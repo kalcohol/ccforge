@@ -1,65 +1,62 @@
+// Compile probe: unique_resource API surface and type traits
+// T-13: verified through forge::forge target (see CMakeLists.txt)
 #include <type_traits>
-#include <utility>
 
-#include "../backport/cpp26/unique_resource.hpp"
+#include <memory>
 
 namespace {
 
-void cleanup_int(int) noexcept {}
-void cleanup_pointer(int*) noexcept {}
-void cleanup_reference(int&) noexcept {}
+void cleanup_int(int) {}
+void cleanup_pointer(int*) {}
+void cleanup_reference(int&) {}
 
 using value_resource = std::unique_resource<int, void(*)(int)>;
 using pointer_resource = std::unique_resource<int*, void(*)(int*)>;
 using reference_resource = std::unique_resource<int&, void(*)(int&)>;
 using value_deleter = void(*)(int);
 
-template<class T, class = void>
-struct has_reset_with_value : std::false_type {};
-
-template<class T>
-struct has_reset_with_value<T, std::void_t<decltype(std::declval<T&>().reset(0))>> : std::true_type {};
-
-template<class T, class = void>
-struct has_dereference : std::false_type {};
-
-template<class T>
-struct has_dereference<T, std::void_t<decltype(*std::declval<T&>())>> : std::true_type {};
-
-template<class T, class = void>
-struct has_arrow : std::false_type {};
-
-template<class T>
-struct has_arrow<T, std::void_t<decltype(std::declval<T&>().operator->())>> : std::true_type {};
-
 } // namespace
 
-static_assert(std::is_default_constructible<value_resource>::value,
-    "unique_resource should be default constructible");
+// T-6: use _v suffix throughout; I-2: default constructor removed
+static_assert(!std::is_default_constructible_v<value_resource>,
+    "unique_resource should not be default constructible");
 
-static_assert(std::is_same<void, decltype(std::declval<value_resource&>().release())>::value,
+static_assert(std::is_same_v<void, decltype(std::declval<value_resource&>().release())>,
     "release should return void");
 
-static_assert(std::is_same<const int&, decltype(std::declval<value_resource&>().get())>::value,
+static_assert(std::is_same_v<const int&, decltype(std::declval<value_resource&>().get())>,
     "get should expose only the const overload");
 
-static_assert(std::is_same<const value_deleter&, decltype(std::declval<value_resource&>().get_deleter())>::value,
+static_assert(std::is_same_v<const value_deleter&, decltype(std::declval<value_resource&>().get_deleter())>,
     "get_deleter should expose only the const overload");
 
-static_assert(has_reset_with_value<value_resource>::value,
+// T-5: use requires expressions instead of SFINAE traits
+static_assert(requires(value_resource& r) { r.reset(0); },
     "unique_resource should support reset(resource)");
 
-static_assert(!std::is_default_constructible<reference_resource>::value,
+static_assert(!std::is_default_constructible_v<reference_resource>,
     "reference-backed unique_resource should not be default constructible");
 
-static_assert(std::is_same<int&, decltype(std::declval<const reference_resource&>().get())>::value,
+static_assert(std::is_same_v<int&, decltype(std::declval<const reference_resource&>().get())>,
     "reference-backed unique_resource should preserve reference semantics");
 
-static_assert(has_dereference<pointer_resource>::value,
+static_assert(requires(pointer_resource& r) { *r; },
     "pointer-like unique_resource should support operator*");
 
-static_assert(has_arrow<pointer_resource>::value,
+static_assert(requires(pointer_resource& r) { r.operator->(); },
     "pointer-like unique_resource should support operator->");
+
+// T-7: CTAD deduction guide
+static_assert(std::is_same_v<
+    decltype(std::unique_resource(0, &cleanup_int)),
+    std::unique_resource<int, void(*)(int)>>,
+    "CTAD should deduce correct types");
+
+// T-11: unique_resource is not copyable
+static_assert(!std::is_copy_constructible_v<value_resource>,
+    "unique_resource should not be copy constructible");
+static_assert(!std::is_copy_assignable_v<value_resource>,
+    "unique_resource should not be copy assignable");
 
 int main() {
     return 0;

@@ -34,8 +34,12 @@ if(NOT TARGET forge)
     # Check for std::unique_resource (C++26)
     check_cxx_source_compiles("
         #include <memory>
+        void cleanup_int(int) {}
         int main() {
-            auto r = std::make_unique_resource(42, [](int){});
+            std::unique_resource<int, void(*)(int)> r(42, &cleanup_int);
+            auto checked = std::make_unique_resource_checked(42, -1, &cleanup_int);
+            (void)r;
+            (void)checked;
             return 0;
         }
     " HAS_STD_UNIQUE_RESOURCE)

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <stdexcept>
+#include <vector>
 
 #include "../backport/cpp26/unique_resource.hpp"
 
@@ -47,8 +49,11 @@ void reset_resource_counters() {
 
 struct constructor_throwing_deleter {
     constructor_throwing_deleter() = default;
-    constructor_throwing_deleter(const constructor_throwing_deleter&) = delete;
     constructor_throwing_deleter& operator=(const constructor_throwing_deleter&) = delete;
+
+    constructor_throwing_deleter(const constructor_throwing_deleter&) {
+        throw std::runtime_error("deleter copy construction failed");
+    }
 
     constructor_throwing_deleter(constructor_throwing_deleter&&) {
         throw std::runtime_error("deleter construction failed");
@@ -88,7 +93,7 @@ TEST(UniqueResourceExceptionTest, ConstructorFailureCleansUpResource) {
     reset_resource_counters();
 
     try {
-        auto resource = std::make_unique_resource(acquire_resource(), constructor_throwing_deleter{});
+        auto resource = std::unique_resource(acquire_resource(), constructor_throwing_deleter{});
         (void)resource;
         FAIL() << "expected constructor_throwing_deleter to throw";
     } catch (const std::runtime_error&) {
@@ -111,4 +116,63 @@ TEST(UniqueResourceExceptionTest, MoveFailureCleansUpTransferredResource) {
     }
 
     EXPECT_EQ(active_resources, 0);
+}
+
+// T-10: reset(R) exception safety — if resource assignment throws,
+// the new resource is cleaned up via the deleter
+namespace {
+
+struct throwing_on_assign_resource {
+    int value;
+
+    explicit throwing_on_assign_resource(int v) noexcept : value(v) {}
+
+    throwing_on_assign_resource(const throwing_on_assign_resource& other) noexcept
+        : value(other.value) {}
+
+    throwing_on_assign_resource(throwing_on_assign_resource&& other) noexcept
+        : value(other.value) {
+        other.value = 0;
+    }
+
+    throwing_on_assign_resource& operator=(const throwing_on_assign_resource&) {
+        throw std::runtime_error("assignment throws");
+    }
+
+    throwing_on_assign_resource& operator=(throwing_on_assign_resource&&) {
+        throw std::runtime_error("move assignment throws");
+    }
+};
+
+bool operator==(const throwing_on_assign_resource& lhs,
+                const throwing_on_assign_resource& rhs) noexcept {
+    return lhs.value == rhs.value;
+}
+
+struct throwing_resource_deleter {
+    int* calls;
+    std::vector<int>* cleaned;
+
+    void operator()(const throwing_on_assign_resource& r) const noexcept {
+        ++*calls;
+        if (cleaned) cleaned->push_back(r.value);
+    }
+};
+
+} // namespace
+
+TEST(UniqueResourceExceptionTest, ResetWithValueCallsDeleterOnNewResourceWhenAssignmentThrows) {
+    int cleanup_count = 0;
+    std::vector<int> cleaned_values;
+
+    std::unique_resource resource(
+        throwing_on_assign_resource{1},
+        throwing_resource_deleter{&cleanup_count, &cleaned_values});
+
+    // reset(r) should try to assign r into the stored resource.
+    // When assignment throws, the standard requires d(r) to be called.
+    EXPECT_THROW(resource.reset(throwing_on_assign_resource{99}), std::runtime_error);
+
+    // The new resource (99) should have been cleaned up by the deleter
+    EXPECT_TRUE(std::find(cleaned_values.begin(), cleaned_values.end(), 99) != cleaned_values.end());
 }

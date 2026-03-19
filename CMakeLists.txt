@@ -2,7 +2,14 @@
 cmake_minimum_required(VERSION 3.17)
 project(Forge VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# This project relies on C++23 language features (e.g. requires-expressions).
+# Do not silently downgrade user-provided standards; require at least C++23.
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 23)
+endif()
+if(CMAKE_CXX_STANDARD LESS 23)
+    message(FATAL_ERROR "Forge requires C++23 or later. Please set -DCMAKE_CXX_STANDARD=23 (or newer).")
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Always include forge.cmake to configure the library

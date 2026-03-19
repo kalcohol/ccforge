@@ -27,6 +27,7 @@ add_test(NAME unique_resource_wording COMMAND test_unique_resource_wording)
 
 # Compile probes for target semantics
 add_executable(test_unique_resource_api EXCLUDE_FROM_ALL test_unique_resource_api.cpp)
+target_link_libraries(test_unique_resource_api PRIVATE forge::forge)
 add_test(
     NAME unique_resource_api_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_unique_resource_api)

@@ -76,3 +76,19 @@ TEST(UniqueResourceCheckedTest, InvalidValuePreservesSentinelState) {
     EXPECT_EQ(resource.get().value, 0);
     EXPECT_EQ(cleanup_count, 0);
 }
+
+// T-12: an object created with an invalid value can be reactivated via reset(valid)
+TEST(UniqueResourceCheckedTest, ResetReactivatesInvalidResource) {
+    int cleanup_count = 0;
+    {
+        auto resource = std::make_unique_resource_checked(-1, -1, counting_deleter{&cleanup_count});
+        // Resource is inactive (invalid == sentinel)
+        EXPECT_EQ(cleanup_count, 0);
+
+        // Reactivate with a valid value
+        resource.reset(42);
+        EXPECT_EQ(resource.get(), 42);
+    }
+    // Destructor should now clean up the valid value
+    EXPECT_EQ(cleanup_count, 1);
+}

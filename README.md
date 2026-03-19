@@ -35,6 +35,24 @@ target_link_libraries(myapp PRIVATE forge::forge)
 - C++23 或更高版本
 - CMake 3.17 或更高版本
 
+## 无感注入机制与必要要素
+
+Forge 的 backport 目标是: 当未来标准库原生提供相同能力后, 下游升级工具链时无需任何源码修改即可自动切换到原生实现.
+
+为了实现这一点, backport 必须满足以下必要要素:
+
+- 标准入口不变: 下游依旧 `#include <memory>` / `#include <simd>`, 而不是包含某个 `forge/...` 头.
+- 命名空间不变: 标准 API 以 `std::` 形式出现, 下游不需要改成 `forge::` 或加宏分支.
+- API 形状一致: 公开接口与标准最终版保持一致, 避免额外扩展导致未来不兼容.
+- 自动开关: `forge.cmake` 会探测当前工具链是否已原生支持对应特性; 仅在缺失时启用 backport, 避免与未来原生实现冲突.
+
+实现方式概览:
+
+- 当需要 backport 时, `forge.cmake` 会把 `backport/` 目录放到 include path 前面.
+- `backport/` 内提供与标准同名的包装头(例如 `backport/memory`), 它先包含真实标准库头, 再在缺失时引入 backport 实现.
+
+注意: 将声明/定义放入 `namespace std` 在严格意义上属于标准未定义行为. 这里是 backport 为达成 "无感切换" 的工程性权衡, 并且通过 "仅在工具链缺失该特性时启用" 来降低风险面.
+
 ## 编码规范
 
 - **文件编码**: UTF-8 without BOM（符合 C++23 标准）
