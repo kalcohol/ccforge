@@ -2,13 +2,26 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+
 namespace {
 
 using int4 = std::simd::vec<int, 4>;
 using float4 = std::simd::vec<float, 4>;
+using longlong4 = std::simd::vec<long long, 4>;
+
+template<class V, class T, size_t N>
+V load_vec(const std::array<T, N>& values) {
+    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::simd_size_type>(N));
+}
+
+int4 make_int4(int v0, int v1, int v2, int v3) {
+    const std::array<int, 4> data{{v0, v1, v2, v3}};
+    return load_vec<int4>(data);
+}
 
 TEST(SimdOperatorsTest, UnaryOperatorsApplyPerLane) {
-    int4 values{1, -2, 3, -4};
+    int4 values = make_int4(1, -2, 3, -4);
 
     const auto positive = +values;
     const auto negative = -values;
@@ -22,12 +35,12 @@ TEST(SimdOperatorsTest, UnaryOperatorsApplyPerLane) {
 }
 
 TEST(SimdOperatorsTest, CompoundAssignmentsUpdateAllLanes) {
-    int4 values{10, 20, 30, 40};
+    int4 values = make_int4(10, 20, 30, 40);
 
-    values += int4{1, 2, 3, 4};
-    values -= int4{1, 1, 1, 1};
-    values *= int4{2, 2, 2, 2};
-    values /= int4{2, 3, 4, 5};
+    values += make_int4(1, 2, 3, 4);
+    values -= make_int4(1, 1, 1, 1);
+    values *= make_int4(2, 2, 2, 2);
+    values /= make_int4(2, 3, 4, 5);
 
     EXPECT_EQ(values[0], 10);
     EXPECT_EQ(values[1], 14);
@@ -36,7 +49,7 @@ TEST(SimdOperatorsTest, CompoundAssignmentsUpdateAllLanes) {
 }
 
 TEST(SimdOperatorsTest, ConversionConstructorCastsEachLane) {
-    int4 source{1, 2, 3, 4};
+    int4 source = make_int4(1, 2, 3, 4);
     float4 converted(source, std::simd::flag_convert);
 
     EXPECT_FLOAT_EQ(converted[0], 1.0f);
@@ -45,9 +58,21 @@ TEST(SimdOperatorsTest, ConversionConstructorCastsEachLane) {
     EXPECT_FLOAT_EQ(converted[3], 4.0f);
 }
 
+TEST(SimdOperatorsTest, SimdCastAndStaticSimdCastConvertEachLane) {
+    const int4 source = make_int4(1, 2, 3, 4);
+
+    const auto widened = std::simd::simd_cast<longlong4>(source);
+    EXPECT_EQ(widened[0], 1);
+    EXPECT_EQ(widened[3], 4);
+
+    const auto narrowed = std::simd::static_simd_cast<int4>(widened);
+    EXPECT_EQ(narrowed[0], 1);
+    EXPECT_EQ(narrowed[3], 4);
+}
+
 TEST(SimdOperatorsTest, ComparisonOperatorsRemainLaneWise) {
-    int4 left{1, 2, 3, 4};
-    int4 right{1, 3, 2, 4};
+    int4 left = make_int4(1, 2, 3, 4);
+    int4 right = make_int4(1, 3, 2, 4);
 
     const auto equal_mask = left == right;
     const auto not_equal_mask = left != right;

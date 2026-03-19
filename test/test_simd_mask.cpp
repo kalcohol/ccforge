@@ -12,8 +12,8 @@ using longlong4 = std::simd::vec<long long, 4>;
 using byte_mask4 = std::simd::mask<signed char, 4>;
 
 TEST(SimdMaskTest, LogicalOperatorsApplyPerLane) {
-    mask<int, 4> left{true, false, true, false};
-    mask<int, 4> right{true, true, false, false};
+    mask<int, 4> left(0b0101u);
+    mask<int, 4> right(0b0011u);
 
     const auto and_value = left && right;
     const auto or_value = left || right;
@@ -36,15 +36,15 @@ TEST(SimdMaskTest, LogicalOperatorsApplyPerLane) {
 }
 
 TEST(SimdMaskTest, BitwiseOperatorsApplyPerLane) {
-    mask<int, 4> left{true, false, true, false};
-    mask<int, 4> right{true, true, false, false};
+    mask<int, 4> left(0b0101u);
+    mask<int, 4> right(0b0011u);
 
     auto and_value = left & right;
     auto or_value = left | right;
     auto xor_value = left ^ right;
 
     left &= right;
-    right |= mask<int, 4>{false, false, true, false};
+    right |= mask<int, 4>(0b0100u);
 
     EXPECT_TRUE(and_value[0]);
     EXPECT_FALSE(and_value[1]);
@@ -72,10 +72,24 @@ TEST(SimdMaskTest, BitwiseOperatorsApplyPerLane) {
     EXPECT_FALSE(right[3]);
 }
 
+TEST(SimdMaskTest, SelectChoosesMaskLanesFromBranchMasks) {
+    const mask<int, 4> cond(0b0101u);
+    const mask<int, 4> when_true(0b0011u);
+    const mask<int, 4> when_false(0b1100u);
+
+    const auto blended = std::simd::select(cond, when_true, when_false);
+
+    // Lane-wise: lane0/2 from when_true; lane1/3 from when_false.
+    EXPECT_TRUE(blended[0]);
+    EXPECT_FALSE(blended[1]);
+    EXPECT_FALSE(blended[2]);
+    EXPECT_TRUE(blended[3]);
+}
+
 TEST(SimdMaskTest, ReductionsTrackPartialMasks) {
-    mask<int, 4> values{false, true, true, false};
-    mask<int, 4> all_true(true);
-    mask<int, 4> all_false(false);
+    mask<int, 4> values(0b0110u);
+    mask<int, 4> all_true(0b1111u);
+    mask<int, 4> all_false(0u);
 
     EXPECT_TRUE(std::simd::all_of(all_true));
     EXPECT_FALSE(std::simd::all_of(values));
@@ -111,7 +125,7 @@ TEST(SimdMaskTest, ConstructorsAndConversionsPreserveBitPatterns) {
     mask<int, 4> from_bits(bits);
     mask<int, 4> implicit_from_bits = bits;
     mask<int, 4> from_unsigned(0b1010u);
-    byte_mask4 source{true, false, true, false};
+    byte_mask4 source(0b0101u);
     mask<int, 4> from_other(source);
     const auto roundtrip = from_bits.to_bitset();
     const auto encoded = from_bits.to_ullong();
@@ -158,7 +172,7 @@ TEST(SimdMaskTest, ConstructorsAndConversionsPreserveBitPatterns) {
 }
 
 TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
-    mask<int, 4> values{true, false, true, false};
+    mask<int, 4> values(0b0101u);
 
     const auto positive = +values;
     const auto negative = -values;
@@ -181,8 +195,8 @@ TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
 }
 
 TEST(SimdMaskTest, ComparisonsApplyPerLane) {
-    mask<int, 4> left{false, false, true, true};
-    mask<int, 4> right{false, true, false, true};
+    mask<int, 4> left(0b1100u);
+    mask<int, 4> right(0b1010u);
 
     const auto equal_value = left == right;
     const auto not_equal_value = left != right;
