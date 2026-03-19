@@ -8,6 +8,68 @@ if(CMAKE_CONFIGURATION_TYPES)
     list(APPEND FORGE_TEST_BUILD_CONFIG_ARGS --config $<CONFIG>)
 endif()
 
+# Configure-time probes for optional std::simd surface growth. These let the test
+# suite stay green while the implementation lands incrementally, while still
+# enabling strict compile/runtime coverage once the API is available.
+include(CheckCXXSourceCompiles)
+
+set(_FORGE_SIMD_PROBE_INCLUDES
+    "${CMAKE_SOURCE_DIR}/backport"
+    "${CMAKE_SOURCE_DIR}/include")
+
+set(CMAKE_REQUIRED_INCLUDES "${_FORGE_SIMD_PROBE_INCLUDES}")
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using V = std::simd::vec<int, 4>;
+        using M = std::simd::mask<int, 4>;
+        V v([](auto i) { return static_cast<int>(decltype(i)::value + 1); });
+        V other(2);
+        M m(0b0101u);
+        std::simd::where(m, v) += other;
+        std::simd::where(m, v) *= 3;
+        return v[0];
+    }
+]=] FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using V = std::simd::vec<int, 4>;
+        V v([](auto i) { return static_cast<int>(decltype(i)::value); });
+        std::simd::where(true, v) = 1;
+        std::simd::where(false, v) = 2;
+        return v[0];
+    }
+]=] FORGE_SIMD_HAS_WHERE_BOOL)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using M = std::simd::mask<int, 4>;
+        M cond(0b0101u);
+        M target(0u);
+        M other(0b1111u);
+        std::simd::where(cond, target) = other;
+        return target[0] ? 0 : 1;
+    }
+]=] FORGE_SIMD_HAS_WHERE_MASK)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using M1 = std::simd::mask<int, 4>;
+        using M2 = std::simd::mask<long long, 4>;
+        M1 value(0b0101u);
+        (void)std::simd::simd_cast<M2>(value);
+        (void)std::simd::static_simd_cast<M1>(value);
+        return 0;
+    }
+]=] FORGE_SIMD_HAS_MASK_CAST)
+
+unset(CMAKE_REQUIRED_INCLUDES)
+
 # Runtime tests for unique_resource
 add_executable(test_unique_resource test_unique_resource.cpp)
 target_link_libraries(test_unique_resource PRIVATE gtest_main)
@@ -55,15 +117,27 @@ add_test(NAME simd_traits COMMAND test_simd_abi)
 
 add_executable(test_simd_mask test_simd_mask.cpp)
 target_link_libraries(test_simd_mask PRIVATE gtest_main forge::forge)
+if(FORGE_SIMD_HAS_WHERE_MASK)
+    target_compile_definitions(test_simd_mask PRIVATE FORGE_SIMD_HAS_WHERE_MASK)
+endif()
 add_test(NAME simd_mask COMMAND test_simd_mask)
 
 add_executable(test_simd_memory test_simd_memory.cpp)
 target_link_libraries(test_simd_memory PRIVATE gtest_main forge::forge)
 target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
+if(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+    target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+endif()
+if(FORGE_SIMD_HAS_WHERE_BOOL)
+    target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_HAS_WHERE_BOOL)
+endif()
 add_test(NAME simd_memory COMMAND test_simd_memory)
 
 add_executable(test_simd_operators test_simd_operators.cpp)
 target_link_libraries(test_simd_operators PRIVATE gtest_main forge::forge)
+if(FORGE_SIMD_HAS_MASK_CAST)
+    target_compile_definitions(test_simd_operators PRIVATE FORGE_SIMD_HAS_MASK_CAST)
+endif()
 add_test(NAME simd_operators COMMAND test_simd_operators)
 
 add_executable(test_simd_math test_simd_math.cpp)
@@ -74,6 +148,18 @@ add_test(NAME simd_math COMMAND test_simd_math)
 add_executable(test_simd_api EXCLUDE_FROM_ALL test_simd_api.cpp)
 target_link_libraries(test_simd_api PRIVATE forge::forge)
 target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
+if(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+endif()
+if(FORGE_SIMD_HAS_WHERE_BOOL)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_BOOL)
+endif()
+if(FORGE_SIMD_HAS_WHERE_MASK)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_MASK)
+endif()
+if(FORGE_SIMD_HAS_MASK_CAST)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_MASK_CAST)
+endif()
 add_test(
     NAME simd_api_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_api)

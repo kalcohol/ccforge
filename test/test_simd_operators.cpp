@@ -9,6 +9,8 @@ namespace {
 using int4 = std::simd::vec<int, 4>;
 using float4 = std::simd::vec<float, 4>;
 using longlong4 = std::simd::vec<long long, 4>;
+using mask4 = std::simd::mask<int, 4>;
+using longlong_mask4 = std::simd::mask<long long, 4>;
 
 template<class V, class T, size_t N>
 V load_vec(const std::array<T, N>& values) {
@@ -69,6 +71,26 @@ TEST(SimdOperatorsTest, SimdCastAndStaticSimdCastConvertEachLane) {
     EXPECT_EQ(narrowed[0], 1);
     EXPECT_EQ(narrowed[3], 4);
 }
+
+#if defined(FORGE_SIMD_HAS_MASK_CAST)
+
+TEST(SimdOperatorsTest, MaskSimdCastAndStaticSimdCastPreserveSelectedLanes) {
+    const mask4 source(0b0101u);
+
+    const auto widened = std::simd::simd_cast<longlong_mask4>(source);
+    EXPECT_TRUE(widened[0]);
+    EXPECT_FALSE(widened[1]);
+    EXPECT_TRUE(widened[2]);
+    EXPECT_FALSE(widened[3]);
+
+    const auto roundtrip = std::simd::static_simd_cast<mask4>(widened);
+    EXPECT_TRUE(roundtrip[0]);
+    EXPECT_FALSE(roundtrip[1]);
+    EXPECT_TRUE(roundtrip[2]);
+    EXPECT_FALSE(roundtrip[3]);
+}
+
+#endif
 
 TEST(SimdOperatorsTest, ComparisonOperatorsRemainLaneWise) {
     int4 left = make_int4(1, 2, 3, 4);

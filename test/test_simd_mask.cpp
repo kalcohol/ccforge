@@ -86,6 +86,23 @@ TEST(SimdMaskTest, SelectChoosesMaskLanesFromBranchMasks) {
     EXPECT_TRUE(blended[3]);
 }
 
+#if defined(FORGE_SIMD_HAS_WHERE_MASK)
+
+TEST(SimdMaskTest, WhereExpressionAssignsOnlySelectedMaskLanes) {
+    const mask<int, 4> cond(0b0101u);
+    mask<int, 4> target(0b0000u);
+    const mask<int, 4> other(0b1111u);
+
+    std::simd::where(cond, target) = other;
+
+    EXPECT_TRUE(target[0]);
+    EXPECT_FALSE(target[1]);
+    EXPECT_TRUE(target[2]);
+    EXPECT_FALSE(target[3]);
+}
+
+#endif
+
 TEST(SimdMaskTest, ReductionsTrackPartialMasks) {
     mask<int, 4> values(0b0110u);
     mask<int, 4> all_true(0b1111u);

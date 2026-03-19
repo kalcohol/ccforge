@@ -2371,15 +2371,21 @@ constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& 
 	    return cond ? static_cast<common_type_t<T, U>>(true_value) : static_cast<common_type_t<T, U>>(false_value);
 	}
 
-	namespace detail {
+		namespace detail {
 
-	template<class>
-	struct is_basic_vec_type : false_type {};
+		template<class>
+		struct is_basic_vec_type : false_type {};
 
-	template<class T, class Abi>
-	struct is_basic_vec_type<basic_vec<T, Abi>> : true_type {};
+		template<class T, class Abi>
+		struct is_basic_vec_type<basic_vec<T, Abi>> : true_type {};
 
-	} // namespace detail
+		template<class>
+		struct is_basic_mask_type : false_type {};
+
+		template<size_t Bytes, class Abi>
+		struct is_basic_mask_type<basic_mask<Bytes, Abi>> : true_type {};
+
+		} // namespace detail
 
 	template<class To, class T, class Abi,
 	         typename enable_if<detail::is_basic_vec_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
@@ -2401,61 +2407,215 @@ constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& 
 
 	template<class To, class T, class Abi,
 	         typename enable_if<detail::is_basic_vec_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
-	constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_vec<T, Abi>& value) noexcept(
-	    noexcept(static_cast<typename detail::remove_cvref_t<To>::value_type>(std::declval<T>()))) {
-	    using to_type = detail::remove_cvref_t<To>;
-	    using to_value = typename to_type::value_type;
-	    static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_vec<T, Abi>::size),
-	        "std::simd::static_simd_cast requires matching lane count");
+		constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_vec<T, Abi>& value) noexcept(
+		    noexcept(static_cast<typename detail::remove_cvref_t<To>::value_type>(std::declval<T>()))) {
+		    using to_type = detail::remove_cvref_t<To>;
+		    using to_value = typename to_type::value_type;
+		    static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_vec<T, Abi>::size),
+		        "std::simd::static_simd_cast requires matching lane count");
 
 	    to_type result;
 	    for (simd_size_type i = 0; i < static_cast<simd_size_type>(to_type::size); ++i) {
 	        detail::set_lane(result, i, static_cast<to_value>(value[i]));
 	    }
-	    return result;
-	}
+		    return result;
+		}
 
-	template<class Mask, class V>
-	class where_expression;
+		template<class To, size_t Bytes, class Abi,
+		         typename enable_if<detail::is_basic_mask_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
+		constexpr detail::remove_cvref_t<To> simd_cast(const basic_mask<Bytes, Abi>& value) noexcept {
+		    using to_type = detail::remove_cvref_t<To>;
+		    static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size),
+		        "std::simd::simd_cast(mask) requires matching lane count");
 
-	template<class Mask, class V>
-	class const_where_expression;
+		    to_type result;
+		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(to_type::size); ++i) {
+		        detail::lane_ref(result, i) = value[i];
+		    }
+		    return result;
+		}
 
-	template<size_t Bytes, class Abi, class T>
-	class where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> {
-	public:
-	    using mask_type = basic_mask<Bytes, Abi>;
-	    using value_type = basic_vec<T, Abi>;
+		template<class To, size_t Bytes, class Abi,
+		         typename enable_if<detail::is_basic_mask_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
+		constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_mask<Bytes, Abi>& value) noexcept {
+		    return simd_cast<To>(value);
+		}
 
-	    constexpr where_expression(const mask_type& mask_value, value_type& value) noexcept
-	        : mask_(mask_value), value_(&value) {
-	        static_assert(Bytes == sizeof(T), "std::simd::where requires mask bytes to match vector value type");
-	        static_assert(static_cast<simd_size_type>(mask_type::size) == static_cast<simd_size_type>(value_type::size),
-	            "std::simd::where requires matching lane count");
-	    }
+		template<class Mask, class V>
+		class where_expression;
 
-	    constexpr where_expression& operator=(const value_type& other) noexcept {
-	        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
-	            if (mask_[i]) {
-	                detail::lane_ref(*value_, i) = other[i];
-	            }
-	        }
-	        return *this;
-	    }
+		template<class Mask, class V>
+		class const_where_expression;
 
-	    constexpr where_expression& operator=(const T& scalar) noexcept {
-	        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
-	            if (mask_[i]) {
-	                detail::lane_ref(*value_, i) = scalar;
-	            }
-	        }
-	        return *this;
-	    }
+		template<size_t Bytes, class Abi, class T>
+		class where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> {
+		public:
+		    using mask_type = basic_mask<Bytes, Abi>;
+		    using value_type = basic_vec<T, Abi>;
 
-	    template<class U, class OtherAbi>
-	    constexpr where_expression& operator=(const basic_vec<U, OtherAbi>& other) noexcept {
-	        static_assert(static_cast<simd_size_type>(basic_vec<U, OtherAbi>::size) == static_cast<simd_size_type>(value_type::size),
-	            "std::simd::where assignment requires matching lane count");
+		    constexpr where_expression(const mask_type& mask_value, value_type& value) noexcept
+		        : mask_(mask_value), value_(&value) {
+		        static_assert(Bytes == sizeof(T), "std::simd::where requires mask bytes to match vector value type");
+		        static_assert(static_cast<simd_size_type>(mask_type::size) == static_cast<simd_size_type>(value_type::size),
+		            "std::simd::where requires matching lane count");
+		    }
+
+		    constexpr where_expression& operator=(const value_type& other) noexcept {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) = other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator=(const T& scalar) noexcept {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) = scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator+=(const value_type& other) noexcept(noexcept(std::declval<T&>() += std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) += other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator-=(const value_type& other) noexcept(noexcept(std::declval<T&>() -= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) -= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator*=(const value_type& other) noexcept(noexcept(std::declval<T&>() *= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) *= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator/=(const value_type& other) noexcept(noexcept(std::declval<T&>() /= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) /= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator+=(const T& scalar) noexcept(noexcept(std::declval<T&>() += std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) += scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator-=(const T& scalar) noexcept(noexcept(std::declval<T&>() -= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) -= scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator*=(const T& scalar) noexcept(noexcept(std::declval<T&>() *= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) *= scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator/=(const T& scalar) noexcept(noexcept(std::declval<T&>() /= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) /= scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class U = T, typename enable_if<is_integral<U>::value, int>::type = 0>
+		    constexpr where_expression& operator%=(const value_type& other) noexcept(noexcept(std::declval<T&>() %= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) %= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class U = T, typename enable_if<is_integral<U>::value, int>::type = 0>
+		    constexpr where_expression& operator&=(const value_type& other) noexcept(noexcept(std::declval<T&>() &= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) &= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class U = T, typename enable_if<is_integral<U>::value, int>::type = 0>
+		    constexpr where_expression& operator|=(const value_type& other) noexcept(noexcept(std::declval<T&>() |= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) |= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class U = T, typename enable_if<is_integral<U>::value, int>::type = 0>
+		    constexpr where_expression& operator^=(const value_type& other) noexcept(noexcept(std::declval<T&>() ^= std::declval<T>())) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) ^= other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class Shift, class U = T,
+		             typename enable_if<is_integral<U>::value && is_integral<Shift>::value, int>::type = 0>
+		    constexpr where_expression& operator<<=(Shift shift) noexcept(noexcept(std::declval<T&>() <<= shift)) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) <<= shift;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class Shift, class U = T,
+		             typename enable_if<is_integral<U>::value && is_integral<Shift>::value, int>::type = 0>
+		    constexpr where_expression& operator>>=(Shift shift) noexcept(noexcept(std::declval<T&>() >>= shift)) {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) >>= shift;
+		            }
+		        }
+		        return *this;
+		    }
+
+		    template<class U, class OtherAbi>
+		    constexpr where_expression& operator=(const basic_vec<U, OtherAbi>& other) noexcept {
+		        static_assert(static_cast<simd_size_type>(basic_vec<U, OtherAbi>::size) == static_cast<simd_size_type>(value_type::size),
+		            "std::simd::where assignment requires matching lane count");
 	        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
 	            if (mask_[i]) {
 	                detail::lane_ref(*value_, i) = static_cast<T>(other[i]);
@@ -2484,13 +2644,45 @@ constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& 
 
 	private:
 	    mask_type mask_;
-	    value_type* value_;
-	};
+		    value_type* value_;
+		};
 
-	template<size_t Bytes, class Abi, class T>
-	class const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> {
-	public:
-	    using mask_type = basic_mask<Bytes, Abi>;
+		template<size_t Bytes, class Abi>
+		class where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>> {
+		public:
+		    using mask_type = basic_mask<Bytes, Abi>;
+		    using value_type = basic_mask<Bytes, Abi>;
+
+		    constexpr where_expression(const mask_type& mask_value, value_type& value) noexcept
+		        : mask_(mask_value), value_(&value) {}
+
+		    constexpr where_expression& operator=(const value_type& other) noexcept {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) = other[i];
+		            }
+		        }
+		        return *this;
+		    }
+
+		    constexpr where_expression& operator=(bool scalar) noexcept {
+		        for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+		            if (mask_[i]) {
+		                detail::lane_ref(*value_, i) = scalar;
+		            }
+		        }
+		        return *this;
+		    }
+
+		private:
+		    mask_type mask_;
+		    value_type* value_;
+		};
+
+		template<size_t Bytes, class Abi, class T>
+		class const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> {
+		public:
+		    using mask_type = basic_mask<Bytes, Abi>;
 	    using value_type = basic_vec<T, Abi>;
 
 	    constexpr const_where_expression(const mask_type& mask_value, const value_type& value) noexcept
@@ -2511,42 +2703,82 @@ constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& 
 
 	private:
 	    mask_type mask_;
-	    const value_type* value_;
-	};
+		    const value_type* value_;
+		};
 
-	template<size_t Bytes, class Abi, class T>
-	constexpr where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
-	                                                                            basic_vec<T, Abi>& value) noexcept {
-	    return where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>>(mask_value, value);
+		template<size_t Bytes, class Abi>
+		class const_where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>> {
+		public:
+		    using mask_type = basic_mask<Bytes, Abi>;
+		    using value_type = basic_mask<Bytes, Abi>;
+
+		    constexpr const_where_expression(const mask_type& mask_value, const value_type& value) noexcept
+		        : mask_(mask_value), value_(&value) {}
+
+		private:
+		    mask_type mask_;
+		    const value_type* value_;
+		};
+
+		template<size_t Bytes, class Abi, class T>
+		constexpr where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
+		                                                                            basic_vec<T, Abi>& value) noexcept {
+		    return where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>>(mask_value, value);
 	}
 
 	template<size_t Bytes, class Abi, class T>
-	constexpr const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
-	                                                                                  const basic_vec<T, Abi>& value) noexcept {
-	    return const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>>(mask_value, value);
+		constexpr const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
+		                                                                                  const basic_vec<T, Abi>& value) noexcept {
+		    return const_where_expression<basic_mask<Bytes, Abi>, basic_vec<T, Abi>>(mask_value, value);
+		}
+
+		template<size_t Bytes, class Abi>
+		constexpr where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
+		                                                                                 basic_mask<Bytes, Abi>& value) noexcept {
+		    return where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>>(mask_value, value);
+		}
+
+		template<size_t Bytes, class Abi>
+		constexpr const_where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>> where(const basic_mask<Bytes, Abi>& mask_value,
+		                                                                                       const basic_mask<Bytes, Abi>& value) noexcept {
+		    return const_where_expression<basic_mask<Bytes, Abi>, basic_mask<Bytes, Abi>>(mask_value, value);
+		}
+
+		template<class T, class Abi>
+		constexpr where_expression<typename basic_vec<T, Abi>::mask_type, basic_vec<T, Abi>> where(bool cond, basic_vec<T, Abi>& value) noexcept {
+		    typename basic_vec<T, Abi>::mask_type mask_value(cond);
+		    return where(mask_value, value);
+		}
+
+		template<class T, class Abi>
+		constexpr const_where_expression<typename basic_vec<T, Abi>::mask_type, basic_vec<T, Abi>> where(bool cond, const basic_vec<T, Abi>& value) noexcept {
+		    typename basic_vec<T, Abi>::mask_type mask_value(cond);
+		    return where(mask_value, value);
+		}
+
+		template<class T,
+		         class Abi,
+		         class BinaryOperation = plus<>,
+		         typename enable_if<!is_same<detail::remove_cvref_t<BinaryOperation>, typename basic_vec<T, Abi>::mask_type>::value, int>::type = 0>
+	constexpr T reduce(const basic_vec<T, Abi>& value, BinaryOperation binary_op = {}) noexcept(
+	    noexcept(std::declval<BinaryOperation&>()(std::declval<T>(), std::declval<T>()))) {
+	    T result = value[0];
+	    for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
+	        result = binary_op(result, value[i]);
+	    }
+	    return result;
 	}
 
-	template<class T,
-	         class Abi,
-	         class BinaryOperation = plus<>,
-	         typename enable_if<!is_same<detail::remove_cvref_t<BinaryOperation>, typename basic_vec<T, Abi>::mask_type>::value, int>::type = 0>
-constexpr T reduce(const basic_vec<T, Abi>& value, BinaryOperation binary_op = {}) {
-    T result = value[0];
-    for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
-        result = binary_op(result, value[i]);
-    }
-    return result;
-}
-
-template<class T, class Abi, class BinaryOperation = plus<>>
-constexpr T reduce(const basic_vec<T, Abi>& value,
-                   const typename basic_vec<T, Abi>::mask_type& mask_value,
-                   BinaryOperation binary_op = {},
-                   T identity_element = detail::reduction_identity<T, BinaryOperation>::value()) {
-    T result = identity_element;
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-        if (mask_value[i]) {
-            result = binary_op(result, value[i]);
+	template<class T, class Abi, class BinaryOperation = plus<>>
+	constexpr T reduce(const basic_vec<T, Abi>& value,
+	                   const typename basic_vec<T, Abi>::mask_type& mask_value,
+	                   BinaryOperation binary_op = {},
+	                   T identity_element = detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
+	    noexcept(std::declval<BinaryOperation&>()(std::declval<T>(), std::declval<T>()))) {
+	    T result = identity_element;
+	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+	        if (mask_value[i]) {
+	            result = binary_op(result, value[i]);
         }
     }
     return result;

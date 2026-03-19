@@ -3,8 +3,12 @@
 #include <iostream>
 
 int main() {
-    std::simd::vec<float, 4> left{1.0f, 2.0f, 3.0f, 4.0f};
-    std::simd::vec<float, 4> right{4.0f, 3.0f, 2.0f, 1.0f};
+    std::simd::vec<float, 4> left([](auto index) {
+        return static_cast<float>(decltype(index)::value + 1);
+    });
+    std::simd::vec<float, 4> right([](auto index) {
+        return static_cast<float>(4 - decltype(index)::value);
+    });
 
     const auto sum = left + right;
     const auto greater = left > right;

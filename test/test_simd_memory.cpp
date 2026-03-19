@@ -319,6 +319,56 @@ TEST(SimdMemoryTest, WhereExpressionAssignsAndCopiesOnlySelectedLanes) {
     EXPECT_EQ(to_const[3], -1);
 }
 
+#if defined(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+
+TEST(SimdMemoryTest, WhereExpressionCompoundAssignmentsModifyOnlySelectedLanes) {
+    int4 values = make_int4(1, 2, 3, 4);
+    const int4 add = make_int4(10, 20, 30, 40);
+    const mask4 selected(0b0101u);
+
+    std::simd::where(selected, values) += add;
+    EXPECT_EQ(values[0], 11);
+    EXPECT_EQ(values[1], 2);
+    EXPECT_EQ(values[2], 33);
+    EXPECT_EQ(values[3], 4);
+
+    std::simd::where(selected, values) *= 2;
+    EXPECT_EQ(values[0], 22);
+    EXPECT_EQ(values[1], 2);
+    EXPECT_EQ(values[2], 66);
+    EXPECT_EQ(values[3], 4);
+
+    std::simd::where(selected, values) -= make_int4(2, 2, 2, 2);
+    EXPECT_EQ(values[0], 20);
+    EXPECT_EQ(values[1], 2);
+    EXPECT_EQ(values[2], 64);
+    EXPECT_EQ(values[3], 4);
+}
+
+#endif
+
+#if defined(FORGE_SIMD_HAS_WHERE_BOOL)
+
+TEST(SimdMemoryTest, WhereBoolOverloadAssignsAllOrNoLanes) {
+    int4 values = make_int4(1, 2, 3, 4);
+    const int4 other = make_int4(9, 8, 7, 6);
+
+    std::simd::where(true, values) = other;
+    EXPECT_EQ(values[0], 9);
+    EXPECT_EQ(values[1], 8);
+    EXPECT_EQ(values[2], 7);
+    EXPECT_EQ(values[3], 6);
+
+    values = make_int4(1, 2, 3, 4);
+    std::simd::where(false, values) = other;
+    EXPECT_EQ(values[0], 1);
+    EXPECT_EQ(values[1], 2);
+    EXPECT_EQ(values[2], 3);
+    EXPECT_EQ(values[3], 4);
+}
+
+#endif
+
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
 
 TEST(SimdMemoryExtensionTest, UncheckedLoadAndStorePreserveExactValues) {

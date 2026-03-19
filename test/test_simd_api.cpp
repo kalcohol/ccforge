@@ -274,6 +274,33 @@ static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_val
 static_assert(requires(const int4 value, mask4 mask_value) { std::simd::where(mask_value, value).copy_to(static_cast<int*>(nullptr)); },
     "where(mask, vec) should expose copy_to for const vectors");
 
+#if defined(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_value, value) += value; },
+    "where(mask, vec) should support compound assignment with vectors");
+static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_value, value) *= 2; },
+    "where(mask, vec) should support compound assignment with scalars");
+#endif
+
+#if defined(FORGE_SIMD_HAS_WHERE_BOOL)
+static_assert(requires(int4 value) { std::simd::where(true, value) = value; },
+    "where(bool, vec) should allow masked assignment from vectors");
+static_assert(requires(int4 value) { std::simd::where(false, value) = 1; },
+    "where(bool, vec) should allow masked assignment from scalars");
+#endif
+
+#if defined(FORGE_SIMD_HAS_WHERE_MASK)
+static_assert(requires(mask4 cond, mask4 value) { std::simd::where(cond, value) = value; },
+    "where(mask, mask) should allow masked assignment between masks");
+#endif
+
+#if defined(FORGE_SIMD_HAS_MASK_CAST)
+static_assert(std::is_same<decltype(std::simd::simd_cast<std::simd::mask<long long, 4>>(std::declval<const mask4&>())),
+                  std::simd::mask<long long, 4>>::value,
+    "simd_cast should be a public entry point for mask conversions");
+static_assert(std::is_same<decltype(std::simd::static_simd_cast<mask4>(std::declval<const std::simd::mask<long long, 4>&>())), mask4>::value,
+    "static_simd_cast should be a public entry point for mask conversions");
+#endif
+
 static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{})), int4>::value,
     "partial_gather_from(pointer, count, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{}, mask4{})), int4>::value,
