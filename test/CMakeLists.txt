@@ -37,6 +37,21 @@ check_cxx_source_compiles([=[
     #include <simd>
     int main() {
         using V = std::simd::vec<int, 4>;
+        using M = std::simd::mask<int, 4>;
+        V v([](auto i) { return static_cast<int>(decltype(i)::value + 1); });
+        M m(0b0101u);
+        std::simd::where(m, v) %= 3;
+        std::simd::where(m, v) &= 7;
+        std::simd::where(m, v) |= 1;
+        std::simd::where(m, v) ^= 2;
+        return v[0];
+    }
+]=] FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using V = std::simd::vec<int, 4>;
         V v([](auto i) { return static_cast<int>(decltype(i)::value); });
         std::simd::where(true, v) = 1;
         std::simd::where(false, v) = 2;
@@ -128,6 +143,9 @@ target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_
 if(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
     target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
 endif()
+if(FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
+    target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
+endif()
 if(FORGE_SIMD_HAS_WHERE_BOOL)
     target_compile_definitions(test_simd_memory PRIVATE FORGE_SIMD_HAS_WHERE_BOOL)
 endif()
@@ -150,6 +168,9 @@ target_link_libraries(test_simd_api PRIVATE forge::forge)
 target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
 if(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
     target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
+endif()
+if(FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
 endif()
 if(FORGE_SIMD_HAS_WHERE_BOOL)
     target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_WHERE_BOOL)

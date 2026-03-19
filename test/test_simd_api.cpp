@@ -279,6 +279,22 @@ static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_val
     "where(mask, vec) should support compound assignment with vectors");
 static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_value, value) *= 2; },
     "where(mask, vec) should support compound assignment with scalars");
+
+using where_vec_expr = decltype(std::simd::where(std::declval<mask4>(), std::declval<int4&>()));
+
+static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() /= std::declval<const int4&>())), where_vec_expr&>::value,
+    "where_expression should return itself from operator/=(vec)");
+static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() <<= 1)), where_vec_expr&>::value,
+    "where_expression should return itself from operator<<=(shift)");
+static_assert(requires(where_vec_expr& expr, const int4& rhs) { expr ^= rhs; },
+    "where_expression should support integer operator^=(vec) for integral vectors");
+
+#if defined(FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
+static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() &= 1)), where_vec_expr&>::value,
+    "where_expression should return itself from operator&=(scalar)");
+static_assert(requires(where_vec_expr& expr) { expr %= 3; },
+    "where_expression should support integer operator%=(scalar) for integral vectors");
+#endif
 #endif
 
 #if defined(FORGE_SIMD_HAS_WHERE_BOOL)
