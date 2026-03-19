@@ -1,0 +1,225 @@
+#include <simd>
+
+#include <bitset>
+
+#include <gtest/gtest.h>
+
+namespace {
+
+using std::simd::mask;
+using int4 = std::simd::vec<int, 4>;
+using longlong4 = std::simd::vec<long long, 4>;
+using byte_mask4 = std::simd::mask<signed char, 4>;
+
+TEST(SimdMaskTest, LogicalOperatorsApplyPerLane) {
+    mask<int, 4> left{true, false, true, false};
+    mask<int, 4> right{true, true, false, false};
+
+    const auto and_value = left && right;
+    const auto or_value = left || right;
+    const auto not_value = !left;
+
+    EXPECT_TRUE(and_value[0]);
+    EXPECT_FALSE(and_value[1]);
+    EXPECT_FALSE(and_value[2]);
+    EXPECT_FALSE(and_value[3]);
+
+    EXPECT_TRUE(or_value[0]);
+    EXPECT_TRUE(or_value[1]);
+    EXPECT_TRUE(or_value[2]);
+    EXPECT_FALSE(or_value[3]);
+
+    EXPECT_FALSE(not_value[0]);
+    EXPECT_TRUE(not_value[1]);
+    EXPECT_FALSE(not_value[2]);
+    EXPECT_TRUE(not_value[3]);
+}
+
+TEST(SimdMaskTest, BitwiseOperatorsApplyPerLane) {
+    mask<int, 4> left{true, false, true, false};
+    mask<int, 4> right{true, true, false, false};
+
+    auto and_value = left & right;
+    auto or_value = left | right;
+    auto xor_value = left ^ right;
+
+    left &= right;
+    right |= mask<int, 4>{false, false, true, false};
+
+    EXPECT_TRUE(and_value[0]);
+    EXPECT_FALSE(and_value[1]);
+    EXPECT_FALSE(and_value[2]);
+    EXPECT_FALSE(and_value[3]);
+
+    EXPECT_TRUE(or_value[0]);
+    EXPECT_TRUE(or_value[1]);
+    EXPECT_TRUE(or_value[2]);
+    EXPECT_FALSE(or_value[3]);
+
+    EXPECT_FALSE(xor_value[0]);
+    EXPECT_TRUE(xor_value[1]);
+    EXPECT_TRUE(xor_value[2]);
+    EXPECT_FALSE(xor_value[3]);
+
+    EXPECT_TRUE(left[0]);
+    EXPECT_FALSE(left[1]);
+    EXPECT_FALSE(left[2]);
+    EXPECT_FALSE(left[3]);
+
+    EXPECT_TRUE(right[0]);
+    EXPECT_TRUE(right[1]);
+    EXPECT_TRUE(right[2]);
+    EXPECT_FALSE(right[3]);
+}
+
+TEST(SimdMaskTest, ReductionsTrackPartialMasks) {
+    mask<int, 4> values{false, true, true, false};
+    mask<int, 4> all_true(true);
+    mask<int, 4> all_false(false);
+
+    EXPECT_TRUE(std::simd::all_of(all_true));
+    EXPECT_FALSE(std::simd::all_of(values));
+
+    EXPECT_TRUE(std::simd::any_of(values));
+    EXPECT_FALSE(std::simd::any_of(all_false));
+
+    EXPECT_FALSE(std::simd::none_of(values));
+    EXPECT_TRUE(std::simd::none_of(all_false));
+
+    EXPECT_EQ(std::simd::reduce_count(values), 2u);
+    EXPECT_EQ(std::simd::reduce_min_index(values), 1u);
+    EXPECT_EQ(std::simd::reduce_max_index(values), 2u);
+}
+
+TEST(SimdMaskTest, BoolOverloadsMatchMaskSemantics) {
+    EXPECT_TRUE(std::simd::all_of(true));
+    EXPECT_TRUE(std::simd::any_of(true));
+    EXPECT_FALSE(std::simd::none_of(true));
+    EXPECT_EQ(std::simd::reduce_count(true), 1u);
+
+    EXPECT_FALSE(std::simd::all_of(false));
+    EXPECT_FALSE(std::simd::any_of(false));
+    EXPECT_TRUE(std::simd::none_of(false));
+    EXPECT_EQ(std::simd::reduce_count(false), 0u);
+}
+
+TEST(SimdMaskTest, ConstructorsAndConversionsPreserveBitPatterns) {
+    std::bitset<4> bits;
+    bits.set(0);
+    bits.set(2);
+
+    mask<int, 4> from_bits(bits);
+    mask<int, 4> implicit_from_bits = bits;
+    mask<int, 4> from_unsigned(0b1010u);
+    byte_mask4 source{true, false, true, false};
+    mask<int, 4> from_other(source);
+    const auto roundtrip = from_bits.to_bitset();
+    const auto encoded = from_bits.to_ullong();
+    const int4 implicit_as_int = from_bits;
+    const auto as_int = static_cast<int4>(from_bits);
+    const auto as_longlong = static_cast<longlong4>(from_bits);
+
+    EXPECT_TRUE(from_bits[0]);
+    EXPECT_TRUE(implicit_from_bits[0]);
+    EXPECT_FALSE(from_bits[1]);
+    EXPECT_TRUE(from_bits[2]);
+    EXPECT_FALSE(from_bits[3]);
+
+    EXPECT_FALSE(from_unsigned[0]);
+    EXPECT_TRUE(from_unsigned[1]);
+    EXPECT_FALSE(from_unsigned[2]);
+    EXPECT_TRUE(from_unsigned[3]);
+
+    EXPECT_TRUE(from_other[0]);
+    EXPECT_FALSE(from_other[1]);
+    EXPECT_TRUE(from_other[2]);
+    EXPECT_FALSE(from_other[3]);
+
+    EXPECT_TRUE(roundtrip[0]);
+    EXPECT_FALSE(roundtrip[1]);
+    EXPECT_TRUE(roundtrip[2]);
+    EXPECT_FALSE(roundtrip[3]);
+    EXPECT_EQ(encoded, 0b0101ull);
+
+    EXPECT_EQ(implicit_as_int[0], 1);
+    EXPECT_EQ(implicit_as_int[1], 0);
+    EXPECT_EQ(implicit_as_int[2], 1);
+    EXPECT_EQ(implicit_as_int[3], 0);
+
+    EXPECT_EQ(as_int[0], 1);
+    EXPECT_EQ(as_int[1], 0);
+    EXPECT_EQ(as_int[2], 1);
+    EXPECT_EQ(as_int[3], 0);
+
+    EXPECT_EQ(as_longlong[0], 1);
+    EXPECT_EQ(as_longlong[1], 0);
+    EXPECT_EQ(as_longlong[2], 1);
+    EXPECT_EQ(as_longlong[3], 0);
+}
+
+TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
+    mask<int, 4> values{true, false, true, false};
+
+    const auto positive = +values;
+    const auto negative = -values;
+    const auto inverted = ~values;
+
+    EXPECT_EQ(positive[0], 1);
+    EXPECT_EQ(positive[1], 0);
+    EXPECT_EQ(positive[2], 1);
+    EXPECT_EQ(positive[3], 0);
+
+    EXPECT_EQ(negative[0], -1);
+    EXPECT_EQ(negative[1], 0);
+    EXPECT_EQ(negative[2], -1);
+    EXPECT_EQ(negative[3], 0);
+
+    EXPECT_EQ(inverted[0], -2);
+    EXPECT_EQ(inverted[1], -1);
+    EXPECT_EQ(inverted[2], -2);
+    EXPECT_EQ(inverted[3], -1);
+}
+
+TEST(SimdMaskTest, ComparisonsApplyPerLane) {
+    mask<int, 4> left{false, false, true, true};
+    mask<int, 4> right{false, true, false, true};
+
+    const auto equal_value = left == right;
+    const auto not_equal_value = left != right;
+    const auto less_value = left < right;
+    const auto less_equal_value = left <= right;
+    const auto greater_value = left > right;
+    const auto greater_equal_value = left >= right;
+
+    EXPECT_TRUE(equal_value[0]);
+    EXPECT_FALSE(equal_value[1]);
+    EXPECT_FALSE(equal_value[2]);
+    EXPECT_TRUE(equal_value[3]);
+
+    EXPECT_FALSE(not_equal_value[0]);
+    EXPECT_TRUE(not_equal_value[1]);
+    EXPECT_TRUE(not_equal_value[2]);
+    EXPECT_FALSE(not_equal_value[3]);
+
+    EXPECT_FALSE(less_value[0]);
+    EXPECT_TRUE(less_value[1]);
+    EXPECT_FALSE(less_value[2]);
+    EXPECT_FALSE(less_value[3]);
+
+    EXPECT_TRUE(less_equal_value[0]);
+    EXPECT_TRUE(less_equal_value[1]);
+    EXPECT_FALSE(less_equal_value[2]);
+    EXPECT_TRUE(less_equal_value[3]);
+
+    EXPECT_FALSE(greater_value[0]);
+    EXPECT_FALSE(greater_value[1]);
+    EXPECT_TRUE(greater_value[2]);
+    EXPECT_FALSE(greater_value[3]);
+
+    EXPECT_TRUE(greater_equal_value[0]);
+    EXPECT_FALSE(greater_equal_value[1]);
+    EXPECT_TRUE(greater_equal_value[2]);
+    EXPECT_TRUE(greater_equal_value[3]);
+}
+
+} // namespace
