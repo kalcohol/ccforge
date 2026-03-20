@@ -68,6 +68,11 @@ Forge 的 backport 目标是: 当未来标准库原生提供相同能力后, 下
 - 当前 `std::simd` backport 已提供并验证核心公开表面与示例构建。
 - 在完整 wording 覆盖继续外扩前，backport 不主动定义 `__cpp_lib_simd`，避免过度宣称标准支持级别。
 
+## `std::execution` 说明
+
+- 当前提供的是 P2300 senders/receivers 的最小 MVP backport（`just/just_error/just_stopped/then/sync_wait/inline_scheduler` + `inplace_stop_*`），入口为 `#include <execution>`。
+- 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`。Forge 的 tests/examples 会在检测到 `tbb` 时自动链接；下游项目若遇到链接错误，请安装 `tbb` 开发包并在链接时加入 `tbb`（例如 CMake 中 `find_library(tbb)` 或 `find_package(TBB)`）。
+
 ## 参考实现
 
 本项目的 backport 实现参考了以下开源项目：

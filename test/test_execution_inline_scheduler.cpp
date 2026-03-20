@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <utility>
 
+static_assert(std::execution::scheduler<std::execution::inline_scheduler>);
+
 TEST(ExecutionInlineSchedulerTest, ScheduleRunsInline) {
     std::execution::inline_scheduler sch{};
 
@@ -28,4 +30,3 @@ TEST(ExecutionInlineSchedulerTest, ScheduleThenChain) {
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 123);
 }
-

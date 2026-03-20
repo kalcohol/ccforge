@@ -22,7 +22,11 @@
 
 #pragma once
 
-// Include standard library <execution> (execution policies).
+// Include standard library <execution> (execution policies) when available.
+//
+// Graceful fallback: if the toolchain doesn't ship <execution>, still provide
+// the P2300 MVP surface from Forge so users can `#include <execution>` for
+// senders/receivers.
 #if defined(_MSC_VER)
 #ifndef FORGE_MSVC_EXECUTION_HEADER
 #error "FORGE_MSVC_EXECUTION_HEADER is required when Forge backport is enabled on MSVC"
@@ -31,8 +35,6 @@
 #elif defined(__has_include_next)
 #if __has_include_next(<execution>)
 #include_next <execution>
-#else
-#error "Forge backport requires include_next support for <execution> on this compiler"
 #endif
 #else
 #error "Forge backport requires a compiler-specific <execution> include strategy"
@@ -43,4 +45,3 @@
 #if !defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)
 #include "cpp26/execution.hpp"
 #endif
-

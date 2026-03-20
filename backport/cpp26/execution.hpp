@@ -286,9 +286,6 @@ struct get_env_t {
             -> __forge_detail::tag_invoke_result_t<get_env_t, const T&> {
         return __forge_detail::tag_invoke_fn(*this, obj);
     }
-
-    // Fallback: any type that doesn't provide an env returns empty_env.
-    auto operator()(const auto&) const noexcept -> empty_env { return {}; }
 };
 inline constexpr get_env_t get_env{};
 
@@ -738,6 +735,8 @@ struct sender {
     friend auto tag_invoke(connect_t, sender self, R rcvr) -> operation<R, E> {
         return {std::move(rcvr), std::move(self.error_)};
     }
+
+    friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
 };
 
 } // namespace __forge_just_error
@@ -769,6 +768,8 @@ struct sender {
     friend auto tag_invoke(connect_t, sender, R rcvr) -> operation<R> {
         return {std::move(rcvr)};
     }
+
+    friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
 };
 
 } // namespace __forge_just_stopped
@@ -947,6 +948,33 @@ struct then_sender {
     }
 };
 
+template<class Fn>
+struct then_closure {
+    [[no_unique_address]] Fn fn_;
+
+    template<std::execution::sender S>
+        requires std::copy_constructible<Fn>
+    [[nodiscard]] auto operator()(S&& s) const & {
+        return then_sender<std::decay_t<S>, Fn>{std::forward<S>(s), fn_};
+    }
+
+    template<std::execution::sender S>
+    [[nodiscard]] auto operator()(S&& s) && {
+        return then_sender<std::decay_t<S>, Fn>{std::forward<S>(s), std::move(fn_)};
+    }
+
+    template<std::execution::sender S>
+        requires std::copy_constructible<Fn>
+    friend constexpr auto operator|(S&& s, const then_closure& self) {
+        return self(std::forward<S>(s));
+    }
+
+    template<std::execution::sender S>
+    friend constexpr auto operator|(S&& s, then_closure&& self) {
+        return std::move(self)(std::forward<S>(s));
+    }
+};
+
 struct then_t {
     template<std::execution::sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
@@ -955,11 +983,7 @@ struct then_t {
 
     template<class Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return [fn = std::forward<Fn>(fn)](std::execution::sender auto&& s) mutable {
-            return then_sender<std::decay_t<decltype(s)>, std::decay_t<Fn>>{
-                std::forward<decltype(s)>(s),
-                std::move(fn)};
-        };
+        return then_closure<std::decay_t<Fn>>{std::forward<Fn>(fn)};
     }
 };
 
@@ -1161,14 +1185,3 @@ inline auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_sche
 using inline_scheduler = __forge_inline::inline_scheduler;
 
 } // namespace std::execution
-
-// Sender adaptor pipeline: `sndr | adaptor` where `adaptor(sndr)` is a sender.
-// Defined in the global namespace to avoid ADL pitfalls.
-template<class S, class Adaptor>
-    requires std::execution::sender<S> &&
-             requires(Adaptor&& adaptor, S&& sndr) {
-                 { static_cast<Adaptor&&>(adaptor)(static_cast<S&&>(sndr)) } -> std::execution::sender;
-             }
-[[nodiscard]] constexpr auto operator|(S&& sndr, Adaptor&& adaptor) {
-    return static_cast<Adaptor&&>(adaptor)(static_cast<S&&>(sndr));
-}
