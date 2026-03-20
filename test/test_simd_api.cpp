@@ -2,8 +2,10 @@
 
 #include <array>
 #include <bitset>
-#include <tuple>
+#include <deque>
 #include <iterator>
+#include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -22,6 +24,7 @@ using mask4 = std::simd::mask<int, 4>;
 using byte_mask4 = std::simd::mask<signed char, 4>;
 using int_iter = std::vector<int>::iterator;
 using const_int_iter = std::vector<int>::const_iterator;
+using deque_int_iter = std::deque<int>::iterator;
 
 struct fake_index_vector {
     using value_type = int;
@@ -41,6 +44,42 @@ struct has_dynamic_subscript : std::false_type {};
 
 template<class V, class Indices>
 struct has_dynamic_subscript<V, Indices, std::void_t<decltype(std::declval<const V&>()[std::declval<const Indices&>()])>> : std::true_type {};
+
+template<class V, class I, class = void>
+struct has_partial_load_count : std::false_type {};
+
+template<class V, class I>
+struct has_partial_load_count<V, I, std::void_t<decltype(std::simd::partial_load<V>(std::declval<I>(), std::simd::simd_size_type{}))>> : std::true_type {};
+
+template<class V, class I, class = void>
+struct has_partial_store_count : std::false_type {};
+
+template<class V, class I>
+struct has_partial_store_count<V, I, std::void_t<decltype(std::simd::partial_store(std::declval<const V&>(), std::declval<I>(), std::simd::simd_size_type{}))>> : std::true_type {};
+
+template<class V, class R, class = void>
+struct has_partial_load_range : std::false_type {};
+
+template<class V, class R>
+struct has_partial_load_range<V, R, std::void_t<decltype(std::simd::partial_load<V>(std::declval<R>()))>> : std::true_type {};
+
+template<class V, class R, class = void>
+struct has_partial_store_range : std::false_type {};
+
+template<class V, class R>
+struct has_partial_store_range<V, R, std::void_t<decltype(std::simd::partial_store(std::declval<const V&>(), std::declval<R>()))>> : std::true_type {};
+
+template<class V, class R, class Indices, class = void>
+struct has_partial_gather_range : std::false_type {};
+
+template<class V, class R, class Indices>
+struct has_partial_gather_range<V, R, Indices, std::void_t<decltype(std::simd::partial_gather_from<V>(std::declval<R>(), std::declval<const Indices&>()))>> : std::true_type {};
+
+template<class V, class R, class Indices, class = void>
+struct has_partial_scatter_range : std::false_type {};
+
+template<class V, class R, class Indices>
+struct has_partial_scatter_range<V, R, Indices, std::void_t<decltype(std::simd::partial_scatter_to(std::declval<const V&>(), std::declval<R>(), std::declval<const Indices&>()))>> : std::true_type {};
 
 template<class V>
 auto lane(const V& value, std::simd::simd_size_type index) -> decltype(value[index]) {
@@ -154,10 +193,16 @@ static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
 static_assert(std::is_constructible<int4, int_generator>::value,
     "basic_vec should support generator construction");
+static_assert(!std::is_constructible<float4, int_generator>::value,
+    "generator construction should reject non-value-preserving lane conversions");
 static_assert(!std::is_constructible<float4, int4>::value,
     "flag_convert-free conversion should be rejected when not supported");
+static_assert(std::is_constructible<longlong4, int4>::value,
+    "value-preserving vector widening should be constructible without std::simd::flag_convert");
 static_assert(std::is_constructible<float4, int4, std::simd::flags<std::simd::convert_flag>>::value,
     "flag_convert overload should always be available");
+static_assert(!std::is_convertible<int, float4>::value,
+    "scalar broadcasting should reject non-value-preserving implicit conversions");
 static_assert(std::is_constructible<mask4, bool>::value,
     "basic_mask should support scalar bool broadcast construction");
 static_assert(std::is_constructible<mask4, unsigned int>::value,
@@ -266,6 +311,16 @@ static_assert(std::is_same<decltype(std::simd::partial_load<int4>(static_cast<co
     "partial_load(pointer, sentinel, mask) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_load<int4>(std::declval<const_int_iter>(), std::declval<const_int_iter>(), mask4{})), int4>::value,
     "partial_load(iterator, sentinel, mask) should be a public entry point");
+static_assert(std::is_constructible<int4, std::span<const int, 4>>::value,
+    "basic_vec should support contiguous range construction");
+static_assert(has_partial_load_range<int4, std::span<const int, 4>>::value,
+    "partial_load(range) should be a public entry point for contiguous ranges");
+static_assert(has_partial_store_range<int4, std::span<int, 4>>::value,
+    "partial_store(range) should be a public entry point for contiguous ranges");
+static_assert(!has_partial_load_count<int4, deque_int_iter>::value,
+    "partial_load(iterator, count) should reject non-contiguous iterators");
+static_assert(!has_partial_store_count<int4, deque_int_iter>::value,
+    "partial_store(iterator, count) should reject non-contiguous iterators");
 static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{})), void>::value,
     "partial_store(pointer, count) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const int4&>(), static_cast<long long*>(nullptr), std::simd::simd_size_type{})), void>::value,
@@ -287,6 +342,8 @@ static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const 
 
 static_assert(std::is_same<decltype(std::simd::select(mask4{}, mask4{}, mask4{})), mask4>::value,
     "select(mask, mask, mask) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::select(mask4{}, 1, 2)), int4>::value,
+    "select(mask, scalar, scalar) should produce the lane vector type");
 static_assert(std::is_same<decltype(std::simd::simd_cast<longlong4>(std::declval<const int4&>())), longlong4>::value,
     "simd_cast should be a public entry point for value-preserving conversions");
 static_assert(std::is_same<decltype(std::simd::static_simd_cast<int4>(std::declval<const longlong4&>())), int4>::value,
@@ -337,6 +394,8 @@ static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_
     "partial_gather_from(pointer, count, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{}, mask4{})), int4>::value,
     "partial_gather_from(pointer, count, indices, mask) should be a public entry point");
+static_assert(has_partial_gather_range<int4, std::span<const int, 8>, int4>::value,
+    "partial_gather_from(range, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), int4{})), int4>::value,
     "unchecked_gather_from(pointer, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), int4{}, mask4{})), int4>::value,
@@ -345,6 +404,8 @@ static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<c
     "partial_scatter_to(value, pointer, count, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{}, int4{}, mask4{})), void>::value,
     "partial_scatter_to(value, pointer, count, indices, mask) should be a public entry point");
+static_assert(has_partial_scatter_range<int4, std::span<int, 8>, int4>::value,
+    "partial_scatter_to(value, range, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), int4{})), void>::value,
     "unchecked_scatter_to(value, pointer, indices) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), int4{}, mask4{})), void>::value,
@@ -366,6 +427,14 @@ static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval
     "unchecked_scatter_to(flag_convert) should accept type-changing stores");
 static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), int4{}, mask4{}, std::simd::flag_convert)), void>::value,
     "unchecked_scatter_to(flag_convert) should accept type-changing stores with masks");
+static_assert(std::is_same<decltype(std::simd::compress(std::declval<const int4&>(), mask4{}, 7)), int4>::value,
+    "compress(vec, mask, fill) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::expand(std::declval<const int4&>(), mask4{}, std::declval<const int4&>())), int4>::value,
+    "expand(vec, mask, original) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::compress(mask4{}, mask4{})), mask4>::value,
+    "compress(mask, mask) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::expand(mask4{}, mask4{}, mask4{})), mask4>::value,
+    "expand(mask, mask, original) should be a public entry point");
 
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)
 

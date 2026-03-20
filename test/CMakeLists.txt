@@ -29,7 +29,14 @@ foreach(_forge_simd_probe_var
     FORGE_SIMD_HAS_LONG_DOUBLE_MASK
     FORGE_SIMD_HAS_NATIVE_MASK_UNARY
     FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER
-    FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+    FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR
+    FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER
+    FORGE_SIMD_HAS_IMPLICIT_SCALAR_NARROWING_BROADCAST
+    FORGE_SIMD_HAS_NARROWING_GENERATOR
+    FORGE_SIMD_HAS_RANGE_LOAD_STORE
+    FORGE_SIMD_ACCEPTS_DEQUE_ITERATOR
+    FORGE_SIMD_HAS_RANGE_GATHER_SCATTER
+    FORGE_SIMD_HAS_COMPRESS_EXPAND_OVERLOADS)
     unset(${_forge_simd_probe_var} CACHE)
     unset(${_forge_simd_probe_var})
 endforeach()
@@ -194,6 +201,126 @@ endif()
 
 if(NOT FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
     message(FATAL_ERROR "Forge simd backport must provide vector converting constructors with std::simd::flag_convert")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::vec<int, 4> ints(1);
+        std::simd::vec<long long, 4> widened(ints);
+        return static_cast<int>(widened[0]);
+    }
+]=] FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER)
+
+if(NOT FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER)
+    message(FATAL_ERROR "Forge simd backport must support value-preserving vector converting constructors")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::vec<float, 4> values = 1;
+        return static_cast<int>(values[0]);
+    }
+]=] FORGE_SIMD_HAS_IMPLICIT_SCALAR_NARROWING_BROADCAST)
+
+if(FORGE_SIMD_HAS_IMPLICIT_SCALAR_NARROWING_BROADCAST)
+    message(FATAL_ERROR "Forge simd backport must reject non-value-preserving implicit scalar broadcasts")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    struct int_generator {
+        template<class Index>
+        constexpr int operator()(Index) const noexcept {
+            return static_cast<int>(Index::value + 1);
+        }
+    };
+    int main() {
+        std::simd::vec<float, 4> values(int_generator{});
+        return static_cast<int>(values[0]);
+    }
+]=] FORGE_SIMD_HAS_NARROWING_GENERATOR)
+
+if(FORGE_SIMD_HAS_NARROWING_GENERATOR)
+    message(FATAL_ERROR "Forge simd backport must reject non-value-preserving generator construction")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    #include <array>
+    #include <span>
+    int main() {
+        std::array<int, 4> input{{1, 2, 3, 4}};
+        std::array<int, 4> output{{0, 0, 0, 0}};
+        std::span<const int, 4> input_view(input);
+        std::span<int, 4> output_view(output);
+        std::simd::vec<int, 4> values(input_view);
+        auto loaded = std::simd::partial_load<std::simd::vec<int, 4>>(input_view);
+        std::simd::partial_store(loaded, output_view);
+        return values[0] + output[3];
+    }
+]=] FORGE_SIMD_HAS_RANGE_LOAD_STORE)
+
+if(NOT FORGE_SIMD_HAS_RANGE_LOAD_STORE)
+    message(FATAL_ERROR "Forge simd backport must support contiguous range constructors and load/store overloads")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    #include <deque>
+    int main() {
+        std::deque<int> input{1, 2, 3, 4};
+        auto values = std::simd::partial_load<std::simd::vec<int, 4>>(input.begin(), std::simd::simd_size_type{4});
+        return values[0];
+    }
+]=] FORGE_SIMD_ACCEPTS_DEQUE_ITERATOR)
+
+if(FORGE_SIMD_ACCEPTS_DEQUE_ITERATOR)
+    message(FATAL_ERROR "Forge simd backport must reject non-contiguous iterators for memory operations")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    #include <array>
+    #include <span>
+    int main() {
+        std::array<int, 8> input{{10, 11, 12, 13, 14, 15, 16, 17}};
+        std::array<int, 8> output{{0, 0, 0, 0, 0, 0, 0, 0}};
+        std::span<const int, 8> input_view(input);
+        std::span<int, 8> output_view(output);
+        std::simd::vec<int, 4> indices([](auto lane) {
+            constexpr int values[] = {1, 4, 5, 7};
+            return values[decltype(lane)::value];
+        });
+        auto gathered = std::simd::partial_gather_from<std::simd::vec<int, 4>>(input_view, indices);
+        std::simd::partial_scatter_to(gathered, output_view, indices);
+        return output[7];
+    }
+]=] FORGE_SIMD_HAS_RANGE_GATHER_SCATTER)
+
+if(NOT FORGE_SIMD_HAS_RANGE_GATHER_SCATTER)
+    message(FATAL_ERROR "Forge simd backport must support contiguous range gather/scatter overloads")
+endif()
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using V = std::simd::vec<int, 4>;
+        using M = std::simd::mask<int, 4>;
+        V values(1);
+        M selected(0b0101u);
+        auto packed = std::simd::compress(values, selected, 7);
+        auto expanded = std::simd::expand(values, selected, values);
+        auto packed_mask = std::simd::compress(selected, selected);
+        auto expanded_mask = std::simd::expand(selected, selected, selected);
+        auto blended = std::simd::select(selected, 1, 2);
+        return packed[0] + expanded[0] + (packed_mask[0] ? 1 : 0) + (expanded_mask[0] ? 1 : 0) + blended[0];
+    }
+]=] FORGE_SIMD_HAS_COMPRESS_EXPAND_OVERLOADS)
+
+if(NOT FORGE_SIMD_HAS_COMPRESS_EXPAND_OVERLOADS)
+    message(FATAL_ERROR "Forge simd backport must provide the repaired compress/expand/select overload set")
 endif()
 
 unset(CMAKE_REQUIRED_INCLUDES)

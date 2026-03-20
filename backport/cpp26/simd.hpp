@@ -32,6 +32,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -228,6 +229,12 @@ struct is_value_preserving_conversion
             numeric_limits<remove_cvref_t<To>>::radix == 2 &&
             numeric_limits<remove_cvref_t<From>>::digits <= numeric_limits<remove_cvref_t<To>>::digits
         )> {};
+
+template<class From, class To>
+struct is_implicit_simd_conversion : is_value_preserving_conversion<From, To> {};
+
+template<class From>
+struct is_implicit_simd_conversion<From, bool> : is_constructible<bool, From> {};
 
 template<class To, class From, class FlagsPack>
 constexpr To convert_or_copy(const From& value, FlagsPack) noexcept {
@@ -489,9 +496,9 @@ template<class I, class = void>
 struct is_random_access_load_store_iterator : false_type {};
 
 template<class I>
-struct is_random_access_load_store_iterator<I, void_t<decltype(++declval<I&>()), iterator_reference_t<I>, typename iterator_traits<I>::iterator_category>>
+struct is_random_access_load_store_iterator<I, void_t<decltype(++declval<I&>()), iterator_reference_t<I>>>
     : integral_constant<bool,
-        is_base_of<random_access_iterator_tag, typename iterator_traits<I>::iterator_category>::value &&
+        contiguous_iterator<I> &&
         is_lvalue_reference<iterator_reference_t<I>>::value &&
         is_supported_value<typename remove_reference<iterator_reference_t<I>>::type>::value> {};
 
@@ -500,17 +507,57 @@ struct is_writable_load_store_iterator : false_type {};
 
 template<class I>
 struct is_writable_load_store_iterator<I,
-    void_t<decltype(++declval<I&>()),
-           iterator_reference_t<I>,
-           typename iterator_traits<I>::iterator_category,
-           decltype(*declval<I&>() = *declval<I&>())>>
+    void_t<decltype(++declval<I&>()), iterator_reference_t<I>, decltype(*declval<I&>() = *declval<I&>())>>
     : integral_constant<bool,
         is_random_access_load_store_iterator<I>::value &&
         !is_const<typename remove_reference<iterator_reference_t<I>>::type>::value> {};
 
+template<class R, class = void>
+struct is_contiguous_load_store_range : false_type {};
+
+template<class R>
+struct is_contiguous_load_store_range<R,
+    void_t<decltype(ranges::data(declval<R&>())),
+           decltype(ranges::size(declval<R&>())),
+           typename ranges::range_value_t<remove_cvref_t<R>>>>
+    : integral_constant<bool,
+        ranges::contiguous_range<remove_cvref_t<R>> &&
+        ranges::sized_range<remove_cvref_t<R>> &&
+        is_supported_value<typename ranges::range_value_t<remove_cvref_t<R>>>::value> {};
+
+template<class R, class = void>
+struct is_writable_load_store_range : false_type {};
+
+template<class R>
+struct is_writable_load_store_range<R,
+    void_t<decltype(ranges::data(declval<R&>())),
+           decltype(ranges::size(declval<R&>())),
+           typename ranges::range_reference_t<remove_cvref_t<R>>>>
+    : integral_constant<bool,
+        is_contiguous_load_store_range<R>::value &&
+        !is_const<typename remove_reference<typename ranges::range_reference_t<remove_cvref_t<R>>>::type>::value> {};
+
+template<class R, class = void>
+struct is_contiguous_mask_range : false_type {};
+
+template<class R>
+struct is_contiguous_mask_range<R,
+    void_t<decltype(ranges::data(declval<R&>())),
+           decltype(ranges::size(declval<R&>())),
+           typename ranges::range_reference_t<remove_cvref_t<R>>>>
+    : integral_constant<bool,
+        ranges::contiguous_range<remove_cvref_t<R>> &&
+        ranges::sized_range<remove_cvref_t<R>> &&
+        is_constructible<bool, typename ranges::range_reference_t<remove_cvref_t<R>>>::value> {};
+
 template<class I, class S>
 constexpr simd_size_type iterator_distance(I first, S last) noexcept {
     return static_cast<simd_size_type>(last - first);
+}
+
+template<class R>
+constexpr simd_size_type range_size(R&& r) noexcept(noexcept(ranges::size(r))) {
+    return static_cast<simd_size_type>(ranges::size(r));
 }
 
 template<class V>
@@ -532,9 +579,17 @@ using generator_index_constant = integral_constant<simd_size_type, static_cast<s
 template<class G, class R, class Seq>
 struct is_simd_generator_sequence;
 
+template<class G, class R, size_t I, class = void>
+struct is_simd_generator_lane : false_type {};
+
+template<class G, class R, size_t I>
+struct is_simd_generator_lane<G, R, I, void_t<decltype(declval<G&>()(generator_index_constant<I>{}))>>
+    : integral_constant<bool,
+        is_implicit_simd_conversion<decltype(declval<G&>()(generator_index_constant<I>{})), R>::value> {};
+
 template<class G, class R, size_t... I>
 struct is_simd_generator_sequence<G, R, index_sequence<I...>>
-    : conjunction<is_invocable_r<R, G&, generator_index_constant<I>>...> {};
+    : conjunction<is_simd_generator_lane<G, R, I>...> {};
 
 template<class G, class R, size_t N>
 struct is_simd_generator : is_simd_generator_sequence<G, R, make_index_sequence<N>> {};
@@ -634,6 +689,17 @@ public:
     basic_mask(const bitset<N>& bits) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = bits[static_cast<size_t>(i)];
+        }
+    }
+
+    template<class R, class... Flags,
+             typename enable_if<detail::is_contiguous_mask_range<R>::value &&
+                 !is_same<detail::remove_cvref_t<R>, basic_mask>::value, int>::type = 0>
+    constexpr explicit basic_mask(R&& r, flags<Flags...> = {}) noexcept : data_{} {
+        assert(detail::range_size(r) == static_cast<simd_size_type>(size));
+        auto* first = ranges::data(r);
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] = static_cast<bool>(first[i]);
         }
     }
 
@@ -864,6 +930,25 @@ public:
         return result;
     }
 
+    friend constexpr basic_mask simd_select_impl(const basic_mask& cond, bool when_true, bool when_false) noexcept {
+        basic_mask result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            result.data_[i] = cond[i] ? when_true : when_false;
+        }
+        return result;
+    }
+
+    template<class U, typename enable_if<detail::is_supported_value<U>::value && sizeof(U) == Bytes, int>::type = 0>
+    friend constexpr basic_vec<U, deduce_abi_t<U, abi_lane_count<Abi>::value>>
+    simd_select_impl(const basic_mask& cond, const U& when_true, const U& when_false) noexcept {
+        using result_type = basic_vec<U, deduce_abi_t<U, abi_lane_count<Abi>::value>>;
+        result_type result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, cond[i] ? when_true : when_false);
+        }
+        return result;
+    }
+
 private:
     array<bool, abi_lane_count<Abi>::value> data_;
 };
@@ -884,11 +969,13 @@ public:
 
 	    constexpr basic_vec() noexcept : data_{} {}
 
-	    constexpr basic_vec(T value) noexcept : data_{} {
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            data_[i] = value;
-	        }
-	    }
+    template<class U,
+             typename enable_if<detail::is_supported_value<U>::value, int>::type = 0>
+    constexpr explicit(!detail::is_implicit_simd_conversion<U, T>::value) basic_vec(U value) noexcept(noexcept(static_cast<T>(value))) : data_{} {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] = static_cast<T>(value);
+        }
+    }
 
     template<class G,
              typename enable_if<detail::is_simd_generator<G, T, simd_size<T, Abi>::value>::value &&
@@ -897,8 +984,30 @@ public:
         noexcept(detail::is_nothrow_simd_generator<G, T, simd_size<T, Abi>::value>::value)
         : data_(detail::generate_array<T, simd_size<T, Abi>::value>(gen)) {}
 
+    template<class R, class... Flags,
+             typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+                 !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
+    constexpr explicit(!detail::is_value_preserving_conversion<typename ranges::range_value_t<detail::remove_cvref_t<R>>, T>::value)
+        basic_vec(R&& r, flags<Flags...> f = {}) noexcept : data_{} {
+        assert(detail::range_size(r) == static_cast<simd_size_type>(size));
+        auto* first = ranges::data(r);
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] = detail::convert_or_copy<T>(first[i], f);
+        }
+    }
+
+    template<class U, class OtherAbi,
+             typename enable_if<detail::is_value_preserving_conversion<U, T>::value, int>::type = 0>
+    constexpr basic_vec(const basic_vec<U, OtherAbi>& other) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
+        static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
+
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] = static_cast<T>(other[i]);
+        }
+    }
+
     template<class U, class OtherAbi>
-    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag>) noexcept : data_{} {
+    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag>) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
         static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
 
         for (simd_size_type i = 0; i < size; ++i) {
@@ -1170,6 +1279,14 @@ public:
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] >= right[i]);
+        }
+        return result;
+    }
+
+    friend constexpr basic_vec simd_select_impl(const mask_type& cond, const basic_vec& when_true, const basic_vec& when_false) noexcept {
+        basic_vec result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, cond[i] ? when_true[i] : when_false[i]);
         }
         return result;
     }
@@ -1614,6 +1731,18 @@ constexpr V partial_load(I first, S last, const typename V::mask_type& mask_valu
     return detail::load_impl<V>(first, last, mask_value, f);
 }
 
+template<class V, class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr V partial_load(R&& r, flags<Flags...> f = {}) {
+    return simd::partial_load<V>(ranges::data(r), detail::range_size(r), f);
+}
+
+template<class V, class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr V partial_load(R&& r, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+    return simd::partial_load<V>(ranges::data(r), detail::range_size(r), mask_value, f);
+}
+
 template<class T,
          class Abi,
          class I,
@@ -1674,6 +1803,18 @@ constexpr void partial_store(const basic_vec<T, Abi>& value,
                              flags<Flags...> f = {}) {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::store_impl(value, first, last, mask_value, f);
+}
+
+template<class T, class Abi, class R, class... Flags,
+         typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
+constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {}) {
+    simd::partial_store(value, ranges::data(r), detail::range_size(r), f);
+}
+
+template<class T, class Abi, class R, class... Flags,
+         typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
+constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+    simd::partial_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
 }
 
 template<class V, class U, class... Flags>
@@ -1800,6 +1941,18 @@ constexpr V unchecked_load(I first, S last, const typename V::mask_type& mask_va
     return detail::load_impl<V>(first, last, mask_value, f);
 }
 
+template<class V, class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr V unchecked_load(R&& r, flags<Flags...> f = {}) {
+    return simd::unchecked_load<V>(ranges::data(r), detail::range_size(r), f);
+}
+
+template<class V, class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr V unchecked_load(R&& r, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+    return simd::unchecked_load<V>(ranges::data(r), detail::range_size(r), mask_value, f);
+}
+
 template<class T,
          class Abi,
          class I,
@@ -1911,11 +2064,11 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		    return result;
 		}
 
-	template<class V, class I, class Indices, class... Flags,
-	         typename enable_if<
-	             detail::is_simd_index_vector<Indices>::value &&
-	                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
-	             int>::type = 0>
+		template<class V, class I, class Indices, class... Flags,
+		         typename enable_if<
+		             detail::is_simd_index_vector<Indices>::value &&
+		                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
+		             int>::type = 0>
 		constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 		    V result;
@@ -1923,9 +2076,23 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
 		        assert(offset >= 0);
 		        detail::set_lane(result, i, detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
-		    }
-		    return result;
-		}
+			    }
+			    return result;
+			}
+
+        template<class V, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr V partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, f);
+        }
+
+        template<class V, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr V partial_gather_from(R&& r, const Indices& indices, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, mask_value, f);
+        }
 
 	template<class V, class I, class Indices, class... Flags,
 	         typename enable_if<
@@ -1994,11 +2161,11 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		    }
 		}
 
-	template<class T, class Abi, class I, class Indices, class... Flags,
-	         typename enable_if<
-	             detail::is_simd_index_vector<Indices>::value &&
-	                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
-	             int>::type = 0>
+		template<class T, class Abi, class I, class Indices, class... Flags,
+		         typename enable_if<
+		             detail::is_simd_index_vector<Indices>::value &&
+		                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
+		             int>::type = 0>
 		constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I first, const Indices& indices, flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
@@ -2019,14 +2186,64 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		                                    const typename basic_vec<T, Abi>::mask_type& mask_value,
 		                                    flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
-		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
-		        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-		        assert(offset >= 0);
-		        if (mask_value[i]) {
-		            *(first + offset) = detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
-		        }
-		    }
-		}
+			    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
+			        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
+			        assert(offset >= 0);
+			        if (mask_value[i]) {
+			            *(first + offset) = detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
+			        }
+			    }
+			}
+
+        template<class V, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr V unchecked_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+            return simd::unchecked_gather_from<V>(ranges::data(r), indices, f);
+        }
+
+        template<class V, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr V unchecked_gather_from(R&& r, const Indices& indices, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+            return simd::unchecked_gather_from<V>(ranges::data(r), indices, mask_value, f);
+        }
+
+        template<class T, class Abi, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_writable_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {}) {
+            simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), indices, f);
+        }
+
+        template<class T, class Abi, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_writable_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
+                                          R&& r,
+                                          const Indices& indices,
+                                          const typename basic_vec<T, Abi>::mask_type& mask_value,
+                                          flags<Flags...> f = {}) {
+            simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), indices, mask_value, f);
+        }
+
+        template<class T, class Abi, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_writable_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {}) {
+            simd::unchecked_scatter_to(value, ranges::data(r), indices, f);
+        }
+
+        template<class T, class Abi, class R, class Indices, class... Flags,
+                 typename enable_if<detail::is_writable_load_store_range<R>::value &&
+                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+        constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
+                                            R&& r,
+                                            const Indices& indices,
+                                            const typename basic_vec<T, Abi>::mask_type& mask_value,
+                                            flags<Flags...> f = {}) {
+            simd::unchecked_scatter_to(value, ranges::data(r), indices, mask_value, f);
+        }
 
 template<class T,
          class Abi,
@@ -2054,42 +2271,99 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, 
     detail::store_impl(value, first, last, mask_value, f);
 }
 
+template<class T, class Abi, class R, class... Flags,
+         typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {}) {
+    simd::unchecked_store(value, ranges::data(r), detail::range_size(r), f);
+}
+
+template<class T, class Abi, class R, class... Flags,
+         typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+    simd::unchecked_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
+}
+
 	template<class V, class Indices,
 	         typename enable_if<detail::is_simd_index_vector<Indices>::value, int>::type>
 	constexpr detail::permute_result_t<V, Indices> permute(const V& value, const Indices& indices) {
 	    return detail::permute_from_indices(value, indices);
 	}
 
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> compress(const basic_vec<T, Abi>& value, const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
-	    basic_vec<T, Abi> result;
-	    simd_size_type out = 0;
-	    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
-	        if (mask_value[i]) {
-	            detail::set_lane(result, out, value[i]);
-	            ++out;
-	        }
-	    }
-	    for (; out < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++out) {
-	        detail::set_lane(result, out, T{});
-	    }
-	    return result;
-	}
+		template<class T, class Abi>
+		constexpr basic_vec<T, Abi> compress(const basic_vec<T, Abi>& value,
+		                                     const typename basic_vec<T, Abi>::mask_type& mask_value,
+		                                     T fill_value) noexcept {
+		    basic_vec<T, Abi> result;
+		    simd_size_type out = 0;
+		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
+		        if (mask_value[i]) {
+		            detail::set_lane(result, out, value[i]);
+		            ++out;
+		        }
+		    }
+		    for (; out < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++out) {
+		        detail::set_lane(result, out, fill_value);
+		    }
+		    return result;
+		}
 
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> expand(const basic_vec<T, Abi>& value, const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
-	    basic_vec<T, Abi> result;
-	    simd_size_type in = 0;
-	    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
-	        if (mask_value[i]) {
-	            detail::set_lane(result, i, value[in]);
-	            ++in;
-	        } else {
-	            detail::set_lane(result, i, T{});
-	        }
-	    }
-	    return result;
-	}
+		template<class T, class Abi>
+		constexpr basic_vec<T, Abi> compress(const basic_vec<T, Abi>& value, const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
+		    return simd::compress(value, mask_value, T{});
+		}
+
+		template<size_t Bytes, class Abi>
+		constexpr basic_mask<Bytes, Abi> compress(const basic_mask<Bytes, Abi>& value,
+		                                          const basic_mask<Bytes, Abi>& mask_value,
+		                                          bool fill_value = false) noexcept {
+		    basic_mask<Bytes, Abi> result(fill_value);
+		    simd_size_type out = 0;
+		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size); ++i) {
+		        if (mask_value[i]) {
+		            detail::lane_ref(result, out) = value[i];
+		            ++out;
+		        }
+		    }
+		    for (; out < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size); ++out) {
+		        detail::lane_ref(result, out) = fill_value;
+		    }
+		    return result;
+		}
+
+		template<class T, class Abi>
+		constexpr basic_vec<T, Abi> expand(const basic_vec<T, Abi>& value,
+		                                   const typename basic_vec<T, Abi>::mask_type& mask_value,
+		                                   const basic_vec<T, Abi>& original) noexcept {
+		    basic_vec<T, Abi> result = original;
+		    simd_size_type in = 0;
+		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
+		        if (mask_value[i]) {
+		            detail::set_lane(result, i, value[in]);
+		            ++in;
+		        }
+		    }
+		    return result;
+		}
+
+		template<class T, class Abi>
+		constexpr basic_vec<T, Abi> expand(const basic_vec<T, Abi>& value, const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
+		    return simd::expand(value, mask_value, basic_vec<T, Abi>{});
+		}
+
+		template<size_t Bytes, class Abi>
+		constexpr basic_mask<Bytes, Abi> expand(const basic_mask<Bytes, Abi>& value,
+		                                        const basic_mask<Bytes, Abi>& mask_value,
+		                                        const basic_mask<Bytes, Abi>& original = basic_mask<Bytes, Abi>{}) noexcept {
+		    basic_mask<Bytes, Abi> result = original;
+		    simd_size_type in = 0;
+		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size); ++i) {
+		        if (mask_value[i]) {
+		            detail::lane_ref(result, i) = value[in];
+		            ++in;
+		        }
+		    }
+		    return result;
+		}
 
 template<simd_size_type N, class V, class IndexMap,
          typename enable_if<!detail::is_simd_index_vector<detail::remove_cvref_t<IndexMap>>::value &&
@@ -2365,6 +2639,14 @@ constexpr basic_mask<Bytes, Abi> select(const basic_mask<Bytes, Abi>& mask_value
 		detail::lane_ref(result, i) = mask_value[i] ? true_value[i] : false_value[i];
 	}
 	return result;
+}
+
+template<size_t Bytes, class Abi, class T, class U,
+         class Result = decltype(simd_select_impl(declval<const basic_mask<Bytes, Abi>&>(), declval<const T&>(), declval<const U&>()))>
+constexpr Result select(const basic_mask<Bytes, Abi>& mask_value,
+                        const T& true_value,
+                        const U& false_value) noexcept(noexcept(simd_select_impl(mask_value, true_value, false_value))) {
+    return simd_select_impl(mask_value, true_value, false_value);
 }
 
 template<class T, class U,

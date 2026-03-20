@@ -87,6 +87,16 @@ TEST(SimdMaskTest, SelectChoosesMaskLanesFromBranchMasks) {
     EXPECT_TRUE(blended[3]);
 }
 
+TEST(SimdMaskTest, ScalarSelectProducesIntegerLaneVector) {
+    const mask<int, 4> cond(0b0101u);
+    const auto blended = std::simd::select(cond, 7, -1);
+
+    EXPECT_EQ(blended[0], 7);
+    EXPECT_EQ(blended[1], -1);
+    EXPECT_EQ(blended[2], 7);
+    EXPECT_EQ(blended[3], -1);
+}
+
 TEST(SimdMaskTest, WhereExpressionAssignsOnlySelectedMaskLanes) {
     const mask<int, 4> cond(0b0101u);
     mask<int, 4> target(0b0000u);
@@ -183,6 +193,24 @@ TEST(SimdMaskTest, ConstructorsAndConversionsPreserveBitPatterns) {
     EXPECT_EQ(as_longlong[1], 0);
     EXPECT_EQ(as_longlong[2], 1);
     EXPECT_EQ(as_longlong[3], 0);
+}
+
+TEST(SimdMaskTest, CompressAndExpandSupportMaskValues) {
+    const mask<int, 4> values(0b0101u);
+    const mask<int, 4> selected(0b0110u);
+    const mask<int, 4> original(0b1000u);
+
+    const auto packed = std::simd::compress(values, selected);
+    EXPECT_FALSE(packed[0]);
+    EXPECT_TRUE(packed[1]);
+    EXPECT_FALSE(packed[2]);
+    EXPECT_FALSE(packed[3]);
+
+    const auto expanded = std::simd::expand(packed, selected, original);
+    EXPECT_FALSE(expanded[0]);
+    EXPECT_FALSE(expanded[1]);
+    EXPECT_TRUE(expanded[2]);
+    EXPECT_TRUE(expanded[3]);
 }
 
 TEST(SimdMaskTest, WideMasksToUllongEncodeOnlyTheLow64Bits) {

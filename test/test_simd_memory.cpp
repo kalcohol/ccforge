@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -130,6 +131,23 @@ TEST(SimdMemoryTest, PartialLoadAndStoreSupportIteratorCountOverloads) {
     EXPECT_EQ(output[3], 9);
 }
 
+TEST(SimdMemoryTest, PartialLoadAndStoreSupportContiguousRangeOverloads) {
+    std::array<int, 4> input{{3, 5, 7, 11}};
+    std::array<int, 4> output{{9, 9, 9, 9}};
+    const std::span<const int, 4> input_view(input);
+    std::span<int, 4> output_view(output);
+
+    const auto value = std::simd::partial_load<int4>(input_view);
+    std::simd::partial_store(value, output_view);
+
+    EXPECT_EQ(lane(value, 0), 3);
+    EXPECT_EQ(lane(value, 1), 5);
+    EXPECT_EQ(lane(value, 2), 7);
+    EXPECT_EQ(lane(value, 3), 11);
+    EXPECT_EQ(output[0], 3);
+    EXPECT_EQ(output[3], 11);
+}
+
 TEST(SimdMemoryTest, PartialLoadAndStoreSupportMaskedIteratorSentinelOverloads) {
     std::vector<int> input{2, 4, 6, 8};
     std::vector<int> output{9, 9, 9, 9};
@@ -254,6 +272,26 @@ TEST(SimdMemoryTest, PartialGatherHonorsMaskAndCount) {
     EXPECT_EQ(gathered[1], 0);
     EXPECT_EQ(gathered[2], 13);
     EXPECT_EQ(gathered[3], 0);
+}
+
+TEST(SimdMemoryTest, PartialGatherAndScatterSupportContiguousRanges) {
+    std::array<int, 8> input{{10, 11, 12, 13, 14, 15, 16, 17}};
+    std::array<int, 8> output{{-1, -1, -1, -1, -1, -1, -1, -1}};
+    const int4 indices = make_int4(1, 4, 5, 7);
+    const std::span<const int, 8> input_view(input);
+    std::span<int, 8> output_view(output);
+
+    const auto gathered = std::simd::partial_gather_from<int4>(input_view, indices);
+    std::simd::partial_scatter_to(gathered, output_view, indices);
+
+    EXPECT_EQ(gathered[0], 11);
+    EXPECT_EQ(gathered[1], 14);
+    EXPECT_EQ(gathered[2], 15);
+    EXPECT_EQ(gathered[3], 17);
+    EXPECT_EQ(output[1], 11);
+    EXPECT_EQ(output[4], 14);
+    EXPECT_EQ(output[5], 15);
+    EXPECT_EQ(output[7], 17);
 }
 
 TEST(SimdMemoryTest, PartialScatterSkipsOffsetsOutsideCount) {

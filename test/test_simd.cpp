@@ -4,6 +4,7 @@
 
 #include <array>
 #include <limits>
+#include <span>
 #include <tuple>
 #include <type_traits>
 
@@ -46,6 +47,24 @@ TEST(SimdRuntimeTest, DefaultWidthAliasBroadcastsAcrossAllLanes) {
     for (std::simd::simd_size_type i = 0; i < decltype(values)::size; ++i) {
         EXPECT_FLOAT_EQ(lane(values, i), 2.5f);
     }
+}
+
+TEST(SimdRuntimeTest, ValuePreservingVectorConstructionWidensLanes) {
+    const std::array<int, 4> data{{1, 2, 3, 4}};
+    const vec<int, 4> ints = load_vec<vec<int, 4>>(data);
+    const std::simd::vec<long long, 4> widened(ints);
+
+    EXPECT_EQ(widened[0], 1);
+    EXPECT_EQ(widened[3], 4);
+}
+
+TEST(SimdRuntimeTest, ContiguousRangeConstructionLoadsLanesInOrder) {
+    const std::array<int, 4> data{{5, 6, 7, 8}};
+    const std::span<const int, 4> values_view(data);
+    const vec<int, 4> values(values_view);
+
+    EXPECT_EQ(values[0], 5);
+    EXPECT_EQ(values[3], 8);
 }
 
 #if defined(FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_TESTS)
@@ -281,6 +300,34 @@ TEST(SimdRuntimeTest, ExpandAfterCompressRestoresSelectedLanes) {
     EXPECT_EQ(roundtrip[1], 20);
     EXPECT_EQ(roundtrip[2], 30);
     EXPECT_EQ(roundtrip[3], 0);
+}
+
+TEST(SimdRuntimeTest, CompressFillAndExpandOriginalPreserveInactiveLanes) {
+    const std::array<int, 4> data{{10, 20, 30, 40}};
+    const vec<int, 4> values = load_vec<vec<int, 4>>(data);
+    const mask<int, 4> selected(0b0101u);
+
+    const auto packed = std::simd::compress(values, selected, -1);
+    EXPECT_EQ(packed[0], 10);
+    EXPECT_EQ(packed[1], 30);
+    EXPECT_EQ(packed[2], -1);
+    EXPECT_EQ(packed[3], -1);
+
+    const auto expanded = std::simd::expand(packed, selected, values);
+    EXPECT_EQ(expanded[0], 10);
+    EXPECT_EQ(expanded[1], 20);
+    EXPECT_EQ(expanded[2], 30);
+    EXPECT_EQ(expanded[3], 40);
+}
+
+TEST(SimdRuntimeTest, ScalarSelectBuildsLaneVectorFromMask) {
+    const mask<int, 4> selected(0b0101u);
+    const auto values = std::simd::select(selected, 7, -3);
+
+    EXPECT_EQ(values[0], 7);
+    EXPECT_EQ(values[1], -3);
+    EXPECT_EQ(values[2], 7);
+    EXPECT_EQ(values[3], -3);
 }
 
 TEST(SimdRuntimeTest, BeginEndAndDefaultSentinelTraverseAllLanes) {
