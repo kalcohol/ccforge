@@ -37,6 +37,16 @@ struct pointer_deleter {
     }
 };
 
+struct static_counting_deleter {
+    static int calls;
+
+    void operator()(int) const noexcept {
+        ++calls;
+    }
+};
+
+int static_counting_deleter::calls = 0;
+
 } // namespace
 
 TEST(UniqueResourceRuntimeTest, BasicUsage) {
@@ -56,6 +66,29 @@ TEST(UniqueResourceRuntimeTest, ResetRunsDeleterOnce) {
     resource.reset();
 
     EXPECT_EQ(cleanup_count, 1);
+}
+
+TEST(UniqueResourceRuntimeTest, DefaultConstructionDoesNotOwnResource) {
+    static_counting_deleter::calls = 0;
+
+    {
+        std::unique_resource<int, static_counting_deleter> resource;
+        EXPECT_EQ(resource.get(), 0);
+    }
+
+    EXPECT_EQ(static_counting_deleter::calls, 0);
+}
+
+TEST(UniqueResourceRuntimeTest, DefaultConstructedResourceCanBeActivatedWithReset) {
+    static_counting_deleter::calls = 0;
+
+    {
+        std::unique_resource<int, static_counting_deleter> resource;
+        resource.reset(42);
+        EXPECT_EQ(resource.get(), 42);
+    }
+
+    EXPECT_EQ(static_counting_deleter::calls, 1);
 }
 
 TEST(UniqueResourceRuntimeTest, MoveTransfersOwnership) {

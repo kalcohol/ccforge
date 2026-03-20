@@ -48,6 +48,13 @@ class unique_resource {
     struct construct_tag {};
 
 public:
+    constexpr unique_resource()
+        requires (is_default_constructible_v<R> &&
+                  is_default_constructible_v<D>)
+        : resource_()
+        , deleter_()
+        , execute_on_reset_(false) {}
+
     template<class RR, class DD>
         requires (is_constructible_v<resource_storage, RR> &&
                   is_constructible_v<D, DD> &&

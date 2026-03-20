@@ -54,12 +54,20 @@ struct constexpr_pointer_deleter {
     constexpr void operator()(constexpr_pointer_object*) const noexcept {}
 };
 
+struct non_default_deleter {
+    non_default_deleter() = delete;
+    constexpr explicit non_default_deleter(int) noexcept {}
+
+    constexpr void operator()(int) const noexcept {}
+};
+
 using non_assignable_value_resource =
     std::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
 using reference_move_assignment_resource =
     std::unique_resource<throwing_assign_reference&, void(*)(throwing_assign_reference&)>;
 using constexpr_value_resource = std::unique_resource<int, constexpr_noop_deleter>;
 using constexpr_pointer_resource = std::unique_resource<constexpr_pointer_object*, constexpr_pointer_deleter>;
+using non_default_deleter_resource = std::unique_resource<int, non_default_deleter>;
 
 template<class T, class RR>
 concept resettable_from = requires(T& resource, RR&& value) {
@@ -70,6 +78,11 @@ constexpr bool constexpr_construction_and_observers() {
     constexpr_value_resource resource(42, constexpr_noop_deleter{});
     return resource.get() == 42 &&
            std::is_empty_v<std::remove_cvref_t<decltype(resource.get_deleter())>>;
+}
+
+constexpr bool constexpr_default_construction() {
+    constexpr_value_resource resource;
+    return resource.get() == 0;
 }
 
 constexpr bool constexpr_reset_and_release() {
@@ -115,9 +128,12 @@ constexpr bool constexpr_pointer_observers() {
 
 } // namespace
 
-// T-6: use _v suffix throughout; I-2: default constructor removed
-static_assert(!std::is_default_constructible_v<value_resource>,
-    "unique_resource should not be default constructible");
+static_assert(std::is_default_constructible_v<value_resource>,
+    "unique_resource should be default constructible when resource and deleter are default constructible");
+static_assert(std::is_default_constructible_v<constexpr_value_resource>,
+    "constexpr-capable unique_resource should support default construction");
+static_assert(!std::is_default_constructible_v<non_default_deleter_resource>,
+    "unique_resource should not be default constructible when the deleter is not default constructible");
 
 static_assert(std::is_same_v<void, decltype(std::declval<value_resource&>().release())>,
     "release should return void");
@@ -162,6 +178,8 @@ static_assert(noexcept(std::declval<const pointer_resource&>().operator->()),
 static_assert(noexcept(std::declval<reference_move_assignment_resource&>() =
                        std::declval<reference_move_assignment_resource&&>()),
     "move assignment noexcept should follow the stored reference_wrapper type");
+static_assert(constexpr_default_construction(),
+    "default construction should be constexpr-capable");
 static_assert(constexpr_construction_and_observers(),
     "construction, get, and get_deleter should be constexpr-capable");
 static_assert(constexpr_reset_and_release(),
