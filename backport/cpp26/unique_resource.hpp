@@ -72,13 +72,13 @@ public:
         , execute_on_reset_(std::exchange(other.execute_on_reset_, false)) {}
 
     unique_resource& operator=(unique_resource&& other) noexcept(
-        is_nothrow_move_assignable_v<R> &&
+        is_nothrow_move_assignable_v<resource_storage> &&
         is_nothrow_move_assignable_v<D>) {
         if (this != &other) {
             reset();
 
-            if constexpr (is_nothrow_move_assignable_v<R> ||
-                          !is_copy_assignable_v<R>) {
+            if constexpr (is_nothrow_move_assignable_v<resource_storage> ||
+                          !is_copy_assignable_v<resource_storage>) {
                 if constexpr (is_nothrow_move_assignable_v<D> ||
                               !is_copy_assignable_v<D>) {
                     resource_ = std::move(other.resource_);
@@ -116,11 +116,9 @@ public:
     }
 
     template<class RR>
+        requires (is_assignable_v<resource_storage&, RR> ||
+                  is_assignable_v<resource_storage&, const remove_reference_t<RR>&>)
     void reset(RR&& r) {
-        static_assert(
-            is_assignable_v<resource_storage&, RR> ||
-            is_assignable_v<resource_storage&, const remove_reference_t<RR>&>,
-            "reset(RR&&) requires resource to be assignable from RR");
         reset();
 
         try {
@@ -151,7 +149,7 @@ public:
 
     template<class T = R>
         requires (is_pointer_v<T> && !is_void_v<remove_pointer_t<T>>)
-    add_lvalue_reference_t<remove_pointer_t<T>> operator*() const noexcept(noexcept(*declval<const T&>())) {
+    add_lvalue_reference_t<remove_pointer_t<T>> operator*() const noexcept {
         return *get();
     }
 
@@ -184,26 +182,6 @@ private:
             return resource.get();
         } else {
             return resource;
-        }
-    }
-
-    template<class RR>
-    static resource_storage construct_resource(RR&& r) {
-        if constexpr (is_nothrow_constructible_v<resource_storage, RR> ||
-                      !is_constructible_v<resource_storage, RR&>) {
-            return resource_storage(std::forward<RR>(r));
-        } else {
-            return resource_storage(r);
-        }
-    }
-
-    template<class DD>
-    static D construct_deleter(DD&& d) {
-        if constexpr (is_nothrow_constructible_v<D, DD> ||
-                      !is_constructible_v<D, DD&>) {
-            return D(std::forward<DD>(d));
-        } else {
-            return D(d);
         }
     }
 

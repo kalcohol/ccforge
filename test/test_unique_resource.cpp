@@ -68,6 +68,20 @@ TEST(UniqueResourceRuntimeTest, MoveTransfersOwnership) {
     EXPECT_EQ(cleanup_count, 1);
 }
 
+TEST(UniqueResourceRuntimeTest, SelfMoveAssignmentIsNoOp) {
+    int cleanup_count = 0;
+
+    {
+        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        resource = std::move(resource);
+
+        EXPECT_EQ(resource.get(), 42);
+        EXPECT_EQ(resource.get_deleter().calls, &cleanup_count);
+    }
+
+    EXPECT_EQ(cleanup_count, 1);
+}
+
 TEST(UniqueResourceRuntimeTest, SwapExchangesResourceAndDeleter) {
     int cleanup_count1 = 0;
     int cleanup_count2 = 0;
@@ -86,6 +100,20 @@ TEST(UniqueResourceRuntimeTest, SwapExchangesResourceAndDeleter) {
 
     EXPECT_EQ(cleanup_count1, 1);
     EXPECT_EQ(cleanup_count2, 1);
+}
+
+TEST(UniqueResourceRuntimeTest, SelfSwapIsNoOp) {
+    int cleanup_count = 0;
+
+    {
+        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        resource.swap(resource);
+
+        EXPECT_EQ(resource.get(), 42);
+        EXPECT_EQ(resource.get_deleter().calls, &cleanup_count);
+    }
+
+    EXPECT_EQ(cleanup_count, 1);
 }
 
 // T-1: release() disables cleanup on destruction

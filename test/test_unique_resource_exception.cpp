@@ -159,6 +159,59 @@ struct throwing_resource_deleter {
     }
 };
 
+struct copy_fallback_assign_resource {
+    int value;
+
+    explicit copy_fallback_assign_resource(int initial_value) noexcept
+        : value(initial_value) {}
+
+    copy_fallback_assign_resource(const copy_fallback_assign_resource&) = default;
+
+    copy_fallback_assign_resource(copy_fallback_assign_resource&& other) noexcept(false)
+        : value(other.value) {
+        other.value = -1;
+    }
+
+    copy_fallback_assign_resource& operator=(const copy_fallback_assign_resource&) noexcept = default;
+
+    copy_fallback_assign_resource& operator=(copy_fallback_assign_resource&& other) noexcept(false) {
+        value = other.value;
+        other.value = -1;
+        return *this;
+    }
+};
+
+struct throwing_copy_assign_deleter {
+    std::vector<int>* cleaned;
+    bool throw_on_copy_assign;
+
+    throwing_copy_assign_deleter(std::vector<int>* cleaned_values, bool should_throw) noexcept
+        : cleaned(cleaned_values)
+        , throw_on_copy_assign(should_throw) {}
+
+    throwing_copy_assign_deleter(const throwing_copy_assign_deleter&) = default;
+
+    void operator()(const copy_fallback_assign_resource& resource) const noexcept {
+        cleaned->push_back(resource.value);
+    }
+
+    throwing_copy_assign_deleter& operator=(const throwing_copy_assign_deleter& other) {
+        if (other.throw_on_copy_assign) {
+            throw std::runtime_error("deleter copy assignment failed");
+        }
+
+        cleaned = other.cleaned;
+        throw_on_copy_assign = other.throw_on_copy_assign;
+        return *this;
+    }
+
+    throwing_copy_assign_deleter& operator=(throwing_copy_assign_deleter&& other) noexcept(false) {
+        cleaned = other.cleaned;
+        throw_on_copy_assign = other.throw_on_copy_assign;
+        return *this;
+    }
+};
+
 } // namespace
 
 TEST(UniqueResourceExceptionTest, ResetWithValueCallsDeleterOnNewResourceWhenAssignmentThrows) {
@@ -175,4 +228,27 @@ TEST(UniqueResourceExceptionTest, ResetWithValueCallsDeleterOnNewResourceWhenAss
 
     // The new resource (99) should have been cleaned up by the deleter
     EXPECT_TRUE(std::find(cleaned_values.begin(), cleaned_values.end(), 99) != cleaned_values.end());
+}
+
+TEST(UniqueResourceExceptionTest, MoveAssignmentDeleterFailureLeavesTargetReleased) {
+    std::vector<int> cleaned_values;
+
+    {
+        auto source_deleter = throwing_copy_assign_deleter{&cleaned_values, true};
+        auto target_deleter = throwing_copy_assign_deleter{&cleaned_values, false};
+        std::unique_resource source(
+            copy_fallback_assign_resource{42},
+            source_deleter);
+        std::unique_resource target(
+            copy_fallback_assign_resource{7},
+            target_deleter);
+
+        EXPECT_THROW(target = std::move(source), std::runtime_error);
+
+        ASSERT_EQ(cleaned_values.size(), 1u);
+        EXPECT_EQ(cleaned_values[0], 7);
+    }
+
+    ASSERT_EQ(cleaned_values.size(), 2u);
+    EXPECT_EQ(cleaned_values[1], 42);
 }
