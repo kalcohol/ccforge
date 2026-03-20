@@ -1,0 +1,31 @@
+#pragma once
+
+#include <cstddef>
+
+#define __cpp_lib_simd 202411L
+
+namespace std {
+namespace simd {
+
+using simd_size_type = std::size_t;
+
+template<class T, simd_size_type N = 4>
+struct basic_vec {
+    T data[N];
+
+    constexpr basic_vec(T value) : data{} {
+        for (simd_size_type i = 0; i < N; ++i) {
+            data[i] = value;
+        }
+    }
+
+    constexpr T operator[](simd_size_type i) const noexcept {
+        return data[i];
+    }
+};
+
+template<class T, simd_size_type N = 4>
+using vec = basic_vec<T, N>;
+
+} // namespace simd
+} // namespace std

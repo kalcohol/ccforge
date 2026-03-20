@@ -1178,6 +1178,8 @@ private:
     array<T, simd_size<T, Abi>::value> data_;
 };
 
+// This metadata models the ABI-aligned memory contract used by load/store APIs.
+// It does not require alignof(basic_vec<T, Abi>) to equal alignment_v.
 template<class T, class U>
 struct alignment<basic_vec<T, U>, T> : integral_constant<size_t, alignof(T) * abi_lane_count<U>::value> {};
 

@@ -72,8 +72,6 @@ TEST(SimdOperatorsTest, SimdCastAndStaticSimdCastConvertEachLane) {
     EXPECT_EQ(narrowed[3], 4);
 }
 
-#if defined(FORGE_SIMD_HAS_MASK_CAST)
-
 TEST(SimdOperatorsTest, MaskSimdCastAndStaticSimdCastPreserveSelectedLanes) {
     const mask4 source(0b0101u);
 
@@ -89,8 +87,6 @@ TEST(SimdOperatorsTest, MaskSimdCastAndStaticSimdCastPreserveSelectedLanes) {
     EXPECT_TRUE(roundtrip[2]);
     EXPECT_FALSE(roundtrip[3]);
 }
-
-#endif
 
 TEST(SimdOperatorsTest, ComparisonOperatorsRemainLaneWise) {
     int4 left = make_int4(1, 2, 3, 4);

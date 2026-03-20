@@ -1,6 +1,7 @@
 #include <simd>
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -199,10 +200,13 @@ TEST(SimdMemoryTest, ValuePreservingConversionsDoNotRequireConvertFlag) {
 }
 
 TEST(SimdMemoryTest, AlignmentFlagsAreAcceptedByPartialLoad) {
-    std::array<int, 4> input{{5, 6, 7, 8}};
+    alignas(std::simd::alignment_v<int4>) int input[4]{5, 6, 7, 8};
+    const auto input_address = reinterpret_cast<std::uintptr_t>(input);
+    ASSERT_EQ(input_address % std::simd::alignment_v<int4>, 0u)
+        << "alignment flag tests should use genuinely aligned storage";
 
-    const auto aligned = std::simd::partial_load<int4>(input.data(), 4, std::simd::flag_aligned);
-    const auto overaligned = std::simd::partial_load<int4>(input.data(), 4, std::simd::flag_overaligned<16>);
+    const auto aligned = std::simd::partial_load<int4>(input, 4, std::simd::flag_aligned);
+    const auto overaligned = std::simd::partial_load<int4>(input, 4, std::simd::flag_overaligned<16>);
 
     EXPECT_EQ(lane(aligned, 0), 5);
     EXPECT_EQ(lane(aligned, 3), 8);
@@ -319,8 +323,6 @@ TEST(SimdMemoryTest, WhereExpressionAssignsAndCopiesOnlySelectedLanes) {
     EXPECT_EQ(to_const[3], -1);
 }
 
-#if defined(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
-
 TEST(SimdMemoryTest, WhereExpressionCompoundAssignmentsModifyOnlySelectedLanes) {
     int4 values = make_int4(1, 2, 3, 4);
     const int4 add = make_int4(10, 20, 30, 40);
@@ -412,7 +414,6 @@ TEST(SimdMemoryTest, WhereExpressionCompoundAssignmentsModifyOnlySelectedLanes) 
         EXPECT_EQ(shift_values[2], 6);
     }
 
-#if defined(FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
     {
         int4 mod_scalar = make_int4(17, 18, 19, 20);
         std::simd::where(selected, mod_scalar) %= 4;
@@ -440,12 +441,7 @@ TEST(SimdMemoryTest, WhereExpressionCompoundAssignmentsModifyOnlySelectedLanes) 
         EXPECT_EQ(xor_scalar[0], 9);
         EXPECT_EQ(xor_scalar[2], 15);
     }
-#endif
 }
-
-#endif
-
-#if defined(FORGE_SIMD_HAS_WHERE_BOOL)
 
 TEST(SimdMemoryTest, WhereBoolOverloadAssignsAllOrNoLanes) {
     int4 values = make_int4(1, 2, 3, 4);
@@ -464,8 +460,6 @@ TEST(SimdMemoryTest, WhereBoolOverloadAssignsAllOrNoLanes) {
     EXPECT_EQ(values[2], 3);
     EXPECT_EQ(values[3], 4);
 }
-
-#endif
 
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
 

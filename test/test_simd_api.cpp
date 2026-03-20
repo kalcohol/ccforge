@@ -142,10 +142,10 @@ static_assert(default_int::size >= 1,
 static_assert(int8::size == 8, "resize_t should expose the requested lane count");
 static_assert(std::simd::alignment_v<int4> >= alignof(int),
     "alignment_v should report at least the scalar alignment");
-#if defined(FORGE_SIMD_HAS_ALIGNMENT_MATCH)
-static_assert(alignof(int4) == std::simd::alignment_v<int4>,
-    "alignment_v should match the actual object alignment");
-#endif
+static_assert(std::simd::alignment_v<int4> >= alignof(int4),
+    "alignment_v should remain an ABI-alignment contract that is at least as strong as the object alignment");
+static_assert(alignof(int4) >= alignof(int),
+    "basic_vec object alignment should remain at least the scalar alignment");
 static_assert(std::is_same<typename int4::mask_type, mask4>::value,
     "vec<int, 4>::mask_type should match mask<int, 4>");
 static_assert(constexpr_broadcast_reduce(),
@@ -154,17 +154,10 @@ static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
 static_assert(std::is_constructible<int4, int_generator>::value,
     "basic_vec should support generator construction");
-#if defined(FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
-static_assert(std::is_constructible<float4, int4>::value,
-    "flag_convert-free conversion should compile when supported");
-#else
 static_assert(!std::is_constructible<float4, int4>::value,
     "flag_convert-free conversion should be rejected when not supported");
-#endif
-#if defined(FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
 static_assert(std::is_constructible<float4, int4, std::simd::flags<std::simd::convert_flag>>::value,
     "flag_convert overload should always be available");
-#endif
 static_assert(std::is_constructible<mask4, bool>::value,
     "basic_mask should support scalar bool broadcast construction");
 static_assert(std::is_constructible<mask4, unsigned int>::value,
@@ -308,7 +301,6 @@ static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_val
 static_assert(requires(const int4 value, mask4 mask_value) { std::simd::where(mask_value, value).copy_to(static_cast<int*>(nullptr)); },
     "where(mask, vec) should expose copy_to for const vectors");
 
-#if defined(FORGE_SIMD_HAS_WHERE_COMPOUND_OPS)
 static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_value, value) += value; },
     "where(mask, vec) should support compound assignment with vectors");
 static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_value, value) *= 2; },
@@ -322,34 +314,24 @@ static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() <<= 1)), wh
     "where_expression should return itself from operator<<=(shift)");
 static_assert(requires(where_vec_expr& expr, const int4& rhs) { expr ^= rhs; },
     "where_expression should support integer operator^=(vec) for integral vectors");
-
-#if defined(FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS)
 static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() &= 1)), where_vec_expr&>::value,
     "where_expression should return itself from operator&=(scalar)");
 static_assert(requires(where_vec_expr& expr) { expr %= 3; },
     "where_expression should support integer operator%=(scalar) for integral vectors");
-#endif
-#endif
 
-#if defined(FORGE_SIMD_HAS_WHERE_BOOL)
 static_assert(requires(int4 value) { std::simd::where(true, value) = value; },
     "where(bool, vec) should allow masked assignment from vectors");
 static_assert(requires(int4 value) { std::simd::where(false, value) = 1; },
     "where(bool, vec) should allow masked assignment from scalars");
-#endif
 
-#if defined(FORGE_SIMD_HAS_WHERE_MASK)
 static_assert(requires(mask4 cond, mask4 value) { std::simd::where(cond, value) = value; },
     "where(mask, mask) should allow masked assignment between masks");
-#endif
 
-#if defined(FORGE_SIMD_HAS_MASK_CAST)
 static_assert(std::is_same<decltype(std::simd::simd_cast<std::simd::mask<long long, 4>>(std::declval<const mask4&>())),
                   std::simd::mask<long long, 4>>::value,
     "simd_cast should be a public entry point for mask conversions");
 static_assert(std::is_same<decltype(std::simd::static_simd_cast<mask4>(std::declval<const std::simd::mask<long long, 4>&>())), mask4>::value,
     "static_simd_cast should be a public entry point for mask conversions");
-#endif
 
 static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{})), int4>::value,
     "partial_gather_from(pointer, count, indices) should be a public entry point");
