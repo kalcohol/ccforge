@@ -172,10 +172,14 @@ static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::simd_
     "const operator[] should return the lane value by value");
 static_assert(std::is_same<decltype(std::declval<int4&>()[std::simd::simd_size_type{}]), int>::value,
     "non-const operator[] should also return the lane value by value");
+static_assert(!std::is_assignable<decltype((std::declval<int4&>()[std::simd::simd_size_type{}])), int>::value,
+    "operator[] should not expose writable lane references");
 static_assert(std::is_same<decltype(std::declval<const mask4&>()[std::simd::simd_size_type{}]), bool>::value,
     "const mask operator[] should return bool by value");
 static_assert(std::is_same<decltype(std::declval<mask4&>()[std::simd::simd_size_type{}]), bool>::value,
     "non-const mask operator[] should also return bool by value");
+static_assert(!std::is_assignable<decltype((std::declval<mask4&>()[std::simd::simd_size_type{}])), bool>::value,
+    "mask operator[] should not expose writable lane references");
 static_assert(std::is_same<decltype(std::declval<mask4&>() & std::declval<const mask4&>()), mask4>::value,
     "mask bitwise and should remain on the mask type");
 static_assert(std::is_same<decltype(std::declval<mask4&>() | std::declval<const mask4&>()), mask4>::value,

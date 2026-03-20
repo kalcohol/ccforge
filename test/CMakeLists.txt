@@ -83,6 +83,21 @@ check_cxx_source_compiles([=[
     }
 ]=] FORGE_SIMD_HAS_MASK_CAST)
 
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using V = std::simd::vec<int, 4>;
+        V value(1);
+        (void)std::simd::partial_load<V>(static_cast<const float*>(nullptr), std::simd::simd_size_type{4});
+        std::simd::partial_store(value, static_cast<float*>(nullptr), std::simd::simd_size_type{4});
+        return 0;
+    }
+]=] FORGE_SIMD_ACCEPTS_NON_VALUE_PRESERVING_LOAD_STORE)
+
+if(FORGE_SIMD_ACCEPTS_NON_VALUE_PRESERVING_LOAD_STORE)
+    message(FATAL_ERROR "Forge simd backport must reject non-value-preserving loads/stores without std::simd::flag_convert")
+endif()
+
 unset(CMAKE_REQUIRED_INCLUDES)
 
 # Runtime tests for unique_resource
