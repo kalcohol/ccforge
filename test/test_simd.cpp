@@ -125,6 +125,27 @@ TEST(SimdRuntimeExpansionTest, PermuteReordersLanes) {
     EXPECT_EQ(indexed[3], 2);
 }
 
+TEST(SimdRuntimeExpansionTest, PermuteSupportsZeroAndUninitSentinels) {
+    const std::array<int, 4> data{{1, 2, 3, 4}};
+    const vec<int, 4> values = load_vec<vec<int, 4>>(data);
+    const auto permuted = std::simd::permute(values, [](auto index) {
+        if constexpr (decltype(index)::value == 0) {
+            return std::simd::simd_size_type(1);
+        } else if constexpr (decltype(index)::value == 1) {
+            return std::simd::zero_element;
+        } else if constexpr (decltype(index)::value == 2) {
+            return std::simd::simd_size_type(3);
+        } else {
+            return std::simd::uninit_element;
+        }
+    });
+
+    EXPECT_EQ(permuted[0], 2);
+    EXPECT_EQ(permuted[1], 0);
+    EXPECT_EQ(permuted[2], 4);
+    EXPECT_EQ(permuted[3], 0);
+}
+
 #else
 
 TEST(SimdDraftRuntimeTest, ChunkCatPermuteCoveragePending) {

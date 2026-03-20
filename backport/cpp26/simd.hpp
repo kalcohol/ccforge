@@ -36,6 +36,7 @@
 #include <type_traits>
 #include <utility>
 
+// This macro is a test marker for backport injection, not an include guard.
 #ifndef FORGE_BACKPORT_SIMD_HPP_INCLUDED
 #define FORGE_BACKPORT_SIMD_HPP_INCLUDED 1
 #endif
@@ -457,21 +458,6 @@ constexpr Tail tail_chunk(const V& value, simd_size_type offset) {
     return make_chunk<Tail>(value, offset);
 }
 
-template<class T, class First, class... Rest>
-constexpr vec<T, First::size + (Rest::size + ... + 0)> cat_impl(const First& first, const Rest&... rest) {
-    vec<T, First::size + (Rest::size + ... + 0)> result;
-    simd_size_type offset = 0;
-    const auto append = [&](const auto& current) {
-        for (simd_size_type i = 0; i < decay_t<decltype(current)>::size; ++i) {
-            detail::set_lane(result, offset + i, current[i]);
-        }
-        offset += decay_t<decltype(current)>::size;
-    };
-    append(first);
-    (append(rest), ...);
-    return result;
-}
-
 template<class I, class S, class = void>
 struct is_sized_sentinel_for : false_type {};
 
@@ -633,16 +619,16 @@ public:
         }
     }
 
-	    template<class G,
-	             typename enable_if<detail::is_simd_generator<G, bool, abi_lane_count<Abi>::value>::value &&
-	                 !is_same<detail::remove_cvref_t<G>, basic_mask>::value, int>::type = 0>
-	    constexpr explicit basic_mask(G&& gen)
-	        noexcept(detail::is_nothrow_simd_generator<G, bool, abi_lane_count<Abi>::value>::value)
-	        : data_(detail::generate_array<bool, abi_lane_count<Abi>::value>(gen)) {}
+    template<class G,
+             typename enable_if<detail::is_simd_generator<G, bool, abi_lane_count<Abi>::value>::value &&
+                 !is_same<detail::remove_cvref_t<G>, basic_mask>::value, int>::type = 0>
+    constexpr explicit basic_mask(G&& gen)
+        noexcept(detail::is_nothrow_simd_generator<G, bool, abi_lane_count<Abi>::value>::value)
+        : data_(detail::generate_array<bool, abi_lane_count<Abi>::value>(gen)) {}
 
-	    constexpr bool operator[](simd_size_type i) const noexcept {
-	        return data_[i];
-	    }
+    constexpr bool operator[](simd_size_type i) const noexcept {
+        return data_[i];
+    }
 
     template<class Indices,
              typename enable_if<detail::is_simd_index_vector<Indices>::value, int>::type = 0>
@@ -889,13 +875,13 @@ public:
     template<class G,
              typename enable_if<detail::is_simd_generator<G, T, simd_size<T, Abi>::value>::value &&
                  !is_same<detail::remove_cvref_t<G>, basic_vec>::value, int>::type = 0>
-	    constexpr explicit basic_vec(G&& gen)
-	        noexcept(detail::is_nothrow_simd_generator<G, T, simd_size<T, Abi>::value>::value)
-	        : data_(detail::generate_array<T, simd_size<T, Abi>::value>(gen)) {}
+    constexpr explicit basic_vec(G&& gen)
+        noexcept(detail::is_nothrow_simd_generator<G, T, simd_size<T, Abi>::value>::value)
+        : data_(detail::generate_array<T, simd_size<T, Abi>::value>(gen)) {}
 
-	    template<class U, class OtherAbi>
-	    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag> = {}) noexcept : data_{} {
-	        static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
+    template<class U, class OtherAbi>
+    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag> = {}) noexcept : data_{} {
+        static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
 
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = static_cast<T>(other[i]);

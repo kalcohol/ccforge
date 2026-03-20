@@ -30,6 +30,7 @@ TEST(SimdMathTest, MaskedReduceStartsFromIdentityElement) {
 
     EXPECT_EQ(std::simd::reduce(values, selected), 7);
     EXPECT_EQ(std::simd::reduce(values, selected, std::plus<>{}, 10), 17);
+    EXPECT_EQ(std::simd::reduce(values, selected, std::multiplies<>{}, 1), 12);
 }
 
 TEST(SimdMathTest, ReduceMinAndReduceMaxHonorMaskSelection) {

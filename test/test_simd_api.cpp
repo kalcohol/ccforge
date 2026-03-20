@@ -61,6 +61,17 @@ struct bool_generator {
     }
 };
 
+constexpr bool constexpr_broadcast_reduce() {
+    constexpr int4 values(42);
+    return values[0] == 42 && values[3] == 42 && std::simd::reduce(values) == 168;
+}
+
+constexpr bool constexpr_generator_and_iota() {
+    constexpr int4 generated(int_generator{});
+    constexpr auto sequence = std::simd::iota<int4>(3);
+    return generated[0] == 1 && generated[3] == 7 && sequence[0] == 3 && sequence[3] == 6;
+}
+
 #if defined(FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
 
 struct identity_index_map {
@@ -133,6 +144,10 @@ static_assert(std::simd::alignment_v<int4> >= alignof(int),
     "alignment_v should report at least the scalar alignment");
 static_assert(std::is_same<typename int4::mask_type, mask4>::value,
     "vec<int, 4>::mask_type should match mask<int, 4>");
+static_assert(constexpr_broadcast_reduce(),
+    "basic_vec broadcast construction and reduce should be constexpr-capable");
+static_assert(constexpr_generator_and_iota(),
+    "generator construction and iota should be constexpr-capable");
 static_assert(std::is_constructible<int4, int_generator>::value,
     "basic_vec should support generator construction");
 static_assert(std::is_constructible<mask4, bool>::value,
