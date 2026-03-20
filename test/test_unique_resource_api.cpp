@@ -42,15 +42,76 @@ struct throwing_assign_reference {
     }
 };
 
+struct constexpr_noop_deleter {
+    constexpr void operator()(int) const noexcept {}
+};
+
+struct constexpr_pointer_object {
+    int x;
+};
+
+struct constexpr_pointer_deleter {
+    constexpr void operator()(constexpr_pointer_object*) const noexcept {}
+};
+
 using non_assignable_value_resource =
     std::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
 using reference_move_assignment_resource =
     std::unique_resource<throwing_assign_reference&, void(*)(throwing_assign_reference&)>;
+using constexpr_value_resource = std::unique_resource<int, constexpr_noop_deleter>;
+using constexpr_pointer_resource = std::unique_resource<constexpr_pointer_object*, constexpr_pointer_deleter>;
 
 template<class T, class RR>
 concept resettable_from = requires(T& resource, RR&& value) {
     resource.reset(std::forward<RR>(value));
 };
+
+constexpr bool constexpr_construction_and_observers() {
+    constexpr_value_resource resource(42, constexpr_noop_deleter{});
+    return resource.get() == 42 &&
+           std::is_empty_v<std::remove_cvref_t<decltype(resource.get_deleter())>>;
+}
+
+constexpr bool constexpr_reset_and_release() {
+    constexpr_value_resource resource(1, constexpr_noop_deleter{});
+    resource.reset(7);
+    if (resource.get() != 7) {
+        return false;
+    }
+    resource.release();
+    return resource.get() == 7;
+}
+
+constexpr bool constexpr_move_operations() {
+    constexpr_value_resource source(11, constexpr_noop_deleter{});
+    constexpr_value_resource moved(std::move(source));
+    if (moved.get() != 11) {
+        return false;
+    }
+
+    constexpr_value_resource target(3, constexpr_noop_deleter{});
+    target = std::move(moved);
+    return target.get() == 11;
+}
+
+constexpr bool constexpr_swap_and_factory() {
+    constexpr_value_resource left(1, constexpr_noop_deleter{});
+    constexpr_value_resource right(2, constexpr_noop_deleter{});
+    using std::swap;
+    swap(left, right);
+    if (left.get() != 2 || right.get() != 1) {
+        return false;
+    }
+
+    auto checked = std::make_unique_resource_checked(5, -1, constexpr_noop_deleter{});
+    return checked.get() == 5;
+}
+
+constexpr bool constexpr_pointer_observers() {
+    constexpr_pointer_object object{17};
+    constexpr_pointer_resource resource(&object, constexpr_pointer_deleter{});
+    return (*resource).x == 17 && resource->x == 17;
+}
 
 } // namespace
 
@@ -101,6 +162,16 @@ static_assert(noexcept(std::declval<const pointer_resource&>().operator->()),
 static_assert(noexcept(std::declval<reference_move_assignment_resource&>() =
                        std::declval<reference_move_assignment_resource&&>()),
     "move assignment noexcept should follow the stored reference_wrapper type");
+static_assert(constexpr_construction_and_observers(),
+    "construction, get, and get_deleter should be constexpr-capable");
+static_assert(constexpr_reset_and_release(),
+    "reset and release should be constexpr-capable");
+static_assert(constexpr_move_operations(),
+    "move constructor and move assignment should be constexpr-capable");
+static_assert(constexpr_swap_and_factory(),
+    "swap and make_unique_resource_checked should be constexpr-capable");
+static_assert(constexpr_pointer_observers(),
+    "pointer observers should be constexpr-capable");
 
 // T-7: CTAD deduction guide
 static_assert(std::is_same_v<
