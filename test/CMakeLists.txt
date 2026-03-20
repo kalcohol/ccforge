@@ -196,3 +196,24 @@ target_link_libraries(test_simd_feature_macro PRIVATE forge::forge)
 add_test(
     NAME simd_feature_macro_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_feature_macro)
+
+# Runtime tests for std::execution (P2300 MVP)
+#
+# These tests intentionally include <execution> to exercise the wrapper-injection
+# shape. They should remain valid even after the standard library ships P2300.
+find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
+
+add_executable(test_execution_mvp test_execution_mvp.cpp)
+target_link_libraries(test_execution_mvp PRIVATE gtest_main forge::forge ${FORGE_TEST_TBB_LIBRARY})
+target_include_directories(test_execution_mvp BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+add_test(NAME execution_mvp COMMAND test_execution_mvp)
+
+add_executable(test_execution_inline_scheduler test_execution_inline_scheduler.cpp)
+target_link_libraries(test_execution_inline_scheduler PRIVATE gtest_main forge::forge ${FORGE_TEST_TBB_LIBRARY})
+target_include_directories(test_execution_inline_scheduler BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+add_test(NAME execution_inline_scheduler COMMAND test_execution_inline_scheduler)
+
+add_executable(test_execution_stop_token test_execution_stop_token.cpp)
+target_link_libraries(test_execution_stop_token PRIVATE gtest_main forge::forge ${FORGE_TEST_TBB_LIBRARY})
+target_include_directories(test_execution_stop_token BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+add_test(NAME execution_stop_token COMMAND test_execution_stop_token)

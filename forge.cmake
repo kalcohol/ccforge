@@ -65,6 +65,22 @@ if(NOT TARGET forge)
         message(STATUS "Forge: std::simd backport enabled")
     endif()
 
+    # Check for P2300 senders/receivers under <execution> (C++26 draft)
+    check_cxx_source_compiles("
+        #include <execution>
+        #include <tuple>
+        int main() {
+            auto s = std::execution::just(1);
+            auto r = std::execution::sync_wait(s);
+            return r ? std::get<0>(*r) : 0;
+        }
+    " HAS_STD_EXECUTION_SENDERS)
+
+    if(NOT HAS_STD_EXECUTION_SENDERS)
+        set(FORGE_NEEDS_BACKPORT TRUE)
+        message(STATUS "Forge: std::execution (P2300 senders/receivers) backport enabled")
+    endif()
+
     # Add backport path if any feature needs it
     if(FORGE_NEEDS_BACKPORT)
         if(MSVC)
@@ -109,6 +125,23 @@ if(NOT TARGET forge)
                     FORGE_MSVC_SIMD_HEADER=\"${FORGE_MSVC_SIMD_HEADER}\"
                 )
             endif()
+
+            set(FORGE_MSVC_EXECUTION_HEADER "")
+
+            foreach(_forge_include_dir IN LISTS _forge_msvc_include_candidates)
+                if(EXISTS "${_forge_include_dir}/execution")
+                    file(TO_CMAKE_PATH "${_forge_include_dir}/execution" FORGE_MSVC_EXECUTION_HEADER)
+                    break()
+                endif()
+            endforeach()
+
+            if(NOT FORGE_MSVC_EXECUTION_HEADER)
+                message(FATAL_ERROR "Forge: failed to locate MSVC standard library header <execution>")
+            endif()
+
+            target_compile_definitions(forge INTERFACE
+                FORGE_MSVC_EXECUTION_HEADER=\"${FORGE_MSVC_EXECUTION_HEADER}\"
+            )
         endif()
 
         target_include_directories(forge BEFORE INTERFACE
