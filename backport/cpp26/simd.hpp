@@ -898,7 +898,7 @@ public:
         : data_(detail::generate_array<T, simd_size<T, Abi>::value>(gen)) {}
 
     template<class U, class OtherAbi>
-    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag> = {}) noexcept : data_{} {
+    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag>) noexcept : data_{} {
         static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
 
         for (simd_size_type i = 0; i < size; ++i) {

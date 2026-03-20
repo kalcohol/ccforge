@@ -142,6 +142,10 @@ static_assert(default_int::size >= 1,
 static_assert(int8::size == 8, "resize_t should expose the requested lane count");
 static_assert(std::simd::alignment_v<int4> >= alignof(int),
     "alignment_v should report at least the scalar alignment");
+#if defined(FORGE_SIMD_HAS_ALIGNMENT_MATCH)
+static_assert(alignof(int4) == std::simd::alignment_v<int4>,
+    "alignment_v should match the actual object alignment");
+#endif
 static_assert(std::is_same<typename int4::mask_type, mask4>::value,
     "vec<int, 4>::mask_type should match mask<int, 4>");
 static_assert(constexpr_broadcast_reduce(),
@@ -150,6 +154,17 @@ static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
 static_assert(std::is_constructible<int4, int_generator>::value,
     "basic_vec should support generator construction");
+#if defined(FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+static_assert(std::is_constructible<float4, int4>::value,
+    "flag_convert-free conversion should compile when supported");
+#else
+static_assert(!std::is_constructible<float4, int4>::value,
+    "flag_convert-free conversion should be rejected when not supported");
+#endif
+#if defined(FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+static_assert(std::is_constructible<float4, int4, std::simd::flags<std::simd::convert_flag>>::value,
+    "flag_convert overload should always be available");
+#endif
 static_assert(std::is_constructible<mask4, bool>::value,
     "basic_mask should support scalar bool broadcast construction");
 static_assert(std::is_constructible<mask4, unsigned int>::value,

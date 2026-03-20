@@ -151,6 +151,22 @@ check_cxx_source_compiles([=[
     }
 ]=] FORGE_SIMD_HAS_ALIGNMENT_MATCH)
 
+if(NOT FORGE_SIMD_HAS_LONG_DOUBLE_MASK)
+    message(FATAL_ERROR "Forge simd backport must support long double mask unary operators")
+endif()
+
+if(NOT FORGE_SIMD_HAS_NATIVE_MASK_UNARY)
+    message(FATAL_ERROR "Forge simd backport must support native-width mask unary operators across float, double, and unsigned int")
+endif()
+
+if(FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+    message(FATAL_ERROR "Forge simd backport must reject vector converting constructors without std::simd::flag_convert")
+endif()
+
+if(NOT FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+    message(FATAL_ERROR "Forge simd backport must provide vector converting constructors with std::simd::flag_convert")
+endif()
+
 unset(CMAKE_REQUIRED_INCLUDES)
 
 # Runtime tests for unique_resource
@@ -200,6 +216,12 @@ add_test(NAME simd_traits COMMAND test_simd_abi)
 
 add_executable(test_simd_mask test_simd_mask.cpp)
 target_link_libraries(test_simd_mask PRIVATE gtest_main forge::forge)
+if(FORGE_SIMD_HAS_LONG_DOUBLE_MASK)
+    target_compile_definitions(test_simd_mask PRIVATE FORGE_SIMD_HAS_LONG_DOUBLE_MASK)
+endif()
+if(FORGE_SIMD_HAS_NATIVE_MASK_UNARY)
+    target_compile_definitions(test_simd_mask PRIVATE FORGE_SIMD_HAS_NATIVE_MASK_UNARY)
+endif()
 if(FORGE_SIMD_HAS_WHERE_MASK)
     target_compile_definitions(test_simd_mask PRIVATE FORGE_SIMD_HAS_WHERE_MASK)
 endif()
@@ -249,6 +271,15 @@ endif()
 if(FORGE_SIMD_HAS_MASK_CAST)
     target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_MASK_CAST)
 endif()
+if(FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+endif()
+if(FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+endif()
+if(FORGE_SIMD_HAS_ALIGNMENT_MATCH)
+    target_compile_definitions(test_simd_api PRIVATE FORGE_SIMD_HAS_ALIGNMENT_MATCH)
+endif()
 add_test(
     NAME simd_api_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_api)
@@ -264,6 +295,18 @@ target_link_libraries(test_simd_feature_macro PRIVATE forge::forge)
 add_test(
     NAME simd_feature_macro_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_feature_macro)
+
+add_executable(test_simd_flag_convert_probe EXCLUDE_FROM_ALL test_simd_flag_convert_probe.cpp)
+target_link_libraries(test_simd_flag_convert_probe PRIVATE forge::forge)
+if(FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+    target_compile_definitions(test_simd_flag_convert_probe PRIVATE FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+endif()
+if(FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+    target_compile_definitions(test_simd_flag_convert_probe PRIVATE FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+endif()
+add_test(
+    NAME simd_flag_convert_probe
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_flag_convert_probe)
 
 # Runtime tests for std::execution (P2300 MVP)
 #
