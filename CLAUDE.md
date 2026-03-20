@@ -25,6 +25,48 @@ Backport implementations MUST be fully transparent to downstream users. When the
 - All symbols must live in `namespace std` with identical signatures to the standard
 - The injection mechanism (`forge.cmake`) auto-detects native support and disables the backport transparently
 
+## Standard Reference Policy
+
+Standard conformance discussions in this repository MUST use a strict reference hierarchy. Previous review confusion showed that loose citation rules lead directly to design mistakes and incorrect accept/reject decisions.
+
+### Normative Baseline Rules
+
+- For any claim about what the standard **currently requires**, the primary source is the **current working draft** on `eel.is` (for example `https://eel.is/c++draft/simd`).
+- WG21 proposal papers (`PxxxxRy`) are **historical context by default**, not the normative baseline, unless the task explicitly says to target that exact revision.
+- Never use an older proposal revision to refute a finding that was raised against the current working draft.
+- If a review/report states its baseline explicitly (for example “current draft [simd]”), all replies and follow-up reviews MUST keep that same baseline unless they explicitly reopen the baseline question first.
+- If the current draft and an older proposal disagree, the current draft wins for all design and review decisions in this repo unless the user explicitly asks for historical analysis.
+
+### Citation Requirements
+
+- Every standards-based review or review-response MUST name its baseline explicitly near the top of the document.
+- When citing a rule, prefer the section name/anchor from the current draft (for example `[simd]`, `[simd.ctor]`, `[simd.permute.memory]`) and include the draft URL when practical.
+- If a proposal paper is cited, include the exact revision (`P1928R9`, `P1928R15`, etc.) and state whether it is:
+  - current normative baseline
+  - historical background
+  - implementation history
+- Do not write “the standard requires” when the only source checked is an old paper revision.
+- Do not write “this is standard-conforming” or “this is not required” unless the cited baseline actually supports that conclusion.
+
+### Review and Response Discipline
+
+- Separate these four things explicitly when needed:
+  - current normative requirement
+  - historical wording/proposal context
+  - local implementation status
+  - local design choice
+- A review response must answer the original review on the review's stated baseline before offering historical context.
+- If a response believes the original baseline is wrong, it must say so explicitly and justify changing the baseline before using different citations.
+- If wording changed across revisions and the change matters, call that out explicitly instead of silently switching references.
+- If exact wording was not verified, say so and avoid decisive accept/reject conclusions.
+
+### Engineering Consequences
+
+- Do not design APIs, constraints, overload sets, or tests from memory when standard wording details matter.
+- For backports, constraints and overload participation rules are part of the public contract; wording-level mistakes are design bugs, not documentation nits.
+- When a standards question materially affects code shape, browse and verify the current draft first, then implement.
+- Prefer adding compile probes/tests that lock in the verified standard behavior so future review cycles do not drift.
+
 ## Build Commands
 
 ```bash
