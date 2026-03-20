@@ -98,6 +98,59 @@ if(FORGE_SIMD_ACCEPTS_NON_VALUE_PRESERVING_LOAD_STORE)
     message(FATAL_ERROR "Forge simd backport must reject non-value-preserving loads/stores without std::simd::flag_convert")
 endif()
 
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::mask<long double, 2> mask(true);
+        auto positive = +mask;
+        auto negative = -mask;
+        auto inverted = ~mask;
+        return static_cast<int>(positive[0] + negative[0] + inverted[0]);
+    }
+]=] FORGE_SIMD_HAS_LONG_DOUBLE_MASK)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::mask<float, 4> float_mask(0b0101u);
+        std::simd::mask<double, 2> double_mask(0b01u);
+        std::simd::mask<unsigned int, 4> uint_mask(0b0011u);
+        auto positive = +float_mask;
+        auto negative = -double_mask;
+        auto inverted = ~uint_mask;
+        return static_cast<int>(positive[0] + negative[0] + inverted[0]);
+    }
+]=] FORGE_SIMD_HAS_NATIVE_MASK_UNARY)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::vec<int, 4> ints(1);
+        std::simd::vec<float, 4> converted(ints);
+        (void)converted;
+        return 0;
+    }
+]=] FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        std::simd::vec<int, 4> ints(1);
+        std::simd::vec<float, 4> converted(ints, std::simd::flag_convert);
+        (void)converted;
+        return 0;
+    }
+]=] FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR)
+
+check_cxx_source_compiles([=[
+    #include <simd>
+    int main() {
+        using int4 = std::simd::vec<int, 4>;
+        static_assert(alignof(int4) == std::simd::alignment_v<int4>, "alignment_v must match actual alignment");
+        return 0;
+    }
+]=] FORGE_SIMD_HAS_ALIGNMENT_MATCH)
+
 unset(CMAKE_REQUIRED_INCLUDES)
 
 # Runtime tests for unique_resource

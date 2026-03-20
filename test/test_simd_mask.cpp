@@ -230,6 +230,34 @@ TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
     EXPECT_EQ(inverted[3], -1);
 }
 
+#if defined(FORGE_SIMD_HAS_LONG_DOUBLE_MASK)
+TEST(SimdMaskTest, LongDoubleMaskUnaryInstantiates) {
+    std::simd::mask<long double, 2> values(true);
+    auto positive = +values;
+    auto negative = -values;
+    auto inverted = ~values;
+
+    EXPECT_EQ(static_cast<int>(positive[0]), 1);
+    EXPECT_EQ(static_cast<int>(negative[0]), -1);
+    EXPECT_EQ(static_cast<int>(inverted[0]), -2);
+}
+#endif
+
+#if defined(FORGE_SIMD_HAS_NATIVE_MASK_UNARY)
+TEST(SimdMaskTest, NativeFloatMaskUnaryInstantiates) {
+    std::simd::mask<float, 4> float_mask(0b0101u);
+    std::simd::mask<double, 2> double_mask(0b01u);
+    std::simd::mask<unsigned int, 4> uint_mask(0b0011u);
+    auto positive = +float_mask;
+    auto negative = -double_mask;
+    auto inverted = ~uint_mask;
+
+    EXPECT_EQ(static_cast<int>(positive[0]), 1);
+    EXPECT_EQ(static_cast<int>(negative[0]), -1);
+    EXPECT_EQ(static_cast<int>(inverted[0]), -2);
+}
+#endif
+
 TEST(SimdMaskTest, ComparisonsApplyPerLane) {
     mask<int, 4> left(0b1100u);
     mask<int, 4> right(0b1010u);

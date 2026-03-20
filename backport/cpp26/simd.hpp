@@ -69,9 +69,20 @@ template<class T>
 using remove_cvref_t = typename remove_cv<typename remove_reference<T>::type>::type;
 
 template<class T>
+struct is_extended_integer : false_type {};
+
+#if defined(__SIZEOF_INT128__)
+template<>
+struct is_extended_integer<__int128> : true_type {};
+
+template<>
+struct is_extended_integer<unsigned __int128> : true_type {};
+#endif
+
+template<class T>
 struct is_supported_value
     : integral_constant<bool,
-        is_arithmetic<remove_cvref_t<T>>::value &&
+        (is_arithmetic<remove_cvref_t<T>>::value || is_extended_integer<remove_cvref_t<T>>::value) &&
         !is_same<remove_cvref_t<T>, bool>::value> {};
 
 template<class T>
@@ -99,6 +110,13 @@ template<>
 struct integer_from_size<8> {
     using type = long long;
 };
+
+#if defined(__SIZEOF_INT128__)
+template<>
+struct integer_from_size<16> {
+    using type = __int128;
+};
+#endif
 
 template<class T>
 struct native_lane_count
@@ -245,8 +263,8 @@ struct simd_size;
 template<class T, simd_size_type N>
 struct simd_size<T, fixed_size_abi<N>> : integral_constant<simd_size_type, N> {};
 
-template<class T>
-struct simd_size<T, native_abi<T>> : detail::native_lane_count<T> {};
+template<class T, class U>
+struct simd_size<T, native_abi<U>> : detail::native_lane_count<U> {};
 
 template<class Abi>
 struct abi_lane_count;
