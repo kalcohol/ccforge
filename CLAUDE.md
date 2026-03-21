@@ -60,6 +60,13 @@ Standard conformance discussions in this repository MUST use a strict reference 
 - If wording changed across revisions and the change matters, call that out explicitly instead of silently switching references.
 - If exact wording was not verified, say so and avoid decisive accept/reject conclusions.
 
+### Review File Timeline Discipline
+
+- Review response files MUST use monotonically increasing answer suffixes: `...-a0.md`, `...-a1.md`, `...-a2.md`, etc.
+- Once a later answer file exists, do not go back and rewrite an older answer file in that chain.
+- Any follow-up correction, clarification, or changed conclusion MUST be written into the next answer number, even if the older file was wrong.
+- Do not collapse or overwrite answer history; the file sequence is part of the review timeline and must remain auditably intact.
+
 ### Engineering Consequences
 
 - Do not design APIs, constraints, overload sets, or tests from memory when standard wording details matter.
