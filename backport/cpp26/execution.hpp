@@ -87,3 +87,5 @@
 #include "execution/split.hpp"
 #include "execution/when_all.hpp"
 #include "execution/ensure_started.hpp"
+#include "execution/any_stop_token.hpp"
+#include "execution/awaitable.hpp"
