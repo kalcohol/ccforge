@@ -245,6 +245,41 @@ struct never_stop_token {
     bool operator==(const never_stop_token&) const noexcept = default;
 };
 
+// ── Stop token concepts — [stoptoken.concepts] ─────────────────────────
+
+// stop_callback_for_t: alias for Token::callback_type<CallbackFn> if it
+// exists, or Token::template callback_type<CallbackFn> otherwise.
+// For inplace_stop_token the callback type is inplace_stop_callback<Fn>.
+template<class Token, class CallbackFn>
+using stop_callback_for_t = typename Token::template callback_type<CallbackFn>;
+
+template<class Token>
+concept stoppable_token =
+    std::copy_constructible<Token> &&
+    std::move_constructible<Token> &&
+    std::is_nothrow_copy_constructible_v<Token> &&
+    std::is_nothrow_move_constructible_v<Token> &&
+    std::equality_comparable<Token> &&
+    requires(const Token& token) {
+        { token.stop_requested() } noexcept -> std::same_as<bool>;
+        { token.stop_possible() } noexcept -> std::same_as<bool>;
+    };
+
+template<class Token, class CallbackFn>
+concept stoppable_token_for =
+    stoppable_token<Token> &&
+    std::invocable<CallbackFn> &&
+    requires { typename stop_callback_for_t<Token, CallbackFn>; } &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token, CallbackFn> &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token&, CallbackFn>;
+
+template<class Token>
+concept unstoppable_token =
+    stoppable_token<Token> &&
+    requires {
+        requires std::bool_constant<(!Token::stop_possible())>::value;
+    };
+
 #endif // !__cpp_lib_inplace_stop_token
 
 } // namespace std
