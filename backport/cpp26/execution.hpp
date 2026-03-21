@@ -72,10 +72,9 @@ struct callback_base {
 class inplace_stop_source {
 public:
     inplace_stop_source() noexcept = default;
-    ~inplace_stop_source() noexcept {
-        std::lock_guard lk{mtx_};
-        callbacks_ = nullptr;
-    }
+    // Precondition: no inplace_stop_callback objects referencing this source
+    // exist at the point of destruction.  See [stopsource.inplace.general].
+    ~inplace_stop_source() noexcept = default;
 
     inplace_stop_source(const inplace_stop_source&) = delete;
     inplace_stop_source& operator=(const inplace_stop_source&) = delete;
@@ -168,6 +167,9 @@ public:
     }
     [[nodiscard]] bool stop_possible() const noexcept { return source_ != nullptr; }
 
+    void swap(inplace_stop_token& other) noexcept { std::swap(source_, other.source_); }
+    friend void swap(inplace_stop_token& a, inplace_stop_token& b) noexcept { a.swap(b); }
+
     bool operator==(const inplace_stop_token&) const noexcept = default;
 
 private:
@@ -237,6 +239,16 @@ struct never_stop_token {
 namespace std::execution {
 
 namespace __forge_detail {
+
+// Non-movable mixin.  Inheriting this makes a type satisfy the
+// operation_state requirement !move_constructible<O> while keeping
+// the derived type an aggregate (C++17: base classes of aggregates
+// need not have user-declared constructors as long as they have no
+// virtual functions and no virtual/private/protected bases).
+struct __immovable {
+    __immovable() = default;
+    __immovable(__immovable&&) = delete;
+};
 
 // tag_invoke protocol (internal).
 namespace __tag_invoke {
@@ -561,6 +573,15 @@ inline constexpr bool sends_stopped_v =
         std::declval<Sender>(), std::declval<Env>()))>::value;
 
 // ──────────────────────────────────────────────────────────────────────────
+// queryable concept — [exec.queryable]
+// ──────────────────────────────────────────────────────────────────────────
+
+// A type is queryable if it is a destructible object type.
+// This is the foundation for env, sender, and receiver constraints.
+template<class T>
+concept queryable = std::destructible<T>;
+
+// ──────────────────────────────────────────────────────────────────────────
 // Core concepts and CPOs
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -576,7 +597,9 @@ inline constexpr start_t start{};
 
 template<class O>
 concept operation_state =
-    std::destructible<O> && std::is_object_v<O> && requires(O& op) { { std::execution::start(op) } noexcept; };
+    std::destructible<O> && std::is_object_v<O> &&
+    !std::move_constructible<O> &&
+    requires(O& op) { { std::execution::start(op) } noexcept; };
 
 struct receiver_t {};
 struct sender_t {};
@@ -587,7 +610,9 @@ concept receiver =
     std::constructible_from<std::remove_cvref_t<R>, std::remove_cvref_t<R>> &&
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
-    requires(const std::remove_cvref_t<R>& r) { std::execution::get_env(r); };
+    requires(const std::remove_cvref_t<R>& r) {
+        { std::execution::get_env(r) } -> queryable;
+    };
 
 namespace __forge_concepts {
 
@@ -626,7 +651,10 @@ concept sender =
     std::move_constructible<std::remove_cvref_t<S>> &&
     std::constructible_from<std::remove_cvref_t<S>, std::remove_cvref_t<S>> &&
     requires { typename std::remove_cvref_t<S>::sender_concept; } &&
-    std::derived_from<typename std::remove_cvref_t<S>::sender_concept, sender_t>;
+    std::derived_from<typename std::remove_cvref_t<S>::sender_concept, sender_t> &&
+    requires(const std::remove_cvref_t<S>& s) {
+        { std::execution::get_env(s) } -> queryable;
+    };
 
 template<class S, class Env = empty_env>
 concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
@@ -677,9 +705,12 @@ concept scheduler =
 namespace __forge_just {
 
 template<class R, class... Vs>
-struct operation {
+struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
     std::tuple<Vs...> values_;
+
+    operation(R rcvr, std::tuple<Vs...> vals)
+        : rcvr_(std::move(rcvr)), values_(std::move(vals)) {}
 
     friend void tag_invoke(start_t, operation& self) noexcept {
         std::apply(
@@ -702,7 +733,7 @@ struct sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, sender self, R rcvr) -> operation<R, Vs...> {
-        return {std::move(rcvr), std::move(self.values_)};
+        return operation<R, Vs...>(std::move(rcvr), std::move(self.values_));
     }
 
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
@@ -720,9 +751,12 @@ template<class... Vs>
 namespace __forge_just_error {
 
 template<class R, class E>
-struct operation {
+struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
     E error_;
+
+    operation(R rcvr, E err)
+        : rcvr_(std::move(rcvr)), error_(std::move(err)) {}
 
     friend void tag_invoke(start_t, operation& self) noexcept {
         std::execution::set_error(std::move(self.rcvr_), std::move(self.error_));
@@ -741,7 +775,7 @@ struct sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, sender self, R rcvr) -> operation<R, E> {
-        return {std::move(rcvr), std::move(self.error_)};
+        return operation<R, E>(std::move(rcvr), std::move(self.error_));
     }
 
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
@@ -758,8 +792,10 @@ template<class E>
 namespace __forge_just_stopped {
 
 template<class R>
-struct operation {
+struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
+
+    explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
 
     friend void tag_invoke(start_t, operation& self) noexcept { std::execution::set_stopped(std::move(self.rcvr_)); }
 };
@@ -774,7 +810,7 @@ struct sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, sender, R rcvr) -> operation<R> {
-        return {std::move(rcvr)};
+        return operation<R>(std::move(rcvr));
     }
 
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
@@ -1149,8 +1185,11 @@ struct env {
 };
 
 template<class R>
-struct operation {
+struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
+
+    explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
+
     friend void tag_invoke(start_t, operation& self) noexcept { std::execution::set_value(std::move(self.rcvr_)); }
 };
 
@@ -1164,8 +1203,8 @@ struct sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender, R rcvr) -> operation<R> {
-        return {std::move(rcvr)};
+    friend auto tag_invoke(connect_t, sender s, R rcvr) -> operation<R> {
+        return operation<R>(std::move(rcvr));
     }
 
     friend auto tag_invoke(get_env_t, const sender& self) noexcept -> env { return env{self.sched_}; }
