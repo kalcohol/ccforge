@@ -21,3 +21,17 @@ if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(execution_example PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()
 target_include_directories(execution_example BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+
+# std::submdspan (P2630) example
+# Only built when the toolchain provides <mdspan> (e.g. zig/clang libc++ 18+).
+# GCC 13 libstdc++ does not ship <mdspan>, so this is guarded.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+    #include <mdspan>
+    int main() { return 0; }
+" FORGE_EXAMPLE_HAS_MDSPAN)
+
+if(FORGE_EXAMPLE_HAS_MDSPAN)
+    add_executable(submdspan_example submdspan_example.cpp)
+    target_link_libraries(submdspan_example PRIVATE forge::forge)
+endif()
