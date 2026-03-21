@@ -38,6 +38,11 @@
 #include <memory>
 #include <ranges>
 #include <span>
+#if defined(__has_include)
+#  if __has_include(<stdfloat>)
+#    include <stdfloat>
+#  endif
+#endif
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -64,5 +69,4 @@ namespace simd {
 #include "simd/iterator.hpp"
 #include "simd/memory.hpp"
 #include "simd/operations.hpp"
-#include "simd/where.hpp"
 #include "simd/reductions.hpp"

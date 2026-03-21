@@ -10,6 +10,9 @@ struct overaligned_flag;
 
 namespace detail {
 
+template<class...>
+using void_t = void;
+
 template<class T>
 using remove_cvref_t = typename remove_cv<typename remove_reference<T>::type>::type;
 
@@ -42,13 +45,42 @@ template<class T>
 using complex_value_t = typename complex_value<remove_cvref_t<T>>::type;
 
 template<class T>
-struct is_vectorizable_floating_point : is_floating_point<remove_cvref_t<T>> {};
+struct is_extended_floating_point : false_type {};
+
+#ifdef __STDCPP_FLOAT16_T__
+template<>
+struct is_extended_floating_point<float16_t> : true_type {};
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+template<>
+struct is_extended_floating_point<float32_t> : true_type {};
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+template<>
+struct is_extended_floating_point<float64_t> : true_type {};
+#endif
 
 template<class T>
-struct is_nonbool_arithmetic
+struct is_vectorizable_floating_point
     : integral_constant<bool,
-        is_arithmetic<remove_cvref_t<T>>::value &&
-        !is_same<remove_cvref_t<T>, bool>::value> {};
+        is_same<remove_cvref_t<T>, float>::value ||
+        is_same<remove_cvref_t<T>, double>::value ||
+        is_extended_floating_point<remove_cvref_t<T>>::value> {};
+
+template<class T>
+struct is_vectorizable_integral
+    : integral_constant<bool,
+        is_integral<remove_cvref_t<T>>::value &&
+        !is_same<remove_cvref_t<T>, bool>::value &&
+        !is_extended_integer<remove_cvref_t<T>>::value> {};
+
+template<class T>
+struct is_supported_scalar_value
+    : integral_constant<bool,
+        is_vectorizable_integral<T>::value ||
+        is_vectorizable_floating_point<T>::value> {};
 
 template<class T, bool = is_complex_value<remove_cvref_t<T>>::value>
 struct is_supported_complex_value : false_type {};
@@ -59,8 +91,7 @@ struct is_supported_complex_value<T, true> : is_vectorizable_floating_point<comp
 template<class T>
 struct is_supported_value
     : integral_constant<bool,
-        is_nonbool_arithmetic<T>::value ||
-        is_extended_integer<remove_cvref_t<T>>::value ||
+        is_supported_scalar_value<T>::value ||
         is_supported_complex_value<T>::value> {};
 
 struct unavailable_real_type {};
@@ -107,6 +138,58 @@ struct integer_from_size<16> {
     using type = __int128;
 };
 #endif
+
+template<size_t Bytes, class = void>
+struct has_integer_from_size : false_type {};
+
+template<size_t Bytes>
+struct has_integer_from_size<Bytes, void_t<typename integer_from_size<Bytes>::type>> : true_type {};
+
+template<size_t Bytes, class = void>
+struct mask_representative_value;
+
+template<>
+struct mask_representative_value<1, void> {
+    using type = signed char;
+};
+
+template<>
+struct mask_representative_value<2, void> {
+    using type = short;
+};
+
+template<>
+struct mask_representative_value<4, void> {
+    using type = int;
+};
+
+template<>
+struct mask_representative_value<8, void> {
+    using type = long long;
+};
+
+template<>
+struct mask_representative_value<16, void> {
+    using type = complex<double>;
+};
+
+template<size_t Bytes, class = void>
+struct has_mask_representative_value : false_type {};
+
+template<size_t Bytes>
+struct has_mask_representative_value<Bytes, void_t<typename mask_representative_value<Bytes>::type>> : true_type {};
+
+template<size_t Bytes>
+using mask_representative_value_t = typename mask_representative_value<Bytes>::type;
+
+template<size_t Bytes>
+struct has_vectorizable_signed_integer_of_size
+    : integral_constant<bool,
+        has_integer_from_size<Bytes>::value &&
+        is_supported_value<typename integer_from_size<Bytes>::type>::value &&
+        is_signed<typename integer_from_size<Bytes>::type>::value> {};
+
+inline constexpr simd_size_type max_supported_fixed_size = 64;
 
 template<class T>
 struct native_lane_count
@@ -289,9 +372,71 @@ struct fixed_size_abi {
 };
 
 template<class T>
-struct native_abi {
-    static_assert(detail::is_supported_value<T>::value, "std::simd only supports supported std::simd value types");
+struct native_abi {};
+
+namespace detail {
+
+template<class T, simd_size_type N>
+struct is_deduce_abi_available
+    : integral_constant<bool,
+        is_supported_value<T>::value &&
+        (N > 0) &&
+        (N <= max_supported_fixed_size)> {};
+
+template<class T, class Abi>
+struct is_enabled_basic_vec : false_type {};
+
+template<class T, simd_size_type N>
+struct is_enabled_basic_vec<T, fixed_size_abi<N>> : is_deduce_abi_available<T, N> {};
+
+template<class T, class U>
+struct is_enabled_basic_vec<T, native_abi<U>>
+    : integral_constant<bool,
+        is_supported_value<T>::value &&
+        is_supported_value<U>::value &&
+        sizeof(remove_cvref_t<T>) == sizeof(remove_cvref_t<U>)> {};
+
+template<size_t Bytes, class Abi>
+struct is_enabled_basic_mask : false_type {};
+
+template<size_t Bytes, simd_size_type N>
+struct is_enabled_basic_mask<Bytes, fixed_size_abi<N>>
+    : integral_constant<bool,
+        has_mask_representative_value<Bytes>::value &&
+        (N > 0) &&
+        (N <= max_supported_fixed_size)> {};
+
+template<size_t Bytes, class U>
+struct is_enabled_basic_mask<Bytes, native_abi<U>>
+    : integral_constant<bool,
+        has_mask_representative_value<Bytes>::value &&
+        is_supported_value<U>::value &&
+        sizeof(remove_cvref_t<U>) == Bytes> {};
+
+template<class Flag>
+struct is_valid_flag : false_type {};
+
+template<>
+struct is_valid_flag<simd::convert_flag> : true_type {};
+
+template<>
+struct is_valid_flag<simd::aligned_flag> : true_type {};
+
+template<size_t N>
+struct is_valid_flag<simd::overaligned_flag<N>> : true_type {};
+
+template<class T, simd_size_type N, class = void>
+struct deduce_abi {};
+
+template<class T, simd_size_type N>
+struct deduce_abi<T, N, enable_if_t<is_deduce_abi_available<T, N>::value>> {
+    using type = typename conditional<
+        N == native_lane_count<remove_cvref_t<T>>::value,
+        native_abi<remove_cvref_t<T>>,
+        fixed_size_abi<N>>::type;
 };
+
+} // namespace detail
 
 template<class V>
 class simd_iterator;
@@ -300,10 +445,13 @@ template<class T, class Abi>
 struct simd_size;
 
 template<class T, simd_size_type N>
-struct simd_size<T, fixed_size_abi<N>> : integral_constant<simd_size_type, N> {};
+struct simd_size<T, fixed_size_abi<N>>
+    : integral_constant<simd_size_type, detail::is_enabled_basic_vec<T, fixed_size_abi<N>>::value ? N : 0> {};
 
 template<class T, class U>
-struct simd_size<T, native_abi<U>> : detail::native_lane_count<U> {};
+struct simd_size<T, native_abi<U>>
+    : integral_constant<simd_size_type,
+        detail::is_enabled_basic_vec<T, native_abi<U>>::value ? detail::native_lane_count<detail::remove_cvref_t<U>>::value : 0> {};
 
 template<class Abi>
 struct abi_lane_count;
@@ -315,13 +463,13 @@ template<class T>
 struct abi_lane_count<native_abi<T>> : detail::native_lane_count<T> {};
 
 template<class T, simd_size_type N = simd_size<T, native_abi<T>>::value>
-using deduce_abi_t = typename conditional<
-    N == simd_size<T, native_abi<T>>::value,
-    native_abi<T>,
-    fixed_size_abi<N>>::type;
+using deduce_abi_t = typename detail::deduce_abi<T, N>::type;
 
 template<class... Flags>
-struct flags {};
+struct flags {
+    static_assert((detail::is_valid_flag<Flags>::value && ...),
+        "std::simd::flags only accepts std::simd::convert_flag, std::simd::aligned_flag, and std::simd::overaligned_flag<N>");
+};
 
 struct convert_flag {};
 struct aligned_flag {};
@@ -346,7 +494,7 @@ consteval flags<Left..., Right...> operator|(flags<Left...>, flags<Right...>) no
 template<class T, class Abi = native_abi<T>>
 class basic_vec;
 
-template<size_t Bytes, class Abi = native_abi<typename detail::integer_from_size<Bytes>::type>>
+template<size_t Bytes, class Abi>
 class basic_mask;
 
 template<class T, simd_size_type N = simd_size<T, native_abi<T>>::value>
@@ -399,9 +547,6 @@ constexpr T& lane_ref(basic_vec<T, Abi>& value, simd_size_type i) noexcept;
 
 template<class V, class U>
 constexpr void set_lane(V& value, simd_size_type i, U&& lane) noexcept;
-
-template<class...>
-using void_t = void;
 
 template<class From, class To, class = void>
 struct is_explicitly_simd_convertible : false_type {};
@@ -503,10 +648,10 @@ template<class V>
 using lane_mapped_value_t = typename lane_mapped_value<V>::type;
 
 template<class T, class Abi>
-struct is_data_parallel_type<basic_vec<T, Abi>> : true_type {};
+struct is_data_parallel_type<basic_vec<T, Abi>> : is_enabled_basic_vec<T, Abi> {};
 
 template<size_t Bytes, class Abi>
-struct is_data_parallel_type<basic_mask<Bytes, Abi>> : true_type {};
+struct is_data_parallel_type<basic_mask<Bytes, Abi>> : is_enabled_basic_mask<Bytes, Abi> {};
 
 template<class V>
 constexpr lane_mapped_value_t<V> permute_lane(const V& value, simd_size_type index) noexcept {
@@ -771,5 +916,3 @@ constexpr auto chunk(const V& value);
 
 template<class First, class... Rest>
 constexpr auto cat(const First& first, const Rest&... rest);
-
-	template<size_t Bytes, class Abi>

@@ -1,4 +1,6 @@
-	class basic_mask {
+template<size_t Bytes, class Abi>
+    requires(detail::is_enabled_basic_mask<Bytes, Abi>::value)
+class basic_mask<Bytes, Abi> {
     friend constexpr bool& detail::lane_ref<Bytes, Abi>(basic_mask& value, simd_size_type i) noexcept;
 
 public:
@@ -196,7 +198,8 @@ public:
         return left;
     }
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator+(const basic_mask& value) noexcept {
+    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator+(const basic_mask& value) noexcept
+        requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
@@ -205,7 +208,11 @@ public:
         return result;
     }
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator-(const basic_mask& value) noexcept {
+    friend void operator+(const basic_mask& value) noexcept
+        requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
+
+    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator-(const basic_mask& value) noexcept
+        requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
@@ -214,7 +221,11 @@ public:
         return result;
     }
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator~(const basic_mask& value) noexcept {
+    friend void operator-(const basic_mask& value) noexcept
+        requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
+
+    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator~(const basic_mask& value) noexcept
+        requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
@@ -223,6 +234,9 @@ public:
         }
         return result;
     }
+
+    friend void operator~(const basic_mask& value) noexcept
+        requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
     friend constexpr basic_mask operator==(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
@@ -295,13 +309,25 @@ private:
     array<bool, abi_lane_count<Abi>::value> data_;
 };
 
-	template<class T, class Abi>
-	class basic_vec {
+template<size_t Bytes, class Abi>
+    requires(!detail::is_enabled_basic_mask<Bytes, Abi>::value)
+class basic_mask<Bytes, Abi> {
+public:
+    using value_type = bool;
+    using abi_type = Abi;
+
+    basic_mask() = delete;
+    ~basic_mask() = delete;
+    basic_mask(const basic_mask&) = delete;
+    basic_mask& operator=(const basic_mask&) = delete;
+};
+
+template<class T, class Abi>
+    requires(detail::is_enabled_basic_vec<T, Abi>::value)
+class basic_vec<T, Abi> {
     friend constexpr T& detail::lane_ref<T, Abi>(basic_vec& value, simd_size_type i) noexcept;
 
 public:
-    static_assert(detail::is_supported_value<T>::value, "std::simd::basic_vec only supports supported std::simd value types");
-
     using value_type = T;
     using real_type = real_simd_t<T, basic_vec>;
     using mask_type = basic_mask<sizeof(T), Abi>;
@@ -745,32 +771,49 @@ private:
     array<T, simd_size<T, Abi>::value> data_;
 };
 
+template<class T, class Abi>
+    requires(!detail::is_enabled_basic_vec<T, Abi>::value)
+class basic_vec<T, Abi> {
+public:
+    using value_type = T;
+    using abi_type = Abi;
+    using mask_type = basic_mask<sizeof(T), Abi>;
+
+    basic_vec() = delete;
+    ~basic_vec() = delete;
+    basic_vec(const basic_vec&) = delete;
+    basic_vec& operator=(const basic_vec&) = delete;
+};
+
 // This metadata models the ABI-aligned memory contract used by load/store APIs.
 // It does not require alignof(basic_vec<T, Abi>) to equal alignment_v.
-template<class T, class U>
-struct alignment<basic_vec<T, U>, T> : integral_constant<size_t, alignof(T) * abi_lane_count<U>::value> {};
-
-template<size_t Bytes, class Abi>
-struct alignment<basic_mask<Bytes, Abi>, bool> : integral_constant<size_t, alignof(bool) * abi_lane_count<Abi>::value> {};
+template<class T, class Abi, class U>
+    requires(detail::is_supported_value<U>::value)
+struct alignment<basic_vec<T, Abi>, U> : integral_constant<size_t, alignof(U) * abi_lane_count<Abi>::value> {};
 
 template<class T, class U, class Abi>
+    requires(detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
 struct rebind<T, basic_vec<U, Abi>> {
     using type = basic_vec<T, deduce_abi_t<T, abi_lane_count<Abi>::value>>;
 };
 
 template<class T, size_t Bytes, class Abi>
+    requires(detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
 struct rebind<T, basic_mask<Bytes, Abi>> {
     using type = basic_mask<sizeof(T), deduce_abi_t<T, abi_lane_count<Abi>::value>>;
 };
 
 template<simd_size_type N, class T, class Abi>
+    requires(detail::is_deduce_abi_available<T, N>::value)
 struct resize<N, basic_vec<T, Abi>> {
     using type = basic_vec<T, deduce_abi_t<T, N>>;
 };
 
 template<simd_size_type N, size_t Bytes, class Abi>
+    requires(detail::has_mask_representative_value<Bytes>::value &&
+             detail::is_deduce_abi_available<detail::mask_representative_value_t<Bytes>, N>::value)
 struct resize<N, basic_mask<Bytes, Abi>> {
-    using type = basic_mask<Bytes, deduce_abi_t<typename detail::integer_from_size<Bytes>::type, N>>;
+    using type = basic_mask<Bytes, deduce_abi_t<detail::mask_representative_value_t<Bytes>, N>>;
 };
 
 template<class V>

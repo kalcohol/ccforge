@@ -1,43 +1,33 @@
 forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_WHERE_COMPOUND_OPS
-    "where_compound_ops.cpp"
-    TRUE
-    "Forge simd backport must support where(mask, vec) compound assignment operators")
-forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_WHERE_INT_SCALAR_OPS
-    "where_int_scalar_ops.cpp"
-    TRUE
-    "Forge simd backport must support integral where(mask, vec) scalar compound operators")
-forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_WHERE_BOOL
-    "where_bool.cpp"
-    TRUE
-    "Forge simd backport must support where(bool, vec)")
-forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_WHERE_MASK
-    "where_mask.cpp"
-    TRUE
-    "Forge simd backport must support where(mask, mask)")
-forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_MASK_CAST
     "mask_cast.cpp"
     TRUE
     "Forge simd backport must support mask simd_cast/static_simd_cast")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_NONSTANDARD_WHERE
+    "reject_nonstandard_where.cpp"
+    FALSE
+    "Forge simd backport must not expose non-standard where APIs")
 forge_add_simd_configure_probe(
     FORGE_SIMD_ACCEPTS_NON_VALUE_PRESERVING_LOAD_STORE
     "reject_non_value_preserving_load_store.cpp"
     FALSE
     "Forge simd backport must reject non-value-preserving loads/stores without std::simd::flag_convert")
 forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_LONG_DOUBLE_MASK
-    "long_double_mask_unary.cpp"
-    TRUE
-    "Forge simd backport must support long double mask unary operators")
-forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_NATIVE_MASK_UNARY
     "native_mask_unary.cpp"
     TRUE
     "Forge simd backport must support native-width mask unary operators across float, double, and unsigned int")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_LONG_DOUBLE_VALUE
+    "reject_long_double_value.cpp"
+    FALSE
+    "Forge simd backport must reject non-vectorizable long double SIMD specializations")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_EXTENDED_INTEGER
+    "reject_extended_integer.cpp"
+    FALSE
+    "Forge simd backport must reject non-standard extended integer SIMD specializations")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER
     "reject_implicit_vec_converter.cpp"
@@ -53,6 +43,11 @@ forge_add_simd_configure_probe(
     "flags_rejects_address.cpp"
     FALSE
     "Forge simd backport must make std::simd::flags operator| an immediate function")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_INVALID_FLAGS
+    "reject_invalid_flags.cpp"
+    FALSE
+    "Forge simd backport must constrain std::simd::flags to standard flag types")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER
     "value_preserving_vec_converter.cpp"
@@ -82,12 +77,27 @@ forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_DEFAULT_SUPPORTED_LOAD_STORE
     "default_supported_load_store.cpp"
     TRUE
-    "Forge simd backport must infer supported complex and extended-integer default load vectors for pointer/count memory entry points")
+    "Forge simd backport must infer supported standard value types for pointer/count memory entry points")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_HAS_CROSS_TYPE_ALIGNMENT
+    "cross_type_alignment.cpp"
+    TRUE
+    "Forge simd backport must expose alignment_v for basic_vec across vectorizable scalar types")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_MASK_ALIGNMENT
+    "reject_mask_alignment.cpp"
+    FALSE
+    "Forge simd backport must not expose alignment_v for basic_mask specializations")
 forge_add_simd_configure_probe(
     FORGE_SIMD_ACCEPTS_DEQUE_ITERATOR
     "reject_deque_iterator.cpp"
     FALSE
     "Forge simd backport must reject non-contiguous iterators for memory operations")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_OVERSIZED_FIXED_SIZE
+    "reject_oversized_fixed_size.cpp"
+    FALSE
+    "Forge simd backport must reject fixed-size SIMD aliases above the supported maximum")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_RANGE_GATHER_SCATTER
     "range_gather_scatter.cpp"
@@ -148,3 +158,8 @@ forge_add_simd_configure_probe(
     "complex_surface.cpp"
     TRUE
     "Forge simd backport must provide the required complex simd surface")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_HAS_STDFLOAT_VALUE_TYPES
+    "stdfloat_value_types.cpp"
+    TRUE
+    "Forge simd backport must support current-draft stdfloat vectorizable types when the implementation defines them")

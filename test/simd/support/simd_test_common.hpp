@@ -37,12 +37,6 @@ using complex4f = std::simd::vec<std::complex<float>, 4>;
 using complex4d = std::simd::vec<std::complex<double>, 4>;
 using default_complexf = std::simd::basic_vec<std::complex<float>>;
 using default_complexd = std::simd::basic_vec<std::complex<double>>;
-#if defined(__SIZEOF_INT128__)
-using int128 = __int128;
-using uint128 = unsigned __int128;
-using default_int128 = std::simd::basic_vec<int128>;
-using default_uint128 = std::simd::basic_vec<uint128>;
-#endif
 using int_iter = std::vector<int>::iterator;
 using const_int_iter = std::vector<int>::const_iterator;
 using deque_int_iter = std::deque<int>::iterator;

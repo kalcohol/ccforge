@@ -10,7 +10,7 @@ using std::simd::mask;
 using int4 = std::simd::vec<int, 4>;
 using longlong4 = std::simd::vec<long long, 4>;
 using byte_mask4 = std::simd::mask<signed char, 4>;
-using wide_byte_mask128 = std::simd::mask<signed char, 128>;
+using wide_byte_mask64 = std::simd::mask<signed char, 64>;
 
 TEST(SimdMaskTest, LogicalOperatorsApplyPerLane) {
     mask<int, 4> left(0b0101u);
@@ -95,19 +95,6 @@ TEST(SimdMaskTest, ScalarSelectProducesIntegerLaneVector) {
     EXPECT_EQ(blended[1], -1);
     EXPECT_EQ(blended[2], 7);
     EXPECT_EQ(blended[3], -1);
-}
-
-TEST(SimdMaskTest, WhereExpressionAssignsOnlySelectedMaskLanes) {
-    const mask<int, 4> cond(0b0101u);
-    mask<int, 4> target(0b0000u);
-    const mask<int, 4> other(0b1111u);
-
-    std::simd::where(cond, target) = other;
-
-    EXPECT_TRUE(target[0]);
-    EXPECT_FALSE(target[1]);
-    EXPECT_TRUE(target[2]);
-    EXPECT_FALSE(target[3]);
 }
 
 TEST(SimdMaskTest, ReductionsTrackPartialMasks) {
@@ -213,22 +200,23 @@ TEST(SimdMaskTest, CompressAndExpandSupportMaskValues) {
     EXPECT_TRUE(expanded[3]);
 }
 
-TEST(SimdMaskTest, WideMasksToUllongEncodeOnlyTheLow64Bits) {
-    const wide_byte_mask128 low_bits([](auto lane) {
+TEST(SimdMaskTest, WideMasksToUllongEncodeAllSupportedLowBits) {
+    const wide_byte_mask64 low_bits([](auto lane) {
         return decltype(lane)::value == 0 || decltype(lane)::value == 63;
     });
-    const wide_byte_mask128 high_bits([](auto lane) {
-        return decltype(lane)::value == 100;
+    const wide_byte_mask64 high_bits([](auto lane) {
+        return decltype(lane)::value == 1 || decltype(lane)::value == 62;
     });
-    const wide_byte_mask128 mixed_bits([](auto lane) {
-        return decltype(lane)::value == 0 || decltype(lane)::value == 63 || decltype(lane)::value == 100;
+    const wide_byte_mask64 mixed_bits([](auto lane) {
+        return decltype(lane)::value == 0 || decltype(lane)::value == 1 || decltype(lane)::value == 62 || decltype(lane)::value == 63;
     });
 
     constexpr unsigned long long low_mask_bits = (1ull << 0) | (1ull << 63);
+    constexpr unsigned long long high_mask_bits = (1ull << 1) | (1ull << 62);
 
     EXPECT_EQ(low_bits.to_ullong(), low_mask_bits);
-    EXPECT_EQ(high_bits.to_ullong(), 0ull);
-    EXPECT_EQ(mixed_bits.to_ullong(), low_mask_bits);
+    EXPECT_EQ(high_bits.to_ullong(), high_mask_bits);
+    EXPECT_EQ(mixed_bits.to_ullong(), low_mask_bits | high_mask_bits);
 }
 
 TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
@@ -252,18 +240,6 @@ TEST(SimdMaskTest, UnaryOperatorsProduceExpectedIntegerLanes) {
     EXPECT_EQ(inverted[1], -1);
     EXPECT_EQ(inverted[2], -2);
     EXPECT_EQ(inverted[3], -1);
-}
-
-TEST(SimdMaskTest, LongDoubleMaskUnaryInstantiates) {
-    const std::simd::vec<long double, 2> values(1.0L);
-    const auto selected = values == values;
-    auto positive = +selected;
-    auto negative = -selected;
-    auto inverted = ~selected;
-
-    EXPECT_EQ(static_cast<int>(positive[0]), 1);
-    EXPECT_EQ(static_cast<int>(negative[0]), -1);
-    EXPECT_EQ(static_cast<int>(inverted[0]), -2);
 }
 
 TEST(SimdMaskTest, NativeFloatMaskUnaryInstantiates) {

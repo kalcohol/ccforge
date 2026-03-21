@@ -97,26 +97,6 @@ static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std
                              default_complexf>,
     "unchecked_load(range) should keep the same default complex type");
 
-#if defined(__SIZEOF_INT128__)
-static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const int128*>(nullptr), std::simd::simd_size_type{})), default_int128>,
-    "partial_load(pointer, count) should infer supported extended integer types");
-static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const int128*>(nullptr), static_cast<const int128*>(nullptr))), default_int128>,
-    "partial_load(pointer, sentinel) should keep the same default extended integer type");
-static_assert(std::is_same_v<decltype(std::simd::partial_load(std::declval<std::span<const int128>>())), default_int128>,
-    "partial_load(range) should keep the same default extended integer type");
-static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr))), default_int128>,
-    "unchecked_load(pointer) should infer supported extended integer types");
-static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr), std::simd::simd_size_type{})), default_int128>,
-    "unchecked_load(pointer, count) should infer supported extended integer types");
-static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr),
-                                                                static_cast<const int128*>(nullptr),
-                                                                std::simd::flag_default)),
-                             default_int128>,
-    "unchecked_load(pointer, sentinel) should keep the same default extended integer type");
-static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std::span<const int128>>(), std::simd::flag_default)), default_int128>,
-    "unchecked_load(range) should keep the same default extended integer type");
-#endif
-
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)
 
 static_assert(std::is_same<decltype(std::simd::unchecked_load<int4>(static_cast<const int*>(nullptr))), int4>::value,
