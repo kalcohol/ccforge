@@ -40,9 +40,50 @@
 #include <utility>
 #include <functional>
 
+
+// Optional SIMD acceleration using Forge simd backport
+#if __has_include(<simd>)
+#include <simd>
+#endif
+
+// Macro: 1 if Forge simd backport was loaded
+#ifdef FORGE_BACKPORT_SIMD_HPP_INCLUDED
+#  define __LINALG_HAS_SIMD 1
+#else
+#  define __LINALG_HAS_SIMD 0
+#endif
+
 #if defined(__cpp_lib_mdspan)
 
 namespace std::linalg {
+
+namespace __detail {
+
+template<class T>
+inline constexpr bool __is_simd_accelerable_v =
+    std::is_arithmetic_v<T> && !std::is_same_v<T, bool> &&
+    !std::is_same_v<T, long double> &&
+    !std::is_same_v<T, char> && !std::is_same_v<T, signed char> &&
+    !std::is_same_v<T, unsigned char>;
+
+template<class Layout>
+inline constexpr bool __is_contiguous_layout_v =
+    std::is_same_v<Layout, std::layout_right> ||
+    std::is_same_v<Layout, std::layout_left>;
+
+template<class Accessor>
+struct __is_default_accessor : std::false_type {};
+template<class T>
+struct __is_default_accessor<std::default_accessor<T>> : std::true_type {};
+
+template<class T, class Layout, class Accessor>
+inline constexpr bool __can_simd_v =
+    (__LINALG_HAS_SIMD == 1) &&
+    __is_simd_accelerable_v<std::remove_const_t<T>> &&
+    __is_contiguous_layout_v<Layout> &&
+    __is_default_accessor<Accessor>::value;
+
+} // namespace __detail
 
 // ──────────────────────────────────────────────────────────────────────────
 // Tag types — [linalg.tags]
@@ -420,6 +461,27 @@ T dot(
     std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
     T init)
 {
+    using ElemT = std::remove_const_t<typename Accessor1::element_type>;
+#if __LINALG_HAS_SIMD
+    if constexpr (__detail::__can_simd_v<ElemT, Layout1, Accessor1> &&
+                  __detail::__can_simd_v<ElemT, Layout2, Accessor2>) {
+        using abi_t  = std::simd::native_abi<ElemT>;
+        using simd_t = std::simd::basic_vec<ElemT, abi_t>;
+        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        const auto n = x.extent(0);
+        typename Extents::index_type i = 0;
+        const ElemT* px = x.data_handle();
+        const ElemT* py = y.data_handle();
+        ElemT acc = ElemT{};
+        for (; i + static_cast<decltype(i)>(kN) <= n; i += kN) {
+            simd_t vx{std::span<const ElemT, kN>{px + i, kN}};
+            simd_t vy{std::span<const ElemT, kN>{py + i, kN}};
+            acc += std::simd::reduce(vx * vy);
+        }
+        for (; i < n; ++i) acc += px[i] * py[i];
+        return init + acc;
+    }
+#endif
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
         init += x[i] * y[i];
     return init;
@@ -489,6 +551,24 @@ auto vector_two_norm(
     using std::abs;
     using std::sqrt;
     using T = decltype(abs(x[0]));
+    using ElemT = std::remove_const_t<typename Accessor::element_type>;
+#if __LINALG_HAS_SIMD
+    if constexpr (__detail::__can_simd_v<ElemT, Layout, Accessor>) {
+        using abi_t  = std::simd::native_abi<ElemT>;
+        using simd_t = std::simd::basic_vec<ElemT, abi_t>;
+        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        const auto n = x.extent(0);
+        typename Extents::index_type i = 0;
+        const ElemT* px = x.data_handle();
+        ElemT sum_sq = ElemT{};
+        for (; i + static_cast<decltype(i)>(kN) <= n; i += kN) {
+            simd_t v{std::span<const ElemT, kN>{px + i, kN}};
+            sum_sq += std::simd::reduce(v * v);
+        }
+        for (; i < n; ++i) { ElemT vi = px[i]; sum_sq += vi * vi; }
+        return sqrt(static_cast<T>(sum_sq));
+    }
+#endif
     T sum_sq = T{};
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         auto v = abs(x[i]);
@@ -515,6 +595,26 @@ auto vector_abs_sum(
 {
     using std::abs;
     using T = decltype(abs(x[0]));
+    using ElemT = std::remove_const_t<typename Accessor::element_type>;
+#if __LINALG_HAS_SIMD
+    if constexpr (__detail::__can_simd_v<ElemT, Layout, Accessor>) {
+        using abi_t  = std::simd::native_abi<ElemT>;
+        using simd_t = std::simd::basic_vec<ElemT, abi_t>;
+        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        const auto n = x.extent(0);
+        typename Extents::index_type i = 0;
+        const ElemT* px = x.data_handle();
+        T acc = T{};
+        for (; i + static_cast<decltype(i)>(kN) <= n; i += kN) {
+            simd_t v{std::span<const ElemT, kN>{px + i, kN}};
+            acc += static_cast<T>(std::simd::reduce(
+                std::simd::basic_vec<ElemT, abi_t>{[&v](auto j) { return v[j] < ElemT{} ? -v[j] : v[j]; }}
+            ));
+        }
+        for (; i < n; ++i) acc += abs(px[i]);
+        return acc;
+    }
+#endif
     return vector_abs_sum(x, T{});
 }
 
