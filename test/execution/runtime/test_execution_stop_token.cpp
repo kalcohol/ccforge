@@ -56,3 +56,29 @@ TEST(ExecutionStopTokenTest, DefaultConstructedToken) {
     EXPECT_FALSE(token.stop_possible());
 }
 
+// ── T-8: stoppable_token concept probes ──────────────────────────────────
+
+static_assert(std::stoppable_token<std::inplace_stop_token>,
+              "inplace_stop_token must satisfy stoppable_token");
+static_assert(std::stoppable_token<std::never_stop_token>,
+              "never_stop_token must satisfy stoppable_token");
+
+static_assert(std::unstoppable_token<std::never_stop_token>,
+              "never_stop_token must satisfy unstoppable_token");
+static_assert(!std::unstoppable_token<std::inplace_stop_token>,
+              "inplace_stop_token must NOT satisfy unstoppable_token");
+
+static_assert(std::stoppable_token_for<std::inplace_stop_token, void(*)()>,
+              "inplace_stop_token must satisfy stoppable_token_for with function pointer");
+
+static_assert(!std::stoppable_token<int>,
+              "int must not satisfy stoppable_token");
+
+// ── T-9: sync_wait accessible from std::this_thread ─────────────────────
+
+TEST(ExecutionStopTokenTest, SyncWaitFromThisThread) {
+    auto result = std::this_thread::sync_wait(std::execution::just(99));
+    ASSERT_TRUE(static_cast<bool>(result));
+    EXPECT_EQ(std::get<0>(*result), 99);
+}
+

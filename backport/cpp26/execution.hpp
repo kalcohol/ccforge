@@ -185,6 +185,11 @@ public:
 
     bool operator==(const inplace_stop_token&) const noexcept = default;
 
+    // [stoptoken.inplace.general] — callback_type alias required by
+    // stop_callback_for_t<inplace_stop_token, CB>.
+    template<class CallbackFn>
+    using callback_type = inplace_stop_callback<CallbackFn>;
+
 private:
     friend class inplace_stop_source;
     template<class Cb>
@@ -244,6 +249,41 @@ struct never_stop_token {
     [[nodiscard]] static constexpr bool stop_possible() noexcept { return false; }
     bool operator==(const never_stop_token&) const noexcept = default;
 };
+
+// ── Stop token concepts — [stoptoken.concepts] ─────────────────────────
+
+// stop_callback_for_t: alias for Token::callback_type<CallbackFn> if it
+// exists, or Token::template callback_type<CallbackFn> otherwise.
+// For inplace_stop_token the callback type is inplace_stop_callback<Fn>.
+template<class Token, class CallbackFn>
+using stop_callback_for_t = typename Token::template callback_type<CallbackFn>;
+
+template<class Token>
+concept stoppable_token =
+    std::copy_constructible<Token> &&
+    std::move_constructible<Token> &&
+    std::is_nothrow_copy_constructible_v<Token> &&
+    std::is_nothrow_move_constructible_v<Token> &&
+    std::equality_comparable<Token> &&
+    requires(const Token& token) {
+        { token.stop_requested() } noexcept -> std::same_as<bool>;
+        { token.stop_possible() } noexcept -> std::same_as<bool>;
+    };
+
+template<class Token, class CallbackFn>
+concept stoppable_token_for =
+    stoppable_token<Token> &&
+    std::invocable<CallbackFn> &&
+    requires { typename stop_callback_for_t<Token, CallbackFn>; } &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token, CallbackFn> &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token&, CallbackFn>;
+
+template<class Token>
+concept unstoppable_token =
+    stoppable_token<Token> &&
+    requires {
+        requires std::bool_constant<(!Token::stop_possible())>::value;
+    };
 
 #endif // !__cpp_lib_inplace_stop_token
 
@@ -598,6 +638,12 @@ concept queryable = std::destructible<T>;
 // Core concepts and CPOs
 // ──────────────────────────────────────────────────────────────────────────
 
+// Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
+struct receiver_t {};
+struct sender_t {};
+struct operation_state_t {};
+struct scheduler_t {};
+
 struct start_t {
     template<class O>
         requires __forge_detail::tag_invocable<start_t, O&>
@@ -612,15 +658,14 @@ template<class O>
 concept operation_state =
     std::destructible<O> && std::is_object_v<O> &&
     !std::move_constructible<O> &&
+    requires { typename O::operation_state_concept; } &&
+    std::derived_from<typename O::operation_state_concept, operation_state_t> &&
     requires(O& op) { { std::execution::start(op) } noexcept; };
-
-struct receiver_t {};
-struct sender_t {};
 
 template<class R>
 concept receiver =
-    std::move_constructible<std::remove_cvref_t<R>> &&
-    std::constructible_from<std::remove_cvref_t<R>, std::remove_cvref_t<R>> &&
+    std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>> &&
+    !std::is_final_v<std::remove_cvref_t<R>> &&
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
     requires(const std::remove_cvref_t<R>& r) {
@@ -709,7 +754,10 @@ template<class S>
 concept scheduler =
     std::copy_constructible<std::remove_cvref_t<S>> &&
     std::equality_comparable<std::remove_cvref_t<S>> &&
-    requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender_in; };
+    queryable<std::remove_cvref_t<S>> &&
+    requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
+    std::derived_from<typename std::remove_cvref_t<S>::scheduler_concept, scheduler_t> &&
+    requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender; };
 
 // ──────────────────────────────────────────────────────────────────────────
 // Algorithms: just / just_error / just_stopped
@@ -719,6 +767,7 @@ namespace __forge_just {
 
 template<class R, class... Vs>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
     std::tuple<Vs...> values_;
 
@@ -766,6 +815,7 @@ namespace __forge_just_error {
 
 template<class R, class E>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
     E error_;
 
@@ -808,6 +858,7 @@ namespace __forge_just_stopped {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
@@ -1169,12 +1220,21 @@ struct receiver {
 
 } // namespace __forge_sync_wait
 
-template<sender_in S>
+} // namespace std::execution
+
+// ── sync_wait — [exec.sync.wait] ────────────────────────────────────────
+// The standard places sync_wait in std::this_thread.  We also provide a
+// using-declaration in std::execution so that both calling conventions
+// work during the backport era, ensuring seamless transition.
+
+namespace std::this_thread {
+
+template<std::execution::sender_in S>
 auto sync_wait(S&& sndr) {
-    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), empty_env{}));
-    using value_tuple_t = typename __forge_sync_wait::value_tuple_for<cs_t>::type;
-    using state_t = typename __forge_sync_wait::state_from_tuple<value_tuple_t>::type;
-    using recv_t = __forge_sync_wait::receiver<state_t>;
+    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), std::execution::empty_env{}));
+    using value_tuple_t = typename std::execution::__forge_sync_wait::value_tuple_for<cs_t>::type;
+    using state_t = typename std::execution::__forge_sync_wait::state_from_tuple<value_tuple_t>::type;
+    using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
 
     state_t state;
     auto op = std::execution::connect(std::forward<S>(sndr), recv_t{&state});
@@ -1192,6 +1252,13 @@ auto sync_wait(S&& sndr) {
     return std::optional<typename state_t::value_t>{std::get<1>(state.result_)};
 }
 
+} // namespace std::this_thread
+
+namespace std::execution {
+
+// Re-export sync_wait for backward compatibility during backport era.
+using std::this_thread::sync_wait;
+
 // ──────────────────────────────────────────────────────────────────────────
 // inline_scheduler
 // ──────────────────────────────────────────────────────────────────────────
@@ -1207,6 +1274,7 @@ struct env {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
@@ -1235,6 +1303,8 @@ struct sender {
 
 class __forge_inline::inline_scheduler {
 public:
+    using scheduler_concept = scheduler_t;
+
     inline_scheduler() noexcept = default;
 
     [[nodiscard]] __forge_inline::sender schedule() const noexcept { return __forge_inline::sender{this}; }

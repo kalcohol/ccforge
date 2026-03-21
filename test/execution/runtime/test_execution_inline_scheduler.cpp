@@ -8,6 +8,21 @@
 
 static_assert(std::execution::scheduler<std::execution::inline_scheduler>);
 
+// ── T-7: scheduler_concept marker is required ────────────────────────────
+namespace {
+
+struct no_marker_scheduler {
+    no_marker_scheduler() = default;
+    bool operator==(const no_marker_scheduler&) const noexcept = default;
+    friend auto tag_invoke(std::execution::schedule_t, const no_marker_scheduler&) noexcept {
+        return std::execution::schedule(std::execution::inline_scheduler{});
+    }
+};
+static_assert(!std::execution::scheduler<no_marker_scheduler>,
+              "scheduler without scheduler_concept marker must be rejected");
+
+} // namespace
+
 TEST(ExecutionInlineSchedulerTest, ScheduleRunsInline) {
     std::execution::inline_scheduler sch{};
 

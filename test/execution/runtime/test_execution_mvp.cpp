@@ -23,6 +23,40 @@ static_assert(!std::execution::receiver<int>);
 static_assert(!std::execution::scheduler<int>);
 static_assert(!std::execution::operation_state<int>);
 
+// ── T-5: receiver concept requires nothrow-move and non-final ────────────
+namespace {
+
+struct throwing_move_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    throwing_move_receiver() = default;
+    throwing_move_receiver(throwing_move_receiver&&) noexcept(false) {}
+    throwing_move_receiver& operator=(throwing_move_receiver&&) = default;
+    friend auto tag_invoke(std::execution::get_env_t, const throwing_move_receiver&) noexcept
+        -> std::execution::empty_env { return {}; }
+};
+static_assert(!std::execution::receiver<throwing_move_receiver>,
+              "receiver with throwing move ctor must be rejected");
+
+struct final_receiver final {
+    using receiver_concept = std::execution::receiver_t;
+    friend auto tag_invoke(std::execution::get_env_t, const final_receiver&) noexcept
+        -> std::execution::empty_env { return {}; }
+};
+static_assert(!std::execution::receiver<final_receiver>,
+              "final receiver must be rejected");
+
+// ── T-6: operation_state_concept marker is required ──────────────────────
+
+struct no_marker_opstate {
+    no_marker_opstate() = default;
+    no_marker_opstate(no_marker_opstate&&) = delete;
+    friend void tag_invoke(std::execution::start_t, no_marker_opstate&) noexcept {}
+};
+static_assert(!std::execution::operation_state<no_marker_opstate>,
+              "operation_state without concept marker must be rejected");
+
+} // namespace
+
 // Completion-signature probes for just(42).
 namespace {
 
