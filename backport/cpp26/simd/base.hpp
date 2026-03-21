@@ -272,8 +272,8 @@ template<class To, class From, class FlagsPack>
 constexpr To convert_or_copy(const From& value, FlagsPack) noexcept {
     using source_type = remove_cvref_t<From>;
 
-    static_assert(is_supported_value<To>::value, "std::simd value type must be a supported non-bool arithmetic type");
-    static_assert(is_supported_value<source_type>::value, "unchecked_load/unchecked_store source type must be a supported non-bool arithmetic type");
+    static_assert(is_supported_value<To>::value, "std::simd value type must be a supported std::simd value type");
+    static_assert(is_supported_value<source_type>::value, "unchecked_load/unchecked_store source type must be a supported std::simd value type");
     static_assert(
         is_value_preserving_conversion<source_type, To>::value || has_flag<simd::convert_flag, FlagsPack>::value,
         "type-changing load/store requires std::simd::flag_convert unless the conversion is value-preserving");
@@ -290,7 +290,7 @@ struct fixed_size_abi {
 
 template<class T>
 struct native_abi {
-    static_assert(detail::is_supported_value<T>::value, "std::simd only supports arithmetic non-bool value types");
+    static_assert(detail::is_supported_value<T>::value, "std::simd only supports supported std::simd value types");
 };
 
 template<class V>

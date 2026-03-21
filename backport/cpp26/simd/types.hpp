@@ -300,7 +300,7 @@ private:
     friend constexpr T& detail::lane_ref<T, Abi>(basic_vec& value, simd_size_type i) noexcept;
 
 public:
-    static_assert(detail::is_supported_value<T>::value, "std::simd::basic_vec only supports arithmetic non-bool value types");
+    static_assert(detail::is_supported_value<T>::value, "std::simd::basic_vec only supports supported std::simd value types");
 
     using value_type = T;
     using real_type = real_simd_t<T, basic_vec>;

@@ -35,8 +35,14 @@ static_assert(has_partial_load_range<int4, std::span<const int, 4>>::value,
     "partial_load(range) should be a public entry point for contiguous ranges");
 static_assert(std::is_same<decltype(std::simd::partial_load(std::declval<std::span<const int, 4>>())), std::simd::basic_vec<int>>::value,
     "partial_load(range) should provide the standard default vector type");
+static_assert(std::is_same<decltype(std::simd::partial_load(std::declval<std::span<const int, 4>>(),
+                                                            typename std::simd::basic_vec<int>::mask_type{})),
+                           std::simd::basic_vec<int>>::value,
+    "partial_load(range, mask) should provide the standard default vector type");
 static_assert(has_partial_store_range<int4, std::span<int, 4>>::value,
     "partial_store(range) should be a public entry point for contiguous ranges");
+static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const int4&>(), std::declval<std::span<int, 4>>(), mask4{})), void>::value,
+    "partial_store(value, range, mask) should be a public entry point");
 static_assert(!has_partial_load_count<int4, deque_int_iter>::value,
     "partial_load(iterator, count) should reject non-contiguous iterators");
 static_assert(!has_partial_store_count<int4, deque_int_iter>::value,
@@ -133,6 +139,11 @@ static_assert(std::is_same<decltype(std::simd::unchecked_load<int4>(std::declval
     "unchecked_load(iterator, sentinel) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, 4>>(), std::simd::flag_default)), std::simd::basic_vec<int>>::value,
     "unchecked_load(range) should provide the standard default vector type");
+static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, 4>>(),
+                                                              typename std::simd::basic_vec<int>::mask_type{},
+                                                              std::simd::flag_default)),
+                           std::simd::basic_vec<int>>::value,
+    "unchecked_load(range, mask) should provide the standard default vector type");
 static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), static_cast<int*>(nullptr))), void>::value,
     "unchecked_store(pointer) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), std::declval<int_iter>(), std::simd::simd_size_type{})), void>::value,
@@ -145,6 +156,8 @@ static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<cons
     "unchecked_store(pointer, sentinel) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), std::declval<int_iter>(), std::declval<int_iter>(), std::simd::flag_default)), void>::value,
     "unchecked_store(iterator, sentinel) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), std::declval<std::span<int, 4>>(), mask4{}, std::simd::flag_default)), void>::value,
+    "unchecked_store(value, range, mask) should be a public entry point");
 
 #endif
 

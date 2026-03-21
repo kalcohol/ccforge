@@ -141,6 +141,26 @@ TEST(SimdMemoryLoadStoreTest, PartialLoadAndStoreSupportContiguousRangeOverloads
     EXPECT_EQ(output[3], 11);
 }
 
+TEST(SimdMemoryLoadStoreTest, PartialLoadAndStoreSupportMaskedContiguousRangeOverloads) {
+    std::array<int, 4> input{{3, 5, 7, 11}};
+    std::array<int, 4> output{{9, 9, 9, 9}};
+    const std::span<const int, 4> input_view(input);
+    std::span<int, 4> output_view(output);
+    const default_int::mask_type selected(0b0101u);
+
+    const auto value = std::simd::partial_load(input_view, selected);
+    std::simd::partial_store(value, output_view, selected);
+
+    EXPECT_EQ(lane(value, 0), 3);
+    EXPECT_EQ(lane(value, 1), 0);
+    EXPECT_EQ(lane(value, 2), 7);
+    EXPECT_EQ(lane(value, 3), 0);
+    EXPECT_EQ(output[0], 3);
+    EXPECT_EQ(output[1], 9);
+    EXPECT_EQ(output[2], 7);
+    EXPECT_EQ(output[3], 9);
+}
+
 TEST(SimdMemoryLoadStoreTest, PartialLoadAndStoreSupportMaskedIteratorSentinelOverloads) {
     std::vector<int> input{2, 4, 6, 8};
     std::vector<int> output{9, 9, 9, 9};
@@ -264,6 +284,29 @@ TEST(SimdMemoryLoadStoreExtensionTest, UncheckedLoadAndStoreSupportIteratorCount
     EXPECT_EQ(output[1], 4);
     EXPECT_EQ(output[2], 6);
     EXPECT_EQ(output[3], 8);
+}
+
+TEST(SimdMemoryLoadStoreExtensionTest, UncheckedLoadAndStoreSupportMaskedContiguousRangeOverloads) {
+    constexpr auto lane_count = static_cast<size_t>(default_int::size);
+    std::array<int, lane_count> input{};
+    std::array<int, lane_count> output{};
+    const std::span<const int, lane_count> input_view(input);
+    std::span<int, lane_count> output_view(output);
+    const default_int::mask_type selected(0b0101u);
+
+    for (size_t i = 0; i < lane_count; ++i) {
+        input[i] = static_cast<int>(i * 2 + 3);
+        output[i] = 9;
+    }
+
+    const auto value = std::simd::unchecked_load(input_view, selected, std::simd::flag_default);
+    std::simd::unchecked_store(value, output_view, selected, std::simd::flag_default);
+
+    for (size_t i = 0; i < lane_count; ++i) {
+        const bool is_selected = (i % 2) == 0 && i < 4;
+        EXPECT_EQ(value[static_cast<std::simd::simd_size_type>(i)], is_selected ? input[i] : 0);
+        EXPECT_EQ(output[i], is_selected ? input[i] : 9);
+    }
 }
 
 TEST(SimdMemoryLoadStoreExtensionTest, UncheckedMaskedIteratorCountOverloadsHonorMask) {

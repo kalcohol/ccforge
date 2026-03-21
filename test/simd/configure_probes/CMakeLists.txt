@@ -74,6 +74,11 @@ forge_add_simd_configure_probe(
     TRUE
     "Forge simd backport must support contiguous range constructors and load/store overloads")
 forge_add_simd_configure_probe(
+    FORGE_SIMD_HAS_RANGE_MASKED_LOAD_STORE
+    "range_masked_load_store.cpp"
+    TRUE
+    "Forge simd backport must support masked contiguous range load/store overloads")
+forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_DEFAULT_SUPPORTED_LOAD_STORE
     "default_supported_load_store.cpp"
     TRUE
@@ -88,6 +93,11 @@ forge_add_simd_configure_probe(
     "range_gather_scatter.cpp"
     TRUE
     "Forge simd backport must support contiguous range gather/scatter overloads")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_HAS_RANGE_MASKED_GATHER_SCATTER
+    "range_masked_gather_scatter.cpp"
+    TRUE
+    "Forge simd backport must support masked contiguous range gather/scatter overloads and supported-type default gathers")
 forge_add_simd_configure_probe(
     FORGE_SIMD_ACCEPTS_LEGACY_MASKED_GATHER_SCATTER_ORDER
     "reject_legacy_masked_gather_scatter_order.cpp"
