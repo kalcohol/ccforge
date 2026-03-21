@@ -74,11 +74,35 @@ TEST(SimdBitTest, UnaryBitAlgorithmsApplyPerLane) {
     EXPECT_EQ(ceiled[3], 0x00000001u);
 }
 
-TEST(SimdBitTest, RotateAlgorithmsSupportScalarAndVectorCounts) {
+TEST(SimdBitTest, CountAlgorithmsUseSignedReboundTypeForSmallUnsignedLanes) {
+    const uchar4 values = load_vec<uchar4>(std::array<unsigned char, 4>{{0xffu, 0x0fu, 0x80u, 0x01u}});
+
+    const auto counted = std::simd::popcount(values);
+    const auto leading_zero = std::simd::countl_zero(values);
+    const auto trailing_zero = std::simd::countr_zero(values);
+    const auto width = std::simd::bit_width(values);
+
+    static_assert(std::is_same_v<std::remove_cv_t<decltype(counted)>, schar4>);
+    static_assert(std::is_same_v<std::remove_cv_t<decltype(leading_zero)>, schar4>);
+    static_assert(std::is_same_v<std::remove_cv_t<decltype(trailing_zero)>, schar4>);
+    static_assert(std::is_same_v<std::remove_cv_t<decltype(width)>, schar4>);
+
+    EXPECT_EQ(counted[0], 8);
+    EXPECT_EQ(counted[1], 4);
+    EXPECT_EQ(counted[2], 1);
+    EXPECT_EQ(counted[3], 1);
+
+    EXPECT_EQ(leading_zero[0], 0);
+    EXPECT_EQ(leading_zero[1], 4);
+    EXPECT_EQ(trailing_zero[2], 7);
+    EXPECT_EQ(width[3], 1);
+}
+
+TEST(SimdBitTest, RotateAlgorithmsSupportScalarAndMixedVectorCounts) {
     const uint4 values = load_vec<uint4>(std::array<unsigned, 4>{{1u, 2u, 4u, 8u}});
-    const uint4 shifts = load_vec<uint4>(std::array<unsigned, 4>{{0u, 1u, 2u, 3u}});
+    const int4 shifts = load_vec<int4>(std::array<int, 4>{{0, 1, 2, 3}});
     const uint4 right_values = load_vec<uint4>(std::array<unsigned, 4>{{16u, 8u, 32u, 64u}});
-    const uint4 right_shifts = load_vec<uint4>(std::array<unsigned, 4>{{2u, 1u, 3u, 4u}});
+    const int4 right_shifts = load_vec<int4>(std::array<int, 4>{{2, 1, 3, 4}});
 
     const auto scalar_left = std::simd::rotl(values, 1);
     const auto vector_left = std::simd::rotl(values, shifts);
