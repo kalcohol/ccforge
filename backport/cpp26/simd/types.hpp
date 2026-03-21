@@ -527,10 +527,26 @@ public:
         return *this;
     }
 
+    template<class U = T>
+    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator<<=(const basic_vec& shift) noexcept {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] <<= shift[i];
+        }
+        return *this;
+    }
+
     template<class Shift, class U = T>
     constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec&>::type operator>>=(Shift shift) noexcept {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] >>= shift;
+        }
+        return *this;
+    }
+
+    template<class U = T>
+    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator>>=(const basic_vec& shift) noexcept {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] >>= shift[i];
         }
         return *this;
     }
@@ -595,8 +611,20 @@ public:
         return left;
     }
 
+    template<class U = T>
+    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator<<(basic_vec left, const basic_vec& shift) noexcept {
+        left <<= shift;
+        return left;
+    }
+
     template<class Shift, class U = T>
     friend constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec>::type operator>>(basic_vec left, Shift shift) noexcept {
+        left >>= shift;
+        return left;
+    }
+
+    template<class U = T>
+    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator>>(basic_vec left, const basic_vec& shift) noexcept {
         left >>= shift;
         return left;
     }

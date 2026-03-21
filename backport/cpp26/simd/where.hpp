@@ -198,12 +198,34 @@ public:
 		return *this;
 	}
 
+	template<class U = T,
+	         typename enable_if<is_integral<U>::value, int>::type = 0>
+	constexpr where_expression& operator<<=(const value_type& shift) noexcept {
+		for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+			if (mask_[i]) {
+				detail::lane_ref(*value_, i) <<= shift[i];
+			}
+		}
+		return *this;
+	}
+
 	template<class Shift, class U = T,
 	         typename enable_if<is_integral<U>::value && is_integral<Shift>::value, int>::type = 0>
 	constexpr where_expression& operator>>=(Shift shift) noexcept(noexcept(std::declval<T&>() >>= shift)) {
 		for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
 			if (mask_[i]) {
 				detail::lane_ref(*value_, i) >>= shift;
+			}
+		}
+		return *this;
+	}
+
+	template<class U = T,
+	         typename enable_if<is_integral<U>::value, int>::type = 0>
+	constexpr where_expression& operator>>=(const value_type& shift) noexcept {
+		for (simd_size_type i = 0; i < static_cast<simd_size_type>(value_type::size); ++i) {
+			if (mask_[i]) {
+				detail::lane_ref(*value_, i) >>= shift[i];
 			}
 		}
 		return *this;

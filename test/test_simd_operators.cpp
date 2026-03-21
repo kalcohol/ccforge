@@ -109,4 +109,56 @@ TEST(SimdOperatorsTest, ComparisonOperatorsRemainLaneWise) {
     EXPECT_TRUE(greater_equal_mask[3]);
 }
 
+TEST(SimdOperatorsTest, ScalarShiftOperatorsApplyUniformShift) {
+    int4 values = make_int4(1, 2, 4, 8);
+
+    const auto left_shifted = values << 2;
+    const auto right_shifted = values >> 1;
+
+    EXPECT_EQ(left_shifted[0], 4);
+    EXPECT_EQ(left_shifted[1], 8);
+    EXPECT_EQ(left_shifted[2], 16);
+    EXPECT_EQ(left_shifted[3], 32);
+
+    EXPECT_EQ(right_shifted[0], 0);
+    EXPECT_EQ(right_shifted[1], 1);
+    EXPECT_EQ(right_shifted[2], 2);
+    EXPECT_EQ(right_shifted[3], 4);
+}
+
+TEST(SimdOperatorsTest, VectorShiftOperatorsApplyPerLane) {
+    int4 values = make_int4(1, 2, 4, 8);
+    int4 shifts = make_int4(0, 1, 2, 3);
+
+    const auto left_shifted = values << shifts;
+    const auto right_shifted = values >> shifts;
+
+    EXPECT_EQ(left_shifted[0], 1);
+    EXPECT_EQ(left_shifted[1], 4);
+    EXPECT_EQ(left_shifted[2], 16);
+    EXPECT_EQ(left_shifted[3], 64);
+
+    EXPECT_EQ(right_shifted[0], 1);
+    EXPECT_EQ(right_shifted[1], 1);
+    EXPECT_EQ(right_shifted[2], 1);
+    EXPECT_EQ(right_shifted[3], 1);
+}
+
+TEST(SimdOperatorsTest, VectorShiftCompoundAssignmentsApplyPerLane) {
+    int4 values = make_int4(1, 2, 4, 8);
+    int4 shifts = make_int4(1, 2, 3, 0);
+
+    values <<= shifts;
+    EXPECT_EQ(values[0], 2);
+    EXPECT_EQ(values[1], 8);
+    EXPECT_EQ(values[2], 32);
+    EXPECT_EQ(values[3], 8);
+
+    values >>= shifts;
+    EXPECT_EQ(values[0], 1);
+    EXPECT_EQ(values[1], 2);
+    EXPECT_EQ(values[2], 4);
+    EXPECT_EQ(values[3], 8);
+}
+
 } // namespace

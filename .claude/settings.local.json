@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v \"^\\\\.$\\\\|^\\\\.\\\\.$\")",
+      "WebSearch",
+      "WebFetch(domain:www.open-std.org)",
+      "WebFetch(domain:eel.is)"
+    ]
+  }
+}

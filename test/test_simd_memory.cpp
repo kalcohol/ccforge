@@ -479,6 +479,26 @@ TEST(SimdMemoryTest, WhereExpressionCompoundAssignmentsModifyOnlySelectedLanes) 
         EXPECT_EQ(xor_scalar[0], 9);
         EXPECT_EQ(xor_scalar[2], 15);
     }
+
+    {
+        int4 vec_lshift = make_int4(1, 2, 4, 8);
+        const int4 lshifts = make_int4(3, 2, 1, 0);
+        std::simd::where(selected, vec_lshift) <<= lshifts;
+        EXPECT_EQ(vec_lshift[0], 8);
+        EXPECT_EQ(vec_lshift[1], 2);
+        EXPECT_EQ(vec_lshift[2], 8);
+        EXPECT_EQ(vec_lshift[3], 8);
+    }
+
+    {
+        int4 vec_rshift = make_int4(16, 8, 32, 64);
+        const int4 rshifts = make_int4(2, 1, 3, 4);
+        std::simd::where(selected, vec_rshift) >>= rshifts;
+        EXPECT_EQ(vec_rshift[0], 4);
+        EXPECT_EQ(vec_rshift[1], 8);
+        EXPECT_EQ(vec_rshift[2], 4);
+        EXPECT_EQ(vec_rshift[3], 64);
+    }
 }
 
 TEST(SimdMemoryTest, WhereBoolOverloadAssignsAllOrNoLanes) {
