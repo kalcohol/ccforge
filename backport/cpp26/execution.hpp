@@ -85,3 +85,5 @@
 #include "execution/bulk.hpp"
 #include "execution/start_detached.hpp"
 #include "execution/split.hpp"
+#include "execution/when_all.hpp"
+#include "execution/ensure_started.hpp"
