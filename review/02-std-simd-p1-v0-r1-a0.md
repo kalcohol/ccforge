@@ -2,80 +2,97 @@
 
 审查基线：当前 C++ 工作草案 `[simd]`（https://eel.is/c++draft/simd）
 
+答复口径：
+
+- 以 `p1-v0-r1` 这份独立审查为准，不以更早 review 结论作为驳回依据
+- 本轮实际修复范围收敛为：先完整收口 I-3，以及本轮应答实现里暴露出的提交污染问题
+- I-1 / I-2 仍然成立，但不在这次窄修复轮次内完成
+
 ---
 
 ## 逐条答复
 
 ### I-1 `simd-complex` 路径整体未打开
 
-裁决：**已知，不在本轮范围内。**
+裁决：**接受问题判断，延期处理。**
 
-此项在 r8 审查链中已作为 Fix-8 裁决（参见 `review/02-std-simd-p0-v0-r8-final.md`），明确归入后续阶段。complex 支持工作量大，需要独立的设计和实施周期。本轮不重复处理。
+当前工作树下，这个问题确实仍然存在：`is_supported_value` 仍把 `basic_vec` 限定在 arithmetic 非 `bool` + 扩展整数子集，因此 complex lane 路径整体不可达。
+
+本轮不实现 complex `simd`，原因不是“旧 review 已覆盖”，而是：
+
+1. complex 支持不是单点补丁，而是类型面、构造面、访问器和算法面的成组工作
+2. 本轮的目标是先把 I-3 从“应答承诺”收口到“实现、测试、提交卫生一致”
+
+因此，I-1 在本轮中被**明确保留为未解决问题**，后续需要独立修复轮处理。
 
 ### I-2 标准算法表面仍是明显子集
 
-裁决：**已知，不在本轮范围内。**
+裁决：**接受问题判断，延期处理。**
 
-同 I-1，此项在 r8-final 中已作为 Fix-8 裁决。bit family、math family 扩展和 complex family 均归入后续阶段。
+当前实现的公开算法面仍然只是现行草案的一个子集，bit family / math family / complex family 的成组缺口判断成立。
+
+本轮同样不试图一次性补完整个算法表面，原因是：
+
+1. 这会把当前修复轮从“收口 I-3”扩大成新的大轮次实现
+2. 在没有先完成完整 surface audit 和测试分层设计前，直接补算法族容易继续产生接口漏测
+
+因此，I-2 在本轮中也被**明确保留为未解决问题**，不是被驳回。
 
 ### I-3 integral `basic_vec` 位移运算符集合不完整
 
-裁决：**接受。**
+裁决：**已修复。**
 
-当前实现确实只有标量位移重载：
+本轮已补齐逐 lane 向量位移重载，并把对应测试补到现有拆分后的测试结构中。
 
-```cpp
-template<class Shift> operator<<=(Shift shift)   // Shift 是标量
-template<class Shift> operator<<(basic_vec, Shift) // Shift 是标量
-```
+已落地内容：
 
-现行草案 `[simd.binary]` 要求同时支持逐 lane 向量位移：
-
-```cpp
-basic_vec& operator<<=(const basic_vec& shift)
-friend basic_vec operator<<(const basic_vec&, const basic_vec& shift)
-```
-
-`where_expression` 同理需要向量位移赋值重载。
-
-修复计划：
-
-1. `types.hpp`：为 `operator<<=`、`operator>>=`、`operator<<`、`operator>>` 各新增 `const basic_vec&` 重载
-2. `where.hpp`：为 `operator<<=`、`operator>>=` 各新增 `const value_type&` 重载
-3. 测试：新增向量位移运行时测试 + compile probe
+1. `backport/cpp26/simd/types.hpp`
+   - 新增 `operator<<=(const basic_vec&)`
+   - 新增 `operator>>=(const basic_vec&)`
+   - 新增 `operator<<(basic_vec, const basic_vec&)`
+   - 新增 `operator>>(basic_vec, const basic_vec&)`
+2. `backport/cpp26/simd/where.hpp`
+   - 新增 `where_expression::operator<<=(const value_type&)`
+   - 新增 `where_expression::operator>>=(const value_type&)`
+3. 运行时测试
+   - `test/test_simd_operators.cpp` 补齐 `vec << vec` / `vec >> vec` / `vec <<= vec` / `vec >>= vec`
+   - `test/test_simd_memory.cpp` 补齐 `where(mask, vec) <<= vec` / `>>= vec`
+4. 编译期测试
+   - `test/test_simd_api_core.cpp` 补齐 integral `vec` 的逐 lane 位移重载可见性
+   - `test/test_simd_api_where.cpp` 补齐 `where_expression` 的逐 lane 位移赋值可见性
+   - 同时增加 floating `vec` / floating `where_expression` 的负向约束检查，防止错误放宽
 
 ### I-4 现有测试仍未把"标准表面完整性"锁住
 
-裁决：**认同观察，但不作为独立修复项。**
+裁决：**部分接受，本轮仅收口 I-3 对应测试。**
 
-这是一个元层面的观察，不是具体代码缺陷。每次补齐标准表面时同步补测试是正确做法，但"系统性锁住所有标准表面"需要一个完整的 surface audit，不适合作为单次修复项处理。I-3 的修复会同步补齐对应测试。
+这条观察本身成立。本轮修复后，I-3 已经从“只靠人工探针发现”变成了有 compile probe 和 runtime tests 双重锁定的状态。
+
+但 I-4 并没有因此整体关闭，因为：
+
+- complex `simd` 路径仍缺测试
+- bit / math / complex 算法表面仍缺系统性 surface audit
+
+因此，本轮对 I-4 的处理范围是：
+
+1. 对 I-3 补齐对应测试
+2. 不把“锁住全部标准表面”伪装成已经完成
 
 ---
 
-## 修复计划
+## 本轮实际修复
 
-仅 I-3 需要代码修改：
+### Fix-9：补齐逐 lane 向量位移重载并补测
 
-### Fix-9：补齐逐 lane 向量位移重载
+- `basic_vec` 的逐 lane 左移/右移及赋值重载已补齐
+- `where_expression` 的逐 lane 左移/右移赋值重载已补齐
+- 运行时与编译期覆盖已同步补齐
 
-**types.hpp 改动：**
+### 附带收口：清理本轮应答实现引入的提交污染
 
-- `operator<<=(const basic_vec&)` — 逐 lane 左移赋值
-- `operator>>=(const basic_vec&)` — 逐 lane 右移赋值
-- `operator<<(basic_vec, const basic_vec&)` — 逐 lane 左移
-- `operator>>(basic_vec, const basic_vec&)` — 逐 lane 右移
+本轮还额外修正了 Fix-9 提交链里的无关追踪内容：
 
-约束：仅当 `is_integral<T>` 时参与重载决议。
+- `.claude/settings.local.json` 已从版本库移除
+- `3rdparty/googletest/` 已恢复为本地存在但不入库的状态，不再把整份 vendor 内容带入本轮修复提交
 
-**where.hpp 改动：**
-
-- `operator<<=(const value_type&)` — masked 逐 lane 左移赋值
-- `operator>>=(const value_type&)` — masked 逐 lane 右移赋值
-
-约束：仅当 `is_integral<T>` 时参与重载决议。
-
-**测试：**
-
-- `test_simd.cpp`：运行时测试验证逐 lane 位移正确性
-- `test_simd_memory.cpp`：`where` 向量位移赋值测试
-- `test_simd_api.cpp`：compile probe 验证向量位移重载可见
+这项属于提交卫生修正，不改变 `std::simd` 的公开语义。

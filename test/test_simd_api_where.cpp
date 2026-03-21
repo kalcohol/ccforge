@@ -4,6 +4,24 @@ namespace {
 
 using namespace simd_test;
 
+template<class Expr, class Shift, class = void>
+struct has_where_lshift_assign : std::false_type {};
+
+template<class Expr, class Shift>
+struct has_where_lshift_assign<Expr,
+                               Shift,
+                               std::void_t<decltype(std::declval<Expr&>() <<= std::declval<const Shift&>())>>
+    : std::true_type {};
+
+template<class Expr, class Shift, class = void>
+struct has_where_rshift_assign : std::false_type {};
+
+template<class Expr, class Shift>
+struct has_where_rshift_assign<Expr,
+                               Shift,
+                               std::void_t<decltype(std::declval<Expr&>() >>= std::declval<const Shift&>())>>
+    : std::true_type {};
+
 static_assert(std::is_same<decltype(std::simd::select(mask4{}, mask4{}, mask4{})), mask4>::value,
     "select(mask, mask, mask) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::select(mask4{}, 1, 2)), int4>::value,
@@ -26,17 +44,26 @@ static_assert(requires(int4 value, mask4 mask_value) { std::simd::where(mask_val
     "where(mask, vec) should support compound assignment with scalars");
 
 using where_vec_expr = decltype(std::simd::where(std::declval<mask4>(), std::declval<int4&>()));
+using where_float_expr = decltype(std::simd::where(std::declval<typename float4::mask_type>(), std::declval<float4&>()));
 
 static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() /= std::declval<const int4&>())), where_vec_expr&>::value,
     "where_expression should return itself from operator/=(vec)");
 static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() <<= 1)), where_vec_expr&>::value,
     "where_expression should return itself from operator<<=(shift)");
+static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() <<= std::declval<const int4&>())), where_vec_expr&>::value,
+    "where_expression should return itself from operator<<=(vec)");
+static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() >>= std::declval<const int4&>())), where_vec_expr&>::value,
+    "where_expression should return itself from operator>>=(vec)");
 static_assert(requires(where_vec_expr& expr, const int4& rhs) { expr ^= rhs; },
     "where_expression should support integer operator^=(vec) for integral vectors");
 static_assert(std::is_same<decltype((std::declval<where_vec_expr&>() &= 1)), where_vec_expr&>::value,
     "where_expression should return itself from operator&=(scalar)");
 static_assert(requires(where_vec_expr& expr) { expr %= 3; },
     "where_expression should support integer operator%=(scalar) for integral vectors");
+static_assert(!has_where_lshift_assign<where_float_expr, float4>::value,
+    "where_expression should not expose vector left shift for floating vectors");
+static_assert(!has_where_rshift_assign<where_float_expr, float4>::value,
+    "where_expression should not expose vector right shift for floating vectors");
 static_assert(requires(int4 value) { std::simd::where(true, value) = value; },
     "where(bool, vec) should allow masked assignment from vectors");
 static_assert(requires(int4 value) { std::simd::where(false, value) = 1; },

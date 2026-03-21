@@ -15,6 +15,42 @@ constexpr bool constexpr_generator_and_iota() {
     return generated[0] == 1 && generated[3] == 7 && sequence[0] == 3 && sequence[3] == 6;
 }
 
+template<class V, class Shift, class = void>
+struct has_vector_lshift_assign : std::false_type {};
+
+template<class V, class Shift>
+struct has_vector_lshift_assign<V,
+                                Shift,
+                                std::void_t<decltype(std::declval<V&>() <<= std::declval<const Shift&>())>>
+    : std::true_type {};
+
+template<class V, class Shift, class = void>
+struct has_vector_rshift_assign : std::false_type {};
+
+template<class V, class Shift>
+struct has_vector_rshift_assign<V,
+                                Shift,
+                                std::void_t<decltype(std::declval<V&>() >>= std::declval<const Shift&>())>>
+    : std::true_type {};
+
+template<class V, class Shift, class = void>
+struct has_vector_lshift : std::false_type {};
+
+template<class V, class Shift>
+struct has_vector_lshift<V,
+                         Shift,
+                         std::void_t<decltype(std::declval<V>() << std::declval<const Shift&>())>>
+    : std::true_type {};
+
+template<class V, class Shift, class = void>
+struct has_vector_rshift : std::false_type {};
+
+template<class V, class Shift>
+struct has_vector_rshift<V,
+                         Shift,
+                         std::void_t<decltype(std::declval<V>() >> std::declval<const Shift&>())>>
+    : std::true_type {};
+
 static_assert(std::is_same<typename int4::value_type, int>::value,
     "vec<int, 4> should expose int as value_type");
 static_assert(std::is_signed<std::simd::simd_size_type>::value,
@@ -58,6 +94,22 @@ static_assert(std::is_same<decltype(std::declval<mask4&>() | std::declval<const 
     "mask bitwise or should remain on the mask type");
 static_assert(std::is_same<decltype(std::declval<mask4&>() ^ std::declval<const mask4&>()), mask4>::value,
     "mask bitwise xor should remain on the mask type");
+static_assert(std::is_same<decltype(std::declval<int4&>() <<= std::declval<const int4&>()), int4&>::value,
+    "integral vec should expose per-lane left-shift assignment");
+static_assert(std::is_same<decltype(std::declval<int4&>() >>= std::declval<const int4&>()), int4&>::value,
+    "integral vec should expose per-lane right-shift assignment");
+static_assert(std::is_same<decltype(std::declval<int4>() << std::declval<const int4&>()), int4>::value,
+    "integral vec should expose per-lane left shift");
+static_assert(std::is_same<decltype(std::declval<int4>() >> std::declval<const int4&>()), int4>::value,
+    "integral vec should expose per-lane right shift");
+static_assert(!has_vector_lshift_assign<float4, float4>::value,
+    "floating vec should not expose per-lane left-shift assignment");
+static_assert(!has_vector_rshift_assign<float4, float4>::value,
+    "floating vec should not expose per-lane right-shift assignment");
+static_assert(!has_vector_lshift<float4, float4>::value,
+    "floating vec should not expose per-lane left shift");
+static_assert(!has_vector_rshift<float4, float4>::value,
+    "floating vec should not expose per-lane right shift");
 static_assert(std::is_same<decltype(std::declval<const mask4&>().to_bitset()), std::bitset<4>>::value,
     "basic_mask::to_bitset should expose a matching std::bitset");
 static_assert(std::is_same<decltype(std::declval<const mask4&>().to_ullong()), unsigned long long>::value,
