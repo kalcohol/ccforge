@@ -1215,12 +1215,21 @@ struct receiver {
 
 } // namespace __forge_sync_wait
 
-template<sender_in S>
+} // namespace std::execution
+
+// ── sync_wait — [exec.sync.wait] ────────────────────────────────────────
+// The standard places sync_wait in std::this_thread.  We also provide a
+// using-declaration in std::execution so that both calling conventions
+// work during the backport era, ensuring seamless transition.
+
+namespace std::this_thread {
+
+template<std::execution::sender_in S>
 auto sync_wait(S&& sndr) {
-    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), empty_env{}));
-    using value_tuple_t = typename __forge_sync_wait::value_tuple_for<cs_t>::type;
-    using state_t = typename __forge_sync_wait::state_from_tuple<value_tuple_t>::type;
-    using recv_t = __forge_sync_wait::receiver<state_t>;
+    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), std::execution::empty_env{}));
+    using value_tuple_t = typename std::execution::__forge_sync_wait::value_tuple_for<cs_t>::type;
+    using state_t = typename std::execution::__forge_sync_wait::state_from_tuple<value_tuple_t>::type;
+    using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
 
     state_t state;
     auto op = std::execution::connect(std::forward<S>(sndr), recv_t{&state});
@@ -1237,6 +1246,13 @@ auto sync_wait(S&& sndr) {
     }
     return std::optional<typename state_t::value_t>{std::get<1>(state.result_)};
 }
+
+} // namespace std::this_thread
+
+namespace std::execution {
+
+// Re-export sync_wait for backward compatibility during backport era.
+using std::this_thread::sync_wait;
 
 // ──────────────────────────────────────────────────────────────────────────
 // inline_scheduler
