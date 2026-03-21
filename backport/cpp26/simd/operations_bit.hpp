@@ -182,7 +182,7 @@ constexpr basic_vec<T, Abi> bit_floor(const basic_vec<T, Abi>& value) noexcept
 }
 
 template<class T, class Abi>
-constexpr basic_vec<T, Abi> bit_ceil(const basic_vec<T, Abi>& value) noexcept
+constexpr basic_vec<T, Abi> bit_ceil(const basic_vec<T, Abi>& value)
     requires(is_unsigned<T>::value && detail::has_bit_ceil<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {

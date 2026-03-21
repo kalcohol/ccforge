@@ -77,6 +77,10 @@ static_assert(std::is_same_v<decltype(std::simd::bit_floor(std::declval<const ui
     "bit_floor should preserve the vector type");
 static_assert(std::is_same_v<decltype(std::simd::bit_ceil(std::declval<const uint4&>())), uint4>,
     "bit_ceil should preserve the vector type");
+static_assert(noexcept(std::simd::bit_floor(std::declval<const uint4&>())),
+    "bit_floor should be noexcept");
+static_assert(!noexcept(std::simd::bit_ceil(std::declval<const uint4&>())),
+    "bit_ceil should not be noexcept");
 static_assert(std::is_same_v<decltype(std::simd::rotl(std::declval<const uint4&>(), 1)), uint4>,
     "rotl(vec, scalar) should preserve the vector type");
 static_assert(std::is_same_v<decltype(std::simd::rotl(std::declval<const uint4&>(), std::declval<const int4&>())), uint4>,
@@ -140,6 +144,10 @@ static_assert(std::is_same_v<decltype(std::simd::ilogb(std::declval<const float4
     "ilogb should return rebind_t<int, V>");
 static_assert(std::is_same_v<decltype(std::simd::ldexp(std::declval<const float4&>(), std::declval<const int4&>())), float4>,
     "ldexp should preserve the floating vector type");
+static_assert(!noexcept(std::simd::lrint(std::declval<const float4&>())),
+    "lrint should not be noexcept");
+static_assert(!noexcept(std::simd::llrint(std::declval<const float4&>())),
+    "llrint should not be noexcept");
 static_assert(std::is_same_v<decltype(std::simd::scalbn(std::declval<const float4&>(), std::declval<const int4&>())), float4>,
     "scalbn should preserve the floating vector type");
 static_assert(std::is_same_v<decltype(std::simd::scalbln(std::declval<const float4&>(), std::declval<const long4&>())), float4>,

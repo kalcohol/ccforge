@@ -6,20 +6,6 @@ struct is_simd_complex_value : false_type {};
 template<class T, class Abi>
 struct is_simd_complex_value<basic_vec<complex<T>, Abi>> : true_type {};
 
-template<class A, class B>
-struct has_matching_complex_extent
-    : bool_constant<remove_cvref_t<A>::size == remove_cvref_t<B>::size> {};
-
-template<class A, class B>
-struct complex_binary_result {
-    using prototype = remove_cvref_t<A>;
-    using scalar_type = common_type_t<typename remove_cvref_t<A>::value_type, typename remove_cvref_t<B>::value_type>;
-    using type = rebind_t<scalar_type, prototype>;
-};
-
-template<class A, class B>
-using complex_binary_result_t = typename complex_binary_result<A, B>::type;
-
 template<class Result, class V, class Fun>
 constexpr Result unary_complex_transform(const V& value, Fun fun) {
     Result result;
@@ -65,26 +51,26 @@ constexpr typename remove_cvref_t<V>::real_type imag(const V& value) noexcept
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type abs(const V& value) noexcept
+constexpr typename remove_cvref_t<V>::real_type abs(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::abs(lane); });
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type arg(const V& value) noexcept
+constexpr typename remove_cvref_t<V>::real_type arg(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::arg(lane); });
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type norm(const V& value) noexcept
+constexpr typename remove_cvref_t<V>::real_type norm(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::norm(lane); });
 }
 
 #define FORGE_SIMD_UNARY_COMPLEX_MATH(name) \
 template<class V> \
-constexpr remove_cvref_t<V> name(const V& value) noexcept \
+constexpr remove_cvref_t<V> name(const V& value) \
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
     return detail::unary_complex_transform<result_type>(value, [](const auto& lane) { return std::name(lane); }); \
@@ -111,13 +97,10 @@ FORGE_SIMD_UNARY_COMPLEX_MATH(atanh)
 
 #undef FORGE_SIMD_UNARY_COMPLEX_MATH
 
-template<class A, class B>
-constexpr detail::complex_binary_result_t<A, B> pow(const A& left, const B& right) noexcept
-    requires(
-        detail::is_simd_complex_value<remove_cvref_t<A>>::value &&
-        detail::is_simd_complex_value<remove_cvref_t<B>>::value &&
-        detail::has_matching_complex_extent<A, B>::value) {
-    using result_type = detail::complex_binary_result_t<A, B>;
+template<class V>
+constexpr remove_cvref_t<V> pow(const V& left, const V& right)
+    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
     return detail::binary_complex_transform<result_type>(left, right, [](const auto& lhs, const auto& rhs) {
         return std::pow(lhs, rhs);
     });
@@ -125,7 +108,7 @@ constexpr detail::complex_binary_result_t<A, B> pow(const A& left, const B& righ
 
 template<class V>
 constexpr rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>
-polar(const V& rho) noexcept
+polar(const V& rho)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>;
     return detail::unary_complex_transform<result_type>(rho, [](const auto& lane) { return std::polar(lane); });
@@ -133,7 +116,7 @@ polar(const V& rho) noexcept
 
 template<class V>
 constexpr rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>
-polar(const V& rho, const V& theta) noexcept
+polar(const V& rho, const V& theta)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>;
     result_type result;

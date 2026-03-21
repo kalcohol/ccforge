@@ -31,16 +31,24 @@ function(forge_expect_cxx_source_compiles result_var source_file should_compile 
 endfunction()
 
 function(forge_add_runtime_test target_name source_file)
+    set(test_name "${target_name}")
+    if(ARGC GREATER 2)
+        set(test_name "${ARGV2}")
+    endif()
     add_executable(${target_name} ${source_file})
     target_link_libraries(${target_name} PRIVATE gtest_main forge::forge)
-    add_test(NAME ${target_name} COMMAND ${target_name})
+    add_test(NAME ${test_name} COMMAND ${target_name})
 endfunction()
 
 function(forge_add_compile_probe target_name source_file)
+    set(test_name "${target_name}_compile")
+    if(ARGC GREATER 2)
+        set(test_name "${ARGV2}")
+    endif()
     add_executable(${target_name} EXCLUDE_FROM_ALL ${source_file})
     target_link_libraries(${target_name} PRIVATE forge::forge)
     add_test(
-        NAME ${target_name}_compile
+        NAME ${test_name}
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target_name})
 endfunction()
 
@@ -50,6 +58,11 @@ set(FORGE_SIMD_RUNTIME_DIR "${FORGE_SIMD_TEST_ROOT}/runtime")
 set(FORGE_SIMD_COMPILE_DIR "${FORGE_SIMD_TEST_ROOT}/compile")
 set(FORGE_SIMD_CONFIGURE_PROBE_DIR "${FORGE_SIMD_TEST_ROOT}/configure_probes")
 set(FORGE_SIMD_NATIVE_HANDOFF_INCLUDE_DIR "${FORGE_SIMD_COMPILE_DIR}/native_handoff_include")
+set(FORGE_UNIQUE_RESOURCE_TEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/unique_resource")
+set(FORGE_UNIQUE_RESOURCE_RUNTIME_DIR "${FORGE_UNIQUE_RESOURCE_TEST_ROOT}/runtime")
+set(FORGE_UNIQUE_RESOURCE_COMPILE_DIR "${FORGE_UNIQUE_RESOURCE_TEST_ROOT}/compile")
+set(FORGE_EXECUTION_TEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/execution")
+set(FORGE_EXECUTION_RUNTIME_DIR "${FORGE_EXECUTION_TEST_ROOT}/runtime")
 forge_detect_cxx_source_compiles(
     FORGE_SIMD_HAS_SCALAR_SPECIAL_MATH
     "${FORGE_SIMD_CONFIGURE_PROBE_DIR}/scalar_math_special.cpp")
@@ -203,10 +216,76 @@ function(forge_register_simd_configure_probes)
         FALSE
         "Forge simd backport must not expose obsolete pair-return decomposition signatures")
     forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_CONSTEXPR_INT_ROUND
+        "math_rejects_constexpr_int_round.cpp"
+        FALSE
+        "Forge simd backport must not expose lrint/llrint as constexpr")
+    forge_add_simd_configure_probe(
         FORGE_SIMD_HAS_COMPLEX_SURFACE
         "complex_surface.cpp"
         TRUE
         "Forge simd backport must provide the required complex simd surface")
+endfunction()
+
+function(forge_register_unique_resource_tests)
+    forge_add_runtime_test(
+        test_unique_resource
+        "${FORGE_UNIQUE_RESOURCE_RUNTIME_DIR}/test_unique_resource.cpp"
+        unique_resource_runtime)
+    forge_add_runtime_test(
+        test_unique_resource_checked
+        "${FORGE_UNIQUE_RESOURCE_RUNTIME_DIR}/test_unique_resource_checked.cpp"
+        unique_resource_checked)
+    forge_add_runtime_test(
+        test_unique_resource_exception
+        "${FORGE_UNIQUE_RESOURCE_RUNTIME_DIR}/test_unique_resource_exception.cpp"
+        unique_resource_exception)
+    forge_add_runtime_test(
+        test_unique_resource_wording
+        "${FORGE_UNIQUE_RESOURCE_RUNTIME_DIR}/test_unique_resource_wording.cpp"
+        unique_resource_wording)
+
+    forge_add_compile_probe(
+        test_unique_resource_api
+        "${FORGE_UNIQUE_RESOURCE_COMPILE_DIR}/test_unique_resource_api.cpp"
+        unique_resource_api_compile)
+    forge_add_compile_probe(
+        test_unique_resource_checked_noexcept
+        "${FORGE_UNIQUE_RESOURCE_COMPILE_DIR}/test_unique_resource_checked_noexcept.cpp"
+        unique_resource_checked_noexcept_compile)
+    forge_add_compile_probe(
+        test_unique_resource_include
+        "${FORGE_UNIQUE_RESOURCE_COMPILE_DIR}/test_unique_resource_include.cpp"
+        unique_resource_include_compile)
+endfunction()
+
+function(forge_register_execution_tests)
+    forge_add_runtime_test(
+        test_execution_mvp
+        "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_mvp.cpp"
+        execution_mvp)
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(test_execution_mvp PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+    target_include_directories(test_execution_mvp BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+
+    forge_add_runtime_test(
+        test_execution_inline_scheduler
+        "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_inline_scheduler.cpp"
+        execution_inline_scheduler)
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(test_execution_inline_scheduler PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+    target_include_directories(test_execution_inline_scheduler BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+
+    forge_add_runtime_test(
+        test_execution_stop_token
+        "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_stop_token.cpp"
+        execution_stop_token)
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(test_execution_stop_token PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+    target_include_directories(test_execution_stop_token BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
 endfunction()
 
 function(forge_register_simd_runtime_tests)
@@ -279,41 +358,7 @@ forge_register_simd_configure_probes()
 
 unset(CMAKE_REQUIRED_INCLUDES)
 
-# Runtime tests for unique_resource
-add_executable(test_unique_resource test_unique_resource.cpp)
-target_link_libraries(test_unique_resource PRIVATE gtest_main)
-add_test(NAME unique_resource_runtime COMMAND test_unique_resource)
-
-add_executable(test_unique_resource_checked test_unique_resource_checked.cpp)
-target_link_libraries(test_unique_resource_checked PRIVATE gtest_main)
-add_test(NAME unique_resource_checked COMMAND test_unique_resource_checked)
-
-add_executable(test_unique_resource_exception test_unique_resource_exception.cpp)
-target_link_libraries(test_unique_resource_exception PRIVATE gtest_main)
-add_test(NAME unique_resource_exception COMMAND test_unique_resource_exception)
-
-add_executable(test_unique_resource_wording test_unique_resource_wording.cpp)
-target_link_libraries(test_unique_resource_wording PRIVATE gtest_main)
-add_test(NAME unique_resource_wording COMMAND test_unique_resource_wording)
-
-# Compile probes for target semantics
-add_executable(test_unique_resource_api EXCLUDE_FROM_ALL test_unique_resource_api.cpp)
-target_link_libraries(test_unique_resource_api PRIVATE forge::forge)
-add_test(
-    NAME unique_resource_api_compile
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_unique_resource_api)
-
-add_executable(test_unique_resource_checked_noexcept EXCLUDE_FROM_ALL test_unique_resource_checked_noexcept.cpp)
-add_test(
-    NAME unique_resource_checked_noexcept_compile
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_unique_resource_checked_noexcept)
-
-add_executable(test_unique_resource_include EXCLUDE_FROM_ALL test_unique_resource_include.cpp)
-target_link_libraries(test_unique_resource_include PRIVATE forge::forge)
-add_test(
-    NAME unique_resource_include_compile
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_unique_resource_include)
-
+forge_register_unique_resource_tests()
 forge_register_simd_runtime_tests()
 forge_register_simd_compile_probes()
 
@@ -325,32 +370,5 @@ if(TARGET simd_complete_example)
     add_test(NAME simd_complete_example_smoke COMMAND simd_complete_example)
 endif()
 
-# Runtime tests for std::execution (P2300 MVP)
-#
-# These tests intentionally include <execution> to exercise the wrapper-injection
-# shape. They should remain valid even after the standard library ships P2300.
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
-
-add_executable(test_execution_mvp test_execution_mvp.cpp)
-target_link_libraries(test_execution_mvp PRIVATE gtest_main forge::forge)
-if(FORGE_TEST_TBB_LIBRARY)
-    target_link_libraries(test_execution_mvp PRIVATE ${FORGE_TEST_TBB_LIBRARY})
-endif()
-target_include_directories(test_execution_mvp BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
-add_test(NAME execution_mvp COMMAND test_execution_mvp)
-
-add_executable(test_execution_inline_scheduler test_execution_inline_scheduler.cpp)
-target_link_libraries(test_execution_inline_scheduler PRIVATE gtest_main forge::forge)
-if(FORGE_TEST_TBB_LIBRARY)
-    target_link_libraries(test_execution_inline_scheduler PRIVATE ${FORGE_TEST_TBB_LIBRARY})
-endif()
-target_include_directories(test_execution_inline_scheduler BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
-add_test(NAME execution_inline_scheduler COMMAND test_execution_inline_scheduler)
-
-add_executable(test_execution_stop_token test_execution_stop_token.cpp)
-target_link_libraries(test_execution_stop_token PRIVATE gtest_main forge::forge)
-if(FORGE_TEST_TBB_LIBRARY)
-    target_link_libraries(test_execution_stop_token PRIVATE ${FORGE_TEST_TBB_LIBRARY})
-endif()
-target_include_directories(test_execution_stop_token BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
-add_test(NAME execution_stop_token COMMAND test_execution_stop_token)
+forge_register_execution_tests()

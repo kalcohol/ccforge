@@ -43,6 +43,14 @@ constexpr rebind_t<int_type, remove_cvref_t<V>> name(const V& value) \
     return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::name(lane); }); \
 }
 
+#define FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(name, int_type) \
+template<class V> \
+rebind_t<int_type, remove_cvref_t<V>> name(const V& value) \
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    using result_type = rebind_t<int_type, remove_cvref_t<V>>; \
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::name(lane); }); \
+}
+
 #define FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(name) \
 template<class A, class B> \
 constexpr detail::binary_math_result_t<A, B> name(const A& left, const B& right) \
@@ -72,8 +80,8 @@ FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(floor)
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(nearbyint)
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(rint)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(ilogb, int)
-FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(lrint, long int)
-FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(llrint, long long int)
+FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(lrint, long int)
+FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(llrint, long long int)
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(round)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(lround, long int)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(llround, long long int)
@@ -235,6 +243,7 @@ constexpr remove_cvref_t<V> scalbln(const V& value, const rebind_t<long int, rem
 #undef FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR
 #undef FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME
 #undef FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR
+#undef FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME
 #undef FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR
 #undef FORGE_SIMD_TERNARY_FLOAT_MATH_CONSTEXPR
 #undef FORGE_SIMD_BINARY_FLOAT_MASK_CONSTEXPR
