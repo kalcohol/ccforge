@@ -8,8 +8,10 @@ int main() {
     std::array<int, 4> output{{0, 0, 0, 0}};
     std::span<const int, 4> input_view(input);
     std::span<int, 4> output_view(output);
-    std::simd::vec<int, 4> values(input_view);
-    auto loaded = std::simd::partial_load<std::simd::vec<int, 4>>(input_view);
+    auto loaded = std::simd::partial_load(input_view);
+    auto unchecked = std::simd::unchecked_load(input_view, std::simd::flag_default);
+    static_assert(std::is_same_v<decltype(loaded), std::simd::basic_vec<int>>);
+    static_assert(std::is_same_v<decltype(unchecked), std::simd::basic_vec<int>>);
     std::simd::partial_store(loaded, output_view);
-    return values[0] + output[3];
+    return loaded[0] + unchecked[0] + output[3];
 }

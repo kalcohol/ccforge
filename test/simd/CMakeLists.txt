@@ -121,6 +121,11 @@ function(forge_register_simd_configure_probes)
         TRUE
         "Forge simd backport must support contiguous range gather/scatter overloads")
     forge_add_simd_configure_probe(
+        FORGE_SIMD_ACCEPTS_LEGACY_MASKED_GATHER_SCATTER_ORDER
+        "reject_legacy_masked_gather_scatter_order.cpp"
+        FALSE
+        "Forge simd backport must reject the legacy masked gather/scatter parameter order")
+    forge_add_simd_configure_probe(
         FORGE_SIMD_HAS_COMPRESS_EXPAND_OVERLOADS
         "compress_expand_overloads.cpp"
         TRUE

@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -267,7 +268,7 @@ TEST(SimdMemoryTest, PartialGatherHonorsMaskAndCount) {
     const int4 indices = make_int4(6, 0, 3, 7);
     const mask4 selected(0b0101u);
 
-    const auto gathered = std::simd::partial_gather_from<int4>(input.data(), 6, indices, selected);
+    const auto gathered = std::simd::partial_gather_from<int4>(input.data(), 6, selected, indices);
     EXPECT_EQ(gathered[0], 0);
     EXPECT_EQ(gathered[1], 0);
     EXPECT_EQ(gathered[2], 13);
@@ -281,7 +282,9 @@ TEST(SimdMemoryTest, PartialGatherAndScatterSupportContiguousRanges) {
     const std::span<const int, 8> input_view(input);
     std::span<int, 8> output_view(output);
 
-    const auto gathered = std::simd::partial_gather_from<int4>(input_view, indices);
+    const auto gathered = std::simd::partial_gather_from(input_view, indices);
+    static_assert(std::is_same<std::remove_const_t<decltype(gathered)>, int4>::value,
+        "range gather should default to vec<range_value_t<R>, Indices::size()>");
     std::simd::partial_scatter_to(gathered, output_view, indices);
 
     EXPECT_EQ(gathered[0], 11);
@@ -313,7 +316,7 @@ TEST(SimdMemoryTest, PartialScatterHonorsMaskAndCount) {
     const int4 values = make_int4(10, 20, 30, 40);
     const mask4 selected(0b0101u);
 
-    std::simd::partial_scatter_to(values, output.data(), 6, indices, selected);
+    std::simd::partial_scatter_to(values, output.data(), 6, selected, indices);
 
     EXPECT_EQ(output[1], 10);
     EXPECT_EQ(output[4], -1);
@@ -520,6 +523,25 @@ TEST(SimdMemoryTest, WhereBoolOverloadAssignsAllOrNoLanes) {
 }
 
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
+
+TEST(SimdMemoryExtensionTest, UncheckedMaskedGatherAndScatterUseStandardOrder) {
+    std::array<int, 8> input{{10, 11, 12, 13, 14, 15, 16, 17}};
+    std::array<int, 8> output{{-1, -1, -1, -1, -1, -1, -1, -1}};
+    const int4 indices = make_int4(6, 0, 3, 7);
+    const mask4 selected(0b0101u);
+
+    const auto gathered = std::simd::unchecked_gather_from<int4>(input.data(), selected, indices);
+    EXPECT_EQ(gathered[0], 16);
+    EXPECT_EQ(gathered[1], 0);
+    EXPECT_EQ(gathered[2], 13);
+    EXPECT_EQ(gathered[3], 0);
+
+    std::simd::unchecked_scatter_to(gathered, output.data(), selected, indices);
+    EXPECT_EQ(output[0], -1);
+    EXPECT_EQ(output[3], 13);
+    EXPECT_EQ(output[6], 16);
+    EXPECT_EQ(output[7], -1);
+}
 
 TEST(SimdMemoryExtensionTest, UncheckedLoadAndStorePreserveExactValues) {
     std::array<int, 4> input{{1, 2, 3, 4}};

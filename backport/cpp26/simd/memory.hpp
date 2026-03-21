@@ -15,6 +15,50 @@ constexpr void set_lane(V& value, simd_size_type i, U&& lane) noexcept {
     lane_ref(value, i) = std::forward<U>(lane);
 }
 
+template<class I, class = void>
+struct default_load_vector {};
+
+template<class I>
+struct default_load_vector<I, void_t<typename iterator_traits<remove_cvref_t<I>>::value_type>> {
+    using type = basic_vec<typename iterator_traits<remove_cvref_t<I>>::value_type>;
+};
+
+template<class I>
+using default_load_vector_t = typename default_load_vector<I>::type;
+
+template<class T, class = void>
+struct default_pointer_load_vector {};
+
+template<class T>
+struct default_pointer_load_vector<T, enable_if_t<is_arithmetic<T>::value && !is_same<T, bool>::value>> {
+    using type = basic_vec<T>;
+};
+
+template<class T>
+using default_pointer_load_vector_t = typename default_pointer_load_vector<T>::type;
+
+template<class R, class = void>
+struct default_range_load_vector {};
+
+template<class R>
+struct default_range_load_vector<R, void_t<ranges::range_value_t<R>>> {
+    using type = basic_vec<ranges::range_value_t<R>>;
+};
+
+template<class R>
+using default_range_load_vector_t = typename default_range_load_vector<R>::type;
+
+template<class R, class Indices, class = void>
+struct default_gather_vector {};
+
+template<class R, class Indices>
+struct default_gather_vector<R, Indices, void_t<ranges::range_value_t<R>, decltype(Indices::size)>> {
+    using type = vec<ranges::range_value_t<R>, Indices::size>;
+};
+
+template<class R, class Indices>
+using default_gather_vector_t = typename default_gather_vector<R, Indices>::type;
+
 template<class V, class U, class... Flags>
 constexpr V load_impl(const U* first, simd_size_type count, flags<Flags...> f);
 
@@ -212,6 +256,74 @@ constexpr void store_impl(const basic_vec<T, Abi>& value, I first, S last, const
 
 } // namespace detail
 
+template<class I,
+         class... Flags,
+         typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>
+constexpr detail::default_load_vector_t<I> partial_load(I first, simd_size_type count, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    return detail::load_n_impl<V>(first, count, f);
+}
+
+template<class I,
+         class... Flags,
+         typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>
+constexpr detail::default_load_vector_t<I>
+partial_load(I first, simd_size_type count, const typename detail::default_load_vector_t<I>::mask_type& mask_value, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    return detail::load_n_impl<V>(first, count, mask_value, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> partial_load(const U* first, simd_size_type count, flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, count, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> partial_load(const U* first,
+                                    simd_size_type count,
+                                    const typename detail::default_pointer_load_vector_t<U>::mask_type& mask_value,
+                                    flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, count, mask_value, f);
+}
+
+template<class I,
+         class S,
+         class... Flags,
+         typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
+             (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
+constexpr detail::default_load_vector_t<I> partial_load(I first, S last, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    return detail::load_impl<V>(first, last, f);
+}
+
+template<class I,
+         class S,
+         class... Flags,
+         typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
+             (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
+constexpr detail::default_load_vector_t<I>
+partial_load(I first, S last, const typename detail::default_load_vector_t<I>::mask_type& mask_value, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    return detail::load_impl<V>(first, last, mask_value, f);
+}
+
+template<class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr detail::default_range_load_vector_t<R> partial_load(R&& r, flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_range_load_vector_t<R>>(ranges::data(r), detail::range_size(r), f);
+}
+
+template<class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr detail::default_range_load_vector_t<R>
+partial_load(R&& r, const typename detail::default_range_load_vector_t<R>::mask_type& mask_value, flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_range_load_vector_t<R>>(ranges::data(r), detail::range_size(r), mask_value, f);
+}
+
 template<class V,
          class I,
          class... Flags,
@@ -394,6 +506,96 @@ template<class T,
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
 constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
 
+template<class I,
+         class... Flags,
+         typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>
+constexpr detail::default_load_vector_t<I> unchecked_load(I first, simd_size_type count, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    detail::require_unchecked_extent<V>(count);
+    return detail::load_n_impl<V>(first, count, f);
+}
+
+template<class I,
+         class... Flags,
+         typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>
+constexpr detail::default_load_vector_t<I>
+unchecked_load(I first, simd_size_type count, const typename detail::default_load_vector_t<I>::mask_type& mask_value, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    detail::require_unchecked_extent<V>(count);
+    return detail::load_n_impl<V>(first, count, mask_value, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first, flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first,
+                                      const typename detail::default_pointer_load_vector_t<U>::mask_type& mask_value,
+                                      flags<Flags...> f = {}) {
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, mask_value, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first, simd_size_type count, flags<Flags...> f = {}) {
+    detail::require_unchecked_extent<detail::default_pointer_load_vector_t<U>>(count);
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, count, f);
+}
+
+template<class U, class... Flags>
+constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first,
+                                      simd_size_type count,
+                                      const typename detail::default_pointer_load_vector_t<U>::mask_type& mask_value,
+                                      flags<Flags...> f = {}) {
+    detail::require_unchecked_extent<detail::default_pointer_load_vector_t<U>>(count);
+    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, count, mask_value, f);
+}
+
+template<class I,
+         class S,
+         class... Flags,
+         typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
+             (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
+constexpr detail::default_load_vector_t<I> unchecked_load(I first, S last, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    detail::require_unchecked_extent<V>(detail::iterator_distance(first, last));
+    return detail::load_impl<V>(first, last, f);
+}
+
+template<class I,
+         class S,
+         class... Flags,
+         typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
+             (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
+constexpr detail::default_load_vector_t<I>
+unchecked_load(I first, S last, const typename detail::default_load_vector_t<I>::mask_type& mask_value, flags<Flags...> f = {}) {
+    using V = detail::default_load_vector_t<I>;
+    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
+    detail::require_unchecked_extent<V>(detail::iterator_distance(first, last));
+    return detail::load_impl<V>(first, last, mask_value, f);
+}
+
+template<class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr detail::default_range_load_vector_t<R> unchecked_load(R&& r, flags<Flags...> f = {}) {
+    using V = detail::default_range_load_vector_t<R>;
+    detail::require_unchecked_extent<V>(detail::range_size(r));
+    return detail::load_impl<V>(ranges::data(r), detail::range_size(r), f);
+}
+
+template<class R, class... Flags,
+         typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
+constexpr detail::default_range_load_vector_t<R>
+unchecked_load(R&& r, const typename detail::default_range_load_vector_t<R>::mask_type& mask_value, flags<Flags...> f = {}) {
+    using V = detail::default_range_load_vector_t<R>;
+    detail::require_unchecked_extent<V>(detail::range_size(r));
+    return detail::load_impl<V>(ranges::data(r), detail::range_size(r), mask_value, f);
+}
+
 template<class V,
          class I,
          class... Flags,
@@ -567,7 +769,7 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		    return result;
 		}
 
-	template<class V,
+		template<class V,
 	         class I,
 	         class Indices,
 	         class... Flags,
@@ -577,8 +779,8 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 	             int>::type = 0>
 		constexpr V partial_gather_from(I first,
 		                                simd_size_type count,
-		                                const Indices& indices,
 		                                const typename Indices::mask_type& mask_value,
+		                                const Indices& indices,
 		                                flags<Flags...> f = {}) {
 		    detail::require_nonnegative_extent(count);
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
@@ -595,12 +797,12 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		    return result;
 		}
 
-		template<class V, class I, class Indices, class... Flags,
-		         typename enable_if<
-		             detail::is_simd_index_vector<Indices>::value &&
-		                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
-		             int>::type = 0>
-		constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {}) {
+			template<class V, class I, class Indices, class... Flags,
+			         typename enable_if<
+			             detail::is_simd_index_vector<Indices>::value &&
+			                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
+			             int>::type = 0>
+			constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 		    V result;
 		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
@@ -608,29 +810,46 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		        assert(offset >= 0);
 		        detail::set_lane(result, i, detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
 			    }
-			    return result;
-			}
+				    return result;
+				}
 
-        template<class V, class R, class Indices, class... Flags,
-                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
-                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-        constexpr V partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
-            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, f);
+	        template<class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr detail::default_gather_vector_t<R, Indices> partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+	            using V = detail::default_gather_vector_t<R, Indices>;
+	            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, f);
+	        }
+
+	        template<class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr detail::default_gather_vector_t<R, Indices>
+	        partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+	            using V = detail::default_gather_vector_t<R, Indices>;
+	            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), mask_value, indices, f);
+	        }
+
+	        template<class V, class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr V partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+	            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, f);
         }
 
-        template<class V, class R, class Indices, class... Flags,
-                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
-                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-        constexpr V partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
-            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, mask_value, f);
-        }
+	        template<class V, class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr V partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+	            return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), mask_value, indices, f);
+	        }
 
 	template<class V, class I, class Indices, class... Flags,
 	         typename enable_if<
 	             detail::is_simd_index_vector<Indices>::value &&
 	                 (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
 	             int>::type = 0>
-		constexpr V unchecked_gather_from(I first, const Indices& indices, const typename Indices::mask_type& mask_value, flags<Flags...> f = {}) {
+		constexpr V unchecked_gather_from(I first, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 		    V result;
 		    for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
@@ -642,8 +861,25 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		            detail::set_lane(result, i, typename V::value_type{});
 		        }
 		    }
-		    return result;
-		}
+			    return result;
+			}
+
+	        template<class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr detail::default_gather_vector_t<R, Indices> unchecked_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+	            using V = detail::default_gather_vector_t<R, Indices>;
+	            return simd::unchecked_gather_from<V>(ranges::data(r), indices, f);
+	        }
+
+	        template<class R, class Indices, class... Flags,
+	                 typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
+	                     detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+	        constexpr detail::default_gather_vector_t<R, Indices>
+	        unchecked_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+	            using V = detail::default_gather_vector_t<R, Indices>;
+	            return simd::unchecked_gather_from<V>(ranges::data(r), mask_value, indices, f);
+	        }
 
 	template<class T,
 	         class Abi,
@@ -678,8 +914,8 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 		constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
 		                                 I first,
 		                                 simd_size_type count,
-		                                 const Indices& indices,
 		                                 const typename Indices::mask_type& mask_value,
+		                                 const Indices& indices,
 		                                 flags<Flags...> f = {}) {
 		    detail::require_nonnegative_extent(count);
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
@@ -713,8 +949,8 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
 	             int>::type = 0>
 		constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
 		                                    I first,
-		                                    const Indices& indices,
 		                                    const typename Indices::mask_type& mask_value,
+		                                    const Indices& indices,
 		                                    flags<Flags...> f = {}) {
 		    detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 			    for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
@@ -737,7 +973,7 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
                  typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                      detail::is_simd_index_vector<Indices>::value, int>::type = 0>
         constexpr V unchecked_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
-            return simd::unchecked_gather_from<V>(ranges::data(r), indices, mask_value, f);
+            return simd::unchecked_gather_from<V>(ranges::data(r), mask_value, indices, f);
         }
 
         template<class T, class Abi, class R, class Indices, class... Flags,
@@ -755,7 +991,7 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
                                           const typename Indices::mask_type& mask_value,
                                           const Indices& indices,
                                           flags<Flags...> f = {}) {
-            simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), indices, mask_value, f);
+            simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), mask_value, indices, f);
         }
 
         template<class T, class Abi, class R, class Indices, class... Flags,
@@ -773,7 +1009,7 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
                                             const typename Indices::mask_type& mask_value,
                                             const Indices& indices,
                                             flags<Flags...> f = {}) {
-            simd::unchecked_scatter_to(value, ranges::data(r), indices, mask_value, f);
+            simd::unchecked_scatter_to(value, ranges::data(r), mask_value, indices, f);
         }
 
 template<class T,
@@ -813,4 +1049,3 @@ template<class T, class Abi, class R, class... Flags,
 constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
     simd::unchecked_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
 }
-
