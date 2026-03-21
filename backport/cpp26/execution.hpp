@@ -80,3 +80,7 @@
 #include "execution/stopped_as.hpp"
 
 #include "execution/on.hpp"
+#include "execution/into_variant.hpp"
+#include "execution/continues_on.hpp"
+#include "execution/bulk.hpp"
+#include "execution/start_detached.hpp"
