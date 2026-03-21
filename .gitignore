@@ -30,6 +30,7 @@ CTestTestfile.cmake
 
 # Agent files
 AGENTS.md
+.claude/
 
 # OS files
 .DS_Store
