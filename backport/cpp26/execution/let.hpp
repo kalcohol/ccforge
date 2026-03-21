@@ -29,7 +29,11 @@ namespace std::execution {
 
 namespace __forge_let {
 
-template<class S, class Fn, class R>
+struct __value_tag  {};
+struct __error_tag  {};
+struct __stopped_tag{};
+
+template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
@@ -65,13 +69,11 @@ struct __op : __forge_detail::__immovable {
     };
 
     template<class... Vs>
-    void __on_outer_value(Vs&&... vs) noexcept {
+    void __start_inner(Vs&&... vs) noexcept {
         using inner_sender_t = std::decay_t<std::invoke_result_t<Fn, std::decay_t<Vs>...>>;
         using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
-
         static_assert(sizeof(inner_op_t) <= kBufSize,
-            "let_value: inner op too large for buffer");
-
+            "let_value/error/stopped: inner op too large for buffer");
         try {
             auto inner_sndr = std::invoke(std::move(__fn_), static_cast<Vs&&>(vs)...);
             ::new(static_cast<void*>(__inner_buf_))
@@ -93,14 +95,26 @@ struct __op : __forge_detail::__immovable {
 
         template<class... Vs>
         friend void tag_invoke(set_value_t, __outer_recv&& self, Vs&&... vs) noexcept {
-            self.__self->__on_outer_value(static_cast<Vs&&>(vs)...);
+            if constexpr (std::is_same_v<Which, __value_tag>) {
+                self.__self->__start_inner(static_cast<Vs&&>(vs)...);
+            } else {
+                set_value(std::move(self.__self->__outer_recv_), static_cast<Vs&&>(vs)...);
+            }
         }
         template<class E>
         friend void tag_invoke(set_error_t, __outer_recv&& self, E&& e) noexcept {
-            set_error(std::move(self.__self->__outer_recv_), static_cast<E&&>(e));
+            if constexpr (std::is_same_v<Which, __error_tag>) {
+                self.__self->__start_inner(static_cast<E&&>(e));
+            } else {
+                set_error(std::move(self.__self->__outer_recv_), static_cast<E&&>(e));
+            }
         }
         friend void tag_invoke(set_stopped_t, __outer_recv&& self) noexcept {
-            set_stopped(std::move(self.__self->__outer_recv_));
+            if constexpr (std::is_same_v<Which, __stopped_tag>) {
+                self.__self->__start_inner();
+            } else {
+                set_stopped(std::move(self.__self->__outer_recv_));
+            }
         }
         friend auto tag_invoke(get_env_t, const __outer_recv& self) noexcept
             -> env_of_t<R> {
@@ -110,7 +124,7 @@ struct __op : __forge_detail::__immovable {
 
     using __outer_op_t = connect_result_t<S, __outer_recv>;
     static_assert(sizeof(__outer_op_t) <= kBufSize,
-        "let_value: outer op too large for buffer");
+        "let_value/error/stopped: outer op too large for buffer");
 
     __op(S sndr, Fn fn, R r)
         : __outer_recv_(std::move(r))
@@ -137,7 +151,7 @@ struct __op : __forge_detail::__immovable {
     }
 };
 
-template<class S, class Fn>
+template<class S, class Fn, class Which>
 struct __sender {
     using sender_concept = sender_t;
     S __sndr;
@@ -150,9 +164,9 @@ struct __sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, __sender self, R r)
-        -> __op<S, Fn, R>
+        -> __op<S, Fn, R, Which>
     {
-        return __op<S, Fn, R>(
+        return __op<S, Fn, R, Which>(
             std::move(self.__sndr), std::move(self.__fn), std::move(r));
     }
 
@@ -161,41 +175,44 @@ struct __sender {
     }
 };
 
-template<class Fn>
-struct __let_value_closure {
+template<class Fn, class Which>
+struct __let_closure {
     Fn __fn;
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) const & {
-        return __sender<std::decay_t<S>, Fn>{std::forward<S>(s), __fn};
+        return __sender<std::decay_t<S>, Fn, Which>{std::forward<S>(s), __fn};
     }
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) && {
-        return __sender<std::decay_t<S>, Fn>{std::forward<S>(s), std::move(__fn)};
+        return __sender<std::decay_t<S>, Fn, Which>{std::forward<S>(s), std::move(__fn)};
     }
     template<sender S>
-    friend constexpr auto operator|(S&& s, const __let_value_closure& self) {
+    friend constexpr auto operator|(S&& s, const __let_closure& self) {
         return self(std::forward<S>(s));
     }
     template<sender S>
-    friend constexpr auto operator|(S&& s, __let_value_closure&& self) {
+    friend constexpr auto operator|(S&& s, __let_closure&& self) {
         return std::move(self)(std::forward<S>(s));
     }
 };
 
-struct __let_value_t {
+template<class Which>
+struct __let_t {
     template<sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
-        return __sender<std::decay_t<S>, std::decay_t<Fn>>{
+        return __sender<std::decay_t<S>, std::decay_t<Fn>, Which>{
             std::forward<S>(s), std::forward<Fn>(fn)};
     }
     template<class Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return __let_value_closure<std::decay_t<Fn>>{std::forward<Fn>(fn)};
+        return __let_closure<std::decay_t<Fn>, Which>{std::forward<Fn>(fn)};
     }
 };
 
 } // namespace __forge_let
 
-inline constexpr __forge_let::__let_value_t let_value{};
+inline constexpr __forge_let::__let_t<__forge_let::__value_tag>   let_value{};
+inline constexpr __forge_let::__let_t<__forge_let::__error_tag>   let_error{};
+inline constexpr __forge_let::__let_t<__forge_let::__stopped_tag> let_stopped{};
 
 } // namespace std::execution

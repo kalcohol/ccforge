@@ -66,3 +66,65 @@ TEST(LetValueTest, ErrorPassThrough) {
     EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), int);
     EXPECT_FALSE(fn_called);
 }
+
+TEST(LetErrorTest, HandleError) {
+    bool fn_called = false;
+    auto sndr = std::execution::just_error(42)
+              | std::execution::let_error([&](int) {
+                    fn_called = true;
+                    return std::execution::just_stopped();
+                });
+    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    EXPECT_TRUE(fn_called);
+}
+
+TEST(LetErrorTest, ValuePassThrough) {
+    bool fn_called = false;
+    auto sndr = std::execution::just(10)
+              | std::execution::let_error([&](auto) {
+                    fn_called = true;
+                    return std::execution::just(0);
+                });
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(fn_called);
+    EXPECT_EQ(std::get<0>(*result), 10);
+}
+
+TEST(LetStoppedTest, HandleStopped) {
+    bool fn_called = false;
+    auto sndr = std::execution::just_stopped()
+              | std::execution::let_stopped([&] {
+                    fn_called = true;
+                    return std::execution::just_stopped();
+                });
+    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    EXPECT_TRUE(fn_called);
+}
+
+TEST(StartsOnTest, RunsOnScheduler) {
+    std::execution::run_loop loop;
+    auto sch = loop.get_scheduler();
+
+    int result = -1;
+    std::thread worker([&] { loop.run(); });
+
+    auto sndr = std::execution::starts_on(sch,
+        std::execution::just(42) | std::execution::then([&](int x) {
+            result = x;
+        }));
+
+    std::execution::sync_wait(std::move(sndr));
+    loop.finish();
+    worker.join();
+
+    EXPECT_EQ(result, 42);
+}
+
+TEST(StoppedAsOptionalTest, SenderExists) {
+    auto sndr1 = std::execution::stopped_as_optional(std::execution::just_stopped());
+    static_assert(std::execution::sender<decltype(sndr1)>);
+    auto sndr2 = std::execution::stopped_as_error(std::execution::just_stopped(), 42);
+    static_assert(std::execution::sender<decltype(sndr2)>);
+    SUCCEED();
+}

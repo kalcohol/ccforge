@@ -70,3 +70,6 @@
 #include "execution/read_env.hpp"
 #include "execution/upon.hpp"
 #include "execution/let.hpp"
+#include "execution/stopped_as.hpp"
+
+#include "execution/on.hpp"
