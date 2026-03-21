@@ -6,6 +6,10 @@
 
 - **forge/** - 标准库之外的扩展功能（类似 Boost 的实用工具）
 - **backport/** - 为旧编译器提供透明的 C++26 backport
+  - `std::unique_resource` (P0052R15) — `#include <memory>`
+  - `std::simd` (P1928) — `#include <simd>`
+  - `std::execution` P2300 senders/receivers Phase 1 — `#include <execution>`
+  - `std::linalg` (P1673) BLAS Level 1/2/3 — `#include <linalg>` (requires C++23 `<mdspan>`)
 
 ## 快速开始
 
@@ -70,7 +74,10 @@ Forge 的 backport 目标是: 当未来标准库原生提供相同能力后, 下
 
 ## `std::execution` 说明
 
-- 当前提供的是 P2300 senders/receivers 的最小 MVP backport（`just/just_error/just_stopped/then/sync_wait/inline_scheduler` + `inplace_stop_*`），入口为 `#include <execution>`。
+- 当前提供 P2300 senders/receivers Phase 1 backport，入口为 `#include <execution>`。
+- 已实现：`just/just_error/just_stopped`、`then`、`upon_error/upon_stopped`、`let_value/let_error/let_stopped`、`starts_on`、`stopped_as_optional/stopped_as_error`、`read_env`、`run_loop`、`inline_scheduler`、`sync_wait`（基于 `run_loop`）、`inplace_stop_*` / `never_stop_token` / stoppable concepts。
+- CPO 调度内部使用 `tag_invoke`（非最终标准的 member-function-first 机制），为实现细节，不对外暴露。
+- 未实现（Phase 2+）：`when_all`、`split`、`ensure_started`、`bulk`、coroutine/awaitable sender、domain-based 调度。
 - 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`。Forge 的 tests/examples 会在检测到 `tbb` 时自动链接；下游项目若遇到链接错误，请安装 `tbb` 开发包并在链接时加入 `tbb`（例如 CMake 中 `find_library(tbb)` 或 `find_package(TBB)`）。
 
 ## 参考实现

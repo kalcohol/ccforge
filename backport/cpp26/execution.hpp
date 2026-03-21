@@ -25,16 +25,22 @@
 // NOTE: This is a Forge backport of a small P2300 sender/receiver MVP.
 // It is intentionally minimal and correctness-first.
 //
-// KNOWN DEVIATION from the current working draft [exec]:
+// DEVIATION from the current working draft [exec]:
 //   - CPO dispatch uses tag_invoke (P2300 R0-R7 era), not the member-function-
 //     first + tag_of_t/domain dispatch adopted in the final standard.
 //     tag_invoke is purely an internal implementation mechanism here and is NOT
 //     exposed as a user-facing customisation protocol.  When native <execution>
 //     support becomes available, Forge disables this backport transparently.
-//   - sync_wait uses mutex+cv instead of run_loop ([exec.sync.wait]).  The
-//     receiver env lacks get_scheduler / get_delegatee_scheduler queries.
-//   - sender_adaptor_closure CRTP base ([exec.adapt.obj]) is not implemented;
-//     pipe operator| is provided via per-adaptor friend functions.
+//   - sync_wait uses run_loop per [exec.sync.wait]; receiver env provides
+//     get_scheduler -> run_loop::scheduler and get_stop_token -> inplace_stop_token.
+//     Static value_type inference uses empty_env for conservative type computation.
+//   - NOT IMPLEMENTED: when_all, split, ensure_started, bulk (Phase 2+)
+//   - NOT IMPLEMENTED: coroutine/awaitable sender support
+//   - NOT IMPLEMENTED: domain-based dispatch
+//   - NOT IMPLEMENTED: continues_on (scheduler context transfer after completion)
+//   - sender_adaptor_closure<D> CRTP base is available in closures.hpp;
+//     existing adaptors (then, upon_*, let_*, stopped_as_*) provide pipe operator|
+//     via per-adaptor friend functions.
 
 // Language version guard.
 #if __cplusplus < 202002L
