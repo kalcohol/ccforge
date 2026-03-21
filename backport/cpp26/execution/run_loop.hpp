@@ -120,22 +120,21 @@ struct __env {
 };
 
 template<class R>
-struct __op : __forge_detail::__immovable {
+struct __op : run_loop::__task_base, __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     run_loop* __loop;
     R __rcvr;
-    run_loop::__task_base __task{};
 
     __op(run_loop* loop, R rcvr) : __loop(loop), __rcvr(std::move(rcvr)) {
-        __task.__execute = [](run_loop::__task_base* t) noexcept {
+        this->__execute = [](run_loop::__task_base* t) noexcept {
             auto* self = static_cast<__op*>(t);
             set_value(std::move(self->__rcvr));
         };
     }
 
     friend void tag_invoke(start_t, __op& self) noexcept {
-        self.__loop->__push(&self.__task);
+        self.__loop->__push(&self);
     }
 };
 
