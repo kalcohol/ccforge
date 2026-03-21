@@ -84,3 +84,4 @@
 #include "execution/continues_on.hpp"
 #include "execution/bulk.hpp"
 #include "execution/start_detached.hpp"
+#include "execution/split.hpp"
