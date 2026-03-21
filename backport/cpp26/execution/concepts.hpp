@@ -181,6 +181,139 @@ struct error_types_impl<type_list, set_error_t(E), Rest...> {
 template<class... Sigs>
 constexpr bool has_stopped_v = (std::is_same_v<Sigs, set_stopped_t()> || ...);
 
+template<class... CSList>
+struct __concat_cs;
+
+template<>
+struct __concat_cs<> {
+    using type = completion_signatures<>;
+};
+
+template<class... Sigs>
+struct __concat_cs<completion_signatures<Sigs...>> {
+    using type = completion_signatures<Sigs...>;
+};
+
+template<class... Sigs1, class... Sigs2, class... Rest>
+struct __concat_cs<completion_signatures<Sigs1...>, completion_signatures<Sigs2...>, Rest...>
+    : __concat_cs<completion_signatures<Sigs1..., Sigs2...>, Rest...> {};
+
+template<class... CSList>
+using __concat_cs_t = typename __concat_cs<CSList...>::type;
+
+template<class Sig,
+         class ValueCompletions,
+         class ErrorCompletions,
+         class StoppedCompletions>
+struct __sig_map {
+    using type = completion_signatures<>;
+};
+
+template<class... Vs,
+         class ValueCompletions,
+         class ErrorCompletions,
+         class StoppedCompletions>
+struct __sig_map<set_value_t(Vs...), ValueCompletions, ErrorCompletions, StoppedCompletions> {
+    using type = ValueCompletions;
+};
+
+template<class E,
+         class ValueCompletions,
+         class ErrorCompletions,
+         class StoppedCompletions>
+struct __sig_map<set_error_t(E), ValueCompletions, ErrorCompletions, StoppedCompletions> {
+    using type = ErrorCompletions;
+};
+
+template<class ValueCompletions,
+         class ErrorCompletions,
+         class StoppedCompletions>
+struct __sig_map<set_stopped_t(), ValueCompletions, ErrorCompletions, StoppedCompletions> {
+    using type = StoppedCompletions;
+};
+
+template<class CS,
+         class ValueCompletions   = completion_signatures<>,
+         class ErrorCompletions   = completion_signatures<set_error_t(std::exception_ptr)>,
+         class StoppedCompletions = completion_signatures<set_stopped_t()>>
+struct transform_completion_signatures;
+
+template<class... Sigs,
+         class ValueCompletions,
+         class ErrorCompletions,
+         class StoppedCompletions>
+struct transform_completion_signatures<
+    completion_signatures<Sigs...>,
+    ValueCompletions,
+    ErrorCompletions,
+    StoppedCompletions>
+{
+    using type = __concat_cs_t<
+        typename __sig_map<Sigs, ValueCompletions, ErrorCompletions, StoppedCompletions>::type...>;
+};
+
+template<class CS,
+         class ValueCompletions   = completion_signatures<>,
+         class ErrorCompletions   = completion_signatures<set_error_t(std::exception_ptr)>,
+         class StoppedCompletions = completion_signatures<set_stopped_t()>>
+using transform_completion_signatures_t =
+    typename transform_completion_signatures<CS, ValueCompletions, ErrorCompletions, StoppedCompletions>::type;
+
+template<class CS>
+struct __single_value_tuple { using type = std::tuple<>; };
+
+template<class... Vs, class... Rest>
+struct __single_value_tuple<completion_signatures<set_value_t(Vs...), Rest...>> {
+    using type = std::tuple<std::decay_t<Vs>...>;
+};
+
+template<class Other, class... Rest>
+struct __single_value_tuple<completion_signatures<Other, Rest...>>
+    : __single_value_tuple<completion_signatures<Rest...>> {};
+
+template<class CS>
+using __single_value_tuple_t = typename __single_value_tuple<CS>::type;
+
+template<class... Tuples>
+struct __tuple_cat_type;
+
+template<>
+struct __tuple_cat_type<> { using type = std::tuple<>; };
+
+template<class... Ts>
+struct __tuple_cat_type<std::tuple<Ts...>> { using type = std::tuple<Ts...>; };
+
+template<class... Ts, class... Us, class... Rest>
+struct __tuple_cat_type<std::tuple<Ts...>, std::tuple<Us...>, Rest...>
+    : __tuple_cat_type<std::tuple<Ts..., Us...>, Rest...> {};
+
+template<class... Tuples>
+using __tuple_cat_t = typename __tuple_cat_type<Tuples...>::type;
+
+// ── __cartesian_product_value_sigs: join value types of N senders ─────────
+// __cartesian_product_value_sigs<CS1, CS2, ...>
+//   -> completion_signatures<set_value_t(all-value-types...)>
+
+template<class... CSList>
+struct __cartesian_product_value_sigs {
+private:
+    using combined_tuple = __tuple_cat_t<__single_value_tuple_t<CSList>...>;
+
+    template<class T>
+    struct __to_cs;
+
+    template<class... Vs>
+    struct __to_cs<std::tuple<Vs...>> {
+        using type = completion_signatures<set_value_t(Vs...)>;
+    };
+
+public:
+    using type = typename __to_cs<combined_tuple>::type;
+};
+
+template<class... CSList>
+using __cartesian_product_value_sigs_t = typename __cartesian_product_value_sigs<CSList...>::type;
+
 template<class CompletionSignatures, template<class...> class Tuple, template<class...> class Variant>
 struct value_types_from;
 
