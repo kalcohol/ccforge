@@ -1,5 +1,8 @@
 #include "simd_test_common.hpp"
 
+#include <complex>
+#include <span>
+
 namespace {
 
 using namespace simd_test;
@@ -56,59 +59,57 @@ static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const 
     "partial_store(pointer, sentinel, mask) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const int4&>(), std::declval<int_iter>(), std::declval<int_iter>(), mask4{})), void>::value,
     "partial_store(iterator, sentinel, mask) should be a public entry point");
-static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{})), int4>::value,
-    "partial_gather_from(pointer, count, indices) should be a public entry point");
-static_assert(requires {
-    std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{});
-}, "partial_gather_from(pointer, count, mask, indices) should be the public masked entry point");
-static_assert(has_partial_gather_range<int4, std::span<const int, 8>, int4>::value,
-    "partial_gather_from(range, indices) should be a public entry point");
-static_assert(std::is_same<decltype(std::simd::partial_gather_from(std::declval<std::span<const int, 8>>(), int4{})), int4>::value,
-    "partial_gather_from(range, indices) should provide the standard default vector type");
-static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), int4{})), int4>::value,
-    "unchecked_gather_from(pointer, indices) should be a public entry point");
-static_assert(requires {
-    std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), mask4{}, int4{});
-}, "unchecked_gather_from(pointer, mask, indices) should be the public masked entry point");
-static_assert(std::is_same<decltype(std::simd::unchecked_gather_from(std::declval<std::span<const int, 8>>(), int4{})), int4>::value,
-    "unchecked_gather_from(range, indices) should provide the standard default vector type");
-static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{}, int4{})), void>::value,
-    "partial_scatter_to(value, pointer, count, indices) should be a public entry point");
-static_assert(requires {
-    std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{});
-}, "partial_scatter_to(value, pointer, count, mask, indices) should be the public masked entry point");
-static_assert(has_partial_scatter_range<int4, std::span<int, 8>, int4>::value,
-    "partial_scatter_to(value, range, indices) should be a public entry point");
-static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), int4{})), void>::value,
-    "unchecked_scatter_to(value, pointer, indices) should be a public entry point");
-static_assert(requires {
-    std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), mask4{}, int4{});
-}, "unchecked_scatter_to(value, pointer, mask, indices) should be the public masked entry point");
-static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const float*>(nullptr), std::simd::simd_size_type{}, int4{}, std::simd::flag_convert)), int4>::value,
-    "partial_gather_from(flag_convert) should accept type-changing loads");
-static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const float*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{}, std::simd::flag_convert)), int4>::value,
-    "partial_gather_from(flag_convert) should accept type-changing loads with masks");
-static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const float*>(nullptr), int4{}, std::simd::flag_convert)), int4>::value,
-    "unchecked_gather_from(flag_convert) should accept type-changing loads");
-static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const float*>(nullptr), mask4{}, int4{}, std::simd::flag_convert)), int4>::value,
-    "unchecked_gather_from(flag_convert) should accept type-changing loads with masks");
-static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), std::simd::simd_size_type{}, int4{}, std::simd::flag_convert)), void>::value,
-    "partial_scatter_to(flag_convert) should accept type-changing stores");
-static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{}, std::simd::flag_convert)), void>::value,
-    "partial_scatter_to(flag_convert) should accept type-changing stores with masks");
-static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), int4{}, std::simd::flag_convert)), void>::value,
-    "unchecked_scatter_to(flag_convert) should accept type-changing stores");
-static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), mask4{}, int4{}, std::simd::flag_convert)), void>::value,
-    "unchecked_scatter_to(flag_convert) should accept type-changing stores with masks");
-static_assert(std::is_same<
-    decltype(std::simd::partial_gather_from<longlong4>(
-        static_cast<const long long*>(nullptr),
-        std::simd::simd_size_type{},
-        mask4{},
-        int4{},
-        std::simd::flag_default)),
-    longlong4>::value,
-    "masked gather overloads should use Indices::mask_type");
+
+static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr), std::simd::simd_size_type{})), default_complexf>,
+    "partial_load(pointer, count) should infer supported complex value types");
+static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr),
+                                                              std::simd::simd_size_type{},
+                                                              typename default_complexf::mask_type{})),
+                             default_complexf>,
+    "masked partial_load(pointer, count) should infer supported complex value types");
+static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr),
+                                                              static_cast<const std::complex<float>*>(nullptr))),
+                             default_complexf>,
+    "partial_load(pointer, sentinel) should keep the same default complex type");
+static_assert(std::is_same_v<decltype(std::simd::partial_load(std::declval<std::span<const std::complex<float>>>())), default_complexf>,
+    "partial_load(range) should keep the same default complex type");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr))), default_complexf>,
+    "unchecked_load(pointer) should infer supported complex value types");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr), std::simd::simd_size_type{})), default_complexf>,
+    "unchecked_load(pointer, count) should infer supported complex value types");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr),
+                                                                typename default_complexf::mask_type{})),
+                             default_complexf>,
+    "masked unchecked_load(pointer) should infer supported complex value types");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr),
+                                                                static_cast<const std::complex<float>*>(nullptr),
+                                                                std::simd::flag_default)),
+                             default_complexf>,
+    "unchecked_load(pointer, sentinel) should keep the same default complex type");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std::span<const std::complex<float>>>(),
+                                                                std::simd::flag_default)),
+                             default_complexf>,
+    "unchecked_load(range) should keep the same default complex type");
+
+#if defined(__SIZEOF_INT128__)
+static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const int128*>(nullptr), std::simd::simd_size_type{})), default_int128>,
+    "partial_load(pointer, count) should infer supported extended integer types");
+static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const int128*>(nullptr), static_cast<const int128*>(nullptr))), default_int128>,
+    "partial_load(pointer, sentinel) should keep the same default extended integer type");
+static_assert(std::is_same_v<decltype(std::simd::partial_load(std::declval<std::span<const int128>>())), default_int128>,
+    "partial_load(range) should keep the same default extended integer type");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr))), default_int128>,
+    "unchecked_load(pointer) should infer supported extended integer types");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr), std::simd::simd_size_type{})), default_int128>,
+    "unchecked_load(pointer, count) should infer supported extended integer types");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const int128*>(nullptr),
+                                                                static_cast<const int128*>(nullptr),
+                                                                std::simd::flag_default)),
+                             default_int128>,
+    "unchecked_load(pointer, sentinel) should keep the same default extended integer type");
+static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std::span<const int128>>(), std::simd::flag_default)), default_int128>,
+    "unchecked_load(range) should keep the same default extended integer type");
+#endif
 
 #if defined(FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)
 

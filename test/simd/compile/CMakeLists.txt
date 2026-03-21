@@ -1,0 +1,26 @@
+forge_add_simd_compile_probe(test_simd_api_core test_simd_api_core.cpp)
+forge_add_simd_compile_probe(test_simd_api_iterator test_simd_api_iterator.cpp)
+forge_add_simd_compile_probe(test_simd_api_mask test_simd_api_mask.cpp)
+forge_add_simd_compile_probe(test_simd_api_constructors test_simd_api_constructors.cpp)
+forge_add_simd_compile_probe(test_simd_api_memory_load_store test_simd_api_memory_load_store.cpp)
+target_compile_definitions(test_simd_api_memory_load_store PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)
+forge_add_simd_compile_probe(test_simd_api_memory_gather_scatter test_simd_api_memory_gather_scatter.cpp)
+forge_add_simd_compile_probe(test_simd_api_where test_simd_api_where.cpp)
+forge_add_simd_compile_probe(test_simd_api_permute test_simd_api_permute.cpp)
+target_compile_definitions(test_simd_api_permute PRIVATE FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
+forge_add_simd_compile_probe(test_simd_api_reductions test_simd_api_reductions.cpp)
+forge_add_simd_compile_probe(test_simd_api_math test_simd_api_math.cpp)
+forge_add_simd_compile_probe(test_simd_api_math_special test_simd_api_math_special.cpp)
+forge_add_simd_compile_probe(test_simd_api_complex test_simd_api_complex.cpp)
+forge_add_simd_compile_probe(test_simd_include test_simd_include.cpp simd_include_compile)
+forge_add_simd_compile_probe(test_simd_feature_macro test_simd_feature_macro.cpp simd_feature_macro_compile)
+forge_add_simd_compile_probe(test_simd_flag_convert_probe test_simd_flag_convert_probe.cpp simd_flag_convert_probe)
+
+add_executable(test_simd_native_handoff EXCLUDE_FROM_ALL "${FORGE_SIMD_COMPILE_DIR}/test_simd_native_handoff.cpp")
+target_include_directories(test_simd_native_handoff BEFORE PRIVATE
+    "${CMAKE_SOURCE_DIR}/backport"
+    "${FORGE_SIMD_NATIVE_HANDOFF_INCLUDE_DIR}"
+    "${FORGE_SIMD_SUPPORT_DIR}")
+add_test(
+    NAME simd_native_handoff_compile
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_native_handoff)

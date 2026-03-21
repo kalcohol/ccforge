@@ -1,0 +1,65 @@
+#include "simd_test_common.hpp"
+
+namespace {
+
+using namespace simd_test;
+
+static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{})), int4>::value,
+    "partial_gather_from(pointer, count, indices) should be a public entry point");
+static_assert(requires {
+    std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{});
+}, "partial_gather_from(pointer, count, mask, indices) should be the public masked entry point");
+static_assert(has_partial_gather_range<int4, std::span<const int, 8>, int4>::value,
+    "partial_gather_from(range, indices) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::partial_gather_from(std::declval<std::span<const int, 8>>(), int4{})), int4>::value,
+    "partial_gather_from(range, indices) should provide the standard default vector type");
+static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), int4{})), int4>::value,
+    "unchecked_gather_from(pointer, indices) should be a public entry point");
+static_assert(requires {
+    std::simd::unchecked_gather_from<int4>(static_cast<const int*>(nullptr), mask4{}, int4{});
+}, "unchecked_gather_from(pointer, mask, indices) should be the public masked entry point");
+static_assert(std::is_same<decltype(std::simd::unchecked_gather_from(std::declval<std::span<const int, 8>>(), int4{})), int4>::value,
+    "unchecked_gather_from(range, indices) should provide the standard default vector type");
+static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{}, int4{})), void>::value,
+    "partial_scatter_to(value, pointer, count, indices) should be a public entry point");
+static_assert(requires {
+    std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{});
+}, "partial_scatter_to(value, pointer, count, mask, indices) should be the public masked entry point");
+static_assert(has_partial_scatter_range<int4, std::span<int, 8>, int4>::value,
+    "partial_scatter_to(value, range, indices) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), int4{})), void>::value,
+    "unchecked_scatter_to(value, pointer, indices) should be a public entry point");
+static_assert(requires {
+    std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<int*>(nullptr), mask4{}, int4{});
+}, "unchecked_scatter_to(value, pointer, mask, indices) should be the public masked entry point");
+static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const float*>(nullptr), std::simd::simd_size_type{}, int4{}, std::simd::flag_convert)), int4>::value,
+    "partial_gather_from(flag_convert) should accept type-changing loads");
+static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const float*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{}, std::simd::flag_convert)), int4>::value,
+    "partial_gather_from(flag_convert) should accept type-changing loads with masks");
+static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const float*>(nullptr), int4{}, std::simd::flag_convert)), int4>::value,
+    "unchecked_gather_from(flag_convert) should accept type-changing loads");
+static_assert(std::is_same<decltype(std::simd::unchecked_gather_from<int4>(static_cast<const float*>(nullptr), mask4{}, int4{}, std::simd::flag_convert)), int4>::value,
+    "unchecked_gather_from(flag_convert) should accept type-changing loads with masks");
+static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), std::simd::simd_size_type{}, int4{}, std::simd::flag_convert)), void>::value,
+    "partial_scatter_to(flag_convert) should accept type-changing stores");
+static_assert(std::is_same<decltype(std::simd::partial_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), std::simd::simd_size_type{}, mask4{}, int4{}, std::simd::flag_convert)), void>::value,
+    "partial_scatter_to(flag_convert) should accept type-changing stores with masks");
+static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), int4{}, std::simd::flag_convert)), void>::value,
+    "unchecked_scatter_to(flag_convert) should accept type-changing stores");
+static_assert(std::is_same<decltype(std::simd::unchecked_scatter_to(std::declval<const int4&>(), static_cast<float*>(nullptr), mask4{}, int4{}, std::simd::flag_convert)), void>::value,
+    "unchecked_scatter_to(flag_convert) should accept type-changing stores with masks");
+static_assert(std::is_same<
+    decltype(std::simd::partial_gather_from<longlong4>(
+        static_cast<const long long*>(nullptr),
+        std::simd::simd_size_type{},
+        mask4{},
+        int4{},
+        std::simd::flag_default)),
+    longlong4>::value,
+    "masked gather overloads should use Indices::mask_type");
+
+} // namespace
+
+int main() {
+    return 0;
+}
