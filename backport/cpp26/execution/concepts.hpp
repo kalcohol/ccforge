@@ -66,11 +66,16 @@ struct completion_signatures {};
 
 struct get_completion_signatures_t {
     template<class S, class Env>
-        requires __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>
+        requires (requires(S&& s, Env&& env) { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)); } ||
+                  __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>)
     auto operator()(S&& s, Env&& env) const
-        noexcept(__forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>)
-            -> __forge_detail::tag_invoke_result_t<get_completion_signatures_t, S, Env> {
-        return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<Env&&>(env));
+        noexcept(requires(S&& s, Env&& env) { { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)) } noexcept; } ||
+                 __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>) {
+        if constexpr (requires { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)); }) {
+            return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
+        } else {
+            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<Env&&>(env));
+        }
     }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};
@@ -234,10 +239,16 @@ struct scheduler_t {};
 
 struct start_t {
     template<class O>
-        requires __forge_detail::tag_invocable<start_t, O&>
+        requires (requires(O& op) { op.start(); } ||
+                  __forge_detail::tag_invocable<start_t, O&>)
     void operator()(O& op) const noexcept {
-        static_assert(__forge_detail::nothrow_tag_invocable<start_t, O&>, "start() must be noexcept");
-        __forge_detail::tag_invoke_fn(*this, op);
+        if constexpr (requires { op.start(); }) {
+            static_assert(noexcept(op.start()), "start() must be noexcept");
+            op.start();
+        } else {
+            static_assert(__forge_detail::nothrow_tag_invocable<start_t, O&>, "start() must be noexcept");
+            __forge_detail::tag_invoke_fn(*this, op);
+        }
     }
 };
 inline constexpr start_t start{};
@@ -315,17 +326,22 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
 
 struct connect_t {
     template<class S, class R>
-        requires __forge_detail::tag_invocable<connect_t, S, R>
+        requires (requires(S&& s, R&& r) { static_cast<S&&>(s).connect(static_cast<R&&>(r)); } ||
+                  __forge_detail::tag_invocable<connect_t, S, R>)
     auto operator()(S&& s, R&& r) const
-        noexcept(__forge_detail::nothrow_tag_invocable<connect_t, S, R>)
-            -> __forge_detail::tag_invoke_result_t<connect_t, S, R> {
-        return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<R&&>(r));
+        noexcept(requires(S&& s, R&& r) { { static_cast<S&&>(s).connect(static_cast<R&&>(r)) } noexcept; } ||
+                 __forge_detail::nothrow_tag_invocable<connect_t, S, R>) {
+        if constexpr (requires { static_cast<S&&>(s).connect(static_cast<R&&>(r)); }) {
+            return static_cast<S&&>(s).connect(static_cast<R&&>(r));
+        } else {
+            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<R&&>(r));
+        }
     }
 };
 inline constexpr connect_t connect{};
 
 template<class S, class R>
-using connect_result_t = __forge_detail::tag_invoke_result_t<connect_t, S, R>;
+using connect_result_t = decltype(connect_t{}(std::declval<S>(), std::declval<R>()));
 
 template<class S, class R>
 concept sender_to =
