@@ -24,6 +24,7 @@
 
 #include "concepts.hpp"
 #include "env.hpp"
+#include "run_loop.hpp"
 
 namespace std::execution {
 
@@ -33,13 +34,8 @@ struct stopped_t {};
 
 template<class... Vs>
 struct shared_state {
-    std::mutex mtx_;
-    std::condition_variable cv_;
-    bool done_ = false;
-
     using value_t = std::tuple<Vs...>;
     std::variant<std::monostate, value_t, std::exception_ptr, stopped_t> result_;
-
     std::inplace_stop_source stop_source_;
 };
 
@@ -94,57 +90,39 @@ template<class State>
 struct receiver {
     using receiver_concept = receiver_t;
     State* state_;
+    run_loop* loop_;
 
     template<class... Vs>
     friend void tag_invoke(set_value_t, receiver&& self, Vs&&... vs) noexcept {
-        {
-            std::lock_guard lk{self.state_->mtx_};
-            self.state_->result_.template emplace<1>(std::forward<Vs>(vs)...);
-            self.state_->done_ = true;
-        }
-        self.state_->cv_.notify_one();
+        self.state_->result_.template emplace<1>(std::forward<Vs>(vs)...);
+        self.loop_->finish();
     }
 
     template<class E>
     friend void tag_invoke(set_error_t, receiver&& self, E&& e) noexcept {
-        {
-            std::lock_guard lk{self.state_->mtx_};
-            if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
-                self.state_->result_.template emplace<2>(std::forward<E>(e));
-            } else {
-                self.state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
-            }
-            self.state_->done_ = true;
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            self.state_->result_.template emplace<2>(std::forward<E>(e));
+        } else {
+            self.state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
         }
-        self.state_->cv_.notify_one();
+        self.loop_->finish();
     }
 
     friend void tag_invoke(set_stopped_t, receiver&& self) noexcept {
-        {
-            std::lock_guard lk{self.state_->mtx_};
-            self.state_->result_.template emplace<3>();
-            self.state_->done_ = true;
-        }
-        self.state_->cv_.notify_one();
+        self.state_->result_.template emplace<3>();
+        self.loop_->finish();
     }
 
-    // NOTE([exec.sync.wait]): the standard requires run_loop's scheduler in
-    // this env via get_scheduler / get_delegatee_scheduler.  Until run_loop
-    // is implemented, only get_stop_token is provided.
     friend auto tag_invoke(get_env_t, const receiver& self) noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(get_stop_token_t{}, self.state_->stop_source_.get_token()));
+            std::execution::make_prop(get_stop_token_t{}, self.state_->stop_source_.get_token()),
+            std::execution::make_prop(get_scheduler_t{}, self.loop_->get_scheduler()));
     }
 };
 
 } // namespace __forge_sync_wait
 
 } // namespace std::execution
-
-// ── sync_wait — [exec.sync.wait] ────────────────────────────────────────
-// The standard places sync_wait in std::this_thread.  We also provide a
-// using-declaration in std::execution so that both calling conventions
-// work during the backport era, ensuring seamless transition.
 
 namespace std::this_thread {
 
@@ -155,12 +133,11 @@ auto sync_wait(S&& sndr) {
     using state_t = typename std::execution::__forge_sync_wait::state_from_tuple<value_tuple_t>::type;
     using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
 
+    std::execution::run_loop loop;
     state_t state;
-    auto op = std::execution::connect(std::forward<S>(sndr), recv_t{&state});
+    auto op = std::execution::connect(std::forward<S>(sndr), recv_t{&state, &loop});
     std::execution::start(op);
-
-    std::unique_lock lk{state.mtx_};
-    state.cv_.wait(lk, [&] { return state.done_; });
+    loop.run();
 
     if (state.result_.index() == 2) {
         std::rethrow_exception(std::get<2>(state.result_));
@@ -175,7 +152,6 @@ auto sync_wait(S&& sndr) {
 
 namespace std::execution {
 
-// Re-export sync_wait for backward compatibility during backport era.
 using std::this_thread::sync_wait;
 
 } // namespace std::execution
