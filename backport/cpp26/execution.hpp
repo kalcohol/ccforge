@@ -185,6 +185,11 @@ public:
 
     bool operator==(const inplace_stop_token&) const noexcept = default;
 
+    // [stoptoken.inplace.general] — callback_type alias required by
+    // stop_callback_for_t<inplace_stop_token, CB>.
+    template<class CallbackFn>
+    using callback_type = inplace_stop_callback<CallbackFn>;
+
 private:
     friend class inplace_stop_source;
     template<class Cb>
