@@ -102,6 +102,22 @@ if(NOT TARGET forge)
         message(STATUS "Forge: std::submdspan backport enabled")
     endif()
 
+
+    # Check for std::linalg (C++26) — new header, use __cpp_lib_linalg
+    check_cxx_source_compiles("
+        #include <linalg>
+        int main() {
+            double data[4] = {1,2,3,4};
+            std::mdspan<double, std::extents<int,4>> v(data);
+            return static_cast<int>(std::linalg::vector_two_norm(v));
+        }
+    " HAS_STD_LINALG)
+
+    if(NOT HAS_STD_LINALG)
+        set(FORGE_NEEDS_BACKPORT TRUE)
+        message(STATUS "Forge: std::linalg backport enabled")
+    endif()
+
     # Add backport path if any feature needs it
     if(FORGE_NEEDS_BACKPORT)
         if(MSVC)
