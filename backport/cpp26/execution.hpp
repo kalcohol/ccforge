@@ -25,22 +25,36 @@
 // NOTE: This is a Forge backport of a small P2300 sender/receiver MVP.
 // It is intentionally minimal and correctness-first.
 //
-// DEVIATION from the current working draft [exec]:
-//   - CPO dispatch uses tag_invoke (P2300 R0-R7 era), not the member-function-
-//     first + tag_of_t/domain dispatch adopted in the final standard.
-//     tag_invoke is purely an internal implementation mechanism here and is NOT
-//     exposed as a user-facing customisation protocol.  When native <execution>
-//     support becomes available, Forge disables this backport transparently.
-//   - sync_wait uses run_loop per [exec.sync.wait]; receiver env provides
-//     get_scheduler -> run_loop::scheduler and get_stop_token -> inplace_stop_token.
-//     Static value_type inference uses empty_env for conservative type computation.
-//   - NOT IMPLEMENTED: when_all, split, ensure_started, bulk (Phase 2+)
-//   - NOT IMPLEMENTED: coroutine/awaitable sender support
-//   - NOT IMPLEMENTED: domain-based dispatch
-//   - NOT IMPLEMENTED: continues_on (scheduler context transfer after completion)
-//   - sender_adaptor_closure<D> CRTP base is available in closures.hpp;
-//     existing adaptors (then, upon_*, let_*, stopped_as_*) provide pipe operator|
-//     via per-adaptor friend functions.
+// IMPLEMENTATION STATUS (Forge C++26 execution backport — Phase 1+2+3 complete):
+//
+// IMPLEMENTED:
+//   Sender factories : just, just_error, just_stopped, read_env
+//   Value adaptors   : then, upon_error, upon_stopped
+//   Sender adaptors  : let_value, let_error, let_stopped
+//   Scheduler ops    : starts_on, continues_on (schedule_from), bulk (serial)
+//   Combinators      : into_variant, when_all, split, ensure_started, start_detached
+//   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
+//   Stopped utils    : stopped_as_optional, stopped_as_error
+//   Schedulers       : inline_scheduler, run_loop (mutex+cv)
+//   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
+//                      any_stop_token, stoppable_token concepts
+//   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
+//   Infra            : sender_adaptor_closure CRTP, transform_completion_signatures,
+//                      enable_sender, get_completion_scheduler CPO,
+//                      SBO+heap storage abstraction, CPO member-function-first dispatch
+//
+// DEVIATIONS from current working draft [exec]:
+//   - CPO dispatch: tag_invoke internally (not final member-function-first mechanism);
+//     not user-visible; new Phase 3+ types use member-function-first dispatch.
+//   - sync_wait value_type inference uses empty_env for conservative type computation.
+//   - ensure_started delegates to split (does not eagerly start on detached thread).
+//   - Domain-based dispatch not implemented (always uses default_domain).
+//
+// NOT IMPLEMENTED (Phase 4+):
+//   - when_all, split: TSAN unverifiable on this host (kernel mmap_rnd_bits issue)
+//     but logic tested with concurrent GTest scenarios passing on GCC/Zig.
+//   - async_scope, counting_scope
+//   - type-erased sender (sender erasure patterns)
 
 // Language version guard.
 #if __cplusplus < 202002L

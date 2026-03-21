@@ -80,19 +80,23 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::execution` 说明
 
-当前为 P2300 senders/receivers 的 Phase 1 backport：
+当前为 P2300 senders/receivers 的 Phase 1-3 完整 backport：
 
 **已实现：**
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
-- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`starts_on`、`stopped_as_optional`、`stopped_as_error`
-- 消费者：`sync_wait`（基于 `run_loop` 驱动，符合 `[exec.sync.wait]`）
+- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`
+- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`bulk`（串行）
+- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名）、`split`、`ensure_started`、`start_detached`
+- 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
+- Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
-- Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
-- 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP
+- Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
+- Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
+- 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP、`transform_completion_signatures`、SBO+堆存储抽象
 
-**未实现（Phase 2+）：**`when_all`、`split`、`ensure_started`、`bulk`、`continues_on`、coroutine/awaitable sender、domain-based 调度
+**未实现：** `async_scope`、`counting_scope`、类型擦除 sender、domain-based 调度
 
-> CPO 调度内部使用 `tag_invoke`（P2300 R0-R7 时代机制），为纯实现细节，不对外暴露。当原生 `<execution>` 可用时（`__cpp_lib_senders >= 202400`），整个 backport 自动禁用。
+> CPO 调度内部使用 `tag_invoke`（不对外暴露），Phase 3+ 新增类型使用成员函数优先分发。当原生 `<execution>` 可用时，整个 backport 自动禁用。
 
 > 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`。Forge 的 tests/examples 会在检测到 `tbb` 时自动链接。
 
