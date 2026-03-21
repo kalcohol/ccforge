@@ -16,7 +16,10 @@ check_cxx_source_compiles("
 " FORGE_LINALG_HAS_MDSPAN_HEADER)
 
 if(FORGE_LINALG_HAS_MDSPAN_HEADER)
-    forge_add_linalg_runtime_test(test_linalg_core test_linalg_core.cpp linalg_core)
+    forge_add_linalg_runtime_test(test_linalg_auxiliary test_linalg_auxiliary.cpp linalg_auxiliary)
+    forge_add_linalg_runtime_test(test_linalg_level1 test_linalg_level1.cpp linalg_level1)
+    forge_add_linalg_runtime_test(test_linalg_level2 test_linalg_level2.cpp linalg_level2)
+    forge_add_linalg_runtime_test(test_linalg_level3 test_linalg_level3.cpp linalg_level3)
 else()
     message(STATUS "Forge: linalg tests skipped (toolchain has no <mdspan>)")
 endif()

@@ -12,6 +12,22 @@ function(forge_add_execution_runtime_test target_name source_name test_name)
     target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
 endfunction()
 
+function(forge_add_execution_compile_probe target_name source_name test_name)
+    forge_add_compile_probe(
+        ${target_name}
+        "${FORGE_EXECUTION_TEST_ROOT}/compile/${source_name}"
+        ${test_name})
+    target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+endfunction()
+
+forge_add_execution_compile_probe(
+    test_execution_api_core
+    test_execution_api_core.cpp
+    execution_api_core_compile)
+
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
     test_execution_inline_scheduler
