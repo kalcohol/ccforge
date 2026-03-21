@@ -15,6 +15,12 @@ constexpr bool constexpr_generator_and_iota() {
     return generated[0] == 1 && generated[3] == 7 && sequence[0] == 3 && sequence[3] == 6;
 }
 
+constexpr bool constexpr_mask_to_bitset() {
+    constexpr mask4 values(0b0101u);
+    constexpr auto bits = values.to_bitset();
+    return bits[0] && !bits[1] && bits[2] && !bits[3];
+}
+
 template<class V, class Shift, class = void>
 struct has_vector_lshift_assign : std::false_type {};
 
@@ -74,6 +80,8 @@ static_assert(constexpr_broadcast_reduce(),
     "basic_vec broadcast construction and reduce should be constexpr-capable");
 static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
+static_assert(constexpr_mask_to_bitset(),
+    "basic_mask::to_bitset should remain constexpr-capable");
 static_assert(std::is_same<decltype(std::declval<int4&>().begin()), typename int4::iterator>::value,
     "begin() should return iterator");
 static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::simd_size_type{}]), int>::value,
