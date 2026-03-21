@@ -24,6 +24,19 @@
 
 // NOTE: This is a Forge backport of a small P2300 sender/receiver MVP.
 // It is intentionally minimal and correctness-first.
+//
+// KNOWN DEVIATION from the current working draft [exec]:
+//   - CPO dispatch uses tag_invoke (P2300 R0-R7 era), not the member-function-
+//     first + tag_of_t/domain dispatch adopted in the final standard.
+//     tag_invoke is purely an internal implementation mechanism here and is NOT
+//     exposed as a user-facing customisation protocol.  When native <execution>
+//     support becomes available, Forge disables this backport transparently.
+//   - sync_wait uses mutex+cv instead of run_loop ([exec.sync.wait]).  The
+//     receiver env lacks get_scheduler / get_delegatee_scheduler queries.
+//   - sender_adaptor_closure CRTP base ([exec.adapt.obj]) is not implemented;
+//     pipe operator| is provided via per-adaptor friend functions.
+//   - stoppable_token / stoppable_token_for / unstoppable_token concepts are
+//     not yet defined ([stoptoken.concepts]).
 
 // Language version guard.
 #if __cplusplus < 202002L
@@ -736,6 +749,7 @@ struct sender {
         return operation<R, Vs...>(std::move(rcvr), std::move(self.values_));
     }
 
+    // TODO([exec.just]): expose completion scheduler in env via just-env type
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
 };
 
@@ -778,6 +792,7 @@ struct sender {
         return operation<R, E>(std::move(rcvr), std::move(self.error_));
     }
 
+    // TODO([exec.just]): expose completion scheduler in env via just-env type
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
 };
 
@@ -813,6 +828,7 @@ struct sender {
         return operation<R>(std::move(rcvr));
     }
 
+    // TODO([exec.just]): expose completion scheduler in env via just-env type
     friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
 };
 
@@ -992,6 +1008,8 @@ struct then_sender {
     }
 };
 
+// TODO([exec.adapt.obj]): replace per-adaptor friend operator| with
+//   sender_adaptor_closure<then_closure<Fn>> CRTP base when adding more adaptors.
 template<class Fn>
 struct then_closure {
     [[no_unique_address]] Fn fn_;
@@ -1140,6 +1158,9 @@ struct receiver {
         self.state_->cv_.notify_one();
     }
 
+    // NOTE([exec.sync.wait]): the standard requires run_loop's scheduler in
+    // this env via get_scheduler / get_delegatee_scheduler.  Until run_loop
+    // is implemented, only get_stop_token is provided.
     friend auto tag_invoke(get_env_t, const receiver& self) noexcept {
         return std::execution::make_env(
             std::execution::make_prop(get_stop_token_t{}, self.state_->stop_source_.get_token()));
