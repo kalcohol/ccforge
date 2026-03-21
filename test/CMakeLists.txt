@@ -136,6 +136,26 @@ forge_expect_cxx_source_compiles(
     "${_FORGE_SIMD_CONFIGURE_PROBE_DIR}/compress_expand_overloads.cpp"
     TRUE
     "Forge simd backport must provide the repaired compress/expand/select overload set")
+forge_expect_cxx_source_compiles(
+    FORGE_SIMD_HAS_BIT_SURFACE
+    "${_FORGE_SIMD_CONFIGURE_PROBE_DIR}/bit_surface.cpp"
+    TRUE
+    "Forge simd backport must provide the required bit algorithm surface")
+forge_expect_cxx_source_compiles(
+    FORGE_SIMD_HAS_MATH_SURFACE
+    "${_FORGE_SIMD_CONFIGURE_PROBE_DIR}/math_surface.cpp"
+    TRUE
+    "Forge simd backport must provide the required math algorithm surface")
+forge_expect_cxx_source_compiles(
+    FORGE_SIMD_REJECTS_INTEGRAL_MATH
+    "${_FORGE_SIMD_CONFIGURE_PROBE_DIR}/math_rejects_integral.cpp"
+    FALSE
+    "Forge simd backport must reject floating-only math algorithms on integral vectors")
+forge_expect_cxx_source_compiles(
+    FORGE_SIMD_HAS_COMPLEX_SURFACE
+    "${_FORGE_SIMD_CONFIGURE_PROBE_DIR}/complex_surface.cpp"
+    TRUE
+    "Forge simd backport must provide the required complex simd surface")
 
 unset(CMAKE_REQUIRED_INCLUDES)
 
@@ -203,6 +223,18 @@ add_executable(test_simd_math test_simd_math.cpp)
 target_link_libraries(test_simd_math PRIVATE gtest_main forge::forge)
 add_test(NAME simd_math COMMAND test_simd_math)
 
+add_executable(test_simd_bit test_simd_bit.cpp)
+target_link_libraries(test_simd_bit PRIVATE gtest_main forge::forge)
+add_test(NAME simd_bit COMMAND test_simd_bit)
+
+add_executable(test_simd_math_ext test_simd_math_ext.cpp)
+target_link_libraries(test_simd_math_ext PRIVATE gtest_main forge::forge)
+add_test(NAME simd_math_ext COMMAND test_simd_math_ext)
+
+add_executable(test_simd_complex test_simd_complex.cpp)
+target_link_libraries(test_simd_complex PRIVATE gtest_main forge::forge)
+add_test(NAME simd_complex COMMAND test_simd_complex)
+
 # Compile probes for simd public surface
 forge_add_compile_probe(test_simd_api_core test_simd_api_core.cpp)
 forge_add_compile_probe(test_simd_api_constructors test_simd_api_constructors.cpp)
@@ -212,6 +244,8 @@ forge_add_compile_probe(test_simd_api_where test_simd_api_where.cpp)
 forge_add_compile_probe(test_simd_api_permute test_simd_api_permute.cpp)
 target_compile_definitions(test_simd_api_permute PRIVATE FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
 forge_add_compile_probe(test_simd_api_reductions test_simd_api_reductions.cpp)
+forge_add_compile_probe(test_simd_api_math test_simd_api_math.cpp)
+forge_add_compile_probe(test_simd_api_complex test_simd_api_complex.cpp)
 
 add_executable(test_simd_include EXCLUDE_FROM_ALL test_simd_include.cpp)
 target_link_libraries(test_simd_include PRIVATE forge::forge)

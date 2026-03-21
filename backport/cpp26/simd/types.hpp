@@ -309,6 +309,7 @@ public:
     static_assert(detail::is_supported_value<T>::value, "std::simd::basic_vec only supports arithmetic non-bool value types");
 
     using value_type = T;
+    using real_type = real_simd_t<T, basic_vec>;
     using mask_type = basic_mask<sizeof(T), Abi>;
     using abi_type = Abi;
     using iterator = simd_iterator<basic_vec>;
@@ -316,6 +317,14 @@ public:
 	    inline static constexpr integral_constant<simd_size_type, simd_size<T, Abi>::value> size{};
 
 	    constexpr basic_vec() noexcept : data_{} {}
+
+    constexpr basic_vec(const real_type& reals, const real_type& imags = {}) noexcept
+        requires(detail::is_complex_value<T>::value)
+        : data_{} {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i] = value_type(reals[i], imags[i]);
+        }
+    }
 
     template<class U,
              typename enable_if<detail::is_explicitly_simd_convertible<U, T>::value &&
@@ -381,6 +390,38 @@ public:
         }
     }
 
+    constexpr real_type real() const noexcept
+        requires(detail::is_complex_value<T>::value) {
+        real_type result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, data_[i].real());
+        }
+        return result;
+    }
+
+    constexpr void real(const real_type& reals) noexcept
+        requires(detail::is_complex_value<T>::value) {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i].real(reals[i]);
+        }
+    }
+
+    constexpr real_type imag() const noexcept
+        requires(detail::is_complex_value<T>::value) {
+        real_type result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, data_[i].imag());
+        }
+        return result;
+    }
+
+    constexpr void imag(const real_type& imags) noexcept
+        requires(detail::is_complex_value<T>::value) {
+        for (simd_size_type i = 0; i < size; ++i) {
+            data_[i].imag(imags[i]);
+        }
+    }
+
     constexpr T operator[](simd_size_type i) const noexcept {
         return data_[i];
     }
@@ -412,11 +453,13 @@ public:
         return default_sentinel;
     }
 
-    constexpr basic_vec operator+() const noexcept {
+    constexpr basic_vec operator+() const noexcept
+        requires requires(const T& value) { +value; } {
         return *this;
     }
 
-	    constexpr basic_vec operator-() const noexcept {
+	    constexpr basic_vec operator-() const noexcept
+            requires requires(const T& value) { -value; } {
 	        basic_vec result;
 	        for (simd_size_type i = 0; i < size; ++i) {
 	            detail::set_lane(result, i, -data_[i]);
@@ -424,7 +467,8 @@ public:
 	        return result;
 	    }
 
-	    friend constexpr mask_type operator!(const basic_vec& value) noexcept {
+	    friend constexpr mask_type operator!(const basic_vec& value) noexcept
+            requires requires(const T& lane) { static_cast<bool>(!lane); } {
 	        mask_type result;
 	        for (simd_size_type i = 0; i < size; ++i) {
 	            detail::set_lane(result, i, !value[i]);
@@ -432,54 +476,62 @@ public:
 	        return result;
 	    }
 
-	    constexpr basic_vec& operator++() noexcept {
+	    constexpr basic_vec& operator++() noexcept
+            requires requires(T& lane) { ++lane; } {
 	        for (simd_size_type i = 0; i < size; ++i) {
 	            ++data_[i];
 	        }
 	        return *this;
 	    }
 
-	    constexpr basic_vec operator++(int) noexcept {
+	    constexpr basic_vec operator++(int) noexcept
+            requires requires(T& lane) { ++lane; } {
 	        basic_vec previous = *this;
 	        ++(*this);
 	        return previous;
 	    }
 
-	    constexpr basic_vec& operator--() noexcept {
+	    constexpr basic_vec& operator--() noexcept
+            requires requires(T& lane) { --lane; } {
 	        for (simd_size_type i = 0; i < size; ++i) {
 	            --data_[i];
 	        }
 	        return *this;
 	    }
 
-	    constexpr basic_vec operator--(int) noexcept {
+	    constexpr basic_vec operator--(int) noexcept
+            requires requires(T& lane) { --lane; } {
 	        basic_vec previous = *this;
 	        --(*this);
 	        return previous;
 	    }
 
-	    constexpr basic_vec& operator+=(const basic_vec& other) noexcept {
+	    constexpr basic_vec& operator+=(const basic_vec& other) noexcept
+            requires requires(T& left, const T& right) { left += right; } {
 	        for (simd_size_type i = 0; i < size; ++i) {
 	            data_[i] += other[i];
 	        }
         return *this;
     }
 
-    constexpr basic_vec& operator-=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator-=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left -= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] -= other[i];
         }
         return *this;
     }
 
-    constexpr basic_vec& operator*=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator*=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left *= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] *= other[i];
         }
         return *this;
     }
 
-    constexpr basic_vec& operator/=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator/=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left /= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] /= other[i];
         }
@@ -487,117 +539,121 @@ public:
     }
 
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator%=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator%=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left %= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] %= other[i];
         }
         return *this;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator&=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator&=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left &= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] &= other[i];
         }
         return *this;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator|=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator|=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left |= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] |= other[i];
         }
         return *this;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator^=(const basic_vec& other) noexcept {
+    constexpr basic_vec& operator^=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left ^= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] ^= other[i];
         }
         return *this;
     }
 
-    template<class Shift, class U = T>
-    constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec&>::type operator<<=(Shift shift) noexcept {
+    constexpr basic_vec& operator<<=(simd_size_type shift) noexcept
+        requires requires(T& value) { value <<= simd_size_type{}; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] <<= shift;
         }
         return *this;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator<<=(const basic_vec& shift) noexcept {
+    constexpr basic_vec& operator<<=(const basic_vec& shift) noexcept
+        requires requires(T& left, const T& right) { left <<= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] <<= shift[i];
         }
         return *this;
     }
 
-    template<class Shift, class U = T>
-    constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec&>::type operator>>=(Shift shift) noexcept {
+    constexpr basic_vec& operator>>=(simd_size_type shift) noexcept
+        requires requires(T& value) { value >>= simd_size_type{}; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] >>= shift;
         }
         return *this;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec&>::type operator>>=(const basic_vec& shift) noexcept {
+    constexpr basic_vec& operator>>=(const basic_vec& shift) noexcept
+        requires requires(T& left, const T& right) { left >>= right; } {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] >>= shift[i];
         }
         return *this;
     }
 
-    friend constexpr basic_vec operator+(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator+(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value += right_value; } {
         left += right;
         return left;
     }
 
-    friend constexpr basic_vec operator-(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator-(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value -= right_value; } {
         left -= right;
         return left;
     }
 
-    friend constexpr basic_vec operator*(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator*(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value *= right_value; } {
         left *= right;
         return left;
     }
 
-    friend constexpr basic_vec operator/(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator/(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value /= right_value; } {
         left /= right;
         return left;
     }
 
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator%(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator%(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value %= right_value; } {
         left %= right;
         return left;
     }
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator&(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator&(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value &= right_value; } {
         left &= right;
         return left;
     }
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator|(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator|(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value |= right_value; } {
         left |= right;
         return left;
     }
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator^(basic_vec left, const basic_vec& right) noexcept {
+    friend constexpr basic_vec operator^(basic_vec left, const basic_vec& right) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value ^= right_value; } {
         left ^= right;
         return left;
     }
 
-    template<class U = T>
-    constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator~() const noexcept {
+    constexpr basic_vec operator~() const noexcept
+        requires requires(const T& value) { ~value; } {
         basic_vec result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, ~data_[i]);
@@ -605,31 +661,32 @@ public:
         return result;
     }
 
-    template<class Shift, class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec>::type operator<<(basic_vec left, Shift shift) noexcept {
+    friend constexpr basic_vec operator<<(basic_vec left, simd_size_type shift) noexcept
+        requires requires(basic_vec& left_value) { left_value <<= simd_size_type{}; } {
         left <<= shift;
         return left;
     }
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator<<(basic_vec left, const basic_vec& shift) noexcept {
+    friend constexpr basic_vec operator<<(basic_vec left, const basic_vec& shift) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value <<= right_value; } {
         left <<= shift;
         return left;
     }
 
-    template<class Shift, class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value && is_integral<Shift>::value, basic_vec>::type operator>>(basic_vec left, Shift shift) noexcept {
+    friend constexpr basic_vec operator>>(basic_vec left, simd_size_type shift) noexcept
+        requires requires(basic_vec& left_value) { left_value >>= simd_size_type{}; } {
         left >>= shift;
         return left;
     }
 
-    template<class U = T>
-    friend constexpr typename enable_if<is_integral<U>::value, basic_vec>::type operator>>(basic_vec left, const basic_vec& shift) noexcept {
+    friend constexpr basic_vec operator>>(basic_vec left, const basic_vec& shift) noexcept
+        requires requires(basic_vec& left_value, const basic_vec& right_value) { left_value >>= right_value; } {
         left >>= shift;
         return left;
     }
 
-    friend constexpr mask_type operator==(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator==(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value == right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] == right[i]);
@@ -637,7 +694,8 @@ public:
         return result;
     }
 
-    friend constexpr mask_type operator!=(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator!=(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value != right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] != right[i]);
@@ -645,7 +703,8 @@ public:
         return result;
     }
 
-    friend constexpr mask_type operator<(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator<(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] < right[i]);
@@ -653,7 +712,8 @@ public:
         return result;
     }
 
-    friend constexpr mask_type operator<=(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator<=(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value <= right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] <= right[i]);
@@ -661,7 +721,8 @@ public:
         return result;
     }
 
-    friend constexpr mask_type operator>(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator>(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value > right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] > right[i]);
@@ -669,7 +730,8 @@ public:
         return result;
     }
 
-    friend constexpr mask_type operator>=(const basic_vec& left, const basic_vec& right) noexcept {
+    friend constexpr mask_type operator>=(const basic_vec& left, const basic_vec& right) noexcept
+        requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value >= right_value); } {
         mask_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, left[i] >= right[i]);

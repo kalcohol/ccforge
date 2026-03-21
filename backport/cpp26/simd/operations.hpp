@@ -190,17 +190,9 @@ constexpr auto chunk(const V& value) {
 	    });
 	}
 
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> abs(const basic_vec<T, Abi>& value) noexcept(noexcept(std::abs(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::abs(value[i])));
-	    }
-	    return result;
-	}
-
 template<class T, class Abi>
-constexpr basic_vec<T, Abi> min(const basic_vec<T, Abi>& left, const basic_vec<T, Abi>& right) noexcept {
+constexpr basic_vec<T, Abi> min(const basic_vec<T, Abi>& left, const basic_vec<T, Abi>& right) noexcept
+    requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, left[i] < right[i] ? left[i] : right[i]);
@@ -209,7 +201,8 @@ constexpr basic_vec<T, Abi> min(const basic_vec<T, Abi>& left, const basic_vec<T
 }
 
 template<class T, class Abi>
-constexpr basic_vec<T, Abi> max(const basic_vec<T, Abi>& left, const basic_vec<T, Abi>& right) noexcept {
+constexpr basic_vec<T, Abi> max(const basic_vec<T, Abi>& left, const basic_vec<T, Abi>& right) noexcept
+    requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, left[i] < right[i] ? right[i] : left[i]);
@@ -219,106 +212,18 @@ constexpr basic_vec<T, Abi> max(const basic_vec<T, Abi>& left, const basic_vec<T
 
 template<class T, class Abi>
 constexpr pair<basic_vec<T, Abi>, basic_vec<T, Abi>> minmax(const basic_vec<T, Abi>& left,
-                                                            const basic_vec<T, Abi>& right) noexcept {
+                                                            const basic_vec<T, Abi>& right) noexcept
+    requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     return {min(left, right), max(left, right)};
 }
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> clamp(const basic_vec<T, Abi>& value,
                                   const basic_vec<T, Abi>& low,
-                                  const basic_vec<T, Abi>& high) noexcept {
+                                  const basic_vec<T, Abi>& high) noexcept
+    requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     return min(max(value, low), high);
 }
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> sqrt(const basic_vec<T, Abi>& value) noexcept(noexcept(std::sqrt(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::sqrt(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> floor(const basic_vec<T, Abi>& value) noexcept(noexcept(std::floor(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::floor(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> ceil(const basic_vec<T, Abi>& value) noexcept(noexcept(std::ceil(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::ceil(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> round(const basic_vec<T, Abi>& value) noexcept(noexcept(std::round(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::round(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> trunc(const basic_vec<T, Abi>& value) noexcept(noexcept(std::trunc(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::trunc(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> sin(const basic_vec<T, Abi>& value) noexcept(noexcept(std::sin(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::sin(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> cos(const basic_vec<T, Abi>& value) noexcept(noexcept(std::cos(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::cos(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> exp(const basic_vec<T, Abi>& value) noexcept(noexcept(std::exp(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::exp(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> log(const basic_vec<T, Abi>& value) noexcept(noexcept(std::log(std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::log(value[i])));
-	    }
-	    return result;
-	}
-
-	template<class T, class Abi>
-	constexpr basic_vec<T, Abi> pow(const basic_vec<T, Abi>& base, const basic_vec<T, Abi>& exponent) noexcept(noexcept(std::pow(std::declval<T>(), std::declval<T>()))) {
-	    basic_vec<T, Abi> result;
-	    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-	        detail::set_lane(result, i, static_cast<T>(std::pow(base[i], exponent[i])));
-	    }
-	    return result;
-	}
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& mask_value,
@@ -443,3 +348,7 @@ template<class To, size_t Bytes, class Abi,
 constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_mask<Bytes, Abi>& value) noexcept {
 	return simd_cast<To>(value);
 }
+
+#include "operations_bit.hpp"
+#include "operations_math.hpp"
+#include "operations_complex.hpp"

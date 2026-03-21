@@ -25,10 +25,55 @@ struct is_extended_integer<unsigned __int128> : true_type {};
 #endif
 
 template<class T>
+struct is_complex_value : false_type {};
+
+template<class T>
+struct is_complex_value<complex<T>> : true_type {};
+
+template<class T, class = void>
+struct complex_value;
+
+template<class T>
+struct complex_value<complex<T>, void> {
+    using type = T;
+};
+
+template<class T>
+using complex_value_t = typename complex_value<remove_cvref_t<T>>::type;
+
+template<class T>
+struct is_vectorizable_floating_point : is_floating_point<remove_cvref_t<T>> {};
+
+template<class T>
+struct is_nonbool_arithmetic
+    : integral_constant<bool,
+        is_arithmetic<remove_cvref_t<T>>::value &&
+        !is_same<remove_cvref_t<T>, bool>::value> {};
+
+template<class T, bool = is_complex_value<remove_cvref_t<T>>::value>
+struct is_supported_complex_value : false_type {};
+
+template<class T>
+struct is_supported_complex_value<T, true> : is_vectorizable_floating_point<complex_value_t<T>> {};
+
+template<class T>
 struct is_supported_value
     : integral_constant<bool,
-        (is_arithmetic<remove_cvref_t<T>>::value || is_extended_integer<remove_cvref_t<T>>::value) &&
-        !is_same<remove_cvref_t<T>, bool>::value> {};
+        is_nonbool_arithmetic<T>::value ||
+        is_extended_integer<remove_cvref_t<T>>::value ||
+        is_supported_complex_value<T>::value> {};
+
+struct unavailable_real_type {};
+
+template<class From, class To>
+struct is_value_preserving_conversion;
+
+template<class From, class To, bool = is_supported_complex_value<To>::value>
+struct is_value_preserving_complex_target : false_type {};
+
+template<class From, class To>
+struct is_value_preserving_complex_target<From, To, true>
+    : is_value_preserving_conversion<remove_cvref_t<From>, complex_value_t<To>> {};
 
 template<class T>
 struct is_data_parallel_type : false_type {};
@@ -210,6 +255,11 @@ struct is_value_preserving_conversion
             is_floating_point<remove_cvref_t<To>>::value &&
             numeric_limits<remove_cvref_t<To>>::radix == 2 &&
             numeric_limits<remove_cvref_t<From>>::digits <= numeric_limits<remove_cvref_t<To>>::digits
+        ) ||
+        (
+            is_arithmetic<remove_cvref_t<From>>::value &&
+            is_supported_complex_value<To>::value &&
+            is_value_preserving_complex_target<From, To>::value
         )> {};
 
 template<class From, class To>
@@ -316,6 +366,19 @@ struct rebind;
 
 template<class T, class V>
 using rebind_t = typename rebind<T, V>::type;
+
+template<class T, class V, bool = detail::is_complex_value<detail::remove_cvref_t<T>>::value>
+struct real_simd_type {
+    using type = detail::unavailable_real_type;
+};
+
+template<class T, class V>
+struct real_simd_type<T, V, true> {
+    using type = rebind_t<detail::complex_value_t<T>, V>;
+};
+
+template<class T, class V>
+using real_simd_t = typename real_simd_type<T, V>::type;
 
 template<simd_size_type N, class V>
 struct resize;

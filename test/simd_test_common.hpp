@@ -4,6 +4,7 @@
 
 #include <array>
 #include <bitset>
+#include <complex>
 #include <deque>
 #include <iterator>
 #include <span>
@@ -21,9 +22,14 @@ using int1 = std::simd::vec<int, 1>;
 using int8 = std::simd::resize_t<8, int4>;
 using default_int = std::simd::vec<int>;
 using float4 = std::simd::rebind_t<float, int4>;
+using double4 = std::simd::vec<double, 4>;
 using longlong4 = std::simd::vec<long long, 4>;
+using uint4 = std::simd::vec<unsigned, 4>;
 using mask4 = std::simd::mask<int, 4>;
 using byte_mask4 = std::simd::mask<signed char, 4>;
+using uint_mask4 = typename uint4::mask_type;
+using complex4f = std::simd::vec<std::complex<float>, 4>;
+using complex4d = std::simd::vec<std::complex<double>, 4>;
 using int_iter = std::vector<int>::iterator;
 using const_int_iter = std::vector<int>::const_iterator;
 using deque_int_iter = std::deque<int>::iterator;
