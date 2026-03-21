@@ -339,7 +339,7 @@ template<size_t N>
 inline constexpr flags<overaligned_flag<N>> flag_overaligned{};
 
 template<class... Left, class... Right>
-constexpr flags<Left..., Right...> operator|(flags<Left...>, flags<Right...>) noexcept {
+consteval flags<Left..., Right...> operator|(flags<Left...>, flags<Right...>) noexcept {
     return {};
 }
 

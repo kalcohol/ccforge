@@ -15,6 +15,11 @@ constexpr bool constexpr_generator_and_iota() {
     return generated[0] == 1 && generated[3] == 7 && sequence[0] == 3 && sequence[3] == 6;
 }
 
+consteval bool consteval_flag_union() {
+    using combined_type = decltype(std::simd::flag_default | std::simd::flag_convert);
+    return std::is_same<combined_type, std::simd::flags<std::simd::convert_flag>>::value;
+}
+
 template<class V, class Shift, class = void>
 struct has_vector_lshift_assign : std::false_type {};
 
@@ -74,26 +79,14 @@ static_assert(constexpr_broadcast_reduce(),
     "basic_vec broadcast construction and reduce should be constexpr-capable");
 static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
-static_assert(std::is_same<decltype(std::declval<int4&>().begin()), typename int4::iterator>::value,
-    "begin() should return iterator");
+static_assert(consteval_flag_union(),
+    "std::simd::flags operator| should remain usable in immediate contexts");
 static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::simd_size_type{}]), int>::value,
     "const operator[] should return the lane value by value");
 static_assert(std::is_same<decltype(std::declval<int4&>()[std::simd::simd_size_type{}]), int>::value,
     "non-const operator[] should also return the lane value by value");
 static_assert(!std::is_assignable<decltype((std::declval<int4&>()[std::simd::simd_size_type{}])), int>::value,
     "operator[] should not expose writable lane references");
-static_assert(std::is_same<decltype(std::declval<const mask4&>()[std::simd::simd_size_type{}]), bool>::value,
-    "const mask operator[] should return bool by value");
-static_assert(std::is_same<decltype(std::declval<mask4&>()[std::simd::simd_size_type{}]), bool>::value,
-    "non-const mask operator[] should also return bool by value");
-static_assert(!std::is_assignable<decltype((std::declval<mask4&>()[std::simd::simd_size_type{}])), bool>::value,
-    "mask operator[] should not expose writable lane references");
-static_assert(std::is_same<decltype(std::declval<mask4&>() & std::declval<const mask4&>()), mask4>::value,
-    "mask bitwise and should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<mask4&>() | std::declval<const mask4&>()), mask4>::value,
-    "mask bitwise or should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<mask4&>() ^ std::declval<const mask4&>()), mask4>::value,
-    "mask bitwise xor should remain on the mask type");
 static_assert(std::is_same<decltype(std::declval<int4&>() <<= std::declval<const int4&>()), int4&>::value,
     "integral vec should expose per-lane left-shift assignment");
 static_assert(std::is_same<decltype(std::declval<int4&>() >>= std::declval<const int4&>()), int4&>::value,
@@ -110,60 +103,6 @@ static_assert(!has_vector_lshift<float4, float4>::value,
     "floating vec should not expose per-lane left shift");
 static_assert(!has_vector_rshift<float4, float4>::value,
     "floating vec should not expose per-lane right shift");
-static_assert(std::is_same<decltype(std::declval<const mask4&>().to_bitset()), std::bitset<4>>::value,
-    "basic_mask::to_bitset should expose a matching std::bitset");
-static_assert(std::is_same<decltype(std::declval<const mask4&>().to_ullong()), unsigned long long>::value,
-    "basic_mask::to_ullong should expose an unsigned long long bit pattern");
-static_assert(std::is_same<decltype(static_cast<int4>(std::declval<const mask4&>())), int4>::value,
-    "basic_mask should provide same-width vector conversion");
-static_assert(std::is_convertible<mask4, int4>::value,
-    "basic_mask to same-byte basic_vec conversion should be implicit");
-static_assert(std::is_constructible<longlong4, mask4>::value,
-    "basic_mask should still support explicit different-byte vector conversion");
-static_assert(!std::is_convertible<mask4, longlong4>::value,
-    "basic_mask to different-byte basic_vec conversion should remain explicit");
-static_assert(std::is_same<decltype(+std::declval<const mask4&>()), int4>::value,
-    "mask unary plus should expose the signed integer lane vector");
-static_assert(std::is_same<decltype(-std::declval<const mask4&>()), int4>::value,
-    "mask unary minus should expose the signed integer lane vector");
-static_assert(std::is_same<decltype(~std::declval<const mask4&>()), int4>::value,
-    "mask unary bitwise not should expose the signed integer lane vector");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() == std::declval<const mask4&>()), mask4>::value,
-    "mask equality should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() != std::declval<const mask4&>()), mask4>::value,
-    "mask inequality should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() < std::declval<const mask4&>()), mask4>::value,
-    "mask ordering comparison should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() <= std::declval<const mask4&>()), mask4>::value,
-    "mask ordering comparison should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() > std::declval<const mask4&>()), mask4>::value,
-    "mask ordering comparison should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<const mask4&>() >= std::declval<const mask4&>()), mask4>::value,
-    "mask ordering comparison should remain on the mask type");
-static_assert(std::is_same<decltype(std::declval<typename int4::iterator&>()++), typename int4::iterator>::value,
-    "iterator post-increment should return iterator");
-static_assert(std::is_same<decltype(std::declval<typename int4::iterator&>()--), typename int4::iterator>::value,
-    "iterator post-decrement should return iterator");
-static_assert(std::is_same<typename int4::iterator::reference, int>::value,
-    "iterator::reference should be the scalar value type");
-static_assert(std::is_same<typename int4::const_iterator::reference, int>::value,
-    "const_iterator::reference should be the scalar value type");
-static_assert(std::is_same<typename int4::iterator::iterator_category, std::input_iterator_tag>::value,
-    "iterator_category should remain input_iterator_tag for legacy algorithms");
-static_assert(std::is_same<typename int4::iterator::iterator_concept, std::random_access_iterator_tag>::value,
-    "iterator_concept should model random access traversal");
-static_assert(std::is_same<decltype(std::declval<const int4&>().begin()), typename int4::const_iterator>::value,
-    "const begin() should return const_iterator");
-static_assert(std::is_same<decltype(std::declval<const int4&>().cbegin()), typename int4::const_iterator>::value,
-    "cbegin() should return const_iterator");
-static_assert(std::is_same<decltype(std::declval<int4&>().end()), std::default_sentinel_t>::value,
-    "end() should return default_sentinel_t");
-static_assert(std::is_same<decltype(std::declval<const int4&>().cend()), std::default_sentinel_t>::value,
-    "cend() should return default_sentinel_t");
-static_assert(std::is_same<decltype(std::declval<int4&>().end() - std::declval<int4&>().begin()), std::simd::simd_size_type>::value,
-    "default sentinel difference should use simd_size_type");
-static_assert(std::is_same<decltype(std::declval<int4&>().begin() - std::declval<int4&>().end()), std::simd::simd_size_type>::value,
-    "iterator minus default sentinel should use simd_size_type");
 
 } // namespace
 

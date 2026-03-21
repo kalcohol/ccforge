@@ -88,29 +88,9 @@ public:
         return left.index_ - right.index_;
     }
 
-    friend constexpr bool operator==(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return left.value_ == right.value_ && left.index_ == right.index_;
-    }
+    friend constexpr bool operator==(const simd_iterator& left, const simd_iterator& right) noexcept = default;
 
-    friend constexpr bool operator!=(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return !(left == right);
-    }
-
-    friend constexpr bool operator<(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return left.index_ < right.index_;
-    }
-
-    friend constexpr bool operator<=(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return left.index_ <= right.index_;
-    }
-
-    friend constexpr bool operator>(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return left.index_ > right.index_;
-    }
-
-    friend constexpr bool operator>=(const simd_iterator& left, const simd_iterator& right) noexcept {
-        return left.index_ >= right.index_;
-    }
+    friend constexpr auto operator<=>(const simd_iterator& left, const simd_iterator& right) noexcept = default;
 
     friend constexpr bool operator==(const simd_iterator& it, default_sentinel_t) noexcept {
         return it.index_ == simd_type::size;

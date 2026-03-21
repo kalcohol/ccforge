@@ -28,6 +28,7 @@
 #include <bitset>
 #include <cassert>
 #include <cmath>
+#include <compare>
 #include <complex>
 #include <concepts>
 #include <cstddef>

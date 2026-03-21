@@ -45,7 +45,7 @@ public:
 
     template<size_t N,
              typename enable_if<N == abi_lane_count<Abi>::value, int>::type = 0>
-    basic_mask(const bitset<N>& bits) noexcept : data_{} {
+    constexpr basic_mask(const bitset<N>& bits) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = bits[static_cast<size_t>(i)];
         }
@@ -89,23 +89,17 @@ public:
         return default_sentinel;
     }
 
-	#if defined(__cpp_lib_constexpr_bitset) && __cpp_lib_constexpr_bitset >= 202207L
-	    constexpr bitset<abi_lane_count<Abi>::value> to_bitset() const noexcept {
-	        bitset<abi_lane_count<Abi>::value> result;
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            result.set(static_cast<size_t>(i), data_[i]);
-	        }
-	        return result;
-	    }
-	#else
-	    bitset<abi_lane_count<Abi>::value> to_bitset() const noexcept {
-	        bitset<abi_lane_count<Abi>::value> result;
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            result.set(static_cast<size_t>(i), data_[i]);
-	        }
-	        return result;
-	    }
-	#endif
+    constexpr bitset<abi_lane_count<Abi>::value> to_bitset() const noexcept {
+        if constexpr (abi_lane_count<Abi>::value <= static_cast<simd_size_type>(numeric_limits<unsigned long long>::digits)) {
+            return bitset<abi_lane_count<Abi>::value>(to_ullong());
+        } else {
+            bitset<abi_lane_count<Abi>::value> result;
+            for (simd_size_type i = 0; i < size; ++i) {
+                result.set(static_cast<size_t>(i), data_[i]);
+            }
+            return result;
+        }
+    }
 
     constexpr unsigned long long to_ullong() const noexcept {
         constexpr simd_size_type digit_count = static_cast<simd_size_type>(numeric_limits<unsigned long long>::digits);

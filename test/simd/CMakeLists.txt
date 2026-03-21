@@ -5,10 +5,6 @@ set(FORGE_SIMD_COMPILE_DIR "${FORGE_SIMD_TEST_ROOT}/compile")
 set(FORGE_SIMD_CONFIGURE_PROBE_DIR "${FORGE_SIMD_TEST_ROOT}/configure_probes")
 set(FORGE_SIMD_NATIVE_HANDOFF_INCLUDE_DIR "${FORGE_SIMD_COMPILE_DIR}/native_handoff_include")
 
-forge_detect_cxx_source_compiles(
-    FORGE_SIMD_HAS_SCALAR_SPECIAL_MATH
-    "${FORGE_SIMD_CONFIGURE_PROBE_DIR}/scalar_math_special.cpp")
-
 function(forge_add_simd_runtime_test target_name source_name)
     add_executable(${target_name} "${FORGE_SIMD_RUNTIME_DIR}/${source_name}")
     target_link_libraries(${target_name} PRIVATE gtest_main forge::forge)
@@ -90,6 +86,11 @@ function(forge_register_simd_configure_probes)
         TRUE
         "Forge simd backport must provide vector converting constructors with std::simd::flag_convert")
     forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_FLAGS_OR_ADDRESS
+        "flags_rejects_address.cpp"
+        FALSE
+        "Forge simd backport must make std::simd::flags operator| an immediate function")
+    forge_add_simd_configure_probe(
         FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER
         "value_preserving_vec_converter.cpp"
         TRUE
@@ -139,15 +140,11 @@ function(forge_register_simd_configure_probes)
         "math_surface.cpp"
         TRUE
         "Forge simd backport must provide the required math algorithm surface")
-    if(FORGE_SIMD_HAS_SCALAR_SPECIAL_MATH)
-        forge_add_simd_configure_probe(
-            FORGE_SIMD_HAS_MATH_SPECIAL_SURFACE
-            "math_special_surface.cpp"
-            TRUE
-            "Forge simd backport must provide the required special math surface")
-    else()
-        message(STATUS "Skipping simd special math configure probes: host scalar library lacks C++ special math support")
-    endif()
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_HAS_MATH_SPECIAL_SURFACE
+        "math_special_surface.cpp"
+        TRUE
+        "Forge simd backport must provide the required special math surface")
     forge_add_simd_configure_probe(
         FORGE_SIMD_REJECTS_INTEGRAL_MATH
         "math_rejects_integral.cpp"
@@ -192,14 +189,14 @@ function(forge_register_simd_runtime_tests)
     forge_add_simd_runtime_test(test_simd_math test_simd_math.cpp)
     forge_add_simd_runtime_test(test_simd_bit test_simd_bit.cpp)
     forge_add_simd_runtime_test(test_simd_math_ext test_simd_math_ext.cpp)
-    if(FORGE_SIMD_HAS_SCALAR_SPECIAL_MATH)
-        forge_add_simd_runtime_test(test_simd_math_special test_simd_math_special.cpp)
-    endif()
+    forge_add_simd_runtime_test(test_simd_math_special test_simd_math_special.cpp)
     forge_add_simd_runtime_test(test_simd_complex test_simd_complex.cpp)
 endfunction()
 
 function(forge_register_simd_compile_probes)
     forge_add_simd_compile_probe(test_simd_api_core test_simd_api_core.cpp)
+    forge_add_simd_compile_probe(test_simd_api_iterator test_simd_api_iterator.cpp)
+    forge_add_simd_compile_probe(test_simd_api_mask test_simd_api_mask.cpp)
     forge_add_simd_compile_probe(test_simd_api_constructors test_simd_api_constructors.cpp)
     forge_add_simd_compile_probe(test_simd_api_memory test_simd_api_memory.cpp)
     target_compile_definitions(test_simd_api_memory PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)
@@ -208,9 +205,7 @@ function(forge_register_simd_compile_probes)
     target_compile_definitions(test_simd_api_permute PRIVATE FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
     forge_add_simd_compile_probe(test_simd_api_reductions test_simd_api_reductions.cpp)
     forge_add_simd_compile_probe(test_simd_api_math test_simd_api_math.cpp)
-    if(FORGE_SIMD_HAS_SCALAR_SPECIAL_MATH)
-        forge_add_simd_compile_probe(test_simd_api_math_special test_simd_api_math_special.cpp)
-    endif()
+    forge_add_simd_compile_probe(test_simd_api_math_special test_simd_api_math_special.cpp)
     forge_add_simd_compile_probe(test_simd_api_complex test_simd_api_complex.cpp)
     forge_add_simd_compile_probe(test_simd_include test_simd_include.cpp simd_include_compile)
     forge_add_simd_compile_probe(test_simd_feature_macro test_simd_feature_macro.cpp simd_feature_macro_compile)
