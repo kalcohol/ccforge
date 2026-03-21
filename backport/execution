@@ -36,8 +36,9 @@
 #if __has_include_next(<execution>)
 #include_next <execution>
 #endif
-#else
-#error "Forge backport requires a compiler-specific <execution> include strategy"
+// else: toolchain has neither MSVC nor __has_include_next — skip the standard
+//       <execution> header silently; only the P2300 MVP surface below will be
+//       available (C++17 execution policies will not be present).
 #endif
 
 // C++26 backports (P2300 senders/receivers are expected to land under <execution>).

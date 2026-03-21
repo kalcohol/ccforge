@@ -83,25 +83,33 @@ public:
     [[nodiscard]] inplace_stop_token get_token() noexcept;
 
     bool request_stop() noexcept {
-        std::lock_guard lk{mtx_};
-        auto st = state_.load(std::memory_order_acquire);
-        if ((st & kStopRequested) != 0) {
-            return false;
-        }
-        state_.store(static_cast<std::uint8_t>(st | kStopRequested),
-                     std::memory_order_release);
-
-        auto* cb = callbacks_;
-        callbacks_ = nullptr;
-
-        while (cb) {
-            auto* next = cb->next;
-            cb->next = nullptr;
-            cb->prev = nullptr;
-            if (cb->invoke_fn) {
-                cb->invoke_fn(cb);
+        __forge_stop_detail::callback_base* head = nullptr;
+        {
+            std::lock_guard lk{mtx_};
+            auto st = state_.load(std::memory_order_acquire);
+            if ((st & kStopRequested) != 0) {
+                return false;
             }
-            cb = next;
+            state_.store(static_cast<std::uint8_t>(st | kStopRequested),
+                         std::memory_order_release);
+
+            // Detach the callback list under the lock, but do NOT invoke
+            // callbacks here.  Invoking user callbacks while holding mtx_
+            // would deadlock if the callback tries to register/remove
+            // another callback.  See [stopsource.inplace.mem].
+            head = callbacks_;
+            callbacks_ = nullptr;
+        }
+
+        // Invoke callbacks outside the lock.
+        while (head) {
+            auto* next = head->next;
+            head->next = nullptr;
+            head->prev = nullptr;
+            if (head->invoke_fn) {
+                head->invoke_fn(head);
+            }
+            head = next;
         }
         return true;
     }
