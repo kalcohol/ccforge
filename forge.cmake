@@ -81,6 +81,27 @@ if(NOT TARGET forge)
         message(STATUS "Forge: std::execution (P2300 senders/receivers) backport enabled")
     endif()
 
+    # Check for std::submdspan (C++26) — only meaningful when <mdspan> exists
+    check_cxx_source_compiles("
+        #include <mdspan>
+        int main() {
+            int data[12]{};
+            std::mdspan<int, std::extents<int, 3, 4>> m(data);
+            auto sub = std::submdspan(m, 1, std::full_extent);
+            (void)sub;
+            return 0;
+        }
+    " HAS_STD_SUBMDSPAN)
+
+    if(NOT HAS_STD_SUBMDSPAN)
+        # Only enable the mdspan backport wrapper when <mdspan> itself is available.
+        # On toolchains without <mdspan> (e.g. GCC 13 libstdc++) the probe above
+        # also fails, but there is nothing to inject — the backport/mdspan wrapper
+        # handles this gracefully via a guarded __cpp_lib_mdspan check.
+        set(FORGE_NEEDS_BACKPORT TRUE)
+        message(STATUS "Forge: std::submdspan backport enabled")
+    endif()
+
     # Add backport path if any feature needs it
     if(FORGE_NEEDS_BACKPORT)
         if(MSVC)
@@ -142,6 +163,22 @@ if(NOT TARGET forge)
             target_compile_definitions(forge INTERFACE
                 FORGE_MSVC_EXECUTION_HEADER=\"${FORGE_MSVC_EXECUTION_HEADER}\"
             )
+
+            # MSVC: locate <mdspan> for the submdspan backport wrapper
+            set(FORGE_MSVC_MDSPAN_HEADER "")
+
+            foreach(_forge_include_dir IN LISTS _forge_msvc_include_candidates)
+                if(EXISTS "${_forge_include_dir}/mdspan")
+                    file(TO_CMAKE_PATH "${_forge_include_dir}/mdspan" FORGE_MSVC_MDSPAN_HEADER)
+                    break()
+                endif()
+            endforeach()
+
+            if(FORGE_MSVC_MDSPAN_HEADER)
+                target_compile_definitions(forge INTERFACE
+                    FORGE_MSVC_MDSPAN_HEADER=\"${FORGE_MSVC_MDSPAN_HEADER}\"
+                )
+            endif()
         endif()
 
         target_include_directories(forge BEFORE INTERFACE

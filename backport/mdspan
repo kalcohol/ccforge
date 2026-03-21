@@ -1,0 +1,50 @@
+// MIT License
+//
+// Copyright (c) 2026 Forge Project
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+#pragma once
+
+// Backport wrapper for <mdspan>.
+//
+// Strategy:
+//  1. Include the real standard library <mdspan> via include_next (or the MSVC
+//     path macro). If the toolchain has no <mdspan> this silently skips it; the
+//     submdspan backport will not be injected either in that case (because
+//     __cpp_lib_mdspan will remain undefined and the guard below fails).
+//  2. If __cpp_lib_submdspan is not yet defined (true for all known toolchains
+//     as of March 2026), inject the Forge submdspan backport.
+
+#if defined(_MSC_VER)
+#  ifdef FORGE_MSVC_MDSPAN_HEADER
+#    include FORGE_MSVC_MDSPAN_HEADER
+#  endif
+#elif defined(__has_include_next)
+#  if __has_include_next(<mdspan>)
+#    include_next <mdspan>
+#  endif
+#endif
+
+// Inject submdspan backport only when:
+//  - The standard <mdspan> was found (__cpp_lib_mdspan is defined)
+//  - The native submdspan is not yet present
+#if defined(__cpp_lib_mdspan) && !defined(__cpp_lib_submdspan)
+#  include "cpp26/submdspan.hpp"
+#endif
