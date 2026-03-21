@@ -290,10 +290,6 @@ struct __tuple_cat_type<std::tuple<Ts...>, std::tuple<Us...>, Rest...>
 template<class... Tuples>
 using __tuple_cat_t = typename __tuple_cat_type<Tuples...>::type;
 
-// ── __cartesian_product_value_sigs: join value types of N senders ─────────
-// __cartesian_product_value_sigs<CS1, CS2, ...>
-//   -> completion_signatures<set_value_t(all-value-types...)>
-
 template<class... CSList>
 struct __cartesian_product_value_sigs {
 private:
