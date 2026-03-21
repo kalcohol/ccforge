@@ -86,6 +86,11 @@ function(forge_register_simd_configure_probes)
         TRUE
         "Forge simd backport must provide vector converting constructors with std::simd::flag_convert")
     forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_FLAGS_OR_ADDRESS
+        "flags_rejects_address.cpp"
+        FALSE
+        "Forge simd backport must make std::simd::flags operator| an immediate function")
+    forge_add_simd_configure_probe(
         FORGE_SIMD_HAS_VALUE_PRESERVING_VEC_CONVERTER
         "value_preserving_vec_converter.cpp"
         TRUE
@@ -190,6 +195,8 @@ endfunction()
 
 function(forge_register_simd_compile_probes)
     forge_add_simd_compile_probe(test_simd_api_core test_simd_api_core.cpp)
+    forge_add_simd_compile_probe(test_simd_api_iterator test_simd_api_iterator.cpp)
+    forge_add_simd_compile_probe(test_simd_api_mask test_simd_api_mask.cpp)
     forge_add_simd_compile_probe(test_simd_api_constructors test_simd_api_constructors.cpp)
     forge_add_simd_compile_probe(test_simd_api_memory test_simd_api_memory.cpp)
     target_compile_definitions(test_simd_api_memory PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_PROBES)

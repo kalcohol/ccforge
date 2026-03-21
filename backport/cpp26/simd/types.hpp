@@ -45,7 +45,7 @@ public:
 
     template<size_t N,
              typename enable_if<N == abi_lane_count<Abi>::value, int>::type = 0>
-    basic_mask(const bitset<N>& bits) noexcept : data_{} {
+    constexpr basic_mask(const bitset<N>& bits) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = bits[static_cast<size_t>(i)];
         }
