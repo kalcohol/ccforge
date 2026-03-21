@@ -30,3 +30,13 @@ TEST(ExecutionInlineSchedulerTest, ScheduleThenChain) {
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 123);
 }
+
+// ── T-2: Scheduler env roundtrip ────────────────────────────────────────
+
+TEST(ExecutionInlineSchedulerTest, ScheduleEnvRoundtrip) {
+    std::execution::inline_scheduler sch{};
+    auto sndr = std::execution::schedule(sch);
+    auto env = std::execution::get_env(sndr);
+    auto sch2 = std::execution::get_scheduler(env);
+    EXPECT_EQ(sch, sch2);
+}

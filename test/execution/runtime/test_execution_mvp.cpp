@@ -9,7 +9,35 @@
 #include <type_traits>
 #include <utility>
 
+// ── T-1: Compile-time concept probes ────────────────────────────────────
+
+// Positive probes — built-in sender types must satisfy sender / sender_in.
+static_assert(std::execution::sender<decltype(std::execution::just(42))>);
+static_assert(std::execution::sender_in<decltype(std::execution::just(42))>);
+static_assert(std::execution::sender<decltype(std::execution::just_error(std::make_exception_ptr(0)))>);
+static_assert(std::execution::sender<decltype(std::execution::just_stopped())>);
+
+// Negative probes — plain types must NOT satisfy execution concepts.
+static_assert(!std::execution::sender<int>);
+static_assert(!std::execution::receiver<int>);
+static_assert(!std::execution::scheduler<int>);
+static_assert(!std::execution::operation_state<int>);
+
+// Completion-signature probes for just(42).
 namespace {
+
+using just_int_cs_t = decltype(std::execution::get_completion_signatures(
+    std::execution::just(42), std::execution::empty_env{}));
+
+// just(42) should produce completion_signatures<set_value_t(int)>.
+static_assert(std::is_same_v<just_int_cs_t,
+    std::execution::completion_signatures<std::execution::set_value_t(int)>>);
+
+// just_stopped() should produce completion_signatures<set_stopped_t()>.
+using just_stopped_cs_t = decltype(std::execution::get_completion_signatures(
+    std::execution::just_stopped(), std::execution::empty_env{}));
+static_assert(std::is_same_v<just_stopped_cs_t,
+    std::execution::completion_signatures<std::execution::set_stopped_t()>>);
 
 template<class T>
 concept optional_like = requires(T t) {
@@ -97,4 +125,15 @@ TEST(ExecutionMvpTest, ThenForwardsStoppedAndDoesNotCallFn) {
     auto result = std::execution::sync_wait(std::move(sender));
     EXPECT_FALSE(static_cast<bool>(result));
     EXPECT_FALSE(called);
+}
+
+// ── T-3: then with multi-value input ────────────────────────────────────
+
+TEST(ExecutionMvpTest, ThenMultiValueInput) {
+    auto sender = std::execution::just(1, 2) |
+                  std::execution::then([](int a, int b) { return a + b; });
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(static_cast<bool>(result));
+    EXPECT_EQ(std::get<0>(*result), 3);
 }
