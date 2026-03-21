@@ -598,6 +598,12 @@ concept queryable = std::destructible<T>;
 // Core concepts and CPOs
 // ──────────────────────────────────────────────────────────────────────────
 
+// Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
+struct receiver_t {};
+struct sender_t {};
+struct operation_state_t {};
+struct scheduler_t {};
+
 struct start_t {
     template<class O>
         requires __forge_detail::tag_invocable<start_t, O&>
@@ -612,15 +618,14 @@ template<class O>
 concept operation_state =
     std::destructible<O> && std::is_object_v<O> &&
     !std::move_constructible<O> &&
+    requires { typename O::operation_state_concept; } &&
+    std::derived_from<typename O::operation_state_concept, operation_state_t> &&
     requires(O& op) { { std::execution::start(op) } noexcept; };
-
-struct receiver_t {};
-struct sender_t {};
 
 template<class R>
 concept receiver =
-    std::move_constructible<std::remove_cvref_t<R>> &&
-    std::constructible_from<std::remove_cvref_t<R>, std::remove_cvref_t<R>> &&
+    std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>> &&
+    !std::is_final_v<std::remove_cvref_t<R>> &&
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
     requires(const std::remove_cvref_t<R>& r) {
@@ -709,7 +714,10 @@ template<class S>
 concept scheduler =
     std::copy_constructible<std::remove_cvref_t<S>> &&
     std::equality_comparable<std::remove_cvref_t<S>> &&
-    requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender_in; };
+    queryable<std::remove_cvref_t<S>> &&
+    requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
+    std::derived_from<typename std::remove_cvref_t<S>::scheduler_concept, scheduler_t> &&
+    requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender; };
 
 // ──────────────────────────────────────────────────────────────────────────
 // Algorithms: just / just_error / just_stopped
@@ -719,6 +727,7 @@ namespace __forge_just {
 
 template<class R, class... Vs>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
     std::tuple<Vs...> values_;
 
@@ -766,6 +775,7 @@ namespace __forge_just_error {
 
 template<class R, class E>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
     E error_;
 
@@ -808,6 +818,7 @@ namespace __forge_just_stopped {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
@@ -1207,6 +1218,7 @@ struct env {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
@@ -1235,6 +1247,8 @@ struct sender {
 
 class __forge_inline::inline_scheduler {
 public:
+    using scheduler_concept = scheduler_t;
+
     inline_scheduler() noexcept = default;
 
     [[nodiscard]] __forge_inline::sender schedule() const noexcept { return __forge_inline::sender{this}; }
