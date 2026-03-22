@@ -453,6 +453,23 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
     std::execution::get_completion_signatures(static_cast<std::remove_cvref_t<S>&&>(s), env);
 };
 
+// Forward declaration for domain-based dispatch
+// default_domain provides identity transform; full definition in domain.hpp
+namespace __forge_domain {
+struct __default_domain_fwd {
+    template<class S, class E>
+    static S&& transform_sender(S&& sndr, const E&) noexcept {
+        return static_cast<S&&>(sndr);
+    }
+};
+
+// Get domain from sender env (returns __default_domain_fwd if no domain tag_invoke)
+template<class S>
+inline auto __get_sender_domain(const S& sndr) noexcept {
+    return __default_domain_fwd{};
+}
+} // namespace __forge_domain
+
 struct connect_t {
     template<class S, class R>
         requires (requires(S&& s, R&& r) { static_cast<S&&>(s).connect(static_cast<R&&>(r)); } ||
@@ -460,10 +477,14 @@ struct connect_t {
     auto operator()(S&& s, R&& r) const
         noexcept(requires(S&& s, R&& r) { { static_cast<S&&>(s).connect(static_cast<R&&>(r)) } noexcept; } ||
                  __forge_detail::nothrow_tag_invocable<connect_t, S, R>) {
-        if constexpr (requires { static_cast<S&&>(s).connect(static_cast<R&&>(r)); }) {
-            return static_cast<S&&>(s).connect(static_cast<R&&>(r));
+        // Apply domain-based transform_sender before connecting [exec.domain.default]
+        auto domain = __forge_domain::__get_sender_domain(s);
+        auto&& ts = domain.transform_sender(static_cast<S&&>(s), get_env(r));
+        using TS = decltype(ts);
+        if constexpr (requires { static_cast<TS&&>(ts).connect(static_cast<R&&>(r)); }) {
+            return static_cast<TS&&>(ts).connect(static_cast<R&&>(r));
         } else {
-            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<R&&>(r));
+            return __forge_detail::tag_invoke_fn(*this, static_cast<TS&&>(ts), static_cast<R&&>(r));
         }
     }
 };
