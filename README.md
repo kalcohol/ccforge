@@ -130,8 +130,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 **OpenMP 并行：** `-fopenmp` 可用时，OpenMP 自动并行化 GEMM/GEMV 外循环。Zig 等不支持 OpenMP 的工具链自动回退串行，无需任何代码修改。
 
-**模块化拆分：** `linalg.hpp` 已拆分为 `backport/cpp26/linalg/` 下的 5 个子文件，按 Level 1/2/3 组织，便于独立维护。
-
 ## `std::simd` 说明
 
 当前 `std::simd` backport 已完整覆盖 [simd.syn] 公开表面：
