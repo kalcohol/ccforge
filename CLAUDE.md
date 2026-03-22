@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Forge is a header-only C++ library providing transparent C++26 backports. When `#include <memory>` or `#include <simd>` is used with Forge's include path, the backport wrappers detect whether the compiler already provides C++26 features and inject polyfills only when needed.
+CC Forge is a header-only C++ library providing transparent C++26 backports. When `#include <memory>` or `#include <simd>` is used with CC Forge's include path, the backport wrappers detect whether the compiler already provides C++26 features and inject polyfills only when needed.
 
 Current backports:
 - `std::unique_resource` (P0052R15) — in `backport/cpp26/unique_resource.hpp`

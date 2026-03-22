@@ -1,4 +1,4 @@
-# Forge
+# CC Forge
 
 现代 C++ header-only 库，提供标准库扩展和无感 C++26 backport。
 

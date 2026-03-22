@@ -1,12 +1,12 @@
-# Forge CMake Configuration
-# Include this file in your project to use Forge library
+# CC Forge CMake Configuration
+# Include this file in your project to use CC Forge library
 
 cmake_minimum_required(VERSION 3.17)
 
 # Get the directory where this file is located
 get_filename_component(FORGE_ROOT_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 
-# Set Forge include directory
+# Set CC Forge include directory
 set(FORGE_INCLUDE_DIR "${FORGE_ROOT_DIR}/include")
 set(FORGE_BACKPORT_DIR "${FORGE_ROOT_DIR}/backport")
 
@@ -46,7 +46,7 @@ if(NOT TARGET forge)
 
     if(NOT HAS_STD_UNIQUE_RESOURCE)
         set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "Forge: std::unique_resource backport enabled")
+        message(STATUS "CC Forge: std::unique_resource backport enabled")
     endif()
 
     # Check for std::simd (C++26 current draft)
@@ -62,7 +62,7 @@ if(NOT TARGET forge)
 
     if(NOT HAS_STD_SIMD)
         set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "Forge: std::simd backport enabled")
+        message(STATUS "CC Forge: std::simd backport enabled")
     endif()
 
     # Check for P2300 senders/receivers under <execution> (C++26 draft)
@@ -78,7 +78,7 @@ if(NOT TARGET forge)
 
     if(NOT HAS_STD_EXECUTION_SENDERS)
         set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "Forge: std::execution (P2300 senders/receivers) backport enabled")
+        message(STATUS "CC Forge: std::execution (P2300 senders/receivers) backport enabled")
     endif()
 
     # Check for std::submdspan (C++26) — only meaningful when <mdspan> exists
@@ -99,7 +99,7 @@ if(NOT TARGET forge)
         # also fails, but there is nothing to inject — the backport/mdspan wrapper
         # handles this gracefully via a guarded __cpp_lib_mdspan check.
         set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "Forge: std::submdspan backport enabled")
+        message(STATUS "CC Forge: std::submdspan backport enabled")
     endif()
 
 
@@ -115,7 +115,7 @@ if(NOT TARGET forge)
 
     if(NOT HAS_STD_LINALG)
         set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "Forge: std::linalg backport enabled")
+        message(STATUS "CC Forge: std::linalg backport enabled")
     endif()
 
     # Add backport path if any feature needs it
@@ -141,7 +141,7 @@ if(NOT TARGET forge)
             endforeach()
 
             if(NOT FORGE_MSVC_MEMORY_HEADER)
-                message(FATAL_ERROR "Forge: failed to locate MSVC standard library header <memory>")
+                message(FATAL_ERROR "CC Forge: failed to locate MSVC standard library header <memory>")
             endif()
 
             set(FORGE_MSVC_SIMD_HEADER "")
@@ -173,7 +173,7 @@ if(NOT TARGET forge)
             endforeach()
 
             if(NOT FORGE_MSVC_EXECUTION_HEADER)
-                message(FATAL_ERROR "Forge: failed to locate MSVC standard library header <execution>")
+                message(FATAL_ERROR "CC Forge: failed to locate MSVC standard library header <execution>")
             endif()
 
             target_compile_definitions(forge INTERFACE
@@ -202,5 +202,5 @@ if(NOT TARGET forge)
         )
     endif()
 
-    message(STATUS "Forge library configured: ${FORGE_INCLUDE_DIR}")
+    message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")
 endif()
