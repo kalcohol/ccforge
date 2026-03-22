@@ -52,6 +52,11 @@
 #define FORGE_BACKPORT_SIMD_HPP_INCLUDED 1
 #endif
 
+// Feature-test macro: CC Forge simd backport covers the full [simd.syn] API surface.
+#if !defined(__cpp_lib_simd)
+#define __cpp_lib_simd 202411L
+#endif
+
 namespace std {
 
 #if __cplusplus < 202002L
@@ -65,6 +70,7 @@ inline constexpr default_sentinel_t default_sentinel{};
 namespace simd {
 
 #include "simd/base.hpp"
+#include "simd/detail/vector_ops.hpp"
 #include "simd/types.hpp"
 #include "simd/iterator.hpp"
 #include "simd/memory.hpp"
