@@ -6,7 +6,7 @@
 
 | 特性 | 标准提案 | 入口头文件 | 状态 |
 |------|---------|-----------|------|
-| `std::unique_resource` | P0052R10 (TS v3) | `#include <memory>` | 完整 (实验性) |
+| `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 (实验性) |
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
 | `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4 完整 |
 | `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD + OpenMP 加速） |
@@ -84,7 +84,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - **标准入口不变**：下游写 `#include <memory>` / `#include <execution>` / `#include <linalg>`，而不是 `forge/...`
 - **命名空间不变**：API 以 `std::` / `std::execution::` / `std::linalg::` 形式出现
 - **API 形状一致**：公开接口与标准最终版保持一致，不引入额外扩展
-- **自动开关**：`forge.cmake` 通过 `check_cxx_source_compiles()` 和 feature-test macro（`__cpp_lib_senders`、`__cpp_lib_linalg` 等）探测原生支持，仅在缺失时注入 backport
+- **自动开关**：`forge.cmake` 通过 `check_cxx_source_compiles()` 探测原生支持，仅在缺失时注入 backport
 
 实现方式：`forge.cmake` 将 `backport/` 前置到 include path；`backport/` 内提供与标准同名的包装头（如 `backport/memory`、`backport/linalg`），先包含真实标准库头，再条件注入 backport 实现。
 
@@ -92,7 +92,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::execution` 说明
 
-当前为 P2300 senders/receivers 的 Phase 1-4 完整 backport：
+当前为 P2300 senders/receivers 的 Phase 1-4 backport（Phase 4 部分功能）：
 
 **已实现：**
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
