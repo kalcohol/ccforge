@@ -1,6 +1,0 @@
-TSAN verification: BLOCKED by kernel ASLR incompatibility.
-The error 'ThreadSanitizer: unexpected memory mapping' occurs at startup before any test code runs.
-This is a known Linux kernel / TSAN incompatibility (see google/sanitizers#1614).
-Fix: set vm.mmap_rnd_bits <= 28 (requires root) or run on a kernel-patched container.
-The actual concurrent tests (split ConcurrentStart, run_loop ConcurrentPush) pass under GCC/Zig without TSAN.
-
