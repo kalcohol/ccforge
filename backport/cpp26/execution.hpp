@@ -103,3 +103,5 @@
 #include "execution/ensure_started.hpp"
 #include "execution/any_stop_token.hpp"
 #include "execution/awaitable.hpp"
+#include "execution/domain.hpp"
+#include "execution/counting_scope.hpp"
