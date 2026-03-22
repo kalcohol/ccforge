@@ -8,7 +8,7 @@
 |------|---------|-----------|------|
 | `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 (实验性) |
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
-| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4 完整 |
+| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4 (Phase 4 部分) |
 | `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD + OpenMP 加速） |
 | `std::submdspan` | P2630 | `#include <mdspan>` | 基础设施 |
 
