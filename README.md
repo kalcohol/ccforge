@@ -8,8 +8,8 @@
 |------|---------|-----------|------|
 | `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 |
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整 |
-| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1 |
-| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（串行） |
+| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-3 完整 |
+| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD 加速） |
 | `std::submdspan` | P2630 | `#include <mdspan>` | 基础设施 |
 
 所有 backport 遵循**无感过渡**原则——当工具链原生支持对应特性后，下游代码**零修改**重新编译即可自动切换。
@@ -39,6 +39,18 @@ auto result = std::execution::sync_wait(
 double a[] = {1,2,3}, b[] = {4,5,6};
 std::mdspan va(a, 3), vb(b, 3);
 double d = std::linalg::dot(va, vb); // 1*4 + 2*5 + 3*6 = 32
+```
+
+```cpp
+#include <execution>
+// when_all — 结构化并发
+auto [a, b] = *std::execution::sync_wait(
+    std::execution::when_all(
+        std::execution::just(42),
+        std::execution::just(3.14)
+    )
+);
+// a == 42, b == 3.14
 ```
 
 ## CMake 集成
@@ -113,6 +125,8 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 **辅助组件：** `scaled`/`conjugated`/`transposed`/`conjugate_transposed` 视图函数、`scaled_accessor`、`conjugated_accessor`、`layout_transpose`、`layout_blas_packed`、标记类型（`upper_triangle`/`lower_triangle`/`column_major`/`row_major` 等）
 
 > 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。当原生 `<linalg>` 可用时（`__cpp_lib_linalg >= 202311`），backport 自动禁用。未实现 execution policy 重载（纯串行实现，不链接系统 BLAS）。
+
+**SIMD 加速：** BLAS Level 1 归约操作（`dot`、`vector_two_norm`、`vector_abs_sum`）在 Forge `std::simd` 可用时自动使用 SIMD 加速路径。支持全部非复数标准算术类型。已在 x86_64（原生）、aarch64、riscv64、loongarch64 四个架构上通过 zig 交叉编译 + qemu 验证。
 
 ## `std::simd` 说明
 
