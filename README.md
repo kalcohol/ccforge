@@ -6,13 +6,13 @@
 
 | 特性 | 标准提案 | 入口头文件 | 状态 |
 |------|---------|-----------|------|
-| `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 |
+| `std::unique_resource` | P0052R10 (TS v3) | `#include <memory>` | 完整 (实验性) |
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
 | `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4 完整 |
 | `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD + OpenMP 加速） |
 | `std::submdspan` | P2630 | `#include <mdspan>` | 基础设施 |
 
-所有 backport 遵循**无感过渡**原则——当工具链原生支持对应特性后，下游代码**零修改**重新编译即可自动切换。
+**注意：** `std::unique_resource` 当前仅在 Library Fundamentals TS v3 中，尚未进入 C++26 标准。
 
 ## 快速开始
 
@@ -107,8 +107,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP、`transform_completion_signatures`、SBO+堆存储抽象
 - 域调度：`default_domain`、`get_domain` CPO、`connect_t` 集成 `transform_sender`
 - Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
-
-**未实现：** `async_scope`（执行策略变体）
 
 > CPO 调度内部使用 `tag_invoke`（不对外暴露），Phase 3+ 新增类型使用成员函数优先分发。当原生 `<execution>` 可用时，整个 backport 自动禁用。
 
