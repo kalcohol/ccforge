@@ -218,6 +218,47 @@ void symmetric_matrix_rank_2k_update(
 
 
 
+// hermitian_matrix_product — [linalg.algs.blas3.hemm]
+template<class Triangle,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void hermitian_matrix_product(
+    Triangle,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
+    using idx_t = typename CExtents::index_type;
+    for (idx_t i = 0; i < C.extent(0); ++i) {
+        for (idx_t j = 0; j < C.extent(1); ++j) {
+            typename CAccessor::element_type sum{};
+            for (idx_t k = 0; k < A.extent(1); ++k) {
+                sum += (i <= k ? A[i, k] : std::conj(A[k, i])) * B[k, j];
+            }
+            C[i, j] = sum;
+        }
+    }
+}
+
+// hermitian_matrix_rank_k_update — [linalg.algs.blas3.herk]
+template<class Triangle,
+         class AExtents, class ALayout, class AAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void hermitian_matrix_rank_k_update(
+    Triangle,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
+    using idx_t = typename CExtents::index_type;
+    const idx_t n = C.extent(0);
+    const idx_t k = A.extent(1);
+    for (idx_t i = 0; i < n; ++i)
+        for (idx_t j = i; j < n; ++j)
+            for (idx_t l = 0; l < k; ++l)
+                C[i, j] += A[i, l] * std::conj(A[j, l]);
+}
+
 } // namespace std::linalg
 
 #endif // defined(__cpp_lib_mdspan)

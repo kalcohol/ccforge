@@ -1,0 +1,63 @@
+Task 2: 评估 res_guard vs unique_resource
+
+## 使用情况搜索结果
+
+搜索命令: `grep -r "res_guard" --include="*.cpp" --include="*.hpp" --exclude-dir=build*`
+
+**结果：仅在定义文件中出现**
+- include/forge/res_guard.hpp - 定义文件本身
+- include/forge.hpp - 包含该头文件
+
+**结论：res_guard 在代码库中没有任何实际使用。**
+
+## API 对比
+
+### forge::res_guard<T>
+- 命名空间: `forge::`
+- 文件: include/forge/res_guard.hpp (125 行)
+- 特点:
+  - 简单的 RAII 包装器
+  - 使用 std::function<void(T&)> 作为 deleter 类型
+  - 支持移动语义
+  - 提供 get(), release(), reset(), swap()
+  - 构造函数支持直接传入资源或通过 creator 函数创建
+
+### std::unique_resource<R, D>
+- 命名空间: `std::`
+- 文件: backport/experimental/unique_resource.hpp (304 行)
+- 特点:
+  - 完整的 P0052R10 (TS v3) 实现
+  - 模板化的 deleter 类型（更高效，无类型擦除）
+  - 支持引用类型资源（通过 reference_wrapper）
+  - 完整的 noexcept 规范
+  - 提供 make_unique_resource_checked 工厂函数
+  - 更复杂的异常安全保证
+
+## 功能对比
+
+| 特性 | res_guard | unique_resource |
+|------|-----------|-----------------|
+| RAII 管理 | ✓ | ✓ |
+| 移动语义 | ✓ | ✓ |
+| 类型擦除 deleter | ✓ (std::function) | ✗ (模板参数) |
+| 引用类型支持 | ✗ | ✓ |
+| 标准兼容 | ✗ | ✓ (P0052R10) |
+| 性能 | 较低 (function 开销) | 较高 (零开销抽象) |
+| 异常安全 | 基础 | 完整 |
+
+## 建议
+
+**应该移除 res_guard，理由：**
+
+1. **零使用率** - 代码库中没有任何地方使用 res_guard
+2. **功能重复** - unique_resource 提供了 res_guard 的所有功能，且更强大
+3. **性能劣势** - res_guard 使用 std::function 有运行时开销
+4. **非标准** - unique_resource 是标准提案，res_guard 是自定义扩展
+5. **维护负担** - 保留两个功能重复的组件增加维护成本
+
+**如果要保留，需要：**
+- 在 README 中明确说明与 unique_resource 的区别
+- 提供使用场景示例
+- 解释为什么用户应该选择 res_guard 而不是 unique_resource
+
+**推荐行动：移除 res_guard**

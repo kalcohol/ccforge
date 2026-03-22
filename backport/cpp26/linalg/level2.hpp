@@ -323,4 +323,40 @@ void symmetric_matrix_rank_2_update(
 
 } // namespace std::linalg
 
+// hermitian_matrix_rank_1_update — [linalg.algs.blas2.rank1]
+template<class Triangle,
+         class XExtents, class XLayout, class XAccessor,
+         class AExtents, class ALayout, class AAccessor>
+void hermitian_matrix_rank_1_update(
+    Triangle,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    for (idx_t i = 0; i < n; ++i)
+        for (idx_t j = i; j < n; ++j)
+            A[i, j] += x[i] * std::conj(x[j]);
+}
+
+// hermitian_matrix_rank_2_update — [linalg.algs.blas2.rank2]
+template<class Triangle,
+         class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class AExtents, class ALayout, class AAccessor>
+void hermitian_matrix_rank_2_update(
+    Triangle,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    for (idx_t i = 0; i < n; ++i)
+        for (idx_t j = i; j < n; ++j)
+            A[i, j] += x[i] * std::conj(y[j]) + y[i] * std::conj(x[j]);
+}
+
+} // namespace std::linalg
+
 #endif // defined(__cpp_lib_mdspan)

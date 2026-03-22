@@ -31,22 +31,19 @@ if(NOT TARGET forge)
 
     set(FORGE_NEEDS_BACKPORT FALSE)
 
-    # Check for std::unique_resource (C++26)
+    # Check for std::unique_resource (TS v3, not in C++26 yet)
     check_cxx_source_compiles("
-        #include <memory>
-        void cleanup_int(int) {}
-        int main() {
-            std::unique_resource<int, void(*)(int)> r(42, &cleanup_int);
-            auto checked = std::make_unique_resource_checked(42, -1, &cleanup_int);
-            (void)r;
-            (void)checked;
-            return 0;
-        }
+        #include <version>
+        #if !defined(__cpp_lib_unique_resource) || __cpp_lib_unique_resource < 202311L
+        #error unique_resource not available
+        #endif
+        int main() { return 0; }
     " HAS_STD_UNIQUE_RESOURCE)
 
+    set(FORGE_NEEDS_EXPERIMENTAL FALSE)
     if(NOT HAS_STD_UNIQUE_RESOURCE)
-        set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "CC Forge: std::unique_resource backport enabled")
+        set(FORGE_NEEDS_EXPERIMENTAL TRUE)
+        message(STATUS "CC Forge: std::unique_resource backport enabled (TS v3)")
     endif()
 
     # Check for std::simd (C++26 current draft)
@@ -199,6 +196,13 @@ if(NOT TARGET forge)
 
         target_include_directories(forge BEFORE INTERFACE
             $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
+        )
+    endif()
+
+    # Add experimental backport path if needed
+    if(FORGE_NEEDS_EXPERIMENTAL)
+        target_include_directories(forge BEFORE INTERFACE
+            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}/experimental>
         )
     endif()
 

@@ -157,9 +157,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
 - `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用（需要 C++20 coroutines）
 
-**其他工具：**
-- `forge::res_guard<T>` — RAII 资源管理
-
 ## 编码规范
 
 - **文件编码**：UTF-8 without BOM（符合 C++23 标准）

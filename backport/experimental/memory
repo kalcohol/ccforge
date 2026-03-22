@@ -22,4 +22,16 @@
 
 #pragma once
 
-// CC Forge extensions - see individual headers for details
+#if __has_include(<version>)
+#include <version>
+#endif
+
+// Detect native unique_resource support
+#if defined(__cpp_lib_unique_resource) && __cpp_lib_unique_resource >= 202311L
+  // Use compiler's native implementation
+  #include <memory>
+#else
+  // Use CC Forge backport
+  #include <memory>  // Include standard <memory> first
+  #include "unique_resource.hpp"  // Then inject our implementation into std::
+#endif

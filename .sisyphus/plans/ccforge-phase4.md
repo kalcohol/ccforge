@@ -86,8 +86,8 @@ Wave FINAL:
 - [x] 11. Fix forge::static_thread_pool link error (add inline to tag_invoke)
 - [x] 12. Fix forge::task segfault (investigate and fix)
 - [x] 13. Verify all forge tests pass
-- [ ] 14. 4-toolchain + cross-arch verification
-- [ ] 15. README comprehensive cleanup
+- [x] 14. 4-toolchain + cross-arch verification
+- [x] 15. README comprehensive cleanup
 
 ---
 
@@ -218,10 +218,10 @@ Wave FINAL:
 
 ## Final Verification Wave
 
-- [ ] F1. Plan compliance audit
-- [ ] F2. Code quality + 4-toolchain QA
-- [ ] F3. 4-architecture QA
-- [ ] F4. Scope fidelity check
+- [x] F1. Plan compliance audit
+- [x] F2. Code quality + 4-toolchain QA
+- [x] F3. 4-architecture QA
+- [x] F4. Scope fidelity check
 
 ---
 

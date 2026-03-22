@@ -1,0 +1,32 @@
+Task 1: 调查 async_scope 声明来源
+
+## 发现
+
+### 错误声明的引入
+- Commit: 80b75f8d1c04ca05d7b6ae8119b5267c30abc292
+- Date: 2026-03-22 13:05:31 +0800
+- Message: docs: update README and CLAUDE.md for Phase 3 completion (execution Phase 4, simd Layer 1, linalg split+SIMD+OpenMP, forge:: extensions)
+- Line: 111 - "**未实现：** `async_scope`（执行策略变体）"
+
+### counting_scope 的实际实现
+- Commit: 9f8a7e23b19ce4c3dd5f372f3a3602d64ad5a940
+- Date: 2026-03-22 12:46:11 +0800 (早于错误声明 19 分钟)
+- Message: feat(forge): add any_sender_of; feat(execution): add default_domain, get_domain, simple_counting_scope, counting_scope (P3149R11)
+- File: backport/cpp26/execution/counting_scope.hpp
+
+## 结论
+
+**时间线矛盾：**
+1. 12:46:11 - counting_scope 实现完成
+2. 13:05:31 - README 更新时错误地写了"未实现 async_scope"
+
+**原因分析：**
+在 13:05 的文档更新中，作者可能：
+- 没有注意到 19 分钟前刚刚实现的 counting_scope
+- 混淆了 P3149R11 的 counting_scope 和其他未实现的功能
+- 文档更新时信息不同步
+
+**应该移除的理由：**
+1. counting_scope 和 simple_counting_scope 已经实现（P3149R11）
+2. README.md:109 已经列出了这些实现
+3. 第 111 行的"未实现"声明是错误的，与实际代码不符
