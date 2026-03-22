@@ -15,8 +15,10 @@ CC Forge is a header-only C++ library providing transparent C++26 backports. Whe
 Current backports:
 - `std::unique_resource` (P0052R15) — in `backport/cpp26/unique_resource.hpp`
 - `std::simd` (P1928) — in `backport/cpp26/simd.hpp`
+- `std::execution` Phase 1-4 (P2300 + P3149R11) — in `backport/cpp26/execution/`; Phase 4 adds `default_domain`, `get_domain` CPO, `simple_counting_scope`, `counting_scope`
+- `std::linalg` (P1673R13) — split into `backport/cpp26/linalg/` sub-files (Level 1/2/3); SIMD + OpenMP acceleration
 
-The `include/forge/` directory contains original extensions (not backports), e.g. `res_guard.hpp`.
+The `include/forge/` directory contains original extensions (not backports), e.g. `res_guard.hpp` and `forge::any_sender_of<Sigs...>` (type-erased sender).
 
 ## Core Design Principle — Seamless Transition
 
@@ -130,6 +132,7 @@ podman run --rm --userns=keep-id --user 0 -v "$PWD:/work:ro,Z" -w /work docker.i
 1. Runs `check_cxx_source_compiles()` to detect native `std::unique_resource` and `std::simd`
 2. If missing, prepends `backport/` to the include path via `target_include_directories(BEFORE)`
 3. The wrapper headers (`backport/memory`, `backport/simd`) include the real standard header first, then conditionally include the backport implementation
+4. `std::linalg` is split into `backport/cpp26/linalg/` sub-files organized by BLAS Level 1/2/3
 
 On MSVC, the real standard header path is resolved via environment variables and passed as compile definitions (`FORGE_MSVC_MEMORY_HEADER`, `FORGE_MSVC_SIMD_HEADER`).
 

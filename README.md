@@ -7,9 +7,9 @@
 | 特性 | 标准提案 | 入口头文件 | 状态 |
 |------|---------|-----------|------|
 | `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 |
-| `std::simd` | P1928 | `#include <simd>` | 核心表面完整 |
-| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-3 完整 |
-| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD 加速） |
+| `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
+| `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4 完整 |
+| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD + OpenMP 加速） |
 | `std::submdspan` | P2630 | `#include <mdspan>` | 基础设施 |
 
 所有 backport 遵循**无感过渡**原则——当工具链原生支持对应特性后，下游代码**零修改**重新编译即可自动切换。
@@ -92,7 +92,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::execution` 说明
 
-当前为 P2300 senders/receivers 的 Phase 1-3 完整 backport：
+当前为 P2300 senders/receivers 的 Phase 1-4 完整 backport：
 
 **已实现：**
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
@@ -105,8 +105,10 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
 - 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP、`transform_completion_signatures`、SBO+堆存储抽象
+- 域调度：`default_domain`、`get_domain` CPO
+- Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
 
-**未实现：** `async_scope`、`counting_scope`、类型擦除 sender、domain-based 调度
+**未实现：** `async_scope`（执行策略变体）
 
 > CPO 调度内部使用 `tag_invoke`（不对外暴露），Phase 3+ 新增类型使用成员函数优先分发。当原生 `<execution>` 可用时，整个 backport 自动禁用。
 
@@ -126,12 +128,24 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 > 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。当原生 `<linalg>` 可用时（`__cpp_lib_linalg >= 202311`），backport 自动禁用。未实现 execution policy 重载（纯串行实现，不链接系统 BLAS）。
 
-**SIMD 加速：** BLAS Level 1 归约操作（`dot`、`vector_two_norm`、`vector_abs_sum`）在 Forge `std::simd` 可用时自动使用 SIMD 加速路径。支持全部非复数标准算术类型。已在 x86_64（原生）、aarch64、riscv64、loongarch64 四个架构上通过 zig 交叉编译 + qemu 验证。
+**SIMD 加速：** BLAS Level 1 归约操作（`dot`、`vector_two_norm`、`vector_abs_sum`）以及 `copy`、`scale` 在 Forge `std::simd` 可用时自动使用 SIMD 加速路径；`matrix_vector_product`（GEMV）内层循环也已 SIMD 化。支持全部非复数标准算术类型。已在 x86_64（原生）、aarch64、riscv64、loongarch64 四个架构上通过 zig 交叉编译 + qemu 验证。
+
+**OpenMP 并行：** `-fopenmp` 可用时，OpenMP 自动并行化 GEMM/GEMV 外循环。Zig 等不支持 OpenMP 的工具链自动回退串行，无需任何代码修改。
+
+**模块化拆分：** `linalg.hpp` 已拆分为 `backport/cpp26/linalg/` 下的 5 个子文件，按 Level 1/2/3 组织，便于独立维护。
 
 ## `std::simd` 说明
 
 - 当前 `std::simd` backport 已提供并验证核心公开表面与示例构建。
+- Layer 1 向量化后端：GCC/Clang vector extension 替换标量循环中的 `+=`/`-=`/`*=` 运算符，`if consteval` 保持 constexpr 路径正确。
 - 在完整 wording 覆盖继续外扩前，backport 不主动定义 `__cpp_lib_simd`，避免过度宣称标准支持级别。
+
+## `forge::` 扩展工具
+
+`include/forge/` 下提供标准之外的扩展工具（`namespace forge`，非 backport）：
+
+- `forge::any_sender_of<Sigs...>` — 类型擦除 sender，SBO 64B + 堆回退，提供 `sync_wait()` 方法直接运行所存储的 sender。用于在泛型代码中存储不同类型的 sender。
+- `forge::res_guard<T>` — RAII 资源管理（已有）
 
 ## 编码规范
 
