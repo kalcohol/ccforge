@@ -528,32 +528,40 @@ public:
 
 	    constexpr basic_vec& operator+=(const basic_vec& other) noexcept
             requires requires(T& left, const T& right) { left += right; } {
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            data_[i] += other[i];
-	        }
+        if consteval {
+            for (simd_size_type i = 0; i < size; ++i) data_[i] += other[i];
+        } else {
+            detail::__simd_add<T, size>(data_.data(), other.data_.data());
+        }
         return *this;
     }
 
     constexpr basic_vec& operator-=(const basic_vec& other) noexcept
         requires requires(T& left, const T& right) { left -= right; } {
-        for (simd_size_type i = 0; i < size; ++i) {
-            data_[i] -= other[i];
+        if consteval {
+            for (simd_size_type i = 0; i < size; ++i) data_[i] -= other[i];
+        } else {
+            detail::__simd_sub<T, size>(data_.data(), other.data_.data());
         }
         return *this;
     }
 
     constexpr basic_vec& operator*=(const basic_vec& other) noexcept
         requires requires(T& left, const T& right) { left *= right; } {
-        for (simd_size_type i = 0; i < size; ++i) {
-            data_[i] *= other[i];
+        if consteval {
+            for (simd_size_type i = 0; i < size; ++i) data_[i] *= other[i];
+        } else {
+            detail::__simd_mul<T, size>(data_.data(), other.data_.data());
         }
         return *this;
     }
 
     constexpr basic_vec& operator/=(const basic_vec& other) noexcept
         requires requires(T& left, const T& right) { left /= right; } {
-        for (simd_size_type i = 0; i < size; ++i) {
-            data_[i] /= other[i];
+        if consteval {
+            for (simd_size_type i = 0; i < size; ++i) data_[i] /= other[i];
+        } else {
+            detail::__simd_div<T, size>(data_.data(), other.data_.data());
         }
         return *this;
     }
