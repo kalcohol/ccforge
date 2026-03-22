@@ -83,9 +83,9 @@ Wave FINAL:
 - [x] 8. forge::system_context (code exists)
 - [x] 9. forge::task<T> (code exists, needs segfault fix)
 - [x] 10. forge::any_receiver_of (code exists, tests pass)
-- [ ] 11. Fix forge::static_thread_pool link error (add inline to tag_invoke)
-- [ ] 12. Fix forge::task segfault (investigate and fix)
-- [ ] 13. Verify all forge tests pass
+- [x] 11. Fix forge::static_thread_pool link error (add inline to tag_invoke)
+- [x] 12. Fix forge::task segfault (investigate and fix)
+- [x] 13. Verify all forge tests pass
 - [ ] 14. 4-toolchain + cross-arch verification
 - [ ] 15. README comprehensive cleanup
 
