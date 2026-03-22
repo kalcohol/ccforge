@@ -105,7 +105,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
 - 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP、`transform_completion_signatures`、SBO+堆存储抽象
-- 域调度：`default_domain`、`get_domain` CPO
+- 域调度：`default_domain`、`get_domain` CPO、`connect_t` 集成 `transform_sender`
 - Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
 
 **未实现：** `async_scope`（执行策略变体）
@@ -136,16 +136,31 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::simd` 说明
 
-- 当前 `std::simd` backport 已提供并验证核心公开表面与示例构建。
-- Layer 1 向量化后端：GCC/Clang vector extension 替换标量循环中的 `+=`/`-=`/`*=` 运算符，`if consteval` 保持 constexpr 路径正确。
-- 在完整 wording 覆盖继续外扩前，backport 不主动定义 `__cpp_lib_simd`，避免过度宣称标准支持级别。
+当前 `std::simd` backport 已完整覆盖 [simd.syn] 公开表面：
+
+- **核心 API**：`simd<T, Abi>`、`simd_mask<T, Abi>`、构造/转换/下标/算术/比较/位运算
+- **内存操作**：`copy_from`/`copy_to`（含 flags）、`load`/`store`（含 partial/unchecked 重载）、`gather`/`scatter`（含 range 重载）
+- **归约与排列**：`reduce`、`hmin`/`hmax`、`split`/`cat`、`select`
+- **Layer 1 向量化**：GCC/Clang vector extension 后端，`if consteval` 保持 constexpr 正确性
+- **Feature macro**：定义 `__cpp_lib_simd = 202411L`，表明完整 [simd.syn] 覆盖
+
+已在 x86_64、aarch64、riscv64、loongarch64 四架构验证。
 
 ## `forge::` 扩展工具
 
 `include/forge/` 下提供标准之外的扩展工具（`namespace forge`，非 backport）：
 
-- `forge::any_sender_of<Sigs...>` — 类型擦除 sender，SBO 64B + 堆回退，提供 `sync_wait()` 方法直接运行所存储的 sender。用于在泛型代码中存储不同类型的 sender。
-- `forge::res_guard<T>` — RAII 资源管理（已有）
+**类型擦除组件：**
+- `forge::any_sender_of<Sigs...>` — 类型擦除 sender，SBO 64B + 堆回退，提供 `sync_wait()` 方法直接运行所存储的 sender
+- `forge::any_receiver_of<Sigs...>` — 类型擦除 receiver，用于在泛型代码中存储不同类型的 receiver
+
+**并发组件：**
+- `forge::static_thread_pool` — 线程池，提供 `scheduler` 接口，与 `std::execution` 集成
+- `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
+- `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用（需要 C++20 coroutines）
+
+**其他工具：**
+- `forge::res_guard<T>` — RAII 资源管理
 
 ## 编码规范
 
