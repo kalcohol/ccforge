@@ -1,0 +1,20 @@
+LINALG BACKPORT VERIFICATION
+=============================
+
+Directory: backport/cpp26/linalg/
+
+FOUND FILES (6 total):
+- accessor.hpp ✓
+- detail.hpp ✓
+- level1.hpp ✓ (REQUIRED)
+- level2.hpp ✓ (REQUIRED)
+- level3.hpp ✓ (REQUIRED)
+- tags_layout.hpp ✓
+
+REQUIRED FEATURES STATUS:
+✓ level1.hpp - READY (BLAS Level 1 operations)
+✓ level2.hpp - READY (GEMV and Level 2 operations)
+✓ level3.hpp - READY (GEMM and Level 3 operations)
+✓ accessor.hpp - READY (scaled/transposed views)
+
+VERDICT: All linalg backports present with Level 1/2/3 support ready for examples.

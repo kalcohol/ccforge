@@ -1,0 +1,34 @@
+CMAKE BUILD PATTERN
+===================
+
+BASIC PATTERN (from example/CMakeLists.txt):
+--------------------------------------------
+
+add_executable(unique_resource_example unique_resource_example.cpp)
+target_link_libraries(unique_resource_example PRIVATE forge::forge)
+
+PATTERN BREAKDOWN:
+- add_executable(<target_name> <source_file>.cpp)
+- target_link_libraries(<target_name> PRIVATE forge::forge)
+
+CONDITIONAL PATTERN (with optional library):
+----------------------------------------------
+
+find_library(FORGE_EXAMPLE_TBB_LIBRARY NAMES tbb)
+
+add_executable(execution_example execution_example.cpp)
+target_link_libraries(execution_example PRIVATE forge::forge)
+if(FORGE_EXAMPLE_TBB_LIBRARY)
+    target_link_libraries(execution_example PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+endif()
+
+BACKPORT INCLUDE PATH PATTERN:
+------------------------------
+
+target_include_directories(execution_example BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+
+NOTES:
+- BEFORE keyword ensures backport headers take precedence
+- PRIVATE scope for all target_link_libraries calls
+- forge::forge is the standard link target for all examples
+- Optional libraries (like tbb) are conditionally linked
