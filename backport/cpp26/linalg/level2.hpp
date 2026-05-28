@@ -320,9 +320,6 @@ void symmetric_matrix_rank_2_update(
             A[i, j] += alpha * (x[i] * y[j] + y[i] * x[j]);
 }
 
-
-} // namespace std::linalg
-
 // hermitian_matrix_rank_1_update — [linalg.algs.blas2.rank1]
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
