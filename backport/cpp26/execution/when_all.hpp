@@ -27,9 +27,12 @@
 #include "stop_token.hpp"
 
 #include <atomic>
+#include <exception>
 #include <mutex>
 #include <optional>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace std::execution {
@@ -38,10 +41,239 @@ namespace __forge_when_all {
 
 struct __stopped_tag {};
 
-template<class S>
-using __sender_value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<
-    decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::execution::empty_env{}))>;
+template<class Env>
+struct __child_env : std::decay_t<Env> {
+    using base_t = std::decay_t<Env>;
+
+    inplace_stop_token __token;
+
+    __child_env(base_t env, inplace_stop_token token)
+        : base_t(std::move(env)), __token(token) {}
+
+    friend auto tag_invoke(get_stop_token_t, const __child_env& self) noexcept
+        -> inplace_stop_token {
+        return self.__token;
+    }
+};
+
+template<class Env>
+using __child_env_t = __child_env<std::decay_t<Env>>;
+
+template<class CS>
+struct __value_tuple_list;
+
+template<class List, class Sig>
+struct __push_value_tuple {
+    using type = List;
+};
+
+template<class... Ts, class... Vs>
+struct __push_value_tuple<__forge_meta::type_list<Ts...>, set_value_t(Vs...)> {
+    using tuple_t = std::tuple<std::decay_t<Vs>...>;
+    using type = __forge_meta::list_push_unique_t<__forge_meta::type_list<Ts...>, tuple_t>;
+};
+
+template<class List, class... Sigs>
+struct __collect_value_tuples;
+
+template<class List>
+struct __collect_value_tuples<List> {
+    using type = List;
+};
+
+template<class List, class Sig, class... Rest>
+struct __collect_value_tuples<List, Sig, Rest...> {
+    using next = typename __push_value_tuple<List, Sig>::type;
+    using type = typename __collect_value_tuples<next, Rest...>::type;
+};
+
+template<class... Sigs>
+struct __value_tuple_list<completion_signatures<Sigs...>> {
+    using type = typename __collect_value_tuples<__forge_meta::type_list<>, Sigs...>::type;
+};
+
+template<class CS>
+using __value_tuple_list_t = typename __value_tuple_list<CS>::type;
+
+template<class List>
+struct __type_list_empty;
+
+template<class... Ts>
+struct __type_list_empty<__forge_meta::type_list<Ts...>>
+    : std::bool_constant<sizeof...(Ts) == 0> {};
+
+template<class... Lists>
+struct __concat_type_lists;
+
+template<>
+struct __concat_type_lists<> {
+    using type = __forge_meta::type_list<>;
+};
+
+template<class... Ts>
+struct __concat_type_lists<__forge_meta::type_list<Ts...>> {
+    using type = __forge_meta::type_list<Ts...>;
+};
+
+template<class... Ts, class... Us, class... Rest>
+struct __concat_type_lists<__forge_meta::type_list<Ts...>, __forge_meta::type_list<Us...>, Rest...>
+    : __concat_type_lists<__forge_meta::type_list<Ts..., Us...>, Rest...> {};
+
+template<class... Lists>
+using __concat_type_lists_t = typename __concat_type_lists<Lists...>::type;
+
+template<class Prefix, class List>
+struct __append_tuple_to_each;
+
+template<class Prefix, class... Tuples>
+struct __append_tuple_to_each<Prefix, __forge_meta::type_list<Tuples...>> {
+    using type = __forge_meta::type_list<__forge_meta::__tuple_cat_t<Prefix, Tuples>...>;
+};
+
+template<class A, class B>
+struct __tuple_product;
+
+template<class... As, class... Bs>
+struct __tuple_product<__forge_meta::type_list<As...>, __forge_meta::type_list<Bs...>> {
+    using type = __concat_type_lists_t<
+        typename __append_tuple_to_each<As, __forge_meta::type_list<Bs...>>::type...>;
+};
+
+template<class... Lists>
+struct __cartesian_value_tuples;
+
+template<>
+struct __cartesian_value_tuples<> {
+    using type = __forge_meta::type_list<std::tuple<>>;
+};
+
+template<class First, class... Rest>
+struct __cartesian_value_tuples<First, Rest...> {
+    using tail = typename __cartesian_value_tuples<Rest...>::type;
+    using type = typename __tuple_product<First, tail>::type;
+};
+
+template<class Tuple>
+struct __tuple_to_value_sig;
+
+template<class... Vs>
+struct __tuple_to_value_sig<std::tuple<Vs...>> {
+    using type = set_value_t(Vs...);
+};
+
+template<class List>
+struct __value_list_to_cs;
+
+template<class... Tuples>
+struct __value_list_to_cs<__forge_meta::type_list<Tuples...>> {
+    using type = completion_signatures<typename __tuple_to_value_sig<Tuples>::type...>;
+};
+
+template<class... CSList>
+using __cartesian_value_cs_t = typename __value_list_to_cs<
+    typename __cartesian_value_tuples<__value_tuple_list_t<CSList>...>::type>::type;
+
+template<class List, class Sig>
+struct __push_error_type {
+    using type = List;
+};
+
+template<class... Es, class E>
+struct __push_error_type<__forge_meta::type_list<Es...>, set_error_t(E)> {
+    using type = __forge_meta::list_push_unique_t<__forge_meta::type_list<Es...>, std::decay_t<E>>;
+};
+
+template<class List, class... Sigs>
+struct __collect_error_types;
+
+template<class List>
+struct __collect_error_types<List> {
+    using type = List;
+};
+
+template<class List, class Sig, class... Rest>
+struct __collect_error_types<List, Sig, Rest...> {
+    using next = typename __push_error_type<List, Sig>::type;
+    using type = typename __collect_error_types<next, Rest...>::type;
+};
+
+template<class CS>
+struct __error_type_list;
+
+template<class... Sigs>
+struct __error_type_list<completion_signatures<Sigs...>> {
+    using type = typename __collect_error_types<__forge_meta::type_list<>, Sigs...>::type;
+};
+
+template<class List, class AddList>
+struct __append_type_list_unique;
+
+template<class List, class... Ts>
+struct __append_type_list_unique<List, __forge_meta::type_list<Ts...>> {
+    using type = __forge_meta::list_push_unique_all_t<List, Ts...>;
+};
+
+template<class List, class... Rest>
+struct __concat_unique_type_lists;
+
+template<class List>
+struct __concat_unique_type_lists<List> {
+    using type = List;
+};
+
+template<class List, class AddList, class... Rest>
+struct __concat_unique_type_lists<List, AddList, Rest...> {
+    using next = typename __append_type_list_unique<List, AddList>::type;
+    using type = typename __concat_unique_type_lists<next, Rest...>::type;
+};
+
+template<class List>
+struct __error_list_to_cs;
+
+template<class... Es>
+struct __error_list_to_cs<__forge_meta::type_list<Es...>> {
+    using type = completion_signatures<set_error_t(Es)...>;
+};
+
+template<class... CSList>
+using __error_type_list_t = typename __concat_unique_type_lists<
+    __forge_meta::type_list<std::exception_ptr>, typename __error_type_list<CSList>::type...>::type;
+
+template<class... CSList>
+using __error_cs_t = typename __error_list_to_cs<__error_type_list_t<CSList...>>::type;
+
+template<class List>
+struct __error_variant_from_list;
+
+template<class... Es>
+struct __error_variant_from_list<__forge_meta::type_list<Es...>> {
+    using type = std::variant<Es...>;
+};
+
+template<class CS>
+struct __value_variant_from_cs;
+
+template<class... Tuples>
+struct __value_variant_from_list {
+    using type = std::variant<Tuples...>;
+};
+
+template<>
+struct __value_variant_from_list<> {
+    using type = std::variant<std::tuple<>>;
+};
+
+template<class... Tuples>
+struct __value_variant_from_cs<__forge_meta::type_list<Tuples...>>
+    : __value_variant_from_list<Tuples...> {};
+
+template<class S, class Env>
+using __sender_value_variant_t = typename __value_variant_from_cs<__value_tuple_list_t<
+    decltype(std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()))>>::type;
+
+template<class Env, class... Senders>
+using __when_all_error_variant_t = typename __error_variant_from_list<__error_type_list_t<
+    decltype(std::execution::get_completion_signatures(std::declval<Senders>(), std::declval<Env>()))...>>::type;
 
 template<class OuterRecv, class... Senders>
 struct __op;
@@ -54,8 +286,9 @@ struct __child_recv {
     template<class... Vs>
     friend void tag_invoke(set_value_t, __child_recv&& self, Vs&&... vs) noexcept {
         try {
-            std::get<I>(self.__self->__partial) =
-                std::make_tuple(std::decay_t<Vs>(vs)...);
+            using tuple_t = std::tuple<std::decay_t<Vs>...>;
+            std::get<I>(self.__self->__partial).emplace(
+                std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
         } catch (...) {
             self.__self->child_fail(std::current_exception());
             return;
@@ -64,19 +297,15 @@ struct __child_recv {
     }
     template<class E>
     friend void tag_invoke(set_error_t, __child_recv&& self, E&& e) noexcept {
-        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
-            self.__self->child_fail(static_cast<E&&>(e));
-        else
-            self.__self->child_fail(std::make_exception_ptr(static_cast<E&&>(e)));
+        self.__self->child_fail(static_cast<E&&>(e));
     }
     friend void tag_invoke(set_stopped_t, __child_recv&& self) noexcept {
         self.__self->child_stop();
     }
     friend auto tag_invoke(get_env_t, const __child_recv& self) noexcept {
-        return std::execution::make_env(
-            std::execution::make_prop(
-                get_stop_token_t{},
-                self.__self->__stop_src.get_token()));
+        return __child_env_t<env_of_t<OuterRecv>>{
+            std::execution::get_env(self.__self->__outer_recv),
+            self.__self->__stop_src.get_token()};
     }
 };
 
@@ -85,17 +314,23 @@ struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     static constexpr std::size_t N = sizeof...(Senders);
 
-    // Combined value tuple type for all senders (concatenated)
-    using all_values_t = std::execution::__forge_meta::__tuple_cat_t<
-        __sender_value_tuple_t<Senders>...>;
+    using child_env_t = __child_env_t<env_of_t<OuterRecv>>;
+    using error_variant_t = __when_all_error_variant_t<child_env_t, Senders...>;
+
+    template<class S>
+    static constexpr bool __sender_has_value = !__type_list_empty<__value_tuple_list_t<
+        decltype(std::execution::get_completion_signatures(
+            std::declval<S>(), std::declval<child_env_t>()))>>::value;
+
+    static constexpr bool __can_value_complete = (__sender_has_value<Senders> && ...);
 
     OuterRecv __outer_recv;
     inplace_stop_source __stop_src;
     std::atomic<std::size_t> __pending{N};
     std::atomic<bool> __failed{false};
     std::mutex __mtx;
-    std::variant<std::monostate, all_values_t, std::exception_ptr, __stopped_tag> __result;
-    std::tuple<std::optional<__sender_value_tuple_t<Senders>>...> __partial;
+    std::variant<std::monostate, error_variant_t, __stopped_tag> __result;
+    std::tuple<std::optional<__sender_value_variant_t<Senders, child_env_t>>...> __partial;
 
     static constexpr std::size_t kChildBuf = 512;
     alignas(std::max_align_t) unsigned char __child_bufs[N][kChildBuf];
@@ -132,11 +367,19 @@ struct __op : __forge_detail::__immovable {
             if (__child_dtors[i]) __child_dtors[i](static_cast<void*>(__child_bufs[i]));
     }
 
-    void child_fail(std::exception_ptr ep) noexcept {
+    template<class E>
+    void child_fail(E&& e) noexcept {
         bool expected = false;
         if (__failed.compare_exchange_strong(expected, true)) {
-            std::lock_guard lk{__mtx};
-            __result.template emplace<2>(std::move(ep));
+            try {
+                std::lock_guard lk{__mtx};
+                __result.template emplace<1>(
+                    std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
+            } catch (...) {
+                std::lock_guard lk{__mtx};
+                __result.template emplace<1>(
+                    std::in_place_type<std::exception_ptr>, std::current_exception());
+            }
         }
         __stop_src.request_stop();
         child_done();
@@ -146,7 +389,7 @@ struct __op : __forge_detail::__immovable {
         bool expected = false;
         if (__failed.compare_exchange_strong(expected, true)) {
             std::lock_guard lk{__mtx};
-            __result.template emplace<3>(__stopped_tag{});
+            __result.template emplace<2>(__stopped_tag{});
         }
         __stop_src.request_stop();
         child_done();
@@ -157,22 +400,34 @@ struct __op : __forge_detail::__immovable {
     }
 
     void deliver() noexcept {
-        if (__result.index() == 2) {
-            set_error(std::move(__outer_recv), std::get<2>(__result));
-        } else if (__result.index() == 3) {
+        if (__result.index() == 1) {
+            std::visit([this](auto& err) noexcept {
+                set_error(std::move(__outer_recv), std::move(err));
+            }, std::get<1>(__result));
+        } else if (__result.index() == 2) {
             set_stopped(std::move(__outer_recv));
         } else {
-            try_deliver_values(std::index_sequence_for<Senders...>{});
+            if constexpr (__can_value_complete) {
+                try_deliver_values(std::index_sequence_for<Senders...>{});
+            } else {
+                set_stopped(std::move(__outer_recv));
+            }
         }
     }
 
     template<std::size_t... Is>
     void try_deliver_values(std::index_sequence<Is...>) noexcept {
         try {
-            auto combined = std::tuple_cat(*std::get<Is>(__partial)...);
-            std::apply([&](auto&&... vs) {
-                set_value(std::move(__outer_recv), std::move(vs)...);
-            }, std::move(combined));
+            std::visit([this](auto&... values) noexcept {
+                try {
+                    auto combined = std::tuple_cat(std::move(values)...);
+                    std::apply([&](auto&&... vs) {
+                        set_value(std::move(__outer_recv), std::move(vs)...);
+                    }, std::move(combined));
+                } catch (...) {
+                    set_error(std::move(__outer_recv), std::current_exception());
+                }
+            }, *std::get<Is>(__partial)...);
         } catch (...) {
             set_error(std::move(__outer_recv), std::current_exception());
         }
@@ -190,14 +445,24 @@ struct __sender {
     using sender_concept = sender_t;
     std::tuple<Senders...> __sndrs;
 
+    template<class Env>
     friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender&, auto env) noexcept {
-        using cart_t = std::execution::__forge_meta::__cartesian_product_value_sigs_t<
+                           const __sender&, Env&&) noexcept {
+        using child_env_t = __child_env_t<Env>;
+        using cart_t = __cartesian_value_cs_t<
             decltype(std::execution::get_completion_signatures(
-                std::declval<Senders>(), env))...>;
-        using err_cs = completion_signatures<set_error_t(std::exception_ptr)>;
-        using stp_cs = completion_signatures<set_stopped_t()>;
-        return std::execution::__forge_meta::__concat_cs_t<cart_t, err_cs, stp_cs>{};
+                std::declval<Senders>(), std::declval<child_env_t>()))...>;
+        using err_cs = __error_cs_t<
+            decltype(std::execution::get_completion_signatures(
+                std::declval<Senders>(), std::declval<child_env_t>()))...>;
+        static constexpr bool sends_stopped = (
+            std::execution::__forge_meta::sends_stopped_from<
+                decltype(std::execution::get_completion_signatures(
+                    std::declval<Senders>(), std::declval<child_env_t>()))>::value || ...);
+        using stp_cs = std::conditional_t<sends_stopped,
+            completion_signatures<set_stopped_t()>,
+            completion_signatures<>>;
+        return std::execution::__forge_meta::__concat_unique_cs_t<cart_t, err_cs, stp_cs>{};
     }
 
     template<receiver R>
