@@ -13,7 +13,7 @@ ARG ZIG_VERSION=0.14.0
 ARG ZIG_TARBALL=zig-linux-x86_64-${ZIG_VERSION}.tar.xz
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl xz-utils cmake ninja-build ca-certificates \
+    && apt-get install -y --no-install-recommends curl xz-utils cmake ninja-build ca-certificates binutils \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_TARBALL}" | tar -xJ -C /opt \
     && ln -s "/opt/${ZIG_TARBALL%.tar.xz}/zig" /usr/local/bin/zig

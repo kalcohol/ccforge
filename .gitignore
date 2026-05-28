@@ -40,6 +40,7 @@ AGENTS.md
 Thumbs.db
 
 # Temporary files
+.cache/
 *.tmp
 *.log
 IMPLEMENTATION_SUMMARY.md
