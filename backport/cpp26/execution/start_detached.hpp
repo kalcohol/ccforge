@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <atomic>
 #include <cstdlib>
 
 namespace std::execution {
@@ -35,15 +36,28 @@ struct __detached_recv {
     using receiver_concept = receiver_t;
 
     struct __state_base {
-        virtual void destroy() noexcept = 0;
+        void add_ref() noexcept {
+            __refs.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        void release() noexcept {
+            if (__refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                delete this;
+            }
+        }
+
+        virtual void start() noexcept = 0;
         virtual ~__state_base() = default;
+
+    private:
+        std::atomic<unsigned> __refs{1};
     };
 
     __state_base* __state;
 
     template<class... Vs>
     friend void tag_invoke(set_value_t, __detached_recv&& self, Vs&&...) noexcept {
-        self.__state->destroy();
+        self.__state->release();
     }
 
     template<class E>
@@ -52,7 +66,7 @@ struct __detached_recv {
     }
 
     friend void tag_invoke(set_stopped_t, __detached_recv&& self) noexcept {
-        self.__state->destroy();
+        self.__state->release();
     }
 
     friend auto tag_invoke(get_env_t, const __detached_recv&) noexcept
@@ -70,8 +84,8 @@ struct __state : __detached_recv::__state_base {
         : __op(std::execution::connect(std::move(sndr), __detached_recv{this}))
     {}
 
-    void destroy() noexcept override {
-        delete this;
+    void start() noexcept override {
+        std::execution::start(__op);
     }
 };
 
@@ -81,7 +95,9 @@ template<sender S>
 void start_detached(S sndr) {
     using state_t = __forge_start_detached::__state<S>;
     auto* s = new state_t(std::move(sndr));
-    std::execution::start(s->__op);
+    s->add_ref();
+    s->start();
+    s->release();
 }
 
 } // namespace std::execution

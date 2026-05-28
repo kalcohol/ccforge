@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -87,6 +88,22 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
     }, st.result);
 }
 
+template<class R>
+struct __subscriber {
+    explicit __subscriber(R r) : rcvr(std::move(r)) {}
+
+    std::atomic<bool> active{true};
+    R rcvr;
+};
+
+template<class S, class R>
+void deliver_to_subscriber(const std::shared_ptr<__shared_state<S>>& sh,
+                           const std::shared_ptr<__subscriber<R>>& sub) noexcept {
+    if (sub && sub->active.exchange(false, std::memory_order_acq_rel)) {
+        deliver_result(*sh, sub->rcvr);
+    }
+}
+
 template<class S>
 struct __inner_recv {
     using receiver_concept = receiver_t;
@@ -142,28 +159,41 @@ struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     std::shared_ptr<__shared_state<S>> __shared;
-    R __rcvr;
+    std::shared_ptr<__subscriber<R>> __sub;
 
     __op(std::shared_ptr<__shared_state<S>> sh, R r)
-        : __shared(std::move(sh)), __rcvr(std::move(r)) {}
+        : __shared(std::move(sh)), __sub(std::make_shared<__subscriber<R>>(std::move(r))) {}
+
+    ~__op() {
+        if (__sub) {
+            __sub->active.store(false, std::memory_order_release);
+        }
+    }
 
     friend void tag_invoke(start_t, __op& self) noexcept {
-        auto& st = *self.__shared;
+        auto sh = self.__shared;
+        auto sub = self.__sub;
+        auto weak_sub = std::weak_ptr<__subscriber<R>>{sub};
+        auto& st = *sh;
         std::unique_lock lk{st.mtx};
 
         if (st.phase == __shared_state<S>::Phase::done) {
             lk.unlock();
-            deliver_result(st, self.__rcvr);
+            deliver_to_subscriber(sh, sub);
         } else if (st.phase == __shared_state<S>::Phase::idle) {
             st.phase = __shared_state<S>::Phase::running;
-            st.on_done.push_back([sh = self.__shared, &rcvr = self.__rcvr]() mutable {
-                deliver_result(*sh, rcvr);
+            st.on_done.push_back([sh, weak_sub]() mutable {
+                if (auto locked = weak_sub.lock()) {
+                    deliver_to_subscriber(sh, locked);
+                }
             });
             lk.unlock();
             st.op_start(static_cast<void*>(st.op_buf));
         } else {
-            st.on_done.push_back([sh = self.__shared, &rcvr = self.__rcvr]() mutable {
-                deliver_result(*sh, rcvr);
+            st.on_done.push_back([sh, weak_sub]() mutable {
+                if (auto locked = weak_sub.lock()) {
+                    deliver_to_subscriber(sh, locked);
+                }
             });
         }
     }

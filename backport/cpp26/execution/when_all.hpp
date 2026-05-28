@@ -179,7 +179,8 @@ struct __op : __forge_detail::__immovable {
     }
 
     friend void tag_invoke(start_t, __op& self) noexcept {
-        for (std::size_t i = 0; i < self.N; ++i)
+        constexpr std::size_t n = N;
+        for (std::size_t i = 0; i < n; ++i)
             self.__child_starts[i](static_cast<void*>(self.__child_bufs[i]));
     }
 };
