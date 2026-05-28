@@ -25,9 +25,70 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <exception>
+#include <functional>
+#include <type_traits>
+
 namespace std::execution {
 
 namespace __forge_upon {
+
+template<class R>
+struct __value_cs_from_result {
+    using type = completion_signatures<set_value_t(R)>;
+};
+
+template<>
+struct __value_cs_from_result<void> {
+    using type = completion_signatures<set_value_t()>;
+};
+
+template<bool Enabled>
+struct __maybe_eptr_cs {
+    using type = completion_signatures<>;
+};
+
+template<>
+struct __maybe_eptr_cs<true> {
+    using type = completion_signatures<set_error_t(std::exception_ptr)>;
+};
+
+template<class Sig>
+struct __is_error_sig : std::false_type {};
+
+template<class E>
+struct __is_error_sig<set_error_t(E)> : std::true_type {};
+
+template<class Fn, class Sig, bool IsError>
+struct __transform_sig {
+    using type = completion_signatures<Sig>;
+};
+
+template<class Fn, class E>
+struct __transform_sig<Fn, set_error_t(E), true> {
+    using result_t = std::invoke_result_t<Fn, E>;
+    using type = typename __value_cs_from_result<result_t>::type;
+};
+
+template<class Fn>
+struct __transform_sig<Fn, set_stopped_t(), false> {
+    using result_t = std::invoke_result_t<Fn>;
+    using type = typename __value_cs_from_result<result_t>::type;
+};
+
+template<class Fn, bool IsError, class CS>
+struct __completion_sigs;
+
+template<class Fn, bool IsError, class... Sigs>
+struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
+    static constexpr bool handles_completion = IsError
+        ? (__is_error_sig<Sigs>::value || ...)
+        : (std::is_same_v<Sigs, set_stopped_t()> || ...);
+
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __transform_sig<Fn, Sigs, IsError>::type...,
+        typename __maybe_eptr_cs<handles_completion>::type>;
+};
 
 template<class R, class Fn>
 struct __recv_error {
@@ -117,7 +178,8 @@ struct __sender {
                            const __sender& self, Env&&) noexcept {
         using up_cs_t = decltype(std::execution::get_completion_signatures(
             self.__sndr, std::declval<Env>()));
-        return up_cs_t{};
+        using out_cs_t = typename __completion_sigs<Fn, IsError, up_cs_t>::type;
+        return out_cs_t{};
     }
 
     template<receiver R>

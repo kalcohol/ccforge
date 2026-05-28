@@ -117,6 +117,8 @@ struct __env {
     run_loop::scheduler const* __sched;
     friend auto tag_invoke(get_scheduler_t, const __env& self) noexcept
         -> run_loop::scheduler;
+    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
+        -> run_loop::scheduler;
 };
 
 template<class R>
@@ -176,6 +178,9 @@ private:
     friend auto tag_invoke(get_scheduler_t,
                            const __forge_run_loop::__env& env) noexcept
         -> scheduler;
+    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>,
+                           const __forge_run_loop::__env& env) noexcept
+        -> scheduler;
     explicit scheduler(run_loop* loop) noexcept : __loop(loop) {}
     run_loop* __loop;
 };
@@ -186,6 +191,10 @@ inline run_loop::scheduler run_loop::get_scheduler() noexcept {
 
 namespace __forge_run_loop {
 inline auto tag_invoke(get_scheduler_t, const __env& self) noexcept
+    -> run_loop::scheduler {
+    return *self.__sched;
+}
+inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
     -> run_loop::scheduler {
     return *self.__sched;
 }

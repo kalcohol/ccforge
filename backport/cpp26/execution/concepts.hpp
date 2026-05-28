@@ -109,6 +109,23 @@ struct list_push_unique<type_list<Ts...>, T> {
 template<class List, class T>
 using list_push_unique_t = typename list_push_unique<List, T>::type;
 
+template<class List, class... Ts>
+struct list_push_unique_all;
+
+template<class List>
+struct list_push_unique_all<List> {
+    using type = List;
+};
+
+template<class List, class T, class... Rest>
+struct list_push_unique_all<List, T, Rest...> {
+    using next = list_push_unique_t<List, T>;
+    using type = typename list_push_unique_all<next, Rest...>::type;
+};
+
+template<class List, class... Ts>
+using list_push_unique_all_t = typename list_push_unique_all<List, Ts...>::type;
+
 template<template<class...> class Variant, class List>
 struct list_to_variant;
 
@@ -204,6 +221,48 @@ struct __concat_cs<completion_signatures<Sigs1...>, completion_signatures<Sigs2.
 
 template<class... CSList>
 using __concat_cs_t = typename __concat_cs<CSList...>::type;
+
+template<class List, class CS>
+struct __append_cs_unique;
+
+template<class List, class... Sigs>
+struct __append_cs_unique<List, completion_signatures<Sigs...>> {
+    using type = list_push_unique_all_t<List, Sigs...>;
+};
+
+template<class... CSList>
+struct __concat_unique_cs;
+
+template<>
+struct __concat_unique_cs<> {
+    using type = completion_signatures<>;
+};
+
+template<class... CSList>
+struct __concat_unique_cs {
+private:
+    template<class List, class... Rest>
+    struct __append_all;
+
+    template<class List>
+    struct __append_all<List> {
+        using type = List;
+    };
+
+    template<class List, class CS, class... Rest>
+    struct __append_all<List, CS, Rest...> {
+        using next = typename __append_cs_unique<List, CS>::type;
+        using type = typename __append_all<next, Rest...>::type;
+    };
+
+    using list = typename __append_all<type_list<>, CSList...>::type;
+
+public:
+    using type = list_to_variant_t<completion_signatures, list>;
+};
+
+template<class... CSList>
+using __concat_unique_cs_t = typename __concat_unique_cs<CSList...>::type;
 
 template<class Sig,
          class ValueCompletions,

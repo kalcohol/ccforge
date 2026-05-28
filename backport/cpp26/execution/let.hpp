@@ -25,6 +25,11 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <exception>
+#include <functional>
+#include <type_traits>
+#include <utility>
+
 namespace std::execution {
 
 namespace __forge_let {
@@ -32,6 +37,78 @@ namespace __forge_let {
 struct __value_tag  {};
 struct __error_tag  {};
 struct __stopped_tag{};
+
+template<class Sig>
+struct __is_value_sig : std::false_type {};
+
+template<class... Vs>
+struct __is_value_sig<set_value_t(Vs...)> : std::true_type {};
+
+template<class Sig>
+struct __is_error_sig : std::false_type {};
+
+template<class E>
+struct __is_error_sig<set_error_t(E)> : std::true_type {};
+
+template<class Which, class Sig>
+struct __matches_which : std::false_type {};
+
+template<class... Vs>
+struct __matches_which<__value_tag, set_value_t(Vs...)> : std::true_type {};
+
+template<class E>
+struct __matches_which<__error_tag, set_error_t(E)> : std::true_type {};
+
+template<>
+struct __matches_which<__stopped_tag, set_stopped_t()> : std::true_type {};
+
+template<bool Enabled>
+struct __maybe_eptr_cs {
+    using type = completion_signatures<>;
+};
+
+template<>
+struct __maybe_eptr_cs<true> {
+    using type = completion_signatures<set_error_t(std::exception_ptr)>;
+};
+
+template<class Fn, class Which, class Env, class Sig>
+struct __let_sig {
+    using type = completion_signatures<Sig>;
+};
+
+template<class Fn, class Env, class... Vs>
+struct __let_sig<Fn, __value_tag, Env, set_value_t(Vs...)> {
+    using inner_sender_t = std::invoke_result_t<Fn, Vs...>;
+    using type = decltype(std::execution::get_completion_signatures(
+        std::declval<inner_sender_t>(), std::declval<Env>()));
+};
+
+template<class Fn, class Env, class E>
+struct __let_sig<Fn, __error_tag, Env, set_error_t(E)> {
+    using inner_sender_t = std::invoke_result_t<Fn, E>;
+    using type = decltype(std::execution::get_completion_signatures(
+        std::declval<inner_sender_t>(), std::declval<Env>()));
+};
+
+template<class Fn, class Env>
+struct __let_sig<Fn, __stopped_tag, Env, set_stopped_t()> {
+    using inner_sender_t = std::invoke_result_t<Fn>;
+    using type = decltype(std::execution::get_completion_signatures(
+        std::declval<inner_sender_t>(), std::declval<Env>()));
+};
+
+template<class Fn, class Which, class Env, class CS>
+struct __let_cs;
+
+template<class Fn, class Which, class Env, class... Sigs>
+struct __let_cs<Fn, Which, Env, completion_signatures<Sigs...>> {
+    static constexpr bool handles_completion = (__matches_which<Which, Sigs>::value || ...);
+
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __let_sig<Fn, Which, Env, Sigs>::type...,
+        typename __maybe_eptr_cs<handles_completion>::type>;
+};
 
 template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
@@ -159,7 +236,9 @@ struct __sender {
 
     friend auto tag_invoke(get_completion_signatures_t,
                            const __sender& self, auto env) noexcept {
-        return decltype(std::execution::get_completion_signatures(self.__sndr, env)){};
+        using env_t = decltype(env);
+        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+        return typename __let_cs<Fn, Which, env_t, up_cs_t>::type{};
     }
 
     template<receiver R>

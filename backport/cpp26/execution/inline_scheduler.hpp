@@ -33,6 +33,7 @@ class inline_scheduler;
 struct env {
     const inline_scheduler* sched_;
     friend auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler;
+    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler;
 };
 
 template<class R>
@@ -81,6 +82,7 @@ public:
 
 namespace __forge_inline {
 inline auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
+inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
 } // namespace __forge_inline
 
 using inline_scheduler = __forge_inline::inline_scheduler;

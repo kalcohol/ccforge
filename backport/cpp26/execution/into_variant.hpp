@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <exception>
 #include <tuple>
 #include <variant>
 
@@ -59,9 +60,22 @@ private:
     template<class List>
     struct __list_to_variant_sig;
 
+    template<bool Empty, class... Tuples>
+    struct __variant_value_cs;
+
+    template<class... Tuples>
+    struct __variant_value_cs<true, Tuples...> {
+        using type = completion_signatures<>;
+    };
+
+    template<class... Tuples>
+    struct __variant_value_cs<false, Tuples...> {
+        using type = completion_signatures<set_value_t(std::variant<Tuples...>)>;
+    };
+
     template<class... Tuples>
     struct __list_to_variant_sig<__forge_meta::type_list<Tuples...>> {
-        using type = completion_signatures<set_value_t(std::variant<Tuples...>)>;
+        using type = typename __variant_value_cs<sizeof...(Tuples) == 0, Tuples...>::type;
     };
 
     template<class List, class Sig>
@@ -120,7 +134,7 @@ private:
     using __eptr_cs = completion_signatures<set_error_t(std::exception_ptr)>;
 
 public:
-    using type = __forge_meta::__concat_cs_t<__value_cs, __non_value_cs, __eptr_cs>;
+    using type = __forge_meta::__concat_unique_cs_t<__value_cs, __non_value_cs, __eptr_cs>;
 };
 
 template<class CS>
@@ -161,9 +175,23 @@ struct __variant_type_of<completion_signatures<Sigs...>> {
 
     template<class List>
     struct __to_variant;
+
+    template<bool Empty, class... Ts>
+    struct __variant_from_list;
+
+    template<class... Ts>
+    struct __variant_from_list<true, Ts...> {
+        using type = std::variant<std::monostate>;
+    };
+
+    template<class... Ts>
+    struct __variant_from_list<false, Ts...> {
+        using type = std::variant<Ts...>;
+    };
+
     template<class... Ts>
     struct __to_variant<__forge_meta::type_list<Ts...>> {
-        using type = std::variant<Ts...>;
+        using type = typename __variant_from_list<sizeof...(Ts) == 0, Ts...>::type;
     };
 
     using __tuples = typename __collect<__forge_meta::type_list<>, Sigs...>::type;
@@ -218,8 +246,9 @@ struct __into_variant_sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, __into_variant_sender self, R r) {
+        using env_t = env_of_t<R>;
         using cs_t = decltype(std::execution::get_completion_signatures(
-            self.__sndr, std::execution::empty_env{}));
+            self.__sndr, std::declval<env_t>()));
         using var_t = __variant_type_of_t<cs_t>;
         return std::execution::connect(
             std::move(self.__sndr),

@@ -25,11 +25,97 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
 namespace std::execution {
 
 namespace __forge_stopped {
 
-template<class S, class R>
+template<class CS>
+struct __first_optional_type {
+    using type = std::optional<std::tuple<>>;
+};
+
+template<class... Vs, class... Rest>
+struct __first_optional_type<completion_signatures<set_value_t(Vs...), Rest...>> {
+    using type = std::optional<std::tuple<std::decay_t<Vs>...>>;
+};
+
+template<class Other, class... Rest>
+struct __first_optional_type<completion_signatures<Other, Rest...>>
+    : __first_optional_type<completion_signatures<Rest...>> {};
+
+template<class Sig>
+struct __optional_sig {
+    using type = completion_signatures<Sig>;
+};
+
+template<class... Vs>
+struct __optional_sig<set_value_t(Vs...)> {
+    using type = completion_signatures<
+        set_value_t(std::optional<std::tuple<std::decay_t<Vs>...>>)>;
+};
+
+template<>
+struct __optional_sig<set_stopped_t()> {
+    using type = completion_signatures<>;
+};
+
+template<class OptionalT, bool SendsStopped>
+struct __optional_stopped_sig {
+    using type = completion_signatures<>;
+};
+
+template<class OptionalT>
+struct __optional_stopped_sig<OptionalT, true> {
+    using type = completion_signatures<set_value_t(OptionalT)>;
+};
+
+template<class CS>
+struct __optional_cs;
+
+template<class... Sigs>
+struct __optional_cs<completion_signatures<Sigs...>> {
+    using optional_t = typename __first_optional_type<completion_signatures<Sigs...>>::type;
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __optional_sig<Sigs>::type...,
+        typename __optional_stopped_sig<optional_t, __forge_meta::has_stopped_v<Sigs...>>::type>;
+};
+
+template<class Err, bool SendsStopped>
+struct __error_stopped_sig {
+    using type = completion_signatures<>;
+};
+
+template<class Err>
+struct __error_stopped_sig<Err, true> {
+    using type = completion_signatures<set_error_t(Err)>;
+};
+
+template<class Sig>
+struct __drop_stopped_sig {
+    using type = completion_signatures<Sig>;
+};
+
+template<>
+struct __drop_stopped_sig<set_stopped_t()> {
+    using type = completion_signatures<>;
+};
+
+template<class CS, class Err>
+struct __error_cs;
+
+template<class Err, class... Sigs>
+struct __error_cs<completion_signatures<Sigs...>, Err> {
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __drop_stopped_sig<Sigs>::type...,
+        typename __error_stopped_sig<std::decay_t<Err>, __forge_meta::has_stopped_v<Sigs...>>::type>;
+};
+
+template<class S, class R, class OptionalT>
 struct __optional_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
@@ -47,7 +133,7 @@ struct __optional_op : __forge_detail::__immovable {
             set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
         }
         friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-            set_value(std::move(*self.__rcvr), std::nullopt);
+            set_value(std::move(*self.__rcvr), OptionalT{std::nullopt});
         }
         friend auto tag_invoke(get_env_t, const __recv& self) noexcept
             -> env_of_t<R> {
@@ -77,14 +163,20 @@ struct __optional_sender {
 
     template<receiver R>
     friend auto tag_invoke(connect_t, __optional_sender self, R r)
-        -> __optional_op<S, R>
+        -> __optional_op<S, R,
+            typename __first_optional_type<decltype(std::execution::get_completion_signatures(
+                std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
     {
-        return __optional_op<S, R>(std::move(self.__sndr), std::move(r));
+        using cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<S>(), std::declval<env_of_t<R>>()));
+        using optional_t = typename __first_optional_type<cs_t>::type;
+        return __optional_op<S, R, optional_t>(std::move(self.__sndr), std::move(r));
     }
 
     friend auto tag_invoke(get_completion_signatures_t,
                            const __optional_sender& self, auto env) noexcept {
-        return decltype(std::execution::get_completion_signatures(self.__sndr, env)){};
+        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+        return typename __optional_cs<up_cs_t>::type{};
     }
 
     friend auto tag_invoke(get_env_t, const __optional_sender& self) noexcept {
@@ -150,7 +242,8 @@ struct __error_sender {
 
     friend auto tag_invoke(get_completion_signatures_t,
                            const __error_sender& self, auto env) noexcept {
-        return decltype(std::execution::get_completion_signatures(self.__sndr, env)){};
+        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+        return typename __error_cs<up_cs_t, Err>::type{};
     }
 
     friend auto tag_invoke(get_env_t, const __error_sender& self) noexcept {

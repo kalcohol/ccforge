@@ -1,5 +1,17 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include <type_traits>
+
+namespace {
+
+struct stop_callback_probe {
+    void operator()() noexcept {}
+};
+
+static_assert(std::stoppable_token<std::any_stop_token>);
+static_assert(std::stoppable_token_for<std::any_stop_token, stop_callback_probe>);
+
+} // namespace
 
 TEST(AnyStopTokenTest, DefaultNotStopped) {
     std::any_stop_token tok;
@@ -22,6 +34,17 @@ TEST(AnyStopTokenTest, CopyPreservesState) {
     std::any_stop_token tok{src.get_token()};
     std::any_stop_token tok2 = tok;
     EXPECT_TRUE(tok2.stop_requested());
+}
+
+TEST(AnyStopTokenTest, CallbackTypeInvokesOnStop) {
+    std::inplace_stop_source src;
+    std::any_stop_token tok{src.get_token()};
+    int calls = 0;
+    auto cb = [&] { ++calls; };
+    std::stop_callback_for_t<std::any_stop_token, decltype(cb)> callback(tok, cb);
+
+    EXPECT_TRUE(src.request_stop());
+    EXPECT_EQ(calls, 1);
 }
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L

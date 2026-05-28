@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 #include "start_detached.hpp"
+#include "upon.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -269,7 +270,8 @@ template<sender S>
 
 template<sender S>
 void simple_counting_scope::scope_token::spawn(S sndr) {
-    start_detached(associate(std::move(sndr)));
+    start_detached(associate(std::move(sndr)) |
+        upon_error([](auto&&) noexcept {}));
 }
 
 inline simple_counting_scope::scope_token

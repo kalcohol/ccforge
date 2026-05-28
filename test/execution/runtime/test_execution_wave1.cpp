@@ -3,6 +3,7 @@
 #include <atomic>
 #include <future>
 #include <thread>
+#include <type_traits>
 #include <variant>
 #include <tuple>
 #include <stdexcept>
@@ -72,6 +73,30 @@ TEST(IntoVariantTest, WrapsValue) {
 TEST(IntoVariantTest, ReportsConstructionFailureAsError) {
     auto sndr = std::execution::into_variant(throwing_value_sender{});
     EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+}
+
+TEST(IntoVariantTest, StoppedOnlySenderDoesNotInstantiateEmptyVariant) {
+    auto sndr = std::execution::into_variant(std::execution::just_stopped());
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(IntoVariantTest, ErrorOnlySenderDoesNotInstantiateEmptyVariant) {
+    auto sndr = std::execution::into_variant(std::execution::just_error(42));
+
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+}
+
+TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
+    auto sndr = std::execution::into_variant(
+        std::execution::just_error(std::exception_ptr{}));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_error_t(std::exception_ptr)>>);
 }
 
 TEST(SyncWaitWithVariantTest, Works) {

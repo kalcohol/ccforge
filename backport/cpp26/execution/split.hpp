@@ -107,47 +107,53 @@ void deliver_to_subscriber(const std::shared_ptr<__shared_state<S>>& sh,
 template<class S>
 struct __inner_recv {
     using receiver_concept = receiver_t;
-    __shared_state<S>* __st;
+    std::weak_ptr<__shared_state<S>> __st;
 
     template<class... Vs>
     friend void tag_invoke(set_value_t, __inner_recv&& self, Vs&&... vs) noexcept {
+        auto st = self.__st.lock();
+        if (!st) { return; }
         try {
             {
-                std::lock_guard lk{self.__st->mtx};
-                self.__st->result.template emplace<1>(
+                std::lock_guard lk{st->mtx};
+                st->result.template emplace<1>(
                     std::make_tuple(std::decay_t<Vs>(vs)...));
-                self.__st->phase = __shared_state<S>::Phase::done;
+                st->phase = __shared_state<S>::Phase::done;
             }
-            self.__st->notify_all();
+            st->notify_all();
         } catch (...) {
             {
-                std::lock_guard lk{self.__st->mtx};
-                self.__st->result.template emplace<2>(std::current_exception());
-                self.__st->phase = __shared_state<S>::Phase::done;
+                std::lock_guard lk{st->mtx};
+                st->result.template emplace<2>(std::current_exception());
+                st->phase = __shared_state<S>::Phase::done;
             }
-            self.__st->notify_all();
+            st->notify_all();
         }
     }
     template<class E>
     friend void tag_invoke(set_error_t, __inner_recv&& self, E&& e) noexcept {
+        auto st = self.__st.lock();
+        if (!st) { return; }
         {
-            std::lock_guard lk{self.__st->mtx};
+            std::lock_guard lk{st->mtx};
             if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
-                self.__st->result.template emplace<2>(static_cast<E&&>(e));
+                st->result.template emplace<2>(static_cast<E&&>(e));
             else
-                self.__st->result.template emplace<2>(
+                st->result.template emplace<2>(
                     std::make_exception_ptr(static_cast<E&&>(e)));
-            self.__st->phase = __shared_state<S>::Phase::done;
+            st->phase = __shared_state<S>::Phase::done;
         }
-        self.__st->notify_all();
+        st->notify_all();
     }
     friend void tag_invoke(set_stopped_t, __inner_recv&& self) noexcept {
+        auto st = self.__st.lock();
+        if (!st) { return; }
         {
-            std::lock_guard lk{self.__st->mtx};
-            self.__st->result.template emplace<3>(__stopped_tag{});
-            self.__st->phase = __shared_state<S>::Phase::done;
+            std::lock_guard lk{st->mtx};
+            st->result.template emplace<3>(__stopped_tag{});
+            st->phase = __shared_state<S>::Phase::done;
         }
-        self.__st->notify_all();
+        st->notify_all();
     }
     friend auto tag_invoke(get_env_t, const __inner_recv&) noexcept -> empty_env {
         return {};
@@ -238,7 +244,7 @@ template<sender S>
     // Connect and store the inner op in the shared buffer
     ::new(static_cast<void*>(shared->op_buf))
         inner_op_t(std::execution::connect(
-            std::move(sndr), inner_recv_t{shared.get()}));
+            std::move(sndr), inner_recv_t{std::weak_ptr<ST>{shared}}));
     shared->op_start = [](void* p) noexcept {
         std::execution::start(*static_cast<inner_op_t*>(p));
     };

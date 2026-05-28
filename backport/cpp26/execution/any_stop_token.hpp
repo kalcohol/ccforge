@@ -25,32 +25,33 @@
 #include "stop_token.hpp"
 
 #include <memory>
+#include <type_traits>
+#include <utility>
 
 namespace std {
 
 class any_stop_token {
 public:
+    template<class Callback>
+    class callback_type;
+
     template<class Token>
-        requires (stoppable_token<std::remove_cvref_t<Token>> &&
-                 !std::is_same_v<std::remove_cvref_t<Token>, any_stop_token>)
+        requires (!std::is_same_v<std::remove_cvref_t<Token>, any_stop_token> &&
+                  stoppable_token<std::remove_cvref_t<Token>>)
     explicit any_stop_token(Token&& tok)
-        : __impl(std::make_unique<__impl_t<std::remove_cvref_t<Token>>>(
+        : __impl(std::make_shared<__impl_t<std::remove_cvref_t<Token>>>(
             std::forward<Token>(tok)))
     {}
 
     any_stop_token() = default;
 
-    any_stop_token(const any_stop_token& other)
-        : __impl(other.__impl ? other.__impl->clone() : nullptr) {}
-
+    any_stop_token(const any_stop_token&) noexcept = default;
     any_stop_token(any_stop_token&&) noexcept = default;
 
-    any_stop_token& operator=(const any_stop_token& other) {
-        if (this != &other)
-            __impl = other.__impl ? other.__impl->clone() : nullptr;
-        return *this;
-    }
+    any_stop_token& operator=(const any_stop_token&) noexcept = default;
     any_stop_token& operator=(any_stop_token&&) noexcept = default;
+
+    friend bool operator==(const any_stop_token&, const any_stop_token&) noexcept = default;
 
     [[nodiscard]] bool stop_requested() const noexcept {
         return __impl && __impl->stop_requested();
@@ -61,11 +62,56 @@ public:
     }
 
 private:
+    struct __callback_base {
+        virtual ~__callback_base() = default;
+    };
+
+    struct __callback_state_base {
+        virtual ~__callback_state_base() = default;
+        virtual void invoke() noexcept = 0;
+    };
+
+    template<class Callback>
+    struct __callback_state : __callback_state_base {
+        Callback __callback;
+
+        template<class Cb>
+        explicit __callback_state(Cb&& cb)
+            : __callback(std::forward<Cb>(cb))
+        {}
+
+        void invoke() noexcept override {
+            __callback();
+        }
+    };
+
+    struct __callback_invoker {
+        std::shared_ptr<__callback_state_base> __state;
+
+        void operator()() noexcept {
+            __state->invoke();
+        }
+    };
+
+    struct __noop_callback : __callback_base {};
+
     struct __base {
         virtual ~__base() = default;
         virtual bool stop_requested() const noexcept = 0;
         virtual bool stop_possible() const noexcept = 0;
-        virtual std::unique_ptr<__base> clone() const = 0;
+        virtual std::unique_ptr<__callback_base>
+            make_callback(std::shared_ptr<__callback_state_base> state) const = 0;
+    };
+
+    template<class Token>
+    struct __callback_impl : __callback_base {
+        using callback_t = stop_callback_for_t<Token, __callback_invoker>;
+
+        callback_t __callback;
+
+        __callback_impl(Token tok, std::shared_ptr<__callback_state_base> state)
+            : __callback(std::move(tok), __callback_invoker{std::move(state)})
+        {}
     };
 
     template<class Token>
@@ -78,12 +124,37 @@ private:
         bool stop_possible() const noexcept override {
             return __tok.stop_possible();
         }
-        std::unique_ptr<__base> clone() const override {
-            return std::make_unique<__impl_t>(__tok);
+        std::unique_ptr<__callback_base>
+        make_callback(std::shared_ptr<__callback_state_base> state) const override {
+            if constexpr (requires { typename stop_callback_for_t<Token, __callback_invoker>; }) {
+                return std::make_unique<__callback_impl<Token>>(__tok, std::move(state));
+            } else {
+                return std::make_unique<__noop_callback>();
+            }
         }
     };
 
-    std::unique_ptr<__base> __impl;
+    std::shared_ptr<const __base> __impl;
+};
+
+template<class Callback>
+class any_stop_token::callback_type {
+public:
+    template<class Cb>
+        requires std::constructible_from<Callback, Cb>
+    callback_type(any_stop_token token, Cb&& cb)
+        : __state(std::make_shared<__callback_state<Callback>>(std::forward<Cb>(cb)))
+        , __callback(token.__impl
+            ? token.__impl->make_callback(__state)
+            : std::make_unique<__noop_callback>())
+    {}
+
+    callback_type(const callback_type&) = delete;
+    callback_type& operator=(const callback_type&) = delete;
+
+private:
+    std::shared_ptr<__callback_state_base> __state;
+    std::unique_ptr<__callback_base> __callback;
 };
 
 } // namespace std
