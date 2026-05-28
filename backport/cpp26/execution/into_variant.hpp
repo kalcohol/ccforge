@@ -117,9 +117,10 @@ private:
 
     using __non_value_list = typename __collect_non_value<__forge_meta::type_list<>, Sigs...>::type;
     using __non_value_cs = typename __list_to_cs<__non_value_list>::type;
+    using __eptr_cs = completion_signatures<set_error_t(std::exception_ptr)>;
 
 public:
-    using type = __forge_meta::__concat_cs_t<__value_cs, __non_value_cs>;
+    using type = __forge_meta::__concat_cs_t<__value_cs, __non_value_cs, __eptr_cs>;
 };
 
 template<class CS>

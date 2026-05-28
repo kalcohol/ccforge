@@ -2,12 +2,29 @@
 #include <execution>
 #include <optional>
 #include <atomic>
+#include <stdexcept>
 #include <thread>
+
+namespace {
+
+struct throwing_query {
+    template<class Env>
+    int operator()(const Env&) const {
+        throw std::runtime_error("read_env query failed");
+    }
+};
+
+} // namespace
 
 TEST(ReadEnvTest, SenderExists) {
     auto sndr = std::execution::read_env(std::execution::get_stop_token);
     static_assert(std::execution::sender<decltype(sndr)>);
     SUCCEED();
+}
+
+TEST(ReadEnvTest, ThrowingQueryCompletesWithError) {
+    auto sndr = std::execution::read_env(throwing_query{});
+    EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(UponErrorTest, ValuePassThrough) {

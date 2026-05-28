@@ -38,8 +38,12 @@ struct __op : __forge_detail::__immovable {
     __op(Tag t, R r) : __rcvr(std::move(r)), __tag(std::move(t)) {}
 
     friend void tag_invoke(start_t, __op& self) noexcept {
-        set_value(std::move(self.__rcvr),
-                  self.__tag(std::execution::get_env(self.__rcvr)));
+        try {
+            set_value(std::move(self.__rcvr),
+                      self.__tag(std::execution::get_env(self.__rcvr)));
+        } catch (...) {
+            set_error(std::move(self.__rcvr), std::current_exception());
+        }
     }
 };
 
@@ -50,10 +54,12 @@ struct __sender {
 
     template<class Env>
     friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self,
-                           Env&&) noexcept {
+                            const __sender& self,
+                            Env&&) noexcept {
         using result_t = std::invoke_result_t<Tag, Env>;
-        return completion_signatures<set_value_t(result_t)>{};
+        return completion_signatures<
+            set_value_t(result_t),
+            set_error_t(std::exception_ptr)>{};
     }
 
     template<receiver R>
