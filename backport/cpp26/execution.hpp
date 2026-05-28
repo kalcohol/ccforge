@@ -49,6 +49,9 @@
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
 //   - Domain-based dispatch not implemented (always uses default_domain).
+//   - Receiver completion callbacks, including set_value, must be noexcept.
+//   - connect overloads generally take senders by value; non-copyable lvalue
+//     sender support is limited pending forwarding overloads.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - when_all, split: TSAN unverifiable on this host (kernel mmap_rnd_bits issue)

@@ -97,6 +97,36 @@ TEST(StartDetachedTest, Executes) {
     EXPECT_EQ(counter.load(), 1);
 }
 
+TEST(StartDetachedTest, HandlesSynchronousWhenAllCompletion) {
+    std::atomic<int> counter{0};
+    std::execution::start_detached(
+        std::execution::when_all(std::execution::just(), std::execution::just())
+        | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }));
+    EXPECT_EQ(counter.load(), 1);
+}
+
+TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
+    std::atomic<int> counter{0};
+    std::execution::inline_scheduler sch;
+    std::execution::start_detached(
+        std::execution::starts_on(
+            sch,
+            std::execution::just()
+            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); })));
+    EXPECT_EQ(counter.load(), 1);
+}
+
+TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
+    std::atomic<int> counter{0};
+    std::execution::inline_scheduler sch;
+    std::execution::start_detached(
+        std::execution::continues_on(
+            std::execution::just()
+            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }),
+            sch));
+    EXPECT_EQ(counter.load(), 1);
+}
+
 TEST(ContinuesOnTest, TransfersToScheduler) {
     std::execution::run_loop loop;
     auto sch = loop.get_scheduler();

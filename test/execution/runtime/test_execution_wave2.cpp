@@ -4,6 +4,30 @@
 #include <thread>
 #include <tuple>
 
+namespace {
+
+struct counting_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::atomic<int>* count;
+
+    friend void tag_invoke(std::execution::set_value_t, counting_receiver&& self) noexcept {
+        self.count->fetch_add(1, std::memory_order_relaxed);
+    }
+
+    template<class E>
+    friend void tag_invoke(std::execution::set_error_t, counting_receiver&&, E&&) noexcept {}
+
+    friend void tag_invoke(std::execution::set_stopped_t, counting_receiver&&) noexcept {}
+
+    friend auto tag_invoke(std::execution::get_env_t, const counting_receiver&) noexcept
+        -> std::execution::empty_env {
+        return {};
+    }
+};
+
+} // namespace
+
 TEST(SplitTest, HappyPath) {
     auto sndr = std::execution::split(std::execution::just(42));
     auto r1 = std::execution::sync_wait(sndr);
@@ -48,4 +72,21 @@ TEST(SplitTest, ConcurrentStart) {
     t2.join();
     EXPECT_EQ(r1.load(), 84);
     EXPECT_EQ(r2.load(), 84);
+}
+
+TEST(SplitTest, DestroyedSubscriberIgnoredOnAsyncCompletion) {
+    std::execution::run_loop loop;
+    auto sch = loop.get_scheduler();
+    auto sndr = std::execution::split(std::execution::schedule(sch));
+    std::atomic<int> count{0};
+
+    {
+        auto op = std::execution::connect(sndr, counting_receiver{&count});
+        std::execution::start(op);
+    }
+
+    loop.finish();
+    loop.run();
+
+    EXPECT_EQ(count.load(), 0);
 }

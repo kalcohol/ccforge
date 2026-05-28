@@ -27,6 +27,10 @@
 
 namespace std::execution {
 
+// Forge limitation: receiver completion callbacks are required to be noexcept,
+// including set_value. User-code exceptions should be translated by senders or
+// adaptors into set_error(std::exception_ptr); throwing completion callbacks are
+// not supported by this backport.
 struct set_value_t {
     template<class R, class... Vs>
         requires __forge_detail::tag_invocable<set_value_t, R, Vs...>
