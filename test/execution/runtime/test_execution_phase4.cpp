@@ -3,6 +3,7 @@
 #include <forge/any_sender.hpp>
 #include <thread>
 #include <atomic>
+#include <tuple>
 
 // ─── T6: domain tests ───────────────────────────────────────────────────────
 
@@ -52,6 +53,48 @@ TEST(SimpleCountingScopeTest, ClosePreventsFurtherSpawns) {
     // spawn should silently ignore (scope closed)
     EXPECT_EQ(counter.load(), 0);
     scope.join();
+}
+
+TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    auto result = std::execution::sync_wait(token.associate(std::execution::just(42)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    scope.close();
+
+    auto result = std::execution::sync_wait(token.associate(std::execution::just(42)));
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, AssociateDisassociatesOnError) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+        token.associate(std::execution::just_error(42))), int);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, SpawnDisassociatesOnErrorAndStopped) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    token.spawn(std::execution::just_error(42));
+    token.spawn(std::execution::just_stopped());
+
+    scope.join();
+    EXPECT_EQ(scope.count(), 0u);
 }
 
 TEST(SimpleCountingScopeTest, MultipleSpawns) {

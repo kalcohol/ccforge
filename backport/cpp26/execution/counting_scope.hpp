@@ -25,12 +25,13 @@
 #include "concepts.hpp"
 #include "env.hpp"
 #include "start_detached.hpp"
-#include "ensure_started.hpp"
 
 #include <atomic>
-#include <mutex>
 #include <condition_variable>
+#include <cstddef>
 #include <exception>
+#include <mutex>
+#include <utility>
 
 namespace std::execution {
 
@@ -129,37 +130,147 @@ public:
     // runs sndr, and decrements on any completion channel.
     // If scope is closed, returns just_stopped().
     template<sender S>
-    [[nodiscard]] auto associate(S sndr) const {
-        if (!try_associate()) {
-            return std::execution::just_stopped();
-        }
-        scope_token token = *this;
-        // Wrap with disassociate-on-complete in all channels
-        return std::move(sndr)
-            | std::execution::then([token](auto&&... vs) noexcept {
-                token.disassociate();
-                return std::make_tuple(static_cast<decltype(vs)&&>(vs)...);
-            });
-        // Note: upon_error/upon_stopped paths not type-compatible in MVP
-        // disassociation on error/stopped is handled by spawn()
-    }
+    [[nodiscard]] auto associate(S sndr) const;
 
     // spawn(sndr): fire-and-forget, associated with this scope
     template<sender S>
-    void spawn(S sndr) {
-        if (!try_associate()) return; // scope closed, silently ignore
-        auto token = *this;
-        start_detached(
-            std::move(sndr)
-            | upon_error([token](auto&&) noexcept { token.disassociate(); })
-            | upon_stopped([token]() noexcept { token.disassociate(); })
-            | then([token](auto&&...) noexcept { token.disassociate(); })
-        );
-    }
+    void spawn(S sndr);
 
 private:
     simple_counting_scope* __scope_ = nullptr;
 };
+
+namespace __forge_counting_scope {
+
+template<class S, class R>
+struct __associated_op : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
+
+    using token_t = simple_counting_scope::scope_token;
+
+    struct __recv {
+        using receiver_concept = receiver_t;
+
+        R* __rcvr;
+        token_t __token;
+        bool* __associated;
+
+        void __done() noexcept {
+            if (*__associated) {
+                __token.disassociate();
+                *__associated = false;
+            }
+        }
+
+        template<class... Vs>
+        friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
+            self.__done();
+            set_value(std::move(*self.__rcvr), static_cast<Vs&&>(vs)...);
+        }
+
+        template<class E>
+        friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
+            self.__done();
+            set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
+        }
+
+        friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
+            self.__done();
+            set_stopped(std::move(*self.__rcvr));
+        }
+
+        friend auto tag_invoke(get_env_t, const __recv& self) noexcept
+            -> env_of_t<R> {
+            return std::execution::get_env(*self.__rcvr);
+        }
+    };
+
+    using inner_op_t = connect_result_t<S, __recv>;
+    static_assert(sizeof(inner_op_t) <= 1024,
+        "counting_scope::associate: inner op too large for buffer");
+
+    token_t __token;
+    S __sndr;
+    R __rcvr;
+    alignas(std::max_align_t) unsigned char __buf[1024];
+    bool __inner_alive = false;
+    bool __associated = false;
+
+    __associated_op(token_t token, S sndr, R rcvr)
+        : __token(token)
+        , __sndr(std::move(sndr))
+        , __rcvr(std::move(rcvr))
+    {}
+
+    ~__associated_op() {
+        if (__inner_alive) {
+            static_cast<inner_op_t*>(static_cast<void*>(__buf))->~inner_op_t();
+        }
+        if (__associated) {
+            __token.disassociate();
+        }
+    }
+
+    friend void tag_invoke(start_t, __associated_op& self) noexcept {
+        if (!self.__token.try_associate()) {
+            set_stopped(std::move(self.__rcvr));
+            return;
+        }
+
+        self.__associated = true;
+        try {
+            ::new(static_cast<void*>(self.__buf)) inner_op_t(
+                std::execution::connect(
+                    std::move(self.__sndr),
+                    __recv{&self.__rcvr, self.__token, &self.__associated}));
+            self.__inner_alive = true;
+            std::execution::start(*static_cast<inner_op_t*>(static_cast<void*>(self.__buf)));
+        } catch (...) {
+            if (self.__associated) {
+                self.__token.disassociate();
+                self.__associated = false;
+            }
+            set_error(std::move(self.__rcvr), std::current_exception());
+        }
+    }
+};
+
+template<class S>
+struct __associated_sender {
+    using sender_concept = sender_t;
+
+    simple_counting_scope::scope_token __token;
+    S __sndr;
+
+    friend auto tag_invoke(get_completion_signatures_t,
+                           const __associated_sender& self, auto env) noexcept {
+        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+        return __forge_meta::__concat_cs_t<up_cs_t, completion_signatures<set_stopped_t()>>{};
+    }
+
+    template<receiver R>
+    friend auto tag_invoke(connect_t, __associated_sender self, R r)
+        -> __associated_op<S, R>
+    {
+        return __associated_op<S, R>{self.__token, std::move(self.__sndr), std::move(r)};
+    }
+
+    friend auto tag_invoke(get_env_t, const __associated_sender& self) noexcept {
+        return std::execution::get_env(self.__sndr);
+    }
+};
+
+} // namespace __forge_counting_scope
+
+template<sender S>
+[[nodiscard]] auto simple_counting_scope::scope_token::associate(S sndr) const {
+    return __forge_counting_scope::__associated_sender<S>{*this, std::move(sndr)};
+}
+
+template<sender S>
+void simple_counting_scope::scope_token::spawn(S sndr) {
+    start_detached(associate(std::move(sndr)));
+}
 
 inline simple_counting_scope::scope_token
 simple_counting_scope::get_token() noexcept {
