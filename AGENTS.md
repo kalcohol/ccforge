@@ -35,5 +35,7 @@
 - Keep commits focused by topic; split docs, tests, fixes, and chores when they are independently reviewable.
 
 ## Commit Attribution
-- When OpenCode contributed to a commit, use exactly `Co-authored-by: OpenCode <noreply@opencode.ai>`; never use `opencode@users.noreply.github.com`, which maps to an unrelated GitHub user.
-- When another AI/tool contributed, use that tool's documented or suggested co-author identity. Do not omit the co-author trailer for tool-assisted commits.
+- When OpenCode contributed to a commit, use exactly `Co-authored-by: opencode-agent <221189863+opencode-agent@users.noreply.github.com>`. This is the official OpenCode organization account (GitHub id 221189863), pinned by numeric ID so attribution cannot be hijacked by anyone later registering a vanity email.
+- Do NOT use `Co-authored-by: OpenCode <noreply@opencode.ai>`: the display name `OpenCode` collides with a real, unrelated GitHub user (`OpenCode`, id 265697 — "Apruzzese Francesco"), and `noreply@opencode.ai` is an unregistered vanity address that attributes to nobody today but can be claimed by whoever verifies it on their account later.
+- Never use `opencode@users.noreply.github.com`: the `<username>@users.noreply.github.com` form routes to whoever holds the `opencode` username — that same real person, not the agent.
+- When another AI/tool contributed, use that tool's documented co-author identity (e.g. `Co-Authored-By: Claude <noreply@anthropic.com>`). Do not omit the co-author trailer for tool-assisted commits.
