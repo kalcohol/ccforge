@@ -25,6 +25,8 @@
 #include "concepts.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
+#include "start_detached.hpp"
+#include "then.hpp"
 
 namespace std::execution {
 
@@ -81,10 +83,22 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         }
         template<class E>
         friend void tag_invoke(set_error_t, __up_recv&& self, E&& e) noexcept {
-            set_error(std::move(self.__self->__outer), static_cast<E&&>(e));
+            auto sch = self.__self->__sch;
+            auto scheduled = std::execution::then(
+                std::execution::schedule(std::move(sch)),
+                [rcvr = std::move(self.__self->__outer), err = static_cast<E&&>(e)]() mutable noexcept {
+                    set_error(std::move(rcvr), std::move(err));
+                });
+            std::execution::start_detached(std::move(scheduled));
         }
         friend void tag_invoke(set_stopped_t, __up_recv&& self) noexcept {
-            set_stopped(std::move(self.__self->__outer));
+            auto sch = self.__self->__sch;
+            auto scheduled = std::execution::then(
+                std::execution::schedule(std::move(sch)),
+                [rcvr = std::move(self.__self->__outer)]() mutable noexcept {
+                    set_stopped(std::move(rcvr));
+                });
+            std::execution::start_detached(std::move(scheduled));
         }
         friend auto tag_invoke(get_env_t, const __up_recv& self) noexcept
             -> env_of_t<R> {

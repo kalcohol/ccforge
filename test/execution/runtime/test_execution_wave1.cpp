@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <atomic>
+#include <future>
 #include <thread>
 #include <variant>
 #include <tuple>
@@ -141,4 +142,53 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     loop.finish();
     worker.join();
     EXPECT_EQ(result, 42);
+}
+
+TEST(ContinuesOnTest, TransfersErrorToScheduler) {
+    std::execution::run_loop loop;
+    auto sch = loop.get_scheduler();
+    std::promise<std::thread::id> worker_id_promise;
+    auto worker_id_future = worker_id_promise.get_future();
+    std::thread worker([&] {
+        worker_id_promise.set_value(std::this_thread::get_id());
+        loop.run();
+    });
+    auto worker_id = worker_id_future.get();
+    std::thread::id observed_id;
+
+    auto sndr = std::execution::continues_on(std::execution::just_error(42), sch)
+              | std::execution::upon_error([&](int value) {
+                    observed_id = std::this_thread::get_id();
+                    EXPECT_EQ(value, 42);
+                });
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    loop.finish();
+    worker.join();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(observed_id, worker_id);
+}
+
+TEST(ContinuesOnTest, TransfersStoppedToScheduler) {
+    std::execution::run_loop loop;
+    auto sch = loop.get_scheduler();
+    std::promise<std::thread::id> worker_id_promise;
+    auto worker_id_future = worker_id_promise.get_future();
+    std::thread worker([&] {
+        worker_id_promise.set_value(std::this_thread::get_id());
+        loop.run();
+    });
+    auto worker_id = worker_id_future.get();
+    std::thread::id observed_id;
+
+    auto sndr = std::execution::continues_on(std::execution::just_stopped(), sch)
+              | std::execution::upon_stopped([&] {
+                    observed_id = std::this_thread::get_id();
+                });
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    loop.finish();
+    worker.join();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(observed_id, worker_id);
 }
