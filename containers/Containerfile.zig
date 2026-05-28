@@ -1,0 +1,28 @@
+# Zig verification image. Zig's bundled clang/libc++ has no native C++26 simd /
+# linalg / execution / submdspan, so this exercises the backport inject path and
+# (optionally) the cross-architecture matrix the project already supports.
+#
+#   podman build -t forge-zig --build-arg ZIG_VERSION=0.14.0 -f containers/Containerfile.zig .
+#
+# NOTE: adjust ZIG_VERSION / the tarball name to a release that exists; newer zig
+# releases use the "zig-x86_64-linux-<ver>" naming instead of the older
+# "zig-linux-x86_64-<ver>".
+FROM docker.io/library/debian:trixie
+
+ARG ZIG_VERSION=0.14.0
+ARG ZIG_TARBALL=zig-linux-x86_64-${ZIG_VERSION}.tar.xz
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl xz-utils cmake ninja-build ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_TARBALL}" | tar -xJ -C /opt \
+    && ln -s "/opt/${ZIG_TARBALL%.tar.xz}/zig" /usr/local/bin/zig
+
+# CMake invokes the compiler as a single executable, so wrap "zig c++".
+RUN printf '#!/bin/sh\nexec zig cc "$@"\n'  > /usr/local/bin/zig-cc  && chmod +x /usr/local/bin/zig-cc \
+ && printf '#!/bin/sh\nexec zig c++ "$@"\n' > /usr/local/bin/zig-c++ && chmod +x /usr/local/bin/zig-c++
+
+ENV CC=zig-cc
+ENV CXX=zig-c++
+
+WORKDIR /src

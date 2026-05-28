@@ -1,0 +1,13 @@
+# GCC 16 verification image — the toolchain where native std::simd / submdspan
+# first land (experimental, -std=c++26). Used to verify that Forge stands aside
+# (no ODR conflict) once partial native support appears.
+#
+#   podman build -t forge-gcc16 -f containers/Containerfile.gcc16 .
+#
+FROM docker.io/library/gcc:16
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cmake ninja-build ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src

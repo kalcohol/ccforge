@@ -1,0 +1,21 @@
+# LLVM / libc++ verification image. libc++ ships none of P2300 / P1928 / P1673 /
+# P2630 natively, so this exercises the "all four backports injected" path at
+# -std=c++26 and guards against the hardening breaking the inject path.
+#
+#   podman build -t forge-llvm -f containers/Containerfile.llvm .
+#
+FROM docker.io/library/debian:trixie
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang lld libc++-dev libc++abi-dev \
+        cmake ninja-build ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=clang
+ENV CXX=clang++
+# Build against libc++ so the C++26 library surface matches the upstream we track.
+ENV CXXFLAGS="-stdlib=libc++"
+ENV LDFLAGS="-stdlib=libc++"
+
+WORKDIR /src
