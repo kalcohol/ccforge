@@ -10,6 +10,26 @@ namespace {
 
 using namespace simd_test;
 
+// EXPECT_NEAR is meaningless when a lane legitimately produces a non-finite value
+// (e.g. exp2(1000) overflows float to +inf, tgamma(0) is the gamma pole): for two
+// equal infinities |a-b| is NaN and NaN <= tol is false, so the assertion spuriously
+// fails even though the simd result matches the scalar reference exactly. Compare
+// non-finite lanes by classification and fall back to a tolerance for finite ones.
+::testing::AssertionResult lane_near(float got, float ref, float tol) {
+    if (std::isnan(ref)) {
+        return std::isnan(got) ? ::testing::AssertionSuccess()
+                               : ::testing::AssertionFailure() << "expected NaN, got " << got;
+    }
+    if (std::isinf(ref)) {
+        return got == ref ? ::testing::AssertionSuccess()
+                          : ::testing::AssertionFailure() << "expected " << ref << ", got " << got;
+    }
+    const float diff = std::fabs(got - ref);
+    return diff <= tol ? ::testing::AssertionSuccess()
+                       : ::testing::AssertionFailure()
+                             << got << " vs " << ref << " differ by " << diff << " > " << tol;
+}
+
 TEST(SimdMathExtTest, ExtendedUnaryMathFunctionsApplyPerLane) {
     const float4 log10_values = load_vec<float4>(std::array<float, 4>{{1.0f, 10.0f, 100.0f, 1000.0f}});
     const float4 log1p_values = load_vec<float4>(std::array<float, 4>{{0.0f, 1.0f, 3.0f, 7.0f}});
@@ -56,12 +76,12 @@ TEST(SimdMathExtTest, ExtendedUnaryMathFunctionsApplyPerLane) {
         EXPECT_NEAR(asinh_result[i], std::asinh(trig_values[i]), 1e-6f);
         EXPECT_NEAR(acosh_result[i], std::acosh(acosh_values[i]), 1e-6f);
         EXPECT_NEAR(atanh_result[i], std::atanh(atanh_values[i]), 1e-6f);
-        EXPECT_NEAR(exp2_result[i], std::exp2(log10_values[i]), 1e-6f);
+        EXPECT_TRUE(lane_near(exp2_result[i], std::exp2(log10_values[i]), 1e-6f));
         EXPECT_NEAR(expm1_result[i], std::expm1(trig_values[i]), 1e-6f);
         EXPECT_NEAR(erf_result[i], std::erf(trig_values[i]), 1e-6f);
         EXPECT_NEAR(erfc_result[i], std::erfc(trig_values[i]), 1e-6f);
         EXPECT_NEAR(lgamma_result[i], std::lgamma(acosh_values[i]), 1e-6f);
-        EXPECT_NEAR(tgamma_result[i], std::tgamma(log1p_values[i]), 1e-6f);
+        EXPECT_TRUE(lane_near(tgamma_result[i], std::tgamma(log1p_values[i]), 1e-6f));
     }
 }
 
