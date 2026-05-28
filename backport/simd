@@ -32,6 +32,10 @@
 #endif
 #endif
 
-#if !defined(__cpp_lib_simd) || __cpp_lib_simd < 202411L
+// FORGE_HAS_NATIVE_SIMD is defined by forge.cmake when the toolchain provides a
+// native <simd> (even an incomplete one that has not yet defined __cpp_lib_simd):
+// in that case we must NOT inject, or the backport would redefine std::simd::*
+// already declared by the partial native header (ODR violation).
+#if !defined(FORGE_HAS_NATIVE_SIMD) && (!defined(__cpp_lib_simd) || __cpp_lib_simd < 202411L)
 #include "cpp26/simd.hpp"
 #endif

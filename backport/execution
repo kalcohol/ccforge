@@ -42,7 +42,10 @@
 #endif
 
 // C++26 backports (P2300 senders/receivers are expected to land under <execution>).
-// Use a future-facing feature test macro when it exists.
-#if !defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)
+// Use a future-facing feature test macro when it exists. FORGE_HAS_NATIVE_SENDERS
+// is defined by forge.cmake when a (possibly partial) native P2300 implementation
+// is present, so the backport stands aside rather than redefining
+// std::execution::* on top of it (ODR violation).
+#if !defined(FORGE_HAS_NATIVE_SENDERS) && (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L))
 #include "cpp26/execution.hpp"
 #endif

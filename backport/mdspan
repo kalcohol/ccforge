@@ -44,7 +44,11 @@
 
 // Inject submdspan backport only when:
 //  - The standard <mdspan> was found (__cpp_lib_mdspan is defined)
-//  - The native submdspan is not yet present
-#if defined(__cpp_lib_mdspan) && !defined(__cpp_lib_submdspan)
+//  - The native submdspan is not yet present (__cpp_lib_submdspan undefined)
+//  - forge.cmake did not detect a (possibly partial) native submdspan. A partial
+//    native submdspan may declare std::submdspan / std::strided_slice without yet
+//    defining __cpp_lib_submdspan; FORGE_HAS_NATIVE_SUBMDSPAN guards against
+//    injecting on top of those declarations (ODR violation).
+#if !defined(FORGE_HAS_NATIVE_SUBMDSPAN) && defined(__cpp_lib_mdspan) && !defined(__cpp_lib_submdspan)
 #  include "cpp26/submdspan.hpp"
 #endif

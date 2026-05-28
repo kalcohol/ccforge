@@ -31,6 +31,62 @@ if(NOT TARGET forge)
 
     set(FORGE_NEEDS_BACKPORT FALSE)
 
+    # Probe at the SAME language standard the consumer compiles with. Detecting a
+    # C++26 feature that is only reachable under -std=c++26 is meaningless if the
+    # project itself builds at C++23 (the feature would not be visible there), so
+    # native presence must be judged at the build standard, not the compiler max.
+    if(DEFINED CMAKE_CXX_STANDARD)
+        set(_forge_std "${CMAKE_CXX_STANDARD}")
+    else()
+        set(_forge_std 23)
+    endif()
+    set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+    if(MSVC)
+        if(_forge_std GREATER_EQUAL 26)
+            set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++latest")
+        else()
+            set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++${_forge_std}")
+        endif()
+    else()
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++${_forge_std}")
+    endif()
+
+    # Three-state decision helper for each backportable feature.
+    #
+    #   full  = the COMPLETE required API surface compiles natively
+    #   partial = ANY trace of a native implementation is present
+    #
+    #   full          -> native is complete: stand aside, signal the wrapper.
+    #   !full && partial -> native is INCOMPLETE: stand aside anyway to avoid
+    #                       injecting the backport on top of partial native
+    #                       declarations in namespace std (ODR violation), and
+    #                       warn the consumer.
+    #   !full && !partial -> no native at all: inject the backport (safe; there
+    #                        is nothing to collide with).
+    #
+    # FORGE_FORCE_<F>_BACKPORT overrides the decision and forces injection
+    # (UB-prone on a partial-native toolchain — used only for testing/diagnosis).
+    macro(_forge_decide _disp _suffix _full _partial)
+        if(FORGE_FORCE_${_suffix}_BACKPORT)
+            set(FORGE_NEEDS_BACKPORT TRUE)
+            message(WARNING "CC Forge: ${_disp} backport FORCED on (FORGE_FORCE_${_suffix}_BACKPORT=ON); injecting on top of any native implementation risks ODR violations")
+        elseif(${_full})
+            target_compile_definitions(forge INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
+            message(STATUS "CC Forge: ${_disp} native support detected — backport disabled")
+        elseif(${_partial})
+            target_compile_definitions(forge INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
+            message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE at -std=c++${_forge_std}; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it, or set -DFORGE_FORCE_${_suffix}_BACKPORT=ON to force the backport (UB-prone).")
+        else()
+            set(FORGE_NEEDS_BACKPORT TRUE)
+            message(STATUS "CC Forge: ${_disp} backport enabled")
+        endif()
+    endmacro()
+
+    option(FORGE_FORCE_SIMD_BACKPORT "Force the std::simd backport even if (partial) native support exists" OFF)
+    option(FORGE_FORCE_SENDERS_BACKPORT "Force the std::execution backport even if (partial) native support exists" OFF)
+    option(FORGE_FORCE_SUBMDSPAN_BACKPORT "Force the std::submdspan backport even if (partial) native support exists" OFF)
+    option(FORGE_FORCE_LINALG_BACKPORT "Force the std::linalg backport even if (partial) native support exists" OFF)
+
     # Check for std::unique_resource (TS v3, not in C++26 yet)
     check_cxx_source_compiles("
         #include <version>
@@ -46,7 +102,9 @@ if(NOT TARGET forge)
         message(STATUS "CC Forge: std::unique_resource backport enabled (TS v3)")
     endif()
 
-    # Check for std::simd (C++26 current draft)
+    # std::simd (P1928). The C++26 <simd> header is brand new; toolchains before
+    # native support only ship <experimental/simd>, so __has_include(<simd>)
+    # succeeding is itself the signal that a native C++26 simd has arrived.
     check_cxx_source_compiles("
         #include <simd>
         int main() {
@@ -55,14 +113,17 @@ if(NOT TARGET forge)
             auto mask = v == v;
             return static_cast<int>(sum + std::simd::reduce_count(mask));
         }
-    " HAS_STD_SIMD)
+    " FORGE_SIMD_FULL)
+    check_cxx_source_compiles("
+        #if !defined(__has_include) || !__has_include(<simd>)
+        #error no native <simd>
+        #endif
+        int main() { return 0; }
+    " FORGE_SIMD_PARTIAL)
+    _forge_decide("std::simd" SIMD FORGE_SIMD_FULL FORGE_SIMD_PARTIAL)
 
-    if(NOT HAS_STD_SIMD)
-        set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "CC Forge: std::simd backport enabled")
-    endif()
-
-    # Check for P2300 senders/receivers under <execution> (C++26 draft)
+    # P2300 senders/receivers under <execution>. <execution> ALWAYS exists (C++17
+    # parallel policies), so it is not a discriminator — probe for a P2300 symbol.
     check_cxx_source_compiles("
         #include <execution>
         #include <tuple>
@@ -71,14 +132,21 @@ if(NOT TARGET forge)
             auto r = std::execution::sync_wait(s);
             return r ? std::get<0>(*r) : 0;
         }
-    " HAS_STD_EXECUTION_SENDERS)
+    " FORGE_SENDERS_FULL)
+    check_cxx_source_compiles("
+        #include <execution>
+        int main() {
+            auto s = std::execution::just(1);
+            (void)s;
+            return 0;
+        }
+    " FORGE_SENDERS_PARTIAL)
+    _forge_decide("std::execution (P2300 senders/receivers)" SENDERS FORGE_SENDERS_FULL FORGE_SENDERS_PARTIAL)
 
-    if(NOT HAS_STD_EXECUTION_SENDERS)
-        set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "CC Forge: std::execution (P2300 senders/receivers) backport enabled")
-    endif()
-
-    # Check for std::submdspan (C++26) — only meaningful when <mdspan> exists
+    # std::submdspan (P2630) — only meaningful when <mdspan> exists. The partial
+    # probe must look for a submdspan-SPECIFIC symbol: <mdspan> alone (e.g. GCC 14)
+    # has no submdspan and must still get the backport, so __has_include(<mdspan>)
+    # is NOT sufficient. std::strided_slice is part of the submdspan addition.
     check_cxx_source_compiles("
         #include <mdspan>
         int main() {
@@ -88,19 +156,16 @@ if(NOT TARGET forge)
             (void)sub;
             return 0;
         }
-    " HAS_STD_SUBMDSPAN)
+    " FORGE_SUBMDSPAN_FULL)
+    check_cxx_source_compiles("
+        #include <mdspan>
+        using probe = std::strided_slice<int, int, int>;
+        int main() { (void)sizeof(probe); return 0; }
+    " FORGE_SUBMDSPAN_PARTIAL)
+    _forge_decide("std::submdspan" SUBMDSPAN FORGE_SUBMDSPAN_FULL FORGE_SUBMDSPAN_PARTIAL)
 
-    if(NOT HAS_STD_SUBMDSPAN)
-        # Only enable the mdspan backport wrapper when <mdspan> itself is available.
-        # On toolchains without <mdspan> (e.g. GCC 13 libstdc++) the probe above
-        # also fails, but there is nothing to inject — the backport/mdspan wrapper
-        # handles this gracefully via a guarded __cpp_lib_mdspan check.
-        set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "CC Forge: std::submdspan backport enabled")
-    endif()
-
-
-    # Check for std::linalg (C++26) — new header, use __cpp_lib_linalg
+    # std::linalg (P1673) — new <linalg> header, so its mere presence is the
+    # native signal.
     check_cxx_source_compiles("
         #include <linalg>
         int main() {
@@ -108,12 +173,16 @@ if(NOT TARGET forge)
             std::mdspan<double, std::extents<int,4>> v(data);
             return static_cast<int>(std::linalg::vector_two_norm(v));
         }
-    " HAS_STD_LINALG)
+    " FORGE_LINALG_FULL)
+    check_cxx_source_compiles("
+        #if !defined(__has_include) || !__has_include(<linalg>)
+        #error no native <linalg>
+        #endif
+        int main() { return 0; }
+    " FORGE_LINALG_PARTIAL)
+    _forge_decide("std::linalg" LINALG FORGE_LINALG_FULL FORGE_LINALG_PARTIAL)
 
-    if(NOT HAS_STD_LINALG)
-        set(FORGE_NEEDS_BACKPORT TRUE)
-        message(STATUS "CC Forge: std::linalg backport enabled")
-    endif()
+    set(CMAKE_REQUIRED_FLAGS "${_forge_saved_required_flags}")
 
     # Add backport path if any feature needs it
     if(FORGE_NEEDS_BACKPORT)
