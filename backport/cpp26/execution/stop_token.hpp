@@ -22,6 +22,13 @@
 
 #pragma once
 
+#include <atomic>
+#include <concepts>
+#include <cstdint>
+#include <mutex>
+#include <type_traits>
+#include <utility>
+
 namespace std {
 
 // Stop token types are specified in namespace std in P2300R10.

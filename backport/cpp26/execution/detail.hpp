@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <utility>
+
 namespace std::execution {
 
 namespace __forge_detail {

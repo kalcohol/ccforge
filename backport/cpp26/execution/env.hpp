@@ -23,6 +23,10 @@
 #pragma once
 
 #include "detail.hpp"
+#include "stop_token.hpp"
+
+#include <type_traits>
+#include <utility>
 
 namespace std::execution {
 
