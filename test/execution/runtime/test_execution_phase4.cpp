@@ -5,6 +5,63 @@
 #include <atomic>
 #include <tuple>
 
+namespace {
+
+struct tracking_domain {
+    static inline bool transformed = false;
+
+    template<class Sender, class Env>
+    Sender&& transform_sender(Sender&& sndr, const Env&) const noexcept {
+        transformed = true;
+        return static_cast<Sender&&>(sndr);
+    }
+};
+
+struct tracking_env {
+    friend auto tag_invoke(std::execution::get_domain_t, const tracking_env&) noexcept
+        -> tracking_domain {
+        return {};
+    }
+};
+
+template<class R>
+struct tracking_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+
+    explicit tracking_op(R r) : rcvr(std::move(r)) {}
+    tracking_op(const tracking_op&) = delete;
+    tracking_op& operator=(const tracking_op&) = delete;
+
+    friend void tag_invoke(std::execution::start_t, tracking_op& self) noexcept {
+        std::execution::set_value(std::move(self.rcvr), 42);
+    }
+};
+
+struct tracking_sender {
+    using sender_concept = std::execution::sender_t;
+
+    friend auto tag_invoke(std::execution::get_completion_signatures_t,
+                           const tracking_sender&, auto) noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    friend auto tag_invoke(std::execution::connect_t, tracking_sender, R r)
+        -> tracking_op<R> {
+        return tracking_op<R>{std::move(r)};
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const tracking_sender&) noexcept
+        -> tracking_env {
+        return {};
+    }
+};
+
+} // namespace
+
 // ─── T6: domain tests ───────────────────────────────────────────────────────
 
 TEST(DefaultDomainTest, GetDomainFromEmptyEnv) {
@@ -21,6 +78,16 @@ TEST(DefaultDomainTest, TransformSenderIsIdentity) {
     auto& result = domain.transform_sender(sndr, env);
     (void)result;
     SUCCEED();
+}
+
+TEST(DefaultDomainTest, ConnectUsesSenderDomainTransform) {
+    tracking_domain::transformed = false;
+
+    auto result = std::execution::sync_wait(tracking_sender{});
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_TRUE(tracking_domain::transformed);
 }
 
 // ─── T7: counting_scope tests ───────────────────────────────────────────────

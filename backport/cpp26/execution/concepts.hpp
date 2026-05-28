@@ -429,6 +429,42 @@ struct sender_t {};
 struct operation_state_t {};
 struct scheduler_t {};
 
+// ──────────────────────────────────────────────────────────────────────────
+// default_domain / get_domain — [exec.domain.default], [exec.get.domain]
+// Defined before connect_t so domain transform_sender participates in connect.
+// ──────────────────────────────────────────────────────────────────────────
+
+struct default_domain {
+    template<class Env, class Sender>
+    static Sender&& transform_sender(Sender&& sndr, const Env&) noexcept {
+        return static_cast<Sender&&>(sndr);
+    }
+
+    template<class Env>
+    static Env&& transform_env(const auto&, Env&& env) noexcept {
+        return static_cast<Env&&>(env);
+    }
+
+    bool operator==(const default_domain&) const noexcept = default;
+};
+
+struct get_domain_t {
+    template<class Env>
+        requires __forge_detail::tag_invocable<get_domain_t, const Env&>
+    auto operator()(const Env& env) const noexcept
+        -> __forge_detail::tag_invoke_result_t<get_domain_t, const Env&> {
+        return __forge_detail::tag_invoke_fn(*this, env);
+    }
+
+    template<class Env>
+        requires (!__forge_detail::tag_invocable<get_domain_t, const Env&>)
+    default_domain operator()(const Env&) const noexcept {
+        return {};
+    }
+};
+
+inline constexpr get_domain_t get_domain{};
+
 struct start_t {
     template<class O>
         requires (requires(O& op) { op.start(); } ||
@@ -516,20 +552,11 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
     std::execution::get_completion_signatures(static_cast<std::remove_cvref_t<S>&&>(s), env);
 };
 
-// Forward declaration for domain-based dispatch
-// default_domain provides identity transform; full definition in domain.hpp
 namespace __forge_domain {
-struct __default_domain_fwd {
-    template<class S, class E>
-    static S&& transform_sender(S&& sndr, const E&) noexcept {
-        return static_cast<S&&>(sndr);
-    }
-};
-
-// Get domain from sender env (returns __default_domain_fwd if no domain tag_invoke)
+// Get domain from sender env (returns default_domain if no get_domain customization exists)
 template<class S>
 inline auto __get_sender_domain(const S& sndr) noexcept {
-    return __default_domain_fwd{};
+    return std::execution::get_domain(std::execution::get_env(sndr));
 }
 } // namespace __forge_domain
 

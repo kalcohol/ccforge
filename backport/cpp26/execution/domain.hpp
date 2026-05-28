@@ -29,48 +29,10 @@
 namespace std::execution {
 
 // ──────────────────────────────────────────────────────────────────────────
-// default_domain — [exec.domain.default]
+// Domain helpers — default_domain/get_domain are defined in concepts.hpp so
+// connect_t can use domain transform_sender during connection.
 // ──────────────────────────────────────────────────────────────────────────
 
-struct default_domain {
-    // transform_sender: default identity (pass-through)
-    template<class Env, class Sender>
-    static Sender&& transform_sender(Sender&& sndr, const Env&) noexcept {
-        return static_cast<Sender&&>(sndr);
-    }
-
-    // transform_env: default identity
-    template<class Env>
-    static Env&& transform_env(const auto&, Env&& env) noexcept {
-        return static_cast<Env&&>(env);
-    }
-
-    bool operator==(const default_domain&) const noexcept = default;
-};
-
-// ──────────────────────────────────────────────────────────────────────────
-// get_domain CPO — [exec.get.domain]
-// ──────────────────────────────────────────────────────────────────────────
-
-struct get_domain_t {
-    template<class Env>
-        requires __forge_detail::tag_invocable<get_domain_t, const Env&>
-    auto operator()(const Env& env) const noexcept
-        -> __forge_detail::tag_invoke_result_t<get_domain_t, const Env&> {
-        return __forge_detail::tag_invoke_fn(*this, env);
-    }
-
-    // Default: return default_domain when no tag_invoke specialization exists
-    template<class Env>
-        requires (!__forge_detail::tag_invocable<get_domain_t, const Env&>)
-    default_domain operator()(const Env&) const noexcept {
-        return {};
-    }
-};
-
-inline constexpr get_domain_t get_domain{};
-
-// Helper: get the domain from a sender's env
 template<class Sender, class Env = empty_env>
 using sender_domain_t = decltype(get_domain(
     std::execution::get_env(std::declval<Sender>())));
