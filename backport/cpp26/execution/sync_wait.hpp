@@ -66,7 +66,7 @@ private:
     };
     template<class... Vs>
     struct value_tuple_of_sig<set_value_t(Vs...)> {
-        using type = std::tuple<Vs...>;
+        using type = std::tuple<std::decay_t<Vs>...>;
     };
 
     template<class... Ts>
@@ -145,7 +145,7 @@ auto sync_wait(S&& sndr) {
     if (state.result_.index() == 3) {
         return std::optional<typename state_t::value_t>{std::nullopt};
     }
-    return std::optional<typename state_t::value_t>{std::get<1>(state.result_)};
+    return std::optional<typename state_t::value_t>{std::move(std::get<1>(state.result_))};
 }
 
 } // namespace std::this_thread

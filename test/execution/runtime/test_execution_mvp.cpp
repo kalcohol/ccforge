@@ -106,6 +106,19 @@ TEST(ExecutionMvpTest, ThenTransformsValue) {
     EXPECT_EQ(std::get<0>(*result), 15);
 }
 
+TEST(ExecutionMvpTest, SyncWaitDecaysReferenceValueSignatures) {
+    int value = 42;
+    auto sender = std::execution::just(&value)
+                | std::execution::then([](int* p) -> int& { return *p; });
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(static_cast<bool>(result));
+    using tuple_t = std::remove_cvref_t<decltype(*result)>;
+    static_assert(std::is_same_v<tuple_t, std::tuple<int>>);
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
 TEST(ExecutionMvpTest, ThenWorksWithPipeOperator) {
     auto sender = std::execution::just(10) | std::execution::then([](int v) { return v + 7; });
     auto result = std::execution::sync_wait(std::move(sender));
