@@ -60,9 +60,14 @@ namespace std {
 
 // ---------------------------------------------------------------------------
 // full_extent_t / full_extent — [mdspan.syn]
-// Present in C++26 (202406) libc++; absent in C++23 libc++21 (202207).
+// These are introduced by submdspan (P2630), NOT by base mdspan (P0009): a
+// toolchain may ship <mdspan> (any __cpp_lib_mdspan value, e.g. libc++ bumped it
+// to 202406 for P2389 dims) yet still lack submdspan and full_extent. So the
+// correct discriminator is __cpp_lib_submdspan, not __cpp_lib_mdspan. This whole
+// file is only included when __cpp_lib_submdspan is undefined, so this defines
+// full_extent exactly when the native submdspan facility is absent.
 // ---------------------------------------------------------------------------
-#if !defined(__cpp_lib_mdspan) || __cpp_lib_mdspan < 202406L
+#if !defined(__cpp_lib_submdspan)
 struct full_extent_t { explicit full_extent_t() = default; };
 inline constexpr full_extent_t full_extent{};
 #endif
