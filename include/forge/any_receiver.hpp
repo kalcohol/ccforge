@@ -79,8 +79,14 @@ public:
 
     any_receiver_of() = default;
 
-    template<std::execution::receiver R>
+    // Self-exclusion guard must precede the receiver<R> check: receiver requires
+    // is_nothrow_move_constructible_v, which for any_receiver_of re-enters this
+    // constructor's constraint and recurses. Left-to-right short-circuiting on the
+    // cheap !is_same_v guard prunes the self type before receiver<R> is evaluated.
+    // (libstdc++ tolerated it; libc++/clang-19 diagnoses it as a hard error.)
+    template<class R>
         requires (!std::is_same_v<std::remove_cvref_t<R>, any_receiver_of>)
+              && std::execution::receiver<std::remove_cvref_t<R>>
     any_receiver_of(R&& r) {
         using D = std::remove_cvref_t<R>;
         if constexpr (sizeof(D) <= kSBOSize && alignof(D) <= alignof(std::max_align_t)) {

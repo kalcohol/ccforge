@@ -87,8 +87,15 @@ public:
 
     any_sender_of() = default;
 
-    template<std::execution::sender S>
+    // The self-exclusion guard MUST come before the sender<S> check: associated
+    // constraints are evaluated left-to-right with short-circuiting, and checking
+    // sender<any_sender_of> recurses (sender -> move_constructible -> is_constructible
+    // -> this very constructor -> sender ...). Putting the cheap !is_same_v guard
+    // first prunes the self type before sender<S> is ever evaluated. (libstdc++
+    // tolerated the recursion; libc++/clang-19 diagnoses it as a hard error.)
+    template<class S>
         requires (!std::is_same_v<std::remove_cvref_t<S>, any_sender_of>)
+              && std::execution::sender<std::remove_cvref_t<S>>
     any_sender_of(S&& sndr) {
         using D = std::remove_cvref_t<S>;
         if constexpr (sizeof(D) <= kSBOSize && alignof(D) <= kSBOAlign) {
