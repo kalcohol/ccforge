@@ -68,7 +68,7 @@ struct sender {
         return operation<R, Vs...>(std::move(rcvr), values_);
     }
 
-    // TODO([exec.just]): expose completion scheduler in env via just-env type
+    // Completion is synchronous in start(); there is no associated scheduler.
     auto get_env() const noexcept -> empty_env { return {}; }
 };
 
@@ -119,7 +119,7 @@ struct sender {
         return operation<R, E>(std::move(rcvr), error_);
     }
 
-    // TODO([exec.just]): expose completion scheduler in env via just-env type
+    // Completion is synchronous in start(); there is no associated scheduler.
     auto get_env() const noexcept -> empty_env { return {}; }
 };
 
@@ -162,7 +162,7 @@ struct sender {
         return operation<R>(std::move(rcvr));
     }
 
-    // TODO([exec.just]): expose completion scheduler in env via just-env type
+    // Completion is synchronous in start(); there is no associated scheduler.
     auto get_env() const noexcept -> empty_env { return {}; }
 };
 
