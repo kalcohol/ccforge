@@ -16,7 +16,9 @@
 #   local   Host toolchain (no container), -std=c++23 baseline regression.
 #   tsan    LLVM/libc++ container, -std=c++26 + -fsanitize=thread. Runs the
 #           execution subset under ThreadSanitizer (data-race / deadlock check).
-#   all     gcc16 + llvm + zig + local + tsan (default).
+#   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
+#           Runs the execution subset under ASan+UBSan (UAF / leak / UB check).
+#   all     gcc16 + llvm + zig + local + tsan + asan (default).
 #
 set -euo pipefail
 
@@ -136,9 +138,35 @@ target_tsan() {
     ok "tsan verified (execution subset, no data races)"
 }
 
+target_asan() {
+    build_image forge-asan containers/Containerfile.asan
+    log "asan: building execution tests with -fsanitize=address,undefined (libc++)"
+    "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
+        -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
+            set -e
+            rm -rf build/asan
+            cmake -S . -B build/asan -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+            cmake --build build/asan
+            # detect_container_overflow=0 avoids false positives against a
+            # non-ASan-instrumented system libc++; UBSan halts on first error.
+            export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
+            export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
+            if ctest --test-dir build/asan -R execution --output-on-failure; then
+                exit 0
+            fi
+            echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
+            setarch "$(uname -m)" -R ctest --test-dir build/asan -R execution --output-on-failure
+        '
+    ok "asan verified (execution subset, no UAF/leak/UB)"
+}
+
 targets=("$@")
 if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(gcc16 llvm zig local tsan)
+    targets=(gcc16 llvm zig local tsan asan)
 fi
 
 for t in "${targets[@]}"; do
@@ -148,7 +176,8 @@ for t in "${targets[@]}"; do
         zig)   target_zig ;;
         local) target_local ;;
         tsan)  target_tsan ;;
-        all)   target_gcc16; target_llvm; target_zig; target_local; target_tsan ;;
+        asan)  target_asan ;;
+        all)   target_gcc16; target_llvm; target_zig; target_local; target_tsan; target_asan ;;
         *)     fail "unknown target: ${t}" ;;
     esac
 done

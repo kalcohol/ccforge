@@ -1,0 +1,19 @@
+# LLVM / libc++ AddressSanitizer + UBSan verification image for execution tests.
+# Catches use-after-free / leaks / UB in the lifetime-heavy operation-state code.
+#
+#   podman build -t forge-asan -f containers/Containerfile.asan .
+#
+FROM docker.io/library/debian:trixie
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang lld libc++-dev libc++abi-dev libclang-rt-dev \
+        cmake ninja-build ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=clang
+ENV CXX=clang++
+ENV CXXFLAGS="-stdlib=libc++"
+ENV LDFLAGS="-stdlib=libc++"
+
+WORKDIR /src
