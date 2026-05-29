@@ -1,4 +1,4 @@
-// Native coexistence test.
+// Native handoff test.
 //
 // This translation unit pulls in every Forge backport wrapper that injects into
 // namespace std (<simd>, <execution>, <mdspan>, <linalg>) through the forge::forge
@@ -25,13 +25,13 @@
 #  include <linalg>
 #endif
 
-TEST(NativeCoexist, Simd) {
+TEST(NativeHandoff, Simd) {
     std::simd::vec<float> v(2.0f);
     const auto sum = std::simd::reduce(v);
     EXPECT_GT(sum, 0.0f);
 }
 
-TEST(NativeCoexist, Senders) {
+TEST(NativeHandoff, Senders) {
     auto result = std::execution::sync_wait(
         std::execution::just(21)
         | std::execution::then([](int x) { return x * 2; }));
@@ -40,14 +40,14 @@ TEST(NativeCoexist, Senders) {
 }
 
 #if defined(__cpp_lib_mdspan)
-TEST(NativeCoexist, Submdspan) {
+TEST(NativeHandoff, Submdspan) {
     int data[12]{};
     std::mdspan<int, std::extents<int, 3, 4>> m(data);
     auto row = std::submdspan(m, 1, std::full_extent);
     EXPECT_EQ(row.extent(0), 4);
 }
 
-TEST(NativeCoexist, Linalg) {
+TEST(NativeHandoff, Linalg) {
     double data[3] = {3.0, 4.0, 0.0};
     std::mdspan<double, std::extents<int, 3>> v(data);
     EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(v), 5.0);

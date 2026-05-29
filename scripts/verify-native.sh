@@ -86,7 +86,7 @@ target_gcc16() {
         2>&1 | tee "${logfile}"
     assert_stands_aside "${logfile}" "std::simd"
     assert_stands_aside "${logfile}" "std::submdspan"
-    log "gcc16: building + testing (native coexistence must compile cleanly)"
+    log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26
     ok "gcc16 verified"
 }
