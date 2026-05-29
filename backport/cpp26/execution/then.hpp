@@ -137,67 +137,73 @@ struct then_receiver {
     [[no_unique_address]] Fn fn_;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, then_receiver&& self, Vs&&... vs) noexcept {
+    void set_value(Vs&&... vs) && noexcept {
         if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
             try {
-                std::invoke(std::move(self.fn_), static_cast<Vs&&>(vs)...);
-                std::execution::set_value(std::move(self.rcvr_));
+                std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(rcvr_));
             } catch (...) {
-                std::execution::set_error(std::move(self.rcvr_), std::current_exception());
+                std::execution::set_error(std::move(rcvr_), std::current_exception());
             }
         } else {
             try {
                 std::execution::set_value(
-                    std::move(self.rcvr_),
-                    std::invoke(std::move(self.fn_), static_cast<Vs&&>(vs)...));
+                    std::move(rcvr_),
+                    std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...));
             } catch (...) {
-                std::execution::set_error(std::move(self.rcvr_), std::current_exception());
+                std::execution::set_error(std::move(rcvr_), std::current_exception());
             }
         }
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, then_receiver&& self, E&& e) noexcept {
-        std::execution::set_error(std::move(self.rcvr_), static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(rcvr_), static_cast<E&&>(e));
     }
 
-    friend void tag_invoke(set_stopped_t, then_receiver&& self) noexcept {
-        std::execution::set_stopped(std::move(self.rcvr_));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(rcvr_));
     }
 
-    friend auto tag_invoke(get_env_t, const then_receiver& self) noexcept -> env_of_t<R> {
-        return std::execution::get_env(self.rcvr_);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(rcvr_);
     }
 };
 
 template<class S, class Fn>
 struct then_sender {
     using sender_concept = sender_t;
+    using source_t = S;
+    using fn_t = Fn;
 
     [[no_unique_address]] S sndr_;
     [[no_unique_address]] Fn fn_;
 
-    friend auto tag_invoke(get_completion_signatures_t, const then_sender& self, auto env) noexcept {
-        using up_cs_t = decltype(std::execution::get_completion_signatures(self.sndr_, env));
-        using out_cs_t = transform_completion_signatures_t<Fn, up_cs_t>;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using up_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
+        using out_cs_t = transform_completion_signatures_t<typename self_t::fn_t, up_cs_t>;
         return out_cs_t{};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(connect_t, then_sender&& self, R rcvr) {
-        return std::execution::connect(std::move(self.sndr_),
-                                       then_receiver<R, Fn>{std::move(rcvr), std::move(self.fn_)});
+    auto connect(R rcvr) && {
+        return std::execution::connect(std::move(sndr_),
+                                       then_receiver<R, Fn>{std::move(rcvr), std::move(fn_)});
     }
 
     template<std::execution::receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
-    friend auto tag_invoke(connect_t, const then_sender& self, R rcvr) {
-        return std::execution::connect(S(self.sndr_),
-                                       then_receiver<R, Fn>{std::move(rcvr), Fn(self.fn_)});
+    auto connect(R rcvr) const& {
+        return std::execution::connect(S(sndr_),
+                                       then_receiver<R, Fn>{std::move(rcvr), Fn(fn_)});
     }
 
-    friend auto tag_invoke(get_env_t, const then_sender& self) noexcept -> env_of_t<S> {
-        return std::execution::get_env(self.sndr_);
+    auto get_env() const noexcept -> env_of_t<S> {
+        return std::execution::get_env(sndr_);
     }
 };
 

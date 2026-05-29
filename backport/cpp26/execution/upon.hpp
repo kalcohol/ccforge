@@ -97,35 +97,35 @@ struct __recv_error {
     Fn __fn;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __recv_error&& self, Vs&&... vs) noexcept {
-        set_value(std::move(self.__rcvr), static_cast<Vs&&>(vs)...);
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(__rcvr), static_cast<Vs&&>(vs)...);
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, __recv_error&& self, E&& e) noexcept {
+    void set_error(E&& e) && noexcept {
         if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
             try {
-                std::invoke(std::move(self.__fn), static_cast<E&&>(e));
-                set_value(std::move(self.__rcvr));
+                std::invoke(std::move(__fn), static_cast<E&&>(e));
+                std::execution::set_value(std::move(__rcvr));
             } catch (...) {
-                set_error(std::move(self.__rcvr), std::current_exception());
+                std::execution::set_error(std::move(__rcvr), std::current_exception());
             }
         } else {
             try {
-                set_value(std::move(self.__rcvr),
-                          std::invoke(std::move(self.__fn), static_cast<E&&>(e)));
+                std::execution::set_value(std::move(__rcvr),
+                                          std::invoke(std::move(__fn), static_cast<E&&>(e)));
             } catch (...) {
-                set_error(std::move(self.__rcvr), std::current_exception());
+                std::execution::set_error(std::move(__rcvr), std::current_exception());
             }
         }
     }
 
-    friend void tag_invoke(set_stopped_t, __recv_error&& self) noexcept {
-        set_stopped(std::move(self.__rcvr));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(__rcvr));
     }
 
-    friend auto tag_invoke(get_env_t, const __recv_error& self) noexcept -> env_of_t<R> {
-        return std::execution::get_env(self.__rcvr);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(__rcvr);
     }
 };
 
@@ -136,77 +136,81 @@ struct __recv_stopped {
     Fn __fn;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __recv_stopped&& self, Vs&&... vs) noexcept {
-        set_value(std::move(self.__rcvr), static_cast<Vs&&>(vs)...);
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(__rcvr), static_cast<Vs&&>(vs)...);
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, __recv_stopped&& self, E&& e) noexcept {
-        set_error(std::move(self.__rcvr), static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
     }
 
-    friend void tag_invoke(set_stopped_t, __recv_stopped&& self) noexcept {
+    void set_stopped() && noexcept {
         if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
             try {
-                std::invoke(std::move(self.__fn));
-                set_value(std::move(self.__rcvr));
+                std::invoke(std::move(__fn));
+                std::execution::set_value(std::move(__rcvr));
             } catch (...) {
-                set_error(std::move(self.__rcvr), std::current_exception());
+                std::execution::set_error(std::move(__rcvr), std::current_exception());
             }
         } else {
             try {
-                set_value(std::move(self.__rcvr), std::invoke(std::move(self.__fn)));
+                std::execution::set_value(std::move(__rcvr), std::invoke(std::move(__fn)));
             } catch (...) {
-                set_error(std::move(self.__rcvr), std::current_exception());
+                std::execution::set_error(std::move(__rcvr), std::current_exception());
             }
         }
     }
 
-    friend auto tag_invoke(get_env_t, const __recv_stopped& self) noexcept -> env_of_t<R> {
-        return std::execution::get_env(self.__rcvr);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(__rcvr);
     }
 };
 
 template<class S, class Fn, bool IsError>
 struct __sender {
     using sender_concept = sender_t;
+    using source_t = S;
+    using fn_t = Fn;
+
     S __sndr;
     Fn __fn;
 
-    template<class Env>
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self, Env&&) noexcept {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            self.__sndr, std::declval<Env>()));
-        using out_cs_t = typename __completion_sigs<Fn, IsError, up_cs_t>::type;
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
+        using out_cs_t = typename __completion_sigs<typename self_t::fn_t, IsError, up_cs_t>::type;
         return out_cs_t{};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r) {
+    auto connect(R r) && {
         if constexpr (IsError) {
-            return std::execution::connect(std::move(self.__sndr),
-                __recv_error<R, Fn>{std::move(r), std::move(self.__fn)});
+            return std::execution::connect(std::move(__sndr),
+                __recv_error<R, Fn>{std::move(r), std::move(__fn)});
         } else {
-            return std::execution::connect(std::move(self.__sndr),
-                __recv_stopped<R, Fn>{std::move(r), std::move(self.__fn)});
+            return std::execution::connect(std::move(__sndr),
+                __recv_stopped<R, Fn>{std::move(r), std::move(__fn)});
         }
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
-    friend auto tag_invoke(connect_t, const __sender& self, R r) {
+    auto connect(R r) const& {
         if constexpr (IsError) {
-            return std::execution::connect(S(self.__sndr),
-                __recv_error<R, Fn>{std::move(r), Fn(self.__fn)});
+            return std::execution::connect(S(__sndr),
+                __recv_error<R, Fn>{std::move(r), Fn(__fn)});
         } else {
-            return std::execution::connect(S(self.__sndr),
-                __recv_stopped<R, Fn>{std::move(r), Fn(self.__fn)});
+            return std::execution::connect(S(__sndr),
+                __recv_stopped<R, Fn>{std::move(r), Fn(__fn)});
         }
     }
 
-    friend auto tag_invoke(get_env_t, const __sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 
