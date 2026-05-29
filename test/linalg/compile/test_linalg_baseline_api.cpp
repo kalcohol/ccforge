@@ -152,9 +152,34 @@ static void check_level3_current_shapes()
     std::linalg::symmetric_matrix_product(
         a, std::linalg::upper_triangle, b, c);
     std::linalg::symmetric_matrix_rank_k_update(
-        2.0, std::linalg::upper_triangle, a, c);
+        2.0, a, c, std::linalg::upper_triangle);
+    std::linalg::symmetric_matrix_rank_k_update(
+        2.0, a, e, c, std::linalg::upper_triangle);
     std::linalg::symmetric_matrix_rank_2k_update(
-        2.0, std::linalg::upper_triangle, a, b, c);
+        a, b, c, std::linalg::upper_triangle);
+    std::linalg::symmetric_matrix_rank_2k_update(
+        a, b, e, c, std::linalg::upper_triangle);
+}
+
+static void check_complex_level3_current_shapes()
+{
+    using complex = std::complex<double>;
+    complex a_storage[4]{};
+    complex b_storage[4]{};
+    complex c_storage[4]{};
+    complex e_storage[4]{};
+
+    std::mdspan a(a_storage, std::extents<int, 2, 2>{});
+    std::mdspan b(b_storage, std::extents<int, 2, 2>{});
+    std::mdspan c(c_storage, std::extents<int, 2, 2>{});
+    std::mdspan e(e_storage, std::extents<int, 2, 2>{});
+
+    std::linalg::hermitian_matrix_product(
+        a, std::linalg::upper_triangle, b, c);
+    std::linalg::hermitian_matrix_rank_k_update(
+        complex{2.0, 0.0}, a, c, std::linalg::upper_triangle);
+    std::linalg::hermitian_matrix_rank_k_update(
+        complex{2.0, 0.0}, a, e, c, std::linalg::upper_triangle);
 }
 
 int main()
@@ -164,4 +189,5 @@ int main()
     check_level2_current_shapes();
     check_complex_hermitian_current_shapes();
     check_level3_current_shapes();
+    check_complex_level3_current_shapes();
 }
