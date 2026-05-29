@@ -354,16 +354,16 @@ sum_of_squares_result<T> vector_sum_of_squares(
     return {scale, ssq};
 }
 
-// givens_rotation_setup — [linalg.algs.blas1.givens]
+// setup_givens_rotation — [linalg.algs.blas1.givens]
 template<class T>
-struct givens_rotation_result {
+struct setup_givens_rotation_result {
     T c;
     T s;
     T r;
 };
 
 template<class T>
-givens_rotation_result<T> givens_rotation_setup(T a, T b) {
+setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) {
     using std::abs;
     using std::sqrt;
     if (b == T{}) return {T{1}, T{0}, a};
@@ -376,10 +376,10 @@ givens_rotation_result<T> givens_rotation_setup(T a, T b) {
     return {c, s, r};
 }
 
-// givens_rotation_apply — [linalg.algs.blas1.givens]
+// apply_givens_rotation — [linalg.algs.blas1.givens]
 template<class Extents, class Layout1, class Accessor1,
                         class Layout2, class Accessor2, class T>
-void givens_rotation_apply(
+void apply_givens_rotation(
     std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
     T c, T s)
@@ -390,6 +390,24 @@ void givens_rotation_apply(
         x[i] = c * xi + s * yi;
         y[i] = -s * xi + c * yi;
     }
+}
+
+template<class T>
+using givens_rotation_result = setup_givens_rotation_result<T>;
+
+template<class T>
+givens_rotation_result<T> givens_rotation_setup(T a, T b) {
+    return setup_givens_rotation(a, b);
+}
+
+template<class Extents, class Layout1, class Accessor1,
+                        class Layout2, class Accessor2, class T>
+void givens_rotation_apply(
+    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
+    T c, T s)
+{
+    apply_givens_rotation(x, y, c, s);
 }
 
 // matrix_frob_norm — [linalg.algs.blas1.matfrobnorm]

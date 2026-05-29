@@ -143,7 +143,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 当前为 P1673R13 风格的实验性 backport，提供一个不依赖外部 BLAS 库的实用 BLAS 子集：
 
-**BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、`vector_sum_of_squares`、`givens_rotation_setup`、`givens_rotation_apply`
+**BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、`vector_sum_of_squares`、`setup_givens_rotation`、`apply_givens_rotation`
 
 **BLAS Level 2：** `matrix_vector_product`、`triangular_matrix_vector_product`、`triangular_matrix_vector_solve`、`symmetric_matrix_vector_product`、`hermitian_matrix_vector_product`、`matrix_rank_1_update`/`_c`、`symmetric_matrix_rank_1/2_update`
 

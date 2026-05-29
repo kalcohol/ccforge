@@ -1,6 +1,6 @@
 // Compile probe: current Forge std::linalg baseline before conformance slices.
 // This intentionally records APIs that later linalg taskbooks are expected to
-// rename or tighten.
+// tighten.
 
 #include <complex>
 #include <linalg>
@@ -50,17 +50,17 @@ static void check_level1_and_helpers()
     (void)std::linalg::conjugate_transposed(matrix);
 }
 
-static void check_current_givens_names()
+static void check_givens_names()
 {
     double x_storage[2]{1.0, 2.0};
     double y_storage[2]{3.0, 4.0};
     std::mdspan x(x_storage, std::extents<int, 2>{});
     std::mdspan y(y_storage, std::extents<int, 2>{});
 
-    auto rotation = std::linalg::givens_rotation_setup(3.0, 4.0);
+    auto rotation = std::linalg::setup_givens_rotation(3.0, 4.0);
     static_assert(std::is_same_v<decltype(rotation),
-                                 std::linalg::givens_rotation_result<double>>);
-    std::linalg::givens_rotation_apply(x, y, rotation.c, rotation.s);
+                                 std::linalg::setup_givens_rotation_result<double>>);
+    std::linalg::apply_givens_rotation(x, y, rotation.c, rotation.s);
 }
 
 static void check_level2_current_shapes()
@@ -144,7 +144,7 @@ static void check_level3_current_shapes()
 int main()
 {
     check_level1_and_helpers();
-    check_current_givens_names();
+    check_givens_names();
     check_level2_current_shapes();
     check_complex_hermitian_current_shapes();
     check_level3_current_shapes();
