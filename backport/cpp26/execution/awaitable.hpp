@@ -30,6 +30,7 @@
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
 #include <optional>
+#include <utility>
 #include <variant>
 
 namespace std::execution {
@@ -43,13 +44,32 @@ concept __has_unhandled_stopped = requires(Promise& p) {
     { p.unhandled_stopped() } noexcept -> std::convertible_to<std::coroutine_handle<>>;
 };
 
+template<class Promise>
+concept __has_promise_env = requires(const Promise& p) {
+    std::execution::get_env(p);
+};
+
+template<class Promise>
+auto __get_promise_env(const Promise& p)
+    noexcept(noexcept(std::execution::get_env(p)))
+    requires __has_promise_env<Promise> {
+    return std::execution::get_env(p);
+}
+
+template<class Promise>
+    requires (!__has_promise_env<Promise>)
+auto __get_promise_env(const Promise&) noexcept -> empty_env {
+    return {};
+}
+
 template<class S, class Promise>
 struct __awaitable {
     S __sndr;
     Promise* __promise;
 
+    using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::execution::empty_env{}));
+        std::declval<S>(), std::declval<env_t>()));
     using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
     using result_t = std::optional<value_tuple_t>;
 
@@ -83,8 +103,8 @@ struct __awaitable {
                 r.__self->__coro.resume();
             }
         }
-        friend auto tag_invoke(get_env_t, const __recv& r) noexcept -> empty_env {
-            return {};
+        friend auto tag_invoke(get_env_t, const __recv& r) noexcept -> env_t {
+            return __get_promise_env(*r.__self->__promise);
         }
     };
 

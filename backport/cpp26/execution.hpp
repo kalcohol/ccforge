@@ -48,6 +48,8 @@
 //   - CPO dispatch: tag_invoke internally (not final member-function-first mechanism);
 //     not user-visible; new Phase 3+ types use member-function-first dispatch.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
+//   - as_awaitable supports a single value-completion shape; multiple value
+//     alternatives should be normalized before co_await.
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.

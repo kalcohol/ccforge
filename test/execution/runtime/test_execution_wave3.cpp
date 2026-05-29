@@ -62,17 +62,50 @@ struct SimpleTask {
     };
 };
 
+struct await_env {};
+
+struct await_env_query {
+    int operator()(await_env) const noexcept { return 42; }
+};
+
+struct EnvTask {
+    struct promise_type : std::execution::with_awaitable_senders<promise_type> {
+        EnvTask get_return_object() { return {}; }
+        std::suspend_never initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept {}
+
+        friend auto tag_invoke(std::execution::get_env_t, const promise_type&) noexcept
+            -> await_env {
+            return {};
+        }
+    };
+};
+
 static int g_coro_result = -1;
+static int g_env_result = -1;
 
 SimpleTask run_coro() {
     auto tup = co_await std::execution::just(42);
     g_coro_result = std::get<0>(tup);
 }
 
+EnvTask run_env_coro() {
+    auto tup = co_await std::execution::read_env(await_env_query{});
+    g_env_result = std::get<0>(tup);
+}
+
 TEST(CoroutineBridgeTest, CoAwaitSender) {
     g_coro_result = -1;
     run_coro();
     EXPECT_EQ(g_coro_result, 42);
+}
+
+TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {
+    g_env_result = -1;
+    run_env_coro();
+    EXPECT_EQ(g_env_result, 42);
 }
 
 struct StoppedProbeTask {
