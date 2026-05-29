@@ -126,33 +126,29 @@ public:
     explicit operator bool() const noexcept { return __ptr != nullptr; }
 
     template<class... Vs>
-    friend void tag_invoke(std::execution::set_value_t,
-                           any_receiver_of&& self, Vs&&... vs) noexcept {
-        if (self.__ptr && self.__vt)
-            self.__vt->complete_value(self.__ptr,
+    void set_value(Vs&&... vs) && noexcept {
+        if (__ptr && __vt)
+            __vt->complete_value(__ptr,
                 value_tuple_t{static_cast<Vs&&>(vs)...});
     }
 
     template<class E>
-    friend void tag_invoke(std::execution::set_error_t,
-                           any_receiver_of&& self, E&& e) noexcept {
-        if (self.__ptr && self.__vt) {
+    void set_error(E&& e) && noexcept {
+        if (__ptr && __vt) {
             std::exception_ptr ep;
             if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
                 ep = static_cast<E&&>(e);
             else
                 ep = std::make_exception_ptr(static_cast<E&&>(e));
-            self.__vt->complete_error(self.__ptr, std::move(ep));
+            __vt->complete_error(__ptr, std::move(ep));
         }
     }
 
-    friend void tag_invoke(std::execution::set_stopped_t,
-                           any_receiver_of&& self) noexcept {
-        if (self.__ptr && self.__vt) self.__vt->complete_stopped(self.__ptr);
+    void set_stopped() && noexcept {
+        if (__ptr && __vt) __vt->complete_stopped(__ptr);
     }
 
-    friend std::execution::empty_env tag_invoke(
-        std::execution::get_env_t, const any_receiver_of&) noexcept {
+    auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
 };

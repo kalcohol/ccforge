@@ -152,14 +152,12 @@ public:
     }
 
     // forge:: extension sender interface
-    friend CompletionSignatures tag_invoke(
-        std::execution::get_completion_signatures_t,
-        const any_sender_of&, auto) noexcept {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> CompletionSignatures {
         return {};
     }
 
-    friend std::execution::empty_env tag_invoke(
-        std::execution::get_env_t, const any_sender_of&) noexcept {
+    auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
 };
