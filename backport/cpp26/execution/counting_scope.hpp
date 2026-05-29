@@ -256,22 +256,21 @@ struct __associated_op : __forge_detail::__immovable {
         R* __rcvr;
 
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-            set_value(std::move(*self.__rcvr), static_cast<Vs&&>(vs)...);
+        void set_value(Vs&&... vs) && noexcept {
+            std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
         }
 
         template<class E>
-        friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
-            set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
+        void set_error(E&& e) && noexcept {
+            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
         }
 
-        friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-            set_stopped(std::move(*self.__rcvr));
+        void set_stopped() && noexcept {
+            std::execution::set_stopped(std::move(*__rcvr));
         }
 
-        friend auto tag_invoke(get_env_t, const __recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(*self.__rcvr);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(*__rcvr);
         }
     };
 
@@ -294,22 +293,22 @@ struct __associated_op : __forge_detail::__immovable {
         __association = {};
     }
 
-    friend void tag_invoke(start_t, __associated_op& self) noexcept {
-        self.__association = self.__token.try_associate();
-        if (!self.__association) {
-            set_stopped(std::move(self.__rcvr));
+    void start() & noexcept {
+        __association = __token.try_associate();
+        if (!__association) {
+            std::execution::set_stopped(std::move(__rcvr));
             return;
         }
 
         try {
-            auto* op = self.__inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+            auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
                 return std::execution::connect(
-                    std::move(self.__sndr),
-                    __recv{&self.__rcvr});
+                    std::move(__sndr),
+                    __recv{&__rcvr});
             });
             std::execution::start(*op);
         } catch (...) {
-            set_error(std::move(self.__rcvr), std::current_exception());
+            std::execution::set_error(std::move(__rcvr), std::current_exception());
         }
     }
 };
@@ -317,33 +316,37 @@ struct __associated_op : __forge_detail::__immovable {
 template<class S>
 struct __associated_sender {
     using sender_concept = sender_t;
+    using source_t = S;
 
     simple_counting_scope::scope_token __token;
     S __sndr;
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __associated_sender& self, auto env) noexcept {
-        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using up_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
         return __forge_meta::__concat_cs_t<up_cs_t, completion_signatures<set_stopped_t()>>{};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __associated_sender&& self, R r)
+    auto connect(R r) &&
         -> __associated_op<S, R>
     {
-        return __associated_op<S, R>{self.__token, std::move(self.__sndr), std::move(r)};
+        return __associated_op<S, R>{__token, std::move(__sndr), std::move(r)};
     }
 
     template<receiver R>
         requires std::copy_constructible<S>
-    friend auto tag_invoke(connect_t, const __associated_sender& self, R r)
+    auto connect(R r) const&
         -> __associated_op<S, R>
     {
-        return __associated_op<S, R>{self.__token, self.__sndr, std::move(r)};
+        return __associated_op<S, R>{__token, __sndr, std::move(r)};
     }
 
-    friend auto tag_invoke(get_env_t, const __associated_sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept -> env_of_t<S> {
+        return std::execution::get_env(__sndr);
     }
 };
 
