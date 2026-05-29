@@ -145,7 +145,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 **BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、`vector_sum_of_squares`、`setup_givens_rotation`、`apply_givens_rotation`
 
-**BLAS Level 2：** `matrix_vector_product`、`triangular_matrix_vector_product`、`triangular_matrix_vector_solve`、`symmetric_matrix_vector_product`、`hermitian_matrix_vector_product`、`matrix_rank_1_update`/`_c`、`symmetric_matrix_rank_1/2_update`
+**BLAS Level 2：** `matrix_vector_product`、`triangular_matrix_vector_product`、`triangular_matrix_vector_solve`、`symmetric_matrix_vector_product`、`hermitian_matrix_vector_product`、`matrix_rank_1_update`/`_c`、`symmetric_matrix_rank_1/2_update`、`hermitian_matrix_rank_1/2_update`
 
 **BLAS Level 3：** `matrix_product`、`triangular_matrix_product`、`triangular_matrix_matrix_left_solve`、`symmetric_matrix_product`、`hermitian_matrix_product`、`symmetric_matrix_rank_k/2k_update`、`hermitian_matrix_rank_k_update`
 

@@ -285,3 +285,28 @@ TEST(LinalgLevel2RankUpdate, HermitianRankUpdatesRespectTriangle) {
     std::linalg::hermitian_matrix_rank_2_update(x, y, E, A, std::linalg::lower_triangle);
     expect_complex_near(A[1, 0], {19.0, -5.0});
 }
+
+TEST(LinalgLevel2RankUpdate, HermitianRankUpdatesKeepDiagonalReal) {
+    complex x_data[] = {{1.0, 1.0}};
+    complex y_data[] = {{2.0, 3.0}};
+    complex e_data[] = {{10.0, 9.0}};
+    complex a_data[] = {{0.0, 0.0}};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+    std::mdspan E(e_data, std::extents<int, 1, 1>{});
+    std::mdspan A(a_data, std::extents<int, 1, 1>{});
+
+    std::linalg::hermitian_matrix_rank_1_update(
+        complex{2.0, 3.0}, x, A, std::linalg::upper_triangle);
+    expect_complex_near(A[0, 0], {4.0, 0.0});
+
+    std::linalg::hermitian_matrix_rank_1_update(
+        complex{2.0, 3.0}, x, E, A, std::linalg::upper_triangle);
+    expect_complex_near(A[0, 0], {14.0, 0.0});
+
+    std::linalg::hermitian_matrix_rank_2_update(x, y, A, std::linalg::upper_triangle);
+    expect_complex_near(A[0, 0], {10.0, 0.0});
+
+    std::linalg::hermitian_matrix_rank_2_update(x, y, E, A, std::linalg::upper_triangle);
+    expect_complex_near(A[0, 0], {20.0, 0.0});
+}

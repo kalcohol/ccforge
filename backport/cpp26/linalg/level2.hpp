@@ -525,11 +525,15 @@ void hermitian_matrix_rank_1_update(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j)
-                A[i, j] = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = i; j < n; ++j) {
+                auto value = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         } else {
-            for (idx_t j = 0; j <= i; ++j)
-                A[i, j] = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = 0; j <= i; ++j) {
+                auto value = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         }
     }
 }
@@ -552,11 +556,15 @@ void hermitian_matrix_rank_1_update(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j)
-                A[i, j] = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = i; j < n; ++j) {
+                auto value = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         } else {
-            for (idx_t j = 0; j <= i; ++j)
-                A[i, j] = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = 0; j <= i; ++j) {
+                auto value = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         }
     }
 }
@@ -588,13 +596,17 @@ void hermitian_matrix_rank_2_update(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j)
-                A[i, j] = x[i] * __detail::__conj_if_needed(y[j]) +
-                          y[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = i; j < n; ++j) {
+                auto value = x[i] * __detail::__conj_if_needed(y[j]) +
+                             y[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         } else {
-            for (idx_t j = 0; j <= i; ++j)
-                A[i, j] = x[i] * __detail::__conj_if_needed(y[j]) +
-                          y[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = 0; j <= i; ++j) {
+                auto value = x[i] * __detail::__conj_if_needed(y[j]) +
+                             y[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         }
     }
 }
@@ -617,13 +629,17 @@ void hermitian_matrix_rank_2_update(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j)
-                A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
-                          y[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = i; j < n; ++j) {
+                auto value = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
+                             y[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         } else {
-            for (idx_t j = 0; j <= i; ++j)
-                A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
-                          y[i] * __detail::__conj_if_needed(x[j]);
+            for (idx_t j = 0; j <= i; ++j) {
+                auto value = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
+                             y[i] * __detail::__conj_if_needed(x[j]);
+                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+            }
         }
     }
 }
