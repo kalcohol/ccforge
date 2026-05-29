@@ -38,6 +38,9 @@ template<class T = void> class task;
 
 namespace __task_detail {
 
+// Current task sender is synchronous: start() resumes the coroutine once and
+// then immediately completes the connected receiver from the promise state.
+// Awaited senders must therefore complete inline.
 template<class T, class R>
 struct __op {
     using operation_state_concept = std::execution::operation_state_t;

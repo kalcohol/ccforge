@@ -125,7 +125,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
 - 许多 `connect_t` 重载仍按值接收 sender，因此 non-copyable lvalue sender 支持尚不完整，除非对应算法已提供专门重载。
 - `sync_wait` MVP 当前只支持最多一个 `set_value` completion signature；具备多组 value signatures 的 sender 仍需先通过 adaptor 归一化后再消费。
-- Coroutine bridge 的 stopped 语义仍为 draft：`as_awaitable` 当前以内部 stopped 异常表示 stopped completion，尚未完整实现 promise-level `unhandled_stopped` 语义。
+- Coroutine bridge 的 `co_await` 当前只支持单一 value completion 形状；多组 value signatures 的 sender 需先归一化后再 await。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
 
@@ -174,7 +174,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 **并发组件：**
 - `forge::static_thread_pool` — 线程池，提供 `scheduler` 接口，与 `std::execution` 集成
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
-- `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用（需要 C++20 coroutines）
+- `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；当前 task body 中 `co_await` 的 sender 必须 inline/synchronous 完成（需要 C++20 coroutines）
 
 ## 编码规范
 
