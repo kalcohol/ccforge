@@ -128,8 +128,11 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Coroutine bridge 的 `co_await` 当前只支持单一 value completion 形状；多组 value signatures 的 sender 需先归一化后再 await。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
+- `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
 
-> CPO 调度内部使用 `tag_invoke`（不对外暴露），Phase 3+ 新增类型使用成员函数优先分发。当原生 `<execution>` 可用时，整个 backport 自动禁用。
+> CPO 调度内部仍主要使用 `tag_invoke` 定义 Forge 自带 sender/receiver 的定制点；当前 C++26 draft 主要采用成员函数定制（如 `connect` / `get_env` / `set_value`）。普通调用方不受影响，但自定义 sender/receiver 作者应注意这仍是 backport 偏差。当原生 `<execution>` 可用时，整个 backport 自动禁用。
+
+> `scripts/verify-native.sh tsan` 与 `scripts/verify-native.sh asan` 分别覆盖 execution 子集的 ThreadSanitizer 与 ASan+UBSan 路径；`llvm` 目标覆盖 libc++ inject-path 全量测试。
 
 > 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`。Forge 的 tests/examples 会在检测到 `tbb` 时自动链接。
 

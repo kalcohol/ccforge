@@ -32,6 +32,10 @@ namespace std::execution {
 
 namespace __forge_start_detached {
 
+// Forge's detached receiver deliberately terminates on set_error. This keeps
+// the fire-and-forget lifetime model simple: value/stopped release the shared
+// state, while error is treated as an unhandled asynchronous failure.
+
 struct __detached_recv {
     using receiver_concept = receiver_t;
 

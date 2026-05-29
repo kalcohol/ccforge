@@ -25,7 +25,7 @@
 // NOTE: This is a Forge backport of a small P2300 sender/receiver MVP.
 // It is intentionally minimal and correctness-first.
 //
-// IMPLEMENTATION STATUS (Forge C++26 execution backport — Phase 1+2+3 complete):
+// IMPLEMENTATION STATUS (Forge C++26 execution backport — Phase 1-4 subset):
 //
 // IMPLEMENTED:
 //   Sender factories : just, just_error, just_stopped, read_env
@@ -41,16 +41,18 @@
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : transform_completion_signatures, enable_sender,
 //                      get_completion_scheduler CPO, CPO member-function-first dispatch
-//   Verification     : execution subset covered by a dedicated ThreadSanitizer
-//                      container configuration.
+//   Verification     : execution subset covered by dedicated ThreadSanitizer
+//                      and ASan+UBSan container configurations.
 //
 // DEVIATIONS from current working draft [exec]:
-//   - CPO dispatch: tag_invoke internally (not final member-function-first mechanism);
-//     not user-visible; new Phase 3+ types use member-function-first dispatch.
+//   - CPO customization is still tag_invoke-based internally for Forge-provided
+//     senders/receivers; the C++26 draft primarily specifies member customization.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - as_awaitable supports a single value-completion shape; multiple value
 //     alternatives should be normalized before co_await.
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
+//   - start_detached terminates on set_error; attach an error-handling adaptor
+//     before detaching if failures are expected.
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
