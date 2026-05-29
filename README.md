@@ -10,18 +10,20 @@
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
 | `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4（部分 draft 行为仍有限制） |
 | `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 实用 BLAS 子集（实验性） |
-| `std::submdspan` | P2630/P3355 | `#include <mdspan>` | 实用 P2630-era 子集 |
+| `std::constant_wrapper` | P2781 | `#include <utility>` | C++26 backport |
+| `std::submdspan` | P2630/P3663/P3982 + P2642 | `#include <mdspan>` | 当前 C++26 draft surface |
 
 **注意：** `std::unique_resource` 当前仅在 Library Fundamentals TS v3 中，尚未进入 C++26 标准。
 
 ## 工具链原生进度（截至 2026-05）
 
-这五个特性均已（除 `unique_resource` 外）并入 C++26，但**主流标准库的原生落地进度差异很大**，直接决定哪个 backport 会在你的工具链上自动退场：
+这些特性均已（除 `unique_resource` 外）并入或服务于 C++26，但**主流标准库的原生落地进度差异很大**，直接决定哪个 backport 会在你的工具链上自动退场：
 
 | 特性 | libstdc++ (GCC) | libc++ (Clang) | 含义 |
 |------|-----------------|----------------|------|
 | `std::simd` | GCC 16 起部分原生（experimental，`-std=c++26`，命名仍在演进） | 未实现 | 新工具链上 backport 开始让位 |
-| `std::submdspan` | GCC 16 起部分原生（如 `submdspan_extents`→`subextents` 改名仍在变动） | 未实现 | 同上 |
+| `std::constant_wrapper` / padded mdspan layouts | 随 C++26 `<utility>` / `<mdspan>` 逐步出现 | 未实现 | `submdspan` 的前置 foundation，单独探测、单独让位 |
+| `std::submdspan` | GCC 16 起部分原生（新词汇为 `extent_slice` / `range_slice` / `subextents` / `canonical_slices`） | 未实现 | 同上 |
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::linalg` | 未实现 | 未实现 | backport 仍是唯一路径 |
 
@@ -161,9 +163,11 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::submdspan` 说明
 
-当前为 P2630/P3355 时代接口的实用子集，覆盖 `full_extent`、`strided_slice`、`submdspan_mapping_result`、`submdspan_extents`、`layout_left` / `layout_right` / `layout_stride` 的 `submdspan_mapping`，以及 `submdspan()` 本体。
+当前对齐 2026-05 C++26 working draft 的 `submdspan` surface，覆盖 `full_extent`、`extent_slice`、`range_slice`、`submdspan_mapping_result`、`canonical_slices`、`subextents`、`layout_left` / `layout_right` / `layout_stride` / `layout_left_padded` / `layout_right_padded` 的 `submdspan_mapping`，以及 `submdspan()` 本体。
 
-> 当前 C++26 draft 的 `submdspan` 命名和规范仍在演进，后续草案已经引入 `subextents` / slice canonicalization 等形态变化；Forge 会在检测到原生 `std::submdspan` 时主动让位，避免与标准库实现重定义。未实现 `layout_left_padded` / `layout_right_padded` 的 mapping，`strided_slice::extent` 语义按当前实现注释中的 working draft 基线处理。
+Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdspan layouts 作为 `submdspan` foundation；这些 foundation 也由 `forge.cmake` 单独探测，检测到原生或部分原生声明时会主动让位，避免 ODR 冲突。
+
+> `strided_slice` 与 `submdspan_extents` 作为早期 P2630-era 兼容拼写保留；新代码建议使用 `extent_slice` / `range_slice` 与 `subextents`。兼容 `strided_slice` 的 `.extent` 仍按旧 Forge/P2630 语义表示输入 span 长度，进入 `submdspan()` 时会先 canonicalize 到当前 draft 的 `extent_slice` 输出计数语义。当 Forge 注入 backport 时定义 `__cpp_lib_constant_wrapper = 202603L` 与 `__cpp_lib_submdspan = 202603L`。
 
 ## `std::simd` 说明
 
