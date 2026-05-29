@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <type_traits>
+#include <variant>
 
 namespace {
 
@@ -85,6 +86,8 @@ struct EnvTask {
 
 static int g_coro_result = -1;
 static int g_env_result = -1;
+static int g_multi_result = -1;
+static int g_empty_alt_result = -1;
 
 SimpleTask run_coro() {
     auto tup = co_await std::execution::just(42);
@@ -94,6 +97,108 @@ SimpleTask run_coro() {
 EnvTask run_env_coro() {
     auto tup = co_await std::execution::read_env(await_env_query{});
     g_env_result = std::get<0>(tup);
+}
+
+template<class R>
+struct multi_value_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+    bool use_double = false;
+
+    void start() & noexcept {
+        if (use_double) {
+            std::execution::set_value(std::move(rcvr), 4.5);
+        } else {
+            std::execution::set_value(std::move(rcvr), 3);
+        }
+    }
+};
+
+struct multi_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool use_double = false;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_value_t(double)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> multi_value_op<R> {
+        return multi_value_op<R>{std::move(r), use_double};
+    }
+};
+
+template<class R>
+struct empty_or_int_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+    bool use_empty = false;
+
+    void start() & noexcept {
+        if (use_empty) {
+            std::execution::set_value(std::move(rcvr));
+        } else {
+            std::execution::set_value(std::move(rcvr), 8);
+        }
+    }
+};
+
+struct empty_or_int_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool use_empty = false;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> empty_or_int_op<R> {
+        return empty_or_int_op<R>{std::move(r), use_empty};
+    }
+};
+
+SimpleTask run_multi_value_coro(bool use_double) {
+    auto value = co_await multi_value_sender{use_double};
+    using expected_t = std::variant<std::tuple<int>, std::tuple<double>>;
+    static_assert(std::is_same_v<decltype(value), expected_t>);
+
+    g_multi_result = std::visit([](auto& tuple) {
+        return static_cast<int>(std::get<0>(tuple));
+    }, value);
+}
+
+SimpleTask run_empty_or_int_coro(bool use_empty) {
+    auto value = co_await empty_or_int_sender{use_empty};
+    using expected_t = std::variant<std::tuple<>, std::tuple<int>>;
+    static_assert(std::is_same_v<decltype(value), expected_t>);
+
+    g_empty_alt_result = std::visit([](auto& tuple) {
+        if constexpr (std::tuple_size_v<std::decay_t<decltype(tuple)>> == 0) {
+            return 1;
+        } else {
+            return std::get<0>(tuple);
+        }
+    }, value);
 }
 
 TEST(CoroutineBridgeTest, CoAwaitSender) {
@@ -106,6 +211,26 @@ TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {
     g_env_result = -1;
     run_env_coro();
     EXPECT_EQ(g_env_result, 42);
+}
+
+TEST(CoroutineBridgeTest, CoAwaitMultiValueAlternativesReturnVariant) {
+    g_multi_result = -1;
+    run_multi_value_coro(false);
+    EXPECT_EQ(g_multi_result, 3);
+
+    g_multi_result = -1;
+    run_multi_value_coro(true);
+    EXPECT_EQ(g_multi_result, 4);
+}
+
+TEST(CoroutineBridgeTest, CoAwaitEmptyValueAlternativeUsesEmptyTuple) {
+    g_empty_alt_result = -1;
+    run_empty_or_int_coro(true);
+    EXPECT_EQ(g_empty_alt_result, 1);
+
+    g_empty_alt_result = -1;
+    run_empty_or_int_coro(false);
+    EXPECT_EQ(g_empty_alt_result, 8);
 }
 
 struct StoppedProbeTask {

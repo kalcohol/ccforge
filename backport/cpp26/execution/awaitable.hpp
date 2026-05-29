@@ -30,6 +30,8 @@
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
 #include <optional>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -62,6 +64,67 @@ auto __get_promise_env(const Promise&) noexcept -> empty_env {
     return {};
 }
 
+template<class CS>
+struct __value_tuple_list;
+
+template<class... Sigs>
+struct __value_tuple_list<completion_signatures<Sigs...>> {
+private:
+    template<class List, class Sig>
+    struct __push_value {
+        using type = List;
+    };
+
+    template<class... Tuples, class... Vs>
+    struct __push_value<__forge_meta::type_list<Tuples...>, set_value_t(Vs...)> {
+        using tuple_t = std::tuple<std::decay_t<Vs>...>;
+        using type = __forge_meta::list_push_unique_t<
+            __forge_meta::type_list<Tuples...>, tuple_t>;
+    };
+
+    template<class List, class... Rest>
+    struct __collect;
+
+    template<class List>
+    struct __collect<List> {
+        using type = List;
+    };
+
+    template<class List, class Sig, class... Rest>
+    struct __collect<List, Sig, Rest...> {
+        using next = typename __push_value<List, Sig>::type;
+        using type = typename __collect<next, Rest...>::type;
+    };
+
+public:
+    using type = typename __collect<__forge_meta::type_list<>, Sigs...>::type;
+};
+
+template<class CS>
+using __value_tuple_list_t = typename __value_tuple_list<CS>::type;
+
+template<class List>
+struct __await_result_value;
+
+template<>
+struct __await_result_value<__forge_meta::type_list<>> {
+    using type = std::tuple<>;
+};
+
+template<class Tuple>
+struct __await_result_value<__forge_meta::type_list<Tuple>> {
+    using type = Tuple;
+};
+
+template<class... Tuples>
+struct __await_result_value<__forge_meta::type_list<Tuples...>> {
+    using type = std::variant<Tuples...>;
+};
+
+template<class CS>
+using __await_result_value_t =
+    typename __await_result_value<__value_tuple_list_t<CS>>::type;
+
 template<class S, class Promise>
 struct __awaitable {
     S __sndr;
@@ -70,8 +133,8 @@ struct __awaitable {
     using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
     using cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<S>(), std::declval<env_t>()));
-    using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
-    using result_t = std::optional<value_tuple_t>;
+    using value_t = __await_result_value_t<cs_t>;
+    using result_t = std::optional<value_t>;
 
     struct __recv {
         using receiver_concept = receiver_t;
@@ -80,7 +143,8 @@ struct __awaitable {
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
             try {
-                __self->__result = std::make_tuple(std::decay_t<Vs>(vs)...);
+                using tuple_t = std::tuple<std::decay_t<Vs>...>;
+                __self->__result.emplace(tuple_t{static_cast<Vs&&>(vs)...});
             } catch (...) {
                 __self->__exc = std::current_exception();
             }
