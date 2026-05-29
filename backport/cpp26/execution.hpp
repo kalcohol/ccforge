@@ -84,7 +84,6 @@
 #include <variant>
 
 #include "execution/detail.hpp"
-#include "execution/detail/storage.hpp"
 #include "execution/stop_token.hpp"
 #include "execution/env.hpp"
 #include "execution/concepts.hpp"
