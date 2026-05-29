@@ -39,25 +39,26 @@
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      any_stop_token, stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
-//   Infra            : sender_adaptor_closure CRTP, transform_completion_signatures,
-//                      enable_sender, get_completion_scheduler CPO,
-//                      SBO+heap storage abstraction, CPO member-function-first dispatch
+//   Infra            : transform_completion_signatures, enable_sender,
+//                      get_completion_scheduler CPO, CPO member-function-first dispatch
 //
 // DEVIATIONS from current working draft [exec]:
 //   - CPO dispatch: tag_invoke internally (not final member-function-first mechanism);
 //     not user-visible; new Phase 3+ types use member-function-first dispatch.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
-//   - Domain-based dispatch not implemented (always uses default_domain).
+//   - Domain transform_env and domain-based recovery for otherwise non-connectable
+//     senders are incomplete.
+//   - as_awaitable stopped completion currently uses an internal exception rather
+//     than full promise-level unhandled_stopped transfer.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - connect overloads generally take senders by value; non-copyable lvalue
 //     sender support is limited pending forwarding overloads.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - when_all, split: TSAN unverifiable on this host (kernel mmap_rnd_bits issue)
-//     but logic tested with concurrent GTest scenarios passing on GCC/Zig.
-//   - async_scope, counting_scope
-//   - type-erased sender (sender erasure patterns)
+//   - TSAN verification for when_all/split/continues_on on a sanitizer-capable host.
+//   - async_scope beyond the current counting_scope/simple_counting_scope subset.
+//   - standard type-erased sender surface.
 
 // Language version guard.
 #if __cplusplus < 202002L

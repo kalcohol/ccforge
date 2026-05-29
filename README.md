@@ -111,13 +111,13 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`bulk`（串行）
-- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名）、`split`、`ensure_started`、`start_detached`
+- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`split`、`ensure_started`、`start_detached`
 - 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
-- 基础设施：`enable_sender`、`get_completion_scheduler`、`sender_adaptor_closure` CRTP、`transform_completion_signatures`、SBO+堆存储抽象
+- 基础设施：`enable_sender`、`get_completion_scheduler`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、`connect_t` sender-domain `transform_sender`
 - Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
 
@@ -125,7 +125,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
 - 许多 `connect_t` 重载仍按值接收 sender，因此 non-copyable lvalue sender 支持尚不完整，除非对应算法已提供专门重载。
 - `sync_wait` MVP 当前只支持最多一个 `set_value` completion signature；具备多组 value signatures 的 sender 仍需先通过 adaptor 归一化后再消费。
-- `when_all` 已计算 value 笛卡尔积签名并向子 sender 注入共享 stop token，但外层 stop token 请求向该共享 stop source 的 callback 传播仍未补齐。
 - Coroutine bridge 的 stopped 语义仍为 draft：`as_awaitable` 当前以内部 stopped 异常表示 stopped completion，尚未完整实现 promise-level `unhandled_stopped` 语义。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
