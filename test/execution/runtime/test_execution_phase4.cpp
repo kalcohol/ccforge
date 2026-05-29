@@ -3,6 +3,12 @@
 #include <forge/any_sender.hpp>
 #include <thread>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <exception>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <tuple>
 
 namespace {
@@ -116,6 +122,164 @@ struct pending_sender {
         return op<R>{std::move(r), started};
     }
 };
+
+struct spawn_future_marker_error {};
+
+struct spawn_future_manual_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool stop_requested = false;
+    bool completed = false;
+    std::function<void(int)> complete_value;
+};
+
+template<class R>
+struct spawn_future_manual_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    struct stop_callback {
+        spawn_future_manual_op* self;
+
+        void operator()() noexcept {
+            self->complete_stopped();
+        }
+    };
+
+    using env_t = std::execution::env_of_t<R>;
+    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
+
+    R rcvr;
+    std::shared_ptr<spawn_future_manual_state> state;
+    std::optional<callback_t> callback;
+    std::atomic<bool> done{false};
+
+    void start() & noexcept {
+        auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+        {
+            std::lock_guard lk{state->mtx};
+            state->started = true;
+            state->complete_value = [this](int value) noexcept {
+                complete_value(value);
+            };
+        }
+        state->cv.notify_all();
+
+        if (token.stop_possible()) {
+            callback.emplace(token, stop_callback{this});
+        }
+    }
+
+    void complete_value(int value) noexcept {
+        if (done.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        {
+            std::lock_guard lk{state->mtx};
+            state->completed = true;
+            state->complete_value = {};
+        }
+        state->cv.notify_all();
+        callback.reset();
+        std::execution::set_value(std::move(rcvr), value);
+    }
+
+    void complete_stopped() noexcept {
+        if (done.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        {
+            std::lock_guard lk{state->mtx};
+            state->stop_requested = true;
+            state->completed = true;
+            state->complete_value = {};
+        }
+        state->cv.notify_all();
+        std::execution::set_stopped(std::move(rcvr));
+    }
+};
+
+struct spawn_future_manual_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<spawn_future_manual_state> state;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> spawn_future_manual_op<R> {
+        return spawn_future_manual_op<R>{std::move(r), std::move(state)};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& -> spawn_future_manual_op<R> {
+        return spawn_future_manual_op<R>{std::move(r), state};
+    }
+};
+
+struct spawn_future_stop_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source = nullptr;
+    std::atomic<bool>* stopped = nullptr;
+
+    void set_value(int) && noexcept {}
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    void set_stopped() && noexcept {
+        stopped->store(true, std::memory_order_release);
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_stop_token_t{}, source->get_token()));
+    }
+};
+
+bool wait_until_started(const std::shared_ptr<spawn_future_manual_state>& state) {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, std::chrono::seconds(2), [&] {
+        return state->started;
+    });
+}
+
+bool wait_until_completed(const std::shared_ptr<spawn_future_manual_state>& state) {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, std::chrono::seconds(2), [&] {
+        return state->completed;
+    });
+}
+
+bool wait_until_stop_requested(const std::shared_ptr<spawn_future_manual_state>& state) {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, std::chrono::seconds(2), [&] {
+        return state->stop_requested;
+    });
+}
+
+void complete_manual_value(const std::shared_ptr<spawn_future_manual_state>& state, int value) {
+    std::function<void(int)> complete;
+    {
+        std::lock_guard lk{state->mtx};
+        complete = state->complete_value;
+    }
+    ASSERT_TRUE(static_cast<bool>(complete));
+    complete(value);
+}
 
 } // namespace
 
@@ -367,6 +531,142 @@ TEST(SimpleCountingScopeTest, MultipleSpawns) {
     // inline_scheduler is synchronous
     EXPECT_EQ(counter.load(), 5);
     scope.join();
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, CompletedBeforeConsumerDeliversValue) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<spawn_future_manual_state>();
+
+    auto future = std::execution::spawn_future(
+        spawn_future_manual_sender{state}, token);
+
+    ASSERT_TRUE(wait_until_started(state));
+    EXPECT_EQ(scope.count(), 1u);
+
+    complete_manual_value(state, 42);
+    ASSERT_TRUE(wait_until_completed(state));
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto result = std::execution::sync_wait(std::move(future));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<spawn_future_manual_state>();
+
+    auto future = std::execution::spawn_future(
+        spawn_future_manual_sender{state}, token);
+
+    std::optional<int> observed;
+    std::exception_ptr failure;
+    std::thread consumer{[future = std::move(future), &observed, &failure]() mutable {
+        try {
+            auto result = std::execution::sync_wait(std::move(future));
+            if (result.has_value()) {
+                observed = std::get<0>(*result);
+            }
+        } catch (...) {
+            failure = std::current_exception();
+        }
+    }};
+
+    ASSERT_TRUE(wait_until_started(state));
+    EXPECT_EQ(scope.count(), 1u);
+
+    complete_manual_value(state, 7);
+    consumer.join();
+
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+    ASSERT_TRUE(observed.has_value());
+    EXPECT_EQ(*observed, 7);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+        std::execution::spawn_future(
+            std::execution::just_error(spawn_future_marker_error{}), token)),
+        spawn_future_marker_error);
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto stopped = std::execution::sync_wait(
+        std::execution::spawn_future(std::execution::just_stopped(), token));
+
+    EXPECT_FALSE(stopped.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    scope.close();
+
+    std::atomic<int> started{0};
+    auto future = std::execution::spawn_future(
+        std::execution::just() | std::execution::then([&started] {
+            started.fetch_add(1, std::memory_order_relaxed);
+        }),
+        token);
+
+    auto result = std::execution::sync_wait(std::move(future));
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(started.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<spawn_future_manual_state>();
+
+    {
+        auto future = std::execution::spawn_future(
+            spawn_future_manual_sender{state}, token);
+
+        ASSERT_TRUE(wait_until_started(state));
+        EXPECT_EQ(scope.count(), 1u);
+    }
+
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    EXPECT_TRUE(wait_until_completed(state));
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<spawn_future_manual_state>();
+    std::inplace_stop_source downstream_stop;
+    std::atomic<bool> receiver_stopped{false};
+
+    auto future = std::execution::spawn_future(
+        spawn_future_manual_sender{state}, token);
+    auto op = std::execution::connect(
+        std::move(future),
+        spawn_future_stop_receiver{&downstream_stop, &receiver_stopped});
+
+    std::execution::start(op);
+    ASSERT_TRUE(wait_until_started(state));
+    EXPECT_EQ(scope.count(), 1u);
+
+    downstream_stop.request_stop();
+
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    EXPECT_TRUE(wait_until_completed(state));
+    EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 }
 

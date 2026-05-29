@@ -34,7 +34,7 @@
 //   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
 //                      bulk (serial)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
-//                      ensure_started, start_detached
+//                      ensure_started, start_detached, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
@@ -56,14 +56,15 @@
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
 //   - start_detached terminates on set_error; attach an error-handling adaptor
 //     before detaching if failures are expected.
+//   - spawn_future returns a move-only single-consumer future sender and does
+//     not yet provide allocator customization.
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders must be connected as rvalues with std::move.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - spawn_future and async_scope beyond the current
-//     counting_scope/simple_counting_scope subset.
+//   - async_scope beyond the current counting_scope/simple_counting_scope subset.
 //   - standard type-erased sender surface.
 
 // Language version guard.
@@ -115,3 +116,4 @@
 #include "execution/awaitable.hpp"
 #include "execution/domain.hpp"
 #include "execution/counting_scope.hpp"
+#include "execution/spawn_future.hpp"

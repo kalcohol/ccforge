@@ -111,7 +111,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk`（串行）
-- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`ensure_started`、`start_detached`
+- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`ensure_started`、`start_detached`、`spawn_future`
 - 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
@@ -129,6 +129,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
+- `spawn_future` 当前返回 move-only single-consumer future sender，尚未接入 allocator customization。
 
 > Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke` fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，整个 backport 自动禁用。
 
