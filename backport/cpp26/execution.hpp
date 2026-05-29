@@ -51,8 +51,6 @@
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.
-//   - as_awaitable stopped completion currently uses an internal exception rather
-//     than full promise-level unhandled_stopped transfer.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - connect overloads generally take senders by value; non-copyable lvalue
 //     sender support is limited pending forwarding overloads.

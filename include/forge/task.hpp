@@ -26,6 +26,7 @@
 #include <variant>
 #include <exception>
 #include <stdexcept>
+#include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
@@ -44,6 +45,7 @@ struct __op {
     __op(const __op&) = delete;
     __op(std::coroutine_handle<typename task<T>::promise_type> coro, R r)
         : __coro(coro), __rcvr(std::move(r)) {}
+    ~__op() { if (__coro) __coro.destroy(); }
     std::coroutine_handle<typename task<T>::promise_type> __coro;
     R __rcvr;
 
@@ -52,6 +54,10 @@ struct __op {
             self.__coro.resume();
         }
         auto& p = self.__coro.promise();
+        if (p.stopped_) {
+            std::execution::set_stopped(std::move(self.__rcvr));
+            return;
+        }
         if constexpr (!std::is_void_v<T>) {
             if (p.result.index() == 2) {
                 std::execution::set_error(std::move(self.__rcvr), std::get<2>(p.result));
@@ -79,6 +85,7 @@ class task {
 public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         std::variant<std::monostate, T, std::exception_ptr> result;
+        bool stopped_ = false;
 
         task get_return_object() noexcept {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
@@ -87,19 +94,31 @@ public:
         std::suspend_always final_suspend()   noexcept { return {}; }
         void return_value(T val) { result.template emplace<1>(std::move(val)); }
         void unhandled_exception() noexcept { result.template emplace<2>(std::current_exception()); }
+        std::coroutine_handle<> unhandled_stopped() noexcept {
+            stopped_ = true;
+            return std::noop_coroutine();
+        }
     };
 
     using sender_concept = std::execution::sender_t;
-    task(task&&) noexcept = default;
+    task(task&& other) noexcept : __coro_(std::exchange(other.__coro_, {})) {}
     task(const task&) = delete;
+    task& operator=(task&& other) noexcept {
+        if (this != &other) {
+            if (__coro_) __coro_.destroy();
+            __coro_ = std::exchange(other.__coro_, {});
+        }
+        return *this;
+    }
     task& operator=(const task&) = delete;
-    ~task() { if (__coro_ && __coro_.done()) __coro_.destroy(); }
+    ~task() { if (__coro_) __coro_.destroy(); }
 
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
                            const task&, auto) noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(T),
-            std::execution::set_error_t(std::exception_ptr)> {
+            std::execution::set_error_t(std::exception_ptr),
+            std::execution::set_stopped_t()> {
         return {};
     }
 
@@ -110,7 +129,7 @@ public:
     friend auto tag_invoke(std::execution::connect_t, task self, R r)
         -> __task_detail::__op<T, R>
     {
-        return __task_detail::__op<T, R>{self.__coro_, std::move(r)};
+        return __task_detail::__op<T, R>{std::exchange(self.__coro_, {}), std::move(r)};
     }
 
     std::coroutine_handle<promise_type> __coro_;
@@ -134,18 +153,32 @@ public:
         std::suspend_always final_suspend()   noexcept { return {}; }
         void return_void() noexcept { done_ = true; }
         void unhandled_exception() noexcept { exc_ = std::current_exception(); }
+        std::coroutine_handle<> unhandled_stopped() noexcept {
+            stopped_ = true;
+            return std::noop_coroutine();
+        }
+        bool stopped_ = false;
     };
 
     using sender_concept = std::execution::sender_t;
-    task(task&&) noexcept = default;
+    task(task&& other) noexcept : __coro_(std::exchange(other.__coro_, {})) {}
     task(const task&) = delete;
-    ~task() { if (__coro_ && __coro_.done()) __coro_.destroy(); }
+    task& operator=(task&& other) noexcept {
+        if (this != &other) {
+            if (__coro_) __coro_.destroy();
+            __coro_ = std::exchange(other.__coro_, {});
+        }
+        return *this;
+    }
+    task& operator=(const task&) = delete;
+    ~task() { if (__coro_) __coro_.destroy(); }
 
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
                            const task&, auto) noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(),
-            std::execution::set_error_t(std::exception_ptr)> {
+            std::execution::set_error_t(std::exception_ptr),
+            std::execution::set_stopped_t()> {
         return {};
     }
     friend auto tag_invoke(std::execution::get_env_t, const task&) noexcept
@@ -155,7 +188,7 @@ public:
     friend auto tag_invoke(std::execution::connect_t, task self, R r)
         -> __task_detail::__op<void, R>
     {
-        return __task_detail::__op<void, R>{self.__coro_, std::move(r)};
+        return __task_detail::__op<void, R>{std::exchange(self.__coro_, {}), std::move(r)};
     }
 
     std::coroutine_handle<promise_type> __coro_;

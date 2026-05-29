@@ -49,6 +49,8 @@ TEST(AnyStopTokenTest, CallbackTypeInvokesOnStop) {
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
+#include <forge/task.hpp>
+#include <utility>
 
 struct SimpleTask {
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
@@ -71,5 +73,65 @@ TEST(CoroutineBridgeTest, CoAwaitSender) {
     g_coro_result = -1;
     run_coro();
     EXPECT_EQ(g_coro_result, 42);
+}
+
+struct StoppedProbeTask {
+    struct promise_type : std::execution::with_awaitable_senders<promise_type> {
+        StoppedProbeTask get_return_object() {
+            return StoppedProbeTask{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        std::suspend_never initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() noexcept { returned = true; }
+        void unhandled_exception() noexcept { errored = true; }
+        std::coroutine_handle<> unhandled_stopped() noexcept {
+            stopped = true;
+            return std::noop_coroutine();
+        }
+
+        bool stopped = false;
+        bool returned = false;
+        bool errored = false;
+    };
+
+    explicit StoppedProbeTask(std::coroutine_handle<promise_type> coro) noexcept
+        : handle(coro) {}
+    StoppedProbeTask(StoppedProbeTask&& other) noexcept
+        : handle(std::exchange(other.handle, {})) {}
+    StoppedProbeTask(const StoppedProbeTask&) = delete;
+    ~StoppedProbeTask() { if (handle) handle.destroy(); }
+
+    std::coroutine_handle<promise_type> handle;
+};
+
+StoppedProbeTask run_stopped_probe() {
+    co_await std::execution::just_stopped();
+}
+
+TEST(CoroutineBridgeTest, StoppedSenderCallsPromiseUnhandledStopped) {
+    auto task = run_stopped_probe();
+    ASSERT_TRUE(task.handle);
+    auto& promise = task.handle.promise();
+    EXPECT_TRUE(promise.stopped);
+    EXPECT_FALSE(promise.returned);
+    EXPECT_FALSE(promise.errored);
+}
+
+forge::task<int> stopped_int_task() {
+    co_await std::execution::just_stopped();
+    co_return 7;
+}
+
+forge::task<void> stopped_void_task() {
+    co_await std::execution::just_stopped();
+}
+
+TEST(CoroutineBridgeTest, ForgeTaskPropagatesStoppedCompletion) {
+    auto int_result = std::execution::sync_wait(stopped_int_task());
+    EXPECT_FALSE(int_result.has_value());
+
+    auto void_result = std::execution::sync_wait(stopped_void_task());
+    EXPECT_FALSE(void_result.has_value());
 }
 #endif

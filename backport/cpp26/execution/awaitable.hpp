@@ -38,6 +38,11 @@ namespace __forge_awaitable {
 
 struct __stopped_awaitable_exception {};
 
+template<class Promise>
+concept __has_unhandled_stopped = requires(Promise& p) {
+    { p.unhandled_stopped() } noexcept -> std::convertible_to<std::coroutine_handle<>>;
+};
+
 template<class S, class Promise>
 struct __awaitable {
     S __sndr;
@@ -70,8 +75,13 @@ struct __awaitable {
             r.__self->__coro.resume();
         }
         friend void tag_invoke(set_stopped_t, __recv&& r) noexcept {
-            r.__self->__stopped = true;
-            r.__self->__coro.resume();
+            if constexpr (__has_unhandled_stopped<Promise>) {
+                static_cast<std::coroutine_handle<>>(
+                    r.__self->__promise->unhandled_stopped()).resume();
+            } else {
+                r.__self->__stopped = true;
+                r.__self->__coro.resume();
+            }
         }
         friend auto tag_invoke(get_env_t, const __recv& r) noexcept -> empty_env {
             return {};
