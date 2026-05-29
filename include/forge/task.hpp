@@ -26,6 +26,7 @@
 #include <variant>
 #include <exception>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -38,24 +39,51 @@ template<class T = void> class task;
 
 namespace __task_detail {
 
-// Current task sender is synchronous: start() resumes the coroutine once and
-// then immediately completes the connected receiver from the promise state.
-// Awaited senders must therefore complete inline.
+struct __op_base {
+    virtual void __complete() noexcept = 0;
+    virtual ~__op_base() = default;
+};
+
+struct __final_awaiter {
+    bool await_ready() noexcept { return false; }
+
+    template<class Promise>
+    void await_suspend(std::coroutine_handle<Promise> coro) noexcept {
+        if (auto* op = coro.promise().__op_) {
+            op->__complete();
+        }
+    }
+
+    void await_resume() noexcept {}
+};
+
 template<class T, class R>
-struct __op {
+struct __op : __op_base {
     using operation_state_concept = std::execution::operation_state_t;
     __op(__op&&) = delete;
     __op(const __op&) = delete;
     __op(std::coroutine_handle<typename task<T>::promise_type> coro, R r)
         : __coro(coro), __rcvr(std::move(r)) {}
-    ~__op() { if (__coro) __coro.destroy(); }
+    ~__op() {
+        if (__coro) {
+            __coro.promise().__op_ = nullptr;
+            __coro.destroy();
+        }
+    }
     std::coroutine_handle<typename task<T>::promise_type> __coro;
     R __rcvr;
 
     void start() & noexcept {
-        if (!__coro.done()) {
-            __coro.resume();
+        __coro.promise().__op_ = this;
+        __coro.resume();
+    }
+
+    void __complete() noexcept override {
+        if (__completed) {
+            return;
         }
+        __completed = true;
+
         auto& p = __coro.promise();
         if (p.stopped_) {
             std::execution::set_stopped(std::move(__rcvr));
@@ -79,6 +107,8 @@ struct __op {
             }
         }
     }
+
+    bool __completed = false;
 };
 
 } // namespace __task_detail
@@ -89,16 +119,20 @@ public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         std::variant<std::monostate, T, std::exception_ptr> result;
         bool stopped_ = false;
+        __task_detail::__op_base* __op_ = nullptr;
 
         task get_return_object() noexcept {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
         std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend()   noexcept { return {}; }
+        __task_detail::__final_awaiter final_suspend() noexcept { return {}; }
         void return_value(T val) { result.template emplace<1>(std::move(val)); }
         void unhandled_exception() noexcept { result.template emplace<2>(std::current_exception()); }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
+            if (__op_) {
+                __op_->__complete();
+            }
             return std::noop_coroutine();
         }
     };
@@ -147,16 +181,20 @@ public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         bool done_ = false;
         std::exception_ptr exc_;
+        __task_detail::__op_base* __op_ = nullptr;
 
         task get_return_object() noexcept {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
         std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend()   noexcept { return {}; }
+        __task_detail::__final_awaiter final_suspend() noexcept { return {}; }
         void return_void() noexcept { done_ = true; }
         void unhandled_exception() noexcept { exc_ = std::current_exception(); }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
+            if (__op_) {
+                __op_->__complete();
+            }
             return std::noop_coroutine();
         }
         bool stopped_ = false;
