@@ -25,10 +25,6 @@
 #include "level2.hpp"
 #if defined(__cpp_lib_mdspan)
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
 namespace std::linalg {
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -46,9 +42,6 @@ void matrix_product(
 {
     using idx_t = typename CExtents::index_type;
     const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(1);
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-#endif
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
             typename CAccessor::element_type sum{};

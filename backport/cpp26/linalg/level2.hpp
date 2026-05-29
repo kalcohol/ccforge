@@ -25,10 +25,6 @@
 #include "level1.hpp"
 #if defined(__cpp_lib_mdspan)
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
 namespace std::linalg {
 
 namespace __detail {
@@ -93,9 +89,6 @@ void matrix_vector_product(
         }
         return;
     }
-#endif
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
 #endif
     for (idx_t i = 0; i < A.extent(0); ++i) {
         typename YAccessor::element_type sum{};
