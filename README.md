@@ -112,7 +112,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk`（串行）
 - 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`ensure_started`、`start_detached`、`spawn_future`
-- 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
+- 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组 value completions 返回 `optional<variant<tuple<...>, ...>>`）、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
@@ -124,7 +124,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 **当前限制：**
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径与 copyable lvalue 拷贝路径；non-copyable lvalue sender 仍需显式 `std::move` 后连接。
-- `sync_wait` MVP 当前只支持最多一个 `set_value` completion signature；具备多组 value signatures 的 sender 仍需先通过 adaptor 归一化后再消费。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。

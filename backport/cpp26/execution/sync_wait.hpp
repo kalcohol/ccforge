@@ -23,8 +23,16 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/value_result.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
+
+#include <exception>
+#include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace std::execution {
 
@@ -32,59 +40,15 @@ namespace __forge_sync_wait {
 
 struct stopped_t {};
 
-template<class... Vs>
+template<class Value>
 struct shared_state {
-    using value_t = std::tuple<Vs...>;
+    using value_t = Value;
     std::variant<std::monostate, value_t, std::exception_ptr, stopped_t> result_;
     std::inplace_stop_source stop_source_;
 };
 
-template<class Tuple>
-struct state_from_tuple;
-
-template<class... Vs>
-struct state_from_tuple<std::tuple<Vs...>> {
-    using type = shared_state<Vs...>;
-};
-
 template<class CompletionSignatures>
-struct value_tuple_for;
-
-template<class... Sigs>
-struct value_tuple_for<completion_signatures<Sigs...>> {
-private:
-    template<class Sig>
-    struct is_value_sig : std::false_type {};
-    template<class... Vs>
-    struct is_value_sig<set_value_t(Vs...)> : std::true_type {};
-
-    static constexpr std::size_t kCount = (static_cast<std::size_t>(is_value_sig<Sigs>::value) + ... + 0u);
-
-    template<class Sig>
-    struct value_tuple_of_sig {
-        using type = std::tuple<>;
-    };
-    template<class... Vs>
-    struct value_tuple_of_sig<set_value_t(Vs...)> {
-        using type = std::tuple<std::decay_t<Vs>...>;
-    };
-
-    template<class... Ts>
-    struct first_value_tuple_from_pack {
-        using type = std::tuple<>;
-    };
-
-    template<class Sig, class... Rest>
-    struct first_value_tuple_from_pack<Sig, Rest...> {
-        using type = std::conditional_t<is_value_sig<Sig>::value,
-                                        typename value_tuple_of_sig<Sig>::type,
-                                        typename first_value_tuple_from_pack<Rest...>::type>;
-    };
-
-public:
-    static_assert(kCount <= 1, "sync_wait MVP supports at most one set_value signature");
-    using type = typename first_value_tuple_from_pack<Sigs...>::type;
-};
+using value_t_for = __forge_meta::single_value_or_variant_t<CompletionSignatures>;
 
 template<class State>
 struct receiver {
@@ -94,7 +58,15 @@ struct receiver {
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        state_->result_.template emplace<1>(std::forward<Vs>(vs)...);
+        try {
+            using value_t = typename State::value_t;
+            using tuple_t = std::tuple<std::decay_t<Vs>...>;
+            auto value = __forge_meta::value_from_tuple<value_t>(
+                tuple_t{std::forward<Vs>(vs)...});
+            state_->result_.template emplace<1>(std::move(value));
+        } catch (...) {
+            state_->result_.template emplace<2>(std::current_exception());
+        }
         loop_->finish();
     }
 
@@ -129,8 +101,8 @@ namespace std::this_thread {
 template<std::execution::sender_in S>
 auto sync_wait(S&& sndr) {
     using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), std::execution::empty_env{}));
-    using value_tuple_t = typename std::execution::__forge_sync_wait::value_tuple_for<cs_t>::type;
-    using state_t = typename std::execution::__forge_sync_wait::state_from_tuple<value_tuple_t>::type;
+    using value_t = std::execution::__forge_sync_wait::value_t_for<cs_t>;
+    using state_t = std::execution::__forge_sync_wait::shared_state<value_t>;
     using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
 
     std::execution::run_loop loop;

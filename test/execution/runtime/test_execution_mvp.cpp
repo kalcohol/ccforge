@@ -9,6 +9,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 // ── T-1: Compile-time concept probes ────────────────────────────────────
 
@@ -100,6 +101,165 @@ struct int_receiver {
         -> std::execution::empty_env { return {}; }
 };
 
+template<class R>
+struct sync_wait_multi_value_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+    bool use_double = false;
+
+    sync_wait_multi_value_op(R r, bool use_double)
+        : rcvr(std::move(r)), use_double(use_double) {}
+    sync_wait_multi_value_op(sync_wait_multi_value_op&&) = delete;
+    sync_wait_multi_value_op(const sync_wait_multi_value_op&) = delete;
+
+    void start() & noexcept {
+        if (use_double) {
+            std::execution::set_value(std::move(rcvr), 4.5);
+        } else {
+            std::execution::set_value(std::move(rcvr), 3);
+        }
+    }
+};
+
+struct sync_wait_multi_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool use_double = false;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_value_t(double)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> sync_wait_multi_value_op<R> {
+        return sync_wait_multi_value_op<R>{std::move(r), use_double};
+    }
+};
+
+template<class R>
+struct sync_wait_empty_or_int_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+    bool use_empty = false;
+
+    sync_wait_empty_or_int_op(R r, bool use_empty)
+        : rcvr(std::move(r)), use_empty(use_empty) {}
+    sync_wait_empty_or_int_op(sync_wait_empty_or_int_op&&) = delete;
+    sync_wait_empty_or_int_op(const sync_wait_empty_or_int_op&) = delete;
+
+    void start() & noexcept {
+        if (use_empty) {
+            std::execution::set_value(std::move(rcvr));
+        } else {
+            std::execution::set_value(std::move(rcvr), 8);
+        }
+    }
+};
+
+struct sync_wait_empty_or_int_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool use_empty = false;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> sync_wait_empty_or_int_op<R> {
+        return sync_wait_empty_or_int_op<R>{std::move(r), use_empty};
+    }
+};
+
+template<class R>
+struct sync_wait_duplicate_value_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+
+    explicit sync_wait_duplicate_value_op(R r) : rcvr(std::move(r)) {}
+    sync_wait_duplicate_value_op(sync_wait_duplicate_value_op&&) = delete;
+    sync_wait_duplicate_value_op(const sync_wait_duplicate_value_op&) = delete;
+
+    void start() & noexcept {
+        std::execution::set_value(std::move(rcvr), 11);
+    }
+};
+
+struct sync_wait_duplicate_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> sync_wait_duplicate_value_op<R> {
+        return sync_wait_duplicate_value_op<R>{std::move(r)};
+    }
+};
+
+struct sync_wait_throwing_value {
+    sync_wait_throwing_value() = default;
+    sync_wait_throwing_value(const sync_wait_throwing_value&) = default;
+    sync_wait_throwing_value(sync_wait_throwing_value&&) {
+        throw std::runtime_error("sync_wait value construction");
+    }
+};
+
+template<class R>
+struct sync_wait_throwing_value_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+
+    explicit sync_wait_throwing_value_op(R r) : rcvr(std::move(r)) {}
+    sync_wait_throwing_value_op(sync_wait_throwing_value_op&&) = delete;
+    sync_wait_throwing_value_op(const sync_wait_throwing_value_op&) = delete;
+
+    void start() & noexcept {
+        std::execution::set_value(std::move(rcvr), sync_wait_throwing_value{});
+    }
+};
+
+struct sync_wait_throwing_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(sync_wait_throwing_value)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> sync_wait_throwing_value_op<R> {
+        return sync_wait_throwing_value_op<R>{std::move(r)};
+    }
+};
+
 using move_only_pipeline_t = decltype(
     std::execution::just(std::unique_ptr<int>{}) | std::execution::then(deref_unique{}));
 
@@ -187,6 +347,49 @@ TEST(ExecutionMvpTest, SyncWaitDecaysReferenceValueSignatures) {
     using tuple_t = std::remove_cvref_t<decltype(*result)>;
     static_assert(std::is_same_v<tuple_t, std::tuple<int>>);
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ExecutionMvpTest, SyncWaitMultiValueAlternativesReturnVariant) {
+    auto int_result = std::execution::sync_wait(sync_wait_multi_value_sender{false});
+    using expected_t = std::optional<std::variant<std::tuple<int>, std::tuple<double>>>;
+    static_assert(std::is_same_v<decltype(int_result), expected_t>);
+
+    ASSERT_TRUE(int_result.has_value());
+    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(*int_result));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(*int_result)), 3);
+
+    auto double_result = std::execution::sync_wait(sync_wait_multi_value_sender{true});
+    ASSERT_TRUE(double_result.has_value());
+    ASSERT_TRUE(std::holds_alternative<std::tuple<double>>(*double_result));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<double>>(*double_result)), 4.5);
+}
+
+TEST(ExecutionMvpTest, SyncWaitEmptyValueAlternativeUsesEmptyTupleVariant) {
+    auto empty_result = std::execution::sync_wait(sync_wait_empty_or_int_sender{true});
+    using expected_t = std::optional<std::variant<std::tuple<>, std::tuple<int>>>;
+    static_assert(std::is_same_v<decltype(empty_result), expected_t>);
+
+    ASSERT_TRUE(empty_result.has_value());
+    EXPECT_TRUE(std::holds_alternative<std::tuple<>>(*empty_result));
+
+    auto int_result = std::execution::sync_wait(sync_wait_empty_or_int_sender{false});
+    ASSERT_TRUE(int_result.has_value());
+    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(*int_result));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(*int_result)), 8);
+}
+
+TEST(ExecutionMvpTest, SyncWaitDuplicateValueAlternativesDeduplicate) {
+    auto result = std::execution::sync_wait(sync_wait_duplicate_value_sender{});
+    using expected_t = std::optional<std::tuple<int>>;
+    static_assert(std::is_same_v<decltype(result), expected_t>);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 11);
+}
+
+TEST(ExecutionMvpTest, SyncWaitValueConstructionFailurePropagates) {
+    EXPECT_THROW((void)std::execution::sync_wait(sync_wait_throwing_value_sender{}),
+                 std::runtime_error);
 }
 
 TEST(ExecutionMvpTest, ThenWorksWithPipeOperator) {

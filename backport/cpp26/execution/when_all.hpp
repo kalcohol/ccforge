@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/value_result.hpp"
 #include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "stop_token.hpp"
@@ -61,47 +62,10 @@ template<class Env>
 using __child_env_t = __child_env<std::decay_t<Env>>;
 
 template<class CS>
-struct __value_tuple_list;
-
-template<class List, class Sig>
-struct __push_value_tuple {
-    using type = List;
-};
-
-template<class... Ts, class... Vs>
-struct __push_value_tuple<__forge_meta::type_list<Ts...>, set_value_t(Vs...)> {
-    using tuple_t = std::tuple<std::decay_t<Vs>...>;
-    using type = __forge_meta::list_push_unique_t<__forge_meta::type_list<Ts...>, tuple_t>;
-};
-
-template<class List, class... Sigs>
-struct __collect_value_tuples;
+using __value_tuple_list_t = __forge_meta::value_tuple_list_t<CS>;
 
 template<class List>
-struct __collect_value_tuples<List> {
-    using type = List;
-};
-
-template<class List, class Sig, class... Rest>
-struct __collect_value_tuples<List, Sig, Rest...> {
-    using next = typename __push_value_tuple<List, Sig>::type;
-    using type = typename __collect_value_tuples<next, Rest...>::type;
-};
-
-template<class... Sigs>
-struct __value_tuple_list<completion_signatures<Sigs...>> {
-    using type = typename __collect_value_tuples<__forge_meta::type_list<>, Sigs...>::type;
-};
-
-template<class CS>
-using __value_tuple_list_t = typename __value_tuple_list<CS>::type;
-
-template<class List>
-struct __type_list_empty;
-
-template<class... Ts>
-struct __type_list_empty<__forge_meta::type_list<Ts...>>
-    : std::bool_constant<sizeof...(Ts) == 0> {};
+using __type_list_empty = __forge_meta::type_list_empty<List>;
 
 template<class... Lists>
 struct __concat_type_lists;
@@ -251,26 +215,10 @@ struct __error_variant_from_list<__forge_meta::type_list<Es...>> {
     using type = std::variant<Es...>;
 };
 
-template<class CS>
-struct __value_variant_from_cs;
-
-template<class... Tuples>
-struct __value_variant_from_list {
-    using type = std::variant<Tuples...>;
-};
-
-template<>
-struct __value_variant_from_list<> {
-    using type = std::variant<std::tuple<>>;
-};
-
-template<class... Tuples>
-struct __value_variant_from_cs<__forge_meta::type_list<Tuples...>>
-    : __value_variant_from_list<Tuples...> {};
-
 template<class S, class Env>
-using __sender_value_variant_t = typename __value_variant_from_cs<__value_tuple_list_t<
-    decltype(std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()))>>::type;
+using __sender_value_variant_t = __forge_meta::value_variant_or_empty_tuple_t<
+    __value_tuple_list_t<decltype(std::execution::get_completion_signatures(
+        std::declval<S>(), std::declval<Env>()))>>;
 
 template<class Env, class... Senders>
 using __when_all_error_variant_t = typename __error_variant_from_list<__error_type_list_t<
