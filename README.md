@@ -129,6 +129,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
 - `spawn_future` 当前返回 move-only single-consumer future sender，尚未接入 allocator customization。
+- `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 
 > Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke` fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，整个 backport 自动禁用。
 
