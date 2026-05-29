@@ -51,8 +51,9 @@
 //   - CPO customization is still tag_invoke-based internally for Forge-provided
 //     senders/receivers; the C++26 draft primarily specifies member customization.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
-//   - as_awaitable supports a single value-completion shape; multiple value
-//     alternatives should be normalized before co_await.
+//   - as_awaitable preserves Forge's historical tuple result for a single
+//     value-completion shape; multiple value alternatives produce
+//     variant<tuple<...>, ...>.
 //   - ensure_started delegates to split (does not eagerly start on detached thread).
 //   - start_detached terminates on set_error; attach an error-handling adaptor
 //     before detaching if failures are expected.

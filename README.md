@@ -116,7 +116,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
-- Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
+- Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
 - 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、`connect_t` sender-domain `transform_sender`
 - Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
@@ -125,7 +125,6 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径与 copyable lvalue 拷贝路径；non-copyable lvalue sender 仍需显式 `std::move` 后连接。
 - `sync_wait` MVP 当前只支持最多一个 `set_value` completion signature；具备多组 value signatures 的 sender 仍需先通过 adaptor 归一化后再消费。
-- Coroutine bridge 的 `co_await` 当前只支持单一 value completion 形状；多组 value signatures 的 sender 需先归一化后再 await。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `ensure_started` 当前复用 `split` 的共享状态语义，并不保证在 detached 后台线程上立即启动。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
@@ -178,7 +177,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 **并发组件：**
 - `forge::static_thread_pool` — 线程池，提供 `scheduler` 接口，与 `std::execution` 集成
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
-- `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；当前 task body 中 `co_await` 的 sender 必须 inline/synchronous 完成（需要 C++20 coroutines）
+- `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；task body 中可 `co_await` 同步或异步 sender（需要 C++20 coroutines）
 
 ## 编码规范
 
