@@ -416,11 +416,12 @@ T matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
+    using std::abs;
     T sum = init * init;
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            auto val = A[i, j];
-            sum += val * val;
+            auto val = abs(A[i, j]);
+            sum += static_cast<T>(val * val);
         }
     }
     return std::sqrt(sum);
@@ -430,7 +431,8 @@ template<class Extents, class Layout, class Accessor>
 auto matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using T = std::remove_const_t<typename Accessor::element_type>;
+    using std::abs;
+    using T = decltype(abs(A[0, 0]));
     return matrix_frob_norm(A, T{});
 }
 
@@ -445,7 +447,7 @@ T matrix_one_norm(
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
         T col_sum = T{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            col_sum += abs(A[i, j]);
+            col_sum += static_cast<T>(abs(A[i, j]));
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
@@ -456,7 +458,8 @@ template<class Extents, class Layout, class Accessor>
 auto matrix_one_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using T = std::remove_const_t<typename Accessor::element_type>;
+    using std::abs;
+    using T = decltype(abs(A[0, 0]));
     return matrix_one_norm(A, T{});
 }
 
@@ -471,7 +474,7 @@ T matrix_inf_norm(
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         T row_sum = T{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            row_sum += abs(A[i, j]);
+            row_sum += static_cast<T>(abs(A[i, j]));
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }
@@ -482,7 +485,8 @@ template<class Extents, class Layout, class Accessor>
 auto matrix_inf_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using T = std::remove_const_t<typename Accessor::element_type>;
+    using std::abs;
+    using T = decltype(abs(A[0, 0]));
     return matrix_inf_norm(A, T{});
 }
 
