@@ -1,0 +1,18 @@
+# LLVM / libc++ ThreadSanitizer verification image for execution stress tests.
+#
+#   podman build -t forge-tsan -f containers/Containerfile.tsan .
+#
+FROM docker.io/library/debian:trixie
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang lld libc++-dev libc++abi-dev libclang-rt-dev \
+        cmake ninja-build ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=clang
+ENV CXX=clang++
+ENV CXXFLAGS="-stdlib=libc++"
+ENV LDFLAGS="-stdlib=libc++"
+
+WORKDIR /src

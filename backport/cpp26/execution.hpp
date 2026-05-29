@@ -41,6 +41,8 @@
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : transform_completion_signatures, enable_sender,
 //                      get_completion_scheduler CPO, CPO member-function-first dispatch
+//   Verification     : execution subset covered by a dedicated ThreadSanitizer
+//                      container configuration.
 //
 // DEVIATIONS from current working draft [exec]:
 //   - CPO dispatch: tag_invoke internally (not final member-function-first mechanism);
@@ -56,7 +58,6 @@
 //     sender support is limited pending forwarding overloads.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - TSAN verification for when_all/split/continues_on on a sanitizer-capable host.
 //   - async_scope beyond the current counting_scope/simple_counting_scope subset.
 //   - standard type-erased sender surface.
 
