@@ -57,8 +57,9 @@
 //   - ensure_started eagerly starts work, but does not create a detached thread.
 //   - start_detached terminates on set_error; attach an error-handling adaptor
 //     before detaching if failures are expected.
-//   - spawn_future returns a move-only single-consumer future sender and does
-//     not yet provide allocator customization.
+//   - spawn_future returns a move-only single-consumer future sender. Its
+//     shared state honors get_allocator(env), but auxiliary consumer/callback
+//     allocations are not fully allocator-aware.
 //   - counting_scope is stop-aware, but join() is still Forge's blocking
 //     compatibility extension rather than the standard sender-returning shape.
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable

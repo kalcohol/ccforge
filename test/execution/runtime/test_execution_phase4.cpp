@@ -1,14 +1,15 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <forge/any_sender.hpp>
-#include <thread>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 
@@ -125,6 +126,46 @@ struct pending_sender {
 };
 
 struct spawn_future_marker_error {};
+
+struct allocation_counts {
+    std::atomic<int> allocations{0};
+    std::atomic<int> deallocations{0};
+};
+
+template<class T>
+struct counting_allocator {
+    using value_type = T;
+
+    std::shared_ptr<allocation_counts> counts;
+
+    counting_allocator() noexcept = default;
+
+    explicit counting_allocator(std::shared_ptr<allocation_counts> c) noexcept
+        : counts(std::move(c)) {}
+
+    template<class U>
+    counting_allocator(const counting_allocator<U>& other) noexcept
+        : counts(other.counts) {}
+
+    [[nodiscard]] T* allocate(std::size_t n) {
+        if (counts) {
+            counts->allocations.fetch_add(1, std::memory_order_relaxed);
+        }
+        return std::allocator<T>{}.allocate(n);
+    }
+
+    void deallocate(T* ptr, std::size_t n) noexcept {
+        if (counts) {
+            counts->deallocations.fetch_add(1, std::memory_order_relaxed);
+        }
+        std::allocator<T>{}.deallocate(ptr, n);
+    }
+
+    template<class U>
+    bool operator==(const counting_allocator<U>& other) const noexcept {
+        return counts == other.counts;
+    }
+};
 
 struct spawn_future_manual_state {
     std::mutex mtx;
@@ -696,6 +737,30 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
         std::execution::spawn_future(std::execution::just_stopped(), token));
 
     EXPECT_FALSE(stopped.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForSharedState) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto counts = std::make_shared<allocation_counts>();
+
+    {
+        auto env = std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_allocator_t{},
+                counting_allocator<std::byte>{counts}));
+        auto future = std::execution::spawn_future(
+            std::execution::just(42), token, env);
+        auto result = std::execution::sync_wait(std::move(future));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(std::get<0>(*result), 42);
+    }
+
+    EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
+              counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
 }
 

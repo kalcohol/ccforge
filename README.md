@@ -126,7 +126,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径与 copyable lvalue 拷贝路径；non-copyable lvalue sender 仍需显式 `std::move` 后连接。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
-- `spawn_future` 当前返回 move-only single-consumer future sender，尚未接入 allocator customization。
+- `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 分配会使用 `env` 中的 `get_allocator`，但 consumer/callback 辅助分配尚未完整 allocator-aware。
 - `counting_scope::join()` 当前保留 Forge 既有阻塞扩展；标准 sender-returning join 形态尚未接入。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 

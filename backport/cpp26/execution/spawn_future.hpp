@@ -477,12 +477,22 @@ struct __sender {
     std::shared_ptr<State> __state;
 };
 
+template<class State, class Env, class... Args>
+[[nodiscard]] auto __make_state(Env& env, Args&&... args) {
+    if constexpr (requires(Env& e) { std::execution::get_allocator(e); }) {
+        auto alloc = std::execution::get_allocator(env);
+        return std::allocate_shared<State>(alloc, std::forward<Args>(args)...);
+    } else {
+        return std::make_shared<State>(std::forward<Args>(args)...);
+    }
+}
+
 template<sender S, scope_token Token, queryable Env>
 [[nodiscard]] auto __spawn_future(S sndr, Token token, Env env) {
     using association_t = decltype(token.try_associate());
     using state_t = __shared_state<S, Env, association_t>;
     auto association = token.try_associate();
-    auto state = std::make_shared<state_t>(std::move(association));
+    auto state = __make_state<state_t>(env, std::move(association));
     if (!state->__has_association()) {
         state->__complete_not_started();
         return __sender<state_t>{std::move(state)};
