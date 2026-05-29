@@ -2,6 +2,8 @@
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
 
+option(FORGE_TEST_ONLY_EXECUTION "Build only Forge execution tests" OFF)
+
 set(FORGE_TEST_BUILD_CONFIG_ARGS)
 if(CMAKE_CONFIGURATION_TYPES)
     list(APPEND FORGE_TEST_BUILD_CONFIG_ARGS --config $<CONFIG>)
@@ -57,10 +59,12 @@ endfunction()
 
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
 
-add_subdirectory(simd)
-add_subdirectory(unique_resource)
 add_subdirectory(execution)
-add_subdirectory(submdspan)
-add_subdirectory(linalg)
-add_subdirectory(forge)
-add_subdirectory(native_coexist)
+if(NOT FORGE_TEST_ONLY_EXECUTION)
+    add_subdirectory(simd)
+    add_subdirectory(unique_resource)
+    add_subdirectory(submdspan)
+    add_subdirectory(linalg)
+    add_subdirectory(forge)
+    add_subdirectory(native_coexist)
+endif()

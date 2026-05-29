@@ -14,6 +14,9 @@
 #           suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
 #   local   Host toolchain (no container), -std=c++23 baseline regression.
+#   gcc-exec
+#           GCC 16 container, -std=c++26. Builds only execution tests to cover
+#           the std::execution backport on libstdc++ without SIMD test probes.
 #   tsan    LLVM/libc++ container, -std=c++26 + -fsanitize=thread. Runs the
 #           execution subset under ThreadSanitizer (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
@@ -112,6 +115,25 @@ target_local() {
     ok "local verified"
 }
 
+target_gcc_exec() {
+    build_image forge-gcc16 containers/Containerfile.gcc16
+    log "gcc-exec: configuring + testing execution subset on GCC/libstdc++"
+    "${PODMAN}" run --rm --userns=keep-id \
+        -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 bash -lc '
+            set -euo pipefail
+            rm -rf build/gcc-exec
+            cmake -S . -B build/gcc-exec -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=ON \
+                  -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DFORGE_TEST_ONLY_EXECUTION=ON
+            cmake --build build/gcc-exec
+            ctest --test-dir build/gcc-exec -R execution --output-on-failure
+        '
+    ok "gcc-exec verified (execution subset on libstdc++)"
+}
+
 target_tsan() {
     build_image forge-tsan containers/Containerfile.tsan
     log "tsan: building execution tests with -fsanitize=thread (libc++)"
@@ -175,6 +197,7 @@ for t in "${targets[@]}"; do
         llvm)  target_llvm ;;
         zig)   target_zig ;;
         local) target_local ;;
+        gcc-exec) target_gcc_exec ;;
         tsan)  target_tsan ;;
         asan)  target_asan ;;
         all)   target_gcc16; target_llvm; target_zig; target_local; target_tsan; target_asan ;;
