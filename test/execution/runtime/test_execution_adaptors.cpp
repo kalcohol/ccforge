@@ -6,6 +6,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <exception>
 
 namespace {
 
@@ -13,6 +14,48 @@ struct throwing_query {
     template<class Env>
     int operator()(const Env&) const {
         throw std::runtime_error("read_env query failed");
+    }
+};
+
+struct throws_on_copy {
+    throws_on_copy() = default;
+    throws_on_copy(const throws_on_copy&) {
+        throw std::runtime_error("optional value construction failed");
+    }
+};
+
+struct throwing_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<std::execution::receiver R>
+    struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+        throws_on_copy value;
+
+        explicit op(R r) : rcvr(std::move(r)) {}
+
+        friend void tag_invoke(std::execution::start_t, op& self) noexcept {
+            std::execution::set_value(std::move(self.rcvr), self.value);
+        }
+    };
+
+    friend auto tag_invoke(std::execution::get_completion_signatures_t,
+                           const throwing_value_sender&, auto) noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(const throws_on_copy&)> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    friend auto tag_invoke(std::execution::connect_t, throwing_value_sender, R r)
+        -> op<R> {
+        return op<R>{std::move(r)};
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const throwing_value_sender&) noexcept
+        -> std::execution::empty_env {
+        return {};
     }
 };
 
@@ -220,7 +263,8 @@ TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<int>)>>);
+            std::execution::set_value_t(std::optional<int>),
+            std::execution::set_error_t(std::exception_ptr)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -235,7 +279,8 @@ TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<int, int>>)>>);
+            std::execution::set_value_t(std::optional<std::tuple<int, int>>),
+            std::execution::set_error_t(std::exception_ptr)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -251,12 +296,19 @@ TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<>>)>>);
+            std::execution::set_value_t(std::optional<std::tuple<>>),
+            std::execution::set_error_t(std::exception_ptr)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(std::get<0>(*result).has_value());
+}
+
+TEST(StoppedAsOptionalTest, ValueConstructionThrowCompletesWithError) {
+    auto sndr = std::execution::stopped_as_optional(throwing_value_sender{});
+
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(StoppedAsErrorTest, ConvertsStoppedToError) {

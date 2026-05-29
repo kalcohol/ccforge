@@ -29,6 +29,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <exception>
 
 namespace std::execution {
 
@@ -111,7 +112,8 @@ struct __optional_cs<completion_signatures<Sigs...>> {
     using optional_t = typename __first_optional_type<completion_signatures<Sigs...>>::type;
     using type = __forge_meta::__concat_unique_cs_t<
         typename __optional_sig<Sigs>::type...,
-        typename __optional_stopped_sig<optional_t, __forge_meta::has_stopped_v<Sigs...>>::type>;
+        typename __optional_stopped_sig<optional_t, __forge_meta::has_stopped_v<Sigs...>>::type,
+        completion_signatures<set_error_t(std::exception_ptr)>>;
 };
 
 template<class Err, bool SendsStopped>
@@ -154,8 +156,12 @@ struct __optional_op : __forge_detail::__immovable {
 
         template<class... Vs>
         friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-            set_value(std::move(*self.__rcvr),
-                __make_optional_value(static_cast<Vs&&>(vs)...));
+            try {
+                auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
+                set_value(std::move(*self.__rcvr), std::move(value));
+            } catch (...) {
+                set_error(std::move(*self.__rcvr), std::current_exception());
+            }
         }
         template<class E>
         friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
