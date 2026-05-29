@@ -34,6 +34,36 @@ namespace std::execution {
 
 namespace __forge_stopped {
 
+template<class... Vs>
+struct __optional_value_type {
+    using type = std::optional<std::tuple<std::decay_t<Vs>...>>;
+};
+
+template<class V>
+struct __optional_value_type<V> {
+    using type = std::optional<std::decay_t<V>>;
+};
+
+template<class... Vs>
+using __optional_value_t = typename __optional_value_type<Vs...>::type;
+
+inline auto __make_optional_value() -> std::optional<std::tuple<>> {
+    return std::optional<std::tuple<>>{std::tuple<>{}};
+}
+
+template<class V>
+auto __make_optional_value(V&& v) -> std::optional<std::decay_t<V>> {
+    return std::optional<std::decay_t<V>>{static_cast<V&&>(v)};
+}
+
+template<class V1, class V2, class... Vs>
+auto __make_optional_value(V1&& v1, V2&& v2, Vs&&... vs)
+    -> std::optional<std::tuple<std::decay_t<V1>, std::decay_t<V2>, std::decay_t<Vs>...>> {
+    using tuple_t = std::tuple<std::decay_t<V1>, std::decay_t<V2>, std::decay_t<Vs>...>;
+    return std::optional<tuple_t>{tuple_t(
+        static_cast<V1&&>(v1), static_cast<V2&&>(v2), static_cast<Vs&&>(vs)...)};
+}
+
 template<class CS>
 struct __first_optional_type {
     using type = std::optional<std::tuple<>>;
@@ -41,7 +71,7 @@ struct __first_optional_type {
 
 template<class... Vs, class... Rest>
 struct __first_optional_type<completion_signatures<set_value_t(Vs...), Rest...>> {
-    using type = std::optional<std::tuple<std::decay_t<Vs>...>>;
+    using type = __optional_value_t<Vs...>;
 };
 
 template<class Other, class... Rest>
@@ -55,8 +85,7 @@ struct __optional_sig {
 
 template<class... Vs>
 struct __optional_sig<set_value_t(Vs...)> {
-    using type = completion_signatures<
-        set_value_t(std::optional<std::tuple<std::decay_t<Vs>...>>)>;
+    using type = completion_signatures<set_value_t(__optional_value_t<Vs...>)>;
 };
 
 template<>
@@ -125,8 +154,8 @@ struct __optional_op : __forge_detail::__immovable {
 
         template<class... Vs>
         friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-            using val_t = std::optional<std::tuple<std::decay_t<Vs>...>>;
-            set_value(std::move(*self.__rcvr), val_t(std::tuple(static_cast<Vs&&>(vs)...)));
+            set_value(std::move(*self.__rcvr),
+                __make_optional_value(static_cast<Vs&&>(vs)...));
         }
         template<class E>
         friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {

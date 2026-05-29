@@ -214,19 +214,35 @@ TEST(StoppedAsOptionalTest, SenderExists) {
     SUCCEED();
 }
 
-TEST(StoppedAsOptionalTest, WrapsValueInOptionalTuple) {
+TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
     auto sndr = std::execution::stopped_as_optional(std::execution::just(42));
     using cs_t = decltype(std::execution::get_completion_signatures(
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<int>>)>>);
+            std::execution::set_value_t(std::optional<int>)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(std::get<0>(*result).has_value());
-    EXPECT_EQ(std::get<0>(*std::get<0>(*result)), 42);
+    EXPECT_EQ(*std::get<0>(*result), 42);
+}
+
+TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
+    auto sndr = std::execution::stopped_as_optional(std::execution::just(1, 2));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(std::optional<std::tuple<int, int>>)>>);
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(std::get<0>(*result).has_value());
+    EXPECT_EQ(std::get<0>(*std::get<0>(*result)), 1);
+    EXPECT_EQ(std::get<1>(*std::get<0>(*result)), 2);
 }
 
 TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
