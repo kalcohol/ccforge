@@ -45,4 +45,13 @@ forge_add_execution_runtime_test(test_execution_wave1 test_execution_wave1.cpp e
 forge_add_execution_runtime_test(test_execution_wave2 test_execution_wave2.cpp execution_wave2)
 forge_add_execution_runtime_test(test_execution_when_all test_execution_when_all.cpp execution_when_all)
 forge_add_execution_runtime_test(test_execution_wave3 test_execution_wave3.cpp execution_wave3)
-forge_add_execution_runtime_test(test_execution_phase4 test_execution_phase4.cpp execution_phase4)
+forge_add_execution_runtime_test(test_execution_domain test_execution_domain.cpp execution_domain)
+forge_add_execution_runtime_test(
+    test_execution_counting_scope
+    test_execution_counting_scope.cpp
+    execution_counting_scope)
+forge_add_execution_runtime_test(
+    test_execution_spawn_future
+    test_execution_spawn_future.cpp
+    execution_spawn_future)
+forge_add_execution_runtime_test(test_execution_any_sender test_execution_any_sender.cpp execution_any_sender)
