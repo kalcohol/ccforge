@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include <forge/static_thread_pool.hpp>
 #include <atomic>
 #include <thread>
 #include <tuple>
@@ -89,4 +90,77 @@ TEST(SplitTest, DestroyedSubscriberIgnoredOnAsyncCompletion) {
     loop.run();
 
     EXPECT_EQ(count.load(), 0);
+}
+
+TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently) {
+    forge::static_thread_pool pool(4);
+    auto scheduler = pool.get_scheduler();
+
+    for (int i = 0; i < 64; ++i) {
+        std::atomic<int> when_all_ran{0};
+        auto child = [&](int value) {
+            return std::execution::schedule(scheduler)
+                | std::execution::then([&, value] {
+                      when_all_ran.fetch_add(1, std::memory_order_relaxed);
+                      return value;
+                  });
+        };
+
+        auto joined = std::execution::sync_wait(
+            std::execution::when_all(child(1), child(2), child(3), child(4)));
+        ASSERT_TRUE(joined.has_value());
+        EXPECT_EQ(std::get<0>(*joined) + std::get<1>(*joined)
+                    + std::get<2>(*joined) + std::get<3>(*joined), 10);
+        EXPECT_EQ(when_all_ran.load(std::memory_order_relaxed), 4);
+
+        std::atomic<int> continued{0};
+        auto continued_result = std::execution::sync_wait(
+            std::execution::continues_on(std::execution::just(5), scheduler)
+                | std::execution::then([&](int x) {
+                      continued.fetch_add(1, std::memory_order_relaxed);
+                      return x + 1;
+                  }));
+        ASSERT_TRUE(continued_result.has_value());
+        EXPECT_EQ(std::get<0>(*continued_result), 6);
+        EXPECT_EQ(continued.load(std::memory_order_relaxed), 1);
+
+        std::atomic<int> producer_runs{0};
+        auto shared = std::execution::split(
+            std::execution::schedule(scheduler)
+                | std::execution::then([&] {
+                      producer_runs.fetch_add(1, std::memory_order_relaxed);
+                      return 42;
+                  }));
+
+        std::atomic<int> sum{0};
+        std::atomic<int> failures{0};
+        std::thread t1([&] {
+            auto result = std::execution::sync_wait(shared);
+            if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
+            else failures.fetch_add(1, std::memory_order_relaxed);
+        });
+        std::thread t2([&] {
+            auto result = std::execution::sync_wait(shared);
+            if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
+            else failures.fetch_add(1, std::memory_order_relaxed);
+        });
+        std::thread t3([&] {
+            auto result = std::execution::sync_wait(shared);
+            if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
+            else failures.fetch_add(1, std::memory_order_relaxed);
+        });
+        std::thread t4([&] {
+            auto result = std::execution::sync_wait(shared);
+            if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
+            else failures.fetch_add(1, std::memory_order_relaxed);
+        });
+        t1.join();
+        t2.join();
+        t3.join();
+        t4.join();
+
+        EXPECT_EQ(failures.load(std::memory_order_relaxed), 0);
+        EXPECT_EQ(sum.load(std::memory_order_relaxed), 168);
+        EXPECT_EQ(producer_runs.load(std::memory_order_relaxed), 1);
+    }
 }
