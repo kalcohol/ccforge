@@ -32,13 +32,35 @@ namespace std::execution {
 
 struct empty_env {};
 
+namespace __forge_env_detail {
+
+template<class T>
+concept __member_get_env = requires(const T& obj) {
+    obj.get_env();
+};
+
+template<class T>
+concept __nothrow_member_get_env = requires(const T& obj) {
+    { obj.get_env() } noexcept;
+};
+
+} // namespace __forge_env_detail
+
 struct get_env_t {
     template<class T>
-        requires __forge_detail::tag_invocable<get_env_t, const T&>
     auto operator()(const T& obj) const
-        noexcept(__forge_detail::nothrow_tag_invocable<get_env_t, const T&>)
-            -> __forge_detail::tag_invoke_result_t<get_env_t, const T&> {
-        return __forge_detail::tag_invoke_fn(*this, obj);
+        noexcept(__forge_env_detail::__nothrow_member_get_env<T> ||
+                 (!__forge_env_detail::__member_get_env<T> &&
+                  __forge_detail::nothrow_tag_invocable<get_env_t, const T&>) ||
+                 (!__forge_env_detail::__member_get_env<T> &&
+                  !__forge_detail::tag_invocable<get_env_t, const T&>)) {
+        if constexpr (__forge_env_detail::__member_get_env<T>) {
+            return obj.get_env();
+        } else if constexpr (__forge_detail::tag_invocable<get_env_t, const T&>) {
+            return __forge_detail::tag_invoke_fn(*this, obj);
+        } else {
+            return empty_env{};
+        }
     }
 };
 inline constexpr get_env_t get_env{};

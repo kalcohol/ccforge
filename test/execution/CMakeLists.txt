@@ -30,6 +30,10 @@ forge_add_execution_compile_probe(
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
+    test_execution_member_customization
+    test_execution_member_customization.cpp
+    execution_member_customization)
+forge_add_execution_runtime_test(
     test_execution_inline_scheduler
     test_execution_inline_scheduler.cpp
     execution_inline_scheduler)

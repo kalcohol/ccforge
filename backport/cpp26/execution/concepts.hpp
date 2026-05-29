@@ -31,33 +31,88 @@ namespace std::execution {
 // including set_value. User-code exceptions should be translated by senders or
 // adaptors into set_error(std::exception_ptr); throwing completion callbacks are
 // not supported by this backport.
+namespace __forge_cpo_detail {
+
+template<class R, class... Vs>
+concept __member_set_value = requires(R&& r, Vs&&... vs) {
+    static_cast<R&&>(r).set_value(static_cast<Vs&&>(vs)...);
+};
+
+template<class R, class... Vs>
+concept __nothrow_member_set_value = requires(R&& r, Vs&&... vs) {
+    { static_cast<R&&>(r).set_value(static_cast<Vs&&>(vs)...) } noexcept -> std::same_as<void>;
+};
+
+template<class R, class E>
+concept __member_set_error = requires(R&& r, E&& e) {
+    static_cast<R&&>(r).set_error(static_cast<E&&>(e));
+};
+
+template<class R, class E>
+concept __nothrow_member_set_error = requires(R&& r, E&& e) {
+    { static_cast<R&&>(r).set_error(static_cast<E&&>(e)) } noexcept -> std::same_as<void>;
+};
+
+template<class R>
+concept __member_set_stopped = requires(R&& r) {
+    static_cast<R&&>(r).set_stopped();
+};
+
+template<class R>
+concept __nothrow_member_set_stopped = requires(R&& r) {
+    { static_cast<R&&>(r).set_stopped() } noexcept -> std::same_as<void>;
+};
+
+} // namespace __forge_cpo_detail
+
 struct set_value_t {
     template<class R, class... Vs>
-        requires __forge_detail::tag_invocable<set_value_t, R, Vs...>
+        requires (__forge_cpo_detail::__member_set_value<R, Vs...> ||
+                  __forge_detail::tag_invocable<set_value_t, R, Vs...>)
     void operator()(R&& r, Vs&&... vs) const noexcept {
-        static_assert(__forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>,
-                      "set_value(receiver, ...) must be noexcept");
-        __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<Vs&&>(vs)...);
+        if constexpr (__forge_cpo_detail::__member_set_value<R, Vs...>) {
+            static_assert(__forge_cpo_detail::__nothrow_member_set_value<R, Vs...>,
+                          "set_value(receiver, ...) must be noexcept and return void");
+            static_cast<R&&>(r).set_value(static_cast<Vs&&>(vs)...);
+        } else {
+            static_assert(__forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>,
+                          "set_value(receiver, ...) must be noexcept");
+            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<Vs&&>(vs)...);
+        }
     }
 };
 
 struct set_error_t {
     template<class R, class E>
-        requires __forge_detail::tag_invocable<set_error_t, R, E>
+        requires (__forge_cpo_detail::__member_set_error<R, E> ||
+                  __forge_detail::tag_invocable<set_error_t, R, E>)
     void operator()(R&& r, E&& e) const noexcept {
-        static_assert(__forge_detail::nothrow_tag_invocable<set_error_t, R, E>,
-                      "set_error(receiver, error) must be noexcept");
-        __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<E&&>(e));
+        if constexpr (__forge_cpo_detail::__member_set_error<R, E>) {
+            static_assert(__forge_cpo_detail::__nothrow_member_set_error<R, E>,
+                          "set_error(receiver, error) must be noexcept and return void");
+            static_cast<R&&>(r).set_error(static_cast<E&&>(e));
+        } else {
+            static_assert(__forge_detail::nothrow_tag_invocable<set_error_t, R, E>,
+                          "set_error(receiver, error) must be noexcept");
+            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<E&&>(e));
+        }
     }
 };
 
 struct set_stopped_t {
     template<class R>
-        requires __forge_detail::tag_invocable<set_stopped_t, R>
+        requires (__forge_cpo_detail::__member_set_stopped<R> ||
+                  __forge_detail::tag_invocable<set_stopped_t, R>)
     void operator()(R&& r) const noexcept {
-        static_assert(__forge_detail::nothrow_tag_invocable<set_stopped_t, R>,
-                      "set_stopped(receiver) must be noexcept");
-        __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r));
+        if constexpr (__forge_cpo_detail::__member_set_stopped<R>) {
+            static_assert(__forge_cpo_detail::__nothrow_member_set_stopped<R>,
+                          "set_stopped(receiver) must be noexcept and return void");
+            static_cast<R&&>(r).set_stopped();
+        } else {
+            static_assert(__forge_detail::nothrow_tag_invocable<set_stopped_t, R>,
+                          "set_stopped(receiver) must be noexcept");
+            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r));
+        }
     }
 };
 
@@ -68,14 +123,53 @@ inline constexpr set_stopped_t set_stopped{};
 template<class... Sigs>
 struct completion_signatures {};
 
+struct get_completion_signatures_t;
+
+namespace __forge_cpo_detail {
+
+template<class S, class Env>
+concept __static_completion_signatures = requires {
+    std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
+};
+
+template<class S, class Env>
+concept __nothrow_static_completion_signatures = requires {
+    { std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>() } noexcept;
+};
+
+template<class S, class Env>
+concept __instance_completion_signatures = requires(S&& s, Env&& env) {
+    static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
+};
+
+template<class S, class Env>
+concept __nothrow_instance_completion_signatures = requires(S&& s, Env&& env) {
+    { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)) } noexcept;
+};
+
+template<class S, class Env>
+consteval bool __completion_signatures_noexcept() {
+    if constexpr (__static_completion_signatures<S, Env>) {
+        return __nothrow_static_completion_signatures<S, Env>;
+    } else if constexpr (__instance_completion_signatures<S, Env>) {
+        return __nothrow_instance_completion_signatures<S, Env>;
+    } else {
+        return __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>;
+    }
+}
+
+} // namespace __forge_cpo_detail
+
 struct get_completion_signatures_t {
     template<class S, class Env>
-        requires (requires(S&& s, Env&& env) { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)); } ||
+        requires (__forge_cpo_detail::__static_completion_signatures<S, Env> ||
+                  __forge_cpo_detail::__instance_completion_signatures<S, Env> ||
                   __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>)
     auto operator()(S&& s, Env&& env) const
-        noexcept(requires(S&& s, Env&& env) { { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)) } noexcept; } ||
-                 __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>) {
-        if constexpr (requires { static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env)); }) {
+        noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, Env>()) {
+        if constexpr (__forge_cpo_detail::__static_completion_signatures<S, Env>) {
+            return std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
+        } else if constexpr (__forge_cpo_detail::__instance_completion_signatures<S, Env>) {
             return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
         } else {
             return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<Env&&>(env));
@@ -519,15 +613,21 @@ struct receiver_accepts : std::false_type {};
 
 template<class R, class... Vs>
 struct receiver_accepts<R, set_value_t(Vs...)>
-    : std::bool_constant<__forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>> {};
+    : std::bool_constant<
+          __forge_cpo_detail::__nothrow_member_set_value<R, Vs...> ||
+          __forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>> {};
 
 template<class R, class E>
 struct receiver_accepts<R, set_error_t(E)>
-    : std::bool_constant<__forge_detail::nothrow_tag_invocable<set_error_t, R, E>> {};
+    : std::bool_constant<
+          __forge_cpo_detail::__nothrow_member_set_error<R, E> ||
+          __forge_detail::nothrow_tag_invocable<set_error_t, R, E>> {};
 
 template<class R>
 struct receiver_accepts<R, set_stopped_t()>
-    : std::bool_constant<__forge_detail::nothrow_tag_invocable<set_stopped_t, R>> {};
+    : std::bool_constant<
+          __forge_cpo_detail::__nothrow_member_set_stopped<R> ||
+          __forge_detail::nothrow_tag_invocable<set_stopped_t, R>> {};
 
 template<class R, class Sig>
 inline constexpr bool receiver_accepts_v = receiver_accepts<R, Sig>::value;
