@@ -285,28 +285,28 @@ struct __child_recv {
     __op<OuterRecv, Senders...>* __self;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __child_recv&& self, Vs&&... vs) noexcept {
+    void set_value(Vs&&... vs) && noexcept {
         try {
             using tuple_t = std::tuple<std::decay_t<Vs>...>;
-            std::get<I>(self.__self->__partial).emplace(
+            std::get<I>(__self->__partial).emplace(
                 std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
         } catch (...) {
-            self.__self->child_fail(std::current_exception());
+            __self->child_fail(std::current_exception());
             return;
         }
-        self.__self->child_done();
+        __self->child_done();
     }
     template<class E>
-    friend void tag_invoke(set_error_t, __child_recv&& self, E&& e) noexcept {
-        self.__self->child_fail(static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        __self->child_fail(static_cast<E&&>(e));
     }
-    friend void tag_invoke(set_stopped_t, __child_recv&& self) noexcept {
-        self.__self->child_stop();
+    void set_stopped() && noexcept {
+        __self->child_stop();
     }
-    friend auto tag_invoke(get_env_t, const __child_recv& self) noexcept {
+    auto get_env() const noexcept {
         return __child_env_t<env_of_t<OuterRecv>>{
-            std::execution::get_env(self.__self->__outer_recv),
-            self.__self->__stop_src.get_token()};
+            std::execution::get_env(__self->__outer_recv),
+            __self->__stop_src.get_token()};
     }
 };
 
@@ -425,15 +425,15 @@ struct __op : __forge_detail::__immovable {
         __stop_callback_storage.destroy();
         if (__result.index() == 1) {
             std::visit([this](auto& err) noexcept {
-                set_error(std::move(__outer_recv), std::move(err));
+                std::execution::set_error(std::move(__outer_recv), std::move(err));
             }, std::get<1>(__result));
         } else if (__result.index() == 2) {
-            set_stopped(std::move(__outer_recv));
+            std::execution::set_stopped(std::move(__outer_recv));
         } else {
             if constexpr (__can_value_complete) {
                 try_deliver_values(std::index_sequence_for<Senders...>{});
             } else {
-                set_stopped(std::move(__outer_recv));
+                std::execution::set_stopped(std::move(__outer_recv));
             }
         }
     }
@@ -445,22 +445,22 @@ struct __op : __forge_detail::__immovable {
                 try {
                     auto combined = std::tuple_cat(std::move(values)...);
                     std::apply([&](auto&&... vs) {
-                        set_value(std::move(__outer_recv), std::move(vs)...);
+                        std::execution::set_value(std::move(__outer_recv), std::move(vs)...);
                     }, std::move(combined));
                 } catch (...) {
-                    set_error(std::move(__outer_recv), std::current_exception());
+                    std::execution::set_error(std::move(__outer_recv), std::current_exception());
                 }
             }, *std::get<Is>(__partial)...);
         } catch (...) {
-            set_error(std::move(__outer_recv), std::current_exception());
+            std::execution::set_error(std::move(__outer_recv), std::current_exception());
         }
     }
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
-        self.register_outer_stop_callback();
+    void start() & noexcept {
+        register_outer_stop_callback();
         constexpr std::size_t n = N;
         for (std::size_t i = 0; i < n; ++i)
-            self.__child_starts[i](self.__child_ptrs[i]);
+            __child_starts[i](__child_ptrs[i]);
     }
 };
 
@@ -469,9 +469,8 @@ struct __sender {
     using sender_concept = sender_t;
     std::tuple<Senders...> __sndrs;
 
-    template<class Env>
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender&, Env&&) noexcept {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
         using child_env_t = __child_env_t<Env>;
         using cart_t = __cartesian_value_cs_t<
             decltype(std::execution::get_completion_signatures(
@@ -490,23 +489,23 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r) {
+    auto connect(R r) && {
         return __op<R, Senders...>{
             std::move(r),
-            std::move(self.__sndrs),
+            std::move(__sndrs),
             std::index_sequence_for<Senders...>{}};
     }
 
     template<receiver R>
         requires (std::copy_constructible<Senders> && ...)
-    friend auto tag_invoke(connect_t, const __sender& self, R r) {
+    auto connect(R r) const& {
         return __op<R, Senders...>{
             std::move(r),
-            self.__sndrs,
+            __sndrs,
             std::index_sequence_for<Senders...>{}};
     }
 
-    friend auto tag_invoke(get_env_t, const __sender&) noexcept -> empty_env {
+    auto get_env() const noexcept -> empty_env {
         return {};
     }
 };
