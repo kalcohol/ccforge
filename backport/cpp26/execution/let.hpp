@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 
 #include <exception>
@@ -117,13 +118,8 @@ struct __op : __forge_detail::__immovable {
     R __outer_recv_;
     Fn __fn_;
 
-    static constexpr std::size_t kBufSize = 1024;
-    alignas(std::max_align_t) unsigned char __outer_buf_[kBufSize];
-    alignas(std::max_align_t) unsigned char __inner_buf_[kBufSize];
-
-    void (*__outer_start_)(void*) noexcept = nullptr;
-    void (*__outer_dtor_)(void*)  noexcept = nullptr;
-    void (*__inner_dtor_)(void*)  noexcept = nullptr;
+    __forge_detail::__op_storage<1024> __outer_storage_;
+    __forge_detail::__op_storage<1024> __inner_storage_;
 
     struct __inner_recv {
         using receiver_concept = receiver_t;
@@ -149,18 +145,12 @@ struct __op : __forge_detail::__immovable {
     void __start_inner(Vs&&... vs) noexcept {
         using inner_sender_t = std::decay_t<std::invoke_result_t<Fn, std::decay_t<Vs>...>>;
         using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
-        static_assert(sizeof(inner_op_t) <= kBufSize,
-            "let_value/error/stopped: inner op too large for buffer");
         try {
             auto inner_sndr = std::invoke(std::move(__fn_), static_cast<Vs&&>(vs)...);
-            ::new(static_cast<void*>(__inner_buf_))
-                inner_op_t(std::execution::connect(
-                    std::move(inner_sndr), __inner_recv{this}));
-            __inner_dtor_ = [](void* p) noexcept {
-                static_cast<inner_op_t*>(p)->~inner_op_t();
-            };
-            std::execution::start(*static_cast<inner_op_t*>(
-                static_cast<void*>(__inner_buf_)));
+            auto* op = __inner_storage_.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+                return std::execution::connect(std::move(inner_sndr), __inner_recv{this});
+            });
+            std::execution::start(*op);
         } catch (...) {
             set_error(std::move(__outer_recv_), std::current_exception());
         }
@@ -200,31 +190,18 @@ struct __op : __forge_detail::__immovable {
     };
 
     using __outer_op_t = connect_result_t<S, __outer_recv>;
-    static_assert(sizeof(__outer_op_t) <= kBufSize,
-        "let_value/error/stopped: outer op too large for buffer");
 
     __op(S sndr, Fn fn, R r)
         : __outer_recv_(std::move(r))
         , __fn_(std::move(fn))
     {
-        ::new(static_cast<void*>(__outer_buf_))
-            __outer_op_t(std::execution::connect(
-                std::move(sndr), __outer_recv{this}));
-        __outer_start_ = [](void* p) noexcept {
-            std::execution::start(*static_cast<__outer_op_t*>(p));
-        };
-        __outer_dtor_ = [](void* p) noexcept {
-            static_cast<__outer_op_t*>(p)->~__outer_op_t();
-        };
-    }
-
-    ~__op() {
-        if (__inner_dtor_) { __inner_dtor_(static_cast<void*>(__inner_buf_)); }
-        if (__outer_dtor_) { __outer_dtor_(static_cast<void*>(__outer_buf_)); }
+        __outer_storage_.template emplace_from<__outer_op_t>([&]() -> __outer_op_t {
+            return std::execution::connect(std::move(sndr), __outer_recv{this});
+        });
     }
 
     friend void tag_invoke(start_t, __op& self) noexcept {
-        self.__outer_start_(static_cast<void*>(self.__outer_buf_));
+        std::execution::start(self.__outer_storage_.template get<__outer_op_t>());
     }
 };
 

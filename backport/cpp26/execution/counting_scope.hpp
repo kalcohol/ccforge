@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "start_detached.hpp"
 #include "upon.hpp"
@@ -187,14 +188,11 @@ struct __associated_op : __forge_detail::__immovable {
     };
 
     using inner_op_t = connect_result_t<S, __recv>;
-    static_assert(sizeof(inner_op_t) <= 1024,
-        "counting_scope::associate: inner op too large for buffer");
 
     token_t __token;
     S __sndr;
     R __rcvr;
-    alignas(std::max_align_t) unsigned char __buf[1024];
-    bool __inner_alive = false;
+    __forge_detail::__op_storage<1024> __inner_storage;
     bool __associated = false;
 
     __associated_op(token_t token, S sndr, R rcvr)
@@ -204,9 +202,7 @@ struct __associated_op : __forge_detail::__immovable {
     {}
 
     ~__associated_op() {
-        if (__inner_alive) {
-            static_cast<inner_op_t*>(static_cast<void*>(__buf))->~inner_op_t();
-        }
+        __inner_storage.destroy();
         if (__associated) {
             __token.disassociate();
         }
@@ -220,12 +216,12 @@ struct __associated_op : __forge_detail::__immovable {
 
         self.__associated = true;
         try {
-            ::new(static_cast<void*>(self.__buf)) inner_op_t(
-                std::execution::connect(
+            auto* op = self.__inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+                return std::execution::connect(
                     std::move(self.__sndr),
-                    __recv{&self.__rcvr, self.__token, &self.__associated}));
-            self.__inner_alive = true;
-            std::execution::start(*static_cast<inner_op_t*>(static_cast<void*>(self.__buf)));
+                    __recv{&self.__rcvr, self.__token, &self.__associated});
+            });
+            std::execution::start(*op);
         } catch (...) {
             if (self.__associated) {
                 self.__token.disassociate();

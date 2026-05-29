@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
 
@@ -112,8 +113,6 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
     using __sched_value_recv_t = __sched_value_recv<R, Vs...>;
     using __sched_sndr_t = decltype(std::execution::schedule(std::declval<Scheduler>()));
 
-    static constexpr std::size_t kBufSize = 1024;
-
     void __deliver_schedule_failure() noexcept {
         std::terminate();
     }
@@ -121,17 +120,11 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
     template<class Recv>
     void __start_scheduled(Recv recv) noexcept {
         using sched_op_t = connect_result_t<__sched_sndr_t, Recv>;
-        static_assert(sizeof(sched_op_t) <= kBufSize,
-            "continues_on: schedule op too large for buffer");
         try {
-            auto* p = static_cast<void*>(__sched_buf);
-            ::new(p) sched_op_t(std::execution::connect(
-                std::execution::schedule(__sch), std::move(recv)));
-            __sched_dtor = [](void* ptr) noexcept {
-                static_cast<sched_op_t*>(ptr)->~sched_op_t();
-            };
-            __sched_alive = true;
-            std::execution::start(*static_cast<sched_op_t*>(p));
+            auto* op = __sched_storage.template emplace_from<sched_op_t>([&]() -> sched_op_t {
+                return std::execution::connect(std::execution::schedule(__sch), std::move(recv));
+            });
+            std::execution::start(*op);
         } catch (...) {
             __deliver_schedule_failure();
         }
@@ -174,22 +167,14 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
 
     R __outer;
     Scheduler __sch;
-    alignas(std::max_align_t) unsigned char __sched_buf[kBufSize];
-    void (*__sched_dtor)(void*) noexcept = nullptr;
-    bool __sched_alive = false;
     __up_op_t __up_op;
+    __forge_detail::__op_storage<1024> __sched_storage;
 
     __op_impl(Scheduler sch, S sndr, R recv)
         : __outer(std::move(recv))
         , __sch(std::move(sch))
         , __up_op(std::execution::connect(std::move(sndr), __up_recv{this}))
     {}
-
-    ~__op_impl() {
-        if (__sched_alive) {
-            __sched_dtor(static_cast<void*>(__sched_buf));
-        }
-    }
 
     friend void tag_invoke(start_t, __op_impl& self) noexcept {
         std::execution::start(self.__up_op);

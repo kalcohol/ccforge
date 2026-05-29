@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
 
@@ -38,13 +39,8 @@ struct __starts_on_op : __forge_detail::__immovable {
     Scheduler __sch;
     S __sndr;
 
-    static constexpr std::size_t kBufSize = 1024;
-    alignas(std::max_align_t) unsigned char __sched_buf[kBufSize];
-    alignas(std::max_align_t) unsigned char __sndr_buf[kBufSize];
-
-    void (*__sched_start)(void*) noexcept = nullptr;
-    void (*__sched_dtor)(void*)  noexcept = nullptr;
-    void (*__sndr_dtor)(void*)   noexcept = nullptr;
+    __forge_detail::__op_storage<1024> __sched_storage;
+    __forge_detail::__op_storage<1024> __sndr_storage;
 
     struct __sndr_recv {
         using receiver_concept = receiver_t;
@@ -72,16 +68,11 @@ struct __starts_on_op : __forge_detail::__immovable {
 
         friend void tag_invoke(set_value_t, __sched_recv&& self) noexcept {
             using inner_op_t = connect_result_t<S, __sndr_recv>;
-            static_assert(sizeof(inner_op_t) <= kBufSize,
-                "starts_on: inner op too large");
-            ::new(static_cast<void*>(self.__self->__sndr_buf))
-                inner_op_t(std::execution::connect(
-                    std::move(self.__self->__sndr), __sndr_recv{self.__self}));
-            self.__self->__sndr_dtor = [](void* p) noexcept {
-                static_cast<inner_op_t*>(p)->~inner_op_t();
-            };
-            std::execution::start(*static_cast<inner_op_t*>(
-                static_cast<void*>(self.__self->__sndr_buf)));
+            auto* op = self.__self->__sndr_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+                return std::execution::connect(
+                    std::move(self.__self->__sndr), __sndr_recv{self.__self});
+            });
+            std::execution::start(*op);
         }
         template<class E>
         friend void tag_invoke(set_error_t, __sched_recv&& self, E&& e) noexcept {
@@ -98,32 +89,19 @@ struct __starts_on_op : __forge_detail::__immovable {
 
     using __sched_op_t = connect_result_t<
         decltype(std::execution::schedule(std::declval<Scheduler>())), __sched_recv>;
-    static_assert(sizeof(__sched_op_t) <= kBufSize,
-        "starts_on: sched op too large");
 
     __starts_on_op(Scheduler sch, S sndr, R recv)
         : __outer_recv(std::move(recv))
         , __sch(std::move(sch))
         , __sndr(std::move(sndr))
     {
-        ::new(static_cast<void*>(__sched_buf))
-            __sched_op_t(std::execution::connect(
-                std::execution::schedule(__sch), __sched_recv{this}));
-        __sched_start = [](void* p) noexcept {
-            std::execution::start(*static_cast<__sched_op_t*>(p));
-        };
-        __sched_dtor = [](void* p) noexcept {
-            static_cast<__sched_op_t*>(p)->~__sched_op_t();
-        };
-    }
-
-    ~__starts_on_op() {
-        if (__sndr_dtor)  { __sndr_dtor(static_cast<void*>(__sndr_buf)); }
-        if (__sched_dtor) { __sched_dtor(static_cast<void*>(__sched_buf)); }
+        __sched_storage.template emplace_from<__sched_op_t>([&]() -> __sched_op_t {
+            return std::execution::connect(std::execution::schedule(__sch), __sched_recv{this});
+        });
     }
 
     friend void tag_invoke(start_t, __starts_on_op& self) noexcept {
-        self.__sched_start(static_cast<void*>(self.__sched_buf));
+        std::execution::start(self.__sched_storage.template get<__sched_op_t>());
     }
 };
 

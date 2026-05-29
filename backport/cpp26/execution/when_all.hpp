@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "stop_token.hpp"
 
@@ -340,14 +341,10 @@ struct __op : __forge_detail::__immovable {
         }
     };
 
-    static constexpr std::size_t kChildBuf = 512;
-    static constexpr std::size_t kStopCallbackBuf = 256;
-    alignas(std::max_align_t) unsigned char __child_bufs[N][kChildBuf];
+    __forge_detail::__op_storage<512> __child_storages[N];
+    void* __child_ptrs[N]{};
     void (*__child_starts[N])(void*) noexcept;
-    void (*__child_dtors[N])(void*) noexcept;
-    alignas(std::max_align_t) unsigned char __stop_callback_buf[kStopCallbackBuf];
-    void (*__stop_callback_dtor)(void*) noexcept = nullptr;
-    bool __stop_callback_alive = false;
+    __forge_detail::__op_storage<256> __stop_callback_storage;
 
     template<std::size_t... Is>
     __op(OuterRecv r, std::tuple<Senders...> sndrs, std::index_sequence<Is...>)
@@ -360,26 +357,14 @@ struct __op : __forge_detail::__immovable {
     void init_child(std::tuple_element_t<I, std::tuple<Senders...>> sndr) {
         using S = std::tuple_element_t<I, std::tuple<Senders...>>;
         using child_op_t = connect_result_t<S, __child_recv<I, OuterRecv, Senders...>>;
-        static_assert(sizeof(child_op_t) <= kChildBuf,
-            "when_all: child op too large for buffer");
-        ::new(static_cast<void*>(__child_bufs[I]))
-            child_op_t(std::execution::connect(
+        __child_ptrs[I] = __child_storages[I].template emplace_from<child_op_t>([&]() -> child_op_t {
+            return std::execution::connect(
                 std::move(sndr),
-                __child_recv<I, OuterRecv, Senders...>{this}));
+                __child_recv<I, OuterRecv, Senders...>{this});
+        });
         __child_starts[I] = [](void* p) noexcept {
             std::execution::start(*static_cast<child_op_t*>(p));
         };
-        __child_dtors[I] = [](void* p) noexcept {
-            static_cast<child_op_t*>(p)->~child_op_t();
-        };
-    }
-
-    ~__op() {
-        if (__stop_callback_alive && __stop_callback_dtor) {
-            __stop_callback_dtor(static_cast<void*>(__stop_callback_buf));
-        }
-        for (std::size_t i = 0; i < N; ++i)
-            if (__child_dtors[i]) __child_dtors[i](static_cast<void*>(__child_bufs[i]));
     }
 
     void register_outer_stop_callback() noexcept {
@@ -393,18 +378,10 @@ struct __op : __forge_detail::__immovable {
                 if (!token.stop_possible()) { return; }
 
                 using callback_t = stop_callback_for_t<outer_token_t, __outer_stop_callback>;
-                static_assert(sizeof(callback_t) <= kStopCallbackBuf,
-                    "when_all: outer stop callback too large for buffer");
-                static_assert(alignof(callback_t) <= alignof(std::max_align_t),
-                    "when_all: outer stop callback alignment too large for buffer");
 
                 try {
-                    ::new(static_cast<void*>(__stop_callback_buf))
-                        callback_t(token, __outer_stop_callback{this});
-                    __stop_callback_dtor = [](void* p) noexcept {
-                        static_cast<callback_t*>(p)->~callback_t();
-                    };
-                    __stop_callback_alive = true;
+                    __stop_callback_storage.template emplace<callback_t>(
+                        token, __outer_stop_callback{this});
                 } catch (...) {
                     __stop_src.request_stop();
                 }
@@ -445,6 +422,7 @@ struct __op : __forge_detail::__immovable {
     }
 
     void deliver() noexcept {
+        __stop_callback_storage.destroy();
         if (__result.index() == 1) {
             std::visit([this](auto& err) noexcept {
                 set_error(std::move(__outer_recv), std::move(err));
@@ -482,7 +460,7 @@ struct __op : __forge_detail::__immovable {
         self.register_outer_stop_callback();
         constexpr std::size_t n = N;
         for (std::size_t i = 0; i < n; ++i)
-            self.__child_starts[i](static_cast<void*>(self.__child_bufs[i]));
+            self.__child_starts[i](self.__child_ptrs[i]);
     }
 };
 

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <tuple>
+#include <utility>
 
 namespace {
 
@@ -22,6 +23,48 @@ struct counting_receiver {
     friend void tag_invoke(std::execution::set_stopped_t, counting_receiver&&) noexcept {}
 
     friend auto tag_invoke(std::execution::get_env_t, const counting_receiver&) noexcept
+        -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct oversized_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    int value;
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        int value;
+        unsigned char padding[2048]{};
+
+        op(R r, int v) : rcvr(std::move(r)), value(v) {}
+        op(const op&) = delete;
+        op(op&&) = delete;
+        op& operator=(const op&) = delete;
+        op& operator=(op&&) = delete;
+
+        friend void tag_invoke(std::execution::start_t, op& self) noexcept {
+            std::execution::set_value(std::move(self.rcvr), self.value);
+        }
+    };
+
+    friend auto tag_invoke(std::execution::get_completion_signatures_t,
+                           const oversized_value_sender&, auto) noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    friend auto tag_invoke(std::execution::connect_t, oversized_value_sender self, R r)
+        -> op<R> {
+        return op<R>{std::move(r), self.value};
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const oversized_value_sender&) noexcept
         -> std::execution::empty_env {
         return {};
     }
@@ -90,6 +133,14 @@ TEST(SplitTest, DestroyedSubscriberIgnoredOnAsyncCompletion) {
     loop.run();
 
     EXPECT_EQ(count.load(), 0);
+}
+
+TEST(SplitTest, OversizedInnerOperationUsesHeapFallback) {
+    auto sndr = std::execution::split(oversized_value_sender{42});
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently) {

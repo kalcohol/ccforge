@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/op_storage.hpp"
 #include "env.hpp"
 
 #include <atomic>
@@ -51,14 +52,9 @@ struct __shared_state {
     std::variant<std::monostate, value_tuple_t, std::exception_ptr, __stopped_tag> result{};
     std::vector<std::function<void()>> on_done{};
 
-    static constexpr std::size_t kOpBuf = 1024;
-    alignas(std::max_align_t) unsigned char op_buf[kOpBuf]{};
+    __forge_detail::__op_storage<1024> op_storage{};
+    void* op_ptr = nullptr;
     void (*op_start)(void*) noexcept = nullptr;
-    void (*op_dtor)(void*) noexcept  = nullptr;
-
-    ~__shared_state() noexcept {
-        if (op_dtor) { op_dtor(static_cast<void*>(op_buf)); }
-    }
 
     void notify_all() noexcept {
         std::vector<std::function<void()>> cbs;
@@ -194,7 +190,7 @@ struct __op : __forge_detail::__immovable {
                 }
             });
             lk.unlock();
-            st.op_start(static_cast<void*>(st.op_buf));
+            st.op_start(st.op_ptr);
         } else {
             st.on_done.push_back([sh, weak_sub]() mutable {
                 if (auto locked = weak_sub.lock()) {
@@ -243,20 +239,14 @@ template<sender S>
     using inner_recv_t = __forge_split::__inner_recv<S>;
     using inner_op_t   = connect_result_t<S, inner_recv_t>;
 
-    static_assert(sizeof(inner_op_t) <= ST::kOpBuf,
-        "split: inner op too large for buffer");
-
     auto shared = std::make_shared<ST>();
 
-    // Connect and store the inner op in the shared buffer
-    ::new(static_cast<void*>(shared->op_buf))
-        inner_op_t(std::execution::connect(
-            std::move(sndr), inner_recv_t{std::weak_ptr<ST>{shared}}));
+    shared->op_ptr = shared->op_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+        return std::execution::connect(
+            std::move(sndr), inner_recv_t{std::weak_ptr<ST>{shared}});
+    });
     shared->op_start = [](void* p) noexcept {
         std::execution::start(*static_cast<inner_op_t*>(p));
-    };
-    shared->op_dtor = [](void* p) noexcept {
-        static_cast<inner_op_t*>(p)->~inner_op_t();
     };
 
     return __forge_split::__sender<S>{std::move(shared)};
