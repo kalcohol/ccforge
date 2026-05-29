@@ -155,24 +155,23 @@ struct __optional_op : __forge_detail::__immovable {
         R* __rcvr;
 
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
+        void set_value(Vs&&... vs) && noexcept {
             try {
                 auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
-                set_value(std::move(*self.__rcvr), std::move(value));
+                std::execution::set_value(std::move(*__rcvr), std::move(value));
             } catch (...) {
-                set_error(std::move(*self.__rcvr), std::current_exception());
+                std::execution::set_error(std::move(*__rcvr), std::current_exception());
             }
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
-            set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
+        void set_error(E&& e) && noexcept {
+            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
         }
-        friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-            set_value(std::move(*self.__rcvr), OptionalT{std::nullopt});
+        void set_stopped() && noexcept {
+            std::execution::set_value(std::move(*__rcvr), OptionalT{std::nullopt});
         }
-        friend auto tag_invoke(get_env_t, const __recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(*self.__rcvr);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(*__rcvr);
         }
     };
 
@@ -186,18 +185,20 @@ struct __optional_op : __forge_detail::__immovable {
         , __op(std::execution::connect(std::move(sndr), __recv{&__rcvr}))
     {}
 
-    friend void tag_invoke(start_t, __optional_op& self) noexcept {
-        std::execution::start(self.__op);
+    void start() & noexcept {
+        std::execution::start(__op);
     }
 };
 
 template<class S>
 struct __optional_sender {
     using sender_concept = sender_t;
+    using source_t = S;
+
     S __sndr;
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __optional_sender&& self, R r)
+    auto connect(R r) &&
         -> __optional_op<S, R,
             typename __first_optional_type<decltype(std::execution::get_completion_signatures(
                 std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
@@ -205,12 +206,12 @@ struct __optional_sender {
         using cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<S>(), std::declval<env_of_t<R>>()));
         using optional_t = typename __first_optional_type<cs_t>::type;
-        return __optional_op<S, R, optional_t>(std::move(self.__sndr), std::move(r));
+        return __optional_op<S, R, optional_t>(std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S>
-    friend auto tag_invoke(connect_t, const __optional_sender& self, R r)
+    auto connect(R r) const&
         -> __optional_op<S, R,
             typename __first_optional_type<decltype(std::execution::get_completion_signatures(
                 std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
@@ -218,17 +219,20 @@ struct __optional_sender {
         using cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<S>(), std::declval<env_of_t<R>>()));
         using optional_t = typename __first_optional_type<cs_t>::type;
-        return __optional_op<S, R, optional_t>(self.__sndr, std::move(r));
+        return __optional_op<S, R, optional_t>(__sndr, std::move(r));
     }
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __optional_sender& self, auto env) noexcept {
-        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using up_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
         return typename __optional_cs<up_cs_t>::type{};
     }
 
-    friend auto tag_invoke(get_env_t, const __optional_sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 
@@ -242,19 +246,18 @@ struct __error_op : __forge_detail::__immovable {
         Err __err;
 
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-            set_value(std::move(*self.__rcvr), static_cast<Vs&&>(vs)...);
+        void set_value(Vs&&... vs) && noexcept {
+            std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
-            set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
+        void set_error(E&& e) && noexcept {
+            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
         }
-        friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-            set_error(std::move(*self.__rcvr), std::move(self.__err));
+        void set_stopped() && noexcept {
+            std::execution::set_error(std::move(*__rcvr), std::move(__err));
         }
-        friend auto tag_invoke(get_env_t, const __recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(*self.__rcvr);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(*__rcvr);
         }
     };
 
@@ -269,42 +272,46 @@ struct __error_op : __forge_detail::__immovable {
             std::move(sndr), __recv{&__rcvr, std::move(err)}))
     {}
 
-    friend void tag_invoke(start_t, __error_op& self) noexcept {
-        std::execution::start(self.__op);
+    void start() & noexcept {
+        std::execution::start(__op);
     }
 };
 
 template<class S, class Err>
 struct __error_sender {
     using sender_concept = sender_t;
+    using source_t = S;
+    using err_t = Err;
+
     S __sndr;
     Err __err;
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __error_sender&& self, R r)
-        -> __error_op<S, Err, R>
+    auto connect(R r) && -> __error_op<S, Err, R>
     {
         return __error_op<S, Err, R>(
-            std::move(self.__sndr), std::move(self.__err), std::move(r));
+            std::move(__sndr), std::move(__err), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Err>
-    friend auto tag_invoke(connect_t, const __error_sender& self, R r)
-        -> __error_op<S, Err, R>
+    auto connect(R r) const& -> __error_op<S, Err, R>
     {
         return __error_op<S, Err, R>(
-            self.__sndr, self.__err, std::move(r));
+            __sndr, __err, std::move(r));
     }
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __error_sender& self, auto env) noexcept {
-        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
-        return typename __error_cs<up_cs_t, Err>::type{};
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using up_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
+        return typename __error_cs<up_cs_t, typename self_t::err_t>::type{};
     }
 
-    friend auto tag_invoke(get_env_t, const __error_sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 
