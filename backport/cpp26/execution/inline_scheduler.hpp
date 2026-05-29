@@ -43,29 +43,30 @@ struct operation : __forge_detail::__immovable {
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
 
-    friend void tag_invoke(start_t, operation& self) noexcept { std::execution::set_value(std::move(self.rcvr_)); }
+    void start() & noexcept { std::execution::set_value(std::move(rcvr_)); }
 };
 
 struct sender {
     using sender_concept = sender_t;
     const inline_scheduler* sched_ = nullptr;
 
-    friend auto tag_invoke(get_completion_signatures_t, const sender&, auto) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> completion_signatures<set_value_t()> {
         return {};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender&&, R rcvr) -> operation<R> {
+    auto connect(R rcvr) && -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, const sender&, R rcvr) -> operation<R> {
+    auto connect(R rcvr) const& -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 
-    friend auto tag_invoke(get_env_t, const sender& self) noexcept -> env { return env{self.sched_}; }
+    auto get_env() const noexcept -> env { return env{sched_}; }
 };
 
 } // namespace __forge_inline
@@ -77,10 +78,6 @@ public:
     inline_scheduler() noexcept = default;
 
     [[nodiscard]] __forge_inline::sender schedule() const noexcept { return __forge_inline::sender{this}; }
-
-    friend auto tag_invoke(schedule_t, const inline_scheduler& self) noexcept -> __forge_inline::sender {
-        return __forge_inline::sender{&self};
-    }
 
     bool operator==(const inline_scheduler&) const noexcept = default;
 };

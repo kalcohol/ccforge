@@ -135,8 +135,8 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
         };
     }
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
-        self.__loop->__push(&self);
+    void start() & noexcept {
+        __loop->__push(this);
     }
 };
 
@@ -145,23 +145,24 @@ struct __sender {
     run_loop* __loop;
     run_loop::scheduler const* __sched;
 
-    friend auto tag_invoke(get_completion_signatures_t, const __sender&, auto) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> completion_signatures<set_value_t()> {
         return {};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R rcvr) -> __op<R> {
-        return __op<R>{self.__loop, std::move(rcvr)};
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{__loop, std::move(rcvr)};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, const __sender& self, R rcvr) -> __op<R> {
-        return __op<R>{self.__loop, std::move(rcvr)};
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{__loop, std::move(rcvr)};
     }
 
-    friend auto tag_invoke(get_env_t, const __sender& self) noexcept -> __env {
-        return __env{self.__sched};
+    auto get_env() const noexcept -> __env {
+        return __env{__sched};
     }
 };
 
@@ -173,9 +174,8 @@ public:
 
     bool operator==(const scheduler&) const noexcept = default;
 
-    friend auto tag_invoke(schedule_t, const scheduler& self) noexcept
-        -> __forge_run_loop::__sender {
-        return __forge_run_loop::__sender{self.__loop, &self};
+    [[nodiscard]] auto schedule() const noexcept -> __forge_run_loop::__sender {
+        return __forge_run_loop::__sender{__loop, this};
     }
 
 private:
