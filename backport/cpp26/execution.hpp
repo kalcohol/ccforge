@@ -30,7 +30,7 @@
 // IMPLEMENTED:
 //   Sender factories : just, just_error, just_stopped, read_env
 //   Value adaptors   : then, upon_error, upon_stopped
-//   Sender adaptors  : let_value, let_error, let_stopped
+//   Sender adaptors  : let_value, let_error, let_stopped, write_env
 //   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
 //                      bulk (serial)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
@@ -62,7 +62,8 @@
 //   - Non-copyable lvalue senders must be connected as rvalues with std::move.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - async_scope beyond the current counting_scope/simple_counting_scope subset.
+//   - spawn_future and async_scope beyond the current
+//     counting_scope/simple_counting_scope subset.
 //   - standard type-erased sender surface.
 
 // Language version guard.
@@ -97,6 +98,7 @@
 #include "execution/inline_scheduler.hpp"
 #include "execution/run_loop.hpp"
 #include "execution/read_env.hpp"
+#include "execution/write_env.hpp"
 #include "execution/upon.hpp"
 #include "execution/let.hpp"
 #include "execution/stopped_as.hpp"

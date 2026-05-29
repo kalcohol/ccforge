@@ -109,7 +109,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 **已实现：**
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
-- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`
+- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk`（串行）
 - 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`ensure_started`、`start_detached`
 - 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
