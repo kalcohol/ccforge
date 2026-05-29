@@ -55,7 +55,9 @@
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce
 //     variant<tuple<...>, ...>.
-//   - ensure_started eagerly starts work, but does not create a detached thread.
+//   - ensure_started eagerly starts work and caches for multiple consumers.
+//     Cached values are delivered as lvalues, so move-only value results are
+//     not supported; abandoning the returned sender does not request stop.
 //   - start_detached terminates on set_error; attach an error-handling adaptor
 //     before detaching if failures are expected.
 //   - spawn_future returns a move-only single-consumer future sender. Its
