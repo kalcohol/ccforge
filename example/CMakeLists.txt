@@ -13,6 +13,7 @@ target_link_libraries(simd_complete_example PRIVATE forge::forge)
 #
 # This is built unconditionally as part of the repo's examples to ensure the
 # wrapper injection shape stays functional.
+find_package(Threads REQUIRED)
 find_library(FORGE_EXAMPLE_TBB_LIBRARY NAMES tbb)
 
 add_executable(execution_example execution_example.cpp)
@@ -88,13 +89,13 @@ if(FORGE_EXAMPLE_TBB_LIBRARY)
 endif()
 
 add_executable(forge_thread_pool forge_thread_pool_example.cpp)
-target_link_libraries(forge_thread_pool PRIVATE forge::forge)
+target_link_libraries(forge_thread_pool PRIVATE forge::forge Threads::Threads)
 if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(forge_thread_pool PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()
 
 add_executable(forge_system_context forge_system_context_example.cpp)
-target_link_libraries(forge_system_context PRIVATE forge::forge)
+target_link_libraries(forge_system_context PRIVATE forge::forge Threads::Threads)
 if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(forge_system_context PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()

@@ -268,10 +268,12 @@ if(NOT TARGET forge)
         )
     endif()
 
-    # Add experimental backport path if needed
+    # Add the backport root for experimental TS headers. Do not add
+    # backport/experimental directly: that would make <memory> resolve to
+    # backport/experimental/memory instead of the standard-header wrapper.
     if(FORGE_NEEDS_EXPERIMENTAL)
         target_include_directories(forge BEFORE INTERFACE
-            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}/experimental>
+            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
         )
     endif()
 
