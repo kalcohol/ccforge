@@ -37,6 +37,8 @@
 // Inject backport if native linalg is not available. FORGE_HAS_NATIVE_LINALG is
 // defined by forge.cmake when a (possibly partial) native <linalg> is present, so
 // the backport stands aside rather than redefining std::linalg::* (ODR violation).
-#if !defined(FORGE_HAS_NATIVE_LINALG) && (!defined(__cpp_lib_linalg) || (__cpp_lib_linalg < 202311L))
+// If this wrapper is used without forge.cmake, any native __cpp_lib_linalg value
+// is still treated as a stand-aside signal.
+#if !defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg)
 #include "cpp26/linalg.hpp"
 #endif

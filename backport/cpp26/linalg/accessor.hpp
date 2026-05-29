@@ -144,7 +144,7 @@ public:
 
         template<class OtherExtents>
         explicit mapping(const typename Layout::template mapping<OtherExtents>& m)
-            : nested_(__transposed_extents_type(m.extents().extent(1), m.extents().extent(0)))
+            : nested_(m)
             , extents_(m.extents().extent(1), m.extents().extent(0))
         {}
 

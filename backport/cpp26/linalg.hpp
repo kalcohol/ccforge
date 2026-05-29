@@ -26,6 +26,13 @@
 #error "CC Forge <linalg> backport requires C++20 or newer"
 #endif
 
+// This macro is a test marker for backport injection, not a standard feature
+// macro. Forge intentionally does not define __cpp_lib_linalg for this
+// experimental subset.
+#ifndef FORGE_BACKPORT_LINALG_HPP_INCLUDED
+#define FORGE_BACKPORT_LINALG_HPP_INCLUDED 1
+#endif
+
 #if __has_include(<version>)
 #include <version>
 #endif

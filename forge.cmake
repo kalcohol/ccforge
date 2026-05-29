@@ -168,10 +168,12 @@ if(NOT TARGET forge)
     # native signal.
     check_cxx_source_compiles("
         #include <linalg>
+        #include <mdspan>
         int main() {
             double data[4] = {1,2,3,4};
             std::mdspan<double, std::extents<int,4>> v(data);
-            return static_cast<int>(std::linalg::vector_two_norm(v));
+            auto g = std::linalg::setup_givens_rotation(3.0, 4.0);
+            return static_cast<int>(std::linalg::vector_two_norm(v) + g.r);
         }
     " FORGE_LINALG_FULL)
     check_cxx_source_compiles("

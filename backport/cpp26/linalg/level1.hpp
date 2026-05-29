@@ -392,24 +392,6 @@ void apply_givens_rotation(
     }
 }
 
-template<class T>
-using givens_rotation_result = setup_givens_rotation_result<T>;
-
-template<class T>
-givens_rotation_result<T> givens_rotation_setup(T a, T b) {
-    return setup_givens_rotation(a, b);
-}
-
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2, class T>
-void givens_rotation_apply(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
-    T c, T s)
-{
-    apply_givens_rotation(x, y, c, s);
-}
-
 // matrix_frob_norm — [linalg.algs.blas1.matfrobnorm]
 template<class Extents, class Layout, class Accessor, class T>
 T matrix_frob_norm(

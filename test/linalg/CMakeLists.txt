@@ -33,6 +33,14 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
         test_linalg_baseline_api
         test_linalg_baseline_api.cpp
         linalg_baseline_api_compile)
+    forge_add_linalg_compile_probe(
+        test_linalg_feature_macro
+        test_linalg_feature_macro.cpp
+        linalg_feature_macro_compile)
+    forge_add_linalg_compile_probe(
+        test_linalg_include
+        test_linalg_include.cpp
+        linalg_include_compile)
 else()
     message(STATUS "Forge: linalg tests skipped (toolchain has no <mdspan>)")
 endif()
