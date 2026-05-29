@@ -23,4 +23,26 @@ static_assert(std::same_as<
         std::execution::get_env(std::execution::schedule(std::execution::inline_scheduler{})))),
     std::execution::inline_scheduler>);
 
-int main() { return 0; }
+struct value_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    void set_value(int) && noexcept {}
+    void set_error(std::exception_ptr) && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+static_assert(requires {
+    std::execution::connect(
+        std::execution::ensure_started(std::execution::just(42)),
+        value_only_receiver{});
+});
+
+int main() {
+    auto sndr = std::execution::ensure_started(std::execution::just(42));
+    auto op = std::execution::connect(std::move(sndr), value_only_receiver{});
+    std::execution::start(op);
+    return 0;
+}

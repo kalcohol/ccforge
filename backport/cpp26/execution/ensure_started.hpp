@@ -165,9 +165,13 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S>> {
         std::visit([&](auto& result) noexcept {
             using result_type = std::decay_t<decltype(result)>;
             if constexpr (std::is_same_v<result_type, std::monostate>) {
-                std::execution::set_stopped(std::move(rcvr));
+                std::terminate();
             } else if constexpr (std::is_same_v<result_type, __stopped_result>) {
-                std::execution::set_stopped(std::move(rcvr));
+                if constexpr (requires(R& r) { std::execution::set_stopped(std::move(r)); }) {
+                    std::execution::set_stopped(std::move(rcvr));
+                } else {
+                    std::terminate();
+                }
             } else if constexpr (requires { result.__values; }) {
                 std::apply([&](auto&... vs) noexcept {
                     std::execution::set_value(std::move(rcvr), vs...);
