@@ -36,32 +36,58 @@ log()  { printf '\033[1;34m[verify]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
 
-# run_in_container <image-tag> <containerfile> <std> <extra-cmake-args...>
 build_image() {
     local tag="$1" containerfile="$2"
     log "building image ${tag} from ${containerfile}"
     "${PODMAN}" build -t "${tag}" -f "${containerfile}" "${REPO_ROOT}"
 }
 
-# Configure + build + test inside a container, capturing the configure log.
+# Configure + build + test inside a container.
 container_run() {
     local tag="$1" builddir="$2" std="$3"
+    shift 3
     "${PODMAN}" run --rm \
         --userns=keep-id \
         -v "${REPO_ROOT}:/src:Z" \
         -w /src \
         "${tag}" \
-        bash -lc "
+        bash -lc '
             set -euo pipefail
-            rm -rf '${builddir}'
-            cmake -S . -B '${builddir}' -G Ninja \
+            builddir="$1"
+            std="$2"
+            shift 2
+            rm -rf "${builddir}"
+            cmake -S . -B "${builddir}" -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug \
-                  -DCMAKE_CXX_STANDARD=${std} \
-                  -DFORGE_BUILD_TESTS=ON
-            cmake --build '${builddir}'
-            ctest --test-dir '${builddir}' --output-on-failure
-        "
+                  -DCMAKE_CXX_STANDARD="${std}" \
+                  -DFORGE_BUILD_TESTS=ON \
+                  "$@"
+            cmake --build "${builddir}"
+            ctest --test-dir "${builddir}" --output-on-failure
+        ' bash "${builddir}" "${std}" "$@"
 }
+
+FORGE_EXECUTION_ONLY_TEST_ARGS=(
+    -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_EXECUTION=ON
+    -DFORGE_TEST_ENABLE_SIMD=OFF
+    -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF
+    -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF
+    -DFORGE_TEST_ENABLE_LINALG=OFF
+    -DFORGE_TEST_ENABLE_FORGE=OFF
+    -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
+)
+
+FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
+    -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_EXECUTION=OFF
+    -DFORGE_TEST_ENABLE_SIMD=OFF
+    -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF
+    -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF
+    -DFORGE_TEST_ENABLE_LINALG=OFF
+    -DFORGE_TEST_ENABLE_FORGE=OFF
+    -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=ON
+)
 
 # Assert the cmake configure log shows simd/submdspan standing aside (NOT injected).
 assert_stands_aside() {
@@ -82,12 +108,20 @@ target_gcc16() {
     log "gcc16: configuring -std=c++26 (capturing configure log)"
     # Configure-only first so we can assert on the stand-aside messages.
     "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
-        bash -lc "rm -rf build/gcc16 && cmake -S . -B build/gcc16 -G Ninja -DCMAKE_CXX_STANDARD=26 -DFORGE_BUILD_TESTS=ON" \
+        bash -lc '
+            set -euo pipefail
+            rm -rf build/gcc16
+            cmake -S . -B build/gcc16 -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=ON \
+                  "$@"
+        ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
     assert_stands_aside "${logfile}" "std::simd"
     assert_stands_aside "${logfile}" "std::submdspan"
     log "gcc16: building + testing (native handoff must compile cleanly)"
-    container_run forge-gcc16 build/gcc16 26
+    container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
     ok "gcc16 verified"
 }
 
@@ -118,25 +152,7 @@ target_local() {
 target_gcc_exec() {
     build_image forge-gcc16 containers/Containerfile.gcc16
     log "gcc-exec: configuring + testing execution subset on GCC/libstdc++"
-    "${PODMAN}" run --rm --userns=keep-id \
-        -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 bash -lc '
-            set -euo pipefail
-            rm -rf build/gcc-exec
-            cmake -S . -B build/gcc-exec -G Ninja \
-                  -DCMAKE_BUILD_TYPE=Debug \
-                  -DCMAKE_CXX_STANDARD=26 \
-                  -DFORGE_BUILD_TESTS=ON \
-                  -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
-                  -DFORGE_TEST_ENABLE_SIMD=OFF \
-                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
-                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
-                  -DFORGE_TEST_ENABLE_LINALG=OFF \
-                  -DFORGE_TEST_ENABLE_FORGE=OFF \
-                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
-            cmake --build build/gcc-exec
-            ctest --test-dir build/gcc-exec -R execution --output-on-failure
-        '
+    container_run forge-gcc16 build/gcc-exec 26 "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
     ok "gcc-exec verified (execution subset on libstdc++)"
 }
 
@@ -149,16 +165,10 @@ target_tsan() {
             rm -rf build/tsan
             cmake -S . -B build/tsan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
-                  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
-                  -DFORGE_TEST_ENABLE_SIMD=OFF \
-                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
-                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
-                  -DFORGE_TEST_ENABLE_LINALG=OFF \
-                  -DFORGE_TEST_ENABLE_FORGE=OFF \
-                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
+                  -DFORGE_BUILD_TESTS=ON \
                   -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
-                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+                  "$@"
             cmake --build build/tsan
             export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1"
             # Try plain ctest first; if the instrumented binaries hit the
@@ -169,7 +179,7 @@ target_tsan() {
             fi
             echo "[tsan] retrying under setarch -R (ASLR off; mmap_rnd_bits workaround)"
             setarch "$(uname -m)" -R ctest --test-dir build/tsan -R execution --output-on-failure
-        '
+        ' bash "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
     ok "tsan verified (execution subset, no data races)"
 }
 
@@ -182,16 +192,10 @@ target_asan() {
             rm -rf build/asan
             cmake -S . -B build/asan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
-                  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
-                  -DFORGE_TEST_ENABLE_SIMD=OFF \
-                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
-                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
-                  -DFORGE_TEST_ENABLE_LINALG=OFF \
-                  -DFORGE_TEST_ENABLE_FORGE=OFF \
-                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
+                  -DFORGE_BUILD_TESTS=ON \
                   -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
-                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+                  "$@"
             cmake --build build/asan
             # detect_container_overflow=0 avoids false positives against a
             # non-ASan-instrumented system libc++; UBSan halts on first error.
@@ -202,7 +206,7 @@ target_asan() {
             fi
             echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
             setarch "$(uname -m)" -R ctest --test-dir build/asan -R execution --output-on-failure
-        '
+        ' bash "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
     ok "asan verified (execution subset, no UAF/leak/UB)"
 }
 

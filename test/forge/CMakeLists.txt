@@ -9,9 +9,8 @@ function(forge_add_forge_test target_name source_name test_name)
     target_include_directories(${target_name} BEFORE PRIVATE
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_SOURCE_DIR}/backport")
-    find_library(FORGE_TBB_LIB NAMES tbb)
-    if(FORGE_TBB_LIB)
-        target_link_libraries(${target_name} PRIVATE ${FORGE_TBB_LIB})
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
 endfunction()
 
