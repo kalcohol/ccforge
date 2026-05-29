@@ -21,12 +21,15 @@
 // SOFTWARE.
 
 #include <forge/any_receiver.hpp>
+#include <exception>
 #include <iostream>
+
 struct print_receiver { using receiver_concept = std::execution::receiver_t; int* out{};
-    friend void tag_invoke(std::execution::set_value_t, print_receiver&& r, int v) noexcept { *r.out = v; }
-    friend void tag_invoke(std::execution::set_error_t, print_receiver&&, std::exception_ptr) noexcept {}
-    friend void tag_invoke(std::execution::set_stopped_t, print_receiver&&) noexcept {}
-    friend std::execution::empty_env tag_invoke(std::execution::get_env_t, const print_receiver&) noexcept { return {}; } };
+    void set_value(int v) && noexcept { *out = v; }
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; } };
+
 int main() {
     using cs_int = std::execution::completion_signatures<std::execution::set_value_t(int), std::execution::set_error_t(std::exception_ptr), std::execution::set_stopped_t()>;
     int captured = 0; forge::any_receiver_of<cs_int> erased = print_receiver{&captured}; std::execution::set_value(std::move(erased), 7);
