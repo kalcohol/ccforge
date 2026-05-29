@@ -98,6 +98,97 @@ struct int_error_receiver {
     }
 };
 
+template<class R>
+struct stop_observing_op {
+    using operation_state_concept = std::execution::operation_state_t;
+    using env_t = std::execution::env_of_t<R>;
+    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+
+    struct callback {
+        stop_observing_op* self;
+
+        void operator()() const noexcept {
+            ++*self->observed_stops;
+            std::execution::set_stopped(std::move(self->rcvr));
+        }
+    };
+
+    using callback_t = std::stop_callback_for_t<token_t, callback>;
+
+    R rcvr;
+    int* observed_stops;
+    alignas(callback_t) unsigned char callback_buf[sizeof(callback_t)];
+    bool callback_alive = false;
+
+    stop_observing_op(R r, int* observed)
+        : rcvr(std::move(r)), observed_stops(observed) {}
+    stop_observing_op(const stop_observing_op&) = delete;
+    stop_observing_op& operator=(const stop_observing_op&) = delete;
+
+    ~stop_observing_op() {
+        if (callback_alive) {
+            static_cast<callback_t*>(static_cast<void*>(callback_buf))->~callback_t();
+        }
+    }
+
+    friend void tag_invoke(std::execution::start_t, stop_observing_op& self) noexcept {
+        ::new(static_cast<void*>(self.callback_buf)) callback_t(
+            std::execution::get_stop_token(std::execution::get_env(self.rcvr)),
+            callback{&self});
+        self.callback_alive = true;
+    }
+};
+
+struct stop_observing_sender {
+    using sender_concept = std::execution::sender_t;
+
+    int* observed_stops;
+
+    friend auto tag_invoke(std::execution::get_completion_signatures_t,
+                           const stop_observing_sender&, auto) noexcept
+        -> std::execution::completion_signatures<std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    friend auto tag_invoke(std::execution::connect_t, stop_observing_sender self, R r)
+        -> stop_observing_op<R> {
+        return stop_observing_op<R>{std::move(r), self.observed_stops};
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const stop_observing_sender&) noexcept
+        -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct outer_stop_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source;
+    bool* stopped;
+    bool* errored;
+
+    template<class... Vs>
+    friend void tag_invoke(std::execution::set_value_t, outer_stop_receiver&& self, Vs&&...) noexcept {
+        *self.errored = true;
+    }
+
+    template<class E>
+    friend void tag_invoke(std::execution::set_error_t, outer_stop_receiver&& self, E&&) noexcept {
+        *self.errored = true;
+    }
+
+    friend void tag_invoke(std::execution::set_stopped_t, outer_stop_receiver&& self) noexcept {
+        *self.stopped = true;
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const outer_stop_receiver& self) noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(std::execution::get_stop_token_t{}, self.source->get_token()));
+    }
+};
+
 } // namespace
 
 TEST(WhenAllTest, AggregatesMultipleValues) {
@@ -191,4 +282,27 @@ TEST(WhenAllTest, StoppedPropagates) {
         std::execution::just_stopped());
     auto result = std::execution::sync_wait(std::move(sndr));
     EXPECT_FALSE(result.has_value());
+}
+
+TEST(WhenAllTest, OuterStopRequestReachesChildren) {
+    std::inplace_stop_source source;
+    int observed_stops = 0;
+    bool stopped = false;
+    bool errored = false;
+
+    auto op = std::execution::connect(
+        std::execution::when_all(
+            stop_observing_sender{&observed_stops},
+            stop_observing_sender{&observed_stops}),
+        outer_stop_receiver{&source, &stopped, &errored});
+
+    std::execution::start(op);
+    EXPECT_EQ(observed_stops, 0);
+    EXPECT_FALSE(stopped);
+
+    EXPECT_TRUE(source.request_stop());
+
+    EXPECT_EQ(observed_stops, 2);
+    EXPECT_TRUE(stopped);
+    EXPECT_FALSE(errored);
 }

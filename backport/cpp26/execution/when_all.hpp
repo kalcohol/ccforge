@@ -332,10 +332,22 @@ struct __op : __forge_detail::__immovable {
     std::variant<std::monostate, error_variant_t, __stopped_tag> __result;
     std::tuple<std::optional<__sender_value_variant_t<Senders, child_env_t>>...> __partial;
 
+    struct __outer_stop_callback {
+        __op* __self;
+
+        void operator()() const noexcept {
+            __self->__stop_src.request_stop();
+        }
+    };
+
     static constexpr std::size_t kChildBuf = 512;
+    static constexpr std::size_t kStopCallbackBuf = 256;
     alignas(std::max_align_t) unsigned char __child_bufs[N][kChildBuf];
     void (*__child_starts[N])(void*) noexcept;
     void (*__child_dtors[N])(void*) noexcept;
+    alignas(std::max_align_t) unsigned char __stop_callback_buf[kStopCallbackBuf];
+    void (*__stop_callback_dtor)(void*) noexcept = nullptr;
+    bool __stop_callback_alive = false;
 
     template<std::size_t... Is>
     __op(OuterRecv r, std::tuple<Senders...> sndrs, std::index_sequence<Is...>)
@@ -363,8 +375,41 @@ struct __op : __forge_detail::__immovable {
     }
 
     ~__op() {
+        if (__stop_callback_alive && __stop_callback_dtor) {
+            __stop_callback_dtor(static_cast<void*>(__stop_callback_buf));
+        }
         for (std::size_t i = 0; i < N; ++i)
             if (__child_dtors[i]) __child_dtors[i](static_cast<void*>(__child_bufs[i]));
+    }
+
+    void register_outer_stop_callback() noexcept {
+        using outer_env_t = env_of_t<OuterRecv>;
+
+        if constexpr (requires(outer_env_t env) { std::execution::get_stop_token(env); }) {
+            using outer_token_t = decltype(std::execution::get_stop_token(
+                std::declval<outer_env_t>()));
+            if constexpr (std::stoppable_token_for<outer_token_t, __outer_stop_callback>) {
+                auto token = std::execution::get_stop_token(std::execution::get_env(__outer_recv));
+                if (!token.stop_possible()) { return; }
+
+                using callback_t = stop_callback_for_t<outer_token_t, __outer_stop_callback>;
+                static_assert(sizeof(callback_t) <= kStopCallbackBuf,
+                    "when_all: outer stop callback too large for buffer");
+                static_assert(alignof(callback_t) <= alignof(std::max_align_t),
+                    "when_all: outer stop callback alignment too large for buffer");
+
+                try {
+                    ::new(static_cast<void*>(__stop_callback_buf))
+                        callback_t(token, __outer_stop_callback{this});
+                    __stop_callback_dtor = [](void* p) noexcept {
+                        static_cast<callback_t*>(p)->~callback_t();
+                    };
+                    __stop_callback_alive = true;
+                } catch (...) {
+                    __stop_src.request_stop();
+                }
+            }
+        }
     }
 
     template<class E>
@@ -434,6 +479,7 @@ struct __op : __forge_detail::__immovable {
     }
 
     friend void tag_invoke(start_t, __op& self) noexcept {
+        self.register_outer_stop_callback();
         constexpr std::size_t n = N;
         for (std::size_t i = 0; i < n; ++i)
             self.__child_starts[i](static_cast<void*>(self.__child_bufs[i]));
