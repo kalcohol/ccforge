@@ -31,6 +31,30 @@
 
 namespace std::linalg {
 
+namespace __detail {
+
+template<class T>
+auto __conj_if_needed(const T& value)
+{
+    if constexpr (requires { value.real(); value.imag(); }) {
+        return std::conj(value);
+    } else {
+        return value;
+    }
+}
+
+template<class T>
+auto __real_if_needed(const T& value)
+{
+    if constexpr (requires { value.real(); value.imag(); }) {
+        return value.real();
+    } else {
+        return value;
+    }
+}
+
+} // namespace __detail
+
 // ──────────────────────────────────────────────────────────────────────────
 // BLAS Level 2 — [linalg.algs.blas2]
 // ──────────────────────────────────────────────────────────────────────────
@@ -48,7 +72,8 @@ void matrix_vector_product(
     using ElemT = std::remove_const_t<typename AAccessor::element_type>;
 #if __LINALG_HAS_SIMD
     if constexpr (__detail::__can_simd_v<ElemT, XLayout, XAccessor> &&
-                  __detail::__can_simd_v<ElemT, ALayout, AAccessor>) {
+                  __detail::__can_simd_v<ElemT, ALayout, AAccessor> &&
+                  std::is_same_v<ALayout, std::layout_right>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
         static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
@@ -113,7 +138,7 @@ void triangular_matrix_vector_product(
     const idx_t n = A.extent(0);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
-    for (idx_t i = 0; i < n; ++i) {
+    auto compute_row = [&](idx_t i) {
         typename XAccessor::element_type sum{};
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
@@ -127,6 +152,11 @@ void triangular_matrix_vector_product(
             }
         }
         x[i] = sum;
+    };
+    if constexpr (is_upper) {
+        for (idx_t i = 0; i < n; ++i) compute_row(i);
+    } else {
+        for (idx_t i = n; i > 0; --i) compute_row(i - 1);
     }
 }
 
@@ -203,12 +233,17 @@ void symmetric_matrix_vector_product(
 {
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) y[i] = typename YAccessor::element_type{};
     for (idx_t i = 0; i < n; ++i) {
         y[i] += A[i, i] * x[i];
         for (idx_t j = i + 1; j < n; ++j) {
-            y[i] += A[i, j] * x[j];
-            y[j] += A[i, j] * x[i];
+            auto aij = [&]() -> decltype(auto) {
+                if constexpr (is_upper) return A[i, j];
+                else return A[j, i];
+            }();
+            y[i] += aij * x[j];
+            y[j] += aij * x[i];
         }
     }
 }
@@ -244,18 +279,41 @@ void hermitian_matrix_vector_product(
 {
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) y[i] = typename YAccessor::element_type{};
     for (idx_t i = 0; i < n; ++i) {
-        y[i] += A[i, i] * x[i];
+        y[i] += __detail::__real_if_needed(A[i, i]) * x[i];
         for (idx_t j = i + 1; j < n; ++j) {
-            using std::conj;
-            y[i] += A[i, j] * x[j];
-            y[j] += conj(A[i, j]) * x[i];
+            if constexpr (is_upper) {
+                y[i] += A[i, j] * x[j];
+                y[j] += __detail::__conj_if_needed(A[i, j]) * x[i];
+            } else {
+                y[i] += __detail::__conj_if_needed(A[j, i]) * x[j];
+                y[j] += A[j, i] * x[i];
+            }
         }
     }
 }
 
-// matrix_rank_1_update — A += x * y^T  [linalg.algs.blas2.rank1]
+// hermitian_matrix_vector_product (update) — z = y + A*x
+template<class Triangle,
+         class AExtents, class ALayout, class AAccessor,
+         class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class ZExtents, class ZLayout, class ZAccessor>
+void hermitian_matrix_vector_product(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle t,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename ZAccessor::element_type, ZExtents, ZLayout, ZAccessor> z)
+{
+    hermitian_matrix_vector_product(A, t, x, z);
+    for (typename ZExtents::index_type i = 0; i < z.extent(0); ++i)
+        z[i] += y[i];
+}
+
+// matrix_rank_1_update — A = x * y^T  [linalg.algs.blas2.rank1]
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
@@ -267,10 +325,27 @@ void matrix_rank_1_update(
     using idx_t = typename AExtents::index_type;
     for (idx_t i = 0; i < A.extent(0); ++i)
         for (idx_t j = 0; j < A.extent(1); ++j)
-            A[i, j] += x[i] * y[j];
+            A[i, j] = x[i] * y[j];
 }
 
-// matrix_rank_1_update_c — A += x * conj(y^T)  [linalg.algs.blas2.rank1]
+// matrix_rank_1_update — A = E + x * y^T
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor>
+void matrix_rank_1_update(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
+{
+    using idx_t = typename AExtents::index_type;
+    for (idx_t i = 0; i < A.extent(0); ++i)
+        for (idx_t j = 0; j < A.extent(1); ++j)
+            A[i, j] = E[i, j] + x[i] * y[j];
+}
+
+// matrix_rank_1_update_c — A = x * conj(y^T)  [linalg.algs.blas2.rank1]
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
@@ -279,30 +354,144 @@ void matrix_rank_1_update_c(
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
 {
-    using std::conj;
     using idx_t = typename AExtents::index_type;
     for (idx_t i = 0; i < A.extent(0); ++i)
         for (idx_t j = 0; j < A.extent(1); ++j)
-            A[i, j] += x[i] * conj(y[j]);
+            A[i, j] = x[i] * __detail::__conj_if_needed(y[j]);
 }
 
-// symmetric_matrix_rank_1_update — A += alpha * x * x^T  [linalg.algs.blas2.syr]
+// matrix_rank_1_update_c — A = E + x * conj(y^T)
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor>
+void matrix_rank_1_update_c(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
+{
+    using idx_t = typename AExtents::index_type;
+    for (idx_t i = 0; i < A.extent(0); ++i)
+        for (idx_t j = 0; j < A.extent(1); ++j)
+            A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]);
+}
+
+// symmetric_matrix_rank_1_update — A = alpha * x * x^T  [linalg.algs.blas2.syr]
+template<class ScalingFactor,
+         class XExtents, class XLayout, class XAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void symmetric_matrix_rank_1_update(
+    ScalingFactor alpha,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = alpha * x[i] * x[j];
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = alpha * x[i] * x[j];
+        }
+    }
+}
+
+// symmetric_matrix_rank_1_update — A = E + alpha * x * x^T
+template<class ScalingFactor,
+         class XExtents, class XLayout, class XAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void symmetric_matrix_rank_1_update(
+    ScalingFactor alpha,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = E[i, j] + alpha * x[i] * x[j];
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = E[i, j] + alpha * x[i] * x[j];
+        }
+    }
+}
+
 template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
 void symmetric_matrix_rank_1_update(
-    ScalingFactor alpha, Triangle,
+    ScalingFactor alpha, Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
 {
-    using idx_t = typename AExtents::index_type;
-    const idx_t n = A.extent(0);
-    for (idx_t i = 0; i < n; ++i)
-        for (idx_t j = i; j < n; ++j)
-            A[i, j] += alpha * x[i] * x[j];
+    symmetric_matrix_rank_1_update(alpha, x, A, t);
 }
 
-// symmetric_matrix_rank_2_update — A += alpha*(x*y^T + y*x^T)  [linalg.algs.blas2.syr2]
+// symmetric_matrix_rank_2_update — A = x*y^T + y*x^T  [linalg.algs.blas2.syr2]
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void symmetric_matrix_rank_2_update(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = x[i] * y[j] + y[i] * x[j];
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = x[i] * y[j] + y[i] * x[j];
+        }
+    }
+}
+
+// symmetric_matrix_rank_2_update — A = E + x*y^T + y*x^T
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void symmetric_matrix_rank_2_update(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = E[i, j] + x[i] * y[j] + y[i] * x[j];
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = E[i, j] + x[i] * y[j] + y[i] * x[j];
+        }
+    }
+}
+
 template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
@@ -315,43 +504,148 @@ void symmetric_matrix_rank_2_update(
 {
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
-    for (idx_t i = 0; i < n; ++i)
-        for (idx_t j = i; j < n; ++j)
-            A[i, j] += alpha * (x[i] * y[j] + y[i] * x[j]);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = alpha * (x[i] * y[j] + y[i] * x[j]);
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = alpha * (x[i] * y[j] + y[i] * x[j]);
+        }
+    }
 }
 
-// hermitian_matrix_rank_1_update — [linalg.algs.blas2.rank1]
+// hermitian_matrix_rank_1_update — A = alpha * x * x^H  [linalg.algs.blas2.rank1]
+template<class ScalingFactor,
+         class XExtents, class XLayout, class XAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void hermitian_matrix_rank_1_update(
+    ScalingFactor alpha,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+        }
+    }
+}
+
+// hermitian_matrix_rank_1_update — A = E + alpha * x * x^H
+template<class ScalingFactor,
+         class XExtents, class XLayout, class XAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void hermitian_matrix_rank_1_update(
+    ScalingFactor alpha,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+        }
+    }
+}
+
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
 void hermitian_matrix_rank_1_update(
-    Triangle,
+    Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
 {
-    using idx_t = typename AExtents::index_type;
-    const idx_t n = A.extent(0);
-    for (idx_t i = 0; i < n; ++i)
-        for (idx_t j = i; j < n; ++j)
-            A[i, j] += x[i] * std::conj(x[j]);
+    hermitian_matrix_rank_1_update(typename AAccessor::element_type{1}, x, A, t);
 }
 
-// hermitian_matrix_rank_2_update — [linalg.algs.blas2.rank2]
+// hermitian_matrix_rank_2_update — A = x*y^H + y*x^H  [linalg.algs.blas2.rank2]
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void hermitian_matrix_rank_2_update(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = x[i] * __detail::__conj_if_needed(y[j]) +
+                          y[i] * __detail::__conj_if_needed(x[j]);
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = x[i] * __detail::__conj_if_needed(y[j]) +
+                          y[i] * __detail::__conj_if_needed(x[j]);
+        }
+    }
+}
+
+// hermitian_matrix_rank_2_update — A = E + x*y^H + y*x^H
+template<class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class EExtents, class ELayout, class EAccessor,
+         class AExtents, class ALayout, class AAccessor,
+         class Triangle>
+void hermitian_matrix_rank_2_update(
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename EAccessor::element_type, EExtents, ELayout, EAccessor> E,
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle)
+{
+    using idx_t = typename AExtents::index_type;
+    const idx_t n = A.extent(0);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (idx_t i = 0; i < n; ++i) {
+        if constexpr (is_upper) {
+            for (idx_t j = i; j < n; ++j)
+                A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
+                          y[i] * __detail::__conj_if_needed(x[j]);
+        } else {
+            for (idx_t j = 0; j <= i; ++j)
+                A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
+                          y[i] * __detail::__conj_if_needed(x[j]);
+        }
+    }
+}
+
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
 void hermitian_matrix_rank_2_update(
-    Triangle,
+    Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
 {
-    using idx_t = typename AExtents::index_type;
-    const idx_t n = A.extent(0);
-    for (idx_t i = 0; i < n; ++i)
-        for (idx_t j = i; j < n; ++j)
-            A[i, j] += x[i] * std::conj(y[j]) + y[i] * std::conj(x[j]);
+    hermitian_matrix_rank_2_update(x, y, A, t);
 }
 
 } // namespace std::linalg
