@@ -59,13 +59,15 @@
 //     before detaching if failures are expected.
 //   - spawn_future returns a move-only single-consumer future sender and does
 //     not yet provide allocator customization.
+//   - counting_scope is stop-aware, but join() is still Forge's blocking
+//     compatibility extension rather than the standard sender-returning shape.
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders must be connected as rvalues with std::move.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - async_scope beyond the current counting_scope/simple_counting_scope subset.
+//   - sender-returning async-scope join.
 //   - standard type-erased sender surface.
 
 // Language version guard.

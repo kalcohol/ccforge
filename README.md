@@ -119,7 +119,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
 - 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、`connect_t` sender-domain `transform_sender`
-- Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
+- Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
 **当前限制：**
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
@@ -127,6 +127,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
 - `spawn_future` 当前返回 move-only single-consumer future sender，尚未接入 allocator customization。
+- `counting_scope::join()` 当前保留 Forge 既有阻塞扩展；标准 sender-returning join 形态尚未接入。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 
 > Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke` fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，整个 backport 自动禁用。

@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 
 namespace {
 
@@ -530,6 +531,96 @@ TEST(SimpleCountingScopeTest, MultipleSpawns) {
     }
     // inline_scheduler is synchronous
     EXPECT_EQ(counter.load(), 5);
+    scope.join();
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, IsDistinctAndAssociatesWork) {
+    static_assert(!std::is_same_v<
+                  std::execution::counting_scope,
+                  std::execution::simple_counting_scope>);
+
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+
+    static_assert(std::execution::scope_association<association_t>);
+    static_assert(std::execution::scope_token<decltype(token)>);
+
+    {
+        auto assoc = token.try_associate();
+        EXPECT_TRUE(static_cast<bool>(assoc));
+        EXPECT_EQ(scope.count(), 1u);
+
+        auto nested = assoc.try_associate();
+        EXPECT_TRUE(static_cast<bool>(nested));
+        EXPECT_EQ(scope.count(), 2u);
+    }
+
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapPreservesCompletionResults) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+
+    auto value = std::execution::sync_wait(token.wrap(std::execution::just(42)));
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(std::get<0>(*value), 42);
+    EXPECT_EQ(scope.count(), 0u);
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+        token.wrap(std::execution::just_error(42))), int);
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto stopped = std::execution::sync_wait(token.wrap(std::execution::just_stopped()));
+    EXPECT_FALSE(stopped.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, CloseRejectsNewWrappedWork) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+
+    scope.close();
+    auto result = std::execution::sync_wait(token.wrap(std::execution::just(42)));
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(scope.is_closed());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapInjectsScopeStopToken) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+
+    auto result = std::execution::sync_wait(
+        token.wrap(std::execution::read_env(std::execution::get_stop_token)));
+
+    ASSERT_TRUE(result.has_value());
+    auto stop_token = std::get<0>(*result);
+    EXPECT_TRUE(stop_token.stop_possible());
+    EXPECT_FALSE(stop_token.stop_requested());
+
+    EXPECT_TRUE(scope.request_stop());
+    EXPECT_TRUE(stop_token.stop_requested());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<spawn_future_manual_state>();
+
+    token.spawn(spawn_future_manual_sender{state});
+
+    ASSERT_TRUE(wait_until_started(state));
+    EXPECT_EQ(scope.count(), 1u);
+
+    EXPECT_TRUE(scope.request_stop());
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    EXPECT_TRUE(wait_until_completed(state));
+
     scope.join();
     EXPECT_EQ(scope.count(), 0u);
 }
