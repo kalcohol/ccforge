@@ -63,10 +63,16 @@ namespace {
 
 using just_int_cs_t = decltype(std::execution::get_completion_signatures(
     std::execution::just(42), std::execution::empty_env{}));
+using just_int_envless_cs_t = decltype(std::execution::get_completion_signatures(
+    std::execution::just(42)));
+using just_int_alias_cs_t = std::execution::completion_signatures_of_t<
+    decltype(std::execution::just(42))>;
 
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
     std::execution::completion_signatures<std::execution::set_value_t(int)>>);
+static_assert(std::is_same_v<just_int_envless_cs_t, just_int_cs_t>);
+static_assert(std::is_same_v<just_int_alias_cs_t, just_int_cs_t>);
 
 // just_stopped() should produce completion_signatures<set_stopped_t()>.
 using just_stopped_cs_t = decltype(std::execution::get_completion_signatures(
@@ -147,6 +153,16 @@ TEST(ExecutionMvpTest, MoveOnlySenderConnectsAsRvalue) {
                 | std::execution::then(deref_unique{});
 
     auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ExecutionMvpTest, TransferJustCompletesOnScheduler) {
+    std::execution::inline_scheduler scheduler;
+
+    auto result = std::execution::sync_wait(
+        std::execution::transfer_just(scheduler, 42));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);

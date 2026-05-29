@@ -234,6 +234,39 @@ TEST(WhenAllTest, ReportsCartesianValueAndChildErrorSignatures) {
             std::execution::set_stopped_t()>>);
 }
 
+TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
+    auto sndr = std::execution::when_all_with_variant(
+        multi_value_sender{},
+        other_multi_value_sender{});
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    using first_variant_t = std::variant<std::tuple<int>, std::tuple<double>>;
+    using second_variant_t = std::variant<std::tuple<char>, std::tuple<bool>>;
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(first_variant_t, second_variant_t),
+            std::execution::set_error_t(std::exception_ptr),
+            std::execution::set_error_t(short),
+            std::execution::set_error_t(long),
+            std::execution::set_stopped_t()>>);
+}
+
+TEST(WhenAllTest, WithVariantAggregatesRuntimeValues) {
+    auto result = std::execution::sync_wait(
+        std::execution::when_all_with_variant(
+            std::execution::just(1),
+            std::execution::just(2.0)));
+
+    ASSERT_TRUE(result.has_value());
+    auto& first = std::get<0>(*result);
+    auto& second = std::get<1>(*result);
+    ASSERT_EQ(first.index(), 0u);
+    ASSERT_EQ(second.index(), 0u);
+    EXPECT_EQ(std::get<0>(std::get<0>(first)), 1);
+    EXPECT_DOUBLE_EQ(std::get<0>(std::get<0>(second)), 2.0);
+}
+
 TEST(WhenAllTest, DropsValueSignatureWhenAChildCannotProduceValue) {
     auto sndr = std::execution::when_all(
         std::execution::just_error(42),

@@ -81,8 +81,21 @@ struct get_completion_signatures_t {
             return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<Env&&>(env));
         }
     }
+
+    template<class S>
+        requires (requires(S&& s) { static_cast<S&&>(s).get_completion_signatures(empty_env{}); } ||
+                  __forge_detail::tag_invocable<get_completion_signatures_t, S, empty_env>)
+    auto operator()(S&& s) const
+        noexcept(requires(S&& s) { { static_cast<S&&>(s).get_completion_signatures(empty_env{}) } noexcept; } ||
+                 __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, empty_env>) {
+        return (*this)(static_cast<S&&>(s), empty_env{});
+    }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};
+
+template<class S, class Env = empty_env>
+using completion_signatures_of_t = decltype(
+    std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()));
 
 namespace __forge_meta {
 

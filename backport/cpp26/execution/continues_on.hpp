@@ -245,4 +245,11 @@ template<sender S, scheduler Scheduler>
         std::move(sch), std::move(sndr)};
 }
 
+template<scheduler Scheduler, class... Vs>
+    requires (std::move_constructible<std::decay_t<Vs>> && ...)
+[[nodiscard]] auto transfer_just(Scheduler sch, Vs&&... vs) {
+    return std::execution::continues_on(
+        std::execution::just(std::forward<Vs>(vs)...), std::move(sch));
+}
+
 } // namespace std::execution

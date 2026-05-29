@@ -31,15 +31,18 @@
 //   Sender factories : just, just_error, just_stopped, read_env
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped
-//   Scheduler ops    : starts_on, continues_on (schedule_from), bulk (serial)
-//   Combinators      : into_variant, when_all, split, ensure_started, start_detached
+//   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
+//                      bulk (serial)
+//   Combinators      : into_variant, when_all, when_all_with_variant, split,
+//                      ensure_started, start_detached
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      any_stop_token, stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
-//   Infra            : transform_completion_signatures, enable_sender,
+//   Infra            : completion_signatures_of_t,
+//                      transform_completion_signatures, enable_sender,
 //                      get_completion_scheduler CPO, CPO member-function-first dispatch
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
 //                      and ASan+UBSan container configurations.

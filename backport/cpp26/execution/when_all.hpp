@@ -541,4 +541,11 @@ template<sender... Senders>
         std::tuple<Senders...>{std::move(sndrs)...}};
 }
 
+template<sender... Senders>
+    requires (sizeof...(Senders) > 0)
+[[nodiscard]] auto when_all_with_variant(Senders... sndrs) {
+    return std::execution::when_all(
+        std::execution::into_variant(std::move(sndrs))...);
+}
+
 } // namespace std::execution

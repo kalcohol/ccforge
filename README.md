@@ -110,14 +110,14 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 **已实现：**
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`
-- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`bulk`（串行）
-- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`split`、`ensure_started`、`start_detached`
+- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk`（串行）
+- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`ensure_started`、`start_detached`
 - 消费者：`sync_wait`、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines）
-- 基础设施：`enable_sender`、`get_completion_scheduler`、`transform_completion_signatures`、CPO 分发基础设施
+- 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、`connect_t` sender-domain `transform_sender`
 - Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`
 
