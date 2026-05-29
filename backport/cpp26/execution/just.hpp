@@ -37,12 +37,12 @@ struct operation : __forge_detail::__immovable {
     operation(R rcvr, std::tuple<Vs...> vals)
         : rcvr_(std::move(rcvr)), values_(std::move(vals)) {}
 
-    friend void tag_invoke(start_t, operation& self) noexcept {
+    void start() & noexcept {
         std::apply(
             [&](Vs&&... vs) noexcept {
-                std::execution::set_value(std::move(self.rcvr_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(rcvr_), static_cast<Vs&&>(vs)...);
             },
-            std::move(self.values_));
+            std::move(values_));
     }
 };
 
@@ -51,24 +51,25 @@ struct sender {
     using sender_concept = sender_t;
     std::tuple<Vs...> values_;
 
-    friend auto tag_invoke(get_completion_signatures_t, const sender&, auto) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> completion_signatures<set_value_t(Vs...)> {
         return {};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender&& self, R rcvr) -> operation<R, Vs...> {
-        return operation<R, Vs...>(std::move(rcvr), std::move(self.values_));
+    auto connect(R rcvr) && -> operation<R, Vs...> {
+        return operation<R, Vs...>(std::move(rcvr), std::move(values_));
     }
 
     template<receiver R>
         requires (std::copy_constructible<Vs> && ...)
-    friend auto tag_invoke(connect_t, const sender& self, R rcvr) -> operation<R, Vs...> {
-        return operation<R, Vs...>(std::move(rcvr), self.values_);
+    auto connect(R rcvr) const& -> operation<R, Vs...> {
+        return operation<R, Vs...>(std::move(rcvr), values_);
     }
 
     // TODO([exec.just]): expose completion scheduler in env via just-env type
-    friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> empty_env { return {}; }
 };
 
 } // namespace __forge_just
@@ -91,8 +92,8 @@ struct operation : __forge_detail::__immovable {
     operation(R rcvr, E err)
         : rcvr_(std::move(rcvr)), error_(std::move(err)) {}
 
-    friend void tag_invoke(start_t, operation& self) noexcept {
-        std::execution::set_error(std::move(self.rcvr_), std::move(self.error_));
+    void start() & noexcept {
+        std::execution::set_error(std::move(rcvr_), std::move(error_));
     }
 };
 
@@ -101,24 +102,25 @@ struct sender {
     using sender_concept = sender_t;
     E error_;
 
-    friend auto tag_invoke(get_completion_signatures_t, const sender&, auto) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> completion_signatures<set_error_t(E)> {
         return {};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender&& self, R rcvr) -> operation<R, E> {
-        return operation<R, E>(std::move(rcvr), std::move(self.error_));
+    auto connect(R rcvr) && -> operation<R, E> {
+        return operation<R, E>(std::move(rcvr), std::move(error_));
     }
 
     template<receiver R>
         requires std::copy_constructible<E>
-    friend auto tag_invoke(connect_t, const sender& self, R rcvr) -> operation<R, E> {
-        return operation<R, E>(std::move(rcvr), self.error_);
+    auto connect(R rcvr) const& -> operation<R, E> {
+        return operation<R, E>(std::move(rcvr), error_);
     }
 
     // TODO([exec.just]): expose completion scheduler in env via just-env type
-    friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> empty_env { return {}; }
 };
 
 } // namespace __forge_just_error
@@ -138,29 +140,30 @@ struct operation : __forge_detail::__immovable {
 
     explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
 
-    friend void tag_invoke(start_t, operation& self) noexcept { std::execution::set_stopped(std::move(self.rcvr_)); }
+    void start() & noexcept { std::execution::set_stopped(std::move(rcvr_)); }
 };
 
 struct sender {
     using sender_concept = sender_t;
 
-    friend auto tag_invoke(get_completion_signatures_t, const sender&, auto) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> completion_signatures<set_stopped_t()> {
         return {};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender&&, R rcvr) -> operation<R> {
+    auto connect(R rcvr) && -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, const sender&, R rcvr) -> operation<R> {
+    auto connect(R rcvr) const& -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 
     // TODO([exec.just]): expose completion scheduler in env via just-env type
-    friend auto tag_invoke(get_env_t, const sender&) noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> empty_env { return {}; }
 };
 
 } // namespace __forge_just_stopped
