@@ -52,30 +52,30 @@ struct __op {
     std::coroutine_handle<typename task<T>::promise_type> __coro;
     R __rcvr;
 
-    friend void tag_invoke(std::execution::start_t, __op& self) noexcept {
-        if (!self.__coro.done()) {
-            self.__coro.resume();
+    void start() & noexcept {
+        if (!__coro.done()) {
+            __coro.resume();
         }
-        auto& p = self.__coro.promise();
+        auto& p = __coro.promise();
         if (p.stopped_) {
-            std::execution::set_stopped(std::move(self.__rcvr));
+            std::execution::set_stopped(std::move(__rcvr));
             return;
         }
         if constexpr (!std::is_void_v<T>) {
             if (p.result.index() == 2) {
-                std::execution::set_error(std::move(self.__rcvr), std::get<2>(p.result));
+                std::execution::set_error(std::move(__rcvr), std::get<2>(p.result));
             } else if (p.result.index() == 1) {
-                std::execution::set_value(std::move(self.__rcvr),
+                std::execution::set_value(std::move(__rcvr),
                     std::move(std::get<1>(p.result)));
             } else {
-                std::execution::set_error(std::move(self.__rcvr),
+                std::execution::set_error(std::move(__rcvr),
                     std::make_exception_ptr(std::runtime_error("task: no result")));
             }
         } else {
             if (p.exc_) {
-                std::execution::set_error(std::move(self.__rcvr), p.exc_);
+                std::execution::set_error(std::move(__rcvr), p.exc_);
             } else {
-                std::execution::set_value(std::move(self.__rcvr));
+                std::execution::set_value(std::move(__rcvr));
             }
         }
     }
@@ -116,8 +116,8 @@ public:
     task& operator=(const task&) = delete;
     ~task() { if (__coro_) __coro_.destroy(); }
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const task&, auto) noexcept
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(T),
             std::execution::set_error_t(std::exception_ptr),
@@ -125,14 +125,13 @@ public:
         return {};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const task&) noexcept
-        -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, task&& self, R r)
+    auto connect(R r) &&
         -> __task_detail::__op<T, R>
     {
-        return __task_detail::__op<T, R>{std::exchange(self.__coro_, {}), std::move(r)};
+        return __task_detail::__op<T, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 
     std::coroutine_handle<promise_type> __coro_;
@@ -176,22 +175,21 @@ public:
     task& operator=(const task&) = delete;
     ~task() { if (__coro_) __coro_.destroy(); }
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const task&, auto) noexcept
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(),
             std::execution::set_error_t(std::exception_ptr),
             std::execution::set_stopped_t()> {
         return {};
     }
-    friend auto tag_invoke(std::execution::get_env_t, const task&) noexcept
-        -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, task&& self, R r)
+    auto connect(R r) &&
         -> __task_detail::__op<void, R>
     {
-        return __task_detail::__op<void, R>{std::exchange(self.__coro_, {}), std::move(r)};
+        return __task_detail::__op<void, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 
     std::coroutine_handle<promise_type> __coro_;
