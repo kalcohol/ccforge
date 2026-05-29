@@ -60,6 +60,63 @@ struct tracking_sender {
     }
 };
 
+struct scope_probe_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    bool* completed = nullptr;
+
+    void set_value() && noexcept {
+        if (completed) *completed = true;
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    void set_stopped() && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct pending_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool* started = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        bool* started;
+
+        void start() & noexcept {
+            if (started) *started = true;
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> op<R> {
+        return op<R>{std::move(r), started};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& -> op<R> {
+        return op<R>{std::move(r), started};
+    }
+};
+
 } // namespace
 
 // ─── T6: domain tests ───────────────────────────────────────────────────────
@@ -91,6 +148,72 @@ TEST(DefaultDomainTest, ConnectUsesSenderDomainTransform) {
 }
 
 // ─── T7: counting_scope tests ───────────────────────────────────────────────
+
+TEST(SimpleCountingScopeTest, AssociationLifecycle) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+
+    static_assert(std::execution::scope_association<association_t>);
+    static_assert(std::execution::scope_token<decltype(token)>);
+
+    association_t empty;
+    EXPECT_FALSE(static_cast<bool>(empty));
+    EXPECT_FALSE(static_cast<bool>(empty.try_associate()));
+    EXPECT_EQ(scope.count(), 0u);
+
+    {
+        auto assoc = token.try_associate();
+        EXPECT_TRUE(static_cast<bool>(assoc));
+        EXPECT_EQ(scope.count(), 1u);
+
+        {
+            auto nested = assoc.try_associate();
+            EXPECT_TRUE(static_cast<bool>(nested));
+            EXPECT_EQ(scope.count(), 2u);
+        }
+
+        EXPECT_EQ(scope.count(), 1u);
+    }
+
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, AssociationMoveTransfersOwnership) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+
+    {
+        auto first = token.try_associate();
+        association_t second = std::move(first);
+
+        EXPECT_FALSE(static_cast<bool>(first));
+        EXPECT_TRUE(static_cast<bool>(second));
+        EXPECT_EQ(scope.count(), 1u);
+
+        auto third = token.try_associate();
+        EXPECT_EQ(scope.count(), 2u);
+
+        third = std::move(second);
+        EXPECT_FALSE(static_cast<bool>(second));
+        EXPECT_TRUE(static_cast<bool>(third));
+        EXPECT_EQ(scope.count(), 1u);
+    }
+
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, ClosedScopeReturnsDisengagedAssociation) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    scope.close();
+    auto assoc = token.try_associate();
+
+    EXPECT_FALSE(static_cast<bool>(assoc));
+    EXPECT_EQ(scope.count(), 0u);
+}
 
 TEST(SimpleCountingScopeTest, SpawnAndJoin) {
     std::execution::simple_counting_scope scope;
@@ -133,12 +256,34 @@ TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SimpleCountingScopeTest, WrapCompletesAndDisassociates) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    auto result = std::execution::sync_wait(token.wrap(std::execution::just(42)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
 TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
     scope.close();
 
     auto result = std::execution::sync_wait(token.associate(std::execution::just(42)));
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, WrapClosedScopeCompletesStopped) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    scope.close();
+
+    auto result = std::execution::sync_wait(token.wrap(std::execution::just(42)));
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
@@ -161,6 +306,51 @@ TEST(SimpleCountingScopeTest, SpawnDisassociatesOnErrorAndStopped) {
     token.spawn(std::execution::just_stopped());
 
     scope.join();
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, WrapAcquiresAtStartAndReleasesOnOperationDestruction) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    bool started = false;
+    bool completed = false;
+
+    {
+        auto op = std::execution::connect(
+            token.wrap(pending_sender{&started}),
+            scope_probe_receiver{&completed});
+
+        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_FALSE(started);
+
+        std::execution::start(op);
+
+        EXPECT_TRUE(started);
+        EXPECT_FALSE(completed);
+        EXPECT_EQ(scope.count(), 1u);
+    }
+
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, UnstartedWrappedOperationDoesNotAssociate) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    bool started = false;
+    bool completed = false;
+
+    {
+        auto op = std::execution::connect(
+            token.wrap(pending_sender{&started}),
+            scope_probe_receiver{&completed});
+        (void)op;
+        EXPECT_EQ(scope.count(), 0u);
+    }
+
+    EXPECT_FALSE(started);
+    EXPECT_FALSE(completed);
     EXPECT_EQ(scope.count(), 0u);
 }
 

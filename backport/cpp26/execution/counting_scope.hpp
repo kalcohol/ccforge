@@ -33,9 +33,47 @@
 #include <cstddef>
 #include <exception>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 
 namespace std::execution {
+
+template<class Assoc>
+concept scope_association =
+    std::movable<Assoc> &&
+    std::is_nothrow_move_constructible_v<Assoc> &&
+    std::is_nothrow_move_assignable_v<Assoc> &&
+    std::default_initializable<Assoc> &&
+    requires(const Assoc assoc) {
+        { static_cast<bool>(assoc) } noexcept -> std::same_as<bool>;
+        { assoc.try_associate() } -> std::same_as<Assoc>;
+    };
+
+namespace __forge_scope_detail {
+
+struct __test_sender {
+    using sender_concept = sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> completion_signatures<set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> empty_env {
+        return {};
+    }
+};
+
+} // namespace __forge_scope_detail
+
+template<class Token>
+concept scope_token =
+    std::copyable<Token> &&
+    requires(const Token token) {
+        { token.try_associate() } -> scope_association;
+        { token.wrap(std::declval<__forge_scope_detail::__test_sender>()) } -> sender_in<empty_env>;
+    };
 
 // ──────────────────────────────────────────────────────────────────────────
 // simple_counting_scope — [exec.counting.scope.simple]
@@ -48,6 +86,7 @@ namespace std::execution {
 class simple_counting_scope {
 public:
     class scope_token;
+    class scope_association;
 
     simple_counting_scope() noexcept = default;
     ~simple_counting_scope() noexcept {
@@ -88,6 +127,9 @@ public:
 
 private:
     friend class scope_token;
+    friend class scope_association;
+
+    [[nodiscard]] scope_association __try_associate() noexcept;
 
     void __increment() noexcept {
         __count_.fetch_add(1, std::memory_order_relaxed);
@@ -108,6 +150,65 @@ private:
 };
 
 // ──────────────────────────────────────────────────────────────────────────
+// scope_association — RAII handle for one scope association
+// ──────────────────────────────────────────────────────────────────────────
+
+class simple_counting_scope::scope_association {
+public:
+    scope_association() noexcept = default;
+
+    scope_association(scope_association&& other) noexcept
+        : __scope_(std::exchange(other.__scope_, nullptr))
+    {}
+
+    scope_association& operator=(scope_association&& other) noexcept {
+        if (this != &other) {
+            __release();
+            __scope_ = std::exchange(other.__scope_, nullptr);
+        }
+        return *this;
+    }
+
+    scope_association(const scope_association&) = delete;
+    scope_association& operator=(const scope_association&) = delete;
+
+    ~scope_association() noexcept {
+        __release();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return __scope_ != nullptr;
+    }
+
+    [[nodiscard]] scope_association try_associate() const noexcept {
+        if (!__scope_) return {};
+        return __scope_->__try_associate();
+    }
+
+private:
+    friend class simple_counting_scope;
+
+    explicit scope_association(simple_counting_scope* scope) noexcept
+        : __scope_(scope) {}
+
+    void __release() noexcept {
+        if (!__scope_) return;
+        auto* scope = std::exchange(__scope_, nullptr);
+        scope->__decrement();
+    }
+
+    simple_counting_scope* __scope_ = nullptr;
+};
+
+static_assert(std::execution::scope_association<simple_counting_scope::scope_association>);
+
+inline auto simple_counting_scope::__try_associate() noexcept -> scope_association {
+    if (is_closed()) return {};
+    __increment();
+    return scope_association{this};
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // scope_token — interface for associating work with the scope
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -117,20 +218,18 @@ public:
     explicit scope_token(simple_counting_scope* scope) noexcept
         : __scope_(scope) {}
 
-    [[nodiscard]] bool try_associate() const noexcept {
-        if (!__scope_ || __scope_->is_closed()) return false;
-        __scope_->__increment();
-        return true;
+    [[nodiscard]] scope_association try_associate() const noexcept {
+        if (!__scope_) return {};
+        return __scope_->__try_associate();
     }
 
-    void disassociate() const noexcept {
-        if (__scope_) __scope_->__decrement();
-    }
+    // wrap(sndr): return a sender associated with this scope.
+    // Forge acquires the association at operation start. If the scope is
+    // already closed, the wrapped sender completes with stopped.
+    template<sender S>
+    [[nodiscard]] auto wrap(S sndr) const;
 
-    // associate(sndr): wrap sender so it decrements scope on completion
-    // Returns a sender that, when started, increments the scope count,
-    // runs sndr, and decrements on any completion channel.
-    // If scope is closed, returns just_stopped().
+    // associate(sndr): compatibility spelling retained for existing callers.
     template<sender S>
     [[nodiscard]] auto associate(S sndr) const;
 
@@ -149,35 +248,24 @@ struct __associated_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     using token_t = simple_counting_scope::scope_token;
+    using association_t = simple_counting_scope::scope_association;
 
     struct __recv {
         using receiver_concept = receiver_t;
 
         R* __rcvr;
-        token_t __token;
-        bool* __associated;
-
-        void __done() noexcept {
-            if (*__associated) {
-                __token.disassociate();
-                *__associated = false;
-            }
-        }
 
         template<class... Vs>
         friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-            self.__done();
             set_value(std::move(*self.__rcvr), static_cast<Vs&&>(vs)...);
         }
 
         template<class E>
         friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
-            self.__done();
             set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
         }
 
         friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-            self.__done();
             set_stopped(std::move(*self.__rcvr));
         }
 
@@ -192,8 +280,8 @@ struct __associated_op : __forge_detail::__immovable {
     token_t __token;
     S __sndr;
     R __rcvr;
+    association_t __association;
     __forge_detail::__op_storage<1024> __inner_storage;
-    bool __associated = false;
 
     __associated_op(token_t token, S sndr, R rcvr)
         : __token(token)
@@ -203,30 +291,24 @@ struct __associated_op : __forge_detail::__immovable {
 
     ~__associated_op() {
         __inner_storage.destroy();
-        if (__associated) {
-            __token.disassociate();
-        }
+        __association = {};
     }
 
     friend void tag_invoke(start_t, __associated_op& self) noexcept {
-        if (!self.__token.try_associate()) {
+        self.__association = self.__token.try_associate();
+        if (!self.__association) {
             set_stopped(std::move(self.__rcvr));
             return;
         }
 
-        self.__associated = true;
         try {
             auto* op = self.__inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
                 return std::execution::connect(
                     std::move(self.__sndr),
-                    __recv{&self.__rcvr, self.__token, &self.__associated});
+                    __recv{&self.__rcvr});
             });
             std::execution::start(*op);
         } catch (...) {
-            if (self.__associated) {
-                self.__token.disassociate();
-                self.__associated = false;
-            }
             set_error(std::move(self.__rcvr), std::current_exception());
         }
     }
@@ -268,15 +350,22 @@ struct __associated_sender {
 } // namespace __forge_counting_scope
 
 template<sender S>
-[[nodiscard]] auto simple_counting_scope::scope_token::associate(S sndr) const {
+[[nodiscard]] auto simple_counting_scope::scope_token::wrap(S sndr) const {
     return __forge_counting_scope::__associated_sender<S>{*this, std::move(sndr)};
 }
 
 template<sender S>
+[[nodiscard]] auto simple_counting_scope::scope_token::associate(S sndr) const {
+    return wrap(std::move(sndr));
+}
+
+template<sender S>
 void simple_counting_scope::scope_token::spawn(S sndr) {
-    start_detached(associate(std::move(sndr)) |
+    start_detached(wrap(std::move(sndr)) |
         upon_error([](auto&&) noexcept {}));
 }
+
+static_assert(std::execution::scope_token<simple_counting_scope::scope_token>);
 
 inline simple_counting_scope::scope_token
 simple_counting_scope::get_token() noexcept {
