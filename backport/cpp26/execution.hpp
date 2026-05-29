@@ -22,8 +22,9 @@
 
 #pragma once
 
-// NOTE: This is a Forge backport of a small P2300 sender/receiver MVP.
-// It is intentionally minimal and correctness-first.
+// NOTE: This is a Forge backport of a focused P2300 sender/receiver subset.
+// It is intentionally correctness-first and leaves large conformance gaps
+// documented below instead of papering over them.
 //
 // IMPLEMENTATION STATUS (Forge C++26 execution backport — Phase 1-4 subset):
 //
