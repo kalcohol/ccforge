@@ -78,33 +78,33 @@ struct __awaitable {
         __awaitable* __self;
 
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __recv&& r, Vs&&... vs) noexcept {
+        void set_value(Vs&&... vs) && noexcept {
             try {
-                r.__self->__result = std::make_tuple(std::decay_t<Vs>(vs)...);
+                __self->__result = std::make_tuple(std::decay_t<Vs>(vs)...);
             } catch (...) {
-                r.__self->__exc = std::current_exception();
+                __self->__exc = std::current_exception();
             }
-            r.__self->__coro.resume();
+            __self->__coro.resume();
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __recv&& r, E&& e) noexcept {
+        void set_error(E&& e) && noexcept {
             if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
-                r.__self->__exc = static_cast<E&&>(e);
+                __self->__exc = static_cast<E&&>(e);
             else
-                r.__self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
-            r.__self->__coro.resume();
+                __self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
+            __self->__coro.resume();
         }
-        friend void tag_invoke(set_stopped_t, __recv&& r) noexcept {
+        void set_stopped() && noexcept {
             if constexpr (__has_unhandled_stopped<Promise>) {
                 static_cast<std::coroutine_handle<>>(
-                    r.__self->__promise->unhandled_stopped()).resume();
+                    __self->__promise->unhandled_stopped()).resume();
             } else {
-                r.__self->__stopped = true;
-                r.__self->__coro.resume();
+                __self->__stopped = true;
+                __self->__coro.resume();
             }
         }
-        friend auto tag_invoke(get_env_t, const __recv& r) noexcept -> env_t {
-            return __get_promise_env(*r.__self->__promise);
+        auto get_env() const noexcept -> env_t {
+            return __get_promise_env(*__self->__promise);
         }
     };
 
