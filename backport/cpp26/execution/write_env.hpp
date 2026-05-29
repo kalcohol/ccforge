@@ -79,21 +79,21 @@ struct __recv {
     OverrideEnv* __env;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __recv&& self, Vs&&... vs) noexcept {
-        set_value(std::move(*self.__rcvr), static_cast<Vs&&>(vs)...);
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, __recv&& self, E&& e) noexcept {
-        set_error(std::move(*self.__rcvr), static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
     }
 
-    friend void tag_invoke(set_stopped_t, __recv&& self) noexcept {
-        set_stopped(std::move(*self.__rcvr));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__rcvr));
     }
 
-    friend auto tag_invoke(get_env_t, const __recv& self) {
-        return __join_env(*self.__env, std::execution::get_env(*self.__rcvr));
+    auto get_env() const {
+        return __join_env(*__env, std::execution::get_env(*__rcvr));
     }
 };
 
@@ -114,44 +114,46 @@ struct __op : __forge_detail::__immovable {
               std::move(sndr), recv_t{&__rcvr, &__env}))
     {}
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
-        std::execution::start(self.__inner_op);
+    void start() & noexcept {
+        std::execution::start(__inner_op);
     }
 };
 
 template<class S, class OverrideEnv>
 struct __sender {
     using sender_concept = sender_t;
+    using source_t = S;
+    using override_env_t = OverrideEnv;
 
     S __sndr;
     OverrideEnv __env;
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self, auto env) noexcept {
-        using joined_env_t = decltype(__join_env(self.__env, env));
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using joined_env_t = decltype(__join_env(
+            std::declval<const typename self_t::override_env_t&>(),
+            std::declval<Env>()));
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            self.__sndr, std::declval<joined_env_t>()));
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<joined_env_t>()));
         return up_cs_t{};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r)
-        -> __op<S, OverrideEnv, R>
-    {
+    auto connect(R r) && -> __op<S, OverrideEnv, R> {
         return __op<S, OverrideEnv, R>{
-            std::move(self.__sndr), std::move(self.__env), std::move(r)};
+            std::move(__sndr), std::move(__env), std::move(r)};
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<OverrideEnv>
-    friend auto tag_invoke(connect_t, const __sender& self, R r)
-        -> __op<S, OverrideEnv, R>
-    {
-        return __op<S, OverrideEnv, R>{self.__sndr, self.__env, std::move(r)};
+    auto connect(R r) const& -> __op<S, OverrideEnv, R> {
+        return __op<S, OverrideEnv, R>{__sndr, __env, std::move(r)};
     }
 
-    friend auto tag_invoke(get_env_t, const __sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 

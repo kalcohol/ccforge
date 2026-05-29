@@ -37,12 +37,12 @@ struct __op : __forge_detail::__immovable {
 
     __op(Tag t, R r) : __rcvr(std::move(r)), __tag(std::move(t)) {}
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
+    void start() & noexcept {
         try {
-            set_value(std::move(self.__rcvr),
-                      self.__tag(std::execution::get_env(self.__rcvr)));
+            set_value(std::move(__rcvr),
+                      __tag(std::execution::get_env(__rcvr)));
         } catch (...) {
-            set_error(std::move(self.__rcvr), std::current_exception());
+            set_error(std::move(__rcvr), std::current_exception());
         }
     }
 };
@@ -50,30 +50,31 @@ struct __op : __forge_detail::__immovable {
 template<class Tag>
 struct __sender {
     using sender_concept = sender_t;
+    using tag_t = Tag;
+
     Tag __tag;
 
-    template<class Env>
-    friend auto tag_invoke(get_completion_signatures_t,
-                            const __sender& self,
-                            Env&&) noexcept {
-        using result_t = std::invoke_result_t<Tag, Env>;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using tag_t = typename std::remove_cvref_t<Self>::tag_t;
+        using result_t = std::invoke_result_t<tag_t, Env>;
         return completion_signatures<
             set_value_t(result_t),
             set_error_t(std::exception_ptr)>{};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r) {
-        return __op<Tag, R>{std::move(self.__tag), std::move(r)};
+    auto connect(R r) && {
+        return __op<Tag, R>{std::move(__tag), std::move(r)};
     }
 
     template<receiver R>
         requires std::copy_constructible<Tag>
-    friend auto tag_invoke(connect_t, const __sender& self, R r) {
-        return __op<Tag, R>{self.__tag, std::move(r)};
+    auto connect(R r) const& {
+        return __op<Tag, R>{__tag, std::move(r)};
     }
 
-    friend auto tag_invoke(get_env_t, const __sender&) noexcept -> empty_env {
+    auto get_env() const noexcept -> empty_env {
         return {};
     }
 };
