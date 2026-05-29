@@ -555,16 +555,57 @@ struct default_domain {
     bool operator==(const default_domain&) const noexcept = default;
 };
 
+struct get_domain_t;
+
+template<class CPO = void>
+struct get_completion_domain_t {
+    template<class Scheduler, class Env>
+        requires __forge_detail::tag_invocable<get_completion_domain_t<CPO>, Scheduler, Env>
+    auto operator()(Scheduler&& sched, Env&& env) const
+        noexcept(__forge_detail::nothrow_tag_invocable<get_completion_domain_t<CPO>, Scheduler, Env>)
+            -> __forge_detail::tag_invoke_result_t<get_completion_domain_t<CPO>, Scheduler, Env> {
+        return __forge_detail::tag_invoke_fn(*this, static_cast<Scheduler&&>(sched), static_cast<Env&&>(env));
+    }
+};
+
+template<class CPO = void>
+inline constexpr get_completion_domain_t<CPO> get_completion_domain{};
+
+namespace __forge_domain {
+
+template<class Env>
+concept __env_domain = __forge_detail::tag_invocable<get_domain_t, const Env&>;
+
+template<class Env>
+concept __scheduler_completion_domain = requires(const Env& env) {
+    std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), env);
+};
+
+} // namespace __forge_domain
+
 struct get_domain_t {
     template<class Env>
-        requires __forge_detail::tag_invocable<get_domain_t, const Env&>
+        requires __forge_domain::__env_domain<Env>
     auto operator()(const Env& env) const noexcept
         -> __forge_detail::tag_invoke_result_t<get_domain_t, const Env&> {
         return __forge_detail::tag_invoke_fn(*this, env);
     }
 
     template<class Env>
-        requires (!__forge_detail::tag_invocable<get_domain_t, const Env&>)
+        requires (!__forge_domain::__env_domain<Env> &&
+                  __forge_domain::__scheduler_completion_domain<Env>)
+    auto operator()(const Env& env) const
+        noexcept(noexcept(std::execution::get_completion_domain<set_value_t>(
+            std::execution::get_scheduler(env), env)))
+            -> decltype(std::execution::get_completion_domain<set_value_t>(
+                std::execution::get_scheduler(env), env)) {
+        return std::execution::get_completion_domain<set_value_t>(
+            std::execution::get_scheduler(env), env);
+    }
+
+    template<class Env>
+        requires (!__forge_domain::__env_domain<Env> &&
+                  !__forge_domain::__scheduler_completion_domain<Env>)
     default_domain operator()(const Env&) const noexcept {
         return {};
     }
@@ -665,29 +706,181 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
     std::execution::get_completion_signatures(static_cast<std::remove_cvref_t<S>&&>(s), env);
 };
 
+struct connect_t;
+
 namespace __forge_domain {
-// Get domain from sender env (returns default_domain if no get_domain customization exists)
-template<class S>
-inline auto __get_sender_domain(const S& sndr) noexcept {
-    return std::execution::get_domain(std::execution::get_env(sndr));
+
+template<class S, class R>
+concept __member_connect = requires(S&& s, R&& r) {
+    static_cast<S&&>(s).connect(static_cast<R&&>(r));
+};
+
+template<class S, class R>
+concept __nothrow_member_connect = requires(S&& s, R&& r) {
+    { static_cast<S&&>(s).connect(static_cast<R&&>(r)) } noexcept;
+};
+
+template<class S, class R>
+concept __direct_connectable =
+    __member_connect<S, R> || __forge_detail::tag_invocable<connect_t, S, R>;
+
+template<class S, class R>
+consteval bool __direct_noexcept() {
+    if constexpr (__member_connect<S, R>) {
+        return __nothrow_member_connect<S, R>;
+    } else {
+        return __forge_detail::nothrow_tag_invocable<connect_t, S, R>;
+    }
 }
+
+template<class R>
+using __receiver_env_t = decltype(
+    std::execution::get_env(std::declval<const std::remove_cvref_t<R>&>()));
+
+template<class R>
+using __receiver_domain_t = decltype(
+    std::execution::get_domain(std::declval<const __receiver_env_t<R>&>()));
+
+template<class R>
+concept __default_receiver_domain =
+    receiver<R> &&
+    std::same_as<std::remove_cvref_t<__receiver_domain_t<R>>, default_domain>;
+
+template<class D, class TS, class Env>
+consteval bool __transform_env_noexcept() {
+    if constexpr (requires(D& domain, TS&& sndr, Env& env) {
+                      domain.transform_env(static_cast<TS&&>(sndr), env);
+                  }) {
+        return noexcept(std::declval<D&>().transform_env(std::declval<TS>(), std::declval<Env&>()));
+    } else {
+        return true;
+    }
+}
+
+template<class D, class TS, class Env>
+decltype(auto) __transform_env(D& domain, TS&& sndr, Env& env)
+    noexcept(__transform_env_noexcept<D, TS, Env>()) {
+    if constexpr (requires { domain.transform_env(static_cast<TS&&>(sndr), env); }) {
+        return domain.transform_env(static_cast<TS&&>(sndr), env);
+    } else {
+        return (env);
+    }
+}
+
+template<class R, class Env>
+struct __domain_recv {
+    using receiver_concept = receiver_t;
+
+    [[no_unique_address]] R __rcvr;
+    [[no_unique_address]] Env __env;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(__rcvr), static_cast<Vs&&>(vs)...);
+    }
+
+    template<class E>
+    void set_error(E&& err) && noexcept {
+        std::execution::set_error(std::move(__rcvr), static_cast<E&&>(err));
+    }
+
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(__rcvr));
+    }
+
+    auto get_env() const noexcept(std::is_nothrow_copy_constructible_v<Env>) -> Env {
+        return __env;
+    }
+};
+
+template<class D, class S, class Env>
+using __transformed_sender_t = decltype(
+    std::declval<D&>().transform_sender(std::declval<S>(), std::declval<Env&>()));
+
+template<class S, class R>
+using __transformed_sender_for_t =
+    __transformed_sender_t<__receiver_domain_t<R>, S, __receiver_env_t<R>>;
+
+template<class S, class R>
+using __transformed_sender_lvalue_for_t =
+    std::add_lvalue_reference_t<std::remove_reference_t<__transformed_sender_for_t<S, R>>>;
+
+template<class D, class TS, class Env>
+using __transformed_env_t = decltype(
+    __transform_env(std::declval<D&>(), std::declval<TS>(), std::declval<Env&>()));
+
+template<class S, class R>
+using __transformed_env_for_t =
+    __transformed_env_t<__receiver_domain_t<R>,
+                        __transformed_sender_lvalue_for_t<S, R>,
+                        __receiver_env_t<R>>;
+
+template<class S, class R>
+using __domain_receiver_for_t =
+    __domain_recv<std::remove_cvref_t<R>, std::decay_t<__transformed_env_for_t<S, R>>>;
+
+template<class S, class R>
+concept __domain_connectable =
+    receiver<R> &&
+    (!__default_receiver_domain<R>) &&
+    requires {
+        typename __transformed_sender_for_t<S, R>;
+        typename __transformed_env_for_t<S, R>;
+        typename __domain_receiver_for_t<S, R>;
+    } &&
+    __direct_connectable<__transformed_sender_for_t<S, R>, __domain_receiver_for_t<S, R>>;
+
+template<class S, class R>
+concept __connectable =
+    receiver<R> &&
+    ((__default_receiver_domain<R> && __direct_connectable<S, R>) ||
+     __domain_connectable<S, R>);
+
+template<class S, class R>
+consteval bool __connect_noexcept() {
+    if constexpr (__default_receiver_domain<R>) {
+        return __direct_noexcept<S, R>();
+    } else {
+        // Non-default domains can perform arbitrary transformations. Keep this
+        // conservative rather than declaring noexcept incorrectly.
+        return false;
+    }
+}
+
+template<class S, class R>
+decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
+    noexcept(__direct_noexcept<S, R>()) {
+    if constexpr (__member_connect<S, R>) {
+        return static_cast<S&&>(s).connect(static_cast<R&&>(r));
+    } else {
+        return __forge_detail::tag_invoke_fn(tag, static_cast<S&&>(s), static_cast<R&&>(r));
+    }
+}
+
+template<class S, class R>
+decltype(auto) __domain_connect(const connect_t& tag, S&& s, R&& r) {
+    auto env = std::execution::get_env(r);
+    auto domain = std::execution::get_domain(env);
+    auto&& ts = domain.transform_sender(static_cast<S&&>(s), env);
+    auto transformed_env = __transform_env(domain, ts, env);
+    using wrapped_t = __domain_recv<std::remove_cvref_t<R>, decltype(transformed_env)>;
+    return __direct_connect(
+        tag,
+        static_cast<decltype(ts)>(ts),
+        wrapped_t{static_cast<R&&>(r), std::move(transformed_env)});
+}
+
 } // namespace __forge_domain
 
 struct connect_t {
     template<class S, class R>
-        requires (requires(S&& s, R&& r) { static_cast<S&&>(s).connect(static_cast<R&&>(r)); } ||
-                  __forge_detail::tag_invocable<connect_t, S, R>)
+        requires __forge_domain::__connectable<S, R>
     auto operator()(S&& s, R&& r) const
-        noexcept(requires(S&& s, R&& r) { { static_cast<S&&>(s).connect(static_cast<R&&>(r)) } noexcept; } ||
-                 __forge_detail::nothrow_tag_invocable<connect_t, S, R>) {
-        // Apply domain-based transform_sender before connecting [exec.domain.default]
-        auto domain = __forge_domain::__get_sender_domain(s);
-        auto&& ts = domain.transform_sender(static_cast<S&&>(s), get_env(r));
-        using TS = decltype(ts);
-        if constexpr (requires { static_cast<TS&&>(ts).connect(static_cast<R&&>(r)); }) {
-            return static_cast<TS&&>(ts).connect(static_cast<R&&>(r));
+        noexcept(__forge_domain::__connect_noexcept<S, R>()) {
+        if constexpr (__forge_domain::__default_receiver_domain<R>) {
+            return __forge_domain::__direct_connect(*this, static_cast<S&&>(s), static_cast<R&&>(r));
         } else {
-            return __forge_detail::tag_invoke_fn(*this, static_cast<TS&&>(ts), static_cast<R&&>(r));
+            return __forge_domain::__domain_connect(*this, static_cast<S&&>(s), static_cast<R&&>(r));
         }
     }
 };

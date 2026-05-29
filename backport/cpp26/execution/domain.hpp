@@ -29,9 +29,17 @@
 namespace std::execution {
 
 // ──────────────────────────────────────────────────────────────────────────
-// Domain helpers — default_domain/get_domain are defined in concepts.hpp so
-// connect_t can use domain transform_sender during connection.
+// Domain helpers — default_domain/get_domain/get_completion_domain are defined
+// in concepts.hpp so connect_t can apply receiver-env domain transforms during
+// connection.
 // ──────────────────────────────────────────────────────────────────────────
+
+template<class Env>
+using env_domain_t = decltype(get_domain(std::declval<Env>()));
+
+template<class Receiver>
+using receiver_domain_t = env_domain_t<
+    decltype(std::execution::get_env(std::declval<const Receiver&>()))>;
 
 template<class Sender, class Env = empty_env>
 using sender_domain_t = decltype(get_domain(
