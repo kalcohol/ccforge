@@ -512,10 +512,19 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender self, R r) {
+    friend auto tag_invoke(connect_t, __sender&& self, R r) {
         return __op<R, Senders...>{
             std::move(r),
             std::move(self.__sndrs),
+            std::index_sequence_for<Senders...>{}};
+    }
+
+    template<receiver R>
+        requires (std::copy_constructible<Senders> && ...)
+    friend auto tag_invoke(connect_t, const __sender& self, R r) {
+        return __op<R, Senders...>{
+            std::move(r),
+            self.__sndrs,
             std::index_sequence_for<Senders...>{}};
     }
 

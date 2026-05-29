@@ -63,8 +63,14 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender self, R r) {
+    friend auto tag_invoke(connect_t, __sender&& self, R r) {
         return __op<Tag, R>{std::move(self.__tag), std::move(r)};
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<Tag>
+    friend auto tag_invoke(connect_t, const __sender& self, R r) {
+        return __op<Tag, R>{self.__tag, std::move(r)};
     }
 
     friend auto tag_invoke(get_env_t, const __sender&) noexcept -> empty_env {

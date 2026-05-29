@@ -139,11 +139,20 @@ struct __starts_on_sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __starts_on_sender self, R r)
+    friend auto tag_invoke(connect_t, __starts_on_sender&& self, R r)
         -> __starts_on_op<Scheduler, S, R>
     {
         return __starts_on_op<Scheduler, S, R>(
             std::move(self.__sch), std::move(self.__sndr), std::move(r));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
+    friend auto tag_invoke(connect_t, const __starts_on_sender& self, R r)
+        -> __starts_on_op<Scheduler, S, R>
+    {
+        return __starts_on_op<Scheduler, S, R>(
+            self.__sch, self.__sndr, std::move(r));
     }
 
     friend auto tag_invoke(get_env_t, const __starts_on_sender& self) noexcept {

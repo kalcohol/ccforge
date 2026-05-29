@@ -245,13 +245,25 @@ struct __into_variant_sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __into_variant_sender self, R r) {
+    friend auto tag_invoke(connect_t, __into_variant_sender&& self, R r) {
         using env_t = env_of_t<R>;
         using cs_t = decltype(std::execution::get_completion_signatures(
             self.__sndr, std::declval<env_t>()));
         using var_t = __variant_type_of_t<cs_t>;
         return std::execution::connect(
             std::move(self.__sndr),
+            __into_variant_recv<R, var_t>{std::move(r)});
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S>
+    friend auto tag_invoke(connect_t, const __into_variant_sender& self, R r) {
+        using env_t = env_of_t<R>;
+        using cs_t = decltype(std::execution::get_completion_signatures(
+            self.__sndr, std::declval<env_t>()));
+        using var_t = __variant_type_of_t<cs_t>;
+        return std::execution::connect(
+            S(self.__sndr),
             __into_variant_recv<R, var_t>{std::move(r)});
     }
 

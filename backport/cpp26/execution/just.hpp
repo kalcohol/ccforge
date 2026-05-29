@@ -57,8 +57,14 @@ struct sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender self, R rcvr) -> operation<R, Vs...> {
+    friend auto tag_invoke(connect_t, sender&& self, R rcvr) -> operation<R, Vs...> {
         return operation<R, Vs...>(std::move(rcvr), std::move(self.values_));
+    }
+
+    template<receiver R>
+        requires (std::copy_constructible<Vs> && ...)
+    friend auto tag_invoke(connect_t, const sender& self, R rcvr) -> operation<R, Vs...> {
+        return operation<R, Vs...>(std::move(rcvr), self.values_);
     }
 
     // TODO([exec.just]): expose completion scheduler in env via just-env type
@@ -101,8 +107,14 @@ struct sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender self, R rcvr) -> operation<R, E> {
+    friend auto tag_invoke(connect_t, sender&& self, R rcvr) -> operation<R, E> {
         return operation<R, E>(std::move(rcvr), std::move(self.error_));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<E>
+    friend auto tag_invoke(connect_t, const sender& self, R rcvr) -> operation<R, E> {
+        return operation<R, E>(std::move(rcvr), self.error_);
     }
 
     // TODO([exec.just]): expose completion scheduler in env via just-env type
@@ -138,7 +150,12 @@ struct sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender, R rcvr) -> operation<R> {
+    friend auto tag_invoke(connect_t, sender&&, R rcvr) -> operation<R> {
+        return operation<R>(std::move(rcvr));
+    }
+
+    template<receiver R>
+    friend auto tag_invoke(connect_t, const sender&, R rcvr) -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 

@@ -123,7 +123,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 **当前限制：**
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
-- 许多 `connect_t` 重载仍按值接收 sender，因此 non-copyable lvalue sender 支持尚不完整，除非对应算法已提供专门重载。
+- Library-provided sender 的 `connect_t` 提供 rvalue 移动路径与 copyable lvalue 拷贝路径；non-copyable lvalue sender 仍需显式 `std::move` 后连接。
 - `sync_wait` MVP 当前只支持最多一个 `set_value` completion signature；具备多组 value signatures 的 sender 仍需先通过 adaptor 归一化后再消费。
 - Coroutine bridge 的 `co_await` 当前只支持单一 value completion 形状；多组 value signatures 的 sender 需先归一化后再 await。
 - 自定义 execution domain 的 `transform_env` 分发及“通过 domain transform 挽救原本不可 connect 的 sender”仍未完整接入。

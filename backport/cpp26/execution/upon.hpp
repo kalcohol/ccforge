@@ -183,13 +183,25 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender self, R r) {
+    friend auto tag_invoke(connect_t, __sender&& self, R r) {
         if constexpr (IsError) {
             return std::execution::connect(std::move(self.__sndr),
                 __recv_error<R, Fn>{std::move(r), std::move(self.__fn)});
         } else {
             return std::execution::connect(std::move(self.__sndr),
                 __recv_stopped<R, Fn>{std::move(r), std::move(self.__fn)});
+        }
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S> && std::copy_constructible<Fn>
+    friend auto tag_invoke(connect_t, const __sender& self, R r) {
+        if constexpr (IsError) {
+            return std::execution::connect(S(self.__sndr),
+                __recv_error<R, Fn>{std::move(r), Fn(self.__fn)});
+        } else {
+            return std::execution::connect(S(self.__sndr),
+                __recv_stopped<R, Fn>{std::move(r), Fn(self.__fn)});
         }
     }
 

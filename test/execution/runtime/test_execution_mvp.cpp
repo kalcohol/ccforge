@@ -2,6 +2,7 @@
 
 #include <execution>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -79,6 +80,37 @@ concept optional_like = requires(T t) {
     *t;
 };
 
+struct deref_unique {
+    int operator()(std::unique_ptr<int> p) const noexcept { return *p; }
+};
+
+struct int_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    friend void tag_invoke(std::execution::set_value_t, int_receiver&&, int) noexcept {}
+    friend void tag_invoke(std::execution::set_error_t, int_receiver&&, std::exception_ptr) noexcept {}
+    friend void tag_invoke(std::execution::set_stopped_t, int_receiver&&) noexcept {}
+    friend auto tag_invoke(std::execution::get_env_t, const int_receiver&) noexcept
+        -> std::execution::empty_env { return {}; }
+};
+
+using move_only_pipeline_t = decltype(
+    std::execution::just(std::unique_ptr<int>{}) | std::execution::then(deref_unique{}));
+
+template<class S>
+concept rvalue_connectable_to_int_receiver = requires(S&& s, int_receiver r) {
+    std::execution::connect(std::move(s), std::move(r));
+};
+
+template<class S>
+concept lvalue_connectable_to_int_receiver = requires(S& s, int_receiver r) {
+    std::execution::connect(s, std::move(r));
+};
+
+static_assert(!std::copy_constructible<move_only_pipeline_t>);
+static_assert(rvalue_connectable_to_int_receiver<move_only_pipeline_t>);
+static_assert(!lvalue_connectable_to_int_receiver<move_only_pipeline_t>);
+
 } // namespace
 
 TEST(ExecutionMvpTest, JustSyncWaitSingleValue) {
@@ -96,6 +128,28 @@ TEST(ExecutionMvpTest, JustSyncWaitMultipleValues) {
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 1);
     EXPECT_EQ(std::get<1>(*result), "ok");
+}
+
+TEST(ExecutionMvpTest, CopyableLvalueSenderConnectsByCopy) {
+    auto sender = std::execution::just(42);
+
+    auto first = std::execution::sync_wait(sender);
+    auto second = std::execution::sync_wait(sender);
+
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(std::get<0>(*first), 42);
+    EXPECT_EQ(std::get<0>(*second), 42);
+}
+
+TEST(ExecutionMvpTest, MoveOnlySenderConnectsAsRvalue) {
+    auto sender = std::execution::just(std::make_unique<int>(42))
+                | std::execution::then(deref_unique{});
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ExecutionMvpTest, ThenTransformsValue) {

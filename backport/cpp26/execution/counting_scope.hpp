@@ -250,10 +250,18 @@ struct __associated_sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __associated_sender self, R r)
+    friend auto tag_invoke(connect_t, __associated_sender&& self, R r)
         -> __associated_op<S, R>
     {
         return __associated_op<S, R>{self.__token, std::move(self.__sndr), std::move(r)};
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S>
+    friend auto tag_invoke(connect_t, const __associated_sender& self, R r)
+        -> __associated_op<S, R>
+    {
+        return __associated_op<S, R>{self.__token, self.__sndr, std::move(r)};
     }
 
     friend auto tag_invoke(get_env_t, const __associated_sender& self) noexcept {

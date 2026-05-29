@@ -184,9 +184,16 @@ struct then_sender {
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(connect_t, then_sender self, R rcvr) {
+    friend auto tag_invoke(connect_t, then_sender&& self, R rcvr) {
         return std::execution::connect(std::move(self.sndr_),
                                        then_receiver<R, Fn>{std::move(rcvr), std::move(self.fn_)});
+    }
+
+    template<std::execution::receiver R>
+        requires std::copy_constructible<S> && std::copy_constructible<Fn>
+    friend auto tag_invoke(connect_t, const then_sender& self, R rcvr) {
+        return std::execution::connect(S(self.sndr_),
+                                       then_receiver<R, Fn>{std::move(rcvr), Fn(self.fn_)});
     }
 
     friend auto tag_invoke(get_env_t, const then_sender& self) noexcept -> env_of_t<S> {

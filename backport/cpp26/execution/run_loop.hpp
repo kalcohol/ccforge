@@ -151,7 +151,12 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender self, R rcvr) -> __op<R> {
+    friend auto tag_invoke(connect_t, __sender&& self, R rcvr) -> __op<R> {
+        return __op<R>{self.__loop, std::move(rcvr)};
+    }
+
+    template<receiver R>
+    friend auto tag_invoke(connect_t, const __sender& self, R rcvr) -> __op<R> {
         return __op<R>{self.__loop, std::move(rcvr)};
     }
 

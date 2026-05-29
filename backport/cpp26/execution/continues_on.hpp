@@ -216,11 +216,20 @@ struct __sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender self, R r)
+    friend auto tag_invoke(connect_t, __sender&& self, R r)
         -> typename __op_selector<Scheduler, S, R>::type
     {
         return typename __op_selector<Scheduler, S, R>::type(
             std::move(self.__sch), std::move(self.__sndr), std::move(r));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
+    friend auto tag_invoke(connect_t, const __sender& self, R r)
+        -> typename __op_selector<Scheduler, S, R>::type
+    {
+        return typename __op_selector<Scheduler, S, R>::type(
+            self.__sch, self.__sndr, std::move(r));
     }
 
     friend auto tag_invoke(get_env_t, const __sender& self) noexcept {

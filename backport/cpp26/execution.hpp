@@ -54,8 +54,7 @@
 //   - Domain transform_env and domain-based recovery for otherwise non-connectable
 //     senders are incomplete.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
-//   - connect overloads generally take senders by value; non-copyable lvalue
-//     sender support is limited pending forwarding overloads.
+//   - Non-copyable lvalue senders must be connected as rvalues with std::move.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - async_scope beyond the current counting_scope/simple_counting_scope subset.

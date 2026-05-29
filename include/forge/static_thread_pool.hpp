@@ -182,7 +182,12 @@ inline void tag_invoke(std::execution::start_t, __op<R>& self) noexcept {
 }
 
 template<std::execution::receiver R>
-inline auto tag_invoke(std::execution::connect_t, __sender self, R r) {
+inline auto tag_invoke(std::execution::connect_t, __sender&& self, R r) {
+    return __op<R>{std::move(r), self.pool};
+}
+
+template<std::execution::receiver R>
+inline auto tag_invoke(std::execution::connect_t, const __sender& self, R r) {
     return __op<R>{std::move(r), self.pool};
 }
 

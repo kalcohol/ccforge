@@ -129,7 +129,7 @@ public:
         -> std::execution::empty_env { return {}; }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, task self, R r)
+    friend auto tag_invoke(std::execution::connect_t, task&& self, R r)
         -> __task_detail::__op<T, R>
     {
         return __task_detail::__op<T, R>{std::exchange(self.__coro_, {}), std::move(r)};
@@ -188,7 +188,7 @@ public:
         -> std::execution::empty_env { return {}; }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, task self, R r)
+    friend auto tag_invoke(std::execution::connect_t, task&& self, R r)
         -> __task_detail::__op<void, R>
     {
         return __task_detail::__op<void, R>{std::exchange(self.__coro_, {}), std::move(r)};

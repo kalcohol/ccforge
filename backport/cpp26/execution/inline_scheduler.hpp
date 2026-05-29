@@ -56,7 +56,12 @@ struct sender {
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, sender s, R rcvr) -> operation<R> {
+    friend auto tag_invoke(connect_t, sender&&, R rcvr) -> operation<R> {
+        return operation<R>(std::move(rcvr));
+    }
+
+    template<receiver R>
+    friend auto tag_invoke(connect_t, const sender&, R rcvr) -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 

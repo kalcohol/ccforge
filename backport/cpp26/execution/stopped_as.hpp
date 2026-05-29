@@ -197,7 +197,7 @@ struct __optional_sender {
     S __sndr;
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __optional_sender self, R r)
+    friend auto tag_invoke(connect_t, __optional_sender&& self, R r)
         -> __optional_op<S, R,
             typename __first_optional_type<decltype(std::execution::get_completion_signatures(
                 std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
@@ -206,6 +206,19 @@ struct __optional_sender {
             std::declval<S>(), std::declval<env_of_t<R>>()));
         using optional_t = typename __first_optional_type<cs_t>::type;
         return __optional_op<S, R, optional_t>(std::move(self.__sndr), std::move(r));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S>
+    friend auto tag_invoke(connect_t, const __optional_sender& self, R r)
+        -> __optional_op<S, R,
+            typename __first_optional_type<decltype(std::execution::get_completion_signatures(
+                std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
+    {
+        using cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<S>(), std::declval<env_of_t<R>>()));
+        using optional_t = typename __first_optional_type<cs_t>::type;
+        return __optional_op<S, R, optional_t>(self.__sndr, std::move(r));
     }
 
     friend auto tag_invoke(get_completion_signatures_t,
@@ -268,11 +281,20 @@ struct __error_sender {
     Err __err;
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __error_sender self, R r)
+    friend auto tag_invoke(connect_t, __error_sender&& self, R r)
         -> __error_op<S, Err, R>
     {
         return __error_op<S, Err, R>(
             std::move(self.__sndr), std::move(self.__err), std::move(r));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S> && std::copy_constructible<Err>
+    friend auto tag_invoke(connect_t, const __error_sender& self, R r)
+        -> __error_op<S, Err, R>
+    {
+        return __error_op<S, Err, R>(
+            self.__sndr, self.__err, std::move(r));
     }
 
     friend auto tag_invoke(get_completion_signatures_t,
