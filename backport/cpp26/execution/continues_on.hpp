@@ -25,32 +25,78 @@
 #include "concepts.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
-#include "start_detached.hpp"
-#include "then.hpp"
+
+#include <exception>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace std::execution {
 
 namespace __forge_continues_on {
 
-template<class Scheduler, class R, class... StoredVs>
-struct __sched_recv {
+template<class R, class... StoredVs>
+struct __sched_value_recv {
     using receiver_concept = receiver_t;
     R* __outer;
     std::tuple<StoredVs...> __vals;
 
-    friend void tag_invoke(set_value_t, __sched_recv&& self) noexcept {
+    friend void tag_invoke(set_value_t, __sched_value_recv&& self) noexcept {
         std::apply([&self](auto&&... vs) {
             set_value(std::move(*self.__outer), static_cast<StoredVs&&>(vs)...);
         }, std::move(self.__vals));
     }
     template<class E>
-    friend void tag_invoke(set_error_t, __sched_recv&& self, E&& e) noexcept {
+    friend void tag_invoke(set_error_t, __sched_value_recv&& self, E&& e) noexcept {
         set_error(std::move(*self.__outer), static_cast<E&&>(e));
     }
-    friend void tag_invoke(set_stopped_t, __sched_recv&& self) noexcept {
+    friend void tag_invoke(set_stopped_t, __sched_value_recv&& self) noexcept {
         set_stopped(std::move(*self.__outer));
     }
-    friend auto tag_invoke(get_env_t, const __sched_recv& self) noexcept
+    friend auto tag_invoke(get_env_t, const __sched_value_recv& self) noexcept
+        -> env_of_t<R> {
+        return std::execution::get_env(*self.__outer);
+    }
+};
+
+template<class R, class E>
+struct __sched_error_recv {
+    using receiver_concept = receiver_t;
+    R* __outer;
+    E __error;
+
+    friend void tag_invoke(set_value_t, __sched_error_recv&& self) noexcept {
+        set_error(std::move(*self.__outer), std::move(self.__error));
+    }
+    template<class Other>
+    friend void tag_invoke(set_error_t, __sched_error_recv&& self, Other&& e) noexcept {
+        set_error(std::move(*self.__outer), static_cast<Other&&>(e));
+    }
+    friend void tag_invoke(set_stopped_t, __sched_error_recv&& self) noexcept {
+        set_stopped(std::move(*self.__outer));
+    }
+    friend auto tag_invoke(get_env_t, const __sched_error_recv& self) noexcept
+        -> env_of_t<R> {
+        return std::execution::get_env(*self.__outer);
+    }
+};
+
+template<class R>
+struct __sched_stopped_recv {
+    using receiver_concept = receiver_t;
+    R* __outer;
+
+    friend void tag_invoke(set_value_t, __sched_stopped_recv&& self) noexcept {
+        set_stopped(std::move(*self.__outer));
+    }
+    template<class E>
+    friend void tag_invoke(set_error_t, __sched_stopped_recv&& self, E&& e) noexcept {
+        set_error(std::move(*self.__outer), static_cast<E&&>(e));
+    }
+    friend void tag_invoke(set_stopped_t, __sched_stopped_recv&& self) noexcept {
+        set_stopped(std::move(*self.__outer));
+    }
+    friend auto tag_invoke(get_env_t, const __sched_stopped_recv& self) noexcept
         -> env_of_t<R> {
         return std::execution::get_env(*self.__outer);
     }
@@ -63,42 +109,60 @@ template<class Scheduler, class S, class R, class... Vs>
 struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
-    using __sched_recv_t = __sched_recv<Scheduler, R, Vs...>;
+    using __sched_value_recv_t = __sched_value_recv<R, Vs...>;
     using __sched_sndr_t = decltype(std::execution::schedule(std::declval<Scheduler>()));
-    using __sched_op_t = connect_result_t<__sched_sndr_t, __sched_recv_t>;
 
-    static constexpr std::size_t kBufSize = sizeof(__sched_op_t) + alignof(__sched_op_t);
+    static constexpr std::size_t kBufSize = 1024;
+
+    void __deliver_schedule_failure() noexcept {
+        std::terminate();
+    }
+
+    template<class Recv>
+    void __start_scheduled(Recv recv) noexcept {
+        using sched_op_t = connect_result_t<__sched_sndr_t, Recv>;
+        static_assert(sizeof(sched_op_t) <= kBufSize,
+            "continues_on: schedule op too large for buffer");
+        try {
+            auto* p = static_cast<void*>(__sched_buf);
+            ::new(p) sched_op_t(std::execution::connect(
+                std::execution::schedule(__sch), std::move(recv)));
+            __sched_dtor = [](void* ptr) noexcept {
+                static_cast<sched_op_t*>(ptr)->~sched_op_t();
+            };
+            __sched_alive = true;
+            std::execution::start(*static_cast<sched_op_t*>(p));
+        } catch (...) {
+            __deliver_schedule_failure();
+        }
+    }
 
     struct __up_recv {
         using receiver_concept = receiver_t;
         __op_impl* __self;
 
         friend void tag_invoke(set_value_t, __up_recv&& self, Vs&&... vs) noexcept {
-            auto* p = static_cast<void*>(self.__self->__sched_buf);
-            ::new(p) __sched_op_t(std::execution::connect(
-                std::execution::schedule(self.__self->__sch),
-                __sched_recv_t{&self.__self->__outer, std::tuple<Vs...>(static_cast<Vs&&>(vs)...)}));
-            self.__self->__sched_alive = true;
-            std::execution::start(*static_cast<__sched_op_t*>(p));
+            try {
+                self.__self->__start_scheduled(__sched_value_recv_t{
+                    &self.__self->__outer,
+                    std::tuple<Vs...>(static_cast<Vs&&>(vs)...)});
+            } catch (...) {
+                self.__self->__deliver_schedule_failure();
+            }
         }
         template<class E>
         friend void tag_invoke(set_error_t, __up_recv&& self, E&& e) noexcept {
-            auto sch = self.__self->__sch;
-            auto scheduled = std::execution::then(
-                std::execution::schedule(std::move(sch)),
-                [rcvr = std::move(self.__self->__outer), err = static_cast<E&&>(e)]() mutable noexcept {
-                    set_error(std::move(rcvr), std::move(err));
-                });
-            std::execution::start_detached(std::move(scheduled));
+            using error_t = std::decay_t<E>;
+            try {
+                self.__self->__start_scheduled(
+                    __sched_error_recv<R, error_t>{&self.__self->__outer, static_cast<E&&>(e)});
+            } catch (...) {
+                self.__self->__deliver_schedule_failure();
+            }
         }
         friend void tag_invoke(set_stopped_t, __up_recv&& self) noexcept {
-            auto sch = self.__self->__sch;
-            auto scheduled = std::execution::then(
-                std::execution::schedule(std::move(sch)),
-                [rcvr = std::move(self.__self->__outer)]() mutable noexcept {
-                    set_stopped(std::move(rcvr));
-                });
-            std::execution::start_detached(std::move(scheduled));
+            self.__self->__start_scheduled(
+                __sched_stopped_recv<R>{&self.__self->__outer});
         }
         friend auto tag_invoke(get_env_t, const __up_recv& self) noexcept
             -> env_of_t<R> {
@@ -111,6 +175,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
     R __outer;
     Scheduler __sch;
     alignas(std::max_align_t) unsigned char __sched_buf[kBufSize];
+    void (*__sched_dtor)(void*) noexcept = nullptr;
     bool __sched_alive = false;
     __up_op_t __up_op;
 
@@ -122,7 +187,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
 
     ~__op_impl() {
         if (__sched_alive) {
-            static_cast<__sched_op_t*>(static_cast<void*>(__sched_buf))->~__sched_op_t();
+            __sched_dtor(static_cast<void*>(__sched_buf));
         }
     }
 
@@ -134,7 +199,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
 template<class Scheduler, class S, class R>
 struct __op_selector {
     using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::execution::empty_env{}));
+        std::declval<S>(), std::declval<env_of_t<R>>()));
     using val_tup_t = __forge_meta::__single_value_tuple_t<cs_t>;
     using type = __op_impl<Scheduler, S, R, val_tup_t>;
 };

@@ -59,6 +59,73 @@ struct throwing_value_sender {
     }
 };
 
+template<class R>
+struct scheduler_value_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    explicit scheduler_value_op(R r) : rcvr(std::move(r)) {}
+    scheduler_value_op(const scheduler_value_op&) = delete;
+    scheduler_value_op& operator=(const scheduler_value_op&) = delete;
+
+    R rcvr;
+
+    friend void tag_invoke(std::execution::start_t, scheduler_value_op& self) noexcept {
+        std::execution::set_value(std::move(self.rcvr),
+            std::execution::get_scheduler(std::execution::get_env(self.rcvr)));
+    }
+};
+
+struct scheduler_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Env>
+    friend auto tag_invoke(std::execution::get_completion_signatures_t,
+                           const scheduler_value_sender&, Env&&) noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(
+            decltype(std::execution::get_scheduler(std::declval<Env>())))> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    friend auto tag_invoke(std::execution::connect_t, scheduler_value_sender, R r)
+        -> scheduler_value_op<R> {
+        return scheduler_value_op<R>{std::move(r)};
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_sender&) noexcept
+        -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct scheduler_value_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::execution::inline_scheduler expected;
+    bool* matched;
+    bool* completed;
+
+    friend void tag_invoke(std::execution::set_value_t, scheduler_value_receiver&& self,
+                           std::execution::inline_scheduler sch) noexcept {
+        *self.matched = (sch == self.expected);
+        *self.completed = true;
+    }
+
+    template<class E>
+    friend void tag_invoke(std::execution::set_error_t, scheduler_value_receiver&& self, E&&) noexcept {
+        *self.completed = false;
+    }
+
+    friend void tag_invoke(std::execution::set_stopped_t, scheduler_value_receiver&& self) noexcept {
+        *self.completed = false;
+    }
+
+    friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_receiver& self) noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(std::execution::get_scheduler_t{}, self.expected));
+    }
+};
+
 } // namespace
 
 TEST(IntoVariantTest, WrapsValue) {
@@ -167,6 +234,20 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     loop.finish();
     worker.join();
     EXPECT_EQ(result, 42);
+}
+
+TEST(ContinuesOnTest, UsesConnectedReceiverEnvForUpstreamSignatures) {
+    std::execution::inline_scheduler sch;
+    bool matched = false;
+    bool completed = false;
+
+    auto op = std::execution::connect(
+        std::execution::continues_on(scheduler_value_sender{}, sch),
+        scheduler_value_receiver{sch, &matched, &completed});
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(matched);
 }
 
 TEST(ContinuesOnTest, TransfersErrorToScheduler) {
