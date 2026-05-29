@@ -42,20 +42,28 @@ struct __env {
     static_thread_pool* pool;
 };
 
+template<class R>
+struct __op;
+
 struct __sender {
     using sender_concept = std::execution::sender_t;
     static_thread_pool* pool;
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const __sender&, auto) noexcept
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t()> {
         return {};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t,
-                           const __sender& self) noexcept -> __env {
-        return __env{self.pool};
+    auto get_env() const noexcept -> __env {
+        return __env{pool};
     }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> __op<R>;
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& -> __op<R>;
 };
 
 template<class R>
@@ -66,6 +74,8 @@ struct __op {
     __op(const __op&) = delete;
     __op& operator=(const __op&) = delete;
     __op(R r, static_thread_pool* p) : __rcvr(std::move(r)), __pool(p) {}
+
+    void start() & noexcept;
 
     R __rcvr;
     static_thread_pool* __pool;
@@ -81,10 +91,8 @@ public:
         using scheduler_concept = std::execution::scheduler_t;
         bool operator==(const scheduler&) const noexcept = default;
 
-        friend auto tag_invoke(std::execution::schedule_t,
-                               const scheduler& self) noexcept
-            -> __pool_detail::__sender {
-            return __pool_detail::__sender{self.__pool};
+        auto schedule() const noexcept -> __pool_detail::__sender {
+            return __pool_detail::__sender{__pool};
         }
 
         static_thread_pool* __pool; // public for simplicity
@@ -175,20 +183,20 @@ private:
 namespace __pool_detail {
 
 template<class R>
-inline void tag_invoke(std::execution::start_t, __op<R>& self) noexcept {
-    self.__pool->__submit([&self]() noexcept {
-        std::execution::set_value(std::move(self.__rcvr));
+inline void __op<R>::start() & noexcept {
+    __pool->__submit([this]() noexcept {
+        std::execution::set_value(std::move(__rcvr));
     });
 }
 
 template<std::execution::receiver R>
-inline auto tag_invoke(std::execution::connect_t, __sender&& self, R r) {
-    return __op<R>{std::move(r), self.pool};
+inline auto __sender::connect(R r) && -> __op<R> {
+    return __op<R>{std::move(r), pool};
 }
 
 template<std::execution::receiver R>
-inline auto tag_invoke(std::execution::connect_t, const __sender& self, R r) {
-    return __op<R>{std::move(r), self.pool};
+inline auto __sender::connect(R r) const& -> __op<R> {
+    return __op<R>{std::move(r), pool};
 }
 
 } // namespace __pool_detail
