@@ -74,12 +74,12 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
             // should not happen
         } else if constexpr (std::is_same_v<V, typename __shared_state<S>::value_tuple_t>) {
             std::apply([&](auto&... vs) {
-                set_value(std::move(rcvr), vs...);
+                std::execution::set_value(std::move(rcvr), vs...);
             }, v);
         } else if constexpr (std::is_same_v<V, std::exception_ptr>) {
-            set_error(std::move(rcvr), v);
+            std::execution::set_error(std::move(rcvr), v);
         } else {
-            set_stopped(std::move(rcvr));
+            std::execution::set_stopped(std::move(rcvr));
         }
     }, st.result);
 }
@@ -106,8 +106,8 @@ struct __inner_recv {
     std::weak_ptr<__shared_state<S>> __st;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __inner_recv&& self, Vs&&... vs) noexcept {
-        auto st = self.__st.lock();
+    void set_value(Vs&&... vs) && noexcept {
+        auto st = __st.lock();
         if (!st) { return; }
         try {
             {
@@ -127,8 +127,8 @@ struct __inner_recv {
         }
     }
     template<class E>
-    friend void tag_invoke(set_error_t, __inner_recv&& self, E&& e) noexcept {
-        auto st = self.__st.lock();
+    void set_error(E&& e) && noexcept {
+        auto st = __st.lock();
         if (!st) { return; }
         {
             std::lock_guard lk{st->mtx};
@@ -141,8 +141,8 @@ struct __inner_recv {
         }
         st->notify_all();
     }
-    friend void tag_invoke(set_stopped_t, __inner_recv&& self) noexcept {
-        auto st = self.__st.lock();
+    void set_stopped() && noexcept {
+        auto st = __st.lock();
         if (!st) { return; }
         {
             std::lock_guard lk{st->mtx};
@@ -151,7 +151,7 @@ struct __inner_recv {
         }
         st->notify_all();
     }
-    friend auto tag_invoke(get_env_t, const __inner_recv&) noexcept -> empty_env {
+    auto get_env() const noexcept -> empty_env {
         return {};
     }
 };
@@ -172,9 +172,9 @@ struct __op : __forge_detail::__immovable {
         }
     }
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
-        auto sh = self.__shared;
-        auto sub = self.__sub;
+    void start() & noexcept {
+        auto sh = __shared;
+        auto sub = __sub;
         auto weak_sub = std::weak_ptr<__subscriber<R>>{sub};
         auto& st = *sh;
         std::unique_lock lk{st.mtx};
@@ -204,29 +204,31 @@ struct __op : __forge_detail::__immovable {
 template<class S>
 struct __sender {
     using sender_concept = sender_t;
+    using source_t = S;
+
     std::shared_ptr<__shared_state<S>> __shared;
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self, auto env) noexcept {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
         return decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), env)){};
+            std::declval<typename self_t::source_t>(),
+            std::declval<Env>())){};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r)
-        -> __op<S, R>
+    auto connect(R r) && -> __op<S, R>
     {
-        return __op<S, R>{std::move(self.__shared), std::move(r)};
+        return __op<S, R>{std::move(__shared), std::move(r)};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, const __sender& self, R r)
-        -> __op<S, R>
+    auto connect(R r) const& -> __op<S, R>
     {
-        return __op<S, R>{self.__shared, std::move(r)};
+        return __op<S, R>{__shared, std::move(r)};
     }
 
-    friend auto tag_invoke(get_env_t, const __sender&) noexcept -> empty_env {
+    auto get_env() const noexcept -> empty_env {
         return {};
     }
 };
