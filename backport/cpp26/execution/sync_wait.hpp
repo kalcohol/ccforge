@@ -93,30 +93,30 @@ struct receiver {
     run_loop* loop_;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, receiver&& self, Vs&&... vs) noexcept {
-        self.state_->result_.template emplace<1>(std::forward<Vs>(vs)...);
-        self.loop_->finish();
+    void set_value(Vs&&... vs) && noexcept {
+        state_->result_.template emplace<1>(std::forward<Vs>(vs)...);
+        loop_->finish();
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, receiver&& self, E&& e) noexcept {
+    void set_error(E&& e) && noexcept {
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
-            self.state_->result_.template emplace<2>(std::forward<E>(e));
+            state_->result_.template emplace<2>(std::forward<E>(e));
         } else {
-            self.state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
+            state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
         }
-        self.loop_->finish();
+        loop_->finish();
     }
 
-    friend void tag_invoke(set_stopped_t, receiver&& self) noexcept {
-        self.state_->result_.template emplace<3>();
-        self.loop_->finish();
+    void set_stopped() && noexcept {
+        state_->result_.template emplace<3>();
+        loop_->finish();
     }
 
-    friend auto tag_invoke(get_env_t, const receiver& self) noexcept {
+    auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(get_stop_token_t{}, self.state_->stop_source_.get_token()),
-            std::execution::make_prop(get_scheduler_t{}, self.loop_->get_scheduler()));
+            std::execution::make_prop(get_stop_token_t{}, state_->stop_source_.get_token()),
+            std::execution::make_prop(get_scheduler_t{}, loop_->get_scheduler()));
     }
 };
 

@@ -60,21 +60,20 @@ struct __detached_recv {
     __state_base* __state;
 
     template<class... Vs>
-    friend void tag_invoke(set_value_t, __detached_recv&& self, Vs&&...) noexcept {
-        self.__state->release();
+    void set_value(Vs&&...) && noexcept {
+        __state->release();
     }
 
     template<class E>
-    friend void tag_invoke(set_error_t, __detached_recv&&, E&&) noexcept {
+    void set_error(E&&) && noexcept {
         std::terminate();
     }
 
-    friend void tag_invoke(set_stopped_t, __detached_recv&& self) noexcept {
-        self.__state->release();
+    void set_stopped() && noexcept {
+        __state->release();
     }
 
-    friend auto tag_invoke(get_env_t, const __detached_recv&) noexcept
-        -> empty_env {
+    auto get_env() const noexcept -> empty_env {
         return {};
     }
 };
