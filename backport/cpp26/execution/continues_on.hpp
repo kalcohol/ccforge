@@ -42,21 +42,20 @@ struct __sched_value_recv {
     R* __outer;
     std::tuple<StoredVs...> __vals;
 
-    friend void tag_invoke(set_value_t, __sched_value_recv&& self) noexcept {
-        std::apply([&self](auto&&... vs) {
-            set_value(std::move(*self.__outer), static_cast<StoredVs&&>(vs)...);
-        }, std::move(self.__vals));
+    void set_value() && noexcept {
+        std::apply([this](auto&&... vs) {
+            std::execution::set_value(std::move(*__outer), static_cast<StoredVs&&>(vs)...);
+        }, std::move(__vals));
     }
     template<class E>
-    friend void tag_invoke(set_error_t, __sched_value_recv&& self, E&& e) noexcept {
-        set_error(std::move(*self.__outer), static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
     }
-    friend void tag_invoke(set_stopped_t, __sched_value_recv&& self) noexcept {
-        set_stopped(std::move(*self.__outer));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
     }
-    friend auto tag_invoke(get_env_t, const __sched_value_recv& self) noexcept
-        -> env_of_t<R> {
-        return std::execution::get_env(*self.__outer);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(*__outer);
     }
 };
 
@@ -66,19 +65,18 @@ struct __sched_error_recv {
     R* __outer;
     E __error;
 
-    friend void tag_invoke(set_value_t, __sched_error_recv&& self) noexcept {
-        set_error(std::move(*self.__outer), std::move(self.__error));
+    void set_value() && noexcept {
+        std::execution::set_error(std::move(*__outer), std::move(__error));
     }
     template<class Other>
-    friend void tag_invoke(set_error_t, __sched_error_recv&& self, Other&& e) noexcept {
-        set_error(std::move(*self.__outer), static_cast<Other&&>(e));
+    void set_error(Other&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<Other&&>(e));
     }
-    friend void tag_invoke(set_stopped_t, __sched_error_recv&& self) noexcept {
-        set_stopped(std::move(*self.__outer));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
     }
-    friend auto tag_invoke(get_env_t, const __sched_error_recv& self) noexcept
-        -> env_of_t<R> {
-        return std::execution::get_env(*self.__outer);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(*__outer);
     }
 };
 
@@ -87,19 +85,18 @@ struct __sched_stopped_recv {
     using receiver_concept = receiver_t;
     R* __outer;
 
-    friend void tag_invoke(set_value_t, __sched_stopped_recv&& self) noexcept {
-        set_stopped(std::move(*self.__outer));
+    void set_value() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
     }
     template<class E>
-    friend void tag_invoke(set_error_t, __sched_stopped_recv&& self, E&& e) noexcept {
-        set_error(std::move(*self.__outer), static_cast<E&&>(e));
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
     }
-    friend void tag_invoke(set_stopped_t, __sched_stopped_recv&& self) noexcept {
-        set_stopped(std::move(*self.__outer));
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
     }
-    friend auto tag_invoke(get_env_t, const __sched_stopped_recv& self) noexcept
-        -> env_of_t<R> {
-        return std::execution::get_env(*self.__outer);
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(*__outer);
     }
 };
 
@@ -134,32 +131,31 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         using receiver_concept = receiver_t;
         __op_impl* __self;
 
-        friend void tag_invoke(set_value_t, __up_recv&& self, Vs&&... vs) noexcept {
+        void set_value(Vs&&... vs) && noexcept {
             try {
-                self.__self->__start_scheduled(__sched_value_recv_t{
-                    &self.__self->__outer,
+                __self->__start_scheduled(__sched_value_recv_t{
+                    &__self->__outer,
                     std::tuple<Vs...>(static_cast<Vs&&>(vs)...)});
             } catch (...) {
-                self.__self->__deliver_schedule_failure();
+                __self->__deliver_schedule_failure();
             }
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __up_recv&& self, E&& e) noexcept {
+        void set_error(E&& e) && noexcept {
             using error_t = std::decay_t<E>;
             try {
-                self.__self->__start_scheduled(
-                    __sched_error_recv<R, error_t>{&self.__self->__outer, static_cast<E&&>(e)});
+                __self->__start_scheduled(
+                    __sched_error_recv<R, error_t>{&__self->__outer, static_cast<E&&>(e)});
             } catch (...) {
-                self.__self->__deliver_schedule_failure();
+                __self->__deliver_schedule_failure();
             }
         }
-        friend void tag_invoke(set_stopped_t, __up_recv&& self) noexcept {
-            self.__self->__start_scheduled(
-                __sched_stopped_recv<R>{&self.__self->__outer});
+        void set_stopped() && noexcept {
+            __self->__start_scheduled(
+                __sched_stopped_recv<R>{&__self->__outer});
         }
-        friend auto tag_invoke(get_env_t, const __up_recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(self.__self->__outer);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(__self->__outer);
         }
     };
 
@@ -176,8 +172,8 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         , __up_op(std::execution::connect(std::move(sndr), __up_recv{this}))
     {}
 
-    friend void tag_invoke(start_t, __op_impl& self) noexcept {
-        std::execution::start(self.__up_op);
+    void start() & noexcept {
+        std::execution::start(__up_op);
     }
 };
 
@@ -192,33 +188,38 @@ struct __op_selector {
 template<class Scheduler, class S>
 struct __sender {
     using sender_concept = sender_t;
+    using source_t = S;
+
     Scheduler __sch;
     S __sndr;
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self, auto env) noexcept {
-        return decltype(std::execution::get_completion_signatures(self.__sndr, env)){};
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        return decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>())){};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r)
+    auto connect(R r) &&
         -> typename __op_selector<Scheduler, S, R>::type
     {
         return typename __op_selector<Scheduler, S, R>::type(
-            std::move(self.__sch), std::move(self.__sndr), std::move(r));
+            std::move(__sch), std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
-    friend auto tag_invoke(connect_t, const __sender& self, R r)
+    auto connect(R r) const&
         -> typename __op_selector<Scheduler, S, R>::type
     {
         return typename __op_selector<Scheduler, S, R>::type(
-            self.__sch, self.__sndr, std::move(r));
+            __sch, __sndr, std::move(r));
     }
 
-    friend auto tag_invoke(get_env_t, const __sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 
