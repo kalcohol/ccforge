@@ -9,8 +9,8 @@
 | `std::unique_resource` | P0052R15 | `#include <memory>` | 完整 (实验性) |
 | `std::simd` | P1928 | `#include <simd>` | 核心表面完整（Layer 1 向量化） |
 | `std::execution` (senders/receivers) | P2300 | `#include <execution>` | Phase 1-4（部分 draft 行为仍有限制） |
-| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 完整（SIMD + OpenMP 加速） |
-| `std::submdspan` | P2630 | `#include <mdspan>` | 基础设施 |
+| `std::linalg` (BLAS Level 1/2/3) | P1673R13 | `#include <linalg>` | 实用 BLAS 子集（实验性） |
+| `std::submdspan` | P2630/P3355 | `#include <mdspan>` | 实用 P2630-era 子集 |
 
 **注意：** `std::unique_resource` 当前仅在 Library Fundamentals TS v3 中，尚未进入 C++26 标准。
 
@@ -141,7 +141,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 ## `std::linalg` 说明
 
-当前为 P1673R13 的完整串行 backport，覆盖 BLAS Level 1/2/3：
+当前为 P1673R13 风格的实验性 backport，提供一个不依赖外部 BLAS 库的实用 BLAS 子集：
 
 **BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、`vector_sum_of_squares`、`givens_rotation_setup`、`givens_rotation_apply`
 
@@ -151,11 +151,17 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 **辅助组件：** `scaled`/`conjugated`/`transposed`/`conjugate_transposed` 视图函数、`scaled_accessor`、`conjugated_accessor`、`layout_transpose`、`layout_blas_packed`、标记类型（`upper_triangle`/`lower_triangle`/`column_major`/`row_major` 等）
 
-> 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。当原生 `<linalg>` 可用时（`__cpp_lib_linalg >= 202311`），backport 自动禁用。未实现 execution policy 重载（纯串行实现，不链接系统 BLAS）。
+> 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。当原生 `<linalg>` 可用时（`__cpp_lib_linalg >= 202311`），backport 自动禁用。未实现 execution policy 重载，不链接系统 BLAS；OpenMP/SIMD 是 Forge 自身的可选实现细节。Level 1 与辅助视图有直接回归测试，Level 2/3 当前主要由示例和轻量 smoke coverage 覆盖，复杂 triangular/symmetric/hermitian/update 路径仍应视为实验性。
 
 **SIMD 加速：** BLAS Level 1 归约操作（`dot`、`vector_two_norm`、`vector_abs_sum`）以及 `copy`、`scale` 在 Forge `std::simd` 可用时自动使用 SIMD 加速路径；`matrix_vector_product`（GEMV）内层循环也已 SIMD 化。支持全部非复数标准算术类型。已在 x86_64（原生）、aarch64、riscv64、loongarch64 四个架构上通过 zig 交叉编译 + qemu 验证。
 
 **OpenMP 并行：** `-fopenmp` 可用时，OpenMP 自动并行化 GEMM/GEMV 外循环。Zig 等不支持 OpenMP 的工具链自动回退串行，无需任何代码修改。
+
+## `std::submdspan` 说明
+
+当前为 P2630/P3355 时代接口的实用子集，覆盖 `full_extent`、`strided_slice`、`submdspan_mapping_result`、`submdspan_extents`、`layout_left` / `layout_right` / `layout_stride` 的 `submdspan_mapping`，以及 `submdspan()` 本体。
+
+> 当前 C++26 draft 的 `submdspan` 命名和规范仍在演进，后续草案已经引入 `subextents` / slice canonicalization 等形态变化；Forge 会在检测到原生 `std::submdspan` 时主动让位，避免与标准库实现重定义。未实现 `layout_left_padded` / `layout_right_padded` 的 mapping，`strided_slice::extent` 语义按当前实现注释中的 working draft 基线处理。
 
 ## `std::simd` 说明
 
