@@ -5,10 +5,17 @@
 // This test must compile successfully; it does not run.
 
 #include <mdspan>
+#include <type_traits>
 
 // After including <mdspan>, std::submdspan and related types must be visible.
+static_assert(sizeof(std::extent_slice<int,int,int>) > 0,
+              "extent_slice must be available after #include <mdspan>");
+static_assert(sizeof(std::range_slice<int,int>) > 0,
+              "range_slice must be available after #include <mdspan>");
 static_assert(sizeof(std::strided_slice<int,int,int>) > 0,
-              "strided_slice must be available after #include <mdspan>");
+              "legacy strided_slice must be available after #include <mdspan>");
+static_assert(sizeof(std::layout_left_padded<>) > 0,
+              "layout_left_padded must be available after #include <mdspan>");
 
 // submdspan_mapping_result must be a template
 static_assert(sizeof(std::submdspan_mapping_result<
@@ -25,7 +32,10 @@ static void check_submdspan() {
     std::mdspan<int, std::dextents<int,2>> m(data, 3, 4);
     auto sub = std::submdspan(m, 1, std::full_extent);
     static_assert(sub.rank() == 1, "rank-1 submdspan from rank-2 with one index slice");
+    auto e = std::subextents(m.extents(), std::full_extent, std::range_slice{0, 4, 2});
+    static_assert(decltype(e)::rank() == 2, "range_slice subextents stays rank-2");
     (void)sub;
+    (void)e;
 }
 
 int main() { return 0; }

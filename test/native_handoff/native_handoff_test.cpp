@@ -44,7 +44,19 @@ TEST(NativeHandoff, Submdspan) {
     int data[12]{};
     std::mdspan<int, std::extents<int, 3, 4>> m(data);
     auto row = std::submdspan(m, 1, std::full_extent);
+    auto sub_ext = std::subextents(m.extents(), std::full_extent, std::range_slice{0, 4, 2});
+    auto canonical = std::canonical_slices(m.extents(), std::full_extent, std::range_slice{0, 4, 2});
+    using extent_slice_t = std::extent_slice<int, int, int>;
+    using range_slice_t = std::range_slice<int, int>;
+    using left_padded_t = std::layout_left_padded<8>::mapping<std::extents<int, 3, 4>>;
+    using right_padded_t = std::layout_right_padded<8>::mapping<std::extents<int, 3, 4>>;
     EXPECT_EQ(row.extent(0), 4);
+    EXPECT_EQ(sub_ext.extent(1), 2);
+    EXPECT_EQ(std::tuple_size_v<decltype(canonical)>, 2u);
+    EXPECT_EQ((left_padded_t{std::extents<int, 3, 4>{}, 8}.stride(1)), 8);
+    EXPECT_EQ((right_padded_t{std::extents<int, 3, 4>{}, 8}.stride(0)), 8);
+    (void)sizeof(extent_slice_t);
+    (void)sizeof(range_slice_t);
 }
 
 TEST(NativeHandoff, Linalg) {

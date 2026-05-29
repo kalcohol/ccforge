@@ -29,8 +29,10 @@
 //     path macro). If the toolchain has no <mdspan> this silently skips it; the
 //     submdspan backport will not be injected either in that case (because
 //     __cpp_lib_mdspan will remain undefined and the guard below fails).
-//  2. If __cpp_lib_submdspan is not yet defined (true for all known toolchains
-//     as of March 2026), inject the Forge submdspan backport.
+//  2. If the toolchain has base mdspan but lacks C++26 padded layouts, inject
+//     the Forge padded layout mappings.
+//  3. If __cpp_lib_submdspan is not yet current, inject the Forge submdspan
+//     backport.
 
 #if defined(_MSC_VER)
 #  ifdef FORGE_MSVC_MDSPAN_HEADER
@@ -42,13 +44,22 @@
 #  endif
 #endif
 
+// Inject mdspan C++26 foundation pieces only when:
+//  - The standard <mdspan> was found (__cpp_lib_mdspan is defined)
+//  - forge.cmake did not detect native padded layouts. Partial native padded
+//    declarations must make Forge stand aside to avoid ODR violations.
+#if defined(__cpp_lib_mdspan) && !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS)
+#  include "cpp26/mdspan_padded.hpp"
+#endif
+
 // Inject submdspan backport only when:
 //  - The standard <mdspan> was found (__cpp_lib_mdspan is defined)
-//  - The native submdspan is not yet present (__cpp_lib_submdspan undefined)
+//  - The native submdspan is not yet current (__cpp_lib_submdspan < 202603L)
 //  - forge.cmake did not detect a (possibly partial) native submdspan. A partial
-//    native submdspan may declare std::submdspan / std::strided_slice without yet
+//    native submdspan may declare std::submdspan / std::extent_slice without yet
 //    defining __cpp_lib_submdspan; FORGE_HAS_NATIVE_SUBMDSPAN guards against
 //    injecting on top of those declarations (ODR violation).
-#if !defined(FORGE_HAS_NATIVE_SUBMDSPAN) && defined(__cpp_lib_mdspan) && !defined(__cpp_lib_submdspan)
+#if !defined(FORGE_HAS_NATIVE_SUBMDSPAN) && defined(__cpp_lib_mdspan) && \
+    (!defined(__cpp_lib_submdspan) || __cpp_lib_submdspan < 202603L)
 #  include "cpp26/submdspan.hpp"
 #endif

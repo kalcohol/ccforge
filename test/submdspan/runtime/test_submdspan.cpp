@@ -1,10 +1,11 @@
 // Runtime tests for std::submdspan
-// Tests correctness of submdspan with layout_left, layout_right, layout_stride
-// covering: index slices, full_extent, pair ranges, strided_slice
+// Tests correctness of submdspan with layout_left, layout_right, layout_stride,
+// padded layouts, and current-draft range slice spellings.
 
 #include <mdspan>
 #include <array>
 #include <tuple>
+#include <type_traits>
 #include <gtest/gtest.h>
 
 // ---------------------------------------------------------------------------
@@ -79,21 +80,44 @@ TEST(SubmdspanLayoutRight, StridedSlice) {
     auto data = make_data<12>();
     std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
 
-    // Every 2nd column of row 0: indices 0, 2
-    // strided_slice{offset=0, extent=4, stride=2}: spans [0,4) with stride 2
-    auto sub = std::submdspan(m, 0, std::strided_slice{0, 4, 2});
+    // current extent_slice: extent is the output count, selecting 0 and 2
+    auto sub = std::submdspan(m, 0, std::extent_slice{0, 2, 2});
     EXPECT_EQ(sub.rank(), 1u);
     EXPECT_EQ(sub.extent(0), 2u);
     EXPECT_EQ(sub[0], 0);  // m[0,0]
     EXPECT_EQ(sub[1], 2);  // m[0,2]
 }
 
+TEST(SubmdspanLayoutRight, RangeSlice) {
+    auto data = make_data<12>();
+    std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
+
+    // range_slice{first=0, last=4, stride=2}: selects 0 and 2
+    auto sub = std::submdspan(m, 0, std::range_slice{0, 4, 2});
+    EXPECT_EQ(sub.rank(), 1u);
+    EXPECT_EQ(sub.extent(0), 2u);
+    EXPECT_EQ(sub[0], 0);
+    EXPECT_EQ(sub[1], 2);
+}
+
+TEST(SubmdspanLayoutRight, LegacyStridedSlice) {
+    auto data = make_data<12>();
+    std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
+
+    // compatibility spelling: legacy strided_slice extent is an input span
+    auto sub = std::submdspan(m, 0, std::strided_slice{0, 4, 2});
+    EXPECT_EQ(sub.rank(), 1u);
+    EXPECT_EQ(sub.extent(0), 2u);
+    EXPECT_EQ(sub[0], 0);
+    EXPECT_EQ(sub[1], 2);
+}
+
 TEST(SubmdspanLayoutRight, StridedSliceEmptyExtent) {
     auto data = make_data<12>();
     std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
 
-    // strided_slice with extent=0 → 0 elements
-    auto sub = std::submdspan(m, 0, std::strided_slice{0, 0, 2});
+    // extent_slice with extent=0 → 0 elements
+    auto sub = std::submdspan(m, 0, std::extent_slice{0, 0, 2});
     EXPECT_EQ(sub.rank(), 1u);
     EXPECT_EQ(sub.extent(0), 0u);
 }
@@ -113,9 +137,9 @@ TEST(SubmdspanLayoutRight, GeneralStridedMapping) {
     std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
 
     // Strided slice on first dim + range on second → layout_stride result
-    // strided_slice{offset=0, extent=3, stride=2} on rows: rows 0, 2
+    // range_slice{0, 3, 2} on rows: rows 0, 2
     auto sub = std::submdspan(m,
-        std::strided_slice{0, 3, 2},
+        std::range_slice{0, 3, 2},
         std::full_extent);
     EXPECT_EQ(sub.rank(), 2u);
     EXPECT_EQ(sub.extent(0), 2u);  // rows 0, 2
@@ -207,12 +231,51 @@ TEST(SubmdspanRank3, SliceMiddleDimension) {
 }
 
 // ---------------------------------------------------------------------------
+// padded layout tests
+// ---------------------------------------------------------------------------
+
+TEST(SubmdspanPaddedLayouts, LayoutLeftPaddedMapping) {
+    using ext_t = std::extents<int, 3, 4>;
+    std::layout_left_padded<8>::mapping<ext_t> map(ext_t{}, 8);
+
+    EXPECT_EQ(map.stride(0), 1);
+    EXPECT_EQ(map.stride(1), 8);
+    EXPECT_EQ((map(2, 3)), 26);
+    EXPECT_EQ(map.required_span_size(), 27);
+    EXPECT_FALSE(map.is_exhaustive());
+}
+
+TEST(SubmdspanPaddedLayouts, LayoutRightPaddedMapping) {
+    using ext_t = std::extents<int, 3, 4>;
+    std::layout_right_padded<8>::mapping<ext_t> map(ext_t{}, 8);
+
+    EXPECT_EQ(map.stride(0), 8);
+    EXPECT_EQ(map.stride(1), 1);
+    EXPECT_EQ((map(2, 3)), 19);
+    EXPECT_EQ(map.required_span_size(), 20);
+    EXPECT_FALSE(map.is_exhaustive());
+}
+
+TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
+    auto data = make_data<32>();
+    using ext_t = std::extents<int, 3, 4>;
+    using map_t = std::layout_left_padded<8>::mapping<ext_t>;
+    std::mdspan<int, ext_t, std::layout_left_padded<8>> m(data.data(), map_t{ext_t{}, 8});
+
+    auto sub = std::submdspan(m, std::full_extent, std::full_extent);
+    EXPECT_TRUE((std::is_same_v<decltype(sub)::layout_type, std::layout_left_padded<8>>));
+    EXPECT_EQ(sub.mapping().stride(1), 8);
+    EXPECT_EQ((sub[2, 3]), 26);
+}
+
+// ---------------------------------------------------------------------------
 // Feature-test macro
 // ---------------------------------------------------------------------------
 
 TEST(SubmdspanFeatureMacro, MacroDefined) {
-    // The backport defines __cpp_lib_submdspan = 202411L
+    static_assert(__cpp_lib_constant_wrapper >= 202603L,
+                  "__cpp_lib_constant_wrapper must be defined and >= 202603L");
     // If the native version ships, it will also define this macro.
-    static_assert(__cpp_lib_submdspan >= 202411L,
-                  "__cpp_lib_submdspan must be defined and >= 202411L");
+    static_assert(__cpp_lib_submdspan >= 202603L,
+                  "__cpp_lib_submdspan must be defined and >= 202603L");
 }

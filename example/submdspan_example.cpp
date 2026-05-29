@@ -71,14 +71,14 @@ int main() {
     print_matrix("A[1:3, 2:5]", sub_block);
 
     // -----------------------------------------------------------------------
-    // Example 3: Strided access (every 2nd element)
+    // Example 3: Range slice with stride (every 2nd element)
     // -----------------------------------------------------------------------
-    std::printf("\n=== Example 3: Strided slice ===\n");
+    std::printf("\n=== Example 3: Range slice with stride ===\n");
 
     // Select every 2nd row of A: rows 0, 2
-    // strided_slice{offset=0, extent=4, stride=2}: spans [0,4) with stride 2
+    // range_slice{first=0, last=4, stride=2}: spans [0,4) with stride 2
     auto even_rows = std::submdspan(A,
-        std::strided_slice{0, 4, 2},
+        std::range_slice{0, 4, 2},
         std::full_extent);
     print_matrix("Even rows of A (0, 2)", even_rows);
 

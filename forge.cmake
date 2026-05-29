@@ -143,25 +143,100 @@ if(NOT TARGET forge)
     " FORGE_SENDERS_PARTIAL)
     _forge_decide("std::execution (P2300 senders/receivers)" SENDERS FORGE_SENDERS_FULL FORGE_SENDERS_PARTIAL)
 
-    # std::submdspan (P2630) — only meaningful when <mdspan> exists. The partial
-    # probe must look for a submdspan-SPECIFIC symbol: <mdspan> alone (e.g. GCC 14)
-    # has no submdspan and must still get the backport, so __has_include(<mdspan>)
-    # is NOT sufficient. std::strided_slice is part of the submdspan addition.
+    # std::constant_wrapper (P2781). submdspan's current C++26 surface uses it
+    # directly (for example range_slice's default stride), so it needs its own
+    # stand-aside guard instead of being hidden inside the submdspan probe.
+    check_cxx_source_compiles("
+        #include <utility>
+        int main() {
+            using one = std::constant_wrapper<1zu>;
+            static_assert(one::value == 1zu);
+            static_assert(std::cw<2zu> == std::constant_wrapper<2zu>{});
+            return static_cast<int>(one{});
+        }
+    " FORGE_CONSTANT_WRAPPER_FULL)
+    check_cxx_source_compiles("
+        #include <utility>
+        using probe = std::constant_wrapper<1zu>;
+        int main() {
+            probe* p = nullptr;
+            (void)p;
+            return 0;
+        }
+    " FORGE_CONSTANT_WRAPPER_PARTIAL)
+    _forge_decide("std::constant_wrapper" CONSTANT_WRAPPER FORGE_CONSTANT_WRAPPER_FULL FORGE_CONSTANT_WRAPPER_PARTIAL)
+
+    # C++26 mdspan padded layouts (P2642). These are not useful only to
+    # submdspan, so they get a native guard before the submdspan wrapper can
+    # inject its mapping specializations.
     check_cxx_source_compiles("
         #include <mdspan>
+        int main() {
+            using ext_t = std::extents<int, 3, 4>;
+            ext_t e;
+            std::layout_left_padded<8>::mapping<ext_t> left(e, 8);
+            std::layout_right_padded<8>::mapping<ext_t> right(e, 8);
+            static_assert(decltype(left)::padding_value == 8);
+            static_assert(decltype(right)::padding_value == 8);
+            return static_cast<int>(left.stride(1) + right.stride(0));
+        }
+    " FORGE_MDSPAN_PADDED_LAYOUTS_FULL)
+    check_cxx_source_compiles("
+        #include <mdspan>
+        using left_probe = std::layout_left_padded<8>;
+        using right_probe = std::layout_right_padded<8>;
+        int main() {
+            left_probe* left = nullptr;
+            right_probe* right = nullptr;
+            (void)left;
+            (void)right;
+            return 0;
+        }
+    " FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL)
+    _forge_decide("std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS FORGE_MDSPAN_PADDED_LAYOUTS_FULL FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL)
+
+    # std::submdspan (P2630 + P3663/P3982 wording) — only meaningful when
+    # <mdspan> exists. The partial probes must look for submdspan-SPECIFIC
+    # symbols: <mdspan> alone (e.g. GCC 14) has no submdspan and must still get
+    # the backport.
+    check_cxx_source_compiles("
+        #include <mdspan>
+        #include <tuple>
         int main() {
             int data[12]{};
             std::mdspan<int, std::extents<int, 3, 4>> m(data);
             auto sub = std::submdspan(m, 1, std::full_extent);
-            (void)sub;
+            auto e = std::subextents(m.extents(), std::full_extent, std::range_slice{0, 4, 2});
+            auto c = std::canonical_slices(m.extents(), std::full_extent, std::range_slice{0, 4, 2});
+            using es = std::extent_slice<int, int, int>;
+            using rs = std::range_slice<int, int>;
+            static_assert(__cpp_lib_submdspan >= 202603L);
+            (void)sub; (void)e; (void)c; (void)sizeof(es); (void)sizeof(rs);
             return 0;
         }
     " FORGE_SUBMDSPAN_FULL)
     check_cxx_source_compiles("
         #include <mdspan>
+        using probe = std::extent_slice<int, int, int>;
+        int main() {
+            probe* p = nullptr;
+            (void)p;
+            return 0;
+        }
+    " FORGE_SUBMDSPAN_PARTIAL_CURRENT)
+    check_cxx_source_compiles("
+        #include <mdspan>
         using probe = std::strided_slice<int, int, int>;
-        int main() { (void)sizeof(probe); return 0; }
-    " FORGE_SUBMDSPAN_PARTIAL)
+        int main() {
+            probe* p = nullptr;
+            (void)p;
+            return 0;
+        }
+    " FORGE_SUBMDSPAN_PARTIAL_LEGACY)
+    set(FORGE_SUBMDSPAN_PARTIAL FALSE)
+    if(FORGE_SUBMDSPAN_PARTIAL_CURRENT OR FORGE_SUBMDSPAN_PARTIAL_LEGACY)
+        set(FORGE_SUBMDSPAN_PARTIAL TRUE)
+    endif()
     _forge_decide("std::submdspan" SUBMDSPAN FORGE_SUBMDSPAN_FULL FORGE_SUBMDSPAN_PARTIAL)
 
     # std::linalg (P1673) — new <linalg> header, so its mere presence is the
@@ -212,6 +287,19 @@ if(NOT TARGET forge)
                 message(FATAL_ERROR "CC Forge: failed to locate MSVC standard library header <memory>")
             endif()
 
+            set(FORGE_MSVC_UTILITY_HEADER "")
+
+            foreach(_forge_include_dir IN LISTS _forge_msvc_include_candidates)
+                if(EXISTS "${_forge_include_dir}/utility")
+                    file(TO_CMAKE_PATH "${_forge_include_dir}/utility" FORGE_MSVC_UTILITY_HEADER)
+                    break()
+                endif()
+            endforeach()
+
+            if(NOT FORGE_MSVC_UTILITY_HEADER)
+                message(FATAL_ERROR "CC Forge: failed to locate MSVC standard library header <utility>")
+            endif()
+
             set(FORGE_MSVC_SIMD_HEADER "")
 
             foreach(_forge_include_dir IN LISTS _forge_msvc_include_candidates)
@@ -223,6 +311,7 @@ if(NOT TARGET forge)
 
             target_compile_definitions(forge INTERFACE
                 FORGE_MSVC_MEMORY_HEADER=\"${FORGE_MSVC_MEMORY_HEADER}\"
+                FORGE_MSVC_UTILITY_HEADER=\"${FORGE_MSVC_UTILITY_HEADER}\"
             )
 
             if(FORGE_MSVC_SIMD_HEADER)
