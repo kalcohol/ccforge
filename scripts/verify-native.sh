@@ -144,6 +144,7 @@ target_tsan() {
             cmake -S . -B build/tsan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DFORGE_TEST_ONLY_EXECUTION=ON \
                   -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
                   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
             cmake --build build/tsan
@@ -170,6 +171,7 @@ target_asan() {
             cmake -S . -B build/asan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DFORGE_TEST_ONLY_EXECUTION=ON \
                   -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
                   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
             cmake --build build/asan
