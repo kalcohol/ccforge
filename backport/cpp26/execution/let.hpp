@@ -125,19 +125,18 @@ struct __op : __forge_detail::__immovable {
         using receiver_concept = receiver_t;
         __op* __self;
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __inner_recv&& self, Vs&&... vs) noexcept {
-            set_value(std::move(self.__self->__outer_recv_), static_cast<Vs&&>(vs)...);
+        void set_value(Vs&&... vs) && noexcept {
+            std::execution::set_value(std::move(__self->__outer_recv_), static_cast<Vs&&>(vs)...);
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __inner_recv&& self, E&& e) noexcept {
-            set_error(std::move(self.__self->__outer_recv_), static_cast<E&&>(e));
+        void set_error(E&& e) && noexcept {
+            std::execution::set_error(std::move(__self->__outer_recv_), static_cast<E&&>(e));
         }
-        friend void tag_invoke(set_stopped_t, __inner_recv&& self) noexcept {
-            set_stopped(std::move(self.__self->__outer_recv_));
+        void set_stopped() && noexcept {
+            std::execution::set_stopped(std::move(__self->__outer_recv_));
         }
-        friend auto tag_invoke(get_env_t, const __inner_recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(self.__self->__outer_recv_);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(__self->__outer_recv_);
         }
     };
 
@@ -161,31 +160,30 @@ struct __op : __forge_detail::__immovable {
         __op* __self;
 
         template<class... Vs>
-        friend void tag_invoke(set_value_t, __outer_recv&& self, Vs&&... vs) noexcept {
+        void set_value(Vs&&... vs) && noexcept {
             if constexpr (std::is_same_v<Which, __value_tag>) {
-                self.__self->__start_inner(static_cast<Vs&&>(vs)...);
+                __self->__start_inner(static_cast<Vs&&>(vs)...);
             } else {
-                set_value(std::move(self.__self->__outer_recv_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(__self->__outer_recv_), static_cast<Vs&&>(vs)...);
             }
         }
         template<class E>
-        friend void tag_invoke(set_error_t, __outer_recv&& self, E&& e) noexcept {
+        void set_error(E&& e) && noexcept {
             if constexpr (std::is_same_v<Which, __error_tag>) {
-                self.__self->__start_inner(static_cast<E&&>(e));
+                __self->__start_inner(static_cast<E&&>(e));
             } else {
-                set_error(std::move(self.__self->__outer_recv_), static_cast<E&&>(e));
+                std::execution::set_error(std::move(__self->__outer_recv_), static_cast<E&&>(e));
             }
         }
-        friend void tag_invoke(set_stopped_t, __outer_recv&& self) noexcept {
+        void set_stopped() && noexcept {
             if constexpr (std::is_same_v<Which, __stopped_tag>) {
-                self.__self->__start_inner();
+                __self->__start_inner();
             } else {
-                set_stopped(std::move(self.__self->__outer_recv_));
+                std::execution::set_stopped(std::move(__self->__outer_recv_));
             }
         }
-        friend auto tag_invoke(get_env_t, const __outer_recv& self) noexcept
-            -> env_of_t<R> {
-            return std::execution::get_env(self.__self->__outer_recv_);
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(__self->__outer_recv_);
         }
     };
 
@@ -200,43 +198,51 @@ struct __op : __forge_detail::__immovable {
         });
     }
 
-    friend void tag_invoke(start_t, __op& self) noexcept {
-        std::execution::start(self.__outer_storage_.template get<__outer_op_t>());
+    void start() & noexcept {
+        std::execution::start(__outer_storage_.template get<__outer_op_t>());
     }
 };
 
 template<class S, class Fn, class Which>
 struct __sender {
     using sender_concept = sender_t;
+    using source_t = S;
+    using fn_t = Fn;
+    using which_t = Which;
+
     S __sndr;
     Fn __fn;
 
-    friend auto tag_invoke(get_completion_signatures_t,
-                           const __sender& self, auto env) noexcept {
-        using env_t = decltype(env);
-        using up_cs_t = decltype(std::execution::get_completion_signatures(self.__sndr, env));
-        return typename __let_cs<Fn, Which, env_t, up_cs_t>::type{};
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using up_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<const typename self_t::source_t&>(),
+            std::declval<Env>()));
+        return typename __let_cs<
+            typename self_t::fn_t,
+            typename self_t::which_t,
+            Env,
+            up_cs_t>::type{};
     }
 
     template<receiver R>
-    friend auto tag_invoke(connect_t, __sender&& self, R r)
-        -> __op<S, Fn, R, Which>
+    auto connect(R r) && -> __op<S, Fn, R, Which>
     {
         return __op<S, Fn, R, Which>(
-            std::move(self.__sndr), std::move(self.__fn), std::move(r));
+            std::move(__sndr), std::move(__fn), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
-    friend auto tag_invoke(connect_t, const __sender& self, R r)
-        -> __op<S, Fn, R, Which>
+    auto connect(R r) const& -> __op<S, Fn, R, Which>
     {
         return __op<S, Fn, R, Which>(
-            self.__sndr, self.__fn, std::move(r));
+            __sndr, __fn, std::move(r));
     }
 
-    friend auto tag_invoke(get_env_t, const __sender& self) noexcept {
-        return std::execution::get_env(self.__sndr);
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
     }
 };
 
