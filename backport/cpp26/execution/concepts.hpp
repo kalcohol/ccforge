@@ -177,11 +177,11 @@ struct get_completion_signatures_t {
     }
 
     template<class S>
-        requires (requires(S&& s) { static_cast<S&&>(s).get_completion_signatures(empty_env{}); } ||
+        requires (__forge_cpo_detail::__static_completion_signatures<S, empty_env> ||
+                  __forge_cpo_detail::__instance_completion_signatures<S, empty_env> ||
                   __forge_detail::tag_invocable<get_completion_signatures_t, S, empty_env>)
     auto operator()(S&& s) const
-        noexcept(requires(S&& s) { { static_cast<S&&>(s).get_completion_signatures(empty_env{}) } noexcept; } ||
-                 __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, empty_env>) {
+        noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, empty_env>()) {
         return (*this)(static_cast<S&&>(s), empty_env{});
     }
 };
@@ -702,13 +702,42 @@ concept sender_to =
         std::execution::connect(static_cast<std::remove_cvref_t<S>&&>(s), static_cast<std::remove_cvref_t<R>&&>(r));
     };
 
+struct schedule_t;
+
+namespace __forge_cpo_detail {
+
+template<class S>
+concept __member_schedule = requires(S&& s) {
+    static_cast<S&&>(s).schedule();
+};
+
+template<class S>
+concept __nothrow_member_schedule = requires(S&& s) {
+    { static_cast<S&&>(s).schedule() } noexcept;
+};
+
+template<class S>
+consteval bool __schedule_noexcept() {
+    if constexpr (__member_schedule<S>) {
+        return __nothrow_member_schedule<S>;
+    } else {
+        return __forge_detail::nothrow_tag_invocable<schedule_t, S>;
+    }
+}
+
+} // namespace __forge_cpo_detail
+
 struct schedule_t {
     template<class S>
-        requires __forge_detail::tag_invocable<schedule_t, S>
+        requires (__forge_cpo_detail::__member_schedule<S> ||
+                  __forge_detail::tag_invocable<schedule_t, S>)
     auto operator()(S&& s) const
-        noexcept(__forge_detail::nothrow_tag_invocable<schedule_t, S>)
-            -> __forge_detail::tag_invoke_result_t<schedule_t, S> {
-        return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s));
+        noexcept(__forge_cpo_detail::__schedule_noexcept<S>()) {
+        if constexpr (__forge_cpo_detail::__member_schedule<S>) {
+            return static_cast<S&&>(s).schedule();
+        } else {
+            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s));
+        }
     }
 };
 inline constexpr schedule_t schedule{};

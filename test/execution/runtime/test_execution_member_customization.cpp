@@ -75,6 +75,16 @@ struct member_sender {
     }
 };
 
+struct member_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    auto schedule() const noexcept -> member_sender {
+        return member_sender{21};
+    }
+
+    bool operator==(const member_scheduler&) const noexcept = default;
+};
+
 static_assert(std::execution::receiver<member_receiver>);
 static_assert(std::execution::receiver_of<member_receiver, member_sender::completions>);
 static_assert(std::execution::sender<member_sender>);
@@ -84,6 +94,10 @@ static_assert(std::execution::sender_to<member_sender, member_receiver>);
 using member_cs_t = std::execution::completion_signatures_of_t<
     member_sender, std::execution::empty_env>;
 static_assert(std::is_same_v<member_cs_t, member_sender::completions>);
+using member_envless_cs_t = decltype(std::execution::get_completion_signatures(
+    std::declval<member_sender>()));
+static_assert(std::is_same_v<member_envless_cs_t, member_sender::completions>);
+static_assert(std::execution::scheduler<member_scheduler>);
 
 } // namespace
 
@@ -123,4 +137,12 @@ TEST(MemberCustomizationTest, SenderWorksThroughSyncWait) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
+}
+
+TEST(MemberCustomizationTest, SchedulerScheduleMemberRuns) {
+    member_scheduler sch;
+    auto result = std::execution::sync_wait(std::execution::schedule(sch));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 21);
 }
