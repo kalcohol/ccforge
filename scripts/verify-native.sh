@@ -127,7 +127,13 @@ target_gcc_exec() {
                   -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON \
                   -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ONLY_EXECUTION=ON
+                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
+                  -DFORGE_TEST_ENABLE_SIMD=OFF \
+                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
+                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
+                  -DFORGE_TEST_ENABLE_LINALG=OFF \
+                  -DFORGE_TEST_ENABLE_FORGE=OFF \
+                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
             cmake --build build/gcc-exec
             ctest --test-dir build/gcc-exec -R execution --output-on-failure
         '
@@ -144,7 +150,13 @@ target_tsan() {
             cmake -S . -B build/tsan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ONLY_EXECUTION=ON \
+                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
+                  -DFORGE_TEST_ENABLE_SIMD=OFF \
+                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
+                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
+                  -DFORGE_TEST_ENABLE_LINALG=OFF \
+                  -DFORGE_TEST_ENABLE_FORGE=OFF \
+                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
                   -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
                   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
             cmake --build build/tsan
@@ -171,7 +183,13 @@ target_asan() {
             cmake -S . -B build/asan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
-                  -DFORGE_TEST_ONLY_EXECUTION=ON \
+                  -DFORGE_TEST_ENABLE_EXECUTION=ON \
+                  -DFORGE_TEST_ENABLE_SIMD=OFF \
+                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
+                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
+                  -DFORGE_TEST_ENABLE_LINALG=OFF \
+                  -DFORGE_TEST_ENABLE_FORGE=OFF \
+                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
                   -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
                   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
             cmake --build build/asan

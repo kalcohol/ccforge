@@ -135,7 +135,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 > `scripts/verify-native.sh tsan` 与 `scripts/verify-native.sh asan` 分别覆盖 execution 子集的 ThreadSanitizer 与 ASan+UBSan 路径；`llvm` 目标覆盖 libc++ inject-path 全量测试。
 
-> 测试子目录可用 CMake 开关独立启停，默认全开：`FORGE_TEST_ENABLE_EXECUTION`、`FORGE_TEST_ENABLE_SIMD`、`FORGE_TEST_ENABLE_UNIQUE_RESOURCE`、`FORGE_TEST_ENABLE_SUBMDSPAN`、`FORGE_TEST_ENABLE_LINALG`、`FORGE_TEST_ENABLE_FORGE`、`FORGE_TEST_ENABLE_NATIVE_HANDOFF`。`FORGE_TEST_ONLY_EXECUTION=ON` 保留为 execution-only 快捷入口。
+> 测试子目录可用 CMake 开关独立启停，默认全开：`FORGE_TEST_ENABLE_EXECUTION`、`FORGE_TEST_ENABLE_SIMD`、`FORGE_TEST_ENABLE_UNIQUE_RESOURCE`、`FORGE_TEST_ENABLE_SUBMDSPAN`、`FORGE_TEST_ENABLE_LINALG`、`FORGE_TEST_ENABLE_FORGE`、`FORGE_TEST_ENABLE_NATIVE_HANDOFF`。
 
 > 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`。Forge 的 tests/examples 会在检测到 `tbb` 时自动链接。
 
