@@ -14,7 +14,9 @@
 #           suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
 #   local   Host toolchain (no container), -std=c++23 baseline regression.
-#   all     gcc16 + llvm + zig + local (default).
+#   tsan    LLVM/libc++ container, -std=c++26 + -fsanitize=thread. Runs the
+#           execution subset under ThreadSanitizer (data-race / deadlock check).
+#   all     gcc16 + llvm + zig + local + tsan (default).
 #
 set -euo pipefail
 
@@ -108,9 +110,35 @@ target_local() {
     ok "local verified"
 }
 
+target_tsan() {
+    build_image forge-tsan containers/Containerfile.tsan
+    log "tsan: building execution tests with -fsanitize=thread (libc++)"
+    "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
+        -v "${REPO_ROOT}:/src:Z" -w /src forge-tsan bash -lc '
+            set -e
+            rm -rf build/tsan
+            cmake -S . -B build/tsan -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+            cmake --build build/tsan
+            export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1"
+            # Try plain ctest first; if the instrumented binaries hit the
+            # mmap_rnd_bits TSAN startup crash on high-ASLR-entropy hosts, retry
+            # with ASLR disabled via setarch -R.
+            if ctest --test-dir build/tsan -R execution --output-on-failure; then
+                exit 0
+            fi
+            echo "[tsan] retrying under setarch -R (ASLR off; mmap_rnd_bits workaround)"
+            setarch "$(uname -m)" -R ctest --test-dir build/tsan -R execution --output-on-failure
+        '
+    ok "tsan verified (execution subset, no data races)"
+}
+
 targets=("$@")
 if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(gcc16 llvm zig local)
+    targets=(gcc16 llvm zig local tsan)
 fi
 
 for t in "${targets[@]}"; do
@@ -119,7 +147,8 @@ for t in "${targets[@]}"; do
         llvm)  target_llvm ;;
         zig)   target_zig ;;
         local) target_local ;;
-        all)   target_gcc16; target_llvm; target_zig; target_local ;;
+        tsan)  target_tsan ;;
+        all)   target_gcc16; target_llvm; target_zig; target_local; target_tsan ;;
         *)     fail "unknown target: ${t}" ;;
     esac
 done
