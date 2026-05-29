@@ -2,6 +2,7 @@
 #include <execution>
 #include <forge/static_thread_pool.hpp>
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -69,6 +70,17 @@ struct oversized_value_sender {
         return {};
     }
 };
+
+template<class Pred>
+bool wait_until(Pred pred) {
+    for (int i = 0; i < 100; ++i) {
+        if (pred()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return pred();
+}
 
 } // namespace
 
@@ -141,6 +153,82 @@ TEST(SplitTest, OversizedInnerOperationUsesHeapFallback) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(EnsureStartedTest, StartsSourceBeforeReturnedSenderConnects) {
+    std::atomic<int> producer_runs{0};
+
+    auto sndr = std::execution::ensure_started(
+        std::execution::just(41)
+        | std::execution::then([&](int value) {
+              producer_runs.fetch_add(1, std::memory_order_relaxed);
+              return value + 1;
+          }));
+
+    EXPECT_EQ(producer_runs.load(std::memory_order_relaxed), 1);
+
+    auto first = std::execution::sync_wait(sndr);
+    auto second = std::execution::sync_wait(sndr);
+
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(std::get<0>(*first), 42);
+    EXPECT_EQ(std::get<0>(*second), 42);
+    EXPECT_EQ(producer_runs.load(std::memory_order_relaxed), 1);
+}
+
+TEST(EnsureStartedTest, AsyncCompletionBeforeConsumerIsCached) {
+    std::execution::run_loop loop;
+    std::atomic<bool> producer_ran{false};
+
+    auto sndr = std::execution::ensure_started(
+        std::execution::schedule(loop.get_scheduler())
+        | std::execution::then([&] {
+              producer_ran.store(true, std::memory_order_release);
+              return 42;
+          }));
+
+    std::thread runner{[&] { loop.run(); }};
+    ASSERT_TRUE(wait_until([&] {
+        return producer_ran.load(std::memory_order_acquire);
+    }));
+    loop.finish();
+    runner.join();
+
+    auto result = std::execution::sync_wait(sndr);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(EnsureStartedTest, AbandonedSenderStillAllowsStartedWorkToComplete) {
+    std::execution::run_loop loop;
+    std::atomic<bool> producer_ran{false};
+
+    {
+        auto sndr = std::execution::ensure_started(
+            std::execution::schedule(loop.get_scheduler())
+            | std::execution::then([&] {
+                  producer_ran.store(true, std::memory_order_release);
+              }));
+        (void)sndr;
+    }
+
+    std::thread runner{[&] { loop.run(); }};
+    ASSERT_TRUE(wait_until([&] {
+        return producer_ran.load(std::memory_order_acquire);
+    }));
+    loop.finish();
+    runner.join();
+}
+
+TEST(EnsureStartedTest, ErrorAndStoppedResultsPropagate) {
+    auto err = std::execution::ensure_started(std::execution::just_error(99));
+    EXPECT_THROW((void)std::execution::sync_wait(err), int);
+
+    auto stopped = std::execution::ensure_started(std::execution::just_stopped());
+    auto result = std::execution::sync_wait(stopped);
+    EXPECT_FALSE(result.has_value());
 }
 
 TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently) {
