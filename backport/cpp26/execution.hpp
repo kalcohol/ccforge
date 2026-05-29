@@ -44,7 +44,8 @@
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : completion_signatures_of_t,
 //                      transform_completion_signatures, enable_sender,
-//                      get_completion_scheduler CPO, CPO member-function-first dispatch
+//                      get_completion_scheduler/get_completion_domain CPOs,
+//                      CPO member-function-first dispatch
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
 //                      and ASan+UBSan container configurations.
 //
@@ -65,8 +66,9 @@
 //     allocations are not fully allocator-aware.
 //   - counting_scope is stop-aware, but join() is still Forge's blocking
 //     compatibility extension rather than the standard sender-returning shape.
-//   - Domain transform_env and domain-based recovery for otherwise non-connectable
-//     senders are incomplete.
+//   - Execution domains are still a focused draft subset: connect uses the
+//     receiver-env start domain and supports transform_sender recovery plus
+//     transform_env wrapping, but not the full recursive transform_sender model.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders must be connected as rvalues with std::move.
 //
