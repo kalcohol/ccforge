@@ -119,6 +119,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `forge::single_thread_context` — 单线程调度上下文，适合串行化执行和测试调度切换
 - `forge::timer_context` — 定时调度上下文，提供 `schedule_after` / `schedule_at`
 - `forge::runtime_context` — 显式拥有的运行时上下文，组合 CPU scheduler 和 timer 调度
+- `forge::async_scope` — 结构化并发 scope，拥有 eager-start sender work，支持 close / stop / wait
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
 - `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；task body 中可 `co_await` 同步或异步 sender（需要 C++20 coroutines）
 - `forge::any_scheduler` — 窄 scheduler 类型擦除，面向 `schedule()` 常见形状

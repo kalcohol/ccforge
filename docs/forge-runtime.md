@@ -59,6 +59,9 @@ Non-owning views and lightweight handles should not block in destructors.
   stopped. `wait()` waits for accepted timer operations.
 - `runtime_context::wait()` is a practical single-hop drain:
   pool -> timers -> pool. It is not an unbounded quiescence protocol.
+- `async_scope` owns eager-start sender work. `close()` rejects future spawn,
+  `request_stop()` exposes a requested stop token through owned receiver envs,
+  and destruction performs `shutdown()` plus `wait()`.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must
@@ -80,4 +83,3 @@ levels:
 
 If full callback cancellation is not implemented, document the missing case
 explicitly.
-

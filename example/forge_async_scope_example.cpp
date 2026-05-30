@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 CC Forge Project
+// Copyright (c) 2026 Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,16 +20,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include <forge/async_scope.hpp>
+#include <forge/static_thread_pool.hpp>
+#include <execution>
+#include <atomic>
+#include <cassert>
 
-#include "async_scope.hpp"
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "erased_sender.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+int main() {
+    forge::static_thread_pool pool{2};
+    forge::async_scope scope;
+    std::atomic<int> count{0};
+
+    bool spawned = scope.spawn(
+        std::execution::schedule(pool.get_scheduler()) |
+        std::execution::then([&] noexcept {
+            count.fetch_add(1, std::memory_order_relaxed);
+        }));
+
+    assert(spawned);
+    scope.wait();
+    pool.wait();
+    assert(count.load(std::memory_order_relaxed) == 1);
+
+    scope.close();
+    assert(!scope.spawn(std::execution::just()));
+}
+
