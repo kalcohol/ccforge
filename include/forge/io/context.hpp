@@ -366,7 +366,10 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void run() noexcept {
-        poller_id = std::this_thread::get_id();
+        {
+            std::lock_guard lk{mtx};
+            poller_id = std::this_thread::get_id();
+        }
         while (true) {
             int count = ::epoll_wait(
                 epoll.get(), events.data(), static_cast<int>(events.size()), -1);
@@ -409,7 +412,8 @@ struct __state : std::enable_shared_from_this<__state> {
         }
     }
 
-    [[nodiscard]] auto called_from_poller() const noexcept -> bool {
+    [[nodiscard]] auto called_from_poller() noexcept -> bool {
+        std::lock_guard lk{mtx};
         return poller_id == std::this_thread::get_id();
     }
 
