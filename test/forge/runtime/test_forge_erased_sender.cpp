@@ -5,6 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 
@@ -23,6 +24,10 @@ struct observed_state {
     std::string string_value;
     int zero_values = 0;
     bool errored = false;
+    bool error_code_seen = false;
+    std::error_code error_code;
+    bool status_seen = false;
+    int status_value = 0;
     bool stopped = false;
     bool stop_possible = false;
     bool stop_requested = false;
@@ -45,6 +50,20 @@ struct observing_receiver {
 
     void set_error(std::exception_ptr error) && noexcept {
         state->errored = static_cast<bool>(error);
+    }
+
+    void set_error(std::error_code error) && noexcept {
+        state->error_code_seen = true;
+        state->error_code = error;
+    }
+
+    enum class status {
+        failed = 7
+    };
+
+    void set_error(status value) && noexcept {
+        state->status_seen = true;
+        state->status_value = static_cast<int>(value);
     }
 
     void set_stopped() && noexcept {
@@ -304,6 +323,90 @@ struct typed_error_sender {
     }
 
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+        explicit op(R r) : rcvr(std::move(r)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+        void start() & noexcept { std::execution::set_error(std::move(rcvr), 17); }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
+struct error_code_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(std::error_code)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+        explicit op(R r) : rcvr(std::move(r)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+        void start() & noexcept {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::make_error_code(std::errc::timed_out));
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
+using status = observing_receiver::status;
+
+struct status_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_error_t(status)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+        explicit op(R r) : rcvr(std::move(r)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+        void start() & noexcept {
+            std::execution::set_error(std::move(rcvr), status::failed);
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
 };
 
 using int_cs =
@@ -312,6 +415,10 @@ using zero_cs =
     std::execution::completion_signatures<std::execution::set_value_t()>;
 using error_cs =
     std::execution::completion_signatures<std::execution::set_error_t(std::exception_ptr)>;
+using typed_error_cs =
+    std::execution::completion_signatures<
+        std::execution::set_error_t(std::error_code),
+        std::execution::set_error_t(status)>;
 using stopped_cs =
     std::execution::completion_signatures<std::execution::set_stopped_t()>;
 using stop_probe_cs =
@@ -320,7 +427,13 @@ using stop_probe_cs =
 static_assert(std::execution::sender<forge::erased_sender<int_cs>>);
 static_assert(!std::copy_constructible<forge::erased_sender<int_cs>>);
 static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_sender>);
+static_assert(std::constructible_from<forge::erased_sender<
+    std::execution::completion_signatures<std::execution::set_error_t(int)>>,
+    typed_error_sender>);
 static_assert(!std::constructible_from<forge::erased_sender<error_cs>, typed_error_sender>);
+static_assert(!std::constructible_from<forge::erased_sender<
+    std::execution::completion_signatures<std::execution::set_error_t(status)>>,
+    error_code_sender>);
 
 } // namespace
 
@@ -366,6 +479,30 @@ TEST(ErasedSenderTest, DeliversExceptionPtrError) {
     std::execution::start(op);
 
     EXPECT_TRUE(state->errored);
+}
+
+TEST(ErasedSenderTest, DeliversErrorCodeTypedError) {
+    forge::erased_sender<typed_error_cs> sender{error_code_sender{}};
+    auto state = std::make_shared<observed_state>();
+    auto op = std::execution::connect(std::move(sender), observing_receiver{state});
+
+    std::execution::start(op);
+
+    EXPECT_TRUE(state->error_code_seen);
+    EXPECT_EQ(state->error_code, std::make_error_code(std::errc::timed_out));
+    EXPECT_FALSE(state->status_seen);
+}
+
+TEST(ErasedSenderTest, DeliversEnumTypedError) {
+    forge::erased_sender<typed_error_cs> sender{status_sender{}};
+    auto state = std::make_shared<observed_state>();
+    auto op = std::execution::connect(std::move(sender), observing_receiver{state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(state->error_code_seen);
+    EXPECT_TRUE(state->status_seen);
+    EXPECT_EQ(state->status_value, 7);
 }
 
 TEST(ErasedSenderTest, DeliversStopped) {

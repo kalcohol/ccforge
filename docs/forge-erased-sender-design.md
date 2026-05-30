@@ -30,24 +30,25 @@ class erased_sender;
 
 `forge::erased_sender` 是独立类型，不会静默扩大 `any_sender_of` 的行为。
 
-## V1 支持范围
+## 支持范围
 
 支持的 completion signatures：
 
 - 任意数量的唯一 `set_value_t(Vs...)` value 形状；
-- 可选 `set_error_t(std::exception_ptr)`；
+- 任意数量显式声明的 `set_error_t(E)` error 形状；
 - 可选 `set_stopped_t()`。
 
 不支持：
 
-- typed error，例如 `set_error_t(std::error_code)`；
 - allocator-aware erased storage；
 - semantic equality；
 - SBO；
 - 任意自定义 receiver env query 透传；
 - 改变 `any_sender_of`。
 
-typed error 是有意拒绝的：任意 error alternative 会需要更大的 receiver vtable 矩阵，后续如确有需要应作为单独扩展设计。
+Error erasure 是闭集模型：source sender 声明的每个 `set_error_t(E)` 都必须出现在
+`erased_sender<CompletionSignatures>` 的目标签名里，未声明 error type 会在构造或
+connectability 检查时被拒绝。不会提供“任意 error 动态兜底”。
 
 ## 所有权模型
 
@@ -71,7 +72,8 @@ v1 是 heap-first 实现：
 
 ## Error、Stopped 与 Env
 
-`set_error` 只支持 `std::exception_ptr`。源 sender 如果声明其它 typed error，构造 `erased_sender` 会在编译期被拒绝。
+`set_error` 会按目标 `CompletionSignatures` 中声明的 error type 分派并原样交给下游
+receiver。`std::exception_ptr` 只是其中一种普通 error type，不再是唯一支持类型。
 
 `set_stopped_t()` 只有在 `CompletionSignatures` 声明时才属于有效契约。
 
@@ -85,8 +87,9 @@ receiver env v1 只保证 stop token 传播：erased receiver 会把下游 recei
 - 多 value shape 分派；
 - 零参数 `set_value_t()`；
 - `set_error_t(std::exception_ptr)`；
+- 多 typed error 形状；
 - `set_stopped_t()`；
-- typed error 编译期拒绝；
+- undeclared typed error 编译期拒绝；
 - downstream stop token 传播；
 - move-only source sender；
 - sanitizer gate 下的 erased operation/receiver 生命周期。

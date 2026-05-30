@@ -47,8 +47,8 @@ struct __valid_signature : std::false_type {};
 template<class... Vs>
 struct __valid_signature<std::execution::set_value_t(Vs...)> : std::true_type {};
 
-template<>
-struct __valid_signature<std::execution::set_error_t(std::exception_ptr)> : std::true_type {};
+template<class E>
+struct __valid_signature<std::execution::set_error_t(E)> : std::true_type {};
 
 template<>
 struct __valid_signature<std::execution::set_stopped_t()> : std::true_type {};
@@ -104,6 +104,71 @@ struct __tuple_index<Tuple, meta::type_list<>> {
                   "value tuple is not present in erased_sender completion signatures");
 };
 
+template<class List, class Sig>
+struct __push_error {
+    using type = List;
+};
+
+template<class... Errors, class E>
+struct __push_error<meta::type_list<Errors...>, std::execution::set_error_t(E)> {
+    using type = meta::list_push_unique_t<
+        meta::type_list<Errors...>,
+        std::decay_t<E>>;
+};
+
+template<class List, class... Sigs>
+struct __collect_errors;
+
+template<class List>
+struct __collect_errors<List> {
+    using type = List;
+};
+
+template<class List, class Sig, class... Rest>
+struct __collect_errors<List, Sig, Rest...> {
+    using next = typename __push_error<List, Sig>::type;
+    using type = typename __collect_errors<next, Rest...>::type;
+};
+
+template<class CS>
+struct __error_list;
+
+template<class... Sigs>
+struct __error_list<std::execution::completion_signatures<Sigs...>> {
+    using type = typename __collect_errors<meta::type_list<>, Sigs...>::type;
+};
+
+template<class CS>
+using __error_list_t = typename __error_list<CS>::type;
+
+template<class Error, class List>
+struct __error_in_list;
+
+template<class Error, class... Errors>
+struct __error_in_list<Error, meta::type_list<Errors...>>
+    : std::bool_constant<(std::is_same_v<Error, Errors> || ...)> {};
+
+template<class Error, class List>
+inline constexpr bool __error_in_list_v = __error_in_list<Error, List>::value;
+
+template<class Error, class List>
+struct __error_index;
+
+template<class Error, class... Rest>
+struct __error_index<Error, meta::type_list<Error, Rest...>>
+    : std::integral_constant<std::size_t, 0> {};
+
+template<class Error, class First, class... Rest>
+struct __error_index<Error, meta::type_list<First, Rest...>>
+    : std::integral_constant<std::size_t,
+          1 + __error_index<Error, meta::type_list<Rest...>>::value> {};
+
+template<class Error>
+struct __error_index<Error, meta::type_list<>> {
+    static_assert(!std::is_same_v<Error, Error>,
+                  "error type is not present in erased_sender completion signatures");
+};
+
 template<class R>
 auto __make_stop_token(const R& rcvr) {
     auto env = std::execution::get_env(rcvr);
@@ -120,7 +185,7 @@ template<class CS>
 struct __receiver_state_base {
     virtual ~__receiver_state_base() = default;
     virtual void complete_value(std::size_t index, void* tuple) noexcept = 0;
-    virtual void complete_error(std::exception_ptr error) noexcept = 0;
+    virtual void complete_error(std::size_t index, void* error) noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
     virtual auto stop_token() const noexcept -> std::any_stop_token = 0;
 };
@@ -129,6 +194,7 @@ template<class CS>
 struct __receiver {
     using receiver_concept = std::execution::receiver_t;
     using value_list = meta::value_tuple_list_t<CS>;
+    using error_list = __error_list_t<CS>;
 
     struct __env {
         std::shared_ptr<__receiver_state_base<CS>> state;
@@ -154,8 +220,13 @@ struct __receiver {
         state->complete_value(index, &values);
     }
 
-    void set_error(std::exception_ptr error) && noexcept {
-        state->complete_error(std::move(error));
+    template<class E>
+        requires __error_in_list_v<std::decay_t<E>, error_list>
+    void set_error(E&& e) && noexcept {
+        using error_t = std::decay_t<E>;
+        auto error = error_t{static_cast<E&&>(e)};
+        constexpr auto index = __error_index<error_t, error_list>::value;
+        state->complete_error(index, &error);
     }
 
     void set_stopped() && noexcept {
@@ -170,6 +241,7 @@ struct __receiver {
 template<class CS, class R>
 struct __receiver_state_model final : __receiver_state_base<CS> {
     using value_list = meta::value_tuple_list_t<CS>;
+    using error_list = __error_list_t<CS>;
 
     explicit __receiver_state_model(R rcvr)
         : stop_token_(__make_stop_token(rcvr))
@@ -179,8 +251,8 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
         complete_value_impl(index, tuple, value_list{});
     }
 
-    void complete_error(std::exception_ptr error) noexcept override {
-        std::execution::set_error(std::move(rcvr_), std::move(error));
+    void complete_error(std::size_t index, void* error) noexcept override {
+        complete_error_impl(index, error, error_list{});
     }
 
     void complete_stopped() noexcept override {
@@ -204,6 +276,20 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
     }
 
     void complete_value_impl(std::size_t, void*, meta::type_list<>) noexcept {
+        std::terminate();
+    }
+
+    template<class Error, class... Rest>
+    void complete_error_impl(std::size_t index, void* error, meta::type_list<Error, Rest...>) noexcept {
+        if (index == 0) {
+            auto& value = *static_cast<Error*>(error);
+            std::execution::set_error(std::move(rcvr_), std::move(value));
+            return;
+        }
+        complete_error_impl(index - 1, error, meta::type_list<Rest...>{});
+    }
+
+    void complete_error_impl(std::size_t, void*, meta::type_list<>) noexcept {
         std::terminate();
     }
 
