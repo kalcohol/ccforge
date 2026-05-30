@@ -62,6 +62,9 @@ Non-owning views and lightweight handles should not block in destructors.
 - `async_scope` owns eager-start sender work. `close()` rejects future spawn,
   `request_stop()` exposes a requested stop token through owned receiver envs,
   and destruction performs `shutdown()` plus `wait()`.
+- `bounded_channel` provides graceful `close()` draining and cancel-now
+  `request_stop()`. Its v1 operation stop-token support is pre-start only;
+  post-enqueue receiver stop requires a later channel state change.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must

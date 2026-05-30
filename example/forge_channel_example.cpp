@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 CC Forge Project
+// Copyright (c) 2026 Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,17 +20,23 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include <forge/channel.hpp>
+#include <execution>
+#include <cassert>
+#include <tuple>
 
-#include "async_scope.hpp"
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "channel.hpp"
-#include "erased_sender.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+int main() {
+    forge::bounded_channel<int> channel{2};
+
+    auto sent = std::execution::sync_wait(channel.async_send(7));
+    assert(sent.has_value());
+
+    auto received = std::execution::sync_wait(channel.async_recv());
+    assert(received.has_value());
+    assert(std::get<0>(*received) == 7);
+
+    channel.close();
+    auto stopped = std::execution::sync_wait(channel.async_recv());
+    assert(!stopped.has_value());
+}
+
