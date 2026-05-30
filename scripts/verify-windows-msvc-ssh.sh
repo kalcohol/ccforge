@@ -13,6 +13,8 @@
 #   FORGE_WINDOWS_REPO        repo cloned on the Windows host
 #   FORGE_WINDOWS_REF         ref checked out before verification (master)
 #   FORGE_WINDOWS_KEEP        set to 1 to keep the remote temp clone on success
+#   FORGE_WINDOWS_SKIP_GATE_CHECKS
+#                             set to 1 to skip configure-only gate checks
 
 set -euo pipefail
 
@@ -61,6 +63,9 @@ fi
 
 if [[ "${FORGE_WINDOWS_KEEP:-0}" == "1" ]]; then
     remote_command+=" -Keep"
+fi
+if [[ "${FORGE_WINDOWS_SKIP_GATE_CHECKS:-0}" == "1" ]]; then
+    remote_command+=" -SkipGateChecks"
 fi
 
 ssh "${host}" "${remote_command}"

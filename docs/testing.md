@@ -58,8 +58,13 @@ scripts/verify-windows-msvc-ssh.sh
 ```
 
 如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
-让脚本按 `VsVersion` 或 `vswhere` 查找。脚本默认关闭 Linux-only IO backend 和
-SIMD/submdspan/linalg/native-handoff 测试：
+让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
+关键 Forge gate 状态和最终 CTest 数量。它还会做 configure-only gate 检查：
+Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` 应跳过 IO backend，显式
+`FORGE_ENABLE_FORGE_IO=ON` 应给出清楚 configure error。可设置
+`FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。
+
+主 smoke 默认关闭 Linux-only IO backend 和 SIMD/submdspan/linalg/native-handoff 测试：
 
 ```cmake
 FORGE_ENABLE_FORGE_IO=OFF

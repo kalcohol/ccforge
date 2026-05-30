@@ -19,7 +19,8 @@ param(
     [string]$BuildName = "",
     [string]$CTestRegex = "execution|unique_resource|forge",
     [switch]$Keep,
-    [switch]$SkipGoogletestProvision
+    [switch]$SkipGoogletestProvision,
+    [switch]$SkipGateChecks
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +36,74 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed ($Label) with exit code $LASTEXITCODE"
     }
+}
+
+function Invoke-NativeOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Command
+    )
+
+    Write-Host "[msvc] $Label"
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = cmd /s /c $Command 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    $output | ForEach-Object { Write-Host $_ }
+    if ($exitCode -ne 0) {
+        throw "Command failed ($Label) with exit code $exitCode"
+    }
+    return ,$output
+}
+
+function Invoke-NativeCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Command
+    )
+
+    Write-Host "[msvc] $Label"
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = cmd /s /c $Command 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    $output | ForEach-Object { Write-Host $_ }
+    return @{
+        ExitCode = $exitCode
+        Output = $output
+    }
+}
+
+function Assert-OutputContains {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Output,
+        [Parameter(Mandatory = $true)][string]$Needle,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $text = ($Output -join "`n")
+    if (-not $text.Contains($Needle)) {
+        throw "$Label did not contain expected text: $Needle"
+    }
+}
+
+function Get-CtestCount {
+    param([Parameter(Mandatory = $true)][object[]]$Output)
+
+    $text = ($Output -join "`n")
+    $match = [regex]::Match($text, "Total Tests:\s+(\d+)")
+    if (-not $match.Success) {
+        throw "Could not parse ctest -N test count"
+    }
+    return [int]$match.Groups[1].Value
 }
 
 function Find-ScriptRepoRoot {
@@ -104,6 +173,55 @@ function Resolve-Vcvars {
     throw "vcvars64.bat not found. Pass -Vcvars or set FORGE_WINDOWS_VC_VARS / FORGE_WINDOWS_VS_ROOT."
 }
 
+function Invoke-GateChecks {
+    param(
+        [Parameter(Mandatory = $true)][string]$Common,
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$BuildName
+    )
+
+    $autoBuild = Join-Path $SourceRoot "build\$BuildName-io-auto"
+    $onBuild = Join-Path $SourceRoot "build\$BuildName-io-on"
+    foreach ($dir in @($autoBuild, $onBuild)) {
+        if (Test-Path $dir) {
+            Remove-Item -Recurse -Force $dir
+        }
+    }
+
+    $autoConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$autoBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=OFF " +
+        "-DFORGE_BUILD_EXAMPLES=OFF " +
+        "-DFORGE_ENABLE_FORGE_IO=AUTO"
+    $autoOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=AUTO" $autoConfigure
+    Assert-OutputContains `
+        -Output $autoOutput `
+        -Needle "CC Forge: forge::io backend unavailable - skipped" `
+        -Label "FORGE_ENABLE_FORGE_IO=AUTO gate check"
+
+    $onConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$onBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=OFF " +
+        "-DFORGE_BUILD_EXAMPLES=OFF " +
+        "-DFORGE_ENABLE_FORGE_IO=ON"
+    $onResult = Invoke-NativeCapture "gate check: FORGE_ENABLE_FORGE_IO=ON must fail" $onConfigure
+    if ($onResult.ExitCode -eq 0) {
+        throw "FORGE_ENABLE_FORGE_IO=ON unexpectedly configured on this Windows smoke"
+    }
+    Assert-OutputContains `
+        -Output $onResult.Output `
+        -Needle "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd support" `
+        -Label "FORGE_ENABLE_FORGE_IO=ON gate check"
+
+    Write-Host "[msvc] gate checks verified"
+}
+
 $sourceRoot = Find-ScriptRepoRoot
 $workRoot = Join-Path $env:TEMP ("ccforge-win-msvc-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 $cloned = $false
@@ -149,6 +267,12 @@ try {
     Write-Host "[msvc] vcvars=$Vcvars"
 
     $common = "call `"$Vcvars`" >nul && "
+    Invoke-NativeOutput "compiler version" ($common + "cl 2>&1 | findstr /C:`"Version`"") | Out-Null
+
+    if (-not $SkipGateChecks) {
+        Invoke-GateChecks -Common $common -SourceRoot $sourceRoot -BuildName $BuildName
+    }
+
     $configure =
         $common +
         "cmake -S `"$sourceRoot`" -B `"$buildDir`" -G Ninja " +
@@ -162,10 +286,22 @@ try {
         "-DFORGE_TEST_ENABLE_LINALG=OFF " +
         "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF"
     $build = $common + "cmake --build `"$buildDir`""
+    $listTests = $common + "ctest --test-dir `"$buildDir`" -N -R `"$CTestRegex`""
     $test = $common + "ctest --test-dir `"$buildDir`" -R `"$CTestRegex`" --output-on-failure"
 
-    Invoke-Native "configure" $configure
+    $configureOutput = Invoke-NativeOutput "configure" $configure
+    Assert-OutputContains `
+        -Output $configureOutput `
+        -Needle "CC Forge: forge::io backend disabled" `
+        -Label "main smoke IO gate"
+    Assert-OutputContains `
+        -Output $configureOutput `
+        -Needle "CC Forge: forge::accel mock backend enabled" `
+        -Label "main smoke accel gate"
     Invoke-Native "build" $build
+    $testListOutput = Invoke-NativeOutput "list tests" $listTests
+    $testCount = Get-CtestCount $testListOutput
+    Write-Host "[msvc] ctest-count=$testCount"
     Invoke-Native "test" $test
 
     $success = $true
