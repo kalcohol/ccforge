@@ -15,5 +15,6 @@ function(forge_add_forge_test target_name source_name test_name)
 endfunction()
 
 forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
+forge_add_forge_test(test_forge_single_thread_context test_forge_single_thread_context.cpp forge_single_thread_context)
 forge_add_forge_test(test_forge_task test_forge_task.cpp forge_task)
 forge_add_forge_test(test_forge_any_receiver test_forge_any_receiver.cpp forge_any_receiver)
