@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 CC Forge Project
+// Copyright (c) 2026 Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,18 +20,35 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include <forge/channel.hpp>
+#include <forge/resource_context.hpp>
+#include <execution>
+#include <cassert>
+#include <tuple>
 
-#include "async_scope.hpp"
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "channel.hpp"
-#include "erased_sender.hpp"
-#include "resource_context.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+int main() {
+    forge::resource_context ctx{1};
+    forge::bounded_channel<int> commands{2};
+    forge::bounded_channel<int> events{2};
+
+    bool spawned = ctx.spawn(
+        std::execution::schedule(ctx.get_scheduler())
+        | std::execution::then([&] noexcept {
+            auto command = std::execution::sync_wait(commands.async_recv());
+            if (command) {
+                (void)std::execution::sync_wait(
+                    events.async_send(std::get<0>(*command) + 1));
+            }
+        }));
+
+    assert(spawned);
+    assert(std::execution::sync_wait(commands.async_send(6)).has_value());
+
+    auto event = std::execution::sync_wait(events.async_recv());
+    assert(event.has_value());
+    assert(std::get<0>(*event) == 7);
+
+    commands.close();
+    ctx.wait();
+}
+

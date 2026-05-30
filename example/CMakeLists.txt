@@ -136,6 +136,12 @@ if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(forge_channel PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()
 
+add_executable(forge_resource_context forge_resource_context_example.cpp)
+target_link_libraries(forge_resource_context PRIVATE forge::forge Threads::Threads)
+if(FORGE_EXAMPLE_TBB_LIBRARY)
+    target_link_libraries(forge_resource_context PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+endif()
+
 # Coroutine examples (unconditional, source-level guards)
 add_executable(execution_coro execution_coro_example.cpp)
 target_link_libraries(execution_coro PRIVATE forge::forge)

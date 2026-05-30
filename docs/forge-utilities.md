@@ -10,7 +10,7 @@
 #include <forge/execution.hpp>
 ```
 
-该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
+该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
 ## 调度与上下文
 
@@ -23,6 +23,8 @@
 - `forge::async_scope`：拥有一组 eager-start sender work 的结构化并发 scope。`spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，`request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，`shutdown()` 等价于 close + request stop。析构会 `shutdown()` 并 `wait()`，因此可能阻塞到 scope-owned work 完成或响应停止。scope 捕获第一个 error 为 `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
 
 `async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
+
+- `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
 ## 消息通道
 
@@ -62,6 +64,7 @@
 - `example/forge_runtime_context_example.cpp`
 - `example/forge_async_scope_example.cpp`
 - `example/forge_channel_example.cpp`
+- `example/forge_resource_context_example.cpp`
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`

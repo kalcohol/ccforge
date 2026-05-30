@@ -121,6 +121,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `forge::runtime_context` — 显式拥有的运行时上下文，组合 CPU scheduler 和 timer 调度
 - `forge::async_scope` — 结构化并发 scope，拥有 eager-start sender work，支持 close / stop / wait
 - `forge::bounded_channel<T>` — 有界 FIFO 消息通道，提供 async send/recv 和显式 close / stop 语义
+- `forge::resource_context` — 资源/会话 owning runtime shell，组合 runtime、timer 和 scope 生命周期
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
 - `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；task body 中可 `co_await` 同步或异步 sender（需要 C++20 coroutines）
 - `forge::any_scheduler` — 窄 scheduler 类型擦除，面向 `schedule()` 常见形状
