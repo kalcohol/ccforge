@@ -2,6 +2,7 @@
 
 - [Native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
+- [`forge::` 扩展工具](forge-utilities.md)
 - Backports:
   - [`std::execution`](backports/execution.md)
   - [`std::linalg`](backports/linalg.md)

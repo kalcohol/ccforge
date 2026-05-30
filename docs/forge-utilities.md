@@ -1,0 +1,50 @@
+# `forge::` 扩展工具
+
+`include/forge/` 下的头文件是 Forge 自带的实用扩展，不是标准 backport，也不向 `namespace std` 注入名字。它们的目标是补齐使用 `std::execution` 时常见的运行时设施，让下游不必为基本线程池、单线程执行上下文、定时器和窄类型擦除再写一套本地胶水。
+
+聚合头：
+
+```cpp
+#include <forge/execution.hpp>
+```
+
+该头会包含 `any_sender.hpp`、`any_receiver.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
+
+## 调度与上下文
+
+- `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。已接受的任务会在 `shutdown()` 后继续 drain；shutdown 后新启动的 schedule operation 会以 `set_stopped` 完成。`wait()` 会等待队列和正在运行的任务清空。
+- `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
+- `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
+- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver 或 shutdown 后入队会完成 `set_stopped()`。
+
+这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。
+
+## Coroutine Sender
+
+- `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或异步 sender，外部可以用 `std::execution::sync_wait` 或其他 sender 组合器消费。
+
+当前限制：`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
+
+## 类型擦除
+
+- `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO + 堆回退。value completion 采用声明的单一 value tuple 形状；error completion 折叠为 `std::exception_ptr`。
+- `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，并提供 `sync_wait()` 直接运行存储的 sender。
+
+`any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。未来如果需要接近 stdexec 风格的 fully-erased sender，应作为独立设施设计。
+
+## 示例与测试
+
+示例位于：
+
+- `example/forge_thread_pool_example.cpp`
+- `example/forge_single_thread_context_example.cpp`
+- `example/forge_system_context_example.cpp`
+- `example/forge_timer_context_example.cpp`
+- `example/forge_any_sender_example.cpp`
+- `example/forge_any_receiver_example.cpp`
+
+对应测试在 `test/forge/` 下，可通过以下命令单独运行：
+
+```bash
+ctest --test-dir build/local -R '^forge_' --output-on-failure
+```
