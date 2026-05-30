@@ -25,6 +25,7 @@
 #include "any_receiver.hpp"
 #include "any_scheduler.hpp"
 #include "any_sender.hpp"
+#include "erased_sender.hpp"
 #include "runtime_context.hpp"
 #include "single_thread_context.hpp"
 #include "static_thread_pool.hpp"
