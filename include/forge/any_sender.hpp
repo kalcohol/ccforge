@@ -23,8 +23,10 @@
 #pragma once
 
 #include <execution>
+#include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -34,13 +36,14 @@ namespace forge {
 // ──────────────────────────────────────────────────────────────────────────
 // any_sender_of<CompletionSignatures>
 //
-// Type-erased sender extension (forge:: namespace, not std::execution).
-// Stores any sender with SBO (64B) + heap fallback. The sender concept
-// and completion signatures are preserved.
+// Narrow type-erased sender extension (forge:: namespace, not std::execution).
+// Stores any sender with SBO (64B) + heap fallback for the common "run it now"
+// path.
 //
-// LIMITATION: connect() requires the receiver type to be known. Use
-// any_sender_of::sync_wait_result<ValueTuple>() for the common case,
-// or extract<SenderType>() to recover the original type.
+// LIMITATION: this is not a general connectable any_sender. It supports a
+// single set_value shape, collapses errors through sync_wait's exception path,
+// and intentionally exposes sync_wait() instead of a receiver-type-erased
+// connect().
 // ──────────────────────────────────────────────────────────────────────────
 
 // Helper: the value tuple type of a given CompletionSignatures.
@@ -110,16 +113,19 @@ public:
 
     any_sender_of(any_sender_of&& other) noexcept {
         if (!other.__ptr) return;
+        __vt = other.__vt;
         if (!other.__on_heap) {
             other.__vt->move_to(other.__ptr, static_cast<void*>(__buf));
+            other.__vt->destroy(other.__ptr);
             __ptr = static_cast<void*>(__buf);
             __on_heap = false;
         } else {
             __ptr = other.__ptr;
             __on_heap = true;
         }
-        __vt = other.__vt;
         other.__ptr = nullptr;
+        other.__vt = nullptr;
+        other.__on_heap = false;
     }
 
     any_sender_of& operator=(any_sender_of&& other) noexcept {

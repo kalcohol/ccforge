@@ -21,6 +21,42 @@ struct test_recv {
     }
 };
 
+struct receiver_move_counts {
+    int moves = 0;
+    int destroyed = 0;
+};
+
+struct tracking_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    receiver_move_counts* counts;
+    int* out;
+
+    tracking_recv(receiver_move_counts* c, int* value) noexcept
+        : counts(c), out(value) {}
+
+    tracking_recv(tracking_recv&& other) noexcept
+        : counts(other.counts), out(other.out) {
+        ++counts->moves;
+    }
+
+    tracking_recv(const tracking_recv&) = delete;
+
+    ~tracking_recv() {
+        if (counts) {
+            ++counts->destroyed;
+        }
+    }
+
+    void set_value(int v) && noexcept {
+        *out = v;
+    }
+
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 static_assert(std::execution::receiver<forge::any_receiver_of<cs_int>>);
 
 TEST(AnyReceiverTest, DefaultEmpty) {
@@ -39,4 +75,24 @@ TEST(AnyReceiverTest, SetValueDelivered) {
     forge::any_receiver_of<cs_int> r = test_recv{&val};
     std::execution::set_value(std::move(r), 42);
     EXPECT_EQ(val, 42);
+}
+
+TEST(AnyReceiverTest, MoveConstructsSmallObjectStorageReceiver) {
+    receiver_move_counts counts;
+    int val = 0;
+
+    {
+        forge::any_receiver_of<cs_int> r = tracking_recv{&counts, &val};
+        EXPECT_EQ(counts.moves, 1);
+        EXPECT_EQ(counts.destroyed, 1);
+
+        forge::any_receiver_of<cs_int> moved(std::move(r));
+        EXPECT_EQ(counts.moves, 2);
+        EXPECT_EQ(counts.destroyed, 2);
+
+        std::execution::set_value(std::move(moved), 99);
+        EXPECT_EQ(val, 99);
+    }
+
+    EXPECT_EQ(counts.destroyed, 3);
 }

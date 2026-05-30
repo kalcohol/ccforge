@@ -23,7 +23,7 @@
 #pragma once
 
 #include <execution>
-#include <cstring>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -43,6 +43,7 @@ class any_receiver_of {
         void (*complete_error)(void*, std::exception_ptr) noexcept;
         void (*complete_stopped)(void*) noexcept;
         void (*destroy)(void*) noexcept;
+        void (*move_to)(void*, void*) noexcept;
     };
 
     template<class R>
@@ -63,6 +64,9 @@ class any_receiver_of {
             },
             .destroy = [](void* p) noexcept {
                 static_cast<R*>(p)->~R();
+            },
+            .move_to = [](void* src, void* dst) noexcept {
+                ::new(dst) R(std::move(*static_cast<R*>(src)));
             },
         };
         return &vt;
@@ -101,16 +105,19 @@ public:
 
     any_receiver_of(any_receiver_of&& o) noexcept {
         if (!o.__ptr) return;
+        __vt = o.__vt;
         if (!o.__on_heap) {
-            std::memcpy(__buf, o.__buf, kSBOSize);
+            __vt->move_to(o.__ptr, static_cast<void*>(__buf));
+            __vt->destroy(o.__ptr);
             __ptr = static_cast<void*>(__buf);
             __on_heap = false;
         } else {
             __ptr = o.__ptr;
             __on_heap = true;
         }
-        __vt = o.__vt;
         o.__ptr = nullptr;
+        o.__vt = nullptr;
+        o.__on_heap = false;
     }
 
     any_receiver_of& operator=(any_receiver_of&&) = delete;
