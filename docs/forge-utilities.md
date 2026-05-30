@@ -17,7 +17,7 @@
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
 - `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver 或 shutdown 后入队会完成 `set_stopped()`。
 
-这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。
+这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`timer_context` 当前只在 start/enqueue 阶段观察 receiver stop token，入队后再请求 stop 不会取消已排定 timer；不要在某个 timer 自己的 completion 回调内同步析构其所属 `timer_context`。
 
 ## Coroutine Sender
 
