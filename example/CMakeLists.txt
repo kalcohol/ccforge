@@ -193,6 +193,12 @@ if(FORGE_HAS_FORGE_IO_BACKEND)
     if(FORGE_EXAMPLE_TBB_LIBRARY)
         target_link_libraries(forge_io_pipeline PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
+
+    add_executable(forge_io_read_write forge_io_read_write_example.cpp)
+    target_link_libraries(forge_io_read_write PRIVATE forge::forge Threads::Threads)
+    if(FORGE_EXAMPLE_TBB_LIBRARY)
+        target_link_libraries(forge_io_read_write PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+    endif()
 endif()
 
 if(FORGE_HAS_FORGE_ACCEL_BACKEND)
@@ -286,6 +292,7 @@ set(FORGE_EXAMPLE_SMOKE_TARGETS
     forge_bounded_pipeline
     forge_io_readiness
     forge_io_pipeline
+    forge_io_read_write
     forge_accel_copy
     forge_accel_pipeline
     forge_accel_event

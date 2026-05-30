@@ -39,6 +39,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <stdexcept>
 #include <system_error>
@@ -90,6 +91,36 @@ bool __stop_requested(const R& rcvr) noexcept {
     -> std::exception_ptr {
     return std::make_exception_ptr(std::system_error{
         error_number, std::generic_category(), what});
+}
+
+[[nodiscard]] inline auto __read_some(int fd, std::span<std::byte> buffer)
+    -> std::size_t {
+    while (true) {
+        const auto result = ::read(fd, buffer.data(), buffer.size());
+        if (result >= 0) {
+            return static_cast<std::size_t>(result);
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        throw std::system_error{errno, std::generic_category(),
+                                "forge::io async_read_some"};
+    }
+}
+
+[[nodiscard]] inline auto __write_some(int fd, std::span<const std::byte> buffer)
+    -> std::size_t {
+    while (true) {
+        const auto result = ::write(fd, buffer.data(), buffer.size());
+        if (result >= 0) {
+            return static_cast<std::size_t>(result);
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        throw std::system_error{errno, std::generic_category(),
+                                "forge::io async_write_some"};
+    }
 }
 
 class __fd {
@@ -771,6 +802,22 @@ public:
 
     [[nodiscard]] auto writable(int fd) -> __detail::__sender {
         return __detail::__sender{state_, fd, readiness::write};
+    }
+
+    [[nodiscard]] auto async_read_some(int fd, std::span<std::byte> buffer) {
+        return readable(fd)
+             | std::execution::then([fd, buffer] {
+                   return __detail::__read_some(fd, buffer);
+               });
+    }
+
+    [[nodiscard]] auto async_write_some(
+        int fd,
+        std::span<const std::byte> buffer) {
+        return writable(fd)
+             | std::execution::then([fd, buffer] {
+                   return __detail::__write_some(fd, buffer);
+               });
     }
 
     void cancel(int fd) noexcept {

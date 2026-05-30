@@ -3,8 +3,8 @@
 `forge::io` 是 Forge runtime extension 的 Linux fd readiness backend。它不是
 标准 backport，不向 `namespace std` 增加名字。
 
-V1 目标很窄：把真实 OS readiness 事件接入 sender/receiver，而不是提供完整网络库或
-异步 read/write buffer 抽象。
+V1 目标很窄：把真实 OS readiness 事件接入 sender/receiver。V2 在 Linux backend
+上增加了薄的 `async_read_some` / `async_write_some` 便利层，但仍不是完整网络库。
 
 ## Platform And Gates
 
@@ -29,6 +29,9 @@ forge::io::context io;
 
 auto readable = io.readable(fd);
 auto writable = io.writable(fd);
+
+std::array<std::byte, 4096> input;
+auto read = io.async_read_some(fd, std::span{input});
 ```
 
 `readable(fd)` / `writable(fd)` 返回 sender，完成形状为：
@@ -40,7 +43,21 @@ std::execution::set_stopped_t()
 ```
 
 `set_value()` 只表示 fd 已经 ready；真正的 `read(2)` / `write(2)` 仍由用户代码执行。
-这避免 V1 过早承诺 buffer lifetime、partial IO、EOF 和 retry 策略。
+这避免 readiness API 过早承诺 buffer lifetime、partial IO、EOF 和 retry 策略。
+
+`async_read_some(fd, std::span<std::byte>)` 和
+`async_write_some(fd, std::span<const std::byte>)` 会先等待相应 readiness，再执行一次
+`read(2)` / `write(2)`，完成形状为：
+
+```cpp
+std::execution::set_value_t(std::size_t)
+std::execution::set_error_t(std::exception_ptr)
+std::execution::set_stopped_t()
+```
+
+返回值是该次 syscall 的 byte count。`0` 对 read 表示 EOF 或零长度 buffer；write
+可能因非阻塞 fd 状态只完成部分 bytes。span 是 borrowed，调用方必须保证 buffer 活到
+operation 完成。`EINTR` 会重试；其它 syscall error 通过 `std::exception_ptr` 传出。
 
 ## FD Lifetime
 
@@ -109,3 +126,4 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。
+- `example/forge_io_read_write_example.cpp`：borrowed span + async read/write convenience。

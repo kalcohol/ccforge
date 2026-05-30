@@ -6,10 +6,12 @@
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <sys/socket.h>
 #include <thread>
@@ -222,6 +224,43 @@ TEST(IoContextTest, WritableCompletesForSocketpair) {
     auto result = std::execution::sync_wait(ctx.writable(sockets.first.get()));
 
     EXPECT_TRUE(result.has_value());
+}
+
+TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    const char payload[] = {'a', 'b', 'c'};
+    ASSERT_EQ(::write(pipe.second.get(), payload, sizeof(payload)),
+              static_cast<ssize_t>(sizeof(payload)));
+
+    std::array<std::byte, sizeof(payload)> buffer{};
+    auto result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.first.get(), std::span{buffer}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), buffer.size());
+    EXPECT_EQ(buffer[0], std::byte{'a'});
+    EXPECT_EQ(buffer[1], std::byte{'b'});
+    EXPECT_EQ(buffer[2], std::byte{'c'});
+}
+
+TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    std::array<char, 3> payload{'x', 'y', 'z'};
+
+    auto result = std::execution::sync_wait(
+        ctx.async_write_some(
+            pipe.second.get(),
+            std::as_bytes(std::span{payload})));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), payload.size());
+
+    std::array<char, 3> received{};
+    ASSERT_EQ(::read(pipe.first.get(), received.data(), received.size()),
+              static_cast<ssize_t>(received.size()));
+    EXPECT_EQ(received, payload);
 }
 
 TEST(IoContextTest, RequestStopCancelsPendingWaiter) {
