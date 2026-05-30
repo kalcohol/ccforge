@@ -56,7 +56,8 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 `FORGE_TEST_ENABLE_FORGE` is the parent switch for `include/forge/` extension
 tests. The narrower `FORGE_TEST_ENABLE_FORGE_*` switches keep the current tests
 enabled by default while allowing future resource, IO, accel, and erasure
-subsets to be configured independently.
+subsets to be configured independently. Resource-policy tests also require
+`FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON`.
 
 Forge extension feature gates are also available:
 

@@ -33,7 +33,8 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
 endfunction()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
-        OR FORGE_TEST_ENABLE_FORGE_RESOURCE
+        OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
+            AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
         OR FORGE_TEST_ENABLE_FORGE_ERASURE)
     forge_add_forge_compile_probe(
         test_forge_execution_header
@@ -54,7 +55,7 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
 endif()
 
-if(FORGE_TEST_ENABLE_FORGE_RESOURCE)
+if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
     forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()
 

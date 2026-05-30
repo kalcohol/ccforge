@@ -119,6 +119,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `forge::single_thread_context` — 单线程调度上下文，适合串行化执行和测试调度切换
 - `forge::timer_context` — 定时调度上下文，提供 `schedule_after` / `schedule_at`
 - `forge::runtime_context` — 显式拥有的运行时上下文，组合 CPU scheduler 和 timer 调度
+- `forge::resource_policy` — `std::pmr::memory_resource*` 资源策略词汇，供 runtime 队列、channel 和 strand 的受控路径使用
 - `forge::async_scope` — 结构化并发 scope，拥有 eager-start sender work，支持 close / stop / wait
 - `forge::bounded_channel<T>` — 有界 FIFO 消息通道，提供 async send/recv 和显式 close / stop 语义
 - `forge::resource_context` — 资源/会话 owning runtime shell，组合 runtime、timer 和 scope 生命周期

@@ -55,6 +55,8 @@ Non-owning views and lightweight handles should not block in destructors.
 
 - `static_thread_pool::shutdown()` stops accepting new schedule operations and
   drains accepted work. `wait()` waits for the queue and active tasks to empty.
+  Its options may carry a non-owning `std::pmr::memory_resource*` for queue
+  node allocation.
 - `timer_context::shutdown()` stops accepting timers and completes pending timers
   stopped. `wait()` waits for accepted timer operations.
 - `runtime_context::wait()` is a practical single-hop drain:
@@ -63,12 +65,18 @@ Non-owning views and lightweight handles should not block in destructors.
   `request_stop()` exposes a requested stop token through owned receiver envs,
   and destruction performs `shutdown()` plus `wait()`.
 - `resource_context` combines a runtime context and async scope for resource
-  sessions. Its destructor performs owning-context shutdown and wait.
+  sessions. Its options pass resource policy to the internal runtime pool; the
+  scope op-state is intentionally not allocator-aware in v1. Its destructor
+  performs owning-context shutdown and wait.
 - `strand` serializes accepted scheduler work. Shutdown completes pending and
-  future strand work stopped.
+  future strand work stopped. Its options may carry a resource for pending
+  queue and receiver record allocation; runner keepalive nodes remain on the
+  default allocation path in v1.
 - `bounded_channel` provides graceful `close()` draining and cancel-now
-  `request_stop()`. Its v1 operation stop-token support is pre-start only;
-  post-enqueue receiver stop requires a later channel state change.
+  `request_stop()`. Its options may carry a resource for buffer, pending
+  operation, action batch, and record allocation. Its v1 operation stop-token
+  support is pre-start only; post-enqueue receiver stop requires a later channel
+  state change.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must
