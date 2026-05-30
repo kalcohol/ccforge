@@ -36,6 +36,43 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 
 这样可以避免 root-owned build artifacts 和 orphaned containers。
 
+## Windows/MSVC Smoke
+
+Windows 验证是可选的手动 smoke gate。它不替代 Linux/podman 全量矩阵；当前
+目标是确认 MSVC 能 configure/build/test `std::execution` backport、
+`std::unique_resource` 和非 Linux IO 的 `forge::` runtime utility 子集。
+
+在 Windows 主机上直接运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\verify-windows-msvc.ps1 `
+  -Vcvars "C:\path\to\VC\Auxiliary\Build\vcvars64.bat"
+```
+
+从 Linux/macOS 通过 SSH 调用远端 Windows 主机：
+
+```bash
+FORGE_WINDOWS_HOST=<windows-host> \
+FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
+scripts/verify-windows-msvc-ssh.sh
+```
+
+如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
+让脚本按 `VsVersion` 或 `vswhere` 查找。脚本默认关闭 Linux-only IO backend 和
+SIMD/submdspan/linalg/native-handoff 测试：
+
+```cmake
+FORGE_ENABLE_FORGE_IO=OFF
+FORGE_TEST_ENABLE_SIMD=OFF
+FORGE_TEST_ENABLE_SUBMDSPAN=OFF
+FORGE_TEST_ENABLE_LINALG=OFF
+FORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
+```
+
+已验证的 Windows baseline 是 VS 2026 Build Tools / MSVC 19.51。VS 2022 /
+MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
+模板路径上仍有编译器兼容缺口；它目前不是强制 gate。
+
 ## 测试分组开关
 
 测试子目录可用 CMake 开关独立启停，默认全开：
