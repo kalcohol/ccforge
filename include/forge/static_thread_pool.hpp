@@ -28,6 +28,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -35,6 +36,11 @@ namespace forge {
 
 // Forward declarations
 class static_thread_pool;
+
+struct static_thread_pool_options {
+    std::size_t thread_count = std::thread::hardware_concurrency();
+    std::optional<std::size_t> queue_capacity = std::nullopt;
+};
 
 namespace __pool_detail {
 
@@ -102,8 +108,13 @@ public:
 
     explicit static_thread_pool(
         std::size_t thread_count = std::thread::hardware_concurrency())
-        : __stop_(false), __active_(0)
+        : static_thread_pool(static_thread_pool_options{thread_count, std::nullopt})
+    {}
+
+    explicit static_thread_pool(static_thread_pool_options options)
+        : __queue_capacity_(options.queue_capacity), __stop_(false), __active_(0)
     {
+        auto thread_count = options.thread_count;
         if (thread_count == 0) thread_count = 1;
         __threads_.reserve(thread_count);
         for (std::size_t i = 0; i < thread_count; ++i)
@@ -147,6 +158,9 @@ public:
         if (__stop_) {
             return false;
         }
+        if (__queue_capacity_ && __queue_.size() >= *__queue_capacity_) {
+            return false;
+        }
         __queue_.push_back(std::move(task));
         ++__active_;
         __cv_.notify_one();
@@ -178,6 +192,7 @@ private:
     std::condition_variable __cv_;
     std::condition_variable __cv_wait_;
     std::deque<std::function<void()>> __queue_;
+    std::optional<std::size_t> __queue_capacity_;
     std::vector<std::thread> __threads_;
     bool __stop_;
     std::size_t __active_;

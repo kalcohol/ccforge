@@ -165,6 +165,110 @@ TEST(StaticThreadPoolTest, ThreadCount) {
     EXPECT_EQ(pool.thread_count(), 3u);
 }
 
+TEST(StaticThreadPoolTest, ZeroThreadCountNormalizesToOne) {
+    forge::static_thread_pool pool{0};
+    EXPECT_EQ(pool.thread_count(), 1u);
+}
+
+TEST(StaticThreadPoolTest, OptionsConstructorKeepsUnboundedDefault) {
+    forge::static_thread_pool pool{forge::static_thread_pool_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto sch = pool.get_scheduler();
+    std::atomic<int> completed{0};
+
+    for (int i = 0; i < 64; ++i) {
+        std::execution::start_detached(
+            std::execution::schedule(sch)
+            | std::execution::then([&] noexcept {
+                completed.fetch_add(1, std::memory_order_relaxed);
+            }));
+    }
+
+    pool.wait();
+    EXPECT_EQ(completed.load(std::memory_order_relaxed), 64);
+}
+
+TEST(StaticThreadPoolTest, BoundedQueueRejectsOverflowWithStopped) {
+    forge::static_thread_pool pool{forge::static_thread_pool_options{
+        .thread_count = 1,
+        .queue_capacity = 1,
+    }};
+    auto sch = pool.get_scheduler();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+
+    std::execution::start_detached(
+        std::execution::schedule(sch)
+        | std::execution::then([&] noexcept {
+            {
+                std::lock_guard lk{mtx};
+                first_started = true;
+            }
+            cv.notify_all();
+            std::unique_lock lk{mtx};
+            cv.wait(lk, [&] { return release_first; });
+        }));
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(2), [&] {
+            return first_started;
+        }));
+    }
+
+    bool second_stopped = false;
+    auto second = std::execution::schedule(sch);
+    auto second_op = std::execution::connect(
+        std::move(second),
+        stopped_receiver{&second_stopped});
+    std::execution::start(second_op);
+    EXPECT_FALSE(second_stopped);
+
+    bool third_stopped = false;
+    auto third = std::execution::schedule(sch);
+    auto third_op = std::execution::connect(
+        std::move(third),
+        stopped_receiver{&third_stopped});
+    std::execution::start(third_op);
+    EXPECT_TRUE(third_stopped);
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    pool.wait();
+    EXPECT_FALSE(second_stopped);
+}
+
+TEST(StaticThreadPoolTest, BoundedQueueShutdownDrainsAcceptedWork) {
+    forge::static_thread_pool pool{forge::static_thread_pool_options{
+        .thread_count = 1,
+        .queue_capacity = 2,
+    }};
+    auto sch = pool.get_scheduler();
+    std::atomic<int> completed{0};
+
+    for (int i = 0; i < 2; ++i) {
+        std::execution::start_detached(
+            std::execution::schedule(sch)
+            | std::execution::then([&] noexcept {
+                completed.fetch_add(1, std::memory_order_relaxed);
+            }));
+    }
+
+    pool.shutdown();
+    pool.wait();
+
+    EXPECT_EQ(completed.load(std::memory_order_relaxed), 2);
+}
+
 TEST(SystemContextTest, GlobalScheduler) {
     auto& ctx = forge::system_context::get();
     auto sch = ctx.get_scheduler();
