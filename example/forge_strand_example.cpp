@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 CC Forge Project
+// Copyright (c) 2026 Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,19 +20,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include <forge/static_thread_pool.hpp>
+#include <forge/strand.hpp>
+#include <execution>
+#include <cassert>
+#include <vector>
 
-#include "async_scope.hpp"
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "channel.hpp"
-#include "erased_sender.hpp"
-#include "resource_context.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "strand.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+int main() {
+    forge::static_thread_pool pool{2};
+    forge::strand strand{pool.get_scheduler()};
+    std::vector<int> order;
+
+    std::execution::start_detached(
+        std::execution::schedule(strand.get_scheduler())
+        | std::execution::then([&] noexcept { order.push_back(1); }));
+    std::execution::start_detached(
+        std::execution::schedule(strand.get_scheduler())
+        | std::execution::then([&] noexcept { order.push_back(2); }));
+
+    strand.wait();
+    assert((order == std::vector<int>{1, 2}));
+}
+
