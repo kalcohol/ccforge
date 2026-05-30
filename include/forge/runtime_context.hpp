@@ -54,6 +54,7 @@ public:
               .queue_capacity = options.queue_capacity,
               .memory = options.memory,
           })
+        , timers_(timer_context_options{.memory = options.memory})
     {}
 
     ~runtime_context() noexcept {

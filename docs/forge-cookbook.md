@@ -139,13 +139,14 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `static_thread_pool_options{.memory = resource}`
 - `bounded_channel_options{.memory = resource}`
 - `strand_options{.memory = resource}`
+- `timer_context_options{.memory = resource}` 或 `runtime_context_options{.memory = resource}`
 - `forge::accel::context_options{.memory = resource}`
 
 关键点：
 
 - pool 的 queue node 和 queued task callable record 受 resource 控制；
-- channel、strand、accel command/pending records 的受控路径使用传入 resource；
-- `async_scope` op-state、`timer_context` timer item、strand runner keepalive node 仍是已知未完全受控路径。
+- channel、strand、timer、accel command/pending records 的受控路径使用传入 resource；
+- `async_scope` op-state、strand runner keepalive node 和部分 `std::function` target 分配仍是已知未完全受控路径。
 
 参考：
 

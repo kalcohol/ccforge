@@ -37,22 +37,23 @@ Accelerator-like mock backend 使用独立头：
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
 - `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和 send/recv record control block。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次和 receiver record；runner node 仍保持原来的 intrusive keepalive `new/delete`，以保护已验证的同步完成生命周期模型。
-- `runtime_context` / `resource_context` 会把 resource 传给内部 `static_thread_pool`。`async_scope` spawned op-state 与 `timer_context` timer item 目前不受该 policy 控制。
+- `timer_context` 使用 resource 控制 state、timer op data、timer item control block 和 timer queue。timer callback 的 `std::function` target 分配仍不完全受控。
+- `runtime_context` / `resource_context` 会把 resource 传给内部 `static_thread_pool` 和 `timer_context`。`async_scope` spawned op-state 目前不受该 policy 控制。
 
 ## 调度与上下文
 
 - `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制队列节点和 queued task callable record 分配时可传入 `.memory = resource`。队列满、shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以 `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列和正在运行的任务清空。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
-- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`wait()` 会等待已接受 timer 操作完成。
+- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`timer_context_options{.memory = resource}` 可控制 state、timer op data、timer item control block 和 timer queue 分配；`wait()` 会等待已接受 timer 操作完成。
   - 入队后取消采用轮询实现而非 stop callback：只要有可停止的 timer 待处理，worker 线程就会把等待上限压到 `poll_interval`（1ms）并在每次唤醒时检查 stop token。代价是取消最多有约 1ms 延迟，且当存在带 stop token 的长时定时器时 worker 会以约 1kHz 周期性唤醒（略有空转）；换来的是单 worker 作为已入队项的唯一完成者，从根本上消除了 value/stopped 完成路径的竞争与 stop-callback 生命周期问题。
-- `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`runtime_context_options` 可配置线程数、pool 队列容量和 pool 队列 resource。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的 pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
+- `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`runtime_context_options` 可配置线程数、pool 队列容量和共享 resource。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的 pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
 - `forge::strand`：scheduler 串行化 wrapper。`strand{scheduler}.get_scheduler()` 返回一个 scheduler，接受的 schedule work 按 FIFO 运行，并保证同一 strand 上最多一个任务处于用户 completion 中。`strand_options{.memory = resource}` 可控制 pending queue 和 receiver record 分配。`shutdown()` 会把 pending/future work 以 stopped 完成；其 schedule sender env 同样暴露 Forge backport completion-scheduler roundtrip。
 - `forge::async_scope`：拥有一组 eager-start sender work 的结构化并发 scope。`spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，`request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，`shutdown()` 等价于 close + request stop。析构会 `shutdown()` 并 `wait()`，因此可能阻塞到 scope-owned work 完成或响应停止。scope 捕获第一个 error 为 `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
 
 `async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
 
-- `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和 pool 队列 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
+- `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和共享 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
 ## IO Readiness
 

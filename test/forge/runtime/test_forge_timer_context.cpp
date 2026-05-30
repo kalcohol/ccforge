@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/timer_context.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <chrono>
 #include <condition_variable>
@@ -96,6 +97,24 @@ TEST(TimerContextTest, ScheduleAfterZeroCompletes) {
     auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
 
     EXPECT_TRUE(result.has_value());
+}
+
+TEST(TimerContextTest, CustomMemoryResourceControlsTimerStorage) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::timer_context ctx{
+            forge::timer_context_options{.memory = &resource}};
+
+        auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+
+        EXPECT_TRUE(result.has_value());
+        EXPECT_GT(resource.allocations(), 0u);
+        ctx.shutdown();
+        ctx.wait();
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(TimerContextTest, ScheduleAfterDoesNotCompleteBeforeDeadline) {

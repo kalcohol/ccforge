@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "resource_policy.hpp"
+
 #include <execution>
 #include <algorithm>
 #include <atomic>
@@ -30,6 +32,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -37,6 +40,10 @@
 namespace forge {
 
 class timer_context;
+
+struct timer_context_options {
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
 
 namespace __timer_detail {
 
@@ -47,21 +54,31 @@ struct __item {
     std::any_stop_token stop_token;
     std::function<void()> complete_value;
     std::function<void()> complete_stopped;
-    std::atomic<bool> done{false};
 };
 
 template<class R>
-bool __stop_requested(const R& rcvr) noexcept {
-    if constexpr (requires {
-                      std::execution::get_stop_token(
-                          std::execution::get_env(rcvr));
-                  }) {
-        return std::execution::get_stop_token(
-            std::execution::get_env(rcvr)).stop_requested();
-    } else {
-        return false;
+struct __op_data {
+    explicit __op_data(R rcvr)
+        : rcvr_(std::move(rcvr))
+    {}
+
+    void complete_value() noexcept {
+        if (done_.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        std::execution::set_value(std::move(rcvr_));
     }
-}
+
+    void complete_stopped() noexcept {
+        if (done_.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        std::execution::set_stopped(std::move(rcvr_));
+    }
+
+    R rcvr_;
+    std::atomic<bool> done_{false};
+};
 
 template<class R>
 struct __op {
@@ -73,27 +90,19 @@ struct __op {
     __op& operator=(const __op&) = delete;
 
     __op(std::shared_ptr<__state> state, std::chrono::steady_clock::time_point deadline, R rcvr)
-        : state_(std::move(state)), deadline_(deadline), rcvr_(std::move(rcvr)) {}
+        : state_(std::move(state))
+        , deadline_(deadline)
+        , data_(make_data(state_, std::move(rcvr)))
+    {}
 
     void start() & noexcept;
 
-    void complete_value() noexcept {
-        if (item_->done.exchange(true, std::memory_order_acq_rel)) {
-            return;
-        }
-        std::execution::set_value(std::move(rcvr_));
-    }
-
-    void complete_stopped() noexcept {
-        if (item_->done.exchange(true, std::memory_order_acq_rel)) {
-            return;
-        }
-        std::execution::set_stopped(std::move(rcvr_));
-    }
+    static auto make_data(std::shared_ptr<__state> state, R rcvr)
+        -> std::shared_ptr<__op_data<R>>;
 
     std::shared_ptr<__state> state_;
     std::chrono::steady_clock::time_point deadline_;
-    R rcvr_;
+    std::shared_ptr<__op_data<R>> data_;
     std::shared_ptr<__item> item_;
 };
 
@@ -127,6 +136,16 @@ struct __sender {
 };
 
 struct __state {
+    explicit __state(std::pmr::memory_resource* memory_resource)
+        : memory(normalize_memory_resource(memory_resource))
+        , items(memory)
+    {}
+
+    [[nodiscard]] auto make_item() -> std::shared_ptr<__item> {
+        return std::allocate_shared<__item>(
+            std::pmr::polymorphic_allocator<__item>{memory});
+    }
+
     bool enqueue(std::shared_ptr<__item> item) {
         std::lock_guard lk{mtx};
         if (stop) {
@@ -253,7 +272,8 @@ struct __state {
     std::mutex mtx;
     std::condition_variable cv;
     std::condition_variable cv_wait;
-    std::vector<std::shared_ptr<__item>> items;
+    std::pmr::memory_resource* memory;
+    std::pmr::vector<std::shared_ptr<__item>> items;
     bool stop = false;
     std::size_t pending = 0;
     std::thread::id worker_id{};
@@ -264,7 +284,14 @@ struct __state {
 class timer_context {
 public:
     timer_context()
-        : state_(std::make_shared<__timer_detail::__state>())
+        : timer_context(timer_context_options{})
+    {}
+
+    explicit timer_context(timer_context_options options)
+        : state_(std::allocate_shared<__timer_detail::__state>(
+              std::pmr::polymorphic_allocator<__timer_detail::__state>{
+                  normalize_memory_resource(options.memory)},
+              normalize_memory_resource(options.memory)))
         , thread_([state = state_] { state->run(); }) {}
 
     ~timer_context() noexcept {
@@ -332,16 +359,29 @@ private:
 namespace __timer_detail {
 
 template<class R>
-inline void __op<R>::start() & noexcept {
-    item_ = std::make_shared<__item>();
-    item_->deadline = deadline_;
-    item_->complete_value = [this] { complete_value(); };
-    item_->complete_stopped = [this] { complete_stopped(); };
+inline auto __op<R>::make_data(std::shared_ptr<__state> state, R rcvr)
+    -> std::shared_ptr<__op_data<R>> {
+    auto* memory = state ? state->memory : default_memory_resource();
+    return std::allocate_shared<__op_data<R>>(
+        std::pmr::polymorphic_allocator<__op_data<R>>{memory},
+        std::move(rcvr));
+}
 
-    auto env = std::execution::get_env(rcvr_);
+template<class R>
+inline void __op<R>::start() & noexcept {
+    item_ = state_
+        ? state_->make_item()
+        : std::allocate_shared<__item>(
+              std::pmr::polymorphic_allocator<__item>{
+                  default_memory_resource()});
+    item_->deadline = deadline_;
+    item_->complete_value = [data = data_] { data->complete_value(); };
+    item_->complete_stopped = [data = data_] { data->complete_stopped(); };
+
+    auto env = std::execution::get_env(data_->rcvr_);
     auto token = std::execution::get_stop_token(env);
     if (token.stop_requested()) {
-        complete_stopped();
+        data_->complete_stopped();
         return;
     }
     if (token.stop_possible()) {
@@ -349,7 +389,7 @@ inline void __op<R>::start() & noexcept {
     }
 
     if (!state_ || !state_->enqueue(item_)) {
-        complete_stopped();
+        data_->complete_stopped();
     }
 }
 

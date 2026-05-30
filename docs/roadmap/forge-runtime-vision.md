@@ -162,8 +162,10 @@ Resource policy 解决实际 runtime 资源问题：
 
 V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy
 framework。`static_thread_pool` 已把 queued task callable record 纳入 pool
-resource；仍需如实记录其它未纳入路径，例如
-`async_scope` op-state、`timer_context` timer item 和 `strand` runner keepalive node。
+resource，`timer_context` 已把 state、timer op data、timer item control block 和
+timer queue 纳入 resource；仍需如实记录其它未纳入路径，例如
+`async_scope` op-state、`strand` runner keepalive node 和部分 `std::function`
+target 分配。
 
 ## IO Backend
 
