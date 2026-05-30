@@ -27,9 +27,17 @@
 
 #include <chrono>
 #include <cstddef>
+#include <memory_resource>
+#include <optional>
 #include <thread>
 
 namespace forge {
+
+struct runtime_context_options {
+    std::size_t thread_count = std::thread::hardware_concurrency();
+    std::optional<std::size_t> queue_capacity = std::nullopt;
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
 
 class runtime_context {
 public:
@@ -37,7 +45,16 @@ public:
 
     explicit runtime_context(
         std::size_t thread_count = std::thread::hardware_concurrency())
-        : pool_(thread_count) {}
+        : runtime_context(runtime_context_options{.thread_count = thread_count})
+    {}
+
+    explicit runtime_context(runtime_context_options options)
+        : pool_(static_thread_pool_options{
+              .thread_count = options.thread_count,
+              .queue_capacity = options.queue_capacity,
+              .memory = options.memory,
+          })
+    {}
 
     ~runtime_context() noexcept {
         shutdown();

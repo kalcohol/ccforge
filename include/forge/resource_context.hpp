@@ -23,15 +23,24 @@
 #pragma once
 
 #include "async_scope.hpp"
+#include "resource_policy.hpp"
 #include "runtime_context.hpp"
 
 #include <chrono>
 #include <cstddef>
 #include <execution>
+#include <memory_resource>
+#include <optional>
 #include <thread>
 #include <utility>
 
 namespace forge {
+
+struct resource_context_options {
+    std::size_t thread_count = std::thread::hardware_concurrency();
+    std::optional<std::size_t> queue_capacity = std::nullopt;
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
 
 class resource_context {
 public:
@@ -39,7 +48,16 @@ public:
 
     explicit resource_context(
         std::size_t thread_count = std::thread::hardware_concurrency())
-        : runtime_(thread_count) {}
+        : resource_context(resource_context_options{.thread_count = thread_count})
+    {}
+
+    explicit resource_context(resource_context_options options)
+        : runtime_(runtime_context_options{
+              .thread_count = options.thread_count,
+              .queue_capacity = options.queue_capacity,
+              .memory = options.memory,
+          })
+    {}
 
     ~resource_context() noexcept {
         shutdown();
@@ -104,4 +122,3 @@ private:
 };
 
 } // namespace forge
-

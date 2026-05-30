@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <tuple>
 
@@ -82,6 +85,63 @@ TEST(ResourceContextTest, SchedulerWorkRuns) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ResourceContextTest, OptionsConstructorUsesCustomMemoryResourceForRuntimeQueue) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::resource_context ctx{forge::resource_context_options{
+            .thread_count = 1,
+            .queue_capacity = std::nullopt,
+            .memory = &resource,
+        }};
+        auto scheduler = ctx.get_scheduler();
+
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool first_started = false;
+        bool release_first = false;
+        std::atomic<int> completed{0};
+
+        ASSERT_TRUE(ctx.spawn(
+            std::execution::schedule(scheduler)
+            | std::execution::then([&] noexcept {
+                {
+                    std::lock_guard lk{mtx};
+                    first_started = true;
+                }
+                cv.notify_all();
+                std::unique_lock lk{mtx};
+                cv.wait(lk, [&] { return release_first; });
+            })));
+
+        {
+            std::unique_lock lk{mtx};
+            ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+        }
+
+        for (int i = 0; i < 8; ++i) {
+            ASSERT_TRUE(ctx.spawn(
+                std::execution::schedule(scheduler)
+                | std::execution::then([&] noexcept {
+                    completed.fetch_add(1, std::memory_order_relaxed);
+                })));
+        }
+
+        EXPECT_GT(resource.allocations(), 0u);
+
+        {
+            std::lock_guard lk{mtx};
+            release_first = true;
+        }
+        cv.notify_all();
+        ctx.wait();
+
+        EXPECT_EQ(completed.load(std::memory_order_relaxed), 8);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(ResourceContextTest, TimerWorkRuns) {
@@ -190,4 +250,3 @@ TEST(ResourceContextTest, FakeCommandLoopExitsWhenCommandChannelCloses) {
     commands.close();
     ctx.wait();
 }
-
