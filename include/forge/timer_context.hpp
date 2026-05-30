@@ -262,8 +262,8 @@ private:
         std::shared_ptr<__timer_detail::__item>,
         std::vector<std::shared_ptr<__timer_detail::__item>>,
         __timer_detail::__item_later> queue_;
-    std::thread thread_;
     bool stop_ = false;
+    std::thread thread_;
 };
 
 namespace __timer_detail {
