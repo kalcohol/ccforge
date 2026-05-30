@@ -73,15 +73,15 @@ private:
 
     template<class Callback>
     struct __callback_state : __callback_state_base {
-        Callback __callback;
+        Callback __stored_fn;
 
         template<class Cb>
         explicit __callback_state(Cb&& cb)
-            : __callback(std::forward<Cb>(cb))
+            : __stored_fn(std::forward<Cb>(cb))
         {}
 
         void invoke() noexcept override {
-            __callback();
+            __stored_fn();
         }
     };
 
@@ -107,10 +107,10 @@ private:
     struct __callback_impl : __callback_base {
         using callback_t = stop_callback_for_t<Token, __callback_invoker>;
 
-        callback_t __callback;
+        callback_t __registration;
 
         __callback_impl(Token tok, std::shared_ptr<__callback_state_base> state)
-            : __callback(std::move(tok), __callback_invoker{std::move(state)})
+            : __registration(std::move(tok), __callback_invoker{std::move(state)})
         {}
     };
 
@@ -144,7 +144,7 @@ public:
         requires std::constructible_from<Callback, Cb>
     callback_type(any_stop_token token, Cb&& cb)
         : __state(std::make_shared<__callback_state<Callback>>(std::forward<Cb>(cb)))
-        , __callback(token.__impl
+        , __handle(token.__impl
             ? token.__impl->make_callback(__state)
             : std::make_unique<__noop_callback>())
     {}
@@ -154,7 +154,7 @@ public:
 
 private:
     std::shared_ptr<__callback_state_base> __state;
-    std::unique_ptr<__callback_base> __callback;
+    std::unique_ptr<__callback_base> __handle;
 };
 
 } // namespace std

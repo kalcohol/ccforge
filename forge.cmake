@@ -77,9 +77,10 @@ if(NOT TARGET forge)
         $<INSTALL_INTERFACE:include>
     )
 
-    # MSVC: Enable UTF-8 source and execution charset (C++23 compliance)
+    # MSVC: Enable UTF-8 source/execution charset and truthful __cplusplus.
     target_compile_options(forge INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+        $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     )
 
     if(FORGE_HAS_FORGE_IO_BACKEND)

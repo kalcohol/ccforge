@@ -35,12 +35,12 @@ namespace __forge_write_env {
 
 template<class OverrideEnv, class BaseEnv>
 struct __joined_env {
-    [[no_unique_address]] OverrideEnv __override;
+    [[no_unique_address]] OverrideEnv __overlay_env;
     [[no_unique_address]] BaseEnv __base;
 
     friend auto tag_invoke(get_stop_token_t, const __joined_env& self) noexcept {
         if constexpr (__forge_detail::tag_invocable<get_stop_token_t, const OverrideEnv&>) {
-            return __forge_detail::tag_invoke_fn(get_stop_token_t{}, self.__override);
+            return __forge_detail::tag_invoke_fn(get_stop_token_t{}, self.__overlay_env);
         } else if constexpr (__forge_detail::tag_invocable<get_stop_token_t, const BaseEnv&>) {
             return __forge_detail::tag_invoke_fn(get_stop_token_t{}, self.__base);
         } else {
@@ -58,7 +58,7 @@ struct __joined_env {
                  (!__forge_detail::tag_invocable<Tag, const OverrideEnv&> &&
                   __forge_detail::nothrow_tag_invocable<Tag, const BaseEnv&>)) {
         if constexpr (__forge_detail::tag_invocable<Tag, const OverrideEnv&>) {
-            return __forge_detail::tag_invoke_fn(tag, self.__override);
+            return __forge_detail::tag_invoke_fn(tag, self.__overlay_env);
         } else {
             return __forge_detail::tag_invoke_fn(tag, self.__base);
         }
