@@ -22,11 +22,14 @@
 
 #pragma once
 
+#include "resource_policy.hpp"
+
 #include <execution>
 #include <atomic>
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -34,6 +37,11 @@
 #include <vector>
 
 namespace forge {
+
+struct bounded_channel_options {
+    std::size_t capacity = 0;
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
 
 namespace __channel_detail {
 
@@ -70,10 +78,17 @@ struct __actions {
     using send_ptr = std::shared_ptr<__send_base<T>>;
     using recv_ptr = std::shared_ptr<__recv_base<T>>;
 
-    std::vector<send_ptr> send_value;
-    std::vector<send_ptr> send_stopped;
-    std::vector<std::pair<recv_ptr, T>> recv_value;
-    std::vector<recv_ptr> recv_stopped;
+    explicit __actions(std::pmr::memory_resource* memory)
+        : send_value(memory)
+        , send_stopped(memory)
+        , recv_value(memory)
+        , recv_stopped(memory)
+    {}
+
+    std::pmr::vector<send_ptr> send_value;
+    std::pmr::vector<send_ptr> send_stopped;
+    std::pmr::vector<std::pair<recv_ptr, T>> recv_value;
+    std::pmr::vector<recv_ptr> recv_stopped;
 
     void run() noexcept {
         for (auto& item : recv_value) {
@@ -96,10 +111,16 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     using send_ptr = std::shared_ptr<__send_base<T>>;
     using recv_ptr = std::shared_ptr<__recv_base<T>>;
 
-    explicit __state(std::size_t cap) noexcept : capacity(cap) {}
+    explicit __state(bounded_channel_options options)
+        : capacity(options.capacity)
+        , memory(normalize_memory_resource(options.memory))
+        , buffer(memory)
+        , pending_sends(memory)
+        , pending_recvs(memory)
+    {}
 
     void start_send(send_ptr send) {
-        __actions<T> actions;
+        __actions<T> actions{memory};
         {
             std::lock_guard lk{mtx};
             if (stopped || closed) {
@@ -121,7 +142,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     void start_recv(recv_ptr recv) {
-        __actions<T> actions;
+        __actions<T> actions{memory};
         {
             std::lock_guard lk{mtx};
             if (!buffer.empty()) {
@@ -144,7 +165,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     bool try_send(T value) {
-        __actions<T> actions;
+        __actions<T> actions{memory};
         bool accepted = false;
         {
             std::lock_guard lk{mtx};
@@ -166,7 +187,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     auto try_recv() -> std::optional<T> {
-        __actions<T> actions;
+        __actions<T> actions{memory};
         std::optional<T> result;
         {
             std::lock_guard lk{mtx};
@@ -186,7 +207,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     void close() noexcept {
-        __actions<T> actions;
+        __actions<T> actions{memory};
         {
             std::lock_guard lk{mtx};
             closed = true;
@@ -203,8 +224,8 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     void request_stop() noexcept {
-        __actions<T> actions;
-        std::deque<T> discarded;
+        __actions<T> actions{memory};
+        std::pmr::deque<T> discarded{memory};
         {
             std::lock_guard lk{mtx};
             stopped = true;
@@ -268,11 +289,12 @@ struct __state : std::enable_shared_from_this<__state<T>> {
 
     mutable std::mutex mtx;
     std::size_t capacity;
+    std::pmr::memory_resource* memory;
     bool closed = false;
     bool stopped = false;
-    std::deque<T> buffer;
-    std::deque<send_ptr> pending_sends;
-    std::deque<recv_ptr> pending_recvs;
+    std::pmr::deque<T> buffer;
+    std::pmr::deque<send_ptr> pending_sends;
+    std::pmr::deque<recv_ptr> pending_recvs;
 };
 
 template<class T, class R>
@@ -338,7 +360,10 @@ struct __send_op {
 
     __send_op(std::shared_ptr<state_t> st, R rcvr, T value)
         : state(std::move(st))
-        , record(std::make_shared<record_t>(std::move(rcvr), std::move(value)))
+        , record(std::allocate_shared<record_t>(
+              std::pmr::polymorphic_allocator<record_t>{state->memory},
+              std::move(rcvr),
+              std::move(value)))
     {}
 
     __send_op(__send_op&&) = delete;
@@ -366,7 +391,9 @@ struct __recv_op {
 
     __recv_op(std::shared_ptr<state_t> st, R rcvr)
         : state(std::move(st))
-        , record(std::make_shared<record_t>(std::move(rcvr)))
+        , record(std::allocate_shared<record_t>(
+              std::pmr::polymorphic_allocator<record_t>{state->memory},
+              std::move(rcvr)))
     {}
 
     __recv_op(__recv_op&&) = delete;
@@ -437,7 +464,11 @@ public:
                   "forge::bounded_channel<T> requires move-constructible T");
 
     explicit bounded_channel(std::size_t capacity)
-        : state_(std::make_shared<__channel_detail::__state<T>>(capacity))
+        : bounded_channel(bounded_channel_options{capacity})
+    {}
+
+    explicit bounded_channel(bounded_channel_options options)
+        : state_(__make_state(options))
     {}
 
     ~bounded_channel() noexcept {
@@ -486,8 +517,17 @@ public:
     }
 
 private:
+    using state_t = __channel_detail::__state<T>;
+
+    static auto __make_state(bounded_channel_options options)
+        -> std::shared_ptr<state_t> {
+        options.memory = normalize_memory_resource(options.memory);
+        return std::allocate_shared<state_t>(
+            std::pmr::polymorphic_allocator<state_t>{options.memory},
+            options);
+    }
+
     std::shared_ptr<__channel_detail::__state<T>> state_;
 };
 
 } // namespace forge
-

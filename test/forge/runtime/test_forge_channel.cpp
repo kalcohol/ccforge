@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
 #include <memory>
@@ -116,6 +117,38 @@ TEST(ChannelTest, SendThenRecvDeliversValue) {
     ASSERT_TRUE(sent.has_value());
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(std::get<0>(*received), 42);
+}
+
+TEST(ChannelTest, OptionsConstructorUsesCustomMemoryResource) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::bounded_channel<int> channel{forge::bounded_channel_options{
+            .capacity = 1,
+            .memory = &resource,
+        }};
+        EXPECT_EQ(channel.capacity(), 1u);
+        EXPECT_GT(resource.allocations(), 0u);
+
+        ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+
+        auto send_state_ptr = std::make_shared<send_state>();
+        auto pending = channel.async_send(2);
+        auto send_op = std::execution::connect(
+            std::move(pending),
+            send_receiver{send_state_ptr});
+        std::execution::start(send_op);
+
+        EXPECT_FALSE(send_state_ptr->value);
+        EXPECT_GT(resource.allocations(), 0u);
+
+        auto first = std::execution::sync_wait(channel.async_recv());
+        ASSERT_TRUE(first.has_value());
+        EXPECT_EQ(std::get<0>(*first), 1);
+        EXPECT_TRUE(send_state_ptr->value);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(ChannelTest, RecvThenSendDirectlyHandsOffValue) {
