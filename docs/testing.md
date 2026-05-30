@@ -46,7 +46,29 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 - `FORGE_TEST_ENABLE_SUBMDSPAN`
 - `FORGE_TEST_ENABLE_LINALG`
 - `FORGE_TEST_ENABLE_FORGE`
+- `FORGE_TEST_ENABLE_FORGE_RUNTIME`
+- `FORGE_TEST_ENABLE_FORGE_RESOURCE`
+- `FORGE_TEST_ENABLE_FORGE_IO`
+- `FORGE_TEST_ENABLE_FORGE_ACCEL`
+- `FORGE_TEST_ENABLE_FORGE_ERASURE`
 - `FORGE_TEST_ENABLE_NATIVE_HANDOFF`
+
+`FORGE_TEST_ENABLE_FORGE` is the parent switch for `include/forge/` extension
+tests. The narrower `FORGE_TEST_ENABLE_FORGE_*` switches keep the current tests
+enabled by default while allowing future resource, IO, accel, and erasure
+subsets to be configured independently.
+
+Forge extension feature gates are also available:
+
+- `FORGE_ENABLE_FORGE_RUNTIME`
+- `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
+- `FORGE_ENABLE_FORGE_IO`
+- `FORGE_ENABLE_FORGE_ACCEL`
+- `FORGE_ENABLE_FORGE_TYPED_ERASURE`
+
+`FORGE_ENABLE_FORGE_IO` and `FORGE_ENABLE_FORGE_ACCEL` are `AUTO` placeholders
+until real backends exist. They do not probe epoll, io_uring, IOCP, CUDA, HIP,
+or SYCL yet.
 
 focused execution 示例：
 

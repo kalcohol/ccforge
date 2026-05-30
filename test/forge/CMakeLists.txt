@@ -32,22 +32,29 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
     endif()
 endfunction()
 
-forge_add_forge_compile_probe(
-    test_forge_execution_header
-    test_forge_execution_header.cpp
-    forge_execution_header)
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME OR FORGE_TEST_ENABLE_FORGE_ERASURE)
+    forge_add_forge_compile_probe(
+        test_forge_execution_header
+        test_forge_execution_header.cpp
+        forge_execution_header)
+endif()
 
-forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
-forge_add_forge_test(test_forge_single_thread_context test_forge_single_thread_context.cpp forge_single_thread_context)
-forge_add_forge_test(test_forge_timer_context test_forge_timer_context.cpp forge_timer_context)
-forge_add_forge_test(test_forge_runtime_context test_forge_runtime_context.cpp forge_runtime_context)
-forge_add_forge_test(test_forge_task test_forge_task.cpp forge_task)
-forge_add_forge_test(test_forge_async_scope test_forge_async_scope.cpp forge_async_scope)
-forge_add_forge_test(test_forge_channel test_forge_channel.cpp forge_channel)
-forge_add_forge_test(test_forge_resource_context test_forge_resource_context.cpp forge_resource_context)
-forge_add_forge_test(test_forge_strand test_forge_strand.cpp forge_strand)
-forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
-forge_add_forge_test(test_forge_any_scheduler test_forge_any_scheduler.cpp forge_any_scheduler)
-forge_add_forge_test(test_forge_erased_sender test_forge_erased_sender.cpp forge_erased_sender)
-forge_add_forge_test(test_forge_any_sender test_forge_any_sender.cpp forge_any_sender)
-forge_add_forge_test(test_forge_any_receiver test_forge_any_receiver.cpp forge_any_receiver)
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
+    forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
+    forge_add_forge_test(test_forge_single_thread_context test_forge_single_thread_context.cpp forge_single_thread_context)
+    forge_add_forge_test(test_forge_timer_context test_forge_timer_context.cpp forge_timer_context)
+    forge_add_forge_test(test_forge_runtime_context test_forge_runtime_context.cpp forge_runtime_context)
+    forge_add_forge_test(test_forge_task test_forge_task.cpp forge_task)
+    forge_add_forge_test(test_forge_async_scope test_forge_async_scope.cpp forge_async_scope)
+    forge_add_forge_test(test_forge_channel test_forge_channel.cpp forge_channel)
+    forge_add_forge_test(test_forge_resource_context test_forge_resource_context.cpp forge_resource_context)
+    forge_add_forge_test(test_forge_strand test_forge_strand.cpp forge_strand)
+    forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
+endif()
+
+if(FORGE_TEST_ENABLE_FORGE_ERASURE)
+    forge_add_forge_test(test_forge_any_scheduler test_forge_any_scheduler.cpp forge_any_scheduler)
+    forge_add_forge_test(test_forge_erased_sender test_forge_erased_sender.cpp forge_erased_sender)
+    forge_add_forge_test(test_forge_any_sender test_forge_any_sender.cpp forge_any_sender)
+    forge_add_forge_test(test_forge_any_receiver test_forge_any_receiver.cpp forge_any_receiver)
+endif()

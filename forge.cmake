@@ -11,6 +11,22 @@ set(FORGE_INCLUDE_DIR "${FORGE_ROOT_DIR}/include")
 set(FORGE_BACKPORT_DIR "${FORGE_ROOT_DIR}/backport")
 set(FORGE_CMAKE_DIR "${FORGE_ROOT_DIR}/cmake")
 
+function(_forge_define_tristate_option option_name default_value description)
+    set(${option_name} "${default_value}" CACHE STRING "${description}")
+    set_property(CACHE ${option_name} PROPERTY STRINGS ON OFF AUTO)
+    if(NOT "${${option_name}}" STREQUAL "ON"
+            AND NOT "${${option_name}}" STREQUAL "OFF"
+            AND NOT "${${option_name}}" STREQUAL "AUTO")
+        message(FATAL_ERROR "${option_name} must be one of ON, OFF, or AUTO")
+    endif()
+endfunction()
+
+option(FORGE_ENABLE_FORGE_RUNTIME "Enable forge:: runtime utility targets" ON)
+option(FORGE_ENABLE_FORGE_RESOURCE_POLICY "Enable forge:: resource policy facilities" ON)
+_forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO backends when available")
+_forge_define_tristate_option(FORGE_ENABLE_FORGE_ACCEL AUTO "Enable forge:: accelerator backends when available")
+option(FORGE_ENABLE_FORGE_TYPED_ERASURE "Enable future forge:: typed-error erasure facilities" OFF)
+
 # Create INTERFACE library target for header-only library
 if(NOT TARGET forge)
     add_library(forge INTERFACE)

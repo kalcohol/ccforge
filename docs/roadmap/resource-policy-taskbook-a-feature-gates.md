@@ -65,7 +65,7 @@ An unused placeholder gate should not affect configure time or platform compatib
 
 ```bash
 cmake -S . -B build/gate-default -DFORGE_BUILD_TESTS=ON
-cmake --build build/gate-default --target test_forge_thread_pool test_forge_erased_sender
+cmake --build build/gate-default
 ctest --test-dir build/gate-default -R '^forge_' --output-on-failure
 
 cmake -S . -B build/gate-resource-off \
