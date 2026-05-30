@@ -1,26 +1,14 @@
-# `forge::erased_sender` Design Note
+# `forge::erased_sender` 设计与限制
 
-This note captures the intended future path for a fully-erased sender facility. It does not change the current `forge::any_sender_of` contract.
+`forge::erased_sender<CompletionSignatures>` 是 Forge 扩展设施，不是标准库 backport。它提供 connectable sender 类型擦除，并刻意与较窄的 `forge::any_sender_of` 分离。
 
-## Status
+## 当前状态
 
-Design accepted for a future task. No public `forge::erased_sender` type exists yet.
-
-## Relationship To `any_sender_of`
-
-`forge::any_sender_of<CompletionSignatures>` remains intentionally narrow:
-
-- one value shape
-- errors collapse through `sync_wait()`'s exception path
-- no connectable erased sender interface
-
-`forge::erased_sender` should be a separate type with a separate name. It must not silently widen `any_sender_of`, because existing users can rely on the small storage-oriented `sync_wait()` helper remaining simple.
-
-## Proposed V1 Surface
-
-Candidate API:
+已实现 v1：
 
 ```cpp
+#include <forge/erased_sender.hpp>
+
 namespace forge {
 
 template<class CompletionSignatures>
@@ -29,92 +17,76 @@ class erased_sender;
 } // namespace forge
 ```
 
-Supported completion signatures for v1:
+`<forge/execution.hpp>` 也会包含该头。
 
-- any number of unique `set_value_t(Vs...)` alternatives
-- optional `set_error_t(std::exception_ptr)`
-- optional `set_stopped_t()`
+## 与 `any_sender_of` 的关系
 
-Unsupported in v1:
+`forge::any_sender_of<CompletionSignatures>` 继续保持窄语义：
 
-- arbitrary typed errors such as `set_error_t(std::error_code)`
-- allocator-aware storage
-- semantic equality
-- changing `any_sender_of`
+- 单一 value 形状；
+- error 通过 `sync_wait()` 异常路径折叠；
+- 提供 `sync_wait()` 便利路径；
+- 不提供通用 connectable erased sender 接口。
 
-The typed-error restriction is deliberate. Arbitrary error alternatives require a broader receiver vtable matrix and should be a later design extension rather than part of the first useful erased sender.
+`forge::erased_sender` 是独立类型，不会静默扩大 `any_sender_of` 的行为。
 
-## Value Model
+## V1 支持范围
 
-Use the existing execution meta utilities in `backport/cpp26/execution/detail/value_result.hpp` as the source of truth for value alternatives:
+支持的 completion signatures：
 
-- collect unique decayed `tuple<...>` value shapes
-- preserve the existing single-value-shape versus variant-of-tuples rules
-- avoid creating another divergent typelist implementation under `include/forge`
+- 任意数量的唯一 `set_value_t(Vs...)` value 形状；
+- 可选 `set_error_t(std::exception_ptr)`；
+- 可选 `set_stopped_t()`。
 
-The erased receiver side should dispatch each supported `set_value_t(Vs...)` alternative to the target receiver without losing value shape.
+不支持：
 
-## Error And Stopped Model
+- typed error，例如 `set_error_t(std::error_code)`；
+- allocator-aware erased storage；
+- semantic equality；
+- SBO；
+- 任意自定义 receiver env query 透传；
+- 改变 `any_sender_of`。
 
-V1 should only support `set_error_t(std::exception_ptr)`.
+typed error 是有意拒绝的：任意 error alternative 会需要更大的 receiver vtable 矩阵，后续如确有需要应作为单独扩展设计。
 
-For concrete senders that expose other typed errors, construction should fail at compile time unless the user adapts the sender first, for example by converting errors to `std::exception_ptr` with an explicit adapter.
+## 所有权模型
 
-`set_stopped_t()` should be forwarded if present in `CompletionSignatures`; otherwise a stopped completion from the source sender should be a construction-time or connect-time contract violation, not silently translated.
+v1 是 heap-first 实现：
 
-## Receiver Erasure
+- erased sender 持有 erased source state；
+- `connect(erased_sender, receiver)` 创建 heap-owned erased operation；
+- erased operation 拥有 concrete operation state；
+- operation 额外持有 source state，避免 concrete operation 引用 source sender 时悬垂；
+- `start()` 只转发到 concrete operation state。
 
-A fully-erased sender needs a receiver-erasure layer that is broader than current `any_receiver_of`:
+`erased_sender` 本身是 move-only。具体 source sender 需要能以存储后的 lvalue 形式连接到 erased receiver；move-only source sender 可以工作，只要它的 `connect` 支持这种用法。
 
-- one vtable entry per unique value tuple alternative
-- one `std::exception_ptr` error entry
-- optional stopped entry
-- `get_env` forwarding for the concrete downstream receiver
+## Value Dispatch
 
-The vtable should be generated from `CompletionSignatures`, not from observed runtime behavior.
+实现复用 `backport/cpp26/execution/detail/value_result.hpp` 里的 value-shape meta：
 
-## Operation-State Ownership
+- value shape 以 decayed `tuple<...>` 归一；
+- 多 value shape 通过生成的 erased receiver 分发表按实际 completion 分派；
+- 不为 `include/forge/` 再造一套独立 value typelist 规则。
 
-Preferred first implementation:
+## Error、Stopped 与 Env
 
-- store the concrete source sender in an erased shared state
-- `connect(erased_sender, receiver)` creates a heap-owned operation model
-- the operation model owns the concrete operation state returned by connecting the concrete sender to the erased receiver
-- `start()` forwards to the concrete operation state
+`set_error` 只支持 `std::exception_ptr`。源 sender 如果声明其它 typed error，构造 `erased_sender` 会在编译期被拒绝。
 
-Heap-first is acceptable for v1. SBO can be added only after the ownership model is proven under ASan/TSan and move-only sender tests.
+`set_stopped_t()` 只有在 `CompletionSignatures` 声明时才属于有效契约。
 
-## Stop And Env
+receiver env v1 只保证 stop token 传播：erased receiver 会把下游 receiver 的 stop token 擦成 `std::any_stop_token` 并通过 `get_stop_token` 暴露给源 sender。任意自定义 env query 不在 v1 范围内。
 
-The erased receiver must forward `get_env(receiver)` to the concrete receiver so source senders can observe stop tokens and receiver environment queries.
+## 测试覆盖
 
-This is a gating requirement. If env forwarding becomes ambiguous or requires invasive changes to the backport, stop at design-only rather than shipping a partial erased sender that breaks cancellation propagation.
+当前测试覆盖：
 
-## Test Plan
-
-Compile-time tests:
-
-- accepts one value shape
-- accepts multiple value shapes
-- accepts `set_error_t(std::exception_ptr)`
-- rejects arbitrary typed errors
-- rejects unsupported completion signatures with a clear diagnostic where feasible
-
-Runtime tests:
-
-- one value shape is delivered
-- multiple value shapes dispatch to the correct receiver path
-- `std::exception_ptr` error is delivered
-- stopped is delivered
-- receiver env and stop token propagate through the erased receiver
-- move-only source sender works if claimed supported
-- operation-state lifetime is clean under ASan/TSan
-
-## Stop Criteria
-
-Do not implement v1 if:
-
-- typed errors leak back into scope
-- receiver env forwarding cannot be made correct
-- operation-state ownership requires changing existing `any_sender_of`
-- the design cannot be tested without depending on undefined receiver lifetime behavior
+- 单 value shape；
+- 多 value shape 分派；
+- 零参数 `set_value_t()`；
+- `set_error_t(std::exception_ptr)`；
+- `set_stopped_t()`；
+- typed error 编译期拒绝；
+- downstream stop token 传播；
+- move-only source sender；
+- sanitizer gate 下的 erased operation/receiver 生命周期。

@@ -8,17 +8,17 @@
 #include <forge/execution.hpp>
 ```
 
-该头会包含 `any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
+该头会包含 `any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`erased_sender.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
 ## 调度与上下文
 
-- `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。已接受的任务会在 `shutdown()` 后继续 drain；shutdown 后新启动的 schedule operation 会以 `set_stopped` 完成。`wait()` 会等待队列和正在运行的任务清空。
+- `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。已接受的任务会在 `shutdown()` 后继续 drain；shutdown 后新启动的 schedule operation 会以 `set_stopped` 完成。`wait()` 会等待队列和正在运行的任务清空。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
-- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver 或 shutdown 后入队会完成 `set_stopped()`。
-- `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 只等待已接受的 CPU work drain。
+- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`wait()` 会等待已接受 timer 操作完成。
+- `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的 pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
 
-这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`timer_context` 当前只在 start/enqueue 阶段观察 receiver stop token，入队后再请求 stop 不会取消已排定 timer；不要在某个 timer 自己的 completion 回调内同步析构其所属 `timer_context`。
+这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`runtime_context::wait()` 不是无界 quiescence 协议：如果回调递归地持续提交新 CPU/timer work，调用方仍应自行定义停止条件。
 
 ## Coroutine Sender
 
@@ -31,10 +31,11 @@
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO + 堆回退。value completion 采用声明的单一 value tuple 形状；error completion 折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，并提供 `sync_wait()` 直接运行存储的 sender。
 - `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除同一个 concrete scheduler 的对象也会因为 state 不同而不相等。
+- `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。v1 是 move-only、heap-first 实现，支持多个唯一 value 形状、`set_error_t(std::exception_ptr)` 和 `set_stopped_t()`；typed error、allocator-aware storage、语义 equality 和任意自定义 receiver env 查询都不属于 v1。
 
-`any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。未来如果需要接近 stdexec 风格的 fully-erased sender，应作为独立设施设计；当前设计边界见 [`forge::erased_sender` 设计记录](forge-erased-sender-design.md)。
+`any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。需要 connectable erased sender 时使用 `erased_sender`；两者语义边界见 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
 
-`any_scheduler` 建模的是 Forge 当前 backport 的本地 scheduler concept。这个本地 concept 不检查标准 P2300 scheduler 的 completion-scheduler 往返；需要与未来原生 `std::execution::scheduler` 严格互通时，应重新审计 `schedule()` sender 的 env。
+`any_scheduler` 建模的是 Forge 当前 backport 的本地 scheduler concept。Forge 公共 scheduler 的 schedule sender env 已通过 backport 的 tag-invoke `get_completion_scheduler<set_value_t>` CPO 暴露 completion-scheduler roundtrip；原生 C++26 member-query env 口径仍是 forward-compat caveat。
 
 ## 示例与测试
 
