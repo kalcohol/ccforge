@@ -27,6 +27,33 @@ _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO back
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_ACCEL AUTO "Enable forge:: accelerator backends when available")
 option(FORGE_ENABLE_FORGE_TYPED_ERASURE "Enable future forge:: typed-error erasure facilities" OFF)
 
+include(CheckCXXSourceCompiles)
+
+check_cxx_source_compiles("
+    #include <sys/epoll.h>
+    #include <sys/eventfd.h>
+    #include <unistd.h>
+    int main() {
+        int ep = epoll_create1(EPOLL_CLOEXEC);
+        int ev = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (ep >= 0) close(ep);
+        if (ev >= 0) close(ev);
+        return 0;
+    }
+" FORGE_PROBE_LINUX_EPOLL_EVENTFD)
+
+set(FORGE_HAS_FORGE_IO_BACKEND OFF)
+if("${FORGE_ENABLE_FORGE_IO}" STREQUAL "OFF")
+    message(STATUS "CC Forge: forge::io backend disabled")
+elseif(FORGE_PROBE_LINUX_EPOLL_EVENTFD)
+    set(FORGE_HAS_FORGE_IO_BACKEND ON)
+    message(STATUS "CC Forge: forge::io linux epoll backend enabled")
+elseif("${FORGE_ENABLE_FORGE_IO}" STREQUAL "ON")
+    message(FATAL_ERROR "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd support")
+else()
+    message(STATUS "CC Forge: forge::io backend unavailable - skipped")
+endif()
+
 # Create INTERFACE library target for header-only library
 if(NOT TARGET forge)
     add_library(forge INTERFACE)
@@ -42,6 +69,10 @@ if(NOT TARGET forge)
     target_compile_options(forge INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
     )
+
+    if(FORGE_HAS_FORGE_IO_BACKEND)
+        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
+    endif()
 
     include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
 
