@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/static_thread_pool.hpp>
 #include <forge/system_context.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
 #include <chrono>
@@ -188,6 +189,65 @@ TEST(StaticThreadPoolTest, OptionsConstructorKeepsUnboundedDefault) {
 
     pool.wait();
     EXPECT_EQ(completed.load(std::memory_order_relaxed), 64);
+}
+
+TEST(StaticThreadPoolTest, OptionsConstructorUsesCustomMemoryResourceForQueue) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::static_thread_pool pool{forge::static_thread_pool_options{
+            .thread_count = 1,
+            .queue_capacity = std::nullopt,
+            .memory = &resource,
+        }};
+        auto sch = pool.get_scheduler();
+
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool first_started = false;
+        bool release_first = false;
+        std::atomic<int> completed{0};
+
+        std::execution::start_detached(
+            std::execution::schedule(sch)
+            | std::execution::then([&] noexcept {
+                {
+                    std::lock_guard lk{mtx};
+                    first_started = true;
+                }
+                cv.notify_all();
+                std::unique_lock lk{mtx};
+                cv.wait(lk, [&] { return release_first; });
+            }));
+
+        {
+            std::unique_lock lk{mtx};
+            ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(2), [&] {
+                return first_started;
+            }));
+        }
+
+        for (int i = 0; i < 16; ++i) {
+            std::execution::start_detached(
+                std::execution::schedule(sch)
+                | std::execution::then([&] noexcept {
+                    completed.fetch_add(1, std::memory_order_relaxed);
+                }));
+        }
+
+        EXPECT_GT(resource.allocations(), 0u);
+
+        {
+            std::lock_guard lk{mtx};
+            release_first = true;
+        }
+        cv.notify_all();
+        pool.wait();
+
+        EXPECT_EQ(completed.load(std::memory_order_relaxed), 16);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(StaticThreadPoolTest, BoundedQueueRejectsOverflowWithStopped) {

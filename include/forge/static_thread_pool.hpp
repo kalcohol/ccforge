@@ -22,11 +22,14 @@
 
 #pragma once
 
+#include "resource_policy.hpp"
+
 #include <execution>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <memory_resource>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -40,6 +43,7 @@ class static_thread_pool;
 struct static_thread_pool_options {
     std::size_t thread_count = std::thread::hardware_concurrency();
     std::optional<std::size_t> queue_capacity = std::nullopt;
+    std::pmr::memory_resource* memory = default_memory_resource();
 };
 
 namespace __pool_detail {
@@ -112,7 +116,10 @@ public:
     {}
 
     explicit static_thread_pool(static_thread_pool_options options)
-        : __queue_capacity_(options.queue_capacity), __stop_(false), __active_(0)
+        : __queue_(normalize_memory_resource(options.memory))
+        , __queue_capacity_(options.queue_capacity)
+        , __stop_(false)
+        , __active_(0)
     {
         auto thread_count = options.thread_count;
         if (thread_count == 0) thread_count = 1;
@@ -191,7 +198,7 @@ private:
     std::mutex __mtx_;
     std::condition_variable __cv_;
     std::condition_variable __cv_wait_;
-    std::deque<std::function<void()>> __queue_;
+    std::pmr::deque<std::function<void()>> __queue_;
     std::optional<std::size_t> __queue_capacity_;
     std::vector<std::thread> __threads_;
     bool __stop_;
