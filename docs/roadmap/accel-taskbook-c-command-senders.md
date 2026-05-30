@@ -3,8 +3,8 @@
 ## Objective
 
 Add the sender/receiver surface that makes the mock accel core useful:
-host/device copies, device/device copies, kernel-like command submission, and a
-small event/fence shape.
+host/device copies, device/device copies, and kernel-like command submission.
+Standalone event/fence remains deferred unless it stays clearly minimal.
 
 ## Public Senders
 
@@ -25,9 +25,6 @@ auto copy_device_to_device(queue& q, device_buffer<T>& dst, const device_buffer<
 template<class F>
 auto submit(queue& q, F&& command);
 
-auto record_event(queue& q);
-auto wait_event(queue& q, event ev);
-
 } // namespace forge::accel
 ```
 
@@ -46,9 +43,8 @@ std::execution::completion_signatures<
     std::execution::set_stopped_t()>
 ```
 
-Event recording may complete with `set_value_t(event)` if returning an event
-handle is the cleanest implementation. If the event API gets awkward, prefer
-shipping copy/submit first and explicitly deferring standalone events over
+Standalone event/fence is explicitly cuttable. If the event API gets awkward,
+prefer shipping copy/submit first and explicitly deferring standalone events over
 adding a half-correct event abstraction.
 
 ## Semantics
@@ -92,7 +88,7 @@ Add focused tests, likely split by behavior:
   - thrown callable routes `set_error(std::exception_ptr)`;
   - start-time stop routes stopped;
   - queue capacity routes stopped.
-- `test_forge_accel_event.cpp`, if event ships:
+- `test_forge_accel_event.cpp`, only if event ships:
   - record event after a copy;
   - wait event before a dependent copy;
   - event handle is safe to move/copy as designed.

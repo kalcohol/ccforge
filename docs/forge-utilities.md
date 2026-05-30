@@ -20,6 +20,14 @@ Linux fd readiness backend 使用独立头：
 
 它受 `FORGE_ENABLE_FORGE_IO` gate 控制；详见 [`forge::io`](forge-io.md)。
 
+Accelerator-like mock backend 使用独立头：
+
+```cpp
+#include <forge/accel.hpp>
+```
+
+它受 `FORGE_ENABLE_FORGE_ACCEL` gate 控制；详见 [`forge::accel`](forge-accel.md)。
+
 ## Resource Policy
 
 - `forge::resource_policy`：V1 资源策略词汇，当前只包含非拥有的 `std::pmr::memory_resource*`。`default_memory_resource()` 返回 `std::pmr::get_default_resource()`，`normalize_memory_resource(ptr)` 会把 `nullptr` 归一为默认 resource。
@@ -56,6 +64,22 @@ Linux fd readiness backend 使用独立头：
 V1 不做 async read/write buffer 抽象，不支持 IOCP/kqueue/io_uring，也不注册入队后的
 per-operation stop callback。pending operation 可由 readiness、`cancel(fd)`、
 `request_stop()` 或 `shutdown()` 唤醒。详细语义见 [`forge::io`](forge-io.md)。
+
+## Accel Mock Backend
+
+- `forge::accel::context`：portable mock/in-memory accelerator-like context，
+  用 Forge runtime 原语模拟 command queue、device buffer、copy 和 kernel-like
+  submit 的 sender 语义。它不是 CUDA/HIP/SYCL/OpenCL/Vulkan/FPGA/NPU backend，也不
+  执行真实硬件加速。
+
+V1 提供 `copy_to_device`、`copy_to_host`、`copy_device_to_device` 和
+`submit(queue, callable)`。`device_buffer<T>` 拥有 mock device storage，`T` 需要
+trivially copyable；host span 是 borrowed，必须活到 command completion。
+同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
+以 stopped 完成。error 路径使用 `std::exception_ptr`。
+
+Standalone event/fence 没有进入 V1；copy/submit sender 自身就是可组合的完成边界。
+详见 [`forge::accel`](forge-accel.md)。
 
 ## 消息通道
 
@@ -101,6 +125,9 @@ per-operation stop callback。pending operation 可由 readiness、`cancel(fd)`�
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_io_readiness_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
+- `example/forge_accel_copy_example.cpp`
+- `example/forge_accel_pipeline_example.cpp`
+- `example/forge_inference_runtime_sketch.cpp`
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`

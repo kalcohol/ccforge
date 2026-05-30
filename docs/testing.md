@@ -70,8 +70,10 @@ Forge extension feature gates are also available:
 `FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend when the
 platform supports it and skips IO tests/examples elsewhere. `ON` requires that
 backend and reports a configure error if unavailable; `OFF` skips IO
-tests/examples. `FORGE_ENABLE_FORGE_ACCEL` remains an `AUTO` placeholder until a
-real accelerator backend exists.
+tests/examples. `FORGE_ENABLE_FORGE_ACCEL=AUTO` enables the portable mock accel
+backend when Forge runtime/resource gates are enabled; `ON` requires those gates
+and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
+vendor SDKs.
 
 focused execution 示例：
 

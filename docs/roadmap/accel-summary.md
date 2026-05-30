@@ -29,7 +29,6 @@ struct context_options {
 
 class context;
 class queue;
-class event;
 
 template<class T>
 class device_buffer;
@@ -45,9 +44,6 @@ auto copy_device_to_device(queue&, device_buffer<T>& dst, const device_buffer<T>
 
 template<class F>
 auto submit(queue&, F&& command);
-
-auto record_event(queue&);
-auto wait_event(queue&, event);
 
 } // namespace forge::accel
 ```
@@ -68,8 +64,6 @@ keep the API small, C++-idiomatic, and easy to explain from examples.
    skips accel tests/examples.
 4. Completion signatures are bounded:
    - `set_value_t()` for copy and kernel-like commands;
-   - `set_value_t(event)` for `record_event`, if this remains the clearest event
-     shape during implementation;
    - `set_error_t(std::exception_ptr)`;
    - `set_stopped_t()`.
 5. Error typing remains `std::exception_ptr` in this round. Typed-error erasure
@@ -92,6 +86,8 @@ keep the API small, C++-idiomatic, and easy to explain from examples.
 - No kernel compilation, module loading, graph capture, streams from vendor
   libraries, pinned memory, unified memory, DMA, or command buffer recording.
 - No tensor library and no neural-network operators.
+- No standalone event/fence surface in V1. Copy and submit senders are the
+  completion boundaries; event/fence can be a later small round if needed.
 - No async read/write integration with IO backend in this round.
 - No typed-error erased sender changes.
 - No changes to standard backport headers.
@@ -110,8 +106,9 @@ Taskbook A fixes the gate and lifecycle contract before public code exists.
 Taskbook B builds the portable mock backend core: context, queue, device buffer,
 resource policy, lifecycle, and capacity behavior.
 
-Taskbook C adds command senders: copies, kernel-like submit, and the smallest
-useful event/fence shape.
+Taskbook C adds command senders: copies and kernel-like submit. Standalone
+event/fence remains a cuttable substep and should be deferred if it starts to
+look like a second scheduler.
 
 Taskbook D makes the feature teachable with examples and final documentation.
 

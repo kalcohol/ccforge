@@ -83,6 +83,12 @@ Non-owning views and lightweight handles should not block in destructors.
   `shutdown()` combines both. `wait()` joins the poller. File descriptors are
   borrowed and must outlive pending readiness operations or be cancelled and
   drained before close.
+- `accel::context` owns a portable mock/in-memory accelerator-like command
+  queue. `close()` rejects later commands and drains accepted work;
+  `request_stop()` stops pending queued commands where possible; `shutdown()`
+  combines both. `wait()` drains accepted command work, and returns immediately
+  if called from an accel command completion to avoid self-deadlock. Host spans
+  are borrowed, while `device_buffer<T>` owns mock device storage.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must

@@ -2,8 +2,8 @@
 
 ## Objective
 
-Implement the portable core objects for `forge::accel`: context, queue, event
-state, and mock device buffers. This taskbook should establish lifecycle,
+Implement the portable core objects for `forge::accel`: context, queue, and
+mock device buffers. This taskbook should establish lifecycle,
 ordering, resource-policy, and capacity behavior before copy/kernel senders are
 added.
 
@@ -12,7 +12,6 @@ added.
 - `include/forge/accel.hpp`
 - `include/forge/accel/context.hpp`
 - `include/forge/accel/buffer.hpp`
-- `include/forge/accel/event.hpp`
 - `include/forge/accel/detail/...` only where it keeps public headers readable
 
 Avoid a large single header if it becomes difficult to audit, but do not split
@@ -56,8 +55,6 @@ public:
     explicit device_buffer(context&, std::size_t size);
     [[nodiscard]] std::size_t size() const noexcept;
 };
-
-class event;
 
 } // namespace forge::accel
 ```

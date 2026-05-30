@@ -97,6 +97,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - [Native handoff 与无感注入](docs/native-handoff.md)
 - [测试与验证](docs/testing.md)
 - [`forge::` 扩展工具](docs/forge-utilities.md)
+- [`forge::accel` mock command backend](docs/forge-accel.md)
 - Backports:
   - [`std::execution`](docs/backports/execution.md)
   - [`std::linalg`](docs/backports/linalg.md)
@@ -125,6 +126,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `forge::resource_context` — 资源/会话 owning runtime shell，组合 runtime、timer 和 scope 生命周期
 - `forge::strand` — scheduler 串行化 wrapper，保证接受的任务 FIFO 且不并发执行
 - `forge::io::context` — Linux fd readiness backend，提供 `readable(fd)` / `writable(fd)` sender（需 `#include <forge/io.hpp>`）
+- `forge::accel::context` — portable mock/in-memory command backend，提供 device buffer、copy 和 kernel-like `submit` sender（需 `#include <forge/accel.hpp>`）
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
 - `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；task body 中可 `co_await` 同步或异步 sender（需要 C++20 coroutines）
 - `forge::any_scheduler` — 窄 scheduler 类型擦除，面向 `schedule()` 常见形状
