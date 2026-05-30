@@ -29,7 +29,7 @@
 #include <tuple>
 
 int main() {
-    std::array<std::byte, 4096> storage{};
+    std::array<std::byte, 65536> storage{};
     std::pmr::monotonic_buffer_resource arena{
         storage.data(),
         storage.size(),

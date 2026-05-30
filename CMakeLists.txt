@@ -29,12 +29,15 @@ if(FORGE_IS_TOP_LEVEL)
     option(FORGE_BUILD_EXAMPLES "Build Forge examples" ON)
     option(FORGE_BUILD_TESTS "Build Forge tests" ON)
 
+    if(FORGE_BUILD_TESTS)
+        enable_testing()
+    endif()
+
     if(FORGE_BUILD_EXAMPLES)
         add_subdirectory(example)
     endif()
 
     if(FORGE_BUILD_TESTS)
-        enable_testing()
         add_subdirectory(test)
     endif()
 else()

@@ -112,6 +112,20 @@ backend when Forge runtime/resource gates are enabled; `ON` requires those gates
 and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
 vendor SDKs.
 
+## Example smoke tests
+
+When both `FORGE_BUILD_EXAMPLES=ON` and `FORGE_BUILD_TESTS=ON`, examples that are
+actually built are also registered as CTest smoke tests named
+`example_<target>_smoke`. This keeps the cookbook paths executable instead of
+only compile-checked. Feature-gated examples, such as Linux IO or mdspan-based
+linalg examples, only register their smoke tests when their target exists.
+
+Focused example check:
+
+```bash
+ctest --test-dir build/local -R '^example_' --output-on-failure
+```
+
 focused execution 示例：
 
 ```bash

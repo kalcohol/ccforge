@@ -1,5 +1,11 @@
 # Forge Examples
 
+function(forge_add_example_smoke target_name)
+    if(FORGE_BUILD_TESTS)
+        add_test(NAME "example_${target_name}_smoke" COMMAND $<TARGET_FILE:${target_name}>)
+    endif()
+endfunction()
+
 add_executable(unique_resource_example unique_resource_example.cpp)
 target_link_libraries(unique_resource_example PRIVATE forge::forge)
 
@@ -238,3 +244,47 @@ if(FORGE_EXAMPLE_HAS_MDSPAN)
     target_link_libraries(linalg_views PRIVATE forge::forge)
     target_include_directories(linalg_views BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
 endif()
+
+set(FORGE_EXAMPLE_SMOKE_TARGETS
+    unique_resource_example
+    simd_example
+    simd_complete_example
+    execution_example
+    submdspan_example
+    execution_phase3_example
+    execution_schedulers
+    execution_let
+    execution_stop_token
+    execution_phase4
+    forge_any_sender
+    forge_any_receiver
+    forge_any_scheduler
+    forge_thread_pool
+    forge_system_context
+    forge_single_thread_context
+    forge_timer_context
+    forge_runtime_context
+    forge_async_scope
+    forge_channel
+    forge_resource_context
+    forge_strand
+    forge_resource_policy
+    forge_bounded_pipeline
+    forge_io_readiness
+    forge_io_pipeline
+    forge_accel_copy
+    forge_accel_pipeline
+    forge_accel_event
+    forge_inference_runtime_sketch
+    execution_coro
+    forge_task
+    linalg_simd_example
+    linalg_level2
+    linalg_level3
+    linalg_views)
+
+foreach(target_name IN LISTS FORGE_EXAMPLE_SMOKE_TARGETS)
+    if(TARGET ${target_name})
+        forge_add_example_smoke(${target_name})
+    endif()
+endforeach()
