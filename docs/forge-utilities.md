@@ -16,6 +16,7 @@
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
 - `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`wait()` 会等待已接受 timer 操作完成。
+  - 入队后取消采用轮询实现而非 stop callback：只要有可停止的 timer 待处理，worker 线程就会把等待上限压到 `poll_interval`（1ms）并在每次唤醒时检查 stop token。代价是取消最多有约 1ms 延迟，且当存在带 stop token 的长时定时器时 worker 会以约 1kHz 周期性唤醒（略有空转）；换来的是单 worker 作为已入队项的唯一完成者，从根本上消除了 value/stopped 完成路径的竞争与 stop-callback 生命周期问题。
 - `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的 pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
 
 这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`runtime_context::wait()` 不是无界 quiescence 协议：如果回调递归地持续提交新 CPU/timer work，调用方仍应自行定义停止条件。
@@ -34,6 +35,8 @@
 - `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。v1 是 move-only、heap-first 实现，支持多个唯一 value 形状、`set_error_t(std::exception_ptr)` 和 `set_stopped_t()`；typed error、allocator-aware storage、语义 equality 和任意自定义 receiver env 查询都不属于 v1。
 
 `any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。需要 connectable erased sender 时使用 `erased_sender`；两者语义边界见 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
+
+两个擦除类型对“空对象”的处理不对称，使用时需注意：空 `any_scheduler`（默认构造）被 schedule 时以 `set_error` 完成；而空 `erased_sender`（默认构造）在 `connect` 时抛 `std::runtime_error`。请仅在持有有效底层对象后再连接/调度。
 
 `any_scheduler` 建模的是 Forge 当前 backport 的本地 scheduler concept。Forge 公共 scheduler 的 schedule sender env 已通过 backport 的 tag-invoke `get_completion_scheduler<set_value_t>` CPO 暴露 completion-scheduler roundtrip；原生 C++26 member-query env 口径仍是 forward-compat caveat。
 
