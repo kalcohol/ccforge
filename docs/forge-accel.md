@@ -79,14 +79,35 @@ Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop tok
 - V1 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
 - User completion 不在 accel 内部 mutex 下执行。
 
-## Event/Fence Status
+## Events And Fences
 
-Standalone `event` / `record_event` / `wait_event` 没有进入 V1。当前 copy 和
-`submit` sender 自身就是可组合的 completion boundary；如果 future backend 需要跨
-queue event/fence，会作为独立小轮次补充，避免把 event 做成第二套 scheduler。
+V1 提供最小 completion-boundary 事件：
+
+```cpp
+forge::accel::event uploaded;
+
+std::execution::sync_wait(forge::accel::copy_to_device(q, device, std::span<const T>{host}));
+std::execution::sync_wait(forge::accel::record_event(q, uploaded));
+std::execution::sync_wait(forge::accel::wait_event(q, uploaded));
+std::execution::sync_wait(forge::accel::fence(q));
+```
+
+- `event` 是可复制的共享完成标记，默认未 ready。
+- `record_event(q, ev)` 作为 queue command 运行，完成时把 `ev` 标记为 ready。
+- `wait_event(q, ev)` 作为 queue command 运行，等待 `ev` ready；若 context stop，
+  以 stopped 完成。
+- `fence(q)` 是 queue 上的 no-op command，可作为“之前已接受 command 已到达”的
+  sender 边界。
+
+这些 API 只描述 portable mock backend 的单 queue completion boundary。它们不暴露
+native CUDA/HIP/SYCL event handle，不建模跨 queue dependency graph，也不检测
+dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
+`record_event` 前面，该 queue 会等待到 event ready 或 context stop；调用方应按
+明确的 command 顺序使用它。
 
 ## Examples
 
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
+- `example/forge_accel_event_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

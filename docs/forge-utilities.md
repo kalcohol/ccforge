@@ -73,12 +73,14 @@ per-operation stop callback。pending operation 可由 readiness、`cancel(fd)`�
   执行真实硬件加速。
 
 V1 提供 `copy_to_device`、`copy_to_host`、`copy_device_to_device` 和
-`submit(queue, callable)`。`device_buffer<T>` 拥有 mock device storage，`T` 需要
+`submit(queue, callable)`，并提供最小 `event` / `record_event` / `wait_event` /
+`fence` completion boundary。`device_buffer<T>` 拥有 mock device storage，`T` 需要
 trivially copyable；host span 是 borrowed，必须活到 command completion。
 同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
 以 stopped 完成。error 路径使用 `std::exception_ptr`。
 
-Standalone event/fence 没有进入 V1；copy/submit sender 自身就是可组合的完成边界。
+V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency graph，也不
+检测 dependency cycle。
 详见 [`forge::accel`](forge-accel.md)。
 
 ## 消息通道
@@ -127,6 +129,7 @@ Standalone event/fence 没有进入 V1；copy/submit sender 自身就是可组�
 - `example/forge_io_pipeline_example.cpp`
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
+- `example/forge_accel_event_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`

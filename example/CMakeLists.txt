@@ -190,6 +190,12 @@ if(FORGE_HAS_FORGE_ACCEL_BACKEND)
         target_link_libraries(forge_accel_pipeline PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
 
+    add_executable(forge_accel_event forge_accel_event_example.cpp)
+    target_link_libraries(forge_accel_event PRIVATE forge::forge Threads::Threads)
+    if(FORGE_EXAMPLE_TBB_LIBRARY)
+        target_link_libraries(forge_accel_event PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+    endif()
+
     add_executable(forge_inference_runtime_sketch forge_inference_runtime_sketch.cpp)
     target_link_libraries(forge_inference_runtime_sketch PRIVATE forge::forge Threads::Threads)
     if(FORGE_EXAMPLE_TBB_LIBRARY)

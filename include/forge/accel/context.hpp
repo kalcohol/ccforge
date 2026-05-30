@@ -28,6 +28,7 @@
 
 #include <execution>
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
@@ -54,6 +55,7 @@ struct context_options {
 
 class context;
 class queue;
+class event;
 template<class T>
 class device_buffer;
 
@@ -66,6 +68,29 @@ using __void_completion_signatures = std::execution::completion_signatures<
 
 struct __state;
 inline thread_local __state* __current_state = nullptr;
+
+struct __stopped_signal {};
+
+struct __event_state {
+    void mark_ready() noexcept {
+        {
+            std::lock_guard lk{mtx};
+            ready = true;
+        }
+        cv.notify_all();
+    }
+
+    [[nodiscard]] bool is_ready() const noexcept {
+        std::lock_guard lk{mtx};
+        return ready;
+    }
+
+    [[nodiscard]] bool wait_until_ready_or_stopped(const __state& state) noexcept;
+
+    mutable std::mutex mtx;
+    std::condition_variable cv;
+    bool ready = false;
+};
 
 struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
@@ -151,6 +176,11 @@ struct __state : std::enable_shared_from_this<__state> {
         return closed || stop_requested;
     }
 
+    [[nodiscard]] bool stop_requested_now() const noexcept {
+        std::lock_guard lk{mtx};
+        return stop_requested;
+    }
+
     [[nodiscard]] auto memory_resource() const noexcept -> std::pmr::memory_resource* {
         return memory;
     }
@@ -165,6 +195,17 @@ struct __state : std::enable_shared_from_this<__state> {
     bool closed = false;
     bool stop_requested = false;
 };
+
+inline bool __event_state::wait_until_ready_or_stopped(const __state& state) noexcept {
+    std::unique_lock lk{mtx};
+    while (!ready) {
+        if (state.stop_requested_now()) {
+            return false;
+        }
+        cv.wait_for(lk, std::chrono::milliseconds{1});
+    }
+    return true;
+}
 
 struct __current_state_guard {
     explicit __current_state_guard(__state* state) noexcept
@@ -206,6 +247,9 @@ struct __command_receiver {
             std::invoke(std::move(action));
             state->finish_one();
             std::execution::set_value(std::move(rcvr));
+        } catch (const __stopped_signal&) {
+            state->finish_one();
+            std::execution::set_stopped(std::move(rcvr));
         } catch (...) {
             state->finish_one();
             std::execution::set_error(std::move(rcvr), std::current_exception());
@@ -365,6 +409,23 @@ auto __make_command_sender(std::shared_ptr<__state> state, Action&& action)
 
 } // namespace __detail
 
+class event {
+public:
+    event()
+        : state_(std::make_shared<__detail::__event_state>())
+    {}
+
+    [[nodiscard]] bool ready() const noexcept {
+        return state_ && state_->is_ready();
+    }
+
+private:
+    friend auto record_event(queue&, event);
+    friend auto wait_event(queue&, event);
+
+    std::shared_ptr<__detail::__event_state> state_;
+};
+
 class queue {
 public:
     queue() = default;
@@ -391,6 +452,9 @@ private:
     friend auto copy_device_to_device(queue&, device_buffer<T>&, const device_buffer<T>&);
     template<class F>
     friend auto submit(queue&, F&&);
+    friend auto record_event(queue&, event);
+    friend auto wait_event(queue&, event);
+    friend auto fence(queue&);
 
     std::weak_ptr<__detail::__state> state_;
 };
@@ -533,6 +597,38 @@ auto submit(queue& q, F&& command) {
         [command = std::forward<F>(command)]() mutable {
             std::invoke(command);
         });
+}
+
+inline auto record_event(queue& q, event ev) {
+    return __detail::__make_command_sender(
+        q.state_.lock(),
+        [state = std::move(ev.state_)] {
+            if (!state) {
+                throw std::runtime_error("forge::accel::record_event: invalid event");
+            }
+            state->mark_ready();
+        });
+}
+
+inline auto wait_event(queue& q, event ev) {
+    auto ctx = q.state_.lock();
+    return __detail::__make_command_sender(
+        ctx,
+        [ctx, state = std::move(ev.state_)] {
+            if (!ctx) {
+                throw __detail::__stopped_signal{};
+            }
+            if (!state) {
+                throw std::runtime_error("forge::accel::wait_event: invalid event");
+            }
+            if (!state->wait_until_ready_or_stopped(*ctx)) {
+                throw __detail::__stopped_signal{};
+            }
+        });
+}
+
+inline auto fence(queue& q) {
+    return __detail::__make_command_sender(q.state_.lock(), [] {});
 }
 
 } // namespace forge::accel
