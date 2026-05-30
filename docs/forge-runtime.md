@@ -77,6 +77,12 @@ Non-owning views and lightweight handles should not block in destructors.
   operation, action batch, and record allocation. Its v1 operation stop-token
   support is pre-start only; post-enqueue receiver stop requires a later channel
   state change.
+- `io::context` owns a Linux epoll/eventfd poller thread. `close()` rejects new
+  readiness operations while allowing already pending readiness waiters to
+  complete normally; `request_stop()` completes pending waiters stopped;
+  `shutdown()` combines both. `wait()` joins the poller. File descriptors are
+  borrowed and must outlive pending readiness operations or be cancelled and
+  drained before close.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must

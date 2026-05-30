@@ -12,6 +12,14 @@
 
 该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_policy.hpp`、`resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`strand.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
+Linux fd readiness backend 使用独立头：
+
+```cpp
+#include <forge/io.hpp>
+```
+
+它受 `FORGE_ENABLE_FORGE_IO` gate 控制；详见 [`forge::io`](forge-io.md)。
+
 ## Resource Policy
 
 - `forge::resource_policy`：V1 资源策略词汇，当前只包含非拥有的 `std::pmr::memory_resource*`。`default_memory_resource()` 返回 `std::pmr::get_default_resource()`，`normalize_memory_resource(ptr)` 会把 `nullptr` 归一为默认 resource。
@@ -37,6 +45,17 @@
 `async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
 
 - `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和 pool 队列 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
+
+## IO Readiness
+
+- `forge::io::context`：Linux `epoll` + `eventfd` backed fd readiness context，提供
+  `readable(fd)` / `writable(fd)` sender。fd 是 borrowed，调用方必须保证 fd 活到
+  operation 完成、`cancel(fd)` 后 drain，或 context shutdown/wait 之后。ready sender
+  完成 `set_value()` 只表示 fd ready，真正的 `read(2)` / `write(2)` 由用户代码执行。
+
+V1 不做 async read/write buffer 抽象，不支持 IOCP/kqueue/io_uring，也不注册入队后的
+per-operation stop callback。pending operation 可由 readiness、`cancel(fd)`、
+`request_stop()` 或 `shutdown()` 唤醒。详细语义见 [`forge::io`](forge-io.md)。
 
 ## 消息通道
 
@@ -80,6 +99,8 @@
 - `example/forge_resource_context_example.cpp`
 - `example/forge_strand_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
+- `example/forge_io_readiness_example.cpp`
+- `example/forge_io_pipeline_example.cpp`
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`

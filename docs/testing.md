@@ -67,9 +67,11 @@ Forge extension feature gates are also available:
 - `FORGE_ENABLE_FORGE_ACCEL`
 - `FORGE_ENABLE_FORGE_TYPED_ERASURE`
 
-`FORGE_ENABLE_FORGE_IO` and `FORGE_ENABLE_FORGE_ACCEL` are `AUTO` placeholders
-until real backends exist. They do not probe epoll, io_uring, IOCP, CUDA, HIP,
-or SYCL yet.
+`FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend when the
+platform supports it and skips IO tests/examples elsewhere. `ON` requires that
+backend and reports a configure error if unavailable; `OFF` skips IO
+tests/examples. `FORGE_ENABLE_FORGE_ACCEL` remains an `AUTO` placeholder until a
+real accelerator backend exists.
 
 focused execution 示例：
 

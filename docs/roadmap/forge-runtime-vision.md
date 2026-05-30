@@ -93,8 +93,8 @@ FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 
 `AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header
 设施不应因为全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、
-tests 和带外部依赖的 backend。在 backend 尚未存在时，IO/accel/typed-erasure gate
-只是惰性占位，不做 epoll、io_uring、CUDA、HIP、SYCL 等探测。
+tests 和带外部依赖的 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness
+backend；accel 和 typed-erasure gate 仍是惰性占位，不做 CUDA、HIP、SYCL 等探测。
 
 ## Resource Policy
 
@@ -114,7 +114,8 @@ framework。需要如实记录限制：当前 `static_thread_pool` 使用
 
 ## IO Backend
 
-IO backend 必须接触真实底层设施，否则只是多包一层线程池。建议分三层：
+IO backend 必须接触真实底层设施，否则只是多包一层线程池。V1 已收窄为 Linux
+fd readiness backend；后续仍建议分三层推进：
 
 - 通用 API 层：readiness sender、async read/write、close/shutdown；
 - 后端层：Linux `epoll`/`eventfd` 起步，后续可评估 `io_uring`；Windows 是 IOCP，
