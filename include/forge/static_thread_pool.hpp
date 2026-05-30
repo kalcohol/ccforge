@@ -183,6 +183,16 @@ private:
     std::size_t __active_;
 };
 
+namespace __pool_detail {
+
+inline auto tag_invoke(
+    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
+    const __env& self) noexcept -> static_thread_pool::scheduler {
+    return static_thread_pool::scheduler{self.pool};
+}
+
+} // namespace __pool_detail
+
 // Define __op start after static_thread_pool is complete
 namespace __pool_detail {
 

@@ -68,6 +68,8 @@ struct __state_base {
     virtual auto connect(__receiver rcvr) -> std::unique_ptr<__operation_base> = 0;
 };
 
+struct __scheduler_access;
+
 template<class Scheduler>
 struct __state_model final : __state_base {
     template<class S>
@@ -133,8 +135,12 @@ struct __sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    struct __env {
+        std::shared_ptr<__state_base> state;
+    };
+
+    auto get_env() const noexcept -> __env {
+        return __env{state};
     }
 
     template<class R>
@@ -186,7 +192,29 @@ public:
     }
 
 private:
+    friend struct __any_scheduler_detail::__scheduler_access;
+
+    explicit any_scheduler(
+        std::shared_ptr<__any_scheduler_detail::__state_base> state) noexcept
+        : state_(std::move(state)) {}
+
     std::shared_ptr<__any_scheduler_detail::__state_base> state_;
 };
+
+namespace __any_scheduler_detail {
+
+struct __scheduler_access {
+    static auto make(std::shared_ptr<__state_base> state) noexcept -> forge::any_scheduler {
+        return forge::any_scheduler{std::move(state)};
+    }
+};
+
+inline auto tag_invoke(
+    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
+    const __sender::__env& env) noexcept -> forge::any_scheduler {
+    return __scheduler_access::make(env.state);
+}
+
+} // namespace __any_scheduler_detail
 
 } // namespace forge
