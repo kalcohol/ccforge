@@ -28,7 +28,7 @@ namespace std {
 
 #if !defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper)
 
-template <auto V, class = void>
+template <auto V>
 struct constant_wrapper {
     static constexpr auto value = V;
     using type = constant_wrapper;
@@ -51,8 +51,8 @@ inline constexpr auto cw = constant_wrapper<V>{};
 template <class T>
 struct __forge_is_constant_wrapper : false_type {};
 
-template <auto V, class Tag>
-struct __forge_is_constant_wrapper<constant_wrapper<V, Tag>> : true_type {};
+template <auto V>
+struct __forge_is_constant_wrapper<constant_wrapper<V>> : true_type {};
 
 template <class T>
 concept __forge_constant_wrapper =

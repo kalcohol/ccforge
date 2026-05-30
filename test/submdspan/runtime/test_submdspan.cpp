@@ -100,19 +100,7 @@ TEST(SubmdspanLayoutRight, RangeSlice) {
     EXPECT_EQ(sub[1], 2);
 }
 
-TEST(SubmdspanLayoutRight, LegacyStridedSlice) {
-    auto data = make_data<12>();
-    std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
-
-    // compatibility spelling: legacy strided_slice extent is an input span
-    auto sub = std::submdspan(m, 0, std::strided_slice{0, 4, 2});
-    EXPECT_EQ(sub.rank(), 1u);
-    EXPECT_EQ(sub.extent(0), 2u);
-    EXPECT_EQ(sub[0], 0);
-    EXPECT_EQ(sub[1], 2);
-}
-
-TEST(SubmdspanLayoutRight, StridedSliceEmptyExtent) {
+TEST(SubmdspanLayoutRight, ExtentSliceEmptyExtent) {
     auto data = make_data<12>();
     std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
 
@@ -136,7 +124,7 @@ TEST(SubmdspanLayoutRight, GeneralStridedMapping) {
     auto data = make_data<12>();
     std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
 
-    // Strided slice on first dim + range on second → layout_stride result
+    // Strided range on first dim + range on second → layout_stride result
     // range_slice{0, 3, 2} on rows: rows 0, 2
     auto sub = std::submdspan(m,
         std::range_slice{0, 3, 2},

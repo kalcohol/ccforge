@@ -167,7 +167,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdspan layouts 作为 `submdspan` foundation；这些 foundation 也由 `forge.cmake` 单独探测，检测到原生或部分原生声明时会主动让位，避免 ODR 冲突。
 
-> `strided_slice` 与 `submdspan_extents` 作为早期 P2630-era 兼容拼写保留；新代码建议使用 `extent_slice` / `range_slice` 与 `subextents`。兼容 `strided_slice` 的 `.extent` 仍按旧 Forge/P2630 语义表示输入 span 长度，进入 `submdspan()` 时会先 canonicalize 到当前 draft 的 `extent_slice` 输出计数语义。当 Forge 注入 backport 时定义 `__cpp_lib_constant_wrapper = 202603L` 与 `__cpp_lib_submdspan = 202603L`。
+> Forge 不保留早期 P2630-era 的 `strided_slice` / `submdspan_extents` 兼容拼写；新代码应直接使用当前 draft 的 `extent_slice` / `range_slice` 与 `subextents`。当 Forge 注入 backport 时定义 `__cpp_lib_constant_wrapper = 202603L` 与 `__cpp_lib_submdspan = 202603L`。
 
 ## `std::simd` 说明
 

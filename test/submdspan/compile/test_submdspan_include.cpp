@@ -12,8 +12,6 @@ static_assert(sizeof(std::extent_slice<int,int,int>) > 0,
               "extent_slice must be available after #include <mdspan>");
 static_assert(sizeof(std::range_slice<int,int>) > 0,
               "range_slice must be available after #include <mdspan>");
-static_assert(sizeof(std::strided_slice<int,int,int>) > 0,
-              "legacy strided_slice must be available after #include <mdspan>");
 static_assert(sizeof(std::layout_left_padded<>) > 0,
               "layout_left_padded must be available after #include <mdspan>");
 

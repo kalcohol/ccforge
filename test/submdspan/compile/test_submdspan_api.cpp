@@ -19,10 +19,6 @@ static_assert(std::is_same_v<es_t::stride_type, int>);
 using rs_t = std::range_slice<int, int>;
 static_assert(std::is_same_v<decltype(rs_t{}.stride), std::constant_wrapper<1zu>>);
 
-// legacy strided_slice remains available as a compatibility spelling
-using ss_ct = std::strided_slice<int, std::integral_constant<int,4>, std::integral_constant<int,2>>;
-static_assert(std::is_same_v<ss_ct::stride_type, std::integral_constant<int,2>>);
-
 // constant_wrapper is part of the current submdspan surface
 using cw_t = std::constant_wrapper<2zu>;
 static_assert(cw_t::value == 2zu);
@@ -35,7 +31,7 @@ static_assert(std::is_same_v<
     decltype(smr_t{}.mapping),
     std::layout_left::mapping<std::extents<int, 4> > >);
 
-// subextents is callable; submdspan_extents remains as a compatibility wrapper
+// subextents is callable
 static void check_subextents() {
     std::extents<int, 3, 4> e;
     // integer index: rank-reducing
@@ -47,7 +43,7 @@ static void check_subextents() {
     // pair range: one dim
     auto e3 = std::subextents(e, std::pair{0,2}, std::full_extent);
     static_assert(decltype(e3)::rank() == 2);
-    auto e4 = std::submdspan_extents(e, std::full_extent, std::range_slice{0, 4, 2});
+    auto e4 = std::subextents(e, std::full_extent, std::range_slice{0, 4, 2});
     static_assert(decltype(e4)::rank() == 2);
     auto c = std::canonical_slices(e, std::full_extent, std::range_slice{0, 4, 2});
     static_assert(std::tuple_size_v<decltype(c)> == 2);
@@ -70,13 +66,10 @@ static void check_submdspan() {
     // range_slice → rank-1
     auto s4 = std::submdspan(m, 0, std::range_slice{0, 4, 2});
     static_assert(s4.rank() == 1);
-    // legacy strided_slice → rank-1
-    auto s5 = std::submdspan(m, 0, std::strided_slice{0, 4, 2});
-    static_assert(s5.rank() == 1);
     // all index → rank-0
-    auto s6 = std::submdspan(m, 1, 2);
-    static_assert(s6.rank() == 0);
-    (void)s1; (void)s2; (void)s3; (void)s4; (void)s5; (void)s6;
+    auto s5 = std::submdspan(m, 1, 2);
+    static_assert(s5.rank() == 0);
+    (void)s1; (void)s2; (void)s3; (void)s4; (void)s5;
 }
 
 static void check_padded_layouts() {
