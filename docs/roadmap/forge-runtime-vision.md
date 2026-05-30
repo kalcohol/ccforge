@@ -15,6 +15,7 @@
 - `bounded_channel`
 - `resource_context`
 - `strand`
+- `io::context` (Linux fd readiness backend)
 - `task`
 - `any_scheduler`
 - 窄 `any_sender_of` / `any_receiver_of`
@@ -54,18 +55,44 @@
 
 ## Project Identity Checkpoint
 
-Resource policy 是当前 `forge::` runtime extension 的自然延伸，独立于后续方向也有用。
-IO backend、`accel` backend 和 typed-error erased sender 则会把 Forge 从
-"C++26 backport 的伴生实用层"推进到更完整的 runtime framework。这个方向可以成立，
-尤其面向推理 runtime、硬件消息通路和结构化并发；但启动 IO 或 `accel` backend 前，
-需要单独确认项目身份和维护范围。
+Forge 的目标不是变成完整 runtime framework、网络库、GPU runtime、tensor runtime 或
+vendor driver wrapper。更准确的身份是：
+
+> C++ backport + 面向资源型异步系统的组合式支撑层。
+
+Resource policy、IO readiness、`accel` command queue sketch 和 typed-error erasure
+都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
+绑定某个具体平台或厂商栈。
 
 具体要求：
 
-- resource policy 轮次不依赖这次身份扩张，可先做；
-- IO/accel 只在 owner 明确批准后进入实现轮次；
+- vendor/platform backend 只是验证支撑层是否能表达真实系统的 optional proof；
 - 任何 vendor/platform backend 都必须有清楚的 optional gate、examples 和验证边界；
 - 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
+- 不把 CUDA/HIP/SYCL、IOCP、kqueue、io_uring、tensor kernel runtime 做成默认依赖。
+
+## Portability And Windows Expectations
+
+Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
+backend。Windows 支持需要被纳入远景，但不应通过在 Linux 代码里堆兼容分支来假装完成。
+
+Windows 阶段性预期：
+
+1. 基础 backport 与 `forge::` 纯 header/runtime 设施应能在 Windows + MSVC 或 clang-cl
+   上 configure/build/test。
+2. 在没有 IOCP backend 前，`FORGE_ENABLE_FORGE_IO=AUTO` 应跳过 IO backend；
+   `FORGE_ENABLE_FORGE_IO=ON` 应给出清楚 configure error。
+3. Linux-only IO headers 不应在 IO disabled 或非 Linux build 下破坏普通用户 include。
+4. 若准备 Windows 机器，优先建立一个可重复执行的验证脚本，而不是依赖手工点击：
+   - CMake configure/build with `FORGE_BUILD_TESTS=ON`;
+   - `ctest` 覆盖 backport + non-IO `forge::` tests；
+   - gate-off/gate-on configure 行为；
+   - 未来 IOCP backend 单独挂在 `FORGE_ENABLE_FORGE_IO=AUTO/ON` 下。
+5. 只有在 Windows 环境稳定后，才启动 IOCP taskbook。IOCP 与 `epoll` 的 completion
+   语义不同，应作为独立 backend 设计，不应强行套 Linux fd readiness 状态机。
+
+如果 owner 提供 Windows 主机，建议作为 self-hosted/manual verification 环境先接入；
+正式 CI 化之前，至少记录可复现命令和预期 test count。
 
 ## Feature Gates
 
@@ -130,6 +157,14 @@ defer。Zig 可以帮助构建和 C ABI 互操作，但不能消除 epoll/io_uri
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
 
+`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。V1 应先从这些场景吸收共同结构：
+
+- command queue / stream 的生命周期；
+- event/fence 的 sender completion 形状；
+- host/device/staging buffer 的资源策略；
+- H2D、D2H、D2D copy 的 backpressure 和错误模型；
+- kernel-like command 的提交、完成、取消和 drain 语义。
+
 候选 surface：
 
 ```cpp
@@ -145,7 +180,7 @@ forge::accel::copy_device_to_device(...)
 forge::accel::submit_kernel(...)
 ```
 
-具体后端可放在：
+具体后端若未来需要，可放在：
 
 ```cpp
 forge::accel::cuda
@@ -153,8 +188,9 @@ forge::accel::hip
 forge::accel::sycl
 ```
 
-核心接口不应强依赖 CUDA/HIP/SYCL。第一版应把 command queue、buffer、event、
-completion sender 的形状定清楚，再选择一个可选后端做真实验证。
+核心接口不应强依赖 CUDA/HIP/SYCL。第一版建议用 mock/in-memory backend 和 examples
+验证语义；只有当抽象能表达真实 pipeline 后，再选择一个可选 vendor/platform backend
+做 proof。
 
 ## Typed-Error Erased Sender
 
