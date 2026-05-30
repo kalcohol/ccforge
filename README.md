@@ -97,6 +97,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - [Native handoff 与无感注入](docs/native-handoff.md)
 - [测试与验证](docs/testing.md)
 - [`forge::` 扩展工具](docs/forge-utilities.md)
+- [Forge cookbook](docs/forge-cookbook.md)
 - [`forge::accel` mock command backend](docs/forge-accel.md)
 - Backports:
   - [`std::execution`](docs/backports/execution.md)

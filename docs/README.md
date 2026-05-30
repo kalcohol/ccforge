@@ -3,6 +3,7 @@
 - [Native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
 - [`forge::` 扩展工具](forge-utilities.md)
+- [Forge cookbook](forge-cookbook.md)
 - [Forge runtime lifecycle contract](forge-runtime.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 - Roadmap:
