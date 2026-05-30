@@ -5,6 +5,9 @@
 - [`forge::` 扩展工具](forge-utilities.md)
 - [Forge runtime lifecycle contract](forge-runtime.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
+- Roadmap:
+  - [Forge runtime 远景图](roadmap/forge-runtime-vision.md)
+  - [Resource policy 下一轮总任务书](roadmap/resource-policy-summary.md)
 - Backports:
   - [`std::execution`](backports/execution.md)
   - [`std::linalg`](backports/linalg.md)
