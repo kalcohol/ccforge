@@ -16,6 +16,9 @@
 - `resource_context`
 - `strand`
 - `io::context` (Linux fd readiness backend)
+- `accel::context` / `accel::queue` / `accel::device_buffer` / `accel::event`
+- `accel` mock copy / submit / event / fence command senders
+- `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
 - 窄 `any_sender_of` / `any_receiver_of`
@@ -71,6 +74,27 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error er
 - 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
 - 不把 CUDA/HIP/SYCL、IOCP、kqueue、io_uring、tensor kernel runtime 做成默认依赖。
 
+## Maintenance Mode And Decision Gates
+
+当前 `include/forge/` 设施已经进入较稳定的维护态。默认下一步应优先做：
+
+- bug fixes and sanitizer-found lifetime fixes;
+- docs/examples/cookbook，让现有设施更容易被正确组合；
+- verification coverage，尤其是 Windows/MSVC smoke、gate-off/gate-on 行为和 sanitizer
+  子集；
+- 小而明确的 ergonomic helpers，前提是能复用现有 runtime/lifetime 模型。
+
+以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
+
+- 新平台 IO backend：Windows IOCP、macOS/BSD kqueue、Linux `io_uring`；
+- 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
+- typed-error `erased_sender` v2；
+- 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
+  `ensure_started` 单发/取消语义、`spawn_future` 更完整 allocator 传播。
+
+每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
+回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
+
 ## Portability And Windows Expectations
 
 Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
@@ -123,7 +147,8 @@ FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 `AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header
 设施不应因为全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、
 tests 和带外部依赖的 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness
-backend；accel 和 typed-erasure gate 仍是惰性占位，不做 CUDA、HIP、SYCL 等探测。
+backend；accel gate 已用于 portable mock backend；typed-erasure gate 仍是惰性占位。
+accel 当前不做 CUDA、HIP、SYCL 或 vendor SDK 探测。
 
 ## Resource Policy
 
@@ -135,9 +160,9 @@ Resource policy 解决实际 runtime 资源问题：
 - host/device staging buffer 的分配；
 - OOM 或 capacity full 时的 completion 策略。
 
-V1 应优先使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy
-framework。`static_thread_pool` 后续 callable-storage 小轮次已把 queued task
-callable record 纳入 pool resource；仍需如实记录其它未纳入路径，例如
+V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy
+framework。`static_thread_pool` 已把 queued task callable record 纳入 pool
+resource；仍需如实记录其它未纳入路径，例如
 `async_scope` op-state、`timer_context` timer item 和 `strand` runner keepalive node。
 
 ## IO Backend
@@ -150,15 +175,17 @@ fd readiness backend；后续仍建议分三层推进：
   macOS/BSD 是 kqueue；
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
-第一版不承诺全平台。建议先做 Linux fd readiness backend，并把 Windows/IOCP 明确
-defer。Zig 可以帮助构建和 C ABI 互操作，但不能消除 epoll/io_uring/IOCP 语义差异。
+第一版不承诺全平台。Linux fd readiness backend 已作为 V1 落地；Windows/IOCP、
+kqueue 和 `io_uring` 仍需独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能
+消除 epoll/io_uring/IOCP 语义差异。
 
 ## Accel Scheduler
 
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
 
-`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。V1 应先从这些场景吸收共同结构：
+`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 V1 已用 portable mock backend
+落地以下共同结构：
 
 - command queue / stream 的生命周期；
 - event/fence 的 sender completion 形状；
@@ -166,19 +193,20 @@ defer。Zig 可以帮助构建和 C ABI 互操作，但不能消除 epoll/io_uri
 - H2D、D2H、D2D copy 的 backpressure 和错误模型；
 - kernel-like command 的提交、完成、取消和 drain 语义。
 
-候选 surface：
+当前 surface：
 
 ```cpp
-forge::accel::device
+forge::accel::context
 forge::accel::queue
-forge::accel::stream
-forge::accel::event
 forge::accel::device_buffer
-forge::accel::host_buffer
+forge::accel::event
 forge::accel::copy_to_device(...)
 forge::accel::copy_to_host(...)
 forge::accel::copy_device_to_device(...)
-forge::accel::submit_kernel(...)
+forge::accel::submit(...)
+forge::accel::record_event(...)
+forge::accel::wait_event(...)
+forge::accel::fence(...)
 ```
 
 具体后端若未来需要，可放在：
@@ -189,9 +217,9 @@ forge::accel::hip
 forge::accel::sycl
 ```
 
-核心接口不应强依赖 CUDA/HIP/SYCL。第一版建议用 mock/in-memory backend 和 examples
-验证语义；只有当抽象能表达真实 pipeline 后，再选择一个可选 vendor/platform backend
-做 proof。
+核心接口不应强依赖 CUDA/HIP/SYCL。mock/in-memory backend 和 examples 已用于验证
+语义；只有当抽象需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做
+proof。
 
 ## Typed-Error Erased Sender
 
