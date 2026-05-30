@@ -24,6 +24,13 @@ int main() {
         return 3;
     }
 
+    forge::runtime_context runtime{1};
+    auto runtime_result = std::execution::sync_wait(
+        std::execution::schedule(runtime.get_scheduler()));
+    if (!runtime_result) {
+        return 4;
+    }
+
     using cs_int = std::execution::completion_signatures<
         std::execution::set_value_t(int),
         std::execution::set_error_t(std::exception_ptr),
@@ -32,7 +39,7 @@ int main() {
     forge::any_sender_of<cs_int> erased = std::execution::just(7);
     auto value = erased.sync_wait();
     if (!value || std::get<0>(*value) != 7) {
-        return 4;
+        return 5;
     }
 
     return 0;
