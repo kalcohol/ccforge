@@ -87,7 +87,7 @@ V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency gr
 
 - `forge::bounded_channel<T>`：有界 FIFO 消息通道，提供 `async_send(T)`、`async_recv()`、`try_send(T)`、`try_recv()`、`close()`、`request_stop()` 和 `shutdown()`。可用 `bounded_channel_options{.capacity = N, .memory = resource}` 控制容量和 channel 内部 buffer/pending/record 分配。send 在值被缓冲或直接交给等待中的 receiver 后完成 `set_value()`；recv 在收到值时完成 `set_value(T)`。`close()` 拒绝新 send 并允许已缓冲值 drain；`request_stop()` 取消 pending send/recv 并丢弃缓冲值。
 
-`bounded_channel` 的 V1 stop-token 支持是保守的：operation `start()` 前如果 receiver stop token 已请求，会直接 `set_stopped()`；已经入队的 pending send/recv 不注册 per-op stop callback，因此 receiver stop token 在入队后才被请求时，不会单独唤醒 idle waiter。此时需要 channel `close()` / `request_stop()` 或其它 channel 状态变化来完成 pending operation。
+`bounded_channel` 会观察 receiver stop token：operation `start()` 前如果 token 已请求，会直接 `set_stopped()`；如果 send/recv 已经进入 pending 队列且 token 后续请求停止，channel 会把该 pending operation 从队列移除并在 mutex 外完成 `set_stopped()`。不带 stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level `request_stop()` 完成。
 
 这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`runtime_context::wait()` 不是无界 quiescence 协议：如果回调递归地持续提交新 CPU/timer work，调用方仍应自行定义停止条件。
 

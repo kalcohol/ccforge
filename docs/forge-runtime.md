@@ -74,9 +74,10 @@ Non-owning views and lightweight handles should not block in destructors.
   default allocation path in v1.
 - `bounded_channel` provides graceful `close()` draining and cancel-now
   `request_stop()`. Its options may carry a resource for buffer, pending
-  operation, action batch, and record allocation. Its v1 operation stop-token
-  support is pre-start only; post-enqueue receiver stop requires a later channel
-  state change.
+  operation, action batch, and record allocation. Pending send/recv operations
+  register receiver stop callbacks when a stoppable token is present; callback
+  completion removes the operation from the pending queue and completes stopped
+  outside the channel mutex.
 - `io::context` owns a Linux epoll/eventfd poller thread. `close()` rejects new
   readiness operations while allowing already pending readiness waiters to
   complete normally; `request_stop()` completes pending waiters stopped;

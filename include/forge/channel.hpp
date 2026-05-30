@@ -25,6 +25,7 @@
 #include "resource_policy.hpp"
 
 #include <execution>
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <deque>
@@ -119,7 +120,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         , pending_recvs(memory)
     {}
 
-    void start_send(send_ptr send) {
+    [[nodiscard]] bool start_send(send_ptr send) {
         __actions<T> actions{memory};
         {
             std::lock_guard lk{mtx};
@@ -135,13 +136,14 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 actions.send_value.push_back(std::move(send));
             } else {
                 pending_sends.push_back(std::move(send));
-                return;
+                return true;
             }
         }
         actions.run();
+        return false;
     }
 
-    void start_recv(recv_ptr recv) {
+    [[nodiscard]] bool start_recv(recv_ptr recv) {
         __actions<T> actions{memory};
         {
             std::lock_guard lk{mtx};
@@ -158,10 +160,11 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 actions.recv_stopped.push_back(std::move(recv));
             } else {
                 pending_recvs.push_back(std::move(recv));
-                return;
+                return true;
             }
         }
         actions.run();
+        return false;
     }
 
     bool try_send(T value) {
@@ -247,6 +250,34 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         request_stop();
     }
 
+    void cancel_send(const send_ptr& send) noexcept {
+        send_ptr stopped;
+        {
+            std::lock_guard lk{mtx};
+            auto it = std::find(pending_sends.begin(), pending_sends.end(), send);
+            if (it == pending_sends.end()) {
+                return;
+            }
+            stopped = std::move(*it);
+            pending_sends.erase(it);
+        }
+        stopped->complete_stopped();
+    }
+
+    void cancel_recv(const recv_ptr& recv) noexcept {
+        recv_ptr stopped;
+        {
+            std::lock_guard lk{mtx};
+            auto it = std::find(pending_recvs.begin(), pending_recvs.end(), recv);
+            if (it == pending_recvs.end()) {
+                return;
+            }
+            stopped = std::move(*it);
+            pending_recvs.erase(it);
+        }
+        stopped->complete_stopped();
+    }
+
     [[nodiscard]] bool is_closed() const noexcept {
         std::lock_guard lk{mtx};
         return closed;
@@ -299,8 +330,26 @@ struct __state : std::enable_shared_from_this<__state<T>> {
 
 template<class T, class R>
 struct __send_record final : __send_base<T> {
+    using state_t = __state<T>;
+
+    struct __stop_callback_fn {
+        std::weak_ptr<state_t> state;
+        std::weak_ptr<__send_base<T>> record;
+
+        void operator()() noexcept {
+            auto st = state.lock();
+            auto rec = record.lock();
+            if (st && rec) {
+                st->cancel_send(rec);
+            }
+        }
+    };
+
+    using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+
     R rcvr;
     std::optional<T> value;
+    std::optional<callback_t> stop_callback;
     std::atomic<bool> done{false};
 
     __send_record(R r, T v)
@@ -325,11 +374,58 @@ struct __send_record final : __send_base<T> {
         value.reset();
         std::execution::set_stopped(std::move(rcvr));
     }
+
+    void install_stop_callback(
+        const std::shared_ptr<state_t>& state,
+        const std::shared_ptr<__send_base<T>>& self) noexcept {
+        if (done.load(std::memory_order_acquire)) {
+            return;
+        }
+        if constexpr (requires {
+                          std::any_stop_token{
+                              std::execution::get_stop_token(
+                                  std::execution::get_env(rcvr))};
+                      }) {
+            try {
+                auto token = std::any_stop_token{
+                    std::execution::get_stop_token(std::execution::get_env(rcvr))};
+                if (token.stop_requested()) {
+                    state->cancel_send(self);
+                    return;
+                }
+                if (token.stop_possible()) {
+                    stop_callback.emplace(
+                        std::move(token),
+                        __stop_callback_fn{state, self});
+                }
+            } catch (...) {
+                state->cancel_send(self);
+            }
+        }
+    }
 };
 
 template<class T, class R>
 struct __recv_record final : __recv_base<T> {
+    using state_t = __state<T>;
+
+    struct __stop_callback_fn {
+        std::weak_ptr<state_t> state;
+        std::weak_ptr<__recv_base<T>> record;
+
+        void operator()() noexcept {
+            auto st = state.lock();
+            auto rec = record.lock();
+            if (st && rec) {
+                st->cancel_recv(rec);
+            }
+        }
+    };
+
+    using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+
     R rcvr;
+    std::optional<callback_t> stop_callback;
     std::atomic<bool> done{false};
 
     explicit __recv_record(R r) : rcvr(std::move(r)) {}
@@ -346,6 +442,35 @@ struct __recv_record final : __recv_base<T> {
             return;
         }
         std::execution::set_stopped(std::move(rcvr));
+    }
+
+    void install_stop_callback(
+        const std::shared_ptr<state_t>& state,
+        const std::shared_ptr<__recv_base<T>>& self) noexcept {
+        if (done.load(std::memory_order_acquire)) {
+            return;
+        }
+        if constexpr (requires {
+                          std::any_stop_token{
+                              std::execution::get_stop_token(
+                                  std::execution::get_env(rcvr))};
+                      }) {
+            try {
+                auto token = std::any_stop_token{
+                    std::execution::get_stop_token(std::execution::get_env(rcvr))};
+                if (token.stop_requested()) {
+                    state->cancel_recv(self);
+                    return;
+                }
+                if (token.stop_possible()) {
+                    stop_callback.emplace(
+                        std::move(token),
+                        __stop_callback_fn{state, self});
+                }
+            } catch (...) {
+                state->cancel_recv(self);
+            }
+        }
     }
 };
 
@@ -376,7 +501,9 @@ struct __send_op {
             record->complete_stopped();
             return;
         }
-        state->start_send(record);
+        if (state->start_send(record)) {
+            record->install_stop_callback(state, record);
+        }
     }
 };
 
@@ -406,7 +533,9 @@ struct __recv_op {
             record->complete_stopped();
             return;
         }
-        state->start_recv(record);
+        if (state->start_recv(record)) {
+            record->install_stop_callback(state, record);
+        }
     }
 };
 

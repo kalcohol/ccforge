@@ -280,7 +280,7 @@ TEST(ChannelTest, PreStartStopTokenCompletesStoppedWithoutEnqueue) {
     EXPECT_TRUE(send_state_ptr->stopped);
 }
 
-TEST(ChannelTest, PostEnqueueReceiverStopWaitsForChannelStateChangeInV1) {
+TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingRecv) {
     forge::bounded_channel<int> channel{1};
     std::inplace_stop_source source;
     auto state = std::make_shared<recv_state<int>>();
@@ -292,10 +292,36 @@ TEST(ChannelTest, PostEnqueueReceiverStopWaitsForChannelStateChangeInV1) {
     std::execution::start(recv_op);
 
     source.request_stop();
-    EXPECT_FALSE(state->stopped);
-
-    channel.close();
     EXPECT_TRUE(state->stopped);
+    EXPECT_TRUE(channel.try_send(4));
+
+    auto value = channel.try_recv();
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 4);
+}
+
+TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingSend) {
+    forge::bounded_channel<int> channel{1};
+    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+
+    std::inplace_stop_source source;
+    auto state = std::make_shared<send_state>();
+
+    auto send = channel.async_send(2);
+    auto send_op = std::execution::connect(
+        std::move(send),
+        stopped_send_receiver{state, &source});
+    std::execution::start(send_op);
+
+    EXPECT_FALSE(state->stopped);
+    source.request_stop();
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->value);
+
+    auto first = channel.try_recv();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_FALSE(channel.try_recv().has_value());
 }
 
 TEST(ChannelTest, CompletionDoesNotHoldChannelMutex) {
