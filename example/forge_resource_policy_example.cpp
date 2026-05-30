@@ -54,5 +54,7 @@ int main() {
         }));
 
     assert(std::execution::sync_wait(channel.async_send(21)).has_value());
+    channel.close();
+    pool.shutdown();
     pool.wait();
 }
