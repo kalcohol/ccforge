@@ -59,6 +59,12 @@ if(FORGE_HAS_FORGE_IO_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_context test_forge_io_context.cpp forge_io_context)
 endif()
 
+if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
+    forge_add_forge_test(test_forge_accel_context test_forge_accel_context.cpp forge_accel_context)
+    forge_add_forge_test(test_forge_accel_copy test_forge_accel_copy.cpp forge_accel_copy)
+    forge_add_forge_test(test_forge_accel_submit test_forge_accel_submit.cpp forge_accel_submit)
+endif()
+
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
     forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()

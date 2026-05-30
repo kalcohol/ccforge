@@ -54,6 +54,18 @@ else()
     message(STATUS "CC Forge: forge::io backend unavailable - skipped")
 endif()
 
+set(FORGE_HAS_FORGE_ACCEL_BACKEND OFF)
+if("${FORGE_ENABLE_FORGE_ACCEL}" STREQUAL "OFF")
+    message(STATUS "CC Forge: forge::accel mock backend disabled")
+elseif(FORGE_ENABLE_FORGE_RUNTIME AND FORGE_ENABLE_FORGE_RESOURCE_POLICY)
+    set(FORGE_HAS_FORGE_ACCEL_BACKEND ON)
+    message(STATUS "CC Forge: forge::accel mock backend enabled")
+elseif("${FORGE_ENABLE_FORGE_ACCEL}" STREQUAL "ON")
+    message(FATAL_ERROR "FORGE_ENABLE_FORGE_ACCEL=ON requires FORGE_ENABLE_FORGE_RUNTIME=ON and FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON")
+else()
+    message(STATUS "CC Forge: forge::accel mock backend unavailable - skipped")
+endif()
+
 # Create INTERFACE library target for header-only library
 if(NOT TARGET forge)
     add_library(forge INTERFACE)
@@ -72,6 +84,9 @@ if(NOT TARGET forge)
 
     if(FORGE_HAS_FORGE_IO_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
+    endif()
+    if(FORGE_HAS_FORGE_ACCEL_BACKEND)
+        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_BACKEND=1)
     endif()
 
     include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
