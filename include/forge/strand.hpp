@@ -23,6 +23,7 @@
 #pragma once
 
 #include "any_scheduler.hpp"
+#include "resource_policy.hpp"
 
 #include <execution>
 #include <atomic>
@@ -30,6 +31,7 @@
 #include <deque>
 #include <exception>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <type_traits>
 #include <utility>
@@ -38,6 +40,10 @@
 namespace forge {
 
 class strand;
+
+struct strand_options {
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
 
 namespace __strand_detail {
 
@@ -135,8 +141,11 @@ struct __runner final : __runner_base {
 };
 
 struct __state : std::enable_shared_from_this<__state> {
-    explicit __state(any_scheduler scheduler)
-        : scheduler_(std::move(scheduler)) {}
+    __state(any_scheduler scheduler, strand_options options)
+        : scheduler_(std::move(scheduler))
+        , memory_(normalize_memory_resource(options.memory))
+        , queue_(memory_)
+    {}
 
     void enqueue(std::shared_ptr<__record_base> record) noexcept {
         std::shared_ptr<__record_base> stopped;
@@ -163,7 +172,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void shutdown() noexcept {
-        std::vector<std::shared_ptr<__record_base>> stopped;
+        std::pmr::vector<std::shared_ptr<__record_base>> stopped{memory_};
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
@@ -211,7 +220,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void stop_all() noexcept {
-        std::vector<std::shared_ptr<__record_base>> stopped;
+        std::pmr::vector<std::shared_ptr<__record_base>> stopped{memory_};
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
@@ -240,6 +249,11 @@ struct __state : std::enable_shared_from_this<__state> {
         return closed_;
     }
 
+    [[nodiscard]] auto memory_resource() const noexcept
+        -> std::pmr::memory_resource* {
+        return memory_;
+    }
+
 private:
     void launch_runner() noexcept {
         try {
@@ -255,9 +269,10 @@ private:
     }
 
     any_scheduler scheduler_;
+    std::pmr::memory_resource* memory_;
     mutable std::mutex mtx_;
     std::condition_variable cv_;
-    std::deque<std::shared_ptr<__record_base>> queue_;
+    std::pmr::deque<std::shared_ptr<__record_base>> queue_;
     bool running_ = false;
     bool closed_ = false;
 };
@@ -326,7 +341,10 @@ struct __op {
 
     __op(std::shared_ptr<__state> state, R rcvr)
         : state_(std::move(state))
-        , record_(std::make_shared<record_t>(std::move(rcvr)))
+        , record_(std::allocate_shared<record_t>(
+              std::pmr::polymorphic_allocator<record_t>{
+                  state_->memory_resource()},
+              std::move(rcvr)))
     {}
 
     __op(__op&&) = delete;
@@ -387,7 +405,11 @@ public:
     using scheduler = __strand_detail::__scheduler;
 
     explicit strand(any_scheduler scheduler)
-        : state_(std::make_shared<__strand_detail::__state>(std::move(scheduler)))
+        : strand(std::move(scheduler), strand_options{})
+    {}
+
+    strand(any_scheduler scheduler, strand_options options)
+        : state_(__make_state(std::move(scheduler), options))
     {}
 
     template<class Scheduler>
@@ -396,6 +418,14 @@ public:
               && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
     explicit strand(Scheduler&& scheduler)
         : strand(any_scheduler{static_cast<Scheduler&&>(scheduler)})
+    {}
+
+    template<class Scheduler>
+        requires (!std::is_same_v<std::remove_cvref_t<Scheduler>, strand>)
+              && (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
+              && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
+    strand(Scheduler&& scheduler, strand_options options)
+        : strand(any_scheduler{static_cast<Scheduler&&>(scheduler)}, options)
     {}
 
     strand(const strand&) = delete;
@@ -425,6 +455,16 @@ public:
     }
 
 private:
+    static auto __make_state(any_scheduler scheduler, strand_options options)
+        -> std::shared_ptr<__strand_detail::__state> {
+        options.memory = normalize_memory_resource(options.memory);
+        return std::allocate_shared<__strand_detail::__state>(
+            std::pmr::polymorphic_allocator<__strand_detail::__state>{
+                options.memory},
+            std::move(scheduler),
+            options);
+    }
+
     std::shared_ptr<__strand_detail::__state> state_;
 };
 

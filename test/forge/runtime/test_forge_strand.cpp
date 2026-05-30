@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/strand.hpp>
 #include <forge/static_thread_pool.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <algorithm>
 #include <atomic>
@@ -68,6 +69,27 @@ TEST(StrandTest, FifoOrder) {
 
     ASSERT_EQ(order.size(), 8u);
     EXPECT_TRUE(std::is_sorted(order.begin(), order.end()));
+}
+
+TEST(StrandTest, OptionsConstructorUsesCustomMemoryResourceForRecords) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::static_thread_pool pool{1};
+        forge::strand strand{
+            pool.get_scheduler(),
+            forge::strand_options{.memory = &resource}};
+        auto scheduler = strand.get_scheduler();
+
+        auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
+        EXPECT_TRUE(result.has_value());
+
+        strand.wait();
+        pool.wait();
+        EXPECT_GT(resource.allocations(), 0u);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(StrandTest, NoOverlapAcrossPoolThreads) {
@@ -206,4 +228,3 @@ TEST(StrandTest, CompletionSchedulerRoundtrip) {
 
     EXPECT_TRUE(roundtrip == scheduler);
 }
-
