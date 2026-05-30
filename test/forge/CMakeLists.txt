@@ -32,7 +32,9 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
     endif()
 endfunction()
 
-if(FORGE_TEST_ENABLE_FORGE_RUNTIME OR FORGE_TEST_ENABLE_FORGE_ERASURE)
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME
+        OR FORGE_TEST_ENABLE_FORGE_RESOURCE
+        OR FORGE_TEST_ENABLE_FORGE_ERASURE)
     forge_add_forge_compile_probe(
         test_forge_execution_header
         test_forge_execution_header.cpp
@@ -50,6 +52,10 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_resource_context test_forge_resource_context.cpp forge_resource_context)
     forge_add_forge_test(test_forge_strand test_forge_strand.cpp forge_strand)
     forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
+endif()
+
+if(FORGE_TEST_ENABLE_FORGE_RESOURCE)
+    forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_ERASURE)

@@ -22,18 +22,22 @@
 
 #pragma once
 
-#include "async_scope.hpp"
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "channel.hpp"
-#include "erased_sender.hpp"
-#include "resource_policy.hpp"
-#include "resource_context.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "strand.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+#include <memory_resource>
+
+namespace forge {
+
+[[nodiscard]] inline auto default_memory_resource() noexcept
+    -> std::pmr::memory_resource* {
+    return std::pmr::get_default_resource();
+}
+
+[[nodiscard]] inline auto normalize_memory_resource(
+    std::pmr::memory_resource* memory) noexcept -> std::pmr::memory_resource* {
+    return memory ? memory : default_memory_resource();
+}
+
+struct resource_policy {
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
+
+} // namespace forge
