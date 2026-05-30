@@ -147,11 +147,10 @@ struct __state {
     }
 
     void wait() noexcept {
+        std::unique_lock lk{mtx};
         if (worker_id == std::this_thread::get_id()) {
             return;
         }
-
-        std::unique_lock lk{mtx};
         cv_wait.wait(lk, [this] { return pending == 0; });
     }
 
