@@ -3,6 +3,7 @@
 #include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -341,6 +342,45 @@ TEST(ChannelTest, CompletionDoesNotHoldChannelMutex) {
     auto second = channel.try_recv();
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(*second, 2);
+}
+
+TEST(ChannelTest, CrossThreadCompletionReleasesStopCallbackBeforeReceiverReturns) {
+    forge::bounded_channel<int> channel{0};
+    std::atomic<bool> waiter_started{false};
+    std::atomic<bool> waiter_done{false};
+    std::atomic<bool> got_value{false};
+
+    std::thread waiter{[&] {
+        waiter_started.store(true, std::memory_order_release);
+        auto result = std::execution::sync_wait(channel.async_recv());
+        got_value.store(
+            result.has_value() && std::get<0>(*result) == 7,
+            std::memory_order_release);
+        waiter_done.store(true, std::memory_order_release);
+    }};
+
+    while (!waiter_started.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    bool sent = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (!sent && std::chrono::steady_clock::now() < deadline) {
+        sent = channel.try_send(7);
+        if (!sent) {
+            std::this_thread::yield();
+        }
+    }
+
+    if (!sent) {
+        channel.request_stop();
+        waiter.join();
+        FAIL() << "receiver did not become pending before timeout";
+    }
+
+    waiter.join();
+    EXPECT_TRUE(waiter_done.load(std::memory_order_acquire));
+    EXPECT_TRUE(got_value.load(std::memory_order_acquire));
 }
 
 TEST(ChannelTest, TrySendTryRecv) {

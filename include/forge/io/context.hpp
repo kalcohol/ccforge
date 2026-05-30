@@ -138,6 +138,7 @@ struct __record_base {
 
     int fd = -1;
     readiness kind = readiness::read;
+    std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
 };
 
@@ -162,6 +163,7 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_value(std::move(rcvr));
     }
 
@@ -169,6 +171,7 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_error(std::move(rcvr), std::move(error));
     }
 
@@ -176,13 +179,14 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_stopped(std::move(rcvr));
     }
 
     using callback_t =
         std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
 
-    void install_stop_callback(
+    [[nodiscard]] bool install_stop_callback(
         std::weak_ptr<__state> state,
         std::weak_ptr<__record_base> self) noexcept;
 
@@ -624,17 +628,23 @@ struct __state : std::enable_shared_from_this<__state> {
 };
 
 inline void __stop_callback_fn::operator()() const noexcept {
-    auto st = state.lock();
     auto rec = record.lock();
+    if (rec) {
+        rec->stop_requested.store(true, std::memory_order_release);
+    }
+    auto st = state.lock();
     if (st && rec) {
         st->cancel_record(rec);
     }
 }
 
 template<class R>
-void __record<R>::install_stop_callback(
+bool __record<R>::install_stop_callback(
     std::weak_ptr<__state> state,
     std::weak_ptr<__record_base> self) noexcept {
+    if (done.load(std::memory_order_acquire)) {
+        return false;
+    }
     if constexpr (requires {
                       std::any_stop_token{
                           std::execution::get_stop_token(
@@ -653,10 +663,12 @@ void __record<R>::install_stop_callback(
             auto st = state.lock();
             auto rec = self.lock();
             if (st && rec) {
-                st->cancel_record(rec);
+                rec->complete_stopped();
             }
+            return false;
         }
     }
+    return true;
 }
 
 template<class R>
@@ -687,8 +699,13 @@ struct __op {
                 record_->complete_stopped();
                 return;
             }
+            if (!record_->install_stop_callback(state_, record_)) {
+                return;
+            }
             if (state_->start(record_)) {
-                record_->install_stop_callback(state_, record_);
+                if (record_->stop_requested.load(std::memory_order_acquire)) {
+                    state_->cancel_record(record_);
+                }
             }
         } catch (...) {
             record_->complete_error(std::current_exception());

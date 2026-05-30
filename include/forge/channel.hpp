@@ -331,14 +331,18 @@ struct __state : std::enable_shared_from_this<__state<T>> {
 template<class T, class R>
 struct __send_record final : __send_base<T> {
     using state_t = __state<T>;
+    using record_t = __send_record<T, R>;
 
     struct __stop_callback_fn {
         std::weak_ptr<state_t> state;
-        std::weak_ptr<__send_base<T>> record;
+        std::weak_ptr<record_t> record;
 
         void operator()() noexcept {
-            auto st = state.lock();
             auto rec = record.lock();
+            if (rec) {
+                rec->stop_requested.store(true, std::memory_order_release);
+            }
+            auto st = state.lock();
             if (st && rec) {
                 st->cancel_send(rec);
             }
@@ -350,6 +354,7 @@ struct __send_record final : __send_base<T> {
     R rcvr;
     std::optional<T> value;
     std::optional<callback_t> stop_callback;
+    std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
 
     __send_record(R r, T v)
@@ -363,6 +368,7 @@ struct __send_record final : __send_base<T> {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         value.reset();
         std::execution::set_value(std::move(rcvr));
     }
@@ -371,15 +377,16 @@ struct __send_record final : __send_base<T> {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         value.reset();
         std::execution::set_stopped(std::move(rcvr));
     }
 
-    void install_stop_callback(
+    [[nodiscard]] bool install_stop_callback(
         const std::shared_ptr<state_t>& state,
-        const std::shared_ptr<__send_base<T>>& self) noexcept {
+        const std::shared_ptr<record_t>& self) noexcept {
         if (done.load(std::memory_order_acquire)) {
-            return;
+            return false;
         }
         if constexpr (requires {
                           std::any_stop_token{
@@ -389,33 +396,35 @@ struct __send_record final : __send_base<T> {
             try {
                 auto token = std::any_stop_token{
                     std::execution::get_stop_token(std::execution::get_env(rcvr))};
-                if (token.stop_requested()) {
-                    state->cancel_send(self);
-                    return;
-                }
                 if (token.stop_possible()) {
                     stop_callback.emplace(
                         std::move(token),
                         __stop_callback_fn{state, self});
                 }
             } catch (...) {
-                state->cancel_send(self);
+                complete_stopped();
+                return false;
             }
         }
+        return true;
     }
 };
 
 template<class T, class R>
 struct __recv_record final : __recv_base<T> {
     using state_t = __state<T>;
+    using record_t = __recv_record<T, R>;
 
     struct __stop_callback_fn {
         std::weak_ptr<state_t> state;
-        std::weak_ptr<__recv_base<T>> record;
+        std::weak_ptr<record_t> record;
 
         void operator()() noexcept {
-            auto st = state.lock();
             auto rec = record.lock();
+            if (rec) {
+                rec->stop_requested.store(true, std::memory_order_release);
+            }
+            auto st = state.lock();
             if (st && rec) {
                 st->cancel_recv(rec);
             }
@@ -426,6 +435,7 @@ struct __recv_record final : __recv_base<T> {
 
     R rcvr;
     std::optional<callback_t> stop_callback;
+    std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
 
     explicit __recv_record(R r) : rcvr(std::move(r)) {}
@@ -434,6 +444,7 @@ struct __recv_record final : __recv_base<T> {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_value(std::move(rcvr), std::move(value));
     }
 
@@ -441,14 +452,15 @@ struct __recv_record final : __recv_base<T> {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_stopped(std::move(rcvr));
     }
 
-    void install_stop_callback(
+    [[nodiscard]] bool install_stop_callback(
         const std::shared_ptr<state_t>& state,
-        const std::shared_ptr<__recv_base<T>>& self) noexcept {
+        const std::shared_ptr<record_t>& self) noexcept {
         if (done.load(std::memory_order_acquire)) {
-            return;
+            return false;
         }
         if constexpr (requires {
                           std::any_stop_token{
@@ -458,19 +470,17 @@ struct __recv_record final : __recv_base<T> {
             try {
                 auto token = std::any_stop_token{
                     std::execution::get_stop_token(std::execution::get_env(rcvr))};
-                if (token.stop_requested()) {
-                    state->cancel_recv(self);
-                    return;
-                }
                 if (token.stop_possible()) {
                     stop_callback.emplace(
                         std::move(token),
                         __stop_callback_fn{state, self});
                 }
             } catch (...) {
-                state->cancel_recv(self);
+                complete_stopped();
+                return false;
             }
         }
+        return true;
     }
 };
 
@@ -501,8 +511,13 @@ struct __send_op {
             record->complete_stopped();
             return;
         }
+        if (!record->install_stop_callback(state, record)) {
+            return;
+        }
         if (state->start_send(record)) {
-            record->install_stop_callback(state, record);
+            if (record->stop_requested.load(std::memory_order_acquire)) {
+                state->cancel_send(record);
+            }
         }
     }
 };
@@ -533,8 +548,13 @@ struct __recv_op {
             record->complete_stopped();
             return;
         }
+        if (!record->install_stop_callback(state, record)) {
+            return;
+        }
         if (state->start_recv(record)) {
-            record->install_stop_callback(state, record);
+            if (record->stop_requested.load(std::memory_order_acquire)) {
+                state->cancel_recv(record);
+            }
         }
     }
 };
