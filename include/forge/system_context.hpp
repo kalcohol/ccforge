@@ -65,4 +65,8 @@ private:
     static_thread_pool __pool_;
 };
 
+[[nodiscard]] inline static_thread_pool::scheduler get_system_scheduler() noexcept {
+    return system_context::get().get_scheduler();
+}
+
 } // namespace forge

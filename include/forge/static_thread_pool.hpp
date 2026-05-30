@@ -51,7 +51,9 @@ struct __sender {
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
-        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_stopped_t()> {
         return {};
     }
 
@@ -140,13 +142,15 @@ public:
         return __threads_.size();
     }
 
-    void __submit(std::function<void()> task) {
+    bool __submit(std::function<void()> task) {
         std::lock_guard lk{__mtx_};
-        if (!__stop_) {
-            __queue_.push_back(std::move(task));
-            ++__active_;
-            __cv_.notify_one();
+        if (__stop_) {
+            return false;
         }
+        __queue_.push_back(std::move(task));
+        ++__active_;
+        __cv_.notify_one();
+        return true;
     }
 
 private:
@@ -183,10 +187,30 @@ private:
 namespace __pool_detail {
 
 template<class R>
+bool __stop_requested(const R& rcvr) noexcept {
+    if constexpr (requires {
+                      std::execution::get_stop_token(
+                          std::execution::get_env(rcvr));
+                  }) {
+        return std::execution::get_stop_token(
+            std::execution::get_env(rcvr)).stop_requested();
+    } else {
+        return false;
+    }
+}
+
+template<class R>
 inline void __op<R>::start() & noexcept {
-    __pool->__submit([this]() noexcept {
+    if (__stop_requested(__rcvr)) {
+        std::execution::set_stopped(std::move(__rcvr));
+        return;
+    }
+
+    if (!__pool->__submit([this]() noexcept {
         std::execution::set_value(std::move(__rcvr));
-    });
+    })) {
+        std::execution::set_stopped(std::move(__rcvr));
+    }
 }
 
 template<std::execution::receiver R>
