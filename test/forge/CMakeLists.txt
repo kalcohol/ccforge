@@ -55,6 +55,10 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
 endif()
 
+if(FORGE_HAS_FORGE_IO_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_test(test_forge_io_context test_forge_io_context.cpp forge_io_context)
+endif()
+
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
     forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()
