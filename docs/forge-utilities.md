@@ -61,9 +61,10 @@ Accelerator-like mock backend 使用独立头：
   operation 完成、`cancel(fd)` 后 drain，或 context shutdown/wait 之后。ready sender
   完成 `set_value()` 只表示 fd ready，真正的 `read(2)` / `write(2)` 由用户代码执行。
 
-V1 不做 async read/write buffer 抽象，不支持 IOCP/kqueue/io_uring，也不注册入队后的
-per-operation stop callback。pending operation 可由 readiness、`cancel(fd)`、
-`request_stop()` 或 `shutdown()` 唤醒。详细语义见 [`forge::io`](forge-io.md)。
+V1 不做 async read/write buffer 抽象，也不支持 IOCP/kqueue/io_uring。pending
+operation 会在 receiver stop token 请求停止时从 fd table 移除并以 stopped 完成；不带
+stoppable token 的 operation 仍可由 readiness、`cancel(fd)`、`request_stop()` 或
+`shutdown()` 唤醒。详细语义见 [`forge::io`](forge-io.md)。
 
 ## Accel Mock Backend
 

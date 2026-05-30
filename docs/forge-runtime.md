@@ -81,9 +81,10 @@ Non-owning views and lightweight handles should not block in destructors.
 - `io::context` owns a Linux epoll/eventfd poller thread. `close()` rejects new
   readiness operations while allowing already pending readiness waiters to
   complete normally; `request_stop()` completes pending waiters stopped;
-  `shutdown()` combines both. `wait()` joins the poller. File descriptors are
-  borrowed and must outlive pending readiness operations or be cancelled and
-  drained before close.
+  pending readiness operations also register receiver stop callbacks when a
+  stoppable token is present. `shutdown()` combines close and context stop.
+  `wait()` joins the poller. File descriptors are borrowed and must outlive
+  pending readiness operations or be cancelled and drained before close.
 - `accel::context` owns a portable mock/in-memory accelerator-like command
   queue. `close()` rejects later commands and drains accepted work;
   `request_stop()` stops pending queued commands where possible; `shutdown()`

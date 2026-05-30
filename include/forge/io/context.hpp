@@ -39,6 +39,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -140,6 +141,15 @@ struct __record_base {
     std::atomic<bool> done{false};
 };
 
+struct __state;
+
+struct __stop_callback_fn {
+    std::weak_ptr<__state> state;
+    std::weak_ptr<__record_base> record;
+
+    void operator()() const noexcept;
+};
+
 template<class R>
 struct __record final : __record_base {
     explicit __record(int file, readiness ready, R r)
@@ -169,7 +179,15 @@ struct __record final : __record_base {
         std::execution::set_stopped(std::move(rcvr));
     }
 
+    using callback_t =
+        std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+
+    void install_stop_callback(
+        std::weak_ptr<__state> state,
+        std::weak_ptr<__record_base> self) noexcept;
+
     R rcvr;
+    std::optional<callback_t> stop_callback;
 };
 
 using __record_ptr = std::shared_ptr<__record_base>;
@@ -279,9 +297,10 @@ struct __state : std::enable_shared_from_this<__state> {
         }
     }
 
-    void start(__record_ptr record) {
+    [[nodiscard]] auto start(__record_ptr record) -> bool {
         __actions actions{memory};
         bool should_wake = false;
+        bool became_pending = false;
         {
             std::lock_guard lk{mtx};
             if (closed || stopped) {
@@ -316,6 +335,7 @@ struct __state : std::enable_shared_from_this<__state> {
                         }
                     } else {
                         should_wake = true;
+                        became_pending = true;
                     }
                 }
             }
@@ -324,6 +344,7 @@ struct __state : std::enable_shared_from_this<__state> {
             wake_polling_thread();
         }
         actions.run();
+        return became_pending;
     }
 
     void cancel(int fd) noexcept {
@@ -337,6 +358,36 @@ struct __state : std::enable_shared_from_this<__state> {
         }
         wake_polling_thread();
         actions.run();
+    }
+
+    void cancel_record(const __record_ptr& target) noexcept {
+        __record_ptr record;
+        bool should_wake = false;
+        if (target) {
+            std::lock_guard lk{mtx};
+            auto it = fd_waiters.find(target->fd);
+            if (it != fd_waiters.end()) {
+                auto& waiters = it->second;
+                auto& slot = target->kind == readiness::read
+                    ? waiters.read
+                    : waiters.write;
+                if (slot == target) {
+                    record = std::move(slot);
+                    --pending;
+                    update_interest_locked(it->first, waiters);
+                    if (waiters.empty()) {
+                        fd_waiters.erase(it);
+                    }
+                    should_wake = true;
+                }
+            }
+        }
+        if (should_wake) {
+            wake_polling_thread();
+        }
+        if (record) {
+            record->complete_stopped();
+        }
     }
 
     void close() noexcept {
@@ -572,6 +623,42 @@ struct __state : std::enable_shared_from_this<__state> {
     std::thread::id poller_id{};
 };
 
+inline void __stop_callback_fn::operator()() const noexcept {
+    auto st = state.lock();
+    auto rec = record.lock();
+    if (st && rec) {
+        st->cancel_record(rec);
+    }
+}
+
+template<class R>
+void __record<R>::install_stop_callback(
+    std::weak_ptr<__state> state,
+    std::weak_ptr<__record_base> self) noexcept {
+    if constexpr (requires {
+                      std::any_stop_token{
+                          std::execution::get_stop_token(
+                              std::execution::get_env(rcvr))};
+                  }) {
+        try {
+            auto token = std::any_stop_token{
+                std::execution::get_stop_token(
+                    std::execution::get_env(rcvr))};
+            if (token.stop_possible()) {
+                stop_callback.emplace(
+                    std::move(token),
+                    __stop_callback_fn{std::move(state), std::move(self)});
+            }
+        } catch (...) {
+            auto st = state.lock();
+            auto rec = self.lock();
+            if (st && rec) {
+                st->cancel_record(rec);
+            }
+        }
+    }
+}
+
 template<class R>
 struct __op {
     using operation_state_concept = std::execution::operation_state_t;
@@ -600,7 +687,9 @@ struct __op {
                 record_->complete_stopped();
                 return;
             }
-            state_->start(record_);
+            if (state_->start(record_)) {
+                record_->install_stop_callback(state_, record_);
+            }
         } catch (...) {
             record_->complete_error(std::current_exception());
         }

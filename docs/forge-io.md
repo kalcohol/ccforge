@@ -69,9 +69,11 @@ pending operation 观察到错误对象。
 - `wait()`：等待 poller thread 退出。若从 poller completion 内调用，会避免 self-join。
 - `cancel(fd)`：取消该 fd 的 pending readable/writable waiter。
 
-V1 只支持 context-level cancellation 和 receiver start-time stop-token 观察。operation
-入队后，如果 receiver stop token 才请求停止，idle waiter 不会靠 per-op stop callback
-单独醒来；需要 readiness、`cancel(fd)`、`request_stop()` 或 `shutdown()`。
+readiness operation 会观察 receiver stop token：operation `start()` 前如果 token 已请求，
+会直接 `set_stopped()`；如果 operation 已经进入 pending fd table 且 token 后续请求停止，
+context 会把该 pending waiter 从 fd table 移除、更新 epoll interest、唤醒 poller，并在
+mutex 外完成 `set_stopped()`。不带 stoppable token 的 pending waiter 仍由 readiness、
+`cancel(fd)`、context `request_stop()` 或 `shutdown()` 完成。
 
 ## Readiness Rules
 

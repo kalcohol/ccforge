@@ -2,6 +2,8 @@
 #include <forge/io.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
+#include <array>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <exception>
@@ -72,6 +74,23 @@ auto make_socketpair() -> fd_pair {
 void write_byte(int fd) {
     const char value = 'x';
     ASSERT_EQ(::write(fd, &value, 1), 1);
+}
+
+void fill_socket_send_buffer(int fd) {
+    std::array<char, 4096> data{};
+    while (true) {
+        const auto result = ::send(fd, data.data(), data.size(), MSG_NOSIGNAL);
+        if (result > 0) {
+            continue;
+        }
+        if (result < 0 && errno == EINTR) {
+            continue;
+        }
+        if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            return;
+        }
+        throw std::runtime_error{"send fill failed"};
+    }
 }
 
 struct io_state {
@@ -278,6 +297,55 @@ TEST(IoContextTest, PreStoppedReceiverDoesNotRegisterFd) {
         ctx.readable(pipe.first.get()),
         stopped_receiver{{state}, &source});
     std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, PostEnqueueReceiverStopCompletesPendingReadable) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto state = std::make_shared<io_state>();
+    std::inplace_stop_source source;
+
+    auto op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        stopped_receiver{{state}, &source});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{state->mtx};
+        EXPECT_FALSE(state->cv.wait_for(lk, 20ms, [&] { return state->done(); }));
+    }
+
+    source.request_stop();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+
+    write_byte(pipe.second.get());
+    auto result = std::execution::sync_wait(ctx.readable(pipe.first.get()));
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST(IoContextTest, PostEnqueueReceiverStopCompletesPendingWritable) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+
+    forge::io::context ctx;
+    auto state = std::make_shared<io_state>();
+    std::inplace_stop_source source;
+
+    auto op = std::execution::connect(
+        ctx.writable(sockets.first.get()),
+        stopped_receiver{{state}, &source});
+    std::execution::start(op);
+
+    source.request_stop();
 
     ASSERT_TRUE(wait_done(state));
     EXPECT_FALSE(state->value);
