@@ -19,9 +19,11 @@
 #           GCC 16 container, -std=c++26. Builds only execution tests to cover
 #           the std::execution backport on libstdc++ without SIMD test probes.
 #   tsan    LLVM/libc++ container, -std=c++26 + -fsanitize=thread. Runs the
-#           execution subset under ThreadSanitizer (data-race / deadlock check).
+#           execution + forge utility subsets under ThreadSanitizer
+#           (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
-#           Runs the execution subset under ASan+UBSan (UAF / leak / UB check).
+#           Runs the execution + forge utility subsets under ASan+UBSan
+#           (UAF / leak / UB check).
 #   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
 set -euo pipefail
@@ -76,6 +78,17 @@ FORGE_EXECUTION_ONLY_TEST_ARGS=(
     -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF
     -DFORGE_TEST_ENABLE_LINALG=OFF
     -DFORGE_TEST_ENABLE_FORGE=OFF
+    -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
+)
+
+FORGE_EXECUTION_AND_FORGE_TEST_ARGS=(
+    -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_EXECUTION=ON
+    -DFORGE_TEST_ENABLE_SIMD=OFF
+    -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF
+    -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF
+    -DFORGE_TEST_ENABLE_LINALG=OFF
+    -DFORGE_TEST_ENABLE_FORGE=ON
     -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
 )
 
@@ -161,7 +174,7 @@ target_gcc_exec() {
 
 target_tsan() {
     build_image forge-tsan containers/Containerfile.tsan
-    log "tsan: building execution tests with -fsanitize=thread (libc++)"
+    log "tsan: building execution + forge utility tests with -fsanitize=thread (libc++)"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-tsan bash -lc '
             set -e
@@ -177,18 +190,18 @@ target_tsan() {
             # Try plain ctest first; if the instrumented binaries hit the
             # mmap_rnd_bits TSAN startup crash on high-ASLR-entropy hosts, retry
             # with ASLR disabled via setarch -R.
-            if ctest --test-dir build/tsan -R execution --output-on-failure; then
+            if ctest --test-dir build/tsan -R "execution|forge" --output-on-failure; then
                 exit 0
             fi
             echo "[tsan] retrying under setarch -R (ASLR off; mmap_rnd_bits workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/tsan -R execution --output-on-failure
-        ' bash "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
-    ok "tsan verified (execution subset, no data races)"
+            setarch "$(uname -m)" -R ctest --test-dir build/tsan -R "execution|forge" --output-on-failure
+        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+    ok "tsan verified (execution + forge utility subsets, no data races)"
 }
 
 target_asan() {
     build_image forge-asan containers/Containerfile.asan
-    log "asan: building execution tests with -fsanitize=address,undefined (libc++)"
+    log "asan: building execution + forge utility tests with -fsanitize=address,undefined (libc++)"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
             set -e
@@ -204,13 +217,13 @@ target_asan() {
             # non-ASan-instrumented system libc++; UBSan halts on first error.
             export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
             export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
-            if ctest --test-dir build/asan -R execution --output-on-failure; then
+            if ctest --test-dir build/asan -R "execution|forge" --output-on-failure; then
                 exit 0
             fi
             echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/asan -R execution --output-on-failure
-        ' bash "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
-    ok "asan verified (execution subset, no UAF/leak/UB)"
+            setarch "$(uname -m)" -R ctest --test-dir build/asan -R "execution|forge" --output-on-failure
+        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+    ok "asan verified (execution + forge utility subsets, no UAF/leak/UB)"
 }
 
 targets=("$@")
