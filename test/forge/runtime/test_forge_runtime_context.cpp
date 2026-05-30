@@ -175,6 +175,71 @@ TEST(RuntimeContextTest, WaitDrainsAcceptedCpuWork) {
     EXPECT_EQ(completed.load(std::memory_order_relaxed), 4);
 }
 
+TEST(RuntimeContextTest, WaitDrainsTimerWork) {
+    forge::runtime_context ctx{1};
+    std::atomic<bool> completed{false};
+
+    std::execution::start_detached(
+        ctx.schedule_after(20ms)
+        | std::execution::then([&] {
+            completed.store(true, std::memory_order_relaxed);
+        }));
+
+    ctx.wait();
+
+    EXPECT_TRUE(completed.load(std::memory_order_relaxed));
+}
+
+TEST(RuntimeContextTest, WaitDrainsCpuToTimerHandoff) {
+    forge::runtime_context ctx{1};
+    auto scheduler = ctx.get_scheduler();
+    std::atomic<bool> completed{false};
+
+    std::execution::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] {
+            std::execution::start_detached(
+                ctx.schedule_after(0ms)
+                | std::execution::then([&] {
+                    completed.store(true, std::memory_order_relaxed);
+                }));
+        }));
+
+    ctx.wait();
+
+    EXPECT_TRUE(completed.load(std::memory_order_relaxed));
+}
+
+TEST(RuntimeContextTest, WaitDrainsTimerToCpuHandoff) {
+    forge::runtime_context ctx{1};
+    auto scheduler = ctx.get_scheduler();
+    std::atomic<bool> completed{false};
+
+    std::execution::start_detached(
+        ctx.schedule_after(0ms)
+        | std::execution::then([&] {
+            std::execution::start_detached(
+                std::execution::schedule(scheduler)
+                | std::execution::then([&] {
+                    completed.store(true, std::memory_order_relaxed);
+                }));
+        }));
+
+    ctx.wait();
+
+    EXPECT_TRUE(completed.load(std::memory_order_relaxed));
+}
+
+TEST(RuntimeContextTest, ShutdownThenWaitIsIdempotent) {
+    forge::runtime_context ctx{1};
+    ctx.shutdown();
+    ctx.wait();
+    ctx.shutdown();
+    ctx.wait();
+
+    SUCCEED();
+}
+
 TEST(RuntimeContextTest, ZeroThreadCountNormalizesToOne) {
     forge::runtime_context ctx{0};
 

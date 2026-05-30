@@ -73,6 +73,8 @@ public:
 
     void wait() noexcept {
         pool_.wait();
+        timers_.wait();
+        pool_.wait();
     }
 
 private:
