@@ -40,6 +40,6 @@
 
 // C++26 backports
 // Note: unique_resource is in experimental/ (TS v3, not yet in C++26)
-#ifndef __cpp_lib_unique_resource
+#if !defined(__cpp_lib_unique_resource) || __cpp_lib_unique_resource < 202311L
 #include "experimental/unique_resource.hpp"
 #endif

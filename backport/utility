@@ -32,6 +32,7 @@
 #  endif
 #endif
 
-#if !defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper)
+#if defined(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT) || \
+    (!defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper))
 #  include "cpp26/constant_wrapper.hpp"
 #endif

@@ -26,7 +26,8 @@
 
 namespace std {
 
-#if !defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper)
+#if defined(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT) || \
+    (!defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper))
 
 template <auto V>
 struct constant_wrapper {
@@ -58,68 +59,70 @@ template <class T>
 concept __forge_constant_wrapper =
     __forge_is_constant_wrapper<remove_cvref_t<T>>::value;
 
-template <__forge_constant_wrapper T>
-constexpr auto operator+(T) noexcept -> constant_wrapper<(+remove_cvref_t<T>::value)> { return {}; }
-template <__forge_constant_wrapper T>
-constexpr auto operator-(T) noexcept -> constant_wrapper<(-remove_cvref_t<T>::value)> { return {}; }
-template <__forge_constant_wrapper T>
-constexpr auto operator~(T) noexcept -> constant_wrapper<(~remove_cvref_t<T>::value)> { return {}; }
-template <__forge_constant_wrapper T>
-constexpr auto operator!(T) noexcept -> constant_wrapper<(!remove_cvref_t<T>::value)> { return {}; }
+template <auto V>
+constexpr auto operator+(constant_wrapper<V>) noexcept -> constant_wrapper<(+V)> { return {}; }
+template <auto V>
+constexpr auto operator-(constant_wrapper<V>) noexcept -> constant_wrapper<(-V)> { return {}; }
+template <auto V>
+constexpr auto operator~(constant_wrapper<V>) noexcept -> constant_wrapper<(~V)> { return {}; }
+template <auto V>
+constexpr auto operator!(constant_wrapper<V>) noexcept -> constant_wrapper<(!V)> { return {}; }
 
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator+(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value + remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator-(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value - remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator*(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value * remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator/(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value / remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator%(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value % remove_cvref_t<R>::value)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator+(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L + R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator-(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L - R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator*(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L * R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator/(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L / R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator%(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L % R)> { return {}; }
 
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator<<(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value << remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator>>(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value >> remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator&(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value & remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator|(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value | remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator^(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value ^ remove_cvref_t<R>::value)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator<<(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L << R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator>>(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L >> R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator&(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L & R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator|(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L | R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator^(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L ^ R)> { return {}; }
 
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator<(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value < remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator<=(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value <= remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator==(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value == remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator!=(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value != remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator>(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value > remove_cvref_t<R>::value)> { return {}; }
-template <__forge_constant_wrapper L, __forge_constant_wrapper R>
-constexpr auto operator>=(L, R) noexcept
-    -> constant_wrapper<(remove_cvref_t<L>::value >= remove_cvref_t<R>::value)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator<(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L < R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator<=(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L <= R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator==(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L == R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator!=(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L != R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator>(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L > R)> { return {}; }
+template <auto L, auto R>
+constexpr auto operator>=(constant_wrapper<L>, constant_wrapper<R>) noexcept
+    -> constant_wrapper<(L >= R)> { return {}; }
 
-#  define __cpp_lib_constant_wrapper 202603L
+#  if !defined(__cpp_lib_constant_wrapper)
+#    define __cpp_lib_constant_wrapper 202603L
+#  endif
 
-#endif // !FORGE_HAS_NATIVE_CONSTANT_WRAPPER && !__cpp_lib_constant_wrapper
+#endif // forced or no native constant_wrapper
 
 } // namespace std

@@ -50,8 +50,8 @@
 //                      and ASan+UBSan container configurations.
 //
 // DEVIATIONS from current working draft [exec]:
-//   - CPO customization is still tag_invoke-based internally for Forge-provided
-//     senders/receivers; the C++26 draft primarily specifies member customization.
+//   - CPO customization is member-first for Forge-provided senders/receivers,
+//     with tag_invoke fallback retained for existing custom types.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce

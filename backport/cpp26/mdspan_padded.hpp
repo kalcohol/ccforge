@@ -31,7 +31,8 @@
 
 namespace std {
 
-#if !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS)
+#if defined(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT) || \
+    !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS)
 
 namespace __forge_mdspan_padded_detail {
 
@@ -428,6 +429,6 @@ struct layout_right_padded {
     };
 };
 
-#endif // !FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS
+#endif // forced or no native mdspan padded layouts
 
 } // namespace std

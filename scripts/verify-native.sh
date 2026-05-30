@@ -8,10 +8,11 @@
 #   scripts/verify-native.sh [target ...]
 #
 # Targets:
-#   gcc16   GCC 16 container, -std=c++26. Asserts std::simd & std::submdspan
-#           STAND ASIDE (native present) and that no ODR/redefinition occurs.
-#   llvm    LLVM/libc++ container, -std=c++26. All four backports inject; full
-#           suite must pass (regression on the inject path).
+#   gcc16   GCC 16 container, -std=c++26. Asserts std::simd, std::constant_wrapper,
+#           padded mdspan layouts, and std::submdspan STAND ASIDE (native present)
+#           and that no ODR/redefinition occurs.
+#   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
+#           native support; full suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
 #   local   Host toolchain (no container), -std=c++23 baseline regression.
 #   gcc-exec
@@ -21,7 +22,7 @@
 #           execution subset under ThreadSanitizer (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
 #           Runs the execution subset under ASan+UBSan (UAF / leak / UB check).
-#   all     gcc16 + llvm + zig + local + tsan + asan (default).
+#   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
 set -euo pipefail
 
@@ -89,7 +90,7 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
     -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=ON
 )
 
-# Assert the cmake configure log shows simd/submdspan standing aside (NOT injected).
+# Assert the cmake configure log shows a feature standing aside (NOT injected).
 assert_stands_aside() {
     local logfile="$1" feature="$2"
     if grep -q "CC Forge: ${feature} backport enabled" "${logfile}"; then
@@ -119,6 +120,8 @@ target_gcc16() {
         ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
     assert_stands_aside "${logfile}" "std::simd"
+    assert_stands_aside "${logfile}" "std::constant_wrapper"
+    assert_stands_aside "${logfile}" "std::mdspan padded layouts"
     assert_stands_aside "${logfile}" "std::submdspan"
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
@@ -212,7 +215,7 @@ target_asan() {
 
 targets=("$@")
 if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(gcc16 llvm zig local tsan asan)
+    targets=(gcc16 llvm zig local gcc-exec tsan asan)
 fi
 
 for t in "${targets[@]}"; do
@@ -224,7 +227,7 @@ for t in "${targets[@]}"; do
         gcc-exec) target_gcc_exec ;;
         tsan)  target_tsan ;;
         asan)  target_asan ;;
-        all)   target_gcc16; target_llvm; target_zig; target_local; target_tsan; target_asan ;;
+        all)   target_gcc16; target_llvm; target_zig; target_local; target_gcc_exec; target_tsan; target_asan ;;
         *)     fail "unknown target: ${t}" ;;
     esac
 done

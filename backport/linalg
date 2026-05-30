@@ -39,6 +39,7 @@
 // the backport stands aside rather than redefining std::linalg::* (ODR violation).
 // If this wrapper is used without forge.cmake, any native __cpp_lib_linalg value
 // is still treated as a stand-aside signal.
-#if !defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg)
+#if defined(FORGE_FORCE_LINALG_BACKPORT) || \
+    (!defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg))
 #include "cpp26/linalg.hpp"
 #endif

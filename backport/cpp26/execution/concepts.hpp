@@ -686,8 +686,7 @@ template<class R, class Completions>
 concept receiver_of = __forge_concepts::receiver_of_impl<R, Completions>::value;
 
 // enable_sender trait — [exec.snd]
-// Defaults to checking sender_concept marker; can be specialized for
-// awaitable types in a future phase.
+// Defaults to checking the sender_concept marker.
 template<class T>
 inline constexpr bool enable_sender =
     requires { typename T::sender_concept; } &&

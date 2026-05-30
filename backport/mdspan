@@ -48,7 +48,8 @@
 //  - The standard <mdspan> was found (__cpp_lib_mdspan is defined)
 //  - forge.cmake did not detect native padded layouts. Partial native padded
 //    declarations must make Forge stand aside to avoid ODR violations.
-#if defined(__cpp_lib_mdspan) && !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS)
+#if defined(__cpp_lib_mdspan) && \
+    (defined(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT) || !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS))
 #  include "cpp26/mdspan_padded.hpp"
 #endif
 
@@ -59,7 +60,8 @@
 //    native submdspan may declare std::submdspan / std::extent_slice without yet
 //    defining __cpp_lib_submdspan; FORGE_HAS_NATIVE_SUBMDSPAN guards against
 //    injecting on top of those declarations (ODR violation).
-#if !defined(FORGE_HAS_NATIVE_SUBMDSPAN) && defined(__cpp_lib_mdspan) && \
-    (!defined(__cpp_lib_submdspan) || __cpp_lib_submdspan < 202603L)
+#if defined(__cpp_lib_mdspan) && \
+    (defined(FORGE_FORCE_SUBMDSPAN_BACKPORT) || \
+     (!defined(FORGE_HAS_NATIVE_SUBMDSPAN) && (!defined(__cpp_lib_submdspan) || __cpp_lib_submdspan < 202603L)))
 #  include "cpp26/submdspan.hpp"
 #endif

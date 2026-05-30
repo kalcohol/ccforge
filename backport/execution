@@ -25,8 +25,7 @@
 // Include standard library <execution> (execution policies) when available.
 //
 // Graceful fallback: if the toolchain doesn't ship <execution>, still provide
-// the P2300 MVP surface from Forge so users can `#include <execution>` for
-// senders/receivers.
+// the Forge P2300 sender/receiver subset so users can `#include <execution>`.
 #if defined(_MSC_VER)
 #ifndef FORGE_MSVC_EXECUTION_HEADER
 #error "FORGE_MSVC_EXECUTION_HEADER is required when Forge backport is enabled on MSVC"
@@ -37,8 +36,8 @@
 #include_next <execution>
 #endif
 // else: toolchain has neither MSVC nor __has_include_next — skip the standard
-//       <execution> header silently; only the P2300 MVP surface below will be
-//       available (C++17 execution policies will not be present).
+//       <execution> header silently; only the Forge P2300 sender/receiver subset
+//       below will be available (C++17 execution policies will not be present).
 #endif
 
 // C++26 backports (P2300 senders/receivers are expected to land under <execution>).
@@ -46,6 +45,7 @@
 // is defined by forge.cmake when a (possibly partial) native P2300 implementation
 // is present, so the backport stands aside rather than redefining
 // std::execution::* on top of it (ODR violation).
-#if !defined(FORGE_HAS_NATIVE_SENDERS) && (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L))
+#if defined(FORGE_FORCE_SENDERS_BACKPORT) || \
+    (!defined(FORGE_HAS_NATIVE_SENDERS) && (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)))
 #include "cpp26/execution.hpp"
 #endif

@@ -27,7 +27,7 @@
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::linalg` | 未实现 | 未实现 | backport 仍是唯一路径 |
 
-**Forge 的应对：** `forge.cmake` 现在以**三态探测**判定每个特性——完整原生 / 部分原生 / 无原生。一旦检测到原生实现（**哪怕只是部分、哪怕尚未定义 `__cpp_lib_*` 宏**），Forge 会**主动让位、不再注入 backport**，避免在 `namespace std` 中与原生声明重定义（ODR 冲突），并打印 `STATUS`/`WARNING` 说明。若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设 `-DFORGE_FORCE_<SIMD|SUBMDSPAN|LINALG|SENDERS>_BACKPORT=ON`。
+**Forge 的应对：** `forge.cmake` 现在以**三态探测**判定每个特性——完整原生 / 部分原生 / 无原生。一旦检测到原生实现（**哪怕只是部分、哪怕尚未定义 `__cpp_lib_*` 宏**），Forge 会**主动让位、不再注入 backport**，避免在 `namespace std` 中与原生声明重定义（ODR 冲突），并打印 `STATUS`/`WARNING` 说明。若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设 `-DFORGE_FORCE_<SIMD|SENDERS|CONSTANT_WRAPPER|MDSPAN_PADDED_LAYOUTS|SUBMDSPAN|LINALG>_BACKPORT=ON`。
 
 ## 快速开始
 
@@ -98,7 +98,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 - **标准入口不变**：下游写 `#include <memory>` / `#include <execution>` / `#include <linalg>`，而不是 `forge/...`
 - **命名空间不变**：API 以 `std::` / `std::execution::` / `std::linalg::` 形式出现
-- **API 形状一致**：公开接口与标准最终版保持一致，不引入额外扩展
+- **API 形状优先对齐标准**：公开接口优先跟随标准最终形态；少量实验性偏离或兼容 wrapper 会在对应特性章节明确说明
 - **自动开关（三态让位）**：`forge.cmake` 以构建所用的 `-std` 通过 `check_cxx_source_compiles()` 做**完整探测 + 痕迹探测**两层判定：完整原生 → 不注入；**部分原生**（已声明符号但 `__cpp_lib_*` 宏未定义）→ 仍**主动让位**并 `WARNING`，避免在 `namespace std` 中 on-top 注入造成 ODR 冲突；无原生 → 注入 backport。检测到原生时通过 `FORGE_HAS_NATIVE_*` 宏通知 wrapper 头一并退场。可用 `FORGE_FORCE_*_BACKPORT` 覆盖（UB 风险）
 
 实现方式：`forge.cmake` 将 `backport/` 前置到 include path；`backport/` 内提供与标准同名的包装头（如 `backport/memory`、`backport/linalg`），先包含真实标准库头，再条件注入 backport 实现。
@@ -173,9 +173,9 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 
 当前 `std::simd` backport 已完整覆盖 [simd.syn] 公开表面：
 
-- **核心 API**：`simd<T, Abi>`、`simd_mask<T, Abi>`、构造/转换/下标/算术/比较/位运算
-- **内存操作**：`copy_from`/`copy_to`（含 flags）、`load`/`store`（含 partial/unchecked 重载）、`gather`/`scatter`（含 range 重载）
-- **归约与排列**：`reduce`、`hmin`/`hmax`、`split`/`cat`、`select`
+- **核心 API**：`std::simd::basic_vec<T, Abi>`、`std::simd::vec<T, N>`、`std::simd::mask<T, N>`、构造/转换/下标/算术/比较/位运算
+- **内存操作**：`partial_load`/`partial_store`、`unchecked_load`/`unchecked_store`（含 flags、mask、range 重载）、`gather`/`scatter`（含 range 重载）
+- **归约与排列**：`reduce`、`reduce_min`/`reduce_max`、`reduce_min_index`/`reduce_max_index`、`split`/`cat`、`select`
 - **Layer 1 向量化**：GCC/Clang vector extension 后端，`if consteval` 保持 constexpr 正确性
 - **Feature macro**：定义 `__cpp_lib_simd = 202411L`，表明完整 [simd.syn] 覆盖
 

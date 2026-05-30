@@ -35,7 +35,8 @@
 //     has __cpp_lib_mdspan=202207 which predates full_extent_t in libc++)
 //
 // Guard: this file is included only when native __cpp_lib_submdspan is absent
-// or older than the current 202603L draft value.
+// or older than the current 202603L draft value, except for explicit diagnostic
+// force-injection builds.
 
 #pragma once
 
@@ -57,8 +58,7 @@ namespace std {
 // These are introduced by submdspan (P2630), NOT by base mdspan (P0009): a
 // toolchain may ship <mdspan> (any __cpp_lib_mdspan value, e.g. libc++ bumped it
 // to 202406 for P2389 dims) yet still lack submdspan and full_extent. So the
-// correct discriminator is __cpp_lib_submdspan, not __cpp_lib_mdspan. This whole
-// file is only included when __cpp_lib_submdspan is undefined, so this defines
+// correct discriminator is __cpp_lib_submdspan, not __cpp_lib_mdspan. Define
 // full_extent exactly when the native submdspan facility is absent.
 // ---------------------------------------------------------------------------
 #if !defined(__cpp_lib_submdspan)
