@@ -173,6 +173,7 @@ struct __state : std::enable_shared_from_this<__state> {
 
     void shutdown() noexcept {
         std::pmr::vector<std::shared_ptr<__record_base>> stopped{memory_};
+        bool notify = false;
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
@@ -180,6 +181,14 @@ struct __state : std::enable_shared_from_this<__state> {
                 stopped.push_back(std::move(queue_.front()));
                 queue_.pop_front();
             }
+            if (!active_ && queue_.empty()) {
+                running_ = false;
+                notify = true;
+            }
+        }
+
+        if (notify) {
+            cv_.notify_all();
         }
 
         for (auto& record : stopped) {
@@ -193,10 +202,12 @@ struct __state : std::enable_shared_from_this<__state> {
             std::lock_guard lk{mtx_};
             if (queue_.empty()) {
                 running_ = false;
+                cv_.notify_all();
                 return;
             }
             record = std::move(queue_.front());
             queue_.pop_front();
+            active_ = true;
         }
 
         record->complete_value();
@@ -204,6 +215,7 @@ struct __state : std::enable_shared_from_this<__state> {
         bool launch = false;
         {
             std::lock_guard lk{mtx_};
+            active_ = false;
             if (queue_.empty()) {
                 running_ = false;
             } else {
@@ -274,6 +286,7 @@ private:
     std::condition_variable cv_;
     std::pmr::deque<std::shared_ptr<__record_base>> queue_;
     bool running_ = false;
+    bool active_ = false;
     bool closed_ = false;
 };
 

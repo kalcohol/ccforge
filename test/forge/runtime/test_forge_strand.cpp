@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <tuple>
@@ -42,6 +43,73 @@ struct stopped_receiver {
     template<class E>
     void set_error(E&&) && noexcept {}
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+struct delayed_scheduler_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool release = false;
+    bool completed = false;
+};
+
+struct delayed_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<delayed_scheduler_state> state;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        std::shared_ptr<delayed_scheduler_state> state;
+        R rcvr;
+
+        void start() & noexcept {
+            auto state_copy = state;
+            auto rcvr_copy = std::make_shared<R>(std::move(rcvr));
+            std::thread([state_copy, rcvr_copy = std::move(rcvr_copy)] mutable {
+                {
+                    std::unique_lock lk{state_copy->mtx};
+                    state_copy->cv.wait(lk, [&] { return state_copy->release; });
+                }
+
+                std::execution::set_value(std::move(*rcvr_copy));
+
+                {
+                    std::lock_guard lk{state_copy->mtx};
+                    state_copy->completed = true;
+                }
+                state_copy->cv.notify_all();
+            }).detach();
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(state), std::move(rcvr)};
+    }
+};
+
+struct delayed_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    std::shared_ptr<delayed_scheduler_state> state;
+
+    auto schedule() const noexcept -> delayed_sender {
+        return delayed_sender{state};
+    }
+
+    friend bool operator==(const delayed_scheduler&, const delayed_scheduler&) noexcept = default;
 };
 
 } // namespace
@@ -214,6 +282,36 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
     cv.notify_all();
     strand.wait();
     pool.wait();
+}
+
+TEST(StrandTest, ShutdownBeforeLaunchedRunnerStartsDoesNotBlockWait) {
+    auto delayed = std::make_shared<delayed_scheduler_state>();
+    forge::strand strand{delayed_scheduler{delayed}};
+    auto scheduler = strand.get_scheduler();
+    auto pending_state = std::make_shared<stopped_state>();
+
+    auto sender = std::execution::schedule(scheduler);
+    auto op = std::execution::connect(
+        std::move(sender),
+        stopped_receiver{pending_state});
+    std::execution::start(op);
+
+    strand.shutdown();
+    strand.wait();
+
+    EXPECT_TRUE(pending_state->stopped);
+    EXPECT_FALSE(pending_state->value);
+
+    {
+        std::lock_guard lk{delayed->mtx};
+        delayed->release = true;
+    }
+    delayed->cv.notify_all();
+
+    std::unique_lock lk{delayed->mtx};
+    EXPECT_TRUE(delayed->cv.wait_for(lk, 2s, [&] {
+        return delayed->completed;
+    }));
 }
 
 TEST(StrandTest, CompletionSchedulerRoundtrip) {
