@@ -1,0 +1,139 @@
+#include <gtest/gtest.h>
+#include <forge/any_scheduler.hpp>
+#include <forge/static_thread_pool.hpp>
+#include <execution>
+#include <memory>
+#include <stdexcept>
+#include <tuple>
+
+static_assert(std::execution::scheduler<forge::any_scheduler>);
+
+namespace {
+
+struct scheduler_counts {
+    int copied = 0;
+    int moved = 0;
+    int destroyed = 0;
+};
+
+struct tracking_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    forge::static_thread_pool* pool;
+    std::shared_ptr<scheduler_counts> counts;
+
+    tracking_scheduler(
+        forge::static_thread_pool* p,
+        std::shared_ptr<scheduler_counts> c) noexcept
+        : pool(p), counts(std::move(c)) {}
+
+    tracking_scheduler(const tracking_scheduler& other) noexcept
+        : pool(other.pool), counts(other.counts) {
+        ++counts->copied;
+    }
+
+    tracking_scheduler(tracking_scheduler&& other) noexcept
+        : pool(other.pool), counts(std::move(other.counts)) {
+        if (counts) {
+            ++counts->moved;
+        }
+    }
+
+    ~tracking_scheduler() {
+        if (counts) {
+            ++counts->destroyed;
+        }
+    }
+
+    auto schedule() const noexcept {
+        return std::execution::schedule(pool->get_scheduler());
+    }
+
+    friend bool operator==(
+        const tracking_scheduler& lhs,
+        const tracking_scheduler& rhs) noexcept {
+        return lhs.pool == rhs.pool;
+    }
+};
+
+static_assert(std::execution::scheduler<tracking_scheduler>);
+
+} // namespace
+
+TEST(AnySchedulerTest, DefaultEmpty) {
+    forge::any_scheduler scheduler;
+
+    EXPECT_FALSE(bool(scheduler));
+    EXPECT_TRUE(scheduler == forge::any_scheduler{});
+}
+
+TEST(AnySchedulerTest, EmptyScheduleCompletesWithError) {
+    forge::any_scheduler scheduler;
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(std::execution::schedule(scheduler)),
+        std::runtime_error);
+}
+
+TEST(AnySchedulerTest, WrappedThreadPoolSchedulerRunsWork) {
+    forge::static_thread_pool pool{1};
+    forge::any_scheduler scheduler{pool.get_scheduler()};
+
+    auto result = std::execution::sync_wait(
+        std::execution::schedule(scheduler)
+        | std::execution::then([] { return 42; }));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(AnySchedulerTest, CopyAndMoveShareIdentity) {
+    forge::static_thread_pool pool{1};
+    forge::any_scheduler scheduler{pool.get_scheduler()};
+    forge::any_scheduler copied = scheduler;
+    forge::any_scheduler moved = std::move(scheduler);
+
+    EXPECT_FALSE(bool(scheduler));
+    EXPECT_TRUE(copied == moved);
+
+    auto result = std::execution::sync_wait(std::execution::schedule(copied));
+    EXPECT_TRUE(result.has_value());
+}
+
+TEST(AnySchedulerTest, DistinctErasedSchedulersHaveDistinctIdentity) {
+    forge::static_thread_pool pool{1};
+    auto concrete = pool.get_scheduler();
+    forge::any_scheduler first{concrete};
+    forge::any_scheduler second{concrete};
+
+    EXPECT_FALSE(first == second);
+}
+
+TEST(AnySchedulerTest, ShutdownUnderlyingPoolCompletesStopped) {
+    forge::static_thread_pool pool{1};
+    forge::any_scheduler scheduler{pool.get_scheduler()};
+    pool.shutdown();
+
+    auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
+
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(AnySchedulerTest, TrackingSchedulerLifetimeIsShared) {
+    forge::static_thread_pool pool{1};
+    auto counts = std::make_shared<scheduler_counts>();
+
+    {
+        tracking_scheduler concrete{&pool, counts};
+        forge::any_scheduler erased{concrete};
+        forge::any_scheduler copied = erased;
+
+        EXPECT_EQ(counts->copied, 1);
+        EXPECT_TRUE(erased == copied);
+
+        auto result = std::execution::sync_wait(std::execution::schedule(copied));
+        EXPECT_TRUE(result.has_value());
+    }
+
+    EXPECT_EQ(counts->destroyed, 2);
+}

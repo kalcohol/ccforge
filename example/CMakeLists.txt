@@ -88,6 +88,12 @@ if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(forge_any_receiver PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()
 
+add_executable(forge_any_scheduler forge_any_scheduler_example.cpp)
+target_link_libraries(forge_any_scheduler PRIVATE forge::forge Threads::Threads)
+if(FORGE_EXAMPLE_TBB_LIBRARY)
+    target_link_libraries(forge_any_scheduler PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+endif()
+
 add_executable(forge_thread_pool forge_thread_pool_example.cpp)
 target_link_libraries(forge_thread_pool PRIVATE forge::forge Threads::Threads)
 if(FORGE_EXAMPLE_TBB_LIBRARY)

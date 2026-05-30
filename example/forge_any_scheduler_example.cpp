@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 CC Forge Project
+// Copyright (c) 2026 Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,14 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include <forge/any_scheduler.hpp>
+#include <forge/static_thread_pool.hpp>
+#include <cassert>
+#include <tuple>
 
-#include "any_receiver.hpp"
-#include "any_scheduler.hpp"
-#include "any_sender.hpp"
-#include "runtime_context.hpp"
-#include "single_thread_context.hpp"
-#include "static_thread_pool.hpp"
-#include "system_context.hpp"
-#include "task.hpp"
-#include "timer_context.hpp"
+int main() {
+    forge::static_thread_pool pool{2};
+    forge::any_scheduler scheduler{pool.get_scheduler()};
+
+    auto result = std::execution::sync_wait(
+        std::execution::schedule(scheduler)
+        | std::execution::then([] { return 7; }));
+
+    assert(result.has_value());
+    assert(std::get<0>(*result) == 7);
+}

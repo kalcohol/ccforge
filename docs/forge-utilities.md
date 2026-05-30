@@ -8,7 +8,7 @@
 #include <forge/execution.hpp>
 ```
 
-该头会包含 `any_sender.hpp`、`any_receiver.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
+该头会包含 `any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
 ## 调度与上下文
 
@@ -30,8 +30,11 @@
 
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO + 堆回退。value completion 采用声明的单一 value tuple 形状；error completion 折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，并提供 `sync_wait()` 直接运行存储的 sender。
+- `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除同一个 concrete scheduler 的对象也会因为 state 不同而不相等。
 
 `any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。未来如果需要接近 stdexec 风格的 fully-erased sender，应作为独立设施设计。
+
+`any_scheduler` 建模的是 Forge 当前 backport 的本地 scheduler concept。这个本地 concept 不检查标准 P2300 scheduler 的 completion-scheduler 往返；需要与未来原生 `std::execution::scheduler` 严格互通时，应重新审计 `schedule()` sender 的 env。
 
 ## 示例与测试
 
@@ -42,6 +45,7 @@
 - `example/forge_system_context_example.cpp`
 - `example/forge_timer_context_example.cpp`
 - `example/forge_runtime_context_example.cpp`
+- `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 

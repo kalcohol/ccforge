@@ -31,6 +31,14 @@ int main() {
         return 4;
     }
 
+    forge::any_scheduler erased_scheduler{runtime.get_scheduler()};
+    static_assert(std::execution::scheduler<forge::any_scheduler>);
+    auto erased_scheduler_result = std::execution::sync_wait(
+        std::execution::schedule(erased_scheduler));
+    if (!erased_scheduler_result) {
+        return 5;
+    }
+
     using cs_int = std::execution::completion_signatures<
         std::execution::set_value_t(int),
         std::execution::set_error_t(std::exception_ptr),
@@ -39,7 +47,7 @@ int main() {
     forge::any_sender_of<cs_int> erased = std::execution::just(7);
     auto value = erased.sync_wait();
     if (!value || std::get<0>(*value) != 7) {
-        return 5;
+        return 6;
     }
 
     return 0;
