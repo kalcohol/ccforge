@@ -136,10 +136,9 @@ Resource policy 解决实际 runtime 资源问题：
 - OOM 或 capacity full 时的 completion 策略。
 
 V1 应优先使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy
-framework。需要如实记录限制：当前 `static_thread_pool` 使用
-`std::deque<std::function<void()>>`，即使用 `pmr::deque` 也不能控制
-`std::function` 内部 target allocation。若需要完全控制 task closure allocation，
-应另开小任务引入 Forge 自有 move-only callable storage。
+framework。`static_thread_pool` 后续 callable-storage 小轮次已把 queued task
+callable record 纳入 pool resource；仍需如实记录其它未纳入路径，例如
+`async_scope` op-state、`timer_context` timer item 和 `strand` runner keepalive node。
 
 ## IO Backend
 

@@ -29,10 +29,14 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <thread>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace forge {
@@ -50,6 +54,102 @@ namespace __pool_detail {
 
 struct __env {
     static_thread_pool* pool;
+};
+
+class __task {
+public:
+    __task() noexcept = default;
+
+    template<class F>
+    static auto make(F&& f, std::pmr::memory_resource* memory) -> __task {
+        using model_t = __model<std::decay_t<F>>;
+        memory = normalize_memory_resource(memory);
+        void* storage = memory->allocate(sizeof(model_t), alignof(model_t));
+        try {
+            ::new (storage) model_t(static_cast<F&&>(f));
+        } catch (...) {
+            memory->deallocate(storage, sizeof(model_t), alignof(model_t));
+            throw;
+        }
+        return __task{storage, memory, &__model_ops<std::decay_t<F>>};
+    }
+
+    ~__task() noexcept {
+        reset();
+    }
+
+    __task(__task&& other) noexcept
+        : ptr_(std::exchange(other.ptr_, nullptr))
+        , memory_(std::exchange(other.memory_, nullptr))
+        , ops_(std::exchange(other.ops_, nullptr))
+    {}
+
+    auto operator=(__task&& other) noexcept -> __task& {
+        if (this == &other) {
+            return *this;
+        }
+        reset();
+        ptr_ = std::exchange(other.ptr_, nullptr);
+        memory_ = std::exchange(other.memory_, nullptr);
+        ops_ = std::exchange(other.ops_, nullptr);
+        return *this;
+    }
+
+    __task(const __task&) = delete;
+    auto operator=(const __task&) -> __task& = delete;
+
+    explicit operator bool() const noexcept {
+        return ptr_ != nullptr;
+    }
+
+    void operator()() {
+        ops_->invoke(ptr_);
+    }
+
+    void reset() noexcept {
+        if (!ptr_) {
+            return;
+        }
+        ops_->destroy(ptr_, memory_);
+        ptr_ = nullptr;
+        memory_ = nullptr;
+        ops_ = nullptr;
+    }
+
+private:
+    struct __ops {
+        void (*invoke)(void*);
+        void (*destroy)(void*, std::pmr::memory_resource*) noexcept;
+    };
+
+    template<class F>
+    struct __model {
+        explicit __model(F&& f)
+            : callable(static_cast<F&&>(f)) {}
+
+        F callable;
+    };
+
+    template<class F>
+    static inline const __ops __model_ops{
+        [](void* ptr) {
+            std::invoke(static_cast<__model<F>*>(ptr)->callable);
+        },
+        [](void* ptr, std::pmr::memory_resource* memory) noexcept {
+            auto* model = static_cast<__model<F>*>(ptr);
+            std::destroy_at(model);
+            memory->deallocate(model, sizeof(__model<F>), alignof(__model<F>));
+        }};
+
+    __task(void* ptr, std::pmr::memory_resource* memory, const __ops* ops) noexcept
+        : ptr_(ptr)
+        , memory_(memory)
+        , ops_(ops)
+    {}
+
+    void* ptr_ = nullptr;
+    std::pmr::memory_resource* memory_ = nullptr;
+    const __ops* ops_ = nullptr;
 };
 
 template<class R>
@@ -116,7 +216,8 @@ public:
     {}
 
     explicit static_thread_pool(static_thread_pool_options options)
-        : __queue_(normalize_memory_resource(options.memory))
+        : __memory_(normalize_memory_resource(options.memory))
+        , __queue_(__memory_)
         , __queue_capacity_(options.queue_capacity)
         , __stop_(false)
         , __active_(0)
@@ -160,7 +261,8 @@ public:
         return __threads_.size();
     }
 
-    bool __submit(std::function<void()> task) {
+    template<class F>
+    bool __submit(F&& task) {
         std::lock_guard lk{__mtx_};
         if (__stop_) {
             return false;
@@ -168,7 +270,9 @@ public:
         if (__queue_capacity_ && __queue_.size() >= *__queue_capacity_) {
             return false;
         }
-        __queue_.push_back(std::move(task));
+        __queue_.push_back(__pool_detail::__task::make(
+            static_cast<F&&>(task),
+            __memory_));
         ++__active_;
         __cv_.notify_one();
         return true;
@@ -177,7 +281,7 @@ public:
 private:
     void __run() noexcept {
         while (true) {
-            std::function<void()> task;
+            __pool_detail::__task task;
             {
                 std::unique_lock lk{__mtx_};
                 __cv_.wait(lk, [this] { return !__queue_.empty() || __stop_; });
@@ -198,7 +302,8 @@ private:
     std::mutex __mtx_;
     std::condition_variable __cv_;
     std::condition_variable __cv_wait_;
-    std::pmr::deque<std::function<void()>> __queue_;
+    std::pmr::memory_resource* __memory_;
+    std::pmr::deque<__pool_detail::__task> __queue_;
     std::optional<std::size_t> __queue_capacity_;
     std::vector<std::thread> __threads_;
     bool __stop_;
@@ -238,9 +343,13 @@ inline void __op<R>::start() & noexcept {
         return;
     }
 
-    if (!__pool->__submit([this]() noexcept {
-        std::execution::set_value(std::move(__rcvr));
-    })) {
+    try {
+        if (!__pool->__submit([this]() noexcept {
+            std::execution::set_value(std::move(__rcvr));
+        })) {
+            std::execution::set_stopped(std::move(__rcvr));
+        }
+    } catch (...) {
         std::execution::set_stopped(std::move(__rcvr));
     }
 }

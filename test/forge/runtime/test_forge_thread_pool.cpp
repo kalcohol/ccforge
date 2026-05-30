@@ -6,7 +6,10 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <memory_resource>
 #include <mutex>
+#include <new>
 #include <tuple>
 
 static_assert(std::execution::scheduler<forge::static_thread_pool::scheduler>);
@@ -40,6 +43,35 @@ struct pre_stopped_receiver {
             std::execution::make_prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
+};
+
+class throwing_resource final : public std::pmr::memory_resource {
+public:
+    void fail_allocations(bool value) noexcept {
+        fail_ = value;
+    }
+
+private:
+    auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override {
+        if (fail_) {
+            throw std::bad_alloc{};
+        }
+        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+    }
+
+    void do_deallocate(
+        void* p,
+        std::size_t bytes,
+        std::size_t alignment) override {
+        std::pmr::new_delete_resource()->deallocate(p, bytes, alignment);
+    }
+
+    [[nodiscard]] bool do_is_equal(
+        const std::pmr::memory_resource& other) const noexcept override {
+        return this == &other;
+    }
+
+    bool fail_ = false;
 };
 
 } // namespace
@@ -248,6 +280,27 @@ TEST(StaticThreadPoolTest, OptionsConstructorUsesCustomMemoryResourceForQueue) {
     }
 
     EXPECT_EQ(resource.allocations(), resource.deallocations());
+}
+
+TEST(StaticThreadPoolTest, QueueTaskAllocationFailureCompletesStopped) {
+    throwing_resource resource;
+    forge::static_thread_pool pool{forge::static_thread_pool_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+        .memory = &resource,
+    }};
+    auto sch = pool.get_scheduler();
+    resource.fail_allocations(true);
+
+    bool stopped = false;
+    auto op = std::execution::connect(
+        std::execution::schedule(sch),
+        stopped_receiver{&stopped});
+
+    std::execution::start(op);
+    pool.wait();
+
+    EXPECT_TRUE(stopped);
 }
 
 TEST(StaticThreadPoolTest, BoundedQueueRejectsOverflowWithStopped) {

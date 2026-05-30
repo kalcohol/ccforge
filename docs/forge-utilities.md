@@ -34,14 +34,14 @@ Accelerator-like mock backend 使用独立头：
 
 资源策略不拥有 `memory_resource`；调用方必须保证传入的 resource 活得比使用它的 runtime primitive 更久。V1 只控制明确接入的路径，不承诺全局零分配：
 
-- `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点；`std::function` 内部 target allocation 仍由标准库实现决定。
+- `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
 - `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和 send/recv record control block。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次和 receiver record；runner node 仍保持原来的 intrusive keepalive `new/delete`，以保护已验证的同步完成生命周期模型。
 - `runtime_context` / `resource_context` 会把 resource 传给内部 `static_thread_pool`。`async_scope` spawned op-state 与 `timer_context` timer item 目前不受该 policy 控制。
 
 ## 调度与上下文
 
-- `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制队列节点分配时可传入 `.memory = resource`。队列满、shutdown 后新启动或 receiver 已停止的 schedule operation 会以 `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列和正在运行的任务清空。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
+- `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制队列节点和 queued task callable record 分配时可传入 `.memory = resource`。队列满、shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以 `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列和正在运行的任务清空。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
 - `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`wait()` 会等待已接受 timer 操作完成。

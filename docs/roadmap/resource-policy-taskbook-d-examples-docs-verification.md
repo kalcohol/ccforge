@@ -37,8 +37,7 @@ Docs must explicitly state:
 
 - `memory_resource*` is non-owning and must outlive configured primitives;
 - V1 controls only documented policy-aware paths;
-- `std::function` target allocation in `static_thread_pool` remains a known caveat unless a
-  callable-storage follow-up lands;
+- `static_thread_pool` callable storage is handled by the callable-storage follow-up;
 - gate semantics for `ON` / `OFF` / `AUTO`.
 
 ## CMake

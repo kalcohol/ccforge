@@ -56,7 +56,7 @@ Non-owning views and lightweight handles should not block in destructors.
 - `static_thread_pool::shutdown()` stops accepting new schedule operations and
   drains accepted work. `wait()` waits for the queue and active tasks to empty.
   Its options may carry a non-owning `std::pmr::memory_resource*` for queue
-  node allocation.
+  node and queued task callable-record allocation.
 - `timer_context::shutdown()` stops accepting timers and completes pending timers
   stopped. `wait()` waits for accepted timer operations.
 - `runtime_context::wait()` is a practical single-hop drain:
