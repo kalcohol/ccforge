@@ -21,12 +21,13 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 1. `example/forge_thread_pool_example.cpp`：最小 scheduler + `schedule`。
 2. `example/forge_runtime_context_example.cpp`：显式拥有 runtime，并用 `wait()` drain。
 3. `example/forge_channel_example.cpp`：异步 send/recv 与 close/stop 语义。
-4. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
+4. `example/forge_graceful_shutdown_example.cpp`：服务入口 close/drain 与 stop/cancel。
+5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
    组合成一个受控 pipeline。
-5. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-6. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+6. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
+7. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-7. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+8. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
@@ -52,6 +53,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - `example/forge_thread_pool_example.cpp`
 - `example/forge_runtime_context_example.cpp`
+- `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_resource_context_example.cpp`
 
 ## Recipe: bounded producer/consumer
@@ -74,6 +76,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 参考：
 
 - `example/forge_channel_example.cpp`
+- `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
 
 ## Recipe: serialize shared state
@@ -119,6 +122,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 参考：
 
 - `example/forge_resource_context_example.cpp`
+- `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
@@ -215,6 +219,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 参考：
 
 - `example/forge_any_scheduler_example.cpp`
+- `example/forge_type_erased_boundary_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 

@@ -155,6 +155,18 @@ if(FORGE_EXAMPLE_TBB_LIBRARY)
     target_link_libraries(forge_strand PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
 endif()
 
+add_executable(forge_graceful_shutdown forge_graceful_shutdown_example.cpp)
+target_link_libraries(forge_graceful_shutdown PRIVATE forge::forge Threads::Threads)
+if(FORGE_EXAMPLE_TBB_LIBRARY)
+    target_link_libraries(forge_graceful_shutdown PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+endif()
+
+add_executable(forge_type_erased_boundary forge_type_erased_boundary_example.cpp)
+target_link_libraries(forge_type_erased_boundary PRIVATE forge::forge Threads::Threads)
+if(FORGE_EXAMPLE_TBB_LIBRARY)
+    target_link_libraries(forge_type_erased_boundary PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+endif()
+
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY)
     add_executable(forge_resource_policy forge_resource_policy_example.cpp)
     target_link_libraries(forge_resource_policy PRIVATE forge::forge Threads::Threads)
@@ -268,6 +280,8 @@ set(FORGE_EXAMPLE_SMOKE_TARGETS
     forge_channel
     forge_resource_context
     forge_strand
+    forge_graceful_shutdown
+    forge_type_erased_boundary
     forge_resource_policy
     forge_bounded_pipeline
     forge_io_readiness
