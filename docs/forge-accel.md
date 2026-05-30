@@ -19,6 +19,8 @@ device buffer、copy 和 kernel-like submit 的 sender 语义。
 - `forge::accel::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
 - `forge::accel::queue`：轻量 queue handle。V1 单 queue 按 FIFO 串行执行 command。
+- `forge::accel::host_buffer<T>`：由 context resource 分配的 owning host staging
+  storage。它不是 pinned memory，只固定 staging buffer 的所有权和分配来源。
 - `forge::accel::device_buffer<T>`：拥有 mock device storage。V1 要求
   `T` trivially copyable。
 
@@ -75,6 +77,8 @@ Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop tok
 ## Ownership
 
 - Host spans 是 borrowed；调用方必须保证它们活到 command completion。
+- `host_buffer<T>` 是 owning host storage，可用 `span()` 传给 copy command；它同样必须
+  活到相关 command completion。
 - `device_buffer<T>` 必须活到使用它的 command completion。
 - V1 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
 - User completion 不在 accel 内部 mutex 下执行。
@@ -110,4 +114,5 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

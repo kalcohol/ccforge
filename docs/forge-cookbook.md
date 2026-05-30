@@ -26,9 +26,11 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
    组合成一个受控 pipeline。
 6. `example/forge_io_read_write_example.cpp`：Linux borrowed buffer async read/write。
 7. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-8. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+8. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
+   device buffer。
+9. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-9. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+10. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
@@ -183,6 +185,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 使用：
 
 - `forge::accel::context`
+- `forge::accel::host_buffer<T>`
 - `forge::accel::device_buffer<T>`
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `submit(queue, callable)`
@@ -193,12 +196,15 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - 当前 backend 是 in-memory mock，不依赖 CUDA/HIP/SYCL；
 - queue 命令按 FIFO 运行；
 - host spans 是 borrowed，`device_buffer` 拥有 mock device storage；
+- `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
+  vendor pinned memory；
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
 
 参考：
 
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 

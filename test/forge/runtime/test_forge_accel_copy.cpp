@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -17,6 +19,37 @@ TEST(AccelCopyTest, HostDeviceRoundTrip) {
         forge::accel::copy_to_host(q, std::span<int>{output}, device)).has_value());
 
     EXPECT_EQ(output, input);
+}
+
+TEST(AccelCopyTest, HostBufferUsesResourceAndCopiesThroughDevice) {
+    forge_test::counting_resource resource;
+    std::vector<int> output(4);
+
+    {
+        forge::accel::context ctx{forge::accel::context_options{
+            .memory = &resource,
+        }};
+        auto q = ctx.get_queue();
+        forge::accel::host_buffer<int> input{ctx, 4};
+        forge::accel::host_buffer<int> staging{ctx, 4};
+        forge::accel::device_buffer<int> device{ctx, 4};
+
+        input.span()[0] = 2;
+        input.span()[1] = 4;
+        input.span()[2] = 6;
+        input.span()[3] = 8;
+
+        ASSERT_TRUE(std::execution::sync_wait(
+            forge::accel::copy_to_device(q, device, input.span())).has_value());
+        ASSERT_TRUE(std::execution::sync_wait(
+            forge::accel::copy_to_host(q, staging.span(), device)).has_value());
+
+        std::ranges::copy(staging.span(), output.begin());
+        EXPECT_GT(resource.allocations(), 0u);
+    }
+
+    EXPECT_EQ(output, (std::vector<int>{2, 4, 6, 8}));
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(AccelCopyTest, DeviceToDeviceCopy) {

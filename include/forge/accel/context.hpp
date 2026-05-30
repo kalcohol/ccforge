@@ -57,6 +57,8 @@ class context;
 class queue;
 class event;
 template<class T>
+class host_buffer;
+template<class T>
 class device_buffer;
 
 namespace __detail {
@@ -496,9 +498,48 @@ public:
 
 private:
     template<class T>
+    friend class host_buffer;
+    template<class T>
     friend class device_buffer;
 
     std::shared_ptr<__detail::__state> state_;
+};
+
+template<class T>
+class host_buffer {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "forge::accel::host_buffer<T> v1 requires trivially copyable T");
+
+public:
+    using value_type = T;
+
+    host_buffer(context& ctx, std::size_t size)
+        : data_(std::pmr::polymorphic_allocator<T>{
+              ctx.state_->memory_resource()})
+    {
+        data_.resize(size);
+    }
+
+    host_buffer(const host_buffer&) = delete;
+    host_buffer& operator=(const host_buffer&) = delete;
+    host_buffer(host_buffer&&) noexcept = default;
+    host_buffer& operator=(host_buffer&&) noexcept = default;
+    ~host_buffer() = default;
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return data_.size();
+    }
+
+    [[nodiscard]] auto span() noexcept -> std::span<T> {
+        return std::span<T>{data_.data(), data_.size()};
+    }
+
+    [[nodiscard]] auto span() const noexcept -> std::span<const T> {
+        return std::span<const T>{data_.data(), data_.size()};
+    }
+
+private:
+    std::pmr::vector<T> data_;
 };
 
 template<class T>
@@ -558,6 +599,11 @@ auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<const T> src) {
             }
             std::copy(src.begin(), src.end(), dst->data_.begin());
         });
+}
+
+template<class T>
+auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<T> src) {
+    return copy_to_device(q, dst, std::span<const T>{src});
 }
 
 template<class T>
