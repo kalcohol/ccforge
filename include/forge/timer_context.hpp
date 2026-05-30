@@ -23,13 +23,14 @@
 #pragma once
 
 #include <execution>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <thread>
 #include <vector>
 
@@ -39,19 +40,14 @@ class timer_context;
 
 namespace __timer_detail {
 
+struct __state;
+
 struct __item {
     std::chrono::steady_clock::time_point deadline;
+    std::any_stop_token stop_token;
     std::function<void()> complete_value;
     std::function<void()> complete_stopped;
     std::atomic<bool> done{false};
-};
-
-struct __item_later {
-    bool operator()(
-        const std::shared_ptr<__item>& lhs,
-        const std::shared_ptr<__item>& rhs) const noexcept {
-        return lhs->deadline > rhs->deadline;
-    }
 };
 
 template<class R>
@@ -76,8 +72,8 @@ struct __op {
     __op(const __op&) = delete;
     __op& operator=(const __op&) = delete;
 
-    __op(timer_context* context, std::chrono::steady_clock::time_point deadline, R rcvr)
-        : context_(context), deadline_(deadline), rcvr_(std::move(rcvr)) {}
+    __op(std::shared_ptr<__state> state, std::chrono::steady_clock::time_point deadline, R rcvr)
+        : state_(std::move(state)), deadline_(deadline), rcvr_(std::move(rcvr)) {}
 
     void start() & noexcept;
 
@@ -95,7 +91,7 @@ struct __op {
         std::execution::set_stopped(std::move(rcvr_));
     }
 
-    timer_context* context_;
+    std::shared_ptr<__state> state_;
     std::chrono::steady_clock::time_point deadline_;
     R rcvr_;
     std::shared_ptr<__item> item_;
@@ -104,7 +100,7 @@ struct __op {
 struct __sender {
     using sender_concept = std::execution::sender_t;
 
-    timer_context* context;
+    std::shared_ptr<__state> state;
     std::chrono::steady_clock::time_point deadline;
 
     template<class Self, class Env>
@@ -121,13 +117,147 @@ struct __sender {
 
     template<std::execution::receiver R>
     auto connect(R rcvr) && -> __op<R> {
-        return __op<R>{context, deadline, std::move(rcvr)};
+        return __op<R>{std::move(state), deadline, std::move(rcvr)};
     }
 
     template<std::execution::receiver R>
     auto connect(R rcvr) const& -> __op<R> {
-        return __op<R>{context, deadline, std::move(rcvr)};
+        return __op<R>{state, deadline, std::move(rcvr)};
     }
+};
+
+struct __state {
+    bool enqueue(std::shared_ptr<__item> item) {
+        std::lock_guard lk{mtx};
+        if (stop) {
+            return false;
+        }
+        items.push_back(std::move(item));
+        ++pending;
+        cv.notify_all();
+        return true;
+    }
+
+    void shutdown() noexcept {
+        {
+            std::lock_guard lk{mtx};
+            stop = true;
+        }
+        cv.notify_all();
+    }
+
+    void wait() noexcept {
+        if (worker_id == std::this_thread::get_id()) {
+            return;
+        }
+
+        std::unique_lock lk{mtx};
+        cv_wait.wait(lk, [this] { return pending == 0; });
+    }
+
+    void run() noexcept {
+        {
+            std::lock_guard lk{mtx};
+            worker_id = std::this_thread::get_id();
+        }
+
+        while (true) {
+            std::shared_ptr<__item> ready;
+            bool complete_stopped = false;
+
+            {
+                std::unique_lock lk{mtx};
+                while (true) {
+                    if (stop) {
+                        if (items.empty()) {
+                            if (pending == 0) {
+                                cv_wait.notify_all();
+                            }
+                            return;
+                        }
+                        ready = std::move(items.back());
+                        items.pop_back();
+                        complete_stopped = true;
+                        break;
+                    }
+
+                    if (items.empty()) {
+                        if (pending == 0) {
+                            cv_wait.notify_all();
+                        }
+                        cv.wait(lk);
+                        continue;
+                    }
+
+                    const auto now = std::chrono::steady_clock::now();
+                    auto stopped_it = std::find_if(items.begin(), items.end(),
+                        [](const std::shared_ptr<__item>& item) {
+                            return item->stop_token.stop_requested();
+                        });
+                    if (stopped_it != items.end()) {
+                        ready = std::move(*stopped_it);
+                        items.erase(stopped_it);
+                        complete_stopped = true;
+                        break;
+                    }
+
+                    auto next_it = std::min_element(items.begin(), items.end(),
+                        [](const std::shared_ptr<__item>& lhs,
+                           const std::shared_ptr<__item>& rhs) {
+                            return lhs->deadline < rhs->deadline;
+                        });
+
+                    if ((*next_it)->deadline <= now) {
+                        ready = std::move(*next_it);
+                        items.erase(next_it);
+                        break;
+                    }
+
+                    auto wake = (*next_it)->deadline;
+                    if (has_stoppable_item()) {
+                        const auto poll_wake = now + poll_interval;
+                        if (poll_wake < wake) {
+                            wake = poll_wake;
+                        }
+                    }
+                    cv.wait_until(lk, wake);
+                }
+            }
+
+            if (ready) {
+                if (complete_stopped) {
+                    ready->complete_stopped();
+                } else {
+                    ready->complete_value();
+                }
+
+                {
+                    std::lock_guard lk{mtx};
+                    --pending;
+                    if (pending == 0) {
+                        cv_wait.notify_all();
+                    }
+                }
+            }
+        }
+    }
+
+    bool has_stoppable_item() const noexcept {
+        return std::any_of(items.begin(), items.end(),
+            [](const std::shared_ptr<__item>& item) {
+                return item->stop_token.stop_possible();
+            });
+    }
+
+    static constexpr auto poll_interval = std::chrono::milliseconds(1);
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::condition_variable cv_wait;
+    std::vector<std::shared_ptr<__item>> items;
+    bool stop = false;
+    std::size_t pending = 0;
+    std::thread::id worker_id{};
 };
 
 } // namespace __timer_detail
@@ -135,7 +265,8 @@ struct __sender {
 class timer_context {
 public:
     timer_context()
-        : thread_([this] { run(); }) {}
+        : state_(std::make_shared<__timer_detail::__state>())
+        , thread_([state = state_] { state->run(); }) {}
 
     ~timer_context() noexcept {
         shutdown();
@@ -178,11 +309,11 @@ public:
     }
 
     void shutdown() noexcept {
-        {
-            std::lock_guard lk{mtx_};
-            stop_ = true;
-        }
-        cv_.notify_all();
+        state_->shutdown();
+    }
+
+    void wait() noexcept {
+        state_->wait();
     }
 
 private:
@@ -192,77 +323,10 @@ private:
     [[nodiscard]] auto schedule_at_steady(
         std::chrono::steady_clock::time_point deadline) noexcept
             -> __timer_detail::__sender {
-        return __timer_detail::__sender{this, deadline};
+        return __timer_detail::__sender{state_, deadline};
     }
 
-    bool enqueue(std::shared_ptr<__timer_detail::__item> item) {
-        std::lock_guard lk{mtx_};
-        if (stop_) {
-            return false;
-        }
-        queue_.push(std::move(item));
-        cv_.notify_all();
-        return true;
-    }
-
-    void run() noexcept {
-        while (true) {
-            std::vector<std::shared_ptr<__timer_detail::__item>> stopped;
-            std::shared_ptr<__timer_detail::__item> ready;
-            bool shutting_down = false;
-
-            {
-                std::unique_lock lk{mtx_};
-                while (true) {
-                    if (stop_) {
-                        shutting_down = true;
-                        while (!queue_.empty()) {
-                            stopped.push_back(queue_.top());
-                            queue_.pop();
-                        }
-                        break;
-                    }
-
-                    if (queue_.empty()) {
-                        cv_.wait(lk);
-                        continue;
-                    }
-
-                    auto deadline = queue_.top()->deadline;
-                    if (deadline > std::chrono::steady_clock::now()) {
-                        cv_.wait_until(lk, deadline);
-                        continue;
-                    }
-
-                    ready = queue_.top();
-                    queue_.pop();
-                    break;
-                }
-            }
-
-            if (!stopped.empty()) {
-                for (auto& item : stopped) {
-                    item->complete_stopped();
-                }
-            }
-
-            if (shutting_down) {
-                return;
-            }
-
-            if (ready) {
-                ready->complete_value();
-            }
-        }
-    }
-
-    std::mutex mtx_;
-    std::condition_variable cv_;
-    std::priority_queue<
-        std::shared_ptr<__timer_detail::__item>,
-        std::vector<std::shared_ptr<__timer_detail::__item>>,
-        __timer_detail::__item_later> queue_;
-    bool stop_ = false;
+    std::shared_ptr<__timer_detail::__state> state_;
     std::thread thread_;
 };
 
@@ -275,12 +339,17 @@ inline void __op<R>::start() & noexcept {
     item_->complete_value = [this] { complete_value(); };
     item_->complete_stopped = [this] { complete_stopped(); };
 
-    if (__stop_requested(rcvr_)) {
+    auto env = std::execution::get_env(rcvr_);
+    auto token = std::execution::get_stop_token(env);
+    if (token.stop_requested()) {
         complete_stopped();
         return;
     }
+    if (token.stop_possible()) {
+        item_->stop_token = std::any_stop_token{std::move(token)};
+    }
 
-    if (!context_->enqueue(item_)) {
+    if (!state_ || !state_->enqueue(item_)) {
         complete_stopped();
     }
 }
