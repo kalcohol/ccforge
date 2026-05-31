@@ -73,6 +73,10 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
 绑定某个具体平台或厂商栈。
 
+`forge::accel` 的 future backend shape 见
+[`forge::accel` backend SPI sketch](forge-accel-backend-spi.md)。它是设计约束，
+不是已发布 plugin ABI。
+
 具体要求：
 
 - vendor/platform backend 只是验证支撑层是否能表达真实系统的 optional proof；

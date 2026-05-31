@@ -180,6 +180,9 @@ handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`r
 - `host_buffer<T>` 是 owning host storage，可用 `span()` 传给 copy command；它同样必须
   活到相关 command completion。
 - `device_buffer<T>` 必须活到使用它的 command completion。
+- command 捕获的是 buffer object 地址和 borrowed span。command pending 期间移动或销毁
+  参与的 `host_buffer<T>` / `device_buffer<T>` / host span 是调用方错误；V1 不尝试
+  pin 或自动延长这些对象的 lifetime。
 - V1 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
 - User completion 不在 accel 内部 mutex 下执行。
 
@@ -197,6 +200,8 @@ std::execution::sync_wait(forge::accel::fence(q));
 ```
 
 - `event` 是可复制的共享完成标记，默认未 ready。
+- `event` 不绑定 context，control block 使用普通共享分配；它不继承
+  `context_options::memory`。
 - `record_event(q, ev)` 作为 queue command 运行，完成时把 `ev` 标记为 ready。
 - `wait_event(q, ev)` 作为 queue command 运行，等待 `ev` ready；若 context stop，
   以 stopped 完成。
