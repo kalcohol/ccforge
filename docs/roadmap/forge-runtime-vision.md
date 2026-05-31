@@ -24,6 +24,7 @@
 - `any_scheduler`
 - 窄 `any_sender_of` / `any_receiver_of`
 - connectable `erased_sender` with closed-set typed errors
+- opt-in `forge::io` typed-error sender variants
 
 这些设施的生命周期词汇由 `docs/forge-runtime.md` 固定：
 `close()` 是 graceful ingress close，`request_stop()` 是协作取消，
@@ -46,7 +47,7 @@
 1. Resource policy / allocator policy
 2. IO backend
 3. `accel` scheduler and command pipeline
-4. typed-error integration for IO/accel surfaces
+4. typed-error integration for remaining accel surfaces
 
 顺序理由：
 
@@ -55,7 +56,7 @@
 - IO 和 accel 会引入平台/厂商后端。先统一资源策略，可以避免后端各自发明 allocation
   和 backpressure 规则。
 - Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；
-  剩余问题是 IO/accel 是否、以及如何暴露 typed-error API。
+  IO 已有 opt-in typed variants，剩余问题是 accel 是否、以及如何暴露 typed-error API。
 
 ## project identity checkpoint
 
@@ -90,7 +91,7 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 - 新平台 IO backend：macOS/BSD kqueue、Linux `io_uring`，或 Windows IOCP 的
   production hardening beyond the current proof；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
-- IO/accel typed-error API variants；
+- accel typed-error API variants；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
   `ensure_started` 单发/取消语义、`spawn_future` 更完整 allocator 传播。
 
@@ -240,9 +241,11 @@ proof。
 - allocation failure / capacity exceeded；
 - resource closed / operation canceled。
 
-当前剩余问题不是 erased sender 的基本 typed-error vtable，而是 IO/accel 等设施是否
-要暴露 typed-error API。默认的 IO/accel surface 仍使用 `std::exception_ptr`，避免在
-错误模型尚未稳定前扩大公共 API；后续应以 opt-in typed variants 推进。
+当前剩余问题不是 erased sender 的基本 typed-error vtable。IO 已提供
+`readable_typed` / `writable_typed` / `async_read_some_typed` /
+`async_write_some_typed` 这组 opt-in typed variants；默认 IO surface 仍使用
+`std::exception_ptr`。accel surface 是否暴露 typed-error API 仍待单独决策，避免在
+设备/命令错误模型尚未稳定前扩大公共 API。
 
 ## examples strategy
 
