@@ -25,6 +25,7 @@
 - 窄 `any_sender_of` / `any_receiver_of`
 - connectable `erased_sender` with closed-set typed errors
 - opt-in `forge::io` typed-error sender variants
+- opt-in `forge::accel` typed-error sender variants
 
 这些设施的生命周期词汇由 `docs/forge-runtime.md` 固定：
 `close()` 是 graceful ingress close，`request_stop()` 是协作取消，
@@ -47,7 +48,7 @@
 1. Resource policy / allocator policy
 2. IO backend
 3. `accel` scheduler and command pipeline
-4. typed-error integration for remaining accel surfaces
+4. typed-error integration for IO and accel boundaries
 
 顺序理由：
 
@@ -56,7 +57,8 @@
 - IO 和 accel 会引入平台/厂商后端。先统一资源策略，可以避免后端各自发明 allocation
   和 backpressure 规则。
 - Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；
-  IO 已有 opt-in typed variants，剩余问题是 accel 是否、以及如何暴露 typed-error API。
+  IO 和 accel 都已有 opt-in typed variants。后续问题是具体 platform/vendor backend
+  是否需要自己的错误映射，而不是默认扩大现有 API。
 
 ## project identity checkpoint
 
@@ -91,7 +93,7 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 - 新平台 IO backend：macOS/BSD kqueue、Linux `io_uring`，或 Windows IOCP 的
   production hardening beyond the current proof；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
-- accel typed-error API variants；
+- 真实 backend 的 vendor/platform typed-error mapping；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
   `ensure_started` 单发/取消语义、`spawn_future` 更完整 allocator 传播。
 
@@ -244,8 +246,11 @@ proof。
 当前剩余问题不是 erased sender 的基本 typed-error vtable。IO 已提供
 `readable_typed` / `writable_typed` / `async_read_some_typed` /
 `async_write_some_typed` 这组 opt-in typed variants；默认 IO surface 仍使用
-`std::exception_ptr`。accel surface 是否暴露 typed-error API 仍待单独决策，避免在
-设备/命令错误模型尚未稳定前扩大公共 API。
+`std::exception_ptr`。accel 已提供 `copy_to_device_typed` / `copy_to_host_typed` /
+`copy_device_to_device_typed` / `submit_typed` / `submit_message_typed` /
+`record_event_typed` / `wait_event_typed` / `fence_typed` 这组 opt-in typed variants；
+默认 accel surface 仍使用 `std::exception_ptr`。真实 backend 若引入 vendor-specific
+错误码，应作为独立 mapping 决策，不应反向污染 portable mock API。
 
 ## examples strategy
 

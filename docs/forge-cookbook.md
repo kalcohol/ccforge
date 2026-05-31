@@ -31,9 +31,11 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
    device buffer。
 10. `example/forge_accel_message_device_example.cpp`：device session 与 message command
     形状。
-11. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+11. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+    error。
+12. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-12. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+13. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
@@ -198,6 +200,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `forge::accel::device_buffer<T>`
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `submit(queue, callable)`
+- `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
+  boundary errors
 - `event` / `record_event` / `wait_event` / `fence`
 - `device` / `device_session` / `submit_message`
 
@@ -210,6 +214,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
   vendor pinned memory；
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
 - `device_session` 是 vendor-neutral message-command proof，不暴露真实设备 handle。
+- 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
+  `set_error(forge::accel::error)`，适合类型擦除或插件边界。
 
 参考：
 
@@ -217,6 +223,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_accel_event_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_typed_error_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
@@ -242,6 +249,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_type_erased_boundary_example.cpp`
 - `example/forge_io_typed_error_example.cpp`
+- `example/forge_accel_typed_error_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 

@@ -75,6 +75,41 @@ std::execution::completion_signatures<
     std::execution::set_stopped_t()>
 ```
 
+Default APIs preserve the exception-based boundary used by the rest of the
+runtime layer. Opt-in typed-error variants are available when a boundary needs a
+closed error type:
+
+```cpp
+forge::accel::copy_to_device_typed(q, device, std::span<const T>{host});
+forge::accel::copy_to_host_typed(q, std::span<T>{host}, device);
+forge::accel::copy_device_to_device_typed(q, dst, src);
+forge::accel::submit_typed(q, callable);
+forge::accel::submit_message_typed(session, request, response, handler);
+forge::accel::record_event_typed(q, ev);
+forge::accel::wait_event_typed(q, ev);
+forge::accel::fence_typed(q);
+```
+
+Typed variants complete with:
+
+```cpp
+std::execution::completion_signatures<
+    std::execution::set_value_t(),
+    std::execution::set_error_t(forge::accel::error),
+    std::execution::set_stopped_t()>
+```
+
+`forge::accel::error` carries:
+
+- `kind`：`invalid_buffer`、`size_mismatch`、`invalid_event`、`command_failed`、
+  `user_exception`、`unknown`，以及为 future backend 保留的 `invalid_context`；
+- `status`：`submit_message_typed` 返回 `command_status::failed` 时保留 command
+  status；
+- `cause`：原始 `std::exception_ptr`，用于需要重新抛出或记录底层诊断的边界。
+
+V1 的 typed errors 是 mock backend 的稳定小闭集；它们不试图声明 CUDA/HIP/SYCL 或
+其它 vendor status model。
+
 ## lifecycle
 
 - `close()`：拒绝后续 command，已接受 command 继续 drain。
@@ -118,7 +153,8 @@ handler 可以返回：
 
 - `command_status::ok`：正常 `set_value()`；
 - `command_status::failed`：通过 `set_error(std::exception_ptr)` 传播
-  `forge::accel::command_error`；
+  `forge::accel::command_error`；typed variant 传播
+  `forge::accel::error{error_kind::command_failed, ...}`；
 - `command_status::stopped`：完成为 stopped。
 
 handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`response` 是 borrowed，
@@ -167,4 +203,5 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_event_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
