@@ -80,13 +80,13 @@ Non-owning views and lightweight handles should not block in destructors.
   register receiver stop callbacks when a stoppable token is present; callback
   completion removes the operation from the pending queue and completes stopped
   outside the channel mutex.
-- `io::context` owns a Linux epoll/eventfd poller thread. `close()` rejects new
-  readiness operations while allowing already pending readiness waiters to
-  complete normally; `request_stop()` completes pending waiters stopped;
-  pending readiness operations also register receiver stop callbacks when a
-  stoppable token is present. `shutdown()` combines close and context stop.
-  `wait()` joins the poller. File descriptors are borrowed and must outlive
-  pending readiness operations or be cancelled and drained before close.
+- `io::context` owns a platform IO worker. Linux uses an epoll/eventfd readiness
+  poller; Windows uses a small IOCP completion worker. `close()` rejects new
+  operations while allowing already pending operations to complete normally;
+  `request_stop()` completes or cancels pending operations stopped; `shutdown()`
+  combines close and context stop. `wait()` joins the worker. File descriptors,
+  Windows handles, and user buffers are borrowed and must outlive pending
+  operations or be cancelled and drained before close.
 - `accel::context` owns a portable mock/in-memory accelerator-like command
   queue. `close()` rejects later commands and drains accepted work;
   `request_stop()` stops pending queued commands where possible; `shutdown()`

@@ -15,9 +15,10 @@
 - `bounded_channel`
 - `resource_context`
 - `strand`
-- `io::context` (Linux fd readiness backend)
-- `accel::context` / `accel::queue` / `accel::device_buffer` / `accel::event`
-- `accel` mock copy / submit / event / fence command senders
+- `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
+- `accel::context` / `accel::device` / `accel::device_session` /
+  `accel::queue` / `accel::device_buffer` / `accel::event`
+- `accel` mock copy / submit / submit_message / event / fence command senders
 - `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
@@ -86,7 +87,8 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error er
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
-- 新平台 IO backend：Windows IOCP、macOS/BSD kqueue、Linux `io_uring`；
+- 新平台 IO backend：macOS/BSD kqueue、Linux `io_uring`，或 Windows IOCP 的
+  production hardening beyond the current proof；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - typed-error `erased_sender` v2；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
@@ -98,22 +100,23 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error er
 ## Portability And Windows Expectations
 
 Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
-backend。Windows 支持需要被纳入远景，但不应通过在 Linux 代码里堆兼容分支来假装完成。
+backend。Windows 支持已经有可重复 smoke 脚本和 IOCP proof backend；后续仍应保持为
+独立 backend，而不是通过在 Linux 状态机里堆兼容分支来假装跨平台。
 
 Windows 阶段性预期：
 
 1. 基础 backport 与 `forge::` 纯 header/runtime 设施应能在 Windows + MSVC 或 clang-cl
    上 configure/build/test。
-2. 在没有 IOCP backend 前，`FORGE_ENABLE_FORGE_IO=AUTO` 应跳过 IO backend；
-   `FORGE_ENABLE_FORGE_IO=ON` 应给出清楚 configure error。
+2. 有 IOCP backend 时，`FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP tests/examples；
+   `FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。
 3. Linux-only IO headers 不应在 IO disabled 或非 Linux build 下破坏普通用户 include。
 4. 若准备 Windows 机器，优先建立一个可重复执行的验证脚本，而不是依赖手工点击：
    - CMake configure/build with `FORGE_BUILD_TESTS=ON`;
-   - `ctest` 覆盖 backport + non-IO `forge::` tests；
+   - `ctest` 覆盖 backport + `forge::` tests；
    - gate-off/gate-on configure 行为；
-   - 未来 IOCP backend 单独挂在 `FORGE_ENABLE_FORGE_IO=AUTO/ON` 下。
-5. 只有在 Windows 环境稳定后，才启动 IOCP taskbook。IOCP 与 `epoll` 的 completion
-   语义不同，应作为独立 backend 设计，不应强行套 Linux fd readiness 状态机。
+   - IOCP backend 单独挂在 `FORGE_ENABLE_FORGE_IO=AUTO/ON` 下。
+5. IOCP 与 `epoll` 的 completion 语义不同，应继续作为独立 backend 维护，不应强行套
+   Linux fd readiness 状态机。
 
 如果 owner 提供 Windows 主机，建议作为 self-hosted/manual verification 环境先接入；
 正式 CI 化之前，至少记录可复现命令和预期 test count。
@@ -147,8 +150,8 @@ FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 `AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header
 设施不应因为全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、
 tests 和带外部依赖的 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness
-backend；accel gate 已用于 portable mock backend；typed-erasure gate 仍是惰性占位。
-accel 当前不做 CUDA、HIP、SYCL 或 vendor SDK 探测。
+backend 和 Windows IOCP proof backend；accel gate 已用于 portable mock backend；
+typed-erasure gate 仍是惰性占位。accel 当前不做 CUDA、HIP、SYCL 或 vendor SDK 探测。
 
 ## Resource Policy
 
@@ -169,17 +172,17 @@ target 分配。
 
 ## IO Backend
 
-IO backend 必须接触真实底层设施，否则只是多包一层线程池。V1 已收窄为 Linux
-fd readiness backend；后续仍建议分三层推进：
+IO backend 必须接触真实底层设施，否则只是多包一层线程池。当前已落地 Linux
+fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 
 - 通用 API 层：readiness sender、async read/write、close/shutdown；
-- 后端层：Linux `epoll`/`eventfd` 起步，后续可评估 `io_uring`；Windows 是 IOCP，
-  macOS/BSD 是 kqueue；
+- 后端层：Linux `epoll`/`eventfd` 与 Windows IOCP 已有 proof，后续可评估 macOS/BSD
+  kqueue；Linux `io_uring` 仅在明确需要 kernel submission/completion queue 语义时再做；
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
-第一版不承诺全平台。Linux fd readiness backend 已作为 V1 落地；Windows/IOCP、
-kqueue 和 `io_uring` 仍需独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能
-消除 epoll/io_uring/IOCP 语义差异。
+第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；
+kqueue、`io_uring` 和 IOCP production hardening 仍需独立 taskbook。Zig 可以帮助
+构建和 C ABI 互操作，但不能消除 epoll/io_uring/IOCP 语义差异。
 
 ## Accel Scheduler
 
@@ -199,6 +202,8 @@ kqueue 和 `io_uring` 仍需独立 taskbook。Zig 可以帮助构建和 C ABI �
 
 ```cpp
 forge::accel::context
+forge::accel::device
+forge::accel::device_session
 forge::accel::queue
 forge::accel::device_buffer
 forge::accel::event
@@ -206,6 +211,7 @@ forge::accel::copy_to_device(...)
 forge::accel::copy_to_host(...)
 forge::accel::copy_device_to_device(...)
 forge::accel::submit(...)
+forge::accel::submit_message(...)
 forge::accel::record_event(...)
 forge::accel::wait_event(...)
 forge::accel::fence(...)
@@ -247,6 +253,7 @@ Examples 必须从“能编译”升级为“能教会人怎么组合”：
 - `forge_io_readiness_example.cpp`：fd readiness sender + resource lifetime；
 - `forge_accel_copy_example.cpp`：host/device copy + CPU continuation；
 - `forge_accel_pipeline_example.cpp`：H2D -> kernel -> D2H -> CPU postprocess；
+- `forge_accel_message_device_example.cpp`：device session + message command；
 - `forge_inference_runtime_sketch.cpp`：请求 channel、strand 顺序控制、accel queue、
   scope 生命周期和 resource shutdown。
 

@@ -12,7 +12,7 @@
 
 该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_policy.hpp`、`resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`strand.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp` 和 `task.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
-Linux fd readiness backend 使用独立头：
+IO backend 使用独立头：
 
 ```cpp
 #include <forge/io.hpp>
@@ -55,29 +55,33 @@ Accelerator-like mock backend 使用独立头：
 
 - `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和共享 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
-## IO Readiness
+## IO Backend
 
-- `forge::io::context`：Linux `epoll` + `eventfd` backed fd readiness context，提供
-  `readable(fd)` / `writable(fd)` sender。fd 是 borrowed，调用方必须保证 fd 活到
-  operation 完成、`cancel(fd)` 后 drain，或 context shutdown/wait 之后。ready sender
-  完成 `set_value()` 只表示 fd ready，真正的 `read(2)` / `write(2)` 由用户代码执行。
+- `forge::io::context`：平台 IO context。Linux backend 是 `epoll` + `eventfd`
+  readiness context，提供 `readable(fd)` / `writable(fd)` sender，以及 borrowed-span
+  `async_read_some` / `async_write_some` convenience。Windows backend 是小型 IOCP
+  completion proof，提供 overlapped `async_read_some` / `async_write_some`。
 
-V1 不做 async read/write buffer 抽象，也不支持 IOCP/kqueue/io_uring。pending
-operation 会在 receiver stop token 请求停止时从 fd table 移除并以 stopped 完成；不带
-stoppable token 的 operation 仍可由 readiness、`cancel(fd)`、`request_stop()` 或
-`shutdown()` 唤醒。详细语义见 [`forge::io`](forge-io.md)。
+fd / `HANDLE` 和 buffer 都是 borrowed，调用方必须保证它们活到 operation 完成、
+`cancel(...)` 后 drain，或 context shutdown/wait 之后。Linux readiness sender 完成
+`set_value()` 只表示 fd ready，真正的 `read(2)` / `write(2)` 由用户代码执行；Linux
+async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::size_t)`。
+
+macOS/BSD kqueue 和 Linux `io_uring` 尚未实现。详细语义见
+[`forge::io`](forge-io.md)。
 
 ## Accel Mock Backend
 
 - `forge::accel::context`：portable mock/in-memory accelerator-like context，
-  用 Forge runtime 原语模拟 command queue、device buffer、copy 和 kernel-like
-  submit 的 sender 语义。它不是 CUDA/HIP/SYCL/OpenCL/Vulkan/FPGA/NPU backend，也不
-  执行真实硬件加速。
+  用 Forge runtime 原语模拟 command queue、device/session、device buffer、copy、
+  message command 和 kernel-like submit 的 sender 语义。它不是
+  CUDA/HIP/SYCL/OpenCL/Vulkan/FPGA/NPU backend，也不执行真实硬件加速。
 
-V1 提供 `copy_to_device`、`copy_to_host`、`copy_device_to_device` 和
-`submit(queue, callable)`，并提供最小 `event` / `record_event` / `wait_event` /
-`fence` completion boundary。`device_buffer<T>` 拥有 mock device storage，`T` 需要
-trivially copyable；host span 是 borrowed，必须活到 command completion。
+V1 提供 `copy_to_device`、`copy_to_host`、`copy_device_to_device`、
+`submit(queue/session, callable)` 和 `submit_message(session, request, response,
+handler)`，并提供最小 `event` / `record_event` / `wait_event` / `fence` completion
+boundary。`device_buffer<T>` 拥有 mock device storage，`T` 需要 trivially copyable；
+host span 和 message response 是 borrowed，必须活到 command completion。
 同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
 以 stopped 完成。error 路径使用 `std::exception_ptr`。
 
@@ -129,9 +133,13 @@ V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency gr
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_io_readiness_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
+- `example/forge_io_read_write_example.cpp`
+- `example/forge_io_iocp_example.cpp`
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_staging_buffer_example.cpp`
+- `example/forge_accel_message_device_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_any_sender_example.cpp`

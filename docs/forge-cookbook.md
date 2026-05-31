@@ -24,13 +24,16 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 4. `example/forge_graceful_shutdown_example.cpp`：服务入口 close/drain 与 stop/cancel。
 5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
    组合成一个受控 pipeline。
-6. `example/forge_io_read_write_example.cpp`：Linux borrowed buffer async read/write。
-7. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-8. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
+6. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
+7. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
+8. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
+9. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
    device buffer。
-9. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+10. `example/forge_accel_message_device_example.cpp`：device session 与 message command
+    形状。
+11. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-10. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+12. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
@@ -154,28 +157,32 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## Recipe: fd readiness into protocol work
+## Recipe: IO into protocol work
 
-适用场景：Linux fd readiness、pipe/socket/eventfd 边界，随后切回 CPU runtime 处理协议状态。
+适用场景：Linux fd readiness 或 Windows IOCP completion 边界，随后切回 CPU runtime
+处理协议状态。
 
 使用：
 
 - `forge::io::context`
-- `readable(fd)` / `writable(fd)`
+- Linux: `readable(fd)` / `writable(fd)`
+- Linux/Windows: `async_read_some(...)` / `async_write_some(...)`
 - `std::execution::continues_on(..., strand.get_scheduler())`
 
 关键点：
 
-- fd 是 borrowed，调用方负责 fd 生命周期；
+- fd / `HANDLE` 和 buffer 是 borrowed，调用方负责生命周期；
 - `readable` / `writable` 是 readiness；`async_read_some` / `async_write_some`
   是 borrowed-span convenience，不拥有 buffer；
-- pending IO 支持 close/stop wakeup 和 receiver stop-token 取消；
-- 非 Linux 平台下 IO backend gate 会跳过，Windows IOCP 需要独立 backend。
+- Linux pending readiness 支持 close/stop wakeup 和 receiver stop-token 取消；
+- Windows IOCP V1 是 completion backend，不提供 `readable` / `writable` readiness
+  sender；入队后取消通过 `cancel` / `request_stop` / `shutdown` 触发 `CancelIoEx`。
 
 参考：
 
 - `example/forge_io_readiness_example.cpp`
 - `example/forge_io_read_write_example.cpp`
+- `example/forge_io_iocp_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
 
 ## Recipe: accelerator-shaped pipeline
@@ -191,6 +198,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `submit(queue, callable)`
 - `event` / `record_event` / `wait_event` / `fence`
+- `device` / `device_session` / `submit_message`
 
 关键点：
 
@@ -200,12 +208,14 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
   vendor pinned memory；
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
+- `device_session` 是 vendor-neutral message-command proof，不暴露真实设备 handle。
 
 参考：
 
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_event_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
+- `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 

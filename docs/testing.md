@@ -40,7 +40,7 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 
 Windows 验证是可选的手动 smoke gate。它不替代 Linux/podman 全量矩阵；当前
 目标是确认 MSVC 能 configure/build/test `std::execution` backport、
-`std::unique_resource` 和非 Linux IO 的 `forge::` runtime utility 子集。
+`std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend。
 
 在 Windows 主机上直接运行：
 
@@ -60,14 +60,15 @@ scripts/verify-windows-msvc-ssh.sh
 如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
 关键 Forge gate 状态和最终 CTest 数量。它还会做 configure-only gate 检查：
-Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` 应跳过 IO backend，显式
-`FORGE_ENABLE_FORGE_IO=ON` 应给出清楚 configure error。可设置
+Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend，
+`FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。可设置
 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。
 
-主 smoke 默认关闭 Linux-only IO backend 和 SIMD/submdspan/linalg/native-handoff 测试：
+主 smoke 默认启用可用的 Forge IO backend，并关闭 SIMD/submdspan/linalg/native-handoff
+测试：
 
 ```cmake
-FORGE_ENABLE_FORGE_IO=OFF
+FORGE_ENABLE_FORGE_IO=AUTO
 FORGE_TEST_ENABLE_SIMD=OFF
 FORGE_TEST_ENABLE_SUBMDSPAN=OFF
 FORGE_TEST_ENABLE_LINALG=OFF
@@ -109,10 +110,11 @@ Forge extension feature gates are also available:
 - `FORGE_ENABLE_FORGE_ACCEL`
 - `FORGE_ENABLE_FORGE_TYPED_ERASURE`
 
-`FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend when the
-platform supports it and skips IO tests/examples elsewhere. `ON` requires that
-backend and reports a configure error if unavailable; `OFF` skips IO
-tests/examples. `FORGE_ENABLE_FORGE_ACCEL=AUTO` enables the portable mock accel
+`FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend or Windows
+IOCP backend when the platform supports one, and skips IO tests/examples
+elsewhere. `ON` requires a supported backend and reports a configure error if
+unavailable; `OFF` skips IO tests/examples. `FORGE_ENABLE_FORGE_ACCEL=AUTO`
+enables the portable mock accel
 backend when Forge runtime/resource gates are enabled; `ON` requires those gates
 and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
 vendor SDKs.
@@ -122,8 +124,9 @@ vendor SDKs.
 When both `FORGE_BUILD_EXAMPLES=ON` and `FORGE_BUILD_TESTS=ON`, examples that are
 actually built are also registered as CTest smoke tests named
 `example_<target>_smoke`. This keeps the cookbook paths executable instead of
-only compile-checked. Feature-gated examples, such as Linux IO or mdspan-based
-linalg examples, only register their smoke tests when their target exists.
+only compile-checked. Feature-gated examples, such as platform IO, accel, or
+mdspan-based linalg examples, only register their smoke tests when their target
+exists.
 
 Focused example check:
 
