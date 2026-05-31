@@ -64,6 +64,19 @@ Consequences:
 when the project needs kernel submission/completion queue semantics and can test
 the different cancellation/drain behavior.
 
+Current decision: defer `io_uring`. The Linux epoll/eventfd backend covers the
+current readiness and one-shot read/write use cases, and the project does not
+yet have a scenario that needs kernel submission/completion queues. Revisit only
+when all of these are true:
+
+- epoll readiness plus `async_read_some` / `async_write_some` is insufficient;
+- the workload needs SQ/CQ semantics rather than a readiness notification;
+- the required syscalls and cancellation paths can be tested in the normal
+  verification environment;
+- the backend can remain optional with AUTO/ON/OFF gates and no mandatory
+  `liburing` dependency unless explicitly approved;
+- typed-error categories remain small and portable.
+
 ## Windows IOCP policy
 
 The existing Windows backend is completion-based. Operations are explicitly

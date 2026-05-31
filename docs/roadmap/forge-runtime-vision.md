@@ -201,7 +201,9 @@ fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三�
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
 第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；
-macOS/BSD kqueue 当前不在项目需求内。`io_uring` 和 IOCP production hardening 仍需
+macOS/BSD kqueue 当前不在项目需求内。`io_uring` 当前 defer：现有需求由 epoll
+readiness + one-shot read/write 覆盖，后续只有在需要 kernel SQ/CQ 语义且能稳定验证时
+才重新立项。IOCP production hardening 仍需
 独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
 epoll/io_uring/IOCP 语义差异。
 
