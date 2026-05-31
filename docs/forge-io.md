@@ -132,9 +132,12 @@ context 会把该 pending waiter 从 fd table 移除、更新 epoll interest、�
 mutex 外完成 `set_stopped()`。不带 stoppable token 的 pending waiter 仍由 readiness、
 `cancel(fd)`、context `request_stop()` 或 `shutdown()` 完成。
 
-Windows IOCP proof V1 只保证 `start()` 前 stop-token 检查。operation 入队后不注册
-per-operation stop callback；pending IO 由 `cancel(HANDLE)`、`request_stop()` 或
-`shutdown()` 调用 `CancelIoEx` 取消，并在 completion packet 返回后以 stopped 完成。
+Windows IOCP operation 也会观察 receiver stop token：`start()` 前如果 token 已请求，
+会直接 `set_stopped()`；operation 接受后若 token 请求停止，context 会调用
+`CancelIoEx(handle, &overlapped)` 请求取消。IOCP 取消仍是 completion-based：最终
+receiver completion 和 pending record 释放发生在 completion packet 被 poller drain 之后。
+不带 stoppable token 的 pending operation 仍由 `cancel(HANDLE)`、context
+`request_stop()` 或 `shutdown()` 完成。
 
 ## readiness rules
 

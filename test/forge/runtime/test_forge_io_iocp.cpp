@@ -162,6 +162,24 @@ struct io_receiver {
     }
 };
 
+struct stop_env {
+    std::inplace_stop_source* source;
+
+    friend auto tag_invoke(
+        std::execution::get_stop_token_t,
+        const stop_env& self) noexcept -> std::inplace_stop_token {
+        return self.source->get_token();
+    }
+};
+
+struct stopped_receiver : io_receiver {
+    std::inplace_stop_source* source;
+
+    auto get_env() const noexcept -> stop_env {
+        return stop_env{source};
+    }
+};
+
 [[nodiscard]] auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
     std::unique_lock lk{state->mtx};
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
@@ -207,6 +225,31 @@ TEST(IoIocpTest, RequestStopCancelsPendingRead) {
     std::execution::start(op);
 
     ctx.request_stop();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, PostEnqueueReceiverStopCancelsPendingRead) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    auto state = std::make_shared<io_state>();
+    std::inplace_stop_source source;
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        stopped_receiver{{state}, &source});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{state->mtx};
+        EXPECT_FALSE(state->cv.wait_for(lk, 50ms, [&] { return state->done(); }));
+    }
+
+    source.request_stop();
 
     ASSERT_TRUE(wait_done(state));
     EXPECT_FALSE(state->value);

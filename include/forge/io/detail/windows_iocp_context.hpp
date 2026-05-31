@@ -47,8 +47,10 @@
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <system_error>
 #include <thread>
 #include <type_traits>
@@ -130,6 +132,7 @@ private:
 };
 
 struct __record_base;
+struct __state;
 
 struct __overlapped_entry {
     OVERLAPPED overlapped{};
@@ -152,8 +155,16 @@ struct __record_base {
     __operation_kind kind = __operation_kind::read;
     std::span<std::byte> read_buffer;
     std::span<const std::byte> write_buffer;
+    std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
     bool cancel_requested = false;
+};
+
+struct __stop_callback_fn {
+    std::weak_ptr<__state> state;
+    std::weak_ptr<__record_base> record;
+
+    void operator()() const noexcept;
 };
 
 template<class R>
@@ -176,6 +187,7 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_value(std::move(rcvr), bytes);
     }
 
@@ -183,6 +195,7 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_error(std::move(rcvr), std::move(error));
     }
 
@@ -190,10 +203,19 @@ struct __record final : __record_base {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        stop_callback.reset();
         std::execution::set_stopped(std::move(rcvr));
     }
 
+    using callback_t =
+        std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+
+    [[nodiscard]] bool install_stop_callback(
+        std::weak_ptr<__state> state,
+        std::weak_ptr<__record_base> self) noexcept;
+
     R rcvr;
+    std::optional<callback_t> stop_callback;
 };
 
 using __record_ptr = std::shared_ptr<__record_base>;
@@ -255,6 +277,10 @@ struct __state : std::enable_shared_from_this<__state> {
                     "forge::io IOCP invalid handle");
                 return result;
             }
+            if (record->stop_requested.load(std::memory_order_acquire)) {
+                result.kind = __start_result_kind::stopped;
+                return result;
+            }
 
             if (!associated_handles.contains(record->handle)) {
                 HANDLE associated = ::CreateIoCompletionPort(
@@ -301,6 +327,20 @@ struct __state : std::enable_shared_from_this<__state> {
                     ::CancelIoEx(handle, &record->entry.overlapped);
                 }
             }
+        }
+        wake_worker();
+    }
+
+    void cancel_record(const __record_ptr& target) noexcept {
+        {
+            std::lock_guard lk{mtx};
+            auto it = pending_records.find(target.get());
+            if (it == pending_records.end()) {
+                return;
+            }
+            auto& record = it->second;
+            record->cancel_requested = true;
+            ::CancelIoEx(record->handle, &record->entry.overlapped);
         }
         wake_worker();
     }
@@ -462,6 +502,51 @@ public:
     std::thread::id worker_id{};
 };
 
+inline void __stop_callback_fn::operator()() const noexcept {
+    auto rec = record.lock();
+    if (rec) {
+        rec->stop_requested.store(true, std::memory_order_release);
+    }
+    auto st = state.lock();
+    if (st && rec) {
+        // cancel_record only requests IOCP cancellation. Final completion and
+        // ownership release still happen when the completion packet is drained.
+        st->cancel_record(rec);
+    }
+}
+
+template<class R>
+bool __record<R>::install_stop_callback(
+    std::weak_ptr<__state> state,
+    std::weak_ptr<__record_base> self) noexcept {
+    if (done.load(std::memory_order_acquire)) {
+        return false;
+    }
+    if constexpr (requires {
+                      std::any_stop_token{
+                          std::execution::get_stop_token(
+                              std::execution::get_env(rcvr))};
+                  }) {
+        try {
+            auto token = std::any_stop_token{
+                std::execution::get_stop_token(
+                    std::execution::get_env(rcvr))};
+            if (token.stop_possible()) {
+                stop_callback.emplace(
+                    std::move(token),
+                    __stop_callback_fn{std::move(state), std::move(self)});
+            }
+        } catch (...) {
+            auto rec = self.lock();
+            if (rec) {
+                rec->complete_stopped();
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 template<class R>
 struct __op {
     using operation_state_concept = std::execution::operation_state_t;
@@ -499,10 +584,16 @@ struct __op {
                 record_->complete_stopped();
                 return;
             }
+            if (!record_->install_stop_callback(state_, record_)) {
+                return;
+            }
 
             auto result = state_->start(record_);
             switch (result.kind) {
             case __start_result_kind::accepted:
+                if (record_->stop_requested.load(std::memory_order_acquire)) {
+                    state_->cancel_record(record_);
+                }
                 break;
             case __start_result_kind::stopped:
                 record_->complete_stopped();
