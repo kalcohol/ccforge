@@ -336,11 +336,12 @@ struct __sender {
 } // namespace __forge_ensure_started
 
 template<sender S>
-[[nodiscard]] auto ensure_started(S sndr) {
-    using state_t = __forge_ensure_started::__shared_state<S>;
+[[nodiscard]] auto ensure_started(S&& sndr) {
+    using source_t = std::decay_t<S>;
+    using state_t = __forge_ensure_started::__shared_state<source_t>;
 
     auto state = std::make_shared<state_t>();
-    state->__start(std::move(sndr));
+    state->__start(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
     return __forge_ensure_started::__sender<state_t>{std::move(state)};
 }
 

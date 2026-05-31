@@ -260,6 +260,12 @@ struct __into_variant_sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<S>)
+    auto connect(R r) & {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<S>
     auto connect(R r) const& {
         using env_t = env_of_t<R>;
@@ -279,8 +285,9 @@ struct __into_variant_sender {
 } // namespace __forge_into_variant
 
 template<sender S>
-[[nodiscard]] auto into_variant(S sndr) {
-    return __forge_into_variant::__into_variant_sender<S>{std::move(sndr)};
+[[nodiscard]] auto into_variant(S&& sndr) {
+    return __forge_into_variant::__into_variant_sender<std::decay_t<S>>{
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
 }
 
 } // namespace std::execution
@@ -288,9 +295,10 @@ template<sender S>
 namespace std::this_thread {
 
 template<std::execution::sender S>
-auto sync_wait_with_variant(S sndr) {
+auto sync_wait_with_variant(S&& sndr) {
     return std::this_thread::sync_wait(
-        std::execution::into_variant(std::move(sndr)));
+        std::execution::into_variant(
+            std::execution::__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))));
 }
 
 } // namespace std::this_thread

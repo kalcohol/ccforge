@@ -21,6 +21,12 @@ using forge_execution_test::wait_until_stop_requested;
 
 struct spawn_future_marker_error {};
 
+struct deref_unique {
+    int operator()(std::unique_ptr<int> value) const noexcept {
+        return *value;
+    }
+};
+
 struct allocation_counts {
     std::atomic<int> allocations{0};
     std::atomic<int> deallocations{0};
@@ -162,6 +168,20 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
         std::execution::spawn_future(std::execution::just_stopped(), token));
 
     EXPECT_FALSE(stopped.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto sndr = std::execution::just(std::make_unique<int>(31))
+        | std::execution::then(deref_unique{});
+
+    auto future = std::execution::spawn_future(sndr, token);
+    auto result = std::execution::sync_wait(std::move(future));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 31);
     EXPECT_EQ(scope.count(), 0u);
 }
 

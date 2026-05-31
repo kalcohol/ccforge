@@ -63,6 +63,12 @@ struct sender {
     }
 
     template<receiver R>
+        requires (!(std::copy_constructible<Vs> && ...))
+    auto connect(R rcvr) & -> operation<R, Vs...> {
+        return std::move(*this).connect(std::move(rcvr));
+    }
+
+    template<receiver R>
         requires (std::copy_constructible<Vs> && ...)
     auto connect(R rcvr) const& -> operation<R, Vs...> {
         return operation<R, Vs...>(std::move(rcvr), values_);
@@ -111,6 +117,12 @@ struct sender {
     template<receiver R>
     auto connect(R rcvr) && -> operation<R, E> {
         return operation<R, E>(std::move(rcvr), std::move(error_));
+    }
+
+    template<receiver R>
+        requires (!std::copy_constructible<E>)
+    auto connect(R rcvr) & -> operation<R, E> {
+        return std::move(*this).connect(std::move(rcvr));
     }
 
     template<receiver R>

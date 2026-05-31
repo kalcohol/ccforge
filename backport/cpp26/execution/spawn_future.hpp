@@ -470,6 +470,11 @@ struct __sender {
         return __op<State, R>{std::exchange(__state, nullptr), std::move(rcvr)};
     }
 
+    template<receiver R>
+    auto connect(R rcvr) & -> __op<State, R> {
+        return std::move(*this).connect(std::move(rcvr));
+    }
+
     auto get_env() const noexcept -> empty_env {
         return {};
     }
@@ -504,14 +509,19 @@ template<sender S, scope_token Token, queryable Env>
 } // namespace __forge_spawn_future
 
 template<sender S, scope_token Token, queryable Env>
-[[nodiscard]] auto spawn_future(S sndr, Token token, Env env) {
+[[nodiscard]] auto spawn_future(S&& sndr, Token token, Env env) {
     return __forge_spawn_future::__spawn_future(
-        std::move(sndr), std::move(token), std::move(env));
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+        std::move(token),
+        std::move(env));
 }
 
 template<sender S, scope_token Token>
-[[nodiscard]] auto spawn_future(S sndr, Token token) {
-    return std::execution::spawn_future(std::move(sndr), std::move(token), empty_env{});
+[[nodiscard]] auto spawn_future(S&& sndr, Token token) {
+    return std::execution::spawn_future(
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+        std::move(token),
+        empty_env{});
 }
 
 } // namespace std::execution

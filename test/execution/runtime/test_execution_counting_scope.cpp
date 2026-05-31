@@ -34,6 +34,12 @@ struct scope_probe_receiver {
     }
 };
 
+struct deref_unique {
+    int operator()(std::unique_ptr<int> value) const noexcept {
+        return *value;
+    }
+};
+
 struct pending_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -153,6 +159,24 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
 
     // inline_scheduler runs synchronously, so counter is already 1
     EXPECT_EQ(counter.load(), 1);
+    scope.join();
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, SpawnNonCopyableLvaluePipeline) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    int observed = 0;
+    auto sndr = std::execution::just(std::make_unique<int>(43))
+        | std::execution::then(deref_unique{})
+        | std::execution::then([&](int value) noexcept {
+              observed = value;
+          });
+
+    token.spawn(sndr);
+
+    EXPECT_EQ(observed, 43);
     scope.join();
     EXPECT_EQ(scope.count(), 0u);
 }

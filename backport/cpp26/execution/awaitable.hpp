@@ -151,9 +151,9 @@ struct __awaitable {
 // as_awaitable(sndr) — [exec.as.awaitable]
 // Returns an awaitable that bridges the sender into a coroutine context.
 template<sender S, class Promise>
-[[nodiscard]] auto as_awaitable(S sndr, Promise& promise) {
-    return __forge_awaitable::__awaitable<S, Promise>{
-        std::move(sndr), &promise};
+[[nodiscard]] auto as_awaitable(S&& sndr, Promise& promise) {
+    return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)), &promise};
 }
 
 // with_awaitable_senders<Promise> — CRTP mixin — [exec.with.awaitable.senders]

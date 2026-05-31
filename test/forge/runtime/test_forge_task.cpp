@@ -27,6 +27,12 @@ bool wait_until(Pred pred) {
 
 struct task_marker_error {};
 
+struct deref_unique {
+    int operator()(std::unique_ptr<int> value) const noexcept {
+        return *value;
+    }
+};
+
 struct pending_state {
     std::atomic<bool> started{false};
     std::atomic<bool> destroyed{false};
@@ -109,6 +115,13 @@ forge::task<int> await_just_task() {
     co_return std::get<0>(tup) + 1;
 }
 
+forge::task<int> await_move_only_lvalue_sender_task() {
+    auto sndr = std::execution::just(std::make_unique<int>(53))
+        | std::execution::then(deref_unique{});
+    auto tup = co_await sndr;
+    co_return std::get<0>(tup);
+}
+
 forge::task<void> void_task(int* result) {
     *result = 77;
     co_return;
@@ -148,6 +161,12 @@ TEST(TaskTest, CoAwaitJustStillWorks) {
     auto result = std::execution::sync_wait(await_just_task());
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(TaskTest, CoAwaitNonCopyableLvalueSenderConsumesSource) {
+    auto result = std::execution::sync_wait(await_move_only_lvalue_sender_task());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 53);
 }
 
 TEST(TaskTest, VoidTask) {

@@ -210,6 +210,14 @@ struct __sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<Scheduler> || !std::copy_constructible<S>)
+    auto connect(R r) &
+        -> typename __op_selector<Scheduler, S, R>::type
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
     auto connect(R r) const&
         -> typename __op_selector<Scheduler, S, R>::type
@@ -225,10 +233,13 @@ struct __sender {
 
 } // namespace __forge_continues_on
 
-template<sender S, scheduler Scheduler>
-[[nodiscard]] auto continues_on(S sndr, Scheduler sch) {
-    return __forge_continues_on::__sender<Scheduler, S>{
-        std::move(sch), std::move(sndr)};
+template<sender S, class Scheduler>
+    requires scheduler<std::remove_cvref_t<Scheduler>>
+[[nodiscard]] auto continues_on(S&& sndr, Scheduler&& sch) {
+    return __forge_continues_on::__sender<
+        std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
+        __forge_detail::__copy_or_move_lvalue(std::forward<Scheduler>(sch)),
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
 }
 
 template<scheduler Scheduler, class... Vs>

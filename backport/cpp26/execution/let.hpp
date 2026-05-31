@@ -234,6 +234,13 @@ struct __sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<S> || !std::copy_constructible<Fn>)
+    auto connect(R r) & -> __op<S, Fn, R, Which>
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
     auto connect(R r) const& -> __op<S, Fn, R, Which>
     {
@@ -251,11 +258,13 @@ struct __let_closure {
     Fn __fn;
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) const & {
-        return __sender<std::decay_t<S>, Fn, Which>{std::forward<S>(s), __fn};
+        return __sender<std::decay_t<S>, Fn, Which>{
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), __fn};
     }
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) && {
-        return __sender<std::decay_t<S>, Fn, Which>{std::forward<S>(s), std::move(__fn)};
+        return __sender<std::decay_t<S>, Fn, Which>{
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), std::move(__fn)};
     }
     template<sender S>
     friend constexpr auto operator|(S&& s, const __let_closure& self) {
@@ -272,7 +281,8 @@ struct __let_t {
     template<sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return __sender<std::decay_t<S>, std::decay_t<Fn>, Which>{
-            std::forward<S>(s), std::forward<Fn>(fn)};
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+            std::forward<Fn>(fn)};
     }
     template<class Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {

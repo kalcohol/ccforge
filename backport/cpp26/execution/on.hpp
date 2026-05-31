@@ -127,6 +127,13 @@ struct __starts_on_sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<Scheduler> || !std::copy_constructible<S>)
+    auto connect(R r) & -> __starts_on_op<Scheduler, S, R>
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
     auto connect(R r) const& -> __starts_on_op<Scheduler, S, R>
     {
@@ -141,11 +148,13 @@ struct __starts_on_sender {
 
 } // namespace __forge_on
 
-template<class Scheduler, class S>
-    requires sender<S> && scheduler<Scheduler>
-[[nodiscard]] auto starts_on(Scheduler sch, S sndr) {
-    return __forge_on::__starts_on_sender<Scheduler, S>{
-        std::move(sch), std::move(sndr)};
+template<class Scheduler, sender S>
+    requires scheduler<std::remove_cvref_t<Scheduler>>
+[[nodiscard]] auto starts_on(Scheduler&& sch, S&& sndr) {
+    return __forge_on::__starts_on_sender<
+        std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
+        __forge_detail::__copy_or_move_lvalue(std::forward<Scheduler>(sch)),
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
 }
 
 } // namespace std::execution

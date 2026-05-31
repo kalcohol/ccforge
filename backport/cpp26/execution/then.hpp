@@ -196,6 +196,12 @@ struct then_sender {
     }
 
     template<std::execution::receiver R>
+        requires (!std::copy_constructible<S> || !std::copy_constructible<Fn>)
+    auto connect(R rcvr) & {
+        return std::move(*this).connect(std::move(rcvr));
+    }
+
+    template<std::execution::receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
     auto connect(R rcvr) const& {
         return std::execution::connect(S(sndr_),
@@ -216,12 +222,14 @@ struct then_closure {
     template<std::execution::sender S>
         requires std::copy_constructible<Fn>
     [[nodiscard]] auto operator()(S&& s) const & {
-        return then_sender<std::decay_t<S>, Fn>{std::forward<S>(s), fn_};
+        return then_sender<std::decay_t<S>, Fn>{
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), fn_};
     }
 
     template<std::execution::sender S>
     [[nodiscard]] auto operator()(S&& s) && {
-        return then_sender<std::decay_t<S>, Fn>{std::forward<S>(s), std::move(fn_)};
+        return then_sender<std::decay_t<S>, Fn>{
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), std::move(fn_)};
     }
 
     template<std::execution::sender S>
@@ -239,7 +247,9 @@ struct then_closure {
 struct then_t {
     template<std::execution::sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
-        return then_sender<std::decay_t<S>, std::decay_t<Fn>>{std::forward<S>(s), std::forward<Fn>(fn)};
+        return then_sender<std::decay_t<S>, std::decay_t<Fn>>{
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+            std::forward<Fn>(fn)};
     }
 
     template<class Fn>

@@ -95,9 +95,11 @@ struct __state : __detached_recv::__state_base {
 } // namespace __forge_start_detached
 
 template<sender S>
-void start_detached(S sndr) {
-    using state_t = __forge_start_detached::__state<S>;
-    auto* s = new state_t(std::move(sndr));
+void start_detached(S&& sndr) {
+    using source_t = std::decay_t<S>;
+    using state_t = __forge_start_detached::__state<source_t>;
+    auto* s = new state_t(
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
     s->add_ref();
     s->start();
     s->release();

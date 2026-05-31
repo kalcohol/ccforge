@@ -227,15 +227,15 @@ public:
     // Forge acquires the association at operation start. If the scope is
     // already closed, the wrapped sender completes with stopped.
     template<sender S>
-    [[nodiscard]] auto wrap(S sndr) const;
+    [[nodiscard]] auto wrap(S&& sndr) const;
 
     // associate(sndr): compatibility spelling retained for existing callers.
     template<sender S>
-    [[nodiscard]] auto associate(S sndr) const;
+    [[nodiscard]] auto associate(S&& sndr) const;
 
     // spawn(sndr): fire-and-forget, associated with this scope
     template<sender S>
-    void spawn(S sndr);
+    void spawn(S&& sndr);
 
 private:
     simple_counting_scope* __scope_ = nullptr;
@@ -363,6 +363,14 @@ struct __associated_sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<S>)
+    auto connect(R r) &
+        -> __associated_op<S, R>
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<S>
     auto connect(R r) const&
         -> __associated_op<S, R>
@@ -378,18 +386,20 @@ struct __associated_sender {
 } // namespace __forge_counting_scope
 
 template<sender S>
-[[nodiscard]] auto simple_counting_scope::scope_token::wrap(S sndr) const {
-    return __forge_counting_scope::__associated_sender<S>{*this, std::move(sndr)};
+[[nodiscard]] auto simple_counting_scope::scope_token::wrap(S&& sndr) const {
+    return __forge_counting_scope::__associated_sender<std::decay_t<S>>{
+        *this,
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
 }
 
 template<sender S>
-[[nodiscard]] auto simple_counting_scope::scope_token::associate(S sndr) const {
-    return wrap(std::move(sndr));
+[[nodiscard]] auto simple_counting_scope::scope_token::associate(S&& sndr) const {
+    return wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
 }
 
 template<sender S>
-void simple_counting_scope::scope_token::spawn(S sndr) {
-    start_detached(wrap(std::move(sndr)) |
+void simple_counting_scope::scope_token::spawn(S&& sndr) {
+    start_detached(wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))) |
         upon_error([](auto&&) noexcept {}));
 }
 
@@ -542,13 +552,13 @@ public:
     }
 
     template<sender S>
-    [[nodiscard]] auto wrap(S sndr) const;
+    [[nodiscard]] auto wrap(S&& sndr) const;
 
     template<sender S>
-    [[nodiscard]] auto associate(S sndr) const;
+    [[nodiscard]] auto associate(S&& sndr) const;
 
     template<sender S>
-    void spawn(S sndr);
+    void spawn(S&& sndr);
 
 private:
     template<class S, class R>
@@ -664,6 +674,14 @@ struct __stop_associated_sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<S>)
+    auto connect(R r) &
+        -> __stop_associated_op<S, R>
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<S>
     auto connect(R r) const&
         -> __stop_associated_op<S, R>
@@ -679,18 +697,20 @@ struct __stop_associated_sender {
 } // namespace __forge_counting_scope
 
 template<sender S>
-[[nodiscard]] auto counting_scope::scope_token::wrap(S sndr) const {
-    return __forge_counting_scope::__stop_associated_sender<S>{*this, std::move(sndr)};
+[[nodiscard]] auto counting_scope::scope_token::wrap(S&& sndr) const {
+    return __forge_counting_scope::__stop_associated_sender<std::decay_t<S>>{
+        *this,
+        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
 }
 
 template<sender S>
-[[nodiscard]] auto counting_scope::scope_token::associate(S sndr) const {
-    return wrap(std::move(sndr));
+[[nodiscard]] auto counting_scope::scope_token::associate(S&& sndr) const {
+    return wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
 }
 
 template<sender S>
-void counting_scope::scope_token::spawn(S sndr) {
-    start_detached(wrap(std::move(sndr)) |
+void counting_scope::scope_token::spawn(S&& sndr) {
+    start_detached(wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))) |
         upon_error([](auto&&) noexcept {}));
 }
 

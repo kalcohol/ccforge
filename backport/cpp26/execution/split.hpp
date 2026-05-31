@@ -236,22 +236,24 @@ struct __sender {
 } // namespace __forge_split
 
 template<sender S>
-[[nodiscard]] auto split(S sndr) {
-    using ST = __forge_split::__shared_state<S>;
-    using inner_recv_t = __forge_split::__inner_recv<S>;
-    using inner_op_t   = connect_result_t<S, inner_recv_t>;
+[[nodiscard]] auto split(S&& sndr) {
+    using source_t = std::decay_t<S>;
+    using ST = __forge_split::__shared_state<source_t>;
+    using inner_recv_t = __forge_split::__inner_recv<source_t>;
+    using inner_op_t   = connect_result_t<source_t, inner_recv_t>;
 
     auto shared = std::make_shared<ST>();
 
     shared->op_ptr = shared->op_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
         return std::execution::connect(
-            std::move(sndr), inner_recv_t{std::weak_ptr<ST>{shared}});
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+            inner_recv_t{std::weak_ptr<ST>{shared}});
     });
     shared->op_start = [](void* p) noexcept {
         std::execution::start(*static_cast<inner_op_t*>(p));
     };
 
-    return __forge_split::__sender<S>{std::move(shared)};
+    return __forge_split::__sender<source_t>{std::move(shared)};
 }
 
 } // namespace std::execution

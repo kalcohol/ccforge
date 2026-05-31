@@ -108,6 +108,15 @@ struct __sender {
     }
 
     template<receiver R>
+        requires (!std::copy_constructible<S> ||
+                  !std::copy_constructible<Shape> ||
+                  !std::copy_constructible<Fn>)
+    auto connect(R r) & -> __op<S, Shape, Fn, R>
+    {
+        return std::move(*this).connect(std::move(r));
+    }
+
+    template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Shape> && std::copy_constructible<Fn>
     auto connect(R r) const& -> __op<S, Shape, Fn, R>
     {
@@ -132,7 +141,8 @@ struct __bulk_closure {
         template<std::execution::sender S>
         [[nodiscard]] auto operator()(S&& s) && {
             return __sender<std::decay_t<S>, Shape, std::decay_t<Fn>>{
-                std::forward<S>(s), std::move(__shape_), std::move(__fn_)};
+                __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+                std::move(__shape_), std::move(__fn_)};
         }
 
         template<std::execution::sender S>
@@ -146,7 +156,8 @@ struct bulk_t {
     template<std::execution::sender S, class Shape, class Fn>
     [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
         return __sender<std::decay_t<S>, Shape, std::decay_t<Fn>>{
-            std::forward<S>(s), std::move(shape), std::forward<Fn>(fn)};
+            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+            std::move(shape), std::forward<Fn>(fn)};
     }
 
     template<class Shape, class Fn>
