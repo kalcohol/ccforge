@@ -57,6 +57,23 @@ FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
 scripts/verify-windows-msvc-ssh.sh
 ```
 
+默认 SSH wrapper 会在远端 clone `FORGE_WINDOWS_REPO` 的 `FORGE_WINDOWS_REF`。验证本地
+尚未 push 的工作树时，使用 local-source 模式；wrapper 会把当前 worktree 打包到远端
+临时目录，运行后清理：
+
+```bash
+FORGE_WINDOWS_HOST=<windows-host> \
+FORGE_WINDOWS_USE_LOCAL_SOURCE=1 \
+FORGE_WINDOWS_CTEST_REGEX=forge_io_iocp \
+FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1 \
+scripts/verify-windows-msvc-ssh.sh
+```
+
+`FORGE_WINDOWS_CTEST_REGEX` 用于 focused smoke，例如只跑 `forge_io_iocp`。省略时使用
+PowerShell 脚本默认的 `execution|unique_resource|forge`。`FORGE_WINDOWS_KEEP=1`
+可保留远端临时源码/clone 以便调试；不要把具体主机名、用户目录或工具链安装路径写进
+仓库文档。
+
 如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
 关键 Forge gate 状态和最终 CTest 数量。它还会做 gate 注册检查：
