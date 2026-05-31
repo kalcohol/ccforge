@@ -15,7 +15,7 @@ Every optional backend must have an explicit CMake feature gate:
 - `OFF`: register zero tests/examples for that backend.
 
 Do not add SDK probes before backend code exists. A future CUDA/HIP/SYCL,
-`io_uring`, kqueue, or vendor-device proof must add its probe in the same
+`io_uring` or a vendor-device proof must add its probe in the same
 taskbook as the backend code and tests.
 
 Package installs must not freeze the build machine's probe result. Installed

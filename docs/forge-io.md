@@ -24,8 +24,9 @@ Future backend entry rules are tracked in the
 `<forge/io.hpp>` 在没有 backend 时可以 include，但不会暴露 `forge::io::context`。
 直接包含 backend 头 `<forge/io/context.hpp>` 需要 `FORGE_HAS_FORGE_IO_BACKEND`。
 
-macOS/BSD kqueue 和 Linux `io_uring` 都是后续工作。Zig 可以帮助构建或 C ABI
-互操作，但不能抹平这些 backend 的语义差异。
+macOS/BSD kqueue 当前不在项目需求内，不作为本轮目标。Linux `io_uring` 只有在需要
+kernel submission/completion queue 语义时才会单独立项；它不是 `epoll` readiness
+backend 的替代写法。Zig 可以帮助构建或 C ABI 互操作，但不能抹平这些 backend 的语义差异。
 
 ## API
 

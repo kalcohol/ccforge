@@ -95,8 +95,8 @@ async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::s
 默认 API 使用 `std::exception_ptr` 错误；`*_typed` opt-in 变体可把稳定错误分类暴露为
 `forge::io::error`。
 
-macOS/BSD kqueue 和 Linux `io_uring` 尚未实现。详细语义见
-[`forge::io`](forge-io.md)。
+macOS/BSD kqueue 当前不在项目需求内；Linux `io_uring` 仅在需要 kernel
+submission/completion queue 语义时才应单独立项。详细语义见 [`forge::io`](forge-io.md)。
 
 ## accel mock backend
 

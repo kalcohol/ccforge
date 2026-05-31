@@ -1,7 +1,7 @@
 # `forge::io` backend SPI sketch
 
 This is a design sketch for future IO backend proofs. It is not a public plugin
-ABI and it does not approve `io_uring`, kqueue, or a networking abstraction by
+ABI and it does not approve `io_uring` or a networking abstraction by
 itself.
 
 The shipped IO surface has two intentionally different backend models:
@@ -91,6 +91,7 @@ Before adding a new IO backend, require:
 - documentation of readiness vs completion semantics;
 - typed-error mapping review for stable portable categories only.
 
-kqueue or another readiness backend can follow the Linux shape if the semantics
-match. A completion backend should follow the IOCP shape instead of pretending to
-be readiness.
+Another readiness backend can follow the Linux shape only if a concrete platform
+need appears and the semantics match. macOS/BSD kqueue is not a current project
+target. A completion backend should follow the IOCP shape instead of pretending
+to be readiness.

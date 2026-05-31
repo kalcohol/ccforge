@@ -140,7 +140,10 @@ or broad API commitments, stop and require a separate owner decision.
   container verification.
 - `forge::accel` is mock/in-memory and vendor-neutral; it does not imply CUDA,
   HIP, SYCL, FPGA, or NPU driver support.
-- Linux `io_uring`, macOS/BSD kqueue, and production IOCP hardening are deferred
-  unless separately approved.
+- macOS/BSD kqueue is out of scope until a concrete BSD/macOS requirement
+  appears.
+- Linux `io_uring` is deferred unless kernel submission/completion queue
+  semantics are required and testable.
+- Production IOCP hardening remains an approved stabilization track.
 - `std::execution` backport behavior should not be changed merely to support a
   `forge::` extension.

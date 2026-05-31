@@ -84,7 +84,7 @@ constraints, not published plugin ABIs.
 - vendor/platform backend 只是验证支撑层是否能表达真实系统的 optional proof；
 - 任何 vendor/platform backend 都必须有清楚的 optional gate、examples 和验证边界；
 - 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
-- 不把 CUDA/HIP/SYCL、IOCP、kqueue、io_uring、tensor kernel runtime 做成默认依赖。
+- 不把 CUDA/HIP/SYCL、IOCP、io_uring、tensor kernel runtime 做成默认依赖。
 
 ## maintenance mode and decision gates
 
@@ -98,8 +98,8 @@ constraints, not published plugin ABIs.
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
-- 新平台 IO backend：macOS/BSD kqueue、Linux `io_uring`，或 Windows IOCP 的
-  production hardening beyond the current proof；
+- 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 的 production hardening beyond
+  the current proof；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - 真实 backend 的 vendor/platform typed-error mapping；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
@@ -189,13 +189,14 @@ IO backend 必须接触真实底层设施，否则只是多包一层线程池。
 fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 
 - 通用 API 层：readiness sender、async read/write、close/shutdown；
-- 后端层：Linux `epoll`/`eventfd` 与 Windows IOCP 已有 proof，后续可评估 macOS/BSD
-  kqueue；Linux `io_uring` 仅在明确需要 kernel submission/completion queue 语义时再做；
+- 后端层：Linux `epoll`/`eventfd` 与 Windows IOCP 已有 proof；Linux `io_uring`
+  仅在明确需要 kernel submission/completion queue 语义时再做；
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
 第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；
-kqueue、`io_uring` 和 IOCP production hardening 仍需独立 taskbook。Zig 可以帮助
-构建和 C ABI 互操作，但不能消除 epoll/io_uring/IOCP 语义差异。
+macOS/BSD kqueue 当前不在项目需求内。`io_uring` 和 IOCP production hardening 仍需
+独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
+epoll/io_uring/IOCP 语义差异。
 
 ## accel scheduler
 
