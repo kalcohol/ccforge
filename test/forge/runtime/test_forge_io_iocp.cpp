@@ -265,6 +265,44 @@ TEST(IoIocpTest, RequestStopCancelsPendingRead) {
     EXPECT_FALSE(state->error);
 }
 
+TEST(IoIocpTest, PreStartReceiverStopCompletesStopped) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    auto state = std::make_shared<io_state>();
+    std::inplace_stop_source source;
+    source.request_stop();
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        stopped_receiver{{state}, &source});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, ImmediateReceiverStopAfterStartCancelsPendingRead) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    auto state = std::make_shared<io_state>();
+    std::inplace_stop_source source;
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        stopped_receiver{{state}, &source});
+    std::execution::start(op);
+    source.request_stop();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
 TEST(IoIocpTest, PostEnqueueReceiverStopCancelsPendingRead) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;
@@ -288,6 +326,45 @@ TEST(IoIocpTest, PostEnqueueReceiverStopCancelsPendingRead) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, CancelHandleCancelsPendingRead) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    auto state = std::make_shared<io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        io_receiver{state});
+    std::execution::start(op);
+
+    ctx.cancel(pipe.server.get());
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, ShutdownCancelsPendingRead) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    auto state = std::make_shared<io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        io_receiver{state});
+    std::execution::start(op);
+
+    ctx.shutdown();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+    ctx.wait();
 }
 
 TEST(IoIocpTest, InvalidHandleCompletesWithError) {
