@@ -25,7 +25,6 @@ option(FORGE_ENABLE_FORGE_RUNTIME "Enable forge:: runtime utility targets" ON)
 option(FORGE_ENABLE_FORGE_RESOURCE_POLICY "Enable forge:: resource policy facilities" ON)
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO backends when available")
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_ACCEL AUTO "Enable forge:: accelerator backends when available")
-option(FORGE_ENABLE_FORGE_TYPED_ERASURE "Enable future forge:: typed-error erasure facilities" OFF)
 
 include(CheckCXXSourceCompiles)
 

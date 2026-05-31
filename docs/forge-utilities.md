@@ -108,7 +108,7 @@ V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency gr
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO + 堆回退。value completion 采用声明的单一 value tuple 形状；error completion 折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，并提供 `sync_wait()` 直接运行存储的 sender。
 - `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除同一个 concrete scheduler 的对象也会因为 state 不同而不相等。
-- `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。v1 是 move-only、heap-first 实现，支持多个唯一 value 形状、`set_error_t(std::exception_ptr)` 和 `set_stopped_t()`；typed error、allocator-aware storage、语义 equality 和任意自定义 receiver env 查询都不属于 v1。
+- `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。当前实现是 move-only、heap-first，支持多个唯一 value 形状、closed-set `set_error_t(E)` typed errors（包括 `std::exception_ptr`）和 `set_stopped_t()`；allocator-aware storage、语义 equality 和任意自定义 receiver env 查询不属于当前范围。
 
 `any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，也不承诺保留任意 `set_error_t(E)` 类型。需要 connectable erased sender 时使用 `erased_sender`；两者语义边界见 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
 

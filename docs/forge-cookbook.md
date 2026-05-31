@@ -231,8 +231,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 关键点：
 
-- `erased_sender` v1 支持多个 value shape，但 error 收敛到 `std::exception_ptr`；
-- typed error erasure 是未来独立大项；
+- `erased_sender` 支持多个 value shape，并保留声明内的 typed error 形状；
+- error 类型必须在目标 `CompletionSignatures` 中显式声明，未声明 typed error 会被编译期拒绝；
 - 如果只需要保存 scheduler，优先 `any_scheduler`，不要在 scheduler 边界上强行使用
   `erased_sender`。
 

@@ -108,7 +108,6 @@ Forge extension feature gates are also available:
 - `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
 - `FORGE_ENABLE_FORGE_IO`
 - `FORGE_ENABLE_FORGE_ACCEL`
-- `FORGE_ENABLE_FORGE_TYPED_ERASURE`
 
 `FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend or Windows
 IOCP backend when the platform supports one, and skips IO tests/examples
@@ -117,7 +116,8 @@ unavailable; `OFF` skips IO tests/examples. `FORGE_ENABLE_FORGE_ACCEL=AUTO`
 enables the portable mock accel
 backend when Forge runtime/resource gates are enabled; `ON` requires those gates
 and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
-vendor SDKs.
+vendor SDKs. Erasure facilities are header-only and always available; use
+`FORGE_TEST_ENABLE_FORGE_ERASURE` to include or skip their tests.
 
 ## Example smoke tests
 

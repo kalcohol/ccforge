@@ -23,7 +23,7 @@
 - `task`
 - `any_scheduler`
 - 窄 `any_sender_of` / `any_receiver_of`
-- connectable `erased_sender` v1
+- connectable `erased_sender` with closed-set typed errors
 
 这些设施的生命周期词汇由 `docs/forge-runtime.md` 固定：
 `close()` 是 graceful ingress close，`request_stop()` 是协作取消，
@@ -46,7 +46,7 @@
 1. Resource policy / allocator policy
 2. IO backend
 3. `accel` scheduler and command pipeline
-4. typed-error erased sender
+4. typed-error integration for IO/accel surfaces
 
 顺序理由：
 
@@ -54,8 +54,8 @@
   command record、host/device staging buffer 都需要明确内存来源和容量策略。
 - IO 和 accel 会引入平台/厂商后端。先统一资源策略，可以避免后端各自发明 allocation
   和 backpressure 规则。
-- Typed-error erasure 最抽象。等 IO/accel 的真实错误形状出现后，再决定 vtable
-  和 completion 策略更稳。
+- Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；
+  剩余问题是 IO/accel 是否、以及如何暴露 typed-error API。
 
 ## Project Identity Checkpoint
 
@@ -64,7 +64,7 @@ vendor driver wrapper。更准确的身份是：
 
 > C++ backport + 面向资源型异步系统的组合式支撑层。
 
-Resource policy、IO readiness、`accel` command queue sketch 和 typed-error erasure
+Resource policy、IO readiness、`accel` command queue sketch 和 typed-error integration
 都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
 绑定某个具体平台或厂商栈。
 
@@ -90,7 +90,7 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error er
 - 新平台 IO backend：macOS/BSD kqueue、Linux `io_uring`，或 Windows IOCP 的
   production hardening beyond the current proof；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
-- typed-error `erased_sender` v2；
+- IO/accel typed-error API variants；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
   `ensure_started` 单发/取消语义、`spawn_future` 更完整 allocator 传播。
 
@@ -134,7 +134,6 @@ FORGE_ENABLE_FORGE_RUNTIME=ON
 FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON
 FORGE_ENABLE_FORGE_IO=AUTO
 FORGE_ENABLE_FORGE_ACCEL=AUTO
-FORGE_ENABLE_FORGE_TYPED_ERASURE=OFF
 ```
 
 测试开关：
@@ -151,7 +150,8 @@ FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 设施不应因为全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、
 tests 和带外部依赖的 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness
 backend 和 Windows IOCP proof backend；accel gate 已用于 portable mock backend；
-typed-erasure gate 仍是惰性占位。accel 当前不做 CUDA、HIP、SYCL 或 vendor SDK 探测。
+erasure 设施是 header-only，不再有独立功能 gate。accel 当前不做 CUDA、HIP、SYCL
+或 vendor SDK 探测。
 
 ## Resource Policy
 
@@ -231,9 +231,8 @@ proof。
 
 ## Typed-Error Erased Sender
 
-当前 `forge::erased_sender` v1 支持多个 value shape，但 error 收敛为
-`std::exception_ptr`。typed-error erasure 的目标是保留 `set_error_t(E)` 类型信息，
-例如：
+`forge::erased_sender` 已支持多个 value shape，并保留目标
+`CompletionSignatures` 中声明的 typed error 形状，例如：
 
 - `std::error_code` for IO；
 - driver error code for CUDA/HIP；
@@ -241,8 +240,9 @@ proof。
 - allocation failure / capacity exceeded；
 - resource closed / operation canceled。
 
-这是高价值但高复杂度设施。它需要多 value shape、多 error type、stopped 的 typed
-completion vtable。应在 IO/accel 真实错误模型明确后单独推进。
+当前剩余问题不是 erased sender 的基本 typed-error vtable，而是 IO/accel 等设施是否
+要暴露 typed-error API。默认的 IO/accel surface 仍使用 `std::exception_ptr`，避免在
+错误模型尚未稳定前扩大公共 API；后续应以 opt-in typed variants 推进。
 
 ## Examples Strategy
 

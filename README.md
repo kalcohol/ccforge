@@ -132,7 +132,7 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `forge::system_context` — 全局线程池单例，提供便捷的全局调度器访问
 - `forge::task<T>` — 协程返回类型，实现 `sender` 接口，可与 `sync_wait` 配合使用；task body 中可 `co_await` 同步或异步 sender（需要 C++20 coroutines）
 - `forge::any_scheduler` — 窄 scheduler 类型擦除，面向 `schedule()` 常见形状
-- `forge::erased_sender<Sigs>` — connectable sender 类型擦除，支持多 value 形状、`std::exception_ptr` error 和 stopped
+- `forge::erased_sender<Sigs>` — connectable sender 类型擦除，支持多 value 形状、closed-set typed errors 和 stopped
 - `forge::any_sender_of<Sigs...>` / `forge::any_receiver_of<Sigs...>` — 窄类型擦除工具，使用 64B SBO + 堆回退；`any_sender_of` 目前提供 `sync_wait()` 便利路径，不是通用 connectable erased sender
 
 详细语义和限制见 [`forge::` 扩展工具](docs/forge-utilities.md)。

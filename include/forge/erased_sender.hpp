@@ -373,7 +373,7 @@ template<class CompletionSignatures>
 class erased_sender {
     static_assert(
         __erased_sender_detail::__valid_completion_signatures<CompletionSignatures>::value,
-        "forge::erased_sender v1 supports set_value, set_error(exception_ptr), and set_stopped only");
+        "forge::erased_sender supports set_value, closed-set set_error(E), and set_stopped signatures");
 
 public:
     using sender_concept = std::execution::sender_t;
