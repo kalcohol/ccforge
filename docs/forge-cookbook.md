@@ -46,6 +46,27 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
 
+## coverage map
+
+| 场景 | 示例 |
+| --- | --- |
+| CPU scheduler basics | `example/forge_thread_pool_example.cpp`, `example/forge_runtime_context_example.cpp` |
+| timer / single-thread / system context | `example/forge_timer_context_example.cpp`, `example/forge_single_thread_context_example.cpp`, `example/forge_system_context_example.cpp` |
+| channel backpressure | `example/forge_channel_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
+| graceful close vs stop | `example/forge_graceful_shutdown_example.cpp` |
+| PMR / bounded allocation | `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
+| serialized session state | `example/forge_strand_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
+| type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
+| Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
+| Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
+| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
+| device/session message command | `example/forge_accel_message_device_example.cpp` |
+| reference runtime pattern | `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp` |
+
+`example/CMakeLists.txt` 会把已构建的示例注册成 `example_<target>_smoke`，所以这些
+路径不是只编译不运行的文档片段；受 IO、accel 或 mdspan gate 控制的示例只在对应 target
+存在时注册 smoke test。
+
 ## recipe: CPU work queue
 
 适用场景：把一批 CPU work 放到固定线程池里执行，最后等待所有已接受 work 完成。
