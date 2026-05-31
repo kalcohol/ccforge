@@ -194,9 +194,11 @@ Windows 强行压成 Linux readiness。
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
 
-V1 会记住已经关联到 context IOCP 的 handle，避免重复关联同一个 handle。大量短命
-handle 会让这个 associated-handle set 增长；production hardening 可在后续轮次加入
-更细的 handle lifetime/pruning 策略。
+V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果同一个 live handle
+已经关联过，Windows 可能拒绝重复关联，此时 backend 使用内部 associated-handle cache
+确认这是已知 handle 并继续。这样 OS 关闭并复用相同 HANDLE 数值时，新 handle 仍会先被
+重新尝试关联。大量短命且数值不复用的 handle 仍会让 cache 增长；更细的 pruning
+策略需要显式 handle lifetime 模型，当前不把 context 变成 handle owner。
 
 ## resource policy
 

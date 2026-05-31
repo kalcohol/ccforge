@@ -213,6 +213,39 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     EXPECT_EQ(buffer, payload);
 }
 
+TEST(IoIocpTest, ReusesAssociatedHandleForSequentialOperations) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+
+    std::array<std::byte, 2> first{byte('o'), byte('n')};
+    auto first_write = std::execution::sync_wait(
+        ctx.async_write_some(pipe.client.get(), std::span<const std::byte>{first}));
+
+    ASSERT_TRUE(first_write.has_value());
+    EXPECT_EQ(std::get<0>(*first_write), first.size());
+
+    std::array<std::byte, 2> first_read{};
+    auto first_read_result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{first_read}));
+
+    ASSERT_TRUE(first_read_result.has_value());
+    EXPECT_EQ(first_read, first);
+
+    std::array<std::byte, 3> second{byte('t'), byte('w'), byte('o')};
+    auto second_write = std::execution::sync_wait(
+        ctx.async_write_some(pipe.client.get(), std::span<const std::byte>{second}));
+
+    ASSERT_TRUE(second_write.has_value());
+    EXPECT_EQ(std::get<0>(*second_write), second.size());
+
+    std::array<std::byte, 3> second_read{};
+    auto second_read_result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{second_read}));
+
+    ASSERT_TRUE(second_read_result.has_value());
+    EXPECT_EQ(second_read, second);
+}
+
 TEST(IoIocpTest, RequestStopCancelsPendingRead) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;

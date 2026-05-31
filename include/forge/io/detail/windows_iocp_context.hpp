@@ -282,15 +282,19 @@ struct __state : std::enable_shared_from_this<__state> {
                 return result;
             }
 
-            if (!associated_handles.contains(record->handle)) {
-                HANDLE associated = ::CreateIoCompletionPort(
-                    record->handle, port.get(), 0, 0);
-                if (!associated) {
+            HANDLE associated = ::CreateIoCompletionPort(
+                record->handle, port.get(), 0, 0);
+            if (!associated) {
+                const auto error = ::GetLastError();
+                if (error != ERROR_INVALID_PARAMETER ||
+                    !associated_handles.contains(record->handle)) {
                     result.kind = __start_result_kind::error;
                     result.error = __windows_error(
+                        error,
                         "CreateIoCompletionPort associate handle");
                     return result;
                 }
+            } else {
                 associated_handles.insert(record->handle);
             }
 
