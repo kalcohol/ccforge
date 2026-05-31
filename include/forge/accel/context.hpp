@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "error.hpp"
 #include "../resource_context.hpp"
 #include "../resource_policy.hpp"
 #include "../strand.hpp"
@@ -517,26 +518,6 @@ private:
     std::shared_ptr<__detail::__state> state_;
 };
 
-enum class command_status {
-    ok,
-    failed,
-    stopped
-};
-
-class command_error : public std::runtime_error {
-public:
-    explicit command_error(command_status status)
-        : std::runtime_error("forge::accel command failed")
-        , status_(status) {}
-
-    [[nodiscard]] auto status() const noexcept -> command_status {
-        return status_;
-    }
-
-private:
-    command_status status_;
-};
-
 class device_session {
 public:
     device_session() = default;
@@ -696,10 +677,14 @@ auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<const T> src) {
         q.state_.lock(),
         [dst = &dst, src] {
             if (!dst) {
-                throw std::runtime_error("forge::accel::copy_to_device: null destination");
+                throw operation_error{
+                    error_kind::invalid_buffer,
+                    "forge::accel::copy_to_device: null destination"};
             }
             if (dst->data_.size() != src.size()) {
-                throw std::runtime_error("forge::accel::copy_to_device: size mismatch");
+                throw operation_error{
+                    error_kind::size_mismatch,
+                    "forge::accel::copy_to_device: size mismatch"};
             }
             std::copy(src.begin(), src.end(), dst->data_.begin());
         });
@@ -711,18 +696,37 @@ auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<T> src) {
 }
 
 template<class T>
+auto copy_to_device_typed(queue& q, device_buffer<T>& dst, std::span<const T> src) {
+    return __typed_detail::void_sender(copy_to_device(q, dst, src));
+}
+
+template<class T>
+auto copy_to_device_typed(queue& q, device_buffer<T>& dst, std::span<T> src) {
+    return copy_to_device_typed(q, dst, std::span<const T>{src});
+}
+
+template<class T>
 auto copy_to_host(queue& q, std::span<T> dst, const device_buffer<T>& src) {
     return __detail::__make_command_sender(
         q.state_.lock(),
         [dst, src = &src] {
             if (!src) {
-                throw std::runtime_error("forge::accel::copy_to_host: null source");
+                throw operation_error{
+                    error_kind::invalid_buffer,
+                    "forge::accel::copy_to_host: null source"};
             }
             if (dst.size() != src->data_.size()) {
-                throw std::runtime_error("forge::accel::copy_to_host: size mismatch");
+                throw operation_error{
+                    error_kind::size_mismatch,
+                    "forge::accel::copy_to_host: size mismatch"};
             }
             std::copy(src->data_.begin(), src->data_.end(), dst.begin());
         });
+}
+
+template<class T>
+auto copy_to_host_typed(queue& q, std::span<T> dst, const device_buffer<T>& src) {
+    return __typed_detail::void_sender(copy_to_host(q, dst, src));
 }
 
 template<class T>
@@ -731,13 +735,25 @@ auto copy_device_to_device(queue& q, device_buffer<T>& dst, const device_buffer<
         q.state_.lock(),
         [dst = &dst, src = &src] {
             if (!dst || !src) {
-                throw std::runtime_error("forge::accel::copy_device_to_device: null buffer");
+                throw operation_error{
+                    error_kind::invalid_buffer,
+                    "forge::accel::copy_device_to_device: null buffer"};
             }
             if (dst->data_.size() != src->data_.size()) {
-                throw std::runtime_error("forge::accel::copy_device_to_device: size mismatch");
+                throw operation_error{
+                    error_kind::size_mismatch,
+                    "forge::accel::copy_device_to_device: size mismatch"};
             }
             std::copy(src->data_.begin(), src->data_.end(), dst->data_.begin());
         });
+}
+
+template<class T>
+auto copy_device_to_device_typed(
+    queue& q,
+    device_buffer<T>& dst,
+    const device_buffer<T>& src) {
+    return __typed_detail::void_sender(copy_device_to_device(q, dst, src));
 }
 
 template<class F>
@@ -747,6 +763,12 @@ auto submit(queue& q, F&& command) {
         [command = std::forward<F>(command)]() mutable {
             std::invoke(command);
         });
+}
+
+template<class F>
+auto submit_typed(queue& q, F&& command) {
+    return __typed_detail::void_sender(
+        submit(q, static_cast<F&&>(command)));
 }
 
 template<class F>
@@ -761,6 +783,12 @@ auto submit(device_session& session, F&& command) {
             }
             std::invoke(command);
         });
+}
+
+template<class F>
+auto submit_typed(device_session& session, F&& command) {
+    return __typed_detail::void_sender(
+        submit(session, static_cast<F&&>(command)));
 }
 
 template<class Request, class Response, class Handler>
@@ -789,15 +817,35 @@ auto submit_message(
         });
 }
 
+template<class Request, class Response, class Handler>
+auto submit_message_typed(
+    device_session& session,
+    Request request,
+    Response& response,
+    Handler&& handler) {
+    return __typed_detail::void_sender(
+        submit_message(
+            session,
+            std::move(request),
+            response,
+            static_cast<Handler&&>(handler)));
+}
+
 inline auto record_event(queue& q, event ev) {
     return __detail::__make_command_sender(
         q.state_.lock(),
         [state = std::move(ev.state_)] {
             if (!state) {
-                throw std::runtime_error("forge::accel::record_event: invalid event");
+                throw operation_error{
+                    error_kind::invalid_event,
+                    "forge::accel::record_event: invalid event"};
             }
             state->mark_ready();
         });
+}
+
+inline auto record_event_typed(queue& q, event ev) {
+    return __typed_detail::void_sender(record_event(q, std::move(ev)));
 }
 
 inline auto wait_event(queue& q, event ev) {
@@ -809,7 +857,9 @@ inline auto wait_event(queue& q, event ev) {
                 throw __detail::__stopped_signal{};
             }
             if (!state) {
-                throw std::runtime_error("forge::accel::wait_event: invalid event");
+                throw operation_error{
+                    error_kind::invalid_event,
+                    "forge::accel::wait_event: invalid event"};
             }
             if (!state->wait_until_ready_or_stopped(*ctx)) {
                 throw __detail::__stopped_signal{};
@@ -817,8 +867,16 @@ inline auto wait_event(queue& q, event ev) {
         });
 }
 
+inline auto wait_event_typed(queue& q, event ev) {
+    return __typed_detail::void_sender(wait_event(q, std::move(ev)));
+}
+
 inline auto fence(queue& q) {
     return __detail::__make_command_sender(q.state_.lock(), [] {});
+}
+
+inline auto fence_typed(queue& q) {
+    return __typed_detail::void_sender(fence(q));
 }
 
 } // namespace forge::accel
