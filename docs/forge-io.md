@@ -71,6 +71,34 @@ Windows `async_read_some(HANDLE, std::span<std::byte>)` 和
 IOCP completion 完成。返回值同样是该次 operation 的 byte count。V1 要求传入的
 `HANDLE` 支持 overlapped IO，且未绑定到其它 completion port。
 
+## typed-error variants
+
+默认 IO API 使用 `set_error(std::exception_ptr)`，保持与其它 Forge runtime sender
+一致。需要在插件边界或 erased sender 边界保留错误分类时，可以使用 opt-in `_typed`
+变体：
+
+```cpp
+auto ready = io.readable_typed(fd);              // Linux readiness only
+auto read = io.async_read_some_typed(fd, span);  // Linux fd 或 Windows HANDLE
+```
+
+typed 变体的 completion signatures 使用：
+
+```cpp
+std::execution::set_error_t(forge::io::error)
+```
+
+`forge::io::error` 是小型 closed-set error 值：
+
+- `error_kind::invalid_handle`
+- `error_kind::operation_in_progress`
+- `error_kind::would_block`
+- `error_kind::system`
+- `error_kind::unknown`
+
+`error::code` 保留底层 `std::error_code`。V1 typed API 只覆盖最稳定的分类；默认
+exception_ptr API 仍是主路径。
+
 ## FD lifetime
 
 fd / `HANDLE` 都是 borrowed。`forge::io::context` 不拥有 OS handle。

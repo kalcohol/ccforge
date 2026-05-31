@@ -26,6 +26,7 @@
 #error "forge::io linux context requires FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND"
 #endif
 
+#include "../error.hpp"
 #include "../../resource_policy.hpp"
 
 #include <execution>
@@ -806,11 +807,25 @@ public:
         return __detail::__sender{state_, fd, readiness::write};
     }
 
+    [[nodiscard]] auto readable_typed(int fd) {
+        return __typed_detail::void_sender(readable(fd));
+    }
+
+    [[nodiscard]] auto writable_typed(int fd) {
+        return __typed_detail::void_sender(writable(fd));
+    }
+
     [[nodiscard]] auto async_read_some(int fd, std::span<std::byte> buffer) {
         return readable(fd)
              | std::execution::then([fd, buffer] {
                    return __detail::__read_some(fd, buffer);
                });
+    }
+
+    [[nodiscard]] auto async_read_some_typed(
+        int fd,
+        std::span<std::byte> buffer) {
+        return __typed_detail::size_sender(async_read_some(fd, buffer));
     }
 
     [[nodiscard]] auto async_write_some(
@@ -820,6 +835,12 @@ public:
              | std::execution::then([fd, buffer] {
                    return __detail::__write_some(fd, buffer);
                });
+    }
+
+    [[nodiscard]] auto async_write_some_typed(
+        int fd,
+        std::span<const std::byte> buffer) {
+        return __typed_detail::size_sender(async_write_some(fd, buffer));
     }
 
     void cancel(int fd) noexcept {

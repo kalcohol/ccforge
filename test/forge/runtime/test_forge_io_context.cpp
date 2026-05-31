@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <forge/erased_sender.hpp>
 #include <forge/io.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
@@ -13,6 +14,7 @@
 #include <mutex>
 #include <span>
 #include <stdexcept>
+#include <system_error>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
@@ -141,6 +143,66 @@ struct io_receiver {
     }
 };
 
+struct typed_io_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool value = false;
+    bool stopped = false;
+    bool error = false;
+    std::size_t bytes = 0;
+    forge::io::error typed_error{};
+
+    [[nodiscard]] bool done() const noexcept {
+        return value || stopped || error;
+    }
+};
+
+struct typed_void_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<typed_io_state> state;
+
+    void set_value() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(forge::io::error error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = true;
+            state->typed_error = error;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct typed_size_receiver : typed_void_receiver {
+    void set_value(std::size_t bytes) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->bytes = bytes;
+        }
+        state->cv.notify_all();
+    }
+};
+
 struct stop_env {
     std::inplace_stop_source* source;
 
@@ -164,7 +226,19 @@ auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
 }
 
+auto wait_done(const std::shared_ptr<typed_io_state>& state) -> bool {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
+}
+
 } // namespace
+
+static_assert(std::execution::sender<
+    decltype(std::declval<forge::io::context&>().readable_typed(0))>);
+static_assert(std::execution::sender<
+    decltype(std::declval<forge::io::context&>().async_read_some_typed(
+        0,
+        std::declval<std::span<std::byte>>()))>);
 
 TEST(IoContextTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
@@ -287,6 +361,95 @@ TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     ASSERT_EQ(::read(pipe.first.get(), received.data(), received.size()),
               static_cast<ssize_t>(received.size()));
     EXPECT_EQ(received, payload);
+}
+
+TEST(IoContextTest, TypedReadableReportsDuplicateWaiter) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto first = std::make_shared<typed_io_state>();
+    auto second = std::make_shared<typed_io_state>();
+
+    auto op1 = std::execution::connect(
+        ctx.readable_typed(pipe.first.get()),
+        typed_void_receiver{first});
+    auto op2 = std::execution::connect(
+        ctx.readable_typed(pipe.first.get()),
+        typed_void_receiver{second});
+
+    std::execution::start(op1);
+    std::execution::start(op2);
+
+    ASSERT_TRUE(wait_done(second));
+    EXPECT_FALSE(second->value);
+    EXPECT_FALSE(second->stopped);
+    ASSERT_TRUE(second->error);
+    EXPECT_EQ(second->typed_error.kind, forge::io::error_kind::operation_in_progress);
+    EXPECT_EQ(second->typed_error.code,
+              std::make_error_code(std::errc::operation_in_progress));
+
+    ctx.cancel(pipe.first.get());
+    ASSERT_TRUE(wait_done(first));
+    EXPECT_TRUE(first->stopped);
+}
+
+TEST(IoContextTest, TypedReadableReportsBadFileDescriptor) {
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+
+    auto op = std::execution::connect(
+        ctx.readable_typed(-1),
+        typed_void_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+    ASSERT_TRUE(state->error);
+    EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
+    EXPECT_EQ(state->typed_error.code,
+              std::make_error_code(std::errc::bad_file_descriptor));
+}
+
+TEST(IoContextTest, TypedReadableCrossesErasedSenderBoundary) {
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+    using cs = std::execution::completion_signatures<
+        std::execution::set_value_t(),
+        std::execution::set_error_t(forge::io::error),
+        std::execution::set_stopped_t()>;
+    forge::erased_sender<cs> sender{ctx.readable_typed(-1)};
+
+    auto op = std::execution::connect(
+        std::move(sender),
+        typed_void_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    ASSERT_TRUE(state->error);
+    EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
+}
+
+TEST(IoContextTest, AsyncReadSomeTypedReturnsByteCount) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    const char payload[] = {'t', 'y'};
+    ASSERT_EQ(::write(pipe.second.get(), payload, sizeof(payload)),
+              static_cast<ssize_t>(sizeof(payload)));
+    std::array<std::byte, sizeof(payload)> buffer{};
+    auto state = std::make_shared<typed_io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_read_some_typed(pipe.first.get(), std::span{buffer}),
+        typed_size_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(state->bytes, buffer.size());
+    EXPECT_EQ(buffer[0], std::byte{'t'});
+    EXPECT_EQ(buffer[1], std::byte{'y'});
 }
 
 TEST(IoContextTest, RequestStopCancelsPendingWaiter) {

@@ -34,6 +34,7 @@
 #endif
 #include <windows.h>
 
+#include "../error.hpp"
 #include "../../resource_policy.hpp"
 
 #include <execution>
@@ -592,6 +593,12 @@ public:
             {}};
     }
 
+    [[nodiscard]] auto async_read_some_typed(
+        HANDLE handle,
+        std::span<std::byte> buffer) {
+        return __typed_detail::size_sender(async_read_some(handle, buffer));
+    }
+
     [[nodiscard]] auto async_write_some(
         HANDLE handle,
         std::span<const std::byte> buffer) -> __detail::__byte_sender {
@@ -601,6 +608,12 @@ public:
             __detail::__operation_kind::write,
             {},
             buffer};
+    }
+
+    [[nodiscard]] auto async_write_some_typed(
+        HANDLE handle,
+        std::span<const std::byte> buffer) {
+        return __typed_detail::size_sender(async_write_some(handle, buffer));
     }
 
     void cancel(HANDLE handle) noexcept {

@@ -66,6 +66,8 @@ fd / `HANDLE` 和 buffer 都是 borrowed，调用方必须保证它们活到 ope
 `cancel(...)` 后 drain，或 context shutdown/wait 之后。Linux readiness sender 完成
 `set_value()` 只表示 fd ready，真正的 `read(2)` / `write(2)` 由用户代码执行；Linux
 async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::size_t)`。
+默认 API 使用 `std::exception_ptr` 错误；`*_typed` opt-in 变体可把稳定错误分类暴露为
+`forge::io::error`。
 
 macOS/BSD kqueue 和 Linux `io_uring` 尚未实现。详细语义见
 [`forge::io`](forge-io.md)。
