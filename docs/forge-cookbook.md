@@ -39,7 +39,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
 
-## Recipe: CPU work queue
+## recipe: CPU work queue
 
 适用场景：把一批 CPU work 放到固定线程池里执行，最后等待所有已接受 work 完成。
 
@@ -62,7 +62,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_resource_context_example.cpp`
 
-## Recipe: bounded producer/consumer
+## recipe: bounded producer/consumer
 
 适用场景：消息系统、推理请求队列、设备 command staging、跨线程 backpressure。
 
@@ -85,7 +85,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
 
-## Recipe: serialize shared state
+## recipe: serialize shared state
 
 适用场景：session 状态、protocol state machine、统计结果、非线程安全资源。
 
@@ -107,7 +107,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
 
-## Recipe: own a session
+## recipe: own a session
 
 适用场景：一个连接、一个设备会话、一个推理 worker、一个资源型服务实例。
 
@@ -132,7 +132,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## Recipe: bounded allocations
+## recipe: bounded allocations
 
 适用场景：嵌入式、实时-ish pipeline、服务端热路径、推理 runtime 中的稳定分配边界。
 
@@ -157,7 +157,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## Recipe: IO into protocol work
+## recipe: IO into protocol work
 
 适用场景：Linux fd readiness 或 Windows IOCP completion 边界，随后切回 CPU runtime
 处理协议状态。
@@ -185,7 +185,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_io_iocp_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
 
-## Recipe: accelerator-shaped pipeline
+## recipe: accelerator-shaped pipeline
 
 适用场景：先用 portable mock backend 验证 command queue / buffer / copy / submit
 形状，再决定是否需要真实 accelerator backend。
@@ -219,7 +219,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## Recipe: type erase at boundaries
+## recipe: type erase at boundaries
 
 适用场景：插件边界、队列中存放异构 sender、将具体 scheduler 隐藏在运行时配置后面。
 
@@ -243,7 +243,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 
-## Shutdown checklist
+## shutdown checklist
 
 写一个拥有型 runtime 或 session 时，按这个顺序检查：
 

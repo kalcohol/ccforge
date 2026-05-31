@@ -57,7 +57,7 @@
 - Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；
   剩余问题是 IO/accel 是否、以及如何暴露 typed-error API。
 
-## Project Identity Checkpoint
+## project identity checkpoint
 
 Forge 的目标不是变成完整 runtime framework、网络库、GPU runtime、tensor runtime 或
 vendor driver wrapper。更准确的身份是：
@@ -75,7 +75,7 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 - 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
 - 不把 CUDA/HIP/SYCL、IOCP、kqueue、io_uring、tensor kernel runtime 做成默认依赖。
 
-## Maintenance Mode And Decision Gates
+## maintenance mode and decision gates
 
 当前 `include/forge/` 设施已经进入较稳定的维护态。默认下一步应优先做：
 
@@ -97,7 +97,7 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
 回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
 
-## Portability And Windows Expectations
+## portability and Windows expectations
 
 Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
 backend。Windows 支持已经有可重复 smoke 脚本和 IOCP proof backend；后续仍应保持为
@@ -123,7 +123,7 @@ Windows 阶段性预期：
 当前可复现入口见 `scripts/verify-windows-msvc.ps1` 和
 `scripts/verify-windows-msvc-ssh.sh`；公开文档和脚本不得写入私有主机名或本地安装路径。
 
-## Feature Gates
+## feature gates
 
 长期建议使用两类开关。
 
@@ -153,7 +153,7 @@ backend 和 Windows IOCP proof backend；accel gate 已用于 portable mock back
 erasure 设施是 header-only，不再有独立功能 gate。accel 当前不做 CUDA、HIP、SYCL
 或 vendor SDK 探测。
 
-## Resource Policy
+## resource policy
 
 Resource policy 解决实际 runtime 资源问题：
 
@@ -170,7 +170,7 @@ timer queue 纳入 resource；仍需如实记录其它未纳入路径，例如
 `async_scope` op-state、`strand` runner keepalive node 和部分 `std::function`
 target 分配。
 
-## IO Backend
+## IO backend
 
 IO backend 必须接触真实底层设施，否则只是多包一层线程池。当前已落地 Linux
 fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
@@ -184,7 +184,7 @@ fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三�
 kqueue、`io_uring` 和 IOCP production hardening 仍需独立 taskbook。Zig 可以帮助
 构建和 C ABI 互操作，但不能消除 epoll/io_uring/IOCP 语义差异。
 
-## Accel Scheduler
+## accel scheduler
 
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
@@ -229,7 +229,7 @@ forge::accel::sycl
 语义；只有当抽象需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做
 proof。
 
-## Typed-Error Erased Sender
+## typed-error erased sender
 
 `forge::erased_sender` 已支持多个 value shape，并保留目标
 `CompletionSignatures` 中声明的 typed error 形状，例如：
@@ -244,7 +244,7 @@ proof。
 要暴露 typed-error API。默认的 IO/accel surface 仍使用 `std::exception_ptr`，避免在
 错误模型尚未稳定前扩大公共 API；后续应以 opt-in typed variants 推进。
 
-## Examples Strategy
+## examples strategy
 
 Examples 必须从“能编译”升级为“能教会人怎么组合”：
 

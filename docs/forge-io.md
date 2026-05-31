@@ -6,7 +6,7 @@
 Linux backend 是 `epoll/eventfd` readiness backend；Windows backend 是小型 IOCP
 completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
 
-## Platform And Gates
+## platform and gates
 
 当前 backend：
 
@@ -68,7 +68,7 @@ Windows `async_read_some(HANDLE, std::span<std::byte>)` 和
 IOCP completion 完成。返回值同样是该次 operation 的 byte count。V1 要求传入的
 `HANDLE` 支持 overlapped IO，且未绑定到其它 completion port。
 
-## FD Lifetime
+## FD lifetime
 
 fd / `HANDLE` 都是 borrowed。`forge::io::context` 不拥有 OS handle。
 
@@ -83,7 +83,7 @@ context `shutdown()` / `wait()` 之后再关闭。否则 OS 可能复用同一�
 3. operation 完成后执行实际 syscall；
 4. shutdown/cancel/drain 后再销毁 fd wrapper。
 
-## Lifecycle
+## lifecycle
 
 `forge::io::context` 是 owning runtime primitive，析构会 `shutdown()` + `wait()`，
 因此可能阻塞。
@@ -105,7 +105,7 @@ Windows IOCP proof V1 只保证 `start()` 前 stop-token 检查。operation 入�
 per-operation stop callback；pending IO 由 `cancel(HANDLE)`、`request_stop()` 或
 `shutdown()` 调用 `CancelIoEx` 取消，并在 completion packet 返回后以 stopped 完成。
 
-## Readiness Rules
+## readiness rules
 
 V1 对每个 fd 最多支持一个 pending read waiter 和一个 pending write waiter。重复提交同一
 fd/readiness kind 会让新的 operation 以 `set_error(std::exception_ptr)` 完成，内部错误为
@@ -126,7 +126,7 @@ auto work = std::execution::continues_on(
     });
 ```
 
-## Windows IOCP Rules
+## Windows IOCP rules
 
 Windows backend 是 completion model，不提供 `readable()` / `writable()` readiness
 sender。它的 V1 目标是证明 Forge 的 IO 抽象能承载 completion-based backend，而不是把
@@ -139,7 +139,7 @@ Windows 强行压成 Linux readiness。
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
 
-## Resource Policy
+## resource policy
 
 `forge::io::context_options{.memory = resource}` 控制 context state、pending fd map、
 event buffer、action batch 和 receiver record 等 context-owned allocation。resource
@@ -147,7 +147,7 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 
 这不控制用户 fd、用户 buffer，也不承诺标准库内部对象零分配。
 
-## Examples
+## examples
 
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->

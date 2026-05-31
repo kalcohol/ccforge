@@ -14,7 +14,7 @@ device buffer、copy 和 kernel-like submit 的 sender 语义。
 #include <forge/accel.hpp>
 ```
 
-## Core Types
+## core types
 
 - `forge::accel::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
@@ -40,7 +40,7 @@ forge::accel::context ctx{forge::accel::context_options{
 `memory` 是非拥有 `std::pmr::memory_resource*`，必须活得比使用它的 context 和
 buffers 更久。
 
-## Commands
+## commands
 
 V1 command sender：
 
@@ -75,7 +75,7 @@ std::execution::completion_signatures<
     std::execution::set_stopped_t()>
 ```
 
-## Lifecycle
+## lifecycle
 
 - `close()`：拒绝后续 command，已接受 command 继续 drain。
 - `request_stop()`：请求停止，pending command 尽量以 stopped 完成；正在运行的用户
@@ -92,7 +92,7 @@ Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop tok
 以 stopped 完成；已经进入用户 callable 的 command 不会被强制中断。这模拟 NPU/FPGA
 command channel 常见的 reset 边界，但不试图声明真实硬件 reset 语义。
 
-## Device Sessions And Message Commands
+## device sessions and message commands
 
 `device_session` 是 vendor-neutral proof，不绑定 CUDA/HIP/SYCL，也不暴露 native
 handle。它的用途是让用户把“向设备发送 command packet，等待 completion/response”的
@@ -124,7 +124,7 @@ handler 可以返回：
 handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`response` 是 borrowed，
 必须活到 command completion。
 
-## Ownership
+## ownership
 
 - Host spans 是 borrowed；调用方必须保证它们活到 command completion。
 - `host_buffer<T>` 是 owning host storage，可用 `span()` 传给 copy command；它同样必须
@@ -133,7 +133,7 @@ handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`r
 - V1 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
 - User completion 不在 accel 内部 mutex 下执行。
 
-## Events And Fences
+## events and fences
 
 V1 提供最小 completion-boundary 事件：
 
@@ -159,7 +159,7 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 `record_event` 前面，该 queue 会等待到 event ready 或 context stop；调用方应按
 明确的 command 顺序使用它。
 
-## Examples
+## examples
 
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`

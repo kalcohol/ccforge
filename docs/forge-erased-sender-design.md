@@ -62,7 +62,7 @@ v1 是 heap-first 实现：
 
 `erased_sender` 本身是 move-only。具体 source sender 需要能以存储后的 lvalue 形式连接到 erased receiver；move-only source sender 可以工作，只要它的 `connect` 支持这种用法。
 
-## Value Dispatch
+## value dispatch
 
 实现复用 `backport/cpp26/execution/detail/value_result.hpp` 里的 value-shape meta：
 
@@ -70,7 +70,7 @@ v1 是 heap-first 实现：
 - 多 value shape 通过生成的 erased receiver 分发表按实际 completion 分派；
 - 不为 `include/forge/` 再造一套独立 value typelist 规则。
 
-## Error、Stopped 与 Env
+## error, stopped 与 env
 
 `set_error` 会按目标 `CompletionSignatures` 中声明的 error type 分派并原样交给下游
 receiver。`std::exception_ptr` 只是其中一种普通 error type，不再是唯一支持类型。

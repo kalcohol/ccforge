@@ -36,7 +36,7 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 
 这样可以避免 root-owned build artifacts 和 orphaned containers。
 
-## Windows/MSVC Smoke
+## Windows/MSVC smoke
 
 Windows 验证是可选的手动 smoke gate。它不替代 Linux/podman 全量矩阵；当前
 目标是确认 MSVC 能 configure/build/test `std::execution` backport、
@@ -121,7 +121,7 @@ and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
 vendor SDKs. Erasure facilities are header-only and always available; use
 `FORGE_TEST_ENABLE_FORGE_ERASURE` to include or skip their tests.
 
-## Example smoke tests
+## example smoke tests
 
 When both `FORGE_BUILD_EXAMPLES=ON` and `FORGE_BUILD_TESTS=ON`, examples that are
 actually built are also registered as CTest smoke tests named
@@ -143,7 +143,7 @@ cmake --build build/llvm --target test_execution_wave1
 ctest --test-dir build/llvm -R 'execution_wave1' --output-on-failure
 ```
 
-## Install package smoke
+## install package smoke
 
 The install package smoke verifies that an installed prefix can be consumed by a
 separate project with `find_package(CCForge CONFIG REQUIRED)`. It installs
@@ -158,7 +158,7 @@ This check is intentionally not part of default CTest because it performs a
 second configure/install/build cycle. It should be run before release-oriented
 changes to CMake packaging or install layout.
 
-## Gotchas
+## gotchas
 
 - `test/CMakeLists.txt` expects `3rdparty/googletest`; fresh checkout 缺失时需要初始化 submodule 或提供该目录
 - 不要意外 stage vendored/untracked `3rdparty/` 内容

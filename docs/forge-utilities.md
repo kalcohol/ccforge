@@ -2,7 +2,7 @@
 
 `include/forge/` 下的头文件是 Forge 自带的实用扩展，不是标准 backport，也不向 `namespace std` 注入名字。它们的目标是补齐使用 `std::execution` 时常见的运行时设施，让下游不必为基本线程池、单线程执行上下文、定时器和窄类型擦除再写一套本地胶水。
 
-运行时对象的 `close()` / `request_stop()` / `shutdown()` / `wait()` 语义见 [Forge runtime lifecycle contract](forge-runtime.md)。新增 `forge::` 运行时设施应先对齐这份契约，再扩展具体行为。
+运行时对象的 `close()` / `request_stop()` / `shutdown()` / `wait()` 语义见 [forge runtime lifecycle contract](forge-runtime.md)。新增 `forge::` 运行时设施应先对齐这份契约，再扩展具体行为。
 
 聚合头：
 
@@ -28,7 +28,7 @@ Accelerator-like mock backend 使用独立头：
 
 它受 `FORGE_ENABLE_FORGE_ACCEL` gate 控制；详见 [`forge::accel`](forge-accel.md)。
 
-## Resource Policy
+## resource policy
 
 - `forge::resource_policy`：V1 资源策略词汇，当前只包含非拥有的 `std::pmr::memory_resource*`。`default_memory_resource()` 返回 `std::pmr::get_default_resource()`，`normalize_memory_resource(ptr)` 会把 `nullptr` 归一为默认 resource。
 
@@ -55,7 +55,7 @@ Accelerator-like mock backend 使用独立头：
 
 - `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和共享 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
-## IO Backend
+## IO backend
 
 - `forge::io::context`：平台 IO context。Linux backend 是 `epoll` + `eventfd`
   readiness context，提供 `readable(fd)` / `writable(fd)` sender，以及 borrowed-span
@@ -70,7 +70,7 @@ async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::s
 macOS/BSD kqueue 和 Linux `io_uring` 尚未实现。详细语义见
 [`forge::io`](forge-io.md)。
 
-## Accel Mock Backend
+## accel mock backend
 
 - `forge::accel::context`：portable mock/in-memory accelerator-like context，
   用 Forge runtime 原语模拟 command queue、device/session、device buffer、copy、
@@ -97,7 +97,7 @@ V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency gr
 
 这些设施的 schedule/timer operation state 应按 sender/receiver 常规约定保持存活直到完成；它们不是 cancel-on-destroy 句柄。`runtime_context::wait()` 不是无界 quiescence 协议：如果回调递归地持续提交新 CPU/timer work，调用方仍应自行定义停止条件。
 
-## Coroutine Sender
+## coroutine sender
 
 - `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或异步 sender，外部可以用 `std::execution::sync_wait` 或其他 sender 组合器消费。
 

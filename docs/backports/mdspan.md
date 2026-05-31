@@ -17,7 +17,7 @@ Forge 的 `<mdspan>` backport 扩展覆盖：
 
 Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdspan layouts 作为 `submdspan` foundation。这些 foundation 由 `forge.cmake` 单独探测，检测到原生或部分原生声明时会主动让位，避免 ODR 冲突。
 
-## Feature Macros
+## feature macros
 
 当 Forge 注入 backport 时定义：
 

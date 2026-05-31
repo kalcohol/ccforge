@@ -1,4 +1,4 @@
-# CC Forge Documentation
+# CC Forge documentation
 
 Root overview:
 [English](../README.md) | [简体中文](../README.zh-CN.md) | [日本語](../README.ja.md)
@@ -8,11 +8,11 @@ and roadmap material. These pages intentionally remain mixed English/Chinese
 where that is clearer for current contributors; the root README files are the
 stable multilingual entrypoints.
 
-## Usage
+## usage
 
 - [forge cookbook](forge-cookbook.md)
 
-## Backports
+## backports
 
 - [`std::execution`](backports/execution.md)
 - [`std::linalg`](backports/linalg.md)
@@ -28,11 +28,11 @@ stable multilingual entrypoints.
 - [`forge::accel` mock command backend](forge-accel.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 
-## Integration and verification
+## integration and verification
 
 - [native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
 
-## Roadmap
+## roadmap
 
-- [Forge runtime 远景图](roadmap/forge-runtime-vision.md)
+- [forge runtime 远景图](roadmap/forge-runtime-vision.md)

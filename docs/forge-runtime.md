@@ -6,7 +6,7 @@ backports and they do not add names to `namespace std`.
 This document fixes the lifecycle vocabulary used by Forge runtime utilities so
 new facilities do not drift apart.
 
-## Core Terms
+## core terms
 
 `close()` means graceful ingress close:
 
@@ -36,7 +36,7 @@ It is the normal "session is ending" operation.
 that completes once the object is drained. Blocking `wait()` may still exist for
 tests, destructors, and simple shutdown paths.
 
-## Destructor Policy
+## destructor policy
 
 Owning Forge runtime objects should be safe to destroy. The preferred policy is:
 
@@ -51,7 +51,7 @@ prefer safe destruction for resource/session management.
 
 Non-owning views and lightweight handles should not block in destructors.
 
-## Current Utilities
+## current utilities
 
 - `static_thread_pool::shutdown()` stops accepting new schedule operations and
   drains accepted work. `wait()` waits for the queue and active tasks to empty.
@@ -99,7 +99,7 @@ Non-owning views and lightweight handles should not block in destructors.
   not synchronously destroy the connected task operation state from inside the
   completion callback.
 
-## V1 Cancellation Boundaries
+## V1 cancellation boundaries
 
 Forge primitives should prefer a clearly documented small guarantee over a
 half-correct broad one.

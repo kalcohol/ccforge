@@ -1,4 +1,4 @@
-# Native Handoff 与无感注入
+# Native handoff 与无感注入
 
 Forge 的核心设计目标：**当未来标准库原生提供相同能力后，下游升级工具链时无需任何源码修改即可自动切换到原生实现。**
 
@@ -24,7 +24,7 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 检测到原生时，`forge.cmake` 会通过 `FORGE_HAS_NATIVE_*` 宏通知 wrapper 头一并退场。部分原生也让位，是为了避免在 `namespace std` 中 on-top 注入造成 ODR 冲突。
 
-## Force Flags
+## force flags
 
 若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设：
 
