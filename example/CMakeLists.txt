@@ -239,6 +239,12 @@ if(FORGE_HAS_FORGE_ACCEL_BACKEND)
     if(FORGE_EXAMPLE_TBB_LIBRARY)
         target_link_libraries(forge_inference_runtime_sketch PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
+
+    add_executable(forge_accel_message_device forge_accel_message_device_example.cpp)
+    target_link_libraries(forge_accel_message_device PRIVATE forge::forge Threads::Threads)
+    if(FORGE_EXAMPLE_TBB_LIBRARY)
+        target_link_libraries(forge_accel_message_device PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+    endif()
 endif()
 endif()
 
@@ -307,10 +313,12 @@ set(FORGE_EXAMPLE_SMOKE_TARGETS
     forge_io_readiness
     forge_io_pipeline
     forge_io_read_write
+    forge_io_iocp
     forge_accel_copy
     forge_accel_pipeline
     forge_accel_event
     forge_accel_staging_buffer
+    forge_accel_message_device
     forge_inference_runtime_sketch
     execution_coro
     forge_task

@@ -18,6 +18,9 @@ device buffer、copy 和 kernel-like submit 的 sender 语义。
 
 - `forge::accel::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
+- `forge::accel::device`：轻量 device handle，由 context 产生，不拥有真实硬件。
+- `forge::accel::device_session`：mock device session，用于表达 NPU/FPGA 风格
+  command/response 生命周期和 reset 边界。
 - `forge::accel::queue`：轻量 queue handle。V1 单 queue 按 FIFO 串行执行 command。
 - `forge::accel::host_buffer<T>`：由 context resource 分配的 owning host staging
   storage。它不是 pinned memory，只固定 staging buffer 的所有权和分配来源。
@@ -52,6 +55,17 @@ forge::accel::submit(q, [&] {
 });
 ```
 
+也可以通过 `device_session` 表达设备会话上的 command：
+
+```cpp
+auto device = ctx.get_device();
+auto session = device.open_session();
+
+forge::accel::submit(session, [&] {
+    // command for a device-like lane
+});
+```
+
 这些 sender 在 `start()` 时接受 command，而不是构造 sender 时。completion signatures：
 
 ```cpp
@@ -73,6 +87,42 @@ std::execution::completion_signatures<
 
 Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop token V1 只在
 `start()` 前检查；command 入队后不注册 per-operation stop callback。
+
+`device_session::reset()` 标记该 session 已 reset。之后尚未执行的 session command 会
+以 stopped 完成；已经进入用户 callable 的 command 不会被强制中断。这模拟 NPU/FPGA
+command channel 常见的 reset 边界，但不试图声明真实硬件 reset 语义。
+
+## Device Sessions And Message Commands
+
+`device_session` 是 vendor-neutral proof，不绑定 CUDA/HIP/SYCL，也不暴露 native
+handle。它的用途是让用户把“向设备发送 command packet，等待 completion/response”的
+工程形状写成 sender pipeline。
+
+```cpp
+struct request_packet { int count; };
+struct response_packet { int count; };
+
+response_packet response{};
+auto op = forge::accel::submit_message(
+    session,
+    request_packet{128},
+    response,
+    [](request_packet& request, response_packet& out) noexcept {
+        out.count = request.count;
+        return forge::accel::command_status::ok;
+    });
+```
+
+`submit_message(session, request, response, handler)` 在 session queue 上运行 handler。
+handler 可以返回：
+
+- `command_status::ok`：正常 `set_value()`；
+- `command_status::failed`：通过 `set_error(std::exception_ptr)` 传播
+  `forge::accel::command_error`；
+- `command_status::stopped`：完成为 stopped。
+
+handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`response` 是 borrowed，
+必须活到 command completion。
 
 ## Ownership
 
@@ -115,4 +165,5 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_accel_event_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
+- `example/forge_accel_message_device_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

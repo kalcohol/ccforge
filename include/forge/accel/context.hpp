@@ -55,6 +55,8 @@ struct context_options {
 
 class context;
 class queue;
+class device;
+class device_session;
 class event;
 template<class T>
 class host_buffer;
@@ -72,6 +74,10 @@ struct __state;
 inline thread_local __state* __current_state = nullptr;
 
 struct __stopped_signal {};
+
+struct __session_state {
+    std::atomic<bool> reset_requested{false};
+};
 
 struct __event_state {
     void mark_ready() noexcept {
@@ -442,6 +448,8 @@ private:
         : state_(state) {}
 
     friend class context;
+    friend class device;
+    friend class device_session;
     template<class Action>
     friend auto __detail::__make_command_sender(
         std::shared_ptr<__detail::__state>,
@@ -480,6 +488,8 @@ public:
         return queue{state_};
     }
 
+    [[nodiscard]] device get_device() noexcept;
+
     void close() noexcept {
         state_->close();
     }
@@ -497,6 +507,8 @@ public:
     }
 
 private:
+    friend class device;
+    friend class device_session;
     template<class T>
     friend class host_buffer;
     template<class T>
@@ -504,6 +516,98 @@ private:
 
     std::shared_ptr<__detail::__state> state_;
 };
+
+enum class command_status {
+    ok,
+    failed,
+    stopped
+};
+
+class command_error : public std::runtime_error {
+public:
+    explicit command_error(command_status status)
+        : std::runtime_error("forge::accel command failed")
+        , status_(status) {}
+
+    [[nodiscard]] auto status() const noexcept -> command_status {
+        return status_;
+    }
+
+private:
+    command_status status_;
+};
+
+class device_session {
+public:
+    device_session() = default;
+
+    [[nodiscard]] queue& get_queue() noexcept {
+        return queue_;
+    }
+
+    [[nodiscard]] const queue& get_queue() const noexcept {
+        return queue_;
+    }
+
+    void reset() noexcept {
+        if (session_) {
+            session_->reset_requested.store(true, std::memory_order_release);
+        }
+    }
+
+    [[nodiscard]] bool reset_requested() const noexcept {
+        return !session_ ||
+            session_->reset_requested.load(std::memory_order_acquire);
+    }
+
+private:
+    explicit device_session(std::shared_ptr<__detail::__state> state)
+        : queue_(state)
+        , session_(state
+              ? std::allocate_shared<__detail::__session_state>(
+                    std::pmr::polymorphic_allocator<__detail::__session_state>{
+                        state->memory_resource()})
+              : nullptr) {}
+
+    template<class F>
+    friend auto submit(device_session&, F&&);
+    template<class Request, class Response, class Handler>
+    friend auto submit_message(device_session&, Request, Response&, Handler&&);
+    friend class device;
+
+    queue queue_;
+    std::shared_ptr<__detail::__session_state> session_;
+};
+
+class device {
+public:
+    device() = default;
+
+    [[nodiscard]] queue get_queue() const noexcept {
+        return queue{state_.lock()};
+    }
+
+    [[nodiscard]] device_session open_session() const {
+        return device_session{state_.lock()};
+    }
+
+    [[nodiscard]] bool available() const noexcept {
+        auto state = state_.lock();
+        return state && !state->is_closed();
+    }
+
+private:
+    explicit device(std::shared_ptr<__detail::__state> state)
+        : state_(state) {}
+
+    friend class context;
+
+    std::weak_ptr<__detail::__state> state_;
+};
+
+inline auto context::get_device() noexcept -> device {
+    return device{state_};
+}
 
 template<class T>
 class host_buffer {
@@ -642,6 +746,46 @@ auto submit(queue& q, F&& command) {
         q.state_.lock(),
         [command = std::forward<F>(command)]() mutable {
             std::invoke(command);
+        });
+}
+
+template<class F>
+auto submit(device_session& session, F&& command) {
+    auto session_state = session.session_;
+    return submit(
+        session.get_queue(),
+        [session_state, command = std::forward<F>(command)]() mutable {
+            if (!session_state ||
+                session_state->reset_requested.load(std::memory_order_acquire)) {
+                throw __detail::__stopped_signal{};
+            }
+            std::invoke(command);
+        });
+}
+
+template<class Request, class Response, class Handler>
+auto submit_message(
+    device_session& session,
+    Request request,
+    Response& response,
+    Handler&& handler) {
+    return submit(
+        session,
+        [request = std::move(request),
+         response = &response,
+         handler = std::forward<Handler>(handler)]() mutable {
+            using result_t = std::invoke_result_t<Handler&, Request&, Response&>;
+            if constexpr (std::is_same_v<result_t, command_status>) {
+                const auto status = std::invoke(handler, request, *response);
+                if (status == command_status::stopped) {
+                    throw __detail::__stopped_signal{};
+                }
+                if (status != command_status::ok) {
+                    throw command_error{status};
+                }
+            } else {
+                std::invoke(handler, request, *response);
+            }
         });
 }
 

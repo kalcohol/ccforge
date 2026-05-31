@@ -68,6 +68,7 @@ if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
     forge_add_forge_test(test_forge_accel_copy test_forge_accel_copy.cpp forge_accel_copy)
     forge_add_forge_test(test_forge_accel_event test_forge_accel_event.cpp forge_accel_event)
     forge_add_forge_test(test_forge_accel_submit test_forge_accel_submit.cpp forge_accel_submit)
+    forge_add_forge_test(test_forge_accel_device test_forge_accel_device.cpp forge_accel_device)
 endif()
 
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
