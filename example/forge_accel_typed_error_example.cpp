@@ -1,55 +1,12 @@
 #include <forge/accel.hpp>
-#include <forge/erased_sender.hpp>
+#include <forge/execution.hpp>
 #include <execution>
 #include <cassert>
-#include <condition_variable>
 #include <exception>
-#include <memory>
-#include <mutex>
+#include <span>
 #include <stdexcept>
+#include <utility>
 #include <vector>
-
-struct result_state {
-    std::mutex mtx;
-    std::condition_variable cv;
-    bool done = false;
-    forge::accel::error error{};
-};
-
-struct receiver {
-    using receiver_concept = std::execution::receiver_t;
-
-    std::shared_ptr<result_state> state;
-
-    void set_value() && noexcept {
-        {
-            std::lock_guard lk{state->mtx};
-            state->done = true;
-        }
-        state->cv.notify_all();
-    }
-
-    void set_error(forge::accel::error error) && noexcept {
-        {
-            std::lock_guard lk{state->mtx};
-            state->done = true;
-            state->error = std::move(error);
-        }
-        state->cv.notify_all();
-    }
-
-    void set_stopped() && noexcept {
-        {
-            std::lock_guard lk{state->mtx};
-            state->done = true;
-        }
-        state->cv.notify_all();
-    }
-
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
-    }
-};
 
 int main() {
     forge::accel::context ctx;
@@ -68,22 +25,17 @@ int main() {
             device,
             std::span<const int>{input})};
 
-    auto state = std::make_shared<result_state>();
-    auto op = std::execution::connect(std::move(work), receiver{state});
-    std::execution::start(op);
+    auto result = forge::wait_result(std::move(work));
+    assert(result.has_error());
 
-    {
-        std::unique_lock lk{state->mtx};
-        state->cv.wait(lk, [&] { return state->done; });
-    }
-
-    assert(state->error.kind == forge::accel::error_kind::size_mismatch);
-    assert(state->error.cause);
+    auto* error = result.error_if<forge::accel::error>();
+    assert(error != nullptr);
+    assert(error->kind == forge::accel::error_kind::size_mismatch);
+    assert(error->cause);
     try {
-        std::rethrow_exception(state->error.cause);
+        std::rethrow_exception(error->cause);
     } catch (const std::runtime_error&) {
         return 0;
     }
     return 1;
 }
-

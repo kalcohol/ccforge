@@ -37,3 +37,4 @@
 #include "system_context.hpp"
 #include "task.hpp"
 #include "timer_context.hpp"
+#include "wait_result.hpp"

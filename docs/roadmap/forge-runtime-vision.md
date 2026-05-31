@@ -251,6 +251,9 @@ proof。
 `std::exception_ptr`。accel 已提供 `copy_to_device_typed` / `copy_to_host_typed` /
 `copy_device_to_device_typed` / `submit_typed` / `submit_message_typed` /
 `record_event_typed` / `wait_event_typed` / `fence_typed` 这组 opt-in typed variants；
+`forge::wait_result(sender)` 可在同步边界保留 value / typed error / stopped，
+避免示例和插件边界重复手写 receiver。
+
 默认 accel surface 仍使用 `std::exception_ptr`。真实 backend 若引入 vendor-specific
 错误码，应作为独立 mapping 决策，不应反向污染 portable mock API。
 

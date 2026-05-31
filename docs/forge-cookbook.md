@@ -241,6 +241,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - `erased_sender` 支持多个 value shape，并保留声明内的 typed error 形状；
 - error 类型必须在目标 `CompletionSignatures` 中显式声明，未声明 typed error 会被编译期拒绝；
+- `forge::wait_result(sender)` 可同步消费 value / typed error / stopped 三种结果；
 - 如果只需要保存 scheduler，优先 `any_scheduler`，不要在 scheduler 边界上强行使用
   `erased_sender`。
 

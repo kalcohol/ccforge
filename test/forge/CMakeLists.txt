@@ -53,6 +53,7 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_resource_context test_forge_resource_context.cpp forge_resource_context)
     forge_add_forge_test(test_forge_strand test_forge_strand.cpp forge_strand)
     forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
+    forge_add_forge_test(test_forge_wait_result test_forge_wait_result.cpp forge_wait_result)
 endif()
 
 if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)

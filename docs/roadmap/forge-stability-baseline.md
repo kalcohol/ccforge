@@ -110,7 +110,7 @@ Use this checklist after each taskbook round.
 | Resource behavior is auditable | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table in place; review for each new primitive |
 | IO lifecycle is explicit | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Needs periodic cancellation/lifetime re-audit |
 | Accel lifecycle is explicit | `docs/forge-accel.md`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Needs periodic event/buffer/session re-audit |
-| Typed-error boundaries are usable | `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | Usable; ergonomics can improve |
+| Typed-error boundaries are usable | `forge_wait_result`, `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | `wait_result` helper in place; review new typed surfaces as they appear |
 | Examples teach composition | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `^example_` smoke tests | Good baseline; needs periodic teaching pass |
 | Deferred large backends stay explicit | `docs/roadmap/forge-runtime-vision.md` decision gates | In place |
 

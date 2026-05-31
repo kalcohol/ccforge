@@ -110,6 +110,20 @@ std::execution::completion_signatures<
 V1 的 typed errors 是 mock backend 的稳定小闭集；它们不试图声明 CUDA/HIP/SYCL 或
 其它 vendor status model。
 
+Typed command sender 可以直接跨 `forge::erased_sender` 边界，并用
+`forge::wait_result` 同步消费：
+
+```cpp
+using command = std::execution::completion_signatures<
+    std::execution::set_value_t(),
+    std::execution::set_error_t(forge::accel::error),
+    std::execution::set_stopped_t()>;
+
+forge::erased_sender<command> op{
+    forge::accel::copy_to_device_typed(q, buffer, host)};
+auto result = forge::wait_result(std::move(op));
+```
+
 ## lifecycle
 
 - `close()`：拒绝后续 command，已接受 command 继续 drain。

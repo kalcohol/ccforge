@@ -99,6 +99,23 @@ std::execution::set_error_t(forge::io::error)
 `error::code` 保留底层 `std::error_code`。V1 typed API 只覆盖最稳定的分类；默认
 exception_ptr API 仍是主路径。
 
+Typed sender 可以直接跨 `forge::erased_sender` 边界，并用 `forge::wait_result`
+同步消费，不需要为常见边界手写 receiver：
+
+```cpp
+using ready = forge::erased_sender<
+    std::execution::completion_signatures<
+        std::execution::set_value_t(),
+        std::execution::set_error_t(forge::io::error),
+        std::execution::set_stopped_t()>>;
+
+ready op{io.readable_typed(fd)};
+auto result = forge::wait_result(std::move(op));
+if (auto* error = result.error_if<forge::io::error>()) {
+    // inspect error->kind and error->code
+}
+```
+
 ## FD lifetime
 
 fd / `HANDLE` 都是 borrowed。`forge::io::context` 不拥有 OS handle。
