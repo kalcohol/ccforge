@@ -40,6 +40,32 @@ Accelerator-like mock backend 使用独立头：
 - `timer_context` 使用 resource 控制 state、timer op data、timer item control block 和 timer queue。timer callback 的 `std::function` target 分配仍不完全受控。
 - `runtime_context` / `resource_context` 会把 resource 传给内部 `static_thread_pool` 和 `timer_context`。`async_scope` spawned op-state 目前不受该 policy 控制。
 
+Allocation audit:
+
+| component | resource-controlled paths | intentionally uncontrolled / deferred | evidence |
+| --- | --- | --- | --- |
+| `static_thread_pool` | pool queue `pmr::deque` nodes and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
+| `timer_context` | context state, timer op data, timer item control blocks, timer queue | timer callback `std::function` target internals may allocate outside the resource | `forge_timer_context` |
+| `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
+| `resource_context` | forwards the resource to the internal runtime | `async_scope` spawned op-state remains on the proven intrusive keepalive allocation path | `forge_resource_context` |
+| `bounded_channel<T>` | channel state, buffer, pending send/recv queues, action batches, send/recv record control blocks | storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
+| `strand` | strand state, pending queue, stopped batches, receiver records | runner keepalive node uses raw `new/delete` to preserve the audited synchronous-completion lifetime model | `forge_strand` |
+| `async_scope` | none in V1 | spawned op-state uses raw `new/delete` plus intrusive refcount keepalive; changing it needs a dedicated lifetime task | `forge_async_scope` |
+| `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
+| `forge::io` Windows backend | context state, pending record map, associated handle set, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
+| `forge::accel` mock backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; mock buffers are not vendor pinned memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
+| type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, `any_scheduler`, and `erased_sender` use SBO/default heap storage and are not allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
+
+Failure policy:
+
+- Capacity full or shutdown-after-start paths complete with stopped where the
+  primitive can make that decision without throwing from `start()`.
+- Allocation failure generally follows the default exception path. Typed-error
+  variants only classify allocation/capacity failures when the classification is
+  stable for that surface.
+- Forge does not claim global zero allocation. The policy is scoped to the
+  paths listed above.
+
 ## 调度与上下文
 
 - `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制队列节点和 queued task callable record 分配时可传入 `.memory = resource`。队列满、shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以 `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列和正在运行的任务清空。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。

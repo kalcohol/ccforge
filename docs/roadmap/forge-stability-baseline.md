@@ -107,7 +107,7 @@ Use this checklist after each taskbook round.
 | --- | --- | --- |
 | Verification is repeatable | `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | In place |
 | Feature gates are testable | IO/accel ON/AUTO/OFF registration checks in `scripts/verify-windows-msvc.ps1`; local `ctest -N -R 'forge_io\|forge_accel'` gate checks | In place |
-| Resource behavior is auditable | `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Needs an allocation audit table |
+| Resource behavior is auditable | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table in place; review for each new primitive |
 | IO lifecycle is explicit | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Needs periodic cancellation/lifetime re-audit |
 | Accel lifecycle is explicit | `docs/forge-accel.md`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Needs periodic event/buffer/session re-audit |
 | Typed-error boundaries are usable | `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | Usable; ergonomics can improve |

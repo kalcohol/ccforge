@@ -473,7 +473,10 @@ private:
 class context {
 public:
     explicit context(context_options options = {})
-        : state_(std::make_shared<__detail::__state>(options)) {}
+        : state_(std::allocate_shared<__detail::__state>(
+              std::pmr::polymorphic_allocator<__detail::__state>{
+                  normalize_memory_resource(options.memory)},
+              options)) {}
 
     ~context() noexcept {
         shutdown();
