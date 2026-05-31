@@ -665,6 +665,8 @@ inline void __stop_callback_fn::operator()() const noexcept {
     }
     auto st = state.lock();
     if (st && rec) {
+        // cancel_record can complete the record and reset this callback. Do
+        // not touch callback members after this call returns.
         st->cancel_record(rec);
     }
 }

@@ -244,6 +244,32 @@ TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
     EXPECT_EQ(buffer[2], std::byte{'c'});
 }
 
+TEST(IoContextTest, AsyncReadSomeZeroLengthReturnsZero) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    ASSERT_EQ(::write(pipe.second.get(), "x", 1), 1);
+
+    std::array<std::byte, 1> buffer{};
+    auto result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.first.get(), std::span{buffer}.first(0)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 0u);
+}
+
+TEST(IoContextTest, AsyncReadSomeReturnsZeroAtEof) {
+    auto pipe = make_pipe();
+    pipe.second.reset();
+
+    forge::io::context ctx;
+    std::array<std::byte, 1> buffer{};
+    auto result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.first.get(), std::span{buffer}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 0u);
+}
+
 TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     auto pipe = make_pipe();
     forge::io::context ctx;

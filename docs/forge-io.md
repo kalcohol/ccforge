@@ -62,6 +62,9 @@ std::execution::set_stopped_t()
 返回值是该次 syscall 的 byte count。`0` 对 read 表示 EOF 或零长度 buffer；write
 可能因非阻塞 fd 状态只完成部分 bytes。span 是 borrowed，调用方必须保证 buffer 活到
 operation 完成。`EINTR` 会重试；其它 syscall error 通过 `std::exception_ptr` 传出。
+因为 Linux backend 使用 level-triggered readiness，ready 到实际 syscall 之间如果有其它
+consumer 抽干 fd，`EAGAIN` / `EWOULDBLOCK` 会作为普通 syscall error 通过
+`set_error(std::exception_ptr)` 传播。
 
 Windows `async_read_some(HANDLE, std::span<std::byte>)` 和
 `async_write_some(HANDLE, std::span<const std::byte>)` 直接发起 overlapped IO，并通过
@@ -138,6 +141,10 @@ Windows 强行压成 Linux readiness。
 - handle 必须保持有效直到 operation completion 或 context drain；
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
+
+V1 会记住已经关联到 context IOCP 的 handle，避免重复关联同一个 handle。大量短命
+handle 会让这个 associated-handle set 增长；production hardening 可在后续轮次加入
+更细的 handle lifetime/pruning 策略。
 
 ## resource policy
 
