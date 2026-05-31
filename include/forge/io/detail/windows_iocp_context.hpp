@@ -511,6 +511,7 @@ inline void __stop_callback_fn::operator()() const noexcept {
     if (st && rec) {
         // cancel_record only requests IOCP cancellation. Final completion and
         // ownership release still happen when the completion packet is drained.
+        // Do not touch callback members after this call returns.
         st->cancel_record(rec);
     }
 }

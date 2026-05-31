@@ -344,6 +344,35 @@ TEST(IoContextTest, AsyncReadSomeReturnsZeroAtEof) {
     EXPECT_EQ(std::get<0>(*result), 0u);
 }
 
+TEST(IoContextTest, ReadinessToSyscallRaceSurfacesWouldBlock) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    write_byte(pipe.second.get());
+
+    auto work = ctx.readable(pipe.first.get())
+              | std::execution::then([fd = pipe.first.get()] {
+                    char discard{};
+                    if (::read(fd, &discard, 1) != 1) {
+                        throw std::runtime_error{"initial read failed"};
+                    }
+
+                    char again{};
+                    if (::read(fd, &again, 1) >= 0) {
+                        throw std::runtime_error{"unexpected second read"};
+                    }
+                    throw std::system_error{
+                        errno, std::generic_category(), "second read"};
+                });
+
+    try {
+        (void)std::execution::sync_wait(std::move(work));
+        FAIL() << "expected second read to report would-block";
+    } catch (const std::system_error& e) {
+        const std::error_code expected{EAGAIN, std::generic_category()};
+        EXPECT_EQ(e.code(), expected);
+    }
+}
+
 TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     auto pipe = make_pipe();
     forge::io::context ctx;
