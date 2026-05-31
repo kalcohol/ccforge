@@ -1,6 +1,6 @@
 # CC Forge Documentation
 
-Root Overview:
+Root overview:
 [English](../README.md) | [简体中文](../README.zh-CN.md) | [日本語](../README.ja.md)
 
 This directory holds the deeper design notes, caveats, verification guidance,
@@ -10,7 +10,7 @@ stable multilingual entrypoints.
 
 ## Usage
 
-- [Forge Cookbook](forge-cookbook.md)
+- [forge cookbook](forge-cookbook.md)
 
 ## Backports
 
@@ -20,17 +20,17 @@ stable multilingual entrypoints.
 - [`std::submdspan` / `std::constant_wrapper`](backports/mdspan.md)
 - [`std::unique_resource`](backports/unique_resource.md)
 
-## `forge::` Runtime Utilities
+## `forge::` runtime utilities
 
 - [`forge::` 扩展工具](forge-utilities.md)
-- [Forge Runtime Lifecycle Contract](forge-runtime.md)
-- [`forge::io` Backend](forge-io.md)
-- [`forge::accel` Mock Command Backend](forge-accel.md)
+- [forge runtime lifecycle contract](forge-runtime.md)
+- [`forge::io` backend](forge-io.md)
+- [`forge::accel` mock command backend](forge-accel.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 
-## Integration and Verification
+## Integration and verification
 
-- [Native Handoff 与无感注入](native-handoff.md)
+- [native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
 
 ## Roadmap

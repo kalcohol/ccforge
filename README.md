@@ -22,15 +22,15 @@ missing native support injects Forge's backport headers.
 
 | Area | Header | Status |
 | --- | --- | --- |
-| `std::execution` senders/receivers | `<execution>` | Practical P2300 subset |
-| `std::simd` | `<simd>` | Core C++26 surface |
-| `std::submdspan` and padded layouts | `<mdspan>` | Current C++26 draft surface |
-| `std::linalg` | `<linalg>` | Practical BLAS Level 1/2/3 subset |
-| `std::unique_resource` | `<memory>` | Experimental TS v3 backport |
+| `std::execution` senders/receivers | `<execution>` | practical P2300 subset |
+| `std::simd` | `<simd>` | core C++26 surface |
+| `std::submdspan` and padded layouts | `<mdspan>` | current C++26 draft surface |
+| `std::linalg` | `<linalg>` | practical BLAS level 1/2/3 subset |
+| `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
-| `forge::` runtime utilities | `<forge/execution.hpp>` | Structured async support layer |
+| `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP proof backends |
-| `forge::accel` | `<forge/accel.hpp>` | Portable mock command backend |
+| `forge::accel` | `<forge/accel.hpp>` | portable mock command backend |
 
 For exact behavior and caveats, see the [documentation index](docs/README.md).
 
@@ -122,14 +122,14 @@ and install-package verification.
 
 ## Documentation
 
-- [Documentation Index](docs/README.md)
-- [Forge Cookbook](docs/forge-cookbook.md)
-- [Backport Notes](docs/backports/)
-- [`forge::` Utilities](docs/forge-utilities.md)
+- [documentation index](docs/README.md)
+- [forge cookbook](docs/forge-cookbook.md)
+- [backport notes](docs/backports/)
+- [`forge::` utilities](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
 - [`forge::accel`](docs/forge-accel.md)
-- [Native Handoff](docs/native-handoff.md)
-- [Testing and Verification](docs/testing.md)
+- [native handoff](docs/native-handoff.md)
+- [testing and verification](docs/testing.md)
 
 ## References
 

@@ -24,7 +24,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::execution` senders/receivers | `<execution>` | 实用 P2300 子集 |
 | `std::simd` | `<simd>` | 核心 C++26 表面 |
 | `std::submdspan` 与 padded layouts | `<mdspan>` | 当前 C++26 draft surface |
-| `std::linalg` | `<linalg>` | 实用 BLAS Level 1/2/3 子集 |
+| `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
 | `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层 |
@@ -118,12 +118,12 @@ scripts/verify-install-package.sh
 ## 文档
 
 - [文档目录](docs/README.md)
-- [Forge Cookbook](docs/forge-cookbook.md)
-- [标准 Backport 说明](docs/backports/)
+- [forge cookbook](docs/forge-cookbook.md)
+- [标准 backport 说明](docs/backports/)
 - [`forge::` 扩展工具](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
 - [`forge::accel`](docs/forge-accel.md)
-- [Native Handoff 与无感注入](docs/native-handoff.md)
+- [native handoff 与无感注入](docs/native-handoff.md)
 - [测试与验证](docs/testing.md)
 
 ## 许可证

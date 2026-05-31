@@ -26,14 +26,14 @@ backport ヘッダーを注入します。
 | `std::execution` senders/receivers | `<execution>` | 実用的な P2300 subset |
 | `std::simd` | `<simd>` | C++26 の主要 surface |
 | `std::submdspan` と padded layouts | `<mdspan>` | 現行 C++26 draft surface |
-| `std::linalg` | `<linalg>` | 実用的な BLAS Level 1/2/3 subset |
-| `std::unique_resource` | `<memory>` | Experimental TS v3 backport |
+| `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
+| `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backend |
 | `forge::accel` | `<forge/accel.hpp>` | portable mock command backend |
 
-正確な意味、制限、現在の状態については [documentation index](docs/README.md) を参照してください。
+正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
 
 ## Quick Start
 
@@ -121,13 +121,13 @@ scripts/verify-install-package.sh
 ## Documentation
 
 - [ドキュメント索引](docs/README.md)
-- [Forge Cookbook](docs/forge-cookbook.md)
-- [Backport Notes](docs/backports/)
-- [`forge::` Utilities](docs/forge-utilities.md)
+- [forge cookbook](docs/forge-cookbook.md)
+- [backport notes](docs/backports/)
+- [`forge::` utilities](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
 - [`forge::accel`](docs/forge-accel.md)
-- [Native Handoff](docs/native-handoff.md)
-- [Testing and Verification](docs/testing.md)
+- [native handoff](docs/native-handoff.md)
+- [testing and verification](docs/testing.md)
 
 ## ライセンス
 
