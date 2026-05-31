@@ -42,14 +42,39 @@ check_cxx_source_compiles("
     }
 " FORGE_PROBE_LINUX_EPOLL_EVENTFD)
 
+check_cxx_source_compiles("
+    #ifndef _WIN32
+    #error Windows only
+    #endif
+    #ifndef NOMINMAX
+    #define NOMINMAX
+    #endif
+    #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+    #endif
+    #include <windows.h>
+    int main() {
+        HANDLE port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
+        if (port) CloseHandle(port);
+        return port ? 0 : 1;
+    }
+" FORGE_PROBE_WINDOWS_IOCP)
+
 set(FORGE_HAS_FORGE_IO_BACKEND OFF)
+set(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND OFF)
+set(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND OFF)
 if("${FORGE_ENABLE_FORGE_IO}" STREQUAL "OFF")
     message(STATUS "CC Forge: forge::io backend disabled")
 elseif(FORGE_PROBE_LINUX_EPOLL_EVENTFD)
     set(FORGE_HAS_FORGE_IO_BACKEND ON)
+    set(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND ON)
     message(STATUS "CC Forge: forge::io linux epoll backend enabled")
+elseif(FORGE_PROBE_WINDOWS_IOCP)
+    set(FORGE_HAS_FORGE_IO_BACKEND ON)
+    set(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND ON)
+    message(STATUS "CC Forge: forge::io windows IOCP backend enabled")
 elseif("${FORGE_ENABLE_FORGE_IO}" STREQUAL "ON")
-    message(FATAL_ERROR "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd support")
+    message(FATAL_ERROR "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd or Windows IOCP support")
 else()
     message(STATUS "CC Forge: forge::io backend unavailable - skipped")
 endif()
@@ -85,6 +110,12 @@ if(NOT TARGET forge)
 
     if(FORGE_HAS_FORGE_IO_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
+    endif()
+    if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
+        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND=1)
+    endif()
+    if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
+        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_ACCEL_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_BACKEND=1)

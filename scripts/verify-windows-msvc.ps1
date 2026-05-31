@@ -5,8 +5,8 @@
 # FORGE_WINDOWS_VS_ROOT in the environment.
 #
 # This is intentionally a smoke gate, not the full native matrix. It covers the
-# std::execution backport, unique_resource, and non-Linux forge:: runtime
-# utilities. Linux-only IO is disabled.
+# std::execution backport, unique_resource, forge:: runtime utilities, and the
+# Windows forge::io backend when available.
 
 [CmdletBinding()]
 param(
@@ -182,7 +182,8 @@ function Invoke-GateChecks {
 
     $autoBuild = Join-Path $SourceRoot "build\$BuildName-io-auto"
     $onBuild = Join-Path $SourceRoot "build\$BuildName-io-on"
-    foreach ($dir in @($autoBuild, $onBuild)) {
+    $offBuild = Join-Path $SourceRoot "build\$BuildName-io-off"
+    foreach ($dir in @($autoBuild, $onBuild, $offBuild)) {
         if (Test-Path $dir) {
             Remove-Item -Recurse -Force $dir
         }
@@ -199,7 +200,7 @@ function Invoke-GateChecks {
     $autoOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=AUTO" $autoConfigure
     Assert-OutputContains `
         -Output $autoOutput `
-        -Needle "CC Forge: forge::io backend unavailable - skipped" `
+        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
         -Label "FORGE_ENABLE_FORGE_IO=AUTO gate check"
 
     $onConfigure =
@@ -210,14 +211,25 @@ function Invoke-GateChecks {
         "-DFORGE_BUILD_TESTS=OFF " +
         "-DFORGE_BUILD_EXAMPLES=OFF " +
         "-DFORGE_ENABLE_FORGE_IO=ON"
-    $onResult = Invoke-NativeCapture "gate check: FORGE_ENABLE_FORGE_IO=ON must fail" $onConfigure
-    if ($onResult.ExitCode -eq 0) {
-        throw "FORGE_ENABLE_FORGE_IO=ON unexpectedly configured on this Windows smoke"
-    }
+    $onOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=ON" $onConfigure
     Assert-OutputContains `
-        -Output $onResult.Output `
-        -Needle "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd support" `
+        -Output $onOutput `
+        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
         -Label "FORGE_ENABLE_FORGE_IO=ON gate check"
+
+    $offConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$offBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=OFF " +
+        "-DFORGE_BUILD_EXAMPLES=OFF " +
+        "-DFORGE_ENABLE_FORGE_IO=OFF"
+    $offOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=OFF" $offConfigure
+    Assert-OutputContains `
+        -Output $offOutput `
+        -Needle "CC Forge: forge::io backend disabled" `
+        -Label "FORGE_ENABLE_FORGE_IO=OFF gate check"
 
     Write-Host "[msvc] gate checks verified"
 }
@@ -280,7 +292,7 @@ try {
         "-DCMAKE_CXX_STANDARD=23 " +
         "-DFORGE_BUILD_TESTS=ON " +
         "-DFORGE_BUILD_EXAMPLES=OFF " +
-        "-DFORGE_ENABLE_FORGE_IO=OFF " +
+        "-DFORGE_ENABLE_FORGE_IO=AUTO " +
         "-DFORGE_TEST_ENABLE_SIMD=OFF " +
         "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
         "-DFORGE_TEST_ENABLE_LINALG=OFF " +
@@ -292,7 +304,7 @@ try {
     $configureOutput = Invoke-NativeOutput "configure" $configure
     Assert-OutputContains `
         -Output $configureOutput `
-        -Needle "CC Forge: forge::io backend disabled" `
+        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
         -Label "main smoke IO gate"
     Assert-OutputContains `
         -Output $configureOutput `

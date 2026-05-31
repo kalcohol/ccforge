@@ -55,8 +55,12 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_scheduler_roundtrip test_forge_scheduler_roundtrip.cpp forge_scheduler_roundtrip)
 endif()
 
-if(FORGE_HAS_FORGE_IO_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_context test_forge_io_context.cpp forge_io_context)
+endif()
+
+if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_test(test_forge_io_iocp test_forge_io_iocp.cpp forge_io_iocp)
 endif()
 
 if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
