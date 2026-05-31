@@ -22,6 +22,45 @@ else()
     set(FORGE_IS_TOP_LEVEL FALSE)
 endif()
 
+option(FORGE_ENABLE_INSTALL "Install CC Forge headers and CMake package config" ${FORGE_IS_TOP_LEVEL})
+
+if(FORGE_ENABLE_INSTALL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    set(FORGE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/CCForge"
+        CACHE STRING "Install directory for CC Forge CMake package files")
+    set(FORGE_INSTALL_BACKPORTDIR "${CMAKE_INSTALL_DATADIR}/ccforge/backport"
+        CACHE STRING "Install directory for CC Forge standard-header backports")
+
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CCForgeConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfig.cmake"
+        INSTALL_DESTINATION "${FORGE_INSTALL_CMAKEDIR}"
+        PATH_VARS
+            CMAKE_INSTALL_INCLUDEDIR
+            FORGE_INSTALL_BACKPORTDIR
+    )
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}"
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/backport/"
+        DESTINATION "${FORGE_INSTALL_BACKPORTDIR}")
+    install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/forge.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeBackportProbes.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeMsvcHeaders.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
+        DESTINATION "${FORGE_INSTALL_CMAKEDIR}")
+endif()
+
 # If top-level project, build examples and tests
 if(FORGE_IS_TOP_LEVEL)
     message(STATUS "Forge: Building as top-level project")

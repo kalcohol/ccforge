@@ -56,6 +56,19 @@ auto [a, b] = *std::execution::sync_wait(
 
 ## CMake 集成
 
+已安装 package：
+
+```cmake
+find_package(CCForge CONFIG REQUIRED)
+target_link_libraries(myapp PRIVATE forge::forge)
+```
+
+安装后的 package config 会在 consumer configure 阶段重新运行 native-vs-backport
+probes，因此同一个安装 prefix 可随 consumer 的 compiler、standard library 和
+`CMAKE_CXX_STANDARD` 做正确让位/注入决策。
+
+源码树直接引用：
+
 ```cmake
 include(/path/to/forge/forge.cmake)
 target_link_libraries(myapp PRIVATE forge::forge)

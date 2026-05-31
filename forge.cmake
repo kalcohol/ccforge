@@ -3,13 +3,34 @@
 
 cmake_minimum_required(VERSION 3.17)
 
-# Get the directory where this file is located
-get_filename_component(FORGE_ROOT_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+# Get the directory where this file is located. Installed package configs set
+# the _CCFORGE_PACKAGE_* variables before including this file so probes still
+# run in the consumer project while paths point at the install tree.
+get_filename_component(_FORGE_CURRENT_LIST_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 
-# Set CC Forge include directory
-set(FORGE_INCLUDE_DIR "${FORGE_ROOT_DIR}/include")
-set(FORGE_BACKPORT_DIR "${FORGE_ROOT_DIR}/backport")
-set(FORGE_CMAKE_DIR "${FORGE_ROOT_DIR}/cmake")
+if(DEFINED _CCFORGE_PACKAGE_PREFIX)
+    set(FORGE_ROOT_DIR "${_CCFORGE_PACKAGE_PREFIX}")
+elseif(NOT DEFINED FORGE_ROOT_DIR)
+    set(FORGE_ROOT_DIR "${_FORGE_CURRENT_LIST_DIR}")
+endif()
+
+if(DEFINED _CCFORGE_PACKAGE_INCLUDE_DIR)
+    set(FORGE_INCLUDE_DIR "${_CCFORGE_PACKAGE_INCLUDE_DIR}")
+elseif(NOT DEFINED FORGE_INCLUDE_DIR)
+    set(FORGE_INCLUDE_DIR "${FORGE_ROOT_DIR}/include")
+endif()
+
+if(DEFINED _CCFORGE_PACKAGE_BACKPORT_DIR)
+    set(FORGE_BACKPORT_DIR "${_CCFORGE_PACKAGE_BACKPORT_DIR}")
+elseif(NOT DEFINED FORGE_BACKPORT_DIR)
+    set(FORGE_BACKPORT_DIR "${FORGE_ROOT_DIR}/backport")
+endif()
+
+if(DEFINED _CCFORGE_PACKAGE_CMAKE_DIR)
+    set(FORGE_CMAKE_DIR "${_CCFORGE_PACKAGE_CMAKE_DIR}")
+elseif(NOT DEFINED FORGE_CMAKE_DIR)
+    set(FORGE_CMAKE_DIR "${FORGE_ROOT_DIR}/cmake")
+endif()
 
 function(_forge_define_tristate_option option_name default_value description)
     set(${option_name} "${default_value}" CACHE STRING "${description}")
@@ -27,6 +48,8 @@ _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO back
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_ACCEL AUTO "Enable forge:: accelerator backends when available")
 
 include(CheckCXXSourceCompiles)
+
+find_package(Threads REQUIRED)
 
 check_cxx_source_compiles("
     #include <sys/epoll.h>
@@ -106,6 +129,8 @@ if(NOT TARGET forge)
         $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
         $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     )
+
+    target_link_libraries(forge INTERFACE Threads::Threads)
 
     if(FORGE_HAS_FORGE_IO_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)

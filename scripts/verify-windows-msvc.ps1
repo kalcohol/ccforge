@@ -20,7 +20,8 @@ param(
     [string]$CTestRegex = "execution|unique_resource|forge",
     [switch]$Keep,
     [switch]$SkipGoogletestProvision,
-    [switch]$SkipGateChecks
+    [switch]$SkipGateChecks,
+    [switch]$SkipInstallPackageCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -234,6 +235,49 @@ function Invoke-GateChecks {
     Write-Host "[msvc] gate checks verified"
 }
 
+function Invoke-InstallPackageCheck {
+    param(
+        [Parameter(Mandatory = $true)][string]$Common,
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$BuildName
+    )
+
+    $root = Join-Path $SourceRoot "build\$BuildName-install-package"
+    $forgeBuild = Join-Path $root "forge-build"
+    $prefix = Join-Path $root "prefix"
+    $consumerBuild = Join-Path $root "consumer-build"
+    $consumerSource = Join-Path $SourceRoot "test\install_consumer"
+
+    if (Test-Path $root) {
+        Remove-Item -Recurse -Force $root
+    }
+
+    $configure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$forgeBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=OFF " +
+        "-DFORGE_BUILD_EXAMPLES=OFF " +
+        "-DFORGE_ENABLE_INSTALL=ON " +
+        "-DCMAKE_INSTALL_PREFIX=`"$prefix`""
+    Invoke-Native "install package: configure Forge" $configure
+    Invoke-Native "install package: build Forge" ($Common + "cmake --build `"$forgeBuild`"")
+    Invoke-Native "install package: install Forge" ($Common + "cmake --install `"$forgeBuild`"")
+
+    $consumerConfigure =
+        $Common +
+        "cmake -S `"$consumerSource`" -B `"$consumerBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DCMAKE_PREFIX_PATH=`"$prefix`""
+    Invoke-Native "install package: configure consumer" $consumerConfigure
+    Invoke-Native "install package: build consumer" ($Common + "cmake --build `"$consumerBuild`"")
+    Invoke-Native "install package: run consumer" ($Common + "`"$consumerBuild\ccforge_install_consumer.exe`"")
+
+    Write-Host "[msvc] install package smoke verified"
+}
+
 $sourceRoot = Find-ScriptRepoRoot
 $workRoot = Join-Path $env:TEMP ("ccforge-win-msvc-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 $cloned = $false
@@ -315,6 +359,10 @@ try {
     $testCount = Get-CtestCount $testListOutput
     Write-Host "[msvc] ctest-count=$testCount"
     Invoke-Native "test" $test
+
+    if (-not $SkipInstallPackageCheck) {
+        Invoke-InstallPackageCheck -Common $common -SourceRoot $sourceRoot -BuildName $BuildName
+    }
 
     $success = $true
     Write-Host "[msvc] verified"

@@ -62,7 +62,9 @@ scripts/verify-windows-msvc-ssh.sh
 关键 Forge gate 状态和最终 CTest 数量。它还会做 configure-only gate 检查：
 Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend，
 `FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。可设置
-`FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。
+`FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。默认 smoke 也会执行
+install package consumer check；可设置 `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1`
+临时跳过。
 
 主 smoke 默认启用可用的 Forge IO backend，并关闭 SIMD/submdspan/linalg/native-handoff
 测试：
@@ -140,6 +142,21 @@ focused execution 示例：
 cmake --build build/llvm --target test_execution_wave1
 ctest --test-dir build/llvm -R 'execution_wave1' --output-on-failure
 ```
+
+## Install package smoke
+
+The install package smoke verifies that an installed prefix can be consumed by a
+separate project with `find_package(CCForge CONFIG REQUIRED)`. It installs
+headers, backport wrappers, and the CMake package config to a temporary build
+prefix, then configures and runs `test/install_consumer`:
+
+```bash
+scripts/verify-install-package.sh
+```
+
+This check is intentionally not part of default CTest because it performs a
+second configure/install/build cycle. It should be run before release-oriented
+changes to CMake packaging or install layout.
 
 ## Gotchas
 

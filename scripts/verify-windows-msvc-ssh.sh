@@ -15,6 +15,8 @@
 #   FORGE_WINDOWS_KEEP        set to 1 to keep the remote temp clone on success
 #   FORGE_WINDOWS_SKIP_GATE_CHECKS
 #                             set to 1 to skip configure-only gate checks
+#   FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK
+#                             set to 1 to skip install package consumer check
 
 set -euo pipefail
 
@@ -66,6 +68,9 @@ if [[ "${FORGE_WINDOWS_KEEP:-0}" == "1" ]]; then
 fi
 if [[ "${FORGE_WINDOWS_SKIP_GATE_CHECKS:-0}" == "1" ]]; then
     remote_command+=" -SkipGateChecks"
+fi
+if [[ "${FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK:-0}" == "1" ]]; then
+    remote_command+=" -SkipInstallPackageCheck"
 fi
 
 ssh "${host}" "${remote_command}"
