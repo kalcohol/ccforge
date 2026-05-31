@@ -37,4 +37,6 @@ stable multilingual entrypoints.
 
 - [forge runtime 远景图](roadmap/forge-runtime-vision.md)
 - [forge stability baseline](roadmap/forge-stability-baseline.md)
+- [backend proof policy](roadmap/forge-backend-proof-policy.md)
+- [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md)
 - [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md)

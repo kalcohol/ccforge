@@ -7,6 +7,9 @@ device buffer、copy 和 kernel-like submit 的 sender 语义。
 它不绑定 CUDA、HIP、SYCL、OpenCL、Vulkan、FPGA SDK 或 NPU driver，也不声明真实硬件
 加速。真实 vendor/platform backend 只有在这个语义模型稳定并确实有价值后才应作为
 独立轮次评估。
+Future backend entry rules are tracked in the
+[`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md) and the
+[backend proof policy](roadmap/forge-backend-proof-policy.md).
 
 入口头：
 

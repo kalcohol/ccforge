@@ -3,6 +3,8 @@
 This is a design sketch for future accelerator backend proofs. It is not a
 public plugin ABI, and it does not approve CUDA, HIP, SYCL, FPGA, or NPU vendor
 dependencies by itself.
+General gate, lifetime, verification, and typed-error rules are defined in
+[backend proof policy](forge-backend-proof-policy.md).
 
 The current shipped backend is the portable mock/in-memory backend in
 `include/forge/accel/`. A future backend should preserve the same user-facing

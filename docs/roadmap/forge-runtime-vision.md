@@ -73,9 +73,11 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
 绑定某个具体平台或厂商栈。
 
-`forge::accel` 的 future backend shape 见
-[`forge::accel` backend SPI sketch](forge-accel-backend-spi.md)。它是设计约束，
-不是已发布 plugin ABI。
+Future backend shapes are tracked in [`forge::io` backend SPI sketch](forge-io-backend-spi.md)
+and [`forge::accel` backend SPI sketch](forge-accel-backend-spi.md). Gate,
+lifetime, verification, and typed-error rules are tracked in
+[backend proof policy](forge-backend-proof-policy.md). These are design
+constraints, not published plugin ABIs.
 
 具体要求：
 
@@ -105,6 +107,8 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 
 每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
 回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
+Backend proof work must also satisfy
+[backend proof policy](forge-backend-proof-policy.md).
 
 ## portability and Windows expectations
 

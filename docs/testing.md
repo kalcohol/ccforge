@@ -139,6 +139,36 @@ Focused example check:
 ctest --test-dir build/local -R '^example_' --output-on-failure
 ```
 
+## backend proof gates
+
+Optional backend proofs must be tested by registration shape as well as by
+runtime tests. For a backend feature gate:
+
+- `AUTO` should register backend tests/examples only when the probe succeeds;
+- `ON` should require the backend and fail configure if unavailable;
+- `OFF` should register zero backend tests/examples.
+
+Use regex-specific checks instead of global test counts. For example:
+
+```bash
+cmake -S . -B build/gate-io-off -G Ninja \
+  -DFORGE_BUILD_TESTS=ON \
+  -DFORGE_BUILD_EXAMPLES=ON \
+  -DFORGE_ENABLE_FORGE_IO=OFF
+ctest --test-dir build/gate-io-off -N -R 'forge_io|example_forge_io'
+
+cmake -S . -B build/gate-accel-off -G Ninja \
+  -DFORGE_BUILD_TESTS=ON \
+  -DFORGE_BUILD_EXAMPLES=ON \
+  -DFORGE_ENABLE_FORGE_ACCEL=OFF
+ctest --test-dir build/gate-accel-off -N -R 'forge_accel|example_forge_accel|inference_runtime'
+```
+
+Future platform/vendor backend proofs must also document their focused tests,
+sanitizer expectation, install-package behavior, and any manual/self-hosted
+platform smoke. Keep private hostnames and local installation paths out of
+committed docs and scripts.
+
 focused execution 示例：
 
 ```bash
