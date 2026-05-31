@@ -402,7 +402,7 @@ struct __send_record final : __send_base<T> {
                         __stop_callback_fn{state, self});
                 }
             } catch (...) {
-                complete_stopped();
+                self->complete_stopped();
                 return false;
             }
         }
@@ -476,7 +476,7 @@ struct __recv_record final : __recv_base<T> {
                         __stop_callback_fn{state, self});
                 }
             } catch (...) {
-                complete_stopped();
+                self->complete_stopped();
                 return false;
             }
         }
@@ -507,16 +507,17 @@ struct __send_op {
     __send_op& operator=(const __send_op&) = delete;
 
     void start() & noexcept {
-        if (__stop_requested(record->rcvr)) {
-            record->complete_stopped();
+        auto rec = record;
+        if (__stop_requested(rec->rcvr)) {
+            rec->complete_stopped();
             return;
         }
-        if (!record->install_stop_callback(state, record)) {
+        if (!rec->install_stop_callback(state, rec)) {
             return;
         }
-        if (state->start_send(record)) {
-            if (record->stop_requested.load(std::memory_order_acquire)) {
-                state->cancel_send(record);
+        if (state->start_send(rec)) {
+            if (rec->stop_requested.load(std::memory_order_acquire)) {
+                state->cancel_send(rec);
             }
         }
     }
@@ -544,16 +545,17 @@ struct __recv_op {
     __recv_op& operator=(const __recv_op&) = delete;
 
     void start() & noexcept {
-        if (__stop_requested(record->rcvr)) {
-            record->complete_stopped();
+        auto rec = record;
+        if (__stop_requested(rec->rcvr)) {
+            rec->complete_stopped();
             return;
         }
-        if (!record->install_stop_callback(state, record)) {
+        if (!rec->install_stop_callback(state, rec)) {
             return;
         }
-        if (state->start_recv(record)) {
-            if (record->stop_requested.load(std::memory_order_acquire)) {
-                state->cancel_recv(record);
+        if (state->start_recv(rec)) {
+            if (rec->stop_requested.load(std::memory_order_acquire)) {
+                state->cancel_recv(rec);
             }
         }
     }

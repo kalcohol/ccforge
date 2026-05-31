@@ -99,6 +99,21 @@ TEST(StaticThreadPoolTest, ConcurrentTasks) {
     EXPECT_EQ(counter.load(), 10);
 }
 
+TEST(StaticThreadPoolTest, WaitFromWorkerReturnsWithoutSelfDeadlock) {
+    forge::static_thread_pool pool(1);
+    auto sch = pool.get_scheduler();
+    std::atomic<bool> reached{false};
+
+    auto result = std::execution::sync_wait(
+        std::execution::schedule(sch) | std::execution::then([&] {
+            pool.wait();
+            reached.store(true, std::memory_order_release);
+        }));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(reached.load(std::memory_order_acquire));
+}
+
 TEST(StaticThreadPoolTest, ScheduleAfterShutdownCompletesStopped) {
     forge::static_thread_pool pool(1);
     auto sch = pool.get_scheduler();

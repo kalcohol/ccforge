@@ -724,25 +724,26 @@ struct __op {
     auto operator=(const __op&) -> __op& = delete;
 
     void start() & noexcept {
+        auto record = record_;
         try {
             if (!state_) {
-                record_->complete_stopped();
+                record->complete_stopped();
                 return;
             }
-            if (__stop_requested(record_->rcvr)) {
-                record_->complete_stopped();
+            if (__stop_requested(record->rcvr)) {
+                record->complete_stopped();
                 return;
             }
-            if (!record_->install_stop_callback(state_, record_)) {
+            if (!record->install_stop_callback(state_, record)) {
                 return;
             }
-            if (state_->start(record_)) {
-                if (record_->stop_requested.load(std::memory_order_acquire)) {
-                    state_->cancel_record(record_);
+            if (state_->start(record)) {
+                if (record->stop_requested.load(std::memory_order_acquire)) {
+                    state_->cancel_record(record);
                 }
             }
         } catch (...) {
-            record_->complete_error(std::current_exception());
+            record->complete_error(std::current_exception());
         }
     }
 

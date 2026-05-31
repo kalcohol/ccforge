@@ -236,7 +236,6 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     template<class R>
     void __deliver_to(R& rcvr) noexcept {
-        std::lock_guard lk{__mtx};
         std::visit([&](auto& result) noexcept {
             using result_type = std::decay_t<decltype(result)>;
             if constexpr (std::is_same_v<result_type, std::monostate>) {

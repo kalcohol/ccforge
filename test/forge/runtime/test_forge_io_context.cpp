@@ -2,6 +2,7 @@
 #include <forge/erased_sender.hpp>
 #include <forge/io.hpp>
 #include "forge_counting_resource.hpp"
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
 #include <cerrno>
@@ -219,6 +220,17 @@ struct stopped_receiver : io_receiver {
     auto get_env() const noexcept -> stop_env {
         return stop_env{source};
     }
+};
+
+struct self_destroying_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+
+    void set_value() && noexcept { context->destroy(); }
+    void set_error(std::exception_ptr) && noexcept { context->destroy(); }
+    void set_stopped() && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
 auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
@@ -616,4 +628,27 @@ TEST(IoContextTest, InvalidFdCompletesWithError) {
     EXPECT_THROW(
         (void)std::execution::sync_wait(ctx.readable(-1)),
         std::system_error);
+}
+
+TEST(IoContextTest, InvalidFdAllowsReceiverToDestroyOperation) {
+    forge::io::context ctx;
+
+    using sender_t = decltype(ctx.readable(-1));
+    using receiver_t = self_destroying_io_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            ctx.readable(-1),
+            self_destroying_io_receiver{&context});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }

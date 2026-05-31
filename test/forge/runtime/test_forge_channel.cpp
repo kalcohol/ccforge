@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include "forge_counting_resource.hpp"
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <atomic>
 #include <chrono>
@@ -105,6 +106,19 @@ struct reenter_receiver {
     template<class E>
     void set_error(E&&) && noexcept {}
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+struct self_destroying_recv_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source = nullptr;
+    forge_test::destroy_context_base* context = nullptr;
+
+    void set_value(int) && noexcept {}
+    void set_stopped() && noexcept { context->destroy(); }
+    template<class E>
+    void set_error(E&&) && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> stop_env { return stop_env{source}; }
 };
 
 } // namespace
@@ -279,6 +293,31 @@ TEST(ChannelTest, PreStartStopTokenCompletesStoppedWithoutEnqueue) {
     std::execution::start(send_op);
 
     EXPECT_TRUE(send_state_ptr->stopped);
+}
+
+TEST(ChannelTest, PreStartStopTokenAllowsReceiverToDestroyOperation) {
+    forge::bounded_channel<int> channel{1};
+    std::inplace_stop_source source;
+    source.request_stop();
+
+    using sender_t = decltype(channel.async_recv());
+    using receiver_t = self_destroying_recv_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            channel.async_recv(),
+            self_destroying_recv_receiver{&source, &context});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }
 
 TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingRecv) {

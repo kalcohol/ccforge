@@ -247,6 +247,9 @@ public:
     }
 
     void wait() noexcept {
+        if (__called_from_worker()) {
+            return;
+        }
         std::unique_lock lk{__mtx_};
         __cv_wait_.wait(lk, [this] {
             return __queue_.empty() && __active_ == 0;
@@ -279,6 +282,16 @@ public:
     }
 
 private:
+    [[nodiscard]] bool __called_from_worker() const noexcept {
+        const auto current = std::this_thread::get_id();
+        for (const auto& thread : __threads_) {
+            if (thread.get_id() == current) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void __run() noexcept {
         while (true) {
             __pool_detail::__task task;

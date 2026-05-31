@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <chrono>
 #include <condition_variable>
@@ -71,6 +72,23 @@ struct pre_stopped_timer_receiver : timer_receiver {
 
 struct stopped_timer_receiver : timer_receiver {
     std::inplace_stop_source* source;
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_stop_token_t{}, source->get_token()));
+    }
+};
+
+struct self_destroying_timer_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source = nullptr;
+    forge_test::destroy_context_base* context = nullptr;
+
+    void set_value() && noexcept { context->destroy(); }
+    void set_error(std::exception_ptr) && noexcept { context->destroy(); }
+    void set_stopped() && noexcept { context->destroy(); }
 
     auto get_env() const noexcept {
         return std::execution::make_env(
@@ -219,6 +237,31 @@ TEST(TimerContextTest, PreStoppedReceiverCompletesStopped) {
     ASSERT_TRUE(wait_done(state));
     EXPECT_FALSE(state.value);
     EXPECT_TRUE(state.stopped);
+}
+
+TEST(TimerContextTest, PreStoppedReceiverMayDestroyOperationInCallback) {
+    forge::timer_context ctx;
+    std::inplace_stop_source source;
+    source.request_stop();
+
+    using sender_t = decltype(ctx.schedule_after(1h));
+    using receiver_t = self_destroying_timer_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            ctx.schedule_after(1h),
+            self_destroying_timer_receiver{&source, &context});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }
 
 TEST(TimerContextTest, StopAfterEnqueueCompletesStoppedBeforeDeadline) {

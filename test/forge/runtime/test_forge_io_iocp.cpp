@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/io.hpp>
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
 #include <chrono>
@@ -178,6 +179,17 @@ struct stopped_receiver : io_receiver {
     auto get_env() const noexcept -> stop_env {
         return stop_env{source};
     }
+};
+
+struct self_destroying_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+
+    void set_value(std::size_t) && noexcept { context->destroy(); }
+    void set_error(std::exception_ptr) && noexcept { context->destroy(); }
+    void set_stopped() && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
 [[nodiscard]] auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
@@ -375,4 +387,30 @@ TEST(IoIocpTest, InvalidHandleCompletesWithError) {
         (void)std::execution::sync_wait(
             ctx.async_read_some(INVALID_HANDLE_VALUE, std::span{buffer})),
         std::system_error);
+}
+
+TEST(IoIocpTest, InvalidHandleAllowsReceiverToDestroyOperation) {
+    forge::io::context ctx;
+    std::array<std::byte, 1> buffer{};
+
+    using sender_t = decltype(ctx.async_read_some(
+        INVALID_HANDLE_VALUE,
+        std::span{buffer}));
+    using receiver_t = self_destroying_io_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(INVALID_HANDLE_VALUE, std::span{buffer}),
+            self_destroying_io_receiver{&context});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }

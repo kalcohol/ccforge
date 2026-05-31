@@ -369,27 +369,32 @@ inline auto __op<R>::make_data(std::shared_ptr<__state> state, R rcvr)
 
 template<class R>
 inline void __op<R>::start() & noexcept {
-    item_ = state_
-        ? state_->make_item()
-        : std::allocate_shared<__item>(
-              std::pmr::polymorphic_allocator<__item>{
-                  default_memory_resource()});
-    item_->deadline = deadline_;
-    item_->complete_value = [data = data_] { data->complete_value(); };
-    item_->complete_stopped = [data = data_] { data->complete_stopped(); };
+    auto data = data_;
+    try {
+        item_ = state_
+            ? state_->make_item()
+            : std::allocate_shared<__item>(
+                  std::pmr::polymorphic_allocator<__item>{
+                      default_memory_resource()});
+        item_->deadline = deadline_;
+        item_->complete_value = [data] { data->complete_value(); };
+        item_->complete_stopped = [data] { data->complete_stopped(); };
 
-    auto env = std::execution::get_env(data_->rcvr_);
-    auto token = std::execution::get_stop_token(env);
-    if (token.stop_requested()) {
-        data_->complete_stopped();
-        return;
-    }
-    if (token.stop_possible()) {
-        item_->stop_token = std::any_stop_token{std::move(token)};
-    }
+        auto env = std::execution::get_env(data->rcvr_);
+        auto token = std::execution::get_stop_token(env);
+        if (token.stop_requested()) {
+            data->complete_stopped();
+            return;
+        }
+        if (token.stop_possible()) {
+            item_->stop_token = std::any_stop_token{std::move(token)};
+        }
 
-    if (!state_ || !state_->enqueue(item_)) {
-        data_->complete_stopped();
+        if (!state_ || !state_->enqueue(item_)) {
+            data->complete_stopped();
+        }
+    } catch (...) {
+        data->complete_stopped();
     }
 }
 
