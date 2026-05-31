@@ -4,6 +4,8 @@
 计划，也不向 `namespace std` 增加名字。目标是让 Forge 在
 `std::execution` backport 之上，提供一组小而实用的运行时原语，服务
 结构化并发、消息通路、推理 runtime、设备/加速卡会话和资源生命周期管理。
+当前稳定交付基线和自循环验收规则见
+[`forge stability baseline`](forge-stability-baseline.md)。
 
 ## 当前基线
 
