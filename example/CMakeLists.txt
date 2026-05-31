@@ -199,6 +199,12 @@ if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
     if(FORGE_EXAMPLE_TBB_LIBRARY)
         target_link_libraries(forge_io_read_write PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
+
+    add_executable(forge_io_typed_error forge_io_typed_error_example.cpp)
+    target_link_libraries(forge_io_typed_error PRIVATE forge::forge Threads::Threads)
+    if(FORGE_EXAMPLE_TBB_LIBRARY)
+        target_link_libraries(forge_io_typed_error PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+    endif()
 endif()
 
 if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
@@ -313,6 +319,7 @@ set(FORGE_EXAMPLE_SMOKE_TARGETS
     forge_io_readiness
     forge_io_pipeline
     forge_io_read_write
+    forge_io_typed_error
     forge_io_iocp
     forge_accel_copy
     forge_accel_pipeline

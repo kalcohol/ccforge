@@ -182,6 +182,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - `example/forge_io_readiness_example.cpp`
 - `example/forge_io_read_write_example.cpp`
+- `example/forge_io_typed_error_example.cpp`
 - `example/forge_io_iocp_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
 
@@ -240,6 +241,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_type_erased_boundary_example.cpp`
+- `example/forge_io_typed_error_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 
