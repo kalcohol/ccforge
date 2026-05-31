@@ -117,6 +117,47 @@ TEST(AccelEventTest, WaitEventStopsWhenContextStops) {
     EXPECT_FALSE(state->error);
 }
 
+TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
+    forge::accel::context ctx{forge::accel::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::event ev;
+    auto wait_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+
+    auto wait_sender = forge::accel::wait_event(q, ev);
+    auto wait_op = std::execution::connect(
+        std::move(wait_sender),
+        async_receiver{wait_state});
+    std::execution::start(wait_op);
+
+    EXPECT_FALSE(wait_done_for(wait_state, 50ms));
+    EXPECT_FALSE(ev.ready());
+
+    auto record_sender = forge::accel::record_event(q, ev);
+    auto record_op = std::execution::connect(
+        std::move(record_sender),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    EXPECT_FALSE(wait_done_for(record_state, 50ms));
+    EXPECT_FALSE(ev.ready());
+
+    ctx.request_stop();
+
+    ASSERT_TRUE(wait_done(wait_state));
+    ASSERT_TRUE(wait_done(record_state));
+    EXPECT_FALSE(wait_state->value);
+    EXPECT_TRUE(wait_state->stopped);
+    EXPECT_FALSE(wait_state->error);
+    EXPECT_FALSE(record_state->value);
+    EXPECT_TRUE(record_state->stopped);
+    EXPECT_FALSE(record_state->error);
+    EXPECT_FALSE(ev.ready());
+}
+
 TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
     forge::accel::context ctx{forge::accel::context_options{
         .thread_count = 1,

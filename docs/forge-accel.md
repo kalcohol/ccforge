@@ -153,7 +153,8 @@ std::execution::sync_wait(forge::accel::fence(q));
 - `fence(q)` 是 queue 上的 no-op command，可作为“之前已接受 command 已到达”的
   sender 边界。
 
-这些 API 只描述 portable mock backend 的单 queue completion boundary。它们不暴露
+这些 API 只描述 portable mock backend 的 completion boundary，主要用于“已经按顺序
+record 后再 wait”的 queue 边界，或跨线程/跨 context 的轻量同步 proof。它们不暴露
 native CUDA/HIP/SYCL event handle，不建模跨 queue dependency graph，也不检测
 dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 `record_event` 前面，该 queue 会等待到 event ready 或 context stop；调用方应按
