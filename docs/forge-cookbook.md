@@ -25,17 +25,19 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
    组合成一个受控 pipeline。
 6. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
-7. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
-8. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-9. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
+7. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender
+   边界，并用 `forge::wait_result` 消费。
+8. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
+9. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
+10. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
    device buffer。
-10. `example/forge_accel_message_device_example.cpp`：device session 与 message command
+11. `example/forge_accel_message_device_example.cpp`：device session 与 message command
     形状。
-11. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+12. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
     error。
-12. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+13. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-13. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+14. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
@@ -151,7 +153,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - pool 的 queue node 和 queued task callable record 受 resource 控制；
 - channel、strand、timer、accel command/pending records 的受控路径使用传入 resource；
-- `async_scope` op-state、strand runner keepalive node 和部分 `std::function` target 分配仍是已知未完全受控路径。
+- `async_scope` op-state、strand runner keepalive node 和 timer callback
+  `std::function` target 分配仍是已知未完全受控路径。
 
 参考：
 
