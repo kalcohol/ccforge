@@ -120,14 +120,14 @@ scripts/verify-install-package.sh
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [Native handoff](docs/native-handoff.md)
-- [Testing and verification](docs/testing.md)
-- [`forge::` utilities](docs/forge-utilities.md)
-- [Cookbook](docs/forge-cookbook.md)
+- [ドキュメント索引](docs/README.md)
+- [Forge Cookbook](docs/forge-cookbook.md)
+- [Backport Notes](docs/backports/)
+- [`forge::` Utilities](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
 - [`forge::accel`](docs/forge-accel.md)
-- [Backport notes](docs/backports/)
+- [Native Handoff](docs/native-handoff.md)
+- [Testing and Verification](docs/testing.md)
 
 ## ライセンス
 
