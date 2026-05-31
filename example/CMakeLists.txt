@@ -257,6 +257,12 @@ if(FORGE_HAS_FORGE_ACCEL_BACKEND)
     if(FORGE_EXAMPLE_TBB_LIBRARY)
         target_link_libraries(forge_accel_typed_error PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
+
+    add_executable(forge_reference_runtime forge_reference_runtime_example.cpp)
+    target_link_libraries(forge_reference_runtime PRIVATE forge::forge Threads::Threads)
+    if(FORGE_EXAMPLE_TBB_LIBRARY)
+        target_link_libraries(forge_reference_runtime PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
+    endif()
 endif()
 endif()
 
@@ -333,6 +339,7 @@ set(FORGE_EXAMPLE_SMOKE_TARGETS
     forge_accel_staging_buffer
     forge_accel_message_device
     forge_accel_typed_error
+    forge_reference_runtime
     forge_inference_runtime_sketch
     execution_coro
     forge_task

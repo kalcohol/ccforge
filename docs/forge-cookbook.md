@@ -39,6 +39,9 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
    continuation。
 14. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
+15. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+    pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
+    errors 和 graceful drain 如何放在同一个 reference runtime 中。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
@@ -228,6 +231,35 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
+- `example/forge_inference_runtime_sketch.cpp`
+
+## recipe: reference runtime service
+
+适用场景：把 CPU runtime、bounded message queue、accelerator-like command queue、
+resource policy 和序列化 session state 组合成一个拥有型服务对象。这个 recipe 是
+pattern，不是新的 framework API；它展示在用户代码里如何把已有原语拼成清晰的
+runtime 边界。
+
+使用：
+
+- `forge::resource_context` 拥有 worker；
+- `forge::bounded_channel<Request>` 表达 bounded ingress；
+- `forge::bounded_channel<Response>` 表达 bounded response path；
+- `forge::accel::context` / `queue` / `device_buffer` 表达 device-like work；
+- `forge::strand` 序列化统计或 session state；
+- `forge::wait_result` 消费 opt-in typed accel errors。
+
+关键点：
+
+- service 析构可以阻塞，因为它显式拥有 runtime/context；
+- request channel `close()` 后，worker 会 drain 已接受请求并关闭 response channel；
+- response channel capacity 小于 request 数时，consumer 必须继续 drain response，
+  这正是 backpressure 的教学点；
+- typed errors 保留在 command boundary，默认 surface 不需要扩大成全局错误体系。
+
+参考：
+
+- `example/forge_reference_runtime_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
 ## recipe: type erase at boundaries
