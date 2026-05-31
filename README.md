@@ -138,4 +138,4 @@ including NVIDIA/stdexec, VcDevel/std-simd, Kokkos stdBLAS, and ncnn.
 
 ## License
 
-MIT License. See the source headers for the license text.
+MIT License. See [LICENSE](LICENSE).
