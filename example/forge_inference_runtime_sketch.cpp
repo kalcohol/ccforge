@@ -38,10 +38,13 @@ struct request {
 
 int main() {
     std::array<std::byte, 16384> storage{};
-    std::pmr::monotonic_buffer_resource arena{
+    std::pmr::monotonic_buffer_resource upstream{
         storage.data(),
         storage.size(),
         std::pmr::new_delete_resource()};
+    std::pmr::synchronized_pool_resource arena{
+        std::pmr::pool_options{},
+        &upstream};
 
     forge::resource_context runtime{forge::resource_context_options{
         .thread_count = 2,

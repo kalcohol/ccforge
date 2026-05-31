@@ -31,11 +31,14 @@
 #include <vector>
 
 int main() {
-    std::array<std::byte, 65536> storage{};
-    std::pmr::monotonic_buffer_resource arena{
+    std::array<std::byte, 1024 * 1024> storage{};
+    std::pmr::monotonic_buffer_resource upstream{
         storage.data(),
         storage.size(),
         std::pmr::null_memory_resource()};
+    std::pmr::synchronized_pool_resource arena{
+        std::pmr::pool_options{},
+        &upstream};
 
     forge::resource_context ctx{forge::resource_context_options{
         .thread_count = 2,

@@ -32,7 +32,12 @@ Accelerator-like mock backend 使用独立头：
 
 - `forge::resource_policy`：V1 资源策略词汇，当前只包含非拥有的 `std::pmr::memory_resource*`。`default_memory_resource()` 返回 `std::pmr::get_default_resource()`，`normalize_memory_resource(ptr)` 会把 `nullptr` 归一为默认 resource。
 
-资源策略不拥有 `memory_resource`；调用方必须保证传入的 resource 活得比使用它的 runtime primitive 更久。V1 只控制明确接入的路径，不承诺全局零分配：
+资源策略不拥有 `memory_resource`；调用方必须保证传入的 resource 活得比使用它的
+runtime primitive 更久。如果同一个 resource 会被多个 runtime primitive 或多个
+worker 线程共享，resource 本身也必须是线程安全的，例如使用
+`std::pmr::synchronized_pool_resource`；不要把裸
+`std::pmr::monotonic_buffer_resource` 同时交给多线程 runtime 路径。V1 只控制明确接入
+的路径，不承诺全局零分配：
 
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
 - `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和 send/recv record control block。

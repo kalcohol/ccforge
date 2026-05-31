@@ -56,10 +56,11 @@ struct runtime_stats {
 class reference_runtime {
 public:
     reference_runtime()
-        : arena_(
+        : upstream_(
               storage_.data(),
               storage_.size(),
               std::pmr::new_delete_resource())
+        , arena_(std::pmr::pool_options{}, &upstream_)
         , runtime_(forge::resource_context_options{
               .thread_count = 2,
               .queue_capacity = 32,
@@ -223,7 +224,8 @@ private:
     }
 
     std::array<std::byte, 32768> storage_{};
-    std::pmr::monotonic_buffer_resource arena_;
+    std::pmr::monotonic_buffer_resource upstream_;
+    std::pmr::synchronized_pool_resource arena_;
     forge::resource_context runtime_;
     forge::accel::context accel_;
     forge::bounded_channel<inference_request> requests_;

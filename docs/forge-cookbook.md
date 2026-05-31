@@ -166,7 +166,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 使用：
 
-- `std::pmr::monotonic_buffer_resource` 或自定义 `std::pmr::memory_resource`
+- `std::pmr::synchronized_pool_resource`，或其他适合跨线程访问的自定义
+  `std::pmr::memory_resource`
 - `static_thread_pool_options{.memory = resource}`
 - `bounded_channel_options{.memory = resource}`
 - `strand_options{.memory = resource}`
@@ -177,6 +178,9 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 
 - pool 的 queue node 和 queued task callable record 受 resource 控制；
 - channel、strand、timer、accel command/pending records 的受控路径使用传入 resource；
+- 如果同一个 resource 会被多个 runtime primitive 或 worker 线程共享，不要直接使用裸
+  `std::pmr::monotonic_buffer_resource`；可把固定 buffer 放在 monotonic upstream
+  后面，再由 `std::pmr::synchronized_pool_resource` 作为对外 resource；
 - `async_scope` op-state、strand runner keepalive node 和 timer callback
   `std::function` target 分配仍是已知未完全受控路径。
 

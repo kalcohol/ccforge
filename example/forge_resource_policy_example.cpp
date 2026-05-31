@@ -29,11 +29,14 @@
 #include <tuple>
 
 int main() {
-    std::array<std::byte, 65536> storage{};
-    std::pmr::monotonic_buffer_resource arena{
+    std::array<std::byte, 1024 * 1024> storage{};
+    std::pmr::monotonic_buffer_resource upstream{
         storage.data(),
         storage.size(),
         std::pmr::null_memory_resource()};
+    std::pmr::synchronized_pool_resource arena{
+        std::pmr::pool_options{},
+        &upstream};
 
     forge::static_thread_pool pool{forge::static_thread_pool_options{
         .thread_count = 1,
