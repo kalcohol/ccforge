@@ -26,7 +26,6 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -330,7 +329,6 @@ struct __sender_state_model final : __sender_state_base<CS> {
         : sender_(static_cast<Sender&&>(sender)) {}
 
     auto connect(__receiver<CS> rcvr) -> std::unique_ptr<__operation_base> override {
-        std::lock_guard lk{mtx_};
         using op_t = decltype(std::execution::connect(
             std::declval<S&>(),
             std::declval<__receiver<CS>>()));
@@ -341,7 +339,6 @@ struct __sender_state_model final : __sender_state_base<CS> {
             });
     }
 
-    std::mutex mtx_;
     S sender_;
 };
 

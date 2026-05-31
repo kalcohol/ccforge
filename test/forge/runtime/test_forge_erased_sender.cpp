@@ -424,6 +424,46 @@ using stopped_cs =
 using stop_probe_cs =
     std::execution::completion_signatures<std::execution::set_value_t(bool, bool)>;
 
+struct reentrant_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    forge::erased_sender<zero_cs>** self = nullptr;
+    bool* reentered = nullptr;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> zero_cs {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+
+        explicit op(R r) : rcvr(std::move(r)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+
+        void start() & noexcept { std::execution::set_value(std::move(rcvr)); }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        if (self != nullptr && *self != nullptr && reentered != nullptr && !*reentered) {
+            *reentered = true;
+            auto nested_state = std::make_shared<observed_state>();
+            auto nested = std::execution::connect(**self, zero_receiver{nested_state});
+            (void)nested;
+        }
+        return op<R>{std::move(rcvr)};
+    }
+};
+
 static_assert(std::execution::sender<forge::erased_sender<int_cs>>);
 static_assert(!std::copy_constructible<forge::erased_sender<int_cs>>);
 static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_sender>);
@@ -539,6 +579,20 @@ TEST(ErasedSenderTest, AcceptsMoveOnlySourceSender) {
 
     EXPECT_EQ(state->int_values, 1);
     EXPECT_EQ(state->int_value, 7);
+}
+
+TEST(ErasedSenderTest, SourceConnectCanReenterSameErasedSender) {
+    forge::erased_sender<zero_cs>* self = nullptr;
+    bool reentered = false;
+    forge::erased_sender<zero_cs> sender{reentrant_connect_sender{&self, &reentered}};
+    self = &sender;
+    auto state = std::make_shared<observed_state>();
+
+    auto op = std::execution::connect(sender, zero_receiver{state});
+    std::execution::start(op);
+
+    EXPECT_TRUE(reentered);
+    EXPECT_EQ(state->zero_values, 1);
 }
 
 TEST(ErasedSenderTest, EmptyConnectThrows) {
