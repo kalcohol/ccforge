@@ -59,9 +59,12 @@ scripts/verify-windows-msvc-ssh.sh
 
 如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
-关键 Forge gate 状态和最终 CTest 数量。它还会做 configure-only gate 检查：
-Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend，
-`FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。可设置
+关键 Forge gate 状态和最终 CTest 数量。它还会做 gate 注册检查：
+Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend 并注册
+IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/examples；
+`FORGE_ENABLE_FORGE_ACCEL=AUTO` 应注册 accel tests/examples，
+`FORGE_ENABLE_FORGE_ACCEL=OFF` 应注册 0 个 accel tests/examples。脚本避免使用单个
+硬编码全局 CTest 数量作为验收标准，因为测试总数会随覆盖增长而变化。可设置
 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。默认 smoke 也会执行
 install package consumer check；可设置 `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1`
 临时跳过。
