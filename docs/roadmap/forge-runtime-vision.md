@@ -96,6 +96,13 @@ constraints, not published plugin ABIs.
   子集；
 - 小而明确的 ergonomic helpers，前提是能复用现有 runtime/lifetime 模型。
 
+Reference runtime helpers remain deferred. The current reference examples prove
+composition patterns, but they do not yet repeat a small enough public shape to
+freeze. If a helper becomes justified later, prefer a lifecycle-only utility
+such as `service_scope` or `owned_service` that exposes scheduler/spawn/close/
+request_stop/shutdown/wait. Avoid `serving_runtime`, `inference_runtime`, and
+any helper that owns IO, accel, tensor, or model-serving policy.
+
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
 - 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 的 production hardening beyond

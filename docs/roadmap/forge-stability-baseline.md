@@ -111,7 +111,7 @@ Use this checklist after each taskbook round.
 | IO lifecycle is explicit | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Needs periodic cancellation/lifetime re-audit |
 | Accel lifecycle is explicit | `docs/forge-accel.md`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Needs periodic event/buffer/session re-audit |
 | Typed-error boundaries are usable | `forge_wait_result`, `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | `wait_result` helper in place; review new typed surfaces as they appear |
-| Examples teach composition | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp`, `^example_` smoke tests | Reference runtime pattern in place; needs periodic teaching pass |
+| Examples teach composition | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp`, `^example_` smoke tests | Reference runtime pattern in place; public helper intentionally deferred until repeated lifecycle shape appears |
 | Deferred large backends stay explicit | `docs/roadmap/forge-runtime-vision.md`, `docs/roadmap/forge-backend-proof-policy.md`, backend SPI sketches | In place |
 
 A round is complete when every changed row has concrete evidence: a test name,

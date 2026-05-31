@@ -272,6 +272,11 @@ runtime 边界。
 
 关键点：
 
+- 当前保持 example-only。`inference_runtime_sketch` 和 `reference_runtime_example`
+  还没有重复到足以冻结一个新的 public helper；
+- 如果未来新增 helper，它应是小的 lifecycle utility，例如 `service_scope` 或
+  `owned_service`，只封装 scheduler/spawn/close/request_stop/shutdown/wait，
+  不内置 IO、accel、tensor 或 serving policy；
 - service 析构可以阻塞，因为它显式拥有 runtime/context；
 - request channel `close()` 后，worker 会 drain 已接受请求并关闭 response channel；
 - response channel capacity 小于 request 数时，consumer 必须继续 drain response，
