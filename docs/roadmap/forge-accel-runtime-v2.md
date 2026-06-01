@@ -108,6 +108,15 @@ Acceptance:
 
 ## phase 2: memory model
 
+Status: implemented for the dependency-free mock/reference backend. Portable
+`memory_kind` vocabulary is visible at the `forge::accel` layer. The mock backend
+tracks host/device buffer memory kinds, exposes byte buffers, rejects invalid
+host/device kind combinations, and simulates `cached_device` coherence with
+`flush` / `invalidate` command senders. This is metadata and executable runtime
+proof only; it does not allocate real pinned, mapped, managed, or vendor device
+memory. No separate alignment API is added in this phase; owning buffers use the
+normal alignment of their `T` or `std::byte` storage.
+
 Target:
 
 - Add portable memory vocabulary for host, pinned host, mapped/shared host,
@@ -115,8 +124,7 @@ Target:
   distinction is useful.
 - Add explicit coherence operations such as flush and invalidate for memory
   kinds that need them.
-- Add byte-oriented buffer support, alignment, and owned command storage where
-  needed.
+- Add byte-oriented buffer support and owned command storage where needed.
 
 Acceptance:
 
@@ -124,7 +132,7 @@ Acceptance:
 - Copy commands validate memory categories and sizes.
 - Docs state which memory is owned, borrowed, pinned, mapped, cached, or mock.
 - Examples show staging, pinned-like host buffers, cached-memory flush/invalidate
-  proof, and size/alignment error handling.
+  proof, and size/coherence error handling.
 
 ## phase 3: queue and event model
 

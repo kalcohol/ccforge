@@ -98,7 +98,9 @@ Non-owning views and lightweight handles should not block in destructors.
   `request_stop()` stops pending queued commands where possible; `shutdown()`
   combines both. `wait()` drains accepted command work, and returns immediately
   if called from an accel command completion to avoid self-deadlock. Host spans
-  are borrowed, while `mock::device_buffer<T>` owns mock device storage. Receiver stop
+  are borrowed, while `mock::host_buffer<T>` / `mock::device_buffer<T>` own mock
+  storage; memory kinds are portable metadata rather than real vendor
+  allocations. Receiver stop
   tokens are observed before command acceptance; accepted commands are
   cancelled by context/session stop, not by per-operation receiver stop in v1.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env

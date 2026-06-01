@@ -119,6 +119,7 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
                 forge_accel_copy
                 forge_accel_pipeline
                 forge_accel_event
+                forge_accel_memory
                 forge_accel_staging_buffer
                 forge_accel_message_device
                 forge_accel_typed_error)

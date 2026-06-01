@@ -289,6 +289,8 @@ Examples 必须从“能编译”升级为“能教会人怎么组合”：
 - `forge_bounded_pipeline_example.cpp`：thread pool + strand + channel + scope；
 - `forge_io_readiness_example.cpp`：fd readiness sender + resource lifetime；
 - `forge_accel_copy_example.cpp`：host/device copy + CPU continuation；
+- `forge_accel_memory_example.cpp`：memory kinds、byte buffer 和 cached-memory
+  `flush` / `invalidate` proof；
 - `forge_accel_pipeline_example.cpp`：H2D -> kernel -> D2H -> CPU postprocess；
 - `forge_accel_message_device_example.cpp`：device session + message command；
 - `forge_inference_runtime_sketch.cpp`：请求 channel、strand 顺序控制、accel queue、

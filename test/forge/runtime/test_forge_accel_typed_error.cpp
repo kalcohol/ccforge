@@ -137,6 +137,31 @@ TEST(AccelTypedErrorTest, CopySizeMismatchReportsTypedError) {
     EXPECT_TRUE(state->error.cause);
 }
 
+TEST(AccelTypedErrorTest, CachedMemoryCoherenceReportsTypedError) {
+    forge::accel::mock::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::mock::device_buffer<int> device{
+        ctx,
+        2,
+        forge::accel::memory_kind::cached_device};
+    std::vector<int> input{1, 2};
+    std::vector<int> output(2);
+    auto state = std::make_shared<typed_state>();
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::copy_to_device(q, device, std::span<const int>{input})).has_value());
+
+    auto sender = forge::accel::mock::copy_to_host_typed(
+        q,
+        std::span<int>{output},
+        device);
+    auto op = std::execution::connect(std::move(sender), typed_receiver{state});
+    std::execution::start(op);
+
+    expect_error_kind(state, forge::accel::error_kind::coherence_required);
+    EXPECT_TRUE(state->error.cause);
+}
+
 TEST(AccelTypedErrorTest, InvalidEventReportsTypedError) {
     forge::accel::mock::context ctx;
     auto q = ctx.get_queue();

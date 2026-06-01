@@ -55,7 +55,9 @@ enum class error_kind {
     unknown,
     invalid_context,
     invalid_buffer,
+    invalid_memory_kind,
     size_mismatch,
+    coherence_required,
     invalid_event,
     command_failed,
     user_exception

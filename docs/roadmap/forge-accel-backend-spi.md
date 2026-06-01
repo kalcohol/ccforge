@@ -18,8 +18,11 @@ The stable portable vocabulary is intentionally small:
 - owning backend context, currently `forge::accel::mock::context`;
 - lightweight device and queue handles derived from the context;
 - optional `device_session` for command/response style devices;
-- owning host and device buffers;
+- owning host and device buffers with portable `memory_kind` metadata;
+- byte-oriented host and device buffers for command/model IO proof;
 - borrowed host spans for copy commands;
+- explicit `flush` / `invalidate` coherence command boundaries for cached-like
+  memory proofs;
 - minimal event / record / wait / fence completion boundary;
 - command senders for H2D, D2H, D2D, generic `submit`, and message submit.
 
@@ -51,6 +54,10 @@ The current public contract is borrowed-by-default:
 - `host_buffer<T>` and `device_buffer<T>` must outlive command completion;
 - moving a buffer object while a command that captured it is pending is a caller
   error;
+- `memory_kind` values are portable metadata unless a backend explicitly
+  documents stronger native allocation behavior;
+- cached-like memory requires explicit command-boundary coherence operations
+  when the backend documents that requirement;
 - `event` is a shared completion marker, not a dependency graph node.
 
 A future backend may add stronger owning command packets, pinned host buffers, or

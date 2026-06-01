@@ -36,9 +36,12 @@ Future backend entry rules are tracked in the
 - `forge::accel::mock::queue`：轻量 queue handle。当前 mock backend 单 queue 按 FIFO
   串行执行 command。
 - `forge::accel::mock::host_buffer<T>`：由 context resource 分配的 owning host staging
-  storage。它不是 pinned memory，只固定 staging buffer 的所有权和分配来源。
-- `forge::accel::mock::device_buffer<T>`：拥有 mock device storage。当前 mock backend 要求
-  `T` trivially copyable。
+  storage。可标注为 `host`、`pinned_host`、`mapped_host` 或 `managed` kind，但这些都是
+  mock metadata，不会调用 OS/vendor pinned allocation。
+- `forge::accel::mock::device_buffer<T>`：拥有 mock device storage。可标注为 `device`、
+  `cached_device` 或 `managed` kind。当前 mock backend 要求 `T` trivially copyable。
+- `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`：byte-oriented owning
+  buffers，用于 command packet、model IO 和不想先引入 tensor shape 的 proof。
 
 `context_options` 可配置线程数、command queue 容量和 resource：
 
@@ -61,6 +64,8 @@ Mock command sender：
 forge::accel::mock::copy_to_device(q, device, std::span<const T>{host});
 forge::accel::mock::copy_to_host(q, std::span<T>{host}, device);
 forge::accel::mock::copy_device_to_device(q, dst, src);
+forge::accel::mock::flush(q, cached_device);
+forge::accel::mock::invalidate(q, cached_device);
 forge::accel::mock::submit(q, [&] {
     for (auto& value : device.span()) {
         value *= 2;
@@ -96,6 +101,8 @@ closed error type:
 forge::accel::mock::copy_to_device_typed(q, device, std::span<const T>{host});
 forge::accel::mock::copy_to_host_typed(q, std::span<T>{host}, device);
 forge::accel::mock::copy_device_to_device_typed(q, dst, src);
+forge::accel::mock::flush_typed(q, cached_device);
+forge::accel::mock::invalidate_typed(q, cached_device);
 forge::accel::mock::submit_typed(q, callable);
 forge::accel::mock::submit_message_typed(session, request, response, handler);
 forge::accel::mock::record_event_typed(q, ev);
@@ -114,8 +121,9 @@ std::execution::completion_signatures<
 
 `forge::accel::error` carries:
 
-- `kind`：`invalid_buffer`、`size_mismatch`、`invalid_event`、`command_failed`、
-  `user_exception`、`unknown`，以及为 future backend 保留的 `invalid_context`；
+- `kind`：`invalid_buffer`、`invalid_memory_kind`、`size_mismatch`、
+  `coherence_required`、`invalid_event`、`command_failed`、`user_exception`、`unknown`，
+  以及为 future backend 保留的 `invalid_context`；
 - `status`：`submit_message_typed` 返回 `command_status::failed` 时保留 command
   status；
 - `cause`：原始 `std::exception_ptr`，用于需要重新抛出或记录底层诊断的边界。
@@ -136,6 +144,32 @@ forge::erased_sender<command> op{
     forge::accel::mock::copy_to_device_typed(q, buffer, host)};
 auto result = forge::wait_result(std::move(op));
 ```
+
+## memory kinds and coherence proof
+
+`memory_kind` 是 portable vocabulary。Mock backend 只用它来固定可测试的工程语义：
+
+- `host`：普通 owning host staging buffer；
+- `pinned_host`：pinned-like staging metadata，用于让示例表达“给设备传输准备的 host
+  buffer”，但不做真实 pin；
+- `mapped_host`：mapped/shared-like host metadata，不暴露 native mapping；
+- `device`：普通 mock device storage；
+- `cached_device`：需要显式 coherence operation 的 mock device storage；
+- `managed`：host/device 两侧都允许构造的 shared-like metadata。
+
+错误的构造组合会抛出 `operation_error{invalid_memory_kind}`。例如 host buffer 不能用
+`device` kind，device buffer 不能用 `pinned_host` kind。
+
+`cached_device` 用来捕捉常见 runtime 边界错误：
+
+- H2D 写入 cached device buffer 后，需要先 `flush(q, buffer)`，再从 host 侧
+  `copy_to_host` / 作为 D2D source 读取；
+- D2D 写入 cached device buffer 后，需要先 `invalidate(q, buffer)`，再从 host 侧或
+  另一个 copy command 读取。
+
+这些规则是 mock proof，不是硬件 cache model。Direct `device_buffer<T>::span()` 是
+raw mock storage access，适合 examples 和 `submit` callable；coherence 检查发生在
+copy command 边界。用户仍需保证 buffer 不会在 pending command 期间被移动或销毁。
 
 ## lifecycle
 
@@ -196,6 +230,8 @@ handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`r
 - `host_buffer<T>` 是 owning host storage，可用 `span()` 传给 copy command；它同样必须
   活到相关 command completion。
 - `device_buffer<T>` 必须活到使用它的 command completion。
+- Buffer `kind()` 只是 portable metadata。`pinned_host`、`mapped_host`、`managed` 和
+  `cached_device` 不声明真实 OS/vendor memory behavior。
 - command 捕获的是 buffer object 地址和 borrowed span。command pending 期间移动或销毁
   参与的 `mock::host_buffer<T>` / `mock::device_buffer<T>` / host span 是调用方错误；
   当前 mock backend 不尝试
@@ -237,6 +273,7 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`

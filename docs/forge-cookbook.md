@@ -31,15 +31,17 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
 9. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
 10. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
    device buffer。
-11. `example/forge_accel_message_device_example.cpp`：device session 与 message command
+11. `example/forge_accel_memory_example.cpp`：memory kinds、byte buffers、cached-memory
+    `flush` / `invalidate` proof 和 typed coherence error。
+12. `example/forge_accel_message_device_example.cpp`：device session 与 message command
     形状。
-12. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+13. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
     error。
-13. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+14. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-14. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+15. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-15. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+16. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors 和 graceful drain 如何放在同一个 reference runtime 中。
 
@@ -69,9 +71,10 @@ For accelerator-shaped work without vendor SDKs:
 
 1. `example/forge_accel_copy_example.cpp`
 2. `example/forge_accel_event_example.cpp`
-3. `example/forge_accel_pipeline_example.cpp`
-4. `example/forge_accel_message_device_example.cpp`
-5. `example/forge_inference_runtime_sketch.cpp`
+3. `example/forge_accel_memory_example.cpp`
+4. `example/forge_accel_pipeline_example.cpp`
+5. `example/forge_accel_message_device_example.cpp`
+6. `example/forge_inference_runtime_sketch.cpp`
 
 These paths intentionally stay example-first. The detailed contracts live in
 the feature docs, so the cookbook remains a map rather than a duplicated API
@@ -90,7 +93,7 @@ reference.
 | type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
-| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
+| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
 | device/session message command | `example/forge_accel_message_device_example.cpp` |
 | reference runtime pattern | `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp` |
 
@@ -260,7 +263,9 @@ reference.
 - `forge::accel::mock::context`
 - `forge::accel::mock::host_buffer<T>`
 - `forge::accel::mock::device_buffer<T>`
+- `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
+- `flush` / `invalidate` for cached-memory proof
 - `submit(queue, callable)`
 - `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
   boundary errors
@@ -274,6 +279,8 @@ reference.
 - host spans 是 borrowed，`device_buffer` 拥有 mock device storage；
 - `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
   vendor pinned memory；
+- `memory_kind` 是 portable metadata；`cached_device` 用 `flush` / `invalidate`
+  模拟 command-boundary coherence error；
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
 - `device_session` 是 vendor-neutral message-command proof，不暴露真实设备 handle。
 - 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
@@ -283,6 +290,7 @@ reference.
 
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`

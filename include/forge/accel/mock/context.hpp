@@ -64,6 +64,10 @@ template<class T>
 class host_buffer;
 template<class T>
 class device_buffer;
+template<class T>
+auto flush(queue&, device_buffer<T>&);
+template<class T>
+auto invalidate(queue&, device_buffer<T>&);
 
 namespace __detail {
 
@@ -465,6 +469,10 @@ private:
     friend auto copy_to_host(queue&, std::span<T>, const device_buffer<T>&);
     template<class T>
     friend auto copy_device_to_device(queue&, device_buffer<T>&, const device_buffer<T>&);
+    template<class T>
+    friend auto flush(queue&, device_buffer<T>&);
+    template<class T>
+    friend auto invalidate(queue&, device_buffer<T>&);
     template<class F>
     friend auto submit(queue&, F&&);
     friend auto record_event(queue&, event);
@@ -605,10 +613,19 @@ class host_buffer {
 public:
     using value_type = T;
 
-    host_buffer(context& ctx, std::size_t size)
+    host_buffer(
+        context& ctx,
+        std::size_t size,
+        memory_kind kind = memory_kind::host)
         : data_(std::pmr::polymorphic_allocator<T>{
               ctx.state_->memory_resource()})
+        , kind_(kind)
     {
+        if (!__is_host_kind(kind_)) {
+            throw operation_error{
+                error_kind::invalid_memory_kind,
+                "forge::accel::mock::host_buffer: invalid memory kind"};
+        }
         data_.resize(size);
     }
 
@@ -630,8 +647,20 @@ public:
         return std::span<const T>{data_.data(), data_.size()};
     }
 
+    [[nodiscard]] auto kind() const noexcept -> memory_kind {
+        return kind_;
+    }
+
 private:
+    [[nodiscard]] static auto __is_host_kind(memory_kind kind) noexcept -> bool {
+        return kind == memory_kind::host ||
+            kind == memory_kind::pinned_host ||
+            kind == memory_kind::mapped_host ||
+            kind == memory_kind::managed;
+    }
+
     std::pmr::vector<T> data_;
+    memory_kind kind_ = memory_kind::host;
 };
 
 template<class T>
@@ -642,10 +671,19 @@ class device_buffer {
 public:
     using value_type = T;
 
-    device_buffer(context& ctx, std::size_t size)
+    device_buffer(
+        context& ctx,
+        std::size_t size,
+        memory_kind kind = memory_kind::device)
         : data_(std::pmr::polymorphic_allocator<T>{
               ctx.state_->memory_resource()})
+        , kind_(kind)
     {
+        if (!__is_device_kind(kind_)) {
+            throw operation_error{
+                error_kind::invalid_memory_kind,
+                "forge::accel::mock::device_buffer: invalid memory kind"};
+        }
         data_.resize(size);
     }
 
@@ -667,16 +705,72 @@ public:
         return std::span<const T>{data_.data(), data_.size()};
     }
 
+    [[nodiscard]] auto kind() const noexcept -> memory_kind {
+        return kind_;
+    }
+
+    [[nodiscard]] bool needs_flush() const noexcept {
+        return needs_flush_;
+    }
+
+    [[nodiscard]] bool needs_invalidate() const noexcept {
+        return needs_invalidate_;
+    }
+
 private:
     template<class U>
     friend auto copy_to_device(queue&, device_buffer<U>&, std::span<const U>);
     template<class U>
+    friend auto copy_to_device(queue&, device_buffer<U>&, const host_buffer<U>&);
+    template<class U>
     friend auto copy_to_host(queue&, std::span<U>, const device_buffer<U>&);
     template<class U>
+    friend auto copy_to_host(queue&, host_buffer<U>&, const device_buffer<U>&);
+    template<class U>
     friend auto copy_device_to_device(queue&, device_buffer<U>&, const device_buffer<U>&);
+    template<class U>
+    friend auto flush(queue&, device_buffer<U>&);
+    template<class U>
+    friend auto invalidate(queue&, device_buffer<U>&);
+
+    [[nodiscard]] static auto __is_device_kind(memory_kind kind) noexcept -> bool {
+        return kind == memory_kind::device ||
+            kind == memory_kind::cached_device ||
+            kind == memory_kind::managed;
+    }
+
+    [[nodiscard]] auto __is_cached() const noexcept -> bool {
+        return kind_ == memory_kind::cached_device;
+    }
+
+    void __mark_host_write() noexcept {
+        if (__is_cached()) {
+            needs_flush_ = true;
+            needs_invalidate_ = false;
+        }
+    }
+
+    void __mark_device_write() noexcept {
+        if (__is_cached()) {
+            needs_invalidate_ = true;
+            needs_flush_ = false;
+        }
+    }
+
+    void __require_readable(const char* what) const {
+        if (__is_cached() && (needs_flush_ || needs_invalidate_)) {
+            throw operation_error{error_kind::coherence_required, what};
+        }
+    }
 
     std::pmr::vector<T> data_;
+    memory_kind kind_ = memory_kind::device;
+    bool needs_flush_ = false;
+    bool needs_invalidate_ = false;
 };
+
+using host_byte_buffer = host_buffer<std::byte>;
+using device_byte_buffer = device_buffer<std::byte>;
 
 template<class T>
 auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<const T> src) {
@@ -694,12 +788,18 @@ auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<const T> src) {
                     "forge::accel::mock::copy_to_device: size mismatch"};
             }
             std::copy(src.begin(), src.end(), dst->data_.begin());
+            dst->__mark_host_write();
         });
 }
 
 template<class T>
 auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<T> src) {
     return copy_to_device(q, dst, std::span<const T>{src});
+}
+
+template<class T>
+auto copy_to_device(queue& q, device_buffer<T>& dst, const host_buffer<T>& src) {
+    return copy_to_device(q, dst, src.span());
 }
 
 template<class T>
@@ -710,6 +810,11 @@ auto copy_to_device_typed(queue& q, device_buffer<T>& dst, std::span<const T> sr
 template<class T>
 auto copy_to_device_typed(queue& q, device_buffer<T>& dst, std::span<T> src) {
     return copy_to_device_typed(q, dst, std::span<const T>{src});
+}
+
+template<class T>
+auto copy_to_device_typed(queue& q, device_buffer<T>& dst, const host_buffer<T>& src) {
+    return __typed_detail::void_sender(copy_to_device(q, dst, src));
 }
 
 template<class T>
@@ -727,12 +832,24 @@ auto copy_to_host(queue& q, std::span<T> dst, const device_buffer<T>& src) {
                     error_kind::size_mismatch,
                     "forge::accel::mock::copy_to_host: size mismatch"};
             }
+            src->__require_readable(
+                "forge::accel::mock::copy_to_host: cached buffer requires flush/invalidate");
             std::copy(src->data_.begin(), src->data_.end(), dst.begin());
         });
 }
 
 template<class T>
+auto copy_to_host(queue& q, host_buffer<T>& dst, const device_buffer<T>& src) {
+    return copy_to_host(q, dst.span(), src);
+}
+
+template<class T>
 auto copy_to_host_typed(queue& q, std::span<T> dst, const device_buffer<T>& src) {
+    return __typed_detail::void_sender(copy_to_host(q, dst, src));
+}
+
+template<class T>
+auto copy_to_host_typed(queue& q, host_buffer<T>& dst, const device_buffer<T>& src) {
     return __typed_detail::void_sender(copy_to_host(q, dst, src));
 }
 
@@ -751,7 +868,10 @@ auto copy_device_to_device(queue& q, device_buffer<T>& dst, const device_buffer<
                     error_kind::size_mismatch,
                     "forge::accel::mock::copy_device_to_device: size mismatch"};
             }
+            src->__require_readable(
+                "forge::accel::mock::copy_device_to_device: cached source requires flush/invalidate");
             std::copy(src->data_.begin(), src->data_.end(), dst->data_.begin());
+            dst->__mark_device_write();
         });
 }
 
@@ -761,6 +881,34 @@ auto copy_device_to_device_typed(
     device_buffer<T>& dst,
     const device_buffer<T>& src) {
     return __typed_detail::void_sender(copy_device_to_device(q, dst, src));
+}
+
+template<class T>
+auto flush(queue& q, device_buffer<T>& buffer) {
+    return __detail::__make_command_sender(
+        q.state_.lock(),
+        [buffer = &buffer] {
+            buffer->needs_flush_ = false;
+        });
+}
+
+template<class T>
+auto flush_typed(queue& q, device_buffer<T>& buffer) {
+    return __typed_detail::void_sender(flush(q, buffer));
+}
+
+template<class T>
+auto invalidate(queue& q, device_buffer<T>& buffer) {
+    return __detail::__make_command_sender(
+        q.state_.lock(),
+        [buffer = &buffer] {
+            buffer->needs_invalidate_ = false;
+        });
+}
+
+template<class T>
+auto invalidate_typed(queue& q, device_buffer<T>& buffer) {
+    return __typed_detail::void_sender(invalidate(q, buffer));
 }
 
 template<class F>

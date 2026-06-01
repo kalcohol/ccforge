@@ -58,7 +58,7 @@ Allocation audit:
 | `async_scope` | none in V1 | spawned op-state uses raw `new/delete` plus intrusive refcount keepalive; changing it needs a dedicated lifetime task | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
-| `forge::accel::mock` backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; mock buffers are not vendor pinned memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
+| `forge::accel::mock` backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; `memory_kind` is metadata and mock buffers are not vendor pinned/mapped/managed memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
 | type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, `any_scheduler`, and `erased_sender` use SBO/default heap storage and are not allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
 
 Failure policy:
@@ -114,9 +114,13 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 `copy_kind`、`command_status`、`error_kind` 等 backend-neutral vocabulary。
 `forge::accel::mock` 提供 `copy_to_device`、`copy_to_host`、
 `copy_device_to_device`、`submit(queue/session, callable)` 和
-`submit_message(session, request, response, handler)`，并提供最小 `event` /
-`record_event` / `wait_event` / `fence` completion boundary。
-`mock::device_buffer<T>` 拥有 mock device storage，`T` 需要 trivially copyable；
+`submit_message(session, request, response, handler)`，并提供 `flush` / `invalidate`
+coherence proof command，以及最小 `event` / `record_event` / `wait_event` / `fence`
+completion boundary。
+`mock::host_buffer<T>` / `mock::device_buffer<T>` 拥有 mock host/device storage，`T`
+需要 trivially copyable；`host_byte_buffer` / `device_byte_buffer` 可用于 command packet
+或 model IO proof。`memory_kind` 是 metadata：`pinned_host`、`mapped_host`、
+`managed` 和 `cached_device` 不代表真实 OS/vendor allocation。
 host span 和 message response 是 borrowed，必须活到 command completion。
 同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
 以 stopped 完成。error 路径使用 `std::exception_ptr`。
@@ -175,6 +179,7 @@ host span 和 message response 是 borrowed，必须活到 command completion。
 - `example/forge_accel_copy_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_accel_event_example.cpp`
+- `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
