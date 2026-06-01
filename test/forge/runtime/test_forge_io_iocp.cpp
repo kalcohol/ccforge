@@ -3,6 +3,7 @@
 #include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -78,9 +79,11 @@ struct pipe_pair {
 };
 
 [[nodiscard]] auto make_pipe_pair() -> pipe_pair {
+    static std::atomic<unsigned long long> sequence{0};
     auto name = std::wstring{LR"(\\.\pipe\ccforge-iocp-)"} +
         std::to_wstring(::GetCurrentProcessId()) + L"-" +
-        std::to_wstring(::GetTickCount64());
+        std::to_wstring(::GetTickCount64()) + L"-" +
+        std::to_wstring(sequence.fetch_add(1, std::memory_order_relaxed));
 
     unique_handle server{::CreateNamedPipeW(
         name.c_str(),
@@ -256,6 +259,41 @@ TEST(IoIocpTest, ReusesAssociatedHandleForSequentialOperations) {
 
     ASSERT_TRUE(second_read_result.has_value());
     EXPECT_EQ(second_read, second);
+}
+
+TEST(IoIocpTest, HandlesHighChurnBorrowedHandles) {
+    forge::io::context ctx;
+
+    for (int i = 0; i < 24; ++i) {
+        auto pipe = make_pipe_pair();
+        std::array<std::byte, 1> payload{
+            byte(static_cast<char>('a' + (i % 20)))};
+        auto write_result = std::execution::sync_wait(
+            ctx.async_write_some(
+                pipe.client.get(),
+                std::span<const std::byte>{payload}));
+        ASSERT_TRUE(write_result.has_value());
+
+        std::array<std::byte, 1> buffer{};
+        auto read_result = std::execution::sync_wait(
+            ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+        ASSERT_TRUE(read_result.has_value());
+        EXPECT_EQ(buffer, payload);
+    }
+
+    auto pipe = make_pipe_pair();
+    std::array<std::byte, 2> payload{byte('o'), byte('k')};
+    auto write_result = std::execution::sync_wait(
+        ctx.async_write_some(
+            pipe.client.get(),
+            std::span<const std::byte>{payload}));
+    ASSERT_TRUE(write_result.has_value());
+
+    std::array<std::byte, 2> buffer{};
+    auto read_result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+    ASSERT_TRUE(read_result.has_value());
+    EXPECT_EQ(buffer, payload);
 }
 
 TEST(IoIocpTest, RequestStopCancelsPendingRead) {

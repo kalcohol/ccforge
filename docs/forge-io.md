@@ -196,9 +196,11 @@ Windows 强行压成 Linux readiness。
 
 V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果同一个 live handle
 已经关联过，Windows 可能拒绝重复关联，此时 backend 使用内部 associated-handle cache
-确认这是已知 handle 并继续。这样 OS 关闭并复用相同 HANDLE 数值时，新 handle 仍会先被
-重新尝试关联。大量短命且数值不复用的 handle 仍会让 cache 增长；更细的 pruning
-策略需要显式 handle lifetime 模型，当前不把 context 变成 handle owner。
+确认这是已知 handle 并继续。context 会记录每个关联 handle 的 active operation
+计数，并在后续启动 operation 时清理已经 idle 且系统确认 invalid 的旧 borrowed handle
+记录。这样 OS 关闭并复用相同 HANDLE 数值时，新 handle 仍会先被重新尝试关联。它仍不是
+生产级 handle cache：更强的 pruning 需要显式 handle lifetime 模型，当前不把 context
+变成 handle owner。
 
 ## resource policy
 

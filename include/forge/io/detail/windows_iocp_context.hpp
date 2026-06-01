@@ -55,7 +55,6 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace forge::io {
@@ -250,7 +249,8 @@ struct __state : std::enable_shared_from_this<__state> {
               0,
               __handle_hash{},
               std::equal_to<HANDLE>{},
-              std::pmr::polymorphic_allocator<HANDLE>{memory}) {
+              std::pmr::polymorphic_allocator<
+                  std::pair<HANDLE const, std::size_t>>{memory}) {
         (void)options.max_events;
         port.reset(::CreateIoCompletionPort(
             INVALID_HANDLE_VALUE, nullptr, 0, 1));
@@ -282,6 +282,8 @@ struct __state : std::enable_shared_from_this<__state> {
                 return result;
             }
 
+            prune_idle_associations_locked();
+
             HANDLE associated = ::CreateIoCompletionPort(
                 record->handle, port.get(), 0, 0);
             if (!associated) {
@@ -295,12 +297,13 @@ struct __state : std::enable_shared_from_this<__state> {
                     return result;
                 }
             } else {
-                associated_handles.insert(record->handle);
+                associated_handles.try_emplace(record->handle, 0);
             }
 
             auto* key = record.get();
             pending_records.emplace(key, record);
             ++pending;
+            increment_association_locked(record->handle);
 
             if (!issue_locked(*record)) {
                 auto error = ::GetLastError();
@@ -309,6 +312,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 }
 
                 pending_records.erase(key);
+                decrement_association_locked(record->handle);
                 --pending;
                 if (pending == 0) {
                     cv.notify_all();
@@ -456,6 +460,41 @@ private:
             &record.entry.overlapped) != FALSE;
     }
 
+    static bool handle_is_invalid(HANDLE handle) noexcept {
+        if (!handle || handle == INVALID_HANDLE_VALUE) {
+            return true;
+        }
+        DWORD flags = 0;
+        if (::GetHandleInformation(handle, &flags) != FALSE) {
+            return false;
+        }
+        return ::GetLastError() == ERROR_INVALID_HANDLE;
+    }
+
+    void prune_idle_associations_locked() noexcept {
+        for (auto it = associated_handles.begin();
+             it != associated_handles.end();) {
+            if (it->second == 0 && handle_is_invalid(it->first)) {
+                it = associated_handles.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    void increment_association_locked(HANDLE handle) {
+        auto [it, _] = associated_handles.try_emplace(handle, 0);
+        ++it->second;
+    }
+
+    void decrement_association_locked(HANDLE handle) noexcept {
+        auto it = associated_handles.find(handle);
+        if (it == associated_handles.end() || it->second == 0) {
+            return;
+        }
+        --it->second;
+    }
+
     void complete(
         __record_base* raw_record,
         bool ok,
@@ -470,6 +509,7 @@ private:
             }
             record = std::move(it->second);
             pending_records.erase(it);
+            decrement_association_locked(record->handle);
             if (pending > 0) {
                 --pending;
             }
@@ -498,7 +538,7 @@ public:
     std::mutex mtx;
     std::condition_variable cv;
     std::pmr::unordered_map<__record_base*, __record_ptr> pending_records;
-    std::pmr::unordered_set<HANDLE, __handle_hash> associated_handles;
+    std::pmr::unordered_map<HANDLE, std::size_t, __handle_hash> associated_handles;
     bool closed = false;
     bool stopped = false;
     bool worker_done = false;
