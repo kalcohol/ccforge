@@ -273,7 +273,12 @@ public:
 
     ~inplace_stop_callback() {
         auto control = control_;
-        if (source_) {
+        bool detached = false;
+        if (control) {
+            std::lock_guard lk{control->mtx};
+            detached = control->detached;
+        }
+        if (source_ && !detached) {
             source_->remove_callback(this);
         }
         if (!control) {
