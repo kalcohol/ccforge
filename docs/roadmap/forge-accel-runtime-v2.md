@@ -92,8 +92,9 @@ is only a forwarding header to the mock backend.
 Target:
 
 - Introduce a clear `forge::accel` vocabulary layer for device IDs, device info,
-  memory kinds, queue kinds, event/fence concepts, copy kinds, command status,
-  error categories, and model/session metadata.
+  memory kinds, queue kinds, copy kinds, command status, error categories, and
+  model/session metadata. Mock events and fences remain backend implementation
+  types.
 - Move the current mock implementation toward an explicit
   `forge::accel::mock` namespace/module.
 - Decide whether V1 names remain as transitional aliases.
@@ -154,7 +155,8 @@ Acceptance:
 
 - Mock tests cover H2D/compute/D2H overlap semantics at the ordering level.
 - Same-queue and cross-queue event behavior is documented and tested.
-- Device stop/reset wakes blocked waits without lost wakeups.
+- Context stop wakes blocked event waits without lost wakeups; session reset
+  stops queued session work before execution.
 - No receiver completion runs under internal locks.
 
 ## phase 4: device, context, and session lifecycle
@@ -257,6 +259,12 @@ Acceptance:
   model execute, error handling, reset, and graceful shutdown.
 
 ## phase 8: final audit
+
+Status: complete. The v2 mock/reference backend has been audited for namespace
+split, vendor-header isolation, accel gate behavior, example coverage, typed and
+exception error surfaces, lost-device packet errors, and documentation alignment.
+The remaining work is future optional backend proof work, not unfinished v2
+foundation.
 
 Target:
 

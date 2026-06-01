@@ -393,3 +393,4 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
+- `example/forge_reference_runtime_example.cpp`

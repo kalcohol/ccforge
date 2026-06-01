@@ -318,7 +318,7 @@ function Invoke-GateChecks {
         -Label "FORGE_ENABLE_FORGE_ACCEL=AUTO gate check"
     $accelAutoTests = Invoke-NativeOutput `
         "gate check: FORGE_ENABLE_FORGE_ACCEL=AUTO registered tests" `
-        ($Common + "ctest --test-dir `"$accelAutoBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch`"")
+        ($Common + "ctest --test-dir `"$accelAutoBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch|forge_reference_runtime`"")
     Assert-CtestNonZero `
         -Count (Get-CtestJsonCount $accelAutoTests) `
         -Label "FORGE_ENABLE_FORGE_ACCEL=AUTO registration"
@@ -342,7 +342,7 @@ function Invoke-GateChecks {
         -Label "FORGE_ENABLE_FORGE_ACCEL=OFF gate check"
     $accelOffTests = Invoke-NativeOutput `
         "gate check: FORGE_ENABLE_FORGE_ACCEL=OFF registered tests" `
-        ($Common + "ctest --test-dir `"$accelOffBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch`"")
+        ($Common + "ctest --test-dir `"$accelOffBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch|forge_reference_runtime`"")
     Assert-CtestCount `
         -Count (Get-CtestJsonCount $accelOffTests) `
         -Expected 0 `

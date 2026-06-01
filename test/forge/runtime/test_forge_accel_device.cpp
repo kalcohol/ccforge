@@ -502,6 +502,33 @@ TEST(AccelDeviceTest, OwningPacketResetWhilePendingCompletesStopped) {
     EXPECT_FALSE(packet_result->error);
 }
 
+TEST(AccelDeviceTest, OwningPacketOnLostDeviceRoutesInvalidContext) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    device.mark_lost();
+    auto session = device.open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit_packet(
+                session,
+                packet_t{
+                    forge::accel::command_id{12},
+                    request_packet{1},
+                    response_packet{}},
+                [](request_packet&, response_packet& out) noexcept {
+                    out.value = 99;
+                    return forge::accel::command_status::ok;
+                }));
+        FAIL() << "expected invalid_context";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::invalid_context);
+    }
+}
+
 TEST(AccelDeviceTest, OwningPacketCompletionCanShutdownContext) {
     forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();

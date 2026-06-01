@@ -795,8 +795,7 @@ struct __packet_sender {
 
         void start() & noexcept {
             auto state = queue_ ? queue_->owner.lock() : nullptr;
-            if (!state || !session_ || __stop_requested(*rcvr_) ||
-                !state->try_accept()) {
+            if (!state || __stop_requested(*rcvr_) || !state->try_accept()) {
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
