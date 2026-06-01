@@ -275,7 +275,7 @@ TEST(TimerContextTest, StopAfterEnqueueCompletesStoppedBeforeDeadline) {
     std::execution::start(op);
     source.request_stop();
 
-    ASSERT_TRUE(wait_done(state));
+    ASSERT_TRUE(wait_done_for(state, 100ms));
     EXPECT_FALSE(state.value);
     EXPECT_TRUE(state.stopped);
 }

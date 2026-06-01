@@ -145,5 +145,8 @@ or broad API commitments, stop and require a separate owner decision.
 - Linux `io_uring` is deferred unless kernel submission/completion queue
   semantics are required and testable.
 - Production IOCP hardening remains an approved stabilization track.
+- `timer_context` uses receiver stop callbacks for pending timer cancellation;
+  `forge::accel` still keeps per-receiver post-accept command cancellation out
+  of scope until a real backend needs a command-level cancellation model.
 - `std::execution` backport behavior should not be changed merely to support a
   `forge::` extension.

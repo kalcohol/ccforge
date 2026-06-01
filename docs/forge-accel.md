@@ -138,7 +138,10 @@ auto result = forge::wait_result(std::move(op));
 - 析构：执行 `shutdown()` + `wait()`。
 
 Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop token V1 只在
-`start()` 前检查；command 入队后不注册 per-operation stop callback。
+`start()` 前检查；command 被接受到串行 queue 后不会因该 receiver token 后续 stop
+而单独取消。需要取消已接受 command 时，使用 context `request_stop()` / `shutdown()`
+或 `device_session::reset()`；这保持 mock command record 简单，避免在没有真实硬件
+取消语义时引入第二套 per-command scheduler。
 
 `device_session::reset()` 标记该 session 已 reset。之后尚未执行的 session command 会
 以 stopped 完成；已经进入用户 callable 的 command 不会被强制中断。这模拟 NPU/FPGA

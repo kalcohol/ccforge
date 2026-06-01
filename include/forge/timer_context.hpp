@@ -34,6 +34,8 @@
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <optional>
+#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -48,12 +50,53 @@ struct timer_context_options {
 namespace __timer_detail {
 
 struct __state;
+struct __item;
+
+struct __stop_callback_fn {
+    std::weak_ptr<__state> state;
+    std::weak_ptr<__item> item;
+
+    void operator()() const noexcept;
+};
 
 struct __item {
+    using callback_t =
+        std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+
     std::chrono::steady_clock::time_point deadline;
     std::any_stop_token stop_token;
     std::function<void()> complete_value;
     std::function<void()> complete_stopped;
+    std::optional<callback_t> stop_callback;
+    std::atomic<bool> stop_requested{false};
+
+    void request_stop() noexcept {
+        stop_requested.store(true, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool is_stop_requested() const noexcept {
+        return stop_requested.load(std::memory_order_acquire);
+    }
+
+    void deliver_value() noexcept {
+        stop_callback.reset();
+        complete_value();
+    }
+
+    void deliver_stopped() noexcept {
+        stop_callback.reset();
+        complete_stopped();
+    }
+
+    void install_stop_callback(
+        std::weak_ptr<__state> state,
+        std::weak_ptr<__item> self) {
+        if (stop_token.stop_possible()) {
+            stop_callback.emplace(
+                stop_token,
+                __stop_callback_fn{std::move(state), std::move(self)});
+        }
+    }
 };
 
 template<class R>
@@ -165,6 +208,10 @@ struct __state {
         cv.notify_all();
     }
 
+    void wake() noexcept {
+        cv.notify_all();
+    }
+
     void wait() noexcept {
         std::unique_lock lk{mtx};
         if (worker_id == std::this_thread::get_id()) {
@@ -210,7 +257,7 @@ struct __state {
                     const auto now = std::chrono::steady_clock::now();
                     auto stopped_it = std::find_if(items.begin(), items.end(),
                         [](const std::shared_ptr<__item>& item) {
-                            return item->stop_token.stop_requested();
+                            return item->is_stop_requested();
                         });
                     if (stopped_it != items.end()) {
                         ready = std::move(*stopped_it);
@@ -231,22 +278,15 @@ struct __state {
                         break;
                     }
 
-                    auto wake = (*next_it)->deadline;
-                    if (has_stoppable_item()) {
-                        const auto poll_wake = now + poll_interval;
-                        if (poll_wake < wake) {
-                            wake = poll_wake;
-                        }
-                    }
-                    cv.wait_until(lk, wake);
+                    cv.wait_until(lk, (*next_it)->deadline);
                 }
             }
 
             if (ready) {
                 if (complete_stopped) {
-                    ready->complete_stopped();
+                    ready->deliver_stopped();
                 } else {
-                    ready->complete_value();
+                    ready->deliver_value();
                 }
 
                 {
@@ -259,15 +299,6 @@ struct __state {
             }
         }
     }
-
-    bool has_stoppable_item() const noexcept {
-        return std::any_of(items.begin(), items.end(),
-            [](const std::shared_ptr<__item>& item) {
-                return item->stop_token.stop_possible();
-            });
-    }
-
-    static constexpr auto poll_interval = std::chrono::milliseconds(1);
 
     std::mutex mtx;
     std::condition_variable cv;
@@ -358,6 +389,17 @@ private:
 
 namespace __timer_detail {
 
+inline void __stop_callback_fn::operator()() const noexcept {
+    auto item_ptr = item.lock();
+    if (item_ptr) {
+        item_ptr->request_stop();
+    }
+    auto state_ptr = state.lock();
+    if (state_ptr) {
+        state_ptr->wake();
+    }
+}
+
 template<class R>
 inline auto __op<R>::make_data(std::shared_ptr<__state> state, R rcvr)
     -> std::shared_ptr<__op_data<R>> {
@@ -388,6 +430,7 @@ inline void __op<R>::start() & noexcept {
         }
         if (token.stop_possible()) {
             item_->stop_token = std::any_stop_token{std::move(token)};
+            item_->install_stop_callback(state_, item_);
         }
 
         if (!state_ || !state_->enqueue(item_)) {

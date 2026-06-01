@@ -82,6 +82,10 @@ Non-owning views and lightweight handles should not block in destructors.
   register receiver stop callbacks when a stoppable token is present; callback
   completion removes the operation from the pending queue and completes stopped
   outside the channel mutex.
+- `timer_context` schedules deadline senders on an owning worker thread.
+  Pending timers register receiver stop callbacks when a stoppable token is
+  present; the callback wakes the worker instead of relying on periodic
+  polling.
 - `io::context` owns a platform IO worker. Linux uses an epoll/eventfd readiness
   poller; Windows uses a small IOCP completion worker. `close()` rejects new
   operations while allowing already pending operations to complete normally;
@@ -94,7 +98,9 @@ Non-owning views and lightweight handles should not block in destructors.
   `request_stop()` stops pending queued commands where possible; `shutdown()`
   combines both. `wait()` drains accepted command work, and returns immediately
   if called from an accel command completion to avoid self-deadlock. Host spans
-  are borrowed, while `device_buffer<T>` owns mock device storage.
+  are borrowed, while `device_buffer<T>` owns mock device storage. Receiver stop
+  tokens are observed before command acceptance; accepted commands are
+  cancelled by context/session stop, not by per-operation receiver stop in v1.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
 - `task` completes receivers from coroutine final suspend; custom receivers must
