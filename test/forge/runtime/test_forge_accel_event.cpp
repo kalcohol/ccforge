@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
 #include <execution>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <exception>
@@ -8,6 +9,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -88,6 +90,104 @@ TEST(AccelEventTest, EventStartsUnreadyAndCopiesShareState) {
     EXPECT_TRUE(copy.ready());
 }
 
+TEST(AccelEventTest, QueueKindsAreRecorded) {
+    forge::accel::mock::context ctx;
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto command = ctx.get_device().get_queue(forge::accel::queue_kind::command);
+
+    EXPECT_EQ(compute.kind(), forge::accel::queue_kind::compute);
+    EXPECT_EQ(copy.kind(), forge::accel::queue_kind::copy);
+    EXPECT_EQ(command.kind(), forge::accel::queue_kind::command);
+}
+
+TEST(AccelEventTest, PerQueueFifoIsPreserved) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue(forge::accel::queue_kind::compute);
+    std::mutex mtx;
+    std::vector<int> order;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+    auto third_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(q, [&] {
+        std::lock_guard lk{mtx};
+        order.push_back(1);
+    });
+    auto second = forge::accel::mock::submit(q, [&] {
+        std::lock_guard lk{mtx};
+        order.push_back(2);
+    });
+    auto third = forge::accel::mock::submit(q, [&] {
+        std::lock_guard lk{mtx};
+        order.push_back(3);
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
+    auto third_op = std::execution::connect(std::move(third), async_receiver{third_state});
+
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+    std::execution::start(third_op);
+    ctx.wait();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    ASSERT_TRUE(wait_done(third_state));
+    EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
+}
+
+TEST(AccelEventTest, DefaultQueueHandleIsStable) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto first_q = ctx.get_queue();
+    auto second_q = ctx.get_queue();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(first_q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto second = forge::accel::mock::submit(second_q, [] {});
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
+
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+    std::execution::start(second_op);
+
+    EXPECT_FALSE(wait_done_for(second_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(second_state->value);
+}
+
 TEST(AccelEventTest, WaitEventCompletesAfterRecordEvent) {
     forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
@@ -97,6 +197,120 @@ TEST(AccelEventTest, WaitEventCompletesAfterRecordEvent) {
         forge::accel::mock::record_event(q, ev)).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
         forge::accel::mock::wait_event(q, ev)).has_value());
+}
+
+TEST(AccelEventTest, CrossQueueWaitCompletesAfterOtherQueueRecordsEvent) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    forge::accel::mock::event ev;
+    auto wait_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+
+    auto wait_sender = forge::accel::mock::wait_event(compute, ev);
+    auto wait_op = std::execution::connect(
+        std::move(wait_sender),
+        async_receiver{wait_state});
+    std::execution::start(wait_op);
+
+    EXPECT_FALSE(wait_done_for(wait_state, 50ms));
+
+    auto record_sender = forge::accel::mock::record_event(copy, ev);
+    auto record_op = std::execution::connect(
+        std::move(record_sender),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    ASSERT_TRUE(wait_done(record_state));
+    ASSERT_TRUE(wait_done(wait_state));
+    EXPECT_TRUE(record_state->value);
+    EXPECT_TRUE(wait_state->value);
+    EXPECT_TRUE(ev.ready());
+}
+
+TEST(AccelEventTest, CopyComputeCopyPipelineUsesCrossQueueEvents) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    forge::accel::mock::event uploaded;
+    forge::accel::mock::event computed;
+    forge::accel::mock::device_buffer<int> device{ctx, 4};
+    std::vector<int> input{1, 2, 3, 4};
+    std::vector<int> output(4);
+
+    auto upload_state = std::make_shared<async_state>();
+    auto uploaded_state = std::make_shared<async_state>();
+    auto wait_upload_state = std::make_shared<async_state>();
+    auto compute_state = std::make_shared<async_state>();
+    auto computed_state = std::make_shared<async_state>();
+    auto wait_compute_state = std::make_shared<async_state>();
+    auto download_state = std::make_shared<async_state>();
+
+    auto upload = forge::accel::mock::copy_to_device(
+        copy,
+        device,
+        std::span<const int>{input});
+    auto record_uploaded = forge::accel::mock::record_event(copy, uploaded);
+    auto wait_uploaded = forge::accel::mock::wait_event(compute, uploaded);
+    auto run_compute = forge::accel::mock::submit(compute, [&] {
+        for (auto& value : device.span()) {
+            value *= 3;
+        }
+    });
+    auto record_computed = forge::accel::mock::record_event(compute, computed);
+    auto wait_computed = forge::accel::mock::wait_event(copy, computed);
+    auto download = forge::accel::mock::copy_to_host(copy, std::span<int>{output}, device);
+
+    auto upload_op = std::execution::connect(std::move(upload), async_receiver{upload_state});
+    auto record_uploaded_op = std::execution::connect(
+        std::move(record_uploaded),
+        async_receiver{uploaded_state});
+    auto wait_uploaded_op = std::execution::connect(
+        std::move(wait_uploaded),
+        async_receiver{wait_upload_state});
+    auto compute_op = std::execution::connect(
+        std::move(run_compute),
+        async_receiver{compute_state});
+    auto record_computed_op = std::execution::connect(
+        std::move(record_computed),
+        async_receiver{computed_state});
+    auto wait_computed_op = std::execution::connect(
+        std::move(wait_computed),
+        async_receiver{wait_compute_state});
+    auto download_op = std::execution::connect(
+        std::move(download),
+        async_receiver{download_state});
+
+    std::execution::start(upload_op);
+    std::execution::start(record_uploaded_op);
+    std::execution::start(wait_uploaded_op);
+    std::execution::start(compute_op);
+    std::execution::start(record_computed_op);
+    std::execution::start(wait_computed_op);
+    std::execution::start(download_op);
+    ctx.wait();
+
+    ASSERT_TRUE(wait_done(upload_state));
+    ASSERT_TRUE(wait_done(uploaded_state));
+    ASSERT_TRUE(wait_done(wait_upload_state));
+    ASSERT_TRUE(wait_done(compute_state));
+    ASSERT_TRUE(wait_done(computed_state));
+    ASSERT_TRUE(wait_done(wait_compute_state));
+    ASSERT_TRUE(wait_done(download_state));
+    EXPECT_TRUE(upload_state->value);
+    EXPECT_TRUE(uploaded_state->value);
+    EXPECT_TRUE(wait_upload_state->value);
+    EXPECT_TRUE(compute_state->value);
+    EXPECT_TRUE(computed_state->value);
+    EXPECT_TRUE(wait_compute_state->value);
+    EXPECT_TRUE(download_state->value);
+    EXPECT_EQ(output, (std::vector<int>{3, 6, 9, 12}));
 }
 
 TEST(AccelEventTest, WaitEventStopsWhenContextStops) {

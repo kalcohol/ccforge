@@ -27,30 +27,42 @@
 #include <vector>
 
 int main() {
-    forge::accel::mock::context ctx;
-    auto q = ctx.get_queue();
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+    }};
+    auto copy_q = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto compute_q = ctx.get_queue(forge::accel::queue_kind::compute);
 
     std::vector<int> input{1, 2, 3, 4};
     std::vector<int> output(input.size());
     forge::accel::mock::device_buffer<int> device{ctx, input.size()};
     forge::accel::mock::event uploaded;
+    forge::accel::mock::event computed;
 
     assert(std::execution::sync_wait(
-        forge::accel::mock::copy_to_device(q, device, std::span<const int>{input})).has_value());
+        forge::accel::mock::copy_to_device(
+            copy_q,
+            device,
+            std::span<const int>{input})).has_value());
     assert(std::execution::sync_wait(
-        forge::accel::mock::record_event(q, uploaded)).has_value());
+        forge::accel::mock::record_event(copy_q, uploaded)).has_value());
     assert(uploaded.ready());
 
-    assert(std::execution::sync_wait(forge::accel::mock::wait_event(q, uploaded)).has_value());
     assert(std::execution::sync_wait(
-        forge::accel::mock::submit(q, [&] {
+        forge::accel::mock::wait_event(compute_q, uploaded)).has_value());
+    assert(std::execution::sync_wait(
+        forge::accel::mock::submit(compute_q, [&] {
             for (auto& value : device.span()) {
                 value *= 10;
             }
         })).has_value());
-    assert(std::execution::sync_wait(forge::accel::mock::fence(q)).has_value());
     assert(std::execution::sync_wait(
-        forge::accel::mock::copy_to_host(q, std::span<int>{output}, device)).has_value());
+        forge::accel::mock::record_event(compute_q, computed)).has_value());
+    assert(std::execution::sync_wait(
+        forge::accel::mock::wait_event(copy_q, computed)).has_value());
+    assert(std::execution::sync_wait(forge::accel::mock::fence(copy_q)).has_value());
+    assert(std::execution::sync_wait(
+        forge::accel::mock::copy_to_host(copy_q, std::span<int>{output}, device)).has_value());
 
     assert((output == std::vector<int>{10, 20, 30, 40}));
 }

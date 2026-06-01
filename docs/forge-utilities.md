@@ -122,8 +122,9 @@ completion boundary。
 或 model IO proof。`memory_kind` 是 metadata：`pinned_host`、`mapped_host`、
 `managed` 和 `cached_device` 不代表真实 OS/vendor allocation。
 host span 和 message response 是 borrowed，必须活到 command completion。
-同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
-以 stopped 完成。error 路径使用 `std::exception_ptr`。
+每个 queue 上 command FIFO 串行执行；一个 context 可以创建多个带 `queue_kind`
+metadata 的 queue，并用 event 在 queue 之间表达 ordering。queue 容量满或 shutdown
+后新启动的 command 以 stopped 完成。error 路径使用 `std::exception_ptr`。
 
 当前 mock event/fence 不暴露 native vendor handle，不建模跨 queue dependency graph，也不
 检测 dependency cycle。

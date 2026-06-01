@@ -275,7 +275,7 @@ reference.
 关键点：
 
 - 当前 backend 是 in-memory mock，不依赖 CUDA/HIP/SYCL；
-- queue 命令按 FIFO 运行；
+- 每个 queue 命令按 FIFO 运行；跨 queue ordering 用 `event` 显式表达，不隐式生成 graph；
 - host spans 是 borrowed，`device_buffer` 拥有 mock device storage；
 - `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
   vendor pinned memory；

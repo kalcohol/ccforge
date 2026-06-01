@@ -136,6 +136,13 @@ Acceptance:
 
 ## phase 3: queue and event model
 
+Status: implemented for the mock/reference backend. A context can create
+multiple `queue` handles with `queue_kind` metadata; each queue owns its own
+strand and preserves FIFO ordering. Events can be recorded on one queue and
+waited on from another queue, enabling copy/compute/copy ordering proofs without
+introducing a dependency graph. Same-queue wait-before-record remains a
+documented cycle that is recoverable through context stop.
+
 Target:
 
 - Model multiple queues per context.

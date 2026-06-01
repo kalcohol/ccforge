@@ -33,8 +33,9 @@ Future backend entry rules are tracked in the
 - `forge::accel::mock::device`：轻量 device handle，由 context 产生，不拥有真实硬件。
 - `forge::accel::mock::device_session`：mock device session，用于表达 NPU/FPGA 风格
   command/response 生命周期和 reset 边界。
-- `forge::accel::mock::queue`：轻量 queue handle。当前 mock backend 单 queue 按 FIFO
-  串行执行 command。
+- `forge::accel::mock::queue`：轻量 queue handle。`context::get_queue(kind)` 可创建
+  `general`、`compute`、`copy` 或 `command` queue；每个 queue 独立 FIFO 串行执行
+  command。
 - `forge::accel::mock::host_buffer<T>`：由 context resource 分配的 owning host staging
   storage。可标注为 `host`、`pinned_host`、`mapped_host` 或 `managed` kind，但这些都是
   mock metadata，不会调用 OS/vendor pinned allocation。
@@ -47,7 +48,7 @@ Future backend entry rules are tracked in the
 
 ```cpp
 forge::accel::mock::context ctx{forge::accel::mock::context_options{
-    .thread_count = 1,
+    .thread_count = 2,
     .queue_capacity = 8,
     .memory = resource,
 }};
@@ -61,12 +62,15 @@ buffers 更久。
 Mock command sender：
 
 ```cpp
-forge::accel::mock::copy_to_device(q, device, std::span<const T>{host});
-forge::accel::mock::copy_to_host(q, std::span<T>{host}, device);
-forge::accel::mock::copy_device_to_device(q, dst, src);
-forge::accel::mock::flush(q, cached_device);
-forge::accel::mock::invalidate(q, cached_device);
-forge::accel::mock::submit(q, [&] {
+auto copy_q = ctx.get_queue(forge::accel::queue_kind::copy);
+auto compute_q = ctx.get_queue(forge::accel::queue_kind::compute);
+
+forge::accel::mock::copy_to_device(copy_q, device, std::span<const T>{host});
+forge::accel::mock::copy_to_host(copy_q, std::span<T>{host}, device);
+forge::accel::mock::copy_device_to_device(copy_q, dst, src);
+forge::accel::mock::flush(copy_q, cached_device);
+forge::accel::mock::invalidate(copy_q, cached_device);
+forge::accel::mock::submit(compute_q, [&] {
     for (auto& value : device.span()) {
         value *= 2;
     }
@@ -181,7 +185,8 @@ copy command 边界。用户仍需保证 buffer 不会在 pending command 期间
   内部调用，为避免自死锁会直接返回。
 - 析构：执行 `shutdown()` + `wait()`。
 
-Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop token 当前只在
+Queue 容量当前按 context 统计已接受 command，而不是 per-queue。容量满时，新启动的
+command 以 stopped 完成。receiver stop token 当前只在
 `start()` 前检查；command 被接受到串行 queue 后不会因该 receiver token 后续 stop
 而单独取消。需要取消已接受 command 时，使用 context `request_stop()` / `shutdown()`
 或 `device_session::reset()`；这保持 mock command record 简单，避免在没有真实硬件
@@ -236,20 +241,22 @@ handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`r
   参与的 `mock::host_buffer<T>` / `mock::device_buffer<T>` / host span 是调用方错误；
   当前 mock backend 不尝试
   pin 或自动延长这些对象的 lifetime。
-- 当前 mock backend 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
+- 当前 mock backend 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问同一 buffer
+  仍是调用方需要用 event/fence 明确排序的责任。
 - User completion 不在 accel 内部 mutex 下执行。
 
 ## events and fences
 
-Mock backend 提供最小 completion-boundary 事件：
+Mock backend 提供最小 completion-boundary 事件。事件可用于同一 context 内不同 queue
+之间的 ordering proof：
 
 ```cpp
 forge::accel::mock::event uploaded;
 
-std::execution::sync_wait(forge::accel::mock::copy_to_device(q, device, std::span<const T>{host}));
-std::execution::sync_wait(forge::accel::mock::record_event(q, uploaded));
-std::execution::sync_wait(forge::accel::mock::wait_event(q, uploaded));
-std::execution::sync_wait(forge::accel::mock::fence(q));
+std::execution::sync_wait(forge::accel::mock::copy_to_device(copy_q, device, std::span<const T>{host}));
+std::execution::sync_wait(forge::accel::mock::record_event(copy_q, uploaded));
+std::execution::sync_wait(forge::accel::mock::wait_event(compute_q, uploaded));
+std::execution::sync_wait(forge::accel::mock::fence(compute_q));
 ```
 
 - `event` 是可复制的共享完成标记，默认未 ready。
@@ -260,10 +267,12 @@ std::execution::sync_wait(forge::accel::mock::fence(q));
   以 stopped 完成。
 - `fence(q)` 是 queue 上的 no-op command，可作为“之前已接受 command 已到达”的
   sender 边界。
+- 同一个 queue 内仍保持 FIFO；不同 queue 可以并发推进，实际并发度取决于
+  `context_options::thread_count` 和 host scheduler。
 
 这些 API 只描述 portable mock backend 的 completion boundary，主要用于“已经按顺序
 record 后再 wait”的 queue 边界，或跨线程/跨 context 的轻量同步 proof。它们不暴露
-native CUDA/HIP/SYCL event handle，不建模跨 queue dependency graph，也不检测
+native CUDA/HIP/SYCL event handle，不建模 dependency graph，也不检测
 dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 `record_event` 前面，该 queue 会等待到 event ready 或 context stop；调用方应按
 明确的 command 顺序使用它。

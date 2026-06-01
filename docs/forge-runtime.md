@@ -93,8 +93,9 @@ Non-owning views and lightweight handles should not block in destructors.
   combines close and context stop. `wait()` joins the worker. File descriptors,
   Windows handles, and user buffers are borrowed and must outlive pending
   operations or be cancelled and drained before close.
-- `accel::mock::context` owns a portable mock/in-memory accelerator-like command
-  queue. `close()` rejects later commands and drains accepted work;
+- `accel::mock::context` owns portable mock/in-memory accelerator-like command
+  queues. Each queue is FIFO, and cross-queue ordering is expressed with
+  events. `close()` rejects later commands and drains accepted work;
   `request_stop()` stops pending queued commands where possible; `shutdown()`
   combines both. `wait()` drains accepted command work, and returns immediately
   if called from an accel command completion to avoid self-deadlock. Host spans

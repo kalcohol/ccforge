@@ -85,6 +85,8 @@ struct __session_state {
     std::atomic<bool> reset_requested{false};
 };
 
+struct __queue_state;
+
 struct __event_state {
     void mark_ready() noexcept {
         {
@@ -114,8 +116,8 @@ struct __state : std::enable_shared_from_this<__state> {
               .queue_capacity = std::nullopt,
               .memory = memory,
           })
-        , serial(runtime.get_scheduler(), strand_options{.memory = memory})
         , queue_capacity(options.queue_capacity)
+        , queues(std::pmr::polymorphic_allocator<std::shared_ptr<__queue_state>>{memory})
     {}
 
     ~__state() noexcept {
@@ -156,34 +158,14 @@ struct __state : std::enable_shared_from_this<__state> {
         }
     }
 
-    void request_stop() noexcept {
-        {
-            std::lock_guard lk{mtx};
-            stop_requested = true;
-        }
-        serial.shutdown();
-        runtime.request_stop();
-        cv.notify_all();
-    }
+    void request_stop() noexcept;
 
     void shutdown() noexcept {
         close();
         request_stop();
     }
 
-    void wait() noexcept {
-        if (__current_state == this) {
-            return;
-        }
-        serial.wait();
-        runtime.wait();
-        std::unique_lock lk{mtx};
-        cv.wait(lk, [this] { return pending == 0; });
-    }
-
-    [[nodiscard]] auto scheduler() noexcept -> strand::scheduler {
-        return serial.get_scheduler();
-    }
+    void wait() noexcept;
 
     [[nodiscard]] bool is_closed() const noexcept {
         std::lock_guard lk{mtx};
@@ -199,16 +181,119 @@ struct __state : std::enable_shared_from_this<__state> {
         return memory;
     }
 
+    [[nodiscard]] auto get_queue(queue_kind kind) -> std::shared_ptr<__queue_state>;
+    [[nodiscard]] auto make_queue(queue_kind kind) -> std::shared_ptr<__queue_state>;
+    [[nodiscard]] auto snapshot_queues()
+        -> std::pmr::vector<std::shared_ptr<__queue_state>>;
+
     std::pmr::memory_resource* memory;
     resource_context runtime;
-    strand serial;
     std::optional<std::size_t> queue_capacity;
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t pending = 0;
     bool closed = false;
     bool stop_requested = false;
+    std::pmr::vector<std::shared_ptr<__queue_state>> queues;
 };
+
+struct __queue_state {
+    __queue_state(std::shared_ptr<__state> owner_state, queue_kind queue_kind)
+        : owner(owner_state)
+        , serial(
+              owner_state->runtime.get_scheduler(),
+              strand_options{.memory = owner_state->memory})
+        , kind(queue_kind)
+    {}
+
+    [[nodiscard]] auto scheduler() noexcept -> strand::scheduler {
+        return serial.get_scheduler();
+    }
+
+    void shutdown() noexcept {
+        serial.shutdown();
+    }
+
+    void wait() noexcept {
+        serial.wait();
+    }
+
+    std::weak_ptr<__state> owner;
+    strand serial;
+    queue_kind kind = queue_kind::general;
+};
+
+inline void __state::request_stop() noexcept {
+    {
+        std::lock_guard lk{mtx};
+        stop_requested = true;
+    }
+    for (auto& queue : snapshot_queues()) {
+        queue->shutdown();
+    }
+    runtime.request_stop();
+    cv.notify_all();
+}
+
+inline void __state::wait() noexcept {
+    if (__current_state == this) {
+        return;
+    }
+    for (auto& queue : snapshot_queues()) {
+        queue->wait();
+    }
+    runtime.wait();
+    std::unique_lock lk{mtx};
+    cv.wait(lk, [this] { return pending == 0; });
+}
+
+inline auto __state::make_queue(queue_kind kind) -> std::shared_ptr<__queue_state> {
+    auto self = shared_from_this();
+    auto queue = std::allocate_shared<__queue_state>(
+        std::pmr::polymorphic_allocator<__queue_state>{memory},
+        std::move(self),
+        kind);
+    {
+        std::lock_guard lk{mtx};
+        queues.push_back(queue);
+    }
+    if (is_closed()) {
+        queue->shutdown();
+    }
+    return queue;
+}
+
+inline auto __state::get_queue(queue_kind kind) -> std::shared_ptr<__queue_state> {
+    auto self = shared_from_this();
+    auto queue = std::allocate_shared<__queue_state>(
+        std::pmr::polymorphic_allocator<__queue_state>{memory},
+        std::move(self),
+        kind);
+    bool should_shutdown = false;
+    {
+        std::lock_guard lk{mtx};
+        for (auto& existing : queues) {
+            if (existing && existing->kind == kind) {
+                return existing;
+            }
+        }
+        queues.push_back(queue);
+        should_shutdown = closed || stop_requested;
+    }
+    if (should_shutdown) {
+        queue->shutdown();
+    }
+    return queue;
+}
+
+inline auto __state::snapshot_queues()
+    -> std::pmr::vector<std::shared_ptr<__queue_state>> {
+    std::pmr::vector<std::shared_ptr<__queue_state>> snapshot{
+        std::pmr::polymorphic_allocator<std::shared_ptr<__queue_state>>{memory}};
+    std::lock_guard lk{mtx};
+    snapshot = queues;
+    return snapshot;
+}
 
 inline bool __event_state::wait_until_ready_or_stopped(const __state& state) noexcept {
     std::unique_lock lk{mtx};
@@ -335,7 +420,7 @@ template<class Action>
 struct __command_sender {
     using sender_concept = std::execution::sender_t;
 
-    std::shared_ptr<__state> state;
+    std::shared_ptr<__queue_state> queue;
     Action action;
 
     template<class Self, class Env>
@@ -358,8 +443,8 @@ struct __command_sender {
         using receiver_t = __command_receiver<R, Action>;
         using op_t = std::execution::connect_result_t<schedule_sender_t, receiver_t>;
 
-        __op(std::shared_ptr<__state> state, Action action, R rcvr)
-            : state_(std::move(state))
+        __op(std::shared_ptr<__queue_state> queue, Action action, R rcvr)
+            : queue_(std::move(queue))
             , action_(std::move(action))
             , rcvr_(std::move(rcvr))
         {}
@@ -370,7 +455,8 @@ struct __command_sender {
         __op& operator=(const __op&) = delete;
 
         void start() & noexcept {
-            if (!state_ || __stop_requested(*rcvr_) || !state_->try_accept()) {
+            auto state = queue_ ? queue_->owner.lock() : nullptr;
+            if (!state || __stop_requested(*rcvr_) || !state->try_accept()) {
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
@@ -378,25 +464,25 @@ struct __command_sender {
             try {
                 // The mock queue is backed by strand::scheduler, whose schedule()
                 // path enqueues work instead of completing synchronously.
-                auto sender = std::execution::schedule(state_->scheduler());
+                auto sender = std::execution::schedule(queue_->scheduler());
                 auto* op = op_.emplace_from([&]() -> op_t {
                     return std::execution::connect(
                         std::move(sender),
                         receiver_t{
-                            state_,
+                            state,
                             std::move(*rcvr_),
                             std::move(*action_)});
                 });
                 std::execution::start(*op);
             } catch (...) {
-                state_->finish_one();
+                state->finish_one();
                 std::execution::set_error(
                     std::move(*rcvr_),
                     std::current_exception());
             }
         }
 
-        std::shared_ptr<__state> state_;
+        std::shared_ptr<__queue_state> queue_;
         std::optional<Action> action_;
         std::optional<R> rcvr_;
         __op_box<op_t> op_;
@@ -405,22 +491,22 @@ struct __command_sender {
     template<class R>
         requires std::execution::receiver_of<R, __void_completion_signatures>
     auto connect(R rcvr) && -> __op<R> {
-        return __op<R>{std::move(state), std::move(action), std::move(rcvr)};
+        return __op<R>{std::move(queue), std::move(action), std::move(rcvr)};
     }
 
     template<class R>
         requires std::execution::receiver_of<R, __void_completion_signatures>
               && std::copy_constructible<Action>
     auto connect(R rcvr) const& -> __op<R> {
-        return __op<R>{state, Action(action), std::move(rcvr)};
+        return __op<R>{queue, Action(action), std::move(rcvr)};
     }
 };
 
 template<class Action>
-auto __make_command_sender(std::shared_ptr<__state> state, Action&& action)
+auto __make_command_sender(std::shared_ptr<__queue_state> queue, Action&& action)
     -> __command_sender<std::decay_t<Action>> {
     return __command_sender<std::decay_t<Action>>{
-        std::move(state),
+        std::move(queue),
         static_cast<Action&&>(action)};
 }
 
@@ -448,20 +534,26 @@ public:
     queue() = default;
 
     [[nodiscard]] bool closed() const noexcept {
-        auto state = state_.lock();
+        auto queue = queue_.lock();
+        auto state = queue ? queue->owner.lock() : nullptr;
         return !state || state->is_closed();
     }
 
+    [[nodiscard]] auto kind() const noexcept -> queue_kind {
+        auto queue = queue_.lock();
+        return queue ? queue->kind : queue_kind::general;
+    }
+
 private:
-    explicit queue(std::shared_ptr<__detail::__state> state)
-        : state_(state) {}
+    explicit queue(std::shared_ptr<__detail::__queue_state> queue)
+        : queue_(std::move(queue)) {}
 
     friend class context;
     friend class device;
     friend class device_session;
     template<class Action>
     friend auto __detail::__make_command_sender(
-        std::shared_ptr<__detail::__state>,
+        std::shared_ptr<__detail::__queue_state>,
         Action&&) -> __detail::__command_sender<std::decay_t<Action>>;
     template<class T>
     friend auto copy_to_device(queue&, device_buffer<T>&, std::span<const T>);
@@ -479,7 +571,7 @@ private:
     friend auto wait_event(queue&, event);
     friend auto fence(queue&);
 
-    std::weak_ptr<__detail::__state> state_;
+    std::weak_ptr<__detail::__queue_state> queue_;
 };
 
 class context {
@@ -500,8 +592,8 @@ public:
     context(context&&) = delete;
     context& operator=(context&&) = delete;
 
-    [[nodiscard]] queue get_queue() noexcept {
-        return queue{state_};
+    [[nodiscard]] queue get_queue(queue_kind kind = queue_kind::general) {
+        return queue{state_->get_queue(kind)};
     }
 
     [[nodiscard]] device get_device() noexcept;
@@ -558,7 +650,7 @@ public:
 
 private:
     explicit device_session(std::shared_ptr<__detail::__state> state)
-        : queue_(state)
+        : queue_(state ? state->make_queue(queue_kind::command) : nullptr)
         , session_(state
               ? std::allocate_shared<__detail::__session_state>(
                     std::pmr::polymorphic_allocator<__detail::__session_state>{
@@ -579,8 +671,9 @@ class device {
 public:
     device() = default;
 
-    [[nodiscard]] queue get_queue() const noexcept {
-        return queue{state_.lock()};
+    [[nodiscard]] queue get_queue(queue_kind kind = queue_kind::general) const {
+        auto state = state_.lock();
+        return queue{state ? state->get_queue(kind) : nullptr};
     }
 
     [[nodiscard]] device_session open_session() const {
@@ -775,7 +868,7 @@ using device_byte_buffer = device_buffer<std::byte>;
 template<class T>
 auto copy_to_device(queue& q, device_buffer<T>& dst, std::span<const T> src) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [dst = &dst, src] {
             if (!dst) {
                 throw operation_error{
@@ -820,7 +913,7 @@ auto copy_to_device_typed(queue& q, device_buffer<T>& dst, const host_buffer<T>&
 template<class T>
 auto copy_to_host(queue& q, std::span<T> dst, const device_buffer<T>& src) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [dst, src = &src] {
             if (!src) {
                 throw operation_error{
@@ -856,7 +949,7 @@ auto copy_to_host_typed(queue& q, host_buffer<T>& dst, const device_buffer<T>& s
 template<class T>
 auto copy_device_to_device(queue& q, device_buffer<T>& dst, const device_buffer<T>& src) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [dst = &dst, src = &src] {
             if (!dst || !src) {
                 throw operation_error{
@@ -886,7 +979,7 @@ auto copy_device_to_device_typed(
 template<class T>
 auto flush(queue& q, device_buffer<T>& buffer) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [buffer = &buffer] {
             buffer->needs_flush_ = false;
         });
@@ -900,7 +993,7 @@ auto flush_typed(queue& q, device_buffer<T>& buffer) {
 template<class T>
 auto invalidate(queue& q, device_buffer<T>& buffer) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [buffer = &buffer] {
             buffer->needs_invalidate_ = false;
         });
@@ -914,7 +1007,7 @@ auto invalidate_typed(queue& q, device_buffer<T>& buffer) {
 template<class F>
 auto submit(queue& q, F&& command) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [command = std::forward<F>(command)]() mutable {
             std::invoke(command);
         });
@@ -988,7 +1081,7 @@ auto submit_message_typed(
 
 inline auto record_event(queue& q, event ev) {
     return __detail::__make_command_sender(
-        q.state_.lock(),
+        q.queue_.lock(),
         [state = std::move(ev.state_)] {
             if (!state) {
                 throw operation_error{
@@ -1004,9 +1097,10 @@ inline auto record_event_typed(queue& q, event ev) {
 }
 
 inline auto wait_event(queue& q, event ev) {
-    auto ctx = q.state_.lock();
+    auto queue_state = q.queue_.lock();
+    auto ctx = queue_state ? queue_state->owner.lock() : nullptr;
     return __detail::__make_command_sender(
-        ctx,
+        std::move(queue_state),
         [ctx, state = std::move(ev.state_)] {
             if (!ctx) {
                 throw __detail::__stopped_signal{};
@@ -1027,7 +1121,7 @@ inline auto wait_event_typed(queue& q, event ev) {
 }
 
 inline auto fence(queue& q) {
-    return __detail::__make_command_sender(q.state_.lock(), [] {});
+    return __detail::__make_command_sender(q.queue_.lock(), [] {});
 }
 
 inline auto fence_typed(queue& q) {

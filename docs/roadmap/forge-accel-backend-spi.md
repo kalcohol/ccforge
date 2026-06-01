@@ -17,6 +17,7 @@ The stable portable vocabulary is intentionally small:
 
 - owning backend context, currently `forge::accel::mock::context`;
 - lightweight device and queue handles derived from the context;
+- queue kind metadata for general, compute, copy, and command/message lanes;
 - optional `device_session` for command/response style devices;
 - owning host and device buffers with portable `memory_kind` metadata;
 - byte-oriented host and device buffers for command/model IO proof;
@@ -73,6 +74,8 @@ Events must remain minimal unless a real backend proof needs more:
 - `wait_event(queue, event)` waits for a marker to become ready or for context
   stop;
 - `fence(queue)` is a no-op command boundary for previously accepted work.
+- A context may expose multiple queues. FIFO is guaranteed per queue; cross-queue
+  ordering is expressed only through explicit event record/wait operations.
 
 Do not turn this into a general dependency graph in the portable layer. Cross
 queue dependency management, native event export, timeline semaphores, and graph
