@@ -98,3 +98,21 @@ TEST(AnySenderTest, MoveConstructsSmallObjectStorageSender) {
 
     EXPECT_GE(counts.destroyed, 3);
 }
+
+TEST(AnySenderTest, MoveAssignsSmallObjectStorageSender) {
+    sender_move_counts counts;
+
+    {
+        forge::any_sender_of<cs_int> first = tracking_sender{&counts, 21};
+        forge::any_sender_of<cs_int> second = std::execution::just(1);
+
+        second = std::move(first);
+        EXPECT_FALSE(bool(first));
+
+        auto result = second.sync_wait();
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(std::get<0>(*result), 21);
+    }
+
+    EXPECT_GE(counts.destroyed, 3);
+}

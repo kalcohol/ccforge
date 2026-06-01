@@ -86,6 +86,23 @@ class any_sender_of {
     void* __ptr = nullptr;
     const __vtable* __vt = nullptr;
 
+    void __move_from(any_sender_of&& other) noexcept {
+        if (!other.__ptr) return;
+        __vt = other.__vt;
+        if (!other.__on_heap) {
+            other.__vt->move_to(other.__ptr, static_cast<void*>(__buf));
+            other.__vt->destroy(other.__ptr);
+            __ptr = static_cast<void*>(__buf);
+            __on_heap = false;
+        } else {
+            __ptr = other.__ptr;
+            __on_heap = true;
+        }
+        other.__ptr = nullptr;
+        other.__vt = nullptr;
+        other.__on_heap = false;
+    }
+
 public:
     using sender_concept = std::execution::sender_t;
     using value_tuple_t  = value_tuple_of_t<CompletionSignatures>;
@@ -114,26 +131,13 @@ public:
     }
 
     any_sender_of(any_sender_of&& other) noexcept {
-        if (!other.__ptr) return;
-        __vt = other.__vt;
-        if (!other.__on_heap) {
-            other.__vt->move_to(other.__ptr, static_cast<void*>(__buf));
-            other.__vt->destroy(other.__ptr);
-            __ptr = static_cast<void*>(__buf);
-            __on_heap = false;
-        } else {
-            __ptr = other.__ptr;
-            __on_heap = true;
-        }
-        other.__ptr = nullptr;
-        other.__vt = nullptr;
-        other.__on_heap = false;
+        __move_from(std::move(other));
     }
 
     any_sender_of& operator=(any_sender_of&& other) noexcept {
         if (this == &other) return *this;
         reset();
-        ::new(this) any_sender_of(std::move(other));
+        __move_from(std::move(other));
         return *this;
     }
 
@@ -149,6 +153,7 @@ public:
         }
         __ptr = nullptr;
         __vt  = nullptr;
+        __on_heap = false;
     }
 
     explicit operator bool() const noexcept { return __ptr != nullptr; }

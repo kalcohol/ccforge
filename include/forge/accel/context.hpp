@@ -284,8 +284,9 @@ struct __command_receiver {
         std::execution::set_stopped(std::move(rcvr));
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept(noexcept(std::execution::get_env(rcvr)))
+        -> decltype(std::execution::get_env(rcvr)) {
+        return std::execution::get_env(rcvr);
     }
 };
 
