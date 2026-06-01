@@ -170,6 +170,56 @@ struct throwing_scheduler {
 
 static_assert(std::execution::scheduler<throwing_scheduler>);
 
+template<class R>
+struct error_stopped_schedule_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+
+    void start() & noexcept {
+        std::execution::set_error(std::move(rcvr), 17);
+    }
+};
+
+struct error_stopped_schedule_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> error_stopped_schedule_op<R> {
+        return error_stopped_schedule_op<R>{std::move(r)};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& -> error_stopped_schedule_op<R> {
+        return error_stopped_schedule_op<R>{std::move(r)};
+    }
+};
+
+struct error_stopped_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    auto schedule() const noexcept -> error_stopped_schedule_sender {
+        return {};
+    }
+
+    friend bool operator==(error_stopped_scheduler, error_stopped_scheduler) noexcept {
+        return true;
+    }
+};
+
+static_assert(std::execution::scheduler<error_stopped_scheduler>);
+
 } // namespace
 
 TEST(IntoVariantTest, WrapsValue) {
@@ -262,6 +312,21 @@ TEST(StartsOnTest, SourceConnectFailureBecomesError) {
         std::runtime_error);
 }
 
+TEST(StartsOnTest, DeclaresSchedulerErrorsAndSetupError) {
+    auto sndr = std::execution::starts_on(
+        error_stopped_scheduler{},
+        std::execution::just(42));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t(),
+            std::execution::set_error_t(std::exception_ptr)>>);
+}
+
 TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
@@ -297,6 +362,21 @@ TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
     EXPECT_THROW(
         (void)std::execution::sync_wait(std::move(sndr)),
         std::runtime_error);
+}
+
+TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
+    auto sndr = std::execution::continues_on(
+        std::execution::just(42),
+        error_stopped_scheduler{});
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t(),
+            std::execution::set_error_t(std::exception_ptr)>>);
 }
 
 TEST(ContinuesOnTest, UsesConnectedReceiverEnvForUpstreamSignatures) {

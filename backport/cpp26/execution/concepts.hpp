@@ -429,6 +429,33 @@ template<class CS,
 using transform_completion_signatures_t =
     typename transform_completion_signatures<CS, ValueCompletions, ErrorCompletions, StoppedCompletions>::type;
 
+template<class Sig>
+struct __non_value_completion {
+    using type = completion_signatures<>;
+};
+
+template<class E>
+struct __non_value_completion<set_error_t(E)> {
+    using type = completion_signatures<set_error_t(E)>;
+};
+
+template<>
+struct __non_value_completion<set_stopped_t()> {
+    using type = completion_signatures<set_stopped_t()>;
+};
+
+template<class CS>
+struct __non_value_completion_signatures;
+
+template<class... Sigs>
+struct __non_value_completion_signatures<completion_signatures<Sigs...>> {
+    using type = __concat_unique_cs_t<typename __non_value_completion<Sigs>::type...>;
+};
+
+template<class CS>
+using __non_value_completion_signatures_t =
+    typename __non_value_completion_signatures<CS>::type;
+
 template<class CS>
 struct __single_value_tuple { using type = std::tuple<>; };
 

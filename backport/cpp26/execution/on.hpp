@@ -131,9 +131,20 @@ struct __starts_on_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
-        return decltype(std::execution::get_completion_signatures(
+        using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<const typename self_t::source_t&>(),
-            std::declval<Env>())){};
+            std::declval<Env>()));
+        using sched_sndr_t = decltype(std::execution::schedule(
+            std::declval<Scheduler&>()));
+        using sched_cs_t = decltype(std::execution::get_completion_signatures(
+            std::declval<sched_sndr_t>(),
+            std::declval<Env>()));
+        using sched_non_value_cs_t =
+            __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
+        return __forge_meta::__concat_unique_cs_t<
+            source_cs_t,
+            sched_non_value_cs_t,
+            completion_signatures<set_error_t(std::exception_ptr)>>{};
     }
 
     template<receiver R>
