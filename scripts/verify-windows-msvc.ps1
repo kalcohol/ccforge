@@ -439,7 +439,11 @@ try {
     Write-Host "[msvc] vcvars=$Vcvars"
 
     $common = "call `"$Vcvars`" >nul && "
-    Invoke-NativeOutput "compiler version" ($common + "cl 2>&1 | findstr /C:`"Version`"") | Out-Null
+    $compilerVersion = Invoke-NativeCapture "compiler version" ($common + "cl /Bv 2>&1")
+    Assert-OutputContains `
+        -Output $compilerVersion.Output `
+        -Needle "Microsoft" `
+        -Label "compiler version"
 
     if (-not $SkipGateChecks) {
         Invoke-GateChecks -Common $common -SourceRoot $sourceRoot -BuildName $BuildName
