@@ -126,6 +126,50 @@ struct scheduler_value_receiver {
     }
 };
 
+template<class R>
+struct never_started_op {
+    using operation_state_concept = std::execution::operation_state_t;
+    void start() & noexcept {}
+};
+
+struct throwing_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R) && -> never_started_op<R> {
+        throw std::runtime_error{"connect failed"};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R) const& -> never_started_op<R> {
+        throw std::runtime_error{"connect failed"};
+    }
+};
+
+struct throwing_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    auto schedule() const noexcept -> throwing_connect_sender {
+        return {};
+    }
+
+    friend bool operator==(throwing_scheduler, throwing_scheduler) noexcept {
+        return true;
+    }
+};
+
+static_assert(std::execution::scheduler<throwing_scheduler>);
+
 } // namespace
 
 TEST(IntoVariantTest, WrapsValue) {
@@ -209,6 +253,15 @@ TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
     EXPECT_EQ(counter.load(), 1);
 }
 
+TEST(StartsOnTest, SourceConnectFailureBecomesError) {
+    std::execution::inline_scheduler sch;
+    auto sndr = std::execution::starts_on(sch, throwing_connect_sender{});
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(std::move(sndr)),
+        std::runtime_error);
+}
+
 TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
@@ -234,6 +287,16 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     loop.finish();
     worker.join();
     EXPECT_EQ(result, 42);
+}
+
+TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
+    auto sndr = std::execution::continues_on(
+        std::execution::just(),
+        throwing_scheduler{});
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(std::move(sndr)),
+        std::runtime_error);
 }
 
 TEST(ContinuesOnTest, UsesConnectedReceiverEnvForUpstreamSignatures) {

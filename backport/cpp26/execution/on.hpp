@@ -27,9 +27,16 @@
 #include "env.hpp"
 #include "run_loop.hpp"
 
+#include <exception>
+
 namespace std::execution {
 
 namespace __forge_on {
+
+template<class R>
+concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
+    std::execution::set_error(std::move(r), std::move(ep));
+};
 
 template<class Scheduler, class S, class R>
 struct __starts_on_op : __forge_detail::__immovable {
@@ -66,12 +73,22 @@ struct __starts_on_op : __forge_detail::__immovable {
         __starts_on_op* __self;
 
         void set_value() && noexcept {
-            using inner_op_t = connect_result_t<S, __sndr_recv>;
-            auto* op = __self->__sndr_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(
-                    std::move(__self->__sndr), __sndr_recv{__self});
-            });
-            std::execution::start(*op);
+            try {
+                using inner_op_t = connect_result_t<S, __sndr_recv>;
+                auto* op = __self->__sndr_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+                    return std::execution::connect(
+                        std::move(__self->__sndr), __sndr_recv{__self});
+                });
+                std::execution::start(*op);
+            } catch (...) {
+                if constexpr (__can_set_exception_ptr<R>) {
+                    std::execution::set_error(
+                        std::move(__self->__outer_recv),
+                        std::current_exception());
+                } else {
+                    std::terminate();
+                }
+            }
         }
         template<class E>
         void set_error(E&& e) && noexcept {

@@ -64,11 +64,20 @@ struct __transform_sig {
     using type = completion_signatures<Sig>;
 };
 
+template<class Fn, class E, bool Invocable>
+struct __transform_error_sig {
+    using type = completion_signatures<set_error_t(E)>;
+};
+
 template<class Fn, class E>
-struct __transform_sig<Fn, set_error_t(E), true> {
+struct __transform_error_sig<Fn, E, true> {
     using result_t = std::invoke_result_t<Fn, E>;
     using type = typename __value_cs_from_result<result_t>::type;
 };
+
+template<class Fn, class E>
+struct __transform_sig<Fn, set_error_t(E), true>
+    : __transform_error_sig<Fn, E, std::is_invocable_v<Fn, E>> {};
 
 template<class Fn>
 struct __transform_sig<Fn, set_stopped_t(), false> {
@@ -103,7 +112,9 @@ struct __recv_error {
 
     template<class E>
     void set_error(E&& e) && noexcept {
-        if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
+        if constexpr (!std::invocable<Fn, E>) {
+            std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
+        } else if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
             try {
                 std::invoke(std::move(__fn), static_cast<E&&>(e));
                 std::execution::set_value(std::move(__rcvr));

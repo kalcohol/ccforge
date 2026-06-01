@@ -28,6 +28,7 @@
 #include "run_loop.hpp"
 
 #include <exception>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -35,6 +36,11 @@
 namespace std::execution {
 
 namespace __forge_continues_on {
+
+template<class R>
+concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
+    std::execution::set_error(std::move(r), std::move(ep));
+};
 
 template<class R, class... StoredVs>
 struct __sched_value_recv {
@@ -111,7 +117,16 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
     using __sched_sndr_t = decltype(std::execution::schedule(std::declval<Scheduler>()));
 
     void __deliver_schedule_failure() noexcept {
-        std::terminate();
+        if constexpr (__can_set_exception_ptr<R>) {
+            auto error = std::current_exception();
+            if (!error) {
+                error = std::make_exception_ptr(
+                    std::runtime_error("continues_on: scheduling failed"));
+            }
+            std::execution::set_error(std::move(__outer), std::move(error));
+        } else {
+            std::terminate();
+        }
     }
 
     template<class Recv>
