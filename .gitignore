@@ -35,6 +35,7 @@ CTestTestfile.cmake
 AGENTS.md
 .claude/
 .antigravitycli/
+.grok/
 
 # OS files
 .DS_Store
