@@ -78,6 +78,10 @@ and [`forge::accel` backend SPI sketch](forge-accel-backend-spi.md). Gate,
 lifetime, verification, and typed-error rules are tracked in
 [backend proof policy](forge-backend-proof-policy.md). These are design
 constraints, not published plugin ABIs.
+The longer-term accelerator support target is tracked separately in
+[`forge::accel` runtime v2 roadmap](forge-accel-runtime-v2.md); it is the
+owner-approved path for improving the vendor-neutral runtime vocabulary and
+mock/reference backend before any real vendor backend proof.
 
 具体要求：
 

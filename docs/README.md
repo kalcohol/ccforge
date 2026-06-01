@@ -41,3 +41,4 @@ stable multilingual entrypoints.
 - [backend proof policy](roadmap/forge-backend-proof-policy.md)
 - [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md)
 - [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md)
+- [`forge::accel` runtime v2 roadmap](roadmap/forge-accel-runtime-v2.md)
