@@ -280,6 +280,25 @@ TEST(TimerContextTest, StopAfterEnqueueCompletesStoppedBeforeDeadline) {
     EXPECT_TRUE(state.stopped);
 }
 
+TEST(TimerContextTest, RepeatedLongDeadlineStopsWakePromptly) {
+    forge::timer_context ctx;
+
+    for (int i = 0; i < 100; ++i) {
+        timer_state state;
+        std::inplace_stop_source source;
+        auto op = std::execution::connect(
+            ctx.schedule_after(1h),
+            stopped_timer_receiver{{&state}, &source});
+
+        std::execution::start(op);
+        source.request_stop();
+
+        ASSERT_TRUE(wait_done_for(state, 100ms));
+        EXPECT_FALSE(state.value);
+        EXPECT_TRUE(state.stopped);
+    }
+}
+
 TEST(TimerContextTest, StopAndDeadlineRaceCompletesExactlyOnce) {
     forge::timer_context ctx;
 

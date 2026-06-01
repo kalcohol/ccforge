@@ -208,7 +208,13 @@ struct __state {
         cv.notify_all();
     }
 
-    void wake() noexcept {
+    void request_item_stop(const std::shared_ptr<__item>& item) noexcept {
+        {
+            std::lock_guard lk{mtx};
+            if (item) {
+                item->request_stop();
+            }
+        }
         cv.notify_all();
     }
 
@@ -391,12 +397,11 @@ namespace __timer_detail {
 
 inline void __stop_callback_fn::operator()() const noexcept {
     auto item_ptr = item.lock();
-    if (item_ptr) {
-        item_ptr->request_stop();
-    }
     auto state_ptr = state.lock();
     if (state_ptr) {
-        state_ptr->wake();
+        state_ptr->request_item_stop(item_ptr);
+    } else if (item_ptr) {
+        item_ptr->request_stop();
     }
 }
 
