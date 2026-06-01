@@ -129,13 +129,14 @@ public:
         std::suspend_always initial_suspend() noexcept { return {}; }
         __task_detail::__final_awaiter final_suspend() noexcept { return {}; }
         void return_value(T val) { result.template emplace<1>(std::move(val)); }
-        void unhandled_exception() noexcept { result.template emplace<2>(std::current_exception()); }
+        void unhandled_exception() noexcept {
+            if (!stopped_) {
+                result.template emplace<2>(std::current_exception());
+            }
+        }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
-            if (__op_) {
-                __op_->__complete();
-            }
-            return std::noop_coroutine();
+            return std::coroutine_handle<promise_type>::from_promise(*this);
         }
     };
 
@@ -191,13 +192,14 @@ public:
         std::suspend_always initial_suspend() noexcept { return {}; }
         __task_detail::__final_awaiter final_suspend() noexcept { return {}; }
         void return_void() noexcept { done_ = true; }
-        void unhandled_exception() noexcept { exc_ = std::current_exception(); }
+        void unhandled_exception() noexcept {
+            if (!stopped_) {
+                exc_ = std::current_exception();
+            }
+        }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
-            if (__op_) {
-                __op_->__complete();
-            }
-            return std::noop_coroutine();
+            return std::coroutine_handle<promise_type>::from_promise(*this);
         }
         bool stopped_ = false;
     };

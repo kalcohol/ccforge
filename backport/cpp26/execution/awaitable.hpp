@@ -101,11 +101,11 @@ struct __awaitable {
             __self->__coro.resume();
         }
         void set_stopped() && noexcept {
+            __self->__stopped = true;
             if constexpr (__has_unhandled_stopped<Promise>) {
                 static_cast<std::coroutine_handle<>>(
                     __self->__promise->unhandled_stopped()).resume();
             } else {
-                __self->__stopped = true;
                 __self->__coro.resume();
             }
         }
