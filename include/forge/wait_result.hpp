@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "detail/completion_meta.hpp"
+
 #include <execution>
 #include <exception>
 #include <stop_token>
@@ -36,7 +38,7 @@ struct wait_stopped_t {};
 
 namespace __wait_result_detail {
 
-namespace meta = std::execution::__forge_meta;
+namespace meta = forge::__detail::meta;
 
 template<class List, class Sig>
 struct __push_error {
@@ -286,7 +288,7 @@ private:
 template<std::execution::sender_in S>
 [[nodiscard]] auto wait_result_of(S&& sndr) {
     using cs_t = std::execution::completion_signatures_of_t<S>;
-    using value_t = std::execution::__forge_meta::single_value_or_variant_t<cs_t>;
+    using value_t = __wait_result_detail::meta::single_value_or_variant_t<cs_t>;
     using error_t = __wait_result_detail::__single_error_or_variant_t<
         __wait_result_detail::__error_list_t<cs_t>>;
     using state_t = __wait_result_detail::__state<value_t, error_t>;

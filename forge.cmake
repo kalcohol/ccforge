@@ -51,6 +51,24 @@ include(CheckCXXSourceCompiles)
 
 find_package(Threads REQUIRED)
 
+if(DEFINED CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD LESS 23)
+    message(FATAL_ERROR "CC Forge requires C++23 or later. Please set CMAKE_CXX_STANDARD to 23 or newer.")
+endif()
+
+set(_forge_runtime_probe_fingerprint
+    "${CMAKE_CXX_STANDARD}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_ID}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_CXX_FLAGS}|${CMAKE_SYSTEM_NAME}|${CMAKE_SYSTEM_PROCESSOR}")
+if(DEFINED FORGE_RUNTIME_PROBE_FINGERPRINT
+        AND NOT "${FORGE_RUNTIME_PROBE_FINGERPRINT}" STREQUAL "${_forge_runtime_probe_fingerprint}")
+    foreach(_forge_probe_var
+            FORGE_PROBE_LINUX_EPOLL_EVENTFD
+            FORGE_PROBE_WINDOWS_IOCP)
+        unset(${_forge_probe_var} CACHE)
+        unset(${_forge_probe_var})
+    endforeach()
+endif()
+set(FORGE_RUNTIME_PROBE_FINGERPRINT "${_forge_runtime_probe_fingerprint}"
+    CACHE INTERNAL "CC Forge runtime backend probe fingerprint")
+
 check_cxx_source_compiles("
     #include <sys/epoll.h>
     #include <sys/eventfd.h>
@@ -123,6 +141,10 @@ if(NOT TARGET forge)
         $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:include>
     )
+
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+        target_compile_features(forge INTERFACE cxx_std_23)
+    endif()
 
     # MSVC: Enable UTF-8 source/execution charset and truthful __cplusplus.
     target_compile_options(forge INTERFACE

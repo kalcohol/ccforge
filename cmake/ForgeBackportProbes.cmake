@@ -19,6 +19,32 @@ else()
     set(_forge_std 23)
 endif()
 
+set(_forge_probe_fingerprint
+    "${_forge_std}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_ID}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_CXX_FLAGS}|${CMAKE_SYSTEM_NAME}|${CMAKE_SYSTEM_PROCESSOR}")
+if(DEFINED FORGE_BACKPORT_PROBE_FINGERPRINT
+        AND NOT "${FORGE_BACKPORT_PROBE_FINGERPRINT}" STREQUAL "${_forge_probe_fingerprint}")
+    foreach(_forge_probe_var
+            HAS_STD_UNIQUE_RESOURCE
+            FORGE_SIMD_FULL
+            FORGE_SIMD_PARTIAL
+            FORGE_SENDERS_FULL
+            FORGE_SENDERS_PARTIAL
+            FORGE_CONSTANT_WRAPPER_FULL
+            FORGE_CONSTANT_WRAPPER_PARTIAL
+            FORGE_MDSPAN_PADDED_LAYOUTS_FULL
+            FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL
+            FORGE_SUBMDSPAN_FULL
+            FORGE_SUBMDSPAN_PARTIAL_CURRENT
+            FORGE_SUBMDSPAN_PARTIAL_LEGACY
+            FORGE_LINALG_FULL
+            FORGE_LINALG_PARTIAL)
+        unset(${_forge_probe_var} CACHE)
+        unset(${_forge_probe_var})
+    endforeach()
+endif()
+set(FORGE_BACKPORT_PROBE_FINGERPRINT "${_forge_probe_fingerprint}"
+    CACHE INTERNAL "CC Forge backport probe fingerprint")
+
 set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
 if(MSVC)
     if(_forge_std GREATER_EQUAL 26)

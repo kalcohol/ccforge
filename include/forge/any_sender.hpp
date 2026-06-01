@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "detail/completion_meta.hpp"
+
 #include <execution>
 #include <cstddef>
 #include <functional>
@@ -49,7 +51,7 @@ namespace forge {
 // Helper: the value tuple type of a given CompletionSignatures.
 template<class CS>
 using value_tuple_of_t =
-    std::execution::__forge_meta::__single_value_tuple_t<CS>;
+    forge::__detail::meta::single_value_tuple_t<CS>;
 
 template<class CompletionSignatures>
 class any_sender_of {

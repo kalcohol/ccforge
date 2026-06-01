@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "detail/completion_meta.hpp"
+
 #include <execution>
 #include <cstddef>
 #include <functional>
@@ -36,7 +38,7 @@ namespace forge {
 template<class CompletionSignatures>
 class any_receiver_of {
     using cs_t = CompletionSignatures;
-    using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
+    using value_tuple_t = forge::__detail::meta::single_value_tuple_t<cs_t>;
 
     struct __vtable {
         void (*complete_value)(void*, value_tuple_t) noexcept;

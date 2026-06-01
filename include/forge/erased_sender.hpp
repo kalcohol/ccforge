@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "detail/completion_meta.hpp"
+
 #include <execution>
 #include <cstddef>
 #include <exception>
@@ -38,7 +40,7 @@ class erased_sender;
 
 namespace __erased_sender_detail {
 
-namespace meta = std::execution::__forge_meta;
+namespace meta = forge::__detail::meta;
 
 template<class Sig>
 struct __valid_signature : std::false_type {};
