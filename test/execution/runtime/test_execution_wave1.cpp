@@ -325,6 +325,13 @@ TEST(StartsOnTest, DeclaresSchedulerErrorsAndSetupError) {
             std::execution::set_error_t(int),
             std::execution::set_stopped_t(),
             std::execution::set_error_t(std::exception_ptr)>>);
+
+    try {
+        (void)std::execution::sync_wait(std::move(sndr));
+        FAIL() << "expected scheduler set_error(int) to propagate";
+    } catch (int value) {
+        EXPECT_EQ(value, 17);
+    }
 }
 
 TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
@@ -377,6 +384,13 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
             std::execution::set_error_t(int),
             std::execution::set_stopped_t(),
             std::execution::set_error_t(std::exception_ptr)>>);
+
+    try {
+        (void)std::execution::sync_wait(std::move(sndr));
+        FAIL() << "expected scheduler set_error(int) to propagate";
+    } catch (int value) {
+        EXPECT_EQ(value, 17);
+    }
 }
 
 TEST(ContinuesOnTest, UsesConnectedReceiverEnvForUpstreamSignatures) {

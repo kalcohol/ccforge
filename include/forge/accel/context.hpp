@@ -371,6 +371,8 @@ struct __command_sender {
             }
 
             try {
+                // The mock queue is backed by strand::scheduler, whose schedule()
+                // path enqueues work instead of completing synchronously.
                 auto sender = std::execution::schedule(state_->scheduler());
                 auto* op = op_.emplace_from([&]() -> op_t {
                     return std::execution::connect(
