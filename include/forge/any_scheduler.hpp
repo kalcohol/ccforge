@@ -65,7 +65,7 @@ struct __operation_model final : __operation_base {
 
 struct __state_base {
     virtual ~__state_base() = default;
-    virtual auto connect(__receiver rcvr) -> std::unique_ptr<__operation_base> = 0;
+    virtual auto connect(__receiver rcvr) -> std::shared_ptr<__operation_base> = 0;
 };
 
 struct __scheduler_access;
@@ -76,12 +76,12 @@ struct __state_model final : __state_base {
     explicit __state_model(S&& scheduler)
         : scheduler_(static_cast<S&&>(scheduler)) {}
 
-    auto connect(__receiver rcvr) -> std::unique_ptr<__operation_base> override {
+    auto connect(__receiver rcvr) -> std::shared_ptr<__operation_base> override {
         using sender_t = decltype(std::execution::schedule(scheduler_));
         using op_t = decltype(std::execution::connect(
             std::declval<sender_t>(),
             std::declval<__receiver>()));
-        return std::make_unique<__operation_model<op_t>>(
+        return std::make_shared<__operation_model<op_t>>(
             std::execution::schedule(scheduler_),
             std::move(rcvr));
     }
@@ -112,15 +112,19 @@ struct __op {
 
     void start() & noexcept {
         if (op_) {
-            op_->start();
+            auto op = op_;
+            op->start();
             return;
         }
 
-        std::execution::set_error(std::move(*rcvr_), error_);
+        auto rcvr = std::move(*rcvr_);
+        auto error = error_;
+        rcvr_.reset();
+        std::execution::set_error(std::move(rcvr), error);
     }
 
     std::shared_ptr<__state_base> state_;
-    std::unique_ptr<__operation_base> op_;
+    std::shared_ptr<__operation_base> op_;
     std::optional<R> rcvr_;
     std::exception_ptr error_;
 };

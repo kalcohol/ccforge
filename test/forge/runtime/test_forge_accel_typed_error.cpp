@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
 #include <forge/erased_sender.hpp>
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <chrono>
 #include <condition_variable>
@@ -75,6 +76,21 @@ struct stop_env {
 
 struct stopped_typed_receiver : typed_receiver {
     std::inplace_stop_source* source;
+
+    auto get_env() const noexcept -> stop_env {
+        return stop_env{source};
+    }
+};
+
+struct self_destroying_accel_typed_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    std::inplace_stop_source* source = nullptr;
+
+    void set_value() && noexcept { context->destroy(); }
+    void set_error(forge::accel::error) && noexcept { context->destroy(); }
+    void set_stopped() && noexcept { context->destroy(); }
 
     auto get_env() const noexcept -> stop_env {
         return stop_env{source};
@@ -230,4 +246,36 @@ TEST(AccelTypedErrorTest, PreStoppedTypedSenderStillStops) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error_seen);
+}
+
+TEST(AccelTypedErrorTest, PreStoppedTypedSenderAllowsReceiverToDestroyOperation) {
+    forge::accel::context ctx;
+    auto q = ctx.get_queue();
+    std::inplace_stop_source source;
+    source.request_stop();
+    bool ran = false;
+    auto sender = forge::accel::submit_typed(q, [&] {
+        ran = true;
+    });
+
+    using sender_t = decltype(sender);
+    using receiver_t = self_destroying_accel_typed_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            std::move(sender),
+            self_destroying_accel_typed_receiver{&context, &source});
+    });
+    std::execution::start(op);
+    ctx.wait();
+
+    EXPECT_FALSE(ran);
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }

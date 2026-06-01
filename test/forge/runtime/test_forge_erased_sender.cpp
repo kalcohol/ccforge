@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
+#include "forge_operation_destroy.hpp"
 #include <execution>
 #include <exception>
 #include <memory>
@@ -83,6 +84,30 @@ struct zero_receiver {
     void set_value() && noexcept { ++state->zero_values; }
     void set_error(std::exception_ptr) && noexcept { state->errored = true; }
     void set_stopped() && noexcept { state->stopped = true; }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+struct self_destroying_zero_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    bool* completed = nullptr;
+
+    void set_value() && noexcept {
+        *completed = true;
+        context->destroy();
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        *completed = true;
+        context->destroy();
+    }
+
+    void set_stopped() && noexcept {
+        *completed = true;
+        context->destroy();
+    }
+
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
@@ -602,4 +627,29 @@ TEST(ErasedSenderTest, EmptyConnectThrows) {
     EXPECT_THROW(
         (void)std::execution::connect(std::move(sender), zero_receiver{state}),
         std::runtime_error);
+}
+
+TEST(ErasedSenderTest, SynchronousSourceAllowsReceiverToDestroyOperation) {
+    forge::erased_sender<zero_cs> sender{zero_sender{}};
+
+    using sender_t = decltype(sender);
+    using receiver_t = self_destroying_zero_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t&&>(),
+        std::declval<receiver_t>()));
+
+    bool completed = false;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            std::move(sender),
+            self_destroying_zero_receiver{&context, &completed});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }

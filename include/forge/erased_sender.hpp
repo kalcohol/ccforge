@@ -319,7 +319,7 @@ struct __operation_model final : __operation_base {
 template<class CS>
 struct __sender_state_base {
     virtual ~__sender_state_base() = default;
-    virtual auto connect(__receiver<CS> rcvr) -> std::unique_ptr<__operation_base> = 0;
+    virtual auto connect(__receiver<CS> rcvr) -> std::shared_ptr<__operation_base> = 0;
 };
 
 template<class CS, class S>
@@ -328,11 +328,11 @@ struct __sender_state_model final : __sender_state_base<CS> {
     explicit __sender_state_model(Sender&& sender)
         : sender_(static_cast<Sender&&>(sender)) {}
 
-    auto connect(__receiver<CS> rcvr) -> std::unique_ptr<__operation_base> override {
+    auto connect(__receiver<CS> rcvr) -> std::shared_ptr<__operation_base> override {
         using op_t = decltype(std::execution::connect(
             std::declval<S&>(),
             std::declval<__receiver<CS>>()));
-        return std::make_unique<__operation_model<op_t>>(
+        return std::make_shared<__operation_model<op_t>>(
             typename __operation_model<op_t>::__factory_tag{},
             [this, rcvr = std::move(rcvr)]() mutable -> op_t {
                 return std::execution::connect(sender_, std::move(rcvr));
@@ -432,12 +432,13 @@ public:
         __op& operator=(const __op&) = delete;
 
         void start() & noexcept {
-            op_->start();
+            auto op = op_;
+            op->start();
         }
 
         std::shared_ptr<
             __erased_sender_detail::__sender_state_base<CompletionSignatures>> state_;
-        std::unique_ptr<__erased_sender_detail::__operation_base> op_;
+        std::shared_ptr<__erased_sender_detail::__operation_base> op_;
     };
 
     template<class R>

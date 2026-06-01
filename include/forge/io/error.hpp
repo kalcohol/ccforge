@@ -25,6 +25,7 @@
 #include <execution>
 #include <cstddef>
 #include <exception>
+#include <memory>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -160,11 +161,20 @@ struct __sender {
         using receiver_t =
             std::conditional_t<Sized, __size_receiver<R>, __void_receiver<R>>;
         using op_t = std::execution::connect_result_t<Sender, receiver_t>;
+        struct state_t {
+            template<class Factory>
+            explicit state_t(Factory&& factory)
+                : op(static_cast<Factory&&>(factory)()) {}
+
+            op_t op;
+        };
 
         __op(Sender sender, R rcvr)
-            : op(std::execution::connect(
-                  std::move(sender),
-                  receiver_t{std::move(rcvr)}))
+            : state(std::make_shared<state_t>([&]() -> op_t {
+                  return std::execution::connect(
+                      std::move(sender),
+                      receiver_t{std::move(rcvr)});
+              }))
         {}
 
         __op(__op&&) = delete;
@@ -173,10 +183,11 @@ struct __sender {
         auto operator=(const __op&) -> __op& = delete;
 
         void start() & noexcept {
-            std::execution::start(op);
+            auto keepalive = state;
+            std::execution::start(keepalive->op);
         }
 
-        op_t op;
+        std::shared_ptr<state_t> state;
     };
 
     template<class R>

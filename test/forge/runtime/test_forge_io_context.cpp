@@ -204,6 +204,18 @@ struct typed_size_receiver : typed_void_receiver {
     }
 };
 
+struct self_destroying_typed_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+
+    void set_value() && noexcept { context->destroy(); }
+    void set_value(std::size_t) && noexcept { context->destroy(); }
+    void set_error(forge::io::error) && noexcept { context->destroy(); }
+    void set_stopped() && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 struct stop_env {
     std::inplace_stop_source* source;
 
@@ -646,6 +658,29 @@ TEST(IoContextTest, InvalidFdAllowsReceiverToDestroyOperation) {
         return std::execution::connect(
             ctx.readable(-1),
             self_destroying_io_receiver{&context});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+}
+
+TEST(IoContextTest, TypedInvalidFdAllowsReceiverToDestroyOperation) {
+    forge::io::context ctx;
+
+    using sender_t = decltype(ctx.readable_typed(-1));
+    using receiver_t = self_destroying_typed_io_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            ctx.readable_typed(-1),
+            self_destroying_typed_io_receiver{&context});
     });
     std::execution::start(op);
 
