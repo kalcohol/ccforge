@@ -2,6 +2,14 @@
 
 #include <execution>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
+
 TEST(ExecutionStopTokenTest, InplaceStopCallbackIsInvoked) {
     std::inplace_stop_source src;
     auto token = src.get_token();
@@ -43,6 +51,78 @@ TEST(ExecutionStopTokenTest, CallbackAutoDeregisterOnDestruction) {
     EXPECT_FALSE(called);
 }
 
+TEST(ExecutionStopTokenTest, CallbackDestructionWaitsForConcurrentInvocation) {
+    std::inplace_stop_source src;
+    auto token = src.get_token();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool entered = false;
+    bool release = false;
+    std::atomic<bool> destructor_returned = false;
+
+    auto fn = [&] {
+        std::unique_lock lk{mtx};
+        entered = true;
+        cv.notify_all();
+        cv.wait(lk, [&] { return release; });
+    };
+    using callback_t = std::inplace_stop_callback<decltype(fn)>;
+    auto cb = std::make_unique<callback_t>(token, fn);
+
+    std::thread requester{[&] {
+        EXPECT_TRUE(src.request_stop());
+    }};
+
+    {
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return entered; });
+    }
+
+    std::thread destroyer{[&] {
+        cb.reset();
+        destructor_returned.store(true, std::memory_order_release);
+    }};
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_FALSE(destructor_returned.load(std::memory_order_acquire));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    destroyer.join();
+    requester.join();
+    EXPECT_TRUE(destructor_returned.load(std::memory_order_acquire));
+}
+
+TEST(ExecutionStopTokenTest, CallbackCanDestroyPendingCallbackDuringRequestStop) {
+    std::inplace_stop_source src;
+    auto token = src.get_token();
+
+    using callback_t = std::inplace_stop_callback<std::function<void()>>;
+    std::unique_ptr<callback_t> first;
+    std::unique_ptr<callback_t> second;
+    bool first_called = false;
+    bool second_called = false;
+
+    second = std::make_unique<callback_t>(
+        token,
+        std::function<void()>{[&] { second_called = true; }});
+    first = std::make_unique<callback_t>(
+        token,
+        std::function<void()>{[&] {
+            first_called = true;
+            second.reset();
+        }});
+
+    EXPECT_TRUE(src.request_stop());
+    EXPECT_TRUE(first_called);
+    EXPECT_FALSE(second_called);
+}
+
 TEST(ExecutionStopTokenTest, NeverStopTokenBehavior) {
     std::never_stop_token token{};
     EXPECT_FALSE(token.stop_requested());
@@ -81,4 +161,3 @@ TEST(ExecutionStopTokenTest, SyncWaitFromThisThread) {
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 99);
 }
-

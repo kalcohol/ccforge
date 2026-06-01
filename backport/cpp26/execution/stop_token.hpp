@@ -23,9 +23,12 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <concepts>
 #include <cstdint>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -42,11 +45,24 @@ class inplace_stop_callback;
 
 namespace __forge_stop_detail {
 
+struct callback_control {
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::shared_ptr<callback_control> next_detached;
+    std::thread::id request_thread{};
+    void (*invoke_fn)(void*) noexcept = nullptr;
+    void* object = nullptr;
+    bool detached = false;
+    bool running = false;
+    bool cancelled = false;
+};
+
 struct callback_base {
     using fn_t = void(callback_base*) noexcept;
     fn_t*          invoke_fn = nullptr;
     callback_base* next      = nullptr;
     callback_base** prev     = nullptr;
+    std::shared_ptr<callback_control> control{};
 };
 
 } // namespace __forge_stop_detail
@@ -64,7 +80,7 @@ public:
     [[nodiscard]] inplace_stop_token get_token() noexcept;
 
     bool request_stop() noexcept {
-        __forge_stop_detail::callback_base* head = nullptr;
+        std::shared_ptr<__forge_stop_detail::callback_control> head;
         {
             std::lock_guard lk{mtx_};
             auto st = state_.load(std::memory_order_acquire);
@@ -78,19 +94,69 @@ public:
             // callbacks here.  Invoking user callbacks while holding mtx_
             // would deadlock if the callback tries to register/remove
             // another callback.  See [stopsource.inplace.mem].
-            head = callbacks_;
+            auto* raw = callbacks_;
             callbacks_ = nullptr;
+            std::shared_ptr<__forge_stop_detail::callback_control> prev;
+            const auto request_thread = std::this_thread::get_id();
+            while (raw) {
+                auto* next_raw = raw->next;
+                auto control = raw->control;
+                if (control) {
+                    {
+                        std::lock_guard control_lk{control->mtx};
+                        control->detached = true;
+                        control->request_thread = request_thread;
+                        control->object = raw;
+                        control->invoke_fn = raw->invoke_fn
+                            ? [](void* ptr) noexcept {
+                                  auto* cb = static_cast<__forge_stop_detail::callback_base*>(ptr);
+                                  cb->invoke_fn(cb);
+                              }
+                            : nullptr;
+                        control->cancelled = false;
+                        control->next_detached.reset();
+                    }
+                    if (!head) {
+                        head = control;
+                    }
+                    if (prev) {
+                        prev->next_detached = control;
+                    }
+                    prev = std::move(control);
+                }
+                raw->next = nullptr;
+                raw->prev = nullptr;
+                raw = next_raw;
+            }
         }
 
         // Invoke callbacks outside the lock.
         while (head) {
-            auto* next = head->next;
-            head->next = nullptr;
-            head->prev = nullptr;
-            if (head->invoke_fn) {
-                head->invoke_fn(head);
+            auto control = std::move(head);
+            head = std::move(control->next_detached);
+            control->next_detached.reset();
+
+            void* object = nullptr;
+            void (*invoke_fn)(void*) noexcept = nullptr;
+            {
+                std::lock_guard lk{control->mtx};
+                if (!control->cancelled && control->object && control->invoke_fn) {
+                    control->running = true;
+                    object = control->object;
+                    invoke_fn = control->invoke_fn;
+                }
             }
-            head = next;
+            if (invoke_fn) {
+                invoke_fn(object);
+            }
+            {
+                std::lock_guard lk{control->mtx};
+                control->running = false;
+                control->cancelled = true;
+                control->object = nullptr;
+                control->invoke_fn = nullptr;
+            }
+            control->cv.notify_all();
         }
         return true;
     }
@@ -181,13 +247,22 @@ public:
     template<class Cb>
         requires std::constructible_from<Callback, Cb>
     explicit inplace_stop_callback(inplace_stop_token token, Cb&& cb)
-        noexcept(std::is_nothrow_constructible_v<Callback, Cb>)
         : callback_(std::forward<Cb>(cb))
-        , source_(token.source_) {
+        , source_(token.source_)
+        , control_(std::make_shared<std::__forge_stop_detail::callback_control>()) {
+        this->control = control_;
         this->invoke_fn = [](std::__forge_stop_detail::callback_base* base) noexcept {
             auto* self = static_cast<inplace_stop_callback*>(base);
             self->callback_();
         };
+        {
+            std::lock_guard lk{control_->mtx};
+            control_->object = this;
+            control_->invoke_fn = [](void* ptr) noexcept {
+                auto* self = static_cast<inplace_stop_callback*>(ptr);
+                self->callback_();
+            };
+        }
 
         if (source_ && !source_->try_add_callback(this)) {
             // Already stopped: invoke immediately.
@@ -197,8 +272,20 @@ public:
     }
 
     ~inplace_stop_callback() {
+        auto control = control_;
         if (source_) {
             source_->remove_callback(this);
+        }
+        if (!control) {
+            return;
+        }
+        std::unique_lock lk{control->mtx};
+        control->cancelled = true;
+        control->object = nullptr;
+        control->invoke_fn = nullptr;
+        if (control->running
+                && control->request_thread != std::this_thread::get_id()) {
+            control->cv.wait(lk, [&] { return !control->running; });
         }
     }
 
@@ -208,6 +295,7 @@ public:
 private:
     [[no_unique_address]] Callback callback_;
     inplace_stop_source* source_;
+    std::shared_ptr<std::__forge_stop_detail::callback_control> control_;
 };
 
 template<class Cb>
