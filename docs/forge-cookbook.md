@@ -35,13 +35,17 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
     `flush` / `invalidate` proof 和 typed coherence error。
 12. `example/forge_accel_message_device_example.cpp`：device session 与 message command
     形状。
-13. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+13. `example/forge_accel_session_reset_example.cpp`：session reset 如何停止后续 command。
+14. `example/forge_accel_packet_example.cpp`：owning command packet 与 completion
+    bridge。
+15. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
+16. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
     error。
-14. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+17. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-15. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+18. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-16. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+19. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors 和 graceful drain 如何放在同一个 reference runtime 中。
 
@@ -74,7 +78,12 @@ For accelerator-shaped work without vendor SDKs:
 3. `example/forge_accel_memory_example.cpp`
 4. `example/forge_accel_pipeline_example.cpp`
 5. `example/forge_accel_message_device_example.cpp`
-6. `example/forge_inference_runtime_sketch.cpp`
+6. `example/forge_accel_session_reset_example.cpp`
+7. `example/forge_accel_packet_example.cpp`
+8. `example/forge_accel_model_example.cpp`
+9. `example/forge_accel_typed_error_example.cpp`
+10. `example/forge_inference_runtime_sketch.cpp`
+11. `example/forge_reference_runtime_example.cpp`
 
 These paths intentionally stay example-first. The detailed contracts live in
 the feature docs, so the cookbook remains a map rather than a duplicated API
@@ -94,7 +103,8 @@ reference.
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
 | accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
-| device/session message command | `example/forge_accel_message_device_example.cpp` |
+| device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp` |
+| model/session IO binding | `example/forge_accel_model_example.cpp` |
 | reference runtime pattern | `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp` |
 
 `example/CMakeLists.txt` 会把已构建的示例注册成 `example_<target>_smoke`，所以这些
@@ -301,6 +311,7 @@ reference.
 - `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_session_reset_example.cpp`
 - `example/forge_accel_packet_example.cpp`
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`

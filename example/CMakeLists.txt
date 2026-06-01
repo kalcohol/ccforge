@@ -122,6 +122,7 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
                 forge_accel_memory
                 forge_accel_staging_buffer
                 forge_accel_message_device
+                forge_accel_session_reset
                 forge_accel_packet
                 forge_accel_model
                 forge_accel_typed_error)

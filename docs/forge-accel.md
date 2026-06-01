@@ -388,6 +388,7 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_session_reset_example.cpp`
 - `example/forge_accel_packet_example.cpp`
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`

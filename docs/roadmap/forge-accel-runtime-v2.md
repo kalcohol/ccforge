@@ -236,6 +236,11 @@ Acceptance:
 
 ## phase 7: examples and cookbook
 
+Status: implemented. The accel example set now covers simple copy, typed errors,
+memory/coherence, cross-queue events, device/session commands, session reset,
+owning command packets, model execute, and reference runtime patterns. The
+cookbook links exact example filenames instead of duplicating API contracts.
+
 Target:
 
 - Provide a progressive example set from simple copy through reference inference
