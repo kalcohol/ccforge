@@ -22,4 +22,6 @@
 
 #pragma once
 
-#include "accel/context.hpp"
+#include "accel/error.hpp"
+#include "accel/vocabulary.hpp"
+#include "accel/mock.hpp"

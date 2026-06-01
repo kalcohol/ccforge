@@ -93,41 +93,41 @@ struct stoppable_async_receiver {
 } // namespace
 
 TEST(AccelSubmitTest, SubmitMutatesDeviceBuffer) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::device_buffer<int> device{ctx, 3};
+    forge::accel::mock::device_buffer<int> device{ctx, 3};
     std::vector<int> input{2, 4, 6};
     std::vector<int> output(3);
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::copy_to_device(q, device, std::span<const int>{input})).has_value());
+        forge::accel::mock::copy_to_device(q, device, std::span<const int>{input})).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::submit(q, [&] {
+        forge::accel::mock::submit(q, [&] {
             auto values = device.span();
             values[0] += 10;
             values[1] += 20;
             values[2] += 30;
         })).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::copy_to_host(q, std::span<int>{output}, device)).has_value());
+        forge::accel::mock::copy_to_host(q, std::span<int>{output}, device)).has_value());
 
     EXPECT_EQ(output, (std::vector<int>{12, 24, 36}));
 }
 
 TEST(AccelSubmitTest, SubmitExceptionsRouteError) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
 
     EXPECT_THROW(
         (void)std::execution::sync_wait(
-            forge::accel::submit(q, [] {
+            forge::accel::mock::submit(q, [] {
                 throw std::runtime_error{"kernel failed"};
             })),
         std::runtime_error);
 }
 
 TEST(AccelSubmitTest, PreStoppedReceiverCompletesStoppedWithoutRunningCommand) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     std::inplace_stop_source source;
     source.request_stop();
@@ -135,7 +135,7 @@ TEST(AccelSubmitTest, PreStoppedReceiverCompletesStoppedWithoutRunningCommand) {
     bool ran = false;
     bool value = false;
     bool stopped = false;
-    auto sender = forge::accel::submit(q, [&] {
+    auto sender = forge::accel::mock::submit(q, [&] {
         ran = true;
     });
     auto op = std::execution::connect(
@@ -153,7 +153,7 @@ TEST(AccelSubmitTest, PreStoppedReceiverCompletesStoppedWithoutRunningCommand) {
 TEST(AccelSubmitTest, PostStartReceiverStopDoesNotCancelAcceptedCommandV1) {
     using namespace std::chrono_literals;
 
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 2,
     }};
@@ -166,7 +166,7 @@ TEST(AccelSubmitTest, PostStartReceiverStopDoesNotCancelAcceptedCommandV1) {
 
     auto first_state = std::make_shared<async_state>();
     std::inplace_stop_source first_source;
-    auto first = forge::accel::submit(q, [&] {
+    auto first = forge::accel::mock::submit(q, [&] {
         {
             std::lock_guard lk{mtx};
             first_started = true;
@@ -189,7 +189,7 @@ TEST(AccelSubmitTest, PostStartReceiverStopDoesNotCancelAcceptedCommandV1) {
     auto second_state = std::make_shared<async_state>();
     std::inplace_stop_source second_source;
     bool second_ran = false;
-    auto second = forge::accel::submit(q, [&] {
+    auto second = forge::accel::mock::submit(q, [&] {
         second_ran = true;
     });
     auto second_op = std::execution::connect(
@@ -215,12 +215,12 @@ TEST(AccelSubmitTest, PostStartReceiverStopDoesNotCancelAcceptedCommandV1) {
 }
 
 TEST(AccelSubmitTest, CommandsComposeWithThen) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     int value = 0;
 
     auto result = std::execution::sync_wait(
-        forge::accel::submit(q, [&] {
+        forge::accel::mock::submit(q, [&] {
             value = 41;
         }) | std::execution::then([&] {
             return value + 1;

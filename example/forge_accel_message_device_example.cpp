@@ -12,7 +12,7 @@ struct response_packet {
 };
 
 int main() {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 8,
     }};
@@ -22,7 +22,7 @@ int main() {
 
     response_packet response{};
     auto result = std::execution::sync_wait(
-        forge::accel::submit_message(
+        forge::accel::mock::submit_message(
             session,
             request_packet{128},
             response,

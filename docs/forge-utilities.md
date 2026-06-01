@@ -20,7 +20,7 @@ IO backend 使用独立头：
 
 它受 `FORGE_ENABLE_FORGE_IO` gate 控制；详见 [`forge::io`](forge-io.md)。
 
-Accelerator-like mock backend 使用独立头：
+Accelerator-like runtime vocabulary and mock backend 使用独立头：
 
 ```cpp
 #include <forge/accel.hpp>
@@ -58,7 +58,7 @@ Allocation audit:
 | `async_scope` | none in V1 | spawned op-state uses raw `new/delete` plus intrusive refcount keepalive; changing it needs a dedicated lifetime task | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
-| `forge::accel` mock backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; mock buffers are not vendor pinned memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
+| `forge::accel::mock` backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; mock buffers are not vendor pinned memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
 | type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, `any_scheduler`, and `erased_sender` use SBO/default heap storage and are not allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
 
 Failure policy:
@@ -103,22 +103,25 @@ async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::s
 macOS/BSD kqueue 当前不在项目需求内；Linux `io_uring` 仅在需要 kernel
 submission/completion queue 语义时才应单独立项。详细语义见 [`forge::io`](forge-io.md)。
 
-## accel mock backend
+## accel runtime vocabulary and mock backend
 
-- `forge::accel::context`：portable mock/in-memory accelerator-like context，
+- `forge::accel::mock::context`：portable mock/in-memory accelerator-like context，
   用 Forge runtime 原语模拟 command queue、device/session、device buffer、copy、
   message command 和 kernel-like submit 的 sender 语义。它不是
   CUDA/HIP/SYCL/OpenCL/Vulkan/FPGA/NPU backend，也不执行真实硬件加速。
 
-V1 提供 `copy_to_device`、`copy_to_host`、`copy_device_to_device`、
-`submit(queue/session, callable)` 和 `submit_message(session, request, response,
-handler)`，并提供最小 `event` / `record_event` / `wait_event` / `fence` completion
-boundary。`device_buffer<T>` 拥有 mock device storage，`T` 需要 trivially copyable；
+`forge::accel` 本层提供 `device_id`、`device_info`、`memory_kind`、`queue_kind`、
+`copy_kind`、`command_status`、`error_kind` 等 backend-neutral vocabulary。
+`forge::accel::mock` 提供 `copy_to_device`、`copy_to_host`、
+`copy_device_to_device`、`submit(queue/session, callable)` 和
+`submit_message(session, request, response, handler)`，并提供最小 `event` /
+`record_event` / `wait_event` / `fence` completion boundary。
+`mock::device_buffer<T>` 拥有 mock device storage，`T` 需要 trivially copyable；
 host span 和 message response 是 borrowed，必须活到 command completion。
 同一 queue 上 command FIFO 串行执行，queue 容量满或 shutdown 后新启动的 command
 以 stopped 完成。error 路径使用 `std::exception_ptr`。
 
-V1 event/fence 不暴露 native vendor handle，不建模跨 queue dependency graph，也不
+当前 mock event/fence 不暴露 native vendor handle，不建模跨 queue dependency graph，也不
 检测 dependency cycle。
 详见 [`forge::accel`](forge-accel.md)。
 

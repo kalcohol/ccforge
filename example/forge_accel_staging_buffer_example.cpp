@@ -29,25 +29,25 @@
 #include <tuple>
 
 int main() {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
 
-    forge::accel::host_buffer<int> input{ctx, 4};
-    forge::accel::host_buffer<int> output{ctx, 4};
-    forge::accel::device_buffer<int> device{ctx, 4};
+    forge::accel::mock::host_buffer<int> input{ctx, 4};
+    forge::accel::mock::host_buffer<int> output{ctx, 4};
+    forge::accel::mock::device_buffer<int> device{ctx, 4};
 
     std::ranges::copy(std::initializer_list<int>{1, 2, 3, 4}, input.span().begin());
 
     assert(std::execution::sync_wait(
-        forge::accel::copy_to_device(q, device, input.span())).has_value());
+        forge::accel::mock::copy_to_device(q, device, input.span())).has_value());
     assert(std::execution::sync_wait(
-        forge::accel::submit(q, [&] {
+        forge::accel::mock::submit(q, [&] {
             for (auto& value : device.span()) {
                 value += 10;
             }
         })).has_value());
     assert(std::execution::sync_wait(
-        forge::accel::copy_to_host(q, output.span(), device)).has_value());
+        forge::accel::mock::copy_to_host(q, output.span(), device)).has_value());
 
     assert(output.span()[0] == 11);
     assert(output.span()[1] == 12);

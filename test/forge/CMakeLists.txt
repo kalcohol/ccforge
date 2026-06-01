@@ -65,6 +65,10 @@ if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
 endif()
 
 if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
+    forge_add_forge_compile_probe(
+        test_forge_accel_vocabulary
+        test_forge_accel_vocabulary.cpp
+        forge_accel_vocabulary)
     forge_add_forge_test(test_forge_accel_context test_forge_accel_context.cpp forge_accel_context)
     forge_add_forge_test(test_forge_accel_copy test_forge_accel_copy.cpp forge_accel_copy)
     forge_add_forge_test(test_forge_accel_event test_forge_accel_event.cpp forge_accel_event)

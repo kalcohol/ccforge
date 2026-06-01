@@ -49,7 +49,7 @@ Platform/proof surfaces:
 
 - `forge::io` Linux epoll/eventfd readiness backend
 - `forge::io` Windows IOCP proof backend
-- `forge::accel` portable mock command backend
+- `forge::accel` runtime vocabulary and portable mock/reference backend
 - opt-in typed-error variants for `forge::io`
 - opt-in typed-error variants for `forge::accel`
 

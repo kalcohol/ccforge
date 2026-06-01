@@ -51,7 +51,7 @@ int main() {
         .queue_capacity = 16,
         .memory = &arena,
     }};
-    forge::accel::context accel{forge::accel::context_options{
+    forge::accel::mock::context accel{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 8,
         .memory = &arena,
@@ -69,22 +69,22 @@ int main() {
         | std::execution::then([&] {
             while (auto item = std::execution::sync_wait(incoming.async_recv())) {
                 auto req = std::get<0>(*item);
-                forge::accel::device_buffer<float> device{accel, req.values.size()};
+                forge::accel::mock::device_buffer<float> device{accel, req.values.size()};
                 std::array<float, 4> output{};
 
                 assert(std::execution::sync_wait(
-                    forge::accel::copy_to_device(
+                    forge::accel::mock::copy_to_device(
                         accel_queue,
                         device,
                         std::span<const float>{req.values})).has_value());
                 assert(std::execution::sync_wait(
-                    forge::accel::submit(accel_queue, [&] {
+                    forge::accel::mock::submit(accel_queue, [&] {
                         for (auto& value : device.span()) {
                             value *= value;
                         }
                     })).has_value());
                 assert(std::execution::sync_wait(
-                    forge::accel::copy_to_host(
+                    forge::accel::mock::copy_to_host(
                         accel_queue,
                         std::span<float>{output},
                         device)).has_value());

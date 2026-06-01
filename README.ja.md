@@ -31,7 +31,7 @@ backport ヘッダーを注入します。
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backend |
-| `forge::accel` | `<forge/accel.hpp>` | portable mock command backend with typed-error variants |
+| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
 

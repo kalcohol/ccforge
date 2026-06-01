@@ -66,7 +66,7 @@ public:
               .queue_capacity = 32,
               .memory = &arena_,
           })
-        , accel_(forge::accel::context_options{
+        , accel_(forge::accel::mock::context_options{
               .thread_count = 1,
               .queue_capacity = 16,
               .memory = &arena_,
@@ -158,11 +158,11 @@ private:
         -> inference_response {
         inference_response response{.id = request.id};
 
-        forge::accel::device_buffer<float> device{accel_, request.features.size()};
-        forge::accel::host_buffer<float> output{accel_, request.features.size()};
+        forge::accel::mock::device_buffer<float> device{accel_, request.features.size()};
+        forge::accel::mock::host_buffer<float> output{accel_, request.features.size()};
 
         if (!wait_accel(
-                forge::accel::copy_to_device_typed(
+                forge::accel::mock::copy_to_device_typed(
                     accel_queue_,
                     device,
                     std::span<const float>{request.features}),
@@ -171,7 +171,7 @@ private:
         }
 
         if (!wait_accel(
-                forge::accel::submit_typed(accel_queue_, [&] {
+                forge::accel::mock::submit_typed(accel_queue_, [&] {
                     for (auto& value : device.span()) {
                         value = value * value + 1.0f;
                     }
@@ -181,7 +181,7 @@ private:
         }
 
         if (!wait_accel(
-                forge::accel::copy_to_host_typed(
+                forge::accel::mock::copy_to_host_typed(
                     accel_queue_,
                     output.span(),
                     device),
@@ -227,11 +227,11 @@ private:
     std::pmr::monotonic_buffer_resource upstream_;
     std::pmr::synchronized_pool_resource arena_;
     forge::resource_context runtime_;
-    forge::accel::context accel_;
+    forge::accel::mock::context accel_;
     forge::bounded_channel<inference_request> requests_;
     forge::bounded_channel<inference_response> responses_;
     forge::strand result_order_;
-    forge::accel::queue accel_queue_;
+    forge::accel::mock::queue accel_queue_;
     runtime_stats stats_{};
     bool started_ = false;
 };

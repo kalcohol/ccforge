@@ -1,7 +1,7 @@
 # `forge::accel` runtime v2 roadmap
 
-This roadmap is the long-lived goal anchor for evolving `forge::accel` from the
-current portable mock command backend into a backend-neutral accelerator runtime
+This roadmap is the long-lived goal anchor for evolving `forge::accel` from its
+initial portable mock command proof into a backend-neutral accelerator runtime
 support layer.
 
 It does not approve CUDA, HIP, SYCL, CANN, AXCL, XRT, FPGA, NPU, or other vendor
@@ -82,6 +82,12 @@ Real backend proofs must first explain how they map to the reference backend's
 contracts before exposing backend-specific extensions.
 
 ## phase 1: vocabulary split
+
+Status: implemented. `forge::accel` now owns backend-neutral vocabulary and
+typed-error/status types, while the dependency-free reference backend lives under
+`forge::accel::mock`. The old V1 context/queue/buffer command names are not
+kept as compatibility aliases; the old `<forge/accel/context.hpp>` include path
+is only a forwarding header to the mock backend.
 
 Target:
 

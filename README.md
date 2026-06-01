@@ -30,7 +30,7 @@ missing native support injects Forge's backport headers.
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP proof backends |
-| `forge::accel` | `<forge/accel.hpp>` | portable mock command backend with typed-error variants |
+| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 For exact behavior and caveats, see the [documentation index](docs/README.md).
 

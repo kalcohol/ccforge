@@ -18,9 +18,12 @@
 - `resource_context`
 - `strand`
 - `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
-- `accel::context` / `accel::device` / `accel::device_session` /
-  `accel::queue` / `accel::device_buffer` / `accel::event`
-- `accel` mock copy / submit / submit_message / event / fence command senders
+- `accel` backend-neutral vocabulary (`device_id`, `device_info`, memory/queue/copy
+  kinds, command/error/model metadata)
+- `accel::mock::context` / `accel::mock::device` /
+  `accel::mock::device_session` / `accel::mock::queue` /
+  `accel::mock::device_buffer` / `accel::mock::event`
+- `accel::mock` copy / submit / submit_message / event / fence command senders
 - `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
@@ -216,8 +219,7 @@ epoll/io_uring/IOCP 语义差异。
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
 
-`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 V1 已用 portable mock backend
-落地以下共同结构：
+`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 mock/reference backend 已落地以下共同结构：
 
 - command queue / stream 的生命周期；
 - event/fence 的 sender completion 形状；
@@ -228,20 +230,20 @@ epoll/io_uring/IOCP 语义差异。
 当前 surface：
 
 ```cpp
-forge::accel::context
-forge::accel::device
-forge::accel::device_session
-forge::accel::queue
-forge::accel::device_buffer
-forge::accel::event
-forge::accel::copy_to_device(...)
-forge::accel::copy_to_host(...)
-forge::accel::copy_device_to_device(...)
-forge::accel::submit(...)
-forge::accel::submit_message(...)
-forge::accel::record_event(...)
-forge::accel::wait_event(...)
-forge::accel::fence(...)
+forge::accel::mock::context
+forge::accel::mock::device
+forge::accel::mock::device_session
+forge::accel::mock::queue
+forge::accel::mock::device_buffer
+forge::accel::mock::event
+forge::accel::mock::copy_to_device(...)
+forge::accel::mock::copy_to_host(...)
+forge::accel::mock::copy_device_to_device(...)
+forge::accel::mock::submit(...)
+forge::accel::mock::submit_message(...)
+forge::accel::mock::record_event(...)
+forge::accel::mock::wait_event(...)
+forge::accel::mock::fence(...)
 ```
 
 具体后端若未来需要，可放在：
@@ -277,7 +279,7 @@ proof。
 避免示例和插件边界重复手写 receiver。
 
 默认 accel surface 仍使用 `std::exception_ptr`。真实 backend 若引入 vendor-specific
-错误码，应作为独立 mapping 决策，不应反向污染 portable mock API。
+错误码，应作为独立 mapping 决策，不应反向污染 portable vocabulary 或 mock API。
 
 ## examples strategy
 

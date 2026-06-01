@@ -67,7 +67,7 @@ auto wait_done(const std::shared_ptr<async_state>& state) -> bool {
 } // namespace
 
 TEST(AccelContextTest, EmptyContextDestroysCleanly) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     ctx.shutdown();
     ctx.wait();
 }
@@ -76,12 +76,12 @@ TEST(AccelContextTest, OptionsConstructorUsesCustomMemoryResource) {
     forge_test::counting_resource resource;
 
     {
-        forge::accel::context ctx{forge::accel::context_options{
+        forge::accel::mock::context ctx{forge::accel::mock::context_options{
             .thread_count = 1,
             .queue_capacity = std::nullopt,
             .memory = &resource,
         }};
-        forge::accel::device_buffer<int> buffer{ctx, 32};
+        forge::accel::mock::device_buffer<int> buffer{ctx, 32};
         EXPECT_GT(resource.allocations(), 0u);
     }
 
@@ -89,45 +89,45 @@ TEST(AccelContextTest, OptionsConstructorUsesCustomMemoryResource) {
 }
 
 TEST(AccelContextTest, QueueRunsCommandsInFifoOrder) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     std::vector<int> order;
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::submit(q, [&] { order.push_back(1); })).has_value());
+        forge::accel::mock::submit(q, [&] { order.push_back(1); })).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::submit(q, [&] { order.push_back(2); })).has_value());
+        forge::accel::mock::submit(q, [&] { order.push_back(2); })).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::submit(q, [&] { order.push_back(3); })).has_value());
+        forge::accel::mock::submit(q, [&] { order.push_back(3); })).has_value());
 
     EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
 }
 
 TEST(AccelContextTest, CloseRejectsNewCommands) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
 
     ctx.close();
-    auto result = std::execution::sync_wait(forge::accel::submit(q, [] {}));
+    auto result = std::execution::sync_wait(forge::accel::mock::submit(q, [] {}));
 
     EXPECT_FALSE(result.has_value());
 }
 
 TEST(AccelContextTest, QueueAfterContextDestructionCompletesStopped) {
-    forge::accel::queue q;
+    forge::accel::mock::queue q;
     {
-        forge::accel::context ctx;
+        forge::accel::mock::context ctx;
         q = ctx.get_queue();
     }
 
     EXPECT_TRUE(q.closed());
-    auto result = std::execution::sync_wait(forge::accel::submit(q, [] {}));
+    auto result = std::execution::sync_wait(forge::accel::mock::submit(q, [] {}));
 
     EXPECT_FALSE(result.has_value());
 }
 
 TEST(AccelContextTest, RequestStopStopsQueuedCommands) {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 2,
     }};
@@ -140,7 +140,7 @@ TEST(AccelContextTest, RequestStopStopsQueuedCommands) {
     auto first_state = std::make_shared<async_state>();
     auto second_state = std::make_shared<async_state>();
 
-    auto first = forge::accel::submit(q, [&] {
+    auto first = forge::accel::mock::submit(q, [&] {
         {
             std::lock_guard lk{mtx};
             first_started = true;
@@ -157,7 +157,7 @@ TEST(AccelContextTest, RequestStopStopsQueuedCommands) {
         ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
     }
 
-    auto second = forge::accel::submit(q, [] {});
+    auto second = forge::accel::mock::submit(q, [] {});
     auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
     std::execution::start(second_op);
 
@@ -179,7 +179,7 @@ TEST(AccelContextTest, RequestStopStopsQueuedCommands) {
 }
 
 TEST(AccelContextTest, QueueCapacityFullCompletesStopped) {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 1,
     }};
@@ -191,7 +191,7 @@ TEST(AccelContextTest, QueueCapacityFullCompletesStopped) {
     bool release = false;
     auto state = std::make_shared<async_state>();
 
-    auto first = forge::accel::submit(q, [&] {
+    auto first = forge::accel::mock::submit(q, [&] {
         {
             std::lock_guard lk{mtx};
             started = true;
@@ -208,7 +208,7 @@ TEST(AccelContextTest, QueueCapacityFullCompletesStopped) {
         ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
     }
 
-    auto result = std::execution::sync_wait(forge::accel::submit(q, [] {}));
+    auto result = std::execution::sync_wait(forge::accel::mock::submit(q, [] {}));
     EXPECT_FALSE(result.has_value());
 
     {
@@ -222,7 +222,7 @@ TEST(AccelContextTest, QueueCapacityFullCompletesStopped) {
 }
 
 TEST(AccelContextTest, RepeatedShutdownAndWaitAreHarmless) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     ctx.shutdown();
     ctx.shutdown();
     ctx.wait();

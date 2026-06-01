@@ -120,13 +120,13 @@ using accel_error_cs = std::execution::completion_signatures<
 } // namespace
 
 TEST(AccelTypedErrorTest, CopySizeMismatchReportsTypedError) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::device_buffer<int> device{ctx, 2};
+    forge::accel::mock::device_buffer<int> device{ctx, 2};
     std::vector<int> input{1, 2, 3};
     auto state = std::make_shared<typed_state>();
 
-    auto sender = forge::accel::copy_to_device_typed(
+    auto sender = forge::accel::mock::copy_to_device_typed(
         q,
         device,
         std::span<const int>{input});
@@ -138,16 +138,16 @@ TEST(AccelTypedErrorTest, CopySizeMismatchReportsTypedError) {
 }
 
 TEST(AccelTypedErrorTest, InvalidEventReportsTypedError) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
     auto moved = std::move(ev);
     auto state = std::make_shared<typed_state>();
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::record_event(q, moved)).has_value());
+        forge::accel::mock::record_event(q, moved)).has_value());
 
-    auto sender = forge::accel::record_event_typed(q, std::move(ev));
+    auto sender = forge::accel::mock::record_event_typed(q, std::move(ev));
     auto op = std::execution::connect(std::move(sender), typed_receiver{state});
     std::execution::start(op);
 
@@ -158,12 +158,12 @@ TEST(AccelTypedErrorTest, MessageFailureReportsCommandStatus) {
     struct request_packet { int value = 0; };
     struct response_packet { int value = 0; };
 
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();
     response_packet response{};
     auto state = std::make_shared<typed_state>();
 
-    auto sender = forge::accel::submit_message_typed(
+    auto sender = forge::accel::mock::submit_message_typed(
         session,
         request_packet{1},
         response,
@@ -179,11 +179,11 @@ TEST(AccelTypedErrorTest, MessageFailureReportsCommandStatus) {
 }
 
 TEST(AccelTypedErrorTest, SubmitUserExceptionPreservesCause) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     auto state = std::make_shared<typed_state>();
 
-    auto sender = forge::accel::submit_typed(q, [] {
+    auto sender = forge::accel::mock::submit_typed(q, [] {
         throw std::runtime_error{"user kernel failed"};
     });
     auto op = std::execution::connect(std::move(sender), typed_receiver{state});
@@ -195,14 +195,14 @@ TEST(AccelTypedErrorTest, SubmitUserExceptionPreservesCause) {
 }
 
 TEST(AccelTypedErrorTest, TypedSenderCrossesErasedSenderBoundary) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::device_buffer<int> device{ctx, 1};
+    forge::accel::mock::device_buffer<int> device{ctx, 1};
     std::vector<int> input{1, 2};
     auto state = std::make_shared<typed_state>();
 
     forge::erased_sender<accel_error_cs> sender{
-        forge::accel::copy_to_device_typed(
+        forge::accel::mock::copy_to_device_typed(
             q,
             device,
             std::span<const int>{input})};
@@ -213,26 +213,26 @@ TEST(AccelTypedErrorTest, TypedSenderCrossesErasedSenderBoundary) {
 }
 
 TEST(AccelTypedErrorTest, DefaultExceptionApiStillWorks) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::device_buffer<int> device{ctx, 2};
+    forge::accel::mock::device_buffer<int> device{ctx, 2};
     std::vector<int> input{1, 2, 3};
 
     EXPECT_THROW(
         (void)std::execution::sync_wait(
-            forge::accel::copy_to_device(q, device, std::span<const int>{input})),
+            forge::accel::mock::copy_to_device(q, device, std::span<const int>{input})),
         std::runtime_error);
 }
 
 TEST(AccelTypedErrorTest, PreStoppedTypedSenderStillStops) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     std::inplace_stop_source source;
     source.request_stop();
     bool ran = false;
     auto state = std::make_shared<typed_state>();
 
-    auto sender = forge::accel::submit_typed(q, [&] {
+    auto sender = forge::accel::mock::submit_typed(q, [&] {
         ran = true;
     });
     auto op = std::execution::connect(
@@ -249,12 +249,12 @@ TEST(AccelTypedErrorTest, PreStoppedTypedSenderStillStops) {
 }
 
 TEST(AccelTypedErrorTest, PreStoppedTypedSenderAllowsReceiverToDestroyOperation) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
     std::inplace_stop_source source;
     source.request_stop();
     bool ran = false;
-    auto sender = forge::accel::submit_typed(q, [&] {
+    auto sender = forge::accel::mock::submit_typed(q, [&] {
         ran = true;
     });
 

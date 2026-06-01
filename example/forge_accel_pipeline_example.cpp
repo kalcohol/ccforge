@@ -30,7 +30,7 @@
 #include <vector>
 
 int main() {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 8,
     }};
@@ -38,20 +38,20 @@ int main() {
 
     std::vector<float> input{1.0f, 2.0f, 3.0f, 4.0f};
     std::vector<float> output(input.size());
-    forge::accel::device_buffer<float> device{ctx, input.size()};
+    forge::accel::mock::device_buffer<float> device{ctx, input.size()};
 
     assert(std::execution::sync_wait(
-        forge::accel::copy_to_device(q, device, std::span<const float>{input})).has_value());
+        forge::accel::mock::copy_to_device(q, device, std::span<const float>{input})).has_value());
 
     assert(std::execution::sync_wait(
-        forge::accel::submit(q, [&] {
+        forge::accel::mock::submit(q, [&] {
             for (auto& value : device.span()) {
                 value = value * 2.0f + 1.0f;
             }
         })).has_value());
 
     auto result = std::execution::sync_wait(
-        forge::accel::copy_to_host(q, std::span<float>{output}, device)
+        forge::accel::mock::copy_to_host(q, std::span<float>{output}, device)
         | std::execution::then([&] {
             return std::accumulate(output.begin(), output.end(), 0.0f);
         }));

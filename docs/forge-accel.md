@@ -1,8 +1,10 @@
 # `forge::accel`
 
-`forge::accel` 是 Forge 的 accelerator-like 支撑层。V1 是 portable
-mock/in-memory backend，用纯 CPU 存储和 Forge runtime 原语固定 command queue、
-device buffer、copy 和 kernel-like submit 的 sender 语义。
+`forge::accel` 是 Forge 的 accelerator-like 支撑层。V2 方向把 portable
+runtime vocabulary 放在 `forge::accel`，并把 dependency-free reference backend
+放在 `forge::accel::mock`。当前可执行后端是 portable mock/in-memory backend，用纯
+CPU 存储和 Forge runtime 原语固定 command queue、device buffer、copy 和
+kernel-like submit 的 sender 语义。
 
 它不绑定 CUDA、HIP、SYCL、OpenCL、Vulkan、FPGA SDK 或 NPU driver，也不声明真实硬件
 加速。真实 vendor/platform backend 只有在这个语义模型稳定并确实有价值后才应作为
@@ -17,23 +19,31 @@ Future backend entry rules are tracked in the
 #include <forge/accel.hpp>
 ```
 
-## core types
+## portable vocabulary
 
-- `forge::accel::context`：拥有型 mock accelerator context。析构会
+`forge::accel` 本层提供 backend-neutral vocabulary，例如 `device_id`、
+`device_info`、`memory_kind`、`queue_kind`、`copy_kind`、`command_status`、
+`error_kind` 和 `model_io_info`。这些类型不绑定 mock storage，也不声明真实硬件
+能力。
+
+## mock reference backend
+
+- `forge::accel::mock::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
-- `forge::accel::device`：轻量 device handle，由 context 产生，不拥有真实硬件。
-- `forge::accel::device_session`：mock device session，用于表达 NPU/FPGA 风格
+- `forge::accel::mock::device`：轻量 device handle，由 context 产生，不拥有真实硬件。
+- `forge::accel::mock::device_session`：mock device session，用于表达 NPU/FPGA 风格
   command/response 生命周期和 reset 边界。
-- `forge::accel::queue`：轻量 queue handle。V1 单 queue 按 FIFO 串行执行 command。
-- `forge::accel::host_buffer<T>`：由 context resource 分配的 owning host staging
+- `forge::accel::mock::queue`：轻量 queue handle。当前 mock backend 单 queue 按 FIFO
+  串行执行 command。
+- `forge::accel::mock::host_buffer<T>`：由 context resource 分配的 owning host staging
   storage。它不是 pinned memory，只固定 staging buffer 的所有权和分配来源。
-- `forge::accel::device_buffer<T>`：拥有 mock device storage。V1 要求
+- `forge::accel::mock::device_buffer<T>`：拥有 mock device storage。当前 mock backend 要求
   `T` trivially copyable。
 
 `context_options` 可配置线程数、command queue 容量和 resource：
 
 ```cpp
-forge::accel::context ctx{forge::accel::context_options{
+forge::accel::mock::context ctx{forge::accel::mock::context_options{
     .thread_count = 1,
     .queue_capacity = 8,
     .memory = resource,
@@ -45,13 +55,13 @@ buffers 更久。
 
 ## commands
 
-V1 command sender：
+Mock command sender：
 
 ```cpp
-forge::accel::copy_to_device(q, device, std::span<const T>{host});
-forge::accel::copy_to_host(q, std::span<T>{host}, device);
-forge::accel::copy_device_to_device(q, dst, src);
-forge::accel::submit(q, [&] {
+forge::accel::mock::copy_to_device(q, device, std::span<const T>{host});
+forge::accel::mock::copy_to_host(q, std::span<T>{host}, device);
+forge::accel::mock::copy_device_to_device(q, dst, src);
+forge::accel::mock::submit(q, [&] {
     for (auto& value : device.span()) {
         value *= 2;
     }
@@ -64,7 +74,7 @@ forge::accel::submit(q, [&] {
 auto device = ctx.get_device();
 auto session = device.open_session();
 
-forge::accel::submit(session, [&] {
+forge::accel::mock::submit(session, [&] {
     // command for a device-like lane
 });
 ```
@@ -83,14 +93,14 @@ runtime layer. Opt-in typed-error variants are available when a boundary needs a
 closed error type:
 
 ```cpp
-forge::accel::copy_to_device_typed(q, device, std::span<const T>{host});
-forge::accel::copy_to_host_typed(q, std::span<T>{host}, device);
-forge::accel::copy_device_to_device_typed(q, dst, src);
-forge::accel::submit_typed(q, callable);
-forge::accel::submit_message_typed(session, request, response, handler);
-forge::accel::record_event_typed(q, ev);
-forge::accel::wait_event_typed(q, ev);
-forge::accel::fence_typed(q);
+forge::accel::mock::copy_to_device_typed(q, device, std::span<const T>{host});
+forge::accel::mock::copy_to_host_typed(q, std::span<T>{host}, device);
+forge::accel::mock::copy_device_to_device_typed(q, dst, src);
+forge::accel::mock::submit_typed(q, callable);
+forge::accel::mock::submit_message_typed(session, request, response, handler);
+forge::accel::mock::record_event_typed(q, ev);
+forge::accel::mock::wait_event_typed(q, ev);
+forge::accel::mock::fence_typed(q);
 ```
 
 Typed variants complete with:
@@ -110,7 +120,7 @@ std::execution::completion_signatures<
   status；
 - `cause`：原始 `std::exception_ptr`，用于需要重新抛出或记录底层诊断的边界。
 
-V1 的 typed errors 是 mock backend 的稳定小闭集；它们不试图声明 CUDA/HIP/SYCL 或
+当前 typed errors 是 mock backend 的稳定小闭集；它们不试图声明 CUDA/HIP/SYCL 或
 其它 vendor status model。
 
 Typed command sender 可以直接跨 `forge::erased_sender` 边界，并用
@@ -123,7 +133,7 @@ using command = std::execution::completion_signatures<
     std::execution::set_stopped_t()>;
 
 forge::erased_sender<command> op{
-    forge::accel::copy_to_device_typed(q, buffer, host)};
+    forge::accel::mock::copy_to_device_typed(q, buffer, host)};
 auto result = forge::wait_result(std::move(op));
 ```
 
@@ -137,7 +147,7 @@ auto result = forge::wait_result(std::move(op));
   内部调用，为避免自死锁会直接返回。
 - 析构：执行 `shutdown()` + `wait()`。
 
-Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop token V1 只在
+Queue 容量满时，新启动的 command 以 stopped 完成。receiver stop token 当前只在
 `start()` 前检查；command 被接受到串行 queue 后不会因该 receiver token 后续 stop
 而单独取消。需要取消已接受 command 时，使用 context `request_stop()` / `shutdown()`
 或 `device_session::reset()`；这保持 mock command record 简单，避免在没有真实硬件
@@ -158,7 +168,7 @@ struct request_packet { int count; };
 struct response_packet { int count; };
 
 response_packet response{};
-auto op = forge::accel::submit_message(
+auto op = forge::accel::mock::submit_message(
     session,
     request_packet{128},
     response,
@@ -187,22 +197,23 @@ handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`r
   活到相关 command completion。
 - `device_buffer<T>` 必须活到使用它的 command completion。
 - command 捕获的是 buffer object 地址和 borrowed span。command pending 期间移动或销毁
-  参与的 `host_buffer<T>` / `device_buffer<T>` / host span 是调用方错误；V1 不尝试
+  参与的 `mock::host_buffer<T>` / `mock::device_buffer<T>` / host span 是调用方错误；
+  当前 mock backend 不尝试
   pin 或自动延长这些对象的 lifetime。
-- V1 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
+- 当前 mock backend 单 queue 串行化同一 queue 上的 buffer 访问。跨 queue 并发访问尚未建模。
 - User completion 不在 accel 内部 mutex 下执行。
 
 ## events and fences
 
-V1 提供最小 completion-boundary 事件：
+Mock backend 提供最小 completion-boundary 事件：
 
 ```cpp
-forge::accel::event uploaded;
+forge::accel::mock::event uploaded;
 
-std::execution::sync_wait(forge::accel::copy_to_device(q, device, std::span<const T>{host}));
-std::execution::sync_wait(forge::accel::record_event(q, uploaded));
-std::execution::sync_wait(forge::accel::wait_event(q, uploaded));
-std::execution::sync_wait(forge::accel::fence(q));
+std::execution::sync_wait(forge::accel::mock::copy_to_device(q, device, std::span<const T>{host}));
+std::execution::sync_wait(forge::accel::mock::record_event(q, uploaded));
+std::execution::sync_wait(forge::accel::mock::wait_event(q, uploaded));
+std::execution::sync_wait(forge::accel::mock::fence(q));
 ```
 
 - `event` 是可复制的共享完成标记，默认未 ready。

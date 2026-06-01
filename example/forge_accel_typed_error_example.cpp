@@ -9,9 +9,9 @@
 #include <vector>
 
 int main() {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::device_buffer<int> device{ctx, 1};
+    forge::accel::mock::device_buffer<int> device{ctx, 1};
     std::vector<int> input{1, 2};
 
     using command = std::execution::completion_signatures<
@@ -20,7 +20,7 @@ int main() {
         std::execution::set_stopped_t()>;
 
     forge::erased_sender<command> work{
-        forge::accel::copy_to_device_typed(
+        forge::accel::mock::copy_to_device_typed(
             q,
             device,
             std::span<const int>{input})};

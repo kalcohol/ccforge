@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2026 Forge Project
+// Copyright (c) 2026 CC Forge Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,24 +20,51 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <forge/accel.hpp>
-#include <execution>
-#include <cassert>
-#include <span>
-#include <vector>
+#pragma once
 
-int main() {
-    forge::accel::mock::context ctx;
-    auto q = ctx.get_queue();
+#include <cstddef>
+#include <cstdint>
 
-    std::vector<int> host_in{1, 2, 3, 4};
-    std::vector<int> host_out(4);
-    forge::accel::mock::device_buffer<int> device{ctx, host_in.size()};
+namespace forge::accel {
 
-    assert(std::execution::sync_wait(
-        forge::accel::mock::copy_to_device(q, device, std::span<const int>{host_in})).has_value());
-    assert(std::execution::sync_wait(
-        forge::accel::mock::copy_to_host(q, std::span<int>{host_out}, device)).has_value());
+struct device_id {
+    std::uint32_t value = 0;
 
-    assert(host_out == host_in);
-}
+    friend auto operator==(device_id, device_id) -> bool = default;
+};
+
+struct device_info {
+    device_id id{};
+    std::uint32_t ordinal = 0;
+    bool available = true;
+};
+
+enum class memory_kind {
+    host,
+    pinned_host,
+    mapped_host,
+    device,
+    cached_device,
+    managed
+};
+
+enum class queue_kind {
+    general,
+    compute,
+    copy,
+    command
+};
+
+enum class copy_kind {
+    host_to_device,
+    device_to_host,
+    device_to_device,
+    host_to_host
+};
+
+struct model_io_info {
+    std::size_t inputs = 0;
+    std::size_t outputs = 0;
+};
+
+} // namespace forge::accel

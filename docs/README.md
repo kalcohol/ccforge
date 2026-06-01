@@ -25,7 +25,7 @@ stable multilingual entrypoints.
 - [`forge::` 扩展工具](forge-utilities.md)
 - [forge runtime lifecycle contract](forge-runtime.md)
 - [`forge::io` backend](forge-io.md)
-- [`forge::accel` mock command backend](forge-accel.md)
+- [`forge::accel` runtime vocabulary and mock backend](forge-accel.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 
 ## integration and verification

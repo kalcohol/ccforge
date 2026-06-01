@@ -29,7 +29,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP proof |
-| `forge::accel` | `<forge/accel.hpp>` | portable mock command backend，带 typed-error variants |
+| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 更精确的语义、限制和状态说明见 [文档目录](docs/README.md)。
 

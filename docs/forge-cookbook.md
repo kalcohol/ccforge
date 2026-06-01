@@ -2,7 +2,7 @@
 
 这份文档把 `include/forge/` 扩展设施按工程用法串起来。它不是 API
 reference；reference 见 [`forge::` 扩展工具](forge-utilities.md)、[runtime
-lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](forge-accel.md)
+lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and mock backend](forge-accel.md)
 和 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
 
 核心心智模型：
@@ -203,7 +203,7 @@ reference.
 - `bounded_channel_options{.memory = resource}`
 - `strand_options{.memory = resource}`
 - `timer_context_options{.memory = resource}` 或 `runtime_context_options{.memory = resource}`
-- `forge::accel::context_options{.memory = resource}`
+- `forge::accel::mock::context_options{.memory = resource}`
 
 关键点：
 
@@ -257,9 +257,9 @@ reference.
 
 使用：
 
-- `forge::accel::context`
-- `forge::accel::host_buffer<T>`
-- `forge::accel::device_buffer<T>`
+- `forge::accel::mock::context`
+- `forge::accel::mock::host_buffer<T>`
+- `forge::accel::mock::device_buffer<T>`
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `submit(queue, callable)`
 - `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
@@ -301,7 +301,7 @@ runtime 边界。
 - `forge::resource_context` 拥有 worker；
 - `forge::bounded_channel<Request>` 表达 bounded ingress；
 - `forge::bounded_channel<Response>` 表达 bounded response path；
-- `forge::accel::context` / `queue` / `device_buffer` 表达 device-like work；
+- `forge::accel::mock::context` / `queue` / `device_buffer` 表达 device-like work；
 - `forge::strand` 序列化统计或 session state；
 - `forge::wait_result` 消费 opt-in typed accel errors。
 

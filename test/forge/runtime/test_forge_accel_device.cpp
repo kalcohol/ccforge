@@ -76,13 +76,13 @@ struct response_packet {
 } // namespace
 
 TEST(AccelDeviceTest, DeviceOpensSessionAndRunsCommand) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto device = ctx.get_device();
     auto session = device.open_session();
 
     int observed = 0;
     auto result = std::execution::sync_wait(
-        forge::accel::submit(session, [&] {
+        forge::accel::mock::submit(session, [&] {
             observed = 42;
         }));
 
@@ -93,12 +93,12 @@ TEST(AccelDeviceTest, DeviceOpensSessionAndRunsCommand) {
 }
 
 TEST(AccelDeviceTest, MessageCommandProducesResponse) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();
 
     response_packet response{};
     auto result = std::execution::sync_wait(
-        forge::accel::submit_message(
+        forge::accel::mock::submit_message(
             session,
             request_packet{21},
             response,
@@ -112,14 +112,14 @@ TEST(AccelDeviceTest, MessageCommandProducesResponse) {
 }
 
 TEST(AccelDeviceTest, MessageFailureRoutesCommandError) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();
 
     response_packet response{};
 
     EXPECT_THROW(
         (void)std::execution::sync_wait(
-            forge::accel::submit_message(
+            forge::accel::mock::submit_message(
                 session,
                 request_packet{1},
                 response,
@@ -130,19 +130,19 @@ TEST(AccelDeviceTest, MessageFailureRoutesCommandError) {
 }
 
 TEST(AccelDeviceTest, ResetStopsNewSessionCommands) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();
 
     session.reset();
     auto result = std::execution::sync_wait(
-        forge::accel::submit(session, [] {}));
+        forge::accel::mock::submit(session, [] {}));
 
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(session.reset_requested());
 }
 
 TEST(AccelDeviceTest, ResetStopsQueuedCommandBeforeExecution) {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = 2,
     }};
@@ -155,7 +155,7 @@ TEST(AccelDeviceTest, ResetStopsQueuedCommandBeforeExecution) {
     auto first_state = std::make_shared<async_state>();
     auto second_state = std::make_shared<async_state>();
 
-    auto first = forge::accel::submit(session, [&] {
+    auto first = forge::accel::mock::submit(session, [&] {
         {
             std::lock_guard lk{mtx};
             first_started = true;
@@ -172,7 +172,7 @@ TEST(AccelDeviceTest, ResetStopsQueuedCommandBeforeExecution) {
         ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
     }
 
-    auto second = forge::accel::submit(session, [] {});
+    auto second = forge::accel::mock::submit(session, [] {});
     auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
     std::execution::start(second_op);
 
@@ -196,14 +196,14 @@ TEST(AccelDeviceTest, SessionStateUsesContextResource) {
     forge_test::counting_resource resource;
 
     {
-        forge::accel::context ctx{forge::accel::context_options{
+        forge::accel::mock::context ctx{forge::accel::mock::context_options{
             .thread_count = 1,
             .queue_capacity = std::nullopt,
             .memory = &resource,
         }};
         auto session = ctx.get_device().open_session();
         ASSERT_TRUE(std::execution::sync_wait(
-            forge::accel::submit(session, [] {})).has_value());
+            forge::accel::mock::submit(session, [] {})).has_value());
     }
 
     EXPECT_GT(resource.allocations(), 0u);

@@ -6,7 +6,8 @@ dependencies by itself.
 General gate, lifetime, verification, and typed-error rules are defined in
 [backend proof policy](forge-backend-proof-policy.md).
 
-The current shipped backend is the portable mock/in-memory backend in
+The current shipped backend is the portable mock/in-memory reference backend in
+`include/forge/accel/mock/`. Backend-neutral vocabulary lives in
 `include/forge/accel/`. A future backend should preserve the same user-facing
 shape before it exposes vendor-specific details.
 
@@ -14,12 +15,12 @@ shape before it exposes vendor-specific details.
 
 The stable portable vocabulary is intentionally small:
 
-- owning `context`;
-- lightweight `device` and `queue` handles derived from the context;
+- owning backend context, currently `forge::accel::mock::context`;
+- lightweight device and queue handles derived from the context;
 - optional `device_session` for command/response style devices;
-- owning `host_buffer<T>` and `device_buffer<T>`;
+- owning host and device buffers;
 - borrowed host spans for copy commands;
-- minimal `event` / `record_event` / `wait_event` / `fence` completion boundary;
+- minimal event / record / wait / fence completion boundary;
 - command senders for H2D, D2H, D2D, generic `submit`, and message submit.
 
 This vocabulary is meant to cover common stream/queue/event/device-memory

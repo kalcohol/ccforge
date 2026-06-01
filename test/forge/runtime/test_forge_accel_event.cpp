@@ -73,39 +73,39 @@ auto wait_done_for(const std::shared_ptr<async_state>& state, std::chrono::milli
 } // namespace
 
 TEST(AccelEventTest, EventStartsUnreadyAndCopiesShareState) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
     auto copy = ev;
 
     EXPECT_FALSE(ev.ready());
     EXPECT_FALSE(copy.ready());
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::record_event(q, ev)).has_value());
+        forge::accel::mock::record_event(q, ev)).has_value());
 
     EXPECT_TRUE(ev.ready());
     EXPECT_TRUE(copy.ready());
 }
 
 TEST(AccelEventTest, WaitEventCompletesAfterRecordEvent) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::record_event(q, ev)).has_value());
+        forge::accel::mock::record_event(q, ev)).has_value());
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::wait_event(q, ev)).has_value());
+        forge::accel::mock::wait_event(q, ev)).has_value());
 }
 
 TEST(AccelEventTest, WaitEventStopsWhenContextStops) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
     auto state = std::make_shared<async_state>();
 
-    auto sender = forge::accel::wait_event(q, ev);
+    auto sender = forge::accel::mock::wait_event(q, ev);
     auto op = std::execution::connect(std::move(sender), async_receiver{state});
     std::execution::start(op);
 
@@ -118,16 +118,16 @@ TEST(AccelEventTest, WaitEventStopsWhenContextStops) {
 }
 
 TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = std::nullopt,
     }};
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
     auto wait_state = std::make_shared<async_state>();
     auto record_state = std::make_shared<async_state>();
 
-    auto wait_sender = forge::accel::wait_event(q, ev);
+    auto wait_sender = forge::accel::mock::wait_event(q, ev);
     auto wait_op = std::execution::connect(
         std::move(wait_sender),
         async_receiver{wait_state});
@@ -136,7 +136,7 @@ TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
     EXPECT_FALSE(wait_done_for(wait_state, 50ms));
     EXPECT_FALSE(ev.ready());
 
-    auto record_sender = forge::accel::record_event(q, ev);
+    auto record_sender = forge::accel::mock::record_event(q, ev);
     auto record_op = std::execution::connect(
         std::move(record_sender),
         async_receiver{record_state});
@@ -159,7 +159,7 @@ TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
 }
 
 TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
-    forge::accel::context ctx{forge::accel::context_options{
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,
         .queue_capacity = std::nullopt,
     }};
@@ -172,7 +172,7 @@ TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
     auto first_state = std::make_shared<async_state>();
     auto fence_state = std::make_shared<async_state>();
 
-    auto first = forge::accel::submit(q, [&] {
+    auto first = forge::accel::mock::submit(q, [&] {
         {
             std::lock_guard lk{mtx};
             started = true;
@@ -189,7 +189,7 @@ TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
         ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
     }
 
-    auto fence = forge::accel::fence(q);
+    auto fence = forge::accel::mock::fence(q);
     auto fence_op = std::execution::connect(std::move(fence), async_receiver{fence_state});
     std::execution::start(fence_op);
 
@@ -208,15 +208,15 @@ TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
 }
 
 TEST(AccelEventTest, MovedFromEventRoutesError) {
-    forge::accel::context ctx;
+    forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
-    forge::accel::event ev;
+    forge::accel::mock::event ev;
     auto moved = std::move(ev);
 
     ASSERT_TRUE(std::execution::sync_wait(
-        forge::accel::record_event(q, moved)).has_value());
+        forge::accel::mock::record_event(q, moved)).has_value());
     EXPECT_THROW(
         (void)std::execution::sync_wait(
-            forge::accel::record_event(q, std::move(ev))),
+            forge::accel::mock::record_event(q, std::move(ev))),
         std::runtime_error);
 }
