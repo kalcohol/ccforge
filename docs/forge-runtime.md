@@ -101,7 +101,9 @@ Non-owning views and lightweight handles should not block in destructors.
   if called from an accel command completion to avoid self-deadlock. Host spans
   are borrowed, while `mock::host_buffer<T>` / `mock::device_buffer<T>` own mock
   storage; memory kinds are portable metadata rather than real vendor
-  allocations. Receiver stop
+  allocations. Mock devices are context-owned handles with portable metadata;
+  device-bound queues and sessions check availability before running queued
+  commands, and mock device loss maps to `invalid_context`. Receiver stop
   tokens are observed before command acceptance; accepted commands are
   cancelled by context/session stop, not by per-operation receiver stop in v1.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env

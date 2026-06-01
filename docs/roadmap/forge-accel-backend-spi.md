@@ -51,6 +51,12 @@ decision.
 
 The current public contract is borrowed-by-default:
 
+- device handles expose portable `device_info` and availability only; a backend
+  must document whether "lost" and "reset" are simulated flags, native device
+  loss, driver reset, or context rebuild;
+- device-bound queues and sessions must check device availability before
+  running queued commands, and must map unavailable/lost-device rejection to the
+  portable `invalid_context` classification;
 - host spans must outlive command completion;
 - `host_buffer<T>` and `device_buffer<T>` must outlive command completion;
 - moving a buffer object while a command that captured it is pending is a caller

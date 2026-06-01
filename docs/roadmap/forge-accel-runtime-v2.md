@@ -159,6 +159,16 @@ Acceptance:
 
 ## phase 4: device, context, and session lifecycle
 
+Status: implemented for the mock/reference backend. `context_options` can create
+zero, one, or multiple mock devices; `context::device_infos()`, `devices()`, and
+`get_device(id)` expose portable metadata without probing real hardware. A
+device can create device-bound queues and sessions. `device.mark_lost()` makes
+not-yet-running device-bound commands complete `invalid_context`, while
+already-running callables are not force-interrupted. `device.reset()` clears the
+mock lost flag only; it is not a vendor reset/native context rebuild model.
+`device_session::reset()` remains the session-local stopped boundary for queued
+session commands.
+
 Target:
 
 - Model device discovery and device info without probing real hardware.

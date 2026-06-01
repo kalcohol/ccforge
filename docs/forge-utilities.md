@@ -117,6 +117,11 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 `submit_message(session, request, response, handler)`，并提供 `flush` / `invalidate`
 coherence proof command，以及最小 `event` / `record_event` / `wait_event` / `fence`
 completion boundary。
+`context_options::device_count` 可构造 no-device 或 multi-device mock 场景；
+`context::device_infos()` / `devices()` / `get_device(id)` 提供 portable metadata 和
+轻量 device handle。device-bound queues/sessions 会在运行 queued command 前检查
+availability；`device.mark_lost()` 后尚未运行的 command 以 `invalid_context` error
+完成，`device.reset()` 只清除 mock lost flag，不代表真实 vendor reset。
 `mock::host_buffer<T>` / `mock::device_buffer<T>` 拥有 mock host/device storage，`T`
 需要 trivially copyable；`host_byte_buffer` / `device_byte_buffer` 可用于 command packet
 或 model IO proof。`memory_kind` 是 metadata：`pinned_host`、`mapped_host`、

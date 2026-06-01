@@ -30,7 +30,8 @@ Future backend entry rules are tracked in the
 
 - `forge::accel::mock::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
-- `forge::accel::mock::device`：轻量 device handle，由 context 产生，不拥有真实硬件。
+- `forge::accel::mock::device`：轻量 device handle，由 context 产生，不拥有真实硬件；
+  可查询 `info()` / `available()`，并用 `mark_lost()` / `reset()` 模拟设备丢失边界。
 - `forge::accel::mock::device_session`：mock device session，用于表达 NPU/FPGA 风格
   command/response 生命周期和 reset 边界。
 - `forge::accel::mock::queue`：轻量 queue handle。`context::get_queue(kind)` 可创建
@@ -44,12 +45,13 @@ Future backend entry rules are tracked in the
 - `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`：byte-oriented owning
   buffers，用于 command packet、model IO 和不想先引入 tensor shape 的 proof。
 
-`context_options` 可配置线程数、command queue 容量和 resource：
+`context_options` 可配置线程数、command queue 容量、mock device 数量和 resource：
 
 ```cpp
 forge::accel::mock::context ctx{forge::accel::mock::context_options{
     .thread_count = 2,
     .queue_capacity = 8,
+    .device_count = 2,
     .memory = resource,
 }};
 ```
@@ -77,11 +79,16 @@ forge::accel::mock::submit(compute_q, [&] {
 });
 ```
 
-也可以通过 `device_session` 表达设备会话上的 command：
+也可以通过 `device` 和 `device_session` 表达设备绑定 command：
 
 ```cpp
 auto device = ctx.get_device();
+auto q = device.get_queue(forge::accel::queue_kind::compute);
 auto session = device.open_session();
+
+forge::accel::mock::submit(q, [&] {
+    // command for a device-bound queue
+});
 
 forge::accel::mock::submit(session, [&] {
     // command for a device-like lane
@@ -195,6 +202,32 @@ command 以 stopped 完成。receiver stop token 当前只在
 `device_session::reset()` 标记该 session 已 reset。之后尚未执行的 session command 会
 以 stopped 完成；已经进入用户 callable 的 command 不会被强制中断。这模拟 NPU/FPGA
 command channel 常见的 reset 边界，但不试图声明真实硬件 reset 语义。
+
+## devices and lifecycle simulation
+
+Mock context 默认创建一个 available device。测试和示例可以通过
+`context_options::device_count` 构造 no-device 或 multi-device 场景：
+
+```cpp
+auto infos = ctx.device_infos();
+auto devices = ctx.devices();
+auto dev = ctx.get_device(forge::accel::device_id{0});
+```
+
+`device_info` 只描述 portable mock metadata，例如 ordinal、name 和 availability。它不
+来自真实 OS/vendor probe。`device.get_queue(kind)` 创建绑定该 device 的 queue；
+`device.open_session()` 创建绑定该 device 的 message/session lane。
+
+`device.mark_lost()` 让 device 变为 unavailable。之后尚未运行的 device-bound
+queue/session command 会完成 error：
+
+- default API：`set_error(std::exception_ptr)`，其中保存
+  `operation_error{error_kind::invalid_context, ...}`；
+- typed API：`set_error(forge::accel::error{error_kind::invalid_context, ...})`。
+
+已经进入用户 callable 的 command 不会被强制中断。`device.reset()` 只清除 mock lost
+flag，用于继续测试后续 command；它不是 vendor device reset、driver reload 或 native
+context rebuild 的模型。
 
 ## device sessions and message commands
 

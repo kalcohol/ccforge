@@ -162,6 +162,22 @@ TEST(AccelTypedErrorTest, CachedMemoryCoherenceReportsTypedError) {
     EXPECT_TRUE(state->error.cause);
 }
 
+TEST(AccelTypedErrorTest, LostDeviceReportsTypedError) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto q = device.get_queue();
+    auto state = std::make_shared<typed_state>();
+
+    device.mark_lost();
+
+    auto sender = forge::accel::mock::submit_typed(q, [] {});
+    auto op = std::execution::connect(std::move(sender), typed_receiver{state});
+    std::execution::start(op);
+
+    expect_error_kind(state, forge::accel::error_kind::invalid_context);
+    EXPECT_TRUE(state->error.cause);
+}
+
 TEST(AccelTypedErrorTest, InvalidEventReportsTypedError) {
     forge::accel::mock::context ctx;
     auto q = ctx.get_queue();

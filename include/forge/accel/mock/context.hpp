@@ -52,6 +52,7 @@ namespace forge::accel::mock {
 struct context_options {
     std::size_t thread_count = 1;
     std::optional<std::size_t> queue_capacity = std::nullopt;
+    std::size_t device_count = 1;
     std::pmr::memory_resource* memory = forge::default_memory_resource();
 };
 
@@ -81,7 +82,10 @@ inline thread_local __state* __current_state = nullptr;
 
 struct __stopped_signal {};
 
+struct __device_state;
+
 struct __session_state {
+    std::weak_ptr<__device_state> device;
     std::atomic<bool> reset_requested{false};
 };
 
@@ -117,6 +121,8 @@ struct __state : std::enable_shared_from_this<__state> {
               .memory = memory,
           })
         , queue_capacity(options.queue_capacity)
+        , device_count(options.device_count)
+        , devices(std::pmr::polymorphic_allocator<std::shared_ptr<__device_state>>{memory})
         , queues(std::pmr::polymorphic_allocator<std::shared_ptr<__queue_state>>{memory})
     {}
 
@@ -181,25 +187,68 @@ struct __state : std::enable_shared_from_this<__state> {
         return memory;
     }
 
+    void initialize_devices();
+    [[nodiscard]] auto get_devices() const
+        -> std::pmr::vector<std::shared_ptr<__device_state>>;
+    [[nodiscard]] auto get_device(device_id id) const -> std::shared_ptr<__device_state>;
     [[nodiscard]] auto get_queue(queue_kind kind) -> std::shared_ptr<__queue_state>;
-    [[nodiscard]] auto make_queue(queue_kind kind) -> std::shared_ptr<__queue_state>;
+    [[nodiscard]] auto make_queue(
+        queue_kind kind,
+        std::shared_ptr<__device_state> device = nullptr) -> std::shared_ptr<__queue_state>;
     [[nodiscard]] auto snapshot_queues()
         -> std::pmr::vector<std::shared_ptr<__queue_state>>;
 
     std::pmr::memory_resource* memory;
     resource_context runtime;
     std::optional<std::size_t> queue_capacity;
+    std::size_t device_count = 1;
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t pending = 0;
     bool closed = false;
     bool stop_requested = false;
+    std::pmr::vector<std::shared_ptr<__device_state>> devices;
     std::pmr::vector<std::shared_ptr<__queue_state>> queues;
 };
 
+struct __device_state {
+    __device_state(std::shared_ptr<__state> owner, device_info info)
+        : owner(std::move(owner))
+        , info(info)
+    {}
+
+    [[nodiscard]] bool available() const noexcept {
+        auto state = owner.lock();
+        return state && !state->is_closed() && info.available &&
+            !lost.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] auto current_info() const noexcept -> device_info {
+        auto out = info;
+        out.available = available();
+        return out;
+    }
+
+    void mark_lost() noexcept {
+        lost.store(true, std::memory_order_release);
+    }
+
+    void reset() noexcept {
+        lost.store(false, std::memory_order_release);
+    }
+
+    std::weak_ptr<__state> owner;
+    device_info info{};
+    std::atomic<bool> lost{false};
+};
+
 struct __queue_state {
-    __queue_state(std::shared_ptr<__state> owner_state, queue_kind queue_kind)
+    __queue_state(
+        std::shared_ptr<__state> owner_state,
+        queue_kind queue_kind,
+        std::shared_ptr<__device_state> bound_device = nullptr)
         : owner(owner_state)
+        , device(std::move(bound_device))
         , serial(
               owner_state->runtime.get_scheduler(),
               strand_options{.memory = owner_state->memory})
@@ -218,7 +267,12 @@ struct __queue_state {
         serial.wait();
     }
 
+    [[nodiscard]] bool device_available() const noexcept {
+        return !device || device->available();
+    }
+
     std::weak_ptr<__state> owner;
+    std::shared_ptr<__device_state> device;
     strand serial;
     queue_kind kind = queue_kind::general;
 };
@@ -247,12 +301,52 @@ inline void __state::wait() noexcept {
     cv.wait(lk, [this] { return pending == 0; });
 }
 
-inline auto __state::make_queue(queue_kind kind) -> std::shared_ptr<__queue_state> {
+inline void __state::initialize_devices() {
+    auto self = shared_from_this();
+    std::lock_guard lk{mtx};
+    if (!devices.empty() || device_count == 0) {
+        return;
+    }
+    for (std::size_t i = 0; i < device_count; ++i) {
+        devices.push_back(std::allocate_shared<__device_state>(
+            std::pmr::polymorphic_allocator<__device_state>{memory},
+            self,
+            device_info{
+                .id = device_id{static_cast<std::uint32_t>(i)},
+                .ordinal = static_cast<std::uint32_t>(i),
+                .available = true,
+            }));
+    }
+}
+
+inline auto __state::get_devices() const
+    -> std::pmr::vector<std::shared_ptr<__device_state>> {
+    std::pmr::vector<std::shared_ptr<__device_state>> snapshot{
+        std::pmr::polymorphic_allocator<std::shared_ptr<__device_state>>{memory}};
+    std::lock_guard lk{mtx};
+    snapshot = devices;
+    return snapshot;
+}
+
+inline auto __state::get_device(device_id id) const -> std::shared_ptr<__device_state> {
+    std::lock_guard lk{mtx};
+    for (auto& device : devices) {
+        if (device && device->info.id == id) {
+            return device;
+        }
+    }
+    return {};
+}
+
+inline auto __state::make_queue(
+    queue_kind kind,
+    std::shared_ptr<__device_state> device) -> std::shared_ptr<__queue_state> {
     auto self = shared_from_this();
     auto queue = std::allocate_shared<__queue_state>(
         std::pmr::polymorphic_allocator<__queue_state>{memory},
         std::move(self),
-        kind);
+        kind,
+        std::move(device));
     {
         std::lock_guard lk{mtx};
         queues.push_back(queue);
@@ -268,12 +362,13 @@ inline auto __state::get_queue(queue_kind kind) -> std::shared_ptr<__queue_state
     auto queue = std::allocate_shared<__queue_state>(
         std::pmr::polymorphic_allocator<__queue_state>{memory},
         std::move(self),
-        kind);
+        kind,
+        nullptr);
     bool should_shutdown = false;
     {
         std::lock_guard lk{mtx};
         for (auto& existing : queues) {
-            if (existing && existing->kind == kind) {
+            if (existing && !existing->device && existing->kind == kind) {
                 return existing;
             }
         }
@@ -337,12 +432,18 @@ struct __command_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     std::shared_ptr<__state> state;
+    std::shared_ptr<__queue_state> queue;
     R rcvr;
     Action action;
 
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
         try {
+            if (queue && !queue->device_available()) {
+                throw operation_error{
+                    error_kind::invalid_context,
+                    "forge::accel::mock command: device is not available"};
+            }
             std::invoke(std::move(action));
             state->finish_one();
             std::execution::set_value(std::move(rcvr));
@@ -470,6 +571,7 @@ struct __command_sender {
                         std::move(sender),
                         receiver_t{
                             state,
+                            queue_,
                             std::move(*rcvr_),
                             std::move(*action_)});
                 });
@@ -580,7 +682,9 @@ public:
         : state_(std::allocate_shared<__detail::__state>(
               std::pmr::polymorphic_allocator<__detail::__state>{
                   normalize_memory_resource(options.memory)},
-              options)) {}
+              options)) {
+        state_->initialize_devices();
+    }
 
     ~context() noexcept {
         shutdown();
@@ -596,7 +700,9 @@ public:
         return queue{state_->get_queue(kind)};
     }
 
-    [[nodiscard]] device get_device() noexcept;
+    [[nodiscard]] device get_device(device_id id = {}) noexcept;
+    [[nodiscard]] auto devices() const -> std::vector<device>;
+    [[nodiscard]] auto device_infos() const -> std::vector<device_info>;
 
     void close() noexcept {
         state_->close();
@@ -649,13 +755,21 @@ public:
     }
 
 private:
-    explicit device_session(std::shared_ptr<__detail::__state> state)
-        : queue_(state ? state->make_queue(queue_kind::command) : nullptr)
-        , session_(state
+    explicit device_session(
+        std::shared_ptr<__detail::__state> state,
+        std::shared_ptr<__detail::__device_state> device)
+        : queue_(state
+              ? state->make_queue(queue_kind::command, device)
+              : nullptr)
+        , session_(state && device && device->available()
               ? std::allocate_shared<__detail::__session_state>(
                     std::pmr::polymorphic_allocator<__detail::__session_state>{
                         state->memory_resource()})
-              : nullptr) {}
+              : nullptr) {
+        if (session_) {
+            session_->device = std::move(device);
+        }
+    }
 
     template<class F>
     friend auto submit(device_session&, F&&);
@@ -672,30 +786,73 @@ public:
     device() = default;
 
     [[nodiscard]] queue get_queue(queue_kind kind = queue_kind::general) const {
-        auto state = state_.lock();
-        return queue{state ? state->get_queue(kind) : nullptr};
+        auto device_state = device_.lock();
+        auto state = device_state ? device_state->owner.lock() : nullptr;
+        return queue{state ? state->make_queue(kind, device_state) : nullptr};
     }
 
     [[nodiscard]] device_session open_session() const {
-        return device_session{state_.lock()};
+        auto device_state = device_.lock();
+        auto state = device_state ? device_state->owner.lock() : nullptr;
+        return device_session{std::move(state), std::move(device_state)};
     }
 
     [[nodiscard]] bool available() const noexcept {
-        auto state = state_.lock();
-        return state && !state->is_closed();
+        auto device_state = device_.lock();
+        return device_state && device_state->available();
+    }
+
+    [[nodiscard]] auto info() const noexcept -> device_info {
+        auto device_state = device_.lock();
+        if (device_state) {
+            return device_state->current_info();
+        }
+        auto out = device_info{};
+        out.available = false;
+        return out;
+    }
+
+    void mark_lost() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->mark_lost();
+        }
+    }
+
+    void reset() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->reset();
+        }
     }
 
 private:
-    explicit device(std::shared_ptr<__detail::__state> state)
-        : state_(state) {}
+    explicit device(std::shared_ptr<__detail::__device_state> device)
+        : device_(std::move(device)) {}
 
     friend class context;
 
-    std::weak_ptr<__detail::__state> state_;
+    std::weak_ptr<__detail::__device_state> device_;
 };
 
-inline auto context::get_device() noexcept -> device {
-    return device{state_};
+inline auto context::get_device(device_id id) noexcept -> device {
+    return device{state_->get_device(id)};
+}
+
+inline auto context::devices() const -> std::vector<device> {
+    std::vector<device> out;
+    for (auto& item : state_->get_devices()) {
+        out.emplace_back(device{std::move(item)});
+    }
+    return out;
+}
+
+inline auto context::device_infos() const -> std::vector<device_info> {
+    std::vector<device_info> out;
+    for (auto& item : state_->get_devices()) {
+        if (item) {
+            out.push_back(item->current_info());
+        }
+    }
+    return out;
 }
 
 template<class T>
@@ -1028,6 +1185,12 @@ auto submit(device_session& session, F&& command) {
             if (!session_state ||
                 session_state->reset_requested.load(std::memory_order_acquire)) {
                 throw __detail::__stopped_signal{};
+            }
+            auto device = session_state->device.lock();
+            if (!device || !device->available()) {
+                throw operation_error{
+                    error_kind::invalid_context,
+                    "forge::accel::mock::submit(session): device is not available"};
             }
             std::invoke(command);
         });

@@ -282,7 +282,9 @@ reference.
 - `memory_kind` 是 portable metadata；`cached_device` 用 `flush` / `invalidate`
   模拟 command-boundary coherence error；
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
-- `device_session` 是 vendor-neutral message-command proof，不暴露真实设备 handle。
+- `device_info` / `device` / `device_session` 是 vendor-neutral discovery 和
+  message-command proof，不暴露真实设备 handle；mock device loss 会映射到
+  `invalid_context`。
 - 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
   `set_error(forge::accel::error)`，适合类型擦除或插件边界。
 
