@@ -57,6 +57,20 @@ FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
 scripts/verify-windows-msvc-ssh.sh
 ```
 
+To run the repeatable smoke as a small matrix, use the wrapper. It defaults to
+the current VS lane (`18`) and uses local-source mode unless overridden:
+
+```bash
+FORGE_WINDOWS_HOST=<windows-host> \
+FORGE_WINDOWS_VS_VERSIONS='18' \
+scripts/verify-windows-msvc-matrix.sh
+```
+
+Older MSVC lanes are exploratory. For example, `FORGE_WINDOWS_VS_VERSIONS='18
+17'` can be used to measure VS 2026 plus VS 2022 compatibility, but the older
+lane is not a reason to degrade modern C++ code generation or contort public
+APIs.
+
 默认 SSH wrapper 会在远端 clone `FORGE_WINDOWS_REPO` 的 `FORGE_WINDOWS_REF`。验证本地
 尚未 push 的工作树时，使用 local-source 模式；wrapper 会把当前 worktree 打包到远端
 临时目录，运行后清理：
@@ -107,6 +121,20 @@ MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 它要求调用者提供 `STDEXEC_ROOT=/path/to/stdexec`，只验证本地 stdexec checkout
 和 Forge `<execution>` backport 各自能编译最小 smoke program。它不 fetch、不
 vendor，也不声明 stdexec 已经是 Forge 的 native `std::execution` handoff lane。
+未设置 `STDEXEC_ROOT` 时脚本返回 77 并打印 `result=skipped`，方便把它接入本地
+可选验证而不把 skip 误判为失败。
+
+## runtime wakeup audit helper
+
+`scripts/audit-runtime-wakeups.sh` lists condition-variable, notify,
+stop-callback, and cancellation sites under `include/forge` and the execution
+backport. It is a manual review aid, not a proof. Use it after touching
+cancellation or shutdown paths. The key rule is:
+
+> If a waiter observes a predicate under a mutex, publish changes to that
+> predicate under the same mutex before `notify_one` / `notify_all`.
+
+An atomic predicate plus an unlocked notify can still lose a wakeup.
 
 ## 测试分组开关
 

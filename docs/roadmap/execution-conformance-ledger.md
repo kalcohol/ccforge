@@ -77,7 +77,9 @@ lane:
 The optional script `scripts/probe-stdexec-feasibility.sh` only checks that a
 locally provided stdexec checkout and the Forge execution backport can each
 compile tiny smoke programs. It intentionally does not fetch stdexec and is not
-part of the default verification floor.
+part of the default verification floor. When `STDEXEC_ROOT` is absent it exits
+with skip code 77 and prints `result=skipped`; a successful probe prints
+`result=passed`.
 
 ## next useful checks
 
@@ -88,4 +90,3 @@ part of the default verification floor.
 3. If stdexec comparison becomes valuable, write a separate taskbook for the
    adapter layer and define exactly which examples/tests must be portable across
    Forge and stdexec.
-

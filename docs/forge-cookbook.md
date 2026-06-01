@@ -46,6 +46,37 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` mock command backend](fo
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
 
+## learning paths
+
+For a CPU service or message pipeline:
+
+1. `example/forge_thread_pool_example.cpp`
+2. `example/forge_channel_example.cpp`
+3. `example/forge_graceful_shutdown_example.cpp`
+4. `example/forge_bounded_pipeline_example.cpp`
+5. `example/forge_reference_runtime_example.cpp`
+
+For OS IO handoff:
+
+1. `example/forge_io_readiness_example.cpp`
+2. `example/forge_io_read_write_example.cpp`
+3. `example/forge_io_pipeline_example.cpp`
+4. `example/forge_io_typed_error_example.cpp`
+5. `example/forge_io_iocp_example.cpp` when validating the Windows completion
+   backend.
+
+For accelerator-shaped work without vendor SDKs:
+
+1. `example/forge_accel_copy_example.cpp`
+2. `example/forge_accel_event_example.cpp`
+3. `example/forge_accel_pipeline_example.cpp`
+4. `example/forge_accel_message_device_example.cpp`
+5. `example/forge_inference_runtime_sketch.cpp`
+
+These paths intentionally stay example-first. The detailed contracts live in
+the feature docs, so the cookbook remains a map rather than a duplicated API
+reference.
+
 ## coverage map
 
 | 场景 | 示例 |

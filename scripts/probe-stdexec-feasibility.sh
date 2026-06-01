@@ -21,12 +21,14 @@ log() {
 }
 
 if [[ -z "${STDEXEC_ROOT:-}" ]]; then
-    log "skipped: set STDEXEC_ROOT=/path/to/stdexec to run this optional probe"
+    log "result=skipped reason=missing-STDEXEC_ROOT"
+    log "set STDEXEC_ROOT=/path/to/stdexec to run this optional probe"
     exit 77
 fi
 
 STDEXEC_INCLUDE="${STDEXEC_ROOT}/include"
 if [[ ! -f "${STDEXEC_INCLUDE}/stdexec/execution.hpp" ]]; then
+    log "result=failed reason=missing-stdexec-header"
     log "error: ${STDEXEC_INCLUDE}/stdexec/execution.hpp not found"
     exit 2
 fi
@@ -64,5 +66,5 @@ log "compiling Forge execution smoke"
 log "running Forge execution smoke"
 "${BUILD_ROOT}/forge_execution_smoke"
 
+log "result=passed"
 log "ok: both tiny surfaces compile; deeper stdexec compatibility requires a separate adapter taskbook"
-

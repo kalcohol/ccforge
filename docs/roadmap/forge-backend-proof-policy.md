@@ -88,3 +88,20 @@ introduces:
 - a long-running background runtime beyond existing Forge contexts.
 
 When in doubt, write a taskbook first and keep the portable surface mock-first.
+
+## current backend stance
+
+The practical IO pair is Linux `epoll/eventfd` readiness plus Windows IOCP
+completion. They are intentionally separate backend models. Do not force IOCP
+through the Linux readiness state machine, and do not add kqueue without a real
+BSD/macOS owner and verification host.
+
+Linux `io_uring` is deferred until the project needs kernel submission/completion
+queue semantics that `epoll` readiness plus one-shot read/write cannot express.
+If that day comes, treat it as a new backend proof with its own gate, examples,
+and sanitizer story.
+
+The practical accel stance is vendor-neutral. Keep the portable surface centered
+on queues, command submission, buffers, async copy, event/fence boundaries, and
+message-style device sessions. CUDA/HIP/SYCL, FPGA, NPU, or driver SDK support
+is a separate proof only after the mock shape has demonstrated a stable need.

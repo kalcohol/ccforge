@@ -117,6 +117,19 @@ Use this checklist after each taskbook round.
 A round is complete when every changed row has concrete evidence: a test name,
 an example path, a doc section, or a deliberate limitation entry.
 
+## wakeup and cancellation audit rule
+
+The timer cancellation hardening round exposed a recurring class of bug:
+`atomic` state plus unlocked `condition_variable::notify_*` can still lose a
+wakeup. If a waiter checks a predicate while holding a mutex, every path that
+changes that predicate for the purpose of waking the waiter must publish the
+change under the same mutex before notifying.
+
+Use `scripts/audit-runtime-wakeups.sh` as a candidate-site inventory after
+touching cancellation, shutdown, timer, queue, or stop-callback paths. The script
+does not prove correctness; it keeps the review focused on the places where a
+manual lifecycle check matters.
+
 ## self-loop protocol
 
 Every new runtime/IO/accel taskbook should follow this loop:
