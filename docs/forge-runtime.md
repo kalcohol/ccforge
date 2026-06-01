@@ -106,6 +106,8 @@ Non-owning views and lightweight handles should not block in destructors.
   commands, and mock device loss maps to `invalid_context`. Session packet
   commands can own request/response storage until terminal completion; packet
   timeout is a queued-command deadline and does not interrupt running user code.
+  Model execute proof validates byte-span IO bindings and uses the same
+  session/context lifecycle; it is not a tensor or inference engine layer.
   Receiver stop
   tokens are observed before command acceptance; accepted commands are
   cancelled by context/session stop, not by per-operation receiver stop in v1.

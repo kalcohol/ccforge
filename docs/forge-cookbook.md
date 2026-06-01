@@ -268,6 +268,7 @@ reference.
 - `flush` / `invalidate` for cached-memory proof
 - `submit(queue, callable)`
 - `submit_packet(session, command_packet{...}, handler, command_options{...})`
+- `model` / `model_session` / `model_bindings` / `execute`
 - `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
   boundary errors
 - `event` / `record_event` / `wait_event` / `fence`
@@ -288,6 +289,8 @@ reference.
   `invalid_context`。
 - `submit_message` 借用 response；`submit_packet` 持有 request/response packet 并在
   成功时返回完成后的 packet，适合 callback/completion bridge 风格。
+- `model` proof 只绑定 byte spans 并检查 IO byte size，不提供 tensor/graph/operator
+  语义。
 - 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
   `set_error(forge::accel::error)`，适合类型擦除或插件边界。
 
@@ -299,6 +302,7 @@ reference.
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_packet_example.cpp`
+- `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

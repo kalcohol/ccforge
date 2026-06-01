@@ -211,6 +211,14 @@ Acceptance:
 
 ## phase 6: model/session inference proof
 
+Status: implemented for the mock/reference backend. `mock::model` owns an
+in-memory descriptor, reports `model_io_info`, exposes per-IO byte-size
+descriptors, and can open a `model_session` on a mock device. `model_bindings`
+bind borrowed byte spans and `execute` validates required inputs/outputs before
+running on the session queue. `execute_typed` maps binding and size failures to
+typed `forge::accel::error`. The proof intentionally stops at byte bindings and
+does not introduce tensor, graph, model-format, or operator semantics.
+
 Target:
 
 - Add a NPU-style model/session proof without implementing tensor graph logic.

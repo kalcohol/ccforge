@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -71,6 +72,12 @@ enum class copy_kind {
 struct model_io_info {
     std::size_t inputs = 0;
     std::size_t outputs = 0;
+};
+
+struct model_io_descriptor {
+    std::size_t byte_size = 0;
+    std::uint32_t rank = 0;
+    std::array<std::size_t, 4> extents{};
 };
 
 } // namespace forge::accel

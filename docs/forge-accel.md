@@ -44,6 +44,9 @@ Future backend entry rules are tracked in the
   `cached_device` 或 `managed` kind。当前 mock backend 要求 `T` trivially copyable。
 - `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`：byte-oriented owning
   buffers，用于 command packet、model IO 和不想先引入 tensor shape 的 proof。
+- `forge::accel::mock::model` / `model_session` / `model_bindings`：NPU-style
+  model/session/IO-binding proof。它只验证 byte-size metadata 和 borrowed byte spans，
+  不实现 tensor、operator graph 或真实推理引擎。
 
 `context_options` 可配置线程数、command queue 容量、mock device 数量和 resource：
 
@@ -296,6 +299,35 @@ Use `submit_message` for small borrowed response examples and `submit_packet`
 for callback/completion-bridge style code where the response object should
 survive asynchronous completion without a caller-owned borrowed lifetime.
 
+## model/session execute proof
+
+`mock::model` lets examples describe an accelerator-like model runtime without
+introducing tensor semantics or a model format parser:
+
+```cpp
+forge::accel::mock::model model{forge::accel::mock::model_descriptor{
+    .inputs = {forge::accel::model_io_descriptor{.byte_size = 4}},
+    .outputs = {forge::accel::model_io_descriptor{.byte_size = 4}},
+}};
+
+auto session = model.open_session(ctx.get_device());
+forge::accel::mock::model_bindings bindings{model};
+bindings.bind_input(0, std::span<const std::byte>{input});
+bindings.bind_output(0, std::span<std::byte>{output});
+
+auto op = forge::accel::mock::execute(session, std::move(bindings));
+```
+
+`execute` validates that every required input and output is bound and that each
+binding matches the declared byte size. It then fills outputs with a deterministic
+mock byte pattern derived from the inputs. The pattern only proves async
+execution and binding lifetime; it is not a numerical inference result.
+
+Model IO bindings are borrowed spans and must outlive execute completion.
+`model::unload()` marks the mock model unavailable for later execute commands.
+`model_session::reset()` uses the same session reset boundary as packet/message
+commands. `execute_typed` maps validation failures to `forge::accel::error`.
+
 ## ownership
 
 - Host spans 是 borrowed；调用方必须保证它们活到 command completion。
@@ -304,6 +336,8 @@ survive asynchronous completion without a caller-owned borrowed lifetime.
 - `device_buffer<T>` 必须活到使用它的 command completion。
 - `submit_packet` owns its request/response packet until terminal completion;
   `submit_message` still borrows the response reference.
+- `model_bindings` stores borrowed byte spans; input/output storage must outlive
+  `execute` completion.
 - Buffer `kind()` 只是 portable metadata。`pinned_host`、`mapped_host`、`managed` 和
   `cached_device` 不声明真实 OS/vendor memory behavior。
 - command 捕获的是 buffer object 地址和 borrowed span。command pending 期间移动或销毁
@@ -355,5 +389,6 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_packet_example.cpp`
+- `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

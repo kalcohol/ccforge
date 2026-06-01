@@ -56,6 +56,7 @@ private:
 enum class error_kind {
     unknown,
     invalid_context,
+    invalid_binding,
     invalid_buffer,
     invalid_memory_kind,
     size_mismatch,

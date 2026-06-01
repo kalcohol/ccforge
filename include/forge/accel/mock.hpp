@@ -23,3 +23,4 @@
 #pragma once
 
 #include "mock/context.hpp"
+#include "mock/model.hpp"

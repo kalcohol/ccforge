@@ -27,6 +27,8 @@ The stable portable vocabulary is intentionally small:
 - explicit `flush` / `invalidate` coherence command boundaries for cached-like
   memory proofs;
 - minimal event / record / wait / fence completion boundary;
+- model/session execute proof over byte-size IO descriptors and borrowed byte
+  spans, without tensor or graph semantics;
 - command senders for H2D, D2H, D2D, generic `submit`, and message submit.
 
 This vocabulary is meant to cover common stream/queue/event/device-memory
@@ -71,6 +73,8 @@ The current public contract is borrowed-by-default:
 - `event` is a shared completion marker, not a dependency graph node.
 - `submit_packet` owns request/response storage until terminal completion;
   `submit_message` is the explicitly borrowed response path.
+- `model_bindings` stores borrowed byte spans; a backend that supports stronger
+  native tensor or buffer ownership must expose that as an explicit opt-in type.
 - queued-command timeout may reject work that has not started by the deadline,
   but it must not claim to interrupt a command/kernel that is already running.
 

@@ -125,6 +125,9 @@ timeout 从 `start()` 开始计时，排队超时会完成 `timeout` error，但
 轻量 device handle。device-bound queues/sessions 会在运行 queued command 前检查
 availability；`device.mark_lost()` 后尚未运行的 command 以 `invalid_context` error
 完成，`device.reset()` 只清除 mock lost flag，不代表真实 vendor reset。
+`model` / `model_session` / `model_bindings` 提供 NPU-style model execute proof：
+只验证 byte-size IO metadata 和 borrowed byte spans，不实现 tensor、operator graph 或
+真实推理引擎。
 `mock::host_buffer<T>` / `mock::device_buffer<T>` 拥有 mock host/device storage，`T`
 需要 trivially copyable；`host_byte_buffer` / `device_byte_buffer` 可用于 command packet
 或 model IO proof。`memory_kind` 是 metadata：`pinned_host`、`mapped_host`、
