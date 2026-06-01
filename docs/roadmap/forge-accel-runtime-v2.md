@@ -187,6 +187,14 @@ Acceptance:
 
 ## phase 5: command packet and completion bridge
 
+Status: implemented for the mock/reference backend. `command_id` is portable
+vocabulary; `mock::command_packet<Request, Response>` owns request/response
+storage and is returned on successful completion. `submit_packet` and
+`submit_packet_typed` preserve the existing session reset, device-lost, and
+context-stop behavior while adding a queued-command timeout boundary. The
+existing borrowed `submit_message` API remains for small examples and explicit
+borrowed-response use.
+
 Target:
 
 - Add an owning command packet path for command/response runtimes.

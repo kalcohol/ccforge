@@ -39,6 +39,12 @@ struct device_info {
     bool available = true;
 };
 
+struct command_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(command_id, command_id) -> bool = default;
+};
+
 enum class memory_kind {
     host,
     pinned_host,

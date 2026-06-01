@@ -116,6 +116,7 @@ forge::accel::mock::flush_typed(q, cached_device);
 forge::accel::mock::invalidate_typed(q, cached_device);
 forge::accel::mock::submit_typed(q, callable);
 forge::accel::mock::submit_message_typed(session, request, response, handler);
+forge::accel::mock::submit_packet_typed(session, packet, handler, options);
 forge::accel::mock::record_event_typed(q, ev);
 forge::accel::mock::wait_event_typed(q, ev);
 forge::accel::mock::fence_typed(q);
@@ -133,8 +134,8 @@ std::execution::completion_signatures<
 `forge::accel::error` carries:
 
 - `kind`：`invalid_buffer`、`invalid_memory_kind`、`size_mismatch`、
-  `coherence_required`、`invalid_event`、`command_failed`、`user_exception`、`unknown`，
-  以及为 future backend 保留的 `invalid_context`；
+  `coherence_required`、`invalid_event`、`command_failed`、`timeout`、`aborted`、
+  `user_exception`、`unknown`，以及为 future backend 保留的 `invalid_context`；
 - `status`：`submit_message_typed` 返回 `command_status::failed` 时保留 command
   status；
 - `cause`：原始 `std::exception_ptr`，用于需要重新抛出或记录底层诊断的边界。
@@ -262,12 +263,47 @@ handler 可以返回：
 handler 也可以返回 `void`，此时只要没有抛异常就视为成功。`response` 是 borrowed，
 必须活到 command completion。
 
+`submit_packet(session, packet, handler, options)` 是 owning command-packet 变体。
+它把 request/response storage 放进 sender-owned state；成功时返回完成后的 packet：
+
+```cpp
+using packet_t = forge::accel::mock::command_packet<
+    request_packet,
+    response_packet>;
+
+auto result = std::execution::sync_wait(
+    forge::accel::mock::submit_packet(
+        session,
+        packet_t{
+            forge::accel::command_id{1},
+            request_packet{128},
+            response_packet{}},
+        [](request_packet& request, response_packet& out) noexcept {
+            out.count = request.count;
+            return forge::accel::command_status::ok;
+        },
+        forge::accel::mock::command_options{
+            .timeout = std::chrono::seconds{1}}));
+```
+
+`command_options::timeout` is measured from sender `start()`, before the command
+is queued on the session lane. If the command is still pending when the deadline
+is reached, it completes with `operation_error{error_kind::timeout}` or typed
+`error{error_kind::timeout}`. A timeout does not interrupt a handler that has
+already started running.
+
+Use `submit_message` for small borrowed response examples and `submit_packet`
+for callback/completion-bridge style code where the response object should
+survive asynchronous completion without a caller-owned borrowed lifetime.
+
 ## ownership
 
 - Host spans 是 borrowed；调用方必须保证它们活到 command completion。
 - `host_buffer<T>` 是 owning host storage，可用 `span()` 传给 copy command；它同样必须
   活到相关 command completion。
 - `device_buffer<T>` 必须活到使用它的 command completion。
+- `submit_packet` owns its request/response packet until terminal completion;
+  `submit_message` still borrows the response reference.
 - Buffer `kind()` 只是 portable metadata。`pinned_host`、`mapped_host`、`managed` 和
   `cached_device` 不声明真实 OS/vendor memory behavior。
 - command 捕获的是 buffer object 地址和 borrowed span。command pending 期间移动或销毁
@@ -318,5 +354,6 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_packet_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

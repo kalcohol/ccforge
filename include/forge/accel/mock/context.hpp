@@ -70,6 +70,30 @@ auto flush(queue&, device_buffer<T>&);
 template<class T>
 auto invalidate(queue&, device_buffer<T>&);
 
+struct command_options {
+    std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
+};
+
+template<class Request, class Response>
+struct command_packet {
+    using request_type = Request;
+    using response_type = Response;
+
+    command_packet(command_id id, Request request, Response response)
+        : id(id)
+        , request(std::move(request))
+        , response(std::move(response))
+    {}
+
+    command_id id{};
+    Request request;
+    Response response;
+    command_status status = command_status::ok;
+};
+
+template<class Request, class Response>
+command_packet(command_id, Request, Response) -> command_packet<Request, Response>;
+
 namespace __detail {
 
 using __void_completion_signatures = std::execution::completion_signatures<
@@ -427,6 +451,44 @@ bool __stop_requested(const R& rcvr) noexcept {
     }
 }
 
+[[noreturn]] inline void __throw_for_command_status(command_status status) {
+    if (status == command_status::stopped) {
+        throw __stopped_signal{};
+    }
+    if (status == command_status::timed_out) {
+        throw operation_error{
+            error_kind::timeout,
+            command_status::timed_out,
+            "forge::accel::mock command timed out"};
+    }
+    if (status == command_status::aborted) {
+        throw operation_error{
+            error_kind::aborted,
+            command_status::aborted,
+            "forge::accel::mock command aborted"};
+    }
+    throw command_error{status};
+}
+
+template<class Packet, class Handler>
+void __invoke_packet_handler(Packet& packet, Handler& handler) {
+    using result_t = std::invoke_result_t<
+        Handler&,
+        typename Packet::request_type&,
+        typename Packet::response_type&>;
+
+    if constexpr (std::is_same_v<result_t, command_status>) {
+        const auto status = std::invoke(handler, packet.request, packet.response);
+        packet.status = status;
+        if (status != command_status::ok) {
+            __throw_for_command_status(status);
+        }
+    } else {
+        std::invoke(handler, packet.request, packet.response);
+        packet.status = command_status::ok;
+    }
+}
+
 template<class R, class Action>
 struct __command_receiver {
     using receiver_concept = std::execution::receiver_t;
@@ -604,6 +666,191 @@ struct __command_sender {
     }
 };
 
+template<class R, class Packet, class Handler>
+struct __packet_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<__state> state;
+    std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__session_state> session;
+    std::shared_ptr<Packet> packet;
+    Handler handler;
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+    R rcvr;
+
+    void set_value() && noexcept {
+        __current_state_guard guard{state.get()};
+        try {
+            if (queue && !queue->device_available()) {
+                throw operation_error{
+                    error_kind::invalid_context,
+                    "forge::accel::mock packet command: device is not available"};
+            }
+            if (!session ||
+                session->reset_requested.load(std::memory_order_acquire)) {
+                throw __stopped_signal{};
+            }
+            auto device = session->device.lock();
+            if (!device || !device->available()) {
+                throw operation_error{
+                    error_kind::invalid_context,
+                    "forge::accel::mock packet command: device is not available"};
+            }
+            if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+                packet->status = command_status::timed_out;
+                throw operation_error{
+                    error_kind::timeout,
+                    command_status::timed_out,
+                    "forge::accel::mock packet command timed out"};
+            }
+            __invoke_packet_handler(*packet, handler);
+            state->finish_one();
+            std::execution::set_value(std::move(rcvr), std::move(*packet));
+        } catch (const __stopped_signal&) {
+            state->finish_one();
+            std::execution::set_stopped(std::move(rcvr));
+        } catch (...) {
+            state->finish_one();
+            std::execution::set_error(std::move(rcvr), std::current_exception());
+        }
+    }
+
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
+        } else {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::make_exception_ptr(static_cast<E&&>(e)));
+        }
+    }
+
+    void set_stopped() && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        std::execution::set_stopped(std::move(rcvr));
+    }
+
+    auto get_env() const noexcept(noexcept(std::execution::get_env(rcvr)))
+        -> decltype(std::execution::get_env(rcvr)) {
+        return std::execution::get_env(rcvr);
+    }
+};
+
+template<class Packet, class Handler>
+struct __packet_sender {
+    using sender_concept = std::execution::sender_t;
+    using completion_signatures = std::execution::completion_signatures<
+        std::execution::set_value_t(Packet),
+        std::execution::set_error_t(std::exception_ptr),
+        std::execution::set_stopped_t()>;
+
+    std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__session_state> session;
+    std::shared_ptr<Packet> packet;
+    Handler handler;
+    command_options options;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> completion_signatures {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, completion_signatures>
+    struct __op {
+        using operation_state_concept = std::execution::operation_state_t;
+        using scheduler_t = strand::scheduler;
+        using schedule_sender_t = decltype(std::execution::schedule(
+            std::declval<scheduler_t>()));
+        using receiver_t = __packet_receiver<R, Packet, Handler>;
+        using op_t = std::execution::connect_result_t<schedule_sender_t, receiver_t>;
+
+        __op(
+            std::shared_ptr<__queue_state> queue,
+            std::shared_ptr<__session_state> session,
+            std::shared_ptr<Packet> packet,
+            Handler handler,
+            command_options options,
+            R rcvr)
+            : queue_(std::move(queue))
+            , session_(std::move(session))
+            , packet_(std::move(packet))
+            , handler_(std::move(handler))
+            , options_(options)
+            , rcvr_(std::move(rcvr))
+        {}
+
+        __op(__op&&) = delete;
+        __op& operator=(__op&&) = delete;
+        __op(const __op&) = delete;
+        __op& operator=(const __op&) = delete;
+
+        void start() & noexcept {
+            auto state = queue_ ? queue_->owner.lock() : nullptr;
+            if (!state || !session_ || __stop_requested(*rcvr_) ||
+                !state->try_accept()) {
+                std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            }
+
+            std::optional<std::chrono::steady_clock::time_point> deadline;
+            if (options_.timeout) {
+                deadline = std::chrono::steady_clock::now() + *options_.timeout;
+            }
+
+            try {
+                auto sender = std::execution::schedule(queue_->scheduler());
+                auto* op = op_.emplace_from([&]() -> op_t {
+                    return std::execution::connect(
+                        std::move(sender),
+                        receiver_t{
+                            state,
+                            queue_,
+                            session_,
+                            packet_,
+                            std::move(*handler_),
+                            deadline,
+                            std::move(*rcvr_)});
+                });
+                std::execution::start(*op);
+            } catch (...) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr_),
+                    std::current_exception());
+            }
+        }
+
+        std::shared_ptr<__queue_state> queue_;
+        std::shared_ptr<__session_state> session_;
+        std::shared_ptr<Packet> packet_;
+        std::optional<Handler> handler_;
+        command_options options_;
+        std::optional<R> rcvr_;
+        __op_box<op_t> op_;
+    };
+
+    template<class R>
+        requires std::execution::receiver_of<R, completion_signatures>
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{
+            std::move(queue),
+            std::move(session),
+            std::move(packet),
+            std::move(handler),
+            options,
+            std::move(rcvr)};
+    }
+};
+
 template<class Action>
 auto __make_command_sender(std::shared_ptr<__queue_state> queue, Action&& action)
     -> __command_sender<std::decay_t<Action>> {
@@ -669,6 +916,12 @@ private:
     friend auto invalidate(queue&, device_buffer<T>&);
     template<class F>
     friend auto submit(queue&, F&&);
+    template<class Request, class Response, class Handler>
+    friend auto submit_packet(
+        device_session&,
+        command_packet<Request, Response>,
+        Handler&&,
+        command_options);
     friend auto record_event(queue&, event);
     friend auto wait_event(queue&, event);
     friend auto fence(queue&);
@@ -775,6 +1028,12 @@ private:
     friend auto submit(device_session&, F&&);
     template<class Request, class Response, class Handler>
     friend auto submit_message(device_session&, Request, Response&, Handler&&);
+    template<class Request, class Response, class Handler>
+    friend auto submit_packet(
+        device_session&,
+        command_packet<Request, Response>,
+        Handler&&,
+        command_options);
     friend class device;
 
     queue queue_;
@@ -1216,16 +1475,50 @@ auto submit_message(
             using result_t = std::invoke_result_t<Handler&, Request&, Response&>;
             if constexpr (std::is_same_v<result_t, command_status>) {
                 const auto status = std::invoke(handler, request, *response);
-                if (status == command_status::stopped) {
-                    throw __detail::__stopped_signal{};
-                }
                 if (status != command_status::ok) {
-                    throw command_error{status};
+                    __detail::__throw_for_command_status(status);
                 }
             } else {
                 std::invoke(handler, request, *response);
             }
         });
+}
+
+template<class Request, class Response, class Handler>
+auto submit_packet(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    Handler&& handler,
+    command_options options) {
+    using packet_t = command_packet<Request, Response>;
+    auto queue_state = session.queue_.queue_.lock();
+    auto ctx = queue_state ? queue_state->owner.lock() : nullptr;
+    std::shared_ptr<packet_t> packet_state;
+    if (ctx) {
+        packet_state = std::allocate_shared<packet_t>(
+            std::pmr::polymorphic_allocator<packet_t>(ctx->memory_resource()),
+            std::move(packet));
+    } else {
+        packet_state = std::make_shared<packet_t>(std::move(packet));
+    }
+    return __detail::__packet_sender<packet_t, std::decay_t<Handler>>{
+        std::move(queue_state),
+        session.session_,
+        std::move(packet_state),
+        static_cast<Handler&&>(handler),
+        options};
+}
+
+template<class Request, class Response, class Handler>
+auto submit_packet(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    Handler&& handler) {
+    return submit_packet(
+        session,
+        std::move(packet),
+        static_cast<Handler&&>(handler),
+        command_options{});
 }
 
 template<class Request, class Response, class Handler>
@@ -1240,6 +1533,33 @@ auto submit_message_typed(
             std::move(request),
             response,
             static_cast<Handler&&>(handler)));
+}
+
+template<class Request, class Response, class Handler>
+auto submit_packet_typed(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    Handler&& handler,
+    command_options options) {
+    using packet_t = command_packet<Request, Response>;
+    return __typed_detail::value_sender<packet_t>(
+        submit_packet(
+            session,
+            std::move(packet),
+            static_cast<Handler&&>(handler),
+            options));
+}
+
+template<class Request, class Response, class Handler>
+auto submit_packet_typed(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    Handler&& handler) {
+    return submit_packet_typed(
+        session,
+        std::move(packet),
+        static_cast<Handler&&>(handler),
+        command_options{});
 }
 
 inline auto record_event(queue& q, event ev) {

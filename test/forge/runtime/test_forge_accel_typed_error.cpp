@@ -8,6 +8,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -38,6 +39,58 @@ struct typed_receiver {
         {
             std::lock_guard lk{state->mtx};
             state->value = true;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(forge::accel::error error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error_seen = true;
+            state->error = std::move(error);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+template<class Packet>
+struct typed_packet_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool value = false;
+    bool stopped = false;
+    bool error_seen = false;
+    forge::accel::error error{};
+    std::optional<Packet> packet;
+
+    [[nodiscard]] bool done() const noexcept {
+        return value || stopped || error_seen;
+    }
+};
+
+template<class Packet>
+struct typed_packet_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<typed_packet_state<Packet>> state;
+
+    void set_value(Packet packet) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->packet = std::move(packet);
         }
         state->cv.notify_all();
     }
@@ -114,6 +167,12 @@ void expect_error_kind(
 
 using accel_error_cs = std::execution::completion_signatures<
     std::execution::set_value_t(),
+    std::execution::set_error_t(forge::accel::error),
+    std::execution::set_stopped_t()>;
+
+template<class Packet>
+using accel_packet_cs = std::execution::completion_signatures<
+    std::execution::set_value_t(Packet),
     std::execution::set_error_t(forge::accel::error),
     std::execution::set_stopped_t()>;
 
@@ -215,6 +274,45 @@ TEST(AccelTypedErrorTest, MessageFailureReportsCommandStatus) {
     std::execution::start(op);
 
     expect_error_kind(state, forge::accel::error_kind::command_failed);
+    EXPECT_EQ(state->error.status, forge::accel::command_status::failed);
+    EXPECT_TRUE(state->error.cause);
+}
+
+TEST(AccelTypedErrorTest, OwningPacketTypedErrorCrossesErasedSenderBoundary) {
+    struct request_packet { int value = 0; };
+    struct response_packet { int value = 0; };
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    auto state = std::make_shared<typed_packet_state<packet_t>>();
+
+    forge::erased_sender<accel_packet_cs<packet_t>> erased{
+        forge::accel::mock::submit_packet_typed(
+            session,
+            packet_t{
+                forge::accel::command_id{31},
+                request_packet{1},
+                response_packet{}},
+            [](request_packet&, response_packet&) noexcept {
+                return forge::accel::command_status::failed;
+            })};
+
+    auto op = std::execution::connect(
+        std::move(erased),
+        typed_packet_receiver<packet_t>{state});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(lk, 2s, [&] { return state->done(); }));
+    }
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+    ASSERT_TRUE(state->error_seen);
+    EXPECT_EQ(state->error.kind, forge::accel::error_kind::command_failed);
     EXPECT_EQ(state->error.status, forge::accel::command_status::failed);
     EXPECT_TRUE(state->error.cause);
 }

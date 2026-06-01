@@ -114,9 +114,12 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 `copy_kind`、`command_status`、`error_kind` 等 backend-neutral vocabulary。
 `forge::accel::mock` 提供 `copy_to_device`、`copy_to_host`、
 `copy_device_to_device`、`submit(queue/session, callable)` 和
-`submit_message(session, request, response, handler)`，并提供 `flush` / `invalidate`
-coherence proof command，以及最小 `event` / `record_event` / `wait_event` / `fence`
-completion boundary。
+`submit_message(session, request, response, handler)`。需要让 request/response storage
+由 sender 自己持有时，使用
+`submit_packet(session, command_packet{...}, handler, command_options{...})`；其
+timeout 从 `start()` 开始计时，排队超时会完成 `timeout` error，但不会中断已经开始运行
+的 handler。backend 还提供 `flush` / `invalidate` coherence proof command，以及最小
+`event` / `record_event` / `wait_event` / `fence` completion boundary。
 `context_options::device_count` 可构造 no-device 或 multi-device mock 场景；
 `context::device_infos()` / `devices()` / `get_device(id)` 提供 portable metadata 和
 轻量 device handle。device-bound queues/sessions 会在运行 queued command 前检查

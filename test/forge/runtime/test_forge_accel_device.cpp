@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -73,6 +74,99 @@ struct request_packet {
 struct response_packet {
     int value = 0;
 };
+
+template<class Packet>
+struct packet_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<Packet> packet;
+    bool stopped = false;
+    std::exception_ptr error;
+
+    [[nodiscard]] bool done() const noexcept {
+        return packet.has_value() || stopped || error;
+    }
+};
+
+template<class Packet>
+struct packet_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<packet_state<Packet>> state;
+
+    void set_value(Packet packet) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->packet = std::move(packet);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = std::move(error);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+template<class Packet>
+struct shutdown_packet_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge::accel::mock::context* ctx = nullptr;
+    std::shared_ptr<packet_state<Packet>> state;
+
+    void set_value(Packet packet) && noexcept {
+        ctx->shutdown();
+        ctx->wait();
+        {
+            std::lock_guard lk{state->mtx};
+            state->packet = std::move(packet);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = std::move(error);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+template<class Packet>
+[[nodiscard]] auto wait_done(const std::shared_ptr<packet_state<Packet>>& state)
+    -> bool {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
+}
 
 } // namespace
 
@@ -225,6 +319,215 @@ TEST(AccelDeviceTest, MessageFailureRoutesCommandError) {
                     return forge::accel::command_status::failed;
                 })),
         forge::accel::command_error);
+}
+
+TEST(AccelDeviceTest, OwningPacketProducesResponse) {
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    auto result = std::execution::sync_wait(
+        forge::accel::mock::submit_packet(
+            session,
+            packet_t{
+                forge::accel::command_id{7},
+                request_packet{11},
+                response_packet{}},
+            [](request_packet& request, response_packet& out) noexcept {
+                out.value = request.value * 3;
+                return forge::accel::command_status::ok;
+            }));
+
+    ASSERT_TRUE(result.has_value());
+    auto& packet = std::get<0>(*result);
+    EXPECT_EQ(packet.id.value, 7u);
+    EXPECT_EQ(packet.request.value, 11);
+    EXPECT_EQ(packet.response.value, 33);
+    EXPECT_EQ(packet.status, forge::accel::command_status::ok);
+}
+
+TEST(AccelDeviceTest, OwningPacketFailureRoutesCommandError) {
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit_packet(
+                session,
+                packet_t{
+                    forge::accel::command_id{8},
+                    request_packet{1},
+                    response_packet{}},
+                [](request_packet&, response_packet&) noexcept {
+                    return forge::accel::command_status::failed;
+                })),
+        forge::accel::command_error);
+}
+
+TEST(AccelDeviceTest, OwningPacketTimeoutWhilePendingReportsTimeout) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = 2,
+    }};
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    auto first_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(session, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+
+    auto packet_result = std::make_shared<packet_state<packet_t>>();
+    auto packet_sender = forge::accel::mock::submit_packet(
+        session,
+        packet_t{
+            forge::accel::command_id{9},
+            request_packet{1},
+            response_packet{}},
+        [](request_packet&, response_packet& out) noexcept {
+            out.value = 99;
+            return forge::accel::command_status::ok;
+        },
+        forge::accel::mock::command_options{.timeout = 10ms});
+    auto packet_op = std::execution::connect(
+        std::move(packet_sender),
+        packet_receiver<packet_t>{packet_result});
+    std::execution::start(packet_op);
+
+    std::this_thread::sleep_for(30ms);
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(packet_result));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_FALSE(packet_result->packet.has_value());
+    ASSERT_TRUE(packet_result->error);
+    try {
+        std::rethrow_exception(packet_result->error);
+        FAIL() << "expected timeout";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::timeout);
+        EXPECT_EQ(error.status(), forge::accel::command_status::timed_out);
+    }
+}
+
+TEST(AccelDeviceTest, OwningPacketResetWhilePendingCompletesStopped) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = 2,
+    }};
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    auto first_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(session, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+
+    auto packet_result = std::make_shared<packet_state<packet_t>>();
+    auto packet_sender = forge::accel::mock::submit_packet(
+        session,
+        packet_t{
+            forge::accel::command_id{10},
+            request_packet{1},
+            response_packet{}},
+        [](request_packet&, response_packet& out) noexcept {
+            out.value = 99;
+            return forge::accel::command_status::ok;
+        });
+    auto packet_op = std::execution::connect(
+        std::move(packet_sender),
+        packet_receiver<packet_t>{packet_result});
+    std::execution::start(packet_op);
+
+    session.reset();
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(packet_result));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_FALSE(packet_result->packet.has_value());
+    EXPECT_TRUE(packet_result->stopped);
+    EXPECT_FALSE(packet_result->error);
+}
+
+TEST(AccelDeviceTest, OwningPacketCompletionCanShutdownContext) {
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+    auto state = std::make_shared<packet_state<packet_t>>();
+
+    auto sender = forge::accel::mock::submit_packet(
+        session,
+        packet_t{
+            forge::accel::command_id{11},
+            request_packet{2},
+            response_packet{}},
+        [](request_packet& request, response_packet& out) noexcept {
+            out.value = request.value + 5;
+            return forge::accel::command_status::ok;
+        });
+    auto op = std::execution::connect(
+        std::move(sender),
+        shutdown_packet_receiver<packet_t>{&ctx, state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    ASSERT_TRUE(state->packet.has_value());
+    EXPECT_EQ(state->packet->response.value, 7);
 }
 
 TEST(AccelDeviceTest, ResetStopsNewSessionCommands) {

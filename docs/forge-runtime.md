@@ -103,7 +103,10 @@ Non-owning views and lightweight handles should not block in destructors.
   storage; memory kinds are portable metadata rather than real vendor
   allocations. Mock devices are context-owned handles with portable metadata;
   device-bound queues and sessions check availability before running queued
-  commands, and mock device loss maps to `invalid_context`. Receiver stop
+  commands, and mock device loss maps to `invalid_context`. Session packet
+  commands can own request/response storage until terminal completion; packet
+  timeout is a queued-command deadline and does not interrupt running user code.
+  Receiver stop
   tokens are observed before command acceptance; accepted commands are
   cancelled by context/session stop, not by per-operation receiver stop in v1.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env

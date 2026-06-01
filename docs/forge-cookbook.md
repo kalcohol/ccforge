@@ -267,6 +267,7 @@ reference.
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `flush` / `invalidate` for cached-memory proof
 - `submit(queue, callable)`
+- `submit_packet(session, command_packet{...}, handler, command_options{...})`
 - `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
   boundary errors
 - `event` / `record_event` / `wait_event` / `fence`
@@ -285,6 +286,8 @@ reference.
 - `device_info` / `device` / `device_session` 是 vendor-neutral discovery 和
   message-command proof，不暴露真实设备 handle；mock device loss 会映射到
   `invalid_context`。
+- `submit_message` 借用 response；`submit_packet` 持有 request/response packet 并在
+  成功时返回完成后的 packet，适合 callback/completion bridge 风格。
 - 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
   `set_error(forge::accel::error)`，适合类型擦除或插件边界。
 
@@ -295,6 +298,7 @@ reference.
 - `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_packet_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

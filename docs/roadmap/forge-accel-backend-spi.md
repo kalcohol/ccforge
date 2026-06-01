@@ -22,6 +22,8 @@ The stable portable vocabulary is intentionally small:
 - owning host and device buffers with portable `memory_kind` metadata;
 - byte-oriented host and device buffers for command/model IO proof;
 - borrowed host spans for copy commands;
+- owning command packets for command/response runtimes that should not borrow
+  caller-owned response storage;
 - explicit `flush` / `invalidate` coherence command boundaries for cached-like
   memory proofs;
 - minimal event / record / wait / fence completion boundary;
@@ -37,6 +39,7 @@ Backend command senders must keep the existing Forge runtime contract:
 
 - exactly one terminal completion;
 - no receiver completion while holding backend internal mutexes;
+- callback or completion-packet storage must outlive the callback return path;
 - default APIs use `set_error(std::exception_ptr)`;
 - opt-in typed APIs use `set_error(forge::accel::error)`;
 - queue-capacity or closed-context rejection completes as stopped where possible;
@@ -66,10 +69,14 @@ The current public contract is borrowed-by-default:
 - cached-like memory requires explicit command-boundary coherence operations
   when the backend documents that requirement;
 - `event` is a shared completion marker, not a dependency graph node.
+- `submit_packet` owns request/response storage until terminal completion;
+  `submit_message` is the explicitly borrowed response path.
+- queued-command timeout may reject work that has not started by the deadline,
+  but it must not claim to interrupt a command/kernel that is already running.
 
-A future backend may add stronger owning command packets, pinned host buffers, or
-native event handles, but those must be explicit opt-in types. They should not
-silently change the borrowed contract of the current mock surface.
+A future backend may add pinned host buffers, native event handles, or stronger
+backend-specific packet ownership, but those must be explicit opt-in types. They
+should not silently change the borrowed contract of the current mock surface.
 
 ## event and fence boundary
 
