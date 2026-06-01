@@ -101,6 +101,13 @@ FORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
 MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 模板路径上仍有编译器兼容缺口；它目前不是强制 gate。
 
+## optional stdexec feasibility probe
+
+`scripts/probe-stdexec-feasibility.sh` 是本地 spike 工具，不属于默认门禁。
+它要求调用者提供 `STDEXEC_ROOT=/path/to/stdexec`，只验证本地 stdexec checkout
+和 Forge `<execution>` backport 各自能编译最小 smoke program。它不 fetch、不
+vendor，也不声明 stdexec 已经是 Forge 的 native `std::execution` handoff lane。
+
 ## 测试分组开关
 
 测试子目录可用 CMake 开关独立启停，默认全开：
