@@ -38,6 +38,13 @@
 
 namespace std::execution {
 
+namespace __forge_counting_scope {
+
+template<class Scope>
+struct __join_sender;
+
+} // namespace __forge_counting_scope
+
 template<class Assoc>
 concept scope_association =
     std::movable<Assoc> &&
@@ -79,9 +86,10 @@ concept scope_token =
 // simple_counting_scope — structured concurrency scope subset
 //
 // Forge keeps early practical token helpers: wrap/associate associate work on
-// connect, token.spawn fire-and-forgets via start_detached, and join() blocks.
-// The current working draft splits these responsibilities across top-level
-// algorithms such as spawn/associate and a sender-returning join shape.
+// connect and token.spawn fire-and-forgets via start_detached. join() already
+// returns a sender, but the sender still performs a start-time blocking wait.
+// The current working draft splits token responsibilities across top-level
+// algorithms such as spawn/associate.
 // ──────────────────────────────────────────────────────────────────────────
 
 class simple_counting_scope {
@@ -110,13 +118,7 @@ public:
         __closed_.store(true, std::memory_order_release);
     }
 
-    // Forge compatibility extension: block until associated work completes.
-    void join() {
-        std::unique_lock lk{__mtx_};
-        __cv_.wait(lk, [this] {
-            return __count_.load(std::memory_order_acquire) == 0;
-        });
-    }
+    [[nodiscard]] auto join() noexcept;
 
     [[nodiscard]] bool is_closed() const noexcept {
         return __closed_.load(std::memory_order_acquire);
@@ -129,6 +131,7 @@ public:
 private:
     friend class scope_token;
     friend class scope_association;
+    friend struct __forge_counting_scope::__join_sender<simple_counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
 
@@ -142,6 +145,13 @@ private:
             std::lock_guard lk{__mtx_};
             __cv_.notify_all();
         }
+    }
+
+    void __wait() noexcept {
+        std::unique_lock lk{__mtx_};
+        __cv_.wait(lk, [this] {
+            return __count_.load(std::memory_order_acquire) == 0;
+        });
     }
 
     std::atomic<std::size_t> __count_{0};
@@ -246,6 +256,46 @@ namespace __forge_counting_scope {
 
 template<class S, class R>
 struct __stop_associated_op;
+
+template<class Scope>
+struct __join_sender {
+    using sender_concept = sender_t;
+
+    Scope* __scope;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> completion_signatures<set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct __op : __forge_detail::__immovable {
+        using operation_state_concept = operation_state_t;
+
+        Scope* __scope;
+        R __rcvr;
+
+        __op(Scope* scope, R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>)
+            : __scope(scope), __rcvr(std::move(rcvr)) {}
+
+        void start() & noexcept {
+            if (__scope) {
+                __scope->__wait();
+            }
+            std::execution::set_value(std::move(__rcvr));
+        }
+    };
+
+    template<receiver R>
+    auto connect(R rcvr) const -> __op<R> {
+        return __op<R>{__scope, std::move(rcvr)};
+    }
+};
 
 template<class BaseEnv>
 struct __stop_env {
@@ -386,6 +436,10 @@ struct __associated_sender {
 
 } // namespace __forge_counting_scope
 
+inline auto simple_counting_scope::join() noexcept {
+    return __forge_counting_scope::__join_sender<simple_counting_scope>{this};
+}
+
 template<sender S>
 [[nodiscard]] auto simple_counting_scope::scope_token::wrap(S&& sndr) const {
     return __forge_counting_scope::__associated_sender<std::decay_t<S>>{
@@ -413,8 +467,8 @@ simple_counting_scope::get_token() noexcept {
 
 // ──────────────────────────────────────────────────────────────────────────
 // counting_scope — stop-aware structured concurrency scope subset
-// Stop-aware counting scope. Forge keeps the existing blocking join() member
-// as an extension while the sender-returning standard join shape is deferred.
+// join() returns a sender; the current implementation still performs a
+// start-time blocking wait until the full async join-state model lands.
 // ──────────────────────────────────────────────────────────────────────────
 
 class counting_scope {
@@ -443,12 +497,7 @@ public:
         return __stop_source_.request_stop();
     }
 
-    void join() {
-        std::unique_lock lk{__mtx_};
-        __cv_.wait(lk, [this] {
-            return __count_.load(std::memory_order_acquire) == 0;
-        });
-    }
+    [[nodiscard]] auto join() noexcept;
 
     [[nodiscard]] bool is_closed() const noexcept {
         return __closed_.load(std::memory_order_acquire);
@@ -461,6 +510,7 @@ public:
 private:
     friend class scope_token;
     friend class scope_association;
+    friend struct __forge_counting_scope::__join_sender<counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
 
@@ -477,6 +527,13 @@ private:
             std::lock_guard lk{__mtx_};
             __cv_.notify_all();
         }
+    }
+
+    void __wait() noexcept {
+        std::unique_lock lk{__mtx_};
+        __cv_.wait(lk, [this] {
+            return __count_.load(std::memory_order_acquire) == 0;
+        });
     }
 
     std::atomic<std::size_t> __count_{0};
@@ -720,6 +777,10 @@ static_assert(std::execution::scope_token<counting_scope::scope_token>);
 inline counting_scope::scope_token
 counting_scope::get_token() noexcept {
     return scope_token{this};
+}
+
+inline auto counting_scope::join() noexcept {
+    return __forge_counting_scope::__join_sender<counting_scope>{this};
 }
 
 } // namespace std::execution

@@ -23,7 +23,7 @@ Primary draft references checked for this round:
 | `counting_scope::token::wrap` | Returns `stop-when(std::forward<Sender>(snd), scope stop token)`. | Returns a sender that associates on operation start and injects stop token. | Split stop-token fusion from association ownership. |
 | `scope_token::associate` | No token-member `associate` in the current target surface. | Token member `associate(sender)` exists as compatibility spelling. | Remove from `std::execution` surface or migrate only if a Forge extension is explicitly needed. |
 | `scope_token::spawn` | No token-member `spawn` in the current target surface. | Token member `spawn(sender)` fire-and-forgets through `start_detached`. | Replace standard examples/tests with top-level `spawn`; delete or move old helper. |
-| `simple_counting_scope::join` / `counting_scope::join` | Return senders produced from a scope-join sender shape. | Blocking `void join()` members. | Implement sender-returning join; preserve blocking wait only under a non-standard Forge name if still useful. |
+| `simple_counting_scope::join` / `counting_scope::join` | Return senders produced from a scope-join sender shape. | Sender-returning join is implemented; the sender currently waits in `start()` rather than using the full async join-state model. | Preserve sender-returning shape and improve async join-state behavior with the broader scope-token migration. |
 | `ensure_started` | Not current-WD `[exec]` surface. | Public `std::execution::ensure_started` extension. | Remove from `std::execution` or migrate to `forge::` if the utility is worth keeping. |
 | `start_detached` | Not current-WD `[exec]` surface. | Public `std::execution::start_detached` extension. | Replace standard paths with `spawn`; move utility to `forge::` only if still needed. |
 | Non-copyable lvalue sender convenience | Native-shaped code requires explicit `std::move(sndr)`. | Many standard backport adaptors destructively move non-copyable non-const lvalues. | Remove from standard-shaped paths; examples/tests must spell `std::move`. |
@@ -31,10 +31,10 @@ Primary draft references checked for this round:
 
 ## standard-surface cleanup order
 
-1. Implement enough `spawn` / sender-returning `join` support to replace
-   standard-path `start_detached` usage coherently.
-2. Migrate examples and tests from token-member `spawn` / blocking `join` to
-   current-WD-shaped spelling.
+1. Implement enough `spawn` support to replace standard-path `start_detached`
+   usage coherently.
+2. Migrate examples and tests from token-member `spawn` to current-WD-shaped
+   spelling, keeping `join()` in sender-consuming form.
 3. Remove or relocate `ensure_started` and `start_detached` from
    `std::execution` public surface.
 4. Remove destructive-move lvalue convenience from standard backport adaptors.

@@ -89,6 +89,7 @@ TEST(SimpleCountingScopeTest, AssociationLifecycle) {
 
     static_assert(std::execution::scope_association<association_t>);
     static_assert(std::execution::scope_token<decltype(token)>);
+    static_assert(std::execution::sender<decltype(scope.join())>);
 
     association_t empty;
     EXPECT_FALSE(static_cast<bool>(empty));
@@ -109,6 +110,15 @@ TEST(SimpleCountingScopeTest, AssociationLifecycle) {
         EXPECT_EQ(scope.count(), 1u);
     }
 
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, JoinSenderCompletesWhenEmpty) {
+    std::execution::simple_counting_scope scope;
+
+    auto result = std::execution::sync_wait(scope.join());
+
+    EXPECT_TRUE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -159,7 +169,7 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
 
     // inline_scheduler runs synchronously, so counter is already 1
     EXPECT_EQ(counter.load(), 1);
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -177,7 +187,7 @@ TEST(SimpleCountingScopeTest, SpawnNonCopyableLvaluePipeline) {
     token.spawn(sndr);
 
     EXPECT_EQ(observed, 43);
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -193,7 +203,7 @@ TEST(SimpleCountingScopeTest, ClosePreventsFurtherSpawns) {
     }));
     // spawn should silently ignore (scope closed)
     EXPECT_EQ(counter.load(), 0);
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
@@ -256,7 +266,7 @@ TEST(SimpleCountingScopeTest, SpawnDisassociatesOnErrorAndStopped) {
     token.spawn(std::execution::just_error(42));
     token.spawn(std::execution::just_stopped());
 
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -317,7 +327,7 @@ TEST(SimpleCountingScopeTest, MultipleSpawns) {
     }
     // inline_scheduler is synchronous
     EXPECT_EQ(counter.load(), 5);
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -332,6 +342,7 @@ TEST(CountingScopeTest, IsDistinctAndAssociatesWork) {
 
     static_assert(std::execution::scope_association<association_t>);
     static_assert(std::execution::scope_token<decltype(token)>);
+    static_assert(std::execution::sender<decltype(scope.join())>);
 
     {
         auto assoc = token.try_associate();
@@ -407,6 +418,6 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
 
-    scope.join();
+    (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }

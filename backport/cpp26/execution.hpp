@@ -70,11 +70,10 @@
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state honors get_allocator(env), but auxiliary consumer/callback
 //     allocations are not fully allocator-aware.
-//   - counting_scope is stop-aware, but join() is still Forge's blocking
-//     compatibility extension rather than the standard sender-returning shape.
-//     The token wrap/associate/spawn helpers also retain Forge's earlier
-//     practical scope model instead of the current-WD top-level spawn/associate
-//     split.
+//   - counting_scope is stop-aware, and simple/counting scope join() returns a
+//     sender. The token wrap/associate/spawn helpers still retain Forge's
+//     earlier practical scope model instead of the current-WD top-level
+//     spawn/associate split.
 //   - Execution domains are still a focused draft subset: connect uses the
 //     receiver-env start domain and supports transform_sender recovery plus
 //     transform_env wrapping, but not the full recursive transform_sender model.
@@ -86,7 +85,6 @@
 // NOT IMPLEMENTED (Phase 4+):
 //   - standard spawn.
 //   - current-WD scope-token shape.
-//   - sender-returning async-scope join.
 //   - standard type-erased sender surface.
 
 // Language version guard.

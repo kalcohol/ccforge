@@ -34,9 +34,7 @@ int main() {
         std::execution::then([] { std::cout << "scope task\n"; }));
 
     scope.close();
-    // Forge keeps blocking join() as a compatibility extension. The current
-    // working draft uses a sender-returning join shape.
-    scope.join();
+    std::execution::sync_wait(scope.join());
 
     std::cout << "scope_count=" << scope.count() << '\n';
     return 0;

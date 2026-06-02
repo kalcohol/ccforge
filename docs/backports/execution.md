@@ -28,7 +28,7 @@
 - `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 分配会使用 `env` 中的 `get_allocator`，但 consumer/callback 辅助分配尚未完整 allocator-aware。
 - Scope-token surface 仍保留 Forge 早期实用形态：`scope_token::wrap(sender)` 会在连接时关联 scope，`scope_token::associate(sender)` 是 token member，`scope_token::spawn(sender)` 通过 `start_detached` fire-and-forget。当前 working draft 把关联职责放在 top-level `spawn` / `associate` 等算法中；如果要收敛，需作为一个完整 scope-token 形态迁移任务处理。
-- `counting_scope::join()` 当前保留 Forge 既有阻塞扩展；标准 sender-returning join 形态尚未接入。
+- `simple_counting_scope::join()` / `counting_scope::join()` 已返回 sender，可用 `sync_wait(scope.join())` 等 sender 消费方式等待 drain；实现目前仍以 start 时阻塞等待为主，完整异步 join-state 模型尚未接入。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke` fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，整个 backport 自动禁用。
