@@ -25,8 +25,35 @@
 #include "detail.hpp"
 #include "stop_token.hpp"
 
+#include <concepts>
 #include <type_traits>
 #include <utility>
+
+namespace std {
+
+struct forwarding_query_t {
+    template<class Query>
+    constexpr bool operator()(Query query) const noexcept {
+        if constexpr (requires {
+            { query.query(*this) } noexcept -> std::same_as<bool>;
+        }) {
+            return query.query(*this);
+        } else if constexpr (std::execution::__forge_detail::tag_invocable<
+                                 forwarding_query_t, Query>) {
+            static_assert(std::execution::__forge_detail::nothrow_tag_invocable<
+                              forwarding_query_t, Query>);
+            return std::execution::__forge_detail::tag_invoke_fn(*this, query);
+        } else if constexpr (std::derived_from<std::remove_cvref_t<Query>, forwarding_query_t>) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+};
+
+inline constexpr forwarding_query_t forwarding_query{};
+
+} // namespace std
 
 namespace std::execution {
 
@@ -76,6 +103,10 @@ struct get_scheduler_t {
             -> __forge_detail::tag_invoke_result_t<get_scheduler_t, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
     }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_scheduler_t) noexcept {
+        return true;
+    }
 };
 inline constexpr get_scheduler_t get_scheduler{};
 
@@ -87,6 +118,10 @@ struct get_start_scheduler_t {
             -> __forge_detail::tag_invoke_result_t<get_start_scheduler_t, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
     }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_start_scheduler_t) noexcept {
+        return true;
+    }
 };
 inline constexpr get_start_scheduler_t get_start_scheduler{};
 
@@ -97,6 +132,10 @@ struct get_delegation_scheduler_t {
         noexcept(__forge_detail::nothrow_tag_invocable<get_delegation_scheduler_t, Env>)
             -> __forge_detail::tag_invoke_result_t<get_delegation_scheduler_t, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
+    }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_delegation_scheduler_t) noexcept {
+        return true;
     }
 };
 inline constexpr get_delegation_scheduler_t get_delegation_scheduler{};
@@ -115,6 +154,17 @@ struct get_forward_progress_guarantee_t {
             -> __forge_detail::tag_invoke_result_t<get_forward_progress_guarantee_t, Scheduler> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Scheduler&&>(scheduler));
     }
+
+    template<class Scheduler>
+        requires (!__forge_detail::tag_invocable<get_forward_progress_guarantee_t, Scheduler> &&
+                  requires { typename std::remove_cvref_t<Scheduler>::scheduler_concept; })
+    constexpr forward_progress_guarantee operator()(Scheduler&&) const noexcept {
+        return forward_progress_guarantee::weakly_parallel;
+    }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_forward_progress_guarantee_t) noexcept {
+        return true;
+    }
 };
 inline constexpr get_forward_progress_guarantee_t get_forward_progress_guarantee{};
 
@@ -129,6 +179,10 @@ struct get_stop_token_t {
 
     // Fallback: return never_stop_token.
     std::never_stop_token operator()(const empty_env&) const noexcept { return {}; }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_stop_token_t) noexcept {
+        return true;
+    }
 };
 inline constexpr get_stop_token_t get_stop_token{};
 
@@ -139,6 +193,10 @@ struct get_allocator_t {
         noexcept(__forge_detail::nothrow_tag_invocable<get_allocator_t, Env>)
             -> __forge_detail::tag_invoke_result_t<get_allocator_t, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
+    }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_allocator_t) noexcept {
+        return true;
     }
 };
 inline constexpr get_allocator_t get_allocator{};
@@ -184,8 +242,28 @@ struct get_completion_scheduler_t {
             -> __forge_detail::tag_invoke_result_t<get_completion_scheduler_t<CPO>, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
     }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_scheduler_t) noexcept {
+        return true;
+    }
 };
 template<class CPO>
 inline constexpr get_completion_scheduler_t<CPO> get_completion_scheduler{};
+
+struct get_await_completion_adaptor_t {
+    template<class Env>
+        requires __forge_detail::tag_invocable<get_await_completion_adaptor_t, Env>
+    auto operator()(Env&& env) const
+        noexcept(__forge_detail::nothrow_tag_invocable<get_await_completion_adaptor_t, Env>)
+            -> __forge_detail::tag_invoke_result_t<get_await_completion_adaptor_t, Env> {
+        return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
+    }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_await_completion_adaptor_t) noexcept {
+        return true;
+    }
+};
+
+inline constexpr get_await_completion_adaptor_t get_await_completion_adaptor{};
 
 } // namespace std::execution

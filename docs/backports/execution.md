@@ -5,7 +5,7 @@
 ## 已实现
 
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
-- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`
+- 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`、`unstoppable`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
 - 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组 value completions 返回 `optional<variant<tuple<...>, ...>>`）、`sync_wait_with_variant`（均通过 `std::this_thread`）
@@ -13,7 +13,7 @@
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
-- 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、`get_completion_scheduler`、`get_completion_domain`、`transform_completion_signatures`、CPO 分发基础设施
+- 基础设施：`completion_signatures_of_t`、`enable_sender`、`forwarding_query`、`get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、`get_completion_scheduler`、`get_completion_domain`、`get_await_completion_adaptor`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、receiver-env start-domain 选取、sender-env completion-domain 选取、`connect_t` recursive `transform_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 

@@ -37,7 +37,7 @@
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
-//   Stopped utils    : stopped_as_optional, stopped_as_error
+//   Stopped utils    : stopped_as_optional, stopped_as_error, unstoppable
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      any_stop_token, stoppable_token concepts
@@ -45,8 +45,9 @@
 //   Infra            : completion_signatures_of_t,
 //                      transform_completion_signatures, enable_sender,
 //                      get_start_scheduler/get_delegation_scheduler,
-//                      get_forward_progress_guarantee,
+//                      forwarding_query, get_forward_progress_guarantee,
 //                      get_completion_scheduler/get_completion_domain CPOs,
+//                      get_await_completion_adaptor CPO,
 //                      CPO member-function-first dispatch
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
 //                      and ASan+UBSan container configurations.
@@ -108,6 +109,7 @@
 #include "execution/run_loop.hpp"
 #include "execution/read_env.hpp"
 #include "execution/write_env.hpp"
+#include "execution/unstoppable.hpp"
 #include "execution/upon.hpp"
 #include "execution/let.hpp"
 #include "execution/stopped_as.hpp"

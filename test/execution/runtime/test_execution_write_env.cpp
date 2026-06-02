@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include <concepts>
 #include <exception>
 #include <tuple>
 #include <type_traits>
@@ -111,7 +112,42 @@ struct stop_token_receiver {
     }
 };
 
+struct member_forwarding_query {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
+        return true;
+    }
+};
+
+struct tag_forwarding_query {
+    friend constexpr bool tag_invoke(std::forwarding_query_t, tag_forwarding_query) noexcept {
+        return true;
+    }
+};
+
+struct await_completion_adaptor_env {
+    int value = 0;
+
+    friend int tag_invoke(
+        std::execution::get_await_completion_adaptor_t,
+        const await_completion_adaptor_env& self) noexcept {
+        return self.value;
+    }
+};
+
 } // namespace
+
+static_assert(std::forwarding_query(std::execution::get_scheduler));
+static_assert(std::forwarding_query(std::execution::get_start_scheduler));
+static_assert(std::forwarding_query(std::execution::get_delegation_scheduler));
+static_assert(std::forwarding_query(std::execution::get_stop_token));
+static_assert(std::forwarding_query(std::execution::get_allocator));
+static_assert(std::forwarding_query(std::execution::get_completion_scheduler<std::execution::set_value_t>));
+static_assert(std::forwarding_query(std::execution::get_domain));
+static_assert(std::forwarding_query(std::execution::get_completion_domain<std::execution::set_value_t>));
+static_assert(std::forwarding_query(std::execution::get_await_completion_adaptor));
+static_assert(std::forwarding_query(member_forwarding_query{}));
+static_assert(std::forwarding_query(tag_forwarding_query{}));
+static_assert(!std::forwarding_query(std::execution::set_value));
 
 TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
     std::execution::inline_scheduler injected;
@@ -240,4 +276,54 @@ TEST(WriteEnvTest, PreservesReceiverStopTokenWhenNotOverridden) {
 
     EXPECT_TRUE(completed);
     EXPECT_TRUE(stop_possible);
+}
+
+TEST(QueryCpoTest, ReadsAwaitCompletionAdaptorThroughBackportQueryModel) {
+    await_completion_adaptor_env env{42};
+
+    EXPECT_EQ(std::execution::get_await_completion_adaptor(env), 42);
+}
+
+TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
+    std::inplace_stop_source source;
+    source.request_stop();
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, source.get_token()));
+
+    auto sndr = std::execution::write_env(
+        std::execution::unstoppable(
+            std::execution::read_env(std::execution::get_stop_token)),
+        env);
+
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(std::never_stop_token),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    auto token = std::get<0>(*result);
+    static_assert(std::unstoppable_token<decltype(token)>);
+    EXPECT_FALSE(token.stop_possible());
+    EXPECT_FALSE(token.stop_requested());
+}
+
+TEST(UnstoppableTest, PipeFormOverridesStopToken) {
+    std::inplace_stop_source source;
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, source.get_token()));
+
+    auto result = std::execution::sync_wait(
+        std::execution::write_env(
+            std::execution::read_env(std::execution::get_stop_token)
+                | std::execution::unstoppable(),
+            env));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(std::get<0>(*result).stop_possible());
 }

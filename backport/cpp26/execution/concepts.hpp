@@ -593,6 +593,10 @@ struct get_completion_domain_t {
             -> __forge_detail::tag_invoke_result_t<get_completion_domain_t<CPO>, Scheduler, Env> {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Scheduler&&>(sched), static_cast<Env&&>(env));
     }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_domain_t) noexcept {
+        return true;
+    }
 };
 
 template<class CPO = void>
@@ -635,6 +639,10 @@ struct get_domain_t {
                   !__forge_domain::__scheduler_completion_domain<Env>)
     default_domain operator()(const Env&) const noexcept {
         return {};
+    }
+
+    friend constexpr bool tag_invoke(std::forwarding_query_t, get_domain_t) noexcept {
+        return true;
     }
 };
 

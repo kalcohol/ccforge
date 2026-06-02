@@ -34,6 +34,20 @@ static_assert(std::same_as<
 static_assert(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{}) ==
               std::execution::forward_progress_guarantee::concurrent);
 
+struct default_progress_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    bool operator==(const default_progress_scheduler&) const noexcept = default;
+
+    auto schedule() const noexcept {
+        return std::execution::just();
+    }
+};
+
+static_assert(std::execution::scheduler<default_progress_scheduler>);
+static_assert(std::execution::get_forward_progress_guarantee(default_progress_scheduler{}) ==
+              std::execution::forward_progress_guarantee::weakly_parallel);
+
 struct value_only_receiver {
     using receiver_concept = std::execution::receiver_t;
 
