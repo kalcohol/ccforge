@@ -14,6 +14,11 @@ now prefers standard convergence over preserving old extension spellings.
 
 ## current implementation status
 
+This snapshot was audited against the live working draft `[exec]` text at
+<https://eel.is/c++draft/exec> on 2026-06-03. The working draft is the
+authority for the classification below; papers and reference implementations
+are only used as explanatory context.
+
 The execution backport currently includes:
 
 - sender factories: `just`, `just_error`, `just_stopped`, `read_env`;
@@ -35,6 +40,39 @@ Several older audit notes are therefore closed and should not be carried forward
 as open work: identity-only domain dispatch, single-shape `sync_wait`,
 non-stop-aware `counting_scope`, and incomplete `when_all` cartesian value
 signatures.
+
+## working-draft coverage matrix
+
+| Surface | Status | Evidence / remaining gap |
+| --- | --- | --- |
+| `just`, `just_error`, `just_stopped` | Implemented | `just.hpp`; covered by MVP/wave tests. |
+| `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`; env query forwarding is tag-invoke based in this backport. |
+| `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`; exception fallback reports `std::exception_ptr` where supported. |
+| `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`; lifecycle-sensitive storage is covered by execution adaptor tests. |
+| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`; schedule errors are included in completion signatures and runtime tests. |
+| `on` | Not implemented | The file `on.hpp` currently provides a `starts_on` implementation; no current-WD `on` CPO is exposed. |
+| `bulk` | Implemented serial subset | `bulk.hpp`; executes iterations serially in the completing agent. |
+| `bulk_chunked`, `bulk_unchunked` | Not implemented | Current WD includes these alongside `bulk`; no Forge CPOs or tests exist yet. |
+| `unstoppable` sender adaptor | Not implemented | Stop-token concepts exist, but the WD adaptor equivalent to `write_env(sndr, prop(get_stop_token, never_stop_token{}))` is not exposed. |
+| `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`; these are practical stopped adapters used by the backport. |
+| `into_variant` | Implemented | `into_variant.hpp`; reused by `sync_wait` / `when_all` value-shape handling. |
+| `when_all`, `when_all_with_variant` | Implemented subset | Cartesian value signature support and outer stop propagation are implemented; keep lifecycle tests when changing shared state. |
+| `split` | Implemented subset | `split.hpp`; fail-fast terminates on impossible empty result state. |
+| `sync_wait`, `sync_wait_with_variant` | Implemented subset | Multiple value alternatives are supported; synchronous typed-error consumption remains a Forge `wait_result` extension rather than `sync_wait`. |
+| `associate`, `spawn` | Implemented current-WD subset | Top-level association and fire-and-forget spawn are implemented; `spawn` accepts only `set_value()` / `set_stopped()` senders. |
+| `spawn_future` | Implemented subset | Eager single-consumer future sender; shared state and consumer records honor `get_allocator(env)`, while `any_stop_token` callback internals remain allocator-neutral. |
+| `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`, top-level association/spawn, stop-token injection, and async sender-returning `join()` are implemented. |
+| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | Coroutine bridge preserves historical single-value tuple behavior; multi-value alternatives use `variant<tuple<...>>`. |
+| `affine_on` | Not implemented | Current WD includes coroutine utility `affine_on`; no Forge surface exists yet. |
+| `get_env` | Implemented subset | Member-first with tag-invoke fallback and `empty_env` default. |
+| `get_scheduler` | Implemented subset | Tag-invoke query object; does not exactly model current WD member `query(...)` wording. |
+| `get_start_scheduler` | Not implemented | No query CPO or forwarding tests. |
+| `get_delegation_scheduler` | Not implemented | No query CPO or forwarding tests. |
+| `get_completion_scheduler` | Implemented subset | Tag-invoke query object; scheduler envs expose roundtrip in Forge/backport style. |
+| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; `get_completion_signatures(sender, env)` still does not recompute through transformed sender types. |
+| `get_allocator` | Implemented subset | Tag-invoke query object; used by `spawn`/`spawn_future` allocator paths. No default allocator query is provided for `empty_env`. |
+| `get_stop_token` | Implemented subset | Tag-invoke query object with `empty_env -> never_stop_token` fallback. |
+| `get_forward_progress_guarantee` | Not implemented | No scheduler query CPO or tests. |
 
 ## compatibility classification
 
@@ -61,14 +99,16 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
+- current-WD algorithms/adaptors not yet exposed: `on`, `bulk_chunked`,
+  `bulk_unchunked`, `unstoppable`, and `affine_on`;
+- current-WD queries not yet exposed: `get_start_scheduler`,
+  `get_delegation_scheduler`, and `get_forward_progress_guarantee`;
 - `get_completion_signatures(sender, env)` does not yet fully recompute through
   domain-transformed sender types, so domain transforms should preserve the
   advertised completion shape;
 - `spawn_future` uses `get_allocator` for its shared state and consumer record,
   but `any_stop_token` callback/type-erasure control blocks are not
   allocator-aware;
-- scope join is async and sender-returning; keep stress coverage current for
-  last-decrement vs join-register races;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.
