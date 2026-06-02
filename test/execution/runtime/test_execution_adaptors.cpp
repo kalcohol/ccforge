@@ -59,6 +59,41 @@ struct throwing_value_sender {
     }
 };
 
+struct start_scheduler_env {
+    std::execution::inline_scheduler scheduler;
+
+    friend auto tag_invoke(
+        std::execution::get_start_scheduler_t,
+        const start_scheduler_env& self) noexcept -> std::execution::inline_scheduler {
+        return self.scheduler;
+    }
+};
+
+struct int_start_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* value = nullptr;
+    bool* completed = nullptr;
+    start_scheduler_env env{};
+
+    void set_value(int v) && noexcept {
+        *value = v;
+        *completed = true;
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        *completed = false;
+    }
+
+    void set_stopped() && noexcept {
+        *completed = false;
+    }
+
+    auto get_env() const noexcept -> start_scheduler_env {
+        return env;
+    }
+};
+
 } // namespace
 
 TEST(ReadEnvTest, SenderExists) {
@@ -247,6 +282,26 @@ TEST(StartsOnTest, RunsOnScheduler) {
     worker.join();
 
     EXPECT_EQ(result, 42);
+}
+
+TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {
+    auto sndr = std::execution::on(
+        std::execution::inline_scheduler{}, std::execution::just(42));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, start_scheduler_env{}));
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    int value = 0;
+    bool completed = false;
+    auto op = std::execution::connect(
+        std::move(sndr), int_start_receiver{&value, &completed});
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 42);
 }
 
 TEST(StoppedAsOptionalTest, SenderExists) {

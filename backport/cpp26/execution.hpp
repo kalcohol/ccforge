@@ -32,7 +32,8 @@
 //   Sender factories : just, just_error, just_stopped, read_env
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
-//   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
+//   Scheduler ops    : starts_on, continues_on (schedule_from), on(first form),
+//                      transfer_just,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
@@ -65,6 +66,8 @@
 //     stop-callback registration inside any_stop_token remains allocator-neutral.
 //   - associate/spawn, current-WD token wrap semantics, and async
 //     sender-returning simple/counting scope join() are implemented.
+//   - on(scheduler, sender) is implemented as a first-form subset. The
+//     closure form on(sender, scheduler, closure) is not implemented yet.
 //   - Execution domains are still a focused draft subset: connect applies
 //     receiver-env start-domain and sender-env completion-domain recursive
 //     transform_sender, but get_completion_signatures does not yet fully

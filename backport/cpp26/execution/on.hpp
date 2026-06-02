@@ -23,6 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "continues_on.hpp"
 #include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
@@ -177,5 +178,111 @@ template<class Scheduler, sender S>
         __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
         __forge_detail::__forward_as_given(std::forward<S>(sndr))};
 }
+
+namespace __forge_on_adaptor {
+
+template<class Scheduler, class S, class R>
+using __orig_scheduler_t = decltype(
+    std::execution::get_start_scheduler(std::execution::get_env(std::declval<const R&>())));
+
+template<class Scheduler, class S, class OrigScheduler>
+using __composed_sender_t = decltype(std::execution::continues_on(
+    std::execution::starts_on(std::declval<Scheduler>(), std::declval<S>()),
+    std::declval<OrigScheduler>()));
+
+template<class Scheduler, class S, class R>
+using __inner_op_t = connect_result_t<
+    __composed_sender_t<Scheduler, S, __orig_scheduler_t<Scheduler, S, R>>, R>;
+
+template<class Scheduler, class S, class R>
+concept __first_form_connectable =
+    requires(const R& r) {
+        std::execution::get_start_scheduler(std::execution::get_env(r));
+    } &&
+    requires(Scheduler&& sch, S&& sndr, R&& r) {
+        typename __inner_op_t<Scheduler, S, R>;
+        std::execution::connect(
+            std::execution::continues_on(
+                std::execution::starts_on(
+                    static_cast<Scheduler&&>(sch),
+                    static_cast<S&&>(sndr)),
+                std::execution::get_start_scheduler(std::execution::get_env(r))),
+            static_cast<R&&>(r));
+    };
+
+template<class Scheduler, class S, class R>
+struct __op : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
+    using inner_op_t = __inner_op_t<Scheduler, S, R>;
+
+    __forge_detail::__op_storage<1024> __storage;
+
+    __op(Scheduler sch, S sndr, R rcvr) {
+        auto orig_sch = std::execution::get_start_scheduler(std::execution::get_env(rcvr));
+        auto composed = std::execution::continues_on(
+            std::execution::starts_on(std::move(sch), std::move(sndr)),
+            std::move(orig_sch));
+        __storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+            return std::execution::connect(std::move(composed), std::move(rcvr));
+        });
+    }
+
+    void start() & noexcept {
+        std::execution::start(__storage.template get<inner_op_t>());
+    }
+};
+
+template<class Scheduler, class S>
+struct __sender {
+    using sender_concept = sender_t;
+    using scheduler_t = Scheduler;
+    using source_t = S;
+
+    Scheduler __sch;
+    S __sndr;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using scheduler_t = typename self_t::scheduler_t;
+        using source_t = typename self_t::source_t;
+        using orig_scheduler_t = decltype(std::execution::get_start_scheduler(std::declval<Env>()));
+        using composed_t = __composed_sender_t<const scheduler_t&, const source_t&, orig_scheduler_t>;
+        return decltype(std::execution::get_completion_signatures(
+            std::declval<composed_t>(), std::declval<Env>())){};
+    }
+
+    template<receiver R>
+        requires __first_form_connectable<Scheduler, S, R>
+    auto connect(R r) && -> __op<Scheduler, S, R> {
+        return __op<Scheduler, S, R>{
+            std::move(__sch), std::move(__sndr), std::move(r)};
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<Scheduler> && std::copy_constructible<S> &&
+                 __first_form_connectable<const Scheduler&, const S&, R>
+    auto connect(R r) const& -> __op<Scheduler, S, R> {
+        return __op<Scheduler, S, R>{__sch, __sndr, std::move(r)};
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
+    }
+};
+
+struct on_t {
+    template<class Scheduler, sender S>
+        requires scheduler<std::remove_cvref_t<Scheduler>>
+    [[nodiscard]] auto operator()(Scheduler&& sch, S&& sndr) const {
+        return __sender<std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+};
+
+} // namespace __forge_on_adaptor
+
+inline constexpr __forge_on_adaptor::on_t on{};
 
 } // namespace std::execution

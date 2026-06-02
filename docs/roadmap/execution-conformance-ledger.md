@@ -24,8 +24,8 @@ The execution backport currently includes:
 - sender factories: `just`, `just_error`, `just_stopped`, `read_env`;
 - adaptors: `then`, `upon_error`, `upon_stopped`, `let_value`, `let_error`,
   `let_stopped`, `write_env`, `unstoppable`;
-- scheduler adaptors: `starts_on`, `continues_on`, `transfer_just`, serial
-  `bulk`, `bulk_chunked`, and `bulk_unchunked`;
+- scheduler adaptors: `starts_on`, `continues_on`, first-form `on`,
+  `transfer_just`, serial `bulk`, `bulk_chunked`, and `bulk_unchunked`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
   `associate`, `spawn`, `spawn_future`;
 - consumers: `sync_wait`, `sync_wait_with_variant`;
@@ -50,7 +50,7 @@ signatures.
 | `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`; exception fallback reports `std::exception_ptr` where supported. |
 | `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`; lifecycle-sensitive storage is covered by execution adaptor tests. |
 | `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`; schedule errors are included in completion signatures and runtime tests. |
-| `on` | Not implemented | The file `on.hpp` currently provides a `starts_on` implementation; no current-WD `on` CPO is exposed. |
+| `on` | Implemented first-form subset | `on.hpp` exposes `on(scheduler, sender)` and returns to `get_start_scheduler(get_env(receiver))`; the `on(sender, scheduler, closure)` form is not implemented. |
 | `bulk` | Implemented serial subset | `bulk.hpp`; executes iterations serially in the completing agent. |
 | `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`; `bulk_unchunked` matches serial `bulk`, while `bulk_chunked` uses one non-empty `[0, shape)` chunk. No execution-policy overloads or parallel execution are provided. |
 | `unstoppable` sender adaptor | Implemented | `unstoppable.hpp`; implemented as a thin `write_env` wrapper that injects `never_stop_token`. |
@@ -101,7 +101,8 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- current-WD algorithms/adaptors not yet exposed: `on` and `affine`;
+- current-WD algorithms/adaptors not yet exposed: `affine`;
+- current-WD adaptor forms not yet exposed: `on(sender, scheduler, closure)`;
 - `get_completion_signatures(sender, env)` does not yet fully recompute through
   domain-transformed sender types, so domain transforms should preserve the
   advertised completion shape;
