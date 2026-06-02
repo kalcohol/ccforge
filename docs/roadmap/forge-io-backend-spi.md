@@ -88,8 +88,14 @@ Consequences:
 - `CancelIoEx` is asynchronous and the completion packet must still be drained;
 - handles must support overlapped IO and remain valid until operation completion
   or context drain;
-- the current proof remembers associated handles; high-churn production
-  pruning is a future hardening task, not a portable contract.
+- the current proof remembers associated handles with per-handle in-flight
+  counts and conservatively prunes idle records only after the OS reports the
+  borrowed handle value is invalid.
+
+The associated-handle cache is bounded by conservative pruning, but it is still
+not an ownership model. A production backend that owns handles or supports
+high-churn handle pools should add an explicit handle-lifetime abstraction
+instead of treating cache policy as the portable contract.
 
 ## future backend entry checklist
 

@@ -12,6 +12,19 @@ stable multilingual entrypoints.
 
 - [forge cookbook](forge-cookbook.md)
 
+## feature docs
+
+- [forge runtime lifecycle contract](forge-runtime.md)
+- [`forge::` utilities](forge-utilities.md)
+- [`forge::io` backend](forge-io.md)
+- [`forge::accel` runtime vocabulary and mock backend](forge-accel.md)
+- [`forge::erased_sender` design and limits](forge-erased-sender-design.md)
+
+## integration and verification
+
+- [native handoff 与无感注入](native-handoff.md)
+- [测试与验证](testing.md)
+
 ## backports
 
 - [`std::execution`](backports/execution.md)
@@ -20,25 +33,12 @@ stable multilingual entrypoints.
 - [`std::submdspan` / `std::constant_wrapper`](backports/mdspan.md)
 - [`std::unique_resource`](backports/unique_resource.md)
 
-## `forge::` runtime utilities
-
-- [`forge::` 扩展工具](forge-utilities.md)
-- [forge runtime lifecycle contract](forge-runtime.md)
-- [`forge::io` backend](forge-io.md)
-- [`forge::accel` runtime vocabulary and mock backend](forge-accel.md)
-- [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
-
-## integration and verification
-
-- [native handoff 与无感注入](native-handoff.md)
-- [测试与验证](testing.md)
-
 ## roadmap
 
-- [forge runtime 远景图](roadmap/forge-runtime-vision.md)
 - [forge stability baseline](roadmap/forge-stability-baseline.md)
-- [`std::execution` conformance ledger](roadmap/execution-conformance-ledger.md)
+- [forge runtime vision](roadmap/forge-runtime-vision.md)
 - [backend proof policy](roadmap/forge-backend-proof-policy.md)
 - [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md)
 - [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md)
 - [`forge::accel` runtime v2 roadmap](roadmap/forge-accel-runtime-v2.md)
+- [`std::execution` conformance ledger](roadmap/execution-conformance-ledger.md)

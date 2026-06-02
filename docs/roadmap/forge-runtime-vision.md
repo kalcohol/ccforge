@@ -117,7 +117,8 @@ any helper that owns IO, accel, tensor, or model-serving policy.
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
 - 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 的 production hardening beyond
-  the current proof；
+  the current proof, such as explicit owned-handle lifetimes or high-churn
+  handle-pool policy；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - 真实 backend 的 vendor/platform typed-error mapping；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
@@ -198,8 +199,8 @@ V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大�
 framework。`static_thread_pool` 已把 queued task callable record 纳入 pool
 resource，`timer_context` 已把 state、timer op data、timer item control block 和
 timer queue 纳入 resource；仍需如实记录其它未纳入路径，例如
-`async_scope` op-state、`strand` runner keepalive node 和部分 `std::function`
-target 分配。
+`async_scope` op-state、`strand` runner keepalive node 和 timer callback
+`std::function` target 分配。
 
 ## IO backend
 
@@ -214,8 +215,9 @@ fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三�
 第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；
 macOS/BSD kqueue 当前不在项目需求内。`io_uring` 当前 defer：现有需求由 epoll
 readiness + one-shot read/write 覆盖，后续只有在需要 kernel SQ/CQ 语义且能稳定验证时
-才重新立项。IOCP production hardening 仍需
-独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
+才重新立项。IOCP 当前 proof 已覆盖 completion drain、per-operation cancellation
+和 conservative associated-handle pruning；更强的 owned-handle lifetime 或
+high-churn handle-pool policy 仍需独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
 epoll/io_uring/IOCP 语义差异。
 
 ## accel scheduler

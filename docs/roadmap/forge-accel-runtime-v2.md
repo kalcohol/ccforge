@@ -95,17 +95,16 @@ Target:
   memory kinds, queue kinds, copy kinds, command status, error categories, and
   model/session metadata. Mock events and fences remain backend implementation
   types.
-- Move the current mock implementation toward an explicit
+- Keep the dependency-free reference implementation in the explicit
   `forge::accel::mock` namespace/module.
-- Decide whether V1 names remain as transitional aliases.
 
 Acceptance:
 
 - Public docs distinguish portable vocabulary from mock/reference backend.
-- Existing accel examples are either migrated to `mock` or explicitly marked as
-  using the reference backend.
+- Existing accel examples use the `mock` reference backend explicitly.
 - Gate-off and gate-on behavior remains deterministic.
-- Focused tests prove aliases, if any, point at the documented layer.
+- No compatibility alias is required for the old V1 mock command names; the
+  forwarding include path is documented separately from the long-term namespace.
 
 ## phase 2: memory model
 
