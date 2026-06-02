@@ -109,6 +109,13 @@ These checks are a feasibility ledger, not a compatibility proof. They do not
 adapt Forge `std::execution` code onto stdexec's namespace and should not be
 treated as evidence that native `std::execution` handoff is complete.
 
+Latest local status for this convergence round:
+
+- `STDEXEC_ROOT` absent: skipped with exit code 77 as intended;
+- `STDEXEC_ROOT` set to a local stdexec checkout: all named checks passed;
+- this remains an optional reference probe and is not promoted to the default
+  verification floor.
+
 ## next useful checks
 
 1. Keep `scripts/verify-native.sh gcc-exec` as the current libstdc++ execution
