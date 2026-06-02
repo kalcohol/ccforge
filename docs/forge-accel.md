@@ -255,6 +255,38 @@ handle 边界；它不是 vendor device reset、driver reload 或 native context
 `worker_generation`，让旧 generation 的 pending command 无法误完成到新 worker
 instance。
 
+## mock trace sink
+
+`mock::trace_sink` 是可选的 in-memory telemetry proof。它用于观察 mock backend 的
+状态机，而不是生产 profiler：
+
+```cpp
+forge::accel::mock::trace_sink trace;
+forge::accel::mock::context ctx{forge::accel::mock::context_options{
+    .trace = &trace,
+}};
+
+auto q = ctx.get_queue();
+std::execution::sync_wait(forge::accel::mock::submit(q, [] {}));
+
+auto events = trace.snapshot();
+```
+
+`context_options::trace` 是非拥有指针；trace sink 必须活到 context 和 pending command
+结束。未设置时不会改变 command 行为。记录失败会被忽略，trace 不会让 command 因记录
+本身失败而完成 error。
+
+Trace events include command submission/start/completion/stopped/error/timeout,
+device-lost/session-stale markers, lifecycle signals, context/device/session/
+stream IDs, command ID where available, device epoch, and worker generation.
+Completion callbacks are still delivered outside accel internal mutexes, and
+`trace_sink` itself never calls user code.
+
+This proof deliberately avoids Perfetto, ETW, LTTng, OpenTelemetry, vendor
+timestamp correlation, and native driver timestamps. A production backend can map
+the same vocabulary to a real tracing system later, but the mock backend only
+keeps a PMR-backed event vector for tests and examples.
+
 ## device sessions and message commands
 
 `device_session` 是 vendor-neutral proof，不绑定 CUDA/HIP/SYCL，也不暴露 native

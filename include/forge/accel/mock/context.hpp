@@ -30,6 +30,7 @@
 
 #include <execution>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -50,11 +51,78 @@
 
 namespace forge::accel::mock {
 
+enum class trace_event_kind {
+    submitted,
+    started,
+    completed,
+    stopped,
+    error,
+    timeout,
+    device_lost,
+    session_stale,
+    lifecycle_signal
+};
+
+struct trace_event {
+    std::uint64_t sequence = 0;
+    std::chrono::steady_clock::time_point timestamp{};
+    trace_event_kind kind = trace_event_kind::submitted;
+    context_id context{};
+    device_id device{};
+    session_id session{};
+    stream_id stream{};
+    request_id request{};
+    command_id command{};
+    event_generation generation{};
+    device_epoch epoch{};
+    worker_generation worker{};
+    error_kind error = error_kind::unknown;
+    command_status status = command_status::ok;
+};
+
+class trace_sink {
+public:
+    explicit trace_sink(
+        std::pmr::memory_resource* memory = forge::default_memory_resource())
+        : events_(std::pmr::polymorphic_allocator<trace_event>{
+              normalize_memory_resource(memory)})
+    {}
+
+    void record(trace_event event) noexcept {
+        try {
+            event.timestamp = std::chrono::steady_clock::now();
+            std::lock_guard lk{mtx_};
+            event.sequence = next_sequence_++;
+            events_.push_back(event);
+        } catch (...) {
+        }
+    }
+
+    [[nodiscard]] auto snapshot() const -> std::vector<trace_event> {
+        std::lock_guard lk{mtx_};
+        return {events_.begin(), events_.end()};
+    }
+
+    void clear() noexcept {
+        try {
+            std::lock_guard lk{mtx_};
+            events_.clear();
+        } catch (...) {
+        }
+    }
+
+private:
+    mutable std::mutex mtx_;
+    std::uint64_t next_sequence_ = 1;
+    std::pmr::vector<trace_event> events_;
+};
+
 struct context_options {
     std::size_t thread_count = 1;
     std::optional<std::size_t> queue_capacity = std::nullopt;
     std::size_t device_count = 1;
     std::pmr::memory_resource* memory = forge::default_memory_resource();
+    trace_sink* trace = nullptr;
 };
 
 class context;
@@ -114,6 +182,7 @@ using __void_completion_signatures = std::execution::completion_signatures<
 
 struct __state;
 inline thread_local __state* __current_state = nullptr;
+inline std::atomic<std::uint64_t> __next_context_id{1};
 
 struct __stopped_signal {};
 
@@ -186,7 +255,8 @@ struct __event_state {
 
 struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
-        : memory(normalize_memory_resource(options.memory))
+        : id(context_id{__next_context_id.fetch_add(1, std::memory_order_relaxed)})
+        , memory(normalize_memory_resource(options.memory))
         , runtime(resource_context_options{
               .thread_count = options.thread_count == 0 ? 1 : options.thread_count,
               .queue_capacity = std::nullopt,
@@ -194,6 +264,7 @@ struct __state : std::enable_shared_from_this<__state> {
           })
         , queue_capacity(options.queue_capacity)
         , device_count(options.device_count)
+        , trace(options.trace)
         , devices(std::pmr::polymorphic_allocator<std::shared_ptr<__device_state>>{memory})
         , queues(std::pmr::polymorphic_allocator<std::shared_ptr<__queue_state>>{memory})
     {}
@@ -259,6 +330,18 @@ struct __state : std::enable_shared_from_this<__state> {
         return memory;
     }
 
+    [[nodiscard]] auto next_stream_id() noexcept -> stream_id {
+        return stream_id{next_stream.fetch_add(1, std::memory_order_relaxed)};
+    }
+
+    void record_trace(trace_event event) noexcept {
+        if (!trace) {
+            return;
+        }
+        event.context = id;
+        trace->record(event);
+    }
+
     void initialize_devices();
     [[nodiscard]] auto get_devices() const
         -> std::pmr::vector<std::shared_ptr<__device_state>>;
@@ -270,10 +353,13 @@ struct __state : std::enable_shared_from_this<__state> {
     [[nodiscard]] auto snapshot_queues()
         -> std::pmr::vector<std::shared_ptr<__queue_state>>;
 
+    context_id id{};
     std::pmr::memory_resource* memory;
     resource_context runtime;
     std::optional<std::size_t> queue_capacity;
     std::size_t device_count = 1;
+    trace_sink* trace = nullptr;
+    std::atomic<std::uint64_t> next_stream{1};
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t pending = 0;
@@ -377,6 +463,7 @@ struct __queue_state {
         std::shared_ptr<__device_state> bound_device = nullptr)
         : owner(owner_state)
         , device(std::move(bound_device))
+        , stream(owner_state->next_stream_id())
         , serial(
               owner_state->runtime.get_scheduler(),
               strand_options{.memory = owner_state->memory})
@@ -401,6 +488,7 @@ struct __queue_state {
 
     std::weak_ptr<__state> owner;
     std::shared_ptr<__device_state> device;
+    stream_id stream{};
     strand serial;
     queue_kind kind = queue_kind::general;
 };
@@ -585,6 +673,136 @@ bool __stop_requested(const R& rcvr) noexcept {
     throw command_error{status};
 }
 
+struct __trace_error_info {
+    trace_event_kind kind = trace_event_kind::error;
+    error_kind error = error_kind::unknown;
+    command_status status = command_status::failed;
+};
+
+[[nodiscard]] inline auto __trace_kind_for_error(error_kind kind) noexcept
+    -> trace_event_kind {
+    if (kind == error_kind::timeout) {
+        return trace_event_kind::timeout;
+    }
+    if (kind == error_kind::device_lost) {
+        return trace_event_kind::device_lost;
+    }
+    if (kind == error_kind::stale_session) {
+        return trace_event_kind::session_stale;
+    }
+    return trace_event_kind::error;
+}
+
+[[nodiscard]] inline auto __trace_error_from_exception(
+    std::exception_ptr ep) noexcept -> __trace_error_info {
+    if (!ep) {
+        return {};
+    }
+    try {
+        std::rethrow_exception(ep);
+    } catch (const operation_error& e) {
+        return __trace_error_info{
+            __trace_kind_for_error(e.kind()),
+            e.kind(),
+            e.status()};
+    } catch (const command_error& e) {
+        auto kind = error_kind::command_failed;
+        if (e.status() == command_status::timed_out) {
+            kind = error_kind::timeout;
+        } else if (e.status() == command_status::aborted) {
+            kind = error_kind::aborted;
+        }
+        return __trace_error_info{
+            __trace_kind_for_error(kind),
+            kind,
+            e.status()};
+    } catch (...) {
+        return __trace_error_info{
+            trace_event_kind::error,
+            error_kind::user_exception,
+            command_status::failed};
+    }
+}
+
+inline void __fill_trace_device(
+    trace_event& event,
+    const std::shared_ptr<__device_state>& device) noexcept {
+    if (!device) {
+        return;
+    }
+    event.device = device->info.id;
+    event.epoch = device->current_epoch();
+    event.worker = device->worker_snapshot().generation;
+}
+
+[[nodiscard]] inline auto __make_trace_event(
+    const std::shared_ptr<__queue_state>& queue,
+    const std::shared_ptr<__session_state>& session,
+    trace_event_kind kind,
+    std::optional<worker_generation> accepted_generation = std::nullopt,
+    command_id command = {}) noexcept -> trace_event {
+    trace_event event{};
+    event.kind = kind;
+    event.command = command;
+    if (queue) {
+        event.stream = queue->stream;
+    }
+    if (session) {
+        event.session = session->id;
+        event.epoch = session->epoch;
+        auto device = session->device.lock();
+        __fill_trace_device(event, device);
+    } else if (queue) {
+        __fill_trace_device(event, queue->device);
+    }
+    if (accepted_generation) {
+        event.worker = *accepted_generation;
+    }
+    return event;
+}
+
+inline void __record_trace_exception(
+    const std::shared_ptr<__state>& state,
+    const std::shared_ptr<__queue_state>& queue,
+    const std::shared_ptr<__session_state>& session,
+    std::optional<worker_generation> accepted_generation,
+    command_id command,
+    std::exception_ptr ep) noexcept {
+    if (!state) {
+        return;
+    }
+    auto event = __make_trace_event(
+        queue,
+        session,
+        trace_event_kind::error,
+        accepted_generation,
+        command);
+    auto info = __trace_error_from_exception(std::move(ep));
+    event.kind = info.kind;
+    event.error = info.error;
+    event.status = info.status;
+    state->record_trace(event);
+}
+
+inline void __record_trace_lifecycle(
+    const std::shared_ptr<__device_state>& device,
+    trace_event_kind kind,
+    error_kind error = error_kind::unknown) noexcept {
+    if (!device) {
+        return;
+    }
+    auto state = device->owner.lock();
+    if (!state) {
+        return;
+    }
+    trace_event event{};
+    event.kind = kind;
+    event.error = error;
+    event.status = command_status::ok;
+    __fill_trace_device(event, device);
+    state->record_trace(event);
+}
+
 inline auto __admit_device_for_command(
     const std::shared_ptr<__device_state>& device,
     const char* what) -> worker_generation {
@@ -710,6 +928,11 @@ struct __command_receiver {
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
         try {
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::started,
+                accepted_generation));
             if (session && accepted_generation) {
                 __validate_session_for_execution(
                     session,
@@ -722,20 +945,56 @@ struct __command_receiver {
                     "forge::accel::mock command: queue device is not usable");
             }
             std::invoke(std::move(action));
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::completed,
+                accepted_generation));
             state->finish_one();
             std::execution::set_value(std::move(rcvr));
         } catch (const __stopped_signal&) {
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::stopped,
+                accepted_generation));
             state->finish_one();
             std::execution::set_stopped(std::move(rcvr));
         } catch (...) {
+            auto ep = std::current_exception();
+            __record_trace_exception(
+                state,
+                queue,
+                session,
+                accepted_generation,
+                command_id{},
+                ep);
             state->finish_one();
-            std::execution::set_error(std::move(rcvr), std::current_exception());
+            std::execution::set_error(std::move(rcvr), std::move(ep));
         }
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_trace_exception(
+                state,
+                queue,
+                session,
+                accepted_generation,
+                command_id{},
+                e);
+        } else {
+            auto event = __make_trace_event(
+                queue,
+                session,
+                trace_event_kind::error,
+                accepted_generation);
+            event.error = error_kind::unknown;
+            event.status = command_status::failed;
+            state->record_trace(event);
+        }
         state->finish_one();
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
@@ -748,6 +1007,11 @@ struct __command_receiver {
 
     void set_stopped() && noexcept {
         __current_state_guard guard{state.get()};
+        state->record_trace(__make_trace_event(
+            queue,
+            session,
+            trace_event_kind::stopped,
+            accepted_generation));
         state->finish_one();
         std::execution::set_stopped(std::move(rcvr));
     }
@@ -852,6 +1116,10 @@ struct __command_sender {
             }
 
             if (!state->try_accept()) {
+                state->record_trace(__make_trace_event(
+                    queue_,
+                    session_,
+                    trace_event_kind::stopped));
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
@@ -868,17 +1136,34 @@ struct __command_sender {
                         "forge::accel::mock command: queue device is not usable");
                 }
             } catch (const __stopped_signal&) {
+                state->record_trace(__make_trace_event(
+                    queue_,
+                    session_,
+                    trace_event_kind::stopped));
                 state->finish_one();
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             } catch (...) {
+                auto ep = std::current_exception();
+                __record_trace_exception(
+                    state,
+                    queue_,
+                    session_,
+                    std::nullopt,
+                    command_id{},
+                    ep);
                 state->finish_one();
                 std::execution::set_error(
                     std::move(*rcvr_),
-                    std::current_exception());
+                    std::move(ep));
                 return;
             }
 
+            state->record_trace(__make_trace_event(
+                queue_,
+                session_,
+                trace_event_kind::submitted,
+                accepted_generation));
             try {
                 // The mock queue is backed by strand::scheduler, whose schedule()
                 // path enqueues work instead of completing synchronously.
@@ -896,10 +1181,18 @@ struct __command_sender {
                 });
                 std::execution::start(*op);
             } catch (...) {
+                auto ep = std::current_exception();
+                __record_trace_exception(
+                    state,
+                    queue_,
+                    session_,
+                    accepted_generation,
+                    command_id{},
+                    ep);
                 state->finish_one();
                 std::execution::set_error(
                     std::move(*rcvr_),
-                    std::current_exception());
+                    std::move(ep));
             }
         }
 
@@ -1276,7 +1569,14 @@ struct __packet_receiver {
 
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
+        const auto command = packet ? packet->id : command_id{};
         try {
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::started,
+                accepted_generation,
+                command));
             __validate_session_for_execution(
                 session,
                 accepted_generation,
@@ -1289,20 +1589,60 @@ struct __packet_receiver {
                     "forge::accel::mock packet command timed out"};
             }
             __invoke_packet_handler(*packet, handler);
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::completed,
+                accepted_generation,
+                command));
             state->finish_one();
             std::execution::set_value(std::move(rcvr), std::move(*packet));
         } catch (const __stopped_signal&) {
+            state->record_trace(__make_trace_event(
+                queue,
+                session,
+                trace_event_kind::stopped,
+                accepted_generation,
+                command));
             state->finish_one();
             std::execution::set_stopped(std::move(rcvr));
         } catch (...) {
+            auto ep = std::current_exception();
+            __record_trace_exception(
+                state,
+                queue,
+                session,
+                accepted_generation,
+                command,
+                ep);
             state->finish_one();
-            std::execution::set_error(std::move(rcvr), std::current_exception());
+            std::execution::set_error(std::move(rcvr), std::move(ep));
         }
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
+        const auto command = packet ? packet->id : command_id{};
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_trace_exception(
+                state,
+                queue,
+                session,
+                accepted_generation,
+                command,
+                e);
+        } else {
+            auto event = __make_trace_event(
+                queue,
+                session,
+                trace_event_kind::error,
+                accepted_generation,
+                command);
+            event.error = error_kind::unknown;
+            event.status = command_status::failed;
+            state->record_trace(event);
+        }
         state->finish_one();
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
@@ -1315,6 +1655,12 @@ struct __packet_receiver {
 
     void set_stopped() && noexcept {
         __current_state_guard guard{state.get()};
+        state->record_trace(__make_trace_event(
+            queue,
+            session,
+            trace_event_kind::stopped,
+            accepted_generation,
+            packet ? packet->id : command_id{}));
         state->finish_one();
         std::execution::set_stopped(std::move(rcvr));
     }
@@ -1384,8 +1730,15 @@ struct __packet_sender {
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
+            const auto command = packet_ ? packet_->id : command_id{};
 
             if (!state->try_accept()) {
+                state->record_trace(__make_trace_event(
+                    queue_,
+                    session_,
+                    trace_event_kind::stopped,
+                    std::nullopt,
+                    command));
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
@@ -1396,14 +1749,28 @@ struct __packet_sender {
                     session_,
                     "forge::accel::mock packet command: session is not usable");
             } catch (const __stopped_signal&) {
+                state->record_trace(__make_trace_event(
+                    queue_,
+                    session_,
+                    trace_event_kind::stopped,
+                    std::nullopt,
+                    command));
                 state->finish_one();
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             } catch (...) {
+                auto ep = std::current_exception();
+                __record_trace_exception(
+                    state,
+                    queue_,
+                    session_,
+                    std::nullopt,
+                    command,
+                    ep);
                 state->finish_one();
                 std::execution::set_error(
                     std::move(*rcvr_),
-                    std::current_exception());
+                    std::move(ep));
                 return;
             }
 
@@ -1412,6 +1779,12 @@ struct __packet_sender {
                 deadline = std::chrono::steady_clock::now() + *options_.timeout;
             }
 
+            state->record_trace(__make_trace_event(
+                queue_,
+                session_,
+                trace_event_kind::submitted,
+                accepted_generation,
+                command));
             try {
                 auto sender = std::execution::schedule(queue_->scheduler());
                 auto* op = op_.emplace_from([&]() -> op_t {
@@ -1429,10 +1802,18 @@ struct __packet_sender {
                 });
                 std::execution::start(*op);
             } catch (...) {
+                auto ep = std::current_exception();
+                __record_trace_exception(
+                    state,
+                    queue_,
+                    session_,
+                    accepted_generation,
+                    command,
+                    ep);
                 state->finish_one();
                 std::execution::set_error(
                     std::move(*rcvr_),
-                    std::current_exception());
+                    std::move(ep));
             }
         }
 
@@ -1650,6 +2031,17 @@ public:
     void reset() noexcept {
         if (session_) {
             session_->reset_requested.store(true, std::memory_order_release);
+            auto device = session_->device.lock();
+            auto state = device ? device->owner.lock() : nullptr;
+            if (state) {
+                trace_event event{};
+                event.kind = trace_event_kind::lifecycle_signal;
+                event.session = session_->id;
+                event.epoch = session_->epoch;
+                event.error = error_kind::stale_session;
+                __detail::__fill_trace_device(event, device);
+                state->record_trace(event);
+            }
         }
     }
 
@@ -1747,36 +2139,60 @@ public:
     void mark_lost() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->mark_lost();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::device_lost,
+                error_kind::device_lost);
         }
     }
 
     void reset() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->reset();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal);
         }
     }
 
     void begin_drain_freeze() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->begin_drain_freeze();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal,
+                error_kind::drain_freeze);
         }
     }
 
     void complete_drain() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->complete_drain();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal);
         }
     }
 
     void mark_worker_fault() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->mark_worker_fault();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal,
+                error_kind::worker_fault);
         }
     }
 
     [[nodiscard]] bool clear_worker_fault(worker_generation generation) noexcept {
         auto device_state = device_.lock();
-        return device_state && device_state->clear_worker_fault(generation);
+        if (!device_state || !device_state->clear_worker_fault(generation)) {
+            return false;
+        }
+        __detail::__record_trace_lifecycle(
+            device_state,
+            trace_event_kind::lifecycle_signal);
+        return true;
     }
 
 private:
