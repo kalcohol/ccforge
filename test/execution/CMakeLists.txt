@@ -28,6 +28,18 @@ forge_add_execution_compile_probe(
     test_execution_api_core.cpp
     execution_api_core_compile)
 
+set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
+set(CMAKE_REQUIRED_INCLUDES
+    "${CMAKE_SOURCE_DIR}/backport"
+    "${CMAKE_SOURCE_DIR}/include")
+forge_expect_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_THROWING_RECEIVER
+    "${FORGE_EXECUTION_TEST_ROOT}/compile/test_execution_reject_throwing_receiver.cpp"
+    OFF
+    "std::execution receiver completion callbacks must reject throwing set_value")
+set(CMAKE_REQUIRED_INCLUDES "${_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES}")
+unset(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES)
+
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
     test_execution_member_customization

@@ -19,11 +19,12 @@
 
 ## 当前限制
 
-- Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持。
+- Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile probe 覆盖。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径、copyable lvalue 拷贝路径，以及 non-copyable non-const lvalue 的 destructive-move 连接路径。连接 non-copyable lvalue 后不应再复用该 sender；const non-copyable lvalue 仍不可连接。该 destructive-move lvalue 路径是 backport-only 便利；原生 C++26 实现下应显式传入 `std::move(sndr)`。
 - Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start domain，并支持 scheduler-derived completion domain、`transform_sender` recovery 和 `transform_env` wrapper；scheduler-derived domain 仅在 scheduler 显式定制 `get_completion_domain` 时生效，否则会回退到 `default_domain`；完整标准递归 `transform_sender` 分发模型尚未实现。
 - `ensure_started` 当前采用多消费者缓存语义；缓存结果以 lvalue 形式投递，因此 move-only value 结果尚不支持；销毁返回 sender 不会请求停止，source 会继续运行到完成。
 - `start_detached` 当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。
+- `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 分配会使用 `env` 中的 `get_allocator`，但 consumer/callback 辅助分配尚未完整 allocator-aware。
 - `counting_scope::join()` 当前保留 Forge 既有阻塞扩展；标准 sender-returning join 形态尚未接入。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
