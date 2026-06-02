@@ -74,6 +74,10 @@ struct command_options {
     std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
 };
 
+struct event_wait_options {
+    std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
+};
+
 template<class Request, class Response>
 struct command_packet {
     using request_type = Request;
@@ -93,6 +97,12 @@ struct command_packet {
 
 template<class Request, class Response>
 command_packet(command_id, Request, Response) -> command_packet<Request, Response>;
+
+struct event_snapshot {
+    event_generation record_generation{};
+    event_generation completed_generation{};
+    bool ready = false;
+};
 
 namespace __detail {
 
@@ -116,24 +126,53 @@ struct __session_state {
 struct __queue_state;
 
 struct __event_state {
-    void mark_ready() noexcept {
+    [[nodiscard]] auto reserve_record_generation() noexcept -> event_generation {
+        std::lock_guard lk{mtx};
+        return event_generation{++record_generation};
+    }
+
+    void mark_completed(event_generation generation) noexcept {
         {
             std::lock_guard lk{mtx};
-            ready = true;
+            if (completed_generation < generation.value) {
+                completed_generation = generation.value;
+            }
         }
         cv.notify_all();
     }
 
-    [[nodiscard]] bool is_ready() const noexcept {
+    [[nodiscard]] auto snapshot() const noexcept -> event_snapshot {
         std::lock_guard lk{mtx};
-        return ready;
+        return event_snapshot{
+            event_generation{record_generation},
+            event_generation{completed_generation},
+            record_generation != 0 && completed_generation >= record_generation};
     }
 
-    [[nodiscard]] bool wait_until_ready_or_stopped(const __state& state) noexcept;
+    [[nodiscard]] auto recorded() const noexcept -> event_generation {
+        std::lock_guard lk{mtx};
+        return event_generation{record_generation};
+    }
+
+    [[nodiscard]] auto completed() const noexcept -> event_generation {
+        std::lock_guard lk{mtx};
+        return event_generation{completed_generation};
+    }
+
+    [[nodiscard]] auto wait_target_generation() const noexcept -> event_generation {
+        std::lock_guard lk{mtx};
+        return event_generation{record_generation == 0 ? 1 : record_generation};
+    }
+
+    [[nodiscard]] command_status wait_until_generation_or_stopped(
+        const __state& state,
+        event_generation target,
+        std::optional<std::chrono::steady_clock::time_point> deadline) noexcept;
 
     mutable std::mutex mtx;
     std::condition_variable cv;
-    bool ready = false;
+    std::uint64_t record_generation = 0;
+    std::uint64_t completed_generation = 0;
 };
 
 struct __state : std::enable_shared_from_this<__state> {
@@ -414,15 +453,26 @@ inline auto __state::snapshot_queues()
     return snapshot;
 }
 
-inline bool __event_state::wait_until_ready_or_stopped(const __state& state) noexcept {
+inline command_status __event_state::wait_until_generation_or_stopped(
+    const __state& state,
+    event_generation target,
+    std::optional<std::chrono::steady_clock::time_point> deadline) noexcept {
     std::unique_lock lk{mtx};
-    while (!ready) {
+    while (completed_generation < target.value) {
         if (state.stop_requested_now()) {
-            return false;
+            return command_status::stopped;
         }
-        cv.wait_for(lk, std::chrono::milliseconds{1});
+        if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+            return command_status::timed_out;
+        }
+        auto next_wake = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds{1};
+        if (deadline && *deadline < next_wake) {
+            next_wake = *deadline;
+        }
+        cv.wait_until(lk, next_wake);
     }
-    return true;
+    return command_status::ok;
 }
 
 struct __current_state_guard {
@@ -666,6 +716,339 @@ struct __command_sender {
     }
 };
 
+struct __event_query_sender {
+    using sender_concept = std::execution::sender_t;
+    using completion_signatures = std::execution::completion_signatures<
+        std::execution::set_value_t(event_snapshot),
+        std::execution::set_error_t(std::exception_ptr),
+        std::execution::set_stopped_t()>;
+
+    std::shared_ptr<__event_state> event;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> completion_signatures {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, completion_signatures>
+    struct __op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        std::shared_ptr<__event_state> event;
+        std::optional<R> rcvr;
+
+        void start() & noexcept {
+            if (!event) {
+                std::execution::set_error(
+                    std::move(*rcvr),
+                    std::make_exception_ptr(operation_error{
+                        error_kind::invalid_event,
+                        "forge::accel::mock::query_event: invalid event"}));
+                return;
+            }
+            std::execution::set_value(std::move(*rcvr), event->snapshot());
+        }
+    };
+
+    template<class R>
+        requires std::execution::receiver_of<R, completion_signatures>
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{std::move(event), std::move(rcvr)};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, completion_signatures>
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{event, std::move(rcvr)};
+    }
+};
+
+template<class R>
+struct __event_record_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<__state> state;
+    std::shared_ptr<__event_state> event;
+    event_generation target;
+    R rcvr;
+
+    void set_value() && noexcept {
+        event->mark_completed(target);
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        std::execution::set_value(std::move(rcvr));
+    }
+
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
+        } else {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::make_exception_ptr(static_cast<E&&>(e)));
+        }
+    }
+
+    void set_stopped() && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        std::execution::set_stopped(std::move(rcvr));
+    }
+
+    auto get_env() const noexcept(noexcept(std::execution::get_env(rcvr)))
+        -> decltype(std::execution::get_env(rcvr)) {
+        return std::execution::get_env(rcvr);
+    }
+};
+
+struct __event_record_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__event_state> event;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> __void_completion_signatures {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    struct __op {
+        using operation_state_concept = std::execution::operation_state_t;
+        using scheduler_t = strand::scheduler;
+        using schedule_sender_t = decltype(std::execution::schedule(
+            std::declval<scheduler_t>()));
+        using receiver_t = __event_record_receiver<R>;
+        using op_t = std::execution::connect_result_t<schedule_sender_t, receiver_t>;
+
+        std::shared_ptr<__queue_state> queue;
+        std::shared_ptr<__event_state> event;
+        std::optional<R> rcvr;
+        __op_box<op_t> op;
+
+        void start() & noexcept {
+            auto state = queue ? queue->owner.lock() : nullptr;
+            if (!state || __stop_requested(*rcvr) || !state->try_accept()) {
+                std::execution::set_stopped(std::move(*rcvr));
+                return;
+            }
+            if (!event) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr),
+                    std::make_exception_ptr(operation_error{
+                        error_kind::invalid_event,
+                        "forge::accel::mock::record_event: invalid event"}));
+                return;
+            }
+
+            auto target = event->reserve_record_generation();
+            try {
+                auto sender = std::execution::schedule(queue->scheduler());
+                auto* connected = op.emplace_from([&]() -> op_t {
+                    return std::execution::connect(
+                        std::move(sender),
+                        receiver_t{
+                            state,
+                            event,
+                            target,
+                            std::move(*rcvr)});
+                });
+                std::execution::start(*connected);
+            } catch (...) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr),
+                    std::current_exception());
+            }
+        }
+    };
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{std::move(queue), std::move(event), std::move(rcvr)};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{queue, event, std::move(rcvr)};
+    }
+};
+
+template<class R>
+struct __event_wait_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<__state> state;
+    std::shared_ptr<__event_state> event;
+    event_generation target;
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+    R rcvr;
+
+    void set_value() && noexcept {
+        auto status = event->wait_until_generation_or_stopped(*state, target, deadline);
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        if (status == command_status::stopped) {
+            std::execution::set_stopped(std::move(rcvr));
+            return;
+        }
+        if (status == command_status::timed_out) {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::make_exception_ptr(operation_error{
+                    error_kind::timeout,
+                    command_status::timed_out,
+                    "forge::accel::mock::wait_event timed out"}));
+            return;
+        }
+        std::execution::set_value(std::move(rcvr));
+    }
+
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
+        } else {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::make_exception_ptr(static_cast<E&&>(e)));
+        }
+    }
+
+    void set_stopped() && noexcept {
+        __current_state_guard guard{state.get()};
+        state->finish_one();
+        std::execution::set_stopped(std::move(rcvr));
+    }
+
+    auto get_env() const noexcept(noexcept(std::execution::get_env(rcvr)))
+        -> decltype(std::execution::get_env(rcvr)) {
+        return std::execution::get_env(rcvr);
+    }
+};
+
+struct __event_wait_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__event_state> event;
+    event_wait_options options;
+    bool synchronize_current = false;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> __void_completion_signatures {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    struct __op {
+        using operation_state_concept = std::execution::operation_state_t;
+        using scheduler_t = strand::scheduler;
+        using schedule_sender_t = decltype(std::execution::schedule(
+            std::declval<scheduler_t>()));
+        using receiver_t = __event_wait_receiver<R>;
+        using op_t = std::execution::connect_result_t<schedule_sender_t, receiver_t>;
+
+        std::shared_ptr<__queue_state> queue;
+        std::shared_ptr<__event_state> event;
+        event_wait_options options;
+        bool synchronize_current = false;
+        std::optional<R> rcvr;
+        __op_box<op_t> op;
+
+        void start() & noexcept {
+            auto state = queue ? queue->owner.lock() : nullptr;
+            if (!state || __stop_requested(*rcvr) || !state->try_accept()) {
+                std::execution::set_stopped(std::move(*rcvr));
+                return;
+            }
+            if (!event) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr),
+                    std::make_exception_ptr(operation_error{
+                        error_kind::invalid_event,
+                        "forge::accel::mock::wait_event: invalid event"}));
+                return;
+            }
+
+            auto target = synchronize_current
+                ? event->recorded()
+                : event->wait_target_generation();
+            std::optional<std::chrono::steady_clock::time_point> deadline;
+            if (options.timeout) {
+                deadline = std::chrono::steady_clock::now() + *options.timeout;
+            }
+            try {
+                auto sender = std::execution::schedule(queue->scheduler());
+                auto* connected = op.emplace_from([&]() -> op_t {
+                    return std::execution::connect(
+                        std::move(sender),
+                        receiver_t{
+                            state,
+                            event,
+                            target,
+                            deadline,
+                            std::move(*rcvr)});
+                });
+                std::execution::start(*connected);
+            } catch (...) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr),
+                    std::current_exception());
+            }
+        }
+    };
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{
+            std::move(queue),
+            std::move(event),
+            options,
+            synchronize_current,
+            std::move(rcvr)};
+    }
+
+    template<class R>
+        requires std::execution::receiver_of<R, __void_completion_signatures>
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{
+            queue,
+            event,
+            options,
+            synchronize_current,
+            std::move(rcvr)};
+    }
+};
+
 template<class R, class Packet, class Handler>
 struct __packet_receiver {
     using receiver_concept = std::execution::receiver_t;
@@ -867,12 +1250,34 @@ public:
     {}
 
     [[nodiscard]] bool ready() const noexcept {
-        return state_ && state_->is_ready();
+        return state_ && state_->snapshot().ready;
+    }
+
+    [[nodiscard]] auto record_generation() const noexcept -> event_generation {
+        return state_ ? state_->recorded() : event_generation{};
+    }
+
+    [[nodiscard]] auto completed_generation() const noexcept -> event_generation {
+        return state_ ? state_->completed() : event_generation{};
+    }
+
+    [[nodiscard]] auto query() const noexcept -> event_snapshot {
+        return state_ ? state_->snapshot() : event_snapshot{};
     }
 
 private:
     friend auto record_event(queue&, event);
+    friend auto record_event_typed(queue&, event);
     friend auto wait_event(queue&, event);
+    friend auto wait_event(queue&, event, event_wait_options);
+    friend auto wait_event_typed(queue&, event);
+    friend auto wait_event_typed(queue&, event, event_wait_options);
+    friend auto query_event(event);
+    friend auto query_event_typed(event);
+    friend auto synchronize_event(queue&, event);
+    friend auto synchronize_event(queue&, event, event_wait_options);
+    friend auto synchronize_event_typed(queue&, event);
+    friend auto synchronize_event_typed(queue&, event, event_wait_options);
 
     std::shared_ptr<__detail::__event_state> state_;
 };
@@ -922,7 +1327,15 @@ private:
         Handler&&,
         command_options);
     friend auto record_event(queue&, event);
+    friend auto record_event_typed(queue&, event);
     friend auto wait_event(queue&, event);
+    friend auto wait_event(queue&, event, event_wait_options);
+    friend auto wait_event_typed(queue&, event);
+    friend auto wait_event_typed(queue&, event, event_wait_options);
+    friend auto synchronize_event(queue&, event);
+    friend auto synchronize_event(queue&, event, event_wait_options);
+    friend auto synchronize_event_typed(queue&, event);
+    friend auto synchronize_event_typed(queue&, event, event_wait_options);
     friend auto fence(queue&);
 
     std::weak_ptr<__detail::__queue_state> queue_;
@@ -1562,44 +1975,62 @@ auto submit_packet_typed(
 }
 
 inline auto record_event(queue& q, event ev) {
-    return __detail::__make_command_sender(
+    return __detail::__event_record_sender{
         q.queue_.lock(),
-        [state = std::move(ev.state_)] {
-            if (!state) {
-                throw operation_error{
-                    error_kind::invalid_event,
-                    "forge::accel::mock::record_event: invalid event"};
-            }
-            state->mark_ready();
-        });
+        std::move(ev.state_)};
 }
 
 inline auto record_event_typed(queue& q, event ev) {
     return __typed_detail::void_sender(record_event(q, std::move(ev)));
 }
 
+inline auto query_event(event ev) {
+    return __detail::__event_query_sender{std::move(ev.state_)};
+}
+
+inline auto query_event_typed(event ev) {
+    return __typed_detail::value_sender<event_snapshot>(
+        query_event(std::move(ev)));
+}
+
+inline auto wait_event(queue& q, event ev, event_wait_options options) {
+    return __detail::__event_wait_sender{
+        q.queue_.lock(),
+        std::move(ev.state_),
+        options,
+        false};
+}
+
 inline auto wait_event(queue& q, event ev) {
-    auto queue_state = q.queue_.lock();
-    auto ctx = queue_state ? queue_state->owner.lock() : nullptr;
-    return __detail::__make_command_sender(
-        std::move(queue_state),
-        [ctx, state = std::move(ev.state_)] {
-            if (!ctx) {
-                throw __detail::__stopped_signal{};
-            }
-            if (!state) {
-                throw operation_error{
-                    error_kind::invalid_event,
-                    "forge::accel::mock::wait_event: invalid event"};
-            }
-            if (!state->wait_until_ready_or_stopped(*ctx)) {
-                throw __detail::__stopped_signal{};
-            }
-        });
+    return wait_event(q, std::move(ev), event_wait_options{});
+}
+
+inline auto wait_event_typed(queue& q, event ev, event_wait_options options) {
+    return __typed_detail::void_sender(wait_event(q, std::move(ev), options));
 }
 
 inline auto wait_event_typed(queue& q, event ev) {
-    return __typed_detail::void_sender(wait_event(q, std::move(ev)));
+    return wait_event_typed(q, std::move(ev), event_wait_options{});
+}
+
+inline auto synchronize_event(queue& q, event ev, event_wait_options options) {
+    return __detail::__event_wait_sender{
+        q.queue_.lock(),
+        std::move(ev.state_),
+        options,
+        true};
+}
+
+inline auto synchronize_event(queue& q, event ev) {
+    return synchronize_event(q, std::move(ev), event_wait_options{});
+}
+
+inline auto synchronize_event_typed(queue& q, event ev, event_wait_options options) {
+    return __typed_detail::void_sender(synchronize_event(q, std::move(ev), options));
+}
+
+inline auto synchronize_event_typed(queue& q, event ev) {
+    return synchronize_event_typed(q, std::move(ev), event_wait_options{});
 }
 
 inline auto fence(queue& q) {

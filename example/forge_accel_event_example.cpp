@@ -24,6 +24,7 @@
 #include <execution>
 #include <cassert>
 #include <span>
+#include <tuple>
 #include <vector>
 
 int main() {
@@ -47,6 +48,10 @@ int main() {
     assert(std::execution::sync_wait(
         forge::accel::mock::record_event(copy_q, uploaded)).has_value());
     assert(uploaded.ready());
+    auto uploaded_snapshot = std::execution::sync_wait(
+        forge::accel::mock::query_event(uploaded));
+    assert(uploaded_snapshot.has_value());
+    assert(std::get<0>(*uploaded_snapshot).completed_generation.value == 1);
 
     assert(std::execution::sync_wait(
         forge::accel::mock::wait_event(compute_q, uploaded)).has_value());
@@ -58,6 +63,8 @@ int main() {
         })).has_value());
     assert(std::execution::sync_wait(
         forge::accel::mock::record_event(compute_q, computed)).has_value());
+    assert(std::execution::sync_wait(
+        forge::accel::mock::synchronize_event(compute_q, computed)).has_value());
     assert(std::execution::sync_wait(
         forge::accel::mock::wait_event(copy_q, computed)).has_value());
     assert(std::execution::sync_wait(forge::accel::mock::fence(copy_q)).has_value());

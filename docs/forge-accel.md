@@ -23,9 +23,9 @@ Future backend entry rules are tracked in the
 
 `forge::accel` 本层提供 backend-neutral vocabulary。设备和运行时身份包括
 `device_id`、`context_id`、`stream_id`、`session_id`、`request_id`、`event_id`、
-`device_epoch`、`worker_generation` 和 `worker_key`；队列、内存和命令 vocabulary
-包括 `device_info`、`memory_kind`、`queue_kind`、`copy_kind`、`command_id`、
-`command_status`、`error_kind` 和 `model_io_info`。
+`event_generation`、`device_epoch`、`worker_generation` 和 `worker_key`；队列、
+内存和命令 vocabulary 包括 `device_info`、`memory_kind`、`queue_kind`、
+`copy_kind`、`command_id`、`command_status`、`error_kind` 和 `model_io_info`。
 
 这些类型是 Forge 的 portable proof vocabulary：它们不绑定 mock storage，不声明真实
 硬件能力，不是 wire format、driver ABI 或 OS process identity。需要跨进程或跨设备
@@ -387,35 +387,48 @@ commands. `execute_typed` maps validation failures to `forge::accel::error`.
 
 ## events and fences
 
-Mock backend 提供最小 completion-boundary 事件。事件可用于同一 context 内不同 queue
-之间的 ordering proof：
+Mock backend 提供 generation-based completion-boundary 事件。事件可用于同一
+context 内不同 queue 之间的 ordering proof：
 
 ```cpp
 forge::accel::mock::event uploaded;
 
 std::execution::sync_wait(forge::accel::mock::copy_to_device(copy_q, device, std::span<const T>{host}));
 std::execution::sync_wait(forge::accel::mock::record_event(copy_q, uploaded));
+auto snapshot = std::execution::sync_wait(forge::accel::mock::query_event(uploaded));
 std::execution::sync_wait(forge::accel::mock::wait_event(compute_q, uploaded));
+std::execution::sync_wait(forge::accel::mock::synchronize_event(compute_q, uploaded));
 std::execution::sync_wait(forge::accel::mock::fence(compute_q));
 ```
 
-- `event` 是可复制的共享完成标记，默认未 ready。
+- `event` 是可复制的共享 generation 标记，默认未 ready。
 - `event` 不绑定 context，control block 使用普通共享分配；它不继承
   `context_options::memory`。
-- `record_event(q, ev)` 作为 queue command 运行，完成时把 `ev` 标记为 ready。
-- `wait_event(q, ev)` 作为 queue command 运行，等待 `ev` ready；若 context stop，
-  以 stopped 完成。
+- `record_event(q, ev)` 在 sender start/enqueue 时 reserve 下一代 generation，
+  并作为 queue command 在完成时 publish 该 generation。
+- `event::record_generation()` 是已 reserve 的最新 generation；
+  `event::completed_generation()` 是已 publish 的最新 generation。`ready()` 等价于
+  “至少有一次 record，且 completed generation 已追上最新 record generation”。
+- `query_event(ev)` 非阻塞返回 `event_snapshot`，包含 record/completed generation
+  和 ready 状态；`query_event_typed(ev)` 用 typed error surface 包装 invalid-event
+  路径。
+- `wait_event(q, ev)` 在 sender start/enqueue 时捕获目标 generation。若此前已有
+  reserved generation，它等待该 generation publish；若 event 尚未 record，它等待
+  第一代 generation。`event_wait_options{.timeout = ...}` 可设置超时。
+- `synchronize_event(q, ev)` 是 fence-like wait boundary：它等待 start/enqueue
+  当下已经 reserve 的最新 generation；若 event 尚未 record，它只是 queue 上的
+  no-op wait boundary。
 - `fence(q)` 是 queue 上的 no-op command，可作为“之前已接受 command 已到达”的
   sender 边界。
 - 同一个 queue 内仍保持 FIFO；不同 queue 可以并发推进，实际并发度取决于
   `context_options::thread_count` 和 host scheduler。
 
 这些 API 只描述 portable mock backend 的 completion boundary，主要用于“已经按顺序
-record 后再 wait”的 queue 边界，或跨线程/跨 context 的轻量同步 proof。它们不暴露
-native CUDA/HIP/SYCL event handle，不建模 dependency graph，也不检测
-dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
-`record_event` 前面，该 queue 会等待到 event ready 或 context stop；调用方应按
-明确的 command 顺序使用它。
+record 后再 wait”的 queue 边界，或跨线程/跨 context 的轻量同步 proof。它们不是
+native CUDA/HIP/SYCL event handle，不建模 dependency graph、timeline semaphore，
+也不检测 dependency cycle。若把未 publish generation 的 `wait_event` 排在同一
+queue 的对应 `record_event` 前面，该 queue 会等待到该 generation publish、timeout
+或 context stop；调用方应按明确的 command 顺序使用它。
 
 ## examples
 

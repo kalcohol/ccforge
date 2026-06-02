@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
+#include <forge/wait_result.hpp>
 #include <execution>
 #include <algorithm>
 #include <chrono>
@@ -82,12 +83,132 @@ TEST(AccelEventTest, EventStartsUnreadyAndCopiesShareState) {
 
     EXPECT_FALSE(ev.ready());
     EXPECT_FALSE(copy.ready());
+    EXPECT_EQ(ev.record_generation().value, 0U);
+    EXPECT_EQ(ev.completed_generation().value, 0U);
 
     ASSERT_TRUE(std::execution::sync_wait(
         forge::accel::mock::record_event(q, ev)).has_value());
 
     EXPECT_TRUE(ev.ready());
     EXPECT_TRUE(copy.ready());
+    EXPECT_EQ(ev.record_generation().value, 1U);
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+}
+
+TEST(AccelEventTest, RecordReservesGenerationAtStartBeforeCompletion) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto blocker_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+
+    auto blocker = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    std::execution::start(blocker_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto record = forge::accel::mock::record_event(q, ev);
+    auto record_op = std::execution::connect(
+        std::move(record),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    EXPECT_EQ(ev.record_generation().value, 1U);
+    EXPECT_EQ(ev.completed_generation().value, 0U);
+    EXPECT_FALSE(ev.ready());
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(record_state));
+    EXPECT_TRUE(record_state->value);
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+    EXPECT_TRUE(ev.ready());
+}
+
+TEST(AccelEventTest, QueryEventReportsGenerationState) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto blocker_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+
+    auto blocker = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    std::execution::start(blocker_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto record = forge::accel::mock::record_event(q, ev);
+    auto record_op = std::execution::connect(
+        std::move(record),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    auto pending = std::execution::sync_wait(forge::accel::mock::query_event(ev));
+    ASSERT_TRUE(pending.has_value());
+    auto pending_snapshot = std::get<0>(*pending);
+    EXPECT_EQ(pending_snapshot.record_generation.value, 1U);
+    EXPECT_EQ(pending_snapshot.completed_generation.value, 0U);
+    EXPECT_FALSE(pending_snapshot.ready);
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+    ASSERT_TRUE(wait_done(record_state));
+
+    auto completed = forge::wait_result(forge::accel::mock::query_event_typed(ev));
+    ASSERT_TRUE(completed.has_value());
+    auto completed_snapshot = std::get<0>(completed.value());
+    EXPECT_EQ(completed_snapshot.record_generation.value, 1U);
+    EXPECT_EQ(completed_snapshot.completed_generation.value, 1U);
+    EXPECT_TRUE(completed_snapshot.ready);
 }
 
 TEST(AccelEventTest, QueueKindsAreRecorded) {
@@ -231,6 +352,146 @@ TEST(AccelEventTest, CrossQueueWaitCompletesAfterOtherQueueRecordsEvent) {
     EXPECT_TRUE(ev.ready());
 }
 
+TEST(AccelEventTest, MultipleWaitersObserveReservedGeneration) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    forge::accel::mock::event ev;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto blocker_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+    auto first_wait_state = std::make_shared<async_state>();
+    auto second_wait_state = std::make_shared<async_state>();
+
+    auto blocker = forge::accel::mock::submit(copy, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    std::execution::start(blocker_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto record = forge::accel::mock::record_event(copy, ev);
+    auto record_op = std::execution::connect(
+        std::move(record),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    auto first_wait = forge::accel::mock::wait_event(compute, ev);
+    auto second_wait = forge::accel::mock::wait_event(compute, ev);
+    auto first_wait_op = std::execution::connect(
+        std::move(first_wait),
+        async_receiver{first_wait_state});
+    auto second_wait_op = std::execution::connect(
+        std::move(second_wait),
+        async_receiver{second_wait_state});
+    std::execution::start(first_wait_op);
+    std::execution::start(second_wait_op);
+
+    EXPECT_EQ(ev.record_generation().value, 1U);
+    EXPECT_EQ(ev.completed_generation().value, 0U);
+    EXPECT_FALSE(wait_done_for(first_wait_state, 50ms));
+    EXPECT_FALSE(wait_done_for(second_wait_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(record_state));
+    ASSERT_TRUE(wait_done(first_wait_state));
+    ASSERT_TRUE(wait_done(second_wait_state));
+    EXPECT_TRUE(first_wait_state->value);
+    EXPECT_TRUE(second_wait_state->value);
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+}
+
+TEST(AccelEventTest, SecondRecordCreatesNewWaitTargetGeneration) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    forge::accel::mock::event ev;
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::record_event(copy, ev)).has_value());
+    EXPECT_EQ(ev.record_generation().value, 1U);
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto blocker_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+    auto wait_state = std::make_shared<async_state>();
+
+    auto blocker = forge::accel::mock::submit(copy, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    std::execution::start(blocker_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto second_record = forge::accel::mock::record_event(copy, ev);
+    auto second_record_op = std::execution::connect(
+        std::move(second_record),
+        async_receiver{record_state});
+    std::execution::start(second_record_op);
+    EXPECT_EQ(ev.record_generation().value, 2U);
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+    EXPECT_FALSE(ev.ready());
+
+    auto wait = forge::accel::mock::wait_event(compute, ev);
+    auto wait_op = std::execution::connect(std::move(wait), async_receiver{wait_state});
+    std::execution::start(wait_op);
+    EXPECT_FALSE(wait_done_for(wait_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(record_state));
+    ASSERT_TRUE(wait_done(wait_state));
+    EXPECT_TRUE(wait_state->value);
+    EXPECT_EQ(ev.completed_generation().value, 2U);
+    EXPECT_TRUE(ev.ready());
+}
+
 TEST(AccelEventTest, CopyComputeCopyPipelineUsesCrossQueueEvents) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 2,
@@ -329,6 +590,112 @@ TEST(AccelEventTest, WaitEventStopsWhenContextStops) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(AccelEventTest, WaitEventTimeoutReportsError) {
+    forge::accel::mock::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(
+            forge::accel::mock::wait_event(
+                q,
+                ev,
+                forge::accel::mock::event_wait_options{.timeout = 10ms})),
+        std::runtime_error);
+
+    auto typed = forge::wait_result(
+        forge::accel::mock::wait_event_typed(
+            q,
+            ev,
+            forge::accel::mock::event_wait_options{.timeout = 10ms}));
+    ASSERT_TRUE(typed.has_error());
+    auto* error = typed.error_if<forge::accel::error>();
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->kind, forge::accel::error_kind::timeout);
+}
+
+TEST(AccelEventTest, WaitEventWithLongTimeoutStopsWhenContextStops) {
+    forge::accel::mock::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+    auto state = std::make_shared<async_state>();
+
+    auto sender = forge::accel::mock::wait_event(
+        q,
+        ev,
+        forge::accel::mock::event_wait_options{.timeout = 1h});
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+
+    ctx.request_stop();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(AccelEventTest, SynchronizeEventWaitsForCurrentRecordedGeneration) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    forge::accel::mock::event ev;
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::synchronize_event(compute, ev)).has_value());
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto blocker_state = std::make_shared<async_state>();
+    auto record_state = std::make_shared<async_state>();
+    auto sync_state = std::make_shared<async_state>();
+
+    auto blocker = forge::accel::mock::submit(copy, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    std::execution::start(blocker_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto record = forge::accel::mock::record_event(copy, ev);
+    auto record_op = std::execution::connect(
+        std::move(record),
+        async_receiver{record_state});
+    std::execution::start(record_op);
+
+    auto sync = forge::accel::mock::synchronize_event(compute, ev);
+    auto sync_op = std::execution::connect(std::move(sync), async_receiver{sync_state});
+    std::execution::start(sync_op);
+    EXPECT_FALSE(wait_done_for(sync_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(record_state));
+    ASSERT_TRUE(wait_done(sync_state));
+    EXPECT_TRUE(sync_state->value);
 }
 
 TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {

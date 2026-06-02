@@ -64,6 +64,20 @@ struct event_id {
     friend auto operator==(event_id, event_id) -> bool = default;
 };
 
+struct event_generation {
+    std::uint64_t value = 0;
+
+    friend auto operator==(event_generation, event_generation) -> bool = default;
+
+    friend constexpr auto operator<(event_generation lhs, event_generation rhs) noexcept -> bool {
+        return lhs.value < rhs.value;
+    }
+
+    friend constexpr auto operator<=(event_generation lhs, event_generation rhs) noexcept -> bool {
+        return lhs.value <= rhs.value;
+    }
+};
+
 struct device_epoch {
     std::uint64_t value = 0;
 
