@@ -3,13 +3,15 @@
 #include "test_execution_manual_sender.hpp"
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <stop_token>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 namespace {
 
-using forge_execution_test::manual_sender;
 using forge_execution_test::manual_state;
 using forge_execution_test::wait_until_completed;
 using forge_execution_test::wait_until_started;
@@ -31,12 +33,6 @@ struct scope_probe_receiver {
 
     auto get_env() const noexcept -> std::execution::empty_env {
         return {};
-    }
-};
-
-struct deref_unique {
-    int operator()(std::unique_ptr<int> value) const noexcept {
-        return *value;
     }
 };
 
@@ -75,6 +71,170 @@ struct pending_sender {
     template<std::execution::receiver R>
     auto connect(R r) const& -> op<R> {
         return op<R>{std::move(r), started};
+    }
+};
+
+struct increment_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::atomic<int>* counter = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::atomic<int>* counter;
+
+        void start() & noexcept {
+            counter->fetch_add(1, std::memory_order_relaxed);
+            std::execution::set_value(std::move(rcvr));
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> op<R> {
+        return op<R>{std::move(r), counter};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& -> op<R> {
+        return op<R>{std::move(r), counter};
+    }
+};
+
+struct move_only_increment_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::unique_ptr<int> value;
+    int* observed = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::unique_ptr<int> value;
+        int* observed;
+
+        void start() & noexcept {
+            *observed = *value;
+            std::execution::set_value(std::move(rcvr));
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> op<R> {
+        return op<R>{std::move(r), std::move(value), observed};
+    }
+};
+
+struct manual_void_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<manual_state> state;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        struct stop_callback {
+            op* self;
+
+            void operator()() noexcept {
+                self->complete_stopped();
+            }
+        };
+
+        using env_t = std::execution::env_of_t<R>;
+        using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+        using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
+
+        R rcvr;
+        std::shared_ptr<manual_state> state;
+        std::optional<callback_t> callback;
+        std::atomic<bool> done{false};
+
+        void start() & noexcept {
+            auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+            {
+                std::lock_guard lk{state->mtx};
+                state->started = true;
+                state->complete_value = [this](int) noexcept {
+                    complete_value();
+                };
+            }
+            state->cv.notify_all();
+
+            if (token.stop_possible()) {
+                callback.emplace(token, stop_callback{this});
+            }
+        }
+
+        void complete_value() noexcept {
+            if (done.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
+            {
+                std::lock_guard lk{state->mtx};
+                state->completed = true;
+                state->complete_value = {};
+            }
+            state->cv.notify_all();
+            callback.reset();
+            std::execution::set_value(std::move(rcvr));
+        }
+
+        void complete_stopped() noexcept {
+            if (done.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
+            {
+                std::lock_guard lk{state->mtx};
+                state->stop_requested = true;
+                state->completed = true;
+                state->complete_value = {};
+            }
+            state->cv.notify_all();
+            std::execution::set_stopped(std::move(rcvr));
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> op<R> {
+        return op<R>{std::move(r), std::move(state)};
     }
 };
 
@@ -163,9 +323,7 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
     auto token = scope.get_token();
 
     std::atomic<int> counter{0};
-    token.spawn(std::execution::just() | std::execution::then([&counter] {
-        counter.fetch_add(1, std::memory_order_relaxed);
-    }));
+    std::execution::spawn(increment_sender{&counter}, token);
 
     // inline_scheduler runs synchronously, so counter is already 1
     EXPECT_EQ(counter.load(), 1);
@@ -178,13 +336,9 @@ TEST(SimpleCountingScopeTest, SpawnNonCopyableLvaluePipeline) {
     auto token = scope.get_token();
 
     int observed = 0;
-    auto sndr = std::execution::just(std::make_unique<int>(43))
-        | std::execution::then(deref_unique{})
-        | std::execution::then([&](int value) noexcept {
-              observed = value;
-          });
+    auto sndr = move_only_increment_sender{std::make_unique<int>(43), &observed};
 
-    token.spawn(sndr);
+    std::execution::spawn(std::move(sndr), token);
 
     EXPECT_EQ(observed, 43);
     (void)std::execution::sync_wait(scope.join());
@@ -198,9 +352,7 @@ TEST(SimpleCountingScopeTest, ClosePreventsFurtherSpawns) {
     EXPECT_TRUE(scope.is_closed());
 
     std::atomic<int> counter{0};
-    token.spawn(std::execution::just() | std::execution::then([&counter] {
-        counter.fetch_add(1, std::memory_order_relaxed);
-    }));
+    std::execution::spawn(increment_sender{&counter}, token);
     // spawn should silently ignore (scope closed)
     EXPECT_EQ(counter.load(), 0);
     (void)std::execution::sync_wait(scope.join());
@@ -210,7 +362,8 @@ TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    auto result = std::execution::sync_wait(token.associate(std::execution::just(42)));
+    auto result = std::execution::sync_wait(
+        std::execution::associate(std::execution::just(42), token));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -233,20 +386,22 @@ TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
     auto token = scope.get_token();
     scope.close();
 
-    auto result = std::execution::sync_wait(token.associate(std::execution::just(42)));
+    auto result = std::execution::sync_wait(
+        std::execution::associate(std::execution::just(42), token));
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SimpleCountingScopeTest, WrapClosedScopeCompletesStopped) {
+TEST(SimpleCountingScopeTest, WrapClosedScopeStillReturnsInputSender) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
     scope.close();
 
     auto result = std::execution::sync_wait(token.wrap(std::execution::just(42)));
 
-    EXPECT_FALSE(result.has_value());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
 }
 
@@ -255,22 +410,21 @@ TEST(SimpleCountingScopeTest, AssociateDisassociatesOnError) {
     auto token = scope.get_token();
 
     EXPECT_THROW((void)std::execution::sync_wait(
-        token.associate(std::execution::just_error(42))), int);
+        std::execution::associate(std::execution::just_error(42), token)), int);
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SimpleCountingScopeTest, SpawnDisassociatesOnErrorAndStopped) {
+TEST(SimpleCountingScopeTest, SpawnDisassociatesOnStopped) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    token.spawn(std::execution::just_error(42));
-    token.spawn(std::execution::just_stopped());
+    std::execution::spawn(std::execution::just_stopped(), token);
 
     (void)std::execution::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SimpleCountingScopeTest, WrapAcquiresAtStartAndReleasesOnOperationDestruction) {
+TEST(SimpleCountingScopeTest, AssociateOwnsAssociationUntilOperationDestruction) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
@@ -278,11 +432,14 @@ TEST(SimpleCountingScopeTest, WrapAcquiresAtStartAndReleasesOnOperationDestructi
     bool completed = false;
 
     {
+        auto associated = std::execution::associate(pending_sender{&started}, token);
+        EXPECT_EQ(scope.count(), 1u);
+
         auto op = std::execution::connect(
-            token.wrap(pending_sender{&started}),
+            std::move(associated),
             scope_probe_receiver{&completed});
 
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.count(), 1u);
         EXPECT_FALSE(started);
 
         std::execution::start(op);
@@ -295,7 +452,7 @@ TEST(SimpleCountingScopeTest, WrapAcquiresAtStartAndReleasesOnOperationDestructi
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SimpleCountingScopeTest, UnstartedWrappedOperationDoesNotAssociate) {
+TEST(SimpleCountingScopeTest, UnstartedAssociatedOperationReleasesAssociationOnDestruction) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
@@ -303,11 +460,14 @@ TEST(SimpleCountingScopeTest, UnstartedWrappedOperationDoesNotAssociate) {
     bool completed = false;
 
     {
+        auto associated = std::execution::associate(pending_sender{&started}, token);
+        EXPECT_EQ(scope.count(), 1u);
+
         auto op = std::execution::connect(
-            token.wrap(pending_sender{&started}),
+            std::move(associated),
             scope_probe_receiver{&completed});
         (void)op;
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.count(), 1u);
     }
 
     EXPECT_FALSE(started);
@@ -321,9 +481,7 @@ TEST(SimpleCountingScopeTest, MultipleSpawns) {
 
     std::atomic<int> counter{0};
     for (int i = 0; i < 5; ++i) {
-        token.spawn(std::execution::just() | std::execution::then([&counter] {
-            counter.fetch_add(1, std::memory_order_relaxed);
-        }));
+        std::execution::spawn(increment_sender{&counter}, token);
     }
     // inline_scheduler is synchronous
     EXPECT_EQ(counter.load(), 5);
@@ -375,12 +533,13 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(CountingScopeTest, CloseRejectsNewWrappedWork) {
+TEST(CountingScopeTest, CloseRejectsNewAssociatedWork) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
 
     scope.close();
-    auto result = std::execution::sync_wait(token.wrap(std::execution::just(42)));
+    auto result = std::execution::sync_wait(
+        std::execution::associate(std::execution::just(42), token));
 
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(scope.is_closed());
@@ -409,7 +568,7 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
     auto token = scope.get_token();
     auto state = std::make_shared<manual_state>();
 
-    token.spawn(manual_sender{state});
+    std::execution::spawn(manual_void_sender{state}, token);
 
     ASSERT_TRUE(wait_until_started(state));
     EXPECT_EQ(scope.count(), 1u);

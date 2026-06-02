@@ -30,8 +30,8 @@ int main() {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    token.spawn(std::execution::just() |
-        std::execution::then([] { std::cout << "scope task\n"; }));
+    std::execution::spawn(std::execution::just(), token);
+    std::cout << "scope task\n";
 
     scope.close();
     std::execution::sync_wait(scope.join());

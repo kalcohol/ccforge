@@ -25,8 +25,6 @@
 #include "concepts.hpp"
 #include "detail/op_storage.hpp"
 #include "env.hpp"
-#include "start_detached.hpp"
-#include "upon.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -85,11 +83,10 @@ concept scope_token =
 // ──────────────────────────────────────────────────────────────────────────
 // simple_counting_scope — structured concurrency scope subset
 //
-// Forge keeps early practical token helpers: wrap/associate associate work on
-// connect and token.spawn fire-and-forgets via start_detached. join() already
-// returns a sender, but the sender still performs a start-time blocking wait.
-// The current working draft splits token responsibilities across top-level
-// algorithms such as spawn/associate.
+// wrap() follows the current working draft shape: simple scope tokens return
+// their input sender unchanged. Association is owned by top-level algorithms
+// such as associate/spawn/spawn_future. join() returns a sender, but currently
+// still performs a start-time blocking wait.
 // ──────────────────────────────────────────────────────────────────────────
 
 class simple_counting_scope {
@@ -234,19 +231,9 @@ public:
         return __scope_->__try_associate();
     }
 
-    // wrap(sndr): return a sender associated with this scope.
-    // Forge acquires the association at operation start. If the scope is
-    // already closed, the wrapped sender completes with stopped.
+    // wrap(sndr): current-WD identity wrapper. It does not associate work.
     template<sender S>
-    [[nodiscard]] auto wrap(S&& sndr) const;
-
-    // associate(sndr): compatibility spelling retained for existing callers.
-    template<sender S>
-    [[nodiscard]] auto associate(S&& sndr) const;
-
-    // spawn(sndr): fire-and-forget, associated with this scope
-    template<sender S>
-    void spawn(S&& sndr);
+    [[nodiscard]] decltype(auto) wrap(S&& sndr) const noexcept;
 
 private:
     simple_counting_scope* __scope_ = nullptr;
@@ -255,7 +242,7 @@ private:
 namespace __forge_counting_scope {
 
 template<class S, class R>
-struct __stop_associated_op;
+struct __stop_op;
 
 template<class Scope>
 struct __join_sender {
@@ -319,121 +306,6 @@ struct __stop_env {
 template<class Env>
 using __stop_env_t = __stop_env<std::decay_t<Env>>;
 
-template<class S, class R>
-struct __associated_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
-
-    using token_t = simple_counting_scope::scope_token;
-    using association_t = simple_counting_scope::scope_association;
-
-    struct __recv {
-        using receiver_concept = receiver_t;
-
-        R* __rcvr;
-
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
-        }
-
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
-        }
-
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(*__rcvr));
-        }
-
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(*__rcvr);
-        }
-    };
-
-    using inner_op_t = connect_result_t<S, __recv>;
-
-    token_t __token;
-    S __sndr;
-    R __rcvr;
-    association_t __association;
-    __forge_detail::__op_storage<1024> __inner_storage;
-
-    __associated_op(token_t token, S sndr, R rcvr)
-        : __token(token)
-        , __sndr(std::move(sndr))
-        , __rcvr(std::move(rcvr))
-    {}
-
-    ~__associated_op() {
-        __inner_storage.destroy();
-        __association = {};
-    }
-
-    void start() & noexcept {
-        __association = __token.try_associate();
-        if (!__association) {
-            std::execution::set_stopped(std::move(__rcvr));
-            return;
-        }
-
-        try {
-            auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(
-                    std::move(__sndr),
-                    __recv{&__rcvr});
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            std::execution::set_error(std::move(__rcvr), std::current_exception());
-        }
-    }
-};
-
-template<class S>
-struct __associated_sender {
-    using sender_concept = sender_t;
-    using source_t = S;
-
-    simple_counting_scope::scope_token __token;
-    S __sndr;
-
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
-            std::declval<Env>()));
-        return __forge_meta::__concat_cs_t<up_cs_t, completion_signatures<set_stopped_t()>>{};
-    }
-
-    template<receiver R>
-    auto connect(R r) &&
-        -> __associated_op<S, R>
-    {
-        return __associated_op<S, R>{__token, std::move(__sndr), std::move(r)};
-    }
-
-    template<receiver R>
-        requires (!std::copy_constructible<S>)
-    auto connect(R r) &
-        -> __associated_op<S, R>
-    {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
-        requires std::copy_constructible<S>
-    auto connect(R r) const&
-        -> __associated_op<S, R>
-    {
-        return __associated_op<S, R>{__token, __sndr, std::move(r)};
-    }
-
-    auto get_env() const noexcept -> env_of_t<S> {
-        return std::execution::get_env(__sndr);
-    }
-};
-
 } // namespace __forge_counting_scope
 
 inline auto simple_counting_scope::join() noexcept {
@@ -441,21 +313,8 @@ inline auto simple_counting_scope::join() noexcept {
 }
 
 template<sender S>
-[[nodiscard]] auto simple_counting_scope::scope_token::wrap(S&& sndr) const {
-    return __forge_counting_scope::__associated_sender<std::decay_t<S>>{
-        *this,
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
-}
-
-template<sender S>
-[[nodiscard]] auto simple_counting_scope::scope_token::associate(S&& sndr) const {
-    return wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
-}
-
-template<sender S>
-void simple_counting_scope::scope_token::spawn(S&& sndr) {
-    start_detached(wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))) |
-        upon_error([](auto&&) noexcept {}));
+[[nodiscard]] decltype(auto) simple_counting_scope::scope_token::wrap(S&& sndr) const noexcept {
+    return std::forward<S>(sndr);
 }
 
 static_assert(std::execution::scope_token<simple_counting_scope::scope_token>);
@@ -612,15 +471,9 @@ public:
     template<sender S>
     [[nodiscard]] auto wrap(S&& sndr) const;
 
-    template<sender S>
-    [[nodiscard]] auto associate(S&& sndr) const;
-
-    template<sender S>
-    void spawn(S&& sndr);
-
 private:
     template<class S, class R>
-    friend struct __forge_counting_scope::__stop_associated_op;
+    friend struct __forge_counting_scope::__stop_op;
 
     [[nodiscard]] std::inplace_stop_token __stop_token() const noexcept {
         if (!__scope_) return {};
@@ -633,11 +486,10 @@ private:
 namespace __forge_counting_scope {
 
 template<class S, class R>
-struct __stop_associated_op : __forge_detail::__immovable {
+struct __stop_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     using token_t = counting_scope::scope_token;
-    using association_t = counting_scope::scope_association;
 
     struct __recv {
         using receiver_concept = receiver_t;
@@ -671,43 +523,31 @@ struct __stop_associated_op : __forge_detail::__immovable {
     token_t __token;
     S __sndr;
     R __rcvr;
-    association_t __association;
     __forge_detail::__op_storage<1024> __inner_storage;
 
-    __stop_associated_op(token_t token, S sndr, R rcvr)
+    __stop_op(token_t token, S sndr, R rcvr)
         : __token(token)
         , __sndr(std::move(sndr))
         , __rcvr(std::move(rcvr))
     {}
 
-    ~__stop_associated_op() {
+    ~__stop_op() {
         __inner_storage.destroy();
-        __association = {};
     }
 
     void start() & noexcept {
-        __association = __token.try_associate();
-        if (!__association) {
-            std::execution::set_stopped(std::move(__rcvr));
-            return;
-        }
-
-        try {
-            auto stop_token = __token.__stop_token();
-            auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(
-                    std::move(__sndr),
-                    __recv{&__rcvr, stop_token});
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            std::execution::set_error(std::move(__rcvr), std::current_exception());
-        }
+        auto stop_token = __token.__stop_token();
+        auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+            return std::execution::connect(
+                std::move(__sndr),
+                __recv{&__rcvr, stop_token});
+        });
+        std::execution::start(*op);
     }
 };
 
 template<class S>
-struct __stop_associated_sender {
+struct __stop_sender {
     using sender_concept = sender_t;
     using source_t = S;
 
@@ -721,20 +561,20 @@ struct __stop_associated_sender {
         using up_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<const typename self_t::source_t&>(),
             std::declval<child_env_t>()));
-        return __forge_meta::__concat_cs_t<up_cs_t, completion_signatures<set_stopped_t()>>{};
+        return up_cs_t{};
     }
 
     template<receiver R>
     auto connect(R r) &&
-        -> __stop_associated_op<S, R>
+        -> __stop_op<S, R>
     {
-        return __stop_associated_op<S, R>{__token, std::move(__sndr), std::move(r)};
+        return __stop_op<S, R>{__token, std::move(__sndr), std::move(r)};
     }
 
     template<receiver R>
         requires (!std::copy_constructible<S>)
     auto connect(R r) &
-        -> __stop_associated_op<S, R>
+        -> __stop_op<S, R>
     {
         return std::move(*this).connect(std::move(r));
     }
@@ -742,9 +582,9 @@ struct __stop_associated_sender {
     template<receiver R>
         requires std::copy_constructible<S>
     auto connect(R r) const&
-        -> __stop_associated_op<S, R>
+        -> __stop_op<S, R>
     {
-        return __stop_associated_op<S, R>{__token, __sndr, std::move(r)};
+        return __stop_op<S, R>{__token, __sndr, std::move(r)};
     }
 
     auto get_env() const noexcept -> env_of_t<S> {
@@ -756,20 +596,9 @@ struct __stop_associated_sender {
 
 template<sender S>
 [[nodiscard]] auto counting_scope::scope_token::wrap(S&& sndr) const {
-    return __forge_counting_scope::__stop_associated_sender<std::decay_t<S>>{
+    return __forge_counting_scope::__stop_sender<std::decay_t<S>>{
         *this,
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
-}
-
-template<sender S>
-[[nodiscard]] auto counting_scope::scope_token::associate(S&& sndr) const {
-    return wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
-}
-
-template<sender S>
-void counting_scope::scope_token::spawn(S&& sndr) {
-    start_detached(wrap(__forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))) |
-        upon_error([](auto&&) noexcept {}));
+        std::forward<S>(sndr)};
 }
 
 static_assert(std::execution::scope_token<counting_scope::scope_token>);

@@ -17,12 +17,12 @@ Primary draft references checked for this round:
 
 | Area | Current-WD target | Current Forge state | Action |
 | --- | --- | --- | --- |
-| `spawn` | `std::execution::spawn(sndr, token, env)` is a `void` CPO that allocates a detached operation, associates via `token.try_associate()`, and starts eagerly. | Missing. Token member `spawn` and `start_detached` fill the practical gap. | Implement standard `spawn` before removing `std::execution::start_detached` use from standard paths. |
+| `spawn` | `std::execution::spawn(sndr, token, env)` is a `void` CPO that allocates a detached operation, associates via `token.try_associate()`, and starts eagerly. | Implemented as `spawn(sndr, token[, env])`; accepts `set_value()` / `set_stopped()` senders. | Keep examples/tests on top-level `spawn`; do not route standard paths through token-member helpers. |
 | `spawn_future` | Uses `token.wrap(sndr)`, allocator from `env` or wrapped sender env, eager state, cancellation-on-abandon, and consumer stop callback. | Implemented with eager state and shared-state allocator support; auxiliary allocation paths still need audit. | Audit and fix feasible allocator gaps after scope-token shape is stable. |
-| `simple_counting_scope::token::wrap` | Returns `std::forward<Sender>(snd)`; it does not create an association. | Returns a sender that associates on operation start. | Change as part of the coherent scope surface migration. |
-| `counting_scope::token::wrap` | Returns `stop-when(std::forward<Sender>(snd), scope stop token)`. | Returns a sender that associates on operation start and injects stop token. | Split stop-token fusion from association ownership. |
-| `scope_token::associate` | No token-member `associate` in the current target surface. | Token member `associate(sender)` exists as compatibility spelling. | Remove from `std::execution` surface or migrate only if a Forge extension is explicitly needed. |
-| `scope_token::spawn` | No token-member `spawn` in the current target surface. | Token member `spawn(sender)` fire-and-forgets through `start_detached`. | Replace standard examples/tests with top-level `spawn`; delete or move old helper. |
+| `simple_counting_scope::token::wrap` | Returns `std::forward<Sender>(snd)`; it does not create an association. | Implemented as identity forwarding. | Keep association in top-level algorithms. |
+| `counting_scope::token::wrap` | Returns `stop-when(std::forward<Sender>(snd), scope stop token)`. | Implemented as stop-token env injection without association ownership. | Keep association in top-level algorithms. |
+| `scope_token::associate` | No token-member `associate` in the current target surface. | Removed from scope tokens; top-level `associate(sender, token)` is implemented. | Keep token surface narrow. |
+| `scope_token::spawn` | No token-member `spawn` in the current target surface. | Removed from scope tokens; top-level `spawn(sender, token[, env])` is implemented. | Keep examples/tests on top-level `spawn`. |
 | `simple_counting_scope::join` / `counting_scope::join` | Return senders produced from a scope-join sender shape. | Sender-returning join is implemented; the sender currently waits in `start()` rather than using the full async join-state model. | Preserve sender-returning shape and improve async join-state behavior with the broader scope-token migration. |
 | `ensure_started` | Not current-WD `[exec]` surface. | Public `std::execution::ensure_started` extension. | Remove from `std::execution` or migrate to `forge::` if the utility is worth keeping. |
 | `start_detached` | Not current-WD `[exec]` surface. | Public `std::execution::start_detached` extension. | Replace standard paths with `spawn`; move utility to `forge::` only if still needed. |
@@ -33,8 +33,8 @@ Primary draft references checked for this round:
 
 1. Implement enough `spawn` support to replace standard-path `start_detached`
    usage coherently.
-2. Migrate examples and tests from token-member `spawn` to current-WD-shaped
-   spelling, keeping `join()` in sender-consuming form.
+2. Keep examples and tests on top-level `spawn` / `associate` spelling,
+   keeping `join()` in sender-consuming form.
 3. Remove or relocate `ensure_started` and `start_detached` from
    `std::execution` public surface.
 4. Remove destructive-move lvalue convenience from standard backport adaptors.

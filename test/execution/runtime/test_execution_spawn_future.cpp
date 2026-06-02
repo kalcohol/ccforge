@@ -177,7 +177,7 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
     auto sndr = std::execution::just(std::make_unique<int>(31))
         | std::execution::then(deref_unique{});
 
-    auto future = std::execution::spawn_future(sndr, token);
+    auto future = std::execution::spawn_future(std::move(sndr), token);
     auto result = std::execution::sync_wait(std::move(future));
 
     ASSERT_TRUE(result.has_value());

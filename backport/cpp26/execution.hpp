@@ -65,15 +65,13 @@
 //     not supported; abandoning the returned sender does not request stop.
 //   - start_detached is a Forge/stdexec-era extension name. It terminates on
 //     set_error; attach an error-handling adaptor before detaching if failures
-//     are expected. Current-WD fire-and-forget uses scope-token based spawn,
-//     which this backport does not yet expose.
+//     are expected. Current-WD fire-and-forget uses scope-token based spawn.
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state honors get_allocator(env), but auxiliary consumer/callback
 //     allocations are not fully allocator-aware.
-//   - counting_scope is stop-aware, and simple/counting scope join() returns a
-//     sender. The token wrap/associate/spawn helpers still retain Forge's
-//     earlier practical scope model instead of the current-WD top-level
-//     spawn/associate split.
+//   - associate/spawn, current-WD token wrap semantics, and sender-returning
+//     simple/counting scope join() are implemented. The join sender still uses
+//     a start-time blocking wait rather than the full async join-state model.
 //   - Execution domains are still a focused draft subset: connect uses the
 //     receiver-env start domain and supports transform_sender recovery plus
 //     transform_env wrapping, but not the full recursive transform_sender model.
@@ -83,8 +81,6 @@
 //     spell std::move(sndr) explicitly.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - standard spawn.
-//   - current-WD scope-token shape.
 //   - standard type-erased sender surface.
 
 // Language version guard.
@@ -136,4 +132,6 @@
 #include "execution/awaitable.hpp"
 #include "execution/domain.hpp"
 #include "execution/counting_scope.hpp"
+#include "execution/associate.hpp"
+#include "execution/spawn.hpp"
 #include "execution/spawn_future.hpp"

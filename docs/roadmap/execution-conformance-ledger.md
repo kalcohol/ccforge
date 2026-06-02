@@ -48,9 +48,9 @@ extensions. This is the source of truth for native handoff risk triage.
 | `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Mirrors the destructive-move convention for non-copyable non-const lvalue senders. | Decide during lvalue cleanup whether Forge keeps the convenience; native-friendly examples should spell `scope.spawn(std::move(sndr))`. |
 | `std::execution::ensure_started` | Non-WD extension name | Exposed as a multi-consumer cached eager sender. Current working-draft execution wording no longer has this name. | Remove from `std::execution` or migrate to `forge::` if the utility is still useful. |
 | `std::execution::start_detached` | Non-WD extension name | Exposed as fire-and-forget with terminate-on-error semantics. Current working-draft execution wording uses `spawn` with scope tokens for the standard fire-and-forget shape. | Replace standard paths with `spawn`; move to `forge::` only if still needed. |
-| `std::execution::spawn` | Missing current-WD surface | Not implemented. | Implement as part of scope/spawn/join convergence. |
+| `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` allocates detached state, associates through `token.try_associate()`, and starts eagerly. It accepts only `set_value()` / `set_stopped()` senders. | Keep tests aligned with current-WD fire-and-forget spelling. |
 | `std::execution::counting_scope::join()` | Partial convergence | `simple_counting_scope::join()` and `counting_scope::join()` return senders, but the current implementation waits in `start()` rather than exposing the full async join-state model. | Keep improving with the whole scope-token surface; do not reintroduce blocking `void join()`. |
-| Scope-token `wrap` / `associate` / member `spawn` | Shape mismatch | Forge tokens use early practical helpers: `wrap` associates work on connect, `associate` is a token member, and `token.spawn` fire-and-forgets through `start_detached`. Current working-draft `simple_counting_scope::token::wrap` is an identity wrapper, `counting_scope::token::wrap` only adds stop-token fusion, and standard `spawn` owns association. | Converge as one coherent scope-token slice; do not adjust only `join()` in isolation. |
+| Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
 | Execution domain dispatch | Draft subset | Receiver-env late-domain selection, scheduler-derived completion domain, `transform_sender`, and `transform_env` wrapper are implemented, but the full recursive standard model is not. | Track as Tier B conformance work. |
 | `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
@@ -64,16 +64,12 @@ Track these as current gaps until a focused taskbook closes them:
 
 - execution-domain dispatch remains a draft subset and does not implement the
   full recursive standard model;
-- standard-shaped `spawn` is not implemented;
 - `ensure_started`, if kept, does not support move-only value results and does
   not request stop when the returned sender is abandoned;
 - `spawn_future` uses `get_allocator` for its shared state, but auxiliary
   consumer/callback allocation is not fully allocator-aware;
 - `counting_scope::join()` is sender-returning but still uses a blocking
   start-time wait rather than the full async join-state model;
-- scope-token `wrap` / `associate` / member `spawn` retain Forge's early
-  practical scope model rather than the current working-draft split between
-  token wrapping and top-level `spawn`;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.

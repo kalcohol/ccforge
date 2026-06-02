@@ -509,16 +509,18 @@ template<sender S, scope_token Token, queryable Env>
 
 template<sender S, scope_token Token, queryable Env>
 [[nodiscard]] auto spawn_future(S&& sndr, Token token, Env env) {
+    auto wrapped = token.wrap(static_cast<S&&>(sndr));
     return __forge_spawn_future::__spawn_future(
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+        std::move(wrapped),
         std::move(token),
         std::move(env));
 }
 
 template<sender S, scope_token Token>
 [[nodiscard]] auto spawn_future(S&& sndr, Token token) {
-    return std::execution::spawn_future(
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+    auto wrapped = token.wrap(static_cast<S&&>(sndr));
+    return __forge_spawn_future::__spawn_future(
+        std::move(wrapped),
         std::move(token),
         empty_env{});
 }
