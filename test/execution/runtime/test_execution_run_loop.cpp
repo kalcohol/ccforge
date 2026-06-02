@@ -65,6 +65,15 @@ TEST(RunLoopTest, SchedulerEnvRoundtrip) {
     EXPECT_EQ(sch, sch2);
 }
 
+TEST(RunLoopTest, ReportsWeaklyParallelForwardProgress) {
+    std::execution::run_loop loop;
+    auto sch = loop.get_scheduler();
+
+    EXPECT_EQ(
+        std::execution::get_forward_progress_guarantee(sch),
+        std::execution::forward_progress_guarantee::weakly_parallel);
+}
+
 TEST(RunLoopTest, ConcurrentPush) {
     std::execution::run_loop loop;
     auto sch = loop.get_scheduler();

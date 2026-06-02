@@ -7,6 +7,8 @@
 #include <utility>
 
 static_assert(std::execution::scheduler<std::execution::inline_scheduler>);
+static_assert(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{}) ==
+              std::execution::forward_progress_guarantee::concurrent);
 
 // ── T-7: scheduler_concept marker is required ────────────────────────────
 namespace {
@@ -54,4 +56,12 @@ TEST(ExecutionInlineSchedulerTest, ScheduleEnvRoundtrip) {
     auto env = std::execution::get_env(sndr);
     auto sch2 = std::execution::get_scheduler(env);
     EXPECT_EQ(sch, sch2);
+}
+
+TEST(ExecutionInlineSchedulerTest, ReportsConcurrentForwardProgress) {
+    std::execution::inline_scheduler sch{};
+
+    EXPECT_EQ(
+        std::execution::get_forward_progress_guarantee(sch),
+        std::execution::forward_progress_guarantee::concurrent);
 }

@@ -79,6 +79,45 @@ struct get_scheduler_t {
 };
 inline constexpr get_scheduler_t get_scheduler{};
 
+struct get_start_scheduler_t {
+    template<class Env>
+        requires __forge_detail::tag_invocable<get_start_scheduler_t, Env>
+    constexpr auto operator()(Env&& env) const
+        noexcept(__forge_detail::nothrow_tag_invocable<get_start_scheduler_t, Env>)
+            -> __forge_detail::tag_invoke_result_t<get_start_scheduler_t, Env> {
+        return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
+    }
+};
+inline constexpr get_start_scheduler_t get_start_scheduler{};
+
+struct get_delegation_scheduler_t {
+    template<class Env>
+        requires __forge_detail::tag_invocable<get_delegation_scheduler_t, Env>
+    constexpr auto operator()(Env&& env) const
+        noexcept(__forge_detail::nothrow_tag_invocable<get_delegation_scheduler_t, Env>)
+            -> __forge_detail::tag_invoke_result_t<get_delegation_scheduler_t, Env> {
+        return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
+    }
+};
+inline constexpr get_delegation_scheduler_t get_delegation_scheduler{};
+
+enum class forward_progress_guarantee {
+    concurrent,
+    parallel,
+    weakly_parallel
+};
+
+struct get_forward_progress_guarantee_t {
+    template<class Scheduler>
+        requires __forge_detail::tag_invocable<get_forward_progress_guarantee_t, Scheduler>
+    constexpr auto operator()(Scheduler&& scheduler) const
+        noexcept(__forge_detail::nothrow_tag_invocable<get_forward_progress_guarantee_t, Scheduler>)
+            -> __forge_detail::tag_invoke_result_t<get_forward_progress_guarantee_t, Scheduler> {
+        return __forge_detail::tag_invoke_fn(*this, static_cast<Scheduler&&>(scheduler));
+    }
+};
+inline constexpr get_forward_progress_guarantee_t get_forward_progress_guarantee{};
+
 struct get_stop_token_t {
     template<class Env>
         requires __forge_detail::tag_invocable<get_stop_token_t, Env>

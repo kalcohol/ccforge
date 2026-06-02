@@ -333,6 +333,13 @@ inline auto tag_invoke(
 
 } // namespace __pool_detail
 
+inline auto tag_invoke(
+    std::execution::get_forward_progress_guarantee_t,
+    const static_thread_pool::scheduler&) noexcept
+    -> std::execution::forward_progress_guarantee {
+    return std::execution::forward_progress_guarantee::parallel;
+}
+
 // Define __op start after static_thread_pool is complete
 namespace __pool_detail {
 

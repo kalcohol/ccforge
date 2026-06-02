@@ -4,7 +4,12 @@ static_assert(std::execution::sender<decltype(std::execution::just(42))>);
 static_assert(std::execution::enable_sender<decltype(std::execution::just(42))>);
 static_assert(std::execution::scheduler<std::execution::run_loop::scheduler>);
 static_assert(std::execution::scheduler<std::execution::inline_scheduler>);
+static_assert(std::is_empty_v<std::execution::get_start_scheduler_t>);
+static_assert(std::is_empty_v<std::execution::get_delegation_scheduler_t>);
+static_assert(std::is_empty_v<std::execution::get_forward_progress_guarantee_t>);
 static_assert(std::is_empty_v<std::execution::get_completion_scheduler_t<std::execution::set_value_t>>);
+static_assert(std::same_as<decltype(std::execution::forward_progress_guarantee::concurrent),
+                           std::execution::forward_progress_guarantee>);
 
 template<class S, class CPO>
 concept has_completion_scheduler = requires(const S& sndr) {
@@ -22,6 +27,12 @@ static_assert(std::same_as<
     decltype(std::execution::get_completion_scheduler<std::execution::set_value_t>(
         std::execution::get_env(std::execution::schedule(std::execution::inline_scheduler{})))),
     std::execution::inline_scheduler>);
+
+static_assert(std::same_as<
+    decltype(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{})),
+    std::execution::forward_progress_guarantee>);
+static_assert(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{}) ==
+              std::execution::forward_progress_guarantee::concurrent);
 
 struct value_only_receiver {
     using receiver_concept = std::execution::receiver_t;

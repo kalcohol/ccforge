@@ -85,6 +85,10 @@ public:
 namespace __forge_inline {
 inline auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
 inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
+inline constexpr auto tag_invoke(get_forward_progress_guarantee_t, const inline_scheduler&) noexcept
+    -> forward_progress_guarantee {
+    return forward_progress_guarantee::concurrent;
+}
 } // namespace __forge_inline
 
 using inline_scheduler = __forge_inline::inline_scheduler;

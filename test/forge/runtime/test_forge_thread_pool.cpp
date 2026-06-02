@@ -86,6 +86,15 @@ TEST(StaticThreadPoolTest, BasicSchedule) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
+TEST(StaticThreadPoolTest, ReportsParallelForwardProgress) {
+    forge::static_thread_pool pool(2);
+    auto sch = pool.get_scheduler();
+
+    EXPECT_EQ(
+        std::execution::get_forward_progress_guarantee(sch),
+        std::execution::forward_progress_guarantee::parallel);
+}
+
 TEST(StaticThreadPoolTest, ConcurrentTasks) {
     forge::static_thread_pool pool(4);
     auto sch = pool.get_scheduler();
