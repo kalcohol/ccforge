@@ -122,7 +122,8 @@ any helper that owns IO, accel, tensor, or model-serving policy.
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - 真实 backend 的 vendor/platform typed-error mapping；
 - 让标准 backport 的已知限制发生行为级变化，例如 throwing receiver completion、
-  `ensure_started` 单发/取消语义、`spawn_future` 更完整 allocator 传播。
+  current-WD `spawn` / `counting_scope::join()` 形态、Forge/stdexec-era
+  `ensure_started` 语义、`spawn_future` 更完整 allocator 传播。
 
 每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
 回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。

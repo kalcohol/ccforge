@@ -128,6 +128,24 @@ MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 未设置 `STDEXEC_ROOT` 时脚本返回 77 并打印 `result=skipped`，方便把它接入本地
 可选验证而不把 skip 误判为失败。
 
+## native handoff and partial-native guards
+
+For wrapper/probe/feature-macro changes, prefer lane-specific evidence over a
+single global CTest count:
+
+- `scripts/verify-native.sh gcc16` checks the partial-native stand-aside path
+  for the standard library features GCC already exposes.
+- `scripts/verify-native.sh llvm` and `scripts/verify-native.sh zig` check the
+  backport inject path on toolchains that still lack those features.
+- `scripts/verify-native.sh gcc-exec` is the current libstdc++ execution
+  backport lane; native `std::execution` is not yet a normal mainstream lane.
+- `scripts/probe-stdexec-feasibility.sh` is only an optional reference probe,
+  because stdexec uses its own `stdexec::` headers and namespace.
+
+Force-backport flags are diagnostic only. On a partial-native toolchain they can
+create `namespace std` redefinition/ODR hazards, so a forced configuration is
+not evidence of production handoff safety.
+
 ## runtime wakeup audit helper
 
 `scripts/audit-runtime-wakeups.sh` lists condition-variable, notify,

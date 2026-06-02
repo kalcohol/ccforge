@@ -24,6 +24,17 @@ Forge 的核心设计目标：**当未来标准库原生提供相同能力后，
 
 检测到原生时，`forge.cmake` 会通过 `FORGE_HAS_NATIVE_*` 宏通知 wrapper 头一并退场。部分原生也让位，是为了避免在 `namespace std` 中 on-top 注入造成 ODR 冲突。
 
+## 回归验证口径
+
+Native handoff 的回归应优先看“是否正确让位”和“是否正确注册/不注册对应测试”，不要依赖单个全局 CTest 数量：
+
+- `scripts/verify-native.sh gcc16` 是 partial-native stand-aside 的主线验证，覆盖 GCC 16 上已经出现的 `std::simd`、`std::constant_wrapper`、padded mdspan layouts 和 `std::submdspan` surface。
+- `scripts/verify-native.sh llvm` / `zig` 覆盖 backport inject path。
+- `scripts/verify-native.sh gcc-exec` 单独覆盖 libstdc++ 上的 `std::execution` backport，因为主流标准库还没有稳定 native `std::execution` 实现。
+- `scripts/probe-stdexec-feasibility.sh` 只是可选 reference probe。它可以帮助比较 sender/receiver 语义，但 stdexec 使用 `stdexec::` surface，不能证明 Forge `<execution>` 已经完成 native handoff。
+
+改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
+
 ## force flags
 
 若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设：

@@ -35,7 +35,10 @@
 //   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
 //                      bulk (serial)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
-//                      ensure_started, start_detached, spawn_future
+//                      spawn_future
+//   Extensions       : ensure_started and start_detached are kept as
+//                      Forge/stdexec-era names; they are not current-WD [exec]
+//                      surface.
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
@@ -56,11 +59,14 @@
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce
 //     variant<tuple<...>, ...>.
-//   - ensure_started eagerly starts work and caches for multiple consumers.
+//   - ensure_started is a Forge/stdexec-era extension name. It eagerly starts
+//     work and caches for multiple consumers.
 //     Cached values are delivered as lvalues, so move-only value results are
 //     not supported; abandoning the returned sender does not request stop.
-//   - start_detached terminates on set_error; attach an error-handling adaptor
-//     before detaching if failures are expected.
+//   - start_detached is a Forge/stdexec-era extension name. It terminates on
+//     set_error; attach an error-handling adaptor before detaching if failures
+//     are expected. Current-WD fire-and-forget uses scope-token based spawn,
+//     which this backport does not yet expose.
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state honors get_allocator(env), but auxiliary consumer/callback
 //     allocations are not fully allocator-aware.
@@ -70,9 +76,12 @@
 //     receiver-env start domain and supports transform_sender recovery plus
 //     transform_env wrapping, but not the full recursive transform_sender model.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
-//   - Non-copyable lvalue senders must be connected as rvalues with std::move.
+//   - Selected Forge library senders accept non-copyable non-const lvalue
+//     senders by destructively moving them. Native C++26 code should still
+//     spell std::move(sndr) explicitly.
 //
 // NOT IMPLEMENTED (Phase 4+):
+//   - standard spawn.
 //   - sender-returning async-scope join.
 //   - standard type-erased sender surface.
 

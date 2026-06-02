@@ -16,7 +16,8 @@ The execution backport currently includes:
 - scheduler adaptors: `starts_on`, `continues_on`, `transfer_just`, serial
   `bulk`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
-  `ensure_started`, `start_detached`, `spawn_future`;
+  `spawn_future`, plus Forge/stdexec-era extension names `ensure_started` and
+  `start_detached`;
 - consumers: `sync_wait`, `sync_wait_with_variant`;
 - stop-token support: `inplace_stop_source/token/callback`,
   `never_stop_token`, `any_stop_token`;
@@ -30,34 +31,39 @@ as open work: identity-only domain dispatch, single-shape `sync_wait`,
 non-stop-aware `counting_scope`, and incomplete `when_all` cartesian value
 signatures.
 
-## intentional extensions and compatibility risks
+## compatibility classification
 
-Forge has a few pragmatic backport-only conveniences:
+The table below separates current-draft conformance work from Forge convenience
+extensions. This is the source of truth for native handoff risk triage.
 
-- non-copyable non-const lvalue senders can be destructively moved by selected
-  library adaptors. Native C++26 implementations require callers to spell
-  `std::move(sndr)`;
-- `counting_scope::join()` keeps Forge's blocking extension rather than the
-  final standard sender-returning shape;
-- `ensure_started` is a multi-consumer cached sender; it is not yet the exact
-  single-shot/cancel-on-abandon standard shape.
-
-These are useful on today's toolchains, but they are native-handoff migration
-risks. Any example intended to compile unchanged under native C++26 should avoid
-depending on them.
+| Item | Classification | Current state | Native-handoff action |
+| --- | --- | --- | --- |
+| Library adaptor non-copyable lvalue `connect` | Backport-only convenience | Selected library senders destructively move non-const non-copyable lvalues. | Portable examples should spell `std::move(sndr)`; keep tests for the Forge convenience. |
+| `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Mirrors the destructive-move convention for non-copyable non-const lvalue senders. | Portable code should spell `scope.spawn(std::move(sndr))`; keep documented as a Forge convenience. |
+| `std::execution::ensure_started` | Non-WD extension name | Exposed as a multi-consumer cached eager sender. Current working-draft execution wording no longer has this name. | Keep as an explicit Forge/stdexec-era extension unless owner approves removal or migration to a `forge::` name. |
+| `std::execution::start_detached` | Non-WD extension name | Exposed as fire-and-forget with terminate-on-error semantics. Current working-draft execution wording uses `spawn` with scope tokens for the standard fire-and-forget shape. | Keep as an explicit Forge/stdexec-era extension; examples may use it when demonstrating Forge/backport utilities. |
+| `std::execution::spawn` | Missing current-WD surface | Not implemented. | Future conformance task if standard-shaped scope spawning becomes a priority. |
+| `std::execution::counting_scope::join()` | Shape mismatch | Forge keeps a blocking `void join()` member. Current working-draft `join()` is a sender-returning async surface. | Owner-deferred Tier A conformance item; do not document the blocking member as standard-shaped. |
+| Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
+| Execution domain dispatch | Draft subset | Receiver-env late-domain selection, scheduler-derived completion domain, `transform_sender`, and `transform_env` wrapper are implemented, but the full recursive standard model is not. | Track as Tier B conformance work. |
+| `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
+| `forge::wait_result` | Forge local utility | Synchronously preserves value, stopped, and closed-set typed error without throwing. | Use when typed errors must cross a synchronous boundary; it is not `std::execution::sync_wait`. |
+| `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
+| Receiver env stop-token propagation | Required behavior for Forge utilities | `wait_result`, `erased_sender`, runtime senders, and IO/accel wrappers preserve receiver stop-token visibility in their supported env model. | Keep regression tests when touching type erasure or wrapper receivers. |
 
 ## remaining conformance gaps
 
 Track these as current gaps until a focused taskbook closes them:
 
-- throwing receiver completion callbacks are not supported;
 - execution-domain dispatch remains a draft subset and does not implement the
   full recursive standard model;
-- `ensure_started` does not support move-only value results and does not request
-  stop when the returned sender is abandoned;
+- standard-shaped `spawn` is not implemented;
+- `ensure_started`, if kept, does not support move-only value results and does
+  not request stop when the returned sender is abandoned;
 - `spawn_future` uses `get_allocator` for its shared state, but auxiliary
   consumer/callback allocation is not fully allocator-aware;
-- `counting_scope::join()` is still the Forge blocking extension;
+- `counting_scope::join()` is still the Forge blocking extension rather than a
+  sender-returning standard-shaped operation;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.
