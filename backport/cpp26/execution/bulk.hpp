@@ -29,7 +29,7 @@ namespace std::execution {
 
 namespace __forge_bulk {
 
-template<class S, class Shape, class Fn, class R>
+template<bool Chunked, class S, class Shape, class Fn, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
@@ -42,8 +42,14 @@ struct __op : __forge_detail::__immovable {
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
             try {
-                for (Shape i = Shape{}; i != __shape; ++i) {
-                    __fn(i, vs...);
+                if constexpr (Chunked) {
+                    if (__shape != Shape{}) {
+                        __fn(Shape{}, __shape, vs...);
+                    }
+                } else {
+                    for (Shape i = Shape{}; i != __shape; ++i) {
+                        __fn(i, vs...);
+                    }
                 }
                 std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
             } catch (...) {
@@ -78,7 +84,7 @@ struct __op : __forge_detail::__immovable {
     }
 };
 
-template<class S, class Shape, class Fn>
+template<bool Chunked, class S, class Shape, class Fn>
 struct __sender {
     using sender_concept = sender_t;
     using source_t = S;
@@ -100,18 +106,18 @@ struct __sender {
     }
 
     template<receiver R>
-    auto connect(R r) && -> __op<S, Shape, Fn, R>
+    auto connect(R r) && -> __op<Chunked, S, Shape, Fn, R>
     {
-        return __op<S, Shape, Fn, R>(
+        return __op<Chunked, S, Shape, Fn, R>(
             std::move(__sndr), std::move(__shape),
             std::move(__fn), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Shape> && std::copy_constructible<Fn>
-    auto connect(R r) const& -> __op<S, Shape, Fn, R>
+    auto connect(R r) const& -> __op<Chunked, S, Shape, Fn, R>
     {
-        return __op<S, Shape, Fn, R>(
+        return __op<Chunked, S, Shape, Fn, R>(
             __sndr, __shape, __fn, std::move(r));
     }
 
@@ -120,7 +126,7 @@ struct __sender {
     }
 };
 
-template<class Fn>
+template<bool Chunked, class Fn>
 struct __bulk_closure {
     std::decay_t<Fn> __fn_;
 
@@ -131,7 +137,7 @@ struct __bulk_closure {
 
         template<std::execution::sender S>
         [[nodiscard]] auto operator()(S&& s) && {
-            return __sender<std::decay_t<S>, Shape, std::decay_t<Fn>>{
+            return __sender<Chunked, std::decay_t<S>, Shape, std::decay_t<Fn>>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
                 std::move(__shape_), std::move(__fn_)};
         }
@@ -143,23 +149,30 @@ struct __bulk_closure {
     };
 };
 
-struct bulk_t {
+template<bool Chunked>
+struct __bulk_t {
     template<std::execution::sender S, class Shape, class Fn>
     [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
-        return __sender<std::decay_t<S>, Shape, std::decay_t<Fn>>{
+        return __sender<Chunked, std::decay_t<S>, Shape, std::decay_t<Fn>>{
             __forge_detail::__forward_as_given(std::forward<S>(s)),
             std::move(shape), std::forward<Fn>(fn)};
     }
 
     template<class Shape, class Fn>
     [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const {
-        using closure_t = typename __bulk_closure<std::decay_t<Fn>>::template __with_shape<Shape>;
+        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>::template __with_shape<Shape>;
         return closure_t{std::move(shape), std::forward<Fn>(fn)};
     }
 };
 
+struct bulk_t : __bulk_t<false> {};
+struct bulk_unchunked_t : __bulk_t<false> {};
+struct bulk_chunked_t : __bulk_t<true> {};
+
 } // namespace __forge_bulk
 
 inline constexpr __forge_bulk::bulk_t bulk{};
+inline constexpr __forge_bulk::bulk_chunked_t bulk_chunked{};
+inline constexpr __forge_bulk::bulk_unchunked_t bulk_unchunked{};
 
 } // namespace std::execution
