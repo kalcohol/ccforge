@@ -42,6 +42,12 @@ int main() {
     assert(completion->meta.request.value == 10);
     assert(completion->payload.size() == 1);
 
+    auto late_response = forge::accel::make_response_envelope(
+        *queued,
+        forge::accel::protocol_payload{std::byte{0x55}});
+    assert(!transport.deliver_response(std::move(late_response)));
+    assert(transport.late_response_count() == 1);
+
     auto signal = forge::accel::make_signal_envelope(
         forge::accel::protocol_route{
             .source = forge::accel::endpoint_id{2},

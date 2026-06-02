@@ -67,4 +67,22 @@ int main() {
 
     assert(posted_response == 12);
     assert(requests.pending_count() == 0);
+
+    forge::accel::mock::context failure_ctx;
+    auto failure_device = failure_ctx.get_device();
+    forge::accel::mock::request_session failing_requests{
+        failure_device.open_session()};
+    failure_device.mark_lost();
+
+    auto failure = forge::wait_result(
+        failing_requests.submit_request_typed(
+            1,
+            0,
+            [](int& request, int& response) noexcept {
+                response = request;
+            }));
+    assert(failure.has_error());
+    auto* error = failure.error_if<forge::accel::error>();
+    assert(error != nullptr);
+    assert(error->kind == forge::accel::error_kind::device_lost);
 }

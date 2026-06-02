@@ -23,7 +23,11 @@
 - `accel::mock::context` / `accel::mock::device` /
   `accel::mock::device_session` / `accel::mock::queue` /
   `accel::mock::device_buffer` / `accel::mock::event`
-- `accel::mock` copy / submit / submit_message / event / fence command senders
+- `accel::mock` copy / submit / submit_message / submit_packet / event / fence
+  command senders
+- `accel::mock::request_session`
+- `accel::protocol_envelope` and `accel::mock::protocol::loopback_transport`
+- `accel::mock::trace_sink`
 - `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
@@ -225,7 +229,9 @@ epoll/io_uring/IOCP 语义差异。
 - event/fence 的 sender completion 形状；
 - host/device/staging buffer 的资源策略；
 - H2D、D2H、D2D copy 的 backpressure 和错误模型；
-- kernel-like command 的提交、完成、取消和 drain 语义。
+- kernel-like command 的提交、完成、取消和 drain 语义；
+- request/response packet、protocol envelope、device/session lifecycle 和
+  optional telemetry proof。
 
 当前 surface：
 
@@ -241,9 +247,14 @@ forge::accel::mock::copy_to_host(...)
 forge::accel::mock::copy_device_to_device(...)
 forge::accel::mock::submit(...)
 forge::accel::mock::submit_message(...)
+forge::accel::mock::submit_packet(...)
+forge::accel::mock::request_session
+forge::accel::protocol_envelope
+forge::accel::mock::protocol::loopback_transport
 forge::accel::mock::record_event(...)
 forge::accel::mock::wait_event(...)
 forge::accel::mock::fence(...)
+forge::accel::mock::trace_sink
 ```
 
 具体后端若未来需要，可放在：
@@ -274,7 +285,8 @@ proof。
 `async_write_some_typed` 这组 opt-in typed variants；默认 IO surface 仍使用
 `std::exception_ptr`。accel 已提供 `copy_to_device_typed` / `copy_to_host_typed` /
 `copy_device_to_device_typed` / `submit_typed` / `submit_message_typed` /
-`record_event_typed` / `wait_event_typed` / `fence_typed` 这组 opt-in typed variants；
+`submit_packet_typed` / `submit_request_typed` / `record_event_typed` /
+`wait_event_typed` / `fence_typed` 这组 opt-in typed variants；
 `forge::wait_result(sender)` 可在同步边界保留 value / typed error / stopped，
 避免示例和插件边界重复手写 receiver。
 
@@ -293,6 +305,13 @@ Examples 必须从“能编译”升级为“能教会人怎么组合”：
   `flush` / `invalidate` proof；
 - `forge_accel_pipeline_example.cpp`：H2D -> kernel -> D2H -> CPU postprocess；
 - `forge_accel_message_device_example.cpp`：device session + message command；
+- `forge_accel_session_reset_example.cpp`：session reset、device lost、stale
+  session 和 recovery；
+- `forge_accel_packet_example.cpp` / `forge_accel_request_runtime_example.cpp`：
+  owning packet、request ID、sync/post request 和 typed boundary；
+- `forge_accel_protocol_transport_example.cpp`：portable envelope、late response
+  discard 和 lifecycle signal；
+- `forge_accel_trace_example.cpp`：optional command timeline；
 - `forge_inference_runtime_sketch.cpp`：请求 channel、strand 顺序控制、accel queue、
   scope 生命周期和 resource shutdown。
 

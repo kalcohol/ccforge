@@ -38,14 +38,19 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
 13. `example/forge_accel_session_reset_example.cpp`：session reset 如何停止后续 command。
 14. `example/forge_accel_packet_example.cpp`：owning command packet 与 completion
     bridge。
-15. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
-16. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+15. `example/forge_accel_request_runtime_example.cpp`：request ID、sync/post request
+    handling 和 typed error boundary。
+16. `example/forge_accel_protocol_transport_example.cpp`：portable envelope、late
+    response discard 和 lifecycle signal。
+17. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
+18. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
     error。
-17. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+19. `example/forge_accel_trace_example.cpp`：可选 in-memory command timeline。
+20. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-18. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+21. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-19. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+22. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors 和 graceful drain 如何放在同一个 reference runtime 中。
 
@@ -80,10 +85,13 @@ For accelerator-shaped work without vendor SDKs:
 5. `example/forge_accel_message_device_example.cpp`
 6. `example/forge_accel_session_reset_example.cpp`
 7. `example/forge_accel_packet_example.cpp`
-8. `example/forge_accel_model_example.cpp`
-9. `example/forge_accel_typed_error_example.cpp`
-10. `example/forge_inference_runtime_sketch.cpp`
-11. `example/forge_reference_runtime_example.cpp`
+8. `example/forge_accel_request_runtime_example.cpp`
+9. `example/forge_accel_protocol_transport_example.cpp`
+10. `example/forge_accel_model_example.cpp`
+11. `example/forge_accel_typed_error_example.cpp`
+12. `example/forge_accel_trace_example.cpp`
+13. `example/forge_inference_runtime_sketch.cpp`
+14. `example/forge_reference_runtime_example.cpp`
 
 These paths intentionally stay example-first. The detailed contracts live in
 the feature docs, so the cookbook remains a map rather than a duplicated API
@@ -103,7 +111,8 @@ reference.
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
 | accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
-| device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp` |
+| device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp`, `example/forge_accel_request_runtime_example.cpp` |
+| protocol and telemetry proofs | `example/forge_accel_protocol_transport_example.cpp`, `example/forge_accel_trace_example.cpp` |
 | model/session IO binding | `example/forge_accel_model_example.cpp` |
 | reference runtime pattern | `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp` |
 
@@ -278,11 +287,14 @@ reference.
 - `flush` / `invalidate` for cached-memory proof
 - `submit(queue, callable)`
 - `submit_packet(session, command_packet{...}, handler, command_options{...})`
+- `request_session`
+- `protocol_envelope` / `mock::protocol::loopback_transport`
 - `model` / `model_session` / `model_bindings` / `execute`
 - `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
   boundary errors
 - `event` / `record_event` / `wait_event` / `fence`
 - `device` / `device_session` / `submit_message`
+- `trace_sink`
 
 关键点：
 
@@ -296,9 +308,12 @@ reference.
 - event 是 one-shot completion marker，不建模跨 queue dependency graph。
 - `device_info` / `device` / `device_session` 是 vendor-neutral discovery 和
   message-command proof，不暴露真实设备 handle；mock device loss 会映射到
-  `invalid_context`。
+  `device_lost`，reset 后旧 session 会映射到 `stale_session`。
 - `submit_message` 借用 response；`submit_packet` 持有 request/response packet 并在
   成功时返回完成后的 packet，适合 callback/completion bridge 风格。
+- `request_session` 持有 pending request map、分配递增 request ID，并统计 late
+  response；`protocol_envelope` 是对象级 envelope proof，不是 ABI。
+- `trace_sink` 是可选 in-memory telemetry proof，不是生产 profiler。
 - `model` proof 只绑定 byte spans 并检查 IO byte size，不提供 tensor/graph/operator
   语义。
 - 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
@@ -313,8 +328,11 @@ reference.
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_session_reset_example.cpp`
 - `example/forge_accel_packet_example.cpp`
+- `example/forge_accel_request_runtime_example.cpp`
+- `example/forge_accel_protocol_transport_example.cpp`
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
+- `example/forge_accel_trace_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 

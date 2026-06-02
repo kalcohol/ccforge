@@ -103,7 +103,8 @@ Non-owning views and lightweight handles should not block in destructors.
   storage; memory kinds are portable metadata rather than real vendor
   allocations. Mock devices are context-owned handles with portable metadata;
   device-bound queues and sessions check availability before running queued
-  commands, and mock device loss maps to `invalid_context`. Session packet
+  commands. Mock device loss maps to `device_lost`; reset increments
+  `device_epoch`, and old sessions later map to `stale_session`. Session packet
   commands can own request/response storage until terminal completion; packet
   timeout is a queued-command deadline and does not interrupt running user code.
   Model execute proof validates byte-span IO bindings and uses the same

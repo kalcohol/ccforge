@@ -120,11 +120,15 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 timeout 从 `start()` 开始计时，排队超时会完成 `timeout` error，但不会中断已经开始运行
 的 handler。backend 还提供 `flush` / `invalidate` coherence proof command，以及最小
 `event` / `record_event` / `wait_event` / `fence` completion boundary。
+`request_session` 提供 request ID、pending map、timeout 和 late-response 计数；
+`protocol_envelope` / `mock::protocol::loopback_transport` 提供 in-memory message
+transport proof；`trace_sink` 可选记录 mock command/lifecycle timeline。
 `context_options::device_count` 可构造 no-device 或 multi-device mock 场景；
 `context::device_infos()` / `devices()` / `get_device(id)` 提供 portable metadata 和
 轻量 device handle。device-bound queues/sessions 会在运行 queued command 前检查
-availability；`device.mark_lost()` 后尚未运行的 command 以 `invalid_context` error
-完成，`device.reset()` 只清除 mock lost flag，不代表真实 vendor reset。
+availability；`device.mark_lost()` 后尚未运行的 command 以 `device_lost` error
+完成，`device.reset()` 清除 mock lost flag 并递增 `device_epoch`；旧 session 后续以
+`stale_session` error 完成，新 session 绑定新 epoch。
 `model` / `model_session` / `model_bindings` 提供 NPU-style model execute proof：
 只验证 byte-size IO metadata 和 borrowed byte spans，不实现 tensor、operator graph 或
 真实推理引擎。
@@ -194,8 +198,17 @@ metadata 的 queue，并用 event 在 queue 之间表达 ordering。queue 容量
 - `example/forge_accel_memory_example.cpp`
 - `example/forge_accel_staging_buffer_example.cpp`
 - `example/forge_accel_message_device_example.cpp`
+- `example/forge_accel_session_reset_example.cpp`
+- `example/forge_accel_packet_example.cpp`
+- `example/forge_accel_request_runtime_example.cpp`
+- `example/forge_accel_protocol_transport_example.cpp`
+- `example/forge_accel_model_example.cpp`
+- `example/forge_accel_typed_error_example.cpp`
+- `example/forge_accel_trace_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
+- `example/forge_reference_runtime_example.cpp`
 - `example/forge_any_scheduler_example.cpp`
+- `example/forge_type_erased_boundary_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 

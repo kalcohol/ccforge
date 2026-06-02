@@ -165,11 +165,13 @@ Status: implemented for the mock/reference backend. `context_options` can create
 zero, one, or multiple mock devices; `context::device_infos()`, `devices()`, and
 `get_device(id)` expose portable metadata without probing real hardware. A
 device can create device-bound queues and sessions. `device.mark_lost()` makes
-not-yet-running device-bound commands complete `invalid_context`, while
+not-yet-running device-bound commands complete `device_lost`, while
 already-running callables are not force-interrupted. `device.reset()` clears the
-mock lost flag only; it is not a vendor reset/native context rebuild model.
-`device_session::reset()` remains the session-local stopped boundary for queued
-session commands.
+mock lost flag and increments `device_epoch`; old sessions complete
+`stale_session` after reset, and new sessions bind the new epoch. Drain freeze
+and worker fault simulation are also implemented with `drain_freeze`,
+`worker_fault`, and generation-checked cleanup. `device_session::reset()` remains
+the session-local stopped boundary for queued session commands.
 
 Target:
 
@@ -240,8 +242,10 @@ Acceptance:
 
 Status: implemented. The accel example set now covers simple copy, typed errors,
 memory/coherence, cross-queue events, device/session commands, session reset,
-owning command packets, model execute, and reference runtime patterns. The
-cookbook links exact example filenames instead of duplicating API contracts.
+lost-device recovery, owning command packets, request IDs, protocol envelopes,
+late-response discard, model execute, optional telemetry, and reference runtime
+patterns. The cookbook links exact example filenames instead of duplicating API
+contracts.
 
 Target:
 
@@ -256,15 +260,17 @@ Acceptance:
 - Cookbook links exact example files and avoids duplicating large semantics that
   can drift from code.
 - Examples cover simple copy, memory kinds, cross-queue event, command packet,
-  model execute, error handling, reset, and graceful shutdown.
+  request/response, protocol envelope, telemetry, model execute, error
+  handling, reset, and graceful shutdown.
 
 ## phase 8: final audit
 
 Status: complete. The v2 mock/reference backend has been audited for namespace
 split, vendor-header isolation, accel gate behavior, example coverage, typed and
-exception error surfaces, lost-device packet errors, and documentation alignment.
-The remaining work is future optional backend proof work, not unfinished v2
-foundation.
+exception error surfaces, device/session lifecycle errors, packet/request
+timeouts, protocol envelope behavior, optional telemetry, and documentation
+alignment. The remaining work is future optional backend proof work, not
+unfinished v2 foundation.
 
 Target:
 
