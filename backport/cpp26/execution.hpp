@@ -33,7 +33,7 @@
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
 //   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
-//                      bulk (serial)
+//                      bulk, bulk_chunked, bulk_unchunked (serial subset)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
@@ -44,6 +44,8 @@
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : completion_signatures_of_t,
 //                      transform_completion_signatures, enable_sender,
+//                      get_start_scheduler/get_delegation_scheduler,
+//                      get_forward_progress_guarantee,
 //                      get_completion_scheduler/get_completion_domain CPOs,
 //                      CPO member-function-first dispatch
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
@@ -51,7 +53,8 @@
 //
 // DEVIATIONS from current working draft [exec]:
 //   - CPO customization is member-first for Forge-provided senders/receivers,
-//     with tag_invoke fallback retained for existing custom types.
+//     with tag_invoke fallback retained for existing custom types. Environment
+//     and scheduler query CPOs remain tag_invoke-based in this backport.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce

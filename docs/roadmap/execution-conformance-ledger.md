@@ -25,7 +25,7 @@ The execution backport currently includes:
 - adaptors: `then`, `upon_error`, `upon_stopped`, `let_value`, `let_error`,
   `let_stopped`, `write_env`;
 - scheduler adaptors: `starts_on`, `continues_on`, `transfer_just`, serial
-  `bulk`;
+  `bulk`, `bulk_chunked`, and `bulk_unchunked`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
   `associate`, `spawn`, `spawn_future`;
 - consumers: `sync_wait`, `sync_wait_with_variant`;
@@ -52,7 +52,7 @@ signatures.
 | `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`; schedule errors are included in completion signatures and runtime tests. |
 | `on` | Not implemented | The file `on.hpp` currently provides a `starts_on` implementation; no current-WD `on` CPO is exposed. |
 | `bulk` | Implemented serial subset | `bulk.hpp`; executes iterations serially in the completing agent. |
-| `bulk_chunked`, `bulk_unchunked` | Not implemented | Current WD includes these alongside `bulk`; no Forge CPOs or tests exist yet. |
+| `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`; `bulk_unchunked` matches serial `bulk`, while `bulk_chunked` uses one non-empty `[0, shape)` chunk. No execution-policy overloads or parallel execution are provided. |
 | `unstoppable` sender adaptor | Not implemented | Stop-token concepts exist, but the WD adaptor equivalent to `write_env(sndr, prop(get_stop_token, never_stop_token{}))` is not exposed. |
 | `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`; these are practical stopped adapters used by the backport. |
 | `into_variant` | Implemented | `into_variant.hpp`; reused by `sync_wait` / `when_all` value-shape handling. |
@@ -66,13 +66,13 @@ signatures.
 | `affine_on` | Not implemented | Current WD includes coroutine utility `affine_on`; no Forge surface exists yet. |
 | `get_env` | Implemented subset | Member-first with tag-invoke fallback and `empty_env` default. |
 | `get_scheduler` | Implemented subset | Tag-invoke query object; does not exactly model current WD member `query(...)` wording. |
-| `get_start_scheduler` | Not implemented | No query CPO or forwarding tests. |
-| `get_delegation_scheduler` | Not implemented | No query CPO or forwarding tests. |
+| `get_start_scheduler` | Implemented subset | Tag-invoke environment query object; `make_prop` / `write_env` forwarding tests cover the current backport query model. |
+| `get_delegation_scheduler` | Implemented subset | Tag-invoke environment query object; `make_prop` / `write_env` forwarding tests cover the current backport query model. |
 | `get_completion_scheduler` | Implemented subset | Tag-invoke query object; scheduler envs expose roundtrip in Forge/backport style. |
 | `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; `get_completion_signatures(sender, env)` still does not recompute through transformed sender types. |
 | `get_allocator` | Implemented subset | Tag-invoke query object; used by `spawn`/`spawn_future` allocator paths. No default allocator query is provided for `empty_env`. |
 | `get_stop_token` | Implemented subset | Tag-invoke query object with `empty_env -> never_stop_token` fallback. |
-| `get_forward_progress_guarantee` | Not implemented | No scheduler query CPO or tests. |
+| `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object. Built-in backport schedulers and `forge::static_thread_pool` report conservative values; the local `scheduler` concept remains looser than the current WD and does not require this query for every custom scheduler. |
 
 ## compatibility classification
 
@@ -99,10 +99,8 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- current-WD algorithms/adaptors not yet exposed: `on`, `bulk_chunked`,
-  `bulk_unchunked`, `unstoppable`, and `affine_on`;
-- current-WD queries not yet exposed: `get_start_scheduler`,
-  `get_delegation_scheduler`, and `get_forward_progress_guarantee`;
+- current-WD algorithms/adaptors not yet exposed: `on`, `unstoppable`, and
+  `affine_on`;
 - `get_completion_signatures(sender, env)` does not yet fully recompute through
   domain-transformed sender types, so domain transforms should preserve the
   advertised completion shape;

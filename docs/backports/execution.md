@@ -6,14 +6,14 @@
 
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`
-- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk`（串行）
+- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
 - 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组 value completions 返回 `optional<variant<tuple<...>, ...>>`）、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
-- 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`get_completion_domain`、`transform_completion_signatures`、CPO 分发基础设施
+- 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、`get_completion_scheduler`、`get_completion_domain`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、receiver-env start-domain 选取、sender-env completion-domain 选取、`connect_t` recursive `transform_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
@@ -22,6 +22,7 @@
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile probe 覆盖。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和 copyable lvalue 拷贝路径；non-copyable lvalue sender 需要显式传入 `std::move(sndr)`，以保持 native C++26 handoff 时的源码形态一致。const non-copyable lvalue 仍不可连接。
 - Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段 recursive `transform_sender`；scheduler-derived start domain 仅在 scheduler 显式定制 `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。`get_completion_signatures(sender, env)` 尚未完整按 transformed sender 重算，因此 domain 变换不应改变 value/error/stopped 签名形态。
+- `bulk` / `bulk_unchunked` / `bulk_chunked` 当前是无 policy 的实用串行 subset：`bulk` 与 `bulk_unchunked` 在完成线程逐 index 调用，`bulk_chunked` 对非零 shape 调用一个 `[0, shape)` chunk；它们不引入并行执行策略。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留 `forge::start_detached(sender)`。
 - `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和 consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token 会通过 `any_stop_token` 类型擦除注册 callback，该类型擦除层的内部 control block 分配尚未 allocator-aware。
