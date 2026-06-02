@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <forge/system_context.hpp>
 #include "forge_counting_resource.hpp"
@@ -90,7 +91,7 @@ TEST(StaticThreadPoolTest, ConcurrentTasks) {
     auto sch = pool.get_scheduler();
     std::atomic<int> counter{0};
     for (int i = 0; i < 10; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch) | std::execution::then([&counter]{
                 counter.fetch_add(1, std::memory_order_relaxed);
             }));
@@ -149,7 +150,7 @@ TEST(StaticThreadPoolTest, ShutdownDrainsAcceptedWork) {
     bool release_first = false;
     std::atomic<int> completed{0};
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(sch) | std::execution::then([&] {
             {
                 std::lock_guard lk{mtx};
@@ -169,7 +170,7 @@ TEST(StaticThreadPoolTest, ShutdownDrainsAcceptedWork) {
         }));
     }
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(sch) | std::execution::then([&] {
             completed.fetch_add(1, std::memory_order_relaxed);
         }));
@@ -227,7 +228,7 @@ TEST(StaticThreadPoolTest, OptionsConstructorKeepsUnboundedDefault) {
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 64; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch)
             | std::execution::then([&] noexcept {
                 completed.fetch_add(1, std::memory_order_relaxed);
@@ -255,7 +256,7 @@ TEST(StaticThreadPoolTest, OptionsConstructorUsesCustomMemoryResourceForQueue) {
         bool release_first = false;
         std::atomic<int> completed{0};
 
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch)
             | std::execution::then([&] noexcept {
                 {
@@ -275,7 +276,7 @@ TEST(StaticThreadPoolTest, OptionsConstructorUsesCustomMemoryResourceForQueue) {
         }
 
         for (int i = 0; i < 16; ++i) {
-            std::execution::start_detached(
+            forge::start_detached(
                 std::execution::schedule(sch)
                 | std::execution::then([&] noexcept {
                     completed.fetch_add(1, std::memory_order_relaxed);
@@ -330,7 +331,7 @@ TEST(StaticThreadPoolTest, BoundedQueueRejectsOverflowWithStopped) {
     bool first_started = false;
     bool release_first = false;
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(sch)
         | std::execution::then([&] noexcept {
             {
@@ -384,7 +385,7 @@ TEST(StaticThreadPoolTest, BoundedQueueShutdownDrainsAcceptedWork) {
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 2; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch)
             | std::execution::then([&] noexcept {
                 completed.fetch_add(1, std::memory_order_relaxed);

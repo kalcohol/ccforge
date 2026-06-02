@@ -32,6 +32,7 @@
 #include "resource_context.hpp"
 #include "runtime_context.hpp"
 #include "single_thread_context.hpp"
+#include "start_detached.hpp"
 #include "static_thread_pool.hpp"
 #include "strand.hpp"
 #include "system_context.hpp"

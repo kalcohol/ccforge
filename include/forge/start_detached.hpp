@@ -22,30 +22,26 @@
 
 #pragma once
 
-#include "concepts.hpp"
-#include "env.hpp"
-
+#include <execution>
 #include <atomic>
-#include <cstdlib>
+#include <exception>
+#include <type_traits>
+#include <utility>
 
-namespace std::execution {
+namespace forge {
 
-namespace __forge_start_detached {
-
-// Forge's detached receiver deliberately terminates on set_error. This keeps
-// the fire-and-forget lifetime model simple: value/stopped release the shared
-// state, while error is treated as an unhandled asynchronous failure.
+namespace __start_detached {
 
 struct __detached_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = std::execution::receiver_t;
 
     struct __state_base {
         void add_ref() noexcept {
-            __refs.fetch_add(1, std::memory_order_relaxed);
+            refs_.fetch_add(1, std::memory_order_relaxed);
         }
 
         void release() noexcept {
-            if (__refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            if (refs_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                 delete this;
             }
         }
@@ -54,14 +50,14 @@ struct __detached_recv {
         virtual ~__state_base() = default;
 
     private:
-        std::atomic<unsigned> __refs{1};
+        std::atomic<unsigned> refs_{1};
     };
 
-    __state_base* __state;
+    __state_base* state;
 
     template<class... Vs>
     void set_value(Vs&&...) && noexcept {
-        __state->release();
+        state->release();
     }
 
     template<class E>
@@ -70,39 +66,39 @@ struct __detached_recv {
     }
 
     void set_stopped() && noexcept {
-        __state->release();
+        state->release();
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
 };
 
 template<class S>
 struct __state : __detached_recv::__state_base {
-    using __op_t = connect_result_t<S, __detached_recv>;
-    __op_t __op;
+    using op_t = std::execution::connect_result_t<S, __detached_recv>;
+
+    op_t op;
 
     explicit __state(S sndr)
-        : __op(std::execution::connect(std::move(sndr), __detached_recv{this}))
+        : op(std::execution::connect(std::move(sndr), __detached_recv{this}))
     {}
 
     void start() noexcept override {
-        std::execution::start(__op);
+        std::execution::start(op);
     }
 };
 
-} // namespace __forge_start_detached
+} // namespace __start_detached
 
-template<sender S>
+template<std::execution::sender S>
 void start_detached(S&& sndr) {
     using source_t = std::decay_t<S>;
-    using state_t = __forge_start_detached::__state<source_t>;
-    auto* s = new state_t(
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)));
-    s->add_ref();
-    s->start();
-    s->release();
+    using state_t = __start_detached::__state<source_t>;
+    auto* state = new state_t(static_cast<S&&>(sndr));
+    state->add_ref();
+    state->start();
+    state->release();
 }
 
-} // namespace std::execution
+} // namespace forge

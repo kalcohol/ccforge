@@ -53,6 +53,11 @@ Non-owning views and lightweight handles should not block in destructors.
 
 ## current utilities
 
+- `forge::start_detached(sender)` is Forge's non-standard fire-and-forget
+  utility. It accepts any sender whose receiver completions are valid for the
+  detached receiver, releases its heap state on value/stopped completion, and
+  calls `std::terminate()` on error completion. Standard-shaped code should use
+  `std::execution::spawn(sender, scope.get_token()[, env])` instead.
 - `static_thread_pool::shutdown()` stops accepting new schedule operations and
   drains accepted work. `wait()` waits for the queue and active tasks to empty.
   If `wait()` is called from one of the pool's own worker threads, it returns

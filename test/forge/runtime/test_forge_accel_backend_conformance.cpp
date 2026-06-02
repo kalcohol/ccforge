@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
 #include <forge/erased_sender.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/wait_result.hpp>
 #include "forge_accel_backend_conformance.hpp"
 
@@ -288,7 +289,7 @@ TEST(AccelBackendConformanceTest, RequestTimeoutAndLateResponseAreObservable) {
     forge::accel::mock::request_session requests{session};
     backend::blocking_gate gate;
 
-    std::execution::start_detached(backend::submit(session, [&] {
+    forge::start_detached(backend::submit(session, [&] {
         gate.mark_started_and_wait();
     }));
     ASSERT_TRUE(gate.wait_started());
@@ -405,4 +406,3 @@ TEST(AccelBackendConformanceTest, TypedErrorsCrossErasureAndWaitResult) {
     EXPECT_EQ(error->kind, forge::accel::error_kind::command_failed);
     EXPECT_EQ(error->status, forge::accel::command_status::failed);
 }
-

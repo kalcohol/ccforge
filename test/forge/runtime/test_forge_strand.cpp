@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-#include <forge/strand.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
+#include <forge/strand.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
 #include <algorithm>
@@ -124,7 +125,7 @@ TEST(StrandTest, FifoOrder) {
     std::vector<int> order;
 
     for (int i = 0; i < 8; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(scheduler)
             | std::execution::then([&, i] noexcept {
                 std::lock_guard lk{mtx};
@@ -169,7 +170,7 @@ TEST(StrandTest, NoOverlapAcrossPoolThreads) {
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 16; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(scheduler)
             | std::execution::then([&] noexcept {
                 int now = active.fetch_add(1, std::memory_order_acq_rel) + 1;
@@ -197,14 +198,14 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
     std::mutex mtx;
     std::vector<int> order;
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(scheduler)
         | std::execution::then([&] noexcept {
             {
                 std::lock_guard lk{mtx};
                 order.push_back(1);
             }
-            std::execution::start_detached(
+            forge::start_detached(
                 std::execution::schedule(scheduler)
                 | std::execution::then([&] noexcept {
                     std::lock_guard lk{mtx};
@@ -212,7 +213,7 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
                 }));
         }));
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(scheduler)
         | std::execution::then([&] noexcept {
             std::lock_guard lk{mtx};
@@ -239,7 +240,7 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
     bool release_first = false;
     auto pending_state = std::make_shared<stopped_state>();
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(scheduler)
         | std::execution::then([&] noexcept {
             {

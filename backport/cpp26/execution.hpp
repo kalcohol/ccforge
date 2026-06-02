@@ -35,10 +35,7 @@
 //   Scheduler ops    : starts_on, continues_on (schedule_from), transfer_just,
 //                      bulk (serial)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
-//                      spawn_future
-//   Extensions       : ensure_started and start_detached are kept as
-//                      Forge/stdexec-era names; they are not current-WD [exec]
-//                      surface.
+//                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
@@ -59,13 +56,6 @@
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce
 //     variant<tuple<...>, ...>.
-//   - ensure_started is a Forge/stdexec-era extension name. It eagerly starts
-//     work and caches for multiple consumers.
-//     Cached values are delivered as lvalues, so move-only value results are
-//     not supported; abandoning the returned sender does not request stop.
-//   - start_detached is a Forge/stdexec-era extension name. It terminates on
-//     set_error; attach an error-handling adaptor before detaching if failures
-//     are expected. Current-WD fire-and-forget uses scope-token based spawn.
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state honors get_allocator(env), but auxiliary consumer/callback
 //     allocations are not fully allocator-aware.
@@ -124,10 +114,8 @@
 #include "execution/into_variant.hpp"
 #include "execution/continues_on.hpp"
 #include "execution/bulk.hpp"
-#include "execution/start_detached.hpp"
 #include "execution/split.hpp"
 #include "execution/when_all.hpp"
-#include "execution/ensure_started.hpp"
 #include "execution/any_stop_token.hpp"
 #include "execution/awaitable.hpp"
 #include "execution/domain.hpp"

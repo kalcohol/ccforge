@@ -24,8 +24,8 @@ Primary draft references checked for this round:
 | `scope_token::associate` | No token-member `associate` in the current target surface. | Removed from scope tokens; top-level `associate(sender, token)` is implemented. | Keep token surface narrow. |
 | `scope_token::spawn` | No token-member `spawn` in the current target surface. | Removed from scope tokens; top-level `spawn(sender, token[, env])` is implemented. | Keep examples/tests on top-level `spawn`. |
 | `simple_counting_scope::join` / `counting_scope::join` | Return senders produced from a scope-join sender shape. | Sender-returning join is implemented; the sender currently waits in `start()` rather than using the full async join-state model. | Preserve sender-returning shape and improve async join-state behavior with the broader scope-token migration. |
-| `ensure_started` | Not current-WD `[exec]` surface. | Public `std::execution::ensure_started` extension. | Remove from `std::execution` or migrate to `forge::` if the utility is worth keeping. |
-| `start_detached` | Not current-WD `[exec]` surface. | Public `std::execution::start_detached` extension. | Replace standard paths with `spawn`; move utility to `forge::` only if still needed. |
+| `ensure_started` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
+| `start_detached` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport; `forge::start_detached` carries the utility behavior. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
 | Non-copyable lvalue sender convenience | Native-shaped code requires explicit `std::move(sndr)`. | Many standard backport adaptors destructively move non-copyable non-const lvalues. | Remove from standard-shaped paths; examples/tests must spell `std::move`. |
 | Domain dispatch | Full recursive current-WD model. | Receiver-env late-domain selection and transform wrappers are implemented; full recursion remains a subset. | Add missing-case tests and implement only confirmed gaps. |
 
@@ -35,8 +35,8 @@ Primary draft references checked for this round:
    usage coherently.
 2. Keep examples and tests on top-level `spawn` / `associate` spelling,
    keeping `join()` in sender-consuming form.
-3. Remove or relocate `ensure_started` and `start_detached` from
-   `std::execution` public surface.
+3. Keep `ensure_started` and `start_detached` out of `std::execution` public
+   surface.
 4. Remove destructive-move lvalue convenience from standard backport adaptors.
 5. Re-run `spawn_future` tests after token `wrap` semantics change, because
    the current draft calls `token.wrap(sndr)` before allocator/env selection.

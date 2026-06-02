@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <forge/start_detached.hpp>
 #include <execution>
 
 #include <memory>
@@ -305,7 +306,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartDetachedConsumes) {
               ran = (*value == 7);
           });
 
-    std::execution::start_detached(sndr);
+    forge::start_detached(std::move(sndr));
 
     EXPECT_TRUE(ran);
 }

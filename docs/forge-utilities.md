@@ -10,7 +10,7 @@
 #include <forge/execution.hpp>
 ```
 
-该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_policy.hpp`、`resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`strand.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp`、`task.hpp` 和 `wait_result.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
+该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、`any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_policy.hpp`、`resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、`start_detached.hpp`、`strand.hpp`、`single_thread_context.hpp`、`system_context.hpp`、`timer_context.hpp`、`task.hpp` 和 `wait_result.hpp`。如果只需要单个设施，也可以直接包含对应头文件。
 
 IO backend 使用独立头：
 

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
+#include <forge/start_detached.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
@@ -194,7 +195,7 @@ TEST(ResourceContextTest, TimerCallbackCanSpawnCpuWork) {
     forge::resource_context ctx{1};
     std::atomic<bool> completed{false};
 
-    std::execution::start_detached(
+    forge::start_detached(
         ctx.schedule_after(0ms)
         | std::execution::then([&] noexcept {
             (void)ctx.spawn(

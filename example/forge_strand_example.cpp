@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/static_thread_pool.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/strand.hpp>
 #include <execution>
 #include <cassert>
@@ -31,14 +32,13 @@ int main() {
     forge::strand strand{pool.get_scheduler()};
     std::vector<int> order;
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(strand.get_scheduler())
         | std::execution::then([&] noexcept { order.push_back(1); }));
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(strand.get_scheduler())
         | std::execution::then([&] noexcept { order.push_back(2); }));
 
     strand.wait();
     assert((order == std::vector<int>{1, 2}));
 }
-

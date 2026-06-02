@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/single_thread_context.hpp>
+#include <forge/start_detached.hpp>
 #include <execution>
 #include <atomic>
 #include <mutex>
@@ -46,7 +47,7 @@ TEST(SingleThreadContextTest, PreservesFifoOrderForAcceptedTasks) {
     std::vector<int> order;
 
     for (int value : {1, 2, 3}) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch) | std::execution::then([&, value] {
                 std::lock_guard lk{mtx};
                 order.push_back(value);

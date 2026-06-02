@@ -22,10 +22,10 @@ int main() {
     ex::sync_wait(ex::just(0) | ex::bulk(5, [&sum](int i, int&) { sum += i; }));
     assert(sum == 0+1+2+3+4);
 
-    // start_detached: fire and forget
-    int counter = 0;
-    ex::start_detached(ex::just() | ex::then([&counter] { counter++; }));
-    assert(counter == 1);
+    // spawn: fire and forget under a scope token
+    ex::simple_counting_scope scope;
+    ex::spawn(ex::just(), scope.get_token());
+    ex::sync_wait(scope.join());
 
     return 0;
 }

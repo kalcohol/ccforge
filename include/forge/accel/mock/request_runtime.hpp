@@ -24,6 +24,7 @@
 
 #include "context.hpp"
 #include "../../timer_context.hpp"
+#include "../../start_detached.hpp"
 
 #include <execution>
 #include <atomic>
@@ -237,7 +238,7 @@ struct __sender {
                               record->complete_timeout();
                           })
                         | std::execution::upon_stopped([]() noexcept {});
-                    std::execution::start_detached(std::move(timeout));
+                    forge::start_detached(std::move(timeout));
                 }
 
                 auto response = submit_packet(
@@ -262,7 +263,7 @@ struct __sender {
                     | std::execution::upon_stopped([record = record_]() noexcept {
                           record->complete_stopped();
                       });
-                std::execution::start_detached(std::move(response));
+                forge::start_detached(std::move(response));
             } catch (...) {
                 record_->complete_error(std::current_exception());
             }

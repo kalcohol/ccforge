@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <forge/start_detached.hpp>
 #include <execution>
 #include <atomic>
 #include <future>
@@ -279,14 +280,14 @@ TEST(BulkTest, SerialExecution) {
 
 TEST(StartDetachedTest, Executes) {
     std::atomic<int> counter{0};
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::just() | std::execution::then([&counter] { counter++; }));
     EXPECT_EQ(counter.load(), 1);
 }
 
 TEST(StartDetachedTest, HandlesSynchronousWhenAllCompletion) {
     std::atomic<int> counter{0};
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::when_all(std::execution::just(), std::execution::just())
         | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }));
     EXPECT_EQ(counter.load(), 1);
@@ -295,7 +296,7 @@ TEST(StartDetachedTest, HandlesSynchronousWhenAllCompletion) {
 TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::starts_on(
             sch,
             std::execution::just()
@@ -337,7 +338,7 @@ TEST(StartsOnTest, DeclaresSchedulerErrorsAndSetupError) {
 TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::continues_on(
             std::execution::just()
             | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }),

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
 #include <forge/erased_sender.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/wait_result.hpp>
 
 #include <chrono>
@@ -106,7 +107,7 @@ TEST(AccelRequestRuntimeTest, TimeoutCompletesBeforeLateResponse) {
     forge::accel::mock::request_session requests{session};
 
     blocking_gate gate;
-    std::execution::start_detached(
+    forge::start_detached(
         forge::accel::mock::submit(session, [&] {
             gate.mark_started_and_wait();
         }));
@@ -148,7 +149,7 @@ TEST(AccelRequestRuntimeTest, TypedTimeoutCrossesErasedSenderBoundary) {
     forge::accel::mock::request_session requests{session};
 
     blocking_gate gate;
-    std::execution::start_detached(
+    forge::start_detached(
         forge::accel::mock::submit(session, [&] {
             gate.mark_started_and_wait();
         }));

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/runtime_context.hpp>
+#include <forge/start_detached.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
@@ -112,7 +113,7 @@ TEST(RuntimeContextTest, OptionsConstructorUsesCustomMemoryResourceForPoolQueue)
         bool release_first = false;
         std::atomic<int> completed{0};
 
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(scheduler)
             | std::execution::then([&] noexcept {
                 {
@@ -130,7 +131,7 @@ TEST(RuntimeContextTest, OptionsConstructorUsesCustomMemoryResourceForPoolQueue)
         }
 
         for (int i = 0; i < 8; ++i) {
-            std::execution::start_detached(
+            forge::start_detached(
                 std::execution::schedule(scheduler)
                 | std::execution::then([&] noexcept {
                     completed.fetch_add(1, std::memory_order_relaxed);
@@ -221,7 +222,7 @@ TEST(RuntimeContextTest, WaitDrainsAcceptedCpuWork) {
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 4; ++i) {
-        std::execution::start_detached(
+        forge::start_detached(
             std::execution::schedule(sch)
             | std::execution::then([&] {
                 completed.fetch_add(1, std::memory_order_relaxed);
@@ -237,7 +238,7 @@ TEST(RuntimeContextTest, WaitDrainsTimerWork) {
     forge::runtime_context ctx{1};
     std::atomic<bool> completed{false};
 
-    std::execution::start_detached(
+    forge::start_detached(
         ctx.schedule_after(20ms)
         | std::execution::then([&] {
             completed.store(true, std::memory_order_relaxed);
@@ -253,10 +254,10 @@ TEST(RuntimeContextTest, WaitDrainsCpuToTimerHandoff) {
     auto scheduler = ctx.get_scheduler();
     std::atomic<bool> completed{false};
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(scheduler)
         | std::execution::then([&] {
-            std::execution::start_detached(
+            forge::start_detached(
                 ctx.schedule_after(0ms)
                 | std::execution::then([&] {
                     completed.store(true, std::memory_order_relaxed);
@@ -273,10 +274,10 @@ TEST(RuntimeContextTest, WaitDrainsTimerToCpuHandoff) {
     auto scheduler = ctx.get_scheduler();
     std::atomic<bool> completed{false};
 
-    std::execution::start_detached(
+    forge::start_detached(
         ctx.schedule_after(0ms)
         | std::execution::then([&] {
-            std::execution::start_detached(
+            forge::start_detached(
                 std::execution::schedule(scheduler)
                 | std::execution::then([&] {
                     completed.store(true, std::memory_order_relaxed);

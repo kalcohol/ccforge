@@ -22,8 +22,7 @@ The execution backport currently includes:
 - scheduler adaptors: `starts_on`, `continues_on`, `transfer_just`, serial
   `bulk`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
-  `spawn_future`, plus Forge/stdexec-era extension names `ensure_started` and
-  `start_detached`;
+  `associate`, `spawn`, `spawn_future`;
 - consumers: `sync_wait`, `sync_wait_with_variant`;
 - stop-token support: `inplace_stop_source/token/callback`,
   `never_stop_token`, `any_stop_token`;
@@ -46,8 +45,8 @@ extensions. This is the source of truth for native handoff risk triage.
 | --- | --- | --- | --- |
 | Library adaptor non-copyable lvalue `connect` | Backport-only convenience | Selected library senders destructively move non-const non-copyable lvalues. | Remove from standard-shaped paths; require explicit `std::move(sndr)` for move-only lvalues. |
 | `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Mirrors the destructive-move convention for non-copyable non-const lvalue senders. | Decide during lvalue cleanup whether Forge keeps the convenience; native-friendly examples should spell `scope.spawn(std::move(sndr))`. |
-| `std::execution::ensure_started` | Non-WD extension name | Exposed as a multi-consumer cached eager sender. Current working-draft execution wording no longer has this name. | Remove from `std::execution` or migrate to `forge::` if the utility is still useful. |
-| `std::execution::start_detached` | Non-WD extension name | Exposed as fire-and-forget with terminate-on-error semantics. Current working-draft execution wording uses `spawn` with scope tokens for the standard fire-and-forget shape. | Replace standard paths with `spawn`; move to `forge::` only if still needed. |
+| `std::execution::ensure_started` | Removed non-WD extension name | No longer exposed by the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
+| `std::execution::start_detached` | Removed non-WD extension name | No longer exposed by the `<execution>` backport; Forge runtime code uses `forge::start_detached`. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
 | `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` allocates detached state, associates through `token.try_associate()`, and starts eagerly. It accepts only `set_value()` / `set_stopped()` senders. | Keep tests aligned with current-WD fire-and-forget spelling. |
 | `std::execution::counting_scope::join()` | Partial convergence | `simple_counting_scope::join()` and `counting_scope::join()` return senders, but the current implementation waits in `start()` rather than exposing the full async join-state model. | Keep improving with the whole scope-token surface; do not reintroduce blocking `void join()`. |
 | Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
@@ -64,8 +63,6 @@ Track these as current gaps until a focused taskbook closes them:
 
 - execution-domain dispatch remains a draft subset and does not implement the
   full recursive standard model;
-- `ensure_started`, if kept, does not support move-only value results and does
-  not request stop when the returned sender is abandoned;
 - `spawn_future` uses `get_allocator` for its shared state, but auxiliary
   consumer/callback allocation is not fully allocator-aware;
 - `counting_scope::join()` is sender-returning but still uses a blocking

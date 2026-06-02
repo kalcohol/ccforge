@@ -1,4 +1,5 @@
 #include <forge/accel.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/wait_result.hpp>
 
 #include <cassert>
@@ -58,7 +59,7 @@ int main() {
               cv.notify_all();
           });
 
-    std::execution::start_detached(std::move(posted));
+    forge::start_detached(std::move(posted));
 
     {
         std::unique_lock lk{mtx};

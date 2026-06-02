@@ -36,12 +36,12 @@ struct value_only_receiver {
 
 static_assert(requires {
     std::execution::connect(
-        std::execution::ensure_started(std::execution::just(42)),
+        std::execution::just(42),
         value_only_receiver{});
 });
 
 int main() {
-    auto sndr = std::execution::ensure_started(std::execution::just(42));
+    auto sndr = std::execution::just(42);
     auto op = std::execution::connect(std::move(sndr), value_only_receiver{});
     std::execution::start(op);
     return 0;

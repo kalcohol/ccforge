@@ -22,19 +22,23 @@
 
 #include <execution>
 #include <iostream>
+#include <thread>
 #include <tuple>
+
 int main() {
     auto inline_result = std::execution::sync_wait(
         std::execution::schedule(std::execution::inline_scheduler{}) |
         std::execution::then([] { return 1; })
     );
     std::execution::run_loop loop;
-    std::execution::start_detached(
+    auto run_loop_sender =
         std::execution::starts_on(loop.get_scheduler(), std::execution::just()) |
         std::execution::then([&] {
             std::cout << "inline=" << std::get<0>(*inline_result) << ", run_loop=1\n";
-            loop.finish();
-        })
-    );
-    loop.run();
-    return 0; }
+        });
+    std::thread runner{[&] { loop.run(); }};
+    (void)std::execution::sync_wait(std::move(run_loop_sender));
+    loop.finish();
+    runner.join();
+    return 0;
+}

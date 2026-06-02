@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/channel.hpp>
+#include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <execution>
 #include <array>
@@ -48,7 +49,7 @@ int main() {
         .memory = &arena,
     }};
 
-    std::execution::start_detached(
+    forge::start_detached(
         std::execution::schedule(pool.get_scheduler())
         | std::execution::then([&] noexcept {
             auto command = std::execution::sync_wait(channel.async_recv());
