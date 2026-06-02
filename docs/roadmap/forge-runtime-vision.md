@@ -152,9 +152,12 @@ Windows 阶段性预期：
    Linux fd readiness 状态机。
 
 如果 owner 提供 Windows 主机，建议作为 self-hosted/manual verification 环境先接入；
-正式 CI 化之前，至少记录可复现命令和预期 test count。
-当前可复现入口见 `scripts/verify-windows-msvc.ps1` 和
-`scripts/verify-windows-msvc-ssh.sh`；公开文档和脚本不得写入私有主机名或本地安装路径。
+不依赖 GitHub hosted CI。当前可复现入口是 `scripts/verify-windows-msvc.ps1`：
+它应在 Windows 主机上直接运行，并通过参数或环境变量接收 MSVC Build Tools 位置等
+本机信息。`scripts/verify-windows-msvc-ssh.sh` 和
+`scripts/verify-windows-msvc-matrix.sh` 只是从 Linux/macOS 调用远端 Windows 主机的
+transport wrapper。公开文档和脚本不得写入私有主机名或本地安装路径。整体 local/
+self-hosted verification floor 入口见 `scripts/verify-selfhosted-floor.sh`。
 
 ## feature gates
 

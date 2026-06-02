@@ -55,17 +55,20 @@ Platform/proof surfaces:
 
 ## verification floor
 
-Use these as the default evidence set for behavior-changing work:
+Use the self-hosted verification floor as the default evidence set for
+behavior-changing work:
 
 ```sh
-scripts/verify-native.sh llvm
-scripts/verify-native.sh tsan asan
-scripts/verify-install-package.sh
+scripts/verify-selfhosted-floor.sh
 ```
 
-When a Windows host is available, also run the Windows/MSVC smoke script. Keep
-machine-specific hostnames, user directories, and installation paths in local
-environment variables or shell history only; do not commit them.
+The default floor runs the Linux/container lanes sequentially and then the
+install-package smoke. It is intentionally local/self-hosted and not tied to
+GitHub hosted CI. When a Windows host is available, opt into the Windows/MSVC
+smoke by setting `FORGE_VERIFY_FLOOR_WINDOWS=1`; the floor script then calls the
+Windows SSH/matrix wrapper, which in turn invokes the Windows-native PowerShell
+entrypoint. Keep machine-specific hostnames, user directories, and installation
+paths in local environment variables or shell history only; do not commit them.
 
 The most recent known-good shape for this track was:
 
@@ -105,7 +108,7 @@ Use this checklist after each taskbook round.
 
 | Target | Evidence | Current status |
 | --- | --- | --- |
-| Verification is repeatable | `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | In place |
+| Verification is repeatable | `scripts/verify-selfhosted-floor.sh`, `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc.ps1`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | In place |
 | Feature gates are testable | IO/accel ON/AUTO/OFF registration checks in `scripts/verify-windows-msvc.ps1`; selected Windows example smoke for IOCP, accel, and reference runtime; local `ctest -N -R 'forge_io\|forge_accel'` gate checks | In place |
 | Resource behavior is auditable | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table in place; review for each new primitive |
 | IO lifecycle is explicit | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Per-op cancellation and IOCP handle-cache pruning are in place; re-audit when IO semantics change |
@@ -149,8 +152,8 @@ or broad API commitments, stop and require a separate owner decision.
 
 ## known intentional boundaries
 
-- Windows/MSVC smoke is a manual/optional gate, not a replacement for Linux
-  container verification.
+- Windows/MSVC smoke is a manual/self-hosted optional gate, not a replacement
+  for Linux container verification.
 - `forge::accel` is mock/in-memory and vendor-neutral; it does not imply CUDA,
   HIP, SYCL, FPGA, or NPU driver support.
 - macOS/BSD kqueue is out of scope until a concrete BSD/macOS requirement

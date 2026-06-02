@@ -10,6 +10,41 @@ ctest --test-dir build/local --output-on-failure
 
 如果 host 没有可用 C++ 编译器，使用 podman 验证镜像和 `scripts/verify-native.sh`，不要猜测工具链配置。
 
+## self-hosted verification floor
+
+Forge 不把验证流程绑定到 GitHub hosted CI。当前标准是本地或 self-hosted
+verification floor：稳定机器直接调用仓库脚本，未来要迁移到 Jenkins、Buildkite、
+GitHub self-hosted runner 或其它 CI 时，只需要挂接这些入口。
+
+默认 owner-neutral 行为变更建议跑：
+
+```bash
+scripts/verify-selfhosted-floor.sh
+```
+
+该脚本按顺序调用现有验证入口，默认 native lanes 为 `llvm gcc-exec tsan asan`，
+随后运行 install-package smoke。它不会并发运行 podman `:Z` bind mount lane。
+如需增加或替换 native lane，直接传参或设置环境变量：
+
+```bash
+scripts/verify-selfhosted-floor.sh llvm gcc16 gcc-exec tsan asan
+FORGE_VERIFY_FLOOR_NATIVE_LANES='llvm zig gcc-exec tsan asan' scripts/verify-selfhosted-floor.sh
+```
+
+Windows/MSVC smoke 默认不跑，因为它需要一台 Windows 主机。需要把 Windows 纳入同一
+floor 时，设置 `FORGE_VERIFY_FLOOR_WINDOWS=1`，并通过 `FORGE_WINDOWS_*` 环境变量把
+主机、MSVC、source/ref 等信息传给 Windows wrapper：
+
+```bash
+FORGE_VERIFY_FLOOR_WINDOWS=1 \
+FORGE_WINDOWS_HOST=<windows-host> \
+FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
+scripts/verify-selfhosted-floor.sh
+```
+
+公开文档和脚本不得写入私有主机名、用户名或本地安装路径。运行日志可以打印本机实际
+选择的路径以便调试，但这些值只属于调用环境。
+
 ## 容器验证
 
 完整验证入口：
@@ -38,18 +73,19 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 
 ## Windows/MSVC smoke
 
-Windows 验证是可选的手动 smoke gate。它不替代 Linux/podman 全量矩阵；当前
-目标是确认 MSVC 能 configure/build/test `std::execution` backport、
+Windows 验证是可选的本机或 self-hosted smoke gate。它不替代 Linux/podman 全量矩阵；
+当前目标是确认 MSVC 能 configure/build/test `std::execution` backport、
 `std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend。
 
-在 Windows 主机上直接运行：
+主入口是 Windows 主机上直接运行的 PowerShell 脚本：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\verify-windows-msvc.ps1 `
   -Vcvars "C:\path\to\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
-从 Linux/macOS 通过 SSH 调用远端 Windows 主机：
+从 Linux/macOS 通过 SSH 调用远端 Windows 主机时，SSH wrapper 只是 transport
+layer；真正的验证逻辑仍在远端执行同一个 PowerShell 脚本：
 
 ```bash
 FORGE_WINDOWS_HOST=<windows-host> \
@@ -57,8 +93,9 @@ FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
 scripts/verify-windows-msvc-ssh.sh
 ```
 
-To run the repeatable smoke as a small matrix, use the wrapper. It defaults to
-the current VS lane (`18`) and uses local-source mode unless overridden:
+To run the repeatable smoke as a small self-hosted/manual matrix, use the
+wrapper. It defaults to the current VS lane (`18`) and uses local-source mode
+unless overridden:
 
 ```bash
 FORGE_WINDOWS_HOST=<windows-host> \
