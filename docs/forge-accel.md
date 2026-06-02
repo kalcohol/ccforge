@@ -336,6 +336,44 @@ typed `error_kind::timeout` through `submit_request_typed`), the pending entry i
 removed, and a later response is counted as a discarded late response. This is a
 portable proof of request correlation, not a wire protocol or driver ABI.
 
+## protocol envelope proof
+
+`forge::accel::protocol_envelope` is the portable envelope vocabulary for
+message-style runtime experiments. It separates:
+
+- `message_kind`, with request, response, notify, and signal variants;
+- `protocol_route`, with source and destination endpoints;
+- `protocol_meta`, with request, session, context, and stream IDs;
+- `module_id` / `command_id`;
+- owning `protocol_payload` bytes;
+- optional `lifecycle_signal`, with reason, generation, timestamp, and
+  diagnostic text.
+
+`mock::protocol::loopback_transport` is an in-memory transport proof built on
+`forge::bounded_channel`. It has a request channel and a completion/signal
+channel, tracks pending request IDs, accepts responses only when the request ID
+is still pending, and counts unknown responses as late/discarded:
+
+```cpp
+forge::accel::mock::protocol::loopback_transport transport;
+
+auto request = forge::accel::make_request_envelope(route, meta, module, command, payload);
+transport.submit_request(request);
+
+auto queued = transport.try_recv_request();
+auto response = forge::accel::make_response_envelope(*queued, response_payload);
+transport.deliver_response(std::move(response));
+auto completion = transport.try_recv_completion();
+```
+
+Lifecycle signals use `make_signal_envelope(...)` and bypass the pending map;
+they are delivered on the completion/signal channel as control messages.
+
+This proof does not define a packed byte ABI, ioctl contract, kernel/userspace
+contract, private SDK message struct, or physical transport routing. If a future
+backend needs serialization, it should add an explicit encoding proof instead
+of treating `protocol_envelope` object layout as wire format.
+
 ## model/session execute proof
 
 `mock::model` lets examples describe an accelerator-like model runtime without
@@ -441,6 +479,7 @@ queue 的对应 `record_event` 前面，该 queue 会等待到该 generation pub
 - `example/forge_accel_session_reset_example.cpp`
 - `example/forge_accel_packet_example.cpp`
 - `example/forge_accel_request_runtime_example.cpp`
+- `example/forge_accel_protocol_transport_example.cpp`
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

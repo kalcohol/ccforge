@@ -1,4 +1,5 @@
 #include <forge/accel/error.hpp>
+#include <forge/accel/protocol.hpp>
 #include <forge/accel/vocabulary.hpp>
 #include <type_traits>
 
@@ -10,6 +11,8 @@ int main() {
     static_assert(std::is_trivially_copyable_v<forge::accel::request_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::event_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::event_generation>);
+    static_assert(std::is_trivially_copyable_v<forge::accel::endpoint_id>);
+    static_assert(std::is_trivially_copyable_v<forge::accel::module_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::device_epoch>);
     static_assert(std::is_trivially_copyable_v<forge::accel::worker_generation>);
     static_assert(std::is_trivially_copyable_v<forge::accel::worker_key>);
@@ -22,6 +25,8 @@ int main() {
     static_assert(forge::accel::context_id{1} == forge::accel::context_id{1});
     static_assert(forge::accel::stream_id{1} != forge::accel::stream_id{2});
     static_assert(forge::accel::event_generation{1} < forge::accel::event_generation{2});
+    static_assert(forge::accel::endpoint_id{1} == forge::accel::endpoint_id{1});
+    static_assert(forge::accel::module_id{1} != forge::accel::module_id{2});
 
     forge::accel::device_info info{
         .id = forge::accel::device_id{7},

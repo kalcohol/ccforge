@@ -125,6 +125,7 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
                 forge_accel_session_reset
                 forge_accel_packet
                 forge_accel_request_runtime
+                forge_accel_protocol_transport
                 forge_accel_model
                 forge_accel_typed_error)
             forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp THREADS TBB)

@@ -23,5 +23,6 @@
 #pragma once
 
 #include "accel/error.hpp"
+#include "accel/protocol.hpp"
 #include "accel/vocabulary.hpp"
 #include "accel/mock.hpp"
