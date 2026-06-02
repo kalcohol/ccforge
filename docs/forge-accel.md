@@ -304,6 +304,38 @@ Use `submit_message` for small borrowed response examples and `submit_packet`
 for callback/completion-bridge style code where the response object should
 survive asynchronous completion without a caller-owned borrowed lifetime.
 
+## request/response runtime proof
+
+`mock::request_session` builds a small runtime proof on top of `device_session`.
+It allocates monotonically increasing `request_id` values, tracks an in-memory
+pending set, and lets response delivery race with timeout/stop/shutdown while
+still completing the caller exactly once.
+
+```cpp
+auto device = ctx.get_device();
+forge::accel::mock::request_session requests{device.open_session()};
+
+auto result = forge::wait_result(
+    requests.submit_request(
+        request,
+        response,
+        [](auto& request, auto& response) noexcept {
+            response = handle(request);
+        }));
+```
+
+The sender returned by `submit_request` is the operation boundary. A synchronous
+API can wait on it with `sync_wait` or `wait_result`; a posted API can attach
+`then` / `upon_error` / `upon_stopped` and start it detached. This keeps
+"posted vs synchronous" as a caller policy rather than a separate runtime
+mechanism.
+
+Timeouts are pending-map timeouts. If a timeout wins before the queued response
+handler runs, the caller observes `operation_error{error_kind::timeout}` (or
+typed `error_kind::timeout` through `submit_request_typed`), the pending entry is
+removed, and a later response is counted as a discarded late response. This is a
+portable proof of request correlation, not a wire protocol or driver ABI.
+
 ## model/session execute proof
 
 `mock::model` lets examples describe an accelerator-like model runtime without
@@ -395,6 +427,7 @@ dependency cycle。若把未 ready event 的 `wait_event` 排在同一 queue 的
 - `example/forge_accel_message_device_example.cpp`
 - `example/forge_accel_session_reset_example.cpp`
 - `example/forge_accel_packet_example.cpp`
+- `example/forge_accel_request_runtime_example.cpp`
 - `example/forge_accel_model_example.cpp`
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`

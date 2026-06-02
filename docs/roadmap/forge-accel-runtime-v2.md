@@ -4,7 +4,7 @@ This roadmap is the long-lived goal anchor for evolving `forge::accel` from its
 initial portable mock command proof into a backend-neutral accelerator runtime
 support layer.
 
-It does not approve CUDA, HIP, SYCL, CANN, AXCL, XRT, FPGA, NPU, or other vendor
+It does not approve CUDA, HIP, SYCL, FPGA, NPU, or other vendor/runtime
 dependencies. It also does not make Forge a tensor framework, model server, or
 driver wrapper. The target layer sits above vendor runtime/driver SDKs and below
 tensor/DL frameworks:
@@ -41,7 +41,7 @@ The mock/reference backend is the executable specification for that vocabulary.
 
 - Do not implement or wrap kernel drivers.
 - Do not introduce vendor SDK dependencies in this roadmap.
-- Do not implement CUDA/HIP/SYCL/CANN/AXCL/XRT backends here.
+- Do not implement CUDA/HIP/SYCL or other vendor-specific backends here.
 - Do not create a dynamic plugin ABI.
 - Do not implement tensor graph optimization, operator fusion, quantization, or
   serving policy.
