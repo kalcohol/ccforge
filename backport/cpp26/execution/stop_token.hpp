@@ -115,6 +115,11 @@ public:
                             : nullptr;
                         control->cancelled = false;
                         control->next_detached.reset();
+                        // A destructor that observes detached=true skips the
+                        // source lock, so finish object-list writes while the
+                        // control lock still excludes that destructor.
+                        raw->next = nullptr;
+                        raw->prev = nullptr;
                     }
                     if (!head) {
                         head = control;
@@ -123,9 +128,10 @@ public:
                         prev->next_detached = control;
                     }
                     prev = std::move(control);
+                } else {
+                    raw->next = nullptr;
+                    raw->prev = nullptr;
                 }
-                raw->next = nullptr;
-                raw->prev = nullptr;
                 raw = next_raw;
             }
         }

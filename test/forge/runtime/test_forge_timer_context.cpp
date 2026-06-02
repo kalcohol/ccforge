@@ -35,24 +35,24 @@ struct timer_receiver {
         {
             std::lock_guard lk{state->mtx};
             state->value = true;
+            state->cv.notify_all();
         }
-        state->cv.notify_all();
     }
 
     void set_error(std::exception_ptr) && noexcept {
         {
             std::lock_guard lk{state->mtx};
             state->stopped = true;
+            state->cv.notify_all();
         }
-        state->cv.notify_all();
     }
 
     void set_stopped() && noexcept {
         {
             std::lock_guard lk{state->mtx};
             state->stopped = true;
+            state->cv.notify_all();
         }
-        state->cv.notify_all();
     }
 
     auto get_env() const noexcept -> std::execution::empty_env {
@@ -426,24 +426,24 @@ TEST(TimerContextTest, DestroyingContextInsideTimerCallbackIsSafe) {
             {
                 std::lock_guard lk{state->mtx};
                 state->value = true;
+                state->cv.notify_all();
             }
-            state->cv.notify_all();
         }
 
         void set_error(std::exception_ptr) && noexcept {
             {
                 std::lock_guard lk{state->mtx};
                 state->stopped = true;
+                state->cv.notify_all();
             }
-            state->cv.notify_all();
         }
 
         void set_stopped() && noexcept {
             {
                 std::lock_guard lk{state->mtx};
                 state->stopped = true;
+                state->cv.notify_all();
             }
-            state->cv.notify_all();
         }
 
         auto get_env() const noexcept -> std::execution::empty_env { return {}; }
