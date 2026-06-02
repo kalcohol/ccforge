@@ -219,8 +219,9 @@ function Invoke-GateChecks {
     $onBuild = Join-Path $SourceRoot "build\$BuildName-io-on"
     $offBuild = Join-Path $SourceRoot "build\$BuildName-io-off"
     $accelAutoBuild = Join-Path $SourceRoot "build\$BuildName-accel-auto"
+    $accelOnBuild = Join-Path $SourceRoot "build\$BuildName-accel-on"
     $accelOffBuild = Join-Path $SourceRoot "build\$BuildName-accel-off"
-    foreach ($dir in @($autoBuild, $onBuild, $offBuild, $accelAutoBuild, $accelOffBuild)) {
+    foreach ($dir in @($autoBuild, $onBuild, $offBuild, $accelAutoBuild, $accelOnBuild, $accelOffBuild)) {
         if (Test-Path $dir) {
             Remove-Item -Recurse -Force $dir
         }
@@ -249,6 +250,12 @@ function Invoke-GateChecks {
     Assert-CtestNonZero `
         -Count (Get-CtestJsonCount $autoTests) `
         -Label "FORGE_ENABLE_FORGE_IO=AUTO registration"
+    Invoke-Native `
+        "gate check: FORGE_ENABLE_FORGE_IO=AUTO build selected IO example" `
+        ($Common + "cmake --build `"$autoBuild`" --target forge_io_iocp")
+    Invoke-Native `
+        "gate check: FORGE_ENABLE_FORGE_IO=AUTO run selected IO example" `
+        ($Common + "ctest --test-dir `"$autoBuild`" -R `"^example_forge_io_iocp_smoke$`" --output-on-failure")
 
     $onConfigure =
         $Common +
@@ -322,6 +329,36 @@ function Invoke-GateChecks {
     Assert-CtestNonZero `
         -Count (Get-CtestJsonCount $accelAutoTests) `
         -Label "FORGE_ENABLE_FORGE_ACCEL=AUTO registration"
+    Invoke-Native `
+        "gate check: FORGE_ENABLE_FORGE_ACCEL=AUTO build selected accel examples" `
+        ($Common + "cmake --build `"$accelAutoBuild`" --target forge_accel_copy forge_accel_event forge_reference_runtime")
+    Invoke-Native `
+        "gate check: FORGE_ENABLE_FORGE_ACCEL=AUTO run selected accel examples" `
+        ($Common + "ctest --test-dir `"$accelAutoBuild`" -R `"example_forge_accel_copy_smoke|example_forge_accel_event_smoke|example_forge_reference_runtime_smoke`" --output-on-failure")
+
+    $accelOnConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$accelOnBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=ON " +
+        "-DFORGE_BUILD_EXAMPLES=ON " +
+        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
+        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
+        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
+        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
+        "-DFORGE_ENABLE_FORGE_ACCEL=ON"
+    $accelOnOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_ACCEL=ON" $accelOnConfigure
+    Assert-OutputContains `
+        -Output $accelOnOutput `
+        -Needle "CC Forge: forge::accel mock backend enabled" `
+        -Label "FORGE_ENABLE_FORGE_ACCEL=ON gate check"
+    $accelOnTests = Invoke-NativeOutput `
+        "gate check: FORGE_ENABLE_FORGE_ACCEL=ON registered tests" `
+        ($Common + "ctest --test-dir `"$accelOnBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch|forge_reference_runtime`"")
+    Assert-CtestNonZero `
+        -Count (Get-CtestJsonCount $accelOnTests) `
+        -Label "FORGE_ENABLE_FORGE_ACCEL=ON registration"
 
     $accelOffConfigure =
         $Common +

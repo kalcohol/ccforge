@@ -93,12 +93,14 @@ PowerShell 脚本默认的 `execution|unique_resource|forge`。`FORGE_WINDOWS_KE
 关键 Forge gate 状态和最终 CTest 数量。它还会做 gate 注册检查：
 Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend 并注册
 IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/examples；
-`FORGE_ENABLE_FORGE_ACCEL=AUTO` 应注册 accel tests/examples，
-`FORGE_ENABLE_FORGE_ACCEL=OFF` 应注册 0 个 accel tests/examples。脚本避免使用单个
-硬编码全局 CTest 数量作为验收标准，因为测试总数会随覆盖增长而变化。可设置
-`FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过这些 gate 检查。默认 smoke 也会执行
-install package consumer check；可设置 `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1`
-临时跳过。
+`FORGE_ENABLE_FORGE_ACCEL=AUTO` / `ON` 应注册 accel tests/examples，
+`FORGE_ENABLE_FORGE_ACCEL=OFF` 应注册 0 个 accel tests/examples。gate 检查还会
+实际 build/run 少量稳定 examples：IOCP example、basic accel copy/event examples
+和 reference runtime example。这保证 Windows smoke 覆盖 cookbook 的关键路径，而不把
+所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
+因为测试总数会随覆盖增长而变化。可设置 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过
+这些 gate 检查。默认 smoke 也会执行 install package consumer check；可设置
+`FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1` 临时跳过。
 
 主 smoke 默认启用可用的 Forge IO backend，并关闭 SIMD/submdspan/linalg/native-handoff
 测试：
