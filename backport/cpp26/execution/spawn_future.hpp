@@ -31,7 +31,6 @@
 
 #include <atomic>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -123,6 +122,31 @@ struct __spawn_env {
 template<class State>
 struct __inner_recv;
 
+template<class State>
+struct __consumer_base;
+
+template<class Env>
+struct __allocator_for_env {
+    using type = std::allocator<std::byte>;
+
+    static type get(Env&) noexcept {
+        return {};
+    }
+};
+
+template<class Env>
+    requires requires(Env& env) { std::execution::get_allocator(env); }
+struct __allocator_for_env<Env> {
+    using type = std::decay_t<decltype(std::execution::get_allocator(std::declval<Env&>()))>;
+
+    static type get(Env& env) {
+        return std::execution::get_allocator(env);
+    }
+};
+
+template<class Env>
+using __allocator_for_env_t = typename __allocator_for_env<Env>::type;
+
 template<class S, class Env, class Association>
 struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Association>> {
     using source_t = S;
@@ -137,13 +161,24 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     using result_t = __result_variant_t<output_cs_t>;
     using inner_recv_t = __inner_recv<__shared_state>;
     using inner_op_t = connect_result_t<started_sender_t, inner_recv_t>;
+    using consumer_base_t = __consumer_base<__shared_state>;
+    using allocator_t = __allocator_for_env_t<Env>;
 
     enum class __phase_t { running, done };
     enum class __consume_result { registered, deliver_now, already_consumed };
 
-    explicit __shared_state(Association assoc) noexcept
+    explicit __shared_state(Association assoc, allocator_t allocator) noexcept
         : __association(std::move(assoc))
+        , __allocator(std::move(allocator))
     {}
+
+    template<class T, class... Args>
+    [[nodiscard]] auto __allocate_shared_aux(Args&&... args) {
+        using alloc_t = typename std::allocator_traits<allocator_t>
+            ::template rebind_alloc<T>;
+        return std::allocate_shared<T>(
+            alloc_t{__allocator}, std::forward<Args>(args)...);
+    }
 
     ~__shared_state() noexcept {
         __op_storage.destroy();
@@ -175,7 +210,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
-        std::function<void(__shared_state&)> consumer_cb;
+        std::weak_ptr<consumer_base_t> consumer_cb;
         {
             std::lock_guard lk{__mtx};
             if (__phase == __phase_t::done) {
@@ -192,8 +227,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
             consumer_cb = std::move(__consumer_cb);
         }
 
-        if (consumer_cb) {
-            consumer_cb(*this);
+        if (auto consumer = consumer_cb.lock()) {
+            consumer->__deliver(*this);
         }
 
         std::shared_ptr<__shared_state> keepalive;
@@ -221,7 +256,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         }
     }
 
-    __consume_result __consume(std::function<void(__shared_state&)> cb) {
+    __consume_result __consume(std::weak_ptr<consumer_base_t> cb) {
         std::lock_guard lk{__mtx};
         if (__consumer_taken) {
             return __consume_result::already_consumed;
@@ -256,9 +291,10 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     __phase_t __phase = __phase_t::running;
     bool __consumer_taken = false;
     result_t __result{};
-    std::function<void(__shared_state&)> __consumer_cb{};
+    std::weak_ptr<consumer_base_t> __consumer_cb{};
     std::inplace_stop_source __stop_source{};
     Association __association{};
+    allocator_t __allocator;
     __forge_detail::__op_storage<1024> __op_storage{};
     std::shared_ptr<__shared_state> __keepalive{};
 };
@@ -311,8 +347,14 @@ struct __inner_recv {
     }
 };
 
+template<class State>
+struct __consumer_base {
+    virtual ~__consumer_base() = default;
+    virtual void __deliver(State& state) noexcept = 0;
+};
+
 template<class State, class R>
-struct __consumer {
+struct __consumer : __consumer_base<State> {
     struct __stop_callback_fn {
         std::weak_ptr<State> __state;
 
@@ -345,7 +387,7 @@ struct __consumer {
         }
     }
 
-    void __deliver(State& state) noexcept {
+    void __deliver(State& state) noexcept override {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             __stop_callback.reset();
             state.__deliver_to(__rcvr);
@@ -389,7 +431,7 @@ struct __op : __forge_detail::__immovable {
 
     __op(std::shared_ptr<State> state, R rcvr)
         : __state(std::move(state))
-        , __consumer_state(std::make_shared<consumer_t>(std::move(rcvr)))
+        , __consumer_state(__state->template __allocate_shared_aux<consumer_t>(std::move(rcvr)))
     {}
 
     ~__op() noexcept {
@@ -402,15 +444,10 @@ struct __op : __forge_detail::__immovable {
         auto state = __state;
         auto consumer = __consumer_state;
         consumer->__install_stop_callback(state);
-        auto weak_consumer = std::weak_ptr<consumer_t>{consumer};
+        std::weak_ptr<typename State::consumer_base_t> weak_consumer{consumer};
         typename State::__consume_result consume_result;
         try {
-            auto cb = std::function<void(State&)>{[weak_consumer](State& st) noexcept {
-                if (auto locked = weak_consumer.lock()) {
-                    locked->__deliver(st);
-                }
-            }};
-            consume_result = state->__consume(std::move(cb));
+            consume_result = state->__consume(std::move(weak_consumer));
         } catch (...) {
             consumer->__deliver_error(std::current_exception());
             state->__request_stop();
@@ -478,12 +515,11 @@ struct __sender {
 
 template<class State, class Env, class... Args>
 [[nodiscard]] auto __make_state(Env& env, Args&&... args) {
-    if constexpr (requires(Env& e) { std::execution::get_allocator(e); }) {
-        auto alloc = std::execution::get_allocator(env);
-        return std::allocate_shared<State>(alloc, std::forward<Args>(args)...);
-    } else {
-        return std::make_shared<State>(std::forward<Args>(args)...);
-    }
+    auto alloc = __allocator_for_env<Env>::get(env);
+    using state_alloc_t = typename std::allocator_traits<decltype(alloc)>
+        ::template rebind_alloc<State>;
+    return std::allocate_shared<State>(
+        state_alloc_t{alloc}, std::forward<Args>(args)..., std::move(alloc));
 }
 
 template<sender S, scope_token Token, queryable Env>

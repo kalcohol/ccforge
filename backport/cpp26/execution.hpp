@@ -57,8 +57,8 @@
 //     value-completion shape; multiple value alternatives produce
 //     variant<tuple<...>, ...>.
 //   - spawn_future returns a move-only single-consumer future sender. Its
-//     shared state honors get_allocator(env), but auxiliary consumer/callback
-//     allocations are not fully allocator-aware.
+//     shared state and consumer record honor get_allocator(env); erased
+//     stop-callback registration inside any_stop_token remains allocator-neutral.
 //   - associate/spawn, current-WD token wrap semantics, and sender-returning
 //     simple/counting scope join() are implemented. The join sender still uses
 //     a start-time blocking wait rather than the full async join-state model.

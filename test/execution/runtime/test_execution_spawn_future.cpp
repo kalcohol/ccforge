@@ -185,7 +185,7 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForSharedState) {
+TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
     auto counts = std::make_shared<allocation_counts>();
@@ -203,7 +203,7 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForSharedState) {
         EXPECT_EQ(std::get<0>(*result), 42);
     }
 
-    EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 1);
+    EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);

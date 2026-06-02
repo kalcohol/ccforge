@@ -64,8 +64,9 @@ Track these as current gaps until a focused taskbook closes them:
 - `get_completion_signatures(sender, env)` does not yet fully recompute through
   domain-transformed sender types, so domain transforms should preserve the
   advertised completion shape;
-- `spawn_future` uses `get_allocator` for its shared state, but auxiliary
-  consumer/callback allocation is not fully allocator-aware;
+- `spawn_future` uses `get_allocator` for its shared state and consumer record,
+  but `any_stop_token` callback/type-erasure control blocks are not
+  allocator-aware;
 - `counting_scope::join()` is sender-returning but still uses a blocking
   start-time wait rather than the full async join-state model;
 - native `std::execution` has no stable mainstream implementation in the normal
