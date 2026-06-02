@@ -44,6 +44,7 @@ extensions. This is the source of truth for native handoff risk triage.
 | `std::execution::start_detached` | Non-WD extension name | Exposed as fire-and-forget with terminate-on-error semantics. Current working-draft execution wording uses `spawn` with scope tokens for the standard fire-and-forget shape. | Keep as an explicit Forge/stdexec-era extension; examples may use it when demonstrating Forge/backport utilities. |
 | `std::execution::spawn` | Missing current-WD surface | Not implemented. | Future conformance task if standard-shaped scope spawning becomes a priority. |
 | `std::execution::counting_scope::join()` | Shape mismatch | Forge keeps a blocking `void join()` member. Current working-draft `join()` is a sender-returning async surface. | Owner-deferred Tier A conformance item; do not document the blocking member as standard-shaped. |
+| Scope-token `wrap` / `associate` / member `spawn` | Shape mismatch | Forge tokens use early practical helpers: `wrap` associates work on connect, `associate` is a token member, and `token.spawn` fire-and-forgets through `start_detached`. Current working-draft `simple_counting_scope::token::wrap` is an identity wrapper, `counting_scope::token::wrap` only adds stop-token fusion, and standard `spawn` owns association. | Treat the whole scope-token surface as one future conformance slice; do not adjust only `join()` in isolation. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
 | Execution domain dispatch | Draft subset | Receiver-env late-domain selection, scheduler-derived completion domain, `transform_sender`, and `transform_env` wrapper are implemented, but the full recursive standard model is not. | Track as Tier B conformance work. |
 | `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
@@ -64,6 +65,9 @@ Track these as current gaps until a focused taskbook closes them:
   consumer/callback allocation is not fully allocator-aware;
 - `counting_scope::join()` is still the Forge blocking extension rather than a
   sender-returning standard-shaped operation;
+- scope-token `wrap` / `associate` / member `spawn` retain Forge's early
+  practical scope model rather than the current working-draft split between
+  token wrapping and top-level `spawn`;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.

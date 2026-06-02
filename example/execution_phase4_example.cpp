@@ -25,5 +25,20 @@ int main() { return 0; }
 #else
 #include "../backport/cpp26/execution.hpp"
 #include <iostream>
-int main() { std::execution::simple_counting_scope scope; auto token = scope.get_token(); token.spawn(std::execution::just() | std::execution::then([] { std::cout << "scope task\n"; })); scope.close(); scope.join(); std::cout << "scope_count=" << scope.count() << '\n'; return 0; }
+
+int main() {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    token.spawn(std::execution::just() |
+        std::execution::then([] { std::cout << "scope task\n"; }));
+
+    scope.close();
+    // Forge keeps blocking join() as a compatibility extension. The current
+    // working draft uses a sender-returning join shape.
+    scope.join();
+
+    std::cout << "scope_count=" << scope.count() << '\n';
+    return 0;
+}
 #endif

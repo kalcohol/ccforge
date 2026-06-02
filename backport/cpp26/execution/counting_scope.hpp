@@ -76,11 +76,12 @@ concept scope_token =
     };
 
 // ──────────────────────────────────────────────────────────────────────────
-// simple_counting_scope — [exec.counting.scope.simple]
-// P3149R11: Structured concurrency with async_scope
+// simple_counting_scope — structured concurrency scope subset
 //
-// simple_counting_scope allows spawning async work and joining (waiting)
-// for all spawned work to complete. The count tracks outstanding operations.
+// Forge keeps early practical token helpers: wrap/associate associate work on
+// connect, token.spawn fire-and-forgets via start_detached, and join() blocks.
+// The current working draft splits these responsibilities across top-level
+// algorithms such as spawn/associate and a sender-returning join shape.
 // ──────────────────────────────────────────────────────────────────────────
 
 class simple_counting_scope {
@@ -91,7 +92,7 @@ public:
     simple_counting_scope() noexcept = default;
     ~simple_counting_scope() noexcept {
         // Destructor: if count > 0, work was not properly joined.
-        // In P3149R11, this is an error. We terminate.
+        // Forge follows the standard-style precondition here and terminates.
         if (__count_.load(std::memory_order_acquire) != 0) {
             std::terminate();
         }
@@ -109,7 +110,8 @@ public:
         __closed_.store(true, std::memory_order_release);
     }
 
-    // join: block until all associated work completes
+    // Forge compatibility extension: block until associated work completes.
+    // Forge compatibility extension: block until associated work completes.
     void join() {
         std::unique_lock lk{__mtx_};
         __cv_.wait(lk, [this] {
@@ -411,7 +413,7 @@ simple_counting_scope::get_token() noexcept {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// counting_scope — [exec.counting.scope]
+// counting_scope — stop-aware structured concurrency scope subset
 // Stop-aware counting scope. Forge keeps the existing blocking join() member
 // as an extension while the sender-returning standard join shape is deferred.
 // ──────────────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
 - 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`get_completion_domain`、`transform_completion_signatures`、CPO 分发基础设施
 - 域调度：`default_domain`、`get_domain` CPO、receiver-env late domain 选取、`connect_t` domain `transform_sender` / `transform_env` wrapper
-- Async scope（P3149R11）：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
+- Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
 ## 当前限制
 
@@ -27,6 +27,7 @@
 - `start_detached` 是 Forge/stdexec-era 扩展名，当前对 `set_error` 采用 terminate-on-error 契约；若 sender 可能失败，应先接入 `upon_error` / `let_error` 等错误处理再 detach。当前 working draft 的 fire-and-forget 标准形态是 scope-token based `spawn`，Forge 尚未实现该标准 surface。
 - `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 分配会使用 `env` 中的 `get_allocator`，但 consumer/callback 辅助分配尚未完整 allocator-aware。
+- Scope-token surface 仍保留 Forge 早期实用形态：`scope_token::wrap(sender)` 会在连接时关联 scope，`scope_token::associate(sender)` 是 token member，`scope_token::spawn(sender)` 通过 `start_detached` fire-and-forget。当前 working draft 把关联职责放在 top-level `spawn` / `associate` 等算法中；如果要收敛，需作为一个完整 scope-token 形态迁移任务处理。
 - `counting_scope::join()` 当前保留 Forge 既有阻塞扩展；标准 sender-returning join 形态尚未接入。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 
