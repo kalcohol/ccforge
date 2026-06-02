@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -227,6 +228,45 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
     EXPECT_EQ(order[0], 1);
     EXPECT_EQ(order[1], 2);
     EXPECT_EQ(order[2], 3);
+}
+
+TEST(StrandTest, WaitFromOwnCompletionDoesNotSelfDeadlock) {
+    forge::static_thread_pool pool{1};
+    forge::strand strand{pool.get_scheduler()};
+    auto scheduler = strand.get_scheduler();
+    std::promise<void> completed;
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            strand.wait();
+            completed.set_value();
+        }));
+
+    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+
+    strand.wait();
+    pool.shutdown();
+    pool.wait();
+}
+
+TEST(StrandTest, DestructorFromOwnCompletionDoesNotSelfDeadlock) {
+    forge::static_thread_pool pool{1};
+    auto strand = std::make_unique<forge::strand>(pool.get_scheduler());
+    auto scheduler = strand->get_scheduler();
+    std::promise<void> completed;
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            strand.reset();
+            completed.set_value();
+        }));
+
+    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+
+    pool.shutdown();
+    pool.wait();
 }
 
 TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {

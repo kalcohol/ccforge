@@ -80,6 +80,20 @@ struct __record final : __record_base {
 };
 
 struct __state;
+inline thread_local __state* __current_state = nullptr;
+
+struct __current_state_guard {
+    explicit __current_state_guard(__state* state) noexcept
+        : previous(__current_state) {
+        __current_state = state;
+    }
+
+    ~__current_state_guard() {
+        __current_state = previous;
+    }
+
+    __state* previous;
+};
 
 struct __runner_base {
     explicit __runner_base(std::pmr::memory_resource* memory) noexcept
@@ -230,7 +244,10 @@ struct __state : std::enable_shared_from_this<__state> {
             active_ = true;
         }
 
-        record->complete_value();
+        {
+            __current_state_guard guard{this};
+            record->complete_value();
+        }
 
         bool launch = false;
         {
@@ -270,6 +287,9 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void wait() noexcept {
+        if (__current_state == this) {
+            return;
+        }
         std::unique_lock lk{mtx_};
         cv_.wait(lk, [this] {
             return queue_.empty() && !running_;

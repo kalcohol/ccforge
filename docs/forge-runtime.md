@@ -84,7 +84,9 @@ Non-owning views and lightweight handles should not block in destructors.
   performs owning-context shutdown and wait.
 - `strand` serializes accepted scheduler work. Shutdown completes pending and
   future strand work stopped. Its options may carry a resource for pending
-  queue, receiver record, and runner keepalive node allocation.
+  queue, receiver record, and runner keepalive node allocation. `wait()` returns
+  immediately when called from a completion currently running on that same
+  strand to avoid self-deadlock; use an outside owner for full drain.
 - `bounded_channel` provides graceful `close()` draining and cancel-now
   `request_stop()`. Its options may carry a resource for buffer, pending
   operation, action batch, and record allocation. Pending send/recv operations
