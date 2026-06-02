@@ -2,6 +2,7 @@
 #include <forge/async_scope.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <forge/task.hpp>
+#include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
 #include <chrono>
@@ -310,6 +311,22 @@ TEST(AsyncScopeTest, MultipleTasksCompleteOnce) {
 
     scope.wait();
     EXPECT_EQ(count.load(std::memory_order_acquire), 32);
+}
+
+TEST(AsyncScopeTest, OptionsConstructorUsesCustomMemoryResourceForSpawnNode) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::async_scope scope{forge::async_scope_options{.memory = &resource}};
+        auto before_spawn = resource.allocations();
+
+        ASSERT_TRUE(scope.spawn(std::execution::just()));
+        scope.wait();
+
+        EXPECT_GT(resource.allocations(), before_spawn);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
 TEST(AsyncScopeTest, DestructorWaitsForOwnedWork) {

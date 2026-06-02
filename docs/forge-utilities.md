@@ -41,9 +41,9 @@ worker 线程共享，resource 本身也必须是线程安全的，例如使用
 
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
 - `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和 send/recv record control block。
-- `strand` 使用 resource 控制 state、pending queue、stop 批次和 receiver record；runner node 仍保持原来的 intrusive keepalive `new/delete`，以保护已验证的同步完成生命周期模型。
+- `strand` 使用 resource 控制 state、pending queue、stop 批次、receiver record 和 runner keepalive node。
 - `timer_context` 使用 resource 控制 state、timer op data、timer item control block 和 timer queue。timer callback 的 `std::function` target 分配仍不完全受控。
-- `runtime_context` / `resource_context` 会把 resource 传给内部 `static_thread_pool` 和 `timer_context`。`async_scope` spawned op-state 目前不受该 policy 控制。
+- `runtime_context` 会把 resource 传给内部 `static_thread_pool` 和 `timer_context`。`resource_context` 还会把同一 resource 传给内部 `async_scope` spawned op-state。
 
 Allocation audit:
 
@@ -52,10 +52,10 @@ Allocation audit:
 | `static_thread_pool` | pool queue `pmr::deque` nodes and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
 | `timer_context` | context state, timer op data, timer item control blocks, timer queue | timer callback `std::function` target internals may allocate outside the resource | `forge_timer_context` |
 | `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
-| `resource_context` | forwards the resource to the internal runtime | `async_scope` spawned op-state remains on the proven intrusive keepalive allocation path | `forge_resource_context` |
+| `resource_context` | forwards the resource to the internal runtime and async scope spawned op-state | no separate allocation policy beyond its members | `forge_resource_context` |
 | `bounded_channel<T>` | channel state, buffer, pending send/recv queues, action batches, send/recv record control blocks | storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
-| `strand` | strand state, pending queue, stopped batches, receiver records | runner keepalive node uses raw `new/delete` to preserve the audited synchronous-completion lifetime model | `forge_strand` |
-| `async_scope` | none in V1 | spawned op-state uses raw `new/delete` plus intrusive refcount keepalive; changing it needs a dedicated lifetime task | `forge_async_scope` |
+| `strand` | strand state, pending queue, stopped batches, receiver records, runner keepalive nodes | underlying scheduler resources remain owned by that scheduler | `forge_strand` |
+| `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
 | `forge::accel::mock` backend | context state, internal runtime/strand, host/device buffers, session state, command records through strand/runtime | `event` control blocks are context-independent and use default allocation; `memory_kind` is metadata and mock buffers are not vendor pinned/mapped/managed memory | `forge_accel_context`, `forge_accel_copy`, `forge_accel_device` |
@@ -86,7 +86,7 @@ Failure policy:
 
 `async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
 
-- `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和共享 resource；scope op-state 尚不受 resource policy 控制。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
+- `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与 `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量和共享 resource；同一 resource 会传给 runtime 和 scope op-state。它不是硬件驱动框架，也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和 `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
 ## IO backend
 

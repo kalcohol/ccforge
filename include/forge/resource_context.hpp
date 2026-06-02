@@ -57,6 +57,7 @@ public:
               .queue_capacity = options.queue_capacity,
               .memory = options.memory,
           })
+        , scope_(async_scope_options{.memory = options.memory})
     {}
 
     ~resource_context() noexcept {

@@ -145,6 +145,26 @@ TEST(ResourceContextTest, OptionsConstructorUsesCustomMemoryResourceForRuntimeQu
     EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
+TEST(ResourceContextTest, OptionsConstructorForwardsResourceToAsyncScope) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::resource_context ctx{forge::resource_context_options{
+            .thread_count = 1,
+            .queue_capacity = std::nullopt,
+            .memory = &resource,
+        }};
+        auto before_spawn = resource.allocations();
+
+        ASSERT_TRUE(ctx.spawn(std::execution::just()));
+        ctx.wait();
+
+        EXPECT_GT(resource.allocations(), before_spawn);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
+}
+
 TEST(ResourceContextTest, TimerWorkRuns) {
     forge::resource_context ctx{1};
 

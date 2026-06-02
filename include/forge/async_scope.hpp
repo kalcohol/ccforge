@@ -22,20 +22,31 @@
 
 #pragma once
 
+#include "resource_policy.hpp"
+
 #include <execution>
 #include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <type_traits>
 #include <utility>
 
 namespace forge {
 
+struct async_scope_options {
+    std::pmr::memory_resource* memory = default_memory_resource();
+};
+
 namespace __async_scope_detail {
 
 struct __state {
+    explicit __state(std::pmr::memory_resource* memory_resource)
+        : memory(normalize_memory_resource(memory_resource))
+    {}
+
     bool try_acquire() {
         std::lock_guard lk{mtx};
         if (closed) {
@@ -93,6 +104,11 @@ struct __state {
         cv.wait(lk, [this] { return active == 0; });
     }
 
+    [[nodiscard]] auto memory_resource() const noexcept -> std::pmr::memory_resource* {
+        return memory;
+    }
+
+    std::pmr::memory_resource* memory;
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t active = 0;
@@ -165,7 +181,10 @@ private:
 };
 
 struct __op_node_base {
-    __op_node_base() = default;
+    explicit __op_node_base(std::pmr::memory_resource* memory) noexcept
+        : memory_(normalize_memory_resource(memory))
+    {}
+
     __op_node_base(const __op_node_base&) = delete;
     __op_node_base& operator=(const __op_node_base&) = delete;
 
@@ -175,7 +194,7 @@ struct __op_node_base {
 
     void release() noexcept {
         if (refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            delete this;
+            destroy_self();
         }
     }
 
@@ -186,11 +205,17 @@ struct __op_node_base {
     }
 
     virtual void start_impl() noexcept = 0;
+    virtual void destroy_self() noexcept = 0;
 
 protected:
     virtual ~__op_node_base() = default;
 
+    [[nodiscard]] auto memory_resource() const noexcept -> std::pmr::memory_resource* {
+        return memory_;
+    }
+
 private:
+    std::pmr::memory_resource* memory_;
     std::atomic<unsigned> refs{1};
 };
 
@@ -200,8 +225,12 @@ struct __op_node final : __op_node_base {
     using receiver_t = __receiver<__op_node>;
     using op_t = std::execution::connect_result_t<sender_t, receiver_t>;
 
-    __op_node(std::shared_ptr<__state> st, S sndr)
-        : state_(std::move(st))
+    __op_node(
+        std::pmr::memory_resource* memory,
+        std::shared_ptr<__state> st,
+        S sndr)
+        : __op_node_base(memory)
+        , state_(std::move(st))
         , sender_(std::move(sndr))
         , op_(std::execution::connect(std::move(sender_), receiver_t{this}))
     {}
@@ -224,6 +253,13 @@ struct __op_node final : __op_node_base {
         release();
     }
 
+    void destroy_self() noexcept override {
+        auto* memory = memory_resource();
+        std::pmr::polymorphic_allocator<__op_node> alloc{memory};
+        std::destroy_at(this);
+        alloc.deallocate(this, 1);
+    }
+
 private:
     std::shared_ptr<__state> state_;
     [[no_unique_address]] sender_t sender_;
@@ -236,7 +272,14 @@ private:
 class async_scope {
 public:
     async_scope()
-        : state_(std::make_shared<__async_scope_detail::__state>())
+        : async_scope(async_scope_options{})
+    {}
+
+    explicit async_scope(async_scope_options options)
+        : state_(std::allocate_shared<__async_scope_detail::__state>(
+              std::pmr::polymorphic_allocator<__async_scope_detail::__state>{
+                  normalize_memory_resource(options.memory)},
+              options.memory))
     {}
 
     ~async_scope() noexcept {
@@ -279,14 +322,21 @@ public:
             return false;
         }
 
+        auto* memory = st->memory_resource();
+        std::pmr::polymorphic_allocator<node_t> alloc{memory};
         node_t* node = nullptr;
         try {
-            node = new node_t{
+            node = alloc.allocate(1);
+            std::construct_at(node,
+                memory,
                 std::move(st),
                 sender_t(__async_scope_detail::__copy_or_move_lvalue(
-                    static_cast<S&&>(sender)))};
+                    static_cast<S&&>(sender))));
         } catch (...) {
-            state_->complete(std::current_exception());
+            if (node != nullptr) {
+                alloc.deallocate(node, 1);
+            }
+            st->complete(std::current_exception());
             return false;
         }
 

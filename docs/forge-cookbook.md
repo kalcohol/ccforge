@@ -235,8 +235,8 @@ reference.
 - 如果同一个 resource 会被多个 runtime primitive 或 worker 线程共享，不要直接使用裸
   `std::pmr::monotonic_buffer_resource`；可把固定 buffer 放在 monotonic upstream
   后面，再由 `std::pmr::synchronized_pool_resource` 作为对外 resource；
-- `async_scope` op-state、strand runner keepalive node 和 timer callback
-  `std::function` target 分配仍是已知未完全受控路径。
+- `async_scope` op-state 和 strand runner keepalive node 已受 resource 控制；
+  timer callback 的 `std::function` target 分配仍是已知未完全受控路径。
 
 参考：
 

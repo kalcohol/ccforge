@@ -75,15 +75,16 @@ Non-owning views and lightweight handles should not block in destructors.
   and destruction performs `shutdown()` plus `wait()`. For non-copyable
   non-const lvalue senders, `spawn(sender)` destructively moves from `sender`;
   spell `std::move(sender)` when writing code that must also compile unchanged
-  against native C++26 implementations.
+  against native C++26 implementations. Its options may carry a non-owning
+  `std::pmr::memory_resource*` for scope state and spawned op-state node
+  allocation.
 - `resource_context` combines a runtime context and async scope for resource
-  sessions. Its options pass resource policy to the internal runtime pool; the
-  scope op-state is intentionally not allocator-aware in v1. Its destructor
+  sessions. Its options pass resource policy to the internal runtime and scope
+  op-state allocation paths. Its destructor
   performs owning-context shutdown and wait.
 - `strand` serializes accepted scheduler work. Shutdown completes pending and
   future strand work stopped. Its options may carry a resource for pending
-  queue and receiver record allocation; runner keepalive nodes remain on the
-  default allocation path in v1.
+  queue, receiver record, and runner keepalive node allocation.
 - `bounded_channel` provides graceful `close()` draining and cancel-now
   `request_stop()`. Its options may carry a resource for buffer, pending
   operation, action batch, and record allocation. Pending send/recv operations

@@ -82,7 +82,10 @@ struct __record final : __record_base {
 struct __state;
 
 struct __runner_base {
-    __runner_base() = default;
+    explicit __runner_base(std::pmr::memory_resource* memory) noexcept
+        : memory_(normalize_memory_resource(memory))
+    {}
+
     __runner_base(const __runner_base&) = delete;
     __runner_base& operator=(const __runner_base&) = delete;
 
@@ -92,7 +95,7 @@ struct __runner_base {
 
     void release() noexcept {
         if (refs_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            delete this;
+            destroy_self();
         }
     }
 
@@ -103,11 +106,17 @@ struct __runner_base {
     }
 
     virtual void start_impl() noexcept = 0;
+    virtual void destroy_self() noexcept = 0;
 
 protected:
     virtual ~__runner_base() = default;
 
+    [[nodiscard]] auto memory_resource() const noexcept -> std::pmr::memory_resource* {
+        return memory_;
+    }
+
 private:
+    std::pmr::memory_resource* memory_;
     std::atomic<unsigned> refs_{1};
 };
 
@@ -127,14 +136,25 @@ template<class Sender>
 struct __runner final : __runner_base {
     using op_t = std::execution::connect_result_t<Sender, __runner_recv>;
 
-    __runner(std::shared_ptr<__state> state, Sender sender)
-        : op_(std::execution::connect(
+    __runner(
+        std::pmr::memory_resource* memory,
+        std::shared_ptr<__state> state,
+        Sender sender)
+        : __runner_base(memory)
+        , op_(std::execution::connect(
               std::move(sender),
               __runner_recv{std::move(state), this}))
     {}
 
     void start_impl() noexcept override {
         std::execution::start(op_);
+    }
+
+    void destroy_self() noexcept override {
+        auto* memory = memory_resource();
+        std::pmr::polymorphic_allocator<__runner> alloc{memory};
+        std::destroy_at(this);
+        alloc.deallocate(this, 1);
     }
 
     op_t op_;
@@ -271,9 +291,18 @@ private:
         try {
             auto sender = std::execution::schedule(scheduler_);
             using sender_t = decltype(sender);
-            auto* runner = new __runner<sender_t>{
-                this->shared_from_this(),
-                std::move(sender)};
+            using runner_t = __runner<sender_t>;
+            std::pmr::polymorphic_allocator<runner_t> alloc{memory_};
+            auto* runner = alloc.allocate(1);
+            try {
+                std::construct_at(runner,
+                    memory_,
+                    this->shared_from_this(),
+                    std::move(sender));
+            } catch (...) {
+                alloc.deallocate(runner, 1);
+                throw;
+            }
             runner->start();
         } catch (...) {
             stop_all();
