@@ -233,7 +233,7 @@ TEST(AccelTypedErrorTest, LostDeviceReportsTypedError) {
     auto op = std::execution::connect(std::move(sender), typed_receiver{state});
     std::execution::start(op);
 
-    expect_error_kind(state, forge::accel::error_kind::invalid_context);
+    expect_error_kind(state, forge::accel::error_kind::device_lost);
     EXPECT_TRUE(state->error.cause);
 }
 

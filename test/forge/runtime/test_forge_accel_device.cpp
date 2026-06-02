@@ -276,12 +276,37 @@ TEST(AccelDeviceTest, DeviceLostWhileCommandPendingRoutesError) {
         std::rethrow_exception(second_state->error);
         FAIL() << "expected operation_error";
     } catch (const forge::accel::operation_error& error) {
-        EXPECT_EQ(error.kind(), forge::accel::error_kind::invalid_context);
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::device_lost);
     }
 
     EXPECT_FALSE(device.available());
     device.reset();
     EXPECT_TRUE(device.available());
+    EXPECT_GT(device.epoch().value, 1U);
+}
+
+TEST(AccelDeviceTest, DeviceResetChangesEpochAndStalesOldSession) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto old_session = device.open_session();
+    const auto old_epoch = old_session.epoch();
+
+    device.reset();
+    EXPECT_NE(device.epoch(), old_epoch);
+
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(old_session, [] {}));
+        FAIL() << "expected stale_session";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::stale_session);
+    }
+
+    auto new_session = device.open_session();
+    EXPECT_EQ(new_session.epoch(), device.epoch());
+    EXPECT_NE(new_session.id(), old_session.id());
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(new_session, [] {})).has_value());
 }
 
 TEST(AccelDeviceTest, MessageCommandProducesResponse) {
@@ -502,7 +527,7 @@ TEST(AccelDeviceTest, OwningPacketResetWhilePendingCompletesStopped) {
     EXPECT_FALSE(packet_result->error);
 }
 
-TEST(AccelDeviceTest, OwningPacketOnLostDeviceRoutesInvalidContext) {
+TEST(AccelDeviceTest, OwningPacketOnLostDeviceRoutesDeviceLost) {
     forge::accel::mock::context ctx;
     auto device = ctx.get_device();
     device.mark_lost();
@@ -523,9 +548,9 @@ TEST(AccelDeviceTest, OwningPacketOnLostDeviceRoutesInvalidContext) {
                     out.value = 99;
                     return forge::accel::command_status::ok;
                 }));
-        FAIL() << "expected invalid_context";
+        FAIL() << "expected device_lost";
     } catch (const forge::accel::operation_error& error) {
-        EXPECT_EQ(error.kind(), forge::accel::error_kind::invalid_context);
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::device_lost);
     }
 }
 

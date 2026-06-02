@@ -36,9 +36,10 @@ Future backend entry rules are tracked in the
 - `forge::accel::mock::context`：拥有型 mock accelerator context。析构会
   `shutdown()` + `wait()`，因此可能阻塞。
 - `forge::accel::mock::device`：轻量 device handle，由 context 产生，不拥有真实硬件；
-  可查询 `info()` / `available()`，并用 `mark_lost()` / `reset()` 模拟设备丢失边界。
+  可查询 `info()` / `available()` / `epoch()`，并用 `mark_lost()` / `reset()` 模拟设备
+  丢失和 epoch 边界。
 - `forge::accel::mock::device_session`：mock device session，用于表达 NPU/FPGA 风格
-  command/response 生命周期和 reset 边界。
+  command/response 生命周期和 reset/epoch 边界。
 - `forge::accel::mock::queue`：轻量 queue handle。`context::get_queue(kind)` 可创建
   `general`、`compute`、`copy` 或 `command` queue；每个 queue 独立 FIFO 串行执行
   command。
@@ -231,12 +232,15 @@ auto dev = ctx.get_device(forge::accel::device_id{0});
 queue/session command 会完成 error：
 
 - default API：`set_error(std::exception_ptr)`，其中保存
-  `operation_error{error_kind::invalid_context, ...}`；
-- typed API：`set_error(forge::accel::error{error_kind::invalid_context, ...})`。
+  `operation_error{error_kind::device_lost, ...}`；
+- typed API：`set_error(forge::accel::error{error_kind::device_lost, ...})`。
 
-已经进入用户 callable 的 command 不会被强制中断。`device.reset()` 只清除 mock lost
-flag，用于继续测试后续 command；它不是 vendor device reset、driver reload 或 native
-context rebuild 的模型。
+已经进入用户 callable 的 command 不会被强制中断。`device.reset()` 清除 mock lost
+flag，并递增 `device_epoch`。已经打开的 old `device_session` 绑定旧 epoch，不会原地
+恢复；后续 session command 会以 `error_kind::stale_session` 完成。新 session 绑定
+reset 后的新 epoch，可继续提交 command。这个模型用于表达用户态 runtime 的 stale
+handle 边界；它不是 vendor device reset、driver reload 或 native context rebuild
+的模型。
 
 ## device sessions and message commands
 
@@ -401,7 +405,9 @@ execution and binding lifetime; it is not a numerical inference result.
 Model IO bindings are borrowed spans and must outlive execute completion.
 `model::unload()` marks the mock model unavailable for later execute commands.
 `model_session::reset()` uses the same session reset boundary as packet/message
-commands. `execute_typed` maps validation failures to `forge::accel::error`.
+commands, and model sessions inherit the device epoch behavior from
+`device_session`. `execute_typed` maps validation failures to
+`forge::accel::error`.
 
 ## ownership
 

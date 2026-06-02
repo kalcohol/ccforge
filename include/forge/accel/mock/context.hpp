@@ -33,6 +33,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -120,6 +121,8 @@ struct __device_state;
 
 struct __session_state {
     std::weak_ptr<__device_state> device;
+    session_id id{};
+    device_epoch epoch{};
     std::atomic<bool> reset_requested{false};
 };
 
@@ -286,6 +289,18 @@ struct __device_state {
             !lost.load(std::memory_order_acquire);
     }
 
+    [[nodiscard]] bool lost_now() const noexcept {
+        return lost.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] auto current_epoch() const noexcept -> device_epoch {
+        return device_epoch{epoch.load(std::memory_order_acquire)};
+    }
+
+    [[nodiscard]] auto next_session_id() noexcept -> session_id {
+        return session_id{next_session.fetch_add(1, std::memory_order_acq_rel)};
+    }
+
     [[nodiscard]] auto current_info() const noexcept -> device_info {
         auto out = info;
         out.available = available();
@@ -298,11 +313,14 @@ struct __device_state {
 
     void reset() noexcept {
         lost.store(false, std::memory_order_release);
+        epoch.fetch_add(1, std::memory_order_acq_rel);
     }
 
     std::weak_ptr<__state> owner;
     device_info info{};
     std::atomic<bool> lost{false};
+    std::atomic<std::uint64_t> epoch{1};
+    std::atomic<std::uint64_t> next_session{1};
 };
 
 struct __queue_state {
@@ -332,6 +350,12 @@ struct __queue_state {
 
     [[nodiscard]] bool device_available() const noexcept {
         return !device || device->available();
+    }
+
+    [[nodiscard]] auto device_error_kind() const noexcept -> error_kind {
+        return device && device->lost_now()
+            ? error_kind::device_lost
+            : error_kind::invalid_context;
     }
 
     std::weak_ptr<__state> owner;
@@ -520,6 +544,25 @@ bool __stop_requested(const R& rcvr) noexcept {
     throw command_error{status};
 }
 
+inline void __validate_session_for_command(
+    const std::shared_ptr<__session_state>& session,
+    const char* what) {
+    if (!session ||
+        session->reset_requested.load(std::memory_order_acquire)) {
+        throw __stopped_signal{};
+    }
+    auto device = session->device.lock();
+    if (!device || device->current_epoch() != session->epoch) {
+        throw operation_error{error_kind::stale_session, what};
+    }
+    if (device->lost_now()) {
+        throw operation_error{error_kind::device_lost, what};
+    }
+    if (!device->available()) {
+        throw operation_error{error_kind::invalid_context, what};
+    }
+}
+
 template<class Packet, class Handler>
 void __invoke_packet_handler(Packet& packet, Handler& handler) {
     using result_t = std::invoke_result_t<
@@ -553,7 +596,7 @@ struct __command_receiver {
         try {
             if (queue && !queue->device_available()) {
                 throw operation_error{
-                    error_kind::invalid_context,
+                    queue->device_error_kind(),
                     "forge::accel::mock command: device is not available"};
             }
             std::invoke(std::move(action));
@@ -1066,19 +1109,12 @@ struct __packet_receiver {
         try {
             if (queue && !queue->device_available()) {
                 throw operation_error{
-                    error_kind::invalid_context,
+                    queue->device_error_kind(),
                     "forge::accel::mock packet command: device is not available"};
             }
-            if (!session ||
-                session->reset_requested.load(std::memory_order_acquire)) {
-                throw __stopped_signal{};
-            }
-            auto device = session->device.lock();
-            if (!device || !device->available()) {
-                throw operation_error{
-                    error_kind::invalid_context,
-                    "forge::accel::mock packet command: device is not available"};
-            }
+            __validate_session_for_command(
+                session,
+                "forge::accel::mock packet command: session is not usable");
             if (deadline && std::chrono::steady_clock::now() >= *deadline) {
                 packet->status = command_status::timed_out;
                 throw operation_error{
@@ -1419,6 +1455,14 @@ public:
             session_->reset_requested.load(std::memory_order_acquire);
     }
 
+    [[nodiscard]] auto id() const noexcept -> session_id {
+        return session_ ? session_->id : session_id{};
+    }
+
+    [[nodiscard]] auto epoch() const noexcept -> device_epoch {
+        return session_ ? session_->epoch : device_epoch{};
+    }
+
 private:
     explicit device_session(
         std::shared_ptr<__detail::__state> state,
@@ -1432,6 +1476,8 @@ private:
                         state->memory_resource()})
               : nullptr) {
         if (session_) {
+            session_->id = device->next_session_id();
+            session_->epoch = device->current_epoch();
             session_->device = std::move(device);
         }
     }
@@ -1481,6 +1527,11 @@ public:
         auto out = device_info{};
         out.available = false;
         return out;
+    }
+
+    [[nodiscard]] auto epoch() const noexcept -> device_epoch {
+        auto device_state = device_.lock();
+        return device_state ? device_state->current_epoch() : device_epoch{};
     }
 
     void mark_lost() noexcept {
@@ -1853,16 +1904,9 @@ auto submit(device_session& session, F&& command) {
     return submit(
         session.get_queue(),
         [session_state, command = std::forward<F>(command)]() mutable {
-            if (!session_state ||
-                session_state->reset_requested.load(std::memory_order_acquire)) {
-                throw __detail::__stopped_signal{};
-            }
-            auto device = session_state->device.lock();
-            if (!device || !device->available()) {
-                throw operation_error{
-                    error_kind::invalid_context,
-                    "forge::accel::mock::submit(session): device is not available"};
-            }
+            __detail::__validate_session_for_command(
+                session_state,
+                "forge::accel::mock::submit(session): session is not usable");
             std::invoke(command);
         });
 }
