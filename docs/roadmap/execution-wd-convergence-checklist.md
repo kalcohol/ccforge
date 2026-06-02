@@ -26,7 +26,7 @@ Primary draft references checked for this round:
 | `simple_counting_scope::join` / `counting_scope::join` | Return senders produced from a scope-join sender shape. | Sender-returning join is implemented; the sender currently waits in `start()` rather than using the full async join-state model. | Preserve sender-returning shape and improve async join-state behavior with the broader scope-token migration. |
 | `ensure_started` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
 | `start_detached` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport; `forge::start_detached` carries the utility behavior. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
-| Non-copyable lvalue sender convenience | Native-shaped code requires explicit `std::move(sndr)`. | Many standard backport adaptors destructively move non-copyable non-const lvalues. | Remove from standard-shaped paths; examples/tests must spell `std::move`. |
+| Non-copyable lvalue sender convenience | Native-shaped code requires explicit `std::move(sndr)`. | Standard-shaped backport paths now require explicit move for non-copyable lvalue senders; `forge::async_scope` retains a documented Forge-only convenience. | Keep examples/tests spelling explicit `std::move`; do not reintroduce destructive lvalue connect in standard paths. |
 | Domain dispatch | Full recursive current-WD model. | Receiver-env late-domain selection and transform wrappers are implemented; full recursion remains a subset. | Add missing-case tests and implement only confirmed gaps. |
 
 ## standard-surface cleanup order
@@ -37,7 +37,7 @@ Primary draft references checked for this round:
    keeping `join()` in sender-consuming form.
 3. Keep `ensure_started` and `start_detached` out of `std::execution` public
    surface.
-4. Remove destructive-move lvalue convenience from standard backport adaptors.
+4. Keep destructive-move lvalue convenience out of standard backport adaptors.
 5. Re-run `spawn_future` tests after token `wrap` semantics change, because
    the current draft calls `token.wrap(sndr)` before allocator/env selection.
 

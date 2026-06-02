@@ -572,14 +572,6 @@ struct __stop_sender {
     }
 
     template<receiver R>
-        requires (!std::copy_constructible<S>)
-    auto connect(R r) &
-        -> __stop_op<S, R>
-    {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
         requires std::copy_constructible<S>
     auto connect(R r) const&
         -> __stop_op<S, R>

@@ -147,12 +147,6 @@ struct __sender {
     }
 
     template<receiver R>
-        requires (!std::copy_constructible<S> || !std::copy_constructible<OverrideEnv>)
-    auto connect(R r) & -> __op<S, OverrideEnv, R> {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<OverrideEnv>
     auto connect(R r) const& -> __op<S, OverrideEnv, R> {
         return __op<S, OverrideEnv, R>{__sndr, __env, std::move(r)};
@@ -171,13 +165,13 @@ struct __closure {
         requires std::copy_constructible<OverrideEnv>
     [[nodiscard]] auto operator()(S&& sndr) const & {
         return __sender<std::decay_t<S>, OverrideEnv>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)), __env};
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)), __env};
     }
 
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) && {
         return __sender<std::decay_t<S>, OverrideEnv>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::move(__env)};
     }
 
@@ -197,7 +191,7 @@ struct __write_env_t {
     template<sender S, queryable Env>
     [[nodiscard]] auto operator()(S&& sndr, Env&& env) const {
         return __sender<std::decay_t<S>, std::decay_t<Env>>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::forward<Env>(env)};
     }
 

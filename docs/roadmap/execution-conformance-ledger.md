@@ -43,8 +43,8 @@ extensions. This is the source of truth for native handoff risk triage.
 
 | Item | Classification | Current state | Native-handoff action |
 | --- | --- | --- | --- |
-| Library adaptor non-copyable lvalue `connect` | Backport-only convenience | Selected library senders destructively move non-const non-copyable lvalues. | Remove from standard-shaped paths; require explicit `std::move(sndr)` for move-only lvalues. |
-| `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Mirrors the destructive-move convention for non-copyable non-const lvalue senders. | Decide during lvalue cleanup whether Forge keeps the convenience; native-friendly examples should spell `scope.spawn(std::move(sndr))`. |
+| Library adaptor non-copyable lvalue `connect` | Converged standard-shaped behavior | Standard backport senders require explicit `std::move(sndr)` for move-only lvalues. | Keep tests and examples spelling explicit move; do not reintroduce destructive lvalue connect in standard paths. |
+| `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Destructively moves non-copyable non-const lvalue senders as a Forge runtime convenience. | Keep documented as a Forge-only extension; native-friendly examples should spell `scope.spawn(std::move(sndr))`. |
 | `std::execution::ensure_started` | Removed non-WD extension name | No longer exposed by the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
 | `std::execution::start_detached` | Removed non-WD extension name | No longer exposed by the `<execution>` backport; Forge runtime code uses `forge::start_detached`. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
 | `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` allocates detached state, associates through `token.try_associate()`, and starts eagerly. It accepts only `set_value()` / `set_stopped()` senders. | Keep tests aligned with current-WD fire-and-forget spelling. |

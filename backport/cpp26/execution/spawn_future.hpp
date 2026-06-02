@@ -469,11 +469,6 @@ struct __sender {
         return __op<State, R>{std::exchange(__state, nullptr), std::move(rcvr)};
     }
 
-    template<receiver R>
-    auto connect(R rcvr) & -> __op<State, R> {
-        return std::move(*this).connect(std::move(rcvr));
-    }
-
     auto get_env() const noexcept -> empty_env {
         return {};
     }

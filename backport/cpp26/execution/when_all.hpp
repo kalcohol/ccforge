@@ -445,12 +445,6 @@ struct __sender {
     }
 
     template<receiver R>
-        requires (!(std::copy_constructible<Senders> && ...))
-    auto connect(R r) & {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
         requires (std::copy_constructible<Senders> && ...)
     auto connect(R r) const& {
         return __op<R, Senders...>{
@@ -470,7 +464,7 @@ template<sender... Senders>
 [[nodiscard]] auto when_all(Senders&&... sndrs) {
     return __forge_when_all::__sender<std::decay_t<Senders>...>{
         std::tuple<std::decay_t<Senders>...>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<Senders>(sndrs))...}};
+            __forge_detail::__forward_as_given(std::forward<Senders>(sndrs))...}};
 }
 
 template<sender... Senders>
@@ -478,7 +472,7 @@ template<sender... Senders>
 [[nodiscard]] auto when_all_with_variant(Senders&&... sndrs) {
     return std::execution::when_all(
         std::execution::into_variant(
-            __forge_detail::__copy_or_move_lvalue(std::forward<Senders>(sndrs)))...);
+            __forge_detail::__forward_as_given(std::forward<Senders>(sndrs)))...);
 }
 
 } // namespace std::execution

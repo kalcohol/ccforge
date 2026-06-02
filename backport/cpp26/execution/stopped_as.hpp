@@ -209,15 +209,6 @@ struct __optional_sender {
         return __optional_op<S, R, optional_t>(std::move(__sndr), std::move(r));
     }
 
-    template<receiver R>
-        requires (!std::copy_constructible<S>)
-    auto connect(R r) &
-        -> __optional_op<S, R,
-            typename __first_optional_type<decltype(std::execution::get_completion_signatures(
-                std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
-    {
-        return std::move(*this).connect(std::move(r));
-    }
 
     template<receiver R>
         requires std::copy_constructible<S>
@@ -304,13 +295,6 @@ struct __error_sender {
     }
 
     template<receiver R>
-        requires (!std::copy_constructible<S> || !std::copy_constructible<Err>)
-    auto connect(R r) & -> __error_op<S, Err, R>
-    {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Err>
     auto connect(R r) const& -> __error_op<S, Err, R>
     {
@@ -337,13 +321,13 @@ struct __error_sender {
 template<sender S>
 [[nodiscard]] auto stopped_as_optional(S&& sndr) {
     return __forge_stopped::__optional_sender<std::decay_t<S>>{
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr))};
+        __forge_detail::__forward_as_given(std::forward<S>(sndr))};
 }
 
 template<sender S, class Err>
 [[nodiscard]] auto stopped_as_error(S&& sndr, Err&& err) {
     return __forge_stopped::__error_sender<std::decay_t<S>, std::decay_t<Err>>{
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+        __forge_detail::__forward_as_given(std::forward<S>(sndr)),
         std::forward<Err>(err)};
 }
 

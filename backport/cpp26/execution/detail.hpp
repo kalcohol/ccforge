@@ -41,14 +41,8 @@ struct __immovable {
 };
 
 template<class T>
-constexpr decltype(auto) __copy_or_move_lvalue(T&& value) noexcept {
-    using value_t = std::remove_cvref_t<T>;
-    if constexpr (std::is_lvalue_reference_v<T&&> &&
-                  !std::copy_constructible<value_t>) {
-        return std::move(value);
-    } else {
-        return static_cast<T&&>(value);
-    }
+constexpr decltype(auto) __forward_as_given(T&& value) noexcept {
+    return static_cast<T&&>(value);
 }
 
 // tag_invoke protocol (internal).

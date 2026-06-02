@@ -153,7 +153,7 @@ struct __awaitable {
 template<sender S, class Promise>
 [[nodiscard]] auto as_awaitable(S&& sndr, Promise& promise) {
     return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
-        __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)), &promise};
+        __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};
 }
 
 // with_awaitable_senders<Promise> — CRTP mixin — [exec.with.awaitable.senders]

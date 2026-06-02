@@ -66,9 +66,8 @@
 //     receiver-env start domain and supports transform_sender recovery plus
 //     transform_env wrapping, but not the full recursive transform_sender model.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
-//   - Selected Forge library senders accept non-copyable non-const lvalue
-//     senders by destructively moving them. Native C++26 code should still
-//     spell std::move(sndr) explicitly.
+//   - Non-copyable lvalue senders require explicit std::move(sndr) on
+//     standard-shaped paths, matching native handoff expectations.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - standard type-erased sender surface.

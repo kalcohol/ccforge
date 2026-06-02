@@ -82,7 +82,7 @@ Failure policy:
 - `forge::strand`：scheduler 串行化 wrapper。`strand{scheduler}.get_scheduler()` 返回一个 scheduler，接受的 schedule work 按 FIFO 运行，并保证同一 strand 上最多一个任务处于用户 completion 中。`strand_options{.memory = resource}` 可控制 pending queue 和 receiver record 分配。`shutdown()` 会把 pending/future work 以 stopped 完成；其 schedule sender env 同样暴露 Forge backport completion-scheduler roundtrip。
 - `forge::async_scope`：拥有一组 eager-start sender work 的结构化并发 scope。`spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，`request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，`shutdown()` 等价于 close + request stop。析构会 `shutdown()` 并 `wait()`，因此可能阻塞到 scope-owned work 完成或响应停止。scope 捕获第一个 error 为 `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
 
-`spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge/backport convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。
+`spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge runtime convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。
 
 `async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
 

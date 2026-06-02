@@ -146,7 +146,7 @@ forge::task<int> await_just_task() {
 forge::task<int> await_move_only_lvalue_sender_task() {
     auto sndr = std::execution::just(std::make_unique<int>(53))
         | std::execution::then(deref_unique{});
-    auto tup = co_await sndr;
+    auto tup = co_await std::move(sndr);
     co_return std::get<0>(tup);
 }
 
@@ -196,7 +196,7 @@ TEST(TaskTest, CoAwaitJustStillWorks) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(TaskTest, CoAwaitNonCopyableLvalueSenderConsumesSource) {
+TEST(TaskTest, CoAwaitNonCopyableLvalueSenderRequiresMove) {
     auto result = std::execution::sync_wait(await_move_only_lvalue_sender_task());
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 53);

@@ -249,7 +249,7 @@ template<sender S>
 
     shared->op_ptr = shared->op_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
         return std::execution::connect(
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(sndr)),
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             inner_recv_t{std::weak_ptr<ST>{shared}});
     });
     shared->op_start = [](void* p) noexcept {

@@ -276,7 +276,7 @@ concept lvalue_connectable_to_int_receiver = requires(S& s, int_receiver r) {
 
 static_assert(!std::copy_constructible<move_only_pipeline_t>);
 static_assert(rvalue_connectable_to_int_receiver<move_only_pipeline_t>);
-static_assert(lvalue_connectable_to_int_receiver<move_only_pipeline_t>);
+static_assert(!lvalue_connectable_to_int_receiver<move_only_pipeline_t>);
 
 } // namespace
 
@@ -289,17 +289,17 @@ TEST(ExecutionMvpTest, JustSyncWaitSingleValue) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSyncWaitConsumes) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSyncWaitRequiresMove) {
     auto sndr = std::execution::just(std::make_unique<int>(42))
         | std::execution::then(deref_unique{});
 
-    auto result = std::execution::sync_wait(sndr);
+    auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartDetachedConsumes) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartDetachedRequiresMove) {
     bool ran = false;
     auto sndr = std::execution::just(std::make_unique<int>(7))
         | std::execution::then([&](std::unique_ptr<int> value) noexcept {
@@ -311,49 +311,49 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartDetachedConsumes) {
     EXPECT_TRUE(ran);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartsOnConsumes) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartsOnRequiresMove) {
     std::execution::inline_scheduler scheduler;
     auto source = std::execution::just(std::make_unique<int>(9))
         | std::execution::then(deref_unique{});
-    auto sndr = std::execution::starts_on(scheduler, source);
+    auto sndr = std::execution::starts_on(scheduler, std::move(source));
 
-    auto result = std::execution::sync_wait(sndr);
+    auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 9);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineContinuesOnConsumes) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineContinuesOnRequiresMove) {
     std::execution::inline_scheduler scheduler;
     auto source = std::execution::just(std::make_unique<int>(11))
         | std::execution::then(deref_unique{});
-    auto sndr = std::execution::continues_on(source, scheduler);
+    auto sndr = std::execution::continues_on(std::move(source), scheduler);
 
-    auto result = std::execution::sync_wait(sndr);
+    auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 11);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSplitConsumesSource) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSplitRequiresMove) {
     auto source = std::execution::just(std::make_unique<int>(13))
         | std::execution::then(deref_unique{});
-    auto sndr = std::execution::split(source);
+    auto sndr = std::execution::split(std::move(source));
 
-    auto result = std::execution::sync_wait(sndr);
+    auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineWhenAllConsumesSources) {
+TEST(ExecutionMvpTest, NonCopyableLvaluePipelineWhenAllRequiresMove) {
     auto first = std::execution::just(std::make_unique<int>(17))
         | std::execution::then(deref_unique{});
     auto second = std::execution::just(std::make_unique<int>(19))
         | std::execution::then(deref_unique{});
-    auto sndr = std::execution::when_all(first, second);
+    auto sndr = std::execution::when_all(std::move(first), std::move(second));
 
-    auto result = std::execution::sync_wait(sndr);
+    auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 17);

@@ -209,12 +209,6 @@ struct __sender {
     }
 
     template<receiver R>
-        requires (!std::copy_constructible<S> || !std::copy_constructible<Fn>)
-    auto connect(R r) & {
-        return std::move(*this).connect(std::move(r));
-    }
-
-    template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
     auto connect(R r) const& {
         if constexpr (IsError) {
@@ -237,12 +231,12 @@ struct __upon_error_closure {
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) const & {
         return __sender<std::decay_t<S>, Fn, true>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), __fn};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), __fn};
     }
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) && {
         return __sender<std::decay_t<S>, Fn, true>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), std::move(__fn)};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), std::move(__fn)};
     }
     template<sender S>
     friend constexpr auto operator|(S&& s, const __upon_error_closure& self) {
@@ -260,12 +254,12 @@ struct __upon_stopped_closure {
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) const & {
         return __sender<std::decay_t<S>, Fn, false>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), __fn};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), __fn};
     }
     template<sender S>
     [[nodiscard]] auto operator()(S&& s) && {
         return __sender<std::decay_t<S>, Fn, false>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)), std::move(__fn)};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), std::move(__fn)};
     }
     template<sender S>
     friend constexpr auto operator|(S&& s, const __upon_stopped_closure& self) {
@@ -281,7 +275,7 @@ struct __upon_error_t {
     template<sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return __sender<std::decay_t<S>, std::decay_t<Fn>, true>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+            __forge_detail::__forward_as_given(std::forward<S>(s)),
             std::forward<Fn>(fn)};
     }
     template<class Fn>
@@ -294,7 +288,7 @@ struct __upon_stopped_t {
     template<sender S, class Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return __sender<std::decay_t<S>, std::decay_t<Fn>, false>{
-            __forge_detail::__copy_or_move_lvalue(std::forward<S>(s)),
+            __forge_detail::__forward_as_given(std::forward<S>(s)),
             std::forward<Fn>(fn)};
     }
     template<class Fn>
