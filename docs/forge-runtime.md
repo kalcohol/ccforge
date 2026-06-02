@@ -67,7 +67,10 @@ Non-owning views and lightweight handles should not block in destructors.
   pool -> timers -> pool. It is not an unbounded quiescence protocol.
 - `async_scope` owns eager-start sender work. `close()` rejects future spawn,
   `request_stop()` exposes a requested stop token through owned receiver envs,
-  and destruction performs `shutdown()` plus `wait()`.
+  and destruction performs `shutdown()` plus `wait()`. For non-copyable
+  non-const lvalue senders, `spawn(sender)` destructively moves from `sender`;
+  spell `std::move(sender)` when writing code that must also compile unchanged
+  against native C++26 implementations.
 - `resource_context` combines a runtime context and async scope for resource
   sessions. Its options pass resource policy to the internal runtime pool; the
   scope op-state is intentionally not allocator-aware in v1. Its destructor
@@ -114,6 +117,9 @@ Non-owning views and lightweight handles should not block in destructors.
   cancelled by context/session stop, not by per-operation receiver stop in v1.
 - `erased_sender` forwards downstream stop tokens through its v1 bounded env
   model.
+- `system_context` is a process-lifetime singleton. It is intentionally not
+  destroyed during C++ static teardown; long-running services should still own an
+  explicit pool/context when they need deterministic shutdown.
 - `task` completes receivers from coroutine final suspend; custom receivers must
   not synchronously destroy the connected task operation state from inside the
   completion callback.

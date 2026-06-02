@@ -101,6 +101,18 @@ struct __state {
     std::inplace_stop_source stop_source{};
 };
 
+template<class T>
+constexpr decltype(auto) __copy_or_move_lvalue(T&& value) noexcept {
+    using value_t = std::remove_cvref_t<T>;
+    if constexpr (std::is_lvalue_reference_v<T&&> &&
+                  !std::is_const_v<std::remove_reference_t<T>> &&
+                  !std::copy_constructible<value_t>) {
+        return std::move(value);
+    } else {
+        return static_cast<T&&>(value);
+    }
+}
+
 struct __env {
     std::shared_ptr<__state> state;
 
@@ -269,7 +281,10 @@ public:
 
         node_t* node = nullptr;
         try {
-            node = new node_t{std::move(st), sender_t(static_cast<S&&>(sender))};
+            node = new node_t{
+                std::move(st),
+                sender_t(__async_scope_detail::__copy_or_move_lvalue(
+                    static_cast<S&&>(sender)))};
         } catch (...) {
             state_->complete(std::current_exception());
             return false;
@@ -298,4 +313,3 @@ private:
 };
 
 } // namespace forge
-

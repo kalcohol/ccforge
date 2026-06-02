@@ -115,6 +115,52 @@ struct destruction_sender {
     }
 };
 
+struct move_only_lvalue_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<std::atomic<int>> starts;
+
+    explicit move_only_lvalue_sender(std::shared_ptr<std::atomic<int>> s)
+        : starts(std::move(s)) {}
+    move_only_lvalue_sender(move_only_lvalue_sender&&) noexcept = default;
+    move_only_lvalue_sender& operator=(move_only_lvalue_sender&&) noexcept = default;
+    move_only_lvalue_sender(const move_only_lvalue_sender&) = delete;
+    move_only_lvalue_sender& operator=(const move_only_lvalue_sender&) = delete;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::shared_ptr<std::atomic<int>> starts;
+
+        op(R r, std::shared_ptr<std::atomic<int>> s)
+            : rcvr(std::move(r)), starts(std::move(s)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+
+        void start() & noexcept {
+            starts->fetch_add(1, std::memory_order_acq_rel);
+            std::execution::set_value(std::move(rcvr));
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(rcvr), std::move(starts)};
+    }
+};
+
 struct boom_error {};
 
 struct error_sender {
@@ -239,6 +285,18 @@ TEST(AsyncScopeTest, ReclaimsCompletedOperationState) {
     scope.wait();
 }
 
+TEST(AsyncScopeTest, SpawnConsumesMoveOnlyLvalueSender) {
+    forge::async_scope scope;
+    auto starts = std::make_shared<std::atomic<int>>(0);
+    move_only_lvalue_sender sender{starts};
+
+    ASSERT_TRUE(scope.spawn(sender));
+    scope.wait();
+
+    EXPECT_EQ(starts->load(std::memory_order_acquire), 1);
+    EXPECT_EQ(sender.starts, nullptr);
+}
+
 TEST(AsyncScopeTest, MultipleTasksCompleteOnce) {
     forge::async_scope scope;
     std::atomic<int> count{0};
@@ -292,4 +350,3 @@ TEST(AsyncScopeTest, SupportsImmediateTaskCompletion) {
     EXPECT_TRUE(completed.load(std::memory_order_acquire));
 }
 #endif
-

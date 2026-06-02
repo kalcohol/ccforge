@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 
@@ -104,6 +105,33 @@ struct recording_receiver {
     }
 };
 
+template<class R>
+struct never_started_op {
+    using operation_state_concept = std::execution::operation_state_t;
+    void start() & noexcept {}
+};
+
+struct throwing_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R) && -> never_started_op<R> {
+        throw std::runtime_error{"connect failed"};
+    }
+};
+
 } // namespace
 
 forge::task<int> simple_task() {
@@ -148,6 +176,11 @@ forge::task<int> await_error_task() {
 
 forge::task<void> await_pending_task(std::shared_ptr<pending_state> state) {
     co_await pending_sender{std::move(state)};
+}
+
+forge::task<int> await_throwing_connect_task() {
+    co_await throwing_connect_sender{};
+    co_return 1;
 }
 
 TEST(TaskTest, IntTask) {
@@ -227,6 +260,12 @@ TEST(TaskTest, CoAwaitStaticThreadPoolResumesAsynchronously) {
 
 TEST(TaskTest, CoAwaitErrorPropagates) {
     EXPECT_THROW((void)std::execution::sync_wait(await_error_task()), task_marker_error);
+}
+
+TEST(TaskTest, CoAwaitThrowingConnectPropagatesException) {
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(await_throwing_connect_task()),
+        std::runtime_error);
 }
 
 TEST(TaskTest, DestroyingStartedTaskDestroysAwaitedOperation) {

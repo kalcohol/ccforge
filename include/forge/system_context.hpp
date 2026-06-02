@@ -38,8 +38,8 @@ class system_context {
 public:
     // Get the global system_context singleton
     [[nodiscard]] static system_context& get() noexcept {
-        static system_context instance;
-        return instance;
+        static system_context* instance = new system_context;
+        return *instance;
     }
 
     [[nodiscard]] static_thread_pool::scheduler get_scheduler() noexcept {

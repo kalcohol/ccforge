@@ -27,6 +27,7 @@
 #include "env.hpp"
 
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -71,7 +72,9 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
     std::visit([&](auto& v) {
         using V = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<V, std::monostate>) {
-            // should not happen
+            // Invariant violation: subscribers are only delivered after the
+            // source operation stored value/error/stopped and marked done.
+            std::terminate();
         } else if constexpr (std::is_same_v<V, typename __shared_state<S>::value_tuple_t>) {
             std::apply([&](auto&... vs) {
                 std::execution::set_value(std::move(rcvr), vs...);
