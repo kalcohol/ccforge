@@ -74,19 +74,37 @@ lane:
 - a meaningful compatibility lane would need an adapter/shim plan before it can
   test Forge `include/forge/` utilities against stdexec.
 
-The optional script `scripts/probe-stdexec-feasibility.sh` only checks that a
-locally provided stdexec checkout and the Forge execution backport can each
-compile tiny smoke programs. It intentionally does not fetch stdexec and is not
-part of the default verification floor. When `STDEXEC_ROOT` is absent it exits
-with skip code 77 and prints `result=skipped`; a successful probe prints
-`result=passed`.
+The optional script `scripts/probe-stdexec-feasibility.sh` checks a locally
+provided stdexec checkout plus a small named set of Forge execution facilities.
+It intentionally does not fetch stdexec and is not part of the default
+verification floor. When `STDEXEC_ROOT` is absent it exits with skip code 77 and
+prints `result=skipped`; a successful probe prints `result=passed`.
+
+Current named checks:
+
+- `stdexec_just_smoke`: stdexec headers compile a tiny `stdexec::just` program;
+- `forge_execution_sync_wait`: Forge `<execution>` backport runs
+  `sync_wait(just(42))`;
+- `forge_wait_result_typed_error`: `forge::wait_result` preserves a closed-set
+  typed error;
+- `forge_erased_sender_typed_error`: `forge::erased_sender` carries the same
+  typed error across an erased sender boundary;
+- `forge_any_scheduler`: `forge::any_scheduler` models the local Forge
+  scheduler concept and schedules successfully;
+- `forge_receiver_stop_env`: receiver env stop-token propagation remains
+  observable through `forge::wait_result`.
+
+These checks are a feasibility ledger, not a compatibility proof. They do not
+adapt Forge `std::execution` code onto stdexec's namespace and should not be
+treated as evidence that native `std::execution` handoff is complete.
 
 ## next useful checks
 
 1. Keep `scripts/verify-native.sh gcc-exec` as the current libstdc++ execution
    backport lane.
 2. Use `scripts/probe-stdexec-feasibility.sh` only as a local spike when a
-   stdexec checkout is available.
+   stdexec checkout is available; review each named check result rather than
+   only the final `result=passed` line.
 3. If stdexec comparison becomes valuable, write a separate taskbook for the
    adapter layer and define exactly which examples/tests must be portable across
    Forge and stdexec.

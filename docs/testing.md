@@ -120,9 +120,11 @@ MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 ## optional stdexec feasibility probe
 
 `scripts/probe-stdexec-feasibility.sh` 是本地 spike 工具，不属于默认门禁。
-它要求调用者提供 `STDEXEC_ROOT=/path/to/stdexec`，只验证本地 stdexec checkout
-和 Forge `<execution>` backport 各自能编译最小 smoke program。它不 fetch、不
-vendor，也不声明 stdexec 已经是 Forge 的 native `std::execution` handoff lane。
+它要求调用者提供 `STDEXEC_ROOT=/path/to/stdexec`，验证本地 stdexec checkout
+能编译最小 smoke program，同时运行一组命名的 Forge execution/utility checks
+（`sync_wait`、`wait_result` typed error、`erased_sender` typed error、
+`any_scheduler` 和 receiver env stop-token 传播）。它不 fetch、不 vendor，也不
+声明 stdexec 已经是 Forge 的 native `std::execution` handoff lane。
 未设置 `STDEXEC_ROOT` 时脚本返回 77 并打印 `result=skipped`，方便把它接入本地
 可选验证而不把 skip 误判为失败。
 
