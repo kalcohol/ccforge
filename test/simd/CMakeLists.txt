@@ -44,11 +44,3 @@ unset(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_INCLUDES)
 
 add_subdirectory(runtime)
 add_subdirectory(compile)
-
-if(TARGET simd_example)
-    add_test(NAME simd_example_smoke COMMAND simd_example)
-endif()
-
-if(TARGET simd_complete_example)
-    add_test(NAME simd_complete_example_smoke COMMAND simd_complete_example)
-endif()

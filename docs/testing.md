@@ -189,6 +189,12 @@ only compile-checked. Feature-gated examples, such as platform IO, accel, or
 mdspan-based linalg examples, only register their smoke tests when their target
 exists.
 
+Example smoke tests are grouped by the feature gates that decide whether their
+targets are built. They do not mirror every narrow `FORGE_TEST_ENABLE_FORGE_*`
+test switch. This keeps examples focused on the public build surface while the
+test tree keeps finer-grained enable/disable controls for runtime, resource, IO,
+accel, and erasure coverage.
+
 Focused example check:
 
 ```bash

@@ -30,7 +30,7 @@ backport ヘッダーを注入します。
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
-| `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backend |
+| `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backends |
 | `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
