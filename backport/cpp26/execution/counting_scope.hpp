@@ -111,7 +111,6 @@ public:
     }
 
     // Forge compatibility extension: block until associated work completes.
-    // Forge compatibility extension: block until associated work completes.
     void join() {
         std::unique_lock lk{__mtx_};
         __cv_.wait(lk, [this] {
