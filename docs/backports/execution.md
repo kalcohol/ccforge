@@ -14,14 +14,14 @@
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；单一 value completion 保持返回 `tuple`，多组 value completions 返回 `variant<tuple<...>, ...>`）
 - 基础设施：`completion_signatures_of_t`、`enable_sender`、`get_completion_scheduler`、`get_completion_domain`、`transform_completion_signatures`、CPO 分发基础设施
-- 域调度：`default_domain`、`get_domain` CPO、receiver-env late domain 选取、`connect_t` domain `transform_sender` / `transform_env` wrapper
+- 域调度：`default_domain`、`get_domain` CPO、receiver-env start-domain 选取、sender-env completion-domain 选取、`connect_t` recursive `transform_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
 ## 当前限制
 
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和 `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile probe 覆盖。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和 copyable lvalue 拷贝路径；non-copyable lvalue sender 需要显式传入 `std::move(sndr)`，以保持 native C++26 handoff 时的源码形态一致。const non-copyable lvalue 仍不可连接。
-- Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start domain，并支持 scheduler-derived completion domain、`transform_sender` recovery 和 `transform_env` wrapper；scheduler-derived domain 仅在 scheduler 显式定制 `get_completion_domain` 时生效，否则会回退到 `default_domain`；完整标准递归 `transform_sender` 分发模型尚未实现。
+- Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段 recursive `transform_sender`；scheduler-derived start domain 仅在 scheduler 显式定制 `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。`get_completion_signatures(sender, env)` 尚未完整按 transformed sender 重算，因此 domain 变换不应改变 value/error/stopped 签名形态。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留 `forge::start_detached(sender)`。
 - `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 分配会使用 `env` 中的 `get_allocator`，但 consumer/callback 辅助分配尚未完整 allocator-aware。

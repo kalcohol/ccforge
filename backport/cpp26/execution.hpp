@@ -62,9 +62,10 @@
 //   - associate/spawn, current-WD token wrap semantics, and sender-returning
 //     simple/counting scope join() are implemented. The join sender still uses
 //     a start-time blocking wait rather than the full async join-state model.
-//   - Execution domains are still a focused draft subset: connect uses the
-//     receiver-env start domain and supports transform_sender recovery plus
-//     transform_env wrapping, but not the full recursive transform_sender model.
+//   - Execution domains are still a focused draft subset: connect applies
+//     receiver-env start-domain and sender-env completion-domain recursive
+//     transform_sender, but get_completion_signatures does not yet fully
+//     recompute through transform_sender.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.

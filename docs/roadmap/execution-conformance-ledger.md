@@ -28,8 +28,8 @@ The execution backport currently includes:
   `never_stop_token`, `any_stop_token`;
 - coroutine bridge: `as_awaitable`, `with_awaitable_senders`;
 - scopes: `simple_counting_scope`, stop-aware `counting_scope`;
-- domain dispatch: receiver-env late domain selection plus `transform_sender`
-  and `transform_env` wrapping.
+- domain dispatch: receiver-env start-domain selection plus sender-env
+  completion-domain recursive `transform_sender` during `connect`.
 
 Several older audit notes are therefore closed and should not be carried forward
 as open work: identity-only domain dispatch, single-shape `sync_wait`,
@@ -51,7 +51,7 @@ extensions. This is the source of truth for native handoff risk triage.
 | `std::execution::counting_scope::join()` | Partial convergence | `simple_counting_scope::join()` and `counting_scope::join()` return senders, but the current implementation waits in `start()` rather than exposing the full async join-state model. | Keep improving with the whole scope-token surface; do not reintroduce blocking `void join()`. |
 | Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
-| Execution domain dispatch | Draft subset | Receiver-env late-domain selection, scheduler-derived completion domain, `transform_sender`, and `transform_env` wrapper are implemented, but the full recursive standard model is not. | Track as Tier B conformance work. |
+| Execution domain dispatch | Tested current-WD connect subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. | Keep coverage for recursive transforms; remaining gap is `get_completion_signatures(sender, env)` not fully recomputing through transformed sender. |
 | `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
 | `forge::wait_result` | Forge local utility | Synchronously preserves value, stopped, and closed-set typed error without throwing. | Use when typed errors must cross a synchronous boundary; it is not `std::execution::sync_wait`. |
 | `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
@@ -61,8 +61,9 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- execution-domain dispatch remains a draft subset and does not implement the
-  full recursive standard model;
+- `get_completion_signatures(sender, env)` does not yet fully recompute through
+  domain-transformed sender types, so domain transforms should preserve the
+  advertised completion shape;
 - `spawn_future` uses `get_allocator` for its shared state, but auxiliary
   consumer/callback allocation is not fully allocator-aware;
 - `counting_scope::join()` is sender-returning but still uses a blocking

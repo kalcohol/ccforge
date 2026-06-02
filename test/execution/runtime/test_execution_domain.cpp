@@ -231,14 +231,9 @@ struct env_observing_sender {
 };
 
 struct env_transform_domain {
-    template<class Sender, class Env>
-    auto transform_sender(Sender&&, const Env&) const noexcept -> env_observing_sender {
-        return {};
-    }
-
-    template<class Sender, class Env>
-    auto transform_env(const Sender&, const Env&) const noexcept -> injected_env {
-        return injected_env{123};
+    template<class Env>
+    auto transform_sender(std::execution::start_t, direct_value_sender&&, const Env&) const noexcept {
+        return std::execution::write_env(env_observing_sender{}, injected_env{123});
     }
 };
 
@@ -278,6 +273,94 @@ struct scheduler_domain_env {
     friend auto tag_invoke(std::execution::get_completion_domain_t<std::execution::set_value_t>,
                            late_domain_scheduler, const scheduler_domain_env&) noexcept
         -> scheduler_domain {
+        return {};
+    }
+};
+
+struct completion_domain_two_env;
+
+struct second_completion_domain {
+    static inline bool transformed = false;
+
+    template<class Sender, class Env>
+    auto transform_sender(std::execution::set_value_t, Sender&&, const Env&) const noexcept
+        -> transformed_sender {
+        transformed = true;
+        return transformed_sender{88};
+    }
+};
+
+struct completion_domain_two_env {
+    template<class Env>
+    friend auto tag_invoke(std::execution::get_completion_domain_t<>,
+                           const completion_domain_two_env&, const Env&) noexcept
+        -> second_completion_domain {
+        return {};
+    }
+};
+
+struct completion_mid_sender : direct_value_sender {
+    auto get_env() const noexcept -> completion_domain_two_env {
+        return {};
+    }
+};
+
+struct first_completion_domain {
+    static inline bool transformed = false;
+
+    template<class Sender, class Env>
+    auto transform_sender(std::execution::set_value_t, Sender&&, const Env&) const noexcept
+        -> completion_mid_sender {
+        transformed = true;
+        completion_mid_sender sndr{};
+        sndr.value = 66;
+        return sndr;
+    }
+};
+
+struct completion_domain_one_env {
+    template<class Env>
+    friend auto tag_invoke(std::execution::get_completion_domain_t<>,
+                           const completion_domain_one_env&, const Env&) noexcept
+        -> first_completion_domain {
+        return {};
+    }
+};
+
+struct completion_domain_source : direct_value_sender {
+    auto get_env() const noexcept -> completion_domain_one_env {
+        return {};
+    }
+};
+
+struct start_mid_sender : direct_value_sender {};
+
+struct start_seed_sender : direct_value_sender {};
+
+struct recursive_start_domain {
+    static inline bool first = false;
+    static inline bool second = false;
+
+    template<class Env>
+    auto transform_sender(std::execution::start_t, start_seed_sender&&, const Env&) const noexcept
+        -> start_mid_sender {
+        first = true;
+        start_mid_sender sndr{};
+        sndr.value = 71;
+        return sndr;
+    }
+
+    template<class Env>
+    auto transform_sender(std::execution::start_t, start_mid_sender&&, const Env&) const noexcept
+        -> transformed_sender {
+        second = true;
+        return transformed_sender{99};
+    }
+};
+
+struct recursive_start_domain_env {
+    friend auto tag_invoke(std::execution::get_domain_t, const recursive_start_domain_env&) noexcept
+        -> recursive_start_domain {
         return {};
     }
 };
@@ -415,7 +498,7 @@ TEST(DefaultDomainTest, TransformSenderReceivesReceiverEnv) {
     EXPECT_EQ(value, 7);
 }
 
-TEST(DefaultDomainTest, TransformEnvIsVisibleToTransformedSender) {
+TEST(DefaultDomainTest, DomainCanInjectEnvWithWriteEnv) {
     int value = 0;
     bool completed = false;
 
@@ -426,6 +509,42 @@ TEST(DefaultDomainTest, TransformEnvIsVisibleToTransformedSender) {
 
     EXPECT_TRUE(completed);
     EXPECT_EQ(value, 123);
+}
+
+TEST(DefaultDomainTest, CompletionDomainRecursesBeforeStartDomain) {
+    first_completion_domain::transformed = false;
+    second_completion_domain::transformed = false;
+
+    int value = 0;
+    bool completed = false;
+
+    auto op = std::execution::connect(
+        completion_domain_source{},
+        int_receiver<>{&value, &completed, {}});
+    std::execution::start(op);
+
+    EXPECT_TRUE(first_completion_domain::transformed);
+    EXPECT_TRUE(second_completion_domain::transformed);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 88);
+}
+
+TEST(DefaultDomainTest, StartDomainRecursesUntilTypeStabilizes) {
+    recursive_start_domain::first = false;
+    recursive_start_domain::second = false;
+
+    int value = 0;
+    bool completed = false;
+
+    auto op = std::execution::connect(
+        start_seed_sender{},
+        int_receiver<recursive_start_domain_env>{&value, &completed, recursive_start_domain_env{}});
+    std::execution::start(op);
+
+    EXPECT_TRUE(recursive_start_domain::first);
+    EXPECT_TRUE(recursive_start_domain::second);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 99);
 }
 
 TEST(DefaultDomainTest, GetDomainCanUseReceiverSchedulerDomain) {
