@@ -26,6 +26,7 @@
 #include <forge/strand.hpp>
 #include <forge/wait_result.hpp>
 #include <execution>
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -36,9 +37,16 @@
 #include <utility>
 #include <vector>
 
+enum class request_mode {
+    normal,
+    size_mismatch,
+    device_loss
+};
+
 struct inference_request {
     int id = 0;
     std::array<float, 4> features{};
+    request_mode mode = request_mode::normal;
 };
 
 struct inference_response {
@@ -49,8 +57,11 @@ struct inference_response {
 };
 
 struct runtime_stats {
+    int responses = 0;
     int processed = 0;
+    int errors = 0;
     float total_score = 0.0f;
+    forge::accel::error_kind last_error = forge::accel::error_kind::unknown;
 };
 
 class reference_runtime {
@@ -66,10 +77,12 @@ public:
               .queue_capacity = 32,
               .memory = &arena_,
           })
+        , trace_{&arena_}
         , accel_(forge::accel::mock::context_options{
               .thread_count = 1,
               .queue_capacity = 16,
               .memory = &arena_,
+              .trace = &trace_,
           })
         , requests_(forge::bounded_channel_options{
               .capacity = 8,
@@ -82,7 +95,8 @@ public:
         , result_order_(
               runtime_.get_scheduler(),
               forge::strand_options{.memory = &arena_})
-        , accel_queue_(accel_.get_queue())
+        , accel_device_(accel_.get_device())
+        , accel_queue_(accel_device_.get_queue())
     {}
 
     ~reference_runtime() noexcept {
@@ -140,6 +154,11 @@ public:
         return stats_;
     }
 
+    [[nodiscard]] auto trace_snapshot() const
+        -> std::vector<forge::accel::mock::trace_event> {
+        return trace_.snapshot();
+    }
+
 private:
     template<class Sender>
     [[nodiscard]] bool wait_accel(Sender&& sender, inference_response& response) {
@@ -160,6 +179,29 @@ private:
 
         forge::accel::mock::device_buffer<float> device{accel_, request.features.size()};
         forge::accel::mock::host_buffer<float> output{accel_, request.features.size()};
+
+        if (request.mode == request_mode::size_mismatch) {
+            forge::accel::mock::device_buffer<float> too_small{accel_, 1};
+            (void)wait_accel(
+                forge::accel::mock::copy_to_device_typed(
+                    accel_queue_,
+                    too_small,
+                    std::span<const float>{request.features}),
+                response);
+            return response;
+        }
+
+        if (request.mode == request_mode::device_loss) {
+            accel_device_.mark_lost();
+            (void)wait_accel(
+                forge::accel::mock::copy_to_device_typed(
+                    accel_queue_,
+                    device,
+                    std::span<const float>{request.features}),
+                response);
+            accel_device_.reset();
+            return response;
+        }
 
         if (!wait_accel(
                 forge::accel::mock::copy_to_device_typed(
@@ -199,9 +241,13 @@ private:
         auto done = std::execution::sync_wait(
             std::execution::schedule(result_order_.get_scheduler())
             | std::execution::then([this, response] {
+                ++stats_.responses;
                 if (response.ok) {
                     ++stats_.processed;
                     stats_.total_score += response.score;
+                } else {
+                    ++stats_.errors;
+                    stats_.last_error = response.error;
                 }
             }));
         return done.has_value();
@@ -227,10 +273,12 @@ private:
     std::pmr::monotonic_buffer_resource upstream_;
     std::pmr::synchronized_pool_resource arena_;
     forge::resource_context runtime_;
+    forge::accel::mock::trace_sink trace_;
     forge::accel::mock::context accel_;
     forge::bounded_channel<inference_request> requests_;
     forge::bounded_channel<inference_response> responses_;
     forge::strand result_order_;
+    forge::accel::mock::device accel_device_;
     forge::accel::mock::queue accel_queue_;
     runtime_stats stats_{};
     bool started_ = false;
@@ -243,10 +291,21 @@ int main() {
     assert(service.submit(
         inference_request{.id = 1, .features = {1.0f, 2.0f, 3.0f, 4.0f}}));
     assert(service.submit(
-        inference_request{.id = 2, .features = {2.0f, 3.0f, 4.0f, 5.0f}}));
+        inference_request{
+            .id = 2,
+            .features = {2.0f, 3.0f, 4.0f, 5.0f},
+            .mode = request_mode::size_mismatch}));
     assert(service.submit(
-        inference_request{.id = 3, .features = {3.0f, 4.0f, 5.0f, 6.0f}}));
+        inference_request{
+            .id = 3,
+            .features = {3.0f, 4.0f, 5.0f, 6.0f},
+            .mode = request_mode::device_loss}));
+    assert(service.submit(
+        inference_request{.id = 4, .features = {2.0f, 3.0f, 4.0f, 5.0f}}));
     service.close();
+    assert(!service.submit(inference_request{
+        .id = 5,
+        .features = {1.0f, 1.0f, 1.0f, 1.0f}}));
 
     std::vector<inference_response> responses;
     while (auto response = service.next_response()) {
@@ -254,18 +313,36 @@ int main() {
     }
     service.wait();
 
-    assert(responses.size() == 3);
+    assert(responses.size() == 4);
     assert(
         responses[0].id == 1 && responses[0].ok &&
         responses[0].score == 34.0f);
+    assert(!responses[1].ok);
+    assert(responses[1].error == forge::accel::error_kind::size_mismatch);
+    assert(!responses[2].ok);
+    assert(responses[2].error == forge::accel::error_kind::device_lost);
     assert(
-        responses[1].id == 2 && responses[1].ok &&
-        responses[1].score == 58.0f);
-    assert(
-        responses[2].id == 3 && responses[2].ok &&
-        responses[2].score == 90.0f);
+        responses[3].id == 4 && responses[3].ok &&
+        responses[3].score == 58.0f);
 
     const auto stats = service.stats();
-    assert(stats.processed == 3);
-    assert(stats.total_score == 182.0f);
+    assert(stats.responses == 4);
+    assert(stats.processed == 2);
+    assert(stats.errors == 2);
+    assert(stats.total_score == 92.0f);
+    assert(stats.last_error == forge::accel::error_kind::device_lost);
+
+    const auto trace = service.trace_snapshot();
+    assert(trace.size() >= 12);
+    assert(std::any_of(trace.begin(), trace.end(), [](const auto& event) {
+        return event.kind == forge::accel::mock::trace_event_kind::device_lost;
+    }));
+
+    reference_runtime stopped;
+    assert(stopped.start());
+    stopped.shutdown();
+    stopped.wait();
+    assert(!stopped.submit(inference_request{
+        .id = 6,
+        .features = {1.0f, 1.0f, 1.0f, 1.0f}}));
 }

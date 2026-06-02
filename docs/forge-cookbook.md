@@ -52,7 +52,8 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
    和资源生命周期放在同一个推理 runtime sketch 里。
 22. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
-    errors 和 graceful drain 如何放在同一个 reference runtime 中。
+    errors、device-loss recovery、trace snapshot 和 graceful drain 如何放在同一个
+    reference runtime 中。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
@@ -361,9 +362,14 @@ runtime 边界。
   不内置 IO、accel、tensor 或 serving policy；
 - service 析构可以阻塞，因为它显式拥有 runtime/context；
 - request channel `close()` 后，worker 会 drain 已接受请求并关闭 response channel；
+- close 后新 request 会被拒绝，示例用断言钉住这个 admission boundary；
 - response channel capacity 小于 request 数时，consumer 必须继续 drain response，
   这正是 backpressure 的教学点；
-- typed errors 保留在 command boundary，默认 surface 不需要扩大成全局错误体系。
+- typed errors 保留在 command boundary，默认 surface 不需要扩大成全局错误体系；
+- reference runtime 示例会执行一个 `size_mismatch` 和一个 `device_lost` command，
+  然后 reset mock device 并继续处理后续 request；
+- trace snapshot 用来验证 command timeline 和 lifecycle event 可观察，但不会改变
+  runtime 行为。
 
 参考：
 
