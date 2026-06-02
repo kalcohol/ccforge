@@ -2,6 +2,9 @@
 
 `include/forge/` 下的头文件是 Forge 自带的实用扩展，不是标准 backport，也不向 `namespace std` 注入名字。它们的目标是补齐使用 `std::execution` 时常见的运行时设施，让下游不必为基本线程池、单线程执行上下文、定时器和窄类型擦除再写一套本地胶水。
 
+头文件命名也按这两层区分：标准 backport 模仿标准库入口，使用 `<execution>`、
+`<memory>` 这类无扩展名头；非标准 `forge::` 扩展保持 `<forge/*.hpp>` 形式。
+
 运行时对象的 `close()` / `request_stop()` / `shutdown()` / `wait()` 语义见 [forge runtime lifecycle contract](forge-runtime.md)。新增 `forge::` 运行时设施应先对齐这份契约，再扩展具体行为。
 
 聚合头：

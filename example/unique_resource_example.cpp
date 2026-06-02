@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <forge.hpp>
 #include <memory>  // Standard library header, CMake handles backport automatically
 #include <cstdio>
 #include <iostream>
