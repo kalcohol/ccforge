@@ -271,6 +271,112 @@ struct __sender {
     }
 };
 
+template<class S>
+using __completion_scheduler_t = decltype(
+    std::execution::get_completion_scheduler<set_value_t>(std::execution::get_env(std::declval<const S&>())));
+
+template<class S, class Scheduler>
+using __shifted_sender_t = decltype(std::execution::continues_on(
+    std::declval<S>(), std::declval<Scheduler>()));
+
+template<class Closure, class Shifted>
+using __closure_result_t = decltype(std::declval<Closure>()(std::declval<Shifted>()));
+
+template<class S, class Scheduler, class Closure, class OrigScheduler>
+using __closure_composed_sender_t = decltype(std::execution::continues_on(
+    std::declval<__closure_result_t<Closure, __shifted_sender_t<S, Scheduler>>>(),
+    std::declval<OrigScheduler>()));
+
+template<class S, class Scheduler, class Closure, class R>
+using __closure_inner_op_t = connect_result_t<
+    __closure_composed_sender_t<
+        S, Scheduler, Closure, __completion_scheduler_t<S>>, R>;
+
+template<class S, class Scheduler, class Closure, class R>
+concept __closure_form_connectable =
+    requires {
+        typename __completion_scheduler_t<S>;
+        typename __closure_inner_op_t<S, Scheduler, Closure, R>;
+    } &&
+    requires(S&& sndr, Scheduler&& sch, Closure&& closure, R&& r) {
+        std::execution::connect(
+            std::execution::continues_on(
+                static_cast<Closure&&>(closure)(
+                    std::execution::continues_on(
+                        static_cast<S&&>(sndr),
+                        static_cast<Scheduler&&>(sch))),
+                std::execution::get_completion_scheduler<set_value_t>(
+                    std::execution::get_env(sndr))),
+            static_cast<R&&>(r));
+    };
+
+template<class S, class Scheduler, class Closure, class R>
+struct __closure_op : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
+    using inner_op_t = __closure_inner_op_t<S, Scheduler, Closure, R>;
+
+    __forge_detail::__op_storage<1024> __storage;
+
+    __closure_op(S sndr, Scheduler sch, Closure closure, R rcvr) {
+        auto orig_sch = std::execution::get_completion_scheduler<set_value_t>(
+            std::execution::get_env(sndr));
+        auto shifted = std::execution::continues_on(std::move(sndr), std::move(sch));
+        auto adapted = std::move(closure)(std::move(shifted));
+        auto composed = std::execution::continues_on(std::move(adapted), std::move(orig_sch));
+        __storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+            return std::execution::connect(std::move(composed), std::move(rcvr));
+        });
+    }
+
+    void start() & noexcept {
+        std::execution::start(__storage.template get<inner_op_t>());
+    }
+};
+
+template<class S, class Scheduler, class Closure>
+struct __closure_sender {
+    using sender_concept = sender_t;
+    using source_t = S;
+    using scheduler_t = Scheduler;
+    using closure_t = Closure;
+
+    S __sndr;
+    Scheduler __sch;
+    Closure __closure;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using source_t = typename self_t::source_t;
+        using scheduler_t = typename self_t::scheduler_t;
+        using closure_t = typename self_t::closure_t;
+        using orig_scheduler_t = __completion_scheduler_t<source_t>;
+        using composed_t = __closure_composed_sender_t<
+            const source_t&, const scheduler_t&, const closure_t&, orig_scheduler_t>;
+        return decltype(std::execution::get_completion_signatures(
+            std::declval<composed_t>(), std::declval<Env>())){};
+    }
+
+    template<receiver R>
+        requires __closure_form_connectable<S, Scheduler, Closure, R>
+    auto connect(R r) && -> __closure_op<S, Scheduler, Closure, R> {
+        return __closure_op<S, Scheduler, Closure, R>{
+            std::move(__sndr), std::move(__sch), std::move(__closure), std::move(r)};
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S> && std::copy_constructible<Scheduler> &&
+                 std::copy_constructible<Closure> &&
+                 __closure_form_connectable<const S&, const Scheduler&, const Closure&, R>
+    auto connect(R r) const& -> __closure_op<S, Scheduler, Closure, R> {
+        return __closure_op<S, Scheduler, Closure, R>{__sndr, __sch, __closure, std::move(r)};
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::get_env(__sndr);
+    }
+};
+
 struct on_t {
     template<class Scheduler, sender S>
         requires scheduler<std::remove_cvref_t<Scheduler>>
@@ -278,6 +384,16 @@ struct on_t {
         return __sender<std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    template<sender S, class Scheduler, class Closure>
+        requires scheduler<std::remove_cvref_t<Scheduler>>
+    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const {
+        return __closure_sender<
+            std::decay_t<S>, std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
+            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
+            __forge_detail::__forward_as_given(std::forward<Closure>(closure))};
     }
 };
 
