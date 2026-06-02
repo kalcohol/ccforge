@@ -119,6 +119,12 @@ struct __stopped_signal {};
 
 struct __device_state;
 
+struct __worker_lifecycle_snapshot {
+    worker_generation generation{};
+    bool drain_frozen = false;
+    bool worker_faulted = false;
+};
+
 struct __session_state {
     std::weak_ptr<__device_state> device;
     session_id id{};
@@ -301,6 +307,43 @@ struct __device_state {
         return session_id{next_session.fetch_add(1, std::memory_order_acq_rel)};
     }
 
+    [[nodiscard]] auto worker_snapshot() const noexcept
+        -> __worker_lifecycle_snapshot {
+        std::lock_guard lk{worker_mtx};
+        return __worker_lifecycle_snapshot{
+            worker_generation{worker_generation_value},
+            drain_frozen,
+            worker_faulted};
+    }
+
+    void begin_drain_freeze() noexcept {
+        std::lock_guard lk{worker_mtx};
+        drain_frozen = true;
+    }
+
+    void complete_drain() noexcept {
+        std::lock_guard lk{worker_mtx};
+        if (drain_frozen) {
+            drain_frozen = false;
+            ++worker_generation_value;
+        }
+    }
+
+    void mark_worker_fault() noexcept {
+        std::lock_guard lk{worker_mtx};
+        worker_faulted = true;
+    }
+
+    [[nodiscard]] bool clear_worker_fault(worker_generation generation) noexcept {
+        std::lock_guard lk{worker_mtx};
+        if (generation.value != worker_generation_value || !worker_faulted) {
+            return false;
+        }
+        worker_faulted = false;
+        ++worker_generation_value;
+        return true;
+    }
+
     [[nodiscard]] auto current_info() const noexcept -> device_info {
         auto out = info;
         out.available = available();
@@ -321,6 +364,10 @@ struct __device_state {
     std::atomic<bool> lost{false};
     std::atomic<std::uint64_t> epoch{1};
     std::atomic<std::uint64_t> next_session{1};
+    mutable std::mutex worker_mtx;
+    std::uint64_t worker_generation_value = 1;
+    bool drain_frozen = false;
+    bool worker_faulted = false;
 };
 
 struct __queue_state {
@@ -350,12 +397,6 @@ struct __queue_state {
 
     [[nodiscard]] bool device_available() const noexcept {
         return !device || device->available();
-    }
-
-    [[nodiscard]] auto device_error_kind() const noexcept -> error_kind {
-        return device && device->lost_now()
-            ? error_kind::device_lost
-            : error_kind::invalid_context;
     }
 
     std::weak_ptr<__state> owner;
@@ -544,8 +585,86 @@ bool __stop_requested(const R& rcvr) noexcept {
     throw command_error{status};
 }
 
-inline void __validate_session_for_command(
+inline auto __admit_device_for_command(
+    const std::shared_ptr<__device_state>& device,
+    const char* what) -> worker_generation {
+    if (!device) {
+        throw operation_error{error_kind::invalid_context, what};
+    }
+    if (device->lost_now()) {
+        throw operation_error{error_kind::device_lost, what};
+    }
+    if (!device->available()) {
+        throw operation_error{error_kind::invalid_context, what};
+    }
+    auto snapshot = device->worker_snapshot();
+    if (snapshot.drain_frozen) {
+        throw operation_error{error_kind::drain_freeze, what};
+    }
+    if (snapshot.worker_faulted) {
+        throw operation_error{error_kind::worker_fault, what};
+    }
+    return snapshot.generation;
+}
+
+inline void __validate_device_for_execution(
+    const std::shared_ptr<__device_state>& device,
+    std::optional<worker_generation> accepted_generation,
+    const char* what) {
+    if (!device) {
+        throw operation_error{error_kind::invalid_context, what};
+    }
+    if (device->lost_now()) {
+        throw operation_error{error_kind::device_lost, what};
+    }
+    if (!device->available()) {
+        throw operation_error{error_kind::invalid_context, what};
+    }
+    auto snapshot = device->worker_snapshot();
+    if (snapshot.worker_faulted) {
+        throw operation_error{error_kind::worker_fault, what};
+    }
+    if (accepted_generation && snapshot.generation != *accepted_generation) {
+        throw operation_error{error_kind::stale_session, what};
+    }
+}
+
+inline auto __admit_queue_for_command(
+    const std::shared_ptr<__queue_state>& queue,
+    const char* what) -> std::optional<worker_generation> {
+    if (!queue || !queue->device) {
+        return std::nullopt;
+    }
+    return __admit_device_for_command(queue->device, what);
+}
+
+inline void __validate_queue_for_execution(
+    const std::shared_ptr<__queue_state>& queue,
+    std::optional<worker_generation> accepted_generation,
+    const char* what) {
+    if (!queue || !queue->device) {
+        return;
+    }
+    __validate_device_for_execution(queue->device, accepted_generation, what);
+}
+
+inline auto __admit_session_for_command(
     const std::shared_ptr<__session_state>& session,
+    const char* what) -> worker_generation {
+    if (!session ||
+        session->reset_requested.load(std::memory_order_acquire)) {
+        throw __stopped_signal{};
+    }
+    auto device = session->device.lock();
+    if (!device || device->current_epoch() != session->epoch) {
+        throw operation_error{error_kind::stale_session, what};
+    }
+    return __admit_device_for_command(device, what);
+}
+
+inline void __validate_session_for_execution(
+    const std::shared_ptr<__session_state>& session,
+    worker_generation accepted_generation,
     const char* what) {
     if (!session ||
         session->reset_requested.load(std::memory_order_acquire)) {
@@ -555,12 +674,7 @@ inline void __validate_session_for_command(
     if (!device || device->current_epoch() != session->epoch) {
         throw operation_error{error_kind::stale_session, what};
     }
-    if (device->lost_now()) {
-        throw operation_error{error_kind::device_lost, what};
-    }
-    if (!device->available()) {
-        throw operation_error{error_kind::invalid_context, what};
-    }
+    __validate_device_for_execution(device, accepted_generation, what);
 }
 
 template<class Packet, class Handler>
@@ -588,16 +702,24 @@ struct __command_receiver {
 
     std::shared_ptr<__state> state;
     std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__session_state> session;
+    std::optional<worker_generation> accepted_generation;
     R rcvr;
     Action action;
 
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
         try {
-            if (queue && !queue->device_available()) {
-                throw operation_error{
-                    queue->device_error_kind(),
-                    "forge::accel::mock command: device is not available"};
+            if (session && accepted_generation) {
+                __validate_session_for_execution(
+                    session,
+                    *accepted_generation,
+                    "forge::accel::mock command: session is not usable");
+            } else {
+                __validate_queue_for_execution(
+                    queue,
+                    accepted_generation,
+                    "forge::accel::mock command: queue device is not usable");
             }
             std::invoke(std::move(action));
             state->finish_one();
@@ -677,6 +799,7 @@ struct __command_sender {
     using sender_concept = std::execution::sender_t;
 
     std::shared_ptr<__queue_state> queue;
+    std::shared_ptr<__session_state> session;
     Action action;
 
     template<class Self, class Env>
@@ -705,6 +828,17 @@ struct __command_sender {
             , rcvr_(std::move(rcvr))
         {}
 
+        __op(
+            std::shared_ptr<__queue_state> queue,
+            std::shared_ptr<__session_state> session,
+            Action action,
+            R rcvr)
+            : queue_(std::move(queue))
+            , session_(std::move(session))
+            , action_(std::move(action))
+            , rcvr_(std::move(rcvr))
+        {}
+
         __op(__op&&) = delete;
         __op& operator=(__op&&) = delete;
         __op(const __op&) = delete;
@@ -712,8 +846,36 @@ struct __command_sender {
 
         void start() & noexcept {
             auto state = queue_ ? queue_->owner.lock() : nullptr;
-            if (!state || __stop_requested(*rcvr_) || !state->try_accept()) {
+            if (!state || __stop_requested(*rcvr_)) {
                 std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            }
+
+            if (!state->try_accept()) {
+                std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            }
+
+            std::optional<worker_generation> accepted_generation;
+            try {
+                if (session_) {
+                    accepted_generation = __admit_session_for_command(
+                        session_,
+                        "forge::accel::mock command: session is not usable");
+                } else {
+                    accepted_generation = __admit_queue_for_command(
+                        queue_,
+                        "forge::accel::mock command: queue device is not usable");
+                }
+            } catch (const __stopped_signal&) {
+                state->finish_one();
+                std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            } catch (...) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr_),
+                    std::current_exception());
                 return;
             }
 
@@ -727,6 +889,8 @@ struct __command_sender {
                         receiver_t{
                             state,
                             queue_,
+                            session_,
+                            accepted_generation,
                             std::move(*rcvr_),
                             std::move(*action_)});
                 });
@@ -740,6 +904,7 @@ struct __command_sender {
         }
 
         std::shared_ptr<__queue_state> queue_;
+        std::shared_ptr<__session_state> session_;
         std::optional<Action> action_;
         std::optional<R> rcvr_;
         __op_box<op_t> op_;
@@ -748,14 +913,18 @@ struct __command_sender {
     template<class R>
         requires std::execution::receiver_of<R, __void_completion_signatures>
     auto connect(R rcvr) && -> __op<R> {
-        return __op<R>{std::move(queue), std::move(action), std::move(rcvr)};
+        return __op<R>{
+            std::move(queue),
+            std::move(session),
+            std::move(action),
+            std::move(rcvr)};
     }
 
     template<class R>
         requires std::execution::receiver_of<R, __void_completion_signatures>
               && std::copy_constructible<Action>
     auto connect(R rcvr) const& -> __op<R> {
-        return __op<R>{queue, Action(action), std::move(rcvr)};
+        return __op<R>{queue, session, Action(action), std::move(rcvr)};
     }
 };
 
@@ -1101,19 +1270,16 @@ struct __packet_receiver {
     std::shared_ptr<__session_state> session;
     std::shared_ptr<Packet> packet;
     Handler handler;
+    worker_generation accepted_generation;
     std::optional<std::chrono::steady_clock::time_point> deadline;
     R rcvr;
 
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
         try {
-            if (queue && !queue->device_available()) {
-                throw operation_error{
-                    queue->device_error_kind(),
-                    "forge::accel::mock packet command: device is not available"};
-            }
-            __validate_session_for_command(
+            __validate_session_for_execution(
                 session,
+                accepted_generation,
                 "forge::accel::mock packet command: session is not usable");
             if (deadline && std::chrono::steady_clock::now() >= *deadline) {
                 packet->status = command_status::timed_out;
@@ -1214,8 +1380,30 @@ struct __packet_sender {
 
         void start() & noexcept {
             auto state = queue_ ? queue_->owner.lock() : nullptr;
-            if (!state || __stop_requested(*rcvr_) || !state->try_accept()) {
+            if (!state || __stop_requested(*rcvr_)) {
                 std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            }
+
+            if (!state->try_accept()) {
+                std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            }
+
+            worker_generation accepted_generation{};
+            try {
+                accepted_generation = __admit_session_for_command(
+                    session_,
+                    "forge::accel::mock packet command: session is not usable");
+            } catch (const __stopped_signal&) {
+                state->finish_one();
+                std::execution::set_stopped(std::move(*rcvr_));
+                return;
+            } catch (...) {
+                state->finish_one();
+                std::execution::set_error(
+                    std::move(*rcvr_),
+                    std::current_exception());
                 return;
             }
 
@@ -1235,6 +1423,7 @@ struct __packet_sender {
                             session_,
                             packet_,
                             std::move(*handler_),
+                            accepted_generation,
                             deadline,
                             std::move(*rcvr_)});
                 });
@@ -1274,6 +1463,18 @@ auto __make_command_sender(std::shared_ptr<__queue_state> queue, Action&& action
     -> __command_sender<std::decay_t<Action>> {
     return __command_sender<std::decay_t<Action>>{
         std::move(queue),
+        nullptr,
+        static_cast<Action&&>(action)};
+}
+
+template<class Action>
+auto __make_session_command_sender(
+    std::shared_ptr<__queue_state> queue,
+    std::shared_ptr<__session_state> session,
+    Action&& action) -> __command_sender<std::decay_t<Action>> {
+    return __command_sender<std::decay_t<Action>>{
+        std::move(queue),
+        std::move(session),
         static_cast<Action&&>(action)};
 }
 
@@ -1356,6 +1557,8 @@ private:
     friend auto invalidate(queue&, device_buffer<T>&);
     template<class F>
     friend auto submit(queue&, F&&);
+    template<class F>
+    friend auto submit(device_session&, F&&);
     template<class Request, class Response, class Handler>
     friend auto submit_packet(
         device_session&,
@@ -1470,7 +1673,7 @@ private:
         : queue_(state
               ? state->make_queue(queue_kind::command, device)
               : nullptr)
-        , session_(state && device && device->available()
+        , session_(state && device
               ? std::allocate_shared<__detail::__session_state>(
                     std::pmr::polymorphic_allocator<__detail::__session_state>{
                         state->memory_resource()})
@@ -1534,6 +1737,13 @@ public:
         return device_state ? device_state->current_epoch() : device_epoch{};
     }
 
+    [[nodiscard]] auto current_worker_generation() const noexcept -> worker_generation {
+        auto device_state = device_.lock();
+        return device_state
+            ? device_state->worker_snapshot().generation
+            : worker_generation{};
+    }
+
     void mark_lost() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->mark_lost();
@@ -1544,6 +1754,29 @@ public:
         if (auto device_state = device_.lock()) {
             device_state->reset();
         }
+    }
+
+    void begin_drain_freeze() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->begin_drain_freeze();
+        }
+    }
+
+    void complete_drain() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->complete_drain();
+        }
+    }
+
+    void mark_worker_fault() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->mark_worker_fault();
+        }
+    }
+
+    [[nodiscard]] bool clear_worker_fault(worker_generation generation) noexcept {
+        auto device_state = device_.lock();
+        return device_state && device_state->clear_worker_fault(generation);
     }
 
 private:
@@ -1900,13 +2133,10 @@ auto submit_typed(queue& q, F&& command) {
 
 template<class F>
 auto submit(device_session& session, F&& command) {
-    auto session_state = session.session_;
-    return submit(
-        session.get_queue(),
-        [session_state, command = std::forward<F>(command)]() mutable {
-            __detail::__validate_session_for_command(
-                session_state,
-                "forge::accel::mock::submit(session): session is not usable");
+    return __detail::__make_session_command_sender(
+        session.get_queue().queue_.lock(),
+        session.session_,
+        [command = std::forward<F>(command)]() mutable {
             std::invoke(command);
         });
 }

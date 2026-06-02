@@ -242,6 +242,19 @@ reset 后的新 epoch，可继续提交 command。这个模型用于表达用户
 handle 边界；它不是 vendor device reset、driver reload 或 native context rebuild
 的模型。
 
+`device.begin_drain_freeze()` 暂停该 device 的新 work admission。freeze 前已经
+`start()` 并被 queue 接受的 command 会继续 drain；freeze 后开始的新 command 会以
+`error_kind::drain_freeze` 完成。`device.complete_drain()` 解除 freeze，并递增
+`worker_generation`，表示新的 worker instance 可以接收 work。
+
+`device.current_worker_generation()` 可查询当前 worker generation。
+`device.mark_worker_fault()` 模拟 worker 发生 sticky fault。fault 后的新 command 会以
+`error_kind::worker_fault` 完成，直到调用
+`device.clear_worker_fault(expected_generation)`。cleanup 必须带当前
+`worker_generation`；generation 不匹配不会清除 fault。成功 cleanup 会递增
+`worker_generation`，让旧 generation 的 pending command 无法误完成到新 worker
+instance。
+
 ## device sessions and message commands
 
 `device_session` 是 vendor-neutral proof，不绑定 CUDA/HIP/SYCL，也不暴露 native

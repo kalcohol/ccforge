@@ -309,6 +309,171 @@ TEST(AccelDeviceTest, DeviceResetChangesEpochAndStalesOldSession) {
         forge::accel::mock::submit(new_session, [] {})).has_value());
 }
 
+TEST(AccelDeviceTest, DrainFreezeRejectsNewWorkUntilDrainCompletes) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+    const auto old_generation = device.current_worker_generation();
+
+    device.begin_drain_freeze();
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(session, [] {}));
+        FAIL() << "expected drain_freeze";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::drain_freeze);
+    }
+
+    device.complete_drain();
+    EXPECT_NE(device.current_worker_generation(), old_generation);
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(session, [] {})).has_value());
+}
+
+TEST(AccelDeviceTest, DrainFreezeAllowsAlreadyAcceptedWorkToDrain) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = 4,
+    }};
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    bool second_ran = false;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(session, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto second = forge::accel::mock::submit(session, [&] {
+        second_ran = true;
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
+
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+    std::execution::start(second_op);
+    device.begin_drain_freeze();
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(second_state->value);
+    EXPECT_TRUE(second_ran);
+}
+
+TEST(AccelDeviceTest, WorkerFaultLatchesUntilGenerationCleanup) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+    const auto fault_generation = device.current_worker_generation();
+
+    device.mark_worker_fault();
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(session, [] {}));
+        FAIL() << "expected worker_fault";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::worker_fault);
+    }
+
+    EXPECT_FALSE(device.clear_worker_fault(
+        forge::accel::worker_generation{fault_generation.value + 1}));
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(session, [] {}));
+        FAIL() << "expected worker_fault";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::worker_fault);
+    }
+
+    EXPECT_TRUE(device.clear_worker_fault(fault_generation));
+    EXPECT_NE(device.current_worker_generation(), fault_generation);
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(session, [] {})).has_value());
+}
+
+TEST(AccelDeviceTest, WorkerGenerationMismatchStopsAcceptedOldWork) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = 4,
+    }};
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    bool second_ran = false;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(session, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto second = forge::accel::mock::submit(session, [&] {
+        second_ran = true;
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
+
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+    std::execution::start(second_op);
+    device.begin_drain_freeze();
+    device.complete_drain();
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_FALSE(second_state->value);
+    EXPECT_FALSE(second_state->stopped);
+    EXPECT_FALSE(second_ran);
+    ASSERT_TRUE(second_state->error);
+    try {
+        std::rethrow_exception(second_state->error);
+        FAIL() << "expected stale_session";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::stale_session);
+    }
+}
+
 TEST(AccelDeviceTest, MessageCommandProducesResponse) {
     forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();
