@@ -21,10 +21,15 @@ Future backend entry rules are tracked in the
 
 ## portable vocabulary
 
-`forge::accel` 本层提供 backend-neutral vocabulary，例如 `device_id`、
-`device_info`、`memory_kind`、`queue_kind`、`copy_kind`、`command_status`、
-`error_kind` 和 `model_io_info`。这些类型不绑定 mock storage，也不声明真实硬件
-能力。
+`forge::accel` 本层提供 backend-neutral vocabulary。设备和运行时身份包括
+`device_id`、`context_id`、`stream_id`、`session_id`、`request_id`、`event_id`、
+`device_epoch`、`worker_generation` 和 `worker_key`；队列、内存和命令 vocabulary
+包括 `device_info`、`memory_kind`、`queue_kind`、`copy_kind`、`command_id`、
+`command_status`、`error_kind` 和 `model_io_info`。
+
+这些类型是 Forge 的 portable proof vocabulary：它们不绑定 mock storage，不声明真实
+硬件能力，不是 wire format、driver ABI 或 OS process identity。需要跨进程或跨设备
+传输时，应由具体 backend/protocol proof 显式选择编码方式。
 
 ## mock reference backend
 

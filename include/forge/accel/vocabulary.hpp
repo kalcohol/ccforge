@@ -34,6 +34,57 @@ struct device_id {
     friend auto operator==(device_id, device_id) -> bool = default;
 };
 
+struct context_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(context_id, context_id) -> bool = default;
+};
+
+struct stream_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(stream_id, stream_id) -> bool = default;
+};
+
+struct session_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(session_id, session_id) -> bool = default;
+};
+
+struct request_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(request_id, request_id) -> bool = default;
+};
+
+struct event_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(event_id, event_id) -> bool = default;
+};
+
+struct device_epoch {
+    std::uint64_t value = 0;
+
+    friend auto operator==(device_epoch, device_epoch) -> bool = default;
+};
+
+struct worker_generation {
+    std::uint64_t value = 0;
+
+    friend auto operator==(worker_generation, worker_generation) -> bool = default;
+};
+
+struct worker_key {
+    device_id device{};
+    session_id session{};
+    context_id context{};
+    worker_generation generation{};
+
+    friend auto operator==(worker_key, worker_key) -> bool = default;
+};
+
 struct device_info {
     device_id id{};
     std::uint32_t ordinal = 0;

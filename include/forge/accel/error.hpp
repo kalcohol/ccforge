@@ -65,7 +65,13 @@ enum class error_kind {
     command_failed,
     timeout,
     aborted,
-    user_exception
+    user_exception,
+    stale_session,
+    device_lost,
+    drain_freeze,
+    late_response,
+    worker_fault,
+    protocol_error
 };
 
 struct error {
