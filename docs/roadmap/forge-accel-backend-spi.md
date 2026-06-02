@@ -11,6 +11,13 @@ The current shipped backend is the portable mock/in-memory reference backend in
 `include/forge/accel/`. A future backend should preserve the same user-facing
 shape before it exposes vendor-specific details.
 
+The executable contract is `forge_accel_backend_conformance`, backed by the
+repository-local test harness in
+`test/forge/runtime/forge_accel_backend_conformance.hpp`.
+The harness currently adapts the mock backend, but it is structured around
+portable operations so a future backend proof can reuse the same tests before
+adding backend-specific extensions.
+
 ## portable concepts
 
 The stable portable vocabulary is intentionally small:
@@ -105,10 +112,33 @@ Before adding a real backend, require:
 - an explicit gate and CMake detection policy;
 - gate-off builds with zero backend tests/examples registered;
 - no vendor headers included from the portable mock headers;
-- focused tests for copy, submit, event/fence, shutdown, and typed errors;
+- the reusable `forge_accel_backend_conformance` test suite passing against the
+  backend adapter;
+- focused backend-specific tests for behavior not covered by the portable
+  conformance suite;
 - documentation of which resources are owned, borrowed, pinned, or vendor-owned;
 - examples that use the portable surface first, with native handles only in a
   clearly marked backend-specific example.
 
 The first real backend proof should be reviewed as a new project identity
 decision, not as routine maintenance.
+
+## conformance coverage
+
+The portable conformance suite covers these backend obligations:
+
+- basic queue, copy, submit, and fence behavior;
+- cross-queue event ordering and the same-queue wait-before-record limitation;
+- capacity-full rejection through stopped completion;
+- size mismatch and cached-memory coherence classification;
+- device loss, device reset, stale sessions, drain freeze, and worker fault;
+- request timeout and late-response accounting;
+- protocol lifecycle signals that bypass the request-pending map;
+- optional trace collection that does not change command behavior;
+- typed accelerator errors crossing `forge::erased_sender` and
+  `forge::wait_result`.
+
+The suite intentionally does not prove vendor allocation classes, native event
+export, graph submission, tensor semantics, driver reset, firmware behavior, or
+kernel interruption. A real backend must document and test those as explicit
+backend-specific additions if it exposes them.

@@ -20,6 +20,9 @@ proofs must be optional and must map back to these portable contracts before
 exposing backend-specific extensions. Backend entry rules are tracked in the
 [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md) and the
 [backend proof policy](roadmap/forge-backend-proof-policy.md).
+The mock backend also runs the repository-local
+`forge_accel_backend_conformance` test suite, which records the portable
+contract a future backend proof must satisfy.
 
 ```cpp
 #include <forge/accel.hpp>
