@@ -33,7 +33,7 @@
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
 //   Scheduler ops    : starts_on, continues_on (schedule_from), on(first form),
-//                      transfer_just,
+//                      affine, transfer_just,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
@@ -120,6 +120,7 @@
 #include "execution/on.hpp"
 #include "execution/into_variant.hpp"
 #include "execution/continues_on.hpp"
+#include "execution/affine.hpp"
 #include "execution/bulk.hpp"
 #include "execution/split.hpp"
 #include "execution/when_all.hpp"

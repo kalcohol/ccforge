@@ -6,7 +6,7 @@
 
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、`let_stopped`、`write_env`、`unstoppable`
-- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`on(scheduler, sender)`、`transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
+- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`on(scheduler, sender)`、`affine`、`transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
 - 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、`when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组 value completions 返回 `optional<variant<tuple<...>, ...>>`）、`sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`

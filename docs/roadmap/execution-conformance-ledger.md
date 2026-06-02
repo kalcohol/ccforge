@@ -24,7 +24,7 @@ The execution backport currently includes:
 - sender factories: `just`, `just_error`, `just_stopped`, `read_env`;
 - adaptors: `then`, `upon_error`, `upon_stopped`, `let_value`, `let_error`,
   `let_stopped`, `write_env`, `unstoppable`;
-- scheduler adaptors: `starts_on`, `continues_on`, first-form `on`,
+- scheduler adaptors: `starts_on`, `continues_on`, first-form `on`, `affine`,
   `transfer_just`, serial `bulk`, `bulk_chunked`, and `bulk_unchunked`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
   `associate`, `spawn`, `spawn_future`;
@@ -63,7 +63,7 @@ signatures.
 | `spawn_future` | Implemented subset | Eager single-consumer future sender; shared state and consumer records honor `get_allocator(env)`, while `any_stop_token` callback internals remain allocator-neutral. |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`, top-level association/spawn, stop-token injection, and async sender-returning `join()` are implemented. |
 | `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | Coroutine bridge preserves historical single-value tuple behavior; multi-value alternatives use `variant<tuple<...>>`. |
-| `affine` | Not implemented | Current WD includes coroutine utility `affine`; no Forge surface exists yet. |
+| `affine` | Implemented subset | `affine.hpp`; implemented as a thin current-WD spelling over the existing `continues_on` transfer subset. |
 | `get_env` | Implemented subset | Member-first with tag-invoke fallback and `empty_env` default. |
 | `get_scheduler` | Implemented subset | Tag-invoke query object; does not exactly model current WD member `query(...)` wording. |
 | `get_start_scheduler` | Implemented subset | Tag-invoke environment query object; `make_prop` / `write_env` forwarding tests cover the current backport query model. |
@@ -101,7 +101,6 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- current-WD algorithms/adaptors not yet exposed: `affine`;
 - current-WD adaptor forms not yet exposed: `on(sender, scheduler, closure)`;
 - `get_completion_signatures(sender, env)` does not yet fully recompute through
   domain-transformed sender types, so domain transforms should preserve the
