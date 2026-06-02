@@ -131,6 +131,20 @@ struct io_state {
     }
 };
 
+struct typed_io_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool value = false;
+    bool stopped = false;
+    bool error = false;
+    std::size_t bytes = 0;
+    forge::io::error typed_error{};
+
+    [[nodiscard]] bool done() const noexcept {
+        return value || stopped || error;
+    }
+};
+
 struct io_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -149,6 +163,42 @@ struct io_receiver {
         {
             std::lock_guard lk{state->mtx};
             state->error = std::move(error);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct typed_size_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<typed_io_state> state;
+
+    void set_value(std::size_t bytes) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->bytes = bytes;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(forge::io::error error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = true;
+            state->typed_error = error;
         }
         state->cv.notify_all();
     }
@@ -200,6 +250,11 @@ struct self_destroying_io_receiver {
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
 }
 
+[[nodiscard]] auto wait_done(const std::shared_ptr<typed_io_state>& state) -> bool {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
+}
+
 } // namespace
 
 TEST(IoIocpTest, EmptyContextDestroysCleanly) {
@@ -225,6 +280,32 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
 
     ASSERT_TRUE(read_result.has_value());
     EXPECT_EQ(std::get<0>(*read_result), payload.size());
+    EXPECT_EQ(buffer, payload);
+}
+
+TEST(IoIocpTest, AsyncWriteSomeTypedReturnsByteCount) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 3> payload{byte('t'), byte('y'), byte('p')};
+    auto state = std::make_shared<typed_io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_write_some_typed(
+            pipe.client.get(),
+            std::span<const std::byte>{payload}),
+        typed_size_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(state->bytes, payload.size());
+
+    std::array<std::byte, 3> buffer{};
+    auto read_result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+    ASSERT_TRUE(read_result.has_value());
     EXPECT_EQ(buffer, payload);
 }
 
@@ -395,6 +476,39 @@ TEST(IoIocpTest, CancelHandleCancelsPendingRead) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, CancelDrainAllowsLaterOperationOnSameHandle) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> pending_buffer{};
+    auto state = std::make_shared<io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{pending_buffer}),
+        io_receiver{state});
+    std::execution::start(op);
+
+    ctx.cancel(pipe.server.get());
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+
+    std::array<std::byte, 8> second_buffer{};
+    auto second = std::make_shared<io_state>();
+    auto second_op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{second_buffer}),
+        io_receiver{second});
+    std::execution::start(second_op);
+
+    ctx.cancel(pipe.server.get());
+
+    ASSERT_TRUE(wait_done(second));
+    EXPECT_FALSE(second->value);
+    EXPECT_TRUE(second->stopped);
+    EXPECT_FALSE(second->error);
 }
 
 TEST(IoIocpTest, ShutdownCancelsPendingRead) {

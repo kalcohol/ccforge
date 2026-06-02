@@ -260,9 +260,15 @@ auto wait_done(const std::shared_ptr<typed_io_state>& state) -> bool {
 static_assert(std::execution::sender<
     decltype(std::declval<forge::io::context&>().readable_typed(0))>);
 static_assert(std::execution::sender<
+    decltype(std::declval<forge::io::context&>().writable_typed(0))>);
+static_assert(std::execution::sender<
     decltype(std::declval<forge::io::context&>().async_read_some_typed(
         0,
         std::declval<std::span<std::byte>>()))>);
+static_assert(std::execution::sender<
+    decltype(std::declval<forge::io::context&>().async_write_some_typed(
+        0,
+        std::declval<std::span<const std::byte>>()))>);
 
 TEST(IoContextTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
@@ -482,6 +488,73 @@ TEST(IoContextTest, TypedReadableCrossesErasedSenderBoundary) {
     EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
 }
 
+TEST(IoContextTest, TypedWritableReportsDuplicateWaiter) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+    auto first = std::make_shared<typed_io_state>();
+    auto second = std::make_shared<typed_io_state>();
+
+    auto op1 = std::execution::connect(
+        ctx.writable_typed(sockets.first.get()),
+        typed_void_receiver{first});
+    auto op2 = std::execution::connect(
+        ctx.writable_typed(sockets.first.get()),
+        typed_void_receiver{second});
+
+    std::execution::start(op1);
+    std::execution::start(op2);
+
+    ASSERT_TRUE(wait_done(second));
+    EXPECT_FALSE(second->value);
+    EXPECT_FALSE(second->stopped);
+    ASSERT_TRUE(second->error);
+    EXPECT_EQ(second->typed_error.kind, forge::io::error_kind::operation_in_progress);
+    EXPECT_EQ(second->typed_error.code,
+              std::make_error_code(std::errc::operation_in_progress));
+
+    ctx.cancel(sockets.first.get());
+    ASSERT_TRUE(wait_done(first));
+    EXPECT_TRUE(first->stopped);
+}
+
+TEST(IoContextTest, TypedWritableReportsBadFileDescriptor) {
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+
+    auto op = std::execution::connect(
+        ctx.writable_typed(-1),
+        typed_void_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+    ASSERT_TRUE(state->error);
+    EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
+    EXPECT_EQ(state->typed_error.code,
+              std::make_error_code(std::errc::bad_file_descriptor));
+}
+
+TEST(IoContextTest, TypedWritableCrossesErasedSenderBoundary) {
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+    using cs = std::execution::completion_signatures<
+        std::execution::set_value_t(),
+        std::execution::set_error_t(forge::io::error),
+        std::execution::set_stopped_t()>;
+    forge::erased_sender<cs> sender{ctx.writable_typed(-1)};
+
+    auto op = std::execution::connect(
+        std::move(sender),
+        typed_void_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    ASSERT_TRUE(state->error);
+    EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
+}
+
 TEST(IoContextTest, AsyncReadSomeTypedReturnsByteCount) {
     auto pipe = make_pipe();
     forge::io::context ctx;
@@ -503,6 +576,43 @@ TEST(IoContextTest, AsyncReadSomeTypedReturnsByteCount) {
     EXPECT_EQ(state->bytes, buffer.size());
     EXPECT_EQ(buffer[0], std::byte{'t'});
     EXPECT_EQ(buffer[1], std::byte{'y'});
+}
+
+TEST(IoContextTest, AsyncWriteSomeTypedReturnsByteCount) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    std::array<char, 3> payload{'w', 'r', 't'};
+    auto state = std::make_shared<typed_io_state>();
+
+    auto op = std::execution::connect(
+        ctx.async_write_some_typed(
+            pipe.second.get(),
+            std::as_bytes(std::span{payload})),
+        typed_size_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(state->bytes, payload.size());
+
+    std::array<char, 3> received{};
+    ASSERT_EQ(::read(pipe.first.get(), received.data(), received.size()),
+              static_cast<ssize_t>(received.size()));
+    EXPECT_EQ(received, payload);
+}
+
+TEST(IoContextTest, TypedWouldBlockClassificationFromException) {
+    auto ep = std::make_exception_ptr(std::system_error{
+        std::make_error_code(std::errc::resource_unavailable_try_again),
+        "would block"});
+
+    auto error = forge::io::__typed_detail::from_exception(ep);
+
+    EXPECT_EQ(error.kind, forge::io::error_kind::would_block);
+    EXPECT_EQ(error.code,
+              std::make_error_code(std::errc::resource_unavailable_try_again));
 }
 
 TEST(IoContextTest, RequestStopCancelsPendingWaiter) {
