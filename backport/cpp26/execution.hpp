@@ -59,9 +59,8 @@
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state and consumer record honor get_allocator(env); erased
 //     stop-callback registration inside any_stop_token remains allocator-neutral.
-//   - associate/spawn, current-WD token wrap semantics, and sender-returning
-//     simple/counting scope join() are implemented. The join sender still uses
-//     a start-time blocking wait rather than the full async join-state model.
+//   - associate/spawn, current-WD token wrap semantics, and async
+//     sender-returning simple/counting scope join() are implemented.
 //   - Execution domains are still a focused draft subset: connect applies
 //     receiver-env start-domain and sender-env completion-domain recursive
 //     transform_sender, but get_completion_signatures does not yet fully

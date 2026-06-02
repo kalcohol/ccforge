@@ -1,11 +1,16 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include <forge/start_detached.hpp>
+#include <forge/static_thread_pool.hpp>
+#include "../../forge/runtime/forge_operation_destroy.hpp"
 #include "test_execution_manual_sender.hpp"
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -16,6 +21,7 @@ using forge_execution_test::manual_state;
 using forge_execution_test::wait_until_completed;
 using forge_execution_test::wait_until_started;
 using forge_execution_test::wait_until_stop_requested;
+using namespace std::chrono_literals;
 
 struct scope_probe_receiver {
     using receiver_concept = std::execution::receiver_t;
@@ -35,6 +41,129 @@ struct scope_probe_receiver {
         return {};
     }
 };
+
+struct self_destroying_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    bool* completed = nullptr;
+
+    void set_value() && noexcept {
+        if (completed) *completed = true;
+        context->destroy();
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {
+        context->destroy();
+    }
+
+    void set_stopped() && noexcept {
+        context->destroy();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+bool wait_for_flag(
+    const std::atomic<bool>& flag,
+    std::chrono::milliseconds timeout = 500ms) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (flag.load(std::memory_order_acquire)) {
+            return true;
+        }
+        std::this_thread::yield();
+    }
+    return flag.load(std::memory_order_acquire);
+}
+
+template<class Scope>
+void expect_join_start_returns_while_nonempty() {
+    Scope scope;
+    auto token = scope.get_token();
+    auto assoc = token.try_associate();
+    ASSERT_TRUE(static_cast<bool>(assoc));
+
+    bool completed = false;
+    auto op = std::execution::connect(scope.join(), scope_probe_receiver{&completed});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(completed);
+    EXPECT_EQ(scope.count(), 1u);
+
+    assoc = decltype(assoc){};
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+template<class Scope>
+void expect_multiple_joiners_complete_when_scope_drains() {
+    Scope scope;
+    auto token = scope.get_token();
+    auto assoc = token.try_associate();
+    ASSERT_TRUE(static_cast<bool>(assoc));
+
+    bool first_completed = false;
+    bool second_completed = false;
+    auto first = std::execution::connect(
+        scope.join(),
+        scope_probe_receiver{&first_completed});
+    auto second = std::execution::connect(
+        scope.join(),
+        scope_probe_receiver{&second_completed});
+
+    std::execution::start(first);
+    std::execution::start(second);
+
+    EXPECT_FALSE(first_completed);
+    EXPECT_FALSE(second_completed);
+
+    assoc = decltype(assoc){};
+
+    EXPECT_TRUE(first_completed);
+    EXPECT_TRUE(second_completed);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+template<class Scope>
+void expect_join_receiver_may_destroy_operation_on_completion() {
+    Scope scope;
+    auto token = scope.get_token();
+    auto assoc = token.try_associate();
+    ASSERT_TRUE(static_cast<bool>(assoc));
+
+    auto sender = scope.join();
+    using sender_t = decltype(sender);
+    using receiver_t = self_destroying_join_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t&&>(),
+        std::declval<receiver_t>()));
+
+    bool completed = false;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            std::move(sender),
+            self_destroying_join_receiver{&context, &completed});
+    });
+    std::execution::start(op);
+
+    EXPECT_FALSE(completed);
+    EXPECT_FALSE(destroyed);
+
+    assoc = decltype(assoc){};
+
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+}
 
 struct pending_sender {
     using sender_concept = std::execution::sender_t;
@@ -282,6 +411,61 @@ TEST(SimpleCountingScopeTest, JoinSenderCompletesWhenEmpty) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SimpleCountingScopeTest, JoinStartReturnsWhileScopeIsNonEmpty) {
+    expect_join_start_returns_while_nonempty<std::execution::simple_counting_scope>();
+}
+
+TEST(SimpleCountingScopeTest, MultipleJoinersCompleteWhenScopeDrains) {
+    expect_multiple_joiners_complete_when_scope_drains<std::execution::simple_counting_scope>();
+}
+
+TEST(SimpleCountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {
+    expect_join_receiver_may_destroy_operation_on_completion<
+        std::execution::simple_counting_scope>();
+}
+
+TEST(SimpleCountingScopeTest, JoinDoesNotDeadlockSingleThreadScheduler) {
+    forge::static_thread_pool pool{1};
+    auto scheduler = pool.get_scheduler();
+
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+    auto assoc = std::make_shared<std::optional<association_t>>(token.try_associate());
+    ASSERT_TRUE(assoc->has_value());
+
+    std::atomic<bool> join_start_returned{false};
+    std::atomic<bool> release_ran{false};
+    std::atomic<bool> join_completed{false};
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            forge::start_detached(
+                scope.join()
+                | std::execution::then([&] noexcept {
+                    join_completed.store(true, std::memory_order_release);
+                }));
+            join_start_returned.store(true, std::memory_order_release);
+        }));
+
+    ASSERT_TRUE(wait_for_flag(join_start_returned));
+    EXPECT_FALSE(join_completed.load(std::memory_order_acquire));
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&, assoc] noexcept {
+            assoc->reset();
+            release_ran.store(true, std::memory_order_release);
+        }));
+
+    EXPECT_TRUE(wait_for_flag(release_ran));
+    EXPECT_TRUE(wait_for_flag(join_completed));
+    EXPECT_EQ(scope.count(), 0u);
+
+    pool.wait();
+}
+
 TEST(SimpleCountingScopeTest, AssociationMoveTransfersOwnership) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
@@ -513,6 +697,18 @@ TEST(CountingScopeTest, IsDistinctAndAssociatesWork) {
     }
 
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, JoinStartReturnsWhileScopeIsNonEmpty) {
+    expect_join_start_returns_while_nonempty<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, MultipleJoinersCompleteWhenScopeDrains) {
+    expect_multiple_joiners_complete_when_scope_drains<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {
+    expect_join_receiver_may_destroy_operation_on_completion<std::execution::counting_scope>();
 }
 
 TEST(CountingScopeTest, WrapPreservesCompletionResults) {

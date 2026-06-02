@@ -27,7 +27,6 @@
 #include "env.hpp"
 
 #include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <exception>
 #include <mutex>
@@ -37,6 +36,26 @@
 namespace std::execution {
 
 namespace __forge_counting_scope {
+
+struct __join_state_base {
+    explicit __join_state_base(
+        void (*complete)(__join_state_base*) noexcept) noexcept
+        : __complete(complete) {}
+
+    __join_state_base* __next = nullptr;
+    bool __registered = false;
+    void (*__complete)(__join_state_base*) noexcept = nullptr;
+};
+
+inline void __complete_joiners(__join_state_base* head) noexcept {
+    while (head) {
+        auto* current = head;
+        head = head->__next;
+        current->__next = nullptr;
+        current->__registered = false;
+        current->__complete(current);
+    }
+}
 
 template<class Scope>
 struct __join_sender;
@@ -85,8 +104,8 @@ concept scope_token =
 //
 // wrap() follows the current working draft shape: simple scope tokens return
 // their input sender unchanged. Association is owned by top-level algorithms
-// such as associate/spawn/spawn_future. join() returns a sender, but currently
-// still performs a start-time blocking wait.
+// such as associate/spawn/spawn_future. join() returns an async sender that
+// completes when all currently associated work drains.
 // ──────────────────────────────────────────────────────────────────────────
 
 class simple_counting_scope {
@@ -112,6 +131,7 @@ public:
 
     // Close: prevent new work from being associated
     void close() noexcept {
+        std::lock_guard lk{__mtx_};
         __closed_.store(true, std::memory_order_release);
     }
 
@@ -131,30 +151,14 @@ private:
     friend struct __forge_counting_scope::__join_sender<simple_counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
+    void __start_join(__forge_counting_scope::__join_state_base* joiner) noexcept;
 
-    void __increment() noexcept {
-        __count_.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    void __decrement() noexcept {
-        if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            // Last operation completed
-            std::lock_guard lk{__mtx_};
-            __cv_.notify_all();
-        }
-    }
-
-    void __wait() noexcept {
-        std::unique_lock lk{__mtx_};
-        __cv_.wait(lk, [this] {
-            return __count_.load(std::memory_order_acquire) == 0;
-        });
-    }
+    void __decrement() noexcept;
 
     std::atomic<std::size_t> __count_{0};
     std::atomic<bool> __closed_{false};
     std::mutex __mtx_;
-    std::condition_variable __cv_;
+    __forge_counting_scope::__join_state_base* __joiners_ = nullptr;
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -211,9 +215,42 @@ private:
 static_assert(std::execution::scope_association<simple_counting_scope::scope_association>);
 
 inline auto simple_counting_scope::__try_associate() noexcept -> scope_association {
-    if (is_closed()) return {};
-    __increment();
+    std::lock_guard lk{__mtx_};
+    if (__closed_.load(std::memory_order_acquire)) return {};
+    __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
+}
+
+inline void simple_counting_scope::__start_join(
+    __forge_counting_scope::__join_state_base* joiner) noexcept {
+    __forge_counting_scope::__join_state_base* ready = nullptr;
+    {
+        std::lock_guard lk{__mtx_};
+        if (__count_.load(std::memory_order_acquire) == 0) {
+            ready = joiner;
+        } else {
+            joiner->__next = __joiners_;
+            joiner->__registered = true;
+            __joiners_ = joiner;
+
+            if (__count_.load(std::memory_order_acquire) == 0) {
+                __joiners_ = joiner->__next;
+                ready = joiner;
+            }
+        }
+    }
+    __forge_counting_scope::__complete_joiners(ready);
+}
+
+inline void simple_counting_scope::__decrement() noexcept {
+    __forge_counting_scope::__join_state_base* ready = nullptr;
+    {
+        std::lock_guard lk{__mtx_};
+        if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            ready = std::exchange(__joiners_, nullptr);
+        }
+    }
+    __forge_counting_scope::__complete_joiners(ready);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -261,20 +298,28 @@ struct __join_sender {
     }
 
     template<class R>
-    struct __op : __forge_detail::__immovable {
+    struct __op : __join_state_base, __forge_detail::__immovable {
         using operation_state_concept = operation_state_t;
 
         Scope* __scope;
         R __rcvr;
 
         __op(Scope* scope, R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>)
-            : __scope(scope), __rcvr(std::move(rcvr)) {}
+            : __join_state_base(&__complete_join)
+            , __scope(scope)
+            , __rcvr(std::move(rcvr)) {}
 
         void start() & noexcept {
             if (__scope) {
-                __scope->__wait();
+                __scope->__start_join(this);
+                return;
             }
-            std::execution::set_value(std::move(__rcvr));
+            __complete_join(this);
+        }
+
+        static void __complete_join(__join_state_base* base) noexcept {
+            auto* self = static_cast<__op*>(base);
+            std::execution::set_value(std::move(self->__rcvr));
         }
     };
 
@@ -326,8 +371,7 @@ simple_counting_scope::get_token() noexcept {
 
 // ──────────────────────────────────────────────────────────────────────────
 // counting_scope — stop-aware structured concurrency scope subset
-// join() returns a sender; the current implementation still performs a
-// start-time blocking wait until the full async join-state model lands.
+// join() returns an async sender that completes when associated work drains.
 // ──────────────────────────────────────────────────────────────────────────
 
 class counting_scope {
@@ -349,6 +393,7 @@ public:
     [[nodiscard]] scope_token get_token() noexcept;
 
     void close() noexcept {
+        std::lock_guard lk{__mtx_};
         __closed_.store(true, std::memory_order_release);
     }
 
@@ -372,34 +417,19 @@ private:
     friend struct __forge_counting_scope::__join_sender<counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
+    void __start_join(__forge_counting_scope::__join_state_base* joiner) noexcept;
 
     [[nodiscard]] std::inplace_stop_token __stop_token() noexcept {
         return __stop_source_.get_token();
     }
 
-    void __increment() noexcept {
-        __count_.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    void __decrement() noexcept {
-        if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            std::lock_guard lk{__mtx_};
-            __cv_.notify_all();
-        }
-    }
-
-    void __wait() noexcept {
-        std::unique_lock lk{__mtx_};
-        __cv_.wait(lk, [this] {
-            return __count_.load(std::memory_order_acquire) == 0;
-        });
-    }
+    void __decrement() noexcept;
 
     std::atomic<std::size_t> __count_{0};
     std::atomic<bool> __closed_{false};
     std::inplace_stop_source __stop_source_{};
     std::mutex __mtx_;
-    std::condition_variable __cv_;
+    __forge_counting_scope::__join_state_base* __joiners_ = nullptr;
 };
 
 class counting_scope::scope_association {
@@ -452,9 +482,42 @@ private:
 static_assert(std::execution::scope_association<counting_scope::scope_association>);
 
 inline auto counting_scope::__try_associate() noexcept -> scope_association {
-    if (is_closed()) return {};
-    __increment();
+    std::lock_guard lk{__mtx_};
+    if (__closed_.load(std::memory_order_acquire)) return {};
+    __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
+}
+
+inline void counting_scope::__start_join(
+    __forge_counting_scope::__join_state_base* joiner) noexcept {
+    __forge_counting_scope::__join_state_base* ready = nullptr;
+    {
+        std::lock_guard lk{__mtx_};
+        if (__count_.load(std::memory_order_acquire) == 0) {
+            ready = joiner;
+        } else {
+            joiner->__next = __joiners_;
+            joiner->__registered = true;
+            __joiners_ = joiner;
+
+            if (__count_.load(std::memory_order_acquire) == 0) {
+                __joiners_ = joiner->__next;
+                ready = joiner;
+            }
+        }
+    }
+    __forge_counting_scope::__complete_joiners(ready);
+}
+
+inline void counting_scope::__decrement() noexcept {
+    __forge_counting_scope::__join_state_base* ready = nullptr;
+    {
+        std::lock_guard lk{__mtx_};
+        if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            ready = std::exchange(__joiners_, nullptr);
+        }
+    }
+    __forge_counting_scope::__complete_joiners(ready);
 }
 
 class counting_scope::scope_token {

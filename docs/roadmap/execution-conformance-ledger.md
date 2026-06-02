@@ -48,7 +48,7 @@ extensions. This is the source of truth for native handoff risk triage.
 | `std::execution::ensure_started` | Removed non-WD extension name | No longer exposed by the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
 | `std::execution::start_detached` | Removed non-WD extension name | No longer exposed by the `<execution>` backport; Forge runtime code uses `forge::start_detached`. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
 | `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` allocates detached state, associates through `token.try_associate()`, and starts eagerly. It accepts only `set_value()` / `set_stopped()` senders. | Keep tests aligned with current-WD fire-and-forget spelling. |
-| `std::execution::counting_scope::join()` | Partial convergence | `simple_counting_scope::join()` and `counting_scope::join()` return senders, but the current implementation waits in `start()` rather than exposing the full async join-state model. | Keep improving with the whole scope-token surface; do not reintroduce blocking `void join()`. |
+| `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` and `counting_scope::join()` return async senders; `start()` registers the join operation and count drain completes receivers outside the scope mutex. | Keep stress coverage for last-decrement vs join-register races; do not reintroduce blocking `void join()` or start-time waits. |
 | Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
 | Execution domain dispatch | Tested current-WD connect subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. | Keep coverage for recursive transforms; remaining gap is `get_completion_signatures(sender, env)` not fully recomputing through transformed sender. |
@@ -67,8 +67,8 @@ Track these as current gaps until a focused taskbook closes them:
 - `spawn_future` uses `get_allocator` for its shared state and consumer record,
   but `any_stop_token` callback/type-erasure control blocks are not
   allocator-aware;
-- `counting_scope::join()` is sender-returning but still uses a blocking
-  start-time wait rather than the full async join-state model;
+- scope join is async and sender-returning; keep stress coverage current for
+  last-decrement vs join-register races;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.

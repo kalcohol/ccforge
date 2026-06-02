@@ -26,7 +26,7 @@
 - `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费 value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的 `forge::wait_result(sender)`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和 consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token 会通过 `any_stop_token` 类型擦除注册 callback，该类型擦除层的内部 control block 分配尚未 allocator-aware。
 - Scope-token surface 已改为 current-WD-shaped：`simple_counting_scope::token::wrap(sender)` 是 identity forwarding，`counting_scope::token::wrap(sender)` 只注入 scope stop token；scope association 由 top-level `associate(sender, token)`、`spawn(sender, token[, env])` 和 `spawn_future(sender, token[, env])` 持有。`spawn` 只接受 completion signatures 为 `set_value()` / `set_stopped()` 的 sender；会产生 value 或 error completion 的 sender 需要先转换成无 error、无 value 的形态。
-- `simple_counting_scope::join()` / `counting_scope::join()` 已返回 sender，可用 `sync_wait(scope.join())` 等 sender 消费方式等待 drain；实现目前仍以 start 时阻塞等待为主，完整异步 join-state 模型尚未接入。
+- `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用 `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join operation，最后一个 scope association 释放时在锁外完成 join receiver。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task operation-state。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke` fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，整个 backport 自动禁用。
