@@ -42,3 +42,4 @@ stable multilingual entrypoints.
 - [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md)
 - [`forge::accel` runtime v2 roadmap](roadmap/forge-accel-runtime-v2.md)
 - [`std::execution` conformance ledger](roadmap/execution-conformance-ledger.md)
+- [`std::execution` current-WD convergence checklist](roadmap/execution-wd-convergence-checklist.md)
