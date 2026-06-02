@@ -158,6 +158,22 @@ cancellation or shutdown paths. The key rule is:
 
 An atomic predicate plus an unlocked notify can still lose a wakeup.
 
+Current high-risk wakeup coverage map:
+
+| Area | Representative wakeup/cancellation site | Coverage |
+| --- | --- | --- |
+| execution scope join | `simple_counting_scope` / `counting_scope` join registration and final association release | `execution_counting_scope` deterministic tests and `execution_counting_scope_stress` race `join start` against last release, multiple joiners, and join completion starting another join |
+| `forge::timer_context` | deadline wakeup, per-item stop callback, `wait()` pending drain | `forge_timer_context` includes long-deadline cancellation, stop-vs-deadline, self-destroying receiver, and repeated prompt wake tests |
+| `forge::bounded_channel` | pending send/recv stop callbacks and close/stop drain | `forge_channel` covers rendezvous, backpressure, close-drain, cancellation, and self-destroying receivers |
+| `forge::async_scope` | active-count drain and request-stop propagation | `forge_async_scope` covers spawn lifetime, blocking destructor/wait, stop propagation, and first-error handling |
+| `forge::strand` / pool | serialized queue drain, shutdown, and worker handoff | `forge_strand`, `forge_thread_pool`, and scheduler roundtrip tests cover FIFO, reentrant scheduling, bounded queues, shutdown, and worker self-wait |
+| `forge::io` / `forge::accel` | backend stop callbacks, pending record completion, and context drain | `forge_io_*` and `forge_accel_*` cover exactly-once completion, typed errors, stop/drain, event waits, and self-destroying receivers where supported |
+
+The map is intentionally representative rather than a proof that every audit
+line is independently stressed. When a wakeup site changes, either point it at
+an existing test that exercises the same predicate/notify discipline or add a
+focused stress case before treating the audit as closed.
+
 ## 测试分组开关
 
 测试子目录可用 CMake 开关独立启停，默认全开：

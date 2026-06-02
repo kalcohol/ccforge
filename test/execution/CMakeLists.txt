@@ -63,6 +63,10 @@ forge_add_execution_runtime_test(
     test_execution_counting_scope.cpp
     execution_counting_scope)
 forge_add_execution_runtime_test(
+    test_execution_counting_scope_stress
+    test_execution_counting_scope_stress.cpp
+    execution_counting_scope_stress)
+forge_add_execution_runtime_test(
     test_execution_spawn_future
     test_execution_spawn_future.cpp
     execution_spawn_future)
