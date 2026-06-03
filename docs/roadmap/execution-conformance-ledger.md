@@ -110,7 +110,9 @@ Track these as current gaps until a focused taskbook closes them:
 - `spawn_future` uses `get_allocator` for its shared state and consumer record,
   but `any_stop_token` callback/type-erasure control blocks are not
   allocator-aware; making those allocations resource-controlled requires an
-  allocator-aware type-erasure API rather than a local replacement;
+  allocator-aware type-erasure API rather than a local replacement. See
+  [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)
+  for the accepted design direction;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.
