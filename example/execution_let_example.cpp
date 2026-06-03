@@ -23,8 +23,18 @@
 #if __cplusplus < 202002L
 int main() { return 0; }
 #else
-#include "../backport/cpp26/execution.hpp"
+#include <execution>
 #include <iostream>
 #include <tuple>
-int main() { auto sender = std::execution::just(7) | std::execution::let_value([](int v) { return std::execution::just(v * 3); }); auto result = std::execution::sync_wait(std::move(sender)); std::cout << "let_value=" << std::get<0>(*result) << '\n'; return 0; }
+
+int main() {
+    auto sender = std::execution::just(7)
+        | std::execution::let_value([](int v) {
+              return std::execution::just(v * 3);
+          });
+
+    auto result = std::execution::sync_wait(std::move(sender));
+    std::cout << "let_value=" << std::get<0>(*result) << '\n';
+    return 0;
+}
 #endif

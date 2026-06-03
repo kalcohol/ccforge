@@ -24,14 +24,27 @@
 #include <exception>
 #include <iostream>
 
-struct print_receiver { using receiver_concept = std::execution::receiver_t; int* out{};
+struct print_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* out{};
+
     void set_value(int v) && noexcept { *out = v; }
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; } };
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
 
 int main() {
-    using cs_int = std::execution::completion_signatures<std::execution::set_value_t(int), std::execution::set_error_t(std::exception_ptr), std::execution::set_stopped_t()>;
-    int captured = 0; forge::any_receiver_of<cs_int> erased = print_receiver{&captured}; std::execution::set_value(std::move(erased), 7);
+    using cs_int = std::execution::completion_signatures<
+        std::execution::set_value_t(int),
+        std::execution::set_error_t(std::exception_ptr),
+        std::execution::set_stopped_t()>;
+
+    int captured = 0;
+    forge::any_receiver_of<cs_int> erased = print_receiver{&captured};
+    std::execution::set_value(std::move(erased), 7);
+
     std::cout << "any_receiver value=" << captured << '\n';
-    return 0; }
+    return 0;
+}

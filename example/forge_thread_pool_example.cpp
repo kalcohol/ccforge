@@ -23,9 +23,16 @@
 #include <forge/static_thread_pool.hpp>
 #include <cassert>
 #include <thread>
+
 int main() {
     forge::static_thread_pool pool(2);
     auto main_id = std::this_thread::get_id();
-    auto ran_on_worker = std::execution::sync_wait(std::execution::schedule(pool.get_scheduler()) | std::execution::then([main_id] { return std::this_thread::get_id() != main_id; }));
+    auto ran_on_worker = std::execution::sync_wait(
+        std::execution::schedule(pool.get_scheduler())
+        | std::execution::then([main_id] {
+              return std::this_thread::get_id() != main_id;
+          }));
+
     assert(ran_on_worker && std::get<0>(*ran_on_worker));
-    return 0; }
+    return 0;
+}

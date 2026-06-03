@@ -29,7 +29,18 @@
 int main() {
 #if defined(__cpp_lib_mdspan)
     int a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9}, x[] = {1, 0, 1}, y[3]{}, z[3]{};
-    std::mdspan A(a, std::extents<int, 3, 3>{}); std::mdspan xv(x, std::extents<int, 3>{}); std::mdspan yv(y, std::extents<int, 3>{}); std::mdspan zv(z, std::extents<int, 3>{}); auto As = std::linalg::scaled(2.0, A); auto At = std::linalg::transposed(A);
-    std::linalg::matrix_vector_product(As, xv, yv); std::linalg::matrix_vector_product(At, xv, zv); assert(y[0] == 8 && y[1] == 20 && y[2] == 32 && z[0] == 8 && z[1] == 10 && z[2] == 12);
+    std::mdspan A(a, std::extents<int, 3, 3>{});
+    std::mdspan xv(x, std::extents<int, 3>{});
+    std::mdspan yv(y, std::extents<int, 3>{});
+    std::mdspan zv(z, std::extents<int, 3>{});
+
+    auto As = std::linalg::scaled(2.0, A);
+    auto At = std::linalg::transposed(A);
+    std::linalg::matrix_vector_product(As, xv, yv);
+    std::linalg::matrix_vector_product(At, xv, zv);
+
+    assert(y[0] == 8 && y[1] == 20 && y[2] == 32);
+    assert(z[0] == 8 && z[1] == 10 && z[2] == 12);
 #endif
-    return 0; }
+    return 0;
+}

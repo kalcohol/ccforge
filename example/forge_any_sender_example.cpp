@@ -22,11 +22,22 @@
 
 #include <forge/any_sender.hpp>
 #include <iostream>
+
 int main() {
-    using cs_int = std::execution::completion_signatures<std::execution::set_value_t(int), std::execution::set_error_t(std::exception_ptr), std::execution::set_stopped_t()>;
-    auto concrete = std::execution::just(21) | std::execution::then([](int v) { return v * 2; });
+    using cs_int = std::execution::completion_signatures<
+        std::execution::set_value_t(int),
+        std::execution::set_error_t(std::exception_ptr),
+        std::execution::set_stopped_t()>;
+
+    auto concrete = std::execution::just(21)
+        | std::execution::then([](int v) { return v * 2; });
     forge::any_sender_of<cs_int> erased = std::move(concrete);
+
     auto result = erased.sync_wait();
-    if (!result) return 1;
+    if (!result) {
+        return 1;
+    }
+
     std::cout << "any_sender value=" << std::get<0>(*result) << '\n';
-    return 0; }
+    return 0;
+}

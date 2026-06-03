@@ -22,9 +22,17 @@
 
 #include <forge/system_context.hpp>
 #include <iostream>
+
 int main() {
     auto& ctx = forge::system_context::get();
-    auto result = std::execution::sync_wait(std::execution::schedule(ctx.get_scheduler()) | std::execution::then([&ctx] { return ctx.thread_count(); }));
-    if (!result) return 1;
+    auto result = std::execution::sync_wait(
+        std::execution::schedule(ctx.get_scheduler())
+        | std::execution::then([&ctx] { return ctx.thread_count(); }));
+
+    if (!result) {
+        return 1;
+    }
+
     std::cout << "system_context threads=" << std::get<0>(*result) << '\n';
-    return 0; }
+    return 0;
+}

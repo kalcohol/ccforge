@@ -24,12 +24,37 @@
 #include <coroutine>
 #include <forge/task.hpp>
 #include <iostream>
+
 using exec_env = std::execution::empty_env;
-struct demo { struct promise_type : std::execution::with_awaitable_senders<promise_type> { demo get_return_object() { return {}; } std::suspend_never initial_suspend() noexcept { return {}; } std::suspend_never final_suspend() noexcept { return {}; } void return_void() {} void unhandled_exception() { std::terminate(); } }; };
-demo run() { auto [v] = co_await (std::execution::just(20) | std::execution::then([](int x) { return x + 22; })); std::cout << "execution coro value: " << v << '\n'; }
-int main() { run(); return 0; }
+
+struct demo {
+    struct promise_type : std::execution::with_awaitable_senders<promise_type> {
+        demo get_return_object() { return {}; }
+        std::suspend_never initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+    };
+};
+
+demo run() {
+    auto [v] = co_await (
+        std::execution::just(20)
+        | std::execution::then([](int x) { return x + 22; }));
+    std::cout << "execution coro value: " << v << '\n';
+}
+
+int main() {
+    run();
+    return 0;
+}
 #else
 #include <execution>
 #include <iostream>
-int main() { std::cout << "C++20 coroutines required\n"; (void)sizeof(std::execution::empty_env); return 0; }
+
+int main() {
+    std::cout << "C++20 coroutines required\n";
+    (void)sizeof(std::execution::empty_env);
+    return 0;
+}
 #endif

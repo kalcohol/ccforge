@@ -29,6 +29,15 @@
 int main() {
 #if defined(__cpp_lib_mdspan)
     int a[] = {2, 1, 0, 0, 1, 3, 4, 0, 1}, b[] = {1, 0, 0, 0, 1, 0, 0, 0, 1}, c[9]{};
-    std::mdspan A(a, std::extents<int, 3, 3>{}); std::mdspan B(b, std::extents<int, 3, 3>{}); std::mdspan C(c, std::extents<int, 3, 3>{}); std::linalg::matrix_product(A, B, C); for (int i = 0; i < 9; ++i) assert(c[i] == a[i]);
+    std::mdspan A(a, std::extents<int, 3, 3>{});
+    std::mdspan B(b, std::extents<int, 3, 3>{});
+    std::mdspan C(c, std::extents<int, 3, 3>{});
+
+    std::linalg::matrix_product(A, B, C);
+
+    for (int i = 0; i < 9; ++i) {
+        assert(c[i] == a[i]);
+    }
 #endif
-    return 0; }
+    return 0;
+}

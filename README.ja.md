@@ -142,6 +142,11 @@ scripts/verify-install-package.sh
 - [testing and verification](docs/testing.md)
 - [roadmap](ROADMAP.md)
 
+## 参考
+
+Forge の backport は標準提案と既存実装を参考にしています。主な参考先は
+NVIDIA/stdexec、VcDevel/std-simd、Kokkos stdBLAS、ncnn です。
+
 ## ライセンス
 
-MIT License。ライセンス本文はソースヘッダーを参照してください。
+MIT License。[LICENSE](LICENSE) を参照してください。

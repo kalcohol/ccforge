@@ -30,20 +30,20 @@ void example_unique_resource() {
 
     // Using function pointer - zero overhead
     auto file1 = std::make_unique_resource_checked(
-        fopen("test1.txt", "w"),
+        std::tmpfile(),
         nullptr,
-        &fclose
+        &std::fclose
     );
 
     if (file1.get() != nullptr) {
-        fprintf(file1.get(), "Hello from unique_resource\n");
+        std::fprintf(file1.get(), "Hello from unique_resource\n");
     }
 
     // Using lambda - zero overhead (stateless lambda can be optimized to function pointer)
     auto file2 = std::make_unique_resource_checked(
-        fopen("test2.txt", "w"),
+        std::tmpfile(),
         nullptr,
-        [](FILE* f) { if (f) fclose(f); }
+        [](FILE* f) { if (f) std::fclose(f); }
     );
 
     // Note: file1 and file2 are different types!
@@ -51,15 +51,19 @@ void example_unique_resource() {
 
     // Managing multiple resources
     auto files = std::unique_resource(
-        std::vector<FILE*>{fopen("test3.txt", "w"), fopen("test4.txt", "w")},
+        std::vector<FILE*>{std::tmpfile(), std::tmpfile()},
         [](std::vector<FILE*>& vec) {
-            for (auto* f : vec) if (f) fclose(f);
+            for (auto* f : vec) {
+                if (f) {
+                    std::fclose(f);
+                }
+            }
         }
     );
 
     for (size_t i = 0; i < files.get().size(); ++i) {
         if (files.get()[i]) {
-            fprintf(files.get()[i], "File %zu\n", i);
+            std::fprintf(files.get()[i], "File %zu\n", i);
         }
     }
 }

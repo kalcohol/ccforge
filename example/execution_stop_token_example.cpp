@@ -23,7 +23,23 @@
 #if __cplusplus < 202002L
 int main() { return 0; }
 #else
-#include "../backport/cpp26/execution.hpp"
+#include <execution>
 #include <iostream>
-int main() { std::inplace_stop_source source; auto token = source.get_token(); bool called = false; std::inplace_stop_callback cb(token, [&] { called = true; std::cout << "stop callback\n"; }); source.request_stop(); std::cout << "stop_requested=" << token.stop_requested() << ", callback=" << called << '\n'; return 0; }
+
+int main() {
+    std::inplace_stop_source source;
+    auto token = source.get_token();
+    bool called = false;
+
+    std::inplace_stop_callback cb(token, [&] {
+        called = true;
+        std::cout << "stop callback\n";
+    });
+
+    source.request_stop();
+
+    std::cout << "stop_requested=" << token.stop_requested()
+              << ", callback=" << called << '\n';
+    return 0;
+}
 #endif

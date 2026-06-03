@@ -51,6 +51,7 @@ forge_add_example(execution_phase3_example execution_phase3_example.cpp BACKPORT
 forge_add_example(execution_schedulers execution_schedulers_example.cpp BACKPORT TBB)
 forge_add_example(execution_let execution_let_example.cpp BACKPORT TBB)
 forge_add_example(execution_stop_token execution_stop_token_example.cpp BACKPORT TBB)
+forge_add_example(execution_spawn_future execution_spawn_future_example.cpp BACKPORT TBB)
 forge_add_example(execution_phase4 execution_phase4_example.cpp BACKPORT TBB)
 forge_add_example(execution_on execution_on_example.cpp BACKPORT TBB)
 forge_add_example(execution_affine execution_affine_example.cpp BACKPORT TBB)

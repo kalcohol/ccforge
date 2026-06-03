@@ -23,7 +23,7 @@
 #if __cplusplus < 202002L
 int main() { return 0; }
 #else
-#include "../backport/cpp26/execution.hpp"
+#include <execution>
 #include <iostream>
 
 int main() {

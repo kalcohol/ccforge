@@ -29,7 +29,9 @@ int main() {
 
     const auto sum = values + offset;
     const std::array<int, 4> threshold_raw{{10, 12, 12, 12}};
-    const auto threshold = std::simd::partial_load<int4>(threshold_raw.data(), static_cast<std::simd::simd_size_type>(threshold_raw.size()));
+    const auto threshold = std::simd::partial_load<int4>(
+        threshold_raw.data(),
+        static_cast<std::simd::simd_size_type>(threshold_raw.size()));
     const auto selected = sum > threshold;
     const auto reversed = std::simd::permute(sum, [](auto index, auto size) {
         return std::simd::simd_size_type(decltype(size)::value - 1 - decltype(index)::value);

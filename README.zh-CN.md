@@ -138,6 +138,11 @@ scripts/verify-install-package.sh
 - [测试与验证](docs/testing.md)
 - [roadmap](ROADMAP.md)
 
+## 参考
+
+Forge 的 backport 参考了标准提案和已有实现，包括 NVIDIA/stdexec、
+VcDevel/std-simd、Kokkos stdBLAS 和 ncnn。
+
 ## 许可证
 
-MIT License。许可证文本见源码文件头。
+MIT License。见 [LICENSE](LICENSE)。
