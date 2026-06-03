@@ -236,3 +236,91 @@ TEST(AccelCpuTest, ContextWaitCanBeCalledFromBackendWork) {
 
     EXPECT_TRUE(reached);
 }
+
+TEST(AccelCpuStressTest, ConcurrentCrossQueueEventPipelinesUseAlignedCopies) {
+    constexpr int kIterations = 16;
+    constexpr int kPipelines = 4;
+    constexpr int kValues = 32;
+
+    for (int iteration = 0; iteration < kIterations; ++iteration) {
+        forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
+            .thread_count = 12,
+            .queue_capacity = std::nullopt,
+        }};
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+        std::atomic<int> completed{0};
+        std::atomic<int> failed{0};
+        std::vector<std::thread> workers;
+
+        for (int lane = 0; lane < kPipelines; ++lane) {
+            workers.emplace_back([&, lane] {
+                auto copy_q = ctx.get_queue(forge::accel::queue_kind::copy);
+                auto compute_q = ctx.get_queue(forge::accel::queue_kind::compute);
+                forge::accel::cpu::device_buffer<int> device{ctx, kValues};
+                forge::accel::cpu::event copied;
+                forge::accel::cpu::event computed;
+                forge::accel::cpu::event_wait_options wait_options{.timeout = 500ms};
+                std::vector<int> input(kValues);
+                std::vector<int> output(kValues, -1);
+
+                for (int i = 0; i < kValues; ++i) {
+                    input[static_cast<std::size_t>(i)] =
+                        iteration * 1000 + lane * 100 + i;
+                }
+
+                ready.fetch_add(1, std::memory_order_acq_rel);
+                while (!go.load(std::memory_order_acquire)) {
+                    std::this_thread::yield();
+                }
+
+                auto result = std::execution::sync_wait(std::execution::when_all(
+                    forge::accel::cpu::copy_to_device(
+                        copy_q,
+                        device,
+                        std::span<const int>{input}),
+                    forge::accel::cpu::record_event(copy_q, copied),
+                    forge::accel::cpu::wait_event(compute_q, copied, wait_options),
+                    forge::accel::cpu::submit(compute_q, [&] {
+                        for (auto& value : device.span()) {
+                            value = value * 2 + 1;
+                        }
+                    }),
+                    forge::accel::cpu::record_event(compute_q, computed),
+                    forge::accel::cpu::wait_event(copy_q, computed, wait_options),
+                    forge::accel::cpu::copy_to_host(
+                        copy_q,
+                        std::span<int>{output},
+                        device)));
+
+                if (!result.has_value()) {
+                    failed.fetch_add(1, std::memory_order_acq_rel);
+                    return;
+                }
+
+                for (int i = 0; i < kValues; ++i) {
+                    const int expected =
+                        (iteration * 1000 + lane * 100 + i) * 2 + 1;
+                    if (output[static_cast<std::size_t>(i)] != expected) {
+                        failed.fetch_add(1, std::memory_order_acq_rel);
+                        return;
+                    }
+                }
+                completed.fetch_add(1, std::memory_order_acq_rel);
+            });
+        }
+
+        while (ready.load(std::memory_order_acquire) != kPipelines) {
+            std::this_thread::yield();
+        }
+        go.store(true, std::memory_order_release);
+
+        for (auto& worker : workers) {
+            worker.join();
+        }
+        ctx.wait();
+
+        EXPECT_EQ(failed.load(std::memory_order_acquire), 0);
+        EXPECT_EQ(completed.load(std::memory_order_acquire), kPipelines);
+    }
+}
