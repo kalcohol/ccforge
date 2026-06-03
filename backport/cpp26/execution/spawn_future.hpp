@@ -169,7 +169,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     explicit __shared_state(Association assoc, allocator_t allocator) noexcept
         : __association(std::move(assoc))
-        , __allocator(std::move(allocator))
+        , __state_allocator(std::move(allocator))
     {}
 
     template<class T, class... Args>
@@ -177,7 +177,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         using alloc_t = typename std::allocator_traits<allocator_t>
             ::template rebind_alloc<T>;
         return std::allocate_shared<T>(
-            alloc_t{__allocator}, std::forward<Args>(args)...);
+            alloc_t{__state_allocator}, std::forward<Args>(args)...);
     }
 
     ~__shared_state() noexcept {
@@ -294,7 +294,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     std::weak_ptr<consumer_base_t> __consumer_cb{};
     std::inplace_stop_source __stop_source{};
     Association __association{};
-    allocator_t __allocator;
+    allocator_t __state_allocator;
     __forge_detail::__op_storage<1024> __op_storage{};
     std::shared_ptr<__shared_state> __keepalive{};
 };
