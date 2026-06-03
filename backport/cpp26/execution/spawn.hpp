@@ -70,14 +70,14 @@ struct __state {
     struct __recv {
         using receiver_concept = receiver_t;
 
-        state_t* __state;
+        state_t* __owner;
 
         void set_value() && noexcept {
-            __state->__complete();
+            __owner->__complete();
         }
 
         void set_stopped() && noexcept {
-            __state->__complete();
+            __owner->__complete();
         }
 
         auto get_env() const noexcept -> empty_env {
