@@ -485,4 +485,3 @@ template<class Action>
 }
 
 } // namespace __detail
-
