@@ -176,6 +176,10 @@ TEST(AccelTraceTest, CommandEmitsSubmittedStartedCompletedInOrder) {
     EXPECT_LT(events[1].sequence, events[2].sequence);
     EXPECT_NE(events[0].context.value, 0U);
     EXPECT_NE(events[0].stream.value, 0U);
+    EXPECT_FALSE(events[0].has_end_timestamp);
+    EXPECT_FALSE(events[1].has_end_timestamp);
+    EXPECT_TRUE(events[2].has_end_timestamp);
+    EXPECT_LE(events[2].timestamp, events[2].end_timestamp);
 }
 
 TEST(AccelTraceTest, PacketTimeoutEmitsTimeoutOnce) {

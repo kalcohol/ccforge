@@ -309,6 +309,144 @@ TEST(AccelEventTest, DefaultQueueHandleIsStable) {
     EXPECT_TRUE(second_state->value);
 }
 
+TEST(AccelEventTest, DefaultQueueUsesStreamZero) {
+    forge::accel::mock::context ctx;
+    auto general = ctx.get_queue();
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+
+    auto general_snapshot = forge::accel::mock::query_stream(general);
+    auto compute_snapshot = forge::accel::mock::query_stream(compute);
+
+    EXPECT_EQ(general_snapshot.stream.value, 0U);
+    EXPECT_EQ(general_snapshot.kind, forge::accel::queue_kind::general);
+    EXPECT_TRUE(general_snapshot.idle);
+    EXPECT_NE(compute_snapshot.stream.value, 0U);
+    EXPECT_EQ(compute_snapshot.kind, forge::accel::queue_kind::compute);
+}
+
+TEST(AccelEventTest, QueryStreamReportsPendingAndIdle) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue(forge::accel::queue_kind::compute);
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto state = std::make_shared<async_state>();
+
+    auto sender = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto pending = forge::accel::mock::query_stream(q);
+    EXPECT_FALSE(pending.idle);
+    EXPECT_EQ(pending.pending_nodes, 1U);
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(state));
+    auto idle = forge::accel::mock::query_stream(q);
+    EXPECT_TRUE(idle.idle);
+    EXPECT_EQ(idle.pending_nodes, 0U);
+}
+
+TEST(AccelEventTest, SynchronizeStreamWaitsOnlyForOneStream) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto blocked_q = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto idle_q = ctx.get_queue(forge::accel::queue_kind::copy);
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto state = std::make_shared<async_state>();
+
+    auto sender = forge::accel::mock::submit(blocked_q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto idle_result = forge::accel::mock::synchronize_stream(idle_q);
+    EXPECT_TRUE(idle_result);
+    EXPECT_TRUE(idle_result.snapshot.idle);
+
+    auto timeout_result = forge::accel::mock::synchronize_stream(
+        blocked_q,
+        forge::accel::mock::stream_sync_options{.timeout = 20ms});
+    EXPECT_EQ(timeout_result.status, forge::accel::command_status::timed_out);
+    EXPECT_FALSE(timeout_result.snapshot.idle);
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(state));
+    auto done = forge::accel::mock::synchronize_stream(blocked_q);
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(done.snapshot.idle);
+}
+
+TEST(AccelEventTest, StreamSynchronizeReportsAndClearsStickyError) {
+    forge::accel::mock::context ctx;
+    auto q = ctx.get_queue(forge::accel::queue_kind::copy);
+    forge::accel::mock::device_buffer<int> device{ctx, 2};
+    std::vector<int> too_large{1, 2, 3};
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(
+            forge::accel::mock::copy_to_device(
+                q,
+                device,
+                std::span<const int>{too_large})),
+        forge::accel::operation_error);
+
+    auto sticky = forge::accel::mock::query_stream(q);
+    ASSERT_TRUE(sticky.has_sticky_error);
+    EXPECT_EQ(sticky.sticky_error.kind, forge::accel::error_kind::size_mismatch);
+
+    auto observed = forge::accel::mock::synchronize_stream(q);
+    EXPECT_FALSE(observed);
+    ASSERT_TRUE(observed.has_error);
+    EXPECT_EQ(observed.sticky_error.kind, forge::accel::error_kind::size_mismatch);
+
+    auto cleared = forge::accel::mock::query_stream(q);
+    EXPECT_FALSE(cleared.has_sticky_error);
+}
+
 TEST(AccelEventTest, WaitEventCompletesAfterRecordEvent) {
     forge::accel::mock::context ctx;
     auto q = ctx.get_queue();
@@ -737,6 +875,22 @@ TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
     EXPECT_TRUE(record_state->stopped);
     EXPECT_FALSE(record_state->error);
     EXPECT_FALSE(ev.ready());
+}
+
+TEST(AccelEventTest, EventElapsedTimeRequiresCompletedRecord) {
+    forge::accel::mock::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+
+    EXPECT_THROW(
+        (void)forge::accel::mock::elapsed_time(ev),
+        forge::accel::operation_error);
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::record_event(q, ev)).has_value());
+
+    const auto elapsed = forge::accel::mock::elapsed_time(ev);
+    EXPECT_GE(elapsed, std::chrono::steady_clock::duration::zero());
 }
 
 TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {

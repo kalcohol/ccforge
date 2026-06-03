@@ -36,7 +36,7 @@ portable conformance suite，因此 vocabulary 不只在 mock state machine 上�
 wire-format struct：
 
 - identity：`context_id`、`device_id`、`stream_id`、`session_id`、`request_id`、
-  `event_id`、`command_id`；
+  `event_id`、`module_id`、`command_id`；
 - lifecycle：`device_epoch`、`worker_generation`、`worker_key`；
 - device / IO metadata：`device_info`、`memory_kind`、`queue_kind`、`copy_kind`、
   `model_io_info`、`model_io_descriptor`；
@@ -117,6 +117,11 @@ context shutdown、device/session reset，或显式 event/fence ordering。
 创建 device-bound queue。每个 queue owns 一个 `forge::strand`，所以同一 queue 内 work
 FIFO 且 single-lane；不同 queue 是否并行推进取决于 `thread_count`。
 
+Mock backend 把 queue 视为 device worker stream 的 proof。`queue_kind::general` 和
+device session 的 command queue 使用 `stream_id{0}` 作为 default stream；显式 copy /
+compute queue 会分配非零 stream id。这对应常见 runtime 中“没有显式 stream 参数的 API
+仍落到默认 stream”的语义。
+
 ```cpp
 auto copy_q = ctx.get_queue(forge::accel::queue_kind::copy);
 auto compute_q = ctx.get_queue(forge::accel::queue_kind::compute);
@@ -164,6 +169,24 @@ forge::erased_sender<command> op{
     forge::accel::mock::copy_to_device_typed(q, buffer, host)};
 auto result = forge::wait_result(std::move(op));
 ```
+
+`query_stream(q)` 是 non-blocking stream snapshot，报告 stream id、queue kind、closed /
+idle 状态、pending node 数和 sticky error。`synchronize_stream(q, options)` 是 host
+blocking wait，只等待该 stream 变 idle 或 timeout，不等整个 context，也不同于 enqueue 一个
+`fence(q)` sender：
+
+```cpp
+auto snapshot = forge::accel::mock::query_stream(compute_q);
+
+auto sync = forge::accel::mock::synchronize_stream(
+    compute_q,
+    forge::accel::mock::stream_sync_options{.timeout = 100ms});
+```
+
+Sticky error 的 v3 proof 语义是：stream 记录第一条 non-success error，后续 node 仍继续
+执行；`query_stream` 只观察不清除；`synchronize_stream` 默认返回并清除当前 sticky error。
+这更接近 runtime 的 sync-point error aggregation，而不是把每个 stream 变成 error 后自动
+跳过后续节点的 dependency graph。
 
 ## Memory and buffers
 
@@ -222,6 +245,10 @@ boundary。
 Event 不是 native CUDA/HIP/SYCL handle、timeline semaphore、dependency graph 或 cycle
 detector。Same-queue wait-before-record 会阻塞该 queue，直到 timeout 或 context stop；
 应把 event 用作 cross-queue 或 already-ordered boundary。
+
+`elapsed_time(ev)` 在 event 已被 record 并完成后返回 mock steady-clock duration。它只用于
+proof / profiling-style 教学，不表示 vendor timestamp correlation；未完成或 invalid event
+会抛出 `operation_error{invalid_event}`。
 
 ## Devices, sessions, and recovery
 
@@ -286,6 +313,33 @@ reload、firmware reset 或 native context rebuild。
 request / response storage，并在成功时返回 completed packet。`command_options::timeout`
 从 sender `start()` 开始计时，早于 command 进入 session queue。Timeout 会以
 `error_kind::timeout` 完成，但不会打断已经开始运行的 handler。
+
+`command_packet` 可以携带 `module_id + command_id`。直接传 handler 时，handler 就是这个
+packet node 的实现；使用 `command_dispatcher<Request, Response>` 时，mock backend 按
+portable key 查 handler：
+
+```cpp
+forge::accel::mock::command_dispatcher<request, response> dispatch;
+dispatch.register_handler(
+    forge::accel::module_id{2},
+    forge::accel::command_id{7},
+    [](request& in, response& out) {
+        out.value = in.value * 4;
+    });
+
+auto op = forge::accel::mock::submit_packet(
+    session,
+    forge::accel::mock::command_packet{
+        forge::accel::module_id{2},
+        forge::accel::command_id{7},
+        request{11},
+        response{}},
+    dispatch);
+```
+
+这只是 module/command dispatch 的 portable proof：没有 handler 会以
+`error_kind::protocol_error` 失败；handler 返回非 ok status 会沿既有 command error path
+传播。
 
 `mock::request_session` 在 `device_session` 之上构建小型 request/response runtime：它分配
 单调递增的 `request_id`，追踪 pending request，支持可选 timeout，并统计 late response。
@@ -367,7 +421,9 @@ command 变成 error。
 
 Trace event 包含 command submitted / started / completed / stopped / error / timeout、
 device-lost 和 session-stale marker、lifecycle signal、context/device/session/stream IDs、
-command IDs、device epoch 和 worker generation。`trace_sink` 使用 mutex-protected PMR
+module/command IDs、device epoch 和 worker generation。Completed command event 还带
+activity duration：`timestamp` 是 activity start，`end_timestamp` 是 activity end，
+`has_end_timestamp` 表示该 duration 是否存在。`trace_sink` 使用 mutex-protected PMR
 vector，不会调用 user code。
 
 Mock backend 故意避开 Perfetto、ETW、LTTng、OpenTelemetry、vendor timestamp correlation

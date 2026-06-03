@@ -23,6 +23,7 @@
 #pragma once
 
 #include "../error.hpp"
+#include "../protocol.hpp"
 #include "../vocabulary.hpp"
 #include "../../resource_context.hpp"
 #include "../../resource_policy.hpp"
@@ -66,12 +67,15 @@ enum class trace_event_kind {
 struct trace_event {
     std::uint64_t sequence = 0;
     std::chrono::steady_clock::time_point timestamp{};
+    std::chrono::steady_clock::time_point end_timestamp{};
+    bool has_end_timestamp = false;
     trace_event_kind kind = trace_event_kind::submitted;
     context_id context{};
     device_id device{};
     session_id session{};
     stream_id stream{};
     request_id request{};
+    module_id module{};
     command_id command{};
     event_generation generation{};
     device_epoch epoch{};
@@ -90,7 +94,9 @@ public:
 
     void record(trace_event event) noexcept {
         try {
-            event.timestamp = std::chrono::steady_clock::now();
+            if (event.timestamp == std::chrono::steady_clock::time_point{}) {
+                event.timestamp = std::chrono::steady_clock::now();
+            }
             std::lock_guard lk{mtx_};
             event.sequence = next_sequence_++;
             events_.push_back(event);
@@ -147,17 +153,49 @@ struct event_wait_options {
     std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
 };
 
+struct stream_sync_options {
+    std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
+    bool clear_sticky_error = true;
+};
+
+struct stream_snapshot {
+    stream_id stream{};
+    queue_kind kind = queue_kind::general;
+    bool closed = true;
+    bool idle = true;
+    std::size_t pending_nodes = 0;
+    bool has_sticky_error = false;
+    error sticky_error{};
+};
+
+struct stream_sync_result {
+    stream_snapshot snapshot{};
+    command_status status = command_status::ok;
+    bool has_error = false;
+    error sticky_error{};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == command_status::ok && !has_error;
+    }
+};
+
 template<class Request, class Response>
 struct command_packet {
     using request_type = Request;
     using response_type = Response;
 
     command_packet(command_id id, Request request, Response response)
-        : id(id)
+        : command_packet(module_id{}, id, std::move(request), std::move(response))
+    {}
+
+    command_packet(module_id module, command_id id, Request request, Response response)
+        : module(module)
+        , id(id)
         , request(std::move(request))
         , response(std::move(response))
     {}
 
+    module_id module{};
     command_id id{};
     Request request;
     Response response;
@@ -166,6 +204,80 @@ struct command_packet {
 
 template<class Request, class Response>
 command_packet(command_id, Request, Response) -> command_packet<Request, Response>;
+
+template<class Request, class Response>
+command_packet(module_id, command_id, Request, Response) -> command_packet<Request, Response>;
+
+template<class Request, class Response>
+class command_dispatcher {
+public:
+    using request_type = Request;
+    using response_type = Response;
+    using handler_type = std::function<command_status(Request&, Response&)>;
+
+    explicit command_dispatcher(
+        std::pmr::memory_resource* memory = forge::default_memory_resource())
+        : entries_(std::pmr::polymorphic_allocator<entry>{normalize_memory_resource(memory)})
+    {}
+
+    template<class Handler>
+    void register_handler(module_id module, command_id command, Handler&& handler) {
+        handler_type wrapped{
+            [handler = std::forward<Handler>(handler)](
+                Request& request,
+                Response& response) mutable -> command_status {
+                using result_t = std::invoke_result_t<Handler&, Request&, Response&>;
+                if constexpr (std::is_same_v<result_t, command_status>) {
+                    return std::invoke(handler, request, response);
+                } else {
+                    std::invoke(handler, request, response);
+                    return command_status::ok;
+                }
+            }};
+
+        std::lock_guard lk{mtx_};
+        for (auto& item : entries_) {
+            if (item.module == module && item.command == command) {
+                item.handler = std::move(wrapped);
+                return;
+            }
+        }
+        entries_.push_back(entry{module, command, std::move(wrapped)});
+    }
+
+    [[nodiscard]] auto invoke(
+        module_id module,
+        command_id command,
+        Request& request,
+        Response& response) const -> command_status {
+        handler_type handler;
+        {
+            std::lock_guard lk{mtx_};
+            for (const auto& item : entries_) {
+                if (item.module == module && item.command == command) {
+                    handler = item.handler;
+                    break;
+                }
+            }
+        }
+        if (!handler) {
+            throw operation_error{
+                error_kind::protocol_error,
+                "forge::accel::mock::command_dispatcher: no handler"};
+        }
+        return handler(request, response);
+    }
+
+private:
+    struct entry {
+        module_id module{};
+        command_id command{};
+        handler_type handler;
+    };
+
+    mutable std::mutex mtx_;
+    std::pmr::vector<entry> entries_;
+};
 
 struct event_snapshot {
     event_generation record_generation{};
@@ -211,6 +323,7 @@ private:
     friend auto wait_event_typed(queue&, event, event_wait_options);
     friend auto query_event(event);
     friend auto query_event_typed(event);
+    friend auto elapsed_time(event) -> std::chrono::steady_clock::duration;
     friend auto synchronize_event(queue&, event);
     friend auto synchronize_event(queue&, event, event_wait_options);
     friend auto synchronize_event_typed(queue&, event);
@@ -276,6 +389,10 @@ private:
     friend auto synchronize_event_typed(queue&, event);
     friend auto synchronize_event_typed(queue&, event, event_wait_options);
     friend auto fence(queue&);
+    friend auto query_stream(queue&) noexcept -> stream_snapshot;
+    friend auto synchronize_stream(queue&, stream_sync_options) noexcept
+        -> stream_sync_result;
+    friend auto synchronize_stream(queue&) noexcept -> stream_sync_result;
 
     std::weak_ptr<__detail::__queue_state> queue_;
 };
@@ -984,6 +1101,35 @@ auto submit_packet(
         command_options{});
 }
 
+template<class Request, class Response>
+auto submit_packet(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    command_dispatcher<Request, Response>& dispatcher,
+    command_options options) {
+    const auto module = packet.module;
+    const auto command = packet.id;
+    return submit_packet(
+        session,
+        std::move(packet),
+        [&dispatcher, module, command](Request& request, Response& response) {
+            return dispatcher.invoke(module, command, request, response);
+        },
+        options);
+}
+
+template<class Request, class Response>
+auto submit_packet(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    command_dispatcher<Request, Response>& dispatcher) {
+    return submit_packet(
+        session,
+        std::move(packet),
+        dispatcher,
+        command_options{});
+}
+
 template<class Request, class Response, class Handler>
 auto submit_message_typed(
     device_session& session,
@@ -1025,6 +1171,33 @@ auto submit_packet_typed(
         command_options{});
 }
 
+template<class Request, class Response>
+auto submit_packet_typed(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    command_dispatcher<Request, Response>& dispatcher,
+    command_options options) {
+    using packet_t = command_packet<Request, Response>;
+    return __typed_detail::value_sender<packet_t>(
+        submit_packet(
+            session,
+            std::move(packet),
+            dispatcher,
+            options));
+}
+
+template<class Request, class Response>
+auto submit_packet_typed(
+    device_session& session,
+    command_packet<Request, Response> packet,
+    command_dispatcher<Request, Response>& dispatcher) {
+    return submit_packet_typed(
+        session,
+        std::move(packet),
+        dispatcher,
+        command_options{});
+}
+
 inline auto record_event(queue& q, event ev) {
     return __detail::__event_record_sender{
         q.queue_.lock(),
@@ -1042,6 +1215,58 @@ inline auto query_event(event ev) {
 inline auto query_event_typed(event ev) {
     return __typed_detail::value_sender<event_snapshot>(
         query_event(std::move(ev)));
+}
+
+inline auto elapsed_time(event ev) -> std::chrono::steady_clock::duration {
+    auto state = ev.state_;
+    if (!state) {
+        throw operation_error{
+            error_kind::invalid_event,
+            "forge::accel::mock::elapsed_time: invalid event"};
+    }
+    auto elapsed = state->elapsed_time();
+    if (!elapsed) {
+        throw operation_error{
+            error_kind::invalid_event,
+            "forge::accel::mock::elapsed_time: event has not completed"};
+    }
+    return *elapsed;
+}
+
+inline auto query_stream(queue& q) noexcept -> stream_snapshot {
+    auto queue_state = q.queue_.lock();
+    if (!queue_state) {
+        return {};
+    }
+    auto state = queue_state->owner.lock();
+    return queue_state->snapshot(!state || state->is_closed());
+}
+
+inline auto synchronize_stream(
+    queue& q,
+    stream_sync_options options) noexcept -> stream_sync_result {
+    auto queue_state = q.queue_.lock();
+    if (!queue_state) {
+        auto out = stream_sync_result{};
+        out.status = command_status::stopped;
+        return out;
+    }
+    auto state = queue_state->owner.lock();
+    if (!state || __detail::__current_state == state.get()) {
+        auto out = stream_sync_result{};
+        out.status = command_status::stopped;
+        out.snapshot = queue_state->snapshot(!state || state->is_closed());
+        return out;
+    }
+    std::optional<std::chrono::steady_clock::time_point> deadline;
+    if (options.timeout) {
+        deadline = std::chrono::steady_clock::now() + *options.timeout;
+    }
+    return queue_state->wait_idle(state, deadline, options.clear_sticky_error);
+}
+
+inline auto synchronize_stream(queue& q) noexcept -> stream_sync_result {
+    return synchronize_stream(q, stream_sync_options{});
 }
 
 inline auto wait_event(queue& q, event ev, event_wait_options options) {

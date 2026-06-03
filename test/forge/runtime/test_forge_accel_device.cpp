@@ -659,6 +659,62 @@ TEST(AccelDeviceTest, OwningPacketProducesResponse) {
     EXPECT_EQ(packet.status, forge::accel::command_status::ok);
 }
 
+TEST(AccelDeviceTest, CommandDispatcherRoutesByModuleAndCommand) {
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+    forge::accel::mock::command_dispatcher<request_packet, response_packet>
+        dispatcher;
+
+    dispatcher.register_handler(
+        forge::accel::module_id{2},
+        forge::accel::command_id{7},
+        [](request_packet& request, response_packet& out) noexcept {
+            out.value = request.value * 4;
+            return forge::accel::command_status::ok;
+        });
+
+    auto result = std::execution::sync_wait(
+        forge::accel::mock::submit_packet(
+            session,
+            packet_t{
+                forge::accel::module_id{2},
+                forge::accel::command_id{7},
+                request_packet{11},
+                response_packet{}},
+            dispatcher));
+
+    ASSERT_TRUE(result.has_value());
+    auto& packet = std::get<0>(*result);
+    EXPECT_EQ(packet.module.value, 2U);
+    EXPECT_EQ(packet.id.value, 7U);
+    EXPECT_EQ(packet.response.value, 44);
+}
+
+TEST(AccelDeviceTest, CommandDispatcherRejectsMissingHandler) {
+    forge::accel::mock::context ctx;
+    auto session = ctx.get_device().open_session();
+    using packet_t = forge::accel::mock::command_packet<
+        request_packet,
+        response_packet>;
+    forge::accel::mock::command_dispatcher<request_packet, response_packet>
+        dispatcher;
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit_packet(
+                session,
+                packet_t{
+                    forge::accel::module_id{3},
+                    forge::accel::command_id{9},
+                    request_packet{1},
+                    response_packet{}},
+                dispatcher)),
+        forge::accel::operation_error);
+}
+
 TEST(AccelDeviceTest, OwningPacketFailureRoutesCommandError) {
     forge::accel::mock::context ctx;
     auto session = ctx.get_device().open_session();

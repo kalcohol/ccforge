@@ -60,14 +60,20 @@ struct __queue_state;
 struct __event_state {
     [[nodiscard]] auto reserve_record_generation() noexcept -> event_generation {
         std::lock_guard lk{mtx};
+        record_time = std::chrono::steady_clock::now();
+        completed_time = {};
+        has_elapsed_time = false;
         return event_generation{++record_generation};
     }
 
     void mark_completed(event_generation generation) noexcept {
+        const auto now = std::chrono::steady_clock::now();
         {
             std::lock_guard lk{mtx};
             if (completed_generation < generation.value) {
                 completed_generation = generation.value;
+                completed_time = now;
+                has_elapsed_time = true;
             }
         }
         cv.notify_all();
@@ -96,6 +102,15 @@ struct __event_state {
         return event_generation{record_generation == 0 ? 1 : record_generation};
     }
 
+    [[nodiscard]] auto elapsed_time() const noexcept
+        -> std::optional<std::chrono::steady_clock::duration> {
+        std::lock_guard lk{mtx};
+        if (!has_elapsed_time || completed_time < record_time) {
+            return std::nullopt;
+        }
+        return completed_time - record_time;
+    }
+
     [[nodiscard]] command_status wait_until_generation_or_stopped(
         const __state& state,
         event_generation target,
@@ -105,6 +120,9 @@ struct __event_state {
     std::condition_variable cv;
     std::uint64_t record_generation = 0;
     std::uint64_t completed_generation = 0;
+    std::chrono::steady_clock::time_point record_time{};
+    std::chrono::steady_clock::time_point completed_time{};
+    bool has_elapsed_time = false;
 };
 
 struct __state : std::enable_shared_from_this<__state> {
@@ -351,10 +369,11 @@ struct __queue_state {
     __queue_state(
         std::shared_ptr<__state> owner_state,
         queue_kind queue_kind,
+        stream_id stream_arg,
         std::shared_ptr<__device_state> bound_device = nullptr)
         : owner(owner_state)
         , device(std::move(bound_device))
-        , stream(owner_state->next_stream_id())
+        , stream(stream_arg)
         , serial(
               owner_state->runtime.get_scheduler(),
               strand_options{.memory = owner_state->memory})
@@ -377,11 +396,58 @@ struct __queue_state {
         return !device || device->available();
     }
 
+    void begin_node() noexcept {
+        std::lock_guard lk{stream_mtx};
+        ++pending_nodes;
+    }
+
+    void finish_node() noexcept {
+        {
+            std::lock_guard lk{stream_mtx};
+            if (pending_nodes > 0) {
+                --pending_nodes;
+            }
+        }
+        stream_cv.notify_all();
+    }
+
+    void record_error(error err) noexcept {
+        std::lock_guard lk{stream_mtx};
+        if (!sticky_error) {
+            sticky_error = std::move(err);
+        }
+    }
+
+    [[nodiscard]] auto snapshot(bool closed) const noexcept -> stream_snapshot {
+        std::lock_guard lk{stream_mtx};
+        auto out = stream_snapshot{
+            .stream = stream,
+            .kind = kind,
+            .closed = closed,
+            .idle = pending_nodes == 0,
+            .pending_nodes = pending_nodes,
+        };
+        if (sticky_error) {
+            out.has_sticky_error = true;
+            out.sticky_error = *sticky_error;
+        }
+        return out;
+    }
+
+    [[nodiscard]] auto wait_idle(
+        const std::shared_ptr<__state>& state,
+        std::optional<std::chrono::steady_clock::time_point> deadline,
+        bool clear_sticky_error) noexcept -> stream_sync_result;
+
     std::weak_ptr<__state> owner;
     std::shared_ptr<__device_state> device;
     stream_id stream{};
     strand serial;
     queue_kind kind = queue_kind::general;
+    mutable std::mutex stream_mtx;
+    std::condition_variable stream_cv;
+    std::size_t pending_nodes = 0;
+    std::optional<error> sticky_error;
 };
 
 inline void __state::request_stop() noexcept {
@@ -449,10 +515,14 @@ inline auto __state::make_queue(
     queue_kind kind,
     std::shared_ptr<__device_state> device) -> std::shared_ptr<__queue_state> {
     auto self = shared_from_this();
+    const auto stream = (kind == queue_kind::general || kind == queue_kind::command)
+        ? stream_id{}
+        : next_stream_id();
     auto queue = std::allocate_shared<__queue_state>(
         std::pmr::polymorphic_allocator<__queue_state>{memory},
         std::move(self),
         kind,
+        stream,
         std::move(device));
     {
         std::lock_guard lk{mtx};
@@ -466,10 +536,12 @@ inline auto __state::make_queue(
 
 inline auto __state::get_queue(queue_kind kind) -> std::shared_ptr<__queue_state> {
     auto self = shared_from_this();
+    const auto stream = kind == queue_kind::general ? stream_id{} : next_stream_id();
     auto queue = std::allocate_shared<__queue_state>(
         std::pmr::polymorphic_allocator<__queue_state>{memory},
         std::move(self),
         kind,
+        stream,
         nullptr);
     bool should_shutdown = false;
     {
@@ -495,6 +567,87 @@ inline auto __state::snapshot_queues()
     std::lock_guard lk{mtx};
     snapshot = queues;
     return snapshot;
+}
+
+inline auto __queue_state::wait_idle(
+    const std::shared_ptr<__state>& state,
+    std::optional<std::chrono::steady_clock::time_point> deadline,
+    bool clear_sticky_error) noexcept -> stream_sync_result {
+    std::unique_lock lk{stream_mtx};
+    auto make_result_locked = [&](command_status status) {
+        auto out = stream_sync_result{};
+        out.status = status;
+        out.snapshot = stream_snapshot{
+            .stream = stream,
+            .kind = kind,
+            .closed = state ? state->is_closed() : true,
+            .idle = pending_nodes == 0,
+            .pending_nodes = pending_nodes,
+        };
+        if (sticky_error) {
+            out.snapshot.has_sticky_error = true;
+            out.snapshot.sticky_error = *sticky_error;
+            out.has_error = true;
+            out.sticky_error = *sticky_error;
+            if (status == command_status::ok && clear_sticky_error) {
+                sticky_error.reset();
+            }
+        }
+        return out;
+    };
+
+    while (pending_nodes != 0) {
+        if (!state || state->stop_requested_now()) {
+            return make_result_locked(command_status::stopped);
+        }
+        if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+            return make_result_locked(command_status::timed_out);
+        }
+        if (deadline) {
+            auto next_wake = std::chrono::steady_clock::now()
+                + std::chrono::milliseconds{1};
+            if (*deadline < next_wake) {
+                next_wake = *deadline;
+            }
+            stream_cv.wait_until(lk, next_wake);
+        } else {
+            stream_cv.wait_for(lk, std::chrono::milliseconds{1});
+        }
+    }
+
+    return make_result_locked(command_status::ok);
+}
+
+inline void __begin_stream_node(
+    const std::shared_ptr<__queue_state>& queue) noexcept {
+    if (queue) {
+        queue->begin_node();
+    }
+}
+
+inline void __finish_stream_node(
+    const std::shared_ptr<__state>& state,
+    const std::shared_ptr<__queue_state>& queue) noexcept {
+    if (queue) {
+        queue->finish_node();
+    }
+    state->finish_one();
+}
+
+inline void __record_stream_error(
+    const std::shared_ptr<__queue_state>& queue,
+    std::exception_ptr ep) noexcept {
+    if (queue) {
+        queue->record_error(__typed_detail::from_exception(std::move(ep)));
+    }
+}
+
+inline void __record_stream_error(
+    const std::shared_ptr<__queue_state>& queue,
+    error err) noexcept {
+    if (queue) {
+        queue->record_error(std::move(err));
+    }
 }
 
 inline command_status __event_state::wait_until_generation_or_stopped(
@@ -631,10 +784,12 @@ inline void __fill_trace_device(
     const std::shared_ptr<__session_state>& session,
     trace_event_kind kind,
     std::optional<worker_generation> accepted_generation = std::nullopt,
-    command_id command = {}) noexcept -> trace_event {
+    command_id command = {},
+    module_id module = {}) noexcept -> trace_event {
     trace_event event{};
     event.kind = kind;
     event.command = command;
+    event.module = module;
     if (queue) {
         event.stream = queue->stream;
     }
@@ -658,6 +813,7 @@ inline void __record_trace_exception(
     const std::shared_ptr<__session_state>& session,
     std::optional<worker_generation> accepted_generation,
     command_id command,
+    module_id module,
     std::exception_ptr ep) noexcept {
     if (!state) {
         return;
@@ -667,12 +823,30 @@ inline void __record_trace_exception(
         session,
         trace_event_kind::error,
         accepted_generation,
-        command);
+        command,
+        module);
     auto info = __trace_error_from_exception(std::move(ep));
     event.kind = info.kind;
     event.error = info.error;
     event.status = info.status;
     state->record_trace(event);
+}
+
+inline void __record_trace_exception(
+    const std::shared_ptr<__state>& state,
+    const std::shared_ptr<__queue_state>& queue,
+    const std::shared_ptr<__session_state>& session,
+    std::optional<worker_generation> accepted_generation,
+    command_id command,
+    std::exception_ptr ep) noexcept {
+    __record_trace_exception(
+        state,
+        queue,
+        session,
+        accepted_generation,
+        command,
+        module_id{},
+        std::move(ep));
 }
 
 inline void __record_trace_lifecycle(

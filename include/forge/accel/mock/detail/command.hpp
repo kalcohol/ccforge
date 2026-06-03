@@ -40,12 +40,15 @@ struct __command_receiver {
 
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
+        const auto started_at = std::chrono::steady_clock::now();
         try {
-            state->record_trace(__make_trace_event(
+            auto started = __make_trace_event(
                 queue,
                 session,
                 trace_event_kind::started,
-                accepted_generation));
+                accepted_generation);
+            started.timestamp = started_at;
+            state->record_trace(started);
             if (session && accepted_generation) {
                 __validate_session_for_execution(
                     session,
@@ -58,12 +61,16 @@ struct __command_receiver {
                     "forge::accel::mock command: queue device is not usable");
             }
             std::invoke(std::move(action));
-            state->record_trace(__make_trace_event(
+            auto completed = __make_trace_event(
                 queue,
                 session,
                 trace_event_kind::completed,
-                accepted_generation));
-            state->finish_one();
+                accepted_generation);
+            completed.timestamp = started_at;
+            completed.end_timestamp = std::chrono::steady_clock::now();
+            completed.has_end_timestamp = true;
+            state->record_trace(completed);
+            __finish_stream_node(state, queue);
             std::execution::set_value(std::move(rcvr));
         } catch (const __stopped_signal&) {
             state->record_trace(__make_trace_event(
@@ -71,10 +78,11 @@ struct __command_receiver {
                 session,
                 trace_event_kind::stopped,
                 accepted_generation));
-            state->finish_one();
+            __finish_stream_node(state, queue);
             std::execution::set_stopped(std::move(rcvr));
         } catch (...) {
             auto ep = std::current_exception();
+            __record_stream_error(queue, ep);
             __record_trace_exception(
                 state,
                 queue,
@@ -82,7 +90,7 @@ struct __command_receiver {
                 accepted_generation,
                 command_id{},
                 ep);
-            state->finish_one();
+            __finish_stream_node(state, queue);
             std::execution::set_error(std::move(rcvr), std::move(ep));
         }
     }
@@ -91,6 +99,7 @@ struct __command_receiver {
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_stream_error(queue, e);
             __record_trace_exception(
                 state,
                 queue,
@@ -107,8 +116,9 @@ struct __command_receiver {
             event.error = error_kind::unknown;
             event.status = command_status::failed;
             state->record_trace(event);
+            __record_stream_error(queue, error{error_kind::unknown});
         }
-        state->finish_one();
+        __finish_stream_node(state, queue);
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
         } else {
@@ -125,7 +135,7 @@ struct __command_receiver {
             session,
             trace_event_kind::stopped,
             accepted_generation));
-        state->finish_one();
+        __finish_stream_node(state, queue);
         std::execution::set_stopped(std::move(rcvr));
     }
 
@@ -236,6 +246,7 @@ struct __command_sender {
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
+            __begin_stream_node(queue_);
 
             std::optional<worker_generation> accepted_generation;
             try {
@@ -253,11 +264,12 @@ struct __command_sender {
                     queue_,
                     session_,
                     trace_event_kind::stopped));
-                state->finish_one();
+                __finish_stream_node(state, queue_);
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             } catch (...) {
                 auto ep = std::current_exception();
+                __record_stream_error(queue_, ep);
                 __record_trace_exception(
                     state,
                     queue_,
@@ -265,7 +277,7 @@ struct __command_sender {
                     std::nullopt,
                     command_id{},
                     ep);
-                state->finish_one();
+                __finish_stream_node(state, queue_);
                 std::execution::set_error(
                     std::move(*rcvr_),
                     std::move(ep));
@@ -295,6 +307,7 @@ struct __command_sender {
                 std::execution::start(*op);
             } catch (...) {
                 auto ep = std::current_exception();
+                __record_stream_error(queue_, ep);
                 __record_trace_exception(
                     state,
                     queue_,
@@ -302,7 +315,7 @@ struct __command_sender {
                     accepted_generation,
                     command_id{},
                     ep);
-                state->finish_one();
+                __finish_stream_node(state, queue_);
                 std::execution::set_error(
                     std::move(*rcvr_),
                     std::move(ep));
@@ -391,6 +404,7 @@ struct __event_record_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     std::shared_ptr<__state> state;
+    std::shared_ptr<__queue_state> queue;
     std::shared_ptr<__event_state> event;
     event_generation target;
     R rcvr;
@@ -398,14 +412,19 @@ struct __event_record_receiver {
     void set_value() && noexcept {
         event->mark_completed(target);
         __current_state_guard guard{state.get()};
-        state->finish_one();
+        __finish_stream_node(state, queue);
         std::execution::set_value(std::move(rcvr));
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
-        state->finish_one();
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_stream_error(queue, e);
+        } else {
+            __record_stream_error(queue, error{error_kind::unknown});
+        }
+        __finish_stream_node(state, queue);
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
         } else {
@@ -417,7 +436,7 @@ struct __event_record_receiver {
 
     void set_stopped() && noexcept {
         __current_state_guard guard{state.get()};
-        state->finish_one();
+        __finish_stream_node(state, queue);
         std::execution::set_stopped(std::move(rcvr));
     }
 
@@ -464,8 +483,10 @@ struct __event_record_sender {
                 std::execution::set_stopped(std::move(*rcvr));
                 return;
             }
+            __begin_stream_node(queue);
             if (!event) {
-                state->finish_one();
+                __record_stream_error(queue, error{error_kind::invalid_event});
+                __finish_stream_node(state, queue);
                 std::execution::set_error(
                     std::move(*rcvr),
                     std::make_exception_ptr(operation_error{
@@ -482,16 +503,17 @@ struct __event_record_sender {
                         std::move(sender),
                         receiver_t{
                             state,
+                            queue,
                             event,
                             target,
                             std::move(*rcvr)});
                 });
                 std::execution::start(*connected);
             } catch (...) {
-                state->finish_one();
-                std::execution::set_error(
-                    std::move(*rcvr),
-                    std::current_exception());
+                auto ep = std::current_exception();
+                __record_stream_error(queue, ep);
+                __finish_stream_node(state, queue);
+                std::execution::set_error(std::move(*rcvr), std::move(ep));
             }
         }
     };
@@ -514,6 +536,7 @@ struct __event_wait_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     std::shared_ptr<__state> state;
+    std::shared_ptr<__queue_state> queue;
     std::shared_ptr<__event_state> event;
     event_generation target;
     std::optional<std::chrono::steady_clock::time_point> deadline;
@@ -522,12 +545,14 @@ struct __event_wait_receiver {
     void set_value() && noexcept {
         auto status = event->wait_until_generation_or_stopped(*state, target, deadline);
         __current_state_guard guard{state.get()};
-        state->finish_one();
         if (status == command_status::stopped) {
+            __finish_stream_node(state, queue);
             std::execution::set_stopped(std::move(rcvr));
             return;
         }
         if (status == command_status::timed_out) {
+            __record_stream_error(queue, error{error_kind::timeout, status});
+            __finish_stream_node(state, queue);
             std::execution::set_error(
                 std::move(rcvr),
                 std::make_exception_ptr(operation_error{
@@ -536,13 +561,19 @@ struct __event_wait_receiver {
                     "forge::accel::mock::wait_event timed out"}));
             return;
         }
+        __finish_stream_node(state, queue);
         std::execution::set_value(std::move(rcvr));
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
-        state->finish_one();
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_stream_error(queue, e);
+        } else {
+            __record_stream_error(queue, error{error_kind::unknown});
+        }
+        __finish_stream_node(state, queue);
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
         } else {
@@ -554,7 +585,7 @@ struct __event_wait_receiver {
 
     void set_stopped() && noexcept {
         __current_state_guard guard{state.get()};
-        state->finish_one();
+        __finish_stream_node(state, queue);
         std::execution::set_stopped(std::move(rcvr));
     }
 
@@ -605,8 +636,10 @@ struct __event_wait_sender {
                 std::execution::set_stopped(std::move(*rcvr));
                 return;
             }
+            __begin_stream_node(queue);
             if (!event) {
-                state->finish_one();
+                __record_stream_error(queue, error{error_kind::invalid_event});
+                __finish_stream_node(state, queue);
                 std::execution::set_error(
                     std::move(*rcvr),
                     std::make_exception_ptr(operation_error{
@@ -629,6 +662,7 @@ struct __event_wait_sender {
                         std::move(sender),
                         receiver_t{
                             state,
+                            queue,
                             event,
                             target,
                             deadline,
@@ -636,10 +670,10 @@ struct __event_wait_sender {
                 });
                 std::execution::start(*connected);
             } catch (...) {
-                state->finish_one();
-                std::execution::set_error(
-                    std::move(*rcvr),
-                    std::current_exception());
+                auto ep = std::current_exception();
+                __record_stream_error(queue, ep);
+                __finish_stream_node(state, queue);
+                std::execution::set_error(std::move(*rcvr), std::move(ep));
             }
         }
     };
@@ -683,13 +717,18 @@ struct __packet_receiver {
     void set_value() && noexcept {
         __current_state_guard guard{state.get()};
         const auto command = packet ? packet->id : command_id{};
+        const auto module = packet ? packet->module : module_id{};
+        const auto started_at = std::chrono::steady_clock::now();
         try {
-            state->record_trace(__make_trace_event(
+            auto started = __make_trace_event(
                 queue,
                 session,
                 trace_event_kind::started,
                 accepted_generation,
-                command));
+                command,
+                module);
+            started.timestamp = started_at;
+            state->record_trace(started);
             __validate_session_for_execution(
                 session,
                 accepted_generation,
@@ -702,13 +741,18 @@ struct __packet_receiver {
                     "forge::accel::mock packet command timed out"};
             }
             __invoke_packet_handler(*packet, handler);
-            state->record_trace(__make_trace_event(
+            auto completed = __make_trace_event(
                 queue,
                 session,
                 trace_event_kind::completed,
                 accepted_generation,
-                command));
-            state->finish_one();
+                command,
+                module);
+            completed.timestamp = started_at;
+            completed.end_timestamp = std::chrono::steady_clock::now();
+            completed.has_end_timestamp = true;
+            state->record_trace(completed);
+            __finish_stream_node(state, queue);
             std::execution::set_value(std::move(rcvr), std::move(*packet));
         } catch (const __stopped_signal&) {
             state->record_trace(__make_trace_event(
@@ -716,19 +760,22 @@ struct __packet_receiver {
                 session,
                 trace_event_kind::stopped,
                 accepted_generation,
-                command));
-            state->finish_one();
+                command,
+                module));
+            __finish_stream_node(state, queue);
             std::execution::set_stopped(std::move(rcvr));
         } catch (...) {
             auto ep = std::current_exception();
+            __record_stream_error(queue, ep);
             __record_trace_exception(
                 state,
                 queue,
                 session,
                 accepted_generation,
                 command,
+                module,
                 ep);
-            state->finish_one();
+            __finish_stream_node(state, queue);
             std::execution::set_error(std::move(rcvr), std::move(ep));
         }
     }
@@ -737,13 +784,16 @@ struct __packet_receiver {
     void set_error(E&& e) && noexcept {
         __current_state_guard guard{state.get()};
         const auto command = packet ? packet->id : command_id{};
+        const auto module = packet ? packet->module : module_id{};
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            __record_stream_error(queue, e);
             __record_trace_exception(
                 state,
                 queue,
                 session,
                 accepted_generation,
                 command,
+                module,
                 e);
         } else {
             auto event = __make_trace_event(
@@ -751,12 +801,14 @@ struct __packet_receiver {
                 session,
                 trace_event_kind::error,
                 accepted_generation,
-                command);
+                command,
+                module);
             event.error = error_kind::unknown;
             event.status = command_status::failed;
             state->record_trace(event);
+            __record_stream_error(queue, error{error_kind::unknown});
         }
-        state->finish_one();
+        __finish_stream_node(state, queue);
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), static_cast<E&&>(e));
         } else {
@@ -773,8 +825,9 @@ struct __packet_receiver {
             session,
             trace_event_kind::stopped,
             accepted_generation,
-            packet ? packet->id : command_id{}));
-        state->finish_one();
+            packet ? packet->id : command_id{},
+            packet ? packet->module : module_id{}));
+        __finish_stream_node(state, queue);
         std::execution::set_stopped(std::move(rcvr));
     }
 
@@ -844,6 +897,7 @@ struct __packet_sender {
                 return;
             }
             const auto command = packet_ ? packet_->id : command_id{};
+            const auto module = packet_ ? packet_->module : module_id{};
 
             if (!state->try_accept()) {
                 state->record_trace(__make_trace_event(
@@ -851,10 +905,12 @@ struct __packet_sender {
                     session_,
                     trace_event_kind::stopped,
                     std::nullopt,
-                    command));
+                    command,
+                    module));
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             }
+            __begin_stream_node(queue_);
 
             worker_generation accepted_generation{};
             try {
@@ -867,20 +923,23 @@ struct __packet_sender {
                     session_,
                     trace_event_kind::stopped,
                     std::nullopt,
-                    command));
-                state->finish_one();
+                    command,
+                    module));
+                __finish_stream_node(state, queue_);
                 std::execution::set_stopped(std::move(*rcvr_));
                 return;
             } catch (...) {
                 auto ep = std::current_exception();
+                __record_stream_error(queue_, ep);
                 __record_trace_exception(
                     state,
                     queue_,
                     session_,
                     std::nullopt,
                     command,
+                    module,
                     ep);
-                state->finish_one();
+                __finish_stream_node(state, queue_);
                 std::execution::set_error(
                     std::move(*rcvr_),
                     std::move(ep));
@@ -897,7 +956,8 @@ struct __packet_sender {
                 session_,
                 trace_event_kind::submitted,
                 accepted_generation,
-                command));
+                command,
+                module));
             try {
                 auto sender = std::execution::schedule(queue_->scheduler());
                 auto* op = op_.emplace_from([&]() -> op_t {
@@ -916,14 +976,16 @@ struct __packet_sender {
                 std::execution::start(*op);
             } catch (...) {
                 auto ep = std::current_exception();
+                __record_stream_error(queue_, ep);
                 __record_trace_exception(
                     state,
                     queue_,
                     session_,
                     accepted_generation,
                     command,
+                    module,
                     ep);
-                state->finish_one();
+                __finish_stream_node(state, queue_);
                 std::execution::set_error(
                     std::move(*rcvr_),
                     std::move(ep));
