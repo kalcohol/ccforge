@@ -53,6 +53,19 @@ enum class message_kind {
     signal
 };
 
+enum class call_mode {
+    posted,
+    non_posted
+};
+
+enum class transport_status {
+    ok,
+    invalid_message,
+    duplicate_request,
+    not_accepted,
+    late_response
+};
+
 enum class lifecycle_signal_reason {
     opened,
     closing,
@@ -87,6 +100,16 @@ struct lifecycle_signal {
     worker_generation generation{};
     std::chrono::steady_clock::time_point timestamp = std::chrono::steady_clock::now();
     std::string diagnostic;
+};
+
+struct transport_result {
+    transport_status status = transport_status::ok;
+    call_mode mode = call_mode::posted;
+    request_id request{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return status == transport_status::ok;
+    }
 };
 
 struct protocol_envelope {

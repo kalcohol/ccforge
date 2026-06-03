@@ -284,6 +284,17 @@ record 时，可以使用它。
 completion/signal channel。只有 request ID 仍在 pending map 中时，response 才会被接受；
 unknown 或 late response 会被丢弃并计数。Lifecycle signal 会绕过 pending map。
 
+Transport proof 区分两种 call mode：
+
+- `posted`：host 只等待 admission / enqueue result，completion 后续从 completion
+  channel 到达；
+- `non_posted`：host 把匹配 response 当作 operation completion boundary。
+
+两种模式共用同一条 transport 和 request-pending map。`submit_posted` /
+`submit_non_posted` 返回 `transport_result`，可区分 `ok`、invalid message、duplicate
+request、not accepted 和 late response。Legacy `submit_request` / `deliver_response`
+仍返回 `bool`，只保留兼容的 accepted / rejected 语义。
+
 这不是 packed ABI、ioctl contract、kernel/userspace contract、SDK message struct 或
 serialization format。
 

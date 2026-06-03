@@ -66,6 +66,102 @@ TEST(AccelProtocolTest, RequestEnvelopeCreatesCorrelatedResponse) {
     EXPECT_EQ(transport.late_response_count(), 0U);
 }
 
+TEST(AccelProtocolTest, PostedAndNonPostedRequestsShareTransport) {
+    forge::accel::mock::protocol::loopback_transport transport;
+    auto posted = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{50}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{1});
+    auto non_posted = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{51}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{2});
+
+    auto posted_result = transport.submit_posted(std::move(posted));
+    ASSERT_TRUE(posted_result);
+    EXPECT_EQ(posted_result.mode, forge::accel::call_mode::posted);
+    EXPECT_EQ(posted_result.request.value, 50U);
+
+    auto non_posted_result = transport.submit_non_posted(std::move(non_posted));
+    ASSERT_TRUE(non_posted_result);
+    EXPECT_EQ(non_posted_result.mode, forge::accel::call_mode::non_posted);
+    EXPECT_EQ(non_posted_result.request.value, 51U);
+
+    auto first = transport.try_recv_request();
+    ASSERT_TRUE(first.has_value());
+    auto second = transport.try_recv_request();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(first->meta.request.value, 50U);
+    EXPECT_EQ(second->meta.request.value, 51U);
+
+    ASSERT_TRUE(transport.deliver_response(
+        forge::accel::make_response_envelope(*second, bytes({2}))));
+    auto completion = transport.try_recv_completion();
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->meta.request.value, 51U);
+}
+
+TEST(AccelProtocolTest, DuplicateRequestReportsTypedTransportStatus) {
+    forge::accel::mock::protocol::loopback_transport transport;
+    auto first = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{52}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{1});
+    auto second = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{52}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{2});
+
+    ASSERT_TRUE(transport.submit_posted(std::move(first)));
+    auto result = transport.submit_non_posted(std::move(second));
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.status, forge::accel::transport_status::duplicate_request);
+    EXPECT_EQ(result.mode, forge::accel::call_mode::non_posted);
+    EXPECT_EQ(result.request.value, 52U);
+    EXPECT_EQ(transport.pending_count(), 1U);
+}
+
+TEST(AccelProtocolTest, InvalidRequestReportsTypedTransportStatus) {
+    forge::accel::mock::protocol::loopback_transport transport;
+    auto invalid = forge::accel::protocol_envelope{
+        .kind = forge::accel::message_kind::notify,
+        .route = route(),
+        .meta = meta(forge::accel::request_id{0}),
+    };
+
+    auto result = transport.submit_posted(std::move(invalid));
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.status, forge::accel::transport_status::invalid_message);
+    EXPECT_EQ(result.mode, forge::accel::call_mode::posted);
+    EXPECT_EQ(transport.pending_count(), 0U);
+}
+
+TEST(AccelProtocolTest, FullRequestQueueReportsNotAccepted) {
+    forge::accel::mock::protocol::loopback_transport transport{
+        forge::accel::mock::protocol::loopback_transport_options{.capacity = 1}};
+    auto first = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{53}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{1});
+    auto second = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{54}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{2});
+
+    ASSERT_TRUE(transport.submit_posted(std::move(first)));
+    auto result = transport.submit_posted(std::move(second));
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.status, forge::accel::transport_status::not_accepted);
+    EXPECT_EQ(result.request.value, 54U);
+    EXPECT_EQ(transport.pending_count(), 1U);
+}
+
 TEST(AccelProtocolTest, FullCompletionQueueKeepsResponsePendingForRetry) {
     forge::accel::mock::protocol::loopback_transport transport{
         forge::accel::mock::protocol::loopback_transport_options{.capacity = 1}};
@@ -113,7 +209,10 @@ TEST(AccelProtocolTest, UnknownResponseIdIsClassifiedLateAndDiscarded) {
         .payload = bytes({9}),
     };
 
-    EXPECT_FALSE(transport.deliver_response(std::move(unknown)));
+    auto result = transport.deliver_response_result(std::move(unknown));
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.status, forge::accel::transport_status::late_response);
+    EXPECT_EQ(result.request.value, 999U);
     EXPECT_EQ(transport.late_response_count(), 1U);
     EXPECT_FALSE(transport.try_recv_completion().has_value());
 }

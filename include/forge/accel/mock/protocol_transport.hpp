@@ -58,25 +58,45 @@ public:
     }
 
     [[nodiscard]] bool submit_request(protocol_envelope envelope) {
+        return static_cast<bool>(submit_posted(std::move(envelope)));
+    }
+
+    [[nodiscard]] auto submit_posted(protocol_envelope envelope) -> transport_result {
+        return submit_request(std::move(envelope), call_mode::posted);
+    }
+
+    [[nodiscard]] auto submit_non_posted(protocol_envelope envelope) -> transport_result {
+        return submit_request(std::move(envelope), call_mode::non_posted);
+    }
+
+    [[nodiscard]] auto submit_request(protocol_envelope envelope, call_mode mode)
+        -> transport_result {
         if (envelope.kind != message_kind::request || envelope.meta.request.value == 0) {
-            return false;
+            return transport_result{
+                transport_status::invalid_message,
+                mode,
+                envelope.meta.request};
         }
 
         const auto id = envelope.meta.request.value;
         {
             std::lock_guard lk{mtx_};
             if (!pending_.insert(id).second) {
-                return false;
+                return transport_result{
+                    transport_status::duplicate_request,
+                    mode,
+                    envelope.meta.request};
             }
         }
 
+        const auto request = envelope.meta.request;
         if (requests_.try_send(std::move(envelope))) {
-            return true;
+            return transport_result{transport_status::ok, mode, request};
         }
 
         std::lock_guard lk{mtx_};
         pending_.erase(id);
-        return false;
+        return transport_result{transport_status::not_accepted, mode, request};
     }
 
     [[nodiscard]] auto try_recv_request() -> std::optional<protocol_envelope> {
@@ -84,22 +104,37 @@ public:
     }
 
     [[nodiscard]] bool deliver_response(protocol_envelope envelope) {
+        return static_cast<bool>(deliver_response_result(std::move(envelope)));
+    }
+
+    [[nodiscard]] auto deliver_response_result(protocol_envelope envelope)
+        -> transport_result {
         if (envelope.kind != message_kind::response || envelope.meta.request.value == 0) {
-            return false;
+            return transport_result{
+                transport_status::invalid_message,
+                call_mode::posted,
+                envelope.meta.request};
         }
 
         std::lock_guard lk{mtx_};
         auto it = pending_.find(envelope.meta.request.value);
         if (it == pending_.end()) {
             ++late_responses_;
-            return false;
+            return transport_result{
+                transport_status::late_response,
+                call_mode::posted,
+                envelope.meta.request};
         }
 
+        const auto request = envelope.meta.request;
         if (!completions_.try_send(std::move(envelope))) {
-            return false;
+            return transport_result{
+                transport_status::not_accepted,
+                call_mode::posted,
+                request};
         }
         pending_.erase(it);
-        return true;
+        return transport_result{transport_status::ok, call_mode::posted, request};
     }
 
     [[nodiscard]] bool deliver_signal(protocol_envelope envelope) {

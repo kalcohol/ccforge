@@ -27,7 +27,9 @@ int main() {
         forge::accel::command_id{4},
         std::move(request_payload));
 
-    assert(transport.submit_request(request));
+    auto posted = transport.submit_posted(request);
+    assert(posted);
+    assert(posted.mode == forge::accel::call_mode::posted);
 
     auto queued = transport.try_recv_request();
     assert(queued.has_value());
@@ -47,6 +49,21 @@ int main() {
         forge::accel::protocol_payload{std::byte{0x55}});
     assert(!transport.deliver_response(std::move(late_response)));
     assert(transport.late_response_count() == 1);
+
+    auto non_posted = forge::accel::make_request_envelope(
+        forge::accel::protocol_route{
+            .source = forge::accel::endpoint_id{1},
+            .destination = forge::accel::endpoint_id{2},
+        },
+        forge::accel::protocol_meta{
+            .request = forge::accel::request_id{2},
+            .session = forge::accel::session_id{7},
+        },
+        forge::accel::module_id{5},
+        forge::accel::command_id{12});
+    auto accepted = transport.submit_non_posted(std::move(non_posted));
+    assert(accepted);
+    assert(accepted.mode == forge::accel::call_mode::non_posted);
 
     auto signal = forge::accel::make_signal_envelope(
         forge::accel::protocol_route{
