@@ -1,3 +1,5 @@
+#pragma once
+
 #define FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(name) \
 template<class V> \
 constexpr remove_cvref_t<V> name(const V& value) \

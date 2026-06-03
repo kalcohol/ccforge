@@ -1,3 +1,5 @@
+#pragma once
+
 template<size_t Bytes, class Abi>
     requires(detail::is_enabled_basic_mask<Bytes, Abi>::value)
 class basic_mask<Bytes, Abi> {

@@ -1,3 +1,5 @@
+#pragma once
+
 namespace detail {
 
 template<class T, bool = is_data_parallel_type<remove_cvref_t<T>>::value>

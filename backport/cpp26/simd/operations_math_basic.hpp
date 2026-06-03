@@ -1,3 +1,5 @@
+#pragma once
+
 template<class V>
 constexpr remove_cvref_t<V> abs(const V& value)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {

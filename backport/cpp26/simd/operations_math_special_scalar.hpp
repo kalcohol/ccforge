@@ -1,3 +1,5 @@
+#pragma once
+
 namespace detail::special_math {
 
 template<class T>

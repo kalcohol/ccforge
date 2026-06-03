@@ -1,3 +1,5 @@
+#pragma once
+
 template<class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>

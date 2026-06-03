@@ -1,3 +1,5 @@
+#pragma once
+
 namespace detail {
 
 template<size_t Bytes, class Abi>

@@ -1,3 +1,5 @@
+#pragma once
+
 template<class V,
          class I,
          class Indices,

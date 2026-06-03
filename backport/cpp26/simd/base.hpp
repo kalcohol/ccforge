@@ -1,3 +1,5 @@
+#pragma once
+
 using simd_size_type = ptrdiff_t;
 
 template<class... Flags>

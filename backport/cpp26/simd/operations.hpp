@@ -1,3 +1,5 @@
+#pragma once
+
 	template<class V, class Indices,
 	         typename enable_if<detail::is_simd_index_vector<Indices>::value, int>::type>
 	constexpr detail::permute_result_t<V, Indices> permute(const V& value, const Indices& indices) {

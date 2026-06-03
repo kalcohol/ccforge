@@ -1,3 +1,5 @@
+#pragma once
+
 #include "operations_math_special_scalar.hpp"
 
 #define FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(name) \
