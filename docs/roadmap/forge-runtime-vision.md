@@ -5,7 +5,7 @@
 `std::execution` backport 之上，提供一组小而实用的运行时原语，服务
 结构化并发、消息通路、推理 runtime、设备/加速卡会话和资源生命周期管理。
 当前稳定交付基线和自循环验收规则见
-[`forge stability baseline`](forge-stability-baseline.md)。
+[`Forge 稳定性基线`](forge-stability-baseline.md)。
 
 ## 当前基线
 
@@ -71,7 +71,7 @@
   IO 和 accel 都已有 opt-in typed variants。后续问题是具体 platform/vendor backend
   是否需要自己的错误映射，而不是默认扩大现有 API。
 
-## project identity checkpoint
+## 项目身份检查点
 
 Forge 的目标不是变成完整 runtime framework、网络库、GPU runtime、tensor runtime 或
 vendor driver wrapper。更准确的身份是：
@@ -82,18 +82,16 @@ Resource policy、IO readiness、`accel` command queue sketch 和 typed-error in
 都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
 绑定某个具体平台或厂商栈。
 
-Future backend shapes are tracked in [`forge::io` backend SPI sketch](forge-io-backend-spi.md)
-and [`forge::accel` backend SPI sketch](forge-accel-backend-spi.md). Gate,
-lifetime, verification, and typed-error rules are tracked in
-[backend proof policy](forge-backend-proof-policy.md). These are design
-constraints, not published plugin ABIs.
-The completed dependency-free accelerator foundation is tracked in
-[`forge::accel` runtime v2 roadmap](forge-accel-runtime-v2.md). The next
-runtime-substrate target is tracked in
-[`forge::accel` runtime v3 roadmap](forge-accel-runtime-v3.md): transport,
-control/lifecycle, worker stream semantics, stream-ordered callbacks,
-power/resume assumptions, and framework glue contracts. Vendor SDK backends
-remain a separate owner gate.
+未来 backend shape 记录在 [`forge::io` backend SPI 草案](forge-io-backend-spi.md)
+和 [`forge::accel` backend SPI 草案](forge-accel-backend-spi.md)。Gate、lifetime、
+verification 和 typed-error 规则记录在
+[`backend proof` 策略](forge-backend-proof-policy.md)。这些是 design constraints，
+不是已发布的 plugin ABI。
+
+Dependency-free accelerator foundation 和 host/device runtime substrate 的当前完成态记录在
+[`forge::accel` runtime 设计](forge-accel-runtime-design.md)：transport、control/lifecycle、
+worker stream semantics、stream-ordered callbacks、power/resume assumptions 和 framework
+glue contracts 已作为 portable proof 收敛。Vendor SDK backend 仍是独立 owner gate。
 
 具体要求：
 
@@ -102,28 +100,26 @@ remain a separate owner gate.
 - 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
 - 不把 CUDA/HIP/SYCL、IOCP、io_uring、tensor kernel runtime 做成默认依赖。
 
-## maintenance mode and decision gates
+## 维护态与决策 gate
 
 当前 `include/forge/` 设施已经进入较稳定的维护态。默认下一步应优先做：
 
-- bug fixes and sanitizer-found lifetime fixes;
+- bug fixes 和 sanitizer-found lifetime fixes；
 - docs/examples/cookbook，让现有设施更容易被正确组合；
 - verification coverage，尤其是 Windows/MSVC smoke、gate-off/gate-on 行为和 sanitizer
   子集；
 - 小而明确的 ergonomic helpers，前提是能复用现有 runtime/lifetime 模型。
 
-Reference runtime helpers remain deferred. The current reference examples prove
-composition patterns, but they do not yet repeat a small enough public shape to
-freeze. If a helper becomes justified later, prefer a lifecycle-only utility
-such as `service_scope` or `owned_service` that exposes scheduler/spawn/close/
-request_stop/shutdown/wait. Avoid `serving_runtime`, `inference_runtime`, and
-any helper that owns IO, accel, tensor, or model-serving policy.
+Reference runtime helpers 仍延后。当前 reference examples 已证明组合模式，但尚未重复出足够小、
+足够稳定的 public shape 来冻结成 helper。若未来确实需要 helper，优先考虑
+`service_scope` 或 `owned_service` 这种只表达 lifecycle 的 utility，暴露
+scheduler/spawn/close/request_stop/shutdown/wait；避免 `serving_runtime`、
+`inference_runtime` 以及任何拥有 IO、accel、tensor 或 model-serving policy 的 helper。
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
-- 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 的 production hardening beyond
-  the current proof, such as explicit owned-handle lifetimes or high-churn
-  handle-pool policy；
+- 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 超出当前 proof 的 production
+  hardening，例如 explicit owned-handle lifetimes 或 high-churn handle-pool policy；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - 真实 backend 的 vendor/platform typed-error mapping；
 - 标准 backport 的未来 conformance 复查。`std::execution` stop-token
@@ -132,10 +128,10 @@ any helper that owns IO, accel, tensor, or model-serving policy.
 
 每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
 回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
-Backend proof work must also satisfy
-[backend proof policy](forge-backend-proof-policy.md).
+Backend proof work 也必须满足
+[`backend proof` 策略](forge-backend-proof-policy.md)。
 
-## portability and Windows expectations
+## 可移植性与 Windows 预期
 
 Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
 backend。Windows 支持已经有可重复 smoke 脚本和 IOCP proof backend；后续仍应保持为
@@ -149,7 +145,7 @@ Windows 阶段性预期：
    `FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。
 3. Linux-only IO headers 不应在 IO disabled 或非 Linux build 下破坏普通用户 include。
 4. 若准备 Windows 机器，优先建立一个可重复执行的验证脚本，而不是依赖手工点击：
-   - CMake configure/build with `FORGE_BUILD_TESTS=ON`;
+   - 使用 `FORGE_BUILD_TESTS=ON` 进行 CMake configure/build；
    - `ctest` 覆盖 backport + `forge::` tests；
    - gate-off/gate-on configure 行为；
    - IOCP backend 单独挂在 `FORGE_ENABLE_FORGE_IO=AUTO/ON` 下。
@@ -161,10 +157,10 @@ Windows 阶段性预期：
 它应在 Windows 主机上直接运行，并通过参数或环境变量接收 MSVC Build Tools 位置等
 本机信息。`scripts/verify-windows-msvc-ssh.sh` 和
 `scripts/verify-windows-msvc-matrix.sh` 只是从 Linux/macOS 调用远端 Windows 主机的
-transport wrapper。公开文档和脚本不得写入私有主机名或本地安装路径。整体 local/
-self-hosted verification floor 入口见 `scripts/verify-selfhosted-floor.sh`。
+transport wrapper。公开文档和脚本不得写入私有主机名或本地安装路径。整体
+local/self-hosted verification floor 入口见 `scripts/verify-selfhosted-floor.sh`。
 
-## feature gates
+## Feature gates（功能 gate）
 
 长期建议使用两类开关。
 
@@ -194,7 +190,7 @@ backend 和 Windows IOCP proof backend；accel gate 已用于 portable mock back
 erasure 设施是 header-only，不再有独立功能 gate。accel 当前不做 CUDA、HIP、SYCL
 或 vendor SDK 探测。
 
-## resource policy
+## Resource policy（资源策略）
 
 Resource policy 解决实际 runtime 资源问题：
 
@@ -211,7 +207,7 @@ timer queue 和 timer callback callable record 纳入 resource；`async_scope`
 op-state 和 `strand` runner keepalive node 也已纳入 resource。仍需如实记录其它
 未纳入路径，例如 OS thread、kernel object 或 vendor-owned allocation。
 
-## IO backend
+## IO backend（IO 后端）
 
 IO backend 必须接触真实底层设施，否则只是多包一层线程池。当前已落地 Linux
 fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
@@ -229,7 +225,7 @@ readiness + one-shot read/write 覆盖，后续只有在需要 kernel SQ/CQ 语�
 high-churn handle-pool policy 仍需独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
 epoll/io_uring/IOCP 语义差异。
 
-## accel scheduler
+## Accel scheduler（加速器调度）
 
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
@@ -279,15 +275,14 @@ forge::accel::hip
 forge::accel::sycl
 ```
 
-核心接口不应强依赖 CUDA/HIP/SYCL。mock/in-memory backend 和 examples 已用于验证
-语义。下一阶段不是直接绑定 vendor SDK，而是按
-[`forge::accel` runtime v3 roadmap](forge-accel-runtime-v3.md) 补强 host/device
-runtime substrate：posted/non-posted transport、control/lifecycle、worker stream
-semantics、stream-ordered callback、power/resume contract 和 framework glue。只有当这些
-portable contracts 需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做
-proof。
+核心接口不应强依赖 CUDA/HIP/SYCL。mock/in-memory backend、CPU/SIMD reference backend
+和 examples 已用于验证语义。当前 host/device runtime substrate 已按
+[`forge::accel` runtime 设计](forge-accel-runtime-design.md) 收敛：posted/non-posted
+transport、control/lifecycle、worker stream semantics、stream-ordered callback、
+power/resume contract 和 framework glue 都有 portable proof。只有当这些 portable
+contracts 需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做 proof。
 
-## typed-error erased sender
+## Typed-error erased sender（类型化错误擦除 sender）
 
 `forge::erased_sender` 已支持多个 value shape，并保留目标
 `CompletionSignatures` 中声明的 typed error 形状，例如：
@@ -311,7 +306,7 @@ proof。
 默认 accel surface 仍使用 `std::exception_ptr`。真实 backend 若引入 vendor-specific
 错误码，应作为独立 mapping 决策，不应反向污染 portable vocabulary 或 mock API。
 
-## examples strategy
+## Examples 策略
 
 Examples 必须从“能编译”升级为“能教会人怎么组合”：
 

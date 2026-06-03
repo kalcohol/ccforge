@@ -1,13 +1,13 @@
-# `forge::accel` runtime design
+# `forge::accel` runtime 设计
 
 这份文档描述 `forge::accel` 当前完成态的 host/device runtime support design。它不是
-V1/V2/V3 roadmap 的拼接版，也不是发布计划；它按 runtime 机制解释这层设施现在如何组织，
+历史 roadmap 的拼接版，也不是发布计划；它按 runtime 机制解释这层设施现在如何组织，
 方便 review、PPT 和后续 backend proof 共享同一套上下文。
 
 本文只使用通用、vendor-neutral 的 runtime 术语。它不记录任何私有项目名、芯片名、私有
 API、私有路径、结构体字段、日志或源码片段。
 
-## positioning
+## 定位
 
 `forge::accel` 的目标层级是 user-space runtime substrate：
 
@@ -19,10 +19,10 @@ kernel driver / firmware / hardware       out of scope
 ```
 
 它不实现 driver，不包装 vendor SDK，不暴露 native handle，也不是 tensor framework、
-model server 或 graph optimizer。它提供的是一组可以被 mock / CPU reference / future
+model server 或 graph optimizer。它提供的是一组可以被 mock、CPU reference 和未来
 backend 共同理解的 vocabulary、lifecycle contract 和 executable proof。
 
-## backend-neutral split
+## Backend-neutral 分层
 
 当前结构分三层：
 
@@ -35,7 +35,7 @@ backend 共同理解的 vocabulary、lifecycle contract 和 executable proof。
 未来真实 backend 必须先说明自身如何映射到这些 portable contracts，再决定是否暴露
 backend-specific extension。真实 backend 不会自动把 vendor dependency 变成 Forge 默认依赖。
 
-## host request path
+## Host request 路径
 
 Host API 发起 work 时，runtime 需要区分两个边界：
 
@@ -55,7 +55,7 @@ duplicate request 会被拒绝；late response 会被 discard 并计数。Lifecy
 这一层表达的是“host 如何把 work 送入 runtime 并得到可追踪结果”，不是 fd、HANDLE、
 ioctl、DMA doorbell 或 native queue handle。
 
-## control plane and lifecycle
+## Control plane 与 lifecycle
 
 Control plane 负责 runtime 生命期，不负责具体业务命令。当前 vocabulary 覆盖：
 
@@ -80,7 +80,7 @@ Power/resume 的 portable default 是保守的：sleep 前 quiesce / drain / fen
 重新 probe，并用 epoch、session、generation 验证旧 handle 是否仍有效。除非真实 backend
 proof 证明 command/session 能跨低功耗存活，否则旧 session 应视为可能 stale。
 
-## worker and stream model
+## Worker 与 stream 模型
 
 Mock backend 把 queue 建模成 worker stream。每条 stream 是 FIFO lane，所有 user callback
 和 receiver completion 都遵守 Forge runtime 的通用规则：
@@ -113,7 +113,7 @@ Sticky stream error 的 proof 语义是：记录第一条 non-success stream err
 继续执行；`query_stream` 只观察；`synchronize_stream` 返回并可清除该 sticky error。这把
 错误聚合放在 sync point，而不是把 stream 变成自动 skip 后续 node 的 graph scheduler。
 
-## module and command dispatch
+## Module/command dispatch（模块命令分发）
 
 Portable `module_id + command_id` 表达“worker 如何把请求路由到某个 runtime module 或
 command handler”。`command_dispatcher<Request, Response>` 是 dependency-free proof：
@@ -125,7 +125,7 @@ command handler”。`command_dispatcher<Request, Response>` 是 dependency-free
 路径。真正的 module load/unload lifecycle 可以在真实 backend 需求出现后作为独立 proof
 补充。
 
-## event, fence, and ordering
+## Event、fence 与 ordering
 
 Event 是 stream 之间的 ordering marker。`record_event(q, ev)` 在某条 stream 上发布
 generation；`wait_event(q, ev)` 在另一条 stream 上等待该 generation；`fence(q)` 是同一
@@ -139,7 +139,7 @@ Event 不是 native handle、timeline semaphore、dependency graph 或 cycle det
 Same-stream wait-before-record 是一个 cycle，mock 会把它作为可停止/可超时的边界处理，而不是
 尝试推断用户意图。
 
-## stream-ordered host callback
+## Stream-ordered host callback（按 stream 排序的 host 回调）
 
 Device-to-host callback 被建模为 stream FIFO node，而不是任意时刻从 device 旁路打断 host。
 
@@ -156,7 +156,7 @@ Device-to-host callback 被建模为 stream FIFO node，而不是任意时刻从
 异常会映射到 typed error 或 exception path。这个模型与 stream ordering 直接衔接，也避免把
 callback 做成难以验证的随机中断通道。
 
-## framework glue contracts
+## Framework glue contracts（框架接入契约）
 
 `forge::accel` 只记录 framework-style backend glue 的通用需求，不包含 framework header：
 
@@ -177,7 +177,7 @@ callback 做成难以验证的随机中断通道。
 typed error 和 examples 作为 dependency-free proof；peer access、graph capture、stream
 priority、memory pool 和 trace range marker 保持 design contract，等待真实 backend 需求。
 
-## implemented proof and intentional omissions
+## 已实现 proof 与刻意延后项
 
 已完成的 portable proof：
 
@@ -208,15 +208,13 @@ priority、memory pool 和 trace range marker 保持 design contract，等待真
 
 这些不是当前完成态缺陷；它们需要真实 backend proof 或 owner 决策。
 
-## how to read the older roadmaps
-
-`forge-accel-runtime-v2.md` 和 `forge-accel-runtime-v3.md` 保留为 historical roadmap /
-implementation audit material。它们解释哪些任务如何收敛，但不是 newcomer 的主阅读入口。
+## 阅读路径
 
 学习或准备分享时，优先读：
 
 1. [`forge::accel` user documentation](../forge-accel.md)；
 2. 本文档；
-3. [`forge::accel` backend SPI sketch](forge-accel-backend-spi.md)；
-4. historical v2/v3 roadmap。
+3. [`forge::accel` backend SPI 草案](forge-accel-backend-spi.md)；
+4. [`backend proof` 策略](forge-backend-proof-policy.md)。
 
+历史实现过程可以从 Git history 追溯；仓库文档只保留当前完成态和未来 proof 需要的上下文。

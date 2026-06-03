@@ -1,4 +1,4 @@
-# `std::unique_resource`
+# `std::unique_resource` backport 说明
 
 `std::unique_resource` 当前仅在 Library Fundamentals TS v3 中，尚未进入 C++26 标准。
 Forge 提供 `<memory>` 入口下的实验性 backport。

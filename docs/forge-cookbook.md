@@ -1,4 +1,4 @@
-# Forge cookbook
+# Forge cookbook（实践手册）
 
 这份文档把 `include/forge/` 扩展设施按工程用法串起来。它不是 API
 reference；reference 见 [`forge::` 扩展工具](forge-utilities.md)、[runtime
@@ -75,7 +75,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and b
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
 
-## learning paths
+## 学习路径
 
 CPU service 或 message pipeline 建议按这个顺序读：
 
@@ -124,7 +124,7 @@ OS IO handoff 建议按这个顺序读：
 这些路径刻意保持 example-first。详细契约放在各 feature docs 中，因此 cookbook 只是地图，
 不是重复的 API reference。
 
-## coverage map
+## 覆盖地图
 
 | 场景 | 示例 |
 | --- | --- |
@@ -150,7 +150,7 @@ OS IO handoff 建议按这个顺序读：
 路径不是只编译不运行的文档片段；受 IO、accel 或 mdspan gate 控制的示例只在对应 target
 存在时注册 smoke test。
 
-## recipe: CPU work queue
+## Recipe：CPU work queue（CPU 工作队列）
 
 适用场景：把一批 CPU work 放到固定线程池里执行，最后等待所有已接受 work 完成。
 
@@ -173,7 +173,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_resource_context_example.cpp`
 
-## recipe: bounded producer/consumer
+## Recipe：bounded producer/consumer（有界生产消费）
 
 适用场景：消息系统、推理请求队列、设备 command staging、跨线程 backpressure。
 
@@ -196,7 +196,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
 
-## recipe: serialize shared state
+## Recipe：serialize shared state（串行化共享状态）
 
 适用场景：session 状态、protocol state machine、统计结果、非线程安全资源。
 
@@ -218,7 +218,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
 
-## recipe: own a session
+## Recipe：own a session（拥有会话生命周期）
 
 适用场景：一个连接、一个设备会话、一个推理 worker、一个资源型服务实例。
 
@@ -243,7 +243,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## recipe: bounded allocations
+## Recipe：bounded allocations（有界分配）
 
 适用场景：嵌入式、实时-ish pipeline、服务端热路径、推理 runtime 中的稳定分配边界。
 
@@ -272,7 +272,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_bounded_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## recipe: IO into protocol work
+## Recipe：IO into protocol work（IO 转协议工作）
 
 适用场景：Linux fd readiness 或 Windows IOCP completion 边界，随后切回 CPU runtime
 处理协议状态。
@@ -302,7 +302,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_io_pipeline_example.cpp`
 - `example/forge_io_accel_pipeline_example.cpp`
 
-## recipe: accelerator-shaped pipeline
+## Recipe：accelerator-shaped pipeline（加速器形状流水线）
 
 适用场景：先用 portable mock backend 验证 command queue / buffer / copy / submit
 形状，再用 CPU reference backend 证明同一套 vocabulary 能跑真实 CPU/SIMD work，
@@ -376,7 +376,7 @@ OS IO handoff 建议按这个顺序读：
 - `example/forge_io_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
-## recipe: reference runtime service
+## Recipe：reference runtime service（参考 runtime 服务）
 
 适用场景：把 CPU runtime、bounded message queue、accelerator-like command queue、
 resource policy 和序列化 session state 组合成一个拥有型服务对象。这个 recipe 是
@@ -416,7 +416,7 @@ runtime 边界。
 - `example/forge_inference_runtime_sketch.cpp`
 - `example/forge_io_accel_pipeline_example.cpp`
 
-## recipe: type erase at boundaries
+## Recipe：type erase at boundaries（边界类型擦除）
 
 适用场景：插件边界、队列中存放异构 sender、将具体 scheduler 隐藏在运行时配置后面。
 
@@ -443,7 +443,7 @@ runtime 边界。
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 
-## shutdown checklist
+## Shutdown checklist（关闭检查表）
 
 写一个拥有型 runtime 或 session 时，按这个顺序检查：
 

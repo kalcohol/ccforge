@@ -1,153 +1,120 @@
-# `forge::accel` backend SPI sketch
+# `forge::accel` backend SPI 草案
 
-This is a design sketch for future accelerator backend proofs. It is not a
-public plugin ABI, and it does not approve CUDA, HIP, SYCL, FPGA, or NPU vendor
-dependencies by itself.
-General gate, lifetime, verification, and typed-error rules are defined in
-[backend proof policy](forge-backend-proof-policy.md).
+这是未来 accelerator backend proof 的设计草案。它不是 public plugin ABI，也不单独批准
+CUDA、HIP、SYCL、FPGA 或 NPU vendor dependency。
+通用 gate、lifetime、verification 和 typed-error 规则见
+[Backend proof 策略](forge-backend-proof-policy.md)。
 
-The current shipped backends are the portable mock/in-memory reference backend
-in `include/forge/accel/mock/` and the dependency-free CPU/SIMD reference
-backend in `include/forge/accel/cpu/`. Backend-neutral vocabulary lives in
-`include/forge/accel/`. Future vendor backends remain separate owner-gated
-proofs and should preserve the same user-facing shape before exposing
-vendor-specific details.
+当前发布的 backend 是 `include/forge/accel/mock/` 下的 portable mock/in-memory reference
+backend，以及 `include/forge/accel/cpu/` 下的 dependency-free CPU/SIMD reference backend。
+Backend-neutral vocabulary 位于 `include/forge/accel/`。未来 vendor backend 仍是单独的
+owner-gated proof；它们应先保持同样的 user-facing shape，再决定是否暴露 vendor-specific detail。
 
-The executable contract is `forge_accel_backend_conformance`, backed by the
-repository-local test harness in
-`test/forge/runtime/forge_accel_backend_conformance.hpp`.
-The harness adapts both mock and CPU with `TYPED_TEST_SUITE`: portable
-operations run against both backends, while mock-only fault-injection behavior
-stays in plain tests.
+可执行 contract 是 `forge_accel_backend_conformance`，由仓库本地测试 harness
+`test/forge/runtime/forge_accel_backend_conformance.hpp` 支撑。Harness 通过
+`TYPED_TEST_SUITE` 同时适配 mock 和 CPU；portable operations 会在两个 backend 上运行，
+mock-only fault-injection behavior 保持 plain tests。
 
-## portable concepts
+## Portable concepts（可移植概念）
 
-The stable portable vocabulary is intentionally small:
+稳定 portable vocabulary 刻意保持小：
 
-- owning backend context, currently `forge::accel::mock::context` and
-  `forge::accel::cpu::context`;
-- lightweight device and queue handles derived from the context;
-- queue kind metadata for general, compute, copy, and command/message lanes;
-- optional `device_session` for command/response style devices;
-- owning host and device buffers with portable `memory_kind` metadata;
-- byte-oriented host and device buffers for command/model IO proof;
-- borrowed host spans for copy commands;
-- owning command packets for command/response runtimes that should not borrow
-  caller-owned response storage;
-- explicit `flush` / `invalidate` coherence command boundaries for cached-like
-  memory proofs;
-- minimal event / record / wait / fence completion boundary;
-- model/session execute proof over byte-size IO descriptors and borrowed byte
-  spans, without tensor or graph semantics;
-- command senders for H2D, D2H, D2D, generic `submit`, and message submit.
+- owning backend context，目前是 `forge::accel::mock::context` 和 `forge::accel::cpu::context`；
+- 从 context 派生的 lightweight device 和 queue handles；
+- general、compute、copy、command/message lanes 的 queue kind metadata；
+- command/response style device 可选的 `device_session`；
+- 带 portable `memory_kind` metadata 的 owning host/device buffers；
+- command/model IO proof 使用的 byte-oriented host/device buffers；
+- copy commands 使用的 borrowed host spans；
+- command/response runtime 使用的 owning command packets；
+- cached-like memory proof 的显式 `flush` / `invalidate` coherence command boundaries；
+- 最小 event / record / wait / fence completion boundary；
+- 基于 byte-size IO descriptors 和 borrowed byte spans 的 model/session execute proof，不包含 tensor 或 graph semantics；
+- H2D、D2H、D2D、generic `submit` 和 message submit 的 command senders。
 
-This vocabulary is meant to cover common stream/queue/event/device-memory
-patterns found in GPU, NPU, FPGA, and other accelerator runtimes without
-binding Forge to any specific vendor SDK.
+这套 vocabulary 覆盖 GPU、NPU、FPGA 和其它 accelerator runtime 中常见的
+stream/queue/event/device-memory 模式，同时不绑定 Forge 到任何具体 vendor SDK。
 
-## sender contract
+## Sender contract（sender 契约）
 
-Backend command senders must keep the existing Forge runtime contract:
+Backend command sender 必须保持现有 Forge runtime contract：
 
-- exactly one terminal completion;
-- no receiver completion while holding backend internal mutexes;
-- callback or completion-packet storage must outlive the callback return path;
-- default APIs use `set_error(std::exception_ptr)`;
-- opt-in typed APIs use `set_error(forge::accel::error)`;
-- queue-capacity or closed-context rejection completes as stopped where possible;
-- request-stop is best-effort and must not claim to interrupt an already running
-  kernel/callable unless the backend has tested support for that behavior.
+- exactly one terminal completion；
+- receiver completion 不在 backend internal mutex 下运行；
+- callback 或 completion-packet storage 必须活到 callback return path 之后；
+- default API 使用 `set_error(std::exception_ptr)`；
+- opt-in typed API 使用 `set_error(forge::accel::error)`；
+- queue-capacity 或 closed-context rejection 在可能时完成为 stopped；
+- request-stop 是 best-effort；除非 backend 已测试支持，否则不能声称会中断已经运行的 kernel/callable。
 
-Typed errors should stay as a small portable classification. Vendor status codes
-may be preserved as backend-specific detail only after a separate mapping
-decision.
+Typed errors 应保持为小的 portable classification。Vendor status code 只有在单独 mapping
+决策后，才能作为 backend-specific detail 保留。
 
-## lifetime contract
+## Lifetime contract（生命周期契约）
 
-The current public contract is borrowed-by-default:
+当前 public contract 是 borrowed-by-default：
 
-- device handles expose portable `device_info` and availability only; a backend
-  must document whether "lost" and "reset" are simulated flags, native device
-  loss, driver reset, or context rebuild;
-- device-bound queues and sessions must check device availability before
-  running queued commands, and must map lost-device rejection to the portable
-  `device_lost` classification;
-- host spans must outlive command completion;
-- `host_buffer<T>` and `device_buffer<T>` must outlive command completion;
-- moving a buffer object while a command that captured it is pending is a caller
-  error;
-- `memory_kind` values are portable metadata unless a backend explicitly
-  documents stronger native allocation behavior;
-- cached-like memory requires explicit command-boundary coherence operations
-  when the backend documents that requirement;
-- `event` is a shared completion marker, not a dependency graph node.
-- `submit_packet` owns request/response storage until terminal completion;
-  `submit_message` is the explicitly borrowed response path.
-- `model_bindings` stores borrowed byte spans; a backend that supports stronger
-  native tensor or buffer ownership must expose that as an explicit opt-in type.
-- queued-command timeout may reject work that has not started by the deadline,
-  but it must not claim to interrupt a command/kernel that is already running.
+- device handles 暴露 portable `device_info` 和 availability；backend 必须说明 "lost" 和
+  "reset" 是 simulated flag、native device loss、driver reset 还是 context rebuild；
+- device-bound queues 和 sessions 运行 queued command 前必须检查 device availability，并把 lost-device rejection 映射到 portable `device_lost` classification；
+- host spans 必须活到 command completion；
+- `host_buffer<T>` 和 `device_buffer<T>` 必须活到 command completion；
+- pending command 捕获某 buffer 时，移动该 buffer object 是 caller error；
+- `memory_kind` 默认只是 portable metadata，除非 backend 明确记录更强 native allocation behavior；
+- cached-like memory 在 backend 记录需要时，必须通过显式 command-boundary coherence operations；
+- `event` 是 shared completion marker，不是 dependency graph node；
+- `submit_packet` 拥有 request/response storage 直到 terminal completion；
+- `submit_message` 是显式 borrowed response path；
+- `model_bindings` 存储 borrowed byte spans；若 backend 支持更强 native tensor 或 buffer ownership，必须用显式 opt-in type 暴露；
+- queued-command timeout 可以拒绝 deadline 前未开始的 work，但不能声称会打断已经运行的 command/kernel。
 
-A future backend may add pinned host buffers, native event handles, or stronger
-backend-specific packet ownership, but those must be explicit opt-in types. They
-should not silently change the borrowed contract of the current mock surface.
+未来 backend 可以新增 pinned host buffers、native event handles 或更强 backend-specific packet
+ownership，但必须是显式 opt-in types，不应静默改变当前 mock surface 的 borrowed contract。
 
-## event and fence boundary
+## Event 与 fence 边界
 
-Events must remain minimal unless a real backend proof needs more:
+除非真实 backend proof 需要更多，event 必须保持最小：
 
-- `record_event(queue, event)` records readiness after earlier accepted work on
-  that queue reaches the command;
-- `wait_event(queue, event)` waits for a marker to become ready or for context
-  stop;
-- `fence(queue)` is a no-op command boundary for previously accepted work.
-- A context may expose multiple queues. FIFO is guaranteed per queue; cross-queue
-  ordering is expressed only through explicit event record/wait operations.
+- `record_event(queue, event)` 在该 queue 上早先 accepted work 到达 command 后记录 readiness；
+- `wait_event(queue, event)` 等待 marker ready 或 context stop；
+- `fence(queue)` 是已 accepted work 的 no-op command boundary；
+- context 可以暴露多条 queue。每条 queue 内保证 FIFO；cross-queue ordering 只通过显式 event record/wait 表达。
 
-Do not turn this into a general dependency graph in the portable layer. Cross
-queue dependency management, native event export, timeline semaphores, and graph
-submission are separate backend-specific proposals.
+不要在 portable layer 把这做成通用 dependency graph。Cross-queue dependency management、
+native event export、timeline semaphores 和 graph submission 都是单独的 backend-specific
+proposal。
 
-## backend proof checklist
+## Backend proof 清单
 
-Before adding a real backend, require:
+添加真实 backend 前，必须具备：
 
-- an explicit gate and CMake detection policy;
-- gate-off builds with zero backend tests/examples registered;
-- no vendor headers included from the portable mock headers;
-- the reusable `forge_accel_backend_conformance` test suite passing against the
-  backend adapter;
-- focused backend-specific tests for behavior not covered by the portable
-  conformance suite;
-- documentation of which resources are owned, borrowed, pinned, or vendor-owned;
-- examples that use the portable surface first, with native handles only in a
-  clearly marked backend-specific example.
+- 显式 gate 和 CMake detection policy；
+- gate-off build 注册零 backend tests/examples；
+- portable mock headers 不 include vendor headers；
+- reusable `forge_accel_backend_conformance` test suite 在 backend adapter 上通过；
+- backend-specific 行为有聚焦测试；
+- 文档说明哪些 resource 是 owned、borrowed、pinned 或 vendor-owned；
+- examples 优先使用 portable surface；native handles 只出现在清楚标记的 backend-specific example 中。
 
-The first real backend proof should be reviewed as a new project identity
-decision, not as routine maintenance.
+第一个真实 backend proof 应作为新的 project identity decision 审查，而不是 routine maintenance。
 
-## conformance coverage
+## Conformance 覆盖
 
-The portable conformance suite covers these backend obligations:
+Portable conformance suite 覆盖以下 backend obligations：
 
-- basic queue, copy, submit, and fence behavior;
-- cross-queue event ordering and the same-queue wait-before-record limitation;
-- stream query, per-stream synchronize, sticky stream error, and event elapsed
-  time in the mock worker proof;
-- capacity-full rejection through stopped completion;
-- size mismatch and cached-memory coherence classification;
-- device loss, device reset, stale sessions, drain freeze, and worker fault;
-- request timeout and late-response accounting;
-- protocol lifecycle signals that bypass the request-pending map;
-- stream-ordered host callback invoke/complete and unregister drain in the mock
-  worker proof;
-- optional trace collection that does not change command behavior;
-- typed accelerator errors crossing `forge::erased_sender` and
-  `forge::wait_result`.
+- basic queue、copy、submit 和 fence 行为；
+- cross-queue event ordering 和 same-queue wait-before-record limitation；
+- mock worker proof 中的 stream query、per-stream synchronize、sticky stream error 和 event elapsed time；
+- capacity-full rejection through stopped completion；
+- size mismatch 和 cached-memory coherence classification；
+- device loss、device reset、stale sessions、drain freeze 和 worker fault；
+- request timeout 和 late-response accounting；
+- bypass request-pending map 的 protocol lifecycle signals；
+- mock worker proof 中的 stream-ordered host callback invoke/complete 和 unregister drain；
+- 不改变 command behavior 的 optional trace collection；
+- typed accelerator errors 跨 `forge::erased_sender` 和 `forge::wait_result`。
 
-The suite intentionally does not prove vendor allocation classes, native event
-export, graph submission, tensor semantics, driver reset, firmware behavior, or
-kernel interruption. The CPU backend covers aligned CPU storage, real H2D/D2H
-copy paths, and real CPU/SIMD submit work; a vendor backend must still document
-and test native-only behavior as explicit backend-specific additions if it
-exposes them.
+Suite 刻意不证明 vendor allocation classes、native event export、graph submission、tensor
+semantics、driver reset、firmware behavior 或 kernel interruption。CPU backend 覆盖 aligned
+CPU storage、真实 H2D/D2H copy paths 和真实 CPU/SIMD submit work；vendor backend 若暴露
+native-only behavior，仍必须把它作为 backend-specific addition 单独记录和测试。

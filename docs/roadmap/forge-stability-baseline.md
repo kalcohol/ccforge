@@ -1,31 +1,28 @@
-# Forge stability baseline
+# Forge 稳定性基线
 
-This page records the current delivery baseline for `include/forge/` work and
-the loop used to decide whether more runtime/IO/accel work is justified. It is a
-maintenance guide, not a promise that every optional proof backend is production
-complete.
+这份文档记录 `include/forge/` 工作的当前交付基线，以及判断是否继续扩展 runtime/IO/accel
+工作的自循环规则。它是维护指南，不承诺每个 optional proof backend 都达到 production complete。
 
-## scope
+## 范围
 
-The stable target is:
+稳定目标是：
 
-- a C++ backport library with optional `forge::` runtime support;
-- clear ownership, cancellation, drain, and typed-error boundaries;
-- portable proof surfaces for IO and accelerator-shaped command systems;
-- examples that teach safe composition.
+- C++ backport library，加可选 `forge::` runtime support；
+- ownership、cancellation、drain 和 typed-error 边界清晰；
+- IO 和 accelerator-shaped command systems 有 portable proof surface；
+- examples 能教会用户安全组合。
 
-The target is not:
+稳定目标不是：
 
-- a complete networking framework;
-- a CUDA/HIP/SYCL runtime;
-- a tensor or model-serving framework;
-- a clone of NVIDIA stdexec/exec;
-- a reason to change standard backport behavior as a side effect of
-  `forge::` work.
+- 完整 networking framework；
+- CUDA/HIP/SYCL runtime；
+- tensor 或 model-serving framework；
+- NVIDIA stdexec/exec 克隆；
+- 因为 `forge::` 工作而顺手改变标准 backport behavior。
 
-## current delivered surface
+## 当前交付 surface
 
-Core runtime utilities:
+Core runtime utilities：
 
 - `forge::static_thread_pool`
 - `forge::single_thread_context`
@@ -38,134 +35,115 @@ Core runtime utilities:
 - `forge::strand`
 - `forge::task`
 
-Resource and type-erasure utilities:
+Resource 与 type-erasure utilities：
 
 - `forge::resource_policy`
 - `forge::any_scheduler`
 - `forge::erased_sender<CompletionSignatures>`
-- narrow `forge::any_sender_of` / `forge::any_receiver_of`
+- 窄 `forge::any_sender_of` / `forge::any_receiver_of`
 
-Platform/proof surfaces:
+Platform/proof surfaces：
 
 - `forge::io` Linux epoll/eventfd readiness backend
 - `forge::io` Windows IOCP proof backend
-- `forge::accel` runtime vocabulary and portable mock/reference backend
-- opt-in typed-error variants for `forge::io`
-- opt-in typed-error variants for `forge::accel`
+- `forge::accel` runtime vocabulary、portable mock backend 和 CPU reference backend
+- `forge::io` opt-in typed-error variants
+- `forge::accel` opt-in typed-error variants
 
-## verification floor
+## Verification floor（验证基线）
 
-Use the self-hosted verification floor as the default evidence set for
-behavior-changing work:
+行为变更默认使用 self-hosted verification floor 作为证据集：
 
 ```sh
 scripts/verify-selfhosted-floor.sh
 ```
 
-The default floor runs the Linux/container lanes sequentially and then the
-install-package smoke. It is intentionally local/self-hosted and not tied to
-GitHub hosted CI. When a Windows host is available, opt into the Windows/MSVC
-smoke by setting `FORGE_VERIFY_FLOOR_WINDOWS=1`; the floor script then calls the
-Windows SSH/matrix wrapper, which in turn invokes the Windows-native PowerShell
-entrypoint. Keep machine-specific hostnames, user directories, and installation
-paths in local environment variables or shell history only; do not commit them.
+默认 floor 顺序运行 Linux/container lanes，然后运行 install-package smoke。它刻意保持为
+local/self-hosted，不绑定 GitHub hosted CI。Windows 主机可用时，通过
+`FORGE_VERIFY_FLOOR_WINDOWS=1` opt into Windows/MSVC smoke；floor script 会调用
+Windows SSH/matrix wrapper，后者再调用 Windows-native PowerShell entrypoint。机器相关的
+主机名、用户目录和安装路径只放在本地环境变量或 shell history 中，不提交到仓库。
 
-The most recent known-good shape for this track was:
+这条 track 最近的 known-good shape：
 
-- LLVM/libc++ all-backport path: all tests passing;
-- TSAN forge/execution subset: all tests passing;
-- ASAN/UBSAN forge/execution subset: all tests passing;
-- install package consumer smoke: passing;
-- Windows/MSVC smoke: passing, including IOCP and accel gate checks.
+- LLVM/libc++ all-backport path：全部测试通过；
+- TSAN forge/execution subset：全部测试通过；
+- ASAN/UBSAN forge/execution subset：全部测试通过；
+- install package consumer smoke：通过；
+- Windows/MSVC smoke：通过，包含 IOCP 和 accel gate checks。
 
-Do not turn these total counts into hard-coded policy. Test totals are expected
-to grow. Prefer named critical tests and feature-gate registration checks.
+不要把这些总数写成硬编码 policy。测试总数预期会增长。优先使用命名 critical tests 和
+feature-gate registration checks。
 
-## gate expectations
+## Gate 预期
 
-For optional features, validate behavior by registration shape:
+Optional features 通过 registration shape 验证行为：
 
-- `FORGE_ENABLE_FORGE_IO=AUTO` or `ON`
-  - on Linux: registers Linux IO tests/examples;
-  - on Windows: registers IOCP tests/examples;
-  - on unsupported platforms with `AUTO`: skips IO backend tests/examples;
-  - with `ON` and no backend: configure should fail.
+- `FORGE_ENABLE_FORGE_IO=AUTO` 或 `ON`
+  - Linux：注册 Linux IO tests/examples；
+  - Windows：注册 IOCP tests/examples；
+  - unsupported platform 且为 `AUTO`：跳过 IO backend tests/examples；
+  - `ON` 且无 backend：configure 应失败。
 - `FORGE_ENABLE_FORGE_IO=OFF`
-  - registers zero IO backend tests/examples.
-- `FORGE_ENABLE_FORGE_ACCEL=AUTO` or `ON`
-  - registers portable mock accel tests/examples when runtime/resource gates are
-    available.
+  - 注册零 IO backend tests/examples。
+- `FORGE_ENABLE_FORGE_ACCEL=AUTO` 或 `ON`
+  - runtime/resource gates 可用时注册 portable mock/CPU accel tests/examples。
 - `FORGE_ENABLE_FORGE_ACCEL=OFF`
-  - registers zero accel tests/examples.
+  - 注册零 accel tests/examples。
 
-For sanitizer coverage, new runtime tests should use the `forge_` test prefix
-unless there is a specific reason not to. The sanitizer gate filters are intended
-to catch execution and `forge::` lifetime issues.
+Sanitizer coverage 中，新 runtime tests 应使用 `forge_` test prefix，除非有明确理由不用。
+Sanitizer gate filters 旨在捕捉 execution 和 `forge::` lifetime issues。
 
-## convergence checklist
+## 收敛清单
 
-Use this checklist after each taskbook round.
+每轮 taskbook 后使用这张清单。
 
-| Target | Evidence | Current status |
+| 目标 | 证据 | 当前状态 |
 | --- | --- | --- |
-| Verification is repeatable | `scripts/verify-selfhosted-floor.sh`, `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc.ps1`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | In place |
-| Feature gates are testable | IO/accel ON/AUTO/OFF registration checks in `scripts/verify-windows-msvc.ps1`; selected Windows example smoke for IOCP, accel, and reference runtime; local `ctest -N -R 'forge_io\|forge_accel'` gate checks | In place |
-| Resource behavior is auditable | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table in place; review for each new primitive |
-| IO lifecycle is explicit | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Per-op cancellation and IOCP handle-cache pruning are in place; re-audit when IO semantics change |
-| Accel lifecycle is explicit | `docs/forge-accel.md`, `docs/roadmap/forge-accel-runtime-v3.md`, `forge_accel_backend_conformance`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Portable conformance harness in place; v3 tracks host/device runtime-substrate contracts before any vendor backend proof |
-| Typed-error boundaries are usable | `forge_wait_result`, `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | `wait_result` helper in place; review new typed surfaces as they appear |
-| Examples teach composition | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp`, `^example_` smoke tests | Reference runtime pattern in place; public helper intentionally deferred until repeated lifecycle shape appears |
-| Deferred large backends stay explicit | `docs/roadmap/forge-runtime-vision.md`, `docs/roadmap/forge-backend-proof-policy.md`, backend SPI sketches | In place |
+| Verification 可重复 | `scripts/verify-selfhosted-floor.sh`, `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc.ps1`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | 已就位 |
+| Feature gates 可测试 | `scripts/verify-windows-msvc.ps1` 中 IO/accel ON/AUTO/OFF registration checks；Windows example smoke 覆盖 IOCP、accel 和 reference runtime；本地 `ctest -N -R 'forge_io\|forge_accel'` gate checks | 已就位 |
+| Resource behavior 可审计 | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table 已就位；新增 primitive 时逐项 review |
+| IO lifecycle 明确 | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Per-op cancellation 和 IOCP handle-cache pruning 已就位；IO 语义变更时重新审计 |
+| Accel lifecycle 明确 | `docs/forge-accel.md`, `docs/roadmap/forge-accel-runtime-design.md`, `forge_accel_backend_conformance`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Portable conformance harness 与 host/device runtime-substrate contracts 已就位；vendor backend proof 仍需单独 gate |
+| Typed-error boundaries 可用 | `forge_wait_result`, `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | `wait_result` helper 已就位；新增 typed surface 时 review |
+| Examples 教会组合 | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp`, `^example_` smoke tests | Reference runtime pattern 已就位；public helper 延后到重复 lifecycle shape 足够稳定时再冻结 |
+| Deferred large backends 保持显式 | `docs/roadmap/forge-runtime-vision.md`, `docs/roadmap/forge-backend-proof-policy.md`, backend SPI sketches | 已就位 |
 
-A round is complete when every changed row has concrete evidence: a test name,
-an example path, a doc section, or a deliberate limitation entry.
+一轮完成的条件是每个变更过的行都有具体证据：test name、example path、doc section 或刻意限制条目。
 
-## wakeup and cancellation audit rule
+## Wakeup 与 cancellation 审计规则
 
-The timer cancellation hardening round exposed a recurring class of bug:
-`atomic` state plus unlocked `condition_variable::notify_*` can still lose a
-wakeup. If a waiter checks a predicate while holding a mutex, every path that
-changes that predicate for the purpose of waking the waiter must publish the
-change under the same mutex before notifying.
+Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state 加 unlocked
+`condition_variable::notify_*` 仍可能丢 wakeup。如果 waiter 在持 mutex 时检查 predicate，
+所有为了唤醒该 waiter 而修改 predicate 的路径，都必须在同一把 mutex 下发布修改，再 notify。
 
-Use `scripts/audit-runtime-wakeups.sh` as a candidate-site inventory after
-touching cancellation, shutdown, timer, queue, or stop-callback paths. The script
-does not prove correctness; it keeps the review focused on the places where a
-manual lifecycle check matters.
+触碰 cancellation、shutdown、timer、queue 或 stop-callback path 后，使用
+`scripts/audit-runtime-wakeups.sh` 作为 candidate-site inventory。该脚本不证明正确性；
+它把 review 聚焦到需要人工 lifecycle check 的位置。
 
-## self-loop protocol
+## 自循环协议
 
-Every new runtime/IO/accel taskbook should follow this loop:
+每个新的 runtime/IO/accel taskbook 都应遵循：
 
-1. **Inspect** current code and docs. Do not implement from stale taskbook facts.
-2. **Implement one slice** with a focused commit.
-3. **Verify** with focused tests, then the taskbook's required gates.
-4. **Review** for UAF, races, completion-under-lock, stop-callback lifetime,
-   gate drift, and docs drift.
-5. **Update backlog** by editing the relevant roadmap/taskbook if a new
-   high-value gap is found.
-6. **Converge check** against the checklist above.
+1. **Inspect** 当前代码和文档。不要从过时 taskbook facts 直接实现。
+2. **Implement one slice**，并形成聚焦提交。
+3. **Verify** 聚焦测试，再跑 taskbook 要求的 gates。
+4. **Review** UAF、races、completion-under-lock、stop-callback lifetime、gate drift 和 docs drift。
+5. **Update backlog**：如果发现新的高价值 gap，编辑相关 roadmap/taskbook。
+6. **Converge check**：回到上面的清单逐项确认。
 
-If a remaining item is high-value and low/medium-risk, create the next small
-round and repeat. If the remaining work requires vendor SDKs, new OS backends,
-or broad API commitments, stop and require a separate owner decision.
+如果剩余项高价值且风险低/中，创建下一小轮并重复。若剩余工作需要 vendor SDK、新 OS
+backend 或广泛 API commitment，停止并要求独立 owner decision。
 
-## known intentional boundaries
+## 已知刻意边界
 
-- Windows/MSVC smoke is a manual/self-hosted optional gate, not a replacement
-  for Linux container verification.
-- `forge::accel` is mock/in-memory and vendor-neutral; it does not imply CUDA,
-  HIP, SYCL, FPGA, or NPU driver support.
-- macOS/BSD kqueue is out of scope until a concrete BSD/macOS requirement
-  appears.
-- Linux `io_uring` is deferred unless kernel submission/completion queue
-  semantics are required and testable.
-- Additional IOCP hardening is requirement-driven. Current proof covers
-  completion drain, per-operation cancellation, and conservative associated
-  handle pruning; stronger handle ownership or high-churn pooling needs a new
-  taskbook.
-- `timer_context` uses receiver stop callbacks for pending timer cancellation;
-  `forge::accel` still keeps per-receiver post-accept command cancellation out
-  of scope until a real backend needs a command-level cancellation model.
-- `std::execution` backport behavior should not be changed merely to support a
-  `forge::` extension.
+- Windows/MSVC smoke 是 manual/self-hosted optional gate，不替代 Linux container verification。
+- `forge::accel` 是 mock/in-memory 和 vendor-neutral；它不表示 CUDA、HIP、SYCL、FPGA 或 NPU driver support。
+- macOS/BSD kqueue 在出现具体 BSD/macOS 需求前不在范围内。
+- Linux `io_uring` 延后，除非 kernel submission/completion queue 语义变成必需且可测试。
+- Additional IOCP hardening 是 requirement-driven。当前 proof 覆盖 completion drain、
+  per-operation cancellation 和 conservative associated handle pruning；更强 handle ownership
+  或 high-churn pooling 需要新 taskbook。
+- `timer_context` 对 pending timer cancellation 使用 receiver stop callbacks；`forge::accel`
+  仍把 per-receiver post-accept command cancellation 留在范围外，直到真实 backend 需要 command-level cancellation model。
+- 不应只为了支持 `forge::` extension 而改变 `std::execution` backport behavior。

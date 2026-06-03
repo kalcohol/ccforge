@@ -1,107 +1,95 @@
-# Backend proof policy
+# Backend proof 策略
 
-This policy applies to optional platform/vendor proof backends under
-`include/forge/`. It does not apply to standard backports under `backport/`.
+这份策略适用于 `include/forge/` 下的 optional platform/vendor proof backend。它不适用于
+`backport/` 下的标准 backport。
 
-The goal is to prove that Forge's runtime substrate can express real systems
-without turning the project into a networking, GPU, tensor, or driver framework.
+目标是证明 Forge 的 runtime substrate 能表达真实系统，同时不把项目变成 networking、
+GPU、tensor 或 driver framework。
 
-## gate policy
+## Gate 策略
 
-Every optional backend must have an explicit CMake feature gate:
+每个 optional backend 都必须有显式 CMake feature gate：
 
-- `AUTO`: enable only when the platform/backend probe succeeds;
-- `ON`: require the backend and fail configure if unavailable;
-- `OFF`: register zero tests/examples for that backend.
+- `AUTO`：只有 platform/backend probe 成功时启用；
+- `ON`：要求 backend 可用，不可用时 configure 失败；
+- `OFF`：该 backend 的 tests/examples 注册数为零。
 
-Do not add SDK probes before backend code exists. A future CUDA/HIP/SYCL,
-`io_uring` or a vendor-device proof must add its probe in the same
-taskbook as the backend code and tests.
+Backend 代码不存在时，不要提前添加 SDK probe。未来 CUDA/HIP/SYCL、`io_uring` 或
+vendor-device proof 必须在同一份 taskbook 里同时添加 probe、backend 代码和测试。
 
-Package installs must not freeze the build machine's probe result. Installed
-configs should rerun backend probes in the consumer project.
+Package install 不能冻结构建机器上的 probe 结果。Installed configs 应在 consumer project
+中重新运行 backend probes。
 
-## verification policy
+## 验证策略
 
-Each backend proof needs:
+每个 backend proof 需要：
 
-- a focused test name with a `forge_` prefix where possible;
-- example smoke tests for public examples;
-- gate-off registration checks;
-- sanitizer coverage if the backend is available in the sanitizer environment;
-- install-package coverage for header and CMake propagation;
-- platform smoke when the backend needs an OS/toolchain not covered by the
-  Linux container matrix.
+- 尽可能使用 `forge_` 前缀的 focused test name；
+- public examples 的 smoke tests；
+- gate-off registration checks；
+- backend 在 sanitizer 环境可用时纳入 sanitizer coverage；
+- install-package coverage，验证 header 和 CMake propagation；
+- OS/toolchain 不在 Linux container matrix 内时，需要 platform smoke。
 
-Do not hard-code one global CTest count as policy. Counts grow. Prefer nonzero
-or zero registration checks for specific regexes.
+不要把某个全局 CTest count 写成 policy。测试数量会增长。应使用具体 regex 的 nonzero 或 zero
+registration checks。
 
-Windows/MSVC smoke is a manual or self-hosted gate. Public docs and scripts must
-not contain private hostnames, user names, or local installation paths; keep
-those in environment variables or local shell history.
+Windows/MSVC smoke 是 manual 或 self-hosted gate。公开文档和脚本不得包含私有主机名、
+用户名或本地安装路径；这些信息留在环境变量或本地 shell history 里。
 
-## lifetime policy
+## Lifetime 策略
 
-Backends must state ownership precisely:
+Backend 必须精确说明 ownership：
 
-- OS handles are borrowed unless the type name says otherwise;
-- spans are borrowed unless the command packet owns storage explicitly;
-- context resources are non-owning and must outlive the context and objects that
-  allocate from them;
-- receiver completion must not run under backend internal locks;
-- cancellation must not release operation storage until in-flight callbacks or
-  completion packets can no longer touch it.
+- OS handle 默认 borrowed，除非类型名明确表示 owning；
+- span 默认 borrowed，除非 command packet 明确拥有 storage；
+- context resources 是 non-owning，必须比 context 和从中分配的对象活得更久；
+- receiver completion 不得在 backend internal lock 下运行；
+- cancellation 不得在 in-flight callback 或 completion packet 仍可能触碰 operation storage 时释放该 storage。
 
-Future stronger storage categories, such as pinned host memory, native device
-allocations, owning command packets, or exported native handles, must be
-explicit opt-in types. They should not silently change existing borrowed-span
-contracts.
+未来更强的 storage category，例如 pinned host memory、native device allocation、owning
+command packet 或 exported native handle，必须是显式 opt-in type。它们不应静默改变现有
+borrowed-span contract。
 
-## typed-error policy
+## Typed-error 策略
 
-Default backend APIs use `set_error(std::exception_ptr)`.
+默认 backend API 使用 `set_error(std::exception_ptr)`。
 
-Typed-error variants are opt-in and should expose only stable portable
-categories:
+Typed-error variant 只暴露稳定的 portable categories：
 
-- invalid handle / buffer / event;
-- operation already in progress;
-- capacity or size mismatch;
-- cancellation / stopped when it is part of the sender contract;
-- backend/system error with the original code preserved where possible.
+- invalid handle / buffer / event；
+- operation already in progress；
+- capacity 或 size mismatch；
+- sender contract 内的 cancellation / stopped；
+- backend/system error，并在可能时保留原始 code。
 
-Vendor/platform status codes should not be added to portable enums
-speculatively. A real backend may preserve raw status in backend-specific detail
-only after a mapping decision and tests. `forge::erased_sender` may carry typed
-errors that are explicitly declared in its target completion signatures, and
-`forge::wait_result` is the synchronous boundary helper for examples and tests.
+不要推测性地把 vendor/platform status code 加进 portable enum。真实 backend 可以在单独
+mapping 决策和测试之后，在 backend-specific detail 中保留 raw status。`forge::erased_sender`
+可以携带目标 completion signatures 明确声明的 typed error；`forge::wait_result` 是 examples
+和 tests 的同步边界 helper。
 
-## project identity rule
+## 项目身份规则
 
-A new backend proof is an owner decision, not routine maintenance, when it
-introduces:
+当新的 backend proof 引入以下内容时，它是 owner decision，不是 routine maintenance：
 
-- a vendor SDK or driver header;
-- a new OS backend model;
-- native handles in public API;
-- a new error taxonomy;
-- a long-running background runtime beyond existing Forge contexts.
+- vendor SDK 或 driver header；
+- 新 OS backend model；
+- public API 中的 native handle；
+- 新 error taxonomy；
+- 超出已有 Forge contexts 的 long-running background runtime。
 
-When in doubt, write a taskbook first and keep the portable surface mock-first.
+拿不准时，先写 taskbook，并保持 portable surface mock-first。
 
-## current backend stance
+## 当前 backend 立场
 
-The practical IO pair is Linux `epoll/eventfd` readiness plus Windows IOCP
-completion. They are intentionally separate backend models. Do not force IOCP
-through the Linux readiness state machine, and do not add kqueue without a real
-BSD/macOS owner and verification host.
+当前实际 IO 组合是 Linux `epoll/eventfd` readiness 与 Windows IOCP completion。它们是两个
+刻意分离的 backend model。不要把 IOCP 强塞进 Linux readiness state machine，也不要在没有
+BSD/macOS owner 和验证主机时添加 kqueue。
 
-Linux `io_uring` is deferred until the project needs kernel submission/completion
-queue semantics that `epoll` readiness plus one-shot read/write cannot express.
-If that day comes, treat it as a new backend proof with its own gate, examples,
-and sanitizer story.
+Linux `io_uring` 延后，直到项目需要 `epoll` readiness 加 one-shot read/write 无法表达的
+kernel submission/completion queue 语义。若将来需要，把它作为新的 backend proof，带独立
+gate、examples 和 sanitizer story。
 
-The practical accel stance is vendor-neutral. Keep the portable surface centered
-on queues, command submission, buffers, async copy, event/fence boundaries, and
-message-style device sessions. CUDA/HIP/SYCL, FPGA, NPU, or driver SDK support
-is a separate proof only after the mock shape has demonstrated a stable need.
+当前 accel 立场是 vendor-neutral。Portable surface 继续围绕 queues、command submission、
+buffers、async copy、event/fence boundaries 和 message-style device sessions。CUDA/HIP/SYCL、
+FPGA、NPU 或 driver SDK support 只有在 mock shape 证明稳定需求后，才作为独立 proof 启动。

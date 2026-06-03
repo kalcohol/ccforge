@@ -1,116 +1,97 @@
-# `forge::io` backend SPI sketch
+# `forge::io` backend SPI 草案
 
-This is a design sketch for future IO backend proofs. It is not a public plugin
-ABI and it does not approve `io_uring` or a networking abstraction by
-itself.
+这是未来 IO backend proof 的设计草案。它不是 public plugin ABI，也不单独批准
+`io_uring` 或 networking abstraction。
 
-The shipped IO surface has two intentionally different backend models:
+当前发布的 IO surface 有两个刻意不同的 backend model：
 
-- Linux `epoll` / `eventfd` readiness;
-- Windows IOCP completion.
+- Linux `epoll` / `eventfd` readiness；
+- Windows IOCP completion。
 
-Future backends should preserve that honesty. Do not force every platform into
-one fake abstraction if the OS completion model is different.
+未来 backend 应保持这种诚实表达。如果 OS completion model 不同，不要强行把所有平台塞进
+同一个伪 abstraction。
 
-## portable user-facing shape
+## Portable user-facing shape（用户可见形态）
 
-The stable vocabulary is small:
+稳定 vocabulary 很小：
 
-- owning `forge::io::context`;
-- borrowed OS handles;
-- borrowed byte spans for one-shot read/write helpers;
-- Linux readiness senders: `readable(fd)` and `writable(fd)`;
-- platform read/write helpers: `async_read_some(...)` and
-  `async_write_some(...)`;
-- `close()`, `request_stop()`, `shutdown()`, `wait()`, and per-handle
-  `cancel(...)`;
-- default exception errors and opt-in typed-error variants.
+- owning `forge::io::context`；
+- borrowed OS handles；
+- one-shot read/write helpers 使用 borrowed byte spans；
+- Linux readiness senders：`readable(fd)` 和 `writable(fd)`；
+- platform read/write helpers：`async_read_some(...)` 和 `async_write_some(...)`；
+- `close()`、`request_stop()`、`shutdown()`、`wait()`，以及 per-handle `cancel(...)`；
+- 默认 exception errors 和 opt-in typed-error variants。
 
-Readiness and completion backends do not need identical APIs. For example, IOCP
-does not expose `readable()` / `writable()` because completion packets already
-represent submitted operations.
+Readiness backend 和 completion backend 不需要拥有完全相同的 API。例如，IOCP 不暴露
+`readable()` / `writable()`，因为 completion packet 已经代表提交过的 operation。
 
-## backend contract
+## Backend contract（后端契约）
 
-Every backend proof must define:
+每个 backend proof 必须定义：
 
-- how operations are accepted or rejected after `close()` / `shutdown()`;
-- how context stop completes pending operations;
-- whether receiver stop tokens cancel already accepted operations;
-- how cancellation is drained before record ownership is released;
-- which thread invokes receiver completion;
-- whether completion can ever run while holding backend locks;
-- which OS handles and buffers are borrowed and how long they must live;
-- which stable typed errors are exposed by `_typed` variants.
+- `close()` / `shutdown()` 后 operation 如何被接受或拒绝；
+- context stop 如何完成 pending operation；
+- receiver stop token 是否取消已经 accepted 的 operation；
+- cancellation 如何 drain，才能安全释放 record ownership；
+- 哪个线程调用 receiver completion；
+- completion 是否可能在 backend lock 下运行；
+- OS handle 和 buffer 的 borrowed lifetime；
+- `_typed` variants 暴露哪些稳定 typed errors。
 
-The default rule is exactly one terminal completion and no receiver completion
-under backend internal locks.
+默认规则是 exactly one terminal completion，且 receiver completion 不在 backend internal lock 下运行。
 
-## Linux readiness policy
+## Linux readiness 策略
 
-The existing Linux backend is level-triggered readiness. It reports "fd appears
-ready"; it does not own the following syscall unless the user chooses
-`async_read_some` / `async_write_some`.
+现有 Linux backend 是 level-triggered readiness。它报告“fd 看起来 ready”；除非用户选择
+`async_read_some` / `async_write_some`，否则 backend 不拥有后续 syscall。
 
-Consequences:
+后果：
 
-- `readable(fd)` / `writable(fd)` only complete with `set_value()`;
-- EOF, socket errors, and short IO are observed by the user's syscall;
-- if another consumer drains the fd between readiness and syscall, `EAGAIN` /
-  `EWOULDBLOCK` is a normal syscall error;
-- one pending read waiter and one pending write waiter per fd are supported.
+- `readable(fd)` / `writable(fd)` 只用 `set_value()` 完成；
+- EOF、socket errors 和 short IO 由用户 syscall 观察；
+- 如果 readiness 到 syscall 之间被其它 consumer 抽干 fd，`EAGAIN` / `EWOULDBLOCK` 是正常 syscall error；
+- 每个 fd 支持一个 pending read waiter 和一个 pending write waiter。
 
-`io_uring` should not be added as "better epoll". It should only be considered
-when the project needs kernel submission/completion queue semantics and can test
-the different cancellation/drain behavior.
+不要把 `io_uring` 当成“更好的 epoll”添加。只有项目需要 kernel submission/completion queue
+语义，并能测试不同的 cancellation/drain behavior 时，才考虑它。
 
-Current decision: defer `io_uring`. The Linux epoll/eventfd backend covers the
-current readiness and one-shot read/write use cases, and the project does not
-yet have a scenario that needs kernel submission/completion queues. Revisit only
-when all of these are true:
+当前决策：延后 `io_uring`。Linux epoll/eventfd backend 已覆盖当前 readiness 和 one-shot
+read/write 用例；项目还没有需要 kernel submission/completion queues 的场景。只有以下条件同时满足时才重新评估：
 
-- epoll readiness plus `async_read_some` / `async_write_some` is insufficient;
-- the workload needs SQ/CQ semantics rather than a readiness notification;
-- the required syscalls and cancellation paths can be tested in the normal
-  verification environment;
-- the backend can remain optional with AUTO/ON/OFF gates and no mandatory
-  `liburing` dependency unless explicitly approved;
-- typed-error categories remain small and portable.
+- epoll readiness 加 `async_read_some` / `async_write_some` 不够；
+- workload 需要 SQ/CQ 语义，而不是 readiness notification；
+- 所需 syscalls 和 cancellation paths 能在常规验证环境中测试；
+- backend 能保持 optional AUTO/ON/OFF gates，且除非明确批准，不引入 mandatory `liburing` dependency；
+- typed-error categories 仍保持小而 portable。
 
-## Windows IOCP policy
+## Windows IOCP 策略
 
-The existing Windows backend is completion-based. Operations are explicitly
-submitted and complete through IOCP packets.
+现有 Windows backend 是 completion-based。Operation 显式提交，并通过 IOCP packet 完成。
 
-Consequences:
+后果：
 
-- no readiness senders are exposed;
-- `CancelIoEx` is asynchronous and the completion packet must still be drained;
-- handles must support overlapped IO and remain valid until operation completion
-  or context drain;
-- the current proof remembers associated handles with per-handle in-flight
-  counts and conservatively prunes idle records only after the OS reports the
-  borrowed handle value is invalid.
+- 不暴露 readiness senders；
+- `CancelIoEx` 是异步的，completion packet 仍必须 drain；
+- handle 必须支持 overlapped IO，并在 operation completion 或 context drain 前保持有效；
+- 当前 proof 用 per-handle in-flight counts 记录 associated handles，并且只在 OS 报告 borrowed handle value 无效后保守 prune idle records。
 
-The associated-handle cache is bounded by conservative pruning, but it is still
-not an ownership model. A production backend that owns handles or supports
-high-churn handle pools should add an explicit handle-lifetime abstraction
-instead of treating cache policy as the portable contract.
+Associated-handle cache 通过保守 pruning 变成有界，但它仍不是 ownership model。若 production
+backend 需要拥有 handle 或支持 high-churn handle pool，应新增显式 handle-lifetime abstraction，
+而不是把 cache policy 当成 portable contract。
 
-## future backend entry checklist
+## 未来 backend 进入清单
 
-Before adding a new IO backend, require:
+添加新 IO backend 前，必须具备：
 
-- an explicit gate and configure probe;
-- gate-off builds with zero backend tests/examples registered;
-- focused tests for accept, cancel, request-stop, close, shutdown, and borrowed
-  lifetime boundaries;
-- sanitizer coverage where the backend is available;
-- install-package behavior that reruns probes in the consumer project;
-- documentation of readiness vs completion semantics;
-- typed-error mapping review for stable portable categories only.
+- 显式 gate 和 configure probe；
+- gate-off build 注册零 backend tests/examples；
+- accept、cancel、request-stop、close、shutdown 和 borrowed lifetime boundaries 的聚焦测试；
+- backend 可用时的 sanitizer coverage；
+- install-package behavior 会在 consumer project 重新运行 probes；
+- readiness vs completion semantics 文档；
+- typed-error mapping 只审查稳定 portable categories。
 
-Another readiness backend can follow the Linux shape only if a concrete platform
-need appears and the semantics match. macOS/BSD kqueue is not a current project
-target. A completion backend should follow the IOCP shape instead of pretending
-to be readiness.
+只有出现具体平台需求且语义匹配时，新的 readiness backend 才能沿用 Linux shape。
+macOS/BSD kqueue 不是当前项目目标。Completion backend 应沿用 IOCP shape，而不是伪装成
+readiness。

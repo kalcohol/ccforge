@@ -1,4 +1,4 @@
-# `forge::accel`
+# `forge::accel` 使用说明
 
 `forge::accel` 是 Forge 的 accelerator-shaped runtime support layer。它提供三层内容：
 
@@ -30,7 +30,7 @@ portable conformance suite，因此 vocabulary 不只在 mock state machine 上�
 #include <forge/accel.hpp>
 ```
 
-## Vocabulary
+## 核心 vocabulary
 
 `forge::accel` owns portable vocabulary。这些都是小 value types，不是 driver handle 或
 wire-format struct：
@@ -50,7 +50,7 @@ protocol error 和 unknown。`error_kind_to_string(kind)` 与
 `command_status_to_string(status)` 提供稳定诊断字符串，方便 log、trace 和 framework
 边界统一展示。
 
-## Mock backend
+## Mock backend 角色
 
 `forge::accel::mock::context` owns reference backend。它的 destructor 会调用
 `shutdown()` 和 `wait()`，因此析构可能在 accepted work drain 或 stop 时阻塞。
@@ -70,7 +70,7 @@ pending work 更久。该 resource 控制 mock context state、internal runtime 
 queue、command record、session 和 owning buffer 的分配。它不会把 mock memory 变成
 pinned、mapped、managed，也不会接入 vendor allocator。
 
-## CPU reference backend
+## CPU reference backend 角色
 
 `forge::accel::cpu::context` 是真实 CPU-work reference backend。它使用与 mock backend
 相同的 queue / copy / submit / event vocabulary，但故意减少 fault injection：不提供
@@ -111,7 +111,7 @@ sender 完成为 stopped。Receiver stop token 在 `start()` 时检查；command
 serial queue 后，per-command stop 不在 v1 建模。需要 runtime-level control 时，使用
 context shutdown、device/session reset，或显式 event/fence ordering。
 
-## Queues and commands
+## Queue 与 command
 
 `context::get_queue(kind)` 创建或返回 lightweight queue handle。`device::get_queue(kind)`
 创建 device-bound queue。每个 queue owns 一个 `forge::strand`，所以同一 queue 内 work
@@ -189,7 +189,7 @@ Sticky error 的 v3 proof 语义是：stream 记录第一条 non-success error�
 这更接近 runtime 的 sync-point error aggregation，而不是把每个 stream 变成 error 后自动
 跳过后续节点的 dependency graph。
 
-## Memory and buffers
+## Memory 与 buffer
 
 `memory_kind` 是 portable metadata：
 
@@ -216,7 +216,7 @@ Byte aliases 是 `host_byte_buffer` 和 `device_byte_buffer`。
 这些 command 是 mock proof rules，不是 hardware cache model。`device_buffer<T>::span()`
 暴露 raw mock storage，主要用于 example 和 `submit` callable。
 
-## Events and fences
+## Event 与 fence
 
 `mock::event` 是 copyable shared generation marker。它初始为 unrecorded / unready。
 `record_event(q, ev)` 在 sender start 时 reserve 下一代 generation，并在 queued record
@@ -251,7 +251,7 @@ detector。Same-queue wait-before-record 会阻塞该 queue，直到 timeout 或
 proof / profiling-style 教学，不表示 vendor timestamp correlation；未完成或 invalid event
 会抛出 `operation_error{invalid_event}`。
 
-## Host callbacks
+## Host callback 机制
 
 `host_callback_dispatcher` 是 stream-ordered device-to-host callback proof。Callback 不是
 device 随时打断 host 的随机 interrupt；host 先注册 callback，再把 callback node 插入某条
@@ -275,7 +275,7 @@ body 不在 accel internal mutex 下运行。Callback 抛异常时，typed varia
 `error_kind::user_exception`；callback id 不存在时报告 `error_kind::protocol_error`。
 `host_callback_dispatcher` 必须活得比捕获它的 pending callback node 更久。
 
-## Devices, sessions, and recovery
+## Device、session 与 recovery
 
 Mock context 创建 `device_count` 个 device。Device metadata 是 synthetic 且 portable 的：
 
@@ -333,7 +333,7 @@ convenience。它通常由 framework backend glue 在进入一个 op dispatch bo
 
 这些 guard 不会执行 hardware context switch，也不会跨线程传播。
 
-## Power/resume and framework glue contracts
+## Power/resume 与 framework glue contract
 
 Power/resume 的 portable default 是保守的：sleep 前先 quiesce / drain / fence；resume 后
 重新 probe，并用 `device_epoch`、`session_id` 和 `worker_generation` 验证旧 handle 是否仍
@@ -367,7 +367,7 @@ Per-stream synchronize 已在 mock worker proof 中实现，语义是等待单�
 node 归零，可选 timeout，并可观察/清除 sticky stream error。它不同于 whole-context
 `wait()`，也不同于 tensor framework 的全设备同步。
 
-## Message, packet, and request runtime proofs
+## Message、packet 与 request runtime proof
 
 `submit_message(session, request, response, handler)` 是 borrowed response form。
 `response` 必须活到 command completion。
@@ -409,7 +409,7 @@ auto op = forge::accel::mock::submit_packet(
 当 caller 需要 posted 或 synchronous request correlation，但不想自己 own raw callback
 record 时，可以使用它。
 
-## Protocol envelope proof
+## Protocol envelope proof（协议封装验证）
 
 `protocol_envelope` 是 runtime experiment 用的 portable message vocabulary。它拆分：
 
@@ -438,7 +438,7 @@ request、not accepted 和 late response。Legacy `submit_request` / `deliver_re
 这不是 packed ABI、ioctl contract、kernel/userspace contract、SDK message struct 或
 serialization format。
 
-## Model execute proof
+## Model execute proof（模型执行验证）
 
 `mock::model` 描述 NPU-style model / session / IO-binding behavior，不包含 tensor 或
 model format：
@@ -461,7 +461,7 @@ auto op = forge::accel::mock::execute(session, std::move(bindings));
 byte pattern 填充 output。它证明 async execution、binding lifetime 和 error handling；
 它不是 numerical inference engine。
 
-## Trace sink
+## Trace sink（追踪输出）
 
 `mock::trace_sink` 是可选 in-memory telemetry proof。它观察 mock backend state machine；
 它不是 production profiler。
@@ -492,7 +492,7 @@ vector，不会调用 user code。
 Mock backend 故意避开 Perfetto、ETW、LTTng、OpenTelemetry、vendor timestamp correlation
 和 native driver timestamp。
 
-## Ownership rules
+## Ownership 规则
 
 - Host spans 是 borrowed，必须活到 command completion。
 - `submit_message` borrows response object；`submit_packet` owns packet。
@@ -503,7 +503,7 @@ Mock backend 故意避开 Perfetto、ETW、LTTng、OpenTelemetry、vendor timest
   应使用 event / fence 排序。
 - User completion callback 不会在 accel internal mutex 下调用。
 
-## Examples
+## 示例
 
 建议按从简单到组合的顺序阅读：
 

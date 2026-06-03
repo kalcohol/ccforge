@@ -40,7 +40,7 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 
 改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
 
-## force flags
+## Force flags（强制开关）
 
 若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设：
 

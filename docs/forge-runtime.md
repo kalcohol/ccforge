@@ -1,4 +1,4 @@
-# Forge runtime lifecycle contract
+# Forge runtime lifecycle contract（生命周期契约）
 
 `include/forge/` 下的 runtime primitives 都是 Forge extension。它们不是
 standard backport，也不会向 `namespace std` 添加名字。
@@ -6,7 +6,7 @@ standard backport，也不会向 `namespace std` 添加名字。
 这份文档统一 Forge runtime utilities 使用的生命周期词汇，避免后续设施在
 `close()`、`request_stop()`、`shutdown()`、`wait()` 和 `join()` 的语义上漂移。
 
-## core terms
+## 核心术语
 
 `close()` 表示 graceful ingress close：
 
@@ -34,7 +34,7 @@ standard backport，也不会向 `namespace std` 添加名字。
 `join()` 是 primitive 可以暴露 sender 时的首选 async surface。它在对象 drain 后完成。
 Blocking `wait()` 仍可用于测试、destructor 和简单 shutdown path。
 
-## destructor policy
+## Destructor policy（析构策略）
 
 Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 
@@ -48,7 +48,7 @@ owning contexts 更偏向 resource/session management 场景里的安全析构�
 
 Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
-## current utilities
+## 当前 utilities
 
 - `forge::start_detached(sender)` 是 Forge 的非标准 fire-and-forget utility。value /
   stopped completion 会释放 heap state；error completion 会调用 `std::terminate()`。
@@ -110,7 +110,7 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
   operation-state。
 
-## V1 cancellation boundaries
+## V1 cancellation 边界
 
 Forge primitive 应优先提供小而明确的 guarantee，而不是半正确的大 guarantee。
 

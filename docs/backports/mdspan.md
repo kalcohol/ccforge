@@ -1,4 +1,4 @@
-# `std::submdspan` / `std::constant_wrapper`
+# `std::submdspan` / `std::constant_wrapper` backport 说明
 
 当前对齐 2026-05 C++26 working draft 的 `submdspan` surface。
 
@@ -20,7 +20,7 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 作为 `submdspan` foundation。这些 foundation 由 `forge.cmake` 单独探测，检测到原生或
 部分原生声明时会主动让位，避免 ODR 冲突。
 
-## feature macros
+## Feature macros（特性宏）
 
 当 Forge 注入 backport 时定义：
 

@@ -40,7 +40,7 @@ Accelerator-like runtime vocabulary and mock backend 使用独立头：
 
 它受 `FORGE_ENABLE_FORGE_ACCEL` gate 控制；详见 [`forge::accel`](forge-accel.md)。
 
-## resource policy
+## Resource policy（资源策略）
 
 - `forge::resource_policy`：V1 资源策略词汇，当前只包含非拥有的
   `std::pmr::memory_resource*`。`default_memory_resource()` 返回
@@ -148,7 +148,7 @@ Failure policy:
   `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再
   关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
 
-## IO backend
+## IO backend（IO 后端）
 
 - `forge::io::context`：平台 IO context。Linux backend 是 `epoll` + `eventfd`
   readiness context，提供 `readable(fd)` / `writable(fd)` sender，以及 borrowed-span
@@ -165,7 +165,7 @@ async read/write convenience 和 Windows IOCP operation 完成 `set_value(std::s
 macOS/BSD kqueue 当前不在项目需求内；Linux `io_uring` 仅在需要 kernel
 submission/completion queue 语义时才应单独立项。详细语义见 [`forge::io`](forge-io.md)。
 
-## accel runtime vocabulary and mock backend
+## Accel runtime vocabulary 与 backend
 
 - `forge::accel::mock::context`：portable mock/in-memory accelerator-like context，
   用 Forge runtime 原语模拟 command queue、device/session、device buffer、copy、
@@ -226,7 +226,7 @@ stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level
 它们不是 cancel-on-destroy 句柄。`runtime_context::wait()` 不是无界 quiescence 协议：
 如果回调递归地持续提交新 CPU/timer work，调用方仍应自行定义停止条件。
 
-## coroutine sender
+## Coroutine sender（协程 sender）
 
 - `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或
   异步 sender，外部可以用 `std::execution::sync_wait` 或其他 sender 组合器消费。

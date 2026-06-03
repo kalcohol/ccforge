@@ -1,4 +1,4 @@
-# `std::simd`
+# `std::simd` backport 说明
 
 当前 `std::simd` backport 已覆盖 [simd.syn] 公开表面。
 

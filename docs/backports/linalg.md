@@ -1,4 +1,4 @@
-# `std::linalg`
+# `std::linalg` backport 说明
 
 当前为 P1673R13 风格的实验性 backport，提供一个不依赖外部 BLAS 库的实用 BLAS 子集。
 

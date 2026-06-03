@@ -1,4 +1,4 @@
-# `forge::io`
+# `forge::io` 使用说明
 
 `forge::io` 是 Forge runtime extension 的 OS IO backend。它不是标准 backport，
 不向 `namespace std` 增加名字。
@@ -9,7 +9,7 @@ completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是�
 [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md) 和
 [backend proof policy](roadmap/forge-backend-proof-policy.md) 中。
 
-## platform and gates
+## 平台与 gate
 
 当前 backend：
 
@@ -28,7 +28,7 @@ macOS/BSD kqueue 当前不在项目需求内，不作为本轮目标。Linux `io
 kernel submission/completion queue 语义时才会单独立项；它不是 `epoll` readiness
 backend 的替代写法。Zig 可以帮助构建或 C ABI 互操作，但不能抹平这些 backend 的语义差异。
 
-## API
+## API 概览
 
 ```cpp
 #include <forge/io.hpp>
@@ -75,7 +75,7 @@ Windows `async_read_some(HANDLE, std::span<std::byte>)` 和
 IOCP completion 完成。返回值同样是该次 operation 的 byte count。V1 要求传入的
 `HANDLE` 支持 overlapped IO，且未绑定到其它 completion port。
 
-## typed-error variants
+## Typed-error variants（类型化错误变体）
 
 默认 IO API 使用 `set_error(std::exception_ptr)`，保持与其它 Forge runtime sender
 一致。需要在插件边界或 erased sender 边界保留错误分类时，可以使用 opt-in `_typed`
@@ -123,7 +123,7 @@ if (auto* error = result.error_if<forge::io::error>()) {
 }
 ```
 
-## FD lifetime
+## FD / HANDLE lifetime（句柄生命周期）
 
 fd / `HANDLE` 都是 borrowed。`forge::io::context` 不拥有 OS handle。
 
@@ -138,7 +138,7 @@ context `shutdown()` / `wait()` 之后再关闭。否则 OS 可能复用同一�
 3. operation 完成后执行实际 syscall；
 4. shutdown/cancel/drain 后再销毁 fd wrapper。
 
-## lifecycle
+## Lifecycle（生命周期）
 
 `forge::io::context` 是 owning runtime primitive，析构会 `shutdown()` + `wait()`，
 因此可能阻塞。
@@ -163,7 +163,7 @@ receiver completion 和 pending record 释放发生在 completion packet 被 pol
 不带 stoppable token 的 pending operation 仍由 `cancel(HANDLE)`、context
 `request_stop()` 或 `shutdown()` 完成。
 
-## readiness rules
+## Readiness 规则
 
 V1 对每个 fd 最多支持一个 pending read waiter 和一个 pending write waiter。重复提交同一
 fd/readiness kind 会让新的 operation 以 `set_error(std::exception_ptr)` 完成，内部错误为
@@ -184,7 +184,7 @@ auto work = std::execution::continues_on(
     });
 ```
 
-## Windows IOCP rules
+## Windows IOCP 规则
 
 Windows backend 是 completion model，不提供 `readable()` / `writable()` readiness
 sender。它的 V1 目标是证明 Forge 的 IO 抽象能承载 completion-based backend，而不是把
@@ -205,7 +205,7 @@ V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果
 生产级 handle cache：更强的 pruning 需要显式 handle lifetime 模型，当前不把 context
 变成 handle owner。
 
-## resource policy
+## Resource policy（资源策略）
 
 `forge::io::context_options{.memory = resource}` 控制 context state、pending fd map、
 event buffer、action batch 和 receiver record 等 context-owned allocation。resource
@@ -213,7 +213,7 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 
 这不控制用户 fd、用户 buffer，也不承诺标准库内部对象零分配。
 
-## examples
+## 示例
 
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->

@@ -1,178 +1,150 @@
-# `std::execution` conformance ledger
+# `std::execution` 一致性台账
 
-This ledger records the current Forge execution backport state after the latest
-runtime hardening rounds. It is deliberately separate from
-[`std::execution`](../backports/execution.md): that page is user-facing
-documentation, while this page is an engineering audit log for future native
-handoff and conformance work.
+这份台账记录最近几轮 runtime hardening 后，Forge execution backport 的当前状态。它刻意与
+用户向的 [`std::execution`](../backports/execution.md) 文档分开：后者说明如何使用，本文是为
+future native handoff 和 conformance work 保留的工程审计记录。
 
-The active convergence checklist is
-[`execution-wd-convergence-checklist.md`](execution-wd-convergence-checklist.md).
-The owner has accepted breaking API changes when they move `std::execution`
-toward the current working draft, so the "native-handoff action" column below
-now prefers standard convergence over preserving old extension spellings.
+当前收敛清单见
+[`execution-wd-convergence-checklist.md`](execution-wd-convergence-checklist.md)。
+Owner 已接受为了贴近当前 working draft 而做 breaking API change，因此下表的
+"native-handoff action" 优先标准收敛，而不是保留旧 extension spelling。
 
-## current implementation status
+## 当前实现状态
 
-This snapshot was audited against the live working draft `[exec]` text at
-<https://eel.is/c++draft/exec> on 2026-06-03. The working draft is the
-authority for the classification below; papers and reference implementations
-are only used as explanatory context.
+本快照在 2026-06-03 对照 live working draft `[exec]`
+<https://eel.is/c++draft/exec> 审计。下面的分类以 working draft 为准；论文和参考实现只作为
+解释上下文。
 
-The execution backport currently includes:
+Execution backport 当前包含：
 
-- sender factories: `just`, `just_error`, `just_stopped`, `read_env`;
-- adaptors: `then`, `upon_error`, `upon_stopped`, `let_value`, `let_error`,
-  `let_stopped`, `write_env`, `unstoppable`;
-- scheduler adaptors: `starts_on`, `continues_on`, `on`, `affine`,
-  `transfer_just`, policy-shaped serial `bulk`, `bulk_chunked`, and
-  `bulk_unchunked`;
-- composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
-  `associate`, `spawn`, `spawn_future`;
-- consumers: `sync_wait`, `sync_wait_with_variant`;
-- stop-token support: `inplace_stop_source/token/callback`,
-  `never_stop_token`, `any_stop_token`;
-- coroutine bridge: `as_awaitable`, `with_awaitable_senders`;
-- scopes: `simple_counting_scope`, stop-aware `counting_scope`;
-- domain dispatch: receiver-env start-domain selection plus sender-env
-  completion-domain recursive `transform_sender` during `connect` and
-  completion-signature computation.
+- sender factories：`just`、`just_error`、`just_stopped`、`read_env`；
+- adaptors：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、
+  `let_stopped`、`write_env`、`unstoppable`；
+- scheduler adaptors：`starts_on`、`continues_on`、`on`、`affine`、
+  `transfer_just`、policy-shaped serial `bulk`、`bulk_chunked` 和 `bulk_unchunked`；
+- composition：`into_variant`、`when_all`、`when_all_with_variant`、`split`、
+  `associate`、`spawn`、`spawn_future`；
+- consumers：`sync_wait`、`sync_wait_with_variant`；
+- stop-token support：`inplace_stop_source/token/callback`、`never_stop_token`、
+  `any_stop_token`；
+- coroutine bridge：`as_awaitable`、`with_awaitable_senders`；
+- scopes：`simple_counting_scope`、stop-aware `counting_scope`；
+- domain dispatch：receiver-env start-domain selection，以及 `connect` 和
+  completion-signature computation 中的 sender-env completion-domain 递归 `transform_sender`。
 
-Several older audit notes are therefore closed and should not be carried forward
-as open work: identity-only domain dispatch, single-shape `sync_wait`,
-non-stop-aware `counting_scope`, and incomplete `when_all` cartesian value
-signatures.
+因此，不应再把若干早期审计记录当成 open work：identity-only domain dispatch、
+single-shape `sync_wait`、non-stop-aware `counting_scope`、以及不完整的 `when_all`
+cartesian value signatures 都已经关闭。
 
-Rows marked "Implemented subset" are not automatically active backlog. They
-record where this header-only backport intentionally uses a practical internal
-model that differs from the current WD wording, such as tag-invoke based query
-objects or serial bulk execution. These residuals are accepted until a concrete
-downstream need, a native-handoff blocker, or a correctness issue justifies a
-focused task. When a conforming native implementation is available, the
-backport stands aside as a whole instead of trying to mix native and backport
-query internals.
+标为 "Implemented subset" 的行不是自动 backlog。它们记录这个 header-only backport
+有意采用的实用内部模型与当前 WD 措辞的差异，例如 tag-invoke based query object 或 serial
+bulk execution。这些 residuals 已接受，除非出现具体下游需求、native-handoff blocker 或
+correctness issue，否则不作为下一轮默认目标。符合标准的原生实现可用时，backport 会整体
+让位，而不是混用 native query internals 与 backport query internals。
 
-## working-draft coverage matrix
+## Working-draft 覆盖矩阵
 
-| Surface | Status | Evidence / remaining gap |
+| Surface | 状态 | 证据 / 剩余差异 |
 | --- | --- | --- |
-| `just`, `just_error`, `just_stopped` | Implemented | `just.hpp`; covered by MVP/wave tests. |
-| `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`; env query forwarding is tag-invoke based in this backport. |
-| `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`; exception fallback reports `std::exception_ptr` where supported. |
-| `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`; lifecycle-sensitive storage is covered by execution adaptor tests. |
-| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`; schedule errors are included in completion signatures and runtime tests. |
-| `on` | Implemented subset | `on.hpp` exposes both current-WD forms. The closure form requires the child attributes to expose `get_completion_scheduler<set_value_t>` through this backport's one-argument query model. |
-| `bulk` | Implemented serial subset | `bulk.hpp`; accepts current-WD execution-policy-shaped calls when the underlying standard library exposes execution policy traits/objects, and executes iterations serially in the completing agent. The policy is not used to introduce parallelism. |
-| `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`; accept current-WD execution-policy-shaped calls when the underlying standard library exposes execution policy traits/objects. `bulk_unchunked` matches serial `bulk`, while `bulk_chunked` uses one non-empty `[0, shape)` chunk. |
-| `unstoppable` sender adaptor | Implemented | `unstoppable.hpp`; implemented as a thin `write_env` wrapper that injects `never_stop_token`. |
-| `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`; these are practical stopped adapters used by the backport. |
-| `into_variant` | Implemented | `into_variant.hpp`; reused by `sync_wait` / `when_all` value-shape handling. |
-| `when_all`, `when_all_with_variant` | Implemented subset | Cartesian value signature support and outer stop propagation are implemented; keep lifecycle tests when changing shared state. |
-| `split` | Implemented subset | `split.hpp`; fail-fast terminates on impossible empty result state. |
-| `sync_wait`, `sync_wait_with_variant` | Implemented subset | Multiple value alternatives are supported; synchronous typed-error consumption remains a Forge `wait_result` extension rather than `sync_wait`. |
-| `associate`, `spawn` | Implemented current-WD subset | Top-level association and fire-and-forget spawn are implemented; `spawn` accepts only `set_value()` / `set_stopped()` senders. |
-| `spawn_future` | Implemented subset | Eager single-consumer future sender; shared state and consumer records honor `get_allocator(env)`, while `any_stop_token` callback internals remain allocator-neutral. |
-| `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`, top-level association/spawn, stop-token injection, and async sender-returning `join()` are implemented. |
-| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | Coroutine bridge preserves historical single-value tuple behavior; multi-value alternatives use `variant<tuple<...>>`. |
-| `affine` | Implemented subset | `affine.hpp`; implemented as a thin current-WD spelling over the existing `continues_on` transfer subset. |
-| `get_env` | Implemented subset | Member-first with tag-invoke fallback and `empty_env` default. |
-| `get_scheduler` | Implemented subset | Tag-invoke query object; does not exactly model current WD member `query(...)` wording. |
-| `get_start_scheduler` | Implemented subset | Tag-invoke environment query object; `make_prop` / `write_env` forwarding tests cover the current backport query model. |
-| `get_delegation_scheduler` | Implemented subset | Tag-invoke environment query object; `make_prop` / `write_env` forwarding tests cover the current backport query model. |
-| `get_completion_scheduler` | Implemented subset | Tag-invoke query object; scheduler envs expose roundtrip in Forge/backport style. |
-| `forwarding_query` | Implemented subset | Exposed as the current WD query with member `.query(forwarding_query)` support and Forge tag-invoke fallback; Forge query objects advertise forwarding where applicable. |
-| `get_await_completion_adaptor` | Implemented subset | Tag-invoke query object exposed for coroutine environments; no default adaptor is provided. |
-| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; non-default-domain `get_completion_signatures(sender, env)` recomputes through the transformed sender type before reading signatures, including rawless source senders rescued by transform. |
-| `get_allocator` | Implemented subset | Tag-invoke query object; used by `spawn`/`spawn_future` allocator paths. No default allocator query is provided for `empty_env`. |
-| `get_stop_token` | Implemented subset | Tag-invoke query object with `empty_env -> never_stop_token` fallback. |
-| `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object with `weakly_parallel` fallback for local scheduler-shaped types; built-in backport schedulers and `forge::static_thread_pool` report conservative values. |
+| `just`, `just_error`, `just_stopped` | Implemented | `just.hpp`；MVP/wave 测试覆盖。 |
+| `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`；env query forwarding 在本 backport 中基于 tag-invoke。 |
+| `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`；可支持时 exception fallback 报告 `std::exception_ptr`。 |
+| `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`；lifecycle-sensitive storage 由 execution adaptor 测试覆盖。 |
+| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`；schedule errors 已进入 completion signatures，并有运行时测试。 |
+| `on` | Implemented subset | `on.hpp` 暴露 current-WD 两种形式。Closure form 要求 child attributes 通过本 backport 的 one-argument query model 暴露 `get_completion_scheduler<set_value_t>`。 |
+| `bulk` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls，并在 completing agent 中串行执行。Policy 不引入并行。 |
+| `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls。`bulk_unchunked` 等价 serial `bulk`，`bulk_chunked` 使用一个非空 `[0, shape)` chunk。 |
+| `unstoppable` sender adaptor | Implemented | `unstoppable.hpp`；用 thin `write_env` wrapper 注入 `never_stop_token`。 |
+| `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`；作为 backport 中实用 stopped adapters。 |
+| `into_variant` | Implemented | `into_variant.hpp`；被 `sync_wait` / `when_all` value-shape handling 复用。 |
+| `when_all`, `when_all_with_variant` | Implemented subset | Cartesian value signature support 和 outer stop propagation 已实现；修改 shared state 时保留 lifecycle tests。 |
+| `split` | Implemented subset | `split.hpp`；impossible empty result state 会 fail-fast terminate。 |
+| `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
+| `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
+| `spawn_future` | Implemented subset | Eager single-consumer future sender；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
+| `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、stop-token injection 和 async sender-returning `join()` 已实现。 |
+| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | Coroutine bridge 保留历史 single-value tuple 行为；multi-value alternatives 使用 `variant<tuple<...>>`。 |
+| `affine` | Implemented subset | `affine.hpp`；当前 WD spelling 上的 thin wrapper，语义复用现有 `continues_on` transfer subset。 |
+| `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
+| `get_scheduler` | Implemented subset | Tag-invoke query object；不完全等同当前 WD member `query(...)` 措辞。 |
+| `get_start_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
+| `get_delegation_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
+| `get_completion_scheduler` | Implemented subset | Tag-invoke query object；scheduler envs 在 Forge/backport style 下暴露 roundtrip。 |
+| `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。 |
+| `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 tag-invoke query object；没有提供 default adaptor。 |
+| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
+| `get_allocator` | Implemented subset | Tag-invoke query object；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
+| `get_stop_token` | Implemented subset | Tag-invoke query object，`empty_env -> never_stop_token` fallback。 |
+| `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object，对 local scheduler-shaped types 提供 `weakly_parallel` fallback；内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
 
-## compatibility classification
+## 兼容性分类
 
-The table below separates current-draft conformance work from Forge convenience
-extensions. This is the source of truth for native handoff risk triage.
+下表区分 current-draft conformance work 和 Forge convenience extensions。它是 native handoff
+risk triage 的事实来源。
 
-| Item | Classification | Current state | Native-handoff action |
+| Item | 分类 | 当前状态 | Native-handoff action |
 | --- | --- | --- | --- |
-| Library adaptor non-copyable lvalue `connect` | Converged standard-shaped behavior | Standard backport senders require explicit `std::move(sndr)` for move-only lvalues. | Keep tests and examples spelling explicit move; do not reintroduce destructive lvalue connect in standard paths. |
-| `forge::async_scope::spawn(lvalue)` | Forge extension convenience | Destructively moves non-copyable non-const lvalue senders as a Forge runtime convenience. | Keep documented as a Forge-only extension; native-friendly examples should spell `scope.spawn(std::move(sndr))`. |
-| `std::execution::ensure_started` | Removed non-WD extension name | No longer exposed by the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
-| `std::execution::start_detached` | Removed non-WD extension name | No longer exposed by the `<execution>` backport; Forge runtime code uses `forge::start_detached`. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
-| `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` allocates detached state, associates through `token.try_associate()`, and starts eagerly. It accepts only `set_value()` / `set_stopped()` senders. | Keep tests aligned with current-WD fire-and-forget spelling. |
-| `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` and `counting_scope::join()` return async senders; `start()` registers the join operation and count drain completes receivers outside the scope mutex. | Keep stress coverage for last-decrement vs join-register races; do not reintroduce blocking `void join()` or start-time waits. |
-| Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
-| Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
-| Execution domain dispatch | Tested current-WD subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. `get_completion_signatures(sender, env)` uses the same transformed sender type before reading signatures on non-default-domain paths. | Keep coverage for recursive transforms and transformed-signature computation, including rawless source senders rescued by transform. |
-| `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
-| `forge::wait_result` | Forge local utility | Synchronously preserves value, stopped, and closed-set typed error without throwing. | Use when typed errors must cross a synchronous boundary; it is not `std::execution::sync_wait`. |
-| `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
-| Receiver env stop-token propagation | Required behavior for Forge utilities | `wait_result`, `erased_sender`, runtime senders, and IO/accel wrappers preserve receiver stop-token visibility in their supported env model. | Keep regression tests when touching type erasure or wrapper receivers. |
+| Library adaptor non-copyable lvalue `connect` | 已收敛的 standard-shaped behavior | Standard backport sender 对 move-only lvalue 要求显式 `std::move(sndr)`。 | 保持测试和示例显式 move；不要在标准路径恢复 destructive lvalue connect。 |
+| `forge::async_scope::spawn(lvalue)` | Forge extension convenience | 对 non-copyable non-const lvalue sender 做 destructive move，作为 Forge runtime convenience。 | 继续文档化为 Forge-only extension；native-friendly 示例写 `scope.spawn(std::move(sndr))`。 |
+| `std::execution::ensure_started` | 已移除的 non-WD extension name | `<execution>` backport 不再暴露。 | 保持在 `std::execution` 外；未来如需工具，只能放入 `forge::`。 |
+| `std::execution::start_detached` | 已移除的 non-WD extension name | `<execution>` backport 不再暴露；Forge runtime code 使用 `forge::start_detached`。 | 标准路径保持使用 `spawn`；detach utility 保持在 `forge::`。 |
+| `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` 分配 detached state，通过 `token.try_associate()` 关联并 eager start。只接受 `set_value()` / `set_stopped()` senders。 | 测试继续对齐 current-WD fire-and-forget spelling。 |
+| `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` 和 `counting_scope::join()` 返回 async senders；`start()` 注册 join operation，count drain 在 scope mutex 外完成 receiver。 | 保持 last-decrement vs join-register races 压力测试；不要恢复 blocking `void join()` 或 start-time waits。 |
+| Scope-token `wrap` / `associate` / member `spawn` | 已收敛 surface，语义为 subset | Token-member `associate` / `spawn` 已移除。`simple_counting_scope::token::wrap` 是 identity forwarding；`counting_scope::token::wrap` 只注入 scope stop token。Top-level `associate` / `spawn` / `spawn_future` 拥有 association。 | 继续测试 allocator/env 和 async join details；不要在 `std::execution` 恢复 token-member helpers。 |
+| Throwing receiver completion callbacks | 刻意 unsupported boundary | `set_value`、`set_error`、`set_stopped` 必须 `noexcept`；negative compile probe 强制该边界。 | 除非有聚焦任务重写 completion dispatch，否则保持拒绝。 |
+| Execution domain dispatch | Tested current-WD subset | `connect` 应用 sender completion-domain recursion，再应用 receiver start-domain recursion；非 default-domain 的 `get_completion_signatures(sender, env)` 使用同一 transformed sender type。 | 保持 recursive transforms 和 transformed-signature computation 覆盖，包括 rawless source senders。 |
+| `forge::any_scheduler` | Forge local utility | 建模 Forge local scheduler concept，使用 shared-state identity equality 和 backport CPO completion-scheduler roundtrip。 | Native member-query scheduler roundtrip 仍是 forward-compat caveat。 |
+| `forge::wait_result` | Forge local utility | 同步保留 value、stopped 和 closed-set typed error，不通过 throw 表达。 | typed error 需要跨同步边界时使用；它不是 `std::execution::sync_wait`。 |
+| `forge::erased_sender` | Forge local utility | Connectable erased sender，支持 multiple value shapes、closed-set typed errors 和 bounded env/stop-token forwarding。 | 保持在 `forge::`；不要当作标准 execution surface。 |
+| Receiver env stop-token propagation | Forge utilities 的 required behavior | `wait_result`、`erased_sender`、runtime senders 和 IO/accel wrappers 在支持的 env model 中保留 receiver stop-token visibility。 | 修改 type erasure 或 wrapper receivers 时保持回归测试。 |
 
-## accepted residuals and future risks
+## 已接受 residuals 与未来风险
 
-- `spawn_future` uses `get_allocator` for its shared state and consumer record.
-  `any_stop_token` callback/type-erasure control blocks remain
-  allocator-neutral by accepted design, because changing the standard-shaped
-  erased stop-token API would increase native-handoff risk. See
-  [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md);
-- serial `bulk` / `bulk_chunked` / `bulk_unchunked`, tag-invoke environment
-  queries, `as_awaitable`'s Forge-compatible tuple shape, and the `affine`
-  transfer subset are accepted residuals. Revisit them only for a concrete
-  user-visible problem or native-handoff blocker;
-- native `std::execution` has no stable mainstream implementation in the normal
-  verification matrix, so native handoff for execution itself remains a future
-  integration risk.
+- `spawn_future` 会为 shared state 和 consumer record 使用 `get_allocator`。`any_stop_token`
+  callback/type-erasure control blocks 按已接受设计保持 allocator-neutral，因为修改
+  standard-shaped erased stop-token API 会增加 native-handoff 风险。见
+  [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)。
+- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、tag-invoke environment queries、
+  `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` transfer subset 都是已接受
+  residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。
+- 常规验证矩阵中尚无稳定主流 native `std::execution` 实现，因此 execution 自身的 native
+  handoff 仍是未来 integration risk。
 
-## stdexec feasibility status
+## stdexec 可行性状态
 
-NVIDIA stdexec is useful as a semantic reference implementation for senders and
-receivers. It is not a direct replacement for this repository's native-handoff
-lane:
+NVIDIA stdexec 可以作为 sender/receiver 的语义参考实现。它不是本仓库 native-handoff lane
+的直接替代：
 
-- Forge exposes `std::execution` through `<execution>`;
-- stdexec exposes its own `stdexec::` surface and headers such as
-  `<stdexec/execution.hpp>`;
-- a meaningful compatibility lane would need an adapter/shim plan before it can
-  test Forge `include/forge/` utilities against stdexec.
+- Forge 通过 `<execution>` 暴露 `std::execution`；
+- stdexec 暴露自己的 `stdexec::` surface 和 `<stdexec/execution.hpp>` 等 header；
+- 有意义的 compatibility lane 需要先有 adapter/shim plan，才能测试 Forge `include/forge/`
+  utilities 是否能面向 stdexec 工作。
 
-The optional script `scripts/probe-stdexec-feasibility.sh` checks a locally
-provided stdexec checkout plus a small named set of Forge execution facilities.
-It intentionally does not fetch stdexec and is not part of the default
-verification floor. When `STDEXEC_ROOT` is absent it exits with skip code 77 and
-prints `result=skipped`; a successful probe prints `result=passed`.
+可选脚本 `scripts/probe-stdexec-feasibility.sh` 会检查用户本地提供的 stdexec checkout，以及
+一小组命名的 Forge execution facilities。它不会 fetch stdexec，也不属于默认 verification
+floor。`STDEXEC_ROOT` 缺失时，它用 skip code 77 退出并打印 `result=skipped`；成功时打印
+`result=passed`。
 
-Current named checks:
+当前命名检查：
 
-- `stdexec_just_smoke`: stdexec headers compile a tiny `stdexec::just` program;
-- `forge_execution_sync_wait`: Forge `<execution>` backport runs
-  `sync_wait(just(42))`;
-- `forge_wait_result_typed_error`: `forge::wait_result` preserves a closed-set
-  typed error;
-- `forge_erased_sender_typed_error`: `forge::erased_sender` carries the same
-  typed error across an erased sender boundary;
-- `forge_any_scheduler`: `forge::any_scheduler` models the local Forge
-  scheduler concept and schedules successfully;
-- `forge_receiver_stop_env`: receiver env stop-token propagation remains
-  observable through `forge::wait_result`.
+- `stdexec_just_smoke`：stdexec headers 能编译一个极小 `stdexec::just` 程序；
+- `forge_execution_sync_wait`：Forge `<execution>` backport 能运行 `sync_wait(just(42))`；
+- `forge_wait_result_typed_error`：`forge::wait_result` 保留 closed-set typed error；
+- `forge_erased_sender_typed_error`：`forge::erased_sender` 让同一 typed error 跨 erased sender boundary；
+- `forge_any_scheduler`：`forge::any_scheduler` 建模 local Forge scheduler concept 并能 schedule；
+- `forge_receiver_stop_env`：receiver env stop-token propagation 仍可通过 `forge::wait_result` 观察。
 
-These checks are a feasibility ledger, not a compatibility proof. They do not
-adapt Forge `std::execution` code onto stdexec's namespace and should not be
-treated as evidence that native `std::execution` handoff is complete.
+这些检查是 feasibility ledger，不是 compatibility proof。它们不会把 Forge `std::execution`
+代码适配到 stdexec namespace 上，也不应被当成 native `std::execution` handoff 完成的证据。
 
-Latest local status for this convergence round:
+当前 convergence round 的本地状态：
 
-- `STDEXEC_ROOT` absent: skipped with exit code 77 as intended;
-- `STDEXEC_ROOT` set to a local stdexec checkout: all named checks passed;
-- this remains an optional reference probe and is not promoted to the default
-  verification floor.
+- `STDEXEC_ROOT` 缺失：按预期 skip，exit code 77；
+- `STDEXEC_ROOT` 指向本地 stdexec checkout：所有命名检查通过；
+- 这仍是可选 reference probe，不提升为默认 verification floor。
 
-## next useful checks
+## 后续有价值的检查
 
-1. Keep `scripts/verify-native.sh gcc-exec` as the current libstdc++ execution
-   backport lane.
-2. Use `scripts/probe-stdexec-feasibility.sh` only as a local spike when a
-   stdexec checkout is available; review each named check result rather than
-   only the final `result=passed` line.
-3. If stdexec comparison becomes valuable, write a separate taskbook for the
-   adapter layer and define exactly which examples/tests must be portable across
-   Forge and stdexec.
+1. 继续把 `scripts/verify-native.sh gcc-exec` 作为当前 libstdc++ execution backport lane。
+2. 只有本地存在 stdexec checkout 时才运行 `scripts/probe-stdexec-feasibility.sh`；审查每个命名检查结果，不只看最终 `result=passed`。
+3. 如果 stdexec 对比变得有价值，单独写 taskbook 设计 adapter layer，并明确哪些 examples/tests 必须同时在 Forge 和 stdexec 上 portable。
