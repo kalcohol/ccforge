@@ -45,6 +45,7 @@ struct __worker_lifecycle_snapshot {
     worker_generation generation{};
     bool drain_frozen = false;
     bool worker_faulted = false;
+    bool host_lost = false;
 };
 
 struct __session_state {
@@ -252,7 +253,23 @@ struct __device_state {
         return __worker_lifecycle_snapshot{
             worker_generation{worker_generation_value},
             drain_frozen,
-            worker_faulted};
+            worker_faulted,
+            host_lost};
+    }
+
+    void note_heartbeat() noexcept {
+        std::lock_guard lk{worker_mtx};
+        last_heartbeat = std::chrono::steady_clock::now();
+    }
+
+    [[nodiscard]] bool mark_worker_fault_if_heartbeat_expired(
+        std::chrono::steady_clock::duration timeout) noexcept {
+        std::lock_guard lk{worker_mtx};
+        if (std::chrono::steady_clock::now() - last_heartbeat < timeout) {
+            return false;
+        }
+        worker_faulted = true;
+        return true;
     }
 
     void begin_drain_freeze() noexcept {
@@ -283,6 +300,24 @@ struct __device_state {
         return true;
     }
 
+    void begin_host_lost_cleanup() noexcept {
+        std::lock_guard lk{worker_mtx};
+        host_lost = true;
+        drain_frozen = true;
+    }
+
+    void complete_host_lost_cleanup() noexcept {
+        std::lock_guard lk{worker_mtx};
+        if (!host_lost) {
+            return;
+        }
+        host_lost = false;
+        drain_frozen = false;
+        worker_faulted = false;
+        ++worker_generation_value;
+        epoch.fetch_add(1, std::memory_order_acq_rel);
+    }
+
     [[nodiscard]] auto current_info() const noexcept -> device_info {
         auto out = info;
         out.available = available();
@@ -305,8 +340,11 @@ struct __device_state {
     std::atomic<std::uint64_t> next_session{1};
     mutable std::mutex worker_mtx;
     std::uint64_t worker_generation_value = 1;
+    std::chrono::steady_clock::time_point last_heartbeat =
+        std::chrono::steady_clock::now();
     bool drain_frozen = false;
     bool worker_faulted = false;
+    bool host_lost = false;
 };
 
 struct __queue_state {
@@ -669,6 +707,9 @@ inline auto __admit_device_for_command(
         throw operation_error{error_kind::invalid_context, what};
     }
     auto snapshot = device->worker_snapshot();
+    if (snapshot.host_lost) {
+        throw operation_error{error_kind::host_lost, what};
+    }
     if (snapshot.drain_frozen) {
         throw operation_error{error_kind::drain_freeze, what};
     }
@@ -692,6 +733,9 @@ inline void __validate_device_for_execution(
         throw operation_error{error_kind::invalid_context, what};
     }
     auto snapshot = device->worker_snapshot();
+    if (snapshot.host_lost) {
+        throw operation_error{error_kind::host_lost, what};
+    }
     if (snapshot.worker_faulted) {
         throw operation_error{error_kind::worker_fault, what};
     }
@@ -730,7 +774,11 @@ inline auto __admit_session_for_command(
     if (!device || device->current_epoch() != session->epoch) {
         throw operation_error{error_kind::stale_session, what};
     }
-    return __admit_device_for_command(device, what);
+    auto generation = __admit_device_for_command(device, what);
+    if (device->current_epoch() != session->epoch) {
+        throw operation_error{error_kind::stale_session, what};
+    }
+    return generation;
 }
 
 inline void __validate_session_for_execution(
@@ -746,6 +794,9 @@ inline void __validate_session_for_execution(
         throw operation_error{error_kind::stale_session, what};
     }
     __validate_device_for_execution(device, accepted_generation, what);
+    if (device->current_epoch() != session->epoch) {
+        throw operation_error{error_kind::stale_session, what};
+    }
 }
 
 template<class Packet, class Handler>

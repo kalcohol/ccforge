@@ -25,6 +25,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace forge::accel {
 
@@ -103,6 +104,21 @@ struct device_info {
     device_id id{};
     std::uint32_t ordinal = 0;
     bool available = true;
+    std::uint64_t total_memory = 0;
+    std::uint32_t capability_version = 0;
+    std::uint32_t max_queues = 0;
+};
+
+enum class lifecycle_state {
+    online,
+    closing,
+    closed,
+    lost,
+    draining,
+    frozen,
+    resuming,
+    stale,
+    faulted
 };
 
 struct command_id {
@@ -143,6 +159,36 @@ struct model_io_descriptor {
     std::size_t byte_size = 0;
     std::uint32_t rank = 0;
     std::array<std::size_t, 4> extents{};
+};
+
+namespace __current_device_detail {
+
+inline thread_local std::optional<device_id> __current_device;
+
+} // namespace __current_device_detail
+
+[[nodiscard]] inline auto current_device() noexcept -> std::optional<device_id> {
+    return __current_device_detail::__current_device;
+}
+
+class current_device_guard {
+public:
+    explicit current_device_guard(device_id device) noexcept
+        : previous_(__current_device_detail::__current_device) {
+        __current_device_detail::__current_device = device;
+    }
+
+    ~current_device_guard() {
+        __current_device_detail::__current_device = previous_;
+    }
+
+    current_device_guard(const current_device_guard&) = delete;
+    auto operator=(const current_device_guard&) -> current_device_guard& = delete;
+    current_device_guard(current_device_guard&&) = delete;
+    auto operator=(current_device_guard&&) -> current_device_guard& = delete;
+
+private:
+    std::optional<device_id> previous_;
 };
 
 } // namespace forge::accel

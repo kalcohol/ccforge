@@ -45,8 +45,10 @@ wire-format struct：
 
 当前稳定的 `error_kind` 覆盖 invalid context / binding / buffer / memory、size mismatch、
 coherence requirement、invalid event、command failure、timeout、abort、user exception、
-stale session、device lost、drain freeze、late response、worker fault、protocol error 和
-unknown。
+stale session、device lost、host lost、drain freeze、late response、worker fault、
+protocol error 和 unknown。`error_kind_to_string(kind)` 与
+`command_status_to_string(status)` 提供稳定诊断字符串，方便 log、trace 和 framework
+边界统一展示。
 
 ## Mock backend
 
@@ -242,17 +244,38 @@ epoch，之后会以 `error_kind::stale_session` 失败；新 session 绑定新 
 
 `device_session::reset()` 只重置该 session。尚未启动的 queued session work 完成为 stopped。
 
-Drain 和 worker fault simulation：
+Drain、heartbeat 和 worker fault simulation：
 
 - `device.begin_drain_freeze()` 用 `error_kind::drain_freeze` 拒绝新的 device work；已
   accepted 的 work 继续 drain；
 - `device.complete_drain()` 解除 freeze 并递增 `worker_generation`；
+- `device.note_heartbeat()` 记录 worker liveness tick；
+- `device.mark_heartbeat_timeout_if_stale(timeout)` 在 heartbeat 超时时 latch
+  `error_kind::worker_fault`；
 - `device.mark_worker_fault()` 用 `error_kind::worker_fault` 拒绝 work；
 - `device.clear_worker_fault(expected_generation)` 仅在 expected generation 匹配时清除
   fault，然后推进 generation。
 
+Host-lost cleanup 与 device-lost 不同：`device.begin_host_lost_cleanup()` 表示 host
+侧会话丢失，mock 会冻结新的 device work admission，并用 `error_kind::host_lost` 拒绝
+新 work；`device.complete_host_lost_cleanup()` 表示旧 worker/session state 已清退，mock
+会推进 `device_epoch` 和 `worker_generation`，因此旧 session 变成 stale，新 session
+才能接纳后续业务。
+
 这建模的是 user-space runtime stale-handle 和 worker-instance boundary，不是 driver
 reload、firmware reset 或 native context rebuild。
+
+`current_device_guard` 是 thread-local host convenience，用于 framework-style glue 在当前
+线程选择默认 device：
+
+```cpp
+{
+    forge::accel::current_device_guard guard{forge::accel::device_id{0}};
+    auto current = forge::accel::current_device();
+}
+```
+
+它不会执行 hardware context switch，也不会跨线程传播。
 
 ## Message, packet, and request runtime proofs
 

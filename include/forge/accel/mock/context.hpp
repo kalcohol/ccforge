@@ -493,6 +493,29 @@ public:
         }
     }
 
+    void note_heartbeat() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->note_heartbeat();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal);
+        }
+    }
+
+    [[nodiscard]] bool mark_heartbeat_timeout_if_stale(
+        std::chrono::steady_clock::duration timeout) noexcept {
+        auto device_state = device_.lock();
+        if (!device_state ||
+            !device_state->mark_worker_fault_if_heartbeat_expired(timeout)) {
+            return false;
+        }
+        __detail::__record_trace_lifecycle(
+            device_state,
+            trace_event_kind::lifecycle_signal,
+            error_kind::worker_fault);
+        return true;
+    }
+
     void mark_worker_fault() noexcept {
         if (auto device_state = device_.lock()) {
             device_state->mark_worker_fault();
@@ -512,6 +535,25 @@ public:
             device_state,
             trace_event_kind::lifecycle_signal);
         return true;
+    }
+
+    void begin_host_lost_cleanup() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->begin_host_lost_cleanup();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal,
+                error_kind::host_lost);
+        }
+    }
+
+    void complete_host_lost_cleanup() noexcept {
+        if (auto device_state = device_.lock()) {
+            device_state->complete_host_lost_cleanup();
+            __detail::__record_trace_lifecycle(
+                device_state,
+                trace_event_kind::lifecycle_signal);
+        }
     }
 
 private:

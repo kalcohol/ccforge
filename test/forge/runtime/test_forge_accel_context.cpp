@@ -228,3 +228,31 @@ TEST(AccelContextTest, RepeatedShutdownAndWaitAreHarmless) {
     ctx.wait();
     ctx.wait();
 }
+
+TEST(AccelContextTest, CurrentDeviceGuardRestoresAndIsThreadLocal) {
+    EXPECT_FALSE(forge::accel::current_device().has_value());
+
+    {
+        forge::accel::current_device_guard guard{forge::accel::device_id{3}};
+        ASSERT_TRUE(forge::accel::current_device().has_value());
+        EXPECT_EQ(forge::accel::current_device()->value, 3u);
+
+        {
+            forge::accel::current_device_guard nested{forge::accel::device_id{5}};
+            ASSERT_TRUE(forge::accel::current_device().has_value());
+            EXPECT_EQ(forge::accel::current_device()->value, 5u);
+        }
+
+        ASSERT_TRUE(forge::accel::current_device().has_value());
+        EXPECT_EQ(forge::accel::current_device()->value, 3u);
+
+        bool thread_has_current_device = true;
+        std::thread worker{[&] {
+            thread_has_current_device = forge::accel::current_device().has_value();
+        }};
+        worker.join();
+        EXPECT_FALSE(thread_has_current_device);
+    }
+
+    EXPECT_FALSE(forge::accel::current_device().has_value());
+}

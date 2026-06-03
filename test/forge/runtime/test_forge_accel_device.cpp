@@ -413,6 +413,127 @@ TEST(AccelDeviceTest, WorkerFaultLatchesUntilGenerationCleanup) {
         forge::accel::mock::submit(session, [] {})).has_value());
 }
 
+TEST(AccelDeviceTest, HeartbeatTimeoutMarksWorkerFault) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+    const auto fault_generation = device.current_worker_generation();
+
+    device.note_heartbeat();
+    EXPECT_FALSE(device.mark_heartbeat_timeout_if_stale(1h));
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(session, [] {})).has_value());
+
+    EXPECT_TRUE(device.mark_heartbeat_timeout_if_stale(0ms));
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(session, [] {}));
+        FAIL() << "expected worker_fault";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::worker_fault);
+    }
+
+    EXPECT_TRUE(device.clear_worker_fault(fault_generation));
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(session, [] {})).has_value());
+}
+
+TEST(AccelDeviceTest, HostLostCleanupBlocksAdmissionThenStalesOldSession) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto old_session = device.open_session();
+    const auto old_epoch = old_session.epoch();
+    const auto old_generation = device.current_worker_generation();
+
+    device.begin_host_lost_cleanup();
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(old_session, [] {}));
+        FAIL() << "expected host_lost";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::host_lost);
+    }
+
+    device.complete_host_lost_cleanup();
+    EXPECT_NE(device.epoch(), old_epoch);
+    EXPECT_NE(device.current_worker_generation(), old_generation);
+
+    try {
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(old_session, [] {}));
+        FAIL() << "expected stale_session";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::stale_session);
+    }
+
+    auto new_session = device.open_session();
+    EXPECT_EQ(new_session.epoch(), device.epoch());
+    EXPECT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::submit(new_session, [] {})).has_value());
+}
+
+TEST(AccelDeviceTest, HostLostCleanupStalesAcceptedOldSessionWork) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = 4,
+    }};
+    auto device = ctx.get_device();
+    auto session = device.open_session();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    bool second_ran = false;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+
+    auto first = forge::accel::mock::submit(session, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto second = forge::accel::mock::submit(session, [&] {
+        second_ran = true;
+    });
+    auto first_op = std::execution::connect(std::move(first), async_receiver{first_state});
+    auto second_op = std::execution::connect(std::move(second), async_receiver{second_state});
+
+    std::execution::start(first_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+    std::execution::start(second_op);
+
+    device.begin_host_lost_cleanup();
+    device.complete_host_lost_cleanup();
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_FALSE(second_state->value);
+    EXPECT_FALSE(second_state->stopped);
+    EXPECT_FALSE(second_ran);
+    ASSERT_TRUE(second_state->error);
+    try {
+        std::rethrow_exception(second_state->error);
+        FAIL() << "expected stale_session";
+    } catch (const forge::accel::operation_error& error) {
+        EXPECT_EQ(error.kind(), forge::accel::error_kind::stale_session);
+    }
+}
+
 TEST(AccelDeviceTest, WorkerGenerationMismatchStopsAcceptedOldWork) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,

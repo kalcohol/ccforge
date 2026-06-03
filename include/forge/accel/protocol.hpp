@@ -70,9 +70,14 @@ enum class lifecycle_signal_reason {
     opened,
     closing,
     closed,
+    heartbeat,
+    heartbeat_timeout,
     reset,
     device_lost,
+    host_lost,
     drain_freeze,
+    drain_complete,
+    resume,
     worker_fault
 };
 

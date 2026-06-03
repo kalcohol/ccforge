@@ -68,11 +68,74 @@ enum class error_kind {
     user_exception,
     stale_session,
     device_lost,
+    host_lost,
     drain_freeze,
     late_response,
     worker_fault,
     protocol_error
 };
+
+[[nodiscard]] constexpr auto error_kind_to_string(error_kind kind) noexcept
+    -> const char* {
+    switch (kind) {
+    case error_kind::unknown:
+        return "unknown";
+    case error_kind::invalid_context:
+        return "invalid_context";
+    case error_kind::invalid_binding:
+        return "invalid_binding";
+    case error_kind::invalid_buffer:
+        return "invalid_buffer";
+    case error_kind::invalid_memory_kind:
+        return "invalid_memory_kind";
+    case error_kind::size_mismatch:
+        return "size_mismatch";
+    case error_kind::coherence_required:
+        return "coherence_required";
+    case error_kind::invalid_event:
+        return "invalid_event";
+    case error_kind::command_failed:
+        return "command_failed";
+    case error_kind::timeout:
+        return "timeout";
+    case error_kind::aborted:
+        return "aborted";
+    case error_kind::user_exception:
+        return "user_exception";
+    case error_kind::stale_session:
+        return "stale_session";
+    case error_kind::device_lost:
+        return "device_lost";
+    case error_kind::host_lost:
+        return "host_lost";
+    case error_kind::drain_freeze:
+        return "drain_freeze";
+    case error_kind::late_response:
+        return "late_response";
+    case error_kind::worker_fault:
+        return "worker_fault";
+    case error_kind::protocol_error:
+        return "protocol_error";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr auto command_status_to_string(command_status status) noexcept
+    -> const char* {
+    switch (status) {
+    case command_status::ok:
+        return "ok";
+    case command_status::failed:
+        return "failed";
+    case command_status::stopped:
+        return "stopped";
+    case command_status::timed_out:
+        return "timed_out";
+    case command_status::aborted:
+        return "aborted";
+    }
+    return "failed";
+}
 
 struct error {
     error_kind kind = error_kind::unknown;
