@@ -48,7 +48,8 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [backend proof policy](roadmap/forge-backend-proof-policy.md)
 - [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md)
 - [`forge::accel` backend SPI sketch](roadmap/forge-accel-backend-spi.md)
-- [`forge::accel` runtime v2 roadmap](roadmap/forge-accel-runtime-v2.md)
-- [`forge::accel` runtime v3 roadmap](roadmap/forge-accel-runtime-v3.md)
+- [`forge::accel` runtime design](roadmap/forge-accel-runtime-design.md)
+- [`forge::accel` runtime v2 roadmap](roadmap/forge-accel-runtime-v2.md)（historical）
+- [`forge::accel` runtime v3 roadmap](roadmap/forge-accel-runtime-v3.md)（historical）
 - [`std::execution` conformance ledger](roadmap/execution-conformance-ledger.md)
 - [`std::execution` current-WD convergence checklist](roadmap/execution-wd-convergence-checklist.md)
