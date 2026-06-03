@@ -24,33 +24,38 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
 4. `example/forge_graceful_shutdown_example.cpp`：服务入口 close/drain 与 stop/cancel。
 5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
    组合成一个受控 pipeline。
-6. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
-7. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender
+6. `example/execution_on_example.cpp`：用 `on` 显式切换起始 scheduler，或在 closure
+   内临时切换再切回原 completion scheduler。
+7. `example/execution_affine_example.cpp`：用 `affine` 表达目标 scheduler affinity 的
+   serial transfer subset。
+8. `example/execution_unstoppable_example.cpp`：把内层 sender 从外部 stop-token 中隔离。
+9. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
+10. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender
    边界，并用 `forge::wait_result` 消费。
-8. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
-9. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-10. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
+11. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
+12. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
+13. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
    device buffer。
-11. `example/forge_accel_memory_example.cpp`：memory kinds、byte buffers、cached-memory
+14. `example/forge_accel_memory_example.cpp`：memory kinds、byte buffers、cached-memory
     `flush` / `invalidate` proof 和 typed coherence error。
-12. `example/forge_accel_message_device_example.cpp`：device session 与 message command
+15. `example/forge_accel_message_device_example.cpp`：device session 与 message command
     形状。
-13. `example/forge_accel_session_reset_example.cpp`：session reset 如何停止后续 command。
-14. `example/forge_accel_packet_example.cpp`：owning command packet 与 completion
+16. `example/forge_accel_session_reset_example.cpp`：session reset 如何停止后续 command。
+17. `example/forge_accel_packet_example.cpp`：owning command packet 与 completion
     bridge。
-15. `example/forge_accel_request_runtime_example.cpp`：request ID、sync/post request
+18. `example/forge_accel_request_runtime_example.cpp`：request ID、sync/post request
     handling 和 typed error boundary。
-16. `example/forge_accel_protocol_transport_example.cpp`：portable envelope、late
+19. `example/forge_accel_protocol_transport_example.cpp`：portable envelope、late
     response discard 和 lifecycle signal。
-17. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
-18. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
+20. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
+21. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
     error。
-19. `example/forge_accel_trace_example.cpp`：可选 in-memory command timeline。
-20. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
+22. `example/forge_accel_trace_example.cpp`：可选 in-memory command timeline。
+23. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-21. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+24. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-22. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+25. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors、device-loss recovery、trace snapshot 和 graceful drain 如何放在同一个
     reference runtime 中。
@@ -63,10 +68,13 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
 For a CPU service or message pipeline:
 
 1. `example/forge_thread_pool_example.cpp`
-2. `example/forge_channel_example.cpp`
-3. `example/forge_graceful_shutdown_example.cpp`
-4. `example/forge_bounded_pipeline_example.cpp`
-5. `example/forge_reference_runtime_example.cpp`
+2. `example/execution_on_example.cpp`
+3. `example/execution_affine_example.cpp`
+4. `example/execution_unstoppable_example.cpp`
+5. `example/forge_channel_example.cpp`
+6. `example/forge_graceful_shutdown_example.cpp`
+7. `example/forge_bounded_pipeline_example.cpp`
+8. `example/forge_reference_runtime_example.cpp`
 
 For OS IO handoff:
 
@@ -102,6 +110,7 @@ reference.
 
 | 场景 | 示例 |
 | --- | --- |
+| execution scheduler adaptors | `example/execution_on_example.cpp`, `example/execution_affine_example.cpp`, `example/execution_unstoppable_example.cpp` |
 | CPU scheduler basics | `example/forge_thread_pool_example.cpp`, `example/forge_runtime_context_example.cpp` |
 | timer / single-thread / system context | `example/forge_timer_context_example.cpp`, `example/forge_single_thread_context_example.cpp`, `example/forge_system_context_example.cpp` |
 | channel backpressure | `example/forge_channel_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
