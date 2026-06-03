@@ -30,13 +30,14 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <type_traits>
 #include <optional>
 #include <stop_token>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace forge {
@@ -52,6 +53,108 @@ namespace __timer_detail {
 struct __state;
 struct __item;
 
+class __callable {
+public:
+    __callable() noexcept = default;
+    ~__callable() noexcept { reset(); }
+
+    __callable(const __callable&) = delete;
+    __callable& operator=(const __callable&) = delete;
+
+    __callable(__callable&& other) noexcept
+        : ptr_(std::exchange(other.ptr_, nullptr))
+        , memory_(std::exchange(other.memory_, nullptr))
+        , ops_(std::exchange(other.ops_, nullptr))
+    {}
+
+    auto operator=(__callable&& other) noexcept -> __callable& {
+        if (this == &other) {
+            return *this;
+        }
+        reset();
+        ptr_ = std::exchange(other.ptr_, nullptr);
+        memory_ = std::exchange(other.memory_, nullptr);
+        ops_ = std::exchange(other.ops_, nullptr);
+        return *this;
+    }
+
+    template<class F>
+    [[nodiscard]] static auto make(std::pmr::memory_resource* memory, F&& fn)
+        -> __callable {
+        using fn_t = std::decay_t<F>;
+        static_assert(std::is_nothrow_invocable_v<fn_t&>,
+            "timer completion callables must be noexcept");
+        static_assert(std::is_nothrow_destructible_v<fn_t>,
+            "timer completion callable destructors must be noexcept");
+        using model_t = __model<fn_t>;
+
+        memory = normalize_memory_resource(memory);
+        void* storage = memory->allocate(sizeof(model_t), alignof(model_t));
+        try {
+            std::construct_at(static_cast<model_t*>(storage), std::forward<F>(fn));
+        } catch (...) {
+            memory->deallocate(storage, sizeof(model_t), alignof(model_t));
+            throw;
+        }
+        return __callable{storage, memory, &__ops_for<fn_t>};
+    }
+
+    void operator()() noexcept {
+        if (ops_) {
+            ops_->call(ptr_);
+        }
+    }
+
+    void reset() noexcept {
+        if (!ops_) {
+            return;
+        }
+        ops_->destroy(ptr_, memory_);
+        ptr_ = nullptr;
+        memory_ = nullptr;
+        ops_ = nullptr;
+    }
+
+private:
+    struct __ops {
+        void (*call)(void*) noexcept;
+        void (*destroy)(void*, std::pmr::memory_resource*) noexcept;
+    };
+
+    template<class F>
+    struct __model {
+        explicit __model(F fn)
+            : fn_(std::move(fn))
+        {}
+
+        F fn_;
+    };
+
+    template<class F>
+    inline static constexpr __ops __ops_for{
+        [](void* ptr) noexcept {
+            static_cast<__model<F>*>(ptr)->fn_();
+        },
+        [](void* ptr, std::pmr::memory_resource* memory) noexcept {
+            auto* model = static_cast<__model<F>*>(ptr);
+            std::destroy_at(model);
+            memory->deallocate(model, sizeof(__model<F>), alignof(__model<F>));
+        }};
+
+    __callable(
+        void* ptr,
+        std::pmr::memory_resource* memory,
+        const __ops* ops) noexcept
+        : ptr_(ptr)
+        , memory_(memory)
+        , ops_(ops)
+    {}
+
+    void* ptr_ = nullptr;
+    std::pmr::memory_resource* memory_ = nullptr;
+    const __ops* ops_ = nullptr;
+};
+
 struct __stop_callback_fn {
     std::weak_ptr<__state> state;
     std::weak_ptr<__item> item;
@@ -65,8 +168,8 @@ struct __item {
 
     std::chrono::steady_clock::time_point deadline;
     std::any_stop_token stop_token;
-    std::function<void()> complete_value;
-    std::function<void()> complete_stopped;
+    __callable complete_value;
+    __callable complete_stopped;
     std::optional<callback_t> stop_callback;
     std::atomic<bool> stop_requested{false};
 
@@ -423,9 +526,14 @@ inline void __op<R>::start() & noexcept {
             : std::allocate_shared<__item>(
                   std::pmr::polymorphic_allocator<__item>{
                       default_memory_resource()});
+        auto* memory = state_ ? state_->memory : default_memory_resource();
         item_->deadline = deadline_;
-        item_->complete_value = [data] { data->complete_value(); };
-        item_->complete_stopped = [data] { data->complete_stopped(); };
+        item_->complete_value = __callable::make(
+            memory,
+            [data] noexcept { data->complete_value(); });
+        item_->complete_stopped = __callable::make(
+            memory,
+            [data] noexcept { data->complete_stopped(); });
 
         auto env = std::execution::get_env(data->rcvr_);
         auto token = std::execution::get_stop_token(env);

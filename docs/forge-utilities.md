@@ -45,7 +45,7 @@ worker 线程共享，resource 本身也必须是线程安全的，例如使用
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
 - `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和 send/recv record control block。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次、receiver record 和 runner keepalive node。
-- `timer_context` 使用 resource 控制 state、timer op data、timer item control block 和 timer queue。timer callback 的 `std::function` target 分配仍不完全受控。
+- `timer_context` 使用 resource 控制 state、timer op data、timer item control block、timer queue 和 timer callback callable record。
 - `runtime_context` 会把 resource 传给内部 `static_thread_pool` 和 `timer_context`。`resource_context` 还会把同一 resource 传给内部 `async_scope` spawned op-state。
 
 Allocation audit:
@@ -53,7 +53,7 @@ Allocation audit:
 | component | resource-controlled paths | intentionally uncontrolled / deferred | evidence |
 | --- | --- | --- | --- |
 | `static_thread_pool` | pool queue `pmr::deque` nodes and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
-| `timer_context` | context state, timer op data, timer item control blocks, timer queue | timer callback `std::function` target internals may allocate outside the resource | `forge_timer_context` |
+| `timer_context` | context state, timer op data, timer item control blocks, timer queue, timer callback callable records | OS timer worker thread resources | `forge_timer_context` |
 | `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
 | `resource_context` | forwards the resource to the internal runtime and async scope spawned op-state | no separate allocation policy beyond its members | `forge_resource_context` |
 | `bounded_channel<T>` | channel state, buffer, pending send/recv queues, action batches, send/recv record control blocks | storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
@@ -79,7 +79,7 @@ Failure policy:
 - `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过 `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制队列节点和 queued task callable record 分配时可传入 `.memory = resource`。队列满、shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以 `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列和正在运行的任务清空；如果从 pool 自己的 worker 线程调用，`wait()` 会立即返回以避免自锁。其 schedule sender env 会通过 Forge backport 的 `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例和轻量工具。该 singleton 是 process-lifetime 对象，不在 C++ static teardown 期间析构，以避免静态析构顺序中的悬垂访问；长期服务建议显式持有自己的 pool/context，以便控制 shutdown 时机。
-- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`timer_context_options{.memory = resource}` 可控制 state、timer op data、timer item control block 和 timer queue 分配；`wait()` 会等待已接受 timer 操作完成。
+- `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与 `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。`timer_context_options{.memory = resource}` 可控制 state、timer op data、timer item control block、timer queue 和 timer callback callable record 分配；`wait()` 会等待已接受 timer 操作完成。
   - 入队后取消使用 per-item stop callback 唤醒 worker。callback 只标记 item 并通知 condition variable；真正的 value/stopped completion 仍由 timer worker 在线程外部锁之外执行，且 completion 前会先销毁 callback registration，避免 stop callback 与 receiver completion 同时触碰同一 op data。
 - `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个 `timer_context`。`runtime_context_options` 可配置线程数、pool 队列容量和共享 resource。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的 pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
 - `forge::strand`：scheduler 串行化 wrapper。`strand{scheduler}.get_scheduler()` 返回一个 scheduler，接受的 schedule work 按 FIFO 运行，并保证同一 strand 上最多一个任务处于用户 completion 中。`strand_options{.memory = resource}` 可控制 pending queue 和 receiver record 分配。`shutdown()` 会把 pending/future work 以 stopped 完成；从该 strand 正在执行的 completion 内部调用 `wait()` 会立即返回以避免自锁，完整 drain 应由外部 owner 调用；其 schedule sender env 同样暴露 Forge backport completion-scheduler roundtrip。

@@ -2,6 +2,8 @@
 #include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
+#include <array>
+#include <cstddef>
 #include <execution>
 #include <chrono>
 #include <condition_variable>
@@ -129,6 +131,61 @@ TEST(TimerContextTest, CustomMemoryResourceControlsTimerStorage) {
         EXPECT_TRUE(result.has_value());
         EXPECT_GT(resource.allocations(), 0u);
         ctx.shutdown();
+        ctx.wait();
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
+}
+
+TEST(TimerContextTest, AllocatorBackedCallableUsesProvidedResource) {
+    forge_test::counting_resource resource;
+    bool called = false;
+
+    struct large_callable {
+        bool* called;
+        std::array<std::byte, 256> padding{};
+
+        void operator()() noexcept {
+            *called = true;
+        }
+    };
+
+    {
+        auto before = resource.allocations();
+        auto callable = forge::__timer_detail::__callable::make(
+            &resource,
+            large_callable{&called});
+
+        EXPECT_GT(resource.allocations(), before);
+        callable();
+        EXPECT_TRUE(called);
+    }
+
+    EXPECT_EQ(resource.allocations(), resource.deallocations());
+}
+
+TEST(TimerContextTest, TimerCallbackStorageUsesCustomMemoryResource) {
+    forge_test::counting_resource resource;
+
+    {
+        forge::timer_context ctx{
+            forge::timer_context_options{.memory = &resource}};
+
+        timer_state state;
+        auto op = std::execution::connect(
+            ctx.schedule_after(1h),
+            timer_receiver{&state});
+
+        auto before_start = resource.allocations();
+        std::execution::start(op);
+        auto after_start = resource.allocations();
+
+        EXPECT_GE(after_start - before_start, 3u);
+
+        ctx.shutdown();
+        ASSERT_TRUE(wait_done(state));
+        EXPECT_FALSE(state.value);
+        EXPECT_TRUE(state.stopped);
         ctx.wait();
     }
 
