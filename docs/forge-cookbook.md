@@ -77,7 +77,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and b
 
 ## learning paths
 
-For a CPU service or message pipeline:
+CPU service 或 message pipeline 建议按这个顺序读：
 
 1. `example/forge_thread_pool_example.cpp`
 2. `example/execution_on_example.cpp`
@@ -89,18 +89,17 @@ For a CPU service or message pipeline:
 8. `example/forge_bounded_pipeline_example.cpp`
 9. `example/forge_reference_runtime_example.cpp`
 
-For OS IO handoff:
+OS IO handoff 建议按这个顺序读：
 
 1. `example/forge_io_readiness_example.cpp`
 2. `example/forge_io_read_write_example.cpp`
 3. `example/forge_io_pipeline_example.cpp`
 4. `example/forge_io_typed_error_example.cpp`
-5. `example/forge_io_accel_pipeline_example.cpp` when validating Linux IO
-   handoff into accelerator-shaped work.
-6. `example/forge_io_iocp_example.cpp` when validating the Windows completion
-   backend.
+5. `example/forge_io_accel_pipeline_example.cpp`：验证 Linux IO handoff 到
+   accelerator-shaped work。
+6. `example/forge_io_iocp_example.cpp`：验证 Windows completion backend。
 
-For accelerator-shaped work without vendor SDKs:
+不依赖 vendor SDK 的 accelerator-shaped work 建议按这个顺序读：
 
 1. `example/forge_accel_copy_example.cpp`
 2. `example/forge_accel_event_example.cpp`
@@ -122,9 +121,8 @@ For accelerator-shaped work without vendor SDKs:
 18. `example/forge_inference_runtime_sketch.cpp`
 19. `example/forge_reference_runtime_example.cpp`
 
-These paths intentionally stay example-first. The detailed contracts live in
-the feature docs, so the cookbook remains a map rather than a duplicated API
-reference.
+这些路径刻意保持 example-first。详细契约放在各 feature docs 中，因此 cookbook 只是地图，
+不是重复的 API reference。
 
 ## coverage map
 

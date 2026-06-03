@@ -1,149 +1,124 @@
 # Forge runtime lifecycle contract
 
-`include/forge/` runtime primitives are Forge extensions. They are not standard
-backports and they do not add names to `namespace std`.
+`include/forge/` 下的 runtime primitives 都是 Forge extension。它们不是
+standard backport，也不会向 `namespace std` 添加名字。
 
-This document fixes the lifecycle vocabulary used by Forge runtime utilities so
-new facilities do not drift apart.
+这份文档统一 Forge runtime utilities 使用的生命周期词汇，避免后续设施在
+`close()`、`request_stop()`、`shutdown()`、`wait()` 和 `join()` 的语义上漂移。
 
 ## core terms
 
-`close()` means graceful ingress close:
+`close()` 表示 graceful ingress close：
 
-- future work/messages are rejected;
-- already accepted work may still complete normally;
-- buffered channel values may drain;
-- close by itself does not request stop.
+- 未来的 work / message 会被拒绝；
+- 已经 accepted 的 work 仍可正常完成；
+- channel 中已经 buffered 的 value 可以继续 drain；
+- 单独调用 `close()` 不表示 request stop。
 
-`request_stop()` means cooperative cancellation:
+`request_stop()` 表示 cooperative cancellation：
 
-- owned operations should observe a stop token where the primitive supports one;
-- pending operations may complete `set_stopped()`;
-- already running user code is not forcibly interrupted.
+- primitive 支持 stop-token 时，owned operation 应观察该 token；
+- pending operation 可以完成为 `set_stopped()`；
+- 已经运行中的 user code 不会被强制中断。
 
-`shutdown()` means `close()` plus `request_stop()` for owning runtime objects.
-It is the normal "session is ending" operation.
+`shutdown()` 表示 owning runtime object 的 `close()` + `request_stop()`。它是
+“session 正在结束”的常规操作。
 
-`wait()` is a blocking drain helper:
+`wait()` 是 blocking drain helper：
 
-- it waits for work already accepted by that primitive according to the
-  primitive's documented scope;
-- it must not complete user callbacks while holding internal locks;
-- it must avoid self-deadlock when called from the primitive's own worker or
-  completion callback.
+- 它等待该 primitive 文档化范围内已经 accepted 的 work；
+- 它不能在持有 internal lock 时调用 user callback；
+- 当它从该 primitive 自己的 worker 或 completion callback 中被调用时，必须避免
+  self-deadlock。
 
-`join()` is the preferred async surface when a primitive can expose a sender
-that completes once the object is drained. Blocking `wait()` may still exist for
-tests, destructors, and simple shutdown paths.
+`join()` 是 primitive 可以暴露 sender 时的首选 async surface。它在对象 drain 后完成。
+Blocking `wait()` 仍可用于测试、destructor 和简单 shutdown path。
 
 ## destructor policy
 
-Owning Forge runtime objects should be safe to destroy. The preferred policy is:
+Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 
-- `shutdown()`;
-- drain accepted work with `wait()` or an equivalent internal join;
-- document that destruction may block.
+- 调用 `shutdown()`；
+- 用 `wait()` 或等价的内部 join drain 已接受 work；
+- 明确记录 destructor 可能阻塞。
 
-This is an intentional Forge extension tradeoff. Some standard-style scope
-facilities require explicit join before destruction and treat destruction with
-outstanding work as a precondition violation. Forge owning contexts instead
-prefer safe destruction for resource/session management.
+这是 Forge 有意选择的 extension tradeoff。某些 standard-style scope 要求用户在析构
+前显式 join，并把 outstanding work 下析构视为 precondition violation。Forge 的
+owning contexts 更偏向 resource/session management 场景里的安全析构。
 
-Non-owning views and lightweight handles should not block in destructors.
+Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
 ## current utilities
 
-- `forge::start_detached(sender)` is Forge's non-standard fire-and-forget
-  utility. It accepts any sender whose receiver completions are valid for the
-  detached receiver, releases its heap state on value/stopped completion, and
-  calls `std::terminate()` on error completion. Standard-shaped code should use
-  `std::execution::spawn(sender, scope.get_token()[, env])` instead.
-- `static_thread_pool::shutdown()` stops accepting new schedule operations and
-  drains accepted work. `wait()` waits for the queue and active tasks to empty.
-  If `wait()` is called from one of the pool's own worker threads, it returns
-  immediately to avoid self-deadlock.
-  Its options may carry a non-owning `std::pmr::memory_resource*` for queue
-  node and queued task callable-record allocation.
-- `timer_context::shutdown()` stops accepting timers and completes pending timers
-  stopped. `wait()` waits for accepted timer operations. Its options may carry
-  a non-owning `std::pmr::memory_resource*` for state, timer op data, timer item
-  control block, and timer queue allocation.
-- `runtime_context::wait()` is a practical single-hop drain:
-  pool -> timers -> pool. It is not an unbounded quiescence protocol.
-- `async_scope` owns eager-start sender work. `close()` rejects future spawn,
-  `request_stop()` exposes a requested stop token through owned receiver envs,
-  and destruction performs `shutdown()` plus `wait()`. For non-copyable
-  non-const lvalue senders, `spawn(sender)` destructively moves from `sender`;
-  spell `std::move(sender)` when writing code that must also compile unchanged
-  against native C++26 implementations. Its options may carry a non-owning
-  `std::pmr::memory_resource*` for scope state and spawned op-state node
-  allocation.
-- `resource_context` combines a runtime context and async scope for resource
-  sessions. Its options pass resource policy to the internal runtime and scope
-  op-state allocation paths. Its destructor
-  performs owning-context shutdown and wait.
-- `strand` serializes accepted scheduler work. Shutdown completes pending and
-  future strand work stopped. Its options may carry a resource for pending
-  queue, receiver record, and runner keepalive node allocation. `wait()` returns
-  immediately when called from a completion currently running on that same
-  strand to avoid self-deadlock; use an outside owner for full drain.
-- `bounded_channel` provides graceful `close()` draining and cancel-now
-  `request_stop()`. Its options may carry a resource for buffer, pending
-  operation, action batch, and record allocation. Pending send/recv operations
-  register receiver stop callbacks when a stoppable token is present; callback
-  completion removes the operation from the pending queue and completes stopped
-  outside the channel mutex.
-- `timer_context` schedules deadline senders on an owning worker thread.
-  Pending timers register receiver stop callbacks when a stoppable token is
-  present; the callback wakes the worker instead of relying on periodic
-  polling.
-- `io::context` owns a platform IO worker. Linux uses an epoll/eventfd readiness
-  poller; Windows uses a small IOCP completion worker. `close()` rejects new
-  operations while allowing already pending operations to complete normally;
-  `request_stop()` completes or cancels pending operations stopped; `shutdown()`
-  combines close and context stop. `wait()` joins the worker. File descriptors,
-  Windows handles, and user buffers are borrowed and must outlive pending
-  operations or be cancelled and drained before close.
-- `accel::mock::context` owns portable mock/in-memory accelerator-like command
-  queues. Each queue is FIFO, and cross-queue ordering is expressed with
-  events. `close()` rejects later commands and drains accepted work;
-  `request_stop()` stops pending queued commands where possible; `shutdown()`
-  combines both. `wait()` drains accepted command work, and returns immediately
-  if called from an accel command completion to avoid self-deadlock. Host spans
-  are borrowed, while `mock::host_buffer<T>` / `mock::device_buffer<T>` own mock
-  storage; memory kinds are portable metadata rather than real vendor
-  allocations. Mock devices are context-owned handles with portable metadata;
-  device-bound queues and sessions check availability before running queued
-  commands. Mock device loss maps to `device_lost`; reset increments
-  `device_epoch`, and old sessions later map to `stale_session`. Session packet
-  commands can own request/response storage until terminal completion; packet
-  timeout is a queued-command deadline and does not interrupt running user code.
-  Model execute proof validates byte-span IO bindings and uses the same
-  session/context lifecycle; it is not a tensor or inference engine layer.
-  Receiver stop
-  tokens are observed before command acceptance; accepted commands are
-  cancelled by context/session stop, not by per-operation receiver stop in v1.
-- `erased_sender` forwards downstream stop tokens through its v1 bounded env
-  model.
-- `system_context` is a process-lifetime singleton. It is intentionally not
-  destroyed during C++ static teardown; long-running services should still own an
-  explicit pool/context when they need deterministic shutdown.
-- `task` completes receivers from coroutine final suspend; custom receivers must
-  not synchronously destroy the connected task operation state from inside the
-  completion callback.
+- `forge::start_detached(sender)` 是 Forge 的非标准 fire-and-forget utility。value /
+  stopped completion 会释放 heap state；error completion 会调用 `std::terminate()`。
+  Standard-shaped code 应优先使用
+  `std::execution::spawn(sender, scope.get_token()[, env])`。
+- `forge::static_thread_pool::shutdown()` 停止接受新的 schedule operation，并 drain 已
+  accepted 的 work。`wait()` 等待 queue 和 active task 清空；如果从 pool 自己的
+  worker thread 调用，它会立即返回以避免 self-deadlock。`options` 可携带 non-owning
+  `std::pmr::memory_resource*`，用于 queue node 和 queued task callable-record 分配。
+- `forge::timer_context::shutdown()` 停止接受新的 timer，并把 pending timer 完成为
+  stopped。`wait()` 等待 accepted timer operation。`options` 可携带 non-owning
+  `std::pmr::memory_resource*`，用于 state、timer op data、timer item control block
+  和 timer queue 分配。Pending timer 在 receiver env 中存在 stoppable token 时会
+  注册 stop callback；callback 会唤醒 worker，不依赖周期性 polling。
+- `forge::runtime_context::wait()` 是 practical single-hop drain：`pool -> timers ->
+  pool`。它不是 unbounded quiescence protocol。
+- `forge::async_scope` owns eager-start sender work。`close()` 拒绝后续 spawn，
+  `request_stop()` 通过 owned receiver env 暴露 requested stop token，destructor 会执行
+  `shutdown()` + `wait()`。对 non-copyable non-const lvalue sender，
+  `spawn(sender)` 会 destructive move；如果代码需要在 native C++26 实现下保持同一源码，
+  请显式写 `std::move(sender)`。`options` 可携带 non-owning
+  `std::pmr::memory_resource*`，用于 scope state 和 spawned op-state node 分配。
+- `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session
+  根对象。它的 `options` 会把 resource policy 传给内部 runtime 和 scope op-state
+  allocation path。Destructor 执行 owning-context shutdown 和 wait。
+- `forge::strand` 串行化 accepted scheduler work。Shutdown 会把 pending 和 future
+  strand work 完成为 stopped。`options` 可为 pending queue、receiver record 和 runner
+  keepalive node 提供 memory resource。若 `wait()` 从该 strand 正在运行的 completion
+  中调用，会立即返回以避免 self-deadlock；完整 drain 应由外层 owner 执行。
+- `forge::bounded_channel` 提供 graceful `close()` draining 和 cancel-now
+  `request_stop()`。`options` 可为 buffer、pending operation、action batch 和 record
+  提供 memory resource。Pending send/recv 在 receiver stop token 可用时注册 stop
+  callback；callback 会从 pending queue 移除 operation，并在 channel mutex 外完成
+  stopped。
+- `forge::io::context` owns platform IO worker。Linux backend 使用 epoll/eventfd
+  readiness poller；Windows backend 使用小型 IOCP completion worker。`close()` 拒绝新
+  operation，同时允许已 pending operation 正常完成；`request_stop()` 会把 pending
+  operation 完成为 stopped 或发起取消；`shutdown()` 组合 close 和 context stop。
+  `wait()` join worker。File descriptor、Windows handle 和 user buffer 都是 borrowed，
+  必须活到 pending operation 完成，或在 close 前先 cancel 并 drain。
+- `forge::accel::mock::context` owns portable mock / in-memory accelerator-shaped
+  command queues。每个 queue 是 FIFO；cross-queue ordering 通过 event 表达。
+  `close()` 拒绝后续 command 并 drain accepted work；`request_stop()` 尽可能停止
+  pending queued command；`shutdown()` 组合二者。`wait()` drain accepted command work；
+  若从 accel command completion 中调用，会立即返回以避免 self-deadlock。Host spans 是
+  borrowed；`mock::host_buffer<T>` / `mock::device_buffer<T>` own mock storage。
+  `memory_kind` 是 portable metadata，不代表真实 vendor allocation。
+- Mock device 是 context-owned handle，带 portable metadata。Device-bound queue 和
+  session 会在运行 command 前检查 availability。Mock device loss 映射到
+  `device_lost`；`reset` 增加 `device_epoch`，旧 session 后续映射到 `stale_session`。
+  Session packet command 可以 own request/response storage 直到 terminal completion。
+  Packet timeout 是 queued-command deadline，不会打断已经运行中的 user code。Model
+  execute proof 验证 byte-span IO binding 和 session/context lifecycle；它不是 tensor
+  或 inference engine layer。
+- `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
+- `forge::system_context` 是 process-lifetime singleton。它故意不在 C++ static teardown
+  阶段销毁；长生命周期服务如果需要 deterministic shutdown，仍应显式 own pool/context。
+- `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
+  不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
+  operation-state。
 
 ## V1 cancellation boundaries
 
-Forge primitives should prefer a clearly documented small guarantee over a
-half-correct broad one.
+Forge primitive 应优先提供小而明确的 guarantee，而不是半正确的大 guarantee。
 
-For pending operation cancellation, a v1 primitive may choose one of these
-levels:
+对 pending operation cancellation，v1 primitive 可以选择以下层级之一：
 
-- pre-start observation only;
-- primitive-owned close/shutdown wakeups;
-- full per-operation stop-callback cancellation, only when callback lifetime and
-  exactly-once completion are proven and tested under sanitizers.
+- 只在 pre-start 观察 stop token；
+- 只通过 primitive-owned close/shutdown wakeup 取消；
+- full per-operation stop-callback cancellation。只有在 callback lifetime 和 exactly-once
+  completion 已证明并在 sanitizer 下测试后，才应选择这个层级。
 
-If full callback cancellation is not implemented, document the missing case
-explicitly.
+如果没有实现 full callback cancellation，文档必须明确写出缺失的 case。

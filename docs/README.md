@@ -1,17 +1,20 @@
 # CC Forge documentation
 
-Root overview:
+根目录概览：
 [English](../README.md) | [简体中文](../README.zh-CN.md) | [日本語](../README.ja.md)
 
-This directory holds the deeper design notes, caveats, verification guidance,
-and roadmap material. These pages intentionally remain mixed English/Chinese
-where that is clearer for current contributors; the root README files are the
-stable multilingual entrypoints.
+这个目录放置更深入的 design notes、caveats、verification guidance 和 roadmap
+material。根目录 README 是稳定的多语种入口；`docs/` 下的用户向文档采用中文技术文章
+风格：正文解释以中文为主，API、类型、header、CMake option、test target、标准术语和
+外部项目名保留英文原名，并用代码格式或原始拼写表达。
 
-Use `forge::std` for standard-header-only consumers and `forge::forge` for the
-full `include/forge` extension layer. Standard-shaped headers are extensionless
-only under `backport/`; `forge::` extension headers intentionally keep `.hpp`
-entries such as `<forge/io.hpp>`.
+`roadmap/` 下的规划和审计文档可以保持英文，因为它们主要服务工程决策和 review
+上下文，不是面向 newcomer 的教程。
+
+只需要 standard-header backport 的 consumer 使用 `forge::std`；需要完整
+`include/forge/` extension layer 的 consumer 使用 `forge::forge`。Standard-shaped
+headers 只在 `backport/` 下保持无后缀，例如 `<execution>`；`forge::` extension
+headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 ## usage
 

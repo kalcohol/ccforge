@@ -5,9 +5,9 @@
 
 Linux backend 是 `epoll/eventfd` readiness backend；Windows backend 是小型 IOCP
 completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
-Future backend entry rules are tracked in the
-[`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md) and the
-[backend proof policy](roadmap/forge-backend-proof-policy.md).
+未来 backend entry rules 记录在
+[`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md) 和
+[backend proof policy](roadmap/forge-backend-proof-policy.md) 中。
 
 ## platform and gates
 

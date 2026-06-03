@@ -167,21 +167,21 @@ MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 
 ## native handoff and partial-native guards
 
-For wrapper/probe/feature-macro changes, prefer lane-specific evidence over a
-single global CTest count:
+改 wrapper、probe 或 feature-test macro 时，优先使用 lane-specific evidence，不要只看
+单个全局 CTest 数量：
 
-- `scripts/verify-native.sh gcc16` checks the partial-native stand-aside path
-  for the standard library features GCC already exposes.
-- `scripts/verify-native.sh llvm` and `scripts/verify-native.sh zig` check the
-  backport inject path on toolchains that still lack those features.
-- `scripts/verify-native.sh gcc-exec` is the current libstdc++ execution
-  backport lane; native `std::execution` is not yet a normal mainstream lane.
-- `scripts/probe-stdexec-feasibility.sh` is only an optional reference probe,
-  because stdexec uses its own `stdexec::` headers and namespace.
+- `scripts/verify-native.sh gcc16` 检查 GCC 已暴露标准库特性时的 partial-native
+  stand-aside path。
+- `scripts/verify-native.sh llvm` 和 `scripts/verify-native.sh zig` 检查仍缺这些特性
+  的工具链上的 backport inject path。
+- `scripts/verify-native.sh gcc-exec` 是当前 libstdc++ execution backport lane；native
+  `std::execution` 还不是常规 mainstream lane。
+- `scripts/probe-stdexec-feasibility.sh` 只是 optional reference probe，因为 stdexec 使用
+  自己的 `stdexec::` headers 和 namespace。
 
-Force-backport flags are diagnostic only. On a partial-native toolchain they can
-create `namespace std` redefinition/ODR hazards, so a forced configuration is
-not evidence of production handoff safety.
+Force-backport flags 只用于诊断。在 partial-native toolchain 上，它们可能制造
+`namespace std` redefinition / ODR hazard，因此 forced configuration 不能作为
+production handoff safety 的证据。
 
 ## runtime wakeup audit helper
 
@@ -190,26 +190,25 @@ stop-callback, and cancellation sites under `include/forge` and the execution
 backport. It is a manual review aid, not a proof. Use it after touching
 cancellation or shutdown paths. The key rule is:
 
-> If a waiter observes a predicate under a mutex, publish changes to that
-> predicate under the same mutex before `notify_one` / `notify_all`.
+> 如果 waiter 在 mutex 下观察 predicate，那么修改该 predicate 也应在同一把 mutex 下
+> publish，然后再 `notify_one` / `notify_all`。
 
-An atomic predicate plus an unlocked notify can still lose a wakeup.
+Atomic predicate 加 unlocked notify 仍可能 lost wakeup。
 
-Current high-risk wakeup coverage map:
+当前 high-risk wakeup coverage map：
 
-| Area | Representative wakeup/cancellation site | Coverage |
+| 区域 | 代表性 wakeup / cancellation site | 覆盖 |
 | --- | --- | --- |
-| execution scope join | `simple_counting_scope` / `counting_scope` join registration and final association release | `execution_counting_scope` deterministic tests and `execution_counting_scope_stress` race `join start` against last release, multiple joiners, and join completion starting another join |
-| `forge::timer_context` | deadline wakeup, per-item stop callback, `wait()` pending drain | `forge_timer_context` includes long-deadline cancellation, stop-vs-deadline, self-destroying receiver, and repeated prompt wake tests; `forge_runtime_stress` races short deadline completion with receiver stop |
-| `forge::bounded_channel` | pending send/recv stop callbacks and close/stop drain | `forge_channel` covers rendezvous, backpressure, close-drain, cancellation, and self-destroying receivers; `forge_runtime_stress` races pending recv/send stop callbacks against direct send/recv handoff |
-| `forge::async_scope` | active-count drain and request-stop propagation | `forge_async_scope` covers spawn lifetime, blocking destructor/wait, stop propagation, and first-error handling; `forge_runtime_stress` races `wait()` against last scheduled completions |
-| `forge::strand` / pool | serialized queue drain, shutdown, and worker handoff | `forge_strand`, `forge_thread_pool`, and scheduler roundtrip tests cover FIFO, reentrant scheduling, bounded queues, shutdown, and worker self-wait; `forge_runtime_stress` stresses concurrent strand scheduling and pool schedule-vs-shutdown completion |
-| `forge::io` / `forge::accel` | backend stop callbacks, pending record completion, and context drain | `forge_io_*` and `forge_accel_*` cover exactly-once completion, typed errors, stop/drain, event waits, and self-destroying receivers where supported |
+| execution scope join | `simple_counting_scope` / `counting_scope` join registration 和最后一次 association release | `execution_counting_scope` deterministic tests 与 `execution_counting_scope_stress` 覆盖 `join start` vs last release、多 joiner、以及 join completion 内再次启动 join |
+| `forge::timer_context` | deadline wakeup、per-item stop callback、`wait()` pending drain | `forge_timer_context` 覆盖 long-deadline cancellation、stop-vs-deadline、self-destroying receiver 和 repeated prompt wake；`forge_runtime_stress` 竞争 short deadline completion 与 receiver stop |
+| `forge::bounded_channel` | pending send/recv stop callback 与 close/stop drain | `forge_channel` 覆盖 rendezvous、backpressure、close-drain、cancellation 和 self-destroying receiver；`forge_runtime_stress` 竞争 pending recv/send stop callback 与 direct send/recv handoff |
+| `forge::async_scope` | active-count drain 与 request-stop propagation | `forge_async_scope` 覆盖 spawn lifetime、blocking destructor/wait、stop propagation 和 first-error handling；`forge_runtime_stress` 竞争 `wait()` 与 last scheduled completion |
+| `forge::strand` / pool | serialized queue drain、shutdown 和 worker handoff | `forge_strand`、`forge_thread_pool` 和 scheduler roundtrip tests 覆盖 FIFO、reentrant scheduling、bounded queues、shutdown 和 worker self-wait；`forge_runtime_stress` 覆盖 concurrent strand scheduling 与 pool schedule-vs-shutdown completion |
+| `forge::io` / `forge::accel` | backend stop callback、pending record completion 和 context drain | `forge_io_*` 与 `forge_accel_*` 覆盖 exactly-once completion、typed error、stop/drain、event wait，以及支持处的 self-destroying receiver |
 
-The map is intentionally representative rather than a proof that every audit
-line is independently stressed. When a wakeup site changes, either point it at
-an existing test that exercises the same predicate/notify discipline or add a
-focused stress case before treating the audit as closed.
+这张表是 representative map，不是“每一条 audit line 都有独立 stress”的证明。修改
+wakeup site 后，应指向一个覆盖同类 predicate/notify discipline 的现有测试，或补一个
+focused stress case，再把该 audit 视为 closed。
 
 ## 测试分组开关
 
@@ -228,45 +227,38 @@ focused stress case before treating the audit as closed.
 - `FORGE_TEST_ENABLE_FORGE_ERASURE`
 - `FORGE_TEST_ENABLE_NATIVE_HANDOFF`
 
-`FORGE_TEST_ENABLE_FORGE` is the parent switch for `include/forge/` extension
-tests. The narrower `FORGE_TEST_ENABLE_FORGE_*` switches keep the current tests
-enabled by default while allowing future resource, IO, accel, and erasure
-subsets to be configured independently. Resource-policy tests also require
-`FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON`.
+`FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
+更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future
+resource、IO、accel 和 erasure subsets 被独立配置。Resource-policy tests 还要求
+`FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON`。
 
-Forge extension feature gates are also available:
+也可以独立设置 Forge extension feature gates：
 
 - `FORGE_ENABLE_FORGE_RUNTIME`
 - `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
 - `FORGE_ENABLE_FORGE_IO`
 - `FORGE_ENABLE_FORGE_ACCEL`
 
-`FORGE_ENABLE_FORGE_IO=AUTO` enables the Linux epoll/eventfd backend or Windows
-IOCP backend when the platform supports one, and skips IO tests/examples
-elsewhere. `ON` requires a supported backend and reports a configure error if
-unavailable; `OFF` skips IO tests/examples. `FORGE_ENABLE_FORGE_ACCEL=AUTO`
-enables the portable mock accel
-backend when Forge runtime/resource gates are enabled; `ON` requires those gates
-and `OFF` skips accel tests/examples. It does not probe CUDA, HIP, SYCL, or
-vendor SDKs. Erasure facilities are header-only and always available; use
-`FORGE_TEST_ENABLE_FORGE_ERASURE` to include or skip their tests.
+`FORGE_ENABLE_FORGE_IO=AUTO` 在平台支持时启用 Linux epoll/eventfd backend 或 Windows
+IOCP backend，其它平台跳过 IO tests/examples。`ON` 要求 supported backend，缺失时
+configure 报错；`OFF` 跳过 IO tests/examples。`FORGE_ENABLE_FORGE_ACCEL=AUTO` 在
+Forge runtime/resource gates 启用时启用 portable mock accel backend；`ON` 要求这些
+gate 可用，`OFF` 跳过 accel tests/examples。它不会探测 CUDA、HIP、SYCL 或 vendor
+SDK。Erasure facilities 是 header-only 且总是可用；用
+`FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
 
 ## example smoke tests
 
-When both `FORGE_BUILD_EXAMPLES=ON` and `FORGE_BUILD_TESTS=ON`, examples that are
-actually built are also registered as CTest smoke tests named
-`example_<target>_smoke`. This keeps the cookbook paths executable instead of
-only compile-checked. Feature-gated examples, such as platform IO, accel, or
-mdspan-based linalg examples, only register their smoke tests when their target
-exists.
+当 `FORGE_BUILD_EXAMPLES=ON` 且 `FORGE_BUILD_TESTS=ON` 时，实际构建出来的 examples
+也会注册为 CTest smoke tests，名称为 `example_<target>_smoke`。这样 cookbook 中的路径
+不是只 compile-check，而是可执行的 smoke。受 feature gate 控制的 examples，例如
+platform IO、accel 或 mdspan-based linalg examples，只在对应 target 存在时注册 smoke。
 
-Example smoke tests are grouped by the feature gates that decide whether their
-targets are built. They do not mirror every narrow `FORGE_TEST_ENABLE_FORGE_*`
-test switch. This keeps examples focused on the public build surface while the
-test tree keeps finer-grained enable/disable controls for runtime, resource, IO,
-accel, and erasure coverage.
+Example smoke tests 按决定 target 是否构建的 feature gates 分组。它们不逐一镜像所有
+`FORGE_TEST_ENABLE_FORGE_*` 细分测试开关。这样 examples 聚焦 public build surface，
+test tree 则继续保留 runtime、resource、IO、accel 和 erasure coverage 的细粒度启停。
 
-Focused example check:
+Focused example 检查：
 
 ```bash
 ctest --test-dir build/local -R '^example_' --output-on-failure
@@ -274,14 +266,14 @@ ctest --test-dir build/local -R '^example_' --output-on-failure
 
 ## backend proof gates
 
-Optional backend proofs must be tested by registration shape as well as by
-runtime tests. For a backend feature gate:
+可选 backend proof 需要同时验证 registration shape 和 runtime tests。对一个
+backend feature gate：
 
-- `AUTO` should register backend tests/examples only when the probe succeeds;
-- `ON` should require the backend and fail configure if unavailable;
-- `OFF` should register zero backend tests/examples.
+- `AUTO` 只在 probe 成功时注册 backend tests/examples；
+- `ON` 要求 backend 可用，缺失时 configure 失败；
+- `OFF` 应注册 0 个 backend tests/examples。
 
-Use regex-specific checks instead of global test counts. For example:
+使用 regex-specific checks，不要依赖 global test count。例如：
 
 ```bash
 cmake -S . -B build/gate-io-off -G Ninja \
@@ -297,10 +289,9 @@ cmake -S . -B build/gate-accel-off -G Ninja \
 ctest --test-dir build/gate-accel-off -N -R 'forge_accel|example_forge_accel|inference_runtime'
 ```
 
-Future platform/vendor backend proofs must also document their focused tests,
-sanitizer expectation, install-package behavior, and any manual/self-hosted
-platform smoke. Keep private hostnames and local installation paths out of
-committed docs and scripts.
+未来 platform/vendor backend proofs 也必须记录 focused tests、sanitizer expectation、
+install-package behavior，以及任何 manual/self-hosted platform smoke。不要把私有
+hostname 或本地安装路径写进已提交的 docs/scripts。
 
 focused execution 示例：
 
@@ -311,18 +302,17 @@ ctest --test-dir build/llvm -R 'execution_wave1' --output-on-failure
 
 ## install package smoke
 
-The install package smoke verifies that an installed prefix can be consumed by a
-separate project with `find_package(CCForge CONFIG REQUIRED)`. It installs
-headers, backport wrappers, and the CMake package config to a temporary build
-prefix, then configures and runs `test/install_consumer`:
+Install package smoke 验证一个已安装 prefix 能被独立项目通过
+`find_package(CCForge CONFIG REQUIRED)` 消费。它会把 headers、backport wrappers 和
+CMake package config 安装到临时 build prefix，然后 configure 并运行
+`test/install_consumer`：
 
 ```bash
 scripts/verify-install-package.sh
 ```
 
-This check is intentionally not part of default CTest because it performs a
-second configure/install/build cycle. It should be run before release-oriented
-changes to CMake packaging or install layout.
+这个检查故意不放进 default CTest，因为它会执行第二轮 configure / install / build cycle。
+修改 CMake packaging 或 install layout、以及 release-oriented change 前应运行它。
 
 ## gotchas
 
