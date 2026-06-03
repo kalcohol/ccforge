@@ -2,7 +2,7 @@
 
 这份文档把 `include/forge/` 扩展设施按工程用法串起来。它不是 API
 reference；reference 见 [`forge::` 扩展工具](forge-utilities.md)、[runtime
-lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and mock backend](forge-accel.md)
+lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and backends](forge-accel.md)
 和 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
 
 核心心智模型：
@@ -59,9 +59,13 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
     和 event ordering。
 26. `example/forge_accel_cpu_simd_example.cpp`：在 aligned CPU device buffer 上跑
     `std::simd`。
-27. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+27. `example/forge_accel_backend_switch_example.cpp`：同一份 command vocabulary
+    逻辑在 mock 和 CPU reference backend 上运行。
+28. `example/forge_io_accel_pipeline_example.cpp`：Linux IO read/write handoff 到
+    CPU reference accel queue。
+29. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-28. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+30. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors、device-loss recovery、trace snapshot 和 graceful drain 如何放在同一个
     reference runtime 中。
@@ -88,7 +92,9 @@ For OS IO handoff:
 2. `example/forge_io_read_write_example.cpp`
 3. `example/forge_io_pipeline_example.cpp`
 4. `example/forge_io_typed_error_example.cpp`
-5. `example/forge_io_iocp_example.cpp` when validating the Windows completion
+5. `example/forge_io_accel_pipeline_example.cpp` when validating Linux IO
+   handoff into accelerator-shaped work.
+6. `example/forge_io_iocp_example.cpp` when validating the Windows completion
    backend.
 
 For accelerator-shaped work without vendor SDKs:
@@ -108,8 +114,10 @@ For accelerator-shaped work without vendor SDKs:
 13. `example/forge_accel_cpu_copy_example.cpp`
 14. `example/forge_accel_cpu_pipeline_example.cpp`
 15. `example/forge_accel_cpu_simd_example.cpp`
-16. `example/forge_inference_runtime_sketch.cpp`
-17. `example/forge_reference_runtime_example.cpp`
+16. `example/forge_accel_backend_switch_example.cpp`
+17. `example/forge_io_accel_pipeline_example.cpp`
+18. `example/forge_inference_runtime_sketch.cpp`
+19. `example/forge_reference_runtime_example.cpp`
 
 These paths intentionally stay example-first. The detailed contracts live in
 the feature docs, so the cookbook remains a map rather than a duplicated API
@@ -129,7 +137,8 @@ reference.
 | type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
-| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp`, `example/forge_accel_cpu_copy_example.cpp`, `example/forge_accel_cpu_pipeline_example.cpp`, `example/forge_accel_cpu_simd_example.cpp` |
+| IO to accelerator-shaped work | `example/forge_io_accel_pipeline_example.cpp` |
+| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp`, `example/forge_accel_cpu_copy_example.cpp`, `example/forge_accel_cpu_pipeline_example.cpp`, `example/forge_accel_cpu_simd_example.cpp`, `example/forge_accel_backend_switch_example.cpp` |
 | device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp`, `example/forge_accel_request_runtime_example.cpp` |
 | protocol and telemetry proofs | `example/forge_accel_protocol_transport_example.cpp`, `example/forge_accel_trace_example.cpp` |
 | model/session IO binding | `example/forge_accel_model_example.cpp` |
@@ -289,6 +298,7 @@ reference.
 - `example/forge_io_typed_error_example.cpp`
 - `example/forge_io_iocp_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
+- `example/forge_io_accel_pipeline_example.cpp`
 
 ## recipe: accelerator-shaped pipeline
 
@@ -360,6 +370,8 @@ reference.
 - `example/forge_accel_cpu_copy_example.cpp`
 - `example/forge_accel_cpu_pipeline_example.cpp`
 - `example/forge_accel_cpu_simd_example.cpp`
+- `example/forge_accel_backend_switch_example.cpp`
+- `example/forge_io_accel_pipeline_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
 ## recipe: reference runtime service
@@ -400,6 +412,7 @@ runtime 边界。
 
 - `example/forge_reference_runtime_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
+- `example/forge_io_accel_pipeline_example.cpp`
 
 ## recipe: type erase at boundaries
 

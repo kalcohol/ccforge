@@ -391,6 +391,10 @@ Progressive examples:
   queue ordering with events;
 - `example/forge_accel_cpu_simd_example.cpp`: CPU reference submit running
   `std::simd` over aligned device storage;
+- `example/forge_accel_backend_switch_example.cpp`: the same command vocabulary
+  logic run against mock and CPU reference backends;
+- `example/forge_io_accel_pipeline_example.cpp`: Linux IO read/write handoff
+  into the CPU reference accel queue;
 - `example/forge_accel_event_example.cpp`: cross-queue event generations,
   query, wait, synchronize, and fence;
 - `example/forge_accel_memory_example.cpp`: memory kinds, byte buffers, cached

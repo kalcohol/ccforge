@@ -219,4 +219,6 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。
 - `example/forge_io_read_write_example.cpp`：borrowed span + async read/write convenience。
+- `example/forge_io_accel_pipeline_example.cpp`：Linux pipe read/write handoff
+  到 CPU reference accel queue。
 - `example/forge_io_iocp_example.cpp`：Windows named pipe + IOCP async read/write。
