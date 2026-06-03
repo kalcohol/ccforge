@@ -88,6 +88,7 @@ if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_cpu_header
         test_forge_accel_cpu_header.cpp
         forge_accel_cpu_header)
+    forge_add_forge_test(test_forge_accel_cpu test_forge_accel_cpu.cpp forge_accel_cpu)
 endif()
 
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
