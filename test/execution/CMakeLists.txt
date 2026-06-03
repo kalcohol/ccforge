@@ -23,22 +23,54 @@ function(forge_add_execution_compile_probe target_name source_name test_name)
     endif()
 endfunction()
 
+function(forge_expect_execution_cxx_source_compiles result_var source_name should_compile failure_message)
+    set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
+    set(CMAKE_REQUIRED_INCLUDES
+        "${CMAKE_SOURCE_DIR}/backport"
+        "${CMAKE_SOURCE_DIR}/include")
+    forge_expect_cxx_source_compiles(
+        ${result_var}
+        "${FORGE_EXECUTION_TEST_ROOT}/compile/${source_name}"
+        ${should_compile}
+        "${failure_message}")
+    set(CMAKE_REQUIRED_INCLUDES "${_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES}")
+endfunction()
+
 forge_add_execution_compile_probe(
     test_execution_api_core
     test_execution_api_core.cpp
     execution_api_core_compile)
 
-set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
-set(CMAKE_REQUIRED_INCLUDES
-    "${CMAKE_SOURCE_DIR}/backport"
-    "${CMAKE_SOURCE_DIR}/include")
-forge_expect_cxx_source_compiles(
+forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_REJECTS_THROWING_RECEIVER
-    "${FORGE_EXECUTION_TEST_ROOT}/compile/test_execution_reject_throwing_receiver.cpp"
+    test_execution_reject_throwing_receiver.cpp
     OFF
     "std::execution receiver completion callbacks must reject throwing set_value")
-set(CMAKE_REQUIRED_INCLUDES "${_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES}")
-unset(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES)
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_THROWING_ERROR_RECEIVER
+    test_execution_reject_throwing_error_receiver.cpp
+    OFF
+    "std::execution receiver completion callbacks must reject throwing set_error")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_THROWING_STOPPED_RECEIVER
+    test_execution_reject_throwing_stopped_receiver.cpp
+    OFF
+    "std::execution receiver completion callbacks must reject throwing set_stopped")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_MOVE_ONLY_LVALUE_SENDER
+    test_execution_reject_move_only_lvalue_sender.cpp
+    OFF
+    "std::execution standard-shaped adaptors must reject non-copyable lvalue senders")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_MOVABLE_OPERATION_STATE
+    test_execution_reject_movable_operation_state.cpp
+    OFF
+    "std::execution operation states must be immovable")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_SPAWN_ERROR_SENDER
+    test_execution_reject_spawn_error_sender.cpp
+    OFF
+    "std::execution::spawn must reject error-completing senders")
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
