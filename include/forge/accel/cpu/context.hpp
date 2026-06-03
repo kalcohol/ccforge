@@ -22,8 +22,31 @@
 
 #pragma once
 
-#include "accel/error.hpp"
-#include "accel/protocol.hpp"
-#include "accel/vocabulary.hpp"
-#include "accel/cpu.hpp"
-#include "accel/mock.hpp"
+#include "../vocabulary.hpp"
+#include "../../resource_policy.hpp"
+
+#include <cstddef>
+#include <memory_resource>
+#include <optional>
+
+namespace forge::accel::cpu {
+
+struct context_options {
+    std::size_t thread_count = 1;
+    std::optional<std::size_t> queue_capacity = std::nullopt;
+    std::size_t device_count = 1;
+    std::pmr::memory_resource* memory = forge::default_memory_resource();
+};
+
+class context;
+class queue;
+class device;
+class event;
+
+template<class T>
+class host_buffer;
+
+template<class T>
+class device_buffer;
+
+} // namespace forge::accel::cpu

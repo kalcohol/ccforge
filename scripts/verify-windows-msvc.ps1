@@ -221,7 +221,9 @@ function Invoke-GateChecks {
     $accelAutoBuild = Join-Path $SourceRoot "build\$BuildName-accel-auto"
     $accelOnBuild = Join-Path $SourceRoot "build\$BuildName-accel-on"
     $accelOffBuild = Join-Path $SourceRoot "build\$BuildName-accel-off"
-    foreach ($dir in @($autoBuild, $onBuild, $offBuild, $accelAutoBuild, $accelOnBuild, $accelOffBuild)) {
+    $accelCpuOffBuild = Join-Path $SourceRoot "build\$BuildName-accel-cpu-off"
+    $accelUmbrellaOffCpuOnBuild = Join-Path $SourceRoot "build\$BuildName-accel-umbrella-off-cpu-on"
+    foreach ($dir in @($autoBuild, $onBuild, $offBuild, $accelAutoBuild, $accelOnBuild, $accelOffBuild, $accelCpuOffBuild, $accelUmbrellaOffCpuOnBuild)) {
         if (Test-Path $dir) {
             Remove-Item -Recurse -Force $dir
         }
@@ -375,7 +377,7 @@ function Invoke-GateChecks {
     $accelOffOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_ACCEL=OFF" $accelOffConfigure
     Assert-OutputContains `
         -Output $accelOffOutput `
-        -Needle "CC Forge: forge::accel mock backend disabled" `
+        -Needle "CC Forge: forge::accel backends disabled" `
         -Label "FORGE_ENABLE_FORGE_ACCEL=OFF gate check"
     $accelOffTests = Invoke-NativeOutput `
         "gate check: FORGE_ENABLE_FORGE_ACCEL=OFF registered tests" `
@@ -384,6 +386,58 @@ function Invoke-GateChecks {
         -Count (Get-CtestJsonCount $accelOffTests) `
         -Expected 0 `
         -Label "FORGE_ENABLE_FORGE_ACCEL=OFF registration"
+
+    $accelCpuOffConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$accelCpuOffBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=ON " +
+        "-DFORGE_BUILD_EXAMPLES=ON " +
+        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
+        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
+        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
+        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
+        "-DFORGE_ENABLE_FORGE_ACCEL=AUTO " +
+        "-DFORGE_ENABLE_FORGE_ACCEL_CPU=OFF"
+    $accelCpuOffOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_ACCEL_CPU=OFF" $accelCpuOffConfigure
+    Assert-OutputContains `
+        -Output $accelCpuOffOutput `
+        -Needle "CC Forge: forge::accel CPU backend disabled" `
+        -Label "FORGE_ENABLE_FORGE_ACCEL_CPU=OFF gate check"
+    $accelCpuOffTests = Invoke-NativeOutput `
+        "gate check: FORGE_ENABLE_FORGE_ACCEL_CPU=OFF registered tests" `
+        ($Common + "ctest --test-dir `"$accelCpuOffBuild`" --show-only=json-v1 -R `"forge_accel_cpu|example_forge_accel_cpu`"")
+    Assert-CtestCount `
+        -Count (Get-CtestJsonCount $accelCpuOffTests) `
+        -Expected 0 `
+        -Label "FORGE_ENABLE_FORGE_ACCEL_CPU=OFF registration"
+
+    $accelUmbrellaOffCpuOnConfigure =
+        $Common +
+        "cmake -S `"$SourceRoot`" -B `"$accelUmbrellaOffCpuOnBuild`" -G Ninja " +
+        "-DCMAKE_BUILD_TYPE=Debug " +
+        "-DCMAKE_CXX_STANDARD=23 " +
+        "-DFORGE_BUILD_TESTS=ON " +
+        "-DFORGE_BUILD_EXAMPLES=ON " +
+        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
+        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
+        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
+        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
+        "-DFORGE_ENABLE_FORGE_ACCEL=OFF " +
+        "-DFORGE_ENABLE_FORGE_ACCEL_CPU=ON"
+    $accelUmbrellaOffCpuOnOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_ACCEL=OFF + FORGE_ENABLE_FORGE_ACCEL_CPU=ON" $accelUmbrellaOffCpuOnConfigure
+    Assert-OutputContains `
+        -Output $accelUmbrellaOffCpuOnOutput `
+        -Needle "CC Forge: forge::accel backends disabled" `
+        -Label "FORGE_ENABLE_FORGE_ACCEL=OFF + FORGE_ENABLE_FORGE_ACCEL_CPU=ON gate check"
+    $accelUmbrellaOffCpuOnTests = Invoke-NativeOutput `
+        "gate check: FORGE_ENABLE_FORGE_ACCEL=OFF + FORGE_ENABLE_FORGE_ACCEL_CPU=ON registered tests" `
+        ($Common + "ctest --test-dir `"$accelUmbrellaOffCpuOnBuild`" --show-only=json-v1 -R `"forge_accel|forge_inference_runtime_sketch|forge_reference_runtime`"")
+    Assert-CtestCount `
+        -Count (Get-CtestJsonCount $accelUmbrellaOffCpuOnTests) `
+        -Expected 0 `
+        -Label "FORGE_ENABLE_FORGE_ACCEL=OFF + FORGE_ENABLE_FORGE_ACCEL_CPU=ON registration"
 
     Write-Host "[msvc] gate checks verified"
 }

@@ -117,7 +117,7 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
         forge_add_example(forge_io_iocp forge_io_iocp_example.cpp THREADS TBB)
     endif()
 
-    if(FORGE_HAS_FORGE_ACCEL_BACKEND)
+    if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND)
         foreach(_forge_example_target IN ITEMS
                 forge_accel_copy
                 forge_accel_pipeline

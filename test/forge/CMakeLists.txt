@@ -65,7 +65,7 @@ if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_iocp test_forge_io_iocp.cpp forge_io_iocp)
 endif()
 
-if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
+if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
     forge_add_forge_compile_probe(
         test_forge_accel_vocabulary
         test_forge_accel_vocabulary.cpp
@@ -81,6 +81,13 @@ if(FORGE_HAS_FORGE_ACCEL_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
     forge_add_forge_test(test_forge_accel_backend_conformance test_forge_accel_backend_conformance.cpp forge_accel_backend_conformance)
     forge_add_forge_test(test_forge_accel_model test_forge_accel_model.cpp forge_accel_model)
     forge_add_forge_test(test_forge_accel_typed_error test_forge_accel_typed_error.cpp forge_accel_typed_error)
+endif()
+
+if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
+    forge_add_forge_compile_probe(
+        test_forge_accel_cpu_header
+        test_forge_accel_cpu_header.cpp
+        forge_accel_cpu_header)
 endif()
 
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
