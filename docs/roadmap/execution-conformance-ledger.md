@@ -43,6 +43,15 @@ as open work: identity-only domain dispatch, single-shape `sync_wait`,
 non-stop-aware `counting_scope`, and incomplete `when_all` cartesian value
 signatures.
 
+Rows marked "Implemented subset" are not automatically active backlog. They
+record where this header-only backport intentionally uses a practical internal
+model that differs from the current WD wording, such as tag-invoke based query
+objects or serial bulk execution. These residuals are accepted until a concrete
+downstream need, a native-handoff blocker, or a correctness issue justifies a
+focused task. When a conforming native implementation is available, the
+backport stands aside as a whole instead of trying to mix native and backport
+query internals.
+
 ## working-draft coverage matrix
 
 | Surface | Status | Evidence / remaining gap |
@@ -99,13 +108,17 @@ extensions. This is the source of truth for native handoff risk triage.
 | `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
 | Receiver env stop-token propagation | Required behavior for Forge utilities | `wait_result`, `erased_sender`, runtime senders, and IO/accel wrappers preserve receiver stop-token visibility in their supported env model. | Keep regression tests when touching type erasure or wrapper receivers. |
 
-## remaining conformance notes
+## accepted residuals and future risks
 
 - `spawn_future` uses `get_allocator` for its shared state and consumer record.
   `any_stop_token` callback/type-erasure control blocks remain
   allocator-neutral by accepted design, because changing the standard-shaped
   erased stop-token API would increase native-handoff risk. See
   [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md);
+- serial `bulk` / `bulk_chunked` / `bulk_unchunked`, tag-invoke environment
+  queries, `as_awaitable`'s Forge-compatible tuple shape, and the `affine`
+  transfer subset are accepted residuals. Revisit them only for a concrete
+  user-visible problem or native-handoff blocker;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.
