@@ -8,8 +8,10 @@ General gate, lifetime, verification, and typed-error rules are defined in
 
 The current shipped backend is the portable mock/in-memory reference backend in
 `include/forge/accel/mock/`. Backend-neutral vocabulary lives in
-`include/forge/accel/`. A future backend should preserve the same user-facing
-shape before it exposes vendor-specific details.
+`include/forge/accel/`. The next approved proof is a dependency-free
+`forge::accel::cpu` backend that validates the portable shape with real CPU
+work. Future vendor backends remain separate owner-gated proofs and should
+preserve the same user-facing shape before exposing vendor-specific details.
 
 The executable contract is `forge_accel_backend_conformance`, backed by the
 repository-local test harness in

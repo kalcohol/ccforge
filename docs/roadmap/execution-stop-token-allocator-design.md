@@ -1,7 +1,8 @@
 # execution stop-token allocator design
 
-This note records the allocator-awareness decision for erased stop-token
-callbacks. It is intentionally a design record, not an implementation task.
+This note records the accepted allocator-awareness decision for erased
+stop-token callbacks. It is intentionally a design record, not an implementation
+task.
 
 ## problem
 
@@ -38,9 +39,10 @@ Keep the current public shape and accept allocator-neutral internals.
 - Paths using it: all current erased-stop-token users, including `spawn_future`,
   `bounded_channel`, `timer_context`, `forge::io`, and `forge::erased_sender`.
 
-This is acceptable while the allocator gap is only an audit caveat, but it does
-not satisfy strict "all runtime allocations route through the caller resource"
-goals.
+This is the accepted decision for the current backport. It preserves the
+standard-shaped stop-token vocabulary and avoids adding Forge-only allocator
+parameters to a type that should hand off cleanly when native execution becomes
+available.
 
 ## option 2: internal allocator-aware callback wrapper
 
@@ -65,10 +67,10 @@ through `std::any_stop_token`.
   `spawn_future` consumer stop-callback registration if the allocator channel is
   available at that point.
 
-This is the preferred future direction if the helper can stay narrow and reuse
-existing operation-state lifetime rules: register before enqueue, reset callback
-registration before receiver completion, complete outside internal locks, and
-keep callback storage alive until any in-flight callback has returned.
+This remains a possible internal-only experiment if a future Forge runtime path
+has a hard resource-control requirement. It is not active work today because it
+would add a second stop-callback implementation and more lifetime surface for a
+minor allocation-control gain.
 
 ## option 3: allocator-parameterized stop-token variant
 
@@ -87,16 +89,20 @@ Introduce a new public erased token, such as a PMR-backed or allocator-typed
 - Paths using it: only Forge extension code should use it; standard backport
   paths should not.
 
-This option should wait until option 2 proves insufficient. It is too broad for
-the current convergence round.
+This option remains rejected for the current project shape. It would add a
+Forge-only public vocabulary and weaken native handoff.
 
 ## decision
 
-Keep `std::any_stop_token` standard-shaped for now and document its
-allocator-neutral internals. If resource-controlled stop-callback allocation
-becomes a hard requirement, implement option 2 as a narrow internal Forge helper
-before considering a public PMR stop-token vocabulary.
+Option 1 is accepted: keep `std::any_stop_token` standard-shaped and document
+its allocator-neutral internals.
+
+The allocator-neutral callback/type-erasure control blocks are an accepted
+tradeoff, not an open convergence defect. Trying to make this path
+allocator-aware through public `std::any_stop_token` changes would create more
+native-handoff risk than it removes. If resource-controlled stop-callback
+allocation ever becomes a hard runtime requirement, revisit option 2 as a narrow
+Forge-internal helper; do not add a public PMR stop-token vocabulary first.
 
 Do not add allocator-taking constructors or Forge-only behavior to
 `std::any_stop_token`.
-

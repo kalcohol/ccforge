@@ -56,7 +56,8 @@ The desired final shape separates vocabulary from the reference implementation:
 ```text
 forge::accel                    backend-neutral vocabulary and contracts
 forge::accel::mock              dependency-free reference backend
-future optional backend         separate owner-approved proof
+forge::accel::cpu               dependency-free CPU/SIMD reference proof
+future optional vendor backend  separate owner-approved proof
 ```
 
 Short-term source compatibility is not a blocker for this roadmap because this
@@ -78,8 +79,11 @@ executable specification:
 - explicit that it does not provide hardware acceleration or realistic
   performance.
 
-Real backend proofs must first explain how they map to the reference backend's
-contracts before exposing backend-specific extensions.
+The next approved proof is `forge::accel::cpu`: a dependency-free CPU/SIMD
+reference backend that runs real CPU work through the same queue/copy/submit
+vocabulary. It is not a release tag, CI policy change, or vendor backend
+approval. Real vendor backend proofs must still explain how they map to the
+reference backend's contracts before exposing backend-specific extensions.
 
 ## phase 1: vocabulary split
 
@@ -268,7 +272,8 @@ Status: complete. The v2 mock/reference backend has been audited for namespace
 split, vendor-header isolation, accel gate behavior, example coverage, typed and
 exception error surfaces, device/session lifecycle errors, packet/request
 timeouts, protocol envelope behavior, optional telemetry, and documentation
-alignment. The remaining work is future optional backend proof work, not
+alignment. The next owner-approved extension is the dependency-free CPU/SIMD
+reference proof; vendor backend work remains future optional proof work, not
 unfinished v2 foundation.
 
 Target:

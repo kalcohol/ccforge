@@ -99,16 +99,13 @@ extensions. This is the source of truth for native handoff risk triage.
 | `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
 | Receiver env stop-token propagation | Required behavior for Forge utilities | `wait_result`, `erased_sender`, runtime senders, and IO/accel wrappers preserve receiver stop-token visibility in their supported env model. | Keep regression tests when touching type erasure or wrapper receivers. |
 
-## remaining conformance gaps
+## remaining conformance notes
 
-Track these as current gaps until a focused taskbook closes them:
-
-- `spawn_future` uses `get_allocator` for its shared state and consumer record,
-  but `any_stop_token` callback/type-erasure control blocks are not
-  allocator-aware; making those allocations resource-controlled requires an
-  allocator-aware type-erasure API rather than a local replacement. See
-  [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)
-  for the accepted design direction;
+- `spawn_future` uses `get_allocator` for its shared state and consumer record.
+  `any_stop_token` callback/type-erasure control blocks remain
+  allocator-neutral by accepted design, because changing the standard-shaped
+  erased stop-token API would increase native-handoff risk. See
+  [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md);
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.

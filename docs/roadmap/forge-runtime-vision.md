@@ -86,9 +86,9 @@ lifetime, verification, and typed-error rules are tracked in
 [backend proof policy](forge-backend-proof-policy.md). These are design
 constraints, not published plugin ABIs.
 The longer-term accelerator support target is tracked separately in
-[`forge::accel` runtime v2 roadmap](forge-accel-runtime-v2.md); it is the
-owner-approved path for improving the vendor-neutral runtime vocabulary and
-mock/reference backend before any real vendor backend proof.
+[`forge::accel` runtime v2 roadmap](forge-accel-runtime-v2.md). The next
+owner-approved proof is a dependency-free CPU/SIMD reference backend; vendor SDK
+backends remain a separate owner gate.
 
 具体要求：
 
@@ -121,9 +121,9 @@ any helper that owns IO, accel, tensor, or model-serving policy.
   handle-pool policy；
 - 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
 - 真实 backend 的 vendor/platform typed-error mapping；
-- 标准 backport 的剩余 conformance work，例如 domain completion-signature
-  recomputation，以及 stop-token type-erasure control block 的 allocator-aware
-  收敛。
+- 标准 backport 的未来 conformance 复查。`std::execution` stop-token
+  type-erasure control block 已接受 allocator-neutral 取舍；不要把它当成开放
+  bug 继续打磨。
 
 每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
 回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
@@ -229,7 +229,10 @@ epoll/io_uring/IOCP 语义差异。
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
 
-`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 mock/reference backend 已落地以下共同结构：
+`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。下一步是 dependency-free
+CPU/SIMD reference backend，用真实 CPU work 验证同一 vocabulary；这不是 release tag
+或 CI policy 变更，也不改变 vendor backend 的 owner gate。当前 mock/reference backend
+已落地以下共同结构：
 
 - command queue / stream 的生命周期；
 - event/fence 的 sender completion 形状；
