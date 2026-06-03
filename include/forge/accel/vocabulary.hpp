@@ -65,6 +65,18 @@ struct event_id {
     friend auto operator==(event_id, event_id) -> bool = default;
 };
 
+struct callback_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(callback_id, callback_id) -> bool = default;
+};
+
+struct callback_invoke_id {
+    std::uint64_t value = 0;
+
+    friend auto operator==(callback_invoke_id, callback_invoke_id) -> bool = default;
+};
+
 struct event_generation {
     std::uint64_t value = 0;
 
@@ -148,6 +160,13 @@ enum class copy_kind {
     device_to_host,
     device_to_device,
     host_to_host
+};
+
+enum class callback_status {
+    ok,
+    missing,
+    stopped,
+    failed
 };
 
 struct model_io_info {

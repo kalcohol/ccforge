@@ -23,6 +23,7 @@
 #pragma once
 
 #include "mock/context.hpp"
+#include "mock/callback.hpp"
 #include "mock/model.hpp"
 #include "mock/protocol_transport.hpp"
 #include "mock/request_runtime.hpp"

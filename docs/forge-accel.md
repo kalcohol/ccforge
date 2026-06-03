@@ -153,6 +153,7 @@ forge::accel::mock::submit_typed(q, callable);
 forge::accel::mock::submit_packet_typed(session, packet, handler, options);
 forge::accel::mock::record_event_typed(q, ev);
 forge::accel::mock::wait_event_typed(q, ev);
+forge::accel::mock::enqueue_callback_typed(q, dispatcher, callback);
 forge::accel::mock::fence_typed(q);
 ```
 
@@ -249,6 +250,30 @@ detector。Same-queue wait-before-record 会阻塞该 queue，直到 timeout 或
 `elapsed_time(ev)` 在 event 已被 record 并完成后返回 mock steady-clock duration。它只用于
 proof / profiling-style 教学，不表示 vendor timestamp correlation；未完成或 invalid event
 会抛出 `operation_error{invalid_event}`。
+
+## Host callbacks
+
+`host_callback_dispatcher` 是 stream-ordered device-to-host callback proof。Callback 不是
+device 随时打断 host 的随机 interrupt；host 先注册 callback，再把 callback node 插入某条
+stream。Worker FIFO 执行到该 node 时，dispatcher 在 host-side strand 上运行 callback body，
+callback 完成后记录 completion ACK，stream 上后续 node 才继续推进。
+
+```cpp
+forge::accel::mock::host_callback_dispatcher callbacks;
+auto id = callbacks.register_callback([] {
+    // host-side callback body
+});
+
+std::execution::sync_wait(
+    forge::accel::mock::enqueue_callback(compute_q, callbacks, id));
+
+auto completions = callbacks.completions();
+```
+
+`unregister_callback(id)` 会拒绝后续 invoke，并等待已经 in-flight 的 invoke 完成。Callback
+body 不在 accel internal mutex 下运行。Callback 抛异常时，typed variant 会报告
+`error_kind::user_exception`；callback id 不存在时报告 `error_kind::protocol_error`。
+`host_callback_dispatcher` 必须活得比捕获它的 pending callback node 更久。
 
 ## Devices, sessions, and recovery
 
@@ -465,6 +490,8 @@ Mock backend 故意避开 Perfetto、ETW、LTTng、OpenTelemetry、vendor timest
 - `example/forge_accel_session_reset_example.cpp`：session reset、device lost、stale
   session 和 recovery；
 - `example/forge_accel_packet_example.cpp`：owning command packet 和 timeout；
+- `example/forge_accel_callback_example.cpp`：stream-ordered host callback 和 completion
+  ACK；
 - `example/forge_accel_request_runtime_example.cpp`：request IDs、sync/post request
   handling 和 typed error boundary；
 - `example/forge_accel_protocol_transport_example.cpp`：envelope route/meta、response、

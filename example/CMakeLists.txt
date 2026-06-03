@@ -128,6 +128,7 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
                 forge_accel_message_device
                 forge_accel_session_reset
                 forge_accel_packet
+                forge_accel_callback
                 forge_accel_request_runtime
                 forge_accel_protocol_transport
                 forge_accel_model

@@ -61,7 +61,9 @@ enum class trace_event_kind {
     timeout,
     device_lost,
     session_stale,
-    lifecycle_signal
+    lifecycle_signal,
+    callback_invoke,
+    callback_complete
 };
 
 struct trace_event {
@@ -75,6 +77,8 @@ struct trace_event {
     session_id session{};
     stream_id stream{};
     request_id request{};
+    callback_id callback{};
+    callback_invoke_id callback_invoke{};
     module_id module{};
     command_id command{};
     event_generation generation{};
@@ -136,6 +140,7 @@ class queue;
 class device;
 class device_session;
 class event;
+class host_callback_dispatcher;
 template<class T>
 class host_buffer;
 template<class T>
@@ -144,6 +149,8 @@ template<class T>
 auto flush(queue&, device_buffer<T>&);
 template<class T>
 auto invalidate(queue&, device_buffer<T>&);
+auto enqueue_callback(queue&, host_callback_dispatcher&, callback_id);
+auto enqueue_callback_typed(queue&, host_callback_dispatcher&, callback_id);
 
 struct command_options {
     std::optional<std::chrono::steady_clock::duration> timeout = std::nullopt;
@@ -393,6 +400,7 @@ private:
     friend auto synchronize_stream(queue&, stream_sync_options) noexcept
         -> stream_sync_result;
     friend auto synchronize_stream(queue&) noexcept -> stream_sync_result;
+    friend auto enqueue_callback(queue&, host_callback_dispatcher&, callback_id);
 
     std::weak_ptr<__detail::__queue_state> queue_;
 };

@@ -72,6 +72,7 @@ if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_vocabulary.cpp
         forge_accel_vocabulary)
     forge_add_forge_test(test_forge_accel_context test_forge_accel_context.cpp forge_accel_context)
+    forge_add_forge_test(test_forge_accel_callback test_forge_accel_callback.cpp forge_accel_callback)
     forge_add_forge_test(test_forge_accel_copy test_forge_accel_copy.cpp forge_accel_copy)
     forge_add_forge_test(test_forge_accel_event test_forge_accel_event.cpp forge_accel_event)
     forge_add_forge_test(test_forge_accel_submit test_forge_accel_submit.cpp forge_accel_submit)
