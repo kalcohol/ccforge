@@ -10,9 +10,11 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <span>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <utility>
 
@@ -125,6 +127,7 @@ struct io_state {
     bool stopped = false;
     std::exception_ptr error;
     std::size_t bytes = 0;
+    int completions = 0;
 
     [[nodiscard]] bool done() const noexcept {
         return value || stopped || error;
@@ -155,6 +158,7 @@ struct io_receiver {
             std::lock_guard lk{state->mtx};
             state->value = true;
             state->bytes = bytes;
+            ++state->completions;
         }
         state->cv.notify_all();
     }
@@ -163,6 +167,7 @@ struct io_receiver {
         {
             std::lock_guard lk{state->mtx};
             state->error = std::move(error);
+            ++state->completions;
         }
         state->cv.notify_all();
     }
@@ -171,6 +176,7 @@ struct io_receiver {
         {
             std::lock_guard lk{state->mtx};
             state->stopped = true;
+            ++state->completions;
         }
         state->cv.notify_all();
     }
@@ -254,6 +260,41 @@ struct self_destroying_io_receiver {
     std::unique_lock lk{state->mtx};
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
 }
+
+template<class Op>
+class op_slot {
+public:
+    op_slot() = default;
+    ~op_slot() { reset(); }
+
+    op_slot(const op_slot&) = delete;
+    auto operator=(const op_slot&) -> op_slot& = delete;
+    op_slot(op_slot&&) = delete;
+    auto operator=(op_slot&&) -> op_slot& = delete;
+
+    template<class Factory>
+    auto emplace_from(Factory&& factory) -> Op& {
+        ::new (static_cast<void*>(storage_)) Op(static_cast<Factory&&>(factory)());
+        has_value_ = true;
+        return get();
+    }
+
+    [[nodiscard]] auto get() noexcept -> Op& {
+        return *std::launder(reinterpret_cast<Op*>(storage_));
+    }
+
+    void reset() noexcept {
+        if (!has_value_) {
+            return;
+        }
+        get().~Op();
+        has_value_ = false;
+    }
+
+private:
+    alignas(Op) unsigned char storage_[sizeof(Op)]{};
+    bool has_value_ = false;
+};
 
 } // namespace
 
@@ -529,6 +570,88 @@ TEST(IoIocpTest, ShutdownCancelsPendingRead) {
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
     ctx.wait();
+}
+
+TEST(IoIocpStressTest, ConcurrentStopCancelAndShutdownDrainPendingReads) {
+    constexpr int kOps = 6;
+    constexpr int kIterations = 24;
+
+    using sender_t = decltype(std::declval<forge::io::context&>().async_read_some(
+        std::declval<HANDLE>(),
+        std::declval<std::span<std::byte>>()));
+    using receiver_t = stopped_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    for (int iteration = 0; iteration < kIterations; ++iteration) {
+        forge::io::context ctx;
+        std::array<pipe_pair, kOps> pipes;
+        std::array<std::array<std::byte, 8>, kOps> buffers{};
+        std::array<std::shared_ptr<io_state>, kOps> states;
+        std::array<std::inplace_stop_source, kOps> stop_sources;
+        std::array<op_slot<op_t>, kOps> ops;
+
+        for (int i = 0; i < kOps; ++i) {
+            pipes[i] = make_pipe_pair();
+            states[i] = std::make_shared<io_state>();
+            auto& op = ops[i].emplace_from([&, i] {
+                return std::execution::connect(
+                    ctx.async_read_some(
+                        pipes[i].server.get(),
+                        std::span<std::byte>{buffers[i]}),
+                    stopped_receiver{{states[i]}, &stop_sources[i]});
+            });
+            std::execution::start(op);
+        }
+
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+        auto wait_for_start = [&] {
+            ready.fetch_add(1, std::memory_order_acq_rel);
+            while (!go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        };
+
+        std::thread token_thread{[&] {
+            wait_for_start();
+            for (int i = 0; i < kOps; ++i) {
+                stop_sources[i].request_stop();
+            }
+        }};
+        std::thread cancel_thread{[&] {
+            wait_for_start();
+            for (int i = 0; i < kOps; ++i) {
+                ctx.cancel(pipes[(i + iteration) % kOps].server.get());
+            }
+        }};
+        std::thread context_thread{[&] {
+            wait_for_start();
+            ctx.request_stop();
+        }};
+
+        while (ready.load(std::memory_order_acquire) != 3) {
+            std::this_thread::yield();
+        }
+        go.store(true, std::memory_order_release);
+
+        token_thread.join();
+        cancel_thread.join();
+        context_thread.join();
+
+        for (int i = 0; i < kOps; ++i) {
+            SCOPED_TRACE(i);
+            ASSERT_TRUE(wait_done(states[i]));
+            EXPECT_FALSE(states[i]->value);
+            EXPECT_TRUE(states[i]->stopped);
+            EXPECT_FALSE(states[i]->error);
+            EXPECT_EQ(states[i]->completions, 1);
+        }
+
+        ctx.shutdown();
+        ctx.wait();
+    }
 }
 
 TEST(IoIocpTest, InvalidHandleCompletesWithError) {
