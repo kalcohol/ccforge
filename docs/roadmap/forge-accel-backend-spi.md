@@ -6,25 +6,26 @@ dependencies by itself.
 General gate, lifetime, verification, and typed-error rules are defined in
 [backend proof policy](forge-backend-proof-policy.md).
 
-The current shipped backend is the portable mock/in-memory reference backend in
-`include/forge/accel/mock/`. Backend-neutral vocabulary lives in
-`include/forge/accel/`. The next approved proof is a dependency-free
-`forge::accel::cpu` backend that validates the portable shape with real CPU
-work. Future vendor backends remain separate owner-gated proofs and should
-preserve the same user-facing shape before exposing vendor-specific details.
+The current shipped backends are the portable mock/in-memory reference backend
+in `include/forge/accel/mock/` and the dependency-free CPU/SIMD reference
+backend in `include/forge/accel/cpu/`. Backend-neutral vocabulary lives in
+`include/forge/accel/`. Future vendor backends remain separate owner-gated
+proofs and should preserve the same user-facing shape before exposing
+vendor-specific details.
 
 The executable contract is `forge_accel_backend_conformance`, backed by the
 repository-local test harness in
 `test/forge/runtime/forge_accel_backend_conformance.hpp`.
-The harness currently adapts the mock backend, but it is structured around
-portable operations so a future backend proof can reuse the same tests before
-adding backend-specific extensions.
+The harness adapts both mock and CPU with `TYPED_TEST_SUITE`: portable
+operations run against both backends, while mock-only fault-injection behavior
+stays in plain tests.
 
 ## portable concepts
 
 The stable portable vocabulary is intentionally small:
 
-- owning backend context, currently `forge::accel::mock::context`;
+- owning backend context, currently `forge::accel::mock::context` and
+  `forge::accel::cpu::context`;
 - lightweight device and queue handles derived from the context;
 - queue kind metadata for general, compute, copy, and command/message lanes;
 - optional `device_session` for command/response style devices;
@@ -142,5 +143,7 @@ The portable conformance suite covers these backend obligations:
 
 The suite intentionally does not prove vendor allocation classes, native event
 export, graph submission, tensor semantics, driver reset, firmware behavior, or
-kernel interruption. A real backend must document and test those as explicit
-backend-specific additions if it exposes them.
+kernel interruption. The CPU backend covers aligned CPU storage, real H2D/D2H
+copy paths, and real CPU/SIMD submit work; a vendor backend must still document
+and test native-only behavior as explicit backend-specific additions if it
+exposes them.

@@ -53,9 +53,15 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and m
 22. `example/forge_accel_trace_example.cpp`：可选 in-memory command timeline。
 23. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
    continuation。
-24. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
+24. `example/forge_accel_cpu_copy_example.cpp`：用 CPU reference backend 跑真实
+    H2D/D2H copy。
+25. `example/forge_accel_cpu_pipeline_example.cpp`：CPU reference copy/compute queue
+    和 event ordering。
+26. `example/forge_accel_cpu_simd_example.cpp`：在 aligned CPU device buffer 上跑
+    `std::simd`。
+27. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
    和资源生命周期放在同一个推理 runtime sketch 里。
-25. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
+28. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
     pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
     errors、device-loss recovery、trace snapshot 和 graceful drain 如何放在同一个
     reference runtime 中。
@@ -99,8 +105,11 @@ For accelerator-shaped work without vendor SDKs:
 10. `example/forge_accel_model_example.cpp`
 11. `example/forge_accel_typed_error_example.cpp`
 12. `example/forge_accel_trace_example.cpp`
-13. `example/forge_inference_runtime_sketch.cpp`
-14. `example/forge_reference_runtime_example.cpp`
+13. `example/forge_accel_cpu_copy_example.cpp`
+14. `example/forge_accel_cpu_pipeline_example.cpp`
+15. `example/forge_accel_cpu_simd_example.cpp`
+16. `example/forge_inference_runtime_sketch.cpp`
+17. `example/forge_reference_runtime_example.cpp`
 
 These paths intentionally stay example-first. The detailed contracts live in
 the feature docs, so the cookbook remains a map rather than a duplicated API
@@ -120,7 +129,7 @@ reference.
 | type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
-| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp` |
+| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp`, `example/forge_accel_cpu_copy_example.cpp`, `example/forge_accel_cpu_pipeline_example.cpp`, `example/forge_accel_cpu_simd_example.cpp` |
 | device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp`, `example/forge_accel_request_runtime_example.cpp` |
 | protocol and telemetry proofs | `example/forge_accel_protocol_transport_example.cpp`, `example/forge_accel_trace_example.cpp` |
 | model/session IO binding | `example/forge_accel_model_example.cpp` |
@@ -284,13 +293,16 @@ reference.
 ## recipe: accelerator-shaped pipeline
 
 适用场景：先用 portable mock backend 验证 command queue / buffer / copy / submit
-形状，再决定是否需要真实 accelerator backend。
+形状，再用 CPU reference backend 证明同一套 vocabulary 能跑真实 CPU/SIMD work，
+最后再决定是否需要真实 vendor backend。
 
 使用：
 
 - `forge::accel::mock::context`
+- `forge::accel::cpu::context`
 - `forge::accel::mock::host_buffer<T>`
 - `forge::accel::mock::device_buffer<T>`
+- `forge::accel::cpu::device_buffer<T>`
 - `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`
 - `copy_to_device` / `copy_to_host` / `copy_device_to_device`
 - `flush` / `invalidate` for cached-memory proof
@@ -308,6 +320,8 @@ reference.
 关键点：
 
 - 当前 backend 是 in-memory mock，不依赖 CUDA/HIP/SYCL；
+- CPU reference backend 同样不依赖 CUDA/HIP/SYCL；它使用 aligned CPU storage，
+  让 H2D/D2H/D2D copy 和 `std::simd` submit 在真实内存路径上运行；
 - 每个 queue 命令按 FIFO 运行；跨 queue ordering 用 `event` 显式表达，不隐式生成 graph；
 - host spans 是 borrowed，`device_buffer` 拥有 mock device storage；
 - `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
@@ -343,6 +357,9 @@ reference.
 - `example/forge_accel_typed_error_example.cpp`
 - `example/forge_accel_trace_example.cpp`
 - `example/forge_accel_pipeline_example.cpp`
+- `example/forge_accel_cpu_copy_example.cpp`
+- `example/forge_accel_cpu_pipeline_example.cpp`
+- `example/forge_accel_cpu_simd_example.cpp`
 - `example/forge_inference_runtime_sketch.cpp`
 
 ## recipe: reference runtime service

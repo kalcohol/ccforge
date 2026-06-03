@@ -1,8 +1,9 @@
 # `forge::accel`
 
 `forge::accel` is Forge's accelerator-shaped runtime support layer. It provides
-backend-neutral vocabulary in `forge::accel` and a dependency-free executable
-reference backend in `forge::accel::mock`.
+backend-neutral vocabulary in `forge::accel`, a dependency-free executable
+mock/fault-injection backend in `forge::accel::mock`, and a dependency-free
+CPU/SIMD reference backend in `forge::accel::cpu`.
 
 The mock backend uses CPU storage plus Forge runtime primitives to model the
 engineering shape of accelerator work:
@@ -22,7 +23,9 @@ exposing backend-specific extensions. Backend entry rules are tracked in the
 [backend proof policy](roadmap/forge-backend-proof-policy.md).
 The mock backend also runs the repository-local
 `forge_accel_backend_conformance` test suite, which records the portable
-contract a future backend proof must satisfy.
+contract a future backend proof must satisfy. The CPU backend runs the same
+portable conformance suite so the vocabulary is tested against a second backend,
+not just the mock state machine.
 
 ```cpp
 #include <forge/accel.hpp>
@@ -67,6 +70,44 @@ context, buffers, and pending work that use it. The resource controls the mock
 context state, internal runtime/strand queues, command records, sessions, and
 owning buffers. It does not make mock memory pinned, mapped, managed, or backed
 by a vendor allocator.
+
+## CPU Reference Backend
+
+`forge::accel::cpu::context` is a real CPU-work reference backend. It uses the
+same queue/copy/submit/event vocabulary as the mock backend, but intentionally
+does less fault injection: no sessions, packets, trace sink, cached-memory
+coherence proof, or model runtime. Its purpose is to validate that portable
+accelerator-shaped code can run useful work through a non-mock backend before
+any vendor SDK proof is approved.
+
+```cpp
+forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
+    .thread_count = 2,
+    .queue_capacity = 8,
+}};
+
+auto copy_q = ctx.get_queue(forge::accel::queue_kind::copy);
+auto compute_q = ctx.get_queue(forge::accel::queue_kind::compute);
+forge::accel::cpu::device_buffer<float> device{ctx, 1024};
+```
+
+CPU `device_buffer<T>` owns 64-byte aligned storage through the configured
+`std::pmr::memory_resource`. H2D/D2H/D2D commands perform real element copies
+between host spans and this aligned storage. `submit(q, callable)` runs user
+work on the queue's serialized lane, so examples can use `std::simd` over
+`device_buffer<T>::span()` without inventing a vendor kernel interface.
+
+The CPU backend keeps the same lifecycle shape:
+
+- `close()` rejects future command admission and drains accepted work;
+- `request_stop()` asks pending work and event waits to stop;
+- `shutdown()` is `close()` plus `request_stop()`;
+- `wait()` drains accepted work and returns immediately when called from backend
+  work to avoid self-deadlock.
+
+The CPU backend still is not CUDA/HIP/SYCL, does not expose native handles, and
+does not model hardware queues, DMA, driver reset, pinned memory, or kernel
+preemption. It is a portable reference backend for the command vocabulary.
 
 The lifecycle verbs match the rest of `forge::`:
 
@@ -344,6 +385,12 @@ Progressive examples:
 
 - `example/forge_accel_copy_example.cpp`: simple H2D/D2H copy;
 - `example/forge_accel_pipeline_example.cpp`: H2D -> submit -> D2H;
+- `example/forge_accel_cpu_copy_example.cpp`: CPU reference H2D/D2H copy with
+  aligned device storage;
+- `example/forge_accel_cpu_pipeline_example.cpp`: CPU reference copy/compute
+  queue ordering with events;
+- `example/forge_accel_cpu_simd_example.cpp`: CPU reference submit running
+  `std::simd` over aligned device storage;
 - `example/forge_accel_event_example.cpp`: cross-queue event generations,
   query, wait, synchronize, and fence;
 - `example/forge_accel_memory_example.cpp`: memory kinds, byte buffers, cached

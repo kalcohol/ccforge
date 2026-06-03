@@ -138,6 +138,15 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
         forge_add_example(forge_inference_runtime_sketch forge_inference_runtime_sketch.cpp THREADS TBB)
         forge_add_example(forge_reference_runtime forge_reference_runtime_example.cpp THREADS TBB)
     endif()
+
+    if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND)
+        foreach(_forge_example_target IN ITEMS
+                forge_accel_cpu_copy
+                forge_accel_cpu_pipeline
+                forge_accel_cpu_simd)
+            forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp THREADS TBB)
+        endforeach()
+    endif()
 endif()
 
 get_property(FORGE_EXAMPLE_SMOKE_TARGETS GLOBAL PROPERTY FORGE_EXAMPLE_SMOKE_TARGETS)

@@ -79,11 +79,13 @@ executable specification:
 - explicit that it does not provide hardware acceleration or realistic
   performance.
 
-The next approved proof is `forge::accel::cpu`: a dependency-free CPU/SIMD
-reference backend that runs real CPU work through the same queue/copy/submit
-vocabulary. It is not a release tag, CI policy change, or vendor backend
-approval. Real vendor backend proofs must still explain how they map to the
-reference backend's contracts before exposing backend-specific extensions.
+`forge::accel::cpu` is implemented as the dependency-free CPU/SIMD reference
+backend. It runs real CPU work through the same queue/copy/submit/event
+vocabulary, uses aligned CPU device-buffer storage, and shares the portable
+backend conformance suite with the mock backend. It is not a release tag, CI
+policy change, or vendor backend approval. Real vendor backend proofs must still
+explain how they map to the reference backend's contracts before exposing
+backend-specific extensions.
 
 ## phase 1: vocabulary split
 
