@@ -133,7 +133,9 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
                 forge_accel_protocol_transport
                 forge_accel_model
                 forge_accel_typed_error
-                forge_accel_trace)
+                forge_accel_trace
+                forge_accel_resume_revalidation
+                forge_accel_framework_glue)
             forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp THREADS TBB)
         endforeach()
 

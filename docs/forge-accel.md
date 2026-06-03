@@ -327,7 +327,45 @@ reload、firmware reset 或 native context rebuild。
 }
 ```
 
-它不会执行 hardware context switch，也不会跨线程传播。
+`current_stream_guard` / `current_stream()` 提供同样的 scoped thread-local stream
+convenience。它通常由 framework backend glue 在进入一个 op dispatch boundary 时设置，
+让普通 C++ callable 能观察“当前 stream”。
+
+这些 guard 不会执行 hardware context switch，也不会跨线程传播。
+
+## Power/resume and framework glue contracts
+
+Power/resume 的 portable default 是保守的：sleep 前先 quiesce / drain / fence；resume 后
+重新 probe，并用 `device_epoch`、`session_id` 和 `worker_generation` 验证旧 handle 是否仍
+有效。除非某个真实 backend proof 明确证明 command / kernel / session 能跨低功耗存活，
+否则旧 session 应视为可能 stale，重新创建 session 是默认安全路径。
+
+Mock proof 中可以用 host-lost cleanup 表达这一点：host 侧会话丢失后，device 侧先冻结新
+admission，清退旧 worker/session state，完成后推进 epoch / generation。旧 session 随后
+以 `error_kind::stale_session` 失败，新 session 才接纳业务。
+
+Framework-style backend glue 的常见需求包括：
+
+- device guard / stream guard；
+- allocator 和 memory-pool contract；
+- record-stream / tensor lifetime；
+- event wrapper 和 per-stream synchronize；
+- peer access enable/query；
+- graph capture state-machine boundary；
+- stream priority metadata；
+- user trace range marker；
+- async copy、op dispatch、model/session binding；
+- typed error 到 framework error 的映射。
+
+Forge 当前只把这些需求记录为 portable contracts 和 dependency-free examples。它不包含
+PyTorch / CUDA / HIP / SYCL / ACL / CNRT header，也不实现 tensor graph、graph optimizer、
+stream-ordered async allocation/free、native peer routing 或 vendor profiler integration。
+这些能力如果进入仓库，必须作为单独 owner-gated backend proof，并先映射回这里的 portable
+contracts。
+
+Per-stream synchronize 已在 mock worker proof 中实现，语义是等待单条 stream 的 pending
+node 归零，可选 timeout，并可观察/清除 sticky stream error。它不同于 whole-context
+`wait()`，也不同于 tensor framework 的全设备同步。
 
 ## Message, packet, and request runtime proofs
 
@@ -500,6 +538,10 @@ Mock backend 故意避开 Perfetto、ETW、LTTng、OpenTelemetry、vendor timest
 - `example/forge_accel_typed_error_example.cpp`：typed accel error 跨过
   `forge::erased_sender` 和 `forge::wait_result`；
 - `example/forge_accel_trace_example.cpp`：可选 command timeline trace；
+- `example/forge_accel_resume_revalidation_example.cpp`：resume 后 epoch/session
+  revalidation sketch；
+- `example/forge_accel_framework_glue_example.cpp`：不含 framework header 的 device guard /
+  stream guard / per-stream synchronize sketch；
 - `example/forge_inference_runtime_sketch.cpp`：channel + accel queue sketch；
 - `example/forge_reference_runtime_example.cpp`：owning request/response service，包含
   bounded ingress、typed accel boundary、serialized stats 和 graceful drain。

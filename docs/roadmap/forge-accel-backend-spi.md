@@ -132,11 +132,15 @@ The portable conformance suite covers these backend obligations:
 
 - basic queue, copy, submit, and fence behavior;
 - cross-queue event ordering and the same-queue wait-before-record limitation;
+- stream query, per-stream synchronize, sticky stream error, and event elapsed
+  time in the mock worker proof;
 - capacity-full rejection through stopped completion;
 - size mismatch and cached-memory coherence classification;
 - device loss, device reset, stale sessions, drain freeze, and worker fault;
 - request timeout and late-response accounting;
 - protocol lifecycle signals that bypass the request-pending map;
+- stream-ordered host callback invoke/complete and unregister drain in the mock
+  worker proof;
 - optional trace collection that does not change command behavior;
 - typed accelerator errors crossing `forge::erased_sender` and
   `forge::wait_result`.

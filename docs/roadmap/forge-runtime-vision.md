@@ -25,6 +25,8 @@
   `accel::mock::device_buffer` / `accel::mock::event`
 - `accel::mock` copy / submit / submit_message / submit_packet / event / fence
   command senders
+- `accel::mock` stream query / per-stream synchronize / stream-ordered host
+  callback proof
 - `accel::mock::request_session`
 - `accel::protocol_envelope` and `accel::mock::protocol::loopback_transport`
 - `accel::mock::trace_sink`

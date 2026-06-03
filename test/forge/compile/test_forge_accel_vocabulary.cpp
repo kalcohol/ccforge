@@ -10,6 +10,8 @@ int main() {
     static_assert(std::is_trivially_copyable_v<forge::accel::session_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::request_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::event_id>);
+    static_assert(std::is_trivially_copyable_v<forge::accel::callback_id>);
+    static_assert(std::is_trivially_copyable_v<forge::accel::callback_invoke_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::event_generation>);
     static_assert(std::is_trivially_copyable_v<forge::accel::endpoint_id>);
     static_assert(std::is_trivially_copyable_v<forge::accel::module_id>);
@@ -32,6 +34,7 @@ int main() {
 
     static_assert(forge::accel::context_id{1} == forge::accel::context_id{1});
     static_assert(forge::accel::stream_id{1} != forge::accel::stream_id{2});
+    static_assert(forge::accel::callback_id{1} != forge::accel::callback_id{2});
     static_assert(forge::accel::event_generation{1} < forge::accel::event_generation{2});
     static_assert(forge::accel::endpoint_id{1} == forge::accel::endpoint_id{1});
     static_assert(forge::accel::module_id{1} != forge::accel::module_id{2});
@@ -57,6 +60,14 @@ int main() {
         if (!forge::accel::current_device().has_value()) {
             return 1;
         }
+        forge::accel::current_stream_guard stream_guard{forge::accel::stream_id{4}};
+        if (!forge::accel::current_stream().has_value()) {
+            return 1;
+        }
+    }
+
+    if (forge::accel::current_stream().has_value()) {
+        return 1;
     }
 
     return static_cast<int>(

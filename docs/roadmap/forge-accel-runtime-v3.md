@@ -92,6 +92,25 @@ dependency-free proof that portable command vocabulary can drive real CPU/SIMD
 work. Vendor backends remain owner-gated and should first map their mechanics
 back to the portable contracts below.
 
+## current status
+
+The dependency-free v3 proof is implemented through the mock backend:
+
+- transport distinguishes posted and non-posted calls;
+- control/lifecycle vocabulary covers heartbeat, host lost, drain, worker fault,
+  epoch, generation, and scoped current-device/current-stream guards;
+- worker stream semantics cover default stream 0, stream query, per-stream
+  synchronize, sticky stream error, module/command dispatch, event elapsed time,
+  and trace activity duration;
+- stream-ordered host callbacks are modeled as FIFO callback nodes with
+  invoke/complete acknowledgement and unregister drain;
+- power/resume and framework glue are documented as conservative contracts and
+  dependency-free examples, not vendor SDK integrations.
+
+The CPU backend remains the portable reference backend for real CPU/SIMD work.
+It intentionally does not implement mock-only lifecycle fault injection,
+callback ingress, transport loops, or power/resume simulation.
+
 ## phase 1: roadmap and vocabulary contracts
 
 Target:
@@ -274,4 +293,3 @@ scripts/verify-install-package.sh
 
 When Windows-sensitive behavior changes, use the Windows/MSVC smoke scripts with
 host details supplied outside the repository.
-

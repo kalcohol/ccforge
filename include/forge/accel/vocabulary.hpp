@@ -183,6 +183,7 @@ struct model_io_descriptor {
 namespace __current_device_detail {
 
 inline thread_local std::optional<device_id> __current_device;
+inline thread_local std::optional<stream_id> __current_stream;
 
 } // namespace __current_device_detail
 
@@ -208,6 +209,30 @@ public:
 
 private:
     std::optional<device_id> previous_;
+};
+
+[[nodiscard]] inline auto current_stream() noexcept -> std::optional<stream_id> {
+    return __current_device_detail::__current_stream;
+}
+
+class current_stream_guard {
+public:
+    explicit current_stream_guard(stream_id stream) noexcept
+        : previous_(__current_device_detail::__current_stream) {
+        __current_device_detail::__current_stream = stream;
+    }
+
+    ~current_stream_guard() {
+        __current_device_detail::__current_stream = previous_;
+    }
+
+    current_stream_guard(const current_stream_guard&) = delete;
+    auto operator=(const current_stream_guard&) -> current_stream_guard& = delete;
+    current_stream_guard(current_stream_guard&&) = delete;
+    auto operator=(current_stream_guard&&) -> current_stream_guard& = delete;
+
+private:
+    std::optional<stream_id> previous_;
 };
 
 } // namespace forge::accel
