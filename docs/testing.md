@@ -23,7 +23,8 @@ scripts/verify-selfhosted-floor.sh
 ```
 
 该脚本按顺序调用现有验证入口，默认 native lanes 为 `llvm gcc-exec tsan asan`，
-随后运行 install-package smoke。它不会并发运行 podman `:Z` bind mount lane。
+先运行 docs/examples audit，随后运行 install-package smoke。它不会并发运行 podman
+`:Z` bind mount lane。
 如需增加或替换 native lane，直接传参或设置环境变量：
 
 ```bash
@@ -44,6 +45,25 @@ scripts/verify-selfhosted-floor.sh
 
 公开文档和脚本不得写入私有主机名、用户名或本地安装路径。运行日志可以打印本机实际
 选择的路径以便调试，但这些值只属于调用环境。
+
+## docs/example audit
+
+`scripts/audit-docs-and-examples.sh` 是轻量防回归脚本。它检查：
+
+- docs / README 中引用的 `example/*.cpp` 是否真实存在；
+- `example/CMakeLists.txt` 中注册的 example source 是否存在；
+- 每个 `example/*.cpp` 是否被 `example/CMakeLists.txt` 注册；
+- docs / README 中的本地 Markdown link 是否仍能解析到文件；
+- committed docs/scripts 是否泄漏私有主机名或本地路径；
+- 非 WD 的 `std::execution::ensure_started` / `std::execution::start_detached`
+  是否只出现在“已移除”说明中。
+
+该脚本不编译代码，也不证明 API correctness；它只负责文档和 example registry 的
+机械一致性。`verify-selfhosted-floor.sh` 默认运行它；特殊情况下可设置：
+
+```bash
+FORGE_VERIFY_FLOOR_SKIP_DOC_AUDIT=1 scripts/verify-selfhosted-floor.sh
+```
 
 ## 容器验证
 

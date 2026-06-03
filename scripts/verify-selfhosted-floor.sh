@@ -20,6 +20,8 @@
 #       Space-separated native lanes used when no positional lanes are passed.
 #   FORGE_VERIFY_FLOOR_SKIP_INSTALL=1
 #       Skip scripts/verify-install-package.sh.
+#   FORGE_VERIFY_FLOOR_SKIP_DOC_AUDIT=1
+#       Skip scripts/audit-docs-and-examples.sh.
 #   FORGE_VERIFY_FLOOR_WINDOWS=1
 #       Also run the Windows/MSVC smoke through scripts/verify-windows-msvc-matrix.sh.
 #       The Windows wrapper consumes FORGE_WINDOWS_* environment variables.
@@ -44,6 +46,14 @@ if [[ ${#native_lanes[@]} -eq 0 ]]; then
     log "no native lanes requested"
 else
     log "native lanes: ${native_lanes[*]}"
+fi
+
+if [[ "${FORGE_VERIFY_FLOOR_SKIP_DOC_AUDIT:-0}" != "1" ]]; then
+    log "start docs/examples audit"
+    scripts/audit-docs-and-examples.sh
+    log "ok docs/examples audit"
+else
+    log "skip docs/examples audit"
 fi
 
 for lane in "${native_lanes[@]}"; do
