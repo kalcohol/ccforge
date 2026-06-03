@@ -8,6 +8,11 @@ and roadmap material. These pages intentionally remain mixed English/Chinese
 where that is clearer for current contributors; the root README files are the
 stable multilingual entrypoints.
 
+Use `forge::std` for standard-header-only consumers and `forge::forge` for the
+full `include/forge` extension layer. Standard-shaped headers are extensionless
+only under `backport/`; `forge::` extension headers intentionally keep `.hpp`
+entries such as `<forge/io.hpp>`.
+
 ## usage
 
 - [forge cookbook](forge-cookbook.md)

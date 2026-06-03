@@ -143,28 +143,68 @@ else()
     message(STATUS "CC Forge: forge::accel backends unavailable - skipped")
 endif()
 
-# Create INTERFACE library target for header-only library
+# Create the standard-header target first. It exposes only standard-shaped
+# headers such as <execution> and <simd>, using native stand-aside or Forge
+# backport injection according to the probes below.
+if(NOT TARGET forge_std)
+    add_library(forge_std INTERFACE)
+    add_library(forge::std ALIAS forge_std)
+
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+        target_compile_features(forge_std INTERFACE cxx_std_23)
+    endif()
+
+    target_compile_options(forge_std INTERFACE
+        $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+        $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
+    )
+
+    target_link_libraries(forge_std INTERFACE Threads::Threads)
+
+    set(FORGE_BACKPORT_TARGET forge_std)
+    include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
+    unset(FORGE_BACKPORT_TARGET)
+
+    # Add backport path if any feature needs it.
+    if(FORGE_NEEDS_BACKPORT)
+        if(MSVC)
+            include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
+            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_MEMORY_HEADER memory TRUE)
+            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_UTILITY_HEADER utility TRUE)
+            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_SIMD_HEADER simd FALSE)
+            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_EXECUTION_HEADER execution TRUE)
+            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
+        endif()
+
+        target_include_directories(forge_std BEFORE INTERFACE
+            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
+        )
+    endif()
+
+    # Add the backport root for experimental TS headers. Do not add
+    # backport/experimental directly: that would make <memory> resolve to
+    # backport/experimental/memory instead of the standard-header wrapper.
+    if(FORGE_NEEDS_EXPERIMENTAL)
+        target_include_directories(forge_std BEFORE INTERFACE
+            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
+        )
+    endif()
+
+    message(STATUS "CC Forge standard-header target configured")
+endif()
+
+# Create the full extension target for include/forge utilities. Existing
+# consumers keep linking forge::forge; std-only consumers can link forge::std.
 if(NOT TARGET forge)
     add_library(forge INTERFACE)
     add_library(forge::forge ALIAS forge)
 
-    # Set include directories
     target_include_directories(forge INTERFACE
         $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:include>
     )
 
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
-        target_compile_features(forge INTERFACE cxx_std_23)
-    endif()
-
-    # MSVC: Enable UTF-8 source/execution charset and truthful __cplusplus.
-    target_compile_options(forge INTERFACE
-        $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
-        $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
-    )
-
-    target_link_libraries(forge INTERFACE Threads::Threads)
+    target_link_libraries(forge INTERFACE forge::std)
 
     if(FORGE_HAS_FORGE_IO_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
@@ -183,33 +223,6 @@ if(NOT TARGET forge)
     endif()
     if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND)
         target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_CPU_BACKEND=1)
-    endif()
-
-    include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
-
-    # Add backport path if any feature needs it
-    if(FORGE_NEEDS_BACKPORT)
-        if(MSVC)
-            include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
-            _forge_define_msvc_standard_header(forge FORGE_MSVC_MEMORY_HEADER memory TRUE)
-            _forge_define_msvc_standard_header(forge FORGE_MSVC_UTILITY_HEADER utility TRUE)
-            _forge_define_msvc_standard_header(forge FORGE_MSVC_SIMD_HEADER simd FALSE)
-            _forge_define_msvc_standard_header(forge FORGE_MSVC_EXECUTION_HEADER execution TRUE)
-            _forge_define_msvc_standard_header(forge FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
-        endif()
-
-        target_include_directories(forge BEFORE INTERFACE
-            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
-        )
-    endif()
-
-    # Add the backport root for experimental TS headers. Do not add
-    # backport/experimental directly: that would make <memory> resolve to
-    # backport/experimental/memory instead of the standard-header wrapper.
-    if(FORGE_NEEDS_EXPERIMENTAL)
-        target_include_directories(forge BEFORE INTERFACE
-            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
-        )
     endif()
 
     message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")

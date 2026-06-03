@@ -72,6 +72,13 @@ find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
 
+Use `forge::std` when a target only needs standard-header backports and native
+stand-aside behavior:
+
+```cmake
+target_link_libraries(myapp PRIVATE forge::std)
+```
+
 Source tree:
 
 ```cmake
@@ -89,6 +96,11 @@ target_link_libraries(myapp PRIVATE forge::forge)
 The installed package config reruns native-vs-backport probes in the consumer
 project, so one install prefix can adapt to different compilers, standard
 libraries, and `CMAKE_CXX_STANDARD` values.
+
+Standard-shaped entries intentionally use extensionless headers such as
+`<execution>` and `<simd>`. Non-standard `forge::` utilities keep `.hpp`
+headers such as `<forge/io.hpp>` to distinguish project extensions from
+standard-library headers and avoid directory/header name collisions.
 
 ## Requirements
 

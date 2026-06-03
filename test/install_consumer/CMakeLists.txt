@@ -14,3 +14,6 @@ find_package(CCForge CONFIG REQUIRED)
 
 add_executable(ccforge_install_consumer main.cpp)
 target_link_libraries(ccforge_install_consumer PRIVATE forge::forge)
+
+add_executable(ccforge_install_std_consumer std_main.cpp)
+target_link_libraries(ccforge_install_std_consumer PRIVATE forge::std)

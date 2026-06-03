@@ -70,6 +70,13 @@ find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
 
+如果只需要标准头 backport 与 native stand-aside 行为，不需要 `forge::` 扩展设施，
+可以链接 `forge::std`：
+
+```cmake
+target_link_libraries(myapp PRIVATE forge::std)
+```
+
 源码树直接引用：
 
 ```cmake
@@ -86,6 +93,10 @@ target_link_libraries(myapp PRIVATE forge::forge)
 
 安装后的 package config 会在 consumer 项目里重新运行 native-vs-backport probes，
 不会固化打包机器的探测结果。
+
+标准形态入口刻意保持无后缀，例如 `<execution>` 与 `<simd>`；非标准 `forge::`
+扩展继续使用 `.hpp` 入口，例如 `<forge/io.hpp>`。这样可以清楚区分项目扩展与标准
+库头，也避免目录名与头文件名冲突。
 
 ## 要求与验证
 

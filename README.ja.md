@@ -72,6 +72,13 @@ find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
 
+標準ヘッダー backport と native stand-aside だけが必要で、`forge::` 拡張を使わない
+target は `forge::std` にリンクできます。
+
+```cmake
+target_link_libraries(myapp PRIVATE forge::std)
+```
+
 ソースツリーを直接使う場合:
 
 ```cmake
@@ -89,6 +96,11 @@ target_link_libraries(myapp PRIVATE forge::forge)
 インストールされた package config は consumer project 側で native-vs-backport probes
 を再実行します。そのため、一つの install prefix を異なる compiler、standard library、
 `CMAKE_CXX_STANDARD` に適応させられます。
+
+標準形の入口は `<execution>` や `<simd>` のように拡張子なしです。一方、非標準の
+`forge::` utilities は `<forge/io.hpp>` のような `.hpp` ヘッダーを使い続けます。
+これにより、標準ライブラリヘッダーとプロジェクト拡張を明確に区別し、directory 名と
+header 名の衝突も避けられます。
 
 ## 要件と検証
 

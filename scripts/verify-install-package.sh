@@ -59,5 +59,6 @@ cmake --build "${CONSUMER_BUILD}"
 
 log "running external consumer"
 "${CONSUMER_BUILD}/ccforge_install_consumer"
+"${CONSUMER_BUILD}/ccforge_install_std_consumer"
 
 log "ok"

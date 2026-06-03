@@ -17,7 +17,7 @@ param(
     [string]$VsVersion = "18",
     [string]$Vcvars = "",
     [string]$BuildName = "",
-    [string]$CTestRegex = "execution|unique_resource|forge",
+    [string]$CTestRegex = "execution|unique_resource|std_target|forge",
     [switch]$Keep,
     [switch]$SkipGoogletestProvision,
     [switch]$SkipGateChecks,
@@ -481,6 +481,7 @@ function Invoke-InstallPackageCheck {
     Invoke-Native "install package: configure consumer" $consumerConfigure
     Invoke-Native "install package: build consumer" ($Common + "cmake --build `"$consumerBuild`"")
     Invoke-Native "install package: run consumer" ($Common + "`"$consumerBuild\ccforge_install_consumer.exe`"")
+    Invoke-Native "install package: run std consumer" ($Common + "`"$consumerBuild\ccforge_install_std_consumer.exe`"")
 
     Write-Host "[msvc] install package smoke verified"
 }

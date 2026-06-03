@@ -1,13 +1,22 @@
 # Backport feature probes for forge.cmake.
 #
-# This file expects the public forge target to already exist. It sets:
+# This file expects the standard-header target to already exist. Set
+# FORGE_BACKPORT_TARGET before including this file; it defaults to forge for
+# compatibility with older direct include patterns. It sets:
 #   FORGE_NEEDS_BACKPORT
 #   FORGE_NEEDS_EXPERIMENTAL
-# and publishes FORGE_HAS_NATIVE_* / FORGE_FORCE_* definitions on forge.
+# and publishes FORGE_HAS_NATIVE_* / FORGE_FORCE_* definitions on that target.
 
 include(CheckCXXSourceCompiles)
 
 set(FORGE_NEEDS_BACKPORT FALSE)
+
+if(NOT DEFINED FORGE_BACKPORT_TARGET)
+    set(FORGE_BACKPORT_TARGET forge)
+endif()
+if(NOT TARGET ${FORGE_BACKPORT_TARGET})
+    message(FATAL_ERROR "CC Forge: FORGE_BACKPORT_TARGET '${FORGE_BACKPORT_TARGET}' does not exist")
+endif()
 
 # Probe at the SAME language standard the consumer compiles with. Detecting a
 # C++26 feature that is only reachable under -std=c++26 is meaningless if the
@@ -72,13 +81,13 @@ endif()
 macro(_forge_decide _disp _suffix _full _partial)
     if(FORGE_FORCE_${_suffix}_BACKPORT)
         set(FORGE_NEEDS_BACKPORT TRUE)
-        target_compile_definitions(forge INTERFACE FORGE_FORCE_${_suffix}_BACKPORT=1)
+        target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_FORCE_${_suffix}_BACKPORT=1)
         message(WARNING "CC Forge: ${_disp} backport FORCED on (FORGE_FORCE_${_suffix}_BACKPORT=ON); injecting on top of any native implementation risks ODR violations")
     elseif(${_full})
-        target_compile_definitions(forge INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
+        target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
         message(STATUS "CC Forge: ${_disp} native support detected - backport disabled")
     elseif(${_partial})
-        target_compile_definitions(forge INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
+        target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
         message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE at -std=c++${_forge_std}; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it, or set -DFORGE_FORCE_${_suffix}_BACKPORT=ON to force the backport (UB-prone).")
     else()
         set(FORGE_NEEDS_BACKPORT TRUE)
