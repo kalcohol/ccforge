@@ -151,6 +151,49 @@ struct transformed_sender : direct_value_sender {
     }
 };
 
+struct signature_source_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct signature_transformed_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(double)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct signature_transform_domain {
+    template<class Env>
+    auto transform_sender(std::execution::start_t, signature_source_sender&&, const Env&) const noexcept
+        -> signature_transformed_sender {
+        return {};
+    }
+};
+
+struct signature_domain_env {
+    friend auto tag_invoke(std::execution::get_domain_t, const signature_domain_env&) noexcept
+        -> signature_transform_domain {
+        return {};
+    }
+};
+
 struct rescue_domain {
     static inline bool transformed = false;
 
@@ -509,6 +552,16 @@ TEST(DefaultDomainTest, DomainCanInjectEnvWithWriteEnv) {
 
     EXPECT_TRUE(completed);
     EXPECT_EQ(value, 123);
+}
+
+TEST(DefaultDomainTest, GetCompletionSignaturesUsesTransformedSender) {
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        signature_source_sender{},
+        signature_domain_env{}));
+    static_assert(std::is_same_v<
+        cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(double)>>);
 }
 
 TEST(DefaultDomainTest, CompletionDomainRecursesBeforeStartDomain) {

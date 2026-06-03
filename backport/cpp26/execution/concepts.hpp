@@ -125,6 +125,16 @@ struct completion_signatures {};
 
 struct get_completion_signatures_t;
 
+namespace __forge_domain {
+
+template<class S, class Env>
+decltype(auto) __transform_sender_for_completion_signatures(S&& sndr, Env& env);
+
+template<class S, class Env>
+consteval bool __completion_signatures_use_default_transform();
+
+} // namespace __forge_domain
+
 namespace __forge_cpo_detail {
 
 template<class S, class Env>
@@ -158,6 +168,13 @@ consteval bool __completion_signatures_noexcept() {
     }
 }
 
+template<class S, class Env>
+decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
+    noexcept(__completion_signatures_noexcept<S, Env>());
+
+template<class S, class Env>
+decltype(auto) __transformed_completion_signatures(S&& s, Env&& env);
+
 } // namespace __forge_cpo_detail
 
 struct get_completion_signatures_t {
@@ -166,13 +183,18 @@ struct get_completion_signatures_t {
                   __forge_cpo_detail::__instance_completion_signatures<S, Env> ||
                   __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>)
     auto operator()(S&& s, Env&& env) const
-        noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, Env>()) {
-        if constexpr (__forge_cpo_detail::__static_completion_signatures<S, Env>) {
-            return std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
+        noexcept(std::same_as<std::remove_cvref_t<Env>, empty_env> &&
+                 __forge_cpo_detail::__completion_signatures_noexcept<S, Env>()) {
+        if constexpr (std::same_as<std::remove_cvref_t<Env>, empty_env> ||
+                      __forge_domain::__completion_signatures_use_default_transform<S, Env>()) {
+            return __forge_cpo_detail::__raw_completion_signatures(
+                static_cast<S&&>(s), static_cast<Env&&>(env));
         } else if constexpr (__forge_cpo_detail::__instance_completion_signatures<S, Env>) {
-            return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
+            return __forge_cpo_detail::__transformed_completion_signatures(
+                static_cast<S&&>(s), static_cast<Env&&>(env));
         } else {
-            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s), static_cast<Env&&>(env));
+            return __forge_cpo_detail::__transformed_completion_signatures(
+                static_cast<S&&>(s), static_cast<Env&&>(env));
         }
     }
 
@@ -186,6 +208,33 @@ struct get_completion_signatures_t {
     }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};
+
+namespace __forge_cpo_detail {
+
+template<class S, class Env>
+decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
+    noexcept(__completion_signatures_noexcept<S, Env>()) {
+    if constexpr (__static_completion_signatures<S, Env>) {
+        return std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
+    } else if constexpr (__instance_completion_signatures<S, Env>) {
+        return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
+    } else {
+        return __forge_detail::tag_invoke_fn(
+            get_completion_signatures_t{}, static_cast<S&&>(s), static_cast<Env&&>(env));
+    }
+}
+
+template<class S, class Env>
+decltype(auto) __transformed_completion_signatures(S&& s, Env&& env) {
+    auto& env_ref = env;
+    decltype(auto) transformed = __forge_domain::__transform_sender_for_completion_signatures(
+        static_cast<S&&>(s), env_ref);
+    return __raw_completion_signatures(
+        static_cast<decltype(transformed)&&>(transformed),
+        static_cast<Env&&>(env));
+}
+
+} // namespace __forge_cpo_detail
 
 template<class S, class Env = empty_env>
 using completion_signatures_of_t = decltype(
@@ -838,6 +887,22 @@ auto __transform_sender_for_connect(S&& sndr, Env& env) {
         completion_domain, set_value_t{}, static_cast<S&&>(sndr), env);
     auto start_domain = std::execution::get_domain(env);
     return __transform_recurse(start_domain, start_t{}, std::move(tmp), env);
+}
+
+template<class S, class Env>
+decltype(auto) __transform_sender_for_completion_signatures(S&& sndr, Env& env) {
+    return __transform_sender_for_connect(static_cast<S&&>(sndr), env);
+}
+
+template<class S, class Env>
+consteval bool __completion_signatures_use_default_transform() {
+    using env_t = std::remove_cvref_t<Env>;
+    using completion_domain_t = decltype(__completion_domain_for(
+        std::declval<S>(), std::declval<env_t&>()));
+    using start_domain_t = decltype(
+        std::execution::get_domain(std::declval<const env_t&>()));
+    return std::same_as<std::remove_cvref_t<completion_domain_t>, default_domain> &&
+           std::same_as<std::remove_cvref_t<start_domain_t>, default_domain>;
 }
 
 template<class S, class R>

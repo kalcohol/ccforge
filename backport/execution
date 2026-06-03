@@ -31,9 +31,11 @@
 #error "FORGE_MSVC_EXECUTION_HEADER is required when Forge backport is enabled on MSVC"
 #endif
 #include FORGE_MSVC_EXECUTION_HEADER
+#define FORGE_HAS_NATIVE_EXECUTION_POLICIES 1
 #elif defined(__has_include_next)
 #if __has_include_next(<execution>)
 #include_next <execution>
+#define FORGE_HAS_NATIVE_EXECUTION_POLICIES 1
 #endif
 // else: toolchain has neither MSVC nor __has_include_next — skip the standard
 //       <execution> header silently; only the Forge P2300 sender/receiver subset

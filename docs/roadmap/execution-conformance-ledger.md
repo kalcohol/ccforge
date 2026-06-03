@@ -25,7 +25,8 @@ The execution backport currently includes:
 - adaptors: `then`, `upon_error`, `upon_stopped`, `let_value`, `let_error`,
   `let_stopped`, `write_env`, `unstoppable`;
 - scheduler adaptors: `starts_on`, `continues_on`, `on`, `affine`,
-  `transfer_just`, serial `bulk`, `bulk_chunked`, and `bulk_unchunked`;
+  `transfer_just`, policy-shaped serial `bulk`, `bulk_chunked`, and
+  `bulk_unchunked`;
 - composition: `into_variant`, `when_all`, `when_all_with_variant`, `split`,
   `associate`, `spawn`, `spawn_future`;
 - consumers: `sync_wait`, `sync_wait_with_variant`;
@@ -34,7 +35,8 @@ The execution backport currently includes:
 - coroutine bridge: `as_awaitable`, `with_awaitable_senders`;
 - scopes: `simple_counting_scope`, stop-aware `counting_scope`;
 - domain dispatch: receiver-env start-domain selection plus sender-env
-  completion-domain recursive `transform_sender` during `connect`.
+  completion-domain recursive `transform_sender` during `connect` and
+  completion-signature computation.
 
 Several older audit notes are therefore closed and should not be carried forward
 as open work: identity-only domain dispatch, single-shape `sync_wait`,
@@ -51,8 +53,8 @@ signatures.
 | `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`; lifecycle-sensitive storage is covered by execution adaptor tests. |
 | `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`; schedule errors are included in completion signatures and runtime tests. |
 | `on` | Implemented subset | `on.hpp` exposes both current-WD forms. The closure form requires the child attributes to expose `get_completion_scheduler<set_value_t>` through this backport's one-argument query model. |
-| `bulk` | Implemented serial subset | `bulk.hpp`; executes iterations serially in the completing agent. |
-| `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`; `bulk_unchunked` matches serial `bulk`, while `bulk_chunked` uses one non-empty `[0, shape)` chunk. No execution-policy overloads or parallel execution are provided. |
+| `bulk` | Implemented serial subset | `bulk.hpp`; accepts current-WD execution-policy-shaped calls when the underlying standard library exposes execution policy traits/objects, and executes iterations serially in the completing agent. The policy is not used to introduce parallelism. |
+| `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`; accept current-WD execution-policy-shaped calls when the underlying standard library exposes execution policy traits/objects. `bulk_unchunked` matches serial `bulk`, while `bulk_chunked` uses one non-empty `[0, shape)` chunk. |
 | `unstoppable` sender adaptor | Implemented | `unstoppable.hpp`; implemented as a thin `write_env` wrapper that injects `never_stop_token`. |
 | `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`; these are practical stopped adapters used by the backport. |
 | `into_variant` | Implemented | `into_variant.hpp`; reused by `sync_wait` / `when_all` value-shape handling. |
@@ -71,7 +73,7 @@ signatures.
 | `get_completion_scheduler` | Implemented subset | Tag-invoke query object; scheduler envs expose roundtrip in Forge/backport style. |
 | `forwarding_query` | Implemented subset | Exposed as the current WD query with member `.query(forwarding_query)` support and Forge tag-invoke fallback; Forge query objects advertise forwarding where applicable. |
 | `get_await_completion_adaptor` | Implemented subset | Tag-invoke query object exposed for coroutine environments; no default adaptor is provided. |
-| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; `get_completion_signatures(sender, env)` still does not recompute through transformed sender types. |
+| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; `get_completion_signatures(sender, env)` recomputes through the transformed sender type for non-`empty_env` calls after the original sender satisfies this backport's raw signature CPO constraints. |
 | `get_allocator` | Implemented subset | Tag-invoke query object; used by `spawn`/`spawn_future` allocator paths. No default allocator query is provided for `empty_env`. |
 | `get_stop_token` | Implemented subset | Tag-invoke query object with `empty_env -> never_stop_token` fallback. |
 | `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object with `weakly_parallel` fallback for local scheduler-shaped types; built-in backport schedulers and `forge::static_thread_pool` report conservative values. |
@@ -91,7 +93,7 @@ extensions. This is the source of truth for native handoff risk triage.
 | `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` and `counting_scope::join()` return async senders; `start()` registers the join operation and count drain completes receivers outside the scope mutex. | Keep stress coverage for last-decrement vs join-register races; do not reintroduce blocking `void join()` or start-time waits. |
 | Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
-| Execution domain dispatch | Tested current-WD connect subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. | Keep coverage for recursive transforms; remaining gap is `get_completion_signatures(sender, env)` not fully recomputing through transformed sender. |
+| Execution domain dispatch | Tested current-WD subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. `get_completion_signatures(sender, env)` uses the same transformed sender type before reading signatures when the original sender passes the raw CPO constraints. | Keep coverage for recursive transforms and transformed-signature computation. |
 | `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
 | `forge::wait_result` | Forge local utility | Synchronously preserves value, stopped, and closed-set typed error without throwing. | Use when typed errors must cross a synchronous boundary; it is not `std::execution::sync_wait`. |
 | `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
@@ -101,12 +103,14 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- `get_completion_signatures(sender, env)` does not yet fully recompute through
-  domain-transformed sender types, so domain transforms should preserve the
-  advertised completion shape;
+- Domain-transformed completion signatures still require the original sender to
+  satisfy this backport's raw `get_completion_signatures` CPO constraints before
+  transformation; the live WD permits a transformed sender to be the first type
+  with usable signatures;
 - `spawn_future` uses `get_allocator` for its shared state and consumer record,
   but `any_stop_token` callback/type-erasure control blocks are not
-  allocator-aware;
+  allocator-aware; making those allocations resource-controlled requires an
+  allocator-aware type-erasure API rather than a local replacement;
 - native `std::execution` has no stable mainstream implementation in the normal
   verification matrix, so native handoff for execution itself remains a future
   integration risk.

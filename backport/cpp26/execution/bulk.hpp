@@ -29,6 +29,8 @@ namespace std::execution {
 
 namespace __forge_bulk {
 
+struct __serial_policy {};
+
 template<bool Chunked, class S, class Shape, class Fn, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
@@ -84,12 +86,13 @@ struct __op : __forge_detail::__immovable {
     }
 };
 
-template<bool Chunked, class S, class Shape, class Fn>
+template<bool Chunked, class S, class Policy, class Shape, class Fn>
 struct __sender {
     using sender_concept = sender_t;
     using source_t = S;
 
     S __sndr;
+    Policy __policy;
     Shape __shape;
     Fn __fn;
 
@@ -130,15 +133,17 @@ template<bool Chunked, class Fn>
 struct __bulk_closure {
     std::decay_t<Fn> __fn_;
 
-    template<class Shape>
+    template<class Policy, class Shape>
     struct __with_shape {
+        std::decay_t<Policy> __policy_;
         Shape __shape_;
         std::decay_t<Fn> __fn_;
 
         template<std::execution::sender S>
         [[nodiscard]] auto operator()(S&& s) && {
-            return __sender<Chunked, std::decay_t<S>, Shape, std::decay_t<Fn>>{
+            return __sender<Chunked, std::decay_t<S>, std::decay_t<Policy>, Shape, std::decay_t<Fn>>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
+                std::move(__policy_),
                 std::move(__shape_), std::move(__fn_)};
         }
 
@@ -151,17 +156,51 @@ struct __bulk_closure {
 
 template<bool Chunked>
 struct __bulk_t {
-    template<std::execution::sender S, class Shape, class Fn>
-    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
-        return __sender<Chunked, std::decay_t<S>, Shape, std::decay_t<Fn>>{
+#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
+    template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
+        requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
+                 std::copy_constructible<std::decay_t<Fn>>
+    [[nodiscard]] auto operator()(S&& s, Policy&& policy, Shape shape, Fn&& fn) const {
+        return __sender<Chunked, std::decay_t<S>, std::decay_t<Policy>, Shape, std::decay_t<Fn>>{
             __forge_detail::__forward_as_given(std::forward<S>(s)),
+            std::forward<Policy>(policy),
+            std::move(shape), std::forward<Fn>(fn)};
+    }
+#endif
+
+    template<std::execution::sender S, class Shape, class Fn>
+        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>>
+    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
+        return __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>>{
+            __forge_detail::__forward_as_given(std::forward<S>(s)),
+            __serial_policy{},
             std::move(shape), std::forward<Fn>(fn)};
     }
 
+#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
+    template<class Policy, class Shape, class Fn>
+        requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
+                 std::integral<Shape> &&
+                 std::copy_constructible<std::decay_t<Fn>>
+    [[nodiscard]] auto operator()(Policy&& policy, Shape shape, Fn&& fn) const {
+        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
+            ::template __with_shape<std::decay_t<Policy>, Shape>;
+        return closure_t{
+            std::forward<Policy>(policy),
+            std::move(shape),
+            std::forward<Fn>(fn)};
+    }
+#endif
+
     template<class Shape, class Fn>
+        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>>
     [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const {
-        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>::template __with_shape<Shape>;
-        return closure_t{std::move(shape), std::forward<Fn>(fn)};
+        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
+            ::template __with_shape<__serial_policy, Shape>;
+        return closure_t{
+            __serial_policy{},
+            std::move(shape),
+            std::forward<Fn>(fn)};
     }
 };
 

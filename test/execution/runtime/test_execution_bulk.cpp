@@ -42,6 +42,30 @@ TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
     EXPECT_EQ(std::get<0>(*result), 16);
 }
 
+#if defined(__GLIBCXX__) || defined(_MSC_VER)
+TEST(BulkTest, UnchunkedAcceptsStandardPolicyParameter) {
+    static_assert(std::is_execution_policy_v<
+                  std::remove_cvref_t<decltype(std::execution::seq)>>);
+
+    std::vector<int> indexes;
+
+    auto sndr = std::execution::bulk_unchunked(
+        std::execution::just(5),
+        std::execution::seq,
+        3,
+        [&indexes](int index, int& value) {
+            indexes.push_back(index);
+            value += index;
+        });
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(indexes, (std::vector<int>{0, 1, 2}));
+    EXPECT_EQ(std::get<0>(*result), 8);
+}
+#endif
+
 TEST(BulkTest, UnchunkedPipeVisitsEveryIndex) {
     int sum = 0;
 
@@ -56,6 +80,26 @@ TEST(BulkTest, UnchunkedPipeVisitsEveryIndex) {
     EXPECT_EQ(sum, 0 + 1 + 2 + 3 + 4);
     EXPECT_EQ(std::get<0>(*result), 1 + 2 * (0 + 1 + 2 + 3 + 4));
 }
+
+#if defined(__GLIBCXX__) || defined(_MSC_VER)
+TEST(BulkTest, ChunkedPipeAcceptsStandardPolicyParameter) {
+    int calls = 0;
+
+    auto sndr = std::execution::just(2)
+              | std::execution::bulk_chunked(
+                    std::execution::seq,
+                    4,
+                    [&calls](int begin, int end, int& value) {
+                        ++calls;
+                        value += end - begin;
+                    });
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(std::get<0>(*result), 6);
+}
+#endif
 
 TEST(BulkTest, ChunkedDirectUsesSingleSerialChunk) {
     std::vector<std::pair<int, int>> chunks;
