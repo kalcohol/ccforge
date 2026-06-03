@@ -27,7 +27,7 @@ Primary draft references checked for this round:
 | `ensure_started` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport. | Keep out of `std::execution`; add only under `forge::` if a future utility task needs it. |
 | `start_detached` | Not current-WD `[exec]` surface. | Removed from the `<execution>` backport; `forge::start_detached` carries the utility behavior. | Keep standard paths on `spawn`; keep detach utility under `forge::`. |
 | Non-copyable lvalue sender convenience | Native-shaped code requires explicit `std::move(sndr)`. | Standard-shaped backport paths now require explicit move for non-copyable lvalue senders; `forge::async_scope` retains a documented Forge-only convenience. | Keep examples/tests spelling explicit `std::move`; do not reintroduce destructive lvalue connect in standard paths. |
-| Domain dispatch | Full recursive current-WD model. | `connect` now applies sender completion-domain recursion followed by receiver start-domain recursion; completion-signature queries still do not fully recompute through transformed senders. | Keep `connect` tests; treat transformed completion-signature recomputation as the remaining focused gap. |
+| Domain dispatch | Full recursive current-WD model. | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion; non-default-domain completion-signature queries recompute through transformed senders before reading signatures. | Keep `connect` and completion-signature tests, including rawless source senders rescued by transform. |
 
 ## standard-surface cleanup order
 

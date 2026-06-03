@@ -73,7 +73,7 @@ signatures.
 | `get_completion_scheduler` | Implemented subset | Tag-invoke query object; scheduler envs expose roundtrip in Forge/backport style. |
 | `forwarding_query` | Implemented subset | Exposed as the current WD query with member `.query(forwarding_query)` support and Forge tag-invoke fallback; Forge query objects advertise forwarding where applicable. |
 | `get_await_completion_adaptor` | Implemented subset | Tag-invoke query object exposed for coroutine environments; no default adaptor is provided. |
-| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; `get_completion_signatures(sender, env)` recomputes through the transformed sender type for non-`empty_env` calls after the original sender satisfies this backport's raw signature CPO constraints. |
+| `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model exists; non-default-domain `get_completion_signatures(sender, env)` recomputes through the transformed sender type before reading signatures, including rawless source senders rescued by transform. |
 | `get_allocator` | Implemented subset | Tag-invoke query object; used by `spawn`/`spawn_future` allocator paths. No default allocator query is provided for `empty_env`. |
 | `get_stop_token` | Implemented subset | Tag-invoke query object with `empty_env -> never_stop_token` fallback. |
 | `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object with `weakly_parallel` fallback for local scheduler-shaped types; built-in backport schedulers and `forge::static_thread_pool` report conservative values. |
@@ -93,7 +93,7 @@ extensions. This is the source of truth for native handoff risk triage.
 | `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` and `counting_scope::join()` return async senders; `start()` registers the join operation and count drain completes receivers outside the scope mutex. | Keep stress coverage for last-decrement vs join-register races; do not reintroduce blocking `void join()` or start-time waits. |
 | Scope-token `wrap` / `associate` / member `spawn` | Converged surface with subset semantics | Token-member `associate` / `spawn` are removed. `simple_counting_scope::token::wrap` is identity forwarding; `counting_scope::token::wrap` only injects scope stop token. Top-level `associate` / `spawn` / `spawn_future` own association. | Continue testing allocator/env and async join details; do not restore token-member helpers in `std::execution`. |
 | Throwing receiver completion callbacks | Intentional unsupported boundary | `set_value`, `set_error`, and `set_stopped` must be `noexcept`; a negative compile probe enforces this. | Keep rejected unless a focused task rewrites completion dispatch. |
-| Execution domain dispatch | Tested current-WD subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. `get_completion_signatures(sender, env)` uses the same transformed sender type before reading signatures when the original sender passes the raw CPO constraints. | Keep coverage for recursive transforms and transformed-signature computation. |
+| Execution domain dispatch | Tested current-WD subset | `connect` applies sender completion-domain recursion followed by receiver start-domain recursion, with default-domain direct-connect preserved when both domains are default. `get_completion_signatures(sender, env)` uses the same transformed sender type before reading signatures on non-default-domain paths. | Keep coverage for recursive transforms and transformed-signature computation, including rawless source senders rescued by transform. |
 | `forge::any_scheduler` | Forge local utility | Models Forge's local scheduler concept, with shared-state identity equality and backport CPO completion-scheduler roundtrip. | Native member-query scheduler roundtrip remains a forward-compat caveat. |
 | `forge::wait_result` | Forge local utility | Synchronously preserves value, stopped, and closed-set typed error without throwing. | Use when typed errors must cross a synchronous boundary; it is not `std::execution::sync_wait`. |
 | `forge::erased_sender` | Forge local utility | Connectable erased sender with multiple value shapes, closed-set typed errors, and bounded env/stop-token forwarding. | Keep under `forge::`; do not treat as standard execution surface. |
@@ -103,10 +103,6 @@ extensions. This is the source of truth for native handoff risk triage.
 
 Track these as current gaps until a focused taskbook closes them:
 
-- Domain-transformed completion signatures still require the original sender to
-  satisfy this backport's raw `get_completion_signatures` CPO constraints before
-  transformation; the live WD permits a transformed sender to be the first type
-  with usable signatures;
 - `spawn_future` uses `get_allocator` for its shared state and consumer record,
   but `any_stop_token` callback/type-erasure control blocks are not
   allocator-aware; making those allocations resource-controlled requires an

@@ -181,7 +181,9 @@ struct get_completion_signatures_t {
     template<class S, class Env>
         requires (__forge_cpo_detail::__static_completion_signatures<S, Env> ||
                   __forge_cpo_detail::__instance_completion_signatures<S, Env> ||
-                  __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>)
+                  __forge_detail::tag_invocable<get_completion_signatures_t, S, Env> ||
+                  (!std::same_as<std::remove_cvref_t<Env>, empty_env> &&
+                   !__forge_domain::__completion_signatures_use_default_transform<S, Env>()))
     auto operator()(S&& s, Env&& env) const
         noexcept(std::same_as<std::remove_cvref_t<Env>, empty_env> &&
                  __forge_cpo_detail::__completion_signatures_noexcept<S, Env>()) {

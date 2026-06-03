@@ -71,8 +71,8 @@
 //   - Execution domains are still a focused draft subset: connect applies
 //     receiver-env start-domain and sender-env completion-domain recursive
 //     transform_sender; get_completion_signatures(sender, env) uses the
-//     transformed sender type for non-empty environments after the original
-//     sender satisfies this backport's raw signature CPO constraints.
+//     transformed sender type before reading signatures on non-default-domain
+//     paths.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
