@@ -85,10 +85,13 @@ and [`forge::accel` backend SPI sketch](forge-accel-backend-spi.md). Gate,
 lifetime, verification, and typed-error rules are tracked in
 [backend proof policy](forge-backend-proof-policy.md). These are design
 constraints, not published plugin ABIs.
-The longer-term accelerator support target is tracked separately in
+The completed dependency-free accelerator foundation is tracked in
 [`forge::accel` runtime v2 roadmap](forge-accel-runtime-v2.md). The next
-owner-approved proof is a dependency-free CPU/SIMD reference backend; vendor SDK
-backends remain a separate owner gate.
+runtime-substrate target is tracked in
+[`forge::accel` runtime v3 roadmap](forge-accel-runtime-v3.md): transport,
+control/lifecycle, worker stream semantics, stream-ordered callbacks,
+power/resume assumptions, and framework glue contracts. Vendor SDK backends
+remain a separate owner gate.
 
 具体要求：
 
@@ -229,10 +232,10 @@ epoll/io_uring/IOCP 语义差异。
 短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
 目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
 
-`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。下一步是 dependency-free
-CPU/SIMD reference backend，用真实 CPU work 验证同一 vocabulary；这不是 release tag
-或 CI policy 变更，也不改变 vendor backend 的 owner gate。当前 mock/reference backend
-已落地以下共同结构：
+`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 dependency-free mock backend 和
+CPU/SIMD reference backend 已经落地，用真实 CPU work 验证同一 vocabulary；这不是
+release tag 或 CI policy 变更，也不改变 vendor backend 的 owner gate。当前
+mock/reference backend 已落地以下共同结构：
 
 - command queue / stream 的生命周期；
 - event/fence 的 sender completion 形状；
@@ -275,7 +278,11 @@ forge::accel::sycl
 ```
 
 核心接口不应强依赖 CUDA/HIP/SYCL。mock/in-memory backend 和 examples 已用于验证
-语义；只有当抽象需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做
+语义。下一阶段不是直接绑定 vendor SDK，而是按
+[`forge::accel` runtime v3 roadmap](forge-accel-runtime-v3.md) 补强 host/device
+runtime substrate：posted/non-posted transport、control/lifecycle、worker stream
+semantics、stream-ordered callback、power/resume contract 和 framework glue。只有当这些
+portable contracts 需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做
 proof。
 
 ## typed-error erased sender
