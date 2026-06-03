@@ -132,6 +132,7 @@ struct mock_backend_adapter {
     using device = forge::accel::mock::device;
     using device_session = forge::accel::mock::device_session;
     using event = forge::accel::mock::event;
+    using event_wait_options = forge::accel::mock::event_wait_options;
     using trace_sink = forge::accel::mock::trace_sink;
     using blocking_gate = ::forge_test::accel_conformance::blocking_gate;
 
@@ -212,11 +213,27 @@ struct mock_backend_adapter {
     }
 
     template<class T>
+    [[nodiscard]] static auto copy_to_device_typed(
+        queue& q,
+        device_buffer<T>& dst,
+        std::span<const T> src) {
+        return forge::accel::mock::copy_to_device_typed(q, dst, src);
+    }
+
+    template<class T>
     [[nodiscard]] static auto copy_to_host(
         queue& q,
         std::span<T> dst,
         device_buffer<T>& src) {
         return forge::accel::mock::copy_to_host(q, dst, src);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_to_host_typed(
+        queue& q,
+        std::span<T> dst,
+        device_buffer<T>& src) {
+        return forge::accel::mock::copy_to_host_typed(q, dst, src);
     }
 
     template<class T>
@@ -309,6 +326,161 @@ struct mock_backend_adapter {
             std::move(packet),
             std::forward<Handler>(handler),
             options);
+    }
+};
+
+struct cpu_backend_adapter {
+    using context_options = forge::accel::cpu::context_options;
+    using context = forge::accel::cpu::context;
+    using queue = forge::accel::cpu::queue;
+    using device = forge::accel::cpu::device;
+    using event = forge::accel::cpu::event;
+    using event_wait_options = forge::accel::cpu::event_wait_options;
+    using blocking_gate = ::forge_test::accel_conformance::blocking_gate;
+
+    template<class T>
+    using host_buffer = forge::accel::cpu::host_buffer<T>;
+
+    template<class T>
+    using device_buffer = forge::accel::cpu::device_buffer<T>;
+
+    [[nodiscard]] static auto make_context(context_options options = {}) -> context {
+        return context{options};
+    }
+
+    [[nodiscard]] static auto get_queue(
+        context& ctx,
+        forge::accel::queue_kind kind = forge::accel::queue_kind::general)
+        -> queue {
+        return ctx.get_queue(kind);
+    }
+
+    [[nodiscard]] static auto get_device(context& ctx) -> device {
+        return ctx.get_device();
+    }
+
+    [[nodiscard]] static auto get_device_queue(
+        device dev,
+        forge::accel::queue_kind kind = forge::accel::queue_kind::general)
+        -> queue {
+        return dev.get_queue(kind);
+    }
+
+    template<class Sender>
+    [[nodiscard]] static auto sync_ok(Sender&& sender) -> bool {
+        return ::forge_test::accel_conformance::sync_ok(
+            std::forward<Sender>(sender));
+    }
+
+    template<class Sender>
+    [[nodiscard]] static auto connect_async(Sender&& sender) {
+        return ::forge_test::accel_conformance::connect_async(
+            std::forward<Sender>(sender));
+    }
+
+    [[nodiscard]] static auto wait_done(
+        const std::shared_ptr<completion_state>& state,
+        std::chrono::milliseconds timeout = 2s) -> bool {
+        return ::forge_test::accel_conformance::wait_done(state, timeout);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto make_host_buffer(
+        context& ctx,
+        std::size_t size,
+        forge::accel::memory_kind kind = forge::accel::memory_kind::host)
+        -> host_buffer<T> {
+        return host_buffer<T>{ctx, size, kind};
+    }
+
+    template<class T>
+    [[nodiscard]] static auto make_device_buffer(
+        context& ctx,
+        std::size_t size,
+        forge::accel::memory_kind kind = forge::accel::memory_kind::device)
+        -> device_buffer<T> {
+        return device_buffer<T>{ctx, size, kind};
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_to_device(
+        queue& q,
+        device_buffer<T>& dst,
+        std::span<const T> src) {
+        return forge::accel::cpu::copy_to_device(q, dst, src);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_to_device_typed(
+        queue& q,
+        device_buffer<T>& dst,
+        std::span<const T> src) {
+        return forge::accel::cpu::copy_to_device_typed(q, dst, src);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_to_host(
+        queue& q,
+        std::span<T> dst,
+        device_buffer<T>& src) {
+        return forge::accel::cpu::copy_to_host(q, dst, src);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_to_host_typed(
+        queue& q,
+        std::span<T> dst,
+        device_buffer<T>& src) {
+        return forge::accel::cpu::copy_to_host_typed(q, dst, src);
+    }
+
+    template<class T>
+    [[nodiscard]] static auto copy_device_to_device(
+        queue& q,
+        device_buffer<T>& dst,
+        device_buffer<T>& src) {
+        return forge::accel::cpu::copy_device_to_device(q, dst, src);
+    }
+
+    template<class Fn>
+    [[nodiscard]] static auto submit(queue& q, Fn&& fn) {
+        return forge::accel::cpu::submit(q, std::forward<Fn>(fn));
+    }
+
+    template<class Fn>
+    [[nodiscard]] static auto submit_typed(queue& q, Fn&& fn) {
+        return forge::accel::cpu::submit_typed(q, std::forward<Fn>(fn));
+    }
+
+    [[nodiscard]] static auto make_event() -> event {
+        return event{};
+    }
+
+    [[nodiscard]] static auto record_event(queue& q, event& ev) {
+        return forge::accel::cpu::record_event(q, ev);
+    }
+
+    [[nodiscard]] static auto wait_event(queue& q, event& ev) {
+        return forge::accel::cpu::wait_event(q, ev);
+    }
+
+    [[nodiscard]] static auto wait_event(
+        queue& q,
+        event& ev,
+        event_wait_options options) {
+        return forge::accel::cpu::wait_event(q, ev, options);
+    }
+
+    [[nodiscard]] static auto synchronize_event(queue& q, event& ev) {
+        return forge::accel::cpu::synchronize_event(q, ev);
+    }
+
+    [[nodiscard]] static auto fence(queue& q) {
+        return forge::accel::cpu::fence(q);
+    }
+
+    [[nodiscard]] static auto query_event(event& ev) {
+        return forge::accel::cpu::query_event(ev);
     }
 };
 

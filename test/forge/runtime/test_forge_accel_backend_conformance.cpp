@@ -16,8 +16,17 @@
 
 namespace {
 
-using backend = forge_test::accel_conformance::mock_backend_adapter;
+using mock_backend = forge_test::accel_conformance::mock_backend_adapter;
 using namespace std::chrono_literals;
+
+template<class Backend>
+class AccelBackendPortableConformanceTest : public ::testing::Test {};
+
+using PortableBackends = ::testing::Types<
+    forge_test::accel_conformance::mock_backend_adapter,
+    forge_test::accel_conformance::cpu_backend_adapter>;
+
+TYPED_TEST_SUITE(AccelBackendPortableConformanceTest, PortableBackends);
 
 struct request_packet {
     int value = 0;
@@ -67,10 +76,11 @@ auto expect_operation_error_kind(
 
 } // namespace
 
-TEST(AccelBackendConformanceTest, BasicQueueCopySubmitAndFence) {
+TYPED_TEST(AccelBackendPortableConformanceTest, BasicQueueCopySubmitAndFence) {
+    using backend = TypeParam;
     auto ctx = backend::make_context();
     auto q = backend::get_queue(ctx, forge::accel::queue_kind::compute);
-    auto device = backend::make_device_buffer<int>(ctx, 4);
+    auto device = backend::template make_device_buffer<int>(ctx, 4);
     std::vector<int> input{1, 2, 3, 4};
     std::vector<int> output(4);
 
@@ -88,8 +98,9 @@ TEST(AccelBackendConformanceTest, BasicQueueCopySubmitAndFence) {
     EXPECT_EQ(output, (std::vector<int>{2, 4, 6, 8}));
 }
 
-TEST(AccelBackendConformanceTest, CrossQueueEventOrdersCopyComputeCopy) {
-    auto ctx = backend::make_context(backend::context_options{
+TYPED_TEST(AccelBackendPortableConformanceTest, CrossQueueEventOrdersCopyComputeCopy) {
+    using backend = TypeParam;
+    auto ctx = backend::make_context(typename backend::context_options{
         .thread_count = 2,
         .queue_capacity = std::nullopt,
     });
@@ -97,7 +108,7 @@ TEST(AccelBackendConformanceTest, CrossQueueEventOrdersCopyComputeCopy) {
     auto compute = backend::get_queue(ctx, forge::accel::queue_kind::compute);
     auto uploaded = backend::make_event();
     auto computed = backend::make_event();
-    auto device = backend::make_device_buffer<int>(ctx, 3);
+    auto device = backend::template make_device_buffer<int>(ctx, 3);
     std::vector<int> input{3, 5, 7};
     std::vector<int> output(3);
 
@@ -139,8 +150,9 @@ TEST(AccelBackendConformanceTest, CrossQueueEventOrdersCopyComputeCopy) {
     EXPECT_EQ(output, (std::vector<int>{4, 6, 8}));
 }
 
-TEST(AccelBackendConformanceTest, SameQueueWaitBeforeRecordStopsCleanly) {
-    auto ctx = backend::make_context(backend::context_options{
+TYPED_TEST(AccelBackendPortableConformanceTest, SameQueueWaitBeforeRecordStopsCleanly) {
+    using backend = TypeParam;
+    auto ctx = backend::make_context(typename backend::context_options{
         .thread_count = 1,
         .queue_capacity = std::nullopt,
     });
@@ -166,13 +178,14 @@ TEST(AccelBackendConformanceTest, SameQueueWaitBeforeRecordStopsCleanly) {
     EXPECT_FALSE(ev.ready());
 }
 
-TEST(AccelBackendConformanceTest, CapacityFullCompletesStoppedWithoutLeakingWork) {
-    auto ctx = backend::make_context(backend::context_options{
+TYPED_TEST(AccelBackendPortableConformanceTest, CapacityFullCompletesStoppedWithoutLeakingWork) {
+    using backend = TypeParam;
+    auto ctx = backend::make_context(typename backend::context_options{
         .thread_count = 1,
         .queue_capacity = 1,
     });
     auto q = backend::get_queue(ctx);
-    backend::blocking_gate gate;
+    typename backend::blocking_gate gate;
 
     auto [first_op, first_state] = backend::connect_async(
         backend::submit(q, [&] {
@@ -190,17 +203,69 @@ TEST(AccelBackendConformanceTest, CapacityFullCompletesStoppedWithoutLeakingWork
     ctx.wait();
 }
 
-TEST(AccelBackendConformanceTest, MemoryContractsClassifyInvalidSizeAndCoherence) {
+TYPED_TEST(AccelBackendPortableConformanceTest, SizeMismatchIsClassified) {
+    using backend = TypeParam;
     auto ctx = backend::make_context();
     auto q = backend::get_queue(ctx);
-    auto small = backend::make_device_buffer<int>(ctx, 2);
+    auto small = backend::template make_device_buffer<int>(ctx, 2);
     std::vector<int> too_large{1, 2, 3};
 
     EXPECT_THROW(
         (void)std::execution::sync_wait(
             backend::copy_to_device(q, small, std::span<const int>{too_large})),
         std::runtime_error);
+}
 
+TYPED_TEST(
+    AccelBackendPortableConformanceTest,
+    TypedSizeMismatchCrossesErasureAndWaitResult) {
+    using backend = TypeParam;
+    using completions = std::execution::completion_signatures<
+        std::execution::set_value_t(),
+        std::execution::set_error_t(forge::accel::error),
+        std::execution::set_stopped_t()>;
+
+    auto ctx = backend::make_context();
+    auto q = backend::get_queue(ctx);
+    auto small = backend::template make_device_buffer<int>(ctx, 2);
+    std::vector<int> too_large{1, 2, 3};
+
+    forge::erased_sender<completions> erased{
+        backend::copy_to_device_typed(
+            q,
+            small,
+            std::span<const int>{too_large})};
+    auto result = forge::wait_result(std::move(erased));
+
+    ASSERT_TRUE(result.has_error());
+    auto* error = result.error_if<forge::accel::error>();
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->kind, forge::accel::error_kind::size_mismatch);
+}
+
+TYPED_TEST(
+    AccelBackendPortableConformanceTest,
+    BackendWorkCanWaitForOwnContextWithoutDeadlock) {
+    using backend = TypeParam;
+    auto ctx = backend::make_context(typename backend::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    });
+    auto q = backend::get_queue(ctx);
+    bool reached = false;
+
+    ASSERT_TRUE(backend::sync_ok(backend::submit(q, [&] {
+        ctx.wait();
+        reached = true;
+    })));
+
+    EXPECT_TRUE(reached);
+}
+
+TEST(AccelBackendMockExtensionTest, CachedMemoryRequiresFlush) {
+    using backend = mock_backend;
+    auto ctx = backend::make_context();
+    auto q = backend::get_queue(ctx);
     auto cached = backend::make_device_buffer<int>(
         ctx,
         2,
@@ -223,7 +288,8 @@ TEST(AccelBackendConformanceTest, MemoryContractsClassifyInvalidSizeAndCoherence
     EXPECT_EQ(output, input);
 }
 
-TEST(AccelBackendConformanceTest, DeviceLostResetAndStaleSessionAreClassified) {
+TEST(AccelBackendMockExtensionTest, DeviceLostResetAndStaleSessionAreClassified) {
+    using backend = mock_backend;
     auto ctx = backend::make_context();
     auto device = backend::get_device(ctx);
     auto old_session = backend::open_session(device);
@@ -248,7 +314,8 @@ TEST(AccelBackendConformanceTest, DeviceLostResetAndStaleSessionAreClassified) {
     ASSERT_TRUE(backend::sync_ok(backend::submit(recovered, [] {})));
 }
 
-TEST(AccelBackendConformanceTest, DrainFreezeAndWorkerFaultAreClassified) {
+TEST(AccelBackendMockExtensionTest, DrainFreezeAndWorkerFaultAreClassified) {
+    using backend = mock_backend;
     auto ctx = backend::make_context();
     auto device = backend::get_device(ctx);
     auto session = backend::open_session(device);
@@ -279,7 +346,8 @@ TEST(AccelBackendConformanceTest, DrainFreezeAndWorkerFaultAreClassified) {
     ASSERT_TRUE(backend::sync_ok(backend::submit(session, [] {})));
 }
 
-TEST(AccelBackendConformanceTest, RequestTimeoutAndLateResponseAreObservable) {
+TEST(AccelBackendMockExtensionTest, RequestTimeoutAndLateResponseAreObservable) {
+    using backend = mock_backend;
     auto ctx = backend::make_context(backend::context_options{
         .thread_count = 1,
         .queue_capacity = 2,
@@ -314,7 +382,7 @@ TEST(AccelBackendConformanceTest, RequestTimeoutAndLateResponseAreObservable) {
     EXPECT_EQ(requests.late_response_count(), 1U);
 }
 
-TEST(AccelBackendConformanceTest, ProtocolSignalsBypassPendingRequestMap) {
+TEST(AccelBackendMockExtensionTest, ProtocolSignalsBypassPendingRequestMap) {
     forge::accel::mock::protocol::loopback_transport transport;
     auto request = forge::accel::make_request_envelope(
         route(),
@@ -345,7 +413,8 @@ TEST(AccelBackendConformanceTest, ProtocolSignalsBypassPendingRequestMap) {
         forge::accel::lifecycle_signal_reason::reset);
 }
 
-TEST(AccelBackendConformanceTest, TraceIsOptionalAndObservesCommandPhases) {
+TEST(AccelBackendMockExtensionTest, TraceIsOptionalAndObservesCommandPhases) {
+    using backend = mock_backend;
     {
         auto ctx = backend::make_context();
         auto q = backend::get_queue(ctx);
@@ -376,7 +445,8 @@ TEST(AccelBackendConformanceTest, TraceIsOptionalAndObservesCommandPhases) {
     EXPECT_LT(events[1].sequence, events[2].sequence);
 }
 
-TEST(AccelBackendConformanceTest, TypedErrorsCrossErasureAndWaitResult) {
+TEST(AccelBackendMockExtensionTest, PacketTypedErrorsCrossErasureAndWaitResult) {
+    using backend = mock_backend;
     using packet_t = forge::accel::mock::command_packet<
         request_packet,
         response_packet>;
