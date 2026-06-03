@@ -394,6 +394,51 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
     }
 }
 
+TEST(AffineTest, DeclaresSchedulerErrorsAndSetupError) {
+    auto sndr = std::execution::affine(
+        std::execution::just(7),
+        error_stopped_scheduler{});
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t(),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    try {
+        (void)std::execution::sync_wait(std::move(sndr));
+        FAIL() << "expected scheduler set_error(int) to propagate";
+    } catch (int value) {
+        EXPECT_EQ(value, 17);
+    }
+}
+
+TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {
+    auto sndr = std::execution::unstoppable(
+        std::execution::continues_on(
+            std::execution::just(8),
+            error_stopped_scheduler{}));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t(),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    try {
+        (void)std::execution::sync_wait(std::move(sndr));
+        FAIL() << "expected scheduler set_error(int) to propagate";
+    } catch (int value) {
+        EXPECT_EQ(value, 17);
+    }
+}
+
 TEST(ContinuesOnTest, UsesConnectedReceiverEnvForUpstreamSignatures) {
     std::execution::inline_scheduler sch;
     bool matched = false;

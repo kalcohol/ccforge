@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
 #include <forge/io.hpp>
+#include <forge/wait_result.hpp>
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
 #include <execution>
@@ -486,6 +487,18 @@ TEST(IoContextTest, TypedReadableCrossesErasedSenderBoundary) {
     ASSERT_TRUE(wait_done(state));
     ASSERT_TRUE(state->error);
     EXPECT_EQ(state->typed_error.kind, forge::io::error_kind::invalid_handle);
+}
+
+TEST(IoContextTest, TypedReadableErrorCrossesWaitResult) {
+    forge::io::context ctx;
+
+    auto result = forge::wait_result(ctx.readable_typed(-1));
+
+    ASSERT_TRUE(result.has_error());
+    auto* error = result.error_if<forge::io::error>();
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->kind, forge::io::error_kind::invalid_handle);
+    EXPECT_EQ(error->code, std::make_error_code(std::errc::bad_file_descriptor));
 }
 
 TEST(IoContextTest, TypedWritableReportsDuplicateWaiter) {

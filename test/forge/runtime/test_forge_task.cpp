@@ -174,6 +174,11 @@ forge::task<int> await_error_task() {
     co_return 1;
 }
 
+forge::task<int> await_stopped_task() {
+    co_await std::execution::just_stopped();
+    co_return 1;
+}
+
 forge::task<void> await_pending_task(std::shared_ptr<pending_state> state) {
     co_await pending_sender{std::move(state)};
 }
@@ -260,6 +265,12 @@ TEST(TaskTest, CoAwaitStaticThreadPoolResumesAsynchronously) {
 
 TEST(TaskTest, CoAwaitErrorPropagates) {
     EXPECT_THROW((void)std::execution::sync_wait(await_error_task()), task_marker_error);
+}
+
+TEST(TaskTest, CoAwaitStoppedPropagates) {
+    auto result = std::execution::sync_wait(await_stopped_task());
+
+    EXPECT_FALSE(result.has_value());
 }
 
 TEST(TaskTest, CoAwaitThrowingConnectPropagatesException) {

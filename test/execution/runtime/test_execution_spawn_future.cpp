@@ -270,3 +270,61 @@ TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
     EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 }
+
+TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
+    constexpr int iterations = 128;
+
+    for (int i = 0; i < iterations; ++i) {
+        std::execution::simple_counting_scope scope;
+        auto token = scope.get_token();
+        auto state = std::make_shared<manual_state>();
+        auto future = std::execution::spawn_future(manual_sender{state}, token);
+
+        ASSERT_TRUE(wait_until_started(state));
+        auto complete = manual_value_completer(state);
+        ASSERT_TRUE(static_cast<bool>(complete));
+
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+        std::optional<int> observed;
+        std::exception_ptr failure;
+
+        std::thread consumer{[&] {
+            ready.fetch_add(1, std::memory_order_acq_rel);
+            while (!go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            try {
+                auto result = std::execution::sync_wait(std::move(future));
+                if (result.has_value()) {
+                    observed = std::get<0>(*result);
+                }
+            } catch (...) {
+                failure = std::current_exception();
+            }
+        }};
+
+        std::thread producer{[&, value = i] {
+            ready.fetch_add(1, std::memory_order_acq_rel);
+            while (!go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            complete(value);
+        }};
+
+        while (ready.load(std::memory_order_acquire) != 2) {
+            std::this_thread::yield();
+        }
+        go.store(true, std::memory_order_release);
+
+        consumer.join();
+        producer.join();
+
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+        ASSERT_TRUE(observed.has_value());
+        EXPECT_EQ(*observed, i);
+        EXPECT_EQ(scope.count(), 0u);
+    }
+}

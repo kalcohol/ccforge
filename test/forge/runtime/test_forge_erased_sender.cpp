@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
+#include <forge/static_thread_pool.hpp>
 #include "forge_operation_destroy.hpp"
 #include <execution>
 #include <exception>
@@ -7,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 
@@ -652,4 +654,30 @@ TEST(ErasedSenderTest, SynchronousSourceAllowsReceiverToDestroyOperation) {
     EXPECT_TRUE(completed);
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
+}
+
+TEST(ErasedSenderTest, DeliversFromSchedulerThread) {
+    forge::static_thread_pool pool{1};
+    const auto caller_thread = std::this_thread::get_id();
+    std::thread::id completion_thread;
+
+    using cs_t = std::execution::completion_signatures<
+        std::execution::set_value_t(int),
+        std::execution::set_error_t(std::exception_ptr),
+        std::execution::set_stopped_t()>;
+    forge::erased_sender<cs_t> sender{
+        std::execution::starts_on(
+            pool.get_scheduler(),
+            std::execution::just()
+            | std::execution::then([&] noexcept {
+                completion_thread = std::this_thread::get_id();
+                return 23;
+            }))};
+
+    auto result = std::execution::sync_wait(std::move(sender));
+    pool.wait();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 23);
+    EXPECT_NE(completion_thread, caller_thread);
 }
