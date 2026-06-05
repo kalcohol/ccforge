@@ -534,11 +534,6 @@ TEST(AccelEventTest, WaitBudgetReleasedBeforeReceiverContinuationRuns) {
                     ctx->test_release_blocking_event_wait();
                 }
                 {
-                    std::lock_guard lk{first_state->mtx};
-                    first_state->value = true;
-                }
-                first_state->cv.notify_all();
-                {
                     std::lock_guard lk{*mtx};
                     *budget_probe_acquired = acquired;
                     *continuation_entered = true;
@@ -547,6 +542,11 @@ TEST(AccelEventTest, WaitBudgetReleasedBeforeReceiverContinuationRuns) {
 
                 std::unique_lock lk{*mtx};
                 cv->wait(lk, [&] { return *release_continuation; });
+                {
+                    std::lock_guard state_lk{first_state->mtx};
+                    first_state->value = true;
+                }
+                first_state->cv.notify_all();
             } catch (...) {
                 {
                     std::lock_guard lk{first_state->mtx};
