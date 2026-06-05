@@ -600,6 +600,7 @@ struct __event_wait_receiver {
             }
         }
         auto status = event->wait_until_generation_or_stopped(*state, target, deadline);
+        wait_slot.release();
         __current_state_guard guard{state.get()};
         if (status == command_status::stopped) {
             __finish_stream_node(state, queue);

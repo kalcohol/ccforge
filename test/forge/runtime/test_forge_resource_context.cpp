@@ -16,17 +16,6 @@ namespace {
 
 using namespace std::chrono_literals;
 
-template<class Pred>
-bool wait_until(Pred pred) {
-    for (int i = 0; i < 200; ++i) {
-        if (pred()) {
-            return true;
-        }
-        std::this_thread::sleep_for(10ms);
-    }
-    return false;
-}
-
 struct stop_probe {
     bool possible = false;
     bool requested = false;

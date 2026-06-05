@@ -472,12 +472,12 @@ template<class F>
     queue& q,
     event& ev,
     event_wait_options options = {}) {
-    const auto target = ev.state_->wait_target_generation();
-    auto deadline = options.timeout
-        ? std::optional<std::chrono::steady_clock::time_point>{
-              std::chrono::steady_clock::now() + *options.timeout}
-        : std::nullopt;
-    return __detail::make_command_sender(q.state_, [state = q.state_->owner.lock(), ev = ev.state_, target, deadline] {
+    return __detail::make_command_sender(q.state_, [state = q.state_->owner.lock(), ev = ev.state_, timeout = options.timeout] {
+        const auto target = ev->wait_target_generation();
+        auto deadline = timeout
+            ? std::optional<std::chrono::steady_clock::time_point>{
+                  std::chrono::steady_clock::now() + *timeout}
+            : std::nullopt;
         const auto status = __detail::wait_until_event_ready_or_stopped(
             state,
             ev,

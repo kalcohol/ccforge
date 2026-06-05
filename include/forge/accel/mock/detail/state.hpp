@@ -267,13 +267,18 @@ struct __blocking_event_wait_guard {
     {}
 
     ~__blocking_event_wait_guard() {
-        if (active && state) {
-            state->release_blocking_event_wait();
-        }
+        release();
     }
 
     __blocking_event_wait_guard(const __blocking_event_wait_guard&) = delete;
     __blocking_event_wait_guard& operator=(const __blocking_event_wait_guard&) = delete;
+
+    void release() noexcept {
+        if (active && state) {
+            state->release_blocking_event_wait();
+            active = false;
+        }
+    }
 
     __state* state;
     bool active = false;

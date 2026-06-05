@@ -328,8 +328,6 @@ inline void __record_callback_trace(
     complete.status = result.err.status;
     if (result.status == callback_status::ok) {
         complete.status = command_status::ok;
-    } else if (result.status == callback_status::stopped) {
-        complete.status = command_status::stopped;
     }
     state->record_trace(complete);
 }
@@ -344,9 +342,6 @@ inline auto enqueue_callback(
         [queue_state, &dispatcher, callback] {
             auto result = dispatcher.invoke(callback);
             __record_callback_trace(queue_state, result);
-            if (result.status == callback_status::stopped) {
-                throw __detail::__stopped_signal{};
-            }
             if (!result) {
                 throw operation_error{
                     result.err.kind,
