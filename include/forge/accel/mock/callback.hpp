@@ -25,6 +25,7 @@
 #include "context.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -155,6 +156,18 @@ private:
         return std::find(stack.begin(), stack.end(), token) != stack.end();
     }
 
+    // True when the calling thread is currently executing any callback body
+    // owned by `owner` (a `state*`). Used so wait()/retire cannot block on an
+    // invocation that the calling thread itself is running (self-deadlock).
+    [[nodiscard]] static bool is_owner_running_on_this_thread(
+        const void* owner) {
+        auto& stack = callback_stack();
+        return std::any_of(
+            stack.begin(),
+            stack.end(),
+            [owner](stack_token token) { return token.owner == owner; });
+    }
+
     struct callback_stack_guard {
         explicit callback_stack_guard(stack_token token_arg)
             : token(token_arg) {
@@ -200,6 +213,7 @@ private:
             , completion_capacity(options.completion_capacity)
             , records(typename record_map::allocator_type{memory})
             , completions_(
+                  std::in_place,
                   std::pmr::polymorphic_allocator<callback_result>{memory})
         {}
 
@@ -256,6 +270,11 @@ private:
 
         void wait() noexcept {
             std::unique_lock lk{mtx};
+            // A callback body that waits on its own dispatcher cannot drain
+            // itself; return instead of self-deadlocking (mirrors unregister).
+            if (is_owner_running_on_this_thread(this)) {
+                return;
+            }
             try {
                 cv.wait(lk, [&] { return all_drained_locked(); });
             } catch (...) {
@@ -267,13 +286,18 @@ private:
         void retire_owner() noexcept {
             std::unique_lock lk{mtx};
             close_locked();
-            try {
-                cv.wait(lk, [&] { return all_drained_locked(); });
-            } catch (...) {
+            // If the owner is destroyed from inside one of its own in-flight
+            // callbacks, skip the drain wait to avoid self-deadlock; that
+            // in-flight invoke keeps `state` alive via its captured token.
+            if (!is_owner_running_on_this_thread(this)) {
+                try {
+                    cv.wait(lk, [&] { return all_drained_locked(); });
+                } catch (...) {
+                }
             }
             retired = true;
             auto old_records = take_records_locked();
-            auto old_completions = take_completions_locked();
+            completions_.reset();
             lk.unlock();
         }
 
@@ -367,7 +391,10 @@ private:
         [[nodiscard]] auto completion_snapshot() const
             -> std::vector<callback_result> {
             std::lock_guard lk{mtx};
-            return {completions_.begin(), completions_.end()};
+            if (!completions_) {
+                return {};
+            }
+            return {completions_->begin(), completions_->end()};
         }
 
         [[nodiscard]] auto record_count() const noexcept -> std::size_t {
@@ -394,7 +421,7 @@ private:
         std::uint64_t next_callback = 1;
         std::uint64_t next_epoch = 1;
         record_map records;
-        std::pmr::vector<callback_result> completions_;
+        std::optional<std::pmr::deque<callback_result>> completions_;
 
     private:
         [[nodiscard]] auto token_for(const record& rec) const noexcept
@@ -498,20 +525,20 @@ private:
 
         void record_completion_locked(callback_result result) noexcept {
             try {
-                if (retired) {
+                if (retired || !completions_) {
                     return;
                 }
                 if (!completion_capacity) {
-                    completions_.push_back(std::move(result));
+                    completions_->push_back(std::move(result));
                     return;
                 }
                 if (*completion_capacity == 0) {
                     return;
                 }
-                if (completions_.size() == *completion_capacity) {
-                    completions_.erase(completions_.begin());
+                if (completions_->size() == *completion_capacity) {
+                    completions_->pop_front();
                 }
-                completions_.push_back(std::move(result));
+                completions_->push_back(std::move(result));
             } catch (...) {
             }
         }
@@ -522,13 +549,6 @@ private:
             return old_records;
         }
 
-        [[nodiscard]] auto take_completions_locked() noexcept
-            -> std::pmr::vector<callback_result> {
-            std::pmr::vector<callback_result> old_completions{
-                std::pmr::polymorphic_allocator<callback_result>{memory}};
-            completions_.swap(old_completions);
-            return old_completions;
-        }
     };
 
     template<class Handler>

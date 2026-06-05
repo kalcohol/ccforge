@@ -370,6 +370,24 @@ TEST(AccelCallbackTest, CallbackCanUnregisterItself) {
     EXPECT_EQ(err->kind, forge::accel::error_kind::protocol_error);
 }
 
+TEST(AccelCallbackTest, CallbackWaitOnOwnDispatcherDoesNotSelfDeadlock) {
+    forge::accel::mock::context ctx;
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue(forge::accel::queue_kind::compute);
+    bool ran = false;
+    forge::accel::callback_id id{};
+    id = callbacks.register_callback([&] {
+        ran = true;
+        // Waiting on our own dispatcher from inside the callback body must
+        // return instead of self-deadlocking on this in-flight invocation.
+        callbacks.wait();
+    });
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, id)).has_value());
+    EXPECT_TRUE(ran);
+}
+
 TEST(AccelCallbackTest, CrossDispatcherUnregisterWaitsForInFlightCallback) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 3,
