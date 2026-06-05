@@ -281,7 +281,7 @@ body 不在 accel internal mutex 下运行；从 callback body 内 unregister �
 完成，避免重入自锁。Callback 抛异常时，typed variant 会报告
 `error_kind::user_exception`；callback id 不存在时报告 `error_kind::protocol_error`。
 
-Callback node 在创建时捕获 `{callback_id, registration epoch}` 和 registry state，而不是在执行时
+Callback sender 在创建时捕获 `{callback_id, registration epoch}` 和 registry state，而不是在执行时
 按 id 查找最新 handler。因此：
 
 - 同一个 id 不能在仍 registered 时重复注册；要替换 handler，必须先
@@ -296,6 +296,11 @@ Callback node 在创建时捕获 `{callback_id, registration epoch}` 和 registr
 `completions()` 返回 diagnostic history。默认只保留最近 1024 条 callback completion，避免
 长生命周期 dispatcher 无界增长。可用 `host_callback_dispatcher_options::completion_capacity`
 调整；设为 `std::nullopt` 表示显式选择 unbounded history，设为 `0` 表示不保留 history。
+`host_callback_dispatcher_options::memory` 是非 owning 指针，必须至少活到 dispatcher 析构
+完成；dispatcher 析构会 close/drain，并释放 PMR-backed handler records 与 completion
+history。已经排进 stream 但尚未执行到的 callback node 可能继续持有 registry control
+state，但不会再持有 user handler，也不会再使用该 memory resource；它们之后到达时以 stopped
+completion 收尾。
 
 ## Device、session 与 recovery
 

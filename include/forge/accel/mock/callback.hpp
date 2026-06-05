@@ -61,15 +61,11 @@ public:
 
     explicit host_callback_dispatcher(
         host_callback_dispatcher_options options)
-        : state_(std::allocate_shared<state>(
-              std::pmr::polymorphic_allocator<state>{
-                  normalize_memory_resource(options.memory)},
-              options))
+        : state_(std::make_shared<state>(options))
     {}
 
     ~host_callback_dispatcher() noexcept {
-        shutdown();
-        wait();
+        state_->retire_owner();
     }
 
     host_callback_dispatcher(const host_callback_dispatcher&) = delete;
@@ -141,6 +137,7 @@ private:
     };
 
     struct stack_token {
+        const void* owner = nullptr;
         std::uint64_t id = 0;
         std::uint64_t epoch = 0;
 
@@ -233,6 +230,7 @@ private:
             }
             auto rec = it->second;
             rec->registered = false;
+            rec->fn = {};
             if (is_running_on_this_thread(token_for(*rec))) {
                 prune_if_unused_locked(rec);
                 cv.notify_all();
@@ -249,7 +247,7 @@ private:
         void close() noexcept {
             {
                 std::lock_guard lk{mtx};
-                closed = true;
+                close_locked();
             }
             cv.notify_all();
         }
@@ -262,6 +260,17 @@ private:
                 return;
             }
             prune_all_locked();
+        }
+
+        void retire_owner() noexcept {
+            std::unique_lock lk{mtx};
+            close_locked();
+            try {
+                cv.wait(lk, [&] { return all_drained_locked(); });
+            } catch (...) {
+            }
+            retired = true;
+            release_storage_locked();
         }
 
         [[nodiscard]] auto capture(callback_id id) noexcept -> callback_token {
@@ -375,15 +384,16 @@ private:
         mutable std::mutex mtx;
         std::condition_variable cv;
         bool closed = false;
+        bool retired = false;
         std::uint64_t next_callback = 1;
         std::uint64_t next_epoch = 1;
         record_map records;
         std::pmr::vector<callback_result> completions_;
 
     private:
-        [[nodiscard]] static auto token_for(const record& rec) noexcept
+        [[nodiscard]] auto token_for(const record& rec) const noexcept
             -> stack_token {
-            return stack_token{rec.id.value, rec.epoch};
+            return stack_token{this, rec.id.value, rec.epoch};
         }
 
         [[nodiscard]] auto all_drained_locked() const noexcept -> bool {
@@ -434,6 +444,18 @@ private:
             records.insert_or_assign(id.value, std::move(rec));
         }
 
+        void close_locked() noexcept {
+            closed = true;
+            for (auto& item : records) {
+                if (!item.second) {
+                    continue;
+                }
+                item.second->registered = false;
+                item.second->fn = {};
+            }
+            prune_all_locked();
+        }
+
         void prune_if_unused_locked(const std::shared_ptr<record>& rec) {
             if (!rec || rec->registered || rec->in_flight != 0) {
                 return;
@@ -468,6 +490,9 @@ private:
 
         void record_completion_locked(callback_result result) noexcept {
             try {
+                if (retired) {
+                    return;
+                }
                 if (!completion_capacity) {
                     completions_.push_back(std::move(result));
                     return;
@@ -480,6 +505,20 @@ private:
                 }
                 completions_.push_back(std::move(result));
             } catch (...) {
+            }
+        }
+
+        void release_storage_locked() noexcept {
+            try {
+                record_map empty_records{
+                    typename record_map::allocator_type{memory}};
+                records.swap(empty_records);
+                std::pmr::vector<callback_result> empty_completions{
+                    std::pmr::polymorphic_allocator<callback_result>{memory}};
+                completions_.swap(empty_completions);
+            } catch (...) {
+                records.clear();
+                completions_.clear();
             }
         }
     };

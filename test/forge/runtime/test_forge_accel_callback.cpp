@@ -2,10 +2,12 @@
 #include <forge/accel.hpp>
 #include <forge/wait_result.hpp>
 #include <execution>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -103,6 +105,44 @@ template<class Sender>
         std::forward<Sender>(sender),
         std::move(state));
 }
+
+class checked_memory_resource : public std::pmr::memory_resource {
+public:
+    void disallow() noexcept {
+        allow_.store(false, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool unexpected_use() const noexcept {
+        return unexpected_use_.load(std::memory_order_acquire);
+    }
+
+private:
+    void* do_allocate(std::size_t bytes, std::size_t alignment) override {
+        note_use();
+        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+    }
+
+    void do_deallocate(
+        void* ptr,
+        std::size_t bytes,
+        std::size_t alignment) override {
+        note_use();
+        std::pmr::new_delete_resource()->deallocate(ptr, bytes, alignment);
+    }
+
+    bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
+        return this == &other;
+    }
+
+    void note_use() noexcept {
+        if (!allow_.load(std::memory_order_acquire)) {
+            unexpected_use_.store(true, std::memory_order_release);
+        }
+    }
+
+    std::atomic<bool> allow_{true};
+    std::atomic<bool> unexpected_use_{false};
+};
 
 } // namespace
 
@@ -329,6 +369,78 @@ TEST(AccelCallbackTest, CallbackCanUnregisterItself) {
     EXPECT_EQ(err->kind, forge::accel::error_kind::protocol_error);
 }
 
+TEST(AccelCallbackTest, CrossDispatcherUnregisterWaitsForInFlightCallback) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 3,
+        .queue_capacity = std::nullopt,
+    }};
+    forge::accel::mock::host_callback_dispatcher callbacks_a;
+    forge::accel::mock::host_callback_dispatcher callbacks_b;
+    auto q_a = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto q_b = ctx.get_queue(forge::accel::queue_kind::copy);
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool b_started = false;
+    bool release_b = false;
+    bool unregister_started = false;
+    bool unregister_returned = false;
+
+    auto id_b = callbacks_b.register_callback([&] {
+        {
+            std::lock_guard lk{mtx};
+            b_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_b; });
+    });
+    auto id_a = callbacks_a.register_callback([&] {
+        {
+            std::lock_guard lk{mtx};
+            unregister_started = true;
+        }
+        cv.notify_all();
+        callbacks_b.unregister_callback(id_b);
+        {
+            std::lock_guard lk{mtx};
+            unregister_returned = true;
+        }
+        cv.notify_all();
+    });
+    ASSERT_EQ(id_a.value, id_b.value);
+
+    auto b_state = std::make_shared<async_state>();
+    auto a_state = std::make_shared<async_state>();
+    auto b_sender = forge::accel::mock::enqueue_callback(q_b, callbacks_b, id_b);
+    auto a_sender = forge::accel::mock::enqueue_callback(q_a, callbacks_a, id_a);
+    auto b_op = std::execution::connect(
+        std::move(b_sender),
+        async_receiver{b_state});
+    auto a_op = std::execution::connect(
+        std::move(a_sender),
+        async_receiver{a_state});
+
+    std::execution::start(b_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return b_started; }));
+    }
+    std::execution::start(a_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return unregister_started; }));
+        EXPECT_FALSE(cv.wait_for(lk, 50ms, [&] { return unregister_returned; }));
+        release_b = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(b_state));
+    ASSERT_TRUE(wait_done(a_state));
+    EXPECT_TRUE(b_state->value);
+    EXPECT_TRUE(a_state->value);
+    EXPECT_TRUE(unregister_returned);
+}
+
 TEST(AccelCallbackTest, AutoIdSkipsExplicitId) {
     forge::accel::mock::context ctx;
     forge::accel::mock::host_callback_dispatcher callbacks;
@@ -493,6 +605,8 @@ TEST(AccelCallbackTest, DispatcherDestructionStopsPendingQueuedNode) {
     bool blocker_started = false;
     bool release_blocker = false;
     bool callback_ran = false;
+    checked_memory_resource memory;
+    std::weak_ptr<int> handler_capture;
 
     auto blocker_state = std::make_shared<async_state>();
     auto callback_state = std::make_shared<async_state>();
@@ -517,13 +631,20 @@ TEST(AccelCallbackTest, DispatcherDestructionStopsPendingQueuedNode) {
 
     std::unique_ptr<op_holder> callback_op;
     {
-        forge::accel::mock::host_callback_dispatcher callbacks;
-        auto id = callbacks.register_callback([&] { callback_ran = true; });
+        forge::accel::mock::host_callback_dispatcher callbacks{
+            forge::accel::mock::host_callback_dispatcher_options{
+                .memory = &memory,
+            }};
+        auto marker = std::make_shared<int>(42);
+        handler_capture = marker;
+        auto id = callbacks.register_callback([&, marker] { callback_ran = true; });
         callback_op = hold_async_op(
             forge::accel::mock::enqueue_callback(q, callbacks, id),
             callback_state);
         callback_op->start();
     }
+    EXPECT_TRUE(handler_capture.expired());
+    memory.disallow();
 
     {
         std::lock_guard lk{mtx};
@@ -537,7 +658,9 @@ TEST(AccelCallbackTest, DispatcherDestructionStopsPendingQueuedNode) {
     EXPECT_FALSE(callback_state->value);
     EXPECT_FALSE(callback_state->error);
     EXPECT_FALSE(callback_ran);
+    EXPECT_FALSE(memory.unexpected_use());
     callback_op.reset();
+    EXPECT_FALSE(memory.unexpected_use());
 }
 
 TEST(AccelCallbackTest, ShutdownWaitIsBarrierForLaterCallbacks) {
