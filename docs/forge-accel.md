@@ -280,7 +280,22 @@ auto completions = callbacks.completions();
 body 不在 accel internal mutex 下运行；从 callback body 内 unregister 自己不会等待自己
 完成，避免重入自锁。Callback 抛异常时，typed variant 会报告
 `error_kind::user_exception`；callback id 不存在时报告 `error_kind::protocol_error`。
-`host_callback_dispatcher` 必须活得比捕获它的 pending callback node 更久。
+
+Callback node 在创建时捕获 `{callback_id, registration epoch}` 和 registry state，而不是在执行时
+按 id 查找最新 handler。因此：
+
+- 同一个 id 不能在仍 registered 时重复注册；要替换 handler，必须先
+  `unregister_callback(id)`；
+- unregister 后再 register 会产生新的 epoch，旧 queued node 不会跑新 handler，而是以
+  stopped completion 结束；
+- `close()` / `shutdown()` 阻止未来 callback body 执行；已 in-flight 的 body 可以完成；
+- `wait()` 在 `close()` / `shutdown()` 之后是 registry barrier，会等待 in-flight body
+  drain。尚未执行到 dispatcher 的 pending callback node 之后到达时会完成 stopped；
+- callback body 仍然是用户代码，捕获的对象必须自行保证活到 body 返回。
+
+`completions()` 返回 diagnostic history。默认只保留最近 1024 条 callback completion，避免
+长生命周期 dispatcher 无界增长。可用 `host_callback_dispatcher_options::completion_capacity`
+调整；设为 `std::nullopt` 表示显式选择 unbounded history，设为 `0` 表示不保留 history。
 
 ## Device、session 与 recovery
 

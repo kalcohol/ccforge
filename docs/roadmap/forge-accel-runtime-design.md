@@ -157,9 +157,17 @@ Device-to-host callback 被建模为 stream FIFO node，而不是任意时刻从
 5. callback completion 记录 invoke/complete ACK；
 6. stream 上后续 node 才继续推进。
 
-`unregister_callback` 会等待 in-flight callback drain。User callback 拷贝到局部后在锁外执行；
-异常会映射到 typed error 或 exception path。这个模型与 stream ordering 直接衔接，也避免把
-callback 做成难以验证的随机中断通道。
+Registry 使用 `{callback_id, registration epoch}` 作为 queued node 身份。Node 创建时捕获
+epoch，执行时只接受同一 id 的同一 epoch；如果该 id 已 unregister 后重新 register，旧 node
+会以 stopped completion 结束，不会运行新 handler。这个规则让 callback id 可以复用，同时避免
+"old queued work 跑到新业务 handler"。
+
+`close()` / `shutdown()` 会阻止未来 callback body 执行；`wait()` 在 close/shutdown 后等待
+in-flight body drain。尚未执行到 dispatcher 的 queued node 之后到达时完成 stopped。User
+callback 拷贝到局部后在锁外执行；异常会映射到 typed error 或 exception path。Completion
+history 是 diagnostic：默认保留最近 1024 条，可通过 options 改成其它容量或显式 unbounded。
+
+这个模型与 stream ordering 直接衔接，也避免把 callback 做成难以验证的随机中断通道。
 
 ## Framework glue contracts（框架接入契约）
 
