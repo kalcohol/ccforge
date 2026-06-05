@@ -131,6 +131,11 @@ Event 是 stream 之间的 ordering marker。`record_event(q, ev)` 在某条 str
 generation；`wait_event(q, ev)` 在另一条 stream 上等待该 generation；`fence(q)` 是同一
 stream 上的 no-op boundary。
 
+Mock 与 CPU backend 都验证了常见的单次 record/wait ordering；它们不承诺在多次 record
+同一个 event 的边界场景下逐位等价。Mock 在 command start 时 reserve record generation，
+CPU reference backend 在 command 执行时 reserve generation，并把 wait timeout 视为“等待 node
+开始执行之后”的预算。
+
 `elapsed_time(event)` 使用 mock steady clock 提供 dependency-free profiling proof。Trace
 event 同时记录 activity start/end timestamp，用于说明 enqueue、execute、complete 的 duration
 如何进入诊断流。

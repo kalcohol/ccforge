@@ -221,6 +221,45 @@ TEST(AccelCpuTest, StopWakesBlockedEventWait) {
     EXPECT_TRUE(wait_state->stopped);
 }
 
+TEST(AccelCpuTest, WaitEventTimeoutStartsWhenWaitNodeExecutes) {
+    forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto wait_q = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto signal_q = ctx.get_queue(forge::accel::queue_kind::copy);
+    forge::accel::cpu::event ev;
+    blocking_gate gate;
+
+    auto [blocker_op, blocker_state] = connect_async(
+        forge::accel::cpu::submit(wait_q, [&] {
+            gate.mark_started_and_wait();
+        }));
+    std::execution::start(blocker_op);
+    ASSERT_TRUE(gate.wait_started());
+
+    auto [wait_op, wait_state] = connect_async(
+        forge::accel::cpu::wait_event(
+            wait_q,
+            ev,
+            forge::accel::cpu::event_wait_options{.timeout = 500ms}));
+    std::execution::start(wait_op);
+
+    std::this_thread::sleep_for(600ms);
+    gate.release_gate();
+    EXPECT_FALSE(wait_done(wait_state, 100ms));
+
+    auto [record_op, record_state] = connect_async(
+        forge::accel::cpu::record_event(signal_q, ev));
+    std::execution::start(record_op);
+
+    ASSERT_TRUE(wait_done(blocker_state));
+    ASSERT_TRUE(wait_done(record_state));
+    ASSERT_TRUE(wait_done(wait_state));
+    EXPECT_TRUE(wait_state->value);
+    EXPECT_FALSE(wait_state->error);
+}
+
 TEST(AccelCpuTest, SingleWorkerUnreadyWaitReportsResourceExhausted) {
     forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
         .thread_count = 1,

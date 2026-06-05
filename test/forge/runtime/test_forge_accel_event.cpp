@@ -73,6 +73,27 @@ auto wait_done_for(const std::shared_ptr<async_state>& state, std::chrono::milli
     return state->cv.wait_for(lk, timeout, [&] { return state->done(); });
 }
 
+template<class Sender>
+void sync_wait_to_state(Sender sender, const std::shared_ptr<async_state>& state) {
+    try {
+        auto result = std::execution::sync_wait(std::move(sender));
+        {
+            std::lock_guard lk{state->mtx};
+            if (result.has_value()) {
+                state->value = true;
+            } else {
+                state->stopped = true;
+            }
+        }
+    } catch (...) {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = std::current_exception();
+        }
+    }
+    state->cv.notify_all();
+}
+
 } // namespace
 
 TEST(AccelEventTest, EventStartsUnreadyAndCopiesShareState) {
@@ -485,6 +506,168 @@ TEST(AccelEventTest, CrossQueueWaitCompletesAfterOtherQueueRecordsEvent) {
     EXPECT_TRUE(record_state->value);
     EXPECT_TRUE(wait_state->value);
     EXPECT_TRUE(ev.ready());
+}
+
+TEST(AccelEventTest, WaitBudgetReleasedBeforeReceiverContinuationRuns) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
+    forge::accel::mock::event first;
+    forge::accel::mock::event second;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool continuation_entered = false;
+    bool release_continuation = false;
+
+    auto first_state = std::make_shared<async_state>();
+    auto first_record_state = std::make_shared<async_state>();
+    auto second_wait_state = std::make_shared<async_state>();
+    auto second_record_state = std::make_shared<async_state>();
+
+    auto second_wait_sender = forge::accel::mock::wait_event(copy, second);
+    auto second_record_sender = forge::accel::mock::record_event(compute, second);
+
+    struct chained_wait {
+        chained_wait(
+            decltype(second_wait_sender) wait_sender_arg,
+            decltype(second_record_sender) record_sender_arg,
+            std::shared_ptr<async_state> wait_state_arg,
+            std::shared_ptr<async_state> record_state_arg)
+            : wait_sender(std::move(wait_sender_arg))
+            , record_sender(std::move(record_sender_arg))
+            , wait_state(std::move(wait_state_arg))
+            , record_state(std::move(record_state_arg))
+        {}
+
+        ~chained_wait() {
+            if (wait_thread.joinable()) {
+                wait_thread.join();
+            }
+            if (record_thread.joinable()) {
+                record_thread.join();
+            }
+        }
+
+        decltype(second_wait_sender) wait_sender;
+        decltype(second_record_sender) record_sender;
+        std::shared_ptr<async_state> wait_state;
+        std::shared_ptr<async_state> record_state;
+        std::thread wait_thread;
+        std::thread record_thread;
+    };
+
+    auto chained = std::make_shared<chained_wait>(
+        std::move(second_wait_sender),
+        std::move(second_record_sender),
+        second_wait_state,
+        second_record_state);
+
+    struct chaining_receiver {
+        using receiver_concept = std::execution::receiver_t;
+
+        std::shared_ptr<async_state> first_state;
+        std::shared_ptr<chained_wait> chained;
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* continuation_entered;
+        bool* release_continuation;
+
+        void set_value() && noexcept {
+            try {
+                chained->wait_thread = std::thread{
+                    [sender = std::move(chained->wait_sender),
+                     state = chained->wait_state] mutable {
+                        sync_wait_to_state(std::move(sender), state);
+                    }};
+                chained->record_thread = std::thread{
+                    [sender = std::move(chained->record_sender),
+                     state = chained->record_state] mutable {
+                        sync_wait_to_state(std::move(sender), state);
+                    }};
+                {
+                    std::lock_guard lk{*mtx};
+                    first_state->value = true;
+                    *continuation_entered = true;
+                }
+                cv->notify_all();
+
+                std::unique_lock lk{*mtx};
+                cv->wait(lk, [&] { return *release_continuation; });
+            } catch (...) {
+                {
+                    std::lock_guard lk{first_state->mtx};
+                    first_state->error = std::current_exception();
+                }
+                first_state->cv.notify_all();
+            }
+        }
+
+        void set_error(std::exception_ptr error) && noexcept {
+            {
+                std::lock_guard lk{first_state->mtx};
+                first_state->error = std::move(error);
+            }
+            first_state->cv.notify_all();
+        }
+
+        void set_stopped() && noexcept {
+            {
+                std::lock_guard lk{first_state->mtx};
+                first_state->stopped = true;
+            }
+            first_state->cv.notify_all();
+        }
+
+        auto get_env() const noexcept -> std::execution::empty_env {
+            return {};
+        }
+    };
+
+    auto first_wait_sender = forge::accel::mock::wait_event(compute, first);
+    auto first_wait_op = std::execution::connect(
+        std::move(first_wait_sender),
+        chaining_receiver{
+            first_state,
+            chained,
+            &mtx,
+            &cv,
+            &continuation_entered,
+            &release_continuation});
+    std::execution::start(first_wait_op);
+
+    auto first_record = forge::accel::mock::record_event(copy, first);
+    auto first_record_op = std::execution::connect(
+        std::move(first_record),
+        async_receiver{first_record_state});
+    std::execution::start(first_record_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return continuation_entered; }));
+    }
+
+    // The chained wait runs on another queue while the first receiver is still
+    // on the stack. If the first wait still held the blocking-wait budget here,
+    // the chained wait would report resource_exhausted before the record can run.
+    EXPECT_FALSE(wait_done_for(second_wait_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release_continuation = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(first_record_state));
+    ASSERT_TRUE(wait_done(second_record_state));
+    ASSERT_TRUE(wait_done(second_wait_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(first_record_state->value);
+    EXPECT_TRUE(second_record_state->value);
+    EXPECT_TRUE(second_wait_state->value);
 }
 
 TEST(AccelEventTest, MultipleWaitersObserveReservedGeneration) {
