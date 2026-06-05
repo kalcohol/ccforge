@@ -29,13 +29,15 @@
 #include <cstddef>
 #include <memory_resource>
 #include <mutex>
-#include <unordered_set>
+#include <optional>
+#include <unordered_map>
 #include <utility>
 
 namespace forge::accel::mock::protocol {
 
 struct loopback_transport_options {
     std::size_t capacity = 16;
+    std::optional<std::size_t> max_pending = std::nullopt;
     std::pmr::memory_resource* memory = forge::default_memory_resource();
 };
 
@@ -43,7 +45,8 @@ class loopback_transport {
 public:
     explicit loopback_transport(loopback_transport_options options = {})
         : memory_(forge::normalize_memory_resource(options.memory))
-        , pending_(std::pmr::polymorphic_allocator<std::uint64_t>{memory_})
+        , max_pending_(options.max_pending)
+        , pending_(typename pending_map::allocator_type{memory_})
         , requests_(forge::bounded_channel_options{options.capacity, memory_})
         , completions_(forge::bounded_channel_options{options.capacity, memory_})
     {}
@@ -79,24 +82,33 @@ public:
         }
 
         const auto id = envelope.meta.request.value;
+        const auto request = envelope.meta.request;
         {
             std::lock_guard lk{mtx_};
-            if (!pending_.insert(id).second) {
+            if (pending_.contains(id)) {
                 return transport_result{
                     transport_status::duplicate_request,
                     mode,
-                    envelope.meta.request};
+                    request};
             }
+            if (max_pending_ && pending_.size() >= *max_pending_) {
+                return transport_result{
+                    transport_status::not_accepted,
+                    mode,
+                    request};
+            }
+            if (!requests_.try_send(std::move(envelope))) {
+                return transport_result{transport_status::not_accepted, mode, request};
+            }
+            pending_.emplace(
+                id,
+                pending_request{
+                    .mode = mode,
+                    .state = pending_state::dispatched,
+                });
         }
 
-        const auto request = envelope.meta.request;
-        if (requests_.try_send(std::move(envelope))) {
-            return transport_result{transport_status::ok, mode, request};
-        }
-
-        std::lock_guard lk{mtx_};
-        pending_.erase(id);
-        return transport_result{transport_status::not_accepted, mode, request};
+        return transport_result{transport_status::ok, mode, request};
     }
 
     [[nodiscard]] auto try_recv_request() -> std::optional<protocol_envelope> {
@@ -116,25 +128,50 @@ public:
                 envelope.meta.request};
         }
 
-        std::lock_guard lk{mtx_};
-        auto it = pending_.find(envelope.meta.request.value);
-        if (it == pending_.end()) {
-            ++late_responses_;
-            return transport_result{
-                transport_status::late_response,
-                call_mode::posted,
-                envelope.meta.request};
+        const auto request = envelope.meta.request;
+        call_mode mode = call_mode::posted;
+        {
+            std::lock_guard lk{mtx_};
+            auto it = pending_.find(request.value);
+            if (it == pending_.end()) {
+                ++late_responses_;
+                return transport_result{
+                    transport_status::late_response,
+                    call_mode::posted,
+                    request};
+            }
+            mode = it->second.mode;
+            if (it->second.state == pending_state::completing) {
+                return transport_result{
+                    transport_status::not_accepted,
+                    mode,
+                    request};
+            }
+            it->second.state = pending_state::completing;
         }
 
-        const auto request = envelope.meta.request;
         if (!completions_.try_send(std::move(envelope))) {
+            std::lock_guard lk{mtx_};
+            auto it = pending_.find(request.value);
+            if (it != pending_.end() &&
+                it->second.state == pending_state::completing) {
+                it->second.state = pending_state::dispatched;
+            }
             return transport_result{
                 transport_status::not_accepted,
-                call_mode::posted,
+                mode,
                 request};
         }
-        pending_.erase(it);
-        return transport_result{transport_status::ok, call_mode::posted, request};
+
+        {
+            std::lock_guard lk{mtx_};
+            auto it = pending_.find(request.value);
+            if (it != pending_.end() &&
+                it->second.state == pending_state::completing) {
+                pending_.erase(it);
+            }
+        }
+        return transport_result{transport_status::ok, mode, request};
     }
 
     [[nodiscard]] bool deliver_signal(protocol_envelope envelope) {
@@ -161,22 +198,49 @@ public:
     void close() noexcept {
         requests_.close();
         completions_.close();
+        clear_pending();
     }
 
     void request_stop() noexcept {
         requests_.request_stop();
         completions_.request_stop();
+        clear_tracking();
     }
 
     void shutdown() noexcept {
         requests_.shutdown();
         completions_.shutdown();
+        clear_tracking();
     }
 
 private:
+    enum class pending_state {
+        dispatched,
+        completing
+    };
+
+    struct pending_request {
+        call_mode mode = call_mode::posted;
+        pending_state state = pending_state::dispatched;
+    };
+
+    using pending_map = std::pmr::unordered_map<std::uint64_t, pending_request>;
+
+    void clear_pending() noexcept {
+        std::lock_guard lk{mtx_};
+        pending_.clear();
+    }
+
+    void clear_tracking() noexcept {
+        std::lock_guard lk{mtx_};
+        pending_.clear();
+        late_responses_ = 0;
+    }
+
     std::pmr::memory_resource* memory_;
+    std::optional<std::size_t> max_pending_;
     mutable std::mutex mtx_;
-    std::pmr::unordered_set<std::uint64_t> pending_;
+    pending_map pending_;
     std::size_t late_responses_ = 0;
     forge::bounded_channel<protocol_envelope> requests_;
     forge::bounded_channel<protocol_envelope> completions_;

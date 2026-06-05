@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <forge/accel.hpp>
 
+#include <atomic>
 #include <cstddef>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -96,11 +98,43 @@ TEST(AccelProtocolTest, PostedAndNonPostedRequestsShareTransport) {
     EXPECT_EQ(first->meta.request.value, 50U);
     EXPECT_EQ(second->meta.request.value, 51U);
 
-    ASSERT_TRUE(transport.deliver_response(
-        forge::accel::make_response_envelope(*second, bytes({2}))));
+    auto response_result = transport.deliver_response_result(
+        forge::accel::make_response_envelope(*second, bytes({2})));
+    ASSERT_TRUE(response_result);
+    EXPECT_EQ(response_result.mode, forge::accel::call_mode::non_posted);
     auto completion = transport.try_recv_completion();
     ASSERT_TRUE(completion.has_value());
     EXPECT_EQ(completion->meta.request.value, 51U);
+}
+
+TEST(AccelProtocolTest, MaxPendingCapRejectsBeforeQueueingRequest) {
+    forge::accel::mock::protocol::loopback_transport transport{
+        forge::accel::mock::protocol::loopback_transport_options{
+            .capacity = 4,
+            .max_pending = 1,
+        }};
+    auto first = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{55}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{1});
+    auto second = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{56}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{2});
+
+    ASSERT_TRUE(transport.submit_posted(std::move(first)));
+    auto rejected = transport.submit_posted(std::move(second));
+    EXPECT_FALSE(rejected);
+    EXPECT_EQ(rejected.status, forge::accel::transport_status::not_accepted);
+    EXPECT_EQ(rejected.request.value, 56U);
+    EXPECT_EQ(transport.pending_count(), 1U);
+
+    auto queued = transport.try_recv_request();
+    ASSERT_TRUE(queued.has_value());
+    EXPECT_EQ(queued->meta.request.value, 55U);
+    EXPECT_FALSE(transport.try_recv_request().has_value());
 }
 
 TEST(AccelProtocolTest, DuplicateRequestReportsTypedTransportStatus) {
@@ -160,6 +194,14 @@ TEST(AccelProtocolTest, FullRequestQueueReportsNotAccepted) {
     EXPECT_EQ(result.status, forge::accel::transport_status::not_accepted);
     EXPECT_EQ(result.request.value, 54U);
     EXPECT_EQ(transport.pending_count(), 1U);
+    auto late = transport.deliver_response_result(forge::accel::protocol_envelope{
+        .kind = forge::accel::message_kind::response,
+        .route = route(),
+        .meta = meta(forge::accel::request_id{54}),
+    });
+    EXPECT_FALSE(late);
+    EXPECT_EQ(late.status, forge::accel::transport_status::late_response);
+    EXPECT_EQ(transport.pending_count(), 1U);
 }
 
 TEST(AccelProtocolTest, FullCompletionQueueKeepsResponsePendingForRetry) {
@@ -214,6 +256,82 @@ TEST(AccelProtocolTest, UnknownResponseIdIsClassifiedLateAndDiscarded) {
     EXPECT_EQ(result.status, forge::accel::transport_status::late_response);
     EXPECT_EQ(result.request.value, 999U);
     EXPECT_EQ(transport.late_response_count(), 1U);
+    EXPECT_FALSE(transport.try_recv_completion().has_value());
+}
+
+TEST(AccelProtocolTest, ShutdownClearsPendingAndLateTracking) {
+    forge::accel::mock::protocol::loopback_transport transport;
+    auto request = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{100}),
+        forge::accel::module_id{1},
+        forge::accel::command_id{1});
+    ASSERT_TRUE(transport.submit_request(std::move(request)));
+
+    EXPECT_FALSE(transport.deliver_response(forge::accel::protocol_envelope{
+        .kind = forge::accel::message_kind::response,
+        .route = route(),
+        .meta = meta(forge::accel::request_id{101}),
+    }));
+    EXPECT_EQ(transport.pending_count(), 1U);
+    EXPECT_EQ(transport.late_response_count(), 1U);
+
+    transport.shutdown();
+    EXPECT_EQ(transport.pending_count(), 0U);
+    EXPECT_EQ(transport.late_response_count(), 0U);
+}
+
+TEST(AccelProtocolTest, ConcurrentDuplicateResponsesCompleteExactlyOnce) {
+    forge::accel::mock::protocol::loopback_transport transport{
+        forge::accel::mock::protocol::loopback_transport_options{
+            .capacity = 16,
+        }};
+    auto request = forge::accel::make_request_envelope(
+        route(),
+        meta(forge::accel::request_id{102}),
+        forge::accel::module_id{2},
+        forge::accel::command_id{3});
+    ASSERT_TRUE(transport.submit_request(std::move(request)));
+    auto queued = transport.try_recv_request();
+    ASSERT_TRUE(queued.has_value());
+    auto queued_request = *queued;
+
+    constexpr int responders = 8;
+    std::atomic<bool> go{false};
+    std::atomic<int> ok_count{0};
+    std::atomic<int> rejected_count{0};
+    std::vector<std::thread> threads;
+    threads.reserve(responders);
+    for (int i = 0; i < responders; ++i) {
+        threads.emplace_back([&, i] {
+            while (!go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            auto response = forge::accel::make_response_envelope(
+                queued_request,
+                bytes({static_cast<unsigned char>(i)}));
+            auto result = transport.deliver_response_result(std::move(response));
+            if (result) {
+                ok_count.fetch_add(1, std::memory_order_relaxed);
+            } else if (
+                result.status == forge::accel::transport_status::late_response ||
+                result.status == forge::accel::transport_status::not_accepted) {
+                rejected_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    go.store(true, std::memory_order_release);
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(ok_count.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(rejected_count.load(std::memory_order_relaxed), responders - 1);
+    EXPECT_EQ(transport.pending_count(), 0U);
+    auto completion = transport.try_recv_completion();
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->meta.request.value, 102U);
     EXPECT_FALSE(transport.try_recv_completion().has_value());
 }
 

@@ -450,6 +450,10 @@ record 时，可以使用它。
 `mock::protocol::loopback_transport` 是 in-memory proof，包含 request 和
 completion/signal channel。只有 request ID 仍在 pending map 中时，response 才会被接受；
 unknown 或 late response 会被丢弃并计数。Lifecycle signal 会绕过 pending map。
+Transport 在 request 成功进入 request channel 后才把 ID 记入 pending map；response
+送入 completion channel 时不会持有 transport mutex，因此不会把 completion side 的
+inline 行为绑进 transport 锁序。`loopback_transport_options::max_pending` 可选地限制
+同时在飞的 request 数量，超出时返回 `not_accepted`。
 
 Transport proof 区分两种 call mode：
 
