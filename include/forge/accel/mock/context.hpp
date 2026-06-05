@@ -449,6 +449,21 @@ public:
         state_->wait();
     }
 
+#ifdef FORGE_ENABLE_TEST_HOOKS
+    [[nodiscard]] auto test_blocking_event_wait_count() const noexcept
+        -> std::size_t {
+        return state_->blocking_event_wait_count_for_test();
+    }
+
+    [[nodiscard]] bool test_try_acquire_blocking_event_wait() noexcept {
+        return state_->try_acquire_blocking_event_wait_for_test();
+    }
+
+    void test_release_blocking_event_wait() noexcept {
+        state_->release_blocking_event_wait_for_test();
+    }
+#endif
+
 private:
     friend class device;
     friend class device_session;

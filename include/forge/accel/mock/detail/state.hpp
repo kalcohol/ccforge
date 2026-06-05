@@ -220,6 +220,22 @@ struct __state : std::enable_shared_from_this<__state> {
         }
     }
 
+#ifdef FORGE_ENABLE_TEST_HOOKS
+    [[nodiscard]] auto blocking_event_wait_count_for_test() const noexcept
+        -> std::size_t {
+        std::lock_guard lk{mtx};
+        return blocking_event_waits;
+    }
+
+    [[nodiscard]] bool try_acquire_blocking_event_wait_for_test() noexcept {
+        return try_acquire_blocking_event_wait();
+    }
+
+    void release_blocking_event_wait_for_test() noexcept {
+        release_blocking_event_wait();
+    }
+#endif
+
     [[nodiscard]] auto next_stream_id() noexcept -> stream_id {
         return stream_id{next_stream.fetch_add(1, std::memory_order_relaxed)};
     }
