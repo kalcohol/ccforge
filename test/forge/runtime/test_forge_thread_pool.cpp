@@ -11,6 +11,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <new>
+#include <thread>
 #include <tuple>
 
 static_assert(std::execution::scheduler<forge::static_thread_pool::scheduler>);
@@ -424,4 +425,49 @@ TEST(SystemContextTest, FreeFunctionReturnsGlobalScheduler) {
         std::execution::schedule(sch) | std::execution::then([]{ return 100; }));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 100);
+}
+
+TEST(SystemContextTest, WaitDrainsAcceptedWork) {
+    auto& ctx = forge::system_context::get();
+    auto sch = ctx.get_scheduler();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    std::atomic<bool> wait_returned{false};
+
+    forge::start_detached(
+        std::execution::schedule(sch)
+        | std::execution::then([&] noexcept {
+            {
+                std::lock_guard lk{mtx};
+                started = true;
+            }
+            cv.notify_all();
+            std::unique_lock lk{mtx};
+            cv.wait(lk, [&] { return release; });
+        }));
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds{2}, [&] {
+            return started;
+        }));
+    }
+
+    std::thread waiter{[&] {
+        ctx.wait();
+        wait_returned.store(true, std::memory_order_release);
+    }};
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    EXPECT_FALSE(wait_returned.load(std::memory_order_acquire));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load(std::memory_order_acquire));
 }

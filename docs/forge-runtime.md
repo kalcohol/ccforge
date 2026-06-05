@@ -105,7 +105,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   或 inference engine layer。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
 - `forge::system_context` 是 process-lifetime singleton。它故意不在 C++ static teardown
-  阶段销毁；长生命周期服务如果需要 deterministic shutdown，仍应显式 own pool/context。
+  阶段销毁；`shutdown()` 只请求停止，不隐式阻塞或 join worker。需要排空已经接受的
+  work 时应显式调用 `wait()`。长生命周期服务如果需要 deterministic shutdown，仍应显式
+  own pool/context。
 - `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
   不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
   operation-state。

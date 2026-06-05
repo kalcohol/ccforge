@@ -27,7 +27,10 @@
 namespace forge {
 
 // ──────────────────────────────────────────────────────────────────────────
-// system_context — global shared thread pool (P2079 inspired)
+// system_context — process-lifetime shared thread pool (P2079 inspired)
+//
+// The singleton intentionally leaks instead of participating in static
+// teardown. Call wait() explicitly when a program needs to drain accepted work.
 //
 // Usage:
 //   auto& ctx = forge::system_context::get();
@@ -53,6 +56,11 @@ public:
     // Request graceful shutdown (does not block)
     void shutdown() noexcept {
         __pool_.shutdown();
+    }
+
+    // Wait for already accepted work to finish.
+    void wait() noexcept {
+        __pool_.wait();
     }
 
 private:

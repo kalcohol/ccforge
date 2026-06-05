@@ -108,8 +108,9 @@ Failure policy:
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例
   和轻量工具。该 singleton 是 process-lifetime 对象，不在 C++ static teardown 期间析构，
-  以避免静态析构顺序中的悬垂访问；长期服务建议显式持有自己的 pool/context，以便控制
-  shutdown 时机。
+  以避免静态析构顺序中的悬垂访问。`shutdown()` 只请求停止；如果需要等待已接受的
+  work 完成，调用 `wait()`。长期服务建议显式持有自己的 pool/context，以便控制
+  shutdown / wait 时机。
 - `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与
   `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、
   shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。
