@@ -297,6 +297,296 @@ TEST(AccelCallbackTest, CallbackCanUnregisterItself) {
     EXPECT_EQ(err->kind, forge::accel::error_kind::protocol_error);
 }
 
+TEST(AccelCallbackTest, AutoIdSkipsExplicitId) {
+    forge::accel::mock::context ctx;
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue();
+    auto explicit_id = forge::accel::callback_id{1};
+    int explicit_count = 0;
+    int auto_count = 0;
+
+    callbacks.register_callback(explicit_id, [&] { ++explicit_count; });
+    auto auto_id = callbacks.register_callback([&] { ++auto_count; });
+
+    ASSERT_NE(auto_id, explicit_id);
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, explicit_id)).has_value());
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, auto_id)).has_value());
+    EXPECT_EQ(explicit_count, 1);
+    EXPECT_EQ(auto_count, 1);
+}
+
+TEST(AccelCallbackTest, DuplicateRegisteredIdIsRejected) {
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto id = forge::accel::callback_id{17};
+    callbacks.register_callback(id, [] {});
+
+    try {
+        callbacks.register_callback(id, [] {});
+        FAIL() << "duplicate callback id should be rejected";
+    } catch (const forge::accel::operation_error& e) {
+        EXPECT_EQ(e.kind(), forge::accel::error_kind::protocol_error);
+    }
+}
+
+TEST(AccelCallbackTest, OldQueuedNodeDoesNotRunReregisteredHandler) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool blocker_started = false;
+    bool release_blocker = false;
+    int handler_a = 0;
+    int handler_b = 0;
+    auto id = forge::accel::callback_id{99};
+
+    callbacks.register_callback(id, [&] { ++handler_a; });
+
+    auto blocker_state = std::make_shared<async_state>();
+    auto old_state = std::make_shared<async_state>();
+    auto blocker = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            blocker_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_blocker; });
+    });
+    auto old_callback = forge::accel::mock::enqueue_callback(q, callbacks, id);
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    auto old_op = std::execution::connect(
+        std::move(old_callback),
+        async_receiver{old_state});
+
+    std::execution::start(blocker_op);
+    std::execution::start(old_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return blocker_started; }));
+    }
+
+    callbacks.unregister_callback(id);
+    callbacks.register_callback(id, [&] { ++handler_b; });
+
+    {
+        std::lock_guard lk{mtx};
+        release_blocker = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(blocker_state));
+    ASSERT_TRUE(wait_done(old_state));
+    EXPECT_TRUE(old_state->stopped);
+    EXPECT_FALSE(old_state->value);
+    EXPECT_FALSE(old_state->error);
+    EXPECT_EQ(handler_a, 0);
+    EXPECT_EQ(handler_b, 0);
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, id)).has_value());
+    EXPECT_EQ(handler_b, 1);
+}
+
+TEST(AccelCallbackTest, CloseStopsQueuedCallbackNode) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool blocker_started = false;
+    bool release_blocker = false;
+    bool callback_ran = false;
+    auto id = callbacks.register_callback([&] { callback_ran = true; });
+
+    auto blocker_state = std::make_shared<async_state>();
+    auto callback_state = std::make_shared<async_state>();
+    auto blocker = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            blocker_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_blocker; });
+    });
+    auto callback = forge::accel::mock::enqueue_callback(q, callbacks, id);
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+    auto callback_op = std::execution::connect(
+        std::move(callback),
+        async_receiver{callback_state});
+
+    std::execution::start(blocker_op);
+    std::execution::start(callback_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return blocker_started; }));
+    }
+
+    callbacks.close();
+    {
+        std::lock_guard lk{mtx};
+        release_blocker = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(blocker_state));
+    ASSERT_TRUE(wait_done(callback_state));
+    EXPECT_TRUE(callback_state->stopped);
+    EXPECT_FALSE(callback_state->value);
+    EXPECT_FALSE(callback_state->error);
+    EXPECT_FALSE(callback_ran);
+}
+
+TEST(AccelCallbackTest, ShutdownWaitIsBarrierForLaterCallbacks) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool callback_started = false;
+    bool release_callback = false;
+    bool wait_returned = false;
+    int callback_runs = 0;
+
+    auto id = callbacks.register_callback([&] {
+        {
+            std::lock_guard lk{mtx};
+            callback_started = true;
+            ++callback_runs;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_callback; });
+    });
+
+    auto state = std::make_shared<async_state>();
+    auto sender = forge::accel::mock::enqueue_callback(q, callbacks, id);
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return callback_started; }));
+    }
+
+    std::thread waiter{[&] {
+        callbacks.shutdown();
+        callbacks.wait();
+        {
+            std::lock_guard lk{mtx};
+            wait_returned = true;
+        }
+        cv.notify_all();
+    }};
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(lk, 50ms, [&] { return wait_returned; }));
+        release_callback = true;
+    }
+    cv.notify_all();
+    waiter.join();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_TRUE(wait_returned);
+
+    auto later_state = std::make_shared<async_state>();
+    auto later = forge::accel::mock::enqueue_callback(q, callbacks, id);
+    auto later_op = std::execution::connect(
+        std::move(later),
+        async_receiver{later_state});
+    std::execution::start(later_op);
+
+    ASSERT_TRUE(wait_done(later_state));
+    EXPECT_TRUE(later_state->stopped);
+    EXPECT_EQ(callback_runs, 1);
+}
+
+TEST(AccelCallbackTest, NestedCallbackCanUnregisterAncestor) {
+    forge::accel::mock::context ctx;
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue();
+    forge::accel::callback_id outer{};
+    auto inner = callbacks.register_callback([&] {
+        callbacks.unregister_callback(outer);
+    });
+    outer = callbacks.register_callback([&] {
+        auto result = callbacks.invoke(inner);
+        EXPECT_TRUE(result);
+    });
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, outer)).has_value());
+
+    auto result = forge::wait_result(
+        forge::accel::mock::enqueue_callback_typed(q, callbacks, outer));
+    ASSERT_TRUE(result.has_error());
+    auto* err = result.error_if<forge::accel::error>();
+    ASSERT_NE(err, nullptr);
+    EXPECT_EQ(err->kind, forge::accel::error_kind::protocol_error);
+}
+
+TEST(AccelCallbackTest, CompletionCapacityKeepsNewestResults) {
+    forge::accel::mock::host_callback_dispatcher_options options;
+    options.completion_capacity = 2;
+    forge::accel::mock::host_callback_dispatcher callbacks{options};
+    auto id = callbacks.register_callback([] {});
+
+    auto first = callbacks.invoke(id);
+    auto second = callbacks.invoke(id);
+    auto third = callbacks.invoke(id);
+
+    EXPECT_TRUE(first);
+    EXPECT_TRUE(second);
+    EXPECT_TRUE(third);
+    auto completions = callbacks.completions();
+    ASSERT_EQ(completions.size(), 2U);
+    EXPECT_EQ(completions[0].invoke, second.invoke);
+    EXPECT_EQ(completions[1].invoke, third.invoke);
+}
+
+TEST(AccelCallbackTest, CompletionCapacityZeroKeepsNoHistory) {
+    forge::accel::mock::host_callback_dispatcher_options options;
+    options.completion_capacity = 0;
+    forge::accel::mock::host_callback_dispatcher callbacks{options};
+    auto id = callbacks.register_callback([] {});
+
+    EXPECT_TRUE(callbacks.invoke(id));
+    EXPECT_TRUE(callbacks.invoke(id));
+    EXPECT_TRUE(callbacks.completions().empty());
+}
+
+#ifdef FORGE_ENABLE_TEST_HOOKS
+TEST(AccelCallbackTest, RecordsArePrunedAfterUnregisterAndDrain) {
+    forge::accel::mock::host_callback_dispatcher callbacks;
+
+    for (std::uint64_t i = 1; i <= 32; ++i) {
+        auto id = forge::accel::callback_id{i};
+        callbacks.register_callback(id, [] {});
+        EXPECT_EQ(callbacks.test_record_count(), 1U);
+        callbacks.unregister_callback(id);
+        EXPECT_EQ(callbacks.test_record_count(), 0U);
+    }
+}
+#endif
+
 TEST(AccelCallbackTest, MissingCallbackReportsTypedProtocolError) {
     forge::accel::mock::context ctx;
     forge::accel::mock::host_callback_dispatcher callbacks;

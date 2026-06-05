@@ -165,6 +165,7 @@ enum class copy_kind {
 enum class callback_status {
     ok,
     missing,
+    stopped,
     failed
 };
 

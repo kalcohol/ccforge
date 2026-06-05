@@ -25,6 +25,10 @@
 #include "context.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <limits>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace forge::accel::mock {
@@ -42,15 +46,25 @@ struct callback_result {
     }
 };
 
+struct host_callback_dispatcher_options {
+    std::pmr::memory_resource* memory = forge::default_memory_resource();
+    std::optional<std::size_t> completion_capacity = 1024;
+};
+
 class host_callback_dispatcher {
 public:
     explicit host_callback_dispatcher(
         std::pmr::memory_resource* memory = forge::default_memory_resource())
-        : memory_(normalize_memory_resource(memory))
-        , records_(
-              std::pmr::polymorphic_allocator<std::shared_ptr<record>>{memory_})
-        , completions_(
-              std::pmr::polymorphic_allocator<callback_result>{memory_})
+        : host_callback_dispatcher(host_callback_dispatcher_options{
+              .memory = memory})
+    {}
+
+    explicit host_callback_dispatcher(
+        host_callback_dispatcher_options options)
+        : state_(std::allocate_shared<state>(
+              std::pmr::polymorphic_allocator<state>{
+                  normalize_memory_resource(options.memory)},
+              options))
     {}
 
     ~host_callback_dispatcher() noexcept {
@@ -67,60 +81,23 @@ public:
 
     template<class Handler>
     [[nodiscard]] auto register_callback(Handler&& handler) -> callback_id {
-        auto id = callback_id{next_callback_.fetch_add(1, std::memory_order_relaxed)};
-        register_callback(id, static_cast<Handler&&>(handler));
-        return id;
+        auto wrapped = wrap_handler(static_cast<Handler&&>(handler));
+        return state_->register_auto(std::move(wrapped));
     }
 
     template<class Handler>
     void register_callback(callback_id id, Handler&& handler) {
-        auto wrapped = callback_fn{
-            [handler = std::forward<Handler>(handler)](
-                callback_invoke_id invoke) mutable {
-                if constexpr (std::is_invocable_v<Handler&, callback_invoke_id>) {
-                    std::invoke(handler, invoke);
-                } else {
-                    std::invoke(handler);
-                }
-            }};
-
-        std::lock_guard lk{mtx_};
-        if (closed_) {
-            throw operation_error{
-                error_kind::invalid_context,
-                "forge::accel::mock::host_callback_dispatcher is closed"};
-        }
-        for (auto& item : records_) {
-            if (item && item->id == id) {
-                std::lock_guard record_lk{item->mtx};
-                item->fn = std::move(wrapped);
-                item->registered = true;
-                return;
-            }
-        }
-        auto rec = std::allocate_shared<record>(
-            std::pmr::polymorphic_allocator<record>{memory_},
+        state_->register_explicit(
             id,
-            std::move(wrapped));
-        records_.push_back(std::move(rec));
+            wrap_handler(static_cast<Handler&&>(handler)));
     }
 
     void unregister_callback(callback_id id) noexcept {
-        auto rec = find_record(id);
-        if (!rec) {
-            return;
-        }
-        std::unique_lock lk{rec->mtx};
-        rec->registered = false;
-        if (is_running_on_this_thread(rec.get())) {
-            return;
-        }
-        rec->cv.wait(lk, [&] { return rec->in_flight == 0; });
+        state_->unregister_callback(id);
     }
 
     void close() noexcept {
-        std::lock_guard lk{mtx_};
-        closed_ = true;
+        state_->close();
     }
 
     void request_stop() noexcept {
@@ -133,166 +110,405 @@ public:
     }
 
     void wait() noexcept {
-        auto snapshot = records_snapshot();
-        for (auto& rec : snapshot) {
-            std::unique_lock lk{rec->mtx};
-            rec->cv.wait(lk, [&] { return rec->in_flight == 0; });
-        }
+        state_->wait();
     }
 
     [[nodiscard]] auto invoke(callback_id id) -> callback_result {
-        auto rec = acquire_record(id);
-        auto result = callback_result{
-            .callback = id,
-            .invoke = callback_invoke_id{
-                next_invoke_.fetch_add(1, std::memory_order_relaxed)},
-            .started = std::chrono::steady_clock::now(),
-        };
-
-        if (!rec) {
-            result.status = callback_status::missing;
-            result.err = error{error_kind::protocol_error};
-            result.completed = std::chrono::steady_clock::now();
-            record_completion(result);
-            return result;
-        }
-
-        try {
-            callback_fn fn;
-            {
-                std::lock_guard lk{rec->mtx};
-                fn = rec->fn;
-            }
-            if (!fn) {
-                throw operation_error{
-                    error_kind::protocol_error,
-                    "forge::accel::mock::host callback was unregistered"};
-            }
-            callback_stack_guard guard{rec.get()};
-            fn(result.invoke);
-        } catch (...) {
-            result.status = callback_status::failed;
-            result.err = __typed_detail::from_exception(std::current_exception());
-        }
-
-        result.completed = std::chrono::steady_clock::now();
-        release_record(rec);
-        record_completion(result);
-        return result;
+        return state_->invoke(state_->capture(id));
     }
 
     [[nodiscard]] auto completions() const -> std::vector<callback_result> {
-        std::lock_guard lk{mtx_};
-        return {completions_.begin(), completions_.end()};
+        return state_->completion_snapshot();
     }
+
+#ifdef FORGE_ENABLE_TEST_HOOKS
+    [[nodiscard]] auto test_record_count() const noexcept -> std::size_t {
+        return state_->record_count();
+    }
+#endif
 
 private:
     using callback_fn = std::function<void(callback_invoke_id)>;
 
-    struct record {
-        record(callback_id id_arg, callback_fn fn_arg)
-            : id(id_arg)
-            , fn(std::move(fn_arg))
-        {}
+    struct state;
 
+    struct callback_token {
+        std::shared_ptr<state> owner;
         callback_id id{};
-        callback_fn fn;
-        std::mutex mtx;
-        std::condition_variable cv;
-        std::size_t in_flight = 0;
-        bool registered = true;
+        std::uint64_t epoch = 0;
+        bool known = false;
+        bool stopped = false;
     };
 
-    [[nodiscard]] static auto callback_stack() -> std::vector<const record*>& {
-        thread_local std::vector<const record*> stack;
+    struct stack_token {
+        std::uint64_t id = 0;
+        std::uint64_t epoch = 0;
+
+        friend auto operator==(stack_token, stack_token) -> bool = default;
+    };
+
+    [[nodiscard]] static auto callback_stack() -> std::vector<stack_token>& {
+        thread_local std::vector<stack_token> stack;
         return stack;
     }
 
-    [[nodiscard]] static bool is_running_on_this_thread(const record* rec) {
+    [[nodiscard]] static bool is_running_on_this_thread(stack_token token) {
         auto& stack = callback_stack();
-        return std::find(stack.begin(), stack.end(), rec) != stack.end();
+        return std::find(stack.begin(), stack.end(), token) != stack.end();
     }
 
     struct callback_stack_guard {
-        explicit callback_stack_guard(const record* rec_arg)
-            : rec(rec_arg) {
-            callback_stack().push_back(rec);
+        explicit callback_stack_guard(stack_token token_arg)
+            : token(token_arg) {
+            callback_stack().push_back(token);
         }
 
         ~callback_stack_guard() {
             auto& stack = callback_stack();
-            if (!stack.empty() && stack.back() == rec) {
+            if (!stack.empty() && stack.back() == token) {
                 stack.pop_back();
                 return;
             }
-            auto it = std::find(stack.begin(), stack.end(), rec);
+            auto it = std::find(stack.begin(), stack.end(), token);
             if (it != stack.end()) {
                 stack.erase(it);
             }
         }
 
-        const record* rec;
+        stack_token token;
     };
 
-    [[nodiscard]] auto records_snapshot() noexcept
-        -> std::pmr::vector<std::shared_ptr<record>> {
-        std::pmr::vector<std::shared_ptr<record>> out{
-            std::pmr::polymorphic_allocator<std::shared_ptr<record>>{memory_}};
-        std::lock_guard lk{mtx_};
-        out = records_;
-        return out;
-    }
+    struct record {
+        record(callback_id id_arg, std::uint64_t epoch_arg, callback_fn fn_arg)
+            : id(id_arg)
+            , epoch(epoch_arg)
+            , fn(std::move(fn_arg))
+        {}
 
-    [[nodiscard]] auto find_record(callback_id id) noexcept
-        -> std::shared_ptr<record> {
-        std::lock_guard lk{mtx_};
-        for (auto& rec : records_) {
-            if (rec && rec->id == id) {
-                return rec;
+        callback_id id{};
+        std::uint64_t epoch = 0;
+        callback_fn fn;
+        std::size_t in_flight = 0;
+        bool registered = true;
+    };
+
+    struct state {
+        using record_map = std::pmr::unordered_map<
+            std::uint64_t,
+            std::shared_ptr<record>>;
+
+        explicit state(host_callback_dispatcher_options options)
+            : memory(normalize_memory_resource(options.memory))
+            , completion_capacity(options.completion_capacity)
+            , records(typename record_map::allocator_type{memory})
+            , completions_(
+                  std::pmr::polymorphic_allocator<callback_result>{memory})
+        {}
+
+        [[nodiscard]] auto register_auto(callback_fn fn) -> callback_id {
+            std::lock_guard lk{mtx};
+            throw_if_closed();
+            auto id = next_available_id_locked();
+            emplace_record_locked(id, std::move(fn));
+            return id;
+        }
+
+        void register_explicit(callback_id id, callback_fn fn) {
+            std::lock_guard lk{mtx};
+            throw_if_closed();
+            auto it = records.find(id.value);
+            if (it != records.end() && it->second && it->second->registered) {
+                throw operation_error{
+                    error_kind::protocol_error,
+                    "forge::accel::mock::host callback id is already registered"};
+            }
+            emplace_record_locked(id, std::move(fn));
+        }
+
+        void unregister_callback(callback_id id) noexcept {
+            std::unique_lock lk{mtx};
+            auto it = records.find(id.value);
+            if (it == records.end() || !it->second) {
+                return;
+            }
+            auto rec = it->second;
+            rec->registered = false;
+            if (is_running_on_this_thread(token_for(*rec))) {
+                prune_if_unused_locked(rec);
+                cv.notify_all();
+                return;
+            }
+            try {
+                cv.wait(lk, [&] { return rec->in_flight == 0; });
+            } catch (...) {
+                return;
+            }
+            prune_if_unused_locked(rec);
+        }
+
+        void close() noexcept {
+            {
+                std::lock_guard lk{mtx};
+                closed = true;
+            }
+            cv.notify_all();
+        }
+
+        void wait() noexcept {
+            std::unique_lock lk{mtx};
+            try {
+                cv.wait(lk, [&] { return all_drained_locked(); });
+            } catch (...) {
+                return;
+            }
+            prune_all_locked();
+        }
+
+        [[nodiscard]] auto capture(callback_id id) noexcept -> callback_token {
+            std::lock_guard lk{mtx};
+            if (closed) {
+                return callback_token{
+                    .id = id,
+                    .stopped = true};
+            }
+            auto it = records.find(id.value);
+            if (it == records.end() || !it->second || !it->second->registered) {
+                return callback_token{
+                    .id = id,
+                    .known = false};
+            }
+            return callback_token{
+                .id = id,
+                .epoch = it->second->epoch,
+                .known = true};
+        }
+
+        [[nodiscard]] auto invoke(callback_token token) -> callback_result {
+            auto result = callback_result{
+                .callback = token.id,
+                .invoke = callback_invoke_id{
+                    next_invoke.fetch_add(1, std::memory_order_relaxed)},
+                .started = std::chrono::steady_clock::now(),
+            };
+
+            std::shared_ptr<record> rec;
+            callback_fn fn;
+            {
+                std::unique_lock lk{mtx};
+                if (token.stopped || closed) {
+                    result.status = callback_status::stopped;
+                    result.err = error{
+                        error_kind::aborted,
+                        command_status::stopped};
+                    result.completed = std::chrono::steady_clock::now();
+                    record_completion_locked(result);
+                    return result;
+                }
+                if (!token.known) {
+                    result.status = callback_status::missing;
+                    result.err = error{error_kind::protocol_error};
+                    result.completed = std::chrono::steady_clock::now();
+                    record_completion_locked(result);
+                    return result;
+                }
+                auto it = records.find(token.id.value);
+                if (it == records.end() || !it->second ||
+                    !it->second->registered || it->second->epoch != token.epoch) {
+                    result.status = callback_status::stopped;
+                    result.err = error{
+                        error_kind::aborted,
+                        command_status::stopped};
+                    result.completed = std::chrono::steady_clock::now();
+                    record_completion_locked(result);
+                    return result;
+                }
+                rec = it->second;
+                try {
+                    fn = rec->fn;
+                } catch (...) {
+                    result.status = callback_status::failed;
+                    result.err = __typed_detail::from_exception(
+                        std::current_exception());
+                    result.completed = std::chrono::steady_clock::now();
+                    record_completion_locked(result);
+                    return result;
+                }
+                ++rec->in_flight;
+            }
+
+            try {
+                callback_stack_guard guard{token_for(*rec)};
+                fn(result.invoke);
+            } catch (...) {
+                result.status = callback_status::failed;
+                result.err = __typed_detail::from_exception(std::current_exception());
+            }
+
+            result.completed = std::chrono::steady_clock::now();
+            release_record(rec);
+            record_completion(result);
+            return result;
+        }
+
+        [[nodiscard]] auto completion_snapshot() const
+            -> std::vector<callback_result> {
+            std::lock_guard lk{mtx};
+            return {completions_.begin(), completions_.end()};
+        }
+
+        [[nodiscard]] auto record_count() const noexcept -> std::size_t {
+            std::lock_guard lk{mtx};
+            return records.size();
+        }
+
+        void record_completion(callback_result result) noexcept {
+            try {
+                std::lock_guard lk{mtx};
+                record_completion_locked(std::move(result));
+            } catch (...) {
             }
         }
-        return {};
-    }
 
-    [[nodiscard]] auto acquire_record(callback_id id) noexcept
-        -> std::shared_ptr<record> {
-        auto rec = find_record(id);
-        if (!rec) {
-            return {};
-        }
-        std::lock_guard lk{rec->mtx};
-        if (!rec->registered) {
-            return {};
-        }
-        ++rec->in_flight;
-        return rec;
-    }
+        std::pmr::memory_resource* memory;
+        std::optional<std::size_t> completion_capacity;
+        std::atomic<std::uint64_t> next_invoke{1};
+        mutable std::mutex mtx;
+        std::condition_variable cv;
+        bool closed = false;
+        std::uint64_t next_callback = 1;
+        std::uint64_t next_epoch = 1;
+        record_map records;
+        std::pmr::vector<callback_result> completions_;
 
-    void release_record(const std::shared_ptr<record>& rec) noexcept {
-        {
-            std::lock_guard lk{rec->mtx};
-            if (rec->in_flight > 0) {
-                --rec->in_flight;
+    private:
+        [[nodiscard]] static auto token_for(const record& rec) noexcept
+            -> stack_token {
+            return stack_token{rec.id.value, rec.epoch};
+        }
+
+        [[nodiscard]] auto all_drained_locked() const noexcept -> bool {
+            for (const auto& item : records) {
+                if (item.second && item.second->in_flight != 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void throw_if_closed() const {
+            if (closed) {
+                throw operation_error{
+                    error_kind::invalid_context,
+                    "forge::accel::mock::host_callback_dispatcher is closed"};
             }
         }
-        rec->cv.notify_all();
-    }
 
-    void record_completion(callback_result result) noexcept {
-        try {
-            std::lock_guard lk{mtx_};
-            completions_.push_back(std::move(result));
-        } catch (...) {
+        [[nodiscard]] auto next_available_id_locked() -> callback_id {
+            auto first = next_callback;
+            for (;;) {
+                auto value = next_callback++;
+                if (next_callback == 0) {
+                    next_callback = 1;
+                }
+                if (value != 0 && records.find(value) == records.end()) {
+                    return callback_id{value};
+                }
+                if (next_callback == first) {
+                    throw operation_error{
+                        error_kind::resource_exhausted,
+                        "forge::accel::mock::host callback id space is exhausted"};
+                }
+            }
         }
+
+        void emplace_record_locked(callback_id id, callback_fn fn) {
+            auto epoch = next_epoch++;
+            if (next_epoch == 0) {
+                next_epoch = 1;
+            }
+            auto rec = std::allocate_shared<record>(
+                std::pmr::polymorphic_allocator<record>{memory},
+                id,
+                epoch,
+                std::move(fn));
+            records.insert_or_assign(id.value, std::move(rec));
+        }
+
+        void prune_if_unused_locked(const std::shared_ptr<record>& rec) {
+            if (!rec || rec->registered || rec->in_flight != 0) {
+                return;
+            }
+            auto it = records.find(rec->id.value);
+            if (it != records.end() && it->second == rec) {
+                records.erase(it);
+            }
+        }
+
+        void prune_all_locked() {
+            for (auto it = records.begin(); it != records.end();) {
+                if (it->second && !it->second->registered &&
+                    it->second->in_flight == 0) {
+                    it = records.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        void release_record(const std::shared_ptr<record>& rec) noexcept {
+            {
+                std::lock_guard lk{mtx};
+                if (rec->in_flight > 0) {
+                    --rec->in_flight;
+                }
+                prune_if_unused_locked(rec);
+            }
+            cv.notify_all();
+        }
+
+        void record_completion_locked(callback_result result) noexcept {
+            try {
+                if (!completion_capacity) {
+                    completions_.push_back(std::move(result));
+                    return;
+                }
+                if (*completion_capacity == 0) {
+                    return;
+                }
+                if (completions_.size() == *completion_capacity) {
+                    completions_.erase(completions_.begin());
+                }
+                completions_.push_back(std::move(result));
+            } catch (...) {
+            }
+        }
+    };
+
+    template<class Handler>
+    [[nodiscard]] static auto wrap_handler(Handler&& handler) -> callback_fn {
+        return callback_fn{
+            [handler = std::forward<Handler>(handler)](
+                callback_invoke_id invoke) mutable {
+                if constexpr (std::is_invocable_v<Handler&, callback_invoke_id>) {
+                    std::invoke(handler, invoke);
+                } else {
+                    std::invoke(handler);
+                }
+            }};
     }
 
-    std::pmr::memory_resource* memory_;
-    std::atomic<std::uint64_t> next_callback_{1};
-    std::atomic<std::uint64_t> next_invoke_{1};
-    mutable std::mutex mtx_;
-    bool closed_ = false;
-    std::pmr::vector<std::shared_ptr<record>> records_;
-    std::pmr::vector<callback_result> completions_;
+    [[nodiscard]] auto capture(callback_id id) const noexcept -> callback_token {
+        auto token = state_->capture(id);
+        token.owner = state_;
+        return token;
+    }
+
+    friend auto enqueue_callback(
+        queue&,
+        host_callback_dispatcher&,
+        callback_id);
+
+    std::shared_ptr<state> state_;
 };
 
 inline void __record_callback_trace(
@@ -337,11 +553,15 @@ inline auto enqueue_callback(
     host_callback_dispatcher& dispatcher,
     callback_id callback) {
     auto queue_state = q.queue_.lock();
+    auto token = dispatcher.capture(callback);
     return __detail::__make_command_sender(
         queue_state,
-        [queue_state, &dispatcher, callback] {
-            auto result = dispatcher.invoke(callback);
+        [queue_state, token = std::move(token)] {
+            auto result = token.owner->invoke(token);
             __record_callback_trace(queue_state, result);
+            if (result.status == callback_status::stopped) {
+                throw __detail::__stopped_signal{};
+            }
             if (!result) {
                 throw operation_error{
                     result.err.kind,
