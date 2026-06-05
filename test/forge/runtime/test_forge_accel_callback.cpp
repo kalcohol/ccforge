@@ -72,6 +72,38 @@ struct async_receiver {
     return state->cv.wait_for(lk, timeout, [&] { return state->done(); });
 }
 
+struct op_holder {
+    virtual ~op_holder() = default;
+    virtual void start() = 0;
+};
+
+template<class Sender>
+struct op_holder_model : op_holder {
+    using op_t = std::execution::connect_result_t<Sender, async_receiver>;
+
+    op_holder_model(Sender sender, std::shared_ptr<async_state> state)
+        : op(std::execution::connect(
+              std::move(sender),
+              async_receiver{std::move(state)}))
+    {}
+
+    void start() override {
+        std::execution::start(op);
+    }
+
+    op_t op;
+};
+
+template<class Sender>
+[[nodiscard]] auto hold_async_op(
+    Sender&& sender,
+    std::shared_ptr<async_state> state) -> std::unique_ptr<op_holder> {
+    using sender_t = std::decay_t<Sender>;
+    return std::make_unique<op_holder_model<sender_t>>(
+        std::forward<Sender>(sender),
+        std::move(state));
+}
+
 } // namespace
 
 TEST(AccelCallbackTest, CallbackNodeRunsInStreamOrder) {
@@ -448,6 +480,64 @@ TEST(AccelCallbackTest, CloseStopsQueuedCallbackNode) {
     EXPECT_FALSE(callback_state->value);
     EXPECT_FALSE(callback_state->error);
     EXPECT_FALSE(callback_ran);
+}
+
+TEST(AccelCallbackTest, DispatcherDestructionStopsPendingQueuedNode) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool blocker_started = false;
+    bool release_blocker = false;
+    bool callback_ran = false;
+
+    auto blocker_state = std::make_shared<async_state>();
+    auto callback_state = std::make_shared<async_state>();
+    auto blocker = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            blocker_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_blocker; });
+    });
+    auto blocker_op = std::execution::connect(
+        std::move(blocker),
+        async_receiver{blocker_state});
+
+    std::execution::start(blocker_op);
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return blocker_started; }));
+    }
+
+    std::unique_ptr<op_holder> callback_op;
+    {
+        forge::accel::mock::host_callback_dispatcher callbacks;
+        auto id = callbacks.register_callback([&] { callback_ran = true; });
+        callback_op = hold_async_op(
+            forge::accel::mock::enqueue_callback(q, callbacks, id),
+            callback_state);
+        callback_op->start();
+    }
+
+    {
+        std::lock_guard lk{mtx};
+        release_blocker = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(blocker_state));
+    ASSERT_TRUE(wait_done(callback_state));
+    EXPECT_TRUE(callback_state->stopped);
+    EXPECT_FALSE(callback_state->value);
+    EXPECT_FALSE(callback_state->error);
+    EXPECT_FALSE(callback_ran);
+    callback_op.reset();
 }
 
 TEST(AccelCallbackTest, ShutdownWaitIsBarrierForLaterCallbacks) {
