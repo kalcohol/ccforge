@@ -38,7 +38,9 @@ Accelerator-like runtime vocabulary and mock backend 使用独立头：
 #include <forge/accel.hpp>
 ```
 
-它受 `FORGE_ENABLE_FORGE_ACCEL` gate 控制；详见 [`forge::accel`](forge-accel.md)。
+该头可直接包含；`FORGE_ENABLE_FORGE_ACCEL` / `FORGE_ENABLE_FORGE_ACCEL_CPU` 控制
+CMake 是否注册对应 accel tests/examples，而不是让 header 本身条件消失。详见
+[`forge::accel`](forge-accel.md)。
 
 ## Resource policy（资源策略）
 

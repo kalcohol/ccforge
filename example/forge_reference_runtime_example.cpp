@@ -73,6 +73,8 @@ public:
               std::pmr::new_delete_resource())
         , arena_(std::pmr::pool_options{}, &upstream_)
         , runtime_(forge::resource_context_options{
+              // The request worker waits at channel boundaries and records
+              // ordered results through a synchronous strand hop.
               .thread_count = 2,
               .queue_capacity = 32,
               .memory = &arena_,

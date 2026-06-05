@@ -64,11 +64,12 @@ v1 是 heap-first 实现：
 
 ## Value dispatch（值分发）
 
-实现复用 `backport/cpp26/execution/detail/value_result.hpp` 里的 value-shape meta：
+实现使用 `include/forge/detail/completion_meta.hpp` 中的 Forge-local value-shape meta：
 
 - value shape 以 decayed `tuple<...>` 归一；
 - 多 value shape 通过生成的 erased receiver 分发表按实际 completion 分派；
-- 不为 `include/forge/` 再造一套独立 value typelist 规则。
+- 这套 meta 只依赖 public `<execution>` surface，避免 `include/forge/` 继续耦合
+  backport 私有 detail。
 
 ## Error、stopped 与 env
 

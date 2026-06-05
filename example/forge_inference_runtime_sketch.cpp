@@ -47,6 +47,8 @@ int main() {
         &upstream};
 
     forge::resource_context runtime{forge::resource_context_options{
+        // The worker waits on the ingress channel and synchronously records
+        // ordered scores; keep a spare runtime worker for those handoffs.
         .thread_count = 2,
         .queue_capacity = 16,
         .memory = &arena,

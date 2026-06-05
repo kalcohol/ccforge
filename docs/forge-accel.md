@@ -46,7 +46,7 @@ wire-format struct：
 当前稳定的 `error_kind` 覆盖 invalid context / binding / buffer / memory、size mismatch、
 coherence requirement、invalid event、command failure、timeout、abort、user exception、
 stale session、device lost、host lost、drain freeze、late response、worker fault、
-protocol error 和 unknown。`error_kind_to_string(kind)` 与
+protocol error、resource exhausted 和 unknown。`error_kind_to_string(kind)` 与
 `command_status_to_string(status)` 提供稳定诊断字符串，方便 log、trace 和 framework
 边界统一展示。
 
@@ -153,7 +153,7 @@ forge::accel::mock::submit_typed(q, callable);
 forge::accel::mock::submit_packet_typed(session, packet, handler, options);
 forge::accel::mock::record_event_typed(q, ev);
 forge::accel::mock::wait_event_typed(q, ev);
-forge::accel::mock::enqueue_callback_typed(q, dispatcher, callback);
+forge::accel::mock::enqueue_callback_typed(q, dispatcher, id);
 forge::accel::mock::fence_typed(q);
 ```
 
@@ -243,6 +243,12 @@ std::execution::sync_wait(forge::accel::mock::fence(compute_q));
 `fence(q)` 是 no-op queued command，用来观察该 queue 上先前 accepted work 是否已到达
 boundary。
 
+Event wait 是 posted stream node，不阻塞 host 线程；真正等待发生在执行该 node 的
+queue worker 上。为了避免单 worker 跨队列 record/wait 互相饿死，mock 和 CPU backend
+默认使用 `thread_count = 2`。当未 ready 的 event wait 发现没有 spare worker budget 时，
+typed path 报告 `error_kind::resource_exhausted`，exception path 抛出对应
+`operation_error`，而不是静默挂死。
+
 Event 不是 native CUDA/HIP/SYCL handle、timeline semaphore、dependency graph 或 cycle
 detector。Same-queue wait-before-record 会阻塞该 queue，直到 timeout 或 context stop；
 应把 event 用作 cross-queue 或 already-ordered boundary。
@@ -255,13 +261,13 @@ proof / profiling-style 教学，不表示 vendor timestamp correlation；未完
 
 `host_callback_dispatcher` 是 stream-ordered device-to-host callback proof。Callback 不是
 device 随时打断 host 的随机 interrupt；host 先注册 callback，再把 callback node 插入某条
-stream。Worker FIFO 执行到该 node 时，dispatcher 在 host-side strand 上运行 callback body，
-callback 完成后记录 completion ACK，stream 上后续 node 才继续推进。
+stream。Worker FIFO 执行到该 node 时，在当前 stream queue 的 strand 上调用 dispatcher
+并运行 callback body；callback 完成后记录 completion ACK，stream 上后续 node 才继续推进。
 
 ```cpp
 forge::accel::mock::host_callback_dispatcher callbacks;
 auto id = callbacks.register_callback([] {
-    // host-side callback body
+    // host callback body, running as a stream-ordered queue node.
 });
 
 std::execution::sync_wait(
@@ -271,7 +277,8 @@ auto completions = callbacks.completions();
 ```
 
 `unregister_callback(id)` 会拒绝后续 invoke，并等待已经 in-flight 的 invoke 完成。Callback
-body 不在 accel internal mutex 下运行。Callback 抛异常时，typed variant 会报告
+body 不在 accel internal mutex 下运行；从 callback body 内 unregister 自己不会等待自己
+完成，避免重入自锁。Callback 抛异常时，typed variant 会报告
 `error_kind::user_exception`；callback id 不存在时报告 `error_kind::protocol_error`。
 `host_callback_dispatcher` 必须活得比捕获它的 pending callback node 更久。
 

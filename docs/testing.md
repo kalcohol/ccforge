@@ -258,13 +258,16 @@ resource、IO、accel 和 erasure subsets 被独立配置。Resource-policy test
 - `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
 - `FORGE_ENABLE_FORGE_IO`
 - `FORGE_ENABLE_FORGE_ACCEL`
+- `FORGE_ENABLE_FORGE_ACCEL_CPU`
 
 `FORGE_ENABLE_FORGE_IO=AUTO` 在平台支持时启用 Linux epoll/eventfd backend 或 Windows
 IOCP backend，其它平台跳过 IO tests/examples。`ON` 要求 supported backend，缺失时
 configure 报错；`OFF` 跳过 IO tests/examples。`FORGE_ENABLE_FORGE_ACCEL=AUTO` 在
 Forge runtime/resource gates 启用时启用 portable mock accel backend；`ON` 要求这些
 gate 可用，`OFF` 跳过 accel tests/examples。它不会探测 CUDA、HIP、SYCL 或 vendor
-SDK。Erasure facilities 是 header-only 且总是可用；用
+SDK。`FORGE_ENABLE_FORGE_ACCEL_CPU=AUTO` / `ON` 在 accel umbrella gate 启用时注册
+CPU reference backend tests/examples；若 `FORGE_ENABLE_FORGE_ACCEL=OFF`，CPU backend
+即使显式 `ON` 也不会注册任何 accel target。Erasure facilities 是 header-only 且总是可用；用
 `FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
 
 ## Example smoke tests（示例冒烟）

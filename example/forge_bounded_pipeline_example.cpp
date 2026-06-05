@@ -41,6 +41,8 @@ int main() {
         &upstream};
 
     forge::resource_context ctx{forge::resource_context_options{
+        // The worker blocks at the channel boundary and synchronously hops to a
+        // strand; keep a spare runtime worker for those handoffs.
         .thread_count = 2,
         .queue_capacity = 16,
         .memory = &arena,

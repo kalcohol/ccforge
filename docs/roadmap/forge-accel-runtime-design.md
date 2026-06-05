@@ -148,7 +148,7 @@ Device-to-host callback 被建模为 stream FIFO node，而不是任意时刻从
 1. host 注册 callback，获得 `callback_id`；
 2. host 把 callback node 插入某条 stream；
 3. worker FIFO 执行到 callback node；
-4. callback dispatcher 在 host-side scheduler/strand 上运行 callback body；
+4. callback dispatcher 在当前 stream queue 的 strand 上运行 callback body；
 5. callback completion 记录 invoke/complete ACK；
 6. stream 上后续 node 才继续推进。
 

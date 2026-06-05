@@ -40,6 +40,8 @@ int main() {
         &upstream};
 
     forge::static_thread_pool pool{forge::static_thread_pool_options{
+        // The single worker is safe here because the matching send runs on the
+        // caller thread; add worker budget before adding another blocking task.
         .thread_count = 1,
         .queue_capacity = 8,
         .memory = &arena,

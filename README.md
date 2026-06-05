@@ -28,7 +28,7 @@ missing native support injects Forge's backport headers.
 | `std::linalg` | `<linalg>` | practical BLAS level 1/2/3 subset |
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
-| `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer |
+| `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer: pool, scope, channel, strand, timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP proof backends |
 | `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 

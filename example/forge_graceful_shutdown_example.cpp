@@ -40,6 +40,8 @@ class service {
 public:
     service()
         : ctx_(forge::resource_context_options{
+              // run() blocks on async_recv() and then performs a synchronous
+              // strand hop, so this example budgets a spare worker.
               .thread_count = 2,
               .queue_capacity = 16,
           })
