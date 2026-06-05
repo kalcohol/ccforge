@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -179,12 +180,12 @@ private:
         record(callback_id id_arg, std::uint64_t epoch_arg, callback_fn fn_arg)
             : id(id_arg)
             , epoch(epoch_arg)
-            , fn(std::move(fn_arg))
+            , fn(std::make_shared<callback_fn>(std::move(fn_arg)))
         {}
 
         callback_id id{};
         std::uint64_t epoch = 0;
-        callback_fn fn;
+        std::shared_ptr<callback_fn> fn;
         std::size_t in_flight = 0;
         bool registered = true;
     };
@@ -223,6 +224,7 @@ private:
         }
 
         void unregister_callback(callback_id id) noexcept {
+            std::shared_ptr<callback_fn> released_fn;
             std::unique_lock lk{mtx};
             auto it = records.find(id.value);
             if (it == records.end() || !it->second) {
@@ -230,7 +232,7 @@ private:
             }
             auto rec = it->second;
             rec->registered = false;
-            rec->fn = {};
+            released_fn = std::move(rec->fn);
             if (is_running_on_this_thread(token_for(*rec))) {
                 prune_if_unused_locked(rec);
                 cv.notify_all();
@@ -270,7 +272,9 @@ private:
             } catch (...) {
             }
             retired = true;
-            release_storage_locked();
+            auto old_records = take_records_locked();
+            auto old_completions = take_completions_locked();
+            lk.unlock();
         }
 
         [[nodiscard]] auto capture(callback_id id) noexcept -> callback_token {
@@ -301,7 +305,7 @@ private:
             };
 
             std::shared_ptr<record> rec;
-            callback_fn fn;
+            std::shared_ptr<callback_fn> fn;
             {
                 std::unique_lock lk{mtx};
                 if (token.stopped || closed) {
@@ -332,30 +336,31 @@ private:
                     return result;
                 }
                 rec = it->second;
-                try {
-                    fn = rec->fn;
-                } catch (...) {
-                    result.status = callback_status::failed;
-                    result.err = __typed_detail::from_exception(
-                        std::current_exception());
+                fn = rec->fn;
+                if (!fn) {
+                    result.status = callback_status::stopped;
+                    result.err = error{
+                        error_kind::aborted,
+                        command_status::stopped};
                     result.completed = std::chrono::steady_clock::now();
                     record_completion_locked(result);
                     return result;
                 }
                 ++rec->in_flight;
+                ++active_invocations;
             }
 
             try {
                 callback_stack_guard guard{token_for(*rec)};
-                fn(result.invoke);
+                (*fn)(result.invoke);
             } catch (...) {
                 result.status = callback_status::failed;
                 result.err = __typed_detail::from_exception(std::current_exception());
             }
 
             result.completed = std::chrono::steady_clock::now();
-            release_record(rec);
             record_completion(result);
+            release_record(rec, fn);
             return result;
         }
 
@@ -385,6 +390,7 @@ private:
         std::condition_variable cv;
         bool closed = false;
         bool retired = false;
+        std::size_t active_invocations = 0;
         std::uint64_t next_callback = 1;
         std::uint64_t next_epoch = 1;
         record_map records;
@@ -402,7 +408,7 @@ private:
                     return false;
                 }
             }
-            return true;
+            return active_invocations == 0;
         }
 
         void throw_if_closed() const {
@@ -446,14 +452,6 @@ private:
 
         void close_locked() noexcept {
             closed = true;
-            for (auto& item : records) {
-                if (!item.second) {
-                    continue;
-                }
-                item.second->registered = false;
-                item.second->fn = {};
-            }
-            prune_all_locked();
         }
 
         void prune_if_unused_locked(const std::shared_ptr<record>& rec) {
@@ -477,13 +475,23 @@ private:
             }
         }
 
-        void release_record(const std::shared_ptr<record>& rec) noexcept {
+        void release_record(
+            std::shared_ptr<record>& rec,
+            std::shared_ptr<callback_fn>& fn) noexcept {
             {
                 std::lock_guard lk{mtx};
                 if (rec->in_flight > 0) {
                     --rec->in_flight;
                 }
                 prune_if_unused_locked(rec);
+            }
+            fn.reset();
+            rec.reset();
+            {
+                std::lock_guard lk{mtx};
+                if (active_invocations > 0) {
+                    --active_invocations;
+                }
             }
             cv.notify_all();
         }
@@ -508,18 +516,18 @@ private:
             }
         }
 
-        void release_storage_locked() noexcept {
-            try {
-                record_map empty_records{
-                    typename record_map::allocator_type{memory}};
-                records.swap(empty_records);
-                std::pmr::vector<callback_result> empty_completions{
-                    std::pmr::polymorphic_allocator<callback_result>{memory}};
-                completions_.swap(empty_completions);
-            } catch (...) {
-                records.clear();
-                completions_.clear();
-            }
+        [[nodiscard]] auto take_records_locked() noexcept -> record_map {
+            record_map old_records{typename record_map::allocator_type{memory}};
+            records.swap(old_records);
+            return old_records;
+        }
+
+        [[nodiscard]] auto take_completions_locked() noexcept
+            -> std::pmr::vector<callback_result> {
+            std::pmr::vector<callback_result> old_completions{
+                std::pmr::polymorphic_allocator<callback_result>{memory}};
+            completions_.swap(old_completions);
+            return old_completions;
         }
     };
 

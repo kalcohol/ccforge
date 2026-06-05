@@ -9,6 +9,7 @@
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -660,6 +661,72 @@ TEST(AccelCallbackTest, DispatcherDestructionStopsPendingQueuedNode) {
     EXPECT_FALSE(callback_ran);
     EXPECT_FALSE(memory.unexpected_use());
     callback_op.reset();
+    EXPECT_FALSE(memory.unexpected_use());
+}
+
+TEST(AccelCallbackTest, DispatcherDestructionWaitsForInFlightStorageRelease) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    checked_memory_resource memory;
+    std::optional<forge::accel::mock::host_callback_dispatcher> callbacks;
+    callbacks.emplace(forge::accel::mock::host_callback_dispatcher_options{
+        .memory = &memory,
+    });
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool callback_started = false;
+    bool release_callback = false;
+    bool dispatcher_destroyed = false;
+    std::weak_ptr<int> handler_capture;
+
+    auto marker = std::make_shared<int>(7);
+    handler_capture = marker;
+    auto id = callbacks->register_callback([&, marker] {
+        {
+            std::lock_guard lk{mtx};
+            callback_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_callback; });
+    });
+    marker.reset();
+
+    auto state = std::make_shared<async_state>();
+    auto sender = forge::accel::mock::enqueue_callback(q, *callbacks, id);
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return callback_started; }));
+    }
+
+    std::thread destroyer{[&] {
+        callbacks.reset();
+        {
+            std::lock_guard lk{mtx};
+            dispatcher_destroyed = true;
+        }
+        cv.notify_all();
+    }};
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(lk, 50ms, [&] { return dispatcher_destroyed; }));
+        release_callback = true;
+    }
+    cv.notify_all();
+    destroyer.join();
+
+    EXPECT_TRUE(handler_capture.expired());
+    memory.disallow();
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
     EXPECT_FALSE(memory.unexpected_use());
 }
 
