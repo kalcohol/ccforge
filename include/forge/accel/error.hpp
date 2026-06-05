@@ -72,6 +72,7 @@ enum class error_kind {
     drain_freeze,
     late_response,
     worker_fault,
+    resource_exhausted,
     protocol_error
 };
 
@@ -114,6 +115,8 @@ enum class error_kind {
         return "late_response";
     case error_kind::worker_fault:
         return "worker_fault";
+    case error_kind::resource_exhausted:
+        return "resource_exhausted";
     case error_kind::protocol_error:
         return "protocol_error";
     }

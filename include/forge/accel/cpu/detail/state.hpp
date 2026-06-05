@@ -112,8 +112,9 @@ struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
         : id(context_id{__next_context_id.fetch_add(1, std::memory_order_relaxed)})
         , memory(normalize_memory_resource(options.memory))
+        , worker_count(options.thread_count == 0 ? 1 : options.thread_count)
         , runtime(resource_context_options{
-              .thread_count = options.thread_count == 0 ? 1 : options.thread_count,
+              .thread_count = worker_count,
               .queue_capacity = std::nullopt,
               .memory = memory,
           })
@@ -210,6 +211,23 @@ struct __state : std::enable_shared_from_this<__state> {
         return closed || stop_requested;
     }
 
+    [[nodiscard]] bool try_acquire_blocking_event_wait() noexcept {
+        std::lock_guard lk{mtx};
+        const auto limit = worker_count > 0 ? worker_count - 1 : 0;
+        if (blocking_event_waits >= limit) {
+            return false;
+        }
+        ++blocking_event_waits;
+        return true;
+    }
+
+    void release_blocking_event_wait() noexcept {
+        std::lock_guard lk{mtx};
+        if (blocking_event_waits > 0) {
+            --blocking_event_waits;
+        }
+    }
+
     [[nodiscard]] auto next_stream_id() noexcept -> stream_id {
         return stream_id{next_stream.fetch_add(1, std::memory_order_relaxed)};
     }
@@ -251,16 +269,36 @@ struct __state : std::enable_shared_from_this<__state> {
 
     context_id id{};
     std::pmr::memory_resource* memory = forge::default_memory_resource();
+    std::size_t worker_count = 1;
     resource_context runtime;
     std::optional<std::size_t> queue_capacity;
     std::atomic<std::uint64_t> next_stream{1};
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t pending = 0;
+    std::size_t blocking_event_waits = 0;
     bool closed = false;
     bool stop_requested = false;
     std::pmr::vector<std::shared_ptr<__device_state>> devices;
     std::pmr::vector<std::shared_ptr<__queue_state>> queues;
+};
+
+struct __blocking_event_wait_guard {
+    explicit __blocking_event_wait_guard(const std::shared_ptr<__state>& st) noexcept
+        : state(st)
+    {}
+
+    ~__blocking_event_wait_guard() {
+        if (active && state) {
+            state->release_blocking_event_wait();
+        }
+    }
+
+    __blocking_event_wait_guard(const __blocking_event_wait_guard&) = delete;
+    __blocking_event_wait_guard& operator=(const __blocking_event_wait_guard&) = delete;
+
+    std::shared_ptr<__state> state;
+    bool active = false;
 };
 
 inline __queue_state::__queue_state(
@@ -279,15 +317,24 @@ inline __queue_state::__queue_state(
     const std::shared_ptr<__state>& state,
     const std::shared_ptr<__event_state>& ev,
     event_generation target,
-    std::optional<std::chrono::steady_clock::time_point> deadline) noexcept
+    std::optional<std::chrono::steady_clock::time_point> deadline)
     -> command_status {
     std::unique_lock lk{ev->mtx};
+    __blocking_event_wait_guard wait_slot{state};
     for (;;) {
         if (ev->completed_generation >= target.value) {
             return command_status::ok;
         }
         if (!state || state->stop_requested_now()) {
             return command_status::stopped;
+        }
+        if (!wait_slot.active) {
+            if (!state->try_acquire_blocking_event_wait()) {
+                throw operation_error{
+                    error_kind::resource_exhausted,
+                    "forge::accel::cpu: event wait requires a spare worker thread"};
+            }
+            wait_slot.active = true;
         }
         if (deadline && std::chrono::steady_clock::now() >= *deadline) {
             return command_status::timed_out;
@@ -318,7 +365,7 @@ struct __command_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     std::shared_ptr<__state> state;
-    R rcvr;
+    std::shared_ptr<std::optional<R>> rcvr;
     Action action;
 
     void set_value() && noexcept {
@@ -329,30 +376,48 @@ struct __command_receiver {
             }
             std::invoke(std::move(action));
             state->finish_one();
-            std::execution::set_value(std::move(rcvr));
+            auto out = std::move(**rcvr);
+            rcvr->reset();
+            std::execution::set_value(std::move(out));
         } catch (const __stopped_signal&) {
             state->finish_one();
-            std::execution::set_stopped(std::move(rcvr));
+            if (rcvr && rcvr->has_value()) {
+                auto out = std::move(**rcvr);
+                rcvr->reset();
+                std::execution::set_stopped(std::move(out));
+            }
         } catch (...) {
             auto ep = std::current_exception();
             state->finish_one();
-            std::execution::set_error(std::move(rcvr), std::move(ep));
+            if (rcvr && rcvr->has_value()) {
+                auto out = std::move(**rcvr);
+                rcvr->reset();
+                std::execution::set_error(std::move(out), std::move(ep));
+            }
         }
     }
 
     void set_error(std::exception_ptr ep) && noexcept {
         state->finish_one();
-        std::execution::set_error(std::move(rcvr), std::move(ep));
+        if (rcvr && rcvr->has_value()) {
+            auto out = std::move(**rcvr);
+            rcvr->reset();
+            std::execution::set_error(std::move(out), std::move(ep));
+        }
     }
 
     void set_stopped() && noexcept {
         state->finish_one();
-        std::execution::set_stopped(std::move(rcvr));
+        if (rcvr && rcvr->has_value()) {
+            auto out = std::move(**rcvr);
+            rcvr->reset();
+            std::execution::set_stopped(std::move(out));
+        }
     }
 
-    auto get_env() const noexcept(noexcept(std::execution::get_env(rcvr)))
-        -> decltype(std::execution::get_env(rcvr)) {
-        return std::execution::get_env(rcvr);
+    auto get_env() const noexcept(noexcept(std::execution::get_env(**rcvr)))
+        -> decltype(std::execution::get_env(**rcvr)) {
+        return std::execution::get_env(**rcvr);
     }
 };
 
@@ -421,7 +486,7 @@ struct __command_sender {
         __op(std::shared_ptr<__queue_state> q, Action a, R r)
             : queue(std::move(q))
             , action(std::move(a))
-            , rcvr(std::move(r))
+            , rcvr(std::make_shared<std::optional<R>>(std::move(r)))
         {}
 
         __op(__op&&) = delete;
@@ -431,12 +496,20 @@ struct __command_sender {
 
         void start() & noexcept {
             auto state = queue ? queue->owner.lock() : nullptr;
-            if (!state || __stop_requested(*rcvr)) {
-                std::execution::set_stopped(std::move(*rcvr));
+            if (!state || __stop_requested(**rcvr)) {
+                if (rcvr && rcvr->has_value()) {
+                    auto out = std::move(**rcvr);
+                    rcvr->reset();
+                    std::execution::set_stopped(std::move(out));
+                }
                 return;
             }
             if (!state->try_accept()) {
-                std::execution::set_stopped(std::move(*rcvr));
+                if (rcvr && rcvr->has_value()) {
+                    auto out = std::move(**rcvr);
+                    rcvr->reset();
+                    std::execution::set_stopped(std::move(out));
+                }
                 return;
             }
             try {
@@ -444,20 +517,23 @@ struct __command_sender {
                 auto* op = inner.emplace_from([&] {
                     return std::execution::connect(
                         std::move(sender),
-                        receiver_t{state, std::move(*rcvr), std::move(action)});
+                        receiver_t{state, rcvr, std::move(action)});
                 });
-                rcvr.reset();
                 std::execution::start(*op);
             } catch (...) {
                 auto ep = std::current_exception();
                 state->finish_one();
-                std::execution::set_error(std::move(*rcvr), std::move(ep));
+                if (rcvr && rcvr->has_value()) {
+                    auto out = std::move(**rcvr);
+                    rcvr->reset();
+                    std::execution::set_error(std::move(out), std::move(ep));
+                }
             }
         }
 
         std::shared_ptr<__queue_state> queue;
         Action action;
-        std::optional<R> rcvr;
+        std::shared_ptr<std::optional<R>> rcvr;
         __op_box<op_t> inner;
     };
 

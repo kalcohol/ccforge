@@ -224,7 +224,7 @@ TEST(AccelEventTest, QueueKindsAreRecorded) {
 
 TEST(AccelEventTest, PerQueueFifoIsPreserved) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
-        .thread_count = 2,
+        .thread_count = 3,
         .queue_capacity = std::nullopt,
     }};
     auto q = ctx.get_queue(forge::accel::queue_kind::compute);
@@ -459,10 +459,7 @@ TEST(AccelEventTest, WaitEventCompletesAfterRecordEvent) {
 }
 
 TEST(AccelEventTest, CrossQueueWaitCompletesAfterOtherQueueRecordsEvent) {
-    forge::accel::mock::context ctx{forge::accel::mock::context_options{
-        .thread_count = 2,
-        .queue_capacity = std::nullopt,
-    }};
+    forge::accel::mock::context ctx;
     auto compute = ctx.get_queue(forge::accel::queue_kind::compute);
     auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
     forge::accel::mock::event ev;
@@ -632,7 +629,9 @@ TEST(AccelEventTest, SecondRecordCreatesNewWaitTargetGeneration) {
 
 TEST(AccelEventTest, CopyComputeCopyPipelineUsesCrossQueueEvents) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
-        .thread_count = 2,
+        // The pipeline can have two unready cross-queue waits at once; keep one
+        // extra worker available for record_event signal work.
+        .thread_count = 3,
         .queue_capacity = std::nullopt,
     }};
     auto copy = ctx.get_queue(forge::accel::queue_kind::copy);
@@ -838,7 +837,7 @@ TEST(AccelEventTest, SynchronizeEventWaitsForCurrentRecordedGeneration) {
 
 TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
-        .thread_count = 1,
+        .thread_count = 2,
         .queue_capacity = std::nullopt,
     }};
     auto q = ctx.get_queue();
@@ -875,6 +874,22 @@ TEST(AccelEventTest, SameQueueWaitBeforeRecordStopsOnContextStop) {
     EXPECT_TRUE(record_state->stopped);
     EXPECT_FALSE(record_state->error);
     EXPECT_FALSE(ev.ready());
+}
+
+TEST(AccelEventTest, SingleWorkerUnreadyWaitReportsResourceExhausted) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+
+    auto result = forge::wait_result(forge::accel::mock::wait_event_typed(q, ev));
+
+    ASSERT_TRUE(result.has_error());
+    auto* err = result.error_if<forge::accel::error>();
+    ASSERT_NE(err, nullptr);
+    EXPECT_EQ(err->kind, forge::accel::error_kind::resource_exhausted);
 }
 
 TEST(AccelEventTest, EventElapsedTimeRequiresCompletedRecord) {

@@ -112,7 +112,7 @@ struct __event_state {
     }
 
     [[nodiscard]] command_status wait_until_generation_or_stopped(
-        const __state& state,
+        __state& state,
         event_generation target,
         std::optional<std::chrono::steady_clock::time_point> deadline) noexcept;
 
@@ -129,8 +129,9 @@ struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
         : id(context_id{__next_context_id.fetch_add(1, std::memory_order_relaxed)})
         , memory(normalize_memory_resource(options.memory))
+        , worker_count(options.thread_count == 0 ? 1 : options.thread_count)
         , runtime(resource_context_options{
-              .thread_count = options.thread_count == 0 ? 1 : options.thread_count,
+              .thread_count = worker_count,
               .queue_capacity = std::nullopt,
               .memory = memory,
           })
@@ -202,6 +203,23 @@ struct __state : std::enable_shared_from_this<__state> {
         return memory;
     }
 
+    [[nodiscard]] bool try_acquire_blocking_event_wait() noexcept {
+        std::lock_guard lk{mtx};
+        const auto limit = worker_count > 0 ? worker_count - 1 : 0;
+        if (blocking_event_waits >= limit) {
+            return false;
+        }
+        ++blocking_event_waits;
+        return true;
+    }
+
+    void release_blocking_event_wait() noexcept {
+        std::lock_guard lk{mtx};
+        if (blocking_event_waits > 0) {
+            --blocking_event_waits;
+        }
+    }
+
     [[nodiscard]] auto next_stream_id() noexcept -> stream_id {
         return stream_id{next_stream.fetch_add(1, std::memory_order_relaxed)};
     }
@@ -227,6 +245,7 @@ struct __state : std::enable_shared_from_this<__state> {
 
     context_id id{};
     std::pmr::memory_resource* memory;
+    std::size_t worker_count = 1;
     resource_context runtime;
     std::optional<std::size_t> queue_capacity;
     std::size_t device_count = 1;
@@ -235,10 +254,29 @@ struct __state : std::enable_shared_from_this<__state> {
     mutable std::mutex mtx;
     std::condition_variable cv;
     std::size_t pending = 0;
+    std::size_t blocking_event_waits = 0;
     bool closed = false;
     bool stop_requested = false;
     std::pmr::vector<std::shared_ptr<__device_state>> devices;
     std::pmr::vector<std::shared_ptr<__queue_state>> queues;
+};
+
+struct __blocking_event_wait_guard {
+    explicit __blocking_event_wait_guard(__state& st) noexcept
+        : state(&st)
+    {}
+
+    ~__blocking_event_wait_guard() {
+        if (active && state) {
+            state->release_blocking_event_wait();
+        }
+    }
+
+    __blocking_event_wait_guard(const __blocking_event_wait_guard&) = delete;
+    __blocking_event_wait_guard& operator=(const __blocking_event_wait_guard&) = delete;
+
+    __state* state;
+    bool active = false;
 };
 
 struct __device_state {
@@ -651,7 +689,7 @@ inline void __record_stream_error(
 }
 
 inline command_status __event_state::wait_until_generation_or_stopped(
-    const __state& state,
+    __state& state,
     event_generation target,
     std::optional<std::chrono::steady_clock::time_point> deadline) noexcept {
     std::unique_lock lk{mtx};

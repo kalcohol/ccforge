@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <forge/any_receiver.hpp>
 #include <execution>
+#include <cstddef>
 #include <optional>
 
 using cs_int = std::execution::completion_signatures<
@@ -57,6 +58,40 @@ struct tracking_recv {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct alignas(64) over_aligned_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    receiver_move_counts* counts;
+    int* out;
+    char padding[64]{};
+
+    over_aligned_recv(receiver_move_counts* c, int* value) noexcept
+        : counts(c), out(value) {}
+
+    over_aligned_recv(over_aligned_recv&& other) noexcept
+        : counts(other.counts), out(other.out) {
+        ++counts->moves;
+    }
+
+    over_aligned_recv(const over_aligned_recv&) = delete;
+
+    ~over_aligned_recv() {
+        if (counts) {
+            ++counts->destroyed;
+        }
+    }
+
+    void set_value(int v) && noexcept {
+        *out = v;
+    }
+
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+static_assert(alignof(over_aligned_recv) > alignof(std::max_align_t));
+
 static_assert(std::execution::receiver<forge::any_receiver_of<cs_int>>);
 
 TEST(AnyReceiverTest, DefaultEmpty) {
@@ -95,4 +130,18 @@ TEST(AnyReceiverTest, MoveConstructsSmallObjectStorageReceiver) {
     }
 
     EXPECT_EQ(counts.destroyed, 3);
+}
+
+TEST(AnyReceiverTest, DestroysOverAlignedHeapFallbackReceiver) {
+    receiver_move_counts counts;
+    int val = 0;
+
+    {
+        forge::any_receiver_of<cs_int> r =
+            over_aligned_recv{&counts, &val};
+        std::execution::set_value(std::move(r), 123);
+        EXPECT_EQ(val, 123);
+    }
+
+    EXPECT_GE(counts.destroyed, 2);
 }

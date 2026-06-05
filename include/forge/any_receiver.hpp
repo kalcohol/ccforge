@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 namespace forge {
@@ -45,6 +46,7 @@ class any_receiver_of {
         void (*complete_error)(void*, std::exception_ptr) noexcept;
         void (*complete_stopped)(void*) noexcept;
         void (*destroy)(void*) noexcept;
+        void (*destroy_heap)(void*) noexcept;
         void (*move_to)(void*, void*) noexcept;
     };
 
@@ -66,6 +68,9 @@ class any_receiver_of {
             },
             .destroy = [](void* p) noexcept {
                 static_cast<R*>(p)->~R();
+            },
+            .destroy_heap = [](void* p) noexcept {
+                delete static_cast<R*>(p);
             },
             .move_to = [](void* src, void* dst) noexcept {
                 ::new(dst) R(std::move(*static_cast<R*>(src)));
@@ -127,8 +132,11 @@ public:
 
     ~any_receiver_of() {
         if (__ptr && __vt) {
-            __vt->destroy(__ptr);
-            if (__on_heap) ::operator delete(__ptr);
+            if (__on_heap) {
+                __vt->destroy_heap(__ptr);
+            } else {
+                __vt->destroy(__ptr);
+            }
         }
     }
 

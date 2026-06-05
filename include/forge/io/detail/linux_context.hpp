@@ -725,8 +725,9 @@ struct __op {
 
     void start() & noexcept {
         auto record = record_;
+        auto state = state_;
         try {
-            if (!state_) {
+            if (!state) {
                 record->complete_stopped();
                 return;
             }
@@ -734,12 +735,12 @@ struct __op {
                 record->complete_stopped();
                 return;
             }
-            if (!record->install_stop_callback(state_, record)) {
+            if (!record->install_stop_callback(state, record)) {
                 return;
             }
-            if (state_->start(record)) {
+            if (state->start(record)) {
                 if (record->stop_requested.load(std::memory_order_acquire)) {
-                    state_->cancel_record(record);
+                    state->cancel_record(record);
                 }
             }
         } catch (...) {

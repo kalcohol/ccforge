@@ -198,6 +198,7 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
     auto scheduler = strand.get_scheduler();
     std::mutex mtx;
     std::vector<int> order;
+    std::atomic<bool> second_submitted{false};
 
     forge::start_detached(
         std::execution::schedule(scheduler)
@@ -205,6 +206,9 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
             {
                 std::lock_guard lk{mtx};
                 order.push_back(1);
+            }
+            while (!second_submitted.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
             }
             forge::start_detached(
                 std::execution::schedule(scheduler)
@@ -220,6 +224,7 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
             std::lock_guard lk{mtx};
             order.push_back(2);
         }));
+    second_submitted.store(true, std::memory_order_release);
 
     strand.wait();
     pool.wait();

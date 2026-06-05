@@ -128,7 +128,7 @@ private:
 };
 
 struct context_options {
-    std::size_t thread_count = 1;
+    std::size_t thread_count = 2;
     std::optional<std::size_t> queue_capacity = std::nullopt;
     std::size_t device_count = 1;
     std::pmr::memory_resource* memory = forge::default_memory_resource();

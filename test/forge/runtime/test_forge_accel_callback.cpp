@@ -243,6 +243,60 @@ TEST(AccelCallbackTest, UnregisterWaitsForInFlightInvoke) {
     EXPECT_TRUE(unregister_done);
 }
 
+TEST(AccelCallbackTest, CallbackCanInvokeAnotherCallbackReentrantly) {
+    forge::accel::mock::context ctx;
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue(forge::accel::queue_kind::compute);
+    std::mutex mtx;
+    std::vector<int> order;
+
+    auto inner = callbacks.register_callback([&] {
+        std::lock_guard lk{mtx};
+        order.push_back(2);
+    });
+    auto outer = callbacks.register_callback([&] {
+        {
+            std::lock_guard lk{mtx};
+            order.push_back(1);
+        }
+        auto result = callbacks.invoke(inner);
+        EXPECT_TRUE(result);
+    });
+
+    auto state = std::make_shared<async_state>();
+    auto sender = forge::accel::mock::enqueue_callback(q, callbacks, outer);
+    auto op = std::execution::connect(std::move(sender), async_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_EQ(order, (std::vector<int>{1, 2}));
+    EXPECT_EQ(callbacks.completions().size(), 2U);
+}
+
+TEST(AccelCallbackTest, CallbackCanUnregisterItself) {
+    forge::accel::mock::context ctx;
+    forge::accel::mock::host_callback_dispatcher callbacks;
+    auto q = ctx.get_queue(forge::accel::queue_kind::compute);
+    bool ran = false;
+    forge::accel::callback_id id{};
+    id = callbacks.register_callback([&] {
+        ran = true;
+        callbacks.unregister_callback(id);
+    });
+
+    ASSERT_TRUE(std::execution::sync_wait(
+        forge::accel::mock::enqueue_callback(q, callbacks, id)).has_value());
+    EXPECT_TRUE(ran);
+
+    auto result = forge::wait_result(
+        forge::accel::mock::enqueue_callback_typed(q, callbacks, id));
+    ASSERT_TRUE(result.has_error());
+    auto* err = result.error_if<forge::accel::error>();
+    ASSERT_NE(err, nullptr);
+    EXPECT_EQ(err->kind, forge::accel::error_kind::protocol_error);
+}
+
 TEST(AccelCallbackTest, MissingCallbackReportsTypedProtocolError) {
     forge::accel::mock::context ctx;
     forge::accel::mock::host_callback_dispatcher callbacks;

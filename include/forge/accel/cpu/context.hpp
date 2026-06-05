@@ -40,6 +40,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <new>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -51,7 +52,7 @@
 namespace forge::accel::cpu {
 
 struct context_options {
-    std::size_t thread_count = 1;
+    std::size_t thread_count = 2;
     std::optional<std::size_t> queue_capacity = std::nullopt;
     std::size_t device_count = 1;
     std::pmr::memory_resource* memory = forge::default_memory_resource();
@@ -195,8 +196,8 @@ public:
 
     context(const context&) = delete;
     context& operator=(const context&) = delete;
-    context(context&&) noexcept = default;
-    context& operator=(context&&) noexcept = default;
+    context(context&&) = delete;
+    context& operator=(context&&) = delete;
 
     [[nodiscard]] auto get_queue(queue_kind kind = queue_kind::general) -> queue {
         return queue{state_->make_queue(kind)};
@@ -366,6 +367,11 @@ private:
     void allocate() {
         if (size_ == 0) {
             return;
+        }
+        if (size_ > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
+            throw operation_error{
+                error_kind::invalid_buffer,
+                "forge::accel::cpu: device buffer size overflows allocation"};
         }
         constexpr std::size_t align = alignment < alignof(T) ? alignof(T) : alignment;
         const auto bytes = sizeof(T) * size_;

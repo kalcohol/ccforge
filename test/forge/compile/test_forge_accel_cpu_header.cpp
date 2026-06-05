@@ -14,4 +14,6 @@ int main() {
     static_assert(std::is_class_v<forge::accel::cpu::event>);
     static_assert(std::is_class_v<forge::accel::cpu::host_buffer<std::byte>>);
     static_assert(std::is_class_v<forge::accel::cpu::device_buffer<std::byte>>);
+    static_assert(!std::is_move_constructible_v<forge::accel::cpu::context>);
+    static_assert(!std::is_move_assignable_v<forge::accel::cpu::context>);
 }

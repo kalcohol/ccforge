@@ -30,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -60,6 +61,7 @@ class any_sender_of {
 
     struct __vtable {
         void (*destroy)(void* p) noexcept;
+        void (*destroy_heap)(void* p) noexcept;
         void (*move_to)(void* src, void* dst) noexcept;
         // sync_wait path: run the sender, get the value tuple
         using value_tuple_t = value_tuple_of_t<CompletionSignatures>;
@@ -71,6 +73,7 @@ class any_sender_of {
         using VT = value_tuple_of_t<CompletionSignatures>;
         static const __vtable vt{
             .destroy  = [](void* p) noexcept { static_cast<S*>(p)->~S(); },
+            .destroy_heap = [](void* p) noexcept { delete static_cast<S*>(p); },
             .move_to  = [](void* src, void* dst) noexcept {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
@@ -148,8 +151,11 @@ public:
 
     void reset() noexcept {
         if (__ptr && __vt) {
-            __vt->destroy(__ptr);
-            if (__on_heap) ::operator delete(__ptr);
+            if (__on_heap) {
+                __vt->destroy_heap(__ptr);
+            } else {
+                __vt->destroy(__ptr);
+            }
         }
         __ptr = nullptr;
         __vt  = nullptr;

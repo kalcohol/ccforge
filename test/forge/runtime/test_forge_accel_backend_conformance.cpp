@@ -153,7 +153,7 @@ TYPED_TEST(AccelBackendPortableConformanceTest, CrossQueueEventOrdersCopyCompute
 TYPED_TEST(AccelBackendPortableConformanceTest, SameQueueWaitBeforeRecordStopsCleanly) {
     using backend = TypeParam;
     auto ctx = backend::make_context(typename backend::context_options{
-        .thread_count = 1,
+        .thread_count = 2,
         .queue_capacity = std::nullopt,
     });
     auto q = backend::get_queue(ctx);

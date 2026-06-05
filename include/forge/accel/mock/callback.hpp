@@ -24,6 +24,9 @@
 
 #include "context.hpp"
 
+#include <algorithm>
+#include <vector>
+
 namespace forge::accel::mock {
 
 struct callback_result {
@@ -44,12 +47,6 @@ public:
     explicit host_callback_dispatcher(
         std::pmr::memory_resource* memory = forge::default_memory_resource())
         : memory_(normalize_memory_resource(memory))
-        , runtime_(resource_context_options{
-              .thread_count = 1,
-              .queue_capacity = std::nullopt,
-              .memory = memory_,
-          })
-        , lane_(runtime_.get_scheduler(), strand_options{.memory = memory_})
         , records_(
               std::pmr::polymorphic_allocator<std::shared_ptr<record>>{memory_})
         , completions_(
@@ -115,6 +112,9 @@ public:
         }
         std::unique_lock lk{rec->mtx};
         rec->registered = false;
+        if (is_running_on_this_thread(rec.get())) {
+            return;
+        }
         rec->cv.wait(lk, [&] { return rec->in_flight == 0; });
     }
 
@@ -125,8 +125,6 @@ public:
 
     void request_stop() noexcept {
         close();
-        lane_.shutdown();
-        runtime_.request_stop();
     }
 
     void shutdown() noexcept {
@@ -135,8 +133,6 @@ public:
     }
 
     void wait() noexcept {
-        lane_.wait();
-        runtime_.wait();
         auto snapshot = records_snapshot();
         for (auto& rec : snapshot) {
             std::unique_lock lk{rec->mtx};
@@ -162,26 +158,18 @@ public:
         }
 
         try {
-            auto sender = std::execution::then(
-                std::execution::schedule(lane_.get_scheduler()),
-                [rec, invoke = result.invoke] {
-                    callback_fn fn;
-                    {
-                        std::lock_guard lk{rec->mtx};
-                        fn = rec->fn;
-                    }
-                    if (!fn) {
-                        throw operation_error{
-                            error_kind::protocol_error,
-                            "forge::accel::mock::host callback was unregistered"};
-                    }
-                    fn(invoke);
-                });
-            auto completed = std::execution::sync_wait(std::move(sender));
-            if (!completed) {
-                result.status = callback_status::stopped;
-                result.err = error{error_kind::aborted, command_status::stopped};
+            callback_fn fn;
+            {
+                std::lock_guard lk{rec->mtx};
+                fn = rec->fn;
             }
+            if (!fn) {
+                throw operation_error{
+                    error_kind::protocol_error,
+                    "forge::accel::mock::host callback was unregistered"};
+            }
+            callback_stack_guard guard{rec.get()};
+            fn(result.invoke);
         } catch (...) {
             result.status = callback_status::failed;
             result.err = __typed_detail::from_exception(std::current_exception());
@@ -213,6 +201,37 @@ private:
         std::condition_variable cv;
         std::size_t in_flight = 0;
         bool registered = true;
+    };
+
+    [[nodiscard]] static auto callback_stack() -> std::vector<const record*>& {
+        thread_local std::vector<const record*> stack;
+        return stack;
+    }
+
+    [[nodiscard]] static bool is_running_on_this_thread(const record* rec) {
+        auto& stack = callback_stack();
+        return std::find(stack.begin(), stack.end(), rec) != stack.end();
+    }
+
+    struct callback_stack_guard {
+        explicit callback_stack_guard(const record* rec_arg)
+            : rec(rec_arg) {
+            callback_stack().push_back(rec);
+        }
+
+        ~callback_stack_guard() {
+            auto& stack = callback_stack();
+            if (!stack.empty() && stack.back() == rec) {
+                stack.pop_back();
+                return;
+            }
+            auto it = std::find(stack.begin(), stack.end(), rec);
+            if (it != stack.end()) {
+                stack.erase(it);
+            }
+        }
+
+        const record* rec;
     };
 
     [[nodiscard]] auto records_snapshot() noexcept
@@ -268,8 +287,6 @@ private:
     }
 
     std::pmr::memory_resource* memory_;
-    resource_context runtime_;
-    strand lane_;
     std::atomic<std::uint64_t> next_callback_{1};
     std::atomic<std::uint64_t> next_invoke_{1};
     mutable std::mutex mtx_;

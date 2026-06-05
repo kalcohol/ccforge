@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <execution>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -203,7 +204,7 @@ TEST(AccelCpuTest, TypedSizeMismatchReportsPortableError) {
 
 TEST(AccelCpuTest, StopWakesBlockedEventWait) {
     forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
-        .thread_count = 1,
+        .thread_count = 2,
         .queue_capacity = std::nullopt,
     }};
     auto q = ctx.get_queue();
@@ -218,6 +219,31 @@ TEST(AccelCpuTest, StopWakesBlockedEventWait) {
 
     ASSERT_TRUE(wait_done(wait_state));
     EXPECT_TRUE(wait_state->stopped);
+}
+
+TEST(AccelCpuTest, SingleWorkerUnreadyWaitReportsResourceExhausted) {
+    forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::cpu::event ev;
+
+    auto result = forge::wait_result(forge::accel::cpu::wait_event_typed(q, ev));
+
+    ASSERT_TRUE(result.has_error());
+    auto* err = result.error_if<forge::accel::error>();
+    ASSERT_NE(err, nullptr);
+    EXPECT_EQ(err->kind, forge::accel::error_kind::resource_exhausted);
+}
+
+TEST(AccelCpuTest, DeviceBufferRejectsOverflowingElementCount) {
+    forge::accel::cpu::context ctx;
+    const auto too_many = std::numeric_limits<std::size_t>::max() / sizeof(int) + 1;
+
+    EXPECT_THROW(
+        (forge::accel::cpu::device_buffer<int>{ctx, too_many}),
+        forge::accel::operation_error);
 }
 
 TEST(AccelCpuTest, ContextWaitCanBeCalledFromBackendWork) {
