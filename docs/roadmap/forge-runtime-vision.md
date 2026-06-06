@@ -299,7 +299,8 @@ contracts 需要真实设备语义证明时，才选择一个可选 vendor/platf
 `std::exception_ptr`。accel 已提供 `copy_to_device_typed` / `copy_to_host_typed` /
 `copy_device_to_device_typed` / `submit_typed` / `submit_message_typed` /
 `submit_packet_typed` / `submit_request_typed` / `record_event_typed` /
-`wait_event_typed` / `fence_typed` 这组 opt-in typed variants；
+`wait_event_typed` / `synchronize_event_typed` / `fence_typed` /
+`enqueue_callback_typed` 这组 opt-in typed variants；
 `forge::wait_result(sender)` 可在同步边界保留 value / typed error / stopped，
 避免示例和插件边界重复手写 receiver。
 
@@ -310,7 +311,8 @@ contracts 需要真实设备语义证明时，才选择一个可选 vendor/platf
 
 Examples 必须从“能编译”升级为“能教会人怎么组合”：
 
-- `forge_resource_policy_example.cpp`：固定 arena + bounded pool/channel；
+- `forge_resource_policy_example.cpp`：`forge::resource_policy`、固定 arena 和
+  bounded pool/channel；
 - `forge_bounded_pipeline_example.cpp`：thread pool + strand + channel + scope；
 - `forge_io_readiness_example.cpp`：fd readiness sender + resource lifetime；
 - `forge_accel_copy_example.cpp`：host/device copy + CPU continuation；

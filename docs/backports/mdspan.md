@@ -20,6 +20,13 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 作为 `submdspan` foundation。这些 foundation 由 `forge.cmake` 单独探测，检测到原生或
 部分原生声明时会主动让位，避免 ODR 冲突。
 
+对应示例：
+
+- `example/constant_wrapper_example.cpp`：`std::constant_wrapper` / `std::cw` 的
+  compile-time value 组合；
+- `example/padded_mdspan_layout_example.cpp`：`layout_left_padded` /
+  `layout_right_padded` 的 stride 与 full-slice layout 保留。
+
 ## Feature macros（特性宏）
 
 当 Forge 注入 backport 时定义：

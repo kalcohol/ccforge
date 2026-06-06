@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/channel.hpp>
+#include <forge/resource_policy.hpp>
 #include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <execution>
@@ -39,17 +40,19 @@ int main() {
     std::pmr::synchronized_pool_resource arena{
         std::pmr::pool_options{},
         &upstream};
+    forge::resource_policy policy{.memory = &arena};
+    forge_example::require(policy.memory == &arena);
 
     forge::static_thread_pool pool{forge::static_thread_pool_options{
         // The single worker is safe here because the matching send runs on the
         // caller thread; add worker budget before adding another blocking task.
         .thread_count = 1,
         .queue_capacity = 8,
-        .memory = &arena,
+        .memory = policy.memory,
     }};
     forge::bounded_channel<int> channel{forge::bounded_channel_options{
         .capacity = 2,
-        .memory = &arena,
+        .memory = policy.memory,
     }};
 
     forge::start_detached(

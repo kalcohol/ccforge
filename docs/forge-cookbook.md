@@ -135,6 +135,7 @@ OS IO handoff 建议按这个顺序读：
 | channel backpressure | `example/forge_channel_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
 | graceful close vs stop | `example/forge_graceful_shutdown_example.cpp` |
 | PMR / bounded allocation | `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
+| C++26 constant / padded layout foundations | `example/constant_wrapper_example.cpp`, `example/padded_mdspan_layout_example.cpp` |
 | serialized session state | `example/forge_strand_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
 | type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |

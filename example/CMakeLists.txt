@@ -42,6 +42,7 @@ function(forge_add_example target_name source_file)
 endfunction()
 
 forge_add_example(unique_resource_example unique_resource_example.cpp)
+forge_add_example(constant_wrapper_example constant_wrapper_example.cpp BACKPORT)
 forge_add_example(simd_example simd_example.cpp)
 forge_add_example(simd_complete_example simd_complete_example.cpp)
 
@@ -69,6 +70,7 @@ check_cxx_source_compiles("
 
 if(FORGE_EXAMPLE_HAS_MDSPAN)
     forge_add_example(submdspan_example submdspan_example.cpp BACKPORT)
+    forge_add_example(padded_mdspan_layout_example padded_mdspan_layout_example.cpp BACKPORT)
     forge_add_example(linalg_simd_example linalg_simd_example.cpp BACKPORT)
     forge_add_example(linalg_level2 linalg_level2_example.cpp BACKPORT)
     forge_add_example(linalg_level3 linalg_level3_example.cpp BACKPORT)
