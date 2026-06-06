@@ -26,6 +26,7 @@
 #include <mdspan>
 #endif
 #include <cassert>
+#include "example_support.hpp"
 int main() {
 #if defined(__cpp_lib_mdspan)
     int a[] = {1, 2, 3, 0, 1, 4, 5, 6, 0}, x[] = {1, 2, 1}, y[3]{};
@@ -35,7 +36,7 @@ int main() {
 
     std::linalg::matrix_vector_product(A, xv, yv);
 
-    assert(y[0] == 8 && y[1] == 6 && y[2] == 17);
+    forge_example::require(y[0] == 8 && y[1] == 6 && y[2] == 17);
 #endif
     return 0;
 }

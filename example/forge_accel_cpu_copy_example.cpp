@@ -23,6 +23,7 @@
 #include <forge/accel.hpp>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <cstdint>
 #include <execution>
 #include <span>
@@ -37,12 +38,12 @@ int main() {
     forge::accel::cpu::device_buffer<int> device{ctx, input.size()};
 
     const auto address = reinterpret_cast<std::uintptr_t>(device.span().data());
-    assert(address % forge::accel::cpu::device_buffer<int>::alignment == 0);
+    forge_example::require(address % forge::accel::cpu::device_buffer<int>::alignment == 0);
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_device(q, device, std::span<const int>{input})).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_host(q, std::span<int>{output}, device)).has_value());
 
-    assert(output == input);
+    forge_example::require(output == input);
 }

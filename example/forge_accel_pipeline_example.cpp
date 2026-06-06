@@ -24,6 +24,7 @@
 #include <execution>
 #include <algorithm>
 #include <cassert>
+#include "example_support.hpp"
 #include <numeric>
 #include <span>
 #include <tuple>
@@ -40,10 +41,10 @@ int main() {
     std::vector<float> output(input.size());
     forge::accel::mock::device_buffer<float> device{ctx, input.size()};
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(q, device, std::span<const float>{input})).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::submit(q, [&] {
             for (auto& value : device.span()) {
                 value = value * 2.0f + 1.0f;
@@ -56,6 +57,6 @@ int main() {
             return std::accumulate(output.begin(), output.end(), 0.0f);
         }));
 
-    assert(result.has_value());
-    assert(std::get<0>(*result) == 24.0f);
+    forge_example::require(result.has_value());
+    forge_example::require(std::get<0>(*result) == 24.0f);
 }

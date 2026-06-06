@@ -23,6 +23,7 @@
 #include <forge/accel.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <span>
 #include <tuple>
 #include <vector>
@@ -40,36 +41,36 @@ int main() {
     forge::accel::mock::event uploaded;
     forge::accel::mock::event computed;
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(
             copy_q,
             device,
             std::span<const int>{input})).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::record_event(copy_q, uploaded)).has_value());
-    assert(uploaded.ready());
+    forge_example::require(uploaded.ready());
     auto uploaded_snapshot = std::execution::sync_wait(
         forge::accel::mock::query_event(uploaded));
-    assert(uploaded_snapshot.has_value());
-    assert(std::get<0>(*uploaded_snapshot).completed_generation.value == 1);
+    forge_example::require(uploaded_snapshot.has_value());
+    forge_example::require(std::get<0>(*uploaded_snapshot).completed_generation.value == 1);
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::wait_event(compute_q, uploaded)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::submit(compute_q, [&] {
             for (auto& value : device.span()) {
                 value *= 10;
             }
         })).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::record_event(compute_q, computed)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::synchronize_event(compute_q, computed)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::wait_event(copy_q, computed)).has_value());
-    assert(std::execution::sync_wait(forge::accel::mock::fence(copy_q)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(forge::accel::mock::fence(copy_q)).has_value());
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_host(copy_q, std::span<int>{output}, device)).has_value());
 
-    assert((output == std::vector<int>{10, 20, 30, 40}));
+    forge_example::require((output == std::vector<int>{10, 20, 30, 40}));
 }

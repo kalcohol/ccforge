@@ -2,6 +2,7 @@
 #include <forge/execution.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <exception>
 #include <span>
 #include <stdexcept>
@@ -26,12 +27,12 @@ int main() {
             std::span<const int>{input})};
 
     auto result = forge::wait_result(std::move(work));
-    assert(result.has_error());
+    forge_example::require(result.has_error());
 
     auto* error = result.error_if<forge::accel::error>();
-    assert(error != nullptr);
-    assert(error->kind == forge::accel::error_kind::size_mismatch);
-    assert(error->cause);
+    forge_example::require(error != nullptr);
+    forge_example::require(error->kind == forge::accel::error_kind::size_mismatch);
+    forge_example::require(error->cause);
     try {
         std::rethrow_exception(error->cause);
     } catch (const std::runtime_error&) {

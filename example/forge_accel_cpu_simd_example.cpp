@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <execution>
 #include <span>
@@ -41,10 +42,10 @@ int main() {
     std::vector<float> output(input.size());
     forge::accel::cpu::device_buffer<float> device{ctx, input.size()};
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_device(q, device, std::span<const float>{input})).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::submit(q, [&] {
             auto data = device.span();
             for (std::size_t offset = 0; offset < data.size(); offset += lanes::size()) {
@@ -57,8 +58,8 @@ int main() {
             }
         })).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_host(q, std::span<float>{output}, device)).has_value());
 
-    assert((output == std::vector<float>{3.0f, 5.0f, 7.0f, 9.0f, 11.0f, 13.0f}));
+    forge_example::require((output == std::vector<float>{3.0f, 5.0f, 7.0f, 9.0f, 11.0f, 13.0f}));
 }

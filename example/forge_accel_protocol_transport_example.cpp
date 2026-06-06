@@ -1,6 +1,7 @@
 #include <forge/accel.hpp>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <iostream>
 #include <vector>
@@ -28,27 +29,27 @@ int main() {
         std::move(request_payload));
 
     auto posted = transport.submit_posted(request);
-    assert(posted);
-    assert(posted.mode == forge::accel::call_mode::posted);
+    forge_example::require(posted);
+    forge_example::require(posted.mode == forge::accel::call_mode::posted);
 
     auto queued = transport.try_recv_request();
-    assert(queued.has_value());
+    forge_example::require(queued.has_value());
     auto response = forge::accel::make_response_envelope(
         *queued,
         forge::accel::protocol_payload{std::byte{0x7f}});
-    assert(transport.deliver_response(std::move(response)));
+    forge_example::require(transport.deliver_response(std::move(response)));
 
     auto completion = transport.try_recv_completion();
-    assert(completion.has_value());
-    assert(completion->kind == forge::accel::message_kind::response);
-    assert(completion->meta.request.value == 10);
-    assert(completion->payload.size() == 1);
+    forge_example::require(completion.has_value());
+    forge_example::require(completion->kind == forge::accel::message_kind::response);
+    forge_example::require(completion->meta.request.value == 10);
+    forge_example::require(completion->payload.size() == 1);
 
     auto late_response = forge::accel::make_response_envelope(
         *queued,
         forge::accel::protocol_payload{std::byte{0x55}});
-    assert(!transport.deliver_response(std::move(late_response)));
-    assert(transport.late_response_count() == 1);
+    forge_example::require(!transport.deliver_response(std::move(late_response)));
+    forge_example::require(transport.late_response_count() == 1);
 
     auto non_posted = forge::accel::make_request_envelope(
         forge::accel::protocol_route{
@@ -62,8 +63,8 @@ int main() {
         forge::accel::module_id{5},
         forge::accel::command_id{12});
     auto accepted = transport.submit_non_posted(std::move(non_posted));
-    assert(accepted);
-    assert(accepted.mode == forge::accel::call_mode::non_posted);
+    forge_example::require(accepted);
+    forge_example::require(accepted.mode == forge::accel::call_mode::non_posted);
 
     auto signal = forge::accel::make_signal_envelope(
         forge::accel::protocol_route{
@@ -75,8 +76,8 @@ int main() {
             .reason = forge::accel::lifecycle_signal_reason::closing,
             .diagnostic = "transport closing",
         });
-    assert(transport.deliver_signal(std::move(signal)));
-    assert(transport.try_recv_completion()->kind == forge::accel::message_kind::signal);
+    forge_example::require(transport.deliver_signal(std::move(signal)));
+    forge_example::require(transport.try_recv_completion()->kind == forge::accel::message_kind::signal);
 
     std::cout << "protocol request " << completion->meta.request.value
               << " completed through loopback transport\n";

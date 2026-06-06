@@ -26,6 +26,7 @@
 #include <execution>
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <memory_resource>
 #include <tuple>
 
@@ -55,11 +56,11 @@ int main() {
         std::execution::schedule(pool.get_scheduler())
         | std::execution::then([&] noexcept {
             auto command = std::execution::sync_wait(channel.async_recv());
-            assert(command.has_value());
-            assert(std::get<0>(*command) == 21);
+            forge_example::require(command.has_value());
+            forge_example::require(std::get<0>(*command) == 21);
         }));
 
-    assert(std::execution::sync_wait(channel.async_send(21)).has_value());
+    forge_example::require(std::execution::sync_wait(channel.async_send(21)).has_value());
     channel.close();
     pool.shutdown();
     pool.wait();

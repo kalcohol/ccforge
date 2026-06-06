@@ -20,9 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#if __cplusplus < 202002L
-int main() { return 0; }
-#else
 #include <execution>
 #include <iostream>
 #include <tuple>
@@ -37,4 +34,3 @@ int main() {
     std::cout << "let_value=" << std::get<0>(*result) << '\n';
     return 0;
 }
-#endif

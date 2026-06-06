@@ -1,6 +1,7 @@
 #include <execution>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <iostream>
 #include <tuple>
 #include <utility>
@@ -20,8 +21,8 @@ int main() {
         token);
 
     auto result = ex::sync_wait(std::move(future));
-    assert(result.has_value());
-    assert(std::get<0>(*result) == 42);
+    forge_example::require(result.has_value());
+    forge_example::require(std::get<0>(*result) == 42);
 
     scope.close();
     ex::sync_wait(scope.join());

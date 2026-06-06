@@ -25,6 +25,7 @@
 #include <execution>
 #include <atomic>
 #include <cassert>
+#include "example_support.hpp"
 
 int main() {
     forge::static_thread_pool pool{2};
@@ -37,12 +38,12 @@ int main() {
             count.fetch_add(1, std::memory_order_relaxed);
         }));
 
-    assert(spawned);
+    forge_example::require(spawned);
     scope.wait();
     pool.wait();
-    assert(count.load(std::memory_order_relaxed) == 1);
+    forge_example::require(count.load(std::memory_order_relaxed) == 1);
 
     scope.close();
-    assert(!scope.spawn(std::execution::just()));
+    forge_example::require(!scope.spawn(std::execution::just()));
 }
 

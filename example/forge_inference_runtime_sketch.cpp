@@ -27,6 +27,7 @@
 #include <execution>
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <memory_resource>
 #include <span>
 #include <tuple>
@@ -74,36 +75,36 @@ int main() {
                 forge::accel::mock::device_buffer<float> device{accel, req.values.size()};
                 std::array<float, 4> output{};
 
-                assert(std::execution::sync_wait(
+                forge_example::require(std::execution::sync_wait(
                     forge::accel::mock::copy_to_device(
                         accel_queue,
                         device,
                         std::span<const float>{req.values})).has_value());
-                assert(std::execution::sync_wait(
+                forge_example::require(std::execution::sync_wait(
                     forge::accel::mock::submit(accel_queue, [&] {
                         for (auto& value : device.span()) {
                             value *= value;
                         }
                     })).has_value());
-                assert(std::execution::sync_wait(
+                forge_example::require(std::execution::sync_wait(
                     forge::accel::mock::copy_to_host(
                         accel_queue,
                         std::span<float>{output},
                         device)).has_value());
 
                 float score = output[0] + output[1] + output[2] + output[3];
-                assert(std::execution::sync_wait(
+                forge_example::require(std::execution::sync_wait(
                     std::execution::schedule(session_order.get_scheduler())
                     | std::execution::then([&scores, score] {
                         scores.push_back(score);
                     })).has_value());
             }
         }));
-    assert(spawned);
+    forge_example::require(spawned);
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         incoming.async_send(request{{1.0f, 2.0f, 3.0f, 4.0f}})).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         incoming.async_send(request{{2.0f, 3.0f, 4.0f, 5.0f}})).has_value());
     incoming.close();
 
@@ -114,5 +115,5 @@ int main() {
     std::pmr::vector<float> expected{&arena};
     expected.push_back(30.0f);
     expected.push_back(54.0f);
-    assert(scores == expected);
+    forge_example::require(scores == expected);
 }

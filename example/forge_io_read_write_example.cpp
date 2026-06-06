@@ -25,6 +25,7 @@
 #include <execution>
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <fcntl.h>
 #include <span>
@@ -64,7 +65,7 @@ private:
 
 int main() {
     int fds[2]{-1, -1};
-    assert(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
+    forge_example::require(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
     unique_fd read_fd{fds[0]};
     unique_fd write_fd{fds[1]};
 
@@ -73,17 +74,17 @@ int main() {
     std::array<char, 5> outbound{'h', 'e', 'l', 'l', 'o'};
     auto wrote = std::execution::sync_wait(
         io.async_write_some(write_fd.get(), std::as_bytes(std::span{outbound})));
-    assert(wrote.has_value());
-    assert(std::get<0>(*wrote) == outbound.size());
+    forge_example::require(wrote.has_value());
+    forge_example::require(std::get<0>(*wrote) == outbound.size());
 
     std::array<std::byte, 5> inbound{};
     auto read = std::execution::sync_wait(
         io.async_read_some(read_fd.get(), std::span{inbound}));
-    assert(read.has_value());
-    assert(std::get<0>(*read) == inbound.size());
+    forge_example::require(read.has_value());
+    forge_example::require(std::get<0>(*read) == inbound.size());
 
     auto text = std::as_bytes(std::span{outbound});
     for (std::size_t i = 0; i < inbound.size(); ++i) {
-        assert(inbound[i] == text[i]);
+        forge_example::require(inbound[i] == text[i]);
     }
 }

@@ -6,6 +6,7 @@ find_library(FORGE_EXAMPLE_TBB_LIBRARY NAMES tbb)
 function(forge_add_example_smoke target_name)
     if(FORGE_BUILD_TESTS)
         add_test(NAME "example_${target_name}_smoke" COMMAND $<TARGET_FILE:${target_name}>)
+        set_tests_properties("example_${target_name}_smoke" PROPERTIES TIMEOUT 60)
     endif()
 endfunction()
 

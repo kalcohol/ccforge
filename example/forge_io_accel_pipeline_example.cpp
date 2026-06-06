@@ -25,6 +25,7 @@
 
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <execution>
 #include <fcntl.h>
@@ -66,7 +67,7 @@ private:
 
 int main() {
     int fds[2]{-1, -1};
-    assert(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
+    forge_example::require(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
     unique_fd read_fd{fds[0]};
     unique_fd write_fd{fds[1]};
 
@@ -81,8 +82,8 @@ int main() {
     std::vector<float> outbound{1.0f, 2.0f, 3.0f, 4.0f};
     auto wrote = std::execution::sync_wait(
         io.async_write_some(write_fd.get(), std::as_bytes(std::span{outbound})));
-    assert(wrote.has_value());
-    assert(std::get<0>(*wrote) == outbound.size() * sizeof(float));
+    forge_example::require(wrote.has_value());
+    forge_example::require(std::get<0>(*wrote) == outbound.size() * sizeof(float));
 
     std::vector<float> inbound(outbound.size());
     std::vector<float> output(outbound.size());
@@ -93,7 +94,7 @@ int main() {
             read_fd.get(),
             std::as_writable_bytes(std::span{inbound}))
         | std::execution::let_value([&](std::size_t bytes) {
-              assert(bytes == inbound.size() * sizeof(float));
+              forge_example::require(bytes == inbound.size() * sizeof(float));
               return forge::accel::cpu::copy_to_device(
                   copy_q,
                   device,
@@ -113,6 +114,6 @@ int main() {
                   device);
           });
 
-    assert(std::execution::sync_wait(std::move(pipeline)).has_value());
-    assert((output == std::vector<float>{3.0f, 5.0f, 7.0f, 9.0f}));
+    forge_example::require(std::execution::sync_wait(std::move(pipeline)).has_value());
+    forge_example::require((output == std::vector<float>{3.0f, 5.0f, 7.0f, 9.0f}));
 }

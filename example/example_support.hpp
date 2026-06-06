@@ -20,22 +20,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <execution>
-#include <iostream>
+#pragma once
 
-int main() {
-    std::inplace_stop_source source;
-    auto token = source.get_token();
-    bool called = false;
+#include <cstdlib>
 
-    std::inplace_stop_callback cb(token, [&] {
-        called = true;
-        std::cout << "stop callback\n";
-    });
+namespace forge_example {
 
-    source.request_stop();
-
-    std::cout << "stop_requested=" << token.stop_requested()
-              << ", callback=" << called << '\n';
-    return 0;
+template<class T>
+void require(const T& value) {
+    if (!static_cast<bool>(value)) {
+        std::abort();
+    }
 }
+
+} // namespace forge_example
+

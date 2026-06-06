@@ -23,20 +23,21 @@
 #include <forge/channel.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <tuple>
 
 int main() {
     forge::bounded_channel<int> channel{2};
 
     auto sent = std::execution::sync_wait(channel.async_send(7));
-    assert(sent.has_value());
+    forge_example::require(sent.has_value());
 
     auto received = std::execution::sync_wait(channel.async_recv());
-    assert(received.has_value());
-    assert(std::get<0>(*received) == 7);
+    forge_example::require(received.has_value());
+    forge_example::require(std::get<0>(*received) == 7);
 
     channel.close();
     auto stopped = std::execution::sync_wait(channel.async_recv());
-    assert(!stopped.has_value());
+    forge_example::require(!stopped.has_value());
 }
 

@@ -23,6 +23,7 @@
 #include <forge/accel.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <span>
 #include <vector>
 
@@ -34,10 +35,10 @@ int main() {
     std::vector<int> host_out(4);
     forge::accel::mock::device_buffer<int> device{ctx, host_in.size()};
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(q, device, std::span<const int>{host_in})).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_host(q, std::span<int>{host_out}, device)).has_value());
 
-    assert(host_out == host_in);
+    forge_example::require(host_out == host_in);
 }

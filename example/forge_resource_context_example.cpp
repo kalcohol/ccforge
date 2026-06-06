@@ -24,6 +24,7 @@
 #include <forge/resource_context.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <tuple>
 
 int main() {
@@ -41,12 +42,12 @@ int main() {
             }
         }));
 
-    assert(spawned);
-    assert(std::execution::sync_wait(commands.async_send(6)).has_value());
+    forge_example::require(spawned);
+    forge_example::require(std::execution::sync_wait(commands.async_send(6)).has_value());
 
     auto event = std::execution::sync_wait(events.async_recv());
-    assert(event.has_value());
-    assert(std::get<0>(*event) == 7);
+    forge_example::require(event.has_value());
+    forge_example::require(std::get<0>(*event) == 7);
 
     commands.close();
     ctx.wait();

@@ -20,12 +20,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#if __cpp_impl_coroutine >= 201902L
+#include <execution>
 #include <forge/task.hpp>
+
 #include <iostream>
-forge::task<int> compute() { co_return 7 * 6; }
-int main() { auto v = std::execution::sync_wait(compute()); std::cout << "forge task value: " << std::get<0>(*v) << '\n'; return 0; }
-#else
-#include <iostream>
-int main() { std::cout << "C++20 coroutines required\n"; return 0; }
-#endif
+#include <tuple>
+
+forge::task<int> compute() {
+    co_return 7 * 6;
+}
+
+int main() {
+    auto value = std::execution::sync_wait(compute());
+    std::cout << "forge task value: " << std::get<0>(*value) << '\n';
+}

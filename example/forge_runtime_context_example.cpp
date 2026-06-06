@@ -22,6 +22,7 @@
 
 #include <forge/runtime_context.hpp>
 #include <cassert>
+#include "example_support.hpp"
 #include <chrono>
 #include <tuple>
 
@@ -33,9 +34,9 @@ int main() {
     auto value = std::execution::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([] { return 42; }));
-    assert(value.has_value());
-    assert(std::get<0>(*value) == 42);
+    forge_example::require(value.has_value());
+    forge_example::require(std::get<0>(*value) == 42);
 
     auto timer = std::execution::sync_wait(ctx.schedule_after(1ms));
-    assert(timer.has_value());
+    forge_example::require(timer.has_value());
 }

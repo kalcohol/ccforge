@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <memory_resource>
 #include <optional>
@@ -288,24 +289,24 @@ private:
 
 int main() {
     reference_runtime service;
-    assert(service.start());
+    forge_example::require(service.start());
 
-    assert(service.submit(
+    forge_example::require(service.submit(
         inference_request{.id = 1, .features = {1.0f, 2.0f, 3.0f, 4.0f}}));
-    assert(service.submit(
+    forge_example::require(service.submit(
         inference_request{
             .id = 2,
             .features = {2.0f, 3.0f, 4.0f, 5.0f},
             .mode = request_mode::size_mismatch}));
-    assert(service.submit(
+    forge_example::require(service.submit(
         inference_request{
             .id = 3,
             .features = {3.0f, 4.0f, 5.0f, 6.0f},
             .mode = request_mode::device_loss}));
-    assert(service.submit(
+    forge_example::require(service.submit(
         inference_request{.id = 4, .features = {2.0f, 3.0f, 4.0f, 5.0f}}));
     service.close();
-    assert(!service.submit(inference_request{
+    forge_example::require(!service.submit(inference_request{
         .id = 5,
         .features = {1.0f, 1.0f, 1.0f, 1.0f}}));
 
@@ -315,36 +316,36 @@ int main() {
     }
     service.wait();
 
-    assert(responses.size() == 4);
-    assert(
+    forge_example::require(responses.size() == 4);
+    forge_example::require(
         responses[0].id == 1 && responses[0].ok &&
         responses[0].score == 34.0f);
-    assert(!responses[1].ok);
-    assert(responses[1].error == forge::accel::error_kind::size_mismatch);
-    assert(!responses[2].ok);
-    assert(responses[2].error == forge::accel::error_kind::device_lost);
-    assert(
+    forge_example::require(!responses[1].ok);
+    forge_example::require(responses[1].error == forge::accel::error_kind::size_mismatch);
+    forge_example::require(!responses[2].ok);
+    forge_example::require(responses[2].error == forge::accel::error_kind::device_lost);
+    forge_example::require(
         responses[3].id == 4 && responses[3].ok &&
         responses[3].score == 58.0f);
 
     const auto stats = service.stats();
-    assert(stats.responses == 4);
-    assert(stats.processed == 2);
-    assert(stats.errors == 2);
-    assert(stats.total_score == 92.0f);
-    assert(stats.last_error == forge::accel::error_kind::device_lost);
+    forge_example::require(stats.responses == 4);
+    forge_example::require(stats.processed == 2);
+    forge_example::require(stats.errors == 2);
+    forge_example::require(stats.total_score == 92.0f);
+    forge_example::require(stats.last_error == forge::accel::error_kind::device_lost);
 
     const auto trace = service.trace_snapshot();
-    assert(trace.size() >= 12);
-    assert(std::any_of(trace.begin(), trace.end(), [](const auto& event) {
+    forge_example::require(trace.size() >= 12);
+    forge_example::require(std::any_of(trace.begin(), trace.end(), [](const auto& event) {
         return event.kind == forge::accel::mock::trace_event_kind::device_lost;
     }));
 
     reference_runtime stopped;
-    assert(stopped.start());
+    forge_example::require(stopped.start());
     stopped.shutdown();
     stopped.wait();
-    assert(!stopped.submit(inference_request{
+    forge_example::require(!stopped.submit(inference_request{
         .id = 6,
         .features = {1.0f, 1.0f, 1.0f, 1.0f}}));
 }

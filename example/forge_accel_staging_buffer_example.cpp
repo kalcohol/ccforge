@@ -25,6 +25,7 @@
 #include <execution>
 #include <algorithm>
 #include <cassert>
+#include "example_support.hpp"
 #include <initializer_list>
 #include <tuple>
 
@@ -38,19 +39,19 @@ int main() {
 
     std::ranges::copy(std::initializer_list<int>{1, 2, 3, 4}, input.span().begin());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(q, device, input.span())).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::submit(q, [&] {
             for (auto& value : device.span()) {
                 value += 10;
             }
         })).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_host(q, output.span(), device)).has_value());
 
-    assert(output.span()[0] == 11);
-    assert(output.span()[1] == 12);
-    assert(output.span()[2] == 13);
-    assert(output.span()[3] == 14);
+    forge_example::require(output.span()[0] == 11);
+    forge_example::require(output.span()[1] == 12);
+    forge_example::require(output.span()[2] == 13);
+    forge_example::require(output.span()[3] == 14);
 }

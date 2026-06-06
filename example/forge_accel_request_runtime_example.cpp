@@ -3,6 +3,7 @@
 #include <forge/wait_result.hpp>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <condition_variable>
 #include <execution>
 #include <mutex>
@@ -20,10 +21,10 @@ int main() {
                 response = request * 2;
             }));
 
-    assert(sync.has_value());
+    forge_example::require(sync.has_value());
     auto sync_packet = std::get<0>(std::move(sync.value()));
-    assert(sync_packet.id.value == 1);
-    assert(sync_packet.response == 42);
+    forge_example::require(sync_packet.id.value == 1);
+    forge_example::require(sync_packet.response == 42);
 
     std::mutex mtx;
     std::condition_variable cv;
@@ -66,8 +67,8 @@ int main() {
         cv.wait(lk, [&] { return done; });
     }
 
-    assert(posted_response == 12);
-    assert(requests.pending_count() == 0);
+    forge_example::require(posted_response == 12);
+    forge_example::require(requests.pending_count() == 0);
 
     forge::accel::mock::context failure_ctx;
     auto failure_device = failure_ctx.get_device();
@@ -82,8 +83,8 @@ int main() {
             [](int& request, int& response) noexcept {
                 response = request;
             }));
-    assert(failure.has_error());
+    forge_example::require(failure.has_error());
     auto* error = failure.error_if<forge::accel::error>();
-    assert(error != nullptr);
-    assert(error->kind == forge::accel::error_kind::device_lost);
+    forge_example::require(error != nullptr);
+    forge_example::require(error->kind == forge::accel::error_kind::device_lost);
 }

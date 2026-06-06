@@ -22,6 +22,7 @@
 
 #include <forge/timer_context.hpp>
 #include <cassert>
+#include "example_support.hpp"
 #include <chrono>
 
 int main() {
@@ -29,5 +30,5 @@ int main() {
 
     forge::timer_context timers;
     auto result = std::execution::sync_wait(timers.schedule_after(1ms));
-    assert(result.has_value());
+    forge_example::require(result.has_value());
 }

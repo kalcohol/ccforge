@@ -1,6 +1,7 @@
 #include <forge/accel.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <vector>
 
 int main() {
@@ -26,11 +27,11 @@ int main() {
         order.push_back(3);
     }));
 
-    assert((order == std::vector<int>{1, 2, 3}));
+    forge_example::require((order == std::vector<int>{1, 2, 3}));
     auto completions = callbacks.completions();
-    assert(completions.size() == 1);
-    assert(completions[0].callback == callback);
-    assert(completions[0].status == forge::accel::callback_status::ok);
+    forge_example::require(completions.size() == 1);
+    forge_example::require(completions[0].callback == callback);
+    forge_example::require(completions[0].status == forge::accel::callback_status::ok);
 
     callbacks.shutdown();
     callbacks.wait();

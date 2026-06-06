@@ -26,6 +26,7 @@
 #include <execution>
 #include <array>
 #include <cassert>
+#include "example_support.hpp"
 #include <memory_resource>
 #include <tuple>
 #include <vector>
@@ -66,15 +67,15 @@ int main() {
                     }));
             }
         }));
-    assert(spawned);
+    forge_example::require(spawned);
 
     for (int value : {1, 2, 3, 4}) {
-        assert(std::execution::sync_wait(commands.async_send(value)).has_value());
+        forge_example::require(std::execution::sync_wait(commands.async_send(value)).has_value());
     }
     commands.close();
 
     ctx.wait();
     serial.wait();
 
-    assert((results == std::vector<int>{2, 4, 6, 8}));
+    forge_example::require((results == std::vector<int>{2, 4, 6, 8}));
 }

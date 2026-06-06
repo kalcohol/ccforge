@@ -26,6 +26,7 @@
 
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <tuple>
 #include <vector>
 
@@ -50,7 +51,7 @@ public:
         bool spawned = ctx_.spawn(
             std::execution::schedule(ctx_.get_scheduler())
             | std::execution::then([this] noexcept { run(); }));
-        assert(spawned);
+        forge_example::require(spawned);
     }
 
     ~service() noexcept {
@@ -103,19 +104,19 @@ private:
 int main() {
     {
         service svc;
-        assert(svc.submit({1, 7}));
-        assert(svc.submit({2, 9}));
+        forge_example::require(svc.submit({1, 7}));
+        forge_example::require(svc.submit({2, 9}));
 
         svc.close_and_wait();
 
-        assert((svc.results() == std::vector<int>{107, 209}));
-        assert(!svc.submit({3, 11}));
+        forge_example::require((svc.results() == std::vector<int>{107, 209}));
+        forge_example::require(!svc.submit({3, 11}));
     }
 
     {
         service svc;
         svc.stop_and_wait();
-        assert(svc.results().empty());
-        assert(!svc.submit({1, 1}));
+        forge_example::require(svc.results().empty());
+        forge_example::require(!svc.submit({1, 1}));
     }
 }

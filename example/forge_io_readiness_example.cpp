@@ -23,6 +23,7 @@
 #include <forge/io.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #include <utility>
@@ -59,19 +60,19 @@ private:
 
 int main() {
     int fds[2]{-1, -1};
-    assert(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
+    forge_example::require(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
     unique_fd read_fd{fds[0]};
     unique_fd write_fd{fds[1]};
 
     forge::io::context io;
 
     const char out = 'x';
-    assert(::write(write_fd.get(), &out, 1) == 1);
+    forge_example::require(::write(write_fd.get(), &out, 1) == 1);
 
     auto ready = std::execution::sync_wait(io.readable(read_fd.get()));
-    assert(ready.has_value());
+    forge_example::require(ready.has_value());
 
     char in = 0;
-    assert(::read(read_fd.get(), &in, 1) == 1);
-    assert(in == out);
+    forge_example::require(::read(read_fd.get(), &in, 1) == 1);
+    forge_example::require(in == out);
 }

@@ -26,6 +26,7 @@
 
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <exception>
 #include <tuple>
 
@@ -48,7 +49,7 @@ plugin_operation make_plugin_operation(forge::any_scheduler scheduler, int value
 
 int run_plugin(plugin_operation op) {
     auto result = std::execution::sync_wait(std::move(op));
-    assert(result.has_value());
+    forge_example::require(result.has_value());
     return std::get<0>(*result);
 }
 
@@ -60,5 +61,5 @@ int main() {
     forge::any_scheduler selected_runtime{pool.get_scheduler()};
     plugin_operation op = make_plugin_operation(std::move(selected_runtime), 14);
 
-    assert(run_plugin(std::move(op)) == 42);
+    forge_example::require(run_plugin(std::move(op)) == 42);
 }

@@ -25,6 +25,7 @@
 #include <forge/strand.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <vector>
 
 int main() {
@@ -40,5 +41,5 @@ int main() {
         | std::execution::then([&] noexcept { order.push_back(2); }));
 
     strand.wait();
-    assert((order == std::vector<int>{1, 2}));
+    forge_example::require((order == std::vector<int>{1, 2}));
 }

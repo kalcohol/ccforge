@@ -22,6 +22,7 @@
 
 #include <forge/static_thread_pool.hpp>
 #include <cassert>
+#include "example_support.hpp"
 #include <thread>
 
 int main() {
@@ -33,6 +34,6 @@ int main() {
               return std::this_thread::get_id() != main_id;
           }));
 
-    assert(ran_on_worker && std::get<0>(*ran_on_worker));
+    forge_example::require(ran_on_worker && std::get<0>(*ran_on_worker));
     return 0;
 }

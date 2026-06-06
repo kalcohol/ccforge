@@ -26,6 +26,7 @@
 #include <execution>
 #include <algorithm>
 #include <cassert>
+#include "example_support.hpp"
 #include <cstddef>
 #include <initializer_list>
 
@@ -51,11 +52,11 @@ int main() {
             std::byte{0x40}},
         staging.span().begin());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(q, bytes, staging)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_host(q, readback, bytes)).has_value());
-    assert(std::ranges::equal(staging.span(), readback.span()));
+    forge_example::require(std::ranges::equal(staging.span(), readback.span()));
 
     forge::accel::mock::device_buffer<int> cached{
         ctx,
@@ -68,7 +69,7 @@ int main() {
     forge::accel::mock::host_buffer<int> output{ctx, 3};
     std::ranges::copy(std::initializer_list<int>{3, 4, 5}, input.span().begin());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_device(q, cached, input)).has_value());
 
     using command = std::execution::completion_signatures<
@@ -79,14 +80,14 @@ int main() {
     forge::erased_sender<command> invalid_read{
         forge::accel::mock::copy_to_host_typed(q, output, cached)};
     auto error_result = forge::wait_result(std::move(invalid_read));
-    assert(error_result.has_error());
+    forge_example::require(error_result.has_error());
     auto* error = error_result.error_if<forge::accel::error>();
-    assert(error != nullptr);
-    assert(error->kind == forge::accel::error_kind::coherence_required);
+    forge_example::require(error != nullptr);
+    forge_example::require(error->kind == forge::accel::error_kind::coherence_required);
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::flush(q, cached)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::mock::copy_to_host(q, output, cached)).has_value());
-    assert(std::ranges::equal(input.span(), output.span()));
+    forge_example::require(std::ranges::equal(input.span(), output.span()));
 }

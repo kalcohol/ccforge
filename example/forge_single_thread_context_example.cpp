@@ -22,6 +22,7 @@
 
 #include <forge/single_thread_context.hpp>
 #include <cassert>
+#include "example_support.hpp"
 #include <thread>
 #include <tuple>
 
@@ -35,6 +36,6 @@ int main() {
         std::execution::schedule(sch)
             | std::execution::then([] { return std::this_thread::get_id(); }));
 
-    assert(first && second);
-    assert(std::get<0>(*first) == std::get<0>(*second));
+    forge_example::require(first && second);
+    forge_example::require(std::get<0>(*first) == std::get<0>(*second));
 }

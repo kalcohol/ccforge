@@ -1,6 +1,7 @@
 #include <forge/accel.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <span>
 #include <utility>
 #include <vector>
@@ -42,18 +43,18 @@ int main() {
             std::span<const int>{host}));
 
     b.run_on_current_stream([&] {
-        assert(forge::accel::current_device().value().value == 0);
-        assert(forge::accel::current_stream().has_value());
+        forge_example::require(forge::accel::current_device().value().value == 0);
+        forge_example::require(forge::accel::current_stream().has_value());
         for (auto& value : data.span()) {
             value *= 2;
         }
     });
 
     auto sync = forge::accel::mock::synchronize_stream(b.compute);
-    assert(sync);
+    forge_example::require(sync);
 
     std::vector<int> out(4);
     std::execution::sync_wait(
         forge::accel::mock::copy_to_host(b.compute, std::span<int>{out}, data));
-    assert((out == std::vector<int>{2, 4, 6, 8}));
+    forge_example::require((out == std::vector<int>{2, 4, 6, 8}));
 }

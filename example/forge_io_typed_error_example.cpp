@@ -25,6 +25,7 @@
 
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <system_error>
 #include <utility>
 
@@ -43,10 +44,10 @@ int main() {
 
     readiness_operation op{io.readable_typed(-1)};
     auto result = forge::wait_result(std::move(op));
-    assert(result.has_error());
+    forge_example::require(result.has_error());
 
     auto* error = result.error_if<forge::io::error>();
-    assert(error != nullptr);
-    assert(error->kind == forge::io::error_kind::invalid_handle);
-    assert(error->code == std::make_error_code(std::errc::bad_file_descriptor));
+    forge_example::require(error != nullptr);
+    forge_example::require(error->kind == forge::io::error_kind::invalid_handle);
+    forge_example::require(error->code == std::make_error_code(std::errc::bad_file_descriptor));
 }

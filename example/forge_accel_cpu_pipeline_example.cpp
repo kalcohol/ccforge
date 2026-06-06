@@ -23,6 +23,7 @@
 #include <forge/accel.hpp>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <execution>
 #include <span>
 #include <vector>
@@ -41,26 +42,26 @@ int main() {
     forge::accel::cpu::event uploaded;
     forge::accel::cpu::event computed;
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_device(copy_q, device, std::span<const float>{input})).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::record_event(copy_q, uploaded)).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::wait_event(compute_q, uploaded)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::submit(compute_q, [&] {
             for (auto& value : device.span()) {
                 value = value * 3.0f;
             }
         })).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::record_event(compute_q, computed)).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::wait_event(copy_q, computed)).has_value());
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         forge::accel::cpu::copy_to_host(copy_q, std::span<float>{output}, device)).has_value());
 
-    assert((output == std::vector<float>{3.0f, 6.0f, 9.0f, 12.0f}));
+    forge_example::require((output == std::vector<float>{3.0f, 6.0f, 9.0f, 12.0f}));
 }

@@ -1,6 +1,7 @@
 #include <linalg>
 #include <mdspan>
 #include <cassert>
+#include "example_support.hpp"
 #include <cmath>
 
 int main() {
@@ -13,13 +14,13 @@ int main() {
 
     // dot product (SIMD-accelerated when simd backport available)
     double d = std::linalg::dot(xv, yv, 0.0);
-    assert(std::abs(d - N) < 1e-10);
+    forge_example::require(std::abs(d - N) < 1e-10);
 
     // vector_two_norm (SIMD-accelerated)
     float fdata[4] = {3.0f, 4.0f, 0.0f, 0.0f};
     std::mdspan fv(fdata, std::extents<int, 4>{});
     float nrm = std::linalg::vector_two_norm(fv);
-    assert(std::abs(nrm - 5.0f) < 1e-5f);
+    forge_example::require(std::abs(nrm - 5.0f) < 1e-5f);
 
     return 0;
 }

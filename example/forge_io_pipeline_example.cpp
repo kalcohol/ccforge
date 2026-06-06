@@ -26,6 +26,7 @@
 #include <forge/strand.hpp>
 #include <execution>
 #include <cassert>
+#include "example_support.hpp"
 #include <fcntl.h>
 #include <tuple>
 #include <unistd.h>
@@ -63,7 +64,7 @@ private:
 
 int main() {
     int fds[2]{-1, -1};
-    assert(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
+    forge_example::require(::pipe2(fds, O_NONBLOCK | O_CLOEXEC) == 0);
     unique_fd read_fd{fds[0]};
     unique_fd write_fd{fds[1]};
 
@@ -76,7 +77,7 @@ int main() {
     forge::bounded_channel<char> messages{1};
 
     const char out = 'm';
-    assert(::write(write_fd.get(), &out, 1) == 1);
+    forge_example::require(::write(write_fd.get(), &out, 1) == 1);
 
     auto processed = std::execution::sync_wait(
         std::execution::continues_on(
@@ -88,11 +89,11 @@ int main() {
                 (void)messages.try_send(value);
             }
         }));
-    assert(processed.has_value());
+    forge_example::require(processed.has_value());
 
     auto message = std::execution::sync_wait(messages.async_recv());
-    assert(message.has_value());
-    assert(std::get<0>(*message) == out);
+    forge_example::require(message.has_value());
+    forge_example::require(std::get<0>(*message) == out);
 
     messages.close();
     protocol.wait();

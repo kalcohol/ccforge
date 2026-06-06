@@ -23,6 +23,7 @@
 #include <forge/any_scheduler.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <cassert>
+#include "example_support.hpp"
 #include <tuple>
 
 int main() {
@@ -33,6 +34,6 @@ int main() {
         std::execution::schedule(scheduler)
         | std::execution::then([] { return 7; }));
 
-    assert(result.has_value());
-    assert(std::get<0>(*result) == 7);
+    forge_example::require(result.has_value());
+    forge_example::require(std::get<0>(*result) == 7);
 }

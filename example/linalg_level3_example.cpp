@@ -26,6 +26,7 @@
 #include <mdspan>
 #endif
 #include <cassert>
+#include "example_support.hpp"
 int main() {
 #if defined(__cpp_lib_mdspan)
     int a[] = {2, 1, 0, 0, 1, 3, 4, 0, 1}, b[] = {1, 0, 0, 0, 1, 0, 0, 0, 1}, c[9]{};
@@ -36,7 +37,7 @@ int main() {
     std::linalg::matrix_product(A, B, C);
 
     for (int i = 0; i < 9; ++i) {
-        assert(c[i] == a[i]);
+        forge_example::require(c[i] == a[i]);
     }
 #endif
     return 0;

@@ -23,6 +23,7 @@
 #include <forge/accel.hpp>
 
 #include <cassert>
+#include "example_support.hpp"
 #include <execution>
 #include <span>
 #include <utility>
@@ -115,17 +116,17 @@ template<class Backend>
     typename Backend::template device_buffer<float> device{ctx, input.size()};
     std::vector<float> output(input.size());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         Backend::copy_to_device(q, device, input)).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         Backend::submit(q, [&] {
             for (auto& value : device.span()) {
                 value = value * 4.0f - 1.0f;
             }
         })).has_value());
 
-    assert(std::execution::sync_wait(
+    forge_example::require(std::execution::sync_wait(
         Backend::copy_to_host(q, std::span<float>{output}, device)).has_value());
 
     ctx.wait();
@@ -137,6 +138,6 @@ int main() {
     auto mock_output = run_backend<mock_backend>(std::span<const float>{input});
     auto cpu_output = run_backend<cpu_backend>(std::span<const float>{input});
 
-    assert((mock_output == std::vector<float>{3.0f, 7.0f, 11.0f, 15.0f}));
-    assert(cpu_output == mock_output);
+    forge_example::require((mock_output == std::vector<float>{3.0f, 7.0f, 11.0f, 15.0f}));
+    forge_example::require(cpu_output == mock_output);
 }
