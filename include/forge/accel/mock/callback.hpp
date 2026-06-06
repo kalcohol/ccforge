@@ -228,8 +228,8 @@ private:
         void register_explicit(callback_id id, callback_fn fn) {
             std::lock_guard lk{mtx};
             throw_if_closed();
-            auto it = records.find(id.value);
-            if (it != records.end() && it->second && it->second->registered) {
+            auto it = records->find(id.value);
+            if (it != records->end() && it->second && it->second->registered) {
                 throw operation_error{
                     error_kind::protocol_error,
                     "forge::accel::mock::host callback id is already registered"};
@@ -240,8 +240,11 @@ private:
         void unregister_callback(callback_id id) noexcept {
             std::shared_ptr<callback_fn> released_fn;
             std::unique_lock lk{mtx};
-            auto it = records.find(id.value);
-            if (it == records.end() || !it->second) {
+            if (!records) {
+                return;
+            }
+            auto it = records->find(id.value);
+            if (it == records->end() || !it->second) {
                 return;
             }
             auto rec = it->second;
@@ -308,8 +311,13 @@ private:
                     .id = id,
                     .stopped = true};
             }
-            auto it = records.find(id.value);
-            if (it == records.end() || !it->second || !it->second->registered) {
+            if (!records) {
+                return callback_token{
+                    .id = id,
+                    .known = false};
+            }
+            auto it = records->find(id.value);
+            if (it == records->end() || !it->second || !it->second->registered) {
                 return callback_token{
                     .id = id,
                     .known = false};
@@ -348,8 +356,17 @@ private:
                     record_completion_locked(result);
                     return result;
                 }
-                auto it = records.find(token.id.value);
-                if (it == records.end() || !it->second ||
+                if (!records) {
+                    result.status = callback_status::stopped;
+                    result.err = error{
+                        error_kind::aborted,
+                        command_status::stopped};
+                    result.completed = std::chrono::steady_clock::now();
+                    record_completion_locked(result);
+                    return result;
+                }
+                auto it = records->find(token.id.value);
+                if (it == records->end() || !it->second ||
                     !it->second->registered || it->second->epoch != token.epoch) {
                     result.status = callback_status::stopped;
                     result.err = error{
@@ -399,7 +416,7 @@ private:
 
         [[nodiscard]] auto record_count() const noexcept -> std::size_t {
             std::lock_guard lk{mtx};
-            return records.size();
+            return records ? records->size() : 0;
         }
 
         void record_completion(callback_result result) noexcept {
@@ -420,7 +437,7 @@ private:
         std::size_t active_invocations = 0;
         std::uint64_t next_callback = 1;
         std::uint64_t next_epoch = 1;
-        record_map records;
+        std::optional<record_map> records;
         std::optional<std::pmr::deque<callback_result>> completions_;
 
     private:
@@ -430,9 +447,11 @@ private:
         }
 
         [[nodiscard]] auto all_drained_locked() const noexcept -> bool {
-            for (const auto& item : records) {
-                if (item.second && item.second->in_flight != 0) {
-                    return false;
+            if (records) {
+                for (const auto& item : *records) {
+                    if (item.second && item.second->in_flight != 0) {
+                        return false;
+                    }
                 }
             }
             return active_invocations == 0;
@@ -453,7 +472,7 @@ private:
                 if (next_callback == 0) {
                     next_callback = 1;
                 }
-                if (value != 0 && records.find(value) == records.end()) {
+                if (value != 0 && records->find(value) == records->end()) {
                     return callback_id{value};
                 }
                 if (next_callback == first) {
@@ -474,7 +493,7 @@ private:
                 id,
                 epoch,
                 std::move(fn));
-            records.insert_or_assign(id.value, std::move(rec));
+            records->insert_or_assign(id.value, std::move(rec));
         }
 
         void close_locked() noexcept {
@@ -485,17 +504,23 @@ private:
             if (!rec || rec->registered || rec->in_flight != 0) {
                 return;
             }
-            auto it = records.find(rec->id.value);
-            if (it != records.end() && it->second == rec) {
-                records.erase(it);
+            if (!records) {
+                return;
+            }
+            auto it = records->find(rec->id.value);
+            if (it != records->end() && it->second == rec) {
+                records->erase(it);
             }
         }
 
         void prune_all_locked() {
-            for (auto it = records.begin(); it != records.end();) {
+            if (!records) {
+                return;
+            }
+            for (auto it = records->begin(); it != records->end();) {
                 if (it->second && !it->second->registered &&
                     it->second->in_flight == 0) {
-                    it = records.erase(it);
+                    it = records->erase(it);
                 } else {
                     ++it;
                 }
@@ -545,7 +570,10 @@ private:
 
         [[nodiscard]] auto take_records_locked() noexcept -> record_map {
             record_map old_records{typename record_map::allocator_type{memory}};
-            records.swap(old_records);
+            if (records) {
+                records->swap(old_records);
+                records.reset();
+            }
             return old_records;
         }
 
