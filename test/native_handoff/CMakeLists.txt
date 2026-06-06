@@ -10,4 +10,7 @@ add_test(
         -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/partial_simd_project
         -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
         -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+        "-DGENERATOR=${CMAKE_GENERATOR}"
+        "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_partial_simd.cmake)
