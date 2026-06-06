@@ -97,6 +97,9 @@ public:
                     mode,
                     request};
             }
+            // Safe under mtx_: requests_ has no public async receive path, so
+            // this cannot inline user continuations that re-enter transport.
+            // Exposing one would require an explicit in-flight dispatch state.
             if (!requests_.try_send(std::move(envelope))) {
                 return transport_result{transport_status::not_accepted, mode, request};
             }

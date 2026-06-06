@@ -62,7 +62,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   stopped。`wait()` 等待 accepted timer operation。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 state、timer op data、timer item control block
   和 timer queue 分配。Pending timer 在 receiver env 中存在 stoppable token 时会
-  注册 stop callback；callback 会唤醒 worker，不依赖周期性 polling。
+  注册 stop callback；callback 会唤醒 worker，不依赖周期性 polling。已 `start()`
+  的 timer operation state 必须保持存活直到 value / stopped completion；提前销毁
+  operation state 不是取消协议，调用方应通过 receiver stop token 或
+  `timer_context::shutdown()` 取消。
 - `forge::runtime_context::wait()` 是 practical single-hop drain：`pool -> timers ->
   pool`。它不是 unbounded quiescence protocol。
 - `forge::async_scope` owns eager-start sender work。`close()` 拒绝后续 spawn，
