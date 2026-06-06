@@ -101,7 +101,9 @@ TYPED_TEST(AccelBackendPortableConformanceTest, BasicQueueCopySubmitAndFence) {
 TYPED_TEST(AccelBackendPortableConformanceTest, CrossQueueEventOrdersCopyComputeCopy) {
     using backend = TypeParam;
     auto ctx = backend::make_context(typename backend::context_options{
-        .thread_count = 2,
+        // The pipeline can have two unready cross-queue waits at once; keep one
+        // spare worker available for record_event signal work.
+        .thread_count = 3,
         .queue_capacity = std::nullopt,
     });
     auto copy = backend::get_queue(ctx, forge::accel::queue_kind::copy);
@@ -147,6 +149,13 @@ TYPED_TEST(AccelBackendPortableConformanceTest, CrossQueueEventOrdersCopyCompute
     ASSERT_TRUE(backend::wait_done(record_compute_state));
     ASSERT_TRUE(backend::wait_done(wait_compute_state));
     ASSERT_TRUE(backend::wait_done(download_state));
+    EXPECT_TRUE(upload_state->value);
+    EXPECT_TRUE(record_upload_state->value);
+    EXPECT_TRUE(wait_upload_state->value);
+    EXPECT_TRUE(compute_state->value);
+    EXPECT_TRUE(record_compute_state->value);
+    EXPECT_TRUE(wait_compute_state->value);
+    EXPECT_TRUE(download_state->value);
     EXPECT_EQ(output, (std::vector<int>{4, 6, 8}));
 }
 
