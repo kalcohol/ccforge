@@ -22,4 +22,7 @@
 
 #pragma once
 
+// Compatibility include for the original mock accel context surface.
+// Prefer <forge/accel.hpp> for the full portable vocabulary, or
+// <forge/accel/mock.hpp> / <forge/accel/cpu.hpp> for an explicit backend.
 #include "mock/context.hpp"
