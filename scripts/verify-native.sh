@@ -187,6 +187,12 @@ target_tsan() {
                   "$@"
             cmake --build build/tsan
             export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1"
+            selected_tests=$(ctest --test-dir build/tsan -N -R "execution|forge" | sed -n "s/^Total Tests: //p")
+            if [ -z "${selected_tests}" ] || [ "${selected_tests}" -le 0 ]; then
+                echo "[tsan] selected zero tests for regex: execution|forge" >&2
+                exit 1
+            fi
+            echo "[tsan] ctest-count=${selected_tests}"
             # Try plain ctest first; if the instrumented binaries hit the
             # mmap_rnd_bits TSAN startup crash on high-ASLR-entropy hosts, retry
             # with ASLR disabled via setarch -R.
@@ -217,6 +223,12 @@ target_asan() {
             # non-ASan-instrumented system libc++; UBSan halts on first error.
             export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
             export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
+            selected_tests=$(ctest --test-dir build/asan -N -R "execution|forge" | sed -n "s/^Total Tests: //p")
+            if [ -z "${selected_tests}" ] || [ "${selected_tests}" -le 0 ]; then
+                echo "[asan] selected zero tests for regex: execution|forge" >&2
+                exit 1
+            fi
+            echo "[asan] ctest-count=${selected_tests}"
             if ctest --test-dir build/asan -R "execution|forge" --output-on-failure; then
                 exit 0
             fi

@@ -141,7 +141,7 @@ scripts/verify-windows-msvc-ssh.sh
 ```
 
 `FORGE_WINDOWS_CTEST_REGEX` 用于 focused smoke，例如只跑 `forge_io_iocp`。省略时使用
-PowerShell 脚本默认的 `execution|unique_resource|forge`。`FORGE_WINDOWS_KEEP=1`
+PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`。`FORGE_WINDOWS_KEEP=1`
 可保留远端临时源码/clone 以便调试；不要把具体主机名、用户目录或工具链安装路径写进
 仓库文档。
 
@@ -155,7 +155,8 @@ IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/example
 实际 build/run 少量稳定 examples：IOCP example、basic accel copy/event examples
 和 reference runtime example。这保证 Windows smoke 覆盖 cookbook 的关键路径，而不把
 所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
-因为测试总数会随覆盖增长而变化。可设置 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过
+因为测试总数会随覆盖增长而变化；但 targeted regex lane 会先断言至少选中 1 个测试，
+gate-off 检查则显式断言注册数为 0。可设置 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过
 这些 gate 检查。默认 smoke 也会执行 install package consumer check；可设置
 `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1` 临时跳过。
 

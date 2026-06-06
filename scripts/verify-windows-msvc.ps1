@@ -570,6 +570,9 @@ try {
     $testListOutput = Invoke-NativeOutput "list tests" $listTests
     $testCount = Get-CtestCount $testListOutput
     Write-Host "[msvc] ctest-count=$testCount"
+    Assert-CtestNonZero `
+        -Count $testCount `
+        -Label "main smoke CTest regex '$CTestRegex'"
     Invoke-Native "test" $test
 
     if (-not $SkipInstallPackageCheck) {
