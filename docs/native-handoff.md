@@ -34,6 +34,7 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 Native handoff 的回归应优先看“是否正确让位”和“是否正确注册/不注册对应测试”，不要依赖单个全局 CTest 数量：
 
 - `scripts/verify-native.sh gcc16` 是 partial-native stand-aside 的主线验证，覆盖 GCC 16 上已经出现的 `std::simd`、`std::constant_wrapper`、padded mdspan layouts 和 `std::submdspan` surface。
+- `native_handoff_partial_simd_configure` 使用合成的 incomplete `<simd>` 头验证 partial-native 分支：CMake probe 必须报告 incomplete native support，wrapper 必须 stand aside，不能把 backport 注入到已有 `std::simd` 声明之上。
 - `scripts/verify-native.sh llvm` / `zig` 覆盖 backport inject path。
 - `scripts/verify-native.sh gcc-exec` 单独覆盖 libstdc++ 上的 `std::execution` backport，因为主流标准库还没有稳定 native `std::execution` 实现。
 - `scripts/probe-stdexec-feasibility.sh` 只是可选 reference probe。它可以帮助比较 sender/receiver 语义，但 stdexec 使用 `stdexec::` surface，不能证明 Forge `<execution>` 已经完成 native handoff。
