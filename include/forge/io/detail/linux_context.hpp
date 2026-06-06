@@ -810,11 +810,11 @@ public:
     }
 
     [[nodiscard]] auto readable_typed(int fd) {
-        return __typed_detail::void_sender(readable(fd));
+        return typed_detail::void_sender(readable(fd));
     }
 
     [[nodiscard]] auto writable_typed(int fd) {
-        return __typed_detail::void_sender(writable(fd));
+        return typed_detail::void_sender(writable(fd));
     }
 
     [[nodiscard]] auto async_read_some(int fd, std::span<std::byte> buffer) {
@@ -827,7 +827,7 @@ public:
     [[nodiscard]] auto async_read_some_typed(
         int fd,
         std::span<std::byte> buffer) {
-        return __typed_detail::size_sender(async_read_some(fd, buffer));
+        return typed_detail::size_sender(async_read_some(fd, buffer));
     }
 
     [[nodiscard]] auto async_write_some(
@@ -842,7 +842,7 @@ public:
     [[nodiscard]] auto async_write_some_typed(
         int fd,
         std::span<const std::byte> buffer) {
-        return __typed_detail::size_sender(async_write_some(fd, buffer));
+        return typed_detail::size_sender(async_write_some(fd, buffer));
     }
 
     void cancel(int fd) noexcept {

@@ -734,7 +734,7 @@ public:
     [[nodiscard]] auto async_read_some_typed(
         HANDLE handle,
         std::span<std::byte> buffer) {
-        return __typed_detail::size_sender(async_read_some(handle, buffer));
+        return typed_detail::size_sender(async_read_some(handle, buffer));
     }
 
     [[nodiscard]] auto async_write_some(
@@ -751,7 +751,7 @@ public:
     [[nodiscard]] auto async_write_some_typed(
         HANDLE handle,
         std::span<const std::byte> buffer) {
-        return __typed_detail::size_sender(async_write_some(handle, buffer));
+        return typed_detail::size_sender(async_write_some(handle, buffer));
     }
 
     void cancel(HANDLE handle) noexcept {

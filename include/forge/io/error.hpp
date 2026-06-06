@@ -47,7 +47,7 @@ struct error {
     friend bool operator==(const error&, const error&) noexcept = default;
 };
 
-namespace __typed_detail {
+namespace typed_detail {
 
 [[nodiscard]] inline auto classify(std::error_code code) noexcept -> error_kind {
     if (code == std::make_error_code(std::errc::bad_file_descriptor)) {
@@ -83,7 +83,7 @@ namespace __typed_detail {
 }
 
 template<class R>
-struct __void_receiver {
+struct void_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     R rcvr;
@@ -107,7 +107,7 @@ struct __void_receiver {
 };
 
 template<class R>
-struct __size_receiver {
+struct size_receiver {
     using receiver_concept = std::execution::receiver_t;
 
     R rcvr;
@@ -131,7 +131,7 @@ struct __size_receiver {
 };
 
 template<class Sender, bool Sized>
-struct __sender {
+struct typed_sender {
     using sender_concept = std::execution::sender_t;
     using completion_signatures = std::conditional_t<
         Sized,
@@ -144,7 +144,7 @@ struct __sender {
             std::execution::set_error_t(error),
             std::execution::set_stopped_t()>>;
 
-    Sender sender;
+    Sender source;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures {
@@ -157,9 +157,9 @@ struct __sender {
 
     template<class R>
         requires std::execution::receiver_of<R, completion_signatures>
-    struct __op {
+    struct typed_op {
         using receiver_t =
-            std::conditional_t<Sized, __size_receiver<R>, __void_receiver<R>>;
+            std::conditional_t<Sized, size_receiver<R>, void_receiver<R>>;
         using op_t = std::execution::connect_result_t<Sender, receiver_t>;
         struct state_t {
             template<class Factory>
@@ -169,7 +169,7 @@ struct __sender {
             op_t op;
         };
 
-        __op(Sender sender, R rcvr)
+        typed_op(Sender sender, R rcvr)
             : state(std::make_shared<state_t>([&]() -> op_t {
                   return std::execution::connect(
                       std::move(sender),
@@ -177,10 +177,10 @@ struct __sender {
               }))
         {}
 
-        __op(__op&&) = delete;
-        auto operator=(__op&&) -> __op& = delete;
-        __op(const __op&) = delete;
-        auto operator=(const __op&) -> __op& = delete;
+        typed_op(typed_op&&) = delete;
+        auto operator=(typed_op&&) -> typed_op& = delete;
+        typed_op(const typed_op&) = delete;
+        auto operator=(const typed_op&) -> typed_op& = delete;
 
         void start() & noexcept {
             auto keepalive = state;
@@ -192,30 +192,30 @@ struct __sender {
 
     template<class R>
         requires std::execution::receiver_of<R, completion_signatures>
-    auto connect(R rcvr) && -> __op<R> {
-        return __op<R>{std::move(sender), std::move(rcvr)};
+    auto connect(R rcvr) && -> typed_op<R> {
+        return typed_op<R>{std::move(source), std::move(rcvr)};
     }
 
     template<class R>
         requires std::execution::receiver_of<R, completion_signatures>
               && std::copy_constructible<Sender>
-    auto connect(R rcvr) const& -> __op<R> {
-        return __op<R>{Sender(sender), std::move(rcvr)};
+    auto connect(R rcvr) const& -> typed_op<R> {
+        return typed_op<R>{Sender(source), std::move(rcvr)};
     }
 };
 
 template<class Sender>
 [[nodiscard]] auto void_sender(Sender&& sender)
-    -> __sender<std::decay_t<Sender>, false> {
-    return __sender<std::decay_t<Sender>, false>{static_cast<Sender&&>(sender)};
+    -> typed_sender<std::decay_t<Sender>, false> {
+    return typed_sender<std::decay_t<Sender>, false>{static_cast<Sender&&>(sender)};
 }
 
 template<class Sender>
 [[nodiscard]] auto size_sender(Sender&& sender)
-    -> __sender<std::decay_t<Sender>, true> {
-    return __sender<std::decay_t<Sender>, true>{static_cast<Sender&&>(sender)};
+    -> typed_sender<std::decay_t<Sender>, true> {
+    return typed_sender<std::decay_t<Sender>, true>{static_cast<Sender&&>(sender)};
 }
 
-} // namespace __typed_detail
+} // namespace typed_detail
 
 } // namespace forge::io

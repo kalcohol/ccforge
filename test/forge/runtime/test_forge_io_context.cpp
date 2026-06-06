@@ -621,7 +621,7 @@ TEST(IoContextTest, TypedWouldBlockClassificationFromException) {
         std::make_error_code(std::errc::resource_unavailable_try_again),
         "would block"});
 
-    auto error = forge::io::__typed_detail::from_exception(ep);
+    auto error = forge::io::typed_detail::from_exception(ep);
 
     EXPECT_EQ(error.kind, forge::io::error_kind::would_block);
     EXPECT_EQ(error.code,
