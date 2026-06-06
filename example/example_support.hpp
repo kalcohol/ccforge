@@ -32,6 +32,4 @@ void require(const T& value) {
         std::abort();
     }
 }
-
 } // namespace forge_example
-
