@@ -23,6 +23,8 @@
 #include <execution>
 #include <forge/task.hpp>
 
+#include "example_support.hpp"
+
 #include <iostream>
 #include <tuple>
 
@@ -32,5 +34,7 @@ forge::task<int> compute() {
 
 int main() {
     auto value = std::execution::sync_wait(compute());
+    forge_example::require(value);
+    forge_example::require(std::get<0>(*value) == 42);
     std::cout << "forge task value: " << std::get<0>(*value) << '\n';
 }

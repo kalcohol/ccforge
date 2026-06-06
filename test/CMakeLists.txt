@@ -62,7 +62,13 @@ function(forge_detect_cxx_source_compiles result_var source_file)
 endfunction()
 
 function(forge_expect_cxx_source_compiles result_var source_file should_compile failure_message)
+    set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+    if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
+    endif()
     forge_detect_cxx_source_compiles(${result_var} "${source_file}")
+    set(CMAKE_REQUIRED_FLAGS "${_forge_saved_required_flags}")
+    unset(_forge_saved_required_flags)
 
     if(${should_compile})
         if(NOT ${result_var})

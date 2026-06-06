@@ -21,6 +21,8 @@
 // SOFTWARE.
 
 #include <execution>
+#include "example_support.hpp"
+
 #include <iostream>
 
 int main() {
@@ -33,6 +35,7 @@ int main() {
     scope.close();
     std::execution::sync_wait(scope.join());
 
+    forge_example::require(scope.count() == 0);
     std::cout << "scope_count=" << scope.count() << '\n';
     return 0;
 }

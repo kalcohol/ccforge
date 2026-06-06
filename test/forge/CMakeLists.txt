@@ -34,16 +34,33 @@ endfunction()
 
 function(forge_expect_forge_cxx_source_compiles result_var source_name should_compile failure_message)
     set(_forge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+    set(_forge_saved_required_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
     set(CMAKE_REQUIRED_INCLUDES
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_SOURCE_DIR}/backport")
+    foreach(_forge_required_target IN ITEMS forge_std forge)
+        if(TARGET ${_forge_required_target})
+            get_target_property(
+                _forge_target_definitions
+                ${_forge_required_target}
+                INTERFACE_COMPILE_DEFINITIONS)
+            if(_forge_target_definitions)
+                foreach(_forge_definition IN LISTS _forge_target_definitions)
+                    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
+                endforeach()
+            endif()
+        endif()
+    endforeach()
     forge_expect_cxx_source_compiles(
         ${result_var}
         "${FORGE_COMPILE_DIR}/${source_name}"
         ${should_compile}
         "${failure_message}")
     set(CMAKE_REQUIRED_INCLUDES "${_forge_saved_required_includes}")
+    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_saved_required_definitions}")
     unset(_forge_saved_required_includes)
+    unset(_forge_saved_required_definitions)
+    unset(_forge_target_definitions)
 endfunction()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
@@ -86,6 +103,11 @@ if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_vocabulary.cpp
         forge_accel_vocabulary)
     forge_expect_forge_cxx_source_compiles(
+        FORGE_ACCEPTS_MOCK_TRIVIAL_BUFFER
+        test_forge_accept_mock_trivial_buffer.cpp
+        TRUE
+        "forge::accel::mock buffers must accept trivially-copyable element types")
+    forge_expect_forge_cxx_source_compiles(
         FORGE_REJECTS_MOCK_NON_TRIVIAL_BUFFER
         test_forge_reject_mock_non_trivial_buffer.cpp
         FALSE
@@ -111,6 +133,11 @@ if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_cpu_header
         test_forge_accel_cpu_header.cpp
         forge_accel_cpu_header)
+    forge_expect_forge_cxx_source_compiles(
+        FORGE_ACCEPTS_CPU_TRIVIAL_BUFFER
+        test_forge_accept_cpu_trivial_buffer.cpp
+        TRUE
+        "forge::accel::cpu buffers must accept trivially-copyable element types")
     forge_expect_forge_cxx_source_compiles(
         FORGE_REJECTS_CPU_NON_TRIVIAL_BUFFER
         test_forge_reject_cpu_non_trivial_buffer.cpp

@@ -21,6 +21,8 @@
 // SOFTWARE.
 
 #include <execution>
+#include "example_support.hpp"
+
 #include <iostream>
 #include <tuple>
 
@@ -31,6 +33,8 @@ int main() {
           });
 
     auto result = std::execution::sync_wait(std::move(sender));
+    forge_example::require(result);
+    forge_example::require(std::get<0>(*result) == 21);
     std::cout << "let_value=" << std::get<0>(*result) << '\n';
     return 0;
 }

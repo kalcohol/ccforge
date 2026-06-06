@@ -21,6 +21,8 @@
 // SOFTWARE.
 
 #include <execution>
+#include "example_support.hpp"
+
 #include <iostream>
 
 int main() {
@@ -35,6 +37,8 @@ int main() {
 
     source.request_stop();
 
+    forge_example::require(token.stop_requested());
+    forge_example::require(called);
     std::cout << "stop_requested=" << token.stop_requested()
               << ", callback=" << called << '\n';
     return 0;
