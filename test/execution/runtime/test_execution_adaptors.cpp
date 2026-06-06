@@ -121,7 +121,8 @@ TEST(UponErrorTest, ErrorHandledWithoutThrow) {
     bool fn_called = false;
     auto sndr = std::execution::just_error(42)
               | std::execution::upon_error([&](int) { fn_called = true; });
-    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
 
@@ -151,7 +152,8 @@ TEST(UponStoppedTest, StoppedHandledWithoutThrow) {
     bool fn_called = false;
     auto sndr = std::execution::just_stopped()
               | std::execution::upon_stopped([&] { fn_called = true; });
-    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
 
@@ -209,7 +211,8 @@ TEST(LetErrorTest, HandleError) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    auto result = std::execution::sync_wait(std::move(sndr));
+    EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
 
@@ -247,7 +250,8 @@ TEST(LetStoppedTest, HandleStopped) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    EXPECT_NO_THROW(std::execution::sync_wait(std::move(sndr)));
+    auto result = std::execution::sync_wait(std::move(sndr));
+    EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
 

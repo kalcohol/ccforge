@@ -32,6 +32,20 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
     endif()
 endfunction()
 
+function(forge_expect_forge_cxx_source_compiles result_var source_name should_compile failure_message)
+    set(_forge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+    set(CMAKE_REQUIRED_INCLUDES
+        "${CMAKE_SOURCE_DIR}/include"
+        "${CMAKE_SOURCE_DIR}/backport")
+    forge_expect_cxx_source_compiles(
+        ${result_var}
+        "${FORGE_COMPILE_DIR}/${source_name}"
+        ${should_compile}
+        "${failure_message}")
+    set(CMAKE_REQUIRED_INCLUDES "${_forge_saved_required_includes}")
+    unset(_forge_saved_required_includes)
+endfunction()
+
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
@@ -71,6 +85,11 @@ if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_vocabulary
         test_forge_accel_vocabulary.cpp
         forge_accel_vocabulary)
+    forge_expect_forge_cxx_source_compiles(
+        FORGE_REJECTS_MOCK_NON_TRIVIAL_BUFFER
+        test_forge_reject_mock_non_trivial_buffer.cpp
+        FALSE
+        "forge::accel::mock buffers must reject non-trivially-copyable element types")
     forge_add_forge_test(test_forge_accel_context test_forge_accel_context.cpp forge_accel_context)
     forge_add_forge_test(test_forge_accel_callback test_forge_accel_callback.cpp forge_accel_callback)
     target_compile_definitions(test_forge_accel_callback PRIVATE FORGE_ENABLE_TEST_HOOKS=1)
@@ -92,6 +111,11 @@ if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
         test_forge_accel_cpu_header
         test_forge_accel_cpu_header.cpp
         forge_accel_cpu_header)
+    forge_expect_forge_cxx_source_compiles(
+        FORGE_REJECTS_CPU_NON_TRIVIAL_BUFFER
+        test_forge_reject_cpu_non_trivial_buffer.cpp
+        FALSE
+        "forge::accel::cpu buffers must reject non-trivially-copyable element types")
     forge_add_forge_test(test_forge_accel_cpu test_forge_accel_cpu.cpp forge_accel_cpu)
 endif()
 
