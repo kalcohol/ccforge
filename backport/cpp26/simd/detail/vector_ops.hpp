@@ -76,19 +76,6 @@ typedef unsigned long __attribute__((vector_size(64))) __vec_u64x8;
 #define __SIMD_IS_CONSTEVAL() false
 #endif
 
-// ─── Binary op dispatch ───────────────────────────────────────────────────────
-// Macro to generate elementwise-op dispatch for a given (ElementType, N, VecType).
-// Falls through to scalar loop for non-matching combinations.
-
-#define __SIMD_VECOP2(T, N, VecType, op)                                    \
-    if constexpr (::std::is_same_v<T, decltype(T())> &&                       \
-                  sizeof(T[N]) == sizeof(VecType)) {                        \
-        VecType& vd = reinterpret_cast<VecType&>(*dst);                     \
-        const VecType& vs = reinterpret_cast<const VecType&>(*src);         \
-        vd op vs;                                                            \
-        return;                                                              \
-    }
-
 // ─── Vector add/sub/mul helpers ──────────────────────────────────────────────
 
 template<class T, ::std::size_t N>
@@ -212,3 +199,8 @@ inline T __simd_reduce_add(const T* __restrict__ src) noexcept {
 }
 
 } // namespace detail
+
+#undef __SIMD_IS_CONSTEVAL
+#undef __SIMD_HAVE_128BIT
+#undef __SIMD_HAVE_256BIT
+#undef __SIMD_HAVE_512BIT
