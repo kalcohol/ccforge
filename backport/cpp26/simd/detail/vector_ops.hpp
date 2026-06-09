@@ -78,26 +78,66 @@ typedef unsigned long __attribute__((vector_size(64))) __vec_u64x8;
 
 // ─── Vector add/sub/mul helpers ──────────────────────────────────────────────
 
+template<class Vec, class T>
+inline void __simd_add_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+    Vec left;
+    Vec right;
+    __builtin_memcpy(&left, dst, sizeof(left));
+    __builtin_memcpy(&right, src, sizeof(right));
+    left += right;
+    __builtin_memcpy(dst, &left, sizeof(left));
+}
+
+template<class Vec, class T>
+inline void __simd_sub_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+    Vec left;
+    Vec right;
+    __builtin_memcpy(&left, dst, sizeof(left));
+    __builtin_memcpy(&right, src, sizeof(right));
+    left -= right;
+    __builtin_memcpy(dst, &left, sizeof(left));
+}
+
+template<class Vec, class T>
+inline void __simd_mul_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+    Vec left;
+    Vec right;
+    __builtin_memcpy(&left, dst, sizeof(left));
+    __builtin_memcpy(&right, src, sizeof(right));
+    left *= right;
+    __builtin_memcpy(dst, &left, sizeof(left));
+}
+
+template<class Vec, class T>
+inline void __simd_div_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+    Vec left;
+    Vec right;
+    __builtin_memcpy(&left, dst, sizeof(left));
+    __builtin_memcpy(&right, src, sizeof(right));
+    left /= right;
+    __builtin_memcpy(dst, &left, sizeof(left));
+}
+
 template<class T, ::std::size_t N>
 inline void __simd_add(T* __restrict__ dst, const T* __restrict__ src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]+=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_512BIT
-    if constexpr (::std::is_same_v<T,float>  && N==16) { reinterpret_cast<__vec_f32x16&>(*dst) += reinterpret_cast<const __vec_f32x16&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N== 8) { reinterpret_cast<__vec_f64x8&>(*dst)  += reinterpret_cast<const __vec_f64x8&>(*src);  return; }
-    if constexpr (::std::is_same_v<T,int>    && N==16) { reinterpret_cast<__vec_i32x16&>(*dst) += reinterpret_cast<const __vec_i32x16&>(*src); return; }
-    if constexpr (::std::is_same_v<T,long>   && N== 8) { reinterpret_cast<__vec_i64x8&>(*dst)  += reinterpret_cast<const __vec_i64x8&>(*src);  return; }
+    if constexpr (::std::is_same_v<T,float>  && N==16) { __simd_add_vec<__vec_f32x16>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N== 8) { __simd_add_vec<__vec_f64x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==16) { __simd_add_vec<__vec_i32x16>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,long>   && sizeof(long)==8 && N==8) { __simd_add_vec<__vec_i64x8>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
-    if constexpr (::std::is_same_v<T,float>  && N==8) { reinterpret_cast<__vec_f32x8&>(*dst) += reinterpret_cast<const __vec_f32x8&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==4) { reinterpret_cast<__vec_f64x4&>(*dst) += reinterpret_cast<const __vec_f64x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==8) { reinterpret_cast<__vec_i32x8&>(*dst) += reinterpret_cast<const __vec_i32x8&>(*src); return; }
-    if constexpr (::std::is_same_v<T,long>   && N==4) { reinterpret_cast<__vec_i64x4&>(*dst) += reinterpret_cast<const __vec_i64x4&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_add_vec<__vec_f32x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==4) { __simd_add_vec<__vec_f64x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==8) { __simd_add_vec<__vec_i32x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,long>   && sizeof(long)==8 && N==4) { __simd_add_vec<__vec_i64x4>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_128BIT
-    if constexpr (::std::is_same_v<T,float>  && N==4) { reinterpret_cast<__vec_f32x4&>(*dst) += reinterpret_cast<const __vec_f32x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==2) { reinterpret_cast<__vec_f64x2&>(*dst) += reinterpret_cast<const __vec_f64x2&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==4) { reinterpret_cast<__vec_i32x4&>(*dst) += reinterpret_cast<const __vec_i32x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,long>   && N==2) { reinterpret_cast<__vec_i64x2&>(*dst) += reinterpret_cast<const __vec_i64x2&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==4) { __simd_add_vec<__vec_f32x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==2) { __simd_add_vec<__vec_f64x2>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==4) { __simd_add_vec<__vec_i32x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,long>   && sizeof(long)==8 && N==2) { __simd_add_vec<__vec_i64x2>(dst, src); return; }
 #endif
     for (::std::size_t i = 0; i < N; ++i) dst[i] += src[i];
 }
@@ -106,19 +146,19 @@ template<class T, ::std::size_t N>
 inline void __simd_sub(T* __restrict__ dst, const T* __restrict__ src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]-=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_512BIT
-    if constexpr (::std::is_same_v<T,float>  && N==16) { reinterpret_cast<__vec_f32x16&>(*dst) -= reinterpret_cast<const __vec_f32x16&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N== 8) { reinterpret_cast<__vec_f64x8&>(*dst)  -= reinterpret_cast<const __vec_f64x8&>(*src);  return; }
-    if constexpr (::std::is_same_v<T,int>    && N==16) { reinterpret_cast<__vec_i32x16&>(*dst) -= reinterpret_cast<const __vec_i32x16&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==16) { __simd_sub_vec<__vec_f32x16>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N== 8) { __simd_sub_vec<__vec_f64x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==16) { __simd_sub_vec<__vec_i32x16>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
-    if constexpr (::std::is_same_v<T,float>  && N==8) { reinterpret_cast<__vec_f32x8&>(*dst) -= reinterpret_cast<const __vec_f32x8&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==4) { reinterpret_cast<__vec_f64x4&>(*dst) -= reinterpret_cast<const __vec_f64x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==8) { reinterpret_cast<__vec_i32x8&>(*dst) -= reinterpret_cast<const __vec_i32x8&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_sub_vec<__vec_f32x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==4) { __simd_sub_vec<__vec_f64x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==8) { __simd_sub_vec<__vec_i32x8>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_128BIT
-    if constexpr (::std::is_same_v<T,float>  && N==4) { reinterpret_cast<__vec_f32x4&>(*dst) -= reinterpret_cast<const __vec_f32x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==2) { reinterpret_cast<__vec_f64x2&>(*dst) -= reinterpret_cast<const __vec_f64x2&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==4) { reinterpret_cast<__vec_i32x4&>(*dst) -= reinterpret_cast<const __vec_i32x4&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==4) { __simd_sub_vec<__vec_f32x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==2) { __simd_sub_vec<__vec_f64x2>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==4) { __simd_sub_vec<__vec_i32x4>(dst, src); return; }
 #endif
     for (::std::size_t i = 0; i < N; ++i) dst[i] -= src[i];
 }
@@ -127,14 +167,14 @@ template<class T, ::std::size_t N>
 inline void __simd_mul(T* __restrict__ dst, const T* __restrict__ src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]*=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
-    if constexpr (::std::is_same_v<T,float>  && N==8) { reinterpret_cast<__vec_f32x8&>(*dst) *= reinterpret_cast<const __vec_f32x8&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==4) { reinterpret_cast<__vec_f64x4&>(*dst) *= reinterpret_cast<const __vec_f64x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==8) { reinterpret_cast<__vec_i32x8&>(*dst) *= reinterpret_cast<const __vec_i32x8&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_mul_vec<__vec_f32x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==4) { __simd_mul_vec<__vec_f64x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==8) { __simd_mul_vec<__vec_i32x8>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_128BIT
-    if constexpr (::std::is_same_v<T,float>  && N==4) { reinterpret_cast<__vec_f32x4&>(*dst) *= reinterpret_cast<const __vec_f32x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==2) { reinterpret_cast<__vec_f64x2&>(*dst) *= reinterpret_cast<const __vec_f64x2&>(*src); return; }
-    if constexpr (::std::is_same_v<T,int>    && N==4) { reinterpret_cast<__vec_i32x4&>(*dst) *= reinterpret_cast<const __vec_i32x4&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==4) { __simd_mul_vec<__vec_f32x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==2) { __simd_mul_vec<__vec_f64x2>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,int>    && N==4) { __simd_mul_vec<__vec_i32x4>(dst, src); return; }
 #endif
     for (::std::size_t i = 0; i < N; ++i) dst[i] *= src[i];
 }
@@ -143,12 +183,12 @@ template<class T, ::std::size_t N>
 inline void __simd_div(T* __restrict__ dst, const T* __restrict__ src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]/=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
-    if constexpr (::std::is_same_v<T,float>  && N==8) { reinterpret_cast<__vec_f32x8&>(*dst) /= reinterpret_cast<const __vec_f32x8&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==4) { reinterpret_cast<__vec_f64x4&>(*dst) /= reinterpret_cast<const __vec_f64x4&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_div_vec<__vec_f32x8>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==4) { __simd_div_vec<__vec_f64x4>(dst, src); return; }
 #endif
 #ifdef FORGE_SIMD_DETAIL_HAVE_128BIT
-    if constexpr (::std::is_same_v<T,float>  && N==4) { reinterpret_cast<__vec_f32x4&>(*dst) /= reinterpret_cast<const __vec_f32x4&>(*src); return; }
-    if constexpr (::std::is_same_v<T,double> && N==2) { reinterpret_cast<__vec_f64x2&>(*dst) /= reinterpret_cast<const __vec_f64x2&>(*src); return; }
+    if constexpr (::std::is_same_v<T,float>  && N==4) { __simd_div_vec<__vec_f32x4>(dst, src); return; }
+    if constexpr (::std::is_same_v<T,double> && N==2) { __simd_div_vec<__vec_f64x2>(dst, src); return; }
 #endif
     for (::std::size_t i = 0; i < N; ++i) dst[i] /= src[i];
 }
