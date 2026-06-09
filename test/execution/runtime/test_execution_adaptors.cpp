@@ -59,6 +59,38 @@ struct throwing_value_sender {
     }
 };
 
+struct stack_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+
+        explicit op(R r) : rcvr(std::move(r)) {}
+
+        void start() & noexcept {
+            int value = 41;
+            std::execution::set_value(std::move(rcvr), value);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> op<R> {
+        return op<R>{std::move(r)};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 struct start_scheduler_env {
     std::execution::inline_scheduler scheduler;
 
@@ -177,6 +209,27 @@ TEST(LetValueTest, ChainNewSender) {
     auto result = std::execution::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 43);
+}
+
+TEST(LetValueTest, StoresCompletionValuesForAsyncInnerSender) {
+    std::execution::run_loop loop;
+    std::thread worker{[&] { loop.run(); }};
+
+    auto sndr = stack_value_sender{}
+              | std::execution::let_value([&](int& value) {
+                    ++value;
+                    return std::execution::schedule(loop.get_scheduler())
+                         | std::execution::then([&value] {
+                               return value;
+                           });
+                });
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+    loop.finish();
+    worker.join();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(LetValueTest, ErrorPassThrough) {

@@ -29,6 +29,7 @@
 #include <exception>
 #include <functional>
 #include <type_traits>
+#include <tuple>
 #include <utility>
 
 namespace std::execution {
@@ -80,21 +81,21 @@ struct __let_sig {
 
 template<class Fn, class Env, class... Vs>
 struct __let_sig<Fn, __value_tag, Env, set_value_t(Vs...)> {
-    using inner_sender_t = std::invoke_result_t<Fn, Vs...>;
+    using inner_sender_t = std::invoke_result_t<Fn&, std::decay_t<Vs>&...>;
     using type = decltype(std::execution::get_completion_signatures(
         std::declval<inner_sender_t>(), std::declval<Env>()));
 };
 
 template<class Fn, class Env, class E>
 struct __let_sig<Fn, __error_tag, Env, set_error_t(E)> {
-    using inner_sender_t = std::invoke_result_t<Fn, E>;
+    using inner_sender_t = std::invoke_result_t<Fn&, std::decay_t<E>&>;
     using type = decltype(std::execution::get_completion_signatures(
         std::declval<inner_sender_t>(), std::declval<Env>()));
 };
 
 template<class Fn, class Env>
 struct __let_sig<Fn, __stopped_tag, Env, set_stopped_t()> {
-    using inner_sender_t = std::invoke_result_t<Fn>;
+    using inner_sender_t = std::invoke_result_t<Fn&>;
     using type = decltype(std::execution::get_completion_signatures(
         std::declval<inner_sender_t>(), std::declval<Env>()));
 };
@@ -119,6 +120,7 @@ struct __op : __forge_detail::__immovable {
     Fn __fn_;
 
     __forge_detail::__op_storage<1024> __outer_storage_;
+    __forge_detail::__op_storage<1024> __arg_storage_;
     __forge_detail::__op_storage<1024> __inner_storage_;
 
     struct __inner_recv {
@@ -142,10 +144,16 @@ struct __op : __forge_detail::__immovable {
 
     template<class... Vs>
     void __start_inner(Vs&&... vs) noexcept {
-        using inner_sender_t = std::decay_t<std::invoke_result_t<Fn, std::decay_t<Vs>...>>;
-        using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
         try {
-            auto inner_sndr = std::invoke(std::move(__fn_), static_cast<Vs&&>(vs)...);
+            using args_t = std::tuple<std::decay_t<Vs>...>;
+            auto* args = __arg_storage_.template emplace_from<args_t>([&]() -> args_t {
+                return args_t{static_cast<Vs&&>(vs)...};
+            });
+            auto inner_sndr = std::apply([this](auto&... stored) {
+                return std::invoke(__fn_, stored...);
+            }, *args);
+            using inner_sender_t = std::decay_t<decltype(inner_sndr)>;
+            using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
             auto* op = __inner_storage_.template emplace_from<inner_op_t>([&]() -> inner_op_t {
                 return std::execution::connect(std::move(inner_sndr), __inner_recv{this});
             });

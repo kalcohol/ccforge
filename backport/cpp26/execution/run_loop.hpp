@@ -114,7 +114,7 @@ inline void run_loop::run() {
 namespace __forge_run_loop {
 
 struct __env {
-    run_loop::scheduler const* __sched;
+    run_loop* __loop;
     friend auto tag_invoke(get_scheduler_t, const __env& self) noexcept
         -> run_loop::scheduler;
     friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
@@ -143,7 +143,6 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
 struct __sender {
     using sender_concept = sender_t;
     run_loop* __loop;
-    run_loop::scheduler const* __sched;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -162,7 +161,7 @@ struct __sender {
     }
 
     auto get_env() const noexcept -> __env {
-        return __env{__sched};
+        return __env{__loop};
     }
 };
 
@@ -175,7 +174,7 @@ public:
     bool operator==(const scheduler&) const noexcept = default;
 
     [[nodiscard]] auto schedule() const noexcept -> __forge_run_loop::__sender {
-        return __forge_run_loop::__sender{__loop, this};
+        return __forge_run_loop::__sender{__loop};
     }
 
 private:
@@ -197,11 +196,11 @@ inline run_loop::scheduler run_loop::get_scheduler() noexcept {
 namespace __forge_run_loop {
 inline auto tag_invoke(get_scheduler_t, const __env& self) noexcept
     -> run_loop::scheduler {
-    return *self.__sched;
+    return self.__loop->get_scheduler();
 }
 inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
     -> run_loop::scheduler {
-    return *self.__sched;
+    return self.__loop->get_scheduler();
 }
 } // namespace __forge_run_loop
 

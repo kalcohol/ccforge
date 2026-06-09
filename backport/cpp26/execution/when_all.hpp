@@ -340,13 +340,16 @@ struct __op : __forge_detail::__immovable {
     template<class E>
     void child_fail(E&& e) noexcept {
         bool expected = false;
-        if (__failed.compare_exchange_strong(expected, true)) {
-            try {
-                std::lock_guard lk{__mtx};
+        __failed.compare_exchange_strong(expected, true);
+        try {
+            std::lock_guard lk{__mtx};
+            if (__result.index() != 1) {
                 __result.template emplace<1>(
                     std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
-            } catch (...) {
-                std::lock_guard lk{__mtx};
+            }
+        } catch (...) {
+            std::lock_guard lk{__mtx};
+            if (__result.index() != 1) {
                 __result.template emplace<1>(
                     std::in_place_type<std::exception_ptr>, std::current_exception());
             }
@@ -359,7 +362,9 @@ struct __op : __forge_detail::__immovable {
         bool expected = false;
         if (__failed.compare_exchange_strong(expected, true)) {
             std::lock_guard lk{__mtx};
-            __result.template emplace<2>(__stopped_tag{});
+            if (__result.index() == 0) {
+                __result.template emplace<2>(__stopped_tag{});
+            }
         }
         __stop_src.request_stop();
         child_done();

@@ -31,7 +31,6 @@ namespace __forge_inline {
 class inline_scheduler;
 
 struct env {
-    const inline_scheduler* sched_;
     friend auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler;
     friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler;
 };
@@ -48,7 +47,6 @@ struct operation : __forge_detail::__immovable {
 
 struct sender {
     using sender_concept = sender_t;
-    const inline_scheduler* sched_ = nullptr;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -66,7 +64,7 @@ struct sender {
         return operation<R>(std::move(rcvr));
     }
 
-    auto get_env() const noexcept -> env { return env{sched_}; }
+    auto get_env() const noexcept -> env { return {}; }
 };
 
 } // namespace __forge_inline
@@ -77,14 +75,14 @@ public:
 
     inline_scheduler() noexcept = default;
 
-    [[nodiscard]] __forge_inline::sender schedule() const noexcept { return __forge_inline::sender{this}; }
+    [[nodiscard]] __forge_inline::sender schedule() const noexcept { return {}; }
 
     bool operator==(const inline_scheduler&) const noexcept = default;
 };
 
 namespace __forge_inline {
-inline auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
-inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler { return *self.sched_; }
+inline auto tag_invoke(get_scheduler_t, const env&) noexcept -> inline_scheduler { return {}; }
+inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env&) noexcept -> inline_scheduler { return {}; }
 inline constexpr auto tag_invoke(get_forward_progress_guarantee_t, const inline_scheduler&) noexcept
     -> forward_progress_guarantee {
     return forward_progress_guarantee::concurrent;

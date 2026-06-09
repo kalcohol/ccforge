@@ -317,6 +317,13 @@ TEST(WhenAllTest, StoppedPropagates) {
     EXPECT_FALSE(result.has_value());
 }
 
+TEST(WhenAllTest, ErrorOverridesPriorStopped) {
+    auto sndr = std::execution::when_all(
+        std::execution::just_stopped(),
+        std::execution::just_error(42));
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+}
+
 TEST(WhenAllTest, OuterStopRequestReachesChildren) {
     std::inplace_stop_source source;
     int observed_stops = 0;
