@@ -695,12 +695,11 @@ bool __record<R>::install_stop_callback(
             if (token.stop_possible()) {
                 stop_callback.emplace(
                     std::move(token),
-                    __stop_callback_fn{std::move(state), std::move(self)});
+                    __stop_callback_fn{state, self});
             }
         } catch (...) {
-            auto st = state.lock();
             auto rec = self.lock();
-            if (st && rec) {
+            if (rec) {
                 rec->complete_stopped();
             }
             return false;

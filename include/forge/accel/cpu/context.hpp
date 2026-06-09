@@ -96,13 +96,9 @@ public:
 private:
     friend auto record_event(queue&, event&);
     friend auto record_event_typed(queue&, event&);
-    friend auto wait_event(queue&, event&);
     friend auto wait_event(queue&, event&, event_wait_options);
-    friend auto wait_event_typed(queue&, event&);
     friend auto wait_event_typed(queue&, event&, event_wait_options);
-    friend auto synchronize_event(queue&, event&);
     friend auto synchronize_event(queue&, event&, event_wait_options);
-    friend auto synchronize_event_typed(queue&, event&);
     friend auto synchronize_event_typed(queue&, event&, event_wait_options);
     friend auto query_event(event&);
     friend auto query_event_typed(event&);
@@ -139,9 +135,7 @@ private:
     template<class F>
     friend auto submit(queue&, F&&);
     friend auto record_event(queue&, event&);
-    friend auto wait_event(queue&, event&);
     friend auto wait_event(queue&, event&, event_wait_options);
-    friend auto synchronize_event(queue&, event&);
     friend auto synchronize_event(queue&, event&, event_wait_options);
     friend auto fence(queue&);
 
@@ -462,9 +456,14 @@ template<class F>
 }
 
 [[nodiscard]] inline auto record_event(queue& q, event& ev) {
-    return __detail::make_command_sender(q.state_, [state = ev.state_] {
-        const auto generation = state->reserve_record_generation();
-        state->mark_completed(generation);
+    return __detail::make_command_sender(q.state_, [ev = ev.state_] {
+        if (!ev) {
+            throw operation_error{
+                error_kind::invalid_event,
+                "forge::accel::cpu: record_event invalid event"};
+        }
+        const auto generation = ev->reserve_record_generation();
+        ev->mark_completed(generation);
     });
 }
 
@@ -472,7 +471,15 @@ template<class F>
     queue& q,
     event& ev,
     event_wait_options options = {}) {
-    return __detail::make_command_sender(q.state_, [state = q.state_->owner.lock(), ev = ev.state_, timeout = options.timeout] {
+    auto queue_state = q.state_;
+    auto event_state = ev.state_;
+    return __detail::make_command_sender(queue_state, [queue_state, ev = std::move(event_state), timeout = options.timeout] {
+        if (!ev) {
+            throw operation_error{
+                error_kind::invalid_event,
+                "forge::accel::cpu: wait_event invalid event"};
+        }
+        auto state = queue_state ? queue_state->owner.lock() : nullptr;
         const auto target = ev->wait_target_generation();
         auto deadline = timeout
             ? std::optional<std::chrono::steady_clock::time_point>{
@@ -496,7 +503,15 @@ template<class F>
     queue& q,
     event& ev,
     event_wait_options options = {}) {
-    return __detail::make_command_sender(q.state_, [state = q.state_->owner.lock(), ev = ev.state_, timeout = options.timeout] {
+    auto queue_state = q.state_;
+    auto event_state = ev.state_;
+    return __detail::make_command_sender(queue_state, [queue_state, ev = std::move(event_state), timeout = options.timeout] {
+        if (!ev) {
+            throw operation_error{
+                error_kind::invalid_event,
+                "forge::accel::cpu: synchronize_event invalid event"};
+        }
+        auto state = queue_state ? queue_state->owner.lock() : nullptr;
         const auto target = ev->recorded();
         auto deadline = timeout
             ? std::optional<std::chrono::steady_clock::time_point>{

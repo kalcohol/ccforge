@@ -182,6 +182,7 @@ struct __state : std::enable_shared_from_this<__state> {
     {}
 
     void enqueue(std::shared_ptr<__record_base> record) noexcept {
+        auto keepalive = shared_from_this();
         std::shared_ptr<__record_base> stopped;
         bool launch = false;
         {

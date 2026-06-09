@@ -276,6 +276,47 @@ TEST(AccelCpuTest, SingleWorkerUnreadyWaitReportsResourceExhausted) {
     EXPECT_EQ(err->kind, forge::accel::error_kind::resource_exhausted);
 }
 
+TEST(AccelCpuTest, MovedFromEventReportsInvalidEvent) {
+    forge::accel::cpu::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::cpu::event ev;
+    auto moved = std::move(ev);
+    (void)moved;
+
+    auto record_result = forge::wait_result(
+        forge::accel::cpu::record_event_typed(q, ev));
+    ASSERT_TRUE(record_result.has_error());
+    auto* record_err = record_result.error_if<forge::accel::error>();
+    ASSERT_NE(record_err, nullptr);
+    EXPECT_EQ(record_err->kind, forge::accel::error_kind::invalid_event);
+
+    auto wait_result = forge::wait_result(
+        forge::accel::cpu::wait_event_typed(q, ev));
+    ASSERT_TRUE(wait_result.has_error());
+    auto* wait_err = wait_result.error_if<forge::accel::error>();
+    ASSERT_NE(wait_err, nullptr);
+    EXPECT_EQ(wait_err->kind, forge::accel::error_kind::invalid_event);
+
+    auto synchronize_result = forge::wait_result(
+        forge::accel::cpu::synchronize_event_typed(q, ev));
+    ASSERT_TRUE(synchronize_result.has_error());
+    auto* synchronize_err = synchronize_result.error_if<forge::accel::error>();
+    ASSERT_NE(synchronize_err, nullptr);
+    EXPECT_EQ(synchronize_err->kind, forge::accel::error_kind::invalid_event);
+}
+
+TEST(AccelCpuTest, UnqualifiedTwoArgEventCallsUseDefaultOptions) {
+    forge::accel::cpu::context ctx;
+    auto q = ctx.get_queue();
+    forge::accel::cpu::event ev;
+
+    auto wait_sender = wait_event(q, ev);
+    auto sync_sender = synchronize_event(q, ev);
+    (void)wait_sender;
+    (void)sync_sender;
+    SUCCEED();
+}
+
 TEST(AccelCpuTest, DeviceBufferRejectsOverflowingElementCount) {
     forge::accel::cpu::context ctx;
     const auto too_many = std::numeric_limits<std::size_t>::max() / sizeof(int) + 1;
