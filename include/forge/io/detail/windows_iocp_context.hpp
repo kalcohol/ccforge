@@ -390,6 +390,7 @@ struct __state : std::enable_shared_from_this<__state> {
             OVERLAPPED* overlapped = nullptr;
             BOOL ok = ::GetQueuedCompletionStatus(
                 port.get(), &bytes, &key, &overlapped, INFINITE);
+            const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
 
             if (!overlapped) {
                 if (should_exit()) {
@@ -401,7 +402,7 @@ struct __state : std::enable_shared_from_this<__state> {
             auto* entry = reinterpret_cast<__overlapped_entry*>(
                 reinterpret_cast<char*>(overlapped) -
                 offsetof(__overlapped_entry, overlapped));
-            complete(entry->record, ok != FALSE, bytes, ::GetLastError());
+            complete(entry->record, ok != FALSE, bytes, error);
 
             if (should_exit()) {
                 break;
@@ -518,10 +519,10 @@ private:
             }
         }
 
-        if (record->cancel_requested || error == ERROR_OPERATION_ABORTED) {
-            record->complete_stopped();
-        } else if (ok) {
+        if (ok) {
             record->complete_value(static_cast<std::size_t>(bytes));
+        } else if (error == ERROR_OPERATION_ABORTED) {
+            record->complete_stopped();
         } else {
             record->complete_error(__windows_error(error, "forge::io IOCP completion"));
         }

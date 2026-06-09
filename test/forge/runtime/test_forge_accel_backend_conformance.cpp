@@ -187,6 +187,20 @@ TYPED_TEST(AccelBackendPortableConformanceTest, SameQueueWaitBeforeRecordStopsCl
     EXPECT_FALSE(ev.ready());
 }
 
+TYPED_TEST(AccelBackendPortableConformanceTest, SynchronizeUnrecordedEventIsNoOp) {
+    using backend = TypeParam;
+    auto ctx = backend::make_context(typename backend::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    });
+    auto q = backend::get_queue(ctx);
+    auto ev = backend::make_event();
+
+    auto result = std::execution::sync_wait(backend::synchronize_event(q, ev));
+    EXPECT_TRUE(result.has_value());
+    EXPECT_FALSE(ev.ready());
+}
+
 TYPED_TEST(AccelBackendPortableConformanceTest, CapacityFullCompletesStoppedWithoutLeakingWork) {
     using backend = TypeParam;
     auto ctx = backend::make_context(typename backend::context_options{

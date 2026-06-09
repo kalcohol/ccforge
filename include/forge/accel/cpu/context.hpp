@@ -496,7 +496,24 @@ template<class F>
     queue& q,
     event& ev,
     event_wait_options options = {}) {
-    return wait_event(q, ev, options);
+    return __detail::make_command_sender(q.state_, [state = q.state_->owner.lock(), ev = ev.state_, timeout = options.timeout] {
+        const auto target = ev->recorded();
+        auto deadline = timeout
+            ? std::optional<std::chrono::steady_clock::time_point>{
+                  std::chrono::steady_clock::now() + *timeout}
+            : std::nullopt;
+        const auto status = __detail::wait_until_event_ready_or_stopped(
+            state,
+            ev,
+            target,
+            deadline);
+        if (status == command_status::stopped) {
+            throw __detail::__stopped_signal{};
+        }
+        if (status == command_status::timed_out) {
+            throw command_error{command_status::timed_out};
+        }
+    });
 }
 
 [[nodiscard]] inline auto fence(queue& q) {

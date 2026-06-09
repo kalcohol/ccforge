@@ -322,6 +322,26 @@ TEST(IoContextTest, PendingReadableCompletesAfterWrite) {
     EXPECT_FALSE(state->error);
 }
 
+TEST(IoContextTest, CloseAfterReadinessStillCompletesTakenRecord) {
+    for (int i = 0; i < 32; ++i) {
+        auto pipe = make_pipe();
+        forge::io::context ctx;
+        auto state = std::make_shared<io_state>();
+
+        auto sender = ctx.readable(pipe.first.get());
+        auto op = std::execution::connect(std::move(sender), io_receiver{state});
+        std::execution::start(op);
+
+        write_byte(pipe.second.get());
+        ctx.close();
+
+        ASSERT_TRUE(wait_done(state));
+        EXPECT_TRUE(state->value);
+        EXPECT_FALSE(state->stopped);
+        EXPECT_FALSE(state->error);
+    }
+}
+
 TEST(IoContextTest, WritableCompletesForSocketpair) {
     auto sockets = make_socketpair();
     forge::io::context ctx;

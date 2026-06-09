@@ -72,6 +72,11 @@ struct __event_state {
         return event_generation{record_generation == 0 ? 1 : record_generation};
     }
 
+    [[nodiscard]] auto recorded() const noexcept -> event_generation {
+        std::lock_guard lk{mtx};
+        return event_generation{record_generation};
+    }
+
     [[nodiscard]] auto snapshot() const noexcept -> event_snapshot {
         std::lock_guard lk{mtx};
         return event_snapshot{

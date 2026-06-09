@@ -470,6 +470,7 @@ struct __state : std::enable_shared_from_this<__state> {
             }
 
             __actions actions{memory};
+            bool should_exit = false;
             {
                 std::lock_guard lk{mtx};
                 for (int i = 0; i < count; ++i) {
@@ -487,10 +488,13 @@ struct __state : std::enable_shared_from_this<__state> {
                 }
 
                 if ((closed || stopped) && pending == 0) {
-                    break;
+                    should_exit = true;
                 }
             }
             actions.run();
+            if (should_exit) {
+                break;
+            }
         }
 
         {
