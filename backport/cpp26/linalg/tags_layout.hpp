@@ -113,8 +113,7 @@ struct layout_blas_packed {
         }
         [[nodiscard]] static constexpr bool is_always_exhaustive()        noexcept { return true;  }
         [[nodiscard]] static constexpr bool is_always_strided()           noexcept {
-            constexpr auto n0 = Extents::static_extent(0);
-            return n0 != std::dynamic_extent && n0 < 2;
+            return is_always_unique();
         }
         [[nodiscard]] constexpr bool is_exhaustive()        const noexcept { return true;  }
         [[nodiscard]] constexpr bool is_strided()           const noexcept {

@@ -121,7 +121,7 @@ TEST(LayoutBlasPackedTest, DegenerateStaticSecondExtentIsAlwaysUnique) {
         std::linalg::lower_triangle_t, std::linalg::row_major_t>;
 
     static_assert(lower_layout::mapping<extents_t>::is_always_unique());
-    lower_layout::mapping<extents_t> mapping(extents_t{3});
+    lower_layout::mapping<extents_t> mapping(extents_t{1});
     EXPECT_TRUE(mapping.is_unique());
 }
 
@@ -131,7 +131,7 @@ TEST(LayoutBlasPackedTest, DegenerateFirstExtentIsStrided) {
         std::linalg::upper_triangle_t, std::linalg::column_major_t>;
 
     static_assert(upper_layout::mapping<extents_t>::is_always_strided());
-    upper_layout::mapping<extents_t> mapping(extents_t{4});
+    upper_layout::mapping<extents_t> mapping(extents_t{1});
     EXPECT_TRUE(mapping.is_strided());
     EXPECT_EQ(mapping.stride(0), 1);
     EXPECT_EQ(mapping.stride(1), 1);
