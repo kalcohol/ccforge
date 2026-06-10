@@ -24,7 +24,6 @@
 #include <forge/start_detached.hpp>
 #include <forge/strand.hpp>
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <vector>
 

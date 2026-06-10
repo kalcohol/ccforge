@@ -150,7 +150,8 @@ context `shutdown()` / `wait()` 之后再关闭。否则 OS 可能复用同一�
 
 - `close()`：关闭 ingress，拒绝新 readiness operation；已 pending operation 仍可正常
   因 readiness 完成。若 close 后没有 pending operation，poller 会退出。
-- `request_stop()`：取消 pending operation，并以 `set_stopped()` 完成。
+- `request_stop()`：请求取消 pending operation。若取消先赢，operation 以 `set_stopped()`
+  完成；若它和 OS 成功 completion 竞态并输掉，operation 仍会交付 `set_value(...)`。
 - `shutdown()`：`close()` + `request_stop()`。
 - `wait()`：等待 poller thread 退出。若从 poller completion 内调用，会避免 self-join。
 - `cancel(fd)` / `cancel(HANDLE)`：取消该 handle 的 pending operation。

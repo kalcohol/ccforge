@@ -223,6 +223,50 @@ TEST(ChannelTest, CloseRejectsFutureSendsAndDrainsBufferedValues) {
     EXPECT_FALSE(stopped.has_value());
 }
 
+TEST(ChannelTest, CloseCompletesPendingSendStopped) {
+    forge::bounded_channel<int> channel{0};
+    auto state = std::make_shared<send_state>();
+
+    auto pending = channel.async_send(1);
+    auto op = std::execution::connect(std::move(pending), send_receiver{state});
+    std::execution::start(op);
+
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+
+    channel.close();
+
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+}
+
+TEST(ChannelTest, CloseDrainsBufferedValueThenStopsPendingReceivers) {
+    forge::bounded_channel<int> channel{1};
+    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(9)).has_value());
+
+    auto first = std::make_shared<recv_state<int>>();
+    auto second = std::make_shared<recv_state<int>>();
+    auto first_recv = channel.async_recv();
+    auto second_recv = channel.async_recv();
+    auto first_op = std::execution::connect(
+        std::move(first_recv),
+        recv_receiver<int>{first});
+    auto second_op = std::execution::connect(
+        std::move(second_recv),
+        recv_receiver<int>{second});
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+
+    ASSERT_TRUE(first->value.has_value());
+    EXPECT_EQ(*first->value, 9);
+    EXPECT_FALSE(second->stopped);
+
+    channel.close();
+
+    EXPECT_TRUE(second->stopped);
+    EXPECT_FALSE(channel.try_recv().has_value());
+}
+
 TEST(ChannelTest, RequestStopCancelsPendingOperationsAndDiscardsBuffer) {
     forge::bounded_channel<int> send_channel{0};
     auto send_state_ptr = std::make_shared<send_state>();

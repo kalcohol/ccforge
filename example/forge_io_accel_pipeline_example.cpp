@@ -24,7 +24,6 @@
 #include <forge/io.hpp>
 
 #include <array>
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <execution>

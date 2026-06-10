@@ -1,5 +1,6 @@
 #include <simd>
 
+#include "example_support.hpp"
 #include <iostream>
 #include <array>
 #include <tuple>
@@ -54,6 +55,19 @@ int main() {
         generated_sum += *begin;
         ++begin;
     }
+
+    forge_example::require(lane(sum, 0) == 11);
+    forge_example::require(std::simd::reduce(sum) == 50);
+    forge_example::require(std::simd::reduce_min(sum) == 11);
+    forge_example::require(std::simd::reduce_count(selected) == 3);
+    forge_example::require(lane(reversed, 0) == 13);
+    forge_example::require(lane(reversed, 3) == 11);
+    forge_example::require(lane(stitched, 0) == 1);
+    forge_example::require(lane(stitched, 7) == 8);
+    forge_example::require(generated_sum == 10);
+    forge_example::require(lane(widened, 0) == 6);
+    forge_example::require(lane(widened, 7) == 6);
+    forge_example::require(lane(rebound, 0) == 1.0f);
 
     std::cout << "sum[0] = " << lane(sum, 0) << '\n';
     std::cout << "reduce(sum) = " << std::simd::reduce(sum) << '\n';

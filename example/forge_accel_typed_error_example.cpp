@@ -1,7 +1,6 @@
 #include <forge/accel.hpp>
 #include <forge/execution.hpp>
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <exception>
 #include <span>

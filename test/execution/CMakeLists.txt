@@ -42,6 +42,12 @@ forge_add_execution_compile_probe(
     execution_api_core_compile)
 
 forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_ACCEPTS_BOUNDARY_PROBES
+    test_execution_accept_boundary_probes.cpp
+    ON
+    "std::execution positive boundary compile probes must compile")
+
+forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_REJECTS_THROWING_RECEIVER
     test_execution_reject_throwing_receiver.cpp
     OFF

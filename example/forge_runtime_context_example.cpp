@@ -21,7 +21,6 @@
 // SOFTWARE.
 
 #include <forge/runtime_context.hpp>
-#include <cassert>
 #include "example_support.hpp"
 #include <chrono>
 #include <tuple>

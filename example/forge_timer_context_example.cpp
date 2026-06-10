@@ -21,7 +21,6 @@
 // SOFTWARE.
 
 #include <forge/timer_context.hpp>
-#include <cassert>
 #include "example_support.hpp"
 #include <chrono>
 

@@ -21,7 +21,6 @@
 // SOFTWARE.
 
 #include <forge/single_thread_context.hpp>
-#include <cassert>
 #include "example_support.hpp"
 #include <thread>
 #include <tuple>

@@ -2,7 +2,6 @@
 #include <forge/start_detached.hpp>
 #include <forge/wait_result.hpp>
 
-#include <cassert>
 #include "example_support.hpp"
 #include <condition_variable>
 #include <execution>

@@ -25,7 +25,6 @@
 #include <linalg>
 #include <mdspan>
 #endif
-#include <cassert>
 #include "example_support.hpp"
 int main() {
 #if defined(__cpp_lib_mdspan)

@@ -28,7 +28,6 @@
 #include <execution>
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <memory_resource>

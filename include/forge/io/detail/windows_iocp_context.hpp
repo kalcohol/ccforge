@@ -87,11 +87,6 @@ bool __stop_requested(const R& rcvr) noexcept {
         static_cast<int>(code), std::system_category(), what});
 }
 
-[[nodiscard]] inline auto __windows_error(const char* what)
-    -> std::exception_ptr {
-    return __windows_error(::GetLastError(), what);
-}
-
 class __handle {
 public:
     __handle() noexcept = default;
@@ -155,7 +150,6 @@ struct __record_base {
     std::span<const std::byte> write_buffer;
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
-    bool cancel_requested = false;
 };
 
 struct __stop_callback_fn {
@@ -329,7 +323,6 @@ struct __state : std::enable_shared_from_this<__state> {
             std::lock_guard lk{mtx};
             for (auto& [_, record] : pending_records) {
                 if (record->handle == handle) {
-                    record->cancel_requested = true;
                     ::CancelIoEx(handle, &record->entry.overlapped);
                 }
             }
@@ -345,7 +338,6 @@ struct __state : std::enable_shared_from_this<__state> {
                 return;
             }
             auto& record = it->second;
-            record->cancel_requested = true;
             ::CancelIoEx(record->handle, &record->entry.overlapped);
         }
         wake_worker();
@@ -364,7 +356,6 @@ struct __state : std::enable_shared_from_this<__state> {
             std::lock_guard lk{mtx};
             stopped = true;
             for (auto& [_, record] : pending_records) {
-                record->cancel_requested = true;
                 ::CancelIoEx(record->handle, &record->entry.overlapped);
             }
         }

@@ -25,7 +25,6 @@
 #include <simd>
 
 #include <algorithm>
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <execution>

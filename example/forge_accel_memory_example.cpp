@@ -25,7 +25,6 @@
 
 #include <execution>
 #include <algorithm>
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <initializer_list>

@@ -24,7 +24,6 @@
 
 #include <execution>
 #include <algorithm>
-#include <cassert>
 #include "example_support.hpp"
 #include <initializer_list>
 #include <tuple>

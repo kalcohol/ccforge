@@ -39,8 +39,6 @@ typedef float  __attribute__((vector_size(16))) __vec_f32x4;
 typedef double __attribute__((vector_size(16))) __vec_f64x2;
 typedef int    __attribute__((vector_size(16))) __vec_i32x4;
 typedef long   __attribute__((vector_size(16))) __vec_i64x2;
-typedef unsigned int  __attribute__((vector_size(16))) __vec_u32x4;
-typedef unsigned long __attribute__((vector_size(16))) __vec_u64x2;
 #define FORGE_SIMD_DETAIL_HAVE_128BIT 1
 #endif
 
@@ -49,8 +47,6 @@ typedef float  __attribute__((vector_size(32))) __vec_f32x8;
 typedef double __attribute__((vector_size(32))) __vec_f64x4;
 typedef int    __attribute__((vector_size(32))) __vec_i32x8;
 typedef long   __attribute__((vector_size(32))) __vec_i64x4;
-typedef unsigned int  __attribute__((vector_size(32))) __vec_u32x8;
-typedef unsigned long __attribute__((vector_size(32))) __vec_u64x4;
 #define FORGE_SIMD_DETAIL_HAVE_256BIT 1
 #endif
 
@@ -59,8 +55,6 @@ typedef float  __attribute__((vector_size(64))) __vec_f32x16;
 typedef double __attribute__((vector_size(64))) __vec_f64x8;
 typedef int    __attribute__((vector_size(64))) __vec_i32x16;
 typedef long   __attribute__((vector_size(64))) __vec_i64x8;
-typedef unsigned int  __attribute__((vector_size(64))) __vec_u32x16;
-typedef unsigned long __attribute__((vector_size(64))) __vec_u64x8;
 #define FORGE_SIMD_DETAIL_HAVE_512BIT 1
 #endif
 
@@ -191,51 +185,6 @@ inline void __simd_div(T* dst, const T* src) noexcept {
     if constexpr (::std::is_same_v<T,double> && N==2) { __simd_div_vec<__vec_f64x2>(dst, src); return; }
 #endif
     for (::std::size_t i = 0; i < N; ++i) dst[i] /= src[i];
-}
-
-// ─── Reduce sum ───────────────────────────────────────────────────────────────
-template<class T, ::std::size_t N>
-inline T __simd_reduce_add(const T* src) noexcept {
-    if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) {
-        T acc = T{};
-        for (::std::size_t i = 0; i < N; ++i) acc += src[i];
-        return acc;
-    }
-#ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
-    if constexpr (::std::is_same_v<T,float>  && N==8) {
-        __vec_f32x8 v; __builtin_memcpy(&v, src, sizeof(v));
-        // Horizontal add: split into two halves, add, then reduce 4-wide
-        __vec_f32x4 lo, hi;
-        __builtin_memcpy(&lo, src,   sizeof(lo));
-        __builtin_memcpy(&hi, src+4, sizeof(hi));
-        __vec_f32x4 sum4 = lo + hi;
-        float t[4]; __builtin_memcpy(t, &sum4, sizeof(t));
-        return t[0]+t[1]+t[2]+t[3];
-    }
-    if constexpr (::std::is_same_v<T,double> && N==4) {
-        __vec_f64x2 lo, hi;
-        __builtin_memcpy(&lo, src,   sizeof(lo));
-        __builtin_memcpy(&hi, src+2, sizeof(hi));
-        __vec_f64x2 sum2 = lo + hi;
-        double t[2]; __builtin_memcpy(t, &sum2, sizeof(t));
-        return t[0]+t[1];
-    }
-#endif
-#ifdef FORGE_SIMD_DETAIL_HAVE_128BIT
-    if constexpr (::std::is_same_v<T,float>  && N==4) {
-        __vec_f32x4 v; __builtin_memcpy(&v, src, sizeof(v));
-        float t[4]; __builtin_memcpy(t, &v, sizeof(t));
-        return t[0]+t[1]+t[2]+t[3];
-    }
-    if constexpr (::std::is_same_v<T,double> && N==2) {
-        __vec_f64x2 v; __builtin_memcpy(&v, src, sizeof(v));
-        double t[2]; __builtin_memcpy(t, &v, sizeof(t));
-        return t[0]+t[1];
-    }
-#endif
-    T acc = T{};
-    for (::std::size_t i = 0; i < N; ++i) acc += src[i];
-    return acc;
 }
 
 } // namespace detail

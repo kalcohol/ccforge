@@ -24,7 +24,6 @@
 #include <forge/static_thread_pool.hpp>
 #include <execution>
 #include <atomic>
-#include <cassert>
 #include "example_support.hpp"
 
 int main() {

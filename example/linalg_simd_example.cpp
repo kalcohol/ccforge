@@ -1,6 +1,5 @@
 #include <linalg>
 #include <mdspan>
-#include <cassert>
 #include "example_support.hpp"
 #include <cmath>
 

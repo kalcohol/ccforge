@@ -25,7 +25,6 @@
 #include <forge/strand.hpp>
 #include <execution>
 #include <array>
-#include <cassert>
 #include "example_support.hpp"
 #include <memory_resource>
 #include <tuple>

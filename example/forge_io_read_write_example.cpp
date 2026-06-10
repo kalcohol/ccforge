@@ -24,7 +24,6 @@
 
 #include <execution>
 #include <array>
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <fcntl.h>

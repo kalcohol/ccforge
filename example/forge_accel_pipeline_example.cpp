@@ -23,7 +23,6 @@
 #include <forge/accel.hpp>
 #include <execution>
 #include <algorithm>
-#include <cassert>
 #include "example_support.hpp"
 #include <numeric>
 #include <span>

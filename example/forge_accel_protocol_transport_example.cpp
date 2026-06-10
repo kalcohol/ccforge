@@ -1,6 +1,5 @@
 #include <forge/accel.hpp>
 
-#include <cassert>
 #include "example_support.hpp"
 #include <cstddef>
 #include <iostream>

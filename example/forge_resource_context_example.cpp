@@ -23,7 +23,6 @@
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <tuple>
 

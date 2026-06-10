@@ -24,7 +24,6 @@
 #include <forge/io.hpp>
 
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <system_error>
 #include <utility>

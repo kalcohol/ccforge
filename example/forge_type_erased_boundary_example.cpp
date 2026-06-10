@@ -25,7 +25,6 @@
 #include <forge/static_thread_pool.hpp>
 
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <exception>
 #include <tuple>

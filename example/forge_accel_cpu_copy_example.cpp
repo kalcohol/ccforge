@@ -22,7 +22,6 @@
 
 #include <forge/accel.hpp>
 
-#include <cassert>
 #include "example_support.hpp"
 #include <cstdint>
 #include <execution>

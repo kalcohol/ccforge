@@ -22,7 +22,6 @@
 
 #include <forge/io.hpp>
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <fcntl.h>
 #include <unistd.h>

@@ -22,7 +22,6 @@
 
 #include <forge/any_scheduler.hpp>
 #include <forge/static_thread_pool.hpp>
-#include <cassert>
 #include "example_support.hpp"
 #include <tuple>
 

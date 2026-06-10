@@ -1,5 +1,6 @@
 #include <simd>
 
+#include "example_support.hpp"
 #include <iostream>
 
 int main() {
@@ -12,6 +13,12 @@ int main() {
 
     const auto sum = left + right;
     const auto greater = left > right;
+
+    forge_example::require(sum[0] == 5.0f);
+    forge_example::require(sum[1] == 5.0f);
+    forge_example::require(sum[2] == 5.0f);
+    forge_example::require(sum[3] == 5.0f);
+    forge_example::require(std::simd::reduce_count(greater) == 2);
 
     std::cout << "sum = {"
               << sum[0] << ", " << sum[1] << ", "

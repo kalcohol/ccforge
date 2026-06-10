@@ -25,7 +25,6 @@
 #include <forge/runtime_context.hpp>
 #include <forge/strand.hpp>
 #include <execution>
-#include <cassert>
 #include "example_support.hpp"
 #include <fcntl.h>
 #include <tuple>
