@@ -23,9 +23,90 @@
 #pragma once
 
 #include "level2.hpp"
+#include <vector>
 #if defined(__cpp_lib_mdspan)
 
 namespace std::linalg {
+
+namespace __detail {
+
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void __triangular_left_product_into(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle, DiagonalStorage,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
+    using idx_t = typename CExtents::index_type;
+    const idx_t m = C.extent(0), n = C.extent(1);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    for (idx_t i = 0; i < m; ++i)
+        for (idx_t j = 0; j < n; ++j) {
+            typename CAccessor::element_type sum{};
+            if constexpr (is_upper) {
+                for (idx_t k = i; k < m; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == i ? B[k, j] : A[i, k] * B[k, j]);
+                    } else {
+                        sum += A[i, k] * B[k, j];
+                    }
+                }
+            } else {
+                for (idx_t k = 0; k <= i; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == i ? B[k, j] : A[i, k] * B[k, j]);
+                    } else {
+                        sum += A[i, k] * B[k, j];
+                    }
+                }
+            }
+            C[i, j] = sum;
+        }
+}
+
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void __triangular_right_product_into(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle, DiagonalStorage,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
+    using idx_t = typename CExtents::index_type;
+    const idx_t m = C.extent(0), n = C.extent(1);
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    for (idx_t i = 0; i < m; ++i)
+        for (idx_t j = 0; j < n; ++j) {
+            typename CAccessor::element_type sum{};
+            if constexpr (is_upper) {
+                for (idx_t k = 0; k <= j; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == j ? B[i, k] : B[i, k] * A[k, j]);
+                    } else {
+                        sum += B[i, k] * A[k, j];
+                    }
+                }
+            } else {
+                for (idx_t k = j; k < n; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == j ? B[i, k] : B[i, k] * A[k, j]);
+                    } else {
+                        sum += B[i, k] * A[k, j];
+                    }
+                }
+            }
+            C[i, j] = sum;
+        }
+}
+
+} // namespace __detail
 
 // ──────────────────────────────────────────────────────────────────────────
 // BLAS Level 3 — [linalg.algs.blas3]
@@ -84,27 +165,96 @@ void triangular_matrix_product(
     std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
     std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
 {
+    __detail::__triangular_left_product_into(A, Triangle{}, DiagonalStorage{}, B, C);
+}
+
+// triangular_matrix_left_product — C = A * C, in place [linalg.algs.blas3.trmm]
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void triangular_matrix_left_product(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle, DiagonalStorage,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
     using idx_t = typename CExtents::index_type;
+    using value_t = std::remove_cv_t<typename CAccessor::element_type>;
     const idx_t m = C.extent(0), n = C.extent(1);
+    std::vector<value_t> tmp(static_cast<std::size_t>(m * n));
+    for (idx_t i = 0; i < m; ++i)
+        for (idx_t j = 0; j < n; ++j)
+            tmp[static_cast<std::size_t>(i * n + j)] = C[i, j];
+
+    auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
+        return tmp[static_cast<std::size_t>(i * n + j)];
+    };
+
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
-            typename CAccessor::element_type sum{};
+            value_t sum{};
             if constexpr (is_upper) {
                 for (idx_t k = i; k < m; ++k) {
                     if constexpr (is_unit) {
-                        sum += (k == i ? B[k, j] : A[i, k] * B[k, j]);
+                        sum += (k == i ? at_tmp(k, j) : A[i, k] * at_tmp(k, j));
                     } else {
-                        sum += A[i, k] * B[k, j];
+                        sum += A[i, k] * at_tmp(k, j);
                     }
                 }
             } else {
                 for (idx_t k = 0; k <= i; ++k) {
                     if constexpr (is_unit) {
-                        sum += (k == i ? B[k, j] : A[i, k] * B[k, j]);
+                        sum += (k == i ? at_tmp(k, j) : A[i, k] * at_tmp(k, j));
                     } else {
-                        sum += A[i, k] * B[k, j];
+                        sum += A[i, k] * at_tmp(k, j);
+                    }
+                }
+            }
+            C[i, j] = sum;
+        }
+}
+
+// triangular_matrix_right_product — C = C * A, in place [linalg.algs.blas3.trmm]
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class CExtents, class CLayout, class CAccessor>
+void triangular_matrix_right_product(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle, DiagonalStorage,
+    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
+{
+    using idx_t = typename CExtents::index_type;
+    using value_t = std::remove_cv_t<typename CAccessor::element_type>;
+    const idx_t m = C.extent(0), n = C.extent(1);
+    std::vector<value_t> tmp(static_cast<std::size_t>(m * n));
+    for (idx_t i = 0; i < m; ++i)
+        for (idx_t j = 0; j < n; ++j)
+            tmp[static_cast<std::size_t>(i * n + j)] = C[i, j];
+
+    auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
+        return tmp[static_cast<std::size_t>(i * n + j)];
+    };
+
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    for (idx_t i = 0; i < m; ++i)
+        for (idx_t j = 0; j < n; ++j) {
+            value_t sum{};
+            if constexpr (is_upper) {
+                for (idx_t k = 0; k <= j; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == j ? at_tmp(i, k) : at_tmp(i, k) * A[k, j]);
+                    } else {
+                        sum += at_tmp(i, k) * A[k, j];
+                    }
+                }
+            } else {
+                for (idx_t k = j; k < n; ++k) {
+                    if constexpr (is_unit) {
+                        sum += (k == j ? at_tmp(i, k) : at_tmp(i, k) * A[k, j]);
+                    } else {
+                        sum += at_tmp(i, k) * A[k, j];
                     }
                 }
             }

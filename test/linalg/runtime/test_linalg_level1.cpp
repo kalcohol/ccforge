@@ -80,6 +80,17 @@ TEST(LinalgLevel1DotSIMD, DoubleEquivalence) {
     EXPECT_NEAR(result, static_cast<double>(N), 1e-10);
 }
 
+TEST(LinalgLevel1Dot, WiderInitAccumulatesProductsInInitType) {
+    float x_data[] = {1.0e20f};
+    float y_data[] = {1.0e20f};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+
+    const double result = std::linalg::dot(x, y, 0.0);
+    EXPECT_TRUE(std::isfinite(result));
+    EXPECT_NEAR(result, 1.0e40, 1.0e34);
+}
+
 TEST(LinalgLevel1Dotc, RealAndComplexInputs) {
     double real_x_data[] = {1.0, 2.0, 3.0};
     double real_y_data[] = {4.0, 5.0, 6.0};
@@ -113,6 +124,13 @@ TEST(LinalgLevel1Reductions, ExplicitInitControlsReturnType) {
     static_assert(std::is_same_v<decltype(std::linalg::matrix_inf_norm(matrix, 0.0)), double>);
 }
 
+TEST(LinalgLevel1Reductions, VectorTwoNormCombinesInitEuclideanly) {
+    double x_data[] = {4.0};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 3.0), 5.0);
+}
+
 TEST(LinalgLevel1NormSIMD, DoubleEquivalence) {
     constexpr int N = 1024;
     static double x[N];
@@ -138,6 +156,16 @@ TEST(LinalgLevel1AsumSIMD, FloatEquivalence) {
     std::mdspan xv(x, std::extents<int, N>{});
     float asum = std::linalg::vector_abs_sum(xv);
     EXPECT_NEAR(asum, static_cast<float>(N), 1e-4f);
+}
+
+TEST(LinalgLevel1Asum, ComplexUsesOneNorm) {
+    using complex = std::complex<double>;
+    complex data[] = {{3.0, 4.0}, {-1.0, 2.0}};
+    std::mdspan v(data, std::extents<int, 2>{});
+
+    static_assert(std::is_same_v<decltype(std::linalg::vector_abs_sum(v)), double>);
+    EXPECT_DOUBLE_EQ(std::linalg::vector_abs_sum(v), 10.0);
+    EXPECT_DOUBLE_EQ(std::linalg::vector_abs_sum(v, 1.0), 11.0);
 }
 
 TEST(LinalgLevel1IdxAbsMax, HandlesEmptyTiesAndNegativeValues) {
@@ -203,4 +231,26 @@ TEST(LinalgLevel1Givens, SetupAndApplyRotation) {
     EXPECT_NEAR(y[0], 0.0, 1e-12);
     EXPECT_NEAR(x[1], 1.6, 1e-12);
     EXPECT_NEAR(y[1], 1.2, 1e-12);
+}
+
+TEST(LinalgLevel1Givens, ComplexRotationUsesRealCAndConjugateS) {
+    using complex = std::complex<double>;
+    const auto rotation = std::linalg::setup_givens_rotation(complex{1.0, 0.0}, complex{0.0, 1.0});
+    const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
+    EXPECT_NEAR(rotation.c, inv_sqrt2, 1e-12);
+    EXPECT_NEAR(rotation.s.real(), 0.0, 1e-12);
+    EXPECT_NEAR(rotation.s.imag(), -inv_sqrt2, 1e-12);
+    EXPECT_NEAR(rotation.r.real(), std::sqrt(2.0), 1e-12);
+    EXPECT_NEAR(rotation.r.imag(), 0.0, 1e-12);
+
+    complex x_data[] = {{1.0, 0.0}};
+    complex y_data[] = {{0.0, 1.0}};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+    std::linalg::apply_givens_rotation(x, y, rotation.c, rotation.s);
+
+    EXPECT_NEAR(x[0].real(), std::sqrt(2.0), 1e-12);
+    EXPECT_NEAR(x[0].imag(), 0.0, 1e-12);
+    EXPECT_NEAR(y[0].real(), 0.0, 1e-12);
+    EXPECT_NEAR(y[0].imag(), 0.0, 1e-12);
 }

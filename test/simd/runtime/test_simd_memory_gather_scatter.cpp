@@ -173,6 +173,25 @@ TEST(SimdMemoryGatherScatterExtensionTest, UncheckedMaskedGatherAndScatterUseSta
     EXPECT_EQ(output[7], -1);
 }
 
+TEST(SimdMemoryGatherScatterExtensionTest, UncheckedMaskedOperationsIgnoreUnselectedInvalidOffsets) {
+    std::array<int, 8> input{{10, 11, 12, 13, 14, 15, 16, 17}};
+    std::array<int, 8> output{{-1, -1, -1, -1, -1, -1, -1, -1}};
+    const int4 indices = make_int4(1, -7, 5, -9);
+    const mask4 selected(0b0101u);
+
+    const auto gathered = std::simd::unchecked_gather_from<int4>(input.data(), selected, indices);
+    EXPECT_EQ(gathered[0], 11);
+    EXPECT_EQ(gathered[1], 0);
+    EXPECT_EQ(gathered[2], 15);
+    EXPECT_EQ(gathered[3], 0);
+
+    std::simd::unchecked_scatter_to(gathered, output.data(), selected, indices);
+    EXPECT_EQ(output[1], 11);
+    EXPECT_EQ(output[5], 15);
+    EXPECT_EQ(output[0], -1);
+    EXPECT_EQ(output[7], -1);
+}
+
 TEST(SimdMemoryGatherScatterExtensionTest, UncheckedMaskedGatherAndScatterSupportContiguousRanges) {
     std::array<int, 8> input{{10, 11, 12, 13, 14, 15, 16, 17}};
     std::array<int, 8> output{{-1, -1, -1, -1, -1, -1, -1, -1}};

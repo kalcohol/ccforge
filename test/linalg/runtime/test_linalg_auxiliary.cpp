@@ -88,6 +88,7 @@ TEST(LayoutBlasPackedTest, UpperAndLowerColumnMajorMappings) {
     lower_layout::mapping<extents_t> lower(extents_t{});
 
     EXPECT_EQ(upper.required_span_size(), 6);
+    EXPECT_FALSE(upper.is_unique());
     EXPECT_EQ(upper(0, 0), 0);
     EXPECT_EQ(upper(0, 1), 1);
     EXPECT_EQ(upper(1, 1), 2);
@@ -95,11 +96,23 @@ TEST(LayoutBlasPackedTest, UpperAndLowerColumnMajorMappings) {
     EXPECT_EQ(upper(2, 2), 5);
 
     EXPECT_EQ(lower.required_span_size(), 6);
+    EXPECT_FALSE(lower.is_unique());
     EXPECT_EQ(lower(0, 0), 0);
     EXPECT_EQ(lower(1, 0), 1);
     EXPECT_EQ(lower(2, 0), 2);
     EXPECT_EQ(lower(1, 1), 3);
     EXPECT_EQ(lower(0, 2), 2);
+}
+
+TEST(LayoutBlasPackedTest, SingleElementMappingsAreUnique) {
+    using extents_t = std::extents<int, 1, 1>;
+    using upper_layout = std::linalg::layout_blas_packed<
+        std::linalg::upper_triangle_t, std::linalg::column_major_t>;
+
+    upper_layout::mapping<extents_t> mapping(extents_t{});
+    static_assert(upper_layout::mapping<extents_t>::is_always_unique());
+    EXPECT_TRUE(mapping.is_unique());
+    EXPECT_EQ(mapping.required_span_size(), 1);
 }
 
 TEST(LayoutBlasPackedTest, UpperAndLowerRowMajorMappings) {

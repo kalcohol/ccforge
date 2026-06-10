@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <linalg>
 #include <mdspan>
+#include <algorithm>
 #include <array>
 #include <complex>
 
@@ -74,28 +75,45 @@ TEST(LinalgLevel3TriangularProduct, UpperLowerAndImplicitUnitDiagonal) {
     std::mdspan B(b_data, std::extents<int, 3, 2>{});
     std::mdspan C(c_data, std::extents<int, 3, 2>{});
 
-    std::linalg::triangular_matrix_product(
-        upper, std::linalg::upper_triangle, std::linalg::explicit_diagonal,
-        std::linalg::column_major, B, C);
+    std::copy(std::begin(b_data), std::end(b_data), std::begin(c_data));
+    std::linalg::triangular_matrix_left_product(
+        upper, std::linalg::upper_triangle, std::linalg::explicit_diagonal, C);
     EXPECT_DOUBLE_EQ((C[0, 0]), 22.0);
     EXPECT_DOUBLE_EQ((C[1, 0]), 37.0);
     EXPECT_DOUBLE_EQ((C[2, 1]), 36.0);
 
-    std::linalg::triangular_matrix_product(
-        lower, std::linalg::lower_triangle, std::linalg::explicit_diagonal,
-        std::linalg::column_major, B, C);
+    std::copy(std::begin(b_data), std::end(b_data), std::begin(c_data));
+    std::linalg::triangular_matrix_left_product(
+        lower, std::linalg::lower_triangle, std::linalg::explicit_diagonal, C);
     EXPECT_DOUBLE_EQ((C[0, 0]), 1.0);
     EXPECT_DOUBLE_EQ((C[1, 1]), 16.0);
     EXPECT_DOUBLE_EQ((C[2, 1]), 64.0);
 
     double unit_data[] = {99.0, 2.0, 3.0, 100.0, 99.0, 5.0, 100.0, 100.0, 99.0};
     std::mdspan unit(unit_data, std::extents<int, 3, 3>{});
-    std::linalg::triangular_matrix_product(
-        unit, std::linalg::upper_triangle, std::linalg::implicit_unit_diagonal,
-        std::linalg::column_major, B, C);
+    std::copy(std::begin(b_data), std::end(b_data), std::begin(c_data));
+    std::linalg::triangular_matrix_left_product(
+        unit, std::linalg::upper_triangle, std::linalg::implicit_unit_diagonal, C);
     EXPECT_DOUBLE_EQ((C[0, 0]), 22.0);
     EXPECT_DOUBLE_EQ((C[1, 0]), 28.0);
     EXPECT_DOUBLE_EQ((C[2, 1]), 6.0);
+}
+
+TEST(LinalgLevel3TriangularProduct, RightProductUsesTriangularMatrixOnRight) {
+    double upper_data[] = {1.0, 2.0, 3.0, 100.0, 4.0, 5.0, 100.0, 100.0, 6.0};
+    double c_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    std::mdspan upper(upper_data, std::extents<int, 3, 3>{});
+    std::mdspan C(c_data, std::extents<int, 2, 3>{});
+
+    std::linalg::triangular_matrix_right_product(
+        upper, std::linalg::upper_triangle, std::linalg::explicit_diagonal, C);
+
+    EXPECT_DOUBLE_EQ((C[0, 0]), 1.0);
+    EXPECT_DOUBLE_EQ((C[0, 1]), 10.0);
+    EXPECT_DOUBLE_EQ((C[0, 2]), 31.0);
+    EXPECT_DOUBLE_EQ((C[1, 0]), 4.0);
+    EXPECT_DOUBLE_EQ((C[1, 1]), 28.0);
+    EXPECT_DOUBLE_EQ((C[1, 2]), 73.0);
 }
 
 TEST(LinalgLevel3TriangularSolve, LeftSolveMultipleRightHandSides) {

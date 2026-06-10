@@ -42,8 +42,10 @@ void copy(
 {
     if constexpr (InExtents::rank() == 1) {
         using ElemT = std::remove_const_t<typename InAccessor::element_type>;
+        using OutElemT = std::remove_const_t<typename OutAccessor::element_type>;
 #if __LINALG_HAS_SIMD
-        if constexpr (__detail::__can_simd_v<ElemT, InLayout, InAccessor> &&
+        if constexpr (std::is_same_v<ElemT, OutElemT> &&
+                      __detail::__can_simd_v<ElemT, InLayout, InAccessor> &&
                       __detail::__can_simd_v<ElemT, OutLayout, OutAccessor>) {
             using abi_t  = std::simd::native_abi<ElemT>;
             using simd_t = std::simd::basic_vec<ElemT, abi_t>;
@@ -152,8 +154,11 @@ T dot(
     T init)
 {
     using ElemT = std::remove_const_t<typename Accessor1::element_type>;
+    using ElemT2 = std::remove_const_t<typename Accessor2::element_type>;
 #if __LINALG_HAS_SIMD
-    if constexpr (__detail::__can_simd_v<ElemT, Layout1, Accessor1> &&
+    if constexpr (std::is_same_v<ElemT, ElemT2> &&
+                  std::is_same_v<T, ElemT> &&
+                  __detail::__can_simd_v<ElemT, Layout1, Accessor1> &&
                   __detail::__can_simd_v<ElemT, Layout2, Accessor2>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
@@ -173,7 +178,7 @@ T dot(
     }
 #endif
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
-        init += x[i] * y[i];
+        init += static_cast<T>(x[i]) * static_cast<T>(y[i]);
     return init;
 }
 
@@ -225,13 +230,14 @@ T vector_two_norm(
     T init)
 {
     using std::abs;
-    T sum_sq = T{};
+    T sum_sq = init * init;
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         auto v = abs(x[i]);
-        sum_sq += v * v;
+        const T vt = static_cast<T>(v);
+        sum_sq += vt * vt;
     }
     using std::sqrt;
-    return init + sqrt(sum_sq);
+    return sqrt(sum_sq);
 }
 
 template<class Extents, class Layout, class Accessor>
@@ -243,7 +249,9 @@ auto vector_two_norm(
     using T = decltype(abs(x[0]));
     using ElemT = std::remove_const_t<typename Accessor::element_type>;
 #if __LINALG_HAS_SIMD
-    if constexpr (__detail::__can_simd_v<ElemT, Layout, Accessor>) {
+    if constexpr (!__detail::__is_complex_v<ElemT> &&
+                  std::is_same_v<T, ElemT> &&
+                  __detail::__can_simd_v<ElemT, Layout, Accessor>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
         static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
@@ -262,7 +270,8 @@ auto vector_two_norm(
     T sum_sq = T{};
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         auto v = abs(x[i]);
-        sum_sq += v * v;
+        const T vt = static_cast<T>(v);
+        sum_sq += vt * vt;
     }
     return sqrt(sum_sq);
 }
@@ -273,9 +282,8 @@ T vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
-    using std::abs;
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
-        init += abs(x[i]);
+        init += static_cast<T>(__detail::__abs_sum_term(x[i]));
     return init;
 }
 
@@ -283,11 +291,11 @@ template<class Extents, class Layout, class Accessor>
 auto vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
-    using std::abs;
-    using T = decltype(abs(x[0]));
+    using T = decltype(__detail::__abs_sum_term(x[0]));
     using ElemT = std::remove_const_t<typename Accessor::element_type>;
 #if __LINALG_HAS_SIMD
-    if constexpr (__detail::__can_simd_v<ElemT, Layout, Accessor>) {
+    if constexpr (!__detail::__is_complex_v<ElemT> &&
+                  __detail::__can_simd_v<ElemT, Layout, Accessor>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
         static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
@@ -363,6 +371,7 @@ struct setup_givens_rotation_result {
 };
 
 template<class T>
+    requires (!__detail::__is_complex_v<T>)
 setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) {
     using std::abs;
     using std::sqrt;
@@ -373,6 +382,36 @@ setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) {
         : abs(b) * sqrt(T{1} + (a/b)*(a/b));
     T c = a / r;
     T s = b / r;
+    return {c, s, r};
+}
+
+template<class Real>
+struct setup_givens_rotation_result<std::complex<Real>> {
+    Real c;
+    std::complex<Real> s;
+    std::complex<Real> r;
+};
+
+template<class Real>
+setup_givens_rotation_result<std::complex<Real>>
+setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
+    using complex = std::complex<Real>;
+    using std::abs;
+    using std::conj;
+    using std::norm;
+    using std::sqrt;
+
+    if (b == complex{}) return {Real{1}, complex{}, a};
+    if (a == complex{}) return {Real{0}, complex{1}, b};
+
+    const Real scale = abs(a) + abs(b);
+    const complex scaled_a = a / scale;
+    const complex scaled_b = b / scale;
+    const Real rho = scale * sqrt(norm(scaled_a) + norm(scaled_b));
+    const complex alpha = a / abs(a);
+    const Real c = abs(a) / rho;
+    const complex s = alpha * conj(b) / rho;
+    const complex r = alpha * rho;
     return {c, s, r};
 }
 
@@ -389,6 +428,22 @@ void apply_givens_rotation(
         auto yi = y[i];
         x[i] = c * xi + s * yi;
         y[i] = -s * xi + c * yi;
+    }
+}
+
+template<class Extents, class Layout1, class Accessor1,
+                        class Layout2, class Accessor2, class Real>
+void apply_givens_rotation(
+    std::mdspan<std::complex<Real>, Extents, Layout1, Accessor1> x,
+    std::mdspan<std::complex<Real>, Extents, Layout2, Accessor2> y,
+    Real c, std::complex<Real> s)
+{
+    using std::conj;
+    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+        auto xi = x[i];
+        auto yi = y[i];
+        x[i] = c * xi + s * yi;
+        y[i] = -conj(s) * xi + c * yi;
     }
 }
 

@@ -75,7 +75,7 @@ struct layout_blas_packed {
             return extents_;
         }
 
-        [[nodiscard]] constexpr size_type required_span_size() const noexcept {
+        [[nodiscard]] constexpr index_type required_span_size() const noexcept {
             const auto n = extents_.extent(0);
             return n * (n + 1) / 2;
         }
@@ -102,8 +102,11 @@ struct layout_blas_packed {
             }
         }
 
-        [[nodiscard]] constexpr bool is_unique()            const noexcept { return false; }
-        [[nodiscard]] static constexpr bool is_always_unique()            noexcept { return false; }
+        [[nodiscard]] constexpr bool is_unique()            const noexcept { return extents_.extent(0) <= 1; }
+        [[nodiscard]] static constexpr bool is_always_unique()            noexcept {
+            constexpr auto n = Extents::static_extent(0);
+            return n != std::dynamic_extent && n <= 1;
+        }
         [[nodiscard]] static constexpr bool is_always_exhaustive()        noexcept { return true;  }
         [[nodiscard]] static constexpr bool is_always_strided()           noexcept { return false; }
         [[nodiscard]] constexpr bool is_exhaustive()        const noexcept { return true;  }

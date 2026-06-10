@@ -54,6 +54,25 @@ namespace std::linalg {
 namespace __detail {
 
 template<class T>
+struct __is_complex : std::false_type {};
+
+template<class T>
+struct __is_complex<std::complex<T>> : std::true_type {};
+
+template<class T>
+inline constexpr bool __is_complex_v = __is_complex<std::remove_cvref_t<T>>::value;
+
+template<class T>
+constexpr auto __abs_sum_term(const T& value) {
+    using std::abs;
+    if constexpr (__is_complex_v<T>) {
+        return abs(value.real()) + abs(value.imag());
+    } else {
+        return abs(value);
+    }
+}
+
+template<class T>
 inline constexpr bool __is_simd_accelerable_v =
     std::is_arithmetic_v<T> && !std::is_same_v<T, bool> &&
     !std::is_same_v<T, long double> &&

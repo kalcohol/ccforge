@@ -13,9 +13,9 @@
 `hermitian_matrix_vector_product`、`matrix_rank_1_update` / `_c`、
 `symmetric_matrix_rank_1/2_update`、`hermitian_matrix_rank_1/2_update`
 
-**BLAS Level 3：** `matrix_product`、`triangular_matrix_product`、
-`triangular_matrix_matrix_left_solve`、`symmetric_matrix_product`、
-`hermitian_matrix_product`、`symmetric_matrix_rank_k/2k_update`、
+**BLAS Level 3：** `matrix_product`、`triangular_matrix_left_product`、
+`triangular_matrix_right_product`、`triangular_matrix_matrix_left_solve`、
+`symmetric_matrix_product`、`hermitian_matrix_product`、`symmetric_matrix_rank_k/2k_update`、
 `hermitian_matrix_rank_k_update`
 
 **辅助组件：** `scaled` / `conjugated` / `transposed` / `conjugate_transposed` 视图函数、
@@ -31,8 +31,11 @@
 - 未实现 execution policy 重载，不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
-- 旧参数顺序仍作为兼容 wrapper 保留，但文档化 API 以后续 draft 拼写为准。
-- Level 3 目前只覆盖左侧 triangular product/solve；右侧 triangular overload 与 Hermitian rank-2k 仍未实现。
+- 旧的 `triangular_matrix_product(..., Side, ...)` 仍作为兼容 wrapper 保留，但文档化 API
+  以后续 draft 的 `triangular_matrix_left_product` / `triangular_matrix_right_product`
+  拼写为准。
+- Level 3 目前覆盖左右两侧 triangular product；triangular solve 仍只覆盖左侧矩阵版本，
+  Hermitian rank-2k 仍未实现。
 
 ## SIMD 加速
 

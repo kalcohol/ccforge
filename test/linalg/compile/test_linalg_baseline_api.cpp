@@ -144,9 +144,10 @@ static void check_level3_current_shapes()
 
     std::linalg::matrix_product(a, b, c);
     std::linalg::matrix_product(a, b, e, c);
-    std::linalg::triangular_matrix_product(
-        a, std::linalg::upper_triangle, std::linalg::explicit_diagonal,
-        std::linalg::column_major, b, c);
+    std::linalg::triangular_matrix_left_product(
+        a, std::linalg::upper_triangle, std::linalg::explicit_diagonal, c);
+    std::linalg::triangular_matrix_right_product(
+        a, std::linalg::upper_triangle, std::linalg::explicit_diagonal, c);
     std::linalg::triangular_matrix_matrix_left_solve(
         a, std::linalg::upper_triangle, std::linalg::explicit_diagonal, b);
     std::linalg::symmetric_matrix_product(

@@ -79,7 +79,7 @@ typedef unsigned long __attribute__((vector_size(64))) __vec_u64x8;
 // ─── Vector add/sub/mul helpers ──────────────────────────────────────────────
 
 template<class Vec, class T>
-inline void __simd_add_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_add_vec(T* dst, const T* src) noexcept {
     Vec left;
     Vec right;
     __builtin_memcpy(&left, dst, sizeof(left));
@@ -89,7 +89,7 @@ inline void __simd_add_vec(T* __restrict__ dst, const T* __restrict__ src) noexc
 }
 
 template<class Vec, class T>
-inline void __simd_sub_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_sub_vec(T* dst, const T* src) noexcept {
     Vec left;
     Vec right;
     __builtin_memcpy(&left, dst, sizeof(left));
@@ -99,7 +99,7 @@ inline void __simd_sub_vec(T* __restrict__ dst, const T* __restrict__ src) noexc
 }
 
 template<class Vec, class T>
-inline void __simd_mul_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_mul_vec(T* dst, const T* src) noexcept {
     Vec left;
     Vec right;
     __builtin_memcpy(&left, dst, sizeof(left));
@@ -109,7 +109,7 @@ inline void __simd_mul_vec(T* __restrict__ dst, const T* __restrict__ src) noexc
 }
 
 template<class Vec, class T>
-inline void __simd_div_vec(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_div_vec(T* dst, const T* src) noexcept {
     Vec left;
     Vec right;
     __builtin_memcpy(&left, dst, sizeof(left));
@@ -119,7 +119,7 @@ inline void __simd_div_vec(T* __restrict__ dst, const T* __restrict__ src) noexc
 }
 
 template<class T, ::std::size_t N>
-inline void __simd_add(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_add(T* dst, const T* src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]+=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_512BIT
     if constexpr (::std::is_same_v<T,float>  && N==16) { __simd_add_vec<__vec_f32x16>(dst, src); return; }
@@ -143,7 +143,7 @@ inline void __simd_add(T* __restrict__ dst, const T* __restrict__ src) noexcept 
 }
 
 template<class T, ::std::size_t N>
-inline void __simd_sub(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_sub(T* dst, const T* src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]-=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_512BIT
     if constexpr (::std::is_same_v<T,float>  && N==16) { __simd_sub_vec<__vec_f32x16>(dst, src); return; }
@@ -164,7 +164,7 @@ inline void __simd_sub(T* __restrict__ dst, const T* __restrict__ src) noexcept 
 }
 
 template<class T, ::std::size_t N>
-inline void __simd_mul(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_mul(T* dst, const T* src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]*=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
     if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_mul_vec<__vec_f32x8>(dst, src); return; }
@@ -180,7 +180,7 @@ inline void __simd_mul(T* __restrict__ dst, const T* __restrict__ src) noexcept 
 }
 
 template<class T, ::std::size_t N>
-inline void __simd_div(T* __restrict__ dst, const T* __restrict__ src) noexcept {
+inline void __simd_div(T* dst, const T* src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) { for (::std::size_t i=0;i<N;++i) dst[i]/=src[i]; return; }
 #ifdef FORGE_SIMD_DETAIL_HAVE_256BIT
     if constexpr (::std::is_same_v<T,float>  && N==8) { __simd_div_vec<__vec_f32x8>(dst, src); return; }
@@ -195,7 +195,7 @@ inline void __simd_div(T* __restrict__ dst, const T* __restrict__ src) noexcept 
 
 // ─── Reduce sum ───────────────────────────────────────────────────────────────
 template<class T, ::std::size_t N>
-inline T __simd_reduce_add(const T* __restrict__ src) noexcept {
+inline T __simd_reduce_add(const T* src) noexcept {
     if (FORGE_SIMD_DETAIL_IS_CONSTEVAL()) {
         T acc = T{};
         for (::std::size_t i = 0; i < N; ++i) acc += src[i];

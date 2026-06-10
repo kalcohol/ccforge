@@ -109,8 +109,8 @@ constexpr V unchecked_gather_from(I first, const typename Indices::mask_type& ma
     V result;
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
         const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        assert(offset >= 0);
         if (mask_value[i]) {
+            assert(offset >= 0);
             detail::set_lane(result, i, detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
         } else {
             detail::set_lane(result, i, typename V::value_type{});
@@ -210,8 +210,8 @@ constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
         const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        assert(offset >= 0);
         if (mask_value[i]) {
+            assert(offset >= 0);
             *(first + offset) = detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
         }
     }
