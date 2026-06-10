@@ -27,6 +27,11 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 - `example/padded_mdspan_layout_example.cpp`：`layout_left_padded` /
   `layout_right_padded` 的 stride 与 full-slice layout 保留。
 
+Padded layout mapping 的 converting constructor 只在不会改变 mapping 唯一性的形状下
+接受相反 layout：rank-1 mapping 可互转，rank>1 的 left-padded 与 right-padded mapping
+不会互转。静态 padding stride 也会参与 `is_always_exhaustive()` 判定；动态 padding
+仍保守返回 false。
+
 ## Feature macros（特性宏）
 
 当 Forge 注入 backport 时定义：

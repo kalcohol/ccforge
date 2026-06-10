@@ -244,6 +244,37 @@ TEST(SubmdspanPaddedLayouts, LayoutRightPaddedMapping) {
     EXPECT_FALSE(map.is_exhaustive());
 }
 
+TEST(SubmdspanPaddedLayouts, StaticPaddedStrideControlsAlwaysExhaustive) {
+    using left_ext_t = std::extents<int, 8, 2>;
+    using right_ext_t = std::extents<int, 2, 8>;
+    using left_map_t = std::layout_left_padded<4>::mapping<left_ext_t>;
+    using right_map_t = std::layout_right_padded<4>::mapping<right_ext_t>;
+    using dynamic_left_map_t = std::layout_left_padded<>::mapping<left_ext_t>;
+
+    static_assert(left_map_t::is_always_exhaustive());
+    static_assert(right_map_t::is_always_exhaustive());
+    static_assert(!dynamic_left_map_t::is_always_exhaustive());
+
+    left_map_t left{left_ext_t{}};
+    right_map_t right{right_ext_t{}};
+    EXPECT_EQ(left.stride(1), 8);
+    EXPECT_TRUE(left.is_exhaustive());
+    EXPECT_EQ(right.stride(0), 8);
+    EXPECT_TRUE(right.is_exhaustive());
+}
+
+TEST(SubmdspanPaddedLayouts, OppositeRankTwoPaddedMappingIsNotConvertible) {
+    using ext_t = std::extents<int, 3, 5>;
+    using left_map_t = std::layout_left_padded<>::mapping<ext_t>;
+    using right_map_t = std::layout_right_padded<4>::mapping<ext_t>;
+    using rank1_t = std::extents<int, 5>;
+    using left_rank1_t = std::layout_left_padded<>::mapping<rank1_t>;
+    using right_rank1_t = std::layout_right_padded<4>::mapping<rank1_t>;
+
+    static_assert(!std::is_constructible_v<left_map_t, right_map_t>);
+    static_assert(std::is_constructible_v<left_rank1_t, right_rank1_t>);
+}
+
 TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
     auto data = make_data<32>();
     using ext_t = std::extents<int, 3, 4>;

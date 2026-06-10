@@ -82,11 +82,21 @@ struct layout_left_padded {
         }
 
         static constexpr size_t first_static_extent = first_static_extent_();
+        static consteval size_t static_padding_stride_() {
+            if constexpr (rank_ <= 1) {
+                return size_t(1);
+            } else if constexpr (PaddingValue == dynamic_extent ||
+                                 first_static_extent == dynamic_extent) {
+                return dynamic_extent;
+            } else {
+                return __forge_mdspan_padded_detail::least_multiple_at_least(
+                    PaddingValue,
+                    first_static_extent);
+            }
+        }
+
         static constexpr size_t static_padding_stride =
-            rank_ <= 1 ? size_t(1) :
-            PaddingValue != dynamic_extent ? PaddingValue :
-            first_static_extent != dynamic_extent ? first_static_extent :
-            dynamic_extent;
+            static_padding_stride_();
 
         static constexpr index_type make_stride(index_type extent, index_type padding) noexcept {
             return __forge_mdspan_padded_detail::least_multiple_at_least(padding, extent);
@@ -134,7 +144,10 @@ struct layout_left_padded {
                 typename OtherMapping::extents_type;
                 other.extents();
                 other.stride(rank_type{});
-            }
+            } && (rank_ <= 1 ||
+                  is_same_v<
+                      typename OtherMapping::layout_type,
+                      layout_left_padded<OtherMapping::padding_value>>)
         constexpr explicit(!is_convertible_v<typename OtherMapping::extents_type, extents_type>)
         mapping(const OtherMapping& other)
             : stride_1_(rank_ > 1 ? static_cast<index_type>(other.stride(1)) : index_type(1)),
@@ -268,11 +281,21 @@ struct layout_right_padded {
         }
 
         static constexpr size_t last_static_extent = last_static_extent_();
+        static consteval size_t static_padding_stride_() {
+            if constexpr (rank_ <= 1) {
+                return size_t(1);
+            } else if constexpr (PaddingValue == dynamic_extent ||
+                                 last_static_extent == dynamic_extent) {
+                return dynamic_extent;
+            } else {
+                return __forge_mdspan_padded_detail::least_multiple_at_least(
+                    PaddingValue,
+                    last_static_extent);
+            }
+        }
+
         static constexpr size_t static_padding_stride =
-            rank_ <= 1 ? size_t(1) :
-            PaddingValue != dynamic_extent ? PaddingValue :
-            last_static_extent != dynamic_extent ? last_static_extent :
-            dynamic_extent;
+            static_padding_stride_();
 
         static constexpr index_type make_stride(index_type extent, index_type padding) noexcept {
             return __forge_mdspan_padded_detail::least_multiple_at_least(padding, extent);
@@ -320,7 +343,10 @@ struct layout_right_padded {
                 typename OtherMapping::extents_type;
                 other.extents();
                 other.stride(rank_type{});
-            }
+            } && (rank_ <= 1 ||
+                  is_same_v<
+                      typename OtherMapping::layout_type,
+                      layout_right_padded<OtherMapping::padding_value>>)
         constexpr explicit(!is_convertible_v<typename OtherMapping::extents_type, extents_type>)
         mapping(const OtherMapping& other)
             : stride_rm2_(rank_ > 1 ? static_cast<index_type>(other.stride(rank_ - 2)) : index_type(1)),
