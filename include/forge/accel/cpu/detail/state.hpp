@@ -242,6 +242,21 @@ struct __state : std::enable_shared_from_this<__state> {
         std::shared_ptr<__device_state> device = nullptr)
         -> std::shared_ptr<__queue_state> {
         auto self = shared_from_this();
+        auto same_device = [](const std::weak_ptr<__device_state>& lhs,
+                              const std::shared_ptr<__device_state>& rhs) {
+            auto locked = lhs.lock();
+            return (!locked && !rhs) || (locked && rhs && locked.get() == rhs.get());
+        };
+        {
+            std::lock_guard lk{mtx};
+            for (auto& existing : queues) {
+                if (existing && existing->kind == kind
+                    && same_device(existing->device, device)) {
+                    return existing;
+                }
+            }
+        }
+
         auto q = std::allocate_shared<__queue_state>(
             std::pmr::polymorphic_allocator<__queue_state>{memory},
             self,
@@ -250,6 +265,13 @@ struct __state : std::enable_shared_from_this<__state> {
             std::move(device));
         {
             std::lock_guard lk{mtx};
+            auto q_device = q->device.lock();
+            for (auto& existing : queues) {
+                if (existing && existing->kind == kind
+                    && same_device(existing->device, q_device)) {
+                    return existing;
+                }
+            }
             queues.push_back(q);
         }
         return q;

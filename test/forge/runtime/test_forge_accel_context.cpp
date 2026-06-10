@@ -229,6 +229,84 @@ TEST(AccelContextTest, RepeatedShutdownAndWaitAreHarmless) {
     ctx.wait();
 }
 
+TEST(AccelContextTest, WaitDrainsReceiverCompletion) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool receiver_entered = false;
+    bool release_receiver = false;
+    bool wait_returned = false;
+
+    struct blocking_receiver {
+        using receiver_concept = std::execution::receiver_t;
+
+        std::mutex* mtx = nullptr;
+        std::condition_variable* cv = nullptr;
+        bool* entered = nullptr;
+        bool* release = nullptr;
+
+        void set_value() && noexcept {
+            {
+                std::lock_guard lk{*mtx};
+                *entered = true;
+            }
+            cv->notify_all();
+
+            std::unique_lock lk{*mtx};
+            cv->wait(lk, [&] { return *release; });
+        }
+
+        void set_error(std::exception_ptr) && noexcept {
+            ADD_FAILURE() << "unexpected error completion";
+        }
+
+        void set_stopped() && noexcept {
+            ADD_FAILURE() << "unexpected stopped completion";
+        }
+
+        auto get_env() const noexcept -> std::execution::empty_env {
+            return {};
+        }
+    };
+
+    auto op = std::execution::connect(
+        forge::accel::mock::submit(q, [] {}),
+        blocking_receiver{&mtx, &cv, &receiver_entered, &release_receiver});
+    std::execution::start(op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return receiver_entered; }));
+    }
+
+    std::thread waiter{[&] {
+        ctx.wait();
+        {
+            std::lock_guard lk{mtx};
+            wait_returned = true;
+        }
+        cv.notify_all();
+    }};
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(lk, 50ms, [&] { return wait_returned; }));
+        release_receiver = true;
+    }
+    cv.notify_all();
+    waiter.join();
+
+    {
+        std::lock_guard lk{mtx};
+        EXPECT_TRUE(wait_returned);
+    }
+}
+
 TEST(AccelContextTest, CurrentDeviceGuardRestoresAndIsThreadLocal) {
     EXPECT_FALSE(forge::accel::current_device().has_value());
 

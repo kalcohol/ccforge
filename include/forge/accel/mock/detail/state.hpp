@@ -541,6 +541,11 @@ inline void __state::wait() noexcept {
     runtime.wait();
     std::unique_lock lk{mtx};
     cv.wait(lk, [this] { return pending == 0; });
+    lk.unlock();
+    for (auto& queue : snapshot_queues()) {
+        queue->wait();
+    }
+    runtime.wait();
 }
 
 inline void __state::initialize_devices() {

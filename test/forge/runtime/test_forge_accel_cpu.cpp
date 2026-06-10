@@ -184,6 +184,48 @@ TEST(AccelCpuTest, CapacityFullCompletesStopped) {
     EXPECT_TRUE(first_state->value);
 }
 
+TEST(AccelCpuTest, RepeatedQueueLookupReusesKindLane) {
+    forge::accel::cpu::context ctx{forge::accel::cpu::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto first_q = ctx.get_queue(forge::accel::queue_kind::compute);
+    auto second_q = ctx.get_queue(forge::accel::queue_kind::compute);
+
+    blocking_gate gate;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool second_started = false;
+
+    auto [first_op, first_state] = connect_async(
+        forge::accel::cpu::submit(first_q, [&] {
+            gate.mark_started_and_wait();
+        }));
+    std::execution::start(first_op);
+    ASSERT_TRUE(gate.wait_started());
+
+    auto [second_op, second_state] = connect_async(
+        forge::accel::cpu::submit(second_q, [&] {
+            {
+                std::lock_guard lk{mtx};
+                second_started = true;
+            }
+            cv.notify_all();
+        }));
+    std::execution::start(second_op);
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(lk, 50ms, [&] { return second_started; }));
+    }
+
+    gate.release_gate();
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(second_state->value);
+}
+
 TEST(AccelCpuTest, TypedSizeMismatchReportsPortableError) {
     forge::accel::cpu::context ctx;
     auto q = ctx.get_queue();

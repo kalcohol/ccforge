@@ -99,8 +99,12 @@ CPU backend 保持与其它 Forge runtime 相同的 lifecycle shape：
 - `close()` 拒绝后续 command admission，并 drain accepted work；
 - `request_stop()` 请求 pending work 和 event wait 停止；
 - `shutdown()` 是 `close()` + `request_stop()`；
-- `wait()` drain accepted work；如果从 backend work 内部调用，则立即返回以避免
-  self-deadlock。
+- `wait()` drain accepted work，并在 command pending 计数归零后再 drain queue/runtime
+  completion 尾段；如果从 backend work 内部调用，则立即返回以避免 self-deadlock。
+
+`wait()` 的 self-deadlock guard 只保护显式等待路径。Owning `mock::context` /
+`cpu::context` 对象不得在它们自己的 command body 或 receiver completion 内析构；外层
+owner 应显式控制 `shutdown()` / `wait()` 和作用域退出顺序。
 
 CPU backend 仍然不是 CUDA / HIP / SYCL，不暴露 native handle，也不建模 hardware queue、
 DMA、driver reset、pinned memory 或 kernel preemption。它只是 command vocabulary 的
@@ -114,8 +118,9 @@ context shutdown、device/session reset，或显式 event/fence ordering。
 ## Queue 与 command
 
 `context::get_queue(kind)` 创建或返回 lightweight queue handle。`device::get_queue(kind)`
-创建 device-bound queue。每个 queue owns 一个 `forge::strand`，所以同一 queue 内 work
-FIFO 且 single-lane；不同 queue 是否并行推进取决于 `thread_count`。
+创建 device-bound queue。Mock 与 CPU backend 都按 `(context/device, kind)` 复用 queue
+state，重复 lookup 不会无限注册新 lane。每个 queue owns 一个 `forge::strand`，所以同一
+queue 内 work FIFO 且 single-lane；不同 queue 是否并行推进取决于 `thread_count`。
 
 Mock backend 把 queue 视为 device worker stream 的 proof。`queue_kind::general` 和
 device session 的 command queue 使用 `stream_id{0}` 作为 default stream；显式 copy /
