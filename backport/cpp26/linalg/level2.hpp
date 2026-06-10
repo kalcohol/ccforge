@@ -66,8 +66,12 @@ void matrix_vector_product(
 {
     using idx_t = typename AExtents::index_type;
     using ElemT = std::remove_const_t<typename AAccessor::element_type>;
+    using XElemT = std::remove_const_t<typename XAccessor::element_type>;
+    using YElemT = std::remove_const_t<typename YAccessor::element_type>;
 #if __LINALG_HAS_SIMD
-    if constexpr (__detail::__can_simd_v<ElemT, XLayout, XAccessor> &&
+    if constexpr (std::is_same_v<ElemT, XElemT> &&
+                  std::is_same_v<ElemT, YElemT> &&
+                  __detail::__can_simd_v<ElemT, XLayout, XAccessor> &&
                   __detail::__can_simd_v<ElemT, ALayout, AAccessor> &&
                   std::is_same_v<ALayout, std::layout_right>) {
         using abi_t  = std::simd::native_abi<ElemT>;

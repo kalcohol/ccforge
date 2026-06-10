@@ -297,10 +297,11 @@ Callback sender 在创建时捕获 `{callback_id, registration epoch}` 和 regis
 长生命周期 dispatcher 无界增长。可用 `host_callback_dispatcher_options::completion_capacity`
 调整；设为 `std::nullopt` 表示显式选择 unbounded history，设为 `0` 表示不保留 history。
 `host_callback_dispatcher_options::memory` 是非 owning 指针，必须至少活到 dispatcher 析构
-完成；dispatcher 析构会 close/drain，并释放 PMR-backed handler records 与 completion
-history。已经排进 stream 但尚未执行到的 callback node 可能继续持有 registry control
-state，但不会再持有 user handler，也不会再使用该 memory resource；它们之后到达时以 stopped
-completion 收尾。
+完成；dispatcher 析构会 close/drain，并释放 registry map 与 completion history。In-flight
+callback record/control blocks 不使用该 PMR resource，因此 callback body 内销毁 dispatcher
+后，return path 仍可安全收尾。已经排进 stream 但尚未执行到的 callback node 可能继续持有
+registry control state，但不会再持有 user handler，也不会再使用该 memory resource；它们之后
+到达时以 stopped completion 收尾。
 
 ## Device、session 与 recovery
 
@@ -312,7 +313,10 @@ auto infos = ctx.device_infos();
 auto devices = ctx.devices();
 ```
 
-`device.open_session()` 创建绑定到当前 device epoch 的 command/session lane。
+`device.open_session()` 创建绑定到当前 device epoch 的 command/session lane。同一 device
+上的 session command lane 使用共享的 default command stream（`stream_id{0}`）：跨 session
+command 会按该 stream FIFO 串行化，`query_stream` / `synchronize_stream` 观察到的是这条
+device-level default command stream 的 pending 与 sticky error。
 `device.get_queue(kind)` 创建 device-bound queue。Device-bound work 在执行前会检查 device
 availability 和 worker generation。
 

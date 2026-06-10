@@ -65,6 +65,19 @@ TEST(LinalgLevel2Gemv, LayoutLeftAndLayoutStrideInputs) {
     expect_vector_near(y, {14.0, 32.0});
 }
 
+TEST(LinalgLevel2Gemv, MixedElementTypesUseScalarFallback) {
+    float a_data[] = {1.25f, 2.5f, 3.75f, 4.5f};
+    double x_data[] = {2.0, -1.0};
+    double y_data[] = {0.0, 0.0};
+    std::mdspan A(a_data, std::extents<int, 2, 2>{});
+    std::mdspan x(x_data, std::extents<int, 2>{});
+    std::mdspan y(y_data, std::extents<int, 2>{});
+
+    std::linalg::matrix_vector_product(A, x, y);
+
+    expect_vector_near(y, {0.0, 3.0});
+}
+
 TEST(LinalgLevel2Gemv, ScaledAndTransposedViews) {
     double a_data[] = {1.0, 2.0, 3.0, 4.0};
     double x_data[] = {1.0, 2.0};

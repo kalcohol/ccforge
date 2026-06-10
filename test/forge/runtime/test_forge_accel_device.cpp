@@ -288,6 +288,36 @@ TEST(AccelDeviceTest, DeviceQueuesAreStablePerKind) {
     EXPECT_TRUE(second_state->value);
 }
 
+TEST(AccelDeviceTest, SessionsShareDeviceDefaultCommandStream) {
+    forge::accel::mock::context ctx;
+    auto device = ctx.get_device();
+    auto first = device.open_session();
+    auto second = device.open_session();
+
+    auto first_snapshot = forge::accel::mock::query_stream(first.get_queue());
+    auto second_snapshot = forge::accel::mock::query_stream(second.get_queue());
+    EXPECT_EQ(first_snapshot.stream, forge::accel::stream_id{});
+    EXPECT_EQ(second_snapshot.stream, forge::accel::stream_id{});
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(
+            forge::accel::mock::submit(first, [] {
+                throw forge::accel::operation_error{
+                    forge::accel::error_kind::size_mismatch,
+                    "session command test"};
+            })),
+        forge::accel::operation_error);
+
+    auto sticky = forge::accel::mock::query_stream(second.get_queue());
+    ASSERT_TRUE(sticky.has_sticky_error);
+    EXPECT_EQ(sticky.sticky_error.kind, forge::accel::error_kind::size_mismatch);
+
+    auto observed = forge::accel::mock::synchronize_stream(second.get_queue());
+    EXPECT_FALSE(observed);
+    ASSERT_TRUE(observed.has_error);
+    EXPECT_EQ(observed.sticky_error.kind, forge::accel::error_kind::size_mismatch);
+}
+
 TEST(AccelDeviceTest, DeviceLostWhileCommandPendingRoutesError) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,

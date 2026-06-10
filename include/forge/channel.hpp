@@ -529,19 +529,16 @@ struct __send_op {
     __send_op& operator=(const __send_op&) = delete;
 
     void start() & noexcept {
+        auto st = state;
         auto rec = record;
         if (__stop_requested(rec->rcvr)) {
             rec->complete_stopped();
             return;
         }
-        if (!rec->install_stop_callback(state, rec)) {
+        if (!rec->install_stop_callback(st, rec)) {
             return;
         }
-        if (state->start_send(rec)) {
-            if (rec->stop_requested()) {
-                state->cancel_send(rec);
-            }
-        }
+        (void)st->start_send(rec);
     }
 };
 
@@ -567,19 +564,16 @@ struct __recv_op {
     __recv_op& operator=(const __recv_op&) = delete;
 
     void start() & noexcept {
+        auto st = state;
         auto rec = record;
         if (__stop_requested(rec->rcvr)) {
             rec->complete_stopped();
             return;
         }
-        if (!rec->install_stop_callback(state, rec)) {
+        if (!rec->install_stop_callback(st, rec)) {
             return;
         }
-        if (state->start_recv(rec)) {
-            if (rec->stop_requested()) {
-                state->cancel_recv(rec);
-            }
-        }
+        (void)st->start_recv(rec);
     }
 };
 

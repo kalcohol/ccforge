@@ -112,7 +112,8 @@ public:
     }
 
     [[nodiscard]] auto invoke(callback_id id) -> callback_result {
-        return state_->invoke(state_->capture(id));
+        auto token = capture(id);
+        return token.owner->invoke(std::move(token));
     }
 
     [[nodiscard]] auto completions() const -> std::vector<callback_result> {
@@ -255,11 +256,20 @@ private:
                 cv.notify_all();
                 return;
             }
+            ++active_unregisters;
+            auto finish_unregister = [&] {
+                if (active_unregisters > 0) {
+                    --active_unregisters;
+                }
+                cv.notify_all();
+            };
             try {
                 cv.wait(lk, [&] { return rec->in_flight == 0; });
             } catch (...) {
+                finish_unregister();
                 return;
             }
+            finish_unregister();
             prune_if_unused_locked(rec);
         }
 
@@ -435,6 +445,7 @@ private:
         bool closed = false;
         bool retired = false;
         std::size_t active_invocations = 0;
+        std::size_t active_unregisters = 0;
         std::uint64_t next_callback = 1;
         std::uint64_t next_epoch = 1;
         std::optional<record_map> records;
@@ -454,7 +465,7 @@ private:
                     }
                 }
             }
-            return active_invocations == 0;
+            return active_invocations == 0 && active_unregisters == 0;
         }
 
         void throw_if_closed() const {
@@ -488,11 +499,7 @@ private:
             if (next_epoch == 0) {
                 next_epoch = 1;
             }
-            auto rec = std::allocate_shared<record>(
-                std::pmr::polymorphic_allocator<record>{memory},
-                id,
-                epoch,
-                std::move(fn));
+            auto rec = std::make_shared<record>(id, epoch, std::move(fn));
             records->insert_or_assign(id.value, std::move(rec));
         }
 

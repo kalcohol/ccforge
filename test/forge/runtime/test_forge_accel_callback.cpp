@@ -347,6 +347,28 @@ TEST(AccelCallbackTest, CallbackCanInvokeAnotherCallbackReentrantly) {
     EXPECT_EQ(callbacks.completions().size(), 2U);
 }
 
+TEST(AccelCallbackTest, DirectInvokeKeepsStateAliveAcrossSelfDestruction) {
+    checked_memory_resource memory;
+    std::optional<forge::accel::mock::host_callback_dispatcher> callbacks;
+    callbacks.emplace(forge::accel::mock::host_callback_dispatcher_options{
+        .memory = &memory,
+    });
+    bool ran = false;
+    forge::accel::callback_id id{};
+    id = callbacks->register_callback([&] {
+        ran = true;
+        callbacks.reset();
+        memory.disallow();
+    });
+
+    auto result = callbacks->invoke(id);
+
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(ran);
+    EXPECT_FALSE(callbacks.has_value());
+    EXPECT_FALSE(memory.unexpected_use());
+}
+
 TEST(AccelCallbackTest, CallbackCanUnregisterItself) {
     forge::accel::mock::context ctx;
     forge::accel::mock::host_callback_dispatcher callbacks;
