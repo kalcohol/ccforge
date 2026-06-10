@@ -73,14 +73,14 @@
   [`execution-stop-token-allocator-design.md`](../roadmap/execution-stop-token-allocator-design.md)。
 - Scope-token surface 已改为 current-WD-shaped：
   `simple_counting_scope::token::wrap(sender)` 是 identity forwarding，
-  `counting_scope::token::wrap(sender)` 只注入 scope stop token；scope association 由
-  top-level `associate(sender, token)`、`spawn(sender, token[, env])` 和
-  `spawn_future(sender, token[, env])` 持有。`spawn` 只接受 completion signatures 为
-  `set_value()` / `set_stopped()` 的 sender；会产生 value 或 error completion 的 sender
-  需要先转换成无 error、无 value 的形态。`counting_scope::token::wrap` 当前不是
-  WD stop-when 融合实现；下游 receiver stop-token 不会与 scope stop-token 组合成复合
-  stop source。这个差异已登记在 conformance ledger，若需要完全语义应作为独立 slice
-  实现。
+  `counting_scope::token::wrap(sender)` 会给 child env 暴露一个 fused stop token：
+  scope stop 和下游 receiver/env stop 任一请求都会让 child 观察到 stop。scope
+  association 由 top-level `associate(sender, token)`、`spawn(sender, token[, env])`
+  和 `spawn_future(sender, token[, env])` 持有。`spawn` 只接受 completion signatures
+  为 `set_value()` / `set_stopped()` 的 sender；会产生 value 或 error completion 的
+  sender 需要先转换成无 error、无 value 的形态。fused token 使用共享 control block，
+  因此 `read_env(get_stop_token)` 把 token 作为 value 返回时不会悬垂；父级 scope /
+  downstream callback 只在 operation active 期间保持注册。
 - `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用
   `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join
   operation，最后一个 scope association 释放时在锁外完成 join receiver。

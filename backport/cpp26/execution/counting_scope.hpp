@@ -29,7 +29,9 @@
 #include <atomic>
 #include <cstddef>
 #include <exception>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -329,13 +331,64 @@ struct __join_sender {
     }
 };
 
+struct __fused_stop_state {
+    std::inplace_stop_source __source;
+};
+
+template<class Callback>
+class __fused_stop_callback;
+
+struct __fused_stop_token {
+    __fused_stop_token() noexcept = default;
+
+    explicit __fused_stop_token(std::shared_ptr<__fused_stop_state> state) noexcept
+        : __state(std::move(state)) {}
+
+    [[nodiscard]] bool stop_requested() const noexcept {
+        return __state && __state->__source.stop_requested();
+    }
+
+    [[nodiscard]] bool stop_possible() const noexcept {
+        return __state != nullptr;
+    }
+
+    bool operator==(const __fused_stop_token&) const noexcept = default;
+
+    template<class Callback>
+    using callback_type = __fused_stop_callback<Callback>;
+
+    std::shared_ptr<__fused_stop_state> __state;
+};
+
+template<class Callback>
+class __fused_stop_callback {
+public:
+    template<class Cb>
+        requires std::constructible_from<Callback, Cb>
+    explicit __fused_stop_callback(__fused_stop_token token, Cb&& cb)
+        : __state(std::move(token.__state)) {
+        if (__state) {
+            __callback.emplace(
+                __state->__source.get_token(),
+                static_cast<Cb&&>(cb));
+        }
+    }
+
+    __fused_stop_callback(const __fused_stop_callback&) = delete;
+    __fused_stop_callback& operator=(const __fused_stop_callback&) = delete;
+
+private:
+    std::shared_ptr<__fused_stop_state> __state;
+    std::optional<std::inplace_stop_callback<Callback>> __callback;
+};
+
 template<class BaseEnv>
 struct __stop_env {
     [[no_unique_address]] BaseEnv __base;
-    std::inplace_stop_token __token;
+    __fused_stop_token __token;
 
     friend auto tag_invoke(get_stop_token_t, const __stop_env& self) noexcept
-        -> std::inplace_stop_token {
+        -> __fused_stop_token {
         return self.__token;
     }
 
@@ -350,6 +403,42 @@ struct __stop_env {
 
 template<class Env>
 using __stop_env_t = __stop_env<std::decay_t<Env>>;
+
+struct __request_fused_stop {
+    std::inplace_stop_source* __source = nullptr;
+
+    void operator()() const noexcept {
+        if (__source) {
+            __source->request_stop();
+        }
+    }
+};
+
+template<class Token, bool = std::stoppable_token_for<Token, __request_fused_stop>>
+struct __optional_stop_callback {
+    void install(Token token, std::inplace_stop_source& source) {
+        if (token.stop_requested()) {
+            source.request_stop();
+        }
+    }
+};
+
+template<class Token>
+struct __optional_stop_callback<Token, true> {
+    using callback_t = std::stop_callback_for_t<Token, __request_fused_stop>;
+
+    void install(Token token, std::inplace_stop_source& source) {
+        if (token.stop_requested()) {
+            source.request_stop();
+            return;
+        }
+        if (token.stop_possible()) {
+            __callback.emplace(std::move(token), __request_fused_stop{&source});
+        }
+    }
+
+    std::optional<callback_t> __callback;
+};
 
 template<class CS>
 struct __declares_exception_error : std::false_type {};
@@ -582,12 +671,15 @@ struct __stop_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     using token_t = counting_scope::scope_token;
+    using downstream_env_t = env_of_t<R>;
+    using downstream_stop_token_t = decltype(
+        std::execution::get_stop_token(std::declval<downstream_env_t>()));
 
     struct __recv {
         using receiver_concept = receiver_t;
 
         R* __rcvr;
-        std::inplace_stop_token __token;
+        __fused_stop_token __token;
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
@@ -615,6 +707,9 @@ struct __stop_op : __forge_detail::__immovable {
     token_t __token;
     S __sndr;
     R __rcvr;
+    std::shared_ptr<__fused_stop_state> __fused_state;
+    __optional_stop_callback<std::inplace_stop_token> __scope_stop;
+    __optional_stop_callback<downstream_stop_token_t> __downstream_stop;
     __forge_detail::__op_storage<1024> __inner_storage;
 
     __stop_op(token_t token, S sndr, R rcvr)
@@ -629,7 +724,12 @@ struct __stop_op : __forge_detail::__immovable {
 
     void start() & noexcept {
         try {
-            auto stop_token = __token.__stop_token();
+            __fused_state = std::make_shared<__fused_stop_state>();
+            __scope_stop.install(__token.__stop_token(), __fused_state->__source);
+            __downstream_stop.install(
+                std::execution::get_stop_token(std::execution::get_env(__rcvr)),
+                __fused_state->__source);
+            auto stop_token = __fused_stop_token{__fused_state};
             auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
                 return std::execution::connect(
                     std::move(__sndr),

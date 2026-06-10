@@ -19,7 +19,7 @@ working-draft-shaped subset 的执行口径。它与更完整的
 | `spawn` | `std::execution::spawn(sndr, token, env)` 是 `void` CPO，分配 detached operation，通过 `token.try_associate()` 关联并 eager start。 | 已实现 `spawn(sndr, token[, env])`；只接受 `set_value()` / `set_stopped()` sender。 | 示例和测试保持 top-level `spawn`；不要让标准路径回到 token-member helper。 |
 | `spawn_future` | 使用 `token.wrap(sndr)`，从 `env` 或 wrapped sender env 取 allocator，eager state，abandon 时取消，consumer stop callback。 | eager state、shared-state allocator 和 consumer record allocator 已实现；`any_stop_token` callback/type-erasure internals 接受 allocator-neutral。 | 剩余 allocator 差异只归类为 stop-token type erasure，不再归到 `spawn_future` state ownership。 |
 | `simple_counting_scope::token::wrap` | 返回 `std::forward<Sender>(snd)`，不创建 association。 | 已实现为 identity forwarding。 | Association 保留在 top-level algorithms。 |
-| `counting_scope::token::wrap` | 返回带 scope stop token 的 sender。 | 已实现为 stop-token env injection，不拥有 association。 | Association 保留在 top-level algorithms。 |
+| `counting_scope::token::wrap` | 返回带 stop-aware child env 的 sender。 | 已实现 fused stop-token env injection：scope stop 与下游 receiver/env stop 会融合；不拥有 association。 | Association 保留在 top-level algorithms，继续覆盖 fused stop callback lifetime。 |
 | `scope_token::associate` | 当前目标 surface 没有 token-member `associate`。 | 已从 scope token 移除；top-level `associate(sender, token)` 已实现。 | 保持 token surface 精简。 |
 | `scope_token::spawn` | 当前目标 surface 没有 token-member `spawn`。 | 已从 scope token 移除；top-level `spawn(sender, token[, env])` 已实现。 | 示例和测试保持 top-level `spawn`。 |
 | `simple_counting_scope::join` / `counting_scope::join` | 返回 scope-join sender shape。 | 已实现 async sender-returning join；`start()` 注册 join operation 后立即返回。 | 保持 zero-count、registered waiter、single-thread composition 测试。 |

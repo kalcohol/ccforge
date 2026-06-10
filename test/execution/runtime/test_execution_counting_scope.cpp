@@ -18,6 +18,7 @@
 namespace {
 
 using forge_execution_test::manual_state;
+using forge_execution_test::manual_sender;
 using forge_execution_test::wait_until_completed;
 using forge_execution_test::wait_until_started;
 using forge_execution_test::wait_until_stop_requested;
@@ -774,7 +775,7 @@ TEST(CountingScopeTest, CloseRejectsNewAssociatedWork) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(CountingScopeTest, WrapInjectsScopeStopToken) {
+TEST(CountingScopeTest, WrapExposesStoppableToken) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
 
@@ -783,11 +784,68 @@ TEST(CountingScopeTest, WrapInjectsScopeStopToken) {
 
     ASSERT_TRUE(result.has_value());
     auto stop_token = std::get<0>(*result);
+    static_assert(std::stoppable_token<decltype(stop_token)>);
     EXPECT_TRUE(stop_token.stop_possible());
     EXPECT_FALSE(stop_token.stop_requested());
+    EXPECT_EQ(scope.count(), 0u);
+}
 
-    EXPECT_TRUE(scope.request_stop());
+TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    std::inplace_stop_source downstream_stop;
+    downstream_stop.request_stop();
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+
+    auto result = std::execution::sync_wait(
+        std::execution::write_env(
+            token.wrap(std::execution::read_env(std::execution::get_stop_token)),
+            env));
+
+    ASSERT_TRUE(result.has_value());
+    auto stop_token = std::get<0>(*result);
+    static_assert(std::stoppable_token<decltype(stop_token)>);
+    EXPECT_TRUE(stop_token.stop_possible());
     EXPECT_TRUE(stop_token.stop_requested());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    std::inplace_stop_source downstream_stop;
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+    auto state = std::make_shared<manual_state>();
+
+    std::atomic<bool> sync_wait_returned{false};
+    std::atomic<bool> sync_wait_stopped{false};
+    std::thread waiter([&] {
+        auto result = std::execution::sync_wait(
+            std::execution::write_env(
+                token.wrap(manual_sender{state}),
+                env));
+        sync_wait_stopped.store(!result.has_value(), std::memory_order_release);
+        sync_wait_returned.store(true, std::memory_order_release);
+    });
+
+    ASSERT_TRUE(wait_until_started(state));
+
+    downstream_stop.request_stop();
+    const bool completed_by_downstream = wait_until_completed(state);
+    if (!completed_by_downstream) {
+        scope.request_stop();
+        EXPECT_TRUE(wait_until_completed(state));
+    }
+
+    waiter.join();
+
+    EXPECT_TRUE(completed_by_downstream);
+    EXPECT_TRUE(sync_wait_returned.load(std::memory_order_acquire));
+    EXPECT_TRUE(sync_wait_stopped.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 }
 
