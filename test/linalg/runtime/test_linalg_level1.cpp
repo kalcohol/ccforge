@@ -256,6 +256,15 @@ TEST(LinalgLevel1MatrixNorms, FrobeniusInitUsesMagnitudeSquared) {
         (complex{5.0, 0.0}));
 }
 
+TEST(LinalgLevel1MatrixNorms, FrobeniusSquaresElementsInAccumulationType) {
+    float data[] = {1.0e20f};
+    std::mdspan matrix(data, std::extents<int, 1, 1>{});
+
+    const double result = std::linalg::matrix_frob_norm(matrix, 0.0);
+    EXPECT_TRUE(std::isfinite(result));
+    EXPECT_NEAR(result, 1.0e20, 1.0e14);
+}
+
 TEST(LinalgLevel1Givens, SetupAndApplyRotation) {
     auto rotation = std::linalg::setup_givens_rotation(3.0, 4.0);
     EXPECT_DOUBLE_EQ(rotation.r, 5.0);

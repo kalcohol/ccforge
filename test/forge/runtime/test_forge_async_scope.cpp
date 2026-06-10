@@ -400,6 +400,25 @@ TEST(AsyncScopeTest, DestructorWaitsForOwnedWork) {
         cv.notify_all();
     }};
 
+    struct owner_thread_guard {
+        std::thread* owner;
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* release;
+
+        ~owner_thread_guard() {
+            if (owner != nullptr && owner->joinable()) {
+                {
+                    std::lock_guard lk{*mtx};
+                    *release = true;
+                }
+                cv->notify_all();
+                owner->join();
+            }
+        }
+    };
+    [[maybe_unused]] owner_thread_guard owner_guard{&owner, &mtx, &cv, &release};
+
     {
         std::unique_lock lk{mtx};
         ASSERT_TRUE(cv.wait_for(

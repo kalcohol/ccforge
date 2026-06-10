@@ -91,7 +91,8 @@ public:
     }
 
     void unregister_callback(callback_id id) noexcept {
-        state_->unregister_callback(id);
+        auto st = state_;
+        st->unregister_callback(id);
     }
 
     void close() noexcept {
@@ -108,7 +109,8 @@ public:
     }
 
     void wait() noexcept {
-        state_->wait();
+        auto st = state_;
+        st->wait();
     }
 
     [[nodiscard]] auto invoke(callback_id id) -> callback_result {

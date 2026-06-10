@@ -112,9 +112,15 @@ struct layout_blas_packed {
                 (n1 != std::dynamic_extent && n1 <= 1);
         }
         [[nodiscard]] static constexpr bool is_always_exhaustive()        noexcept { return true;  }
-        [[nodiscard]] static constexpr bool is_always_strided()           noexcept { return false; }
+        [[nodiscard]] static constexpr bool is_always_strided()           noexcept {
+            constexpr auto n0 = Extents::static_extent(0);
+            return n0 != std::dynamic_extent && n0 < 2;
+        }
         [[nodiscard]] constexpr bool is_exhaustive()        const noexcept { return true;  }
-        [[nodiscard]] constexpr bool is_strided()           const noexcept { return false; }
+        [[nodiscard]] constexpr bool is_strided()           const noexcept {
+            return extents_.extent(0) < 2;
+        }
+        [[nodiscard]] constexpr index_type stride(rank_type) const noexcept { return 1; }
 
         friend bool operator==(const mapping&, const mapping&) noexcept = default;
 

@@ -116,13 +116,25 @@ TEST(LayoutBlasPackedTest, SingleElementMappingsAreUnique) {
 }
 
 TEST(LayoutBlasPackedTest, DegenerateStaticSecondExtentIsAlwaysUnique) {
-    using extents_t = std::extents<int, 3, 1>;
+    using extents_t = std::extents<int, std::dynamic_extent, 1>;
     using lower_layout = std::linalg::layout_blas_packed<
         std::linalg::lower_triangle_t, std::linalg::row_major_t>;
 
     static_assert(lower_layout::mapping<extents_t>::is_always_unique());
-    lower_layout::mapping<extents_t> mapping(extents_t{});
+    lower_layout::mapping<extents_t> mapping(extents_t{3});
     EXPECT_TRUE(mapping.is_unique());
+}
+
+TEST(LayoutBlasPackedTest, DegenerateFirstExtentIsStrided) {
+    using extents_t = std::extents<int, 1, std::dynamic_extent>;
+    using upper_layout = std::linalg::layout_blas_packed<
+        std::linalg::upper_triangle_t, std::linalg::column_major_t>;
+
+    static_assert(upper_layout::mapping<extents_t>::is_always_strided());
+    upper_layout::mapping<extents_t> mapping(extents_t{4});
+    EXPECT_TRUE(mapping.is_strided());
+    EXPECT_EQ(mapping.stride(0), 1);
+    EXPECT_EQ(mapping.stride(1), 1);
 }
 
 TEST(LayoutBlasPackedTest, UpperAndLowerRowMajorMappings) {

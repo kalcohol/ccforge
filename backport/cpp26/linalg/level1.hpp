@@ -205,7 +205,6 @@ T dotc(
 {
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
-        using xi_t = std::remove_cvref_t<decltype(xi)>;
         if constexpr (requires { xi.real(); xi.imag(); }) {
             init += static_cast<T>(std::conj(xi)) * static_cast<T>(y[i]);
         } else {
@@ -231,12 +230,9 @@ T vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
-    using std::abs;
-    T sum_sq = static_cast<T>(__detail::__norm_square_term(init));
+    T sum_sq = __detail::__norm_square_term_as<T>(init);
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-        auto v = abs(x[i]);
-        const T vt = static_cast<T>(v);
-        sum_sq += vt * vt;
+        sum_sq += __detail::__norm_square_term_as<T>(x[i]);
     }
     using std::sqrt;
     return sqrt(sum_sq);
@@ -454,11 +450,10 @@ T matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
-    using std::abs;
-    T sum = static_cast<T>(__detail::__norm_square_term(init));
+    T sum = __detail::__norm_square_term_as<T>(init);
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            sum += static_cast<T>(__detail::__norm_square_term(A[i, j]));
+            sum += __detail::__norm_square_term_as<T>(A[i, j]);
         }
     }
     return std::sqrt(sum);

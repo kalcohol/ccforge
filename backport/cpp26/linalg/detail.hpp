@@ -79,6 +79,14 @@ constexpr auto __norm_square_term(const T& value) {
     return magnitude * magnitude;
 }
 
+template<class Accum, class T>
+constexpr Accum __norm_square_term_as(const T& value) {
+    using std::abs;
+    const auto magnitude = abs(value);
+    const Accum converted = static_cast<Accum>(magnitude);
+    return converted * converted;
+}
+
 template<class T>
 inline constexpr bool __is_simd_accelerable_v =
     std::is_arithmetic_v<T> && !std::is_same_v<T, bool> &&
