@@ -73,6 +73,13 @@ constexpr auto __abs_sum_term(const T& value) {
 }
 
 template<class T>
+constexpr auto __norm_square_term(const T& value) {
+    using std::abs;
+    const auto magnitude = abs(value);
+    return magnitude * magnitude;
+}
+
+template<class T>
 inline constexpr bool __is_simd_accelerable_v =
     std::is_arithmetic_v<T> && !std::is_same_v<T, bool> &&
     !std::is_same_v<T, long double> &&

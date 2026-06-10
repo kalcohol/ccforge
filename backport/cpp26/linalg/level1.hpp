@@ -25,6 +25,8 @@
 #include "accessor.hpp"
 #if defined(__cpp_lib_mdspan)
 
+#include <limits>
+
 namespace std::linalg {
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -205,9 +207,9 @@ T dotc(
         auto xi = x[i];
         using xi_t = std::remove_cvref_t<decltype(xi)>;
         if constexpr (requires { xi.real(); xi.imag(); }) {
-            init += std::conj(xi) * y[i];
+            init += static_cast<T>(std::conj(xi)) * static_cast<T>(y[i]);
         } else {
-            init += xi * y[i];
+            init += static_cast<T>(xi) * static_cast<T>(y[i]);
         }
     }
     return init;
@@ -230,7 +232,7 @@ T vector_two_norm(
     T init)
 {
     using std::abs;
-    T sum_sq = init * init;
+    T sum_sq = static_cast<T>(__detail::__norm_square_term(init));
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         auto v = abs(x[i]);
         const T vt = static_cast<T>(v);
@@ -321,13 +323,12 @@ template<class Extents, class Layout, class Accessor>
 typename Extents::index_type vector_idx_abs_max(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
-    using std::abs;
     using idx_t = typename Extents::index_type;
-    if (x.extent(0) == 0) return 0;
+    if (x.extent(0) == 0) return std::numeric_limits<idx_t>::max();
     idx_t best = 0;
-    auto best_v = abs(x[0]);
+    auto best_v = __detail::__abs_sum_term(x[0]);
     for (idx_t i = 1; i < x.extent(0); ++i) {
-        auto v = abs(x[i]);
+        auto v = __detail::__abs_sum_term(x[i]);
         if (v > best_v) { best_v = v; best = i; }
     }
     return best;
@@ -454,11 +455,10 @@ T matrix_frob_norm(
     T init)
 {
     using std::abs;
-    T sum = init * init;
+    T sum = static_cast<T>(__detail::__norm_square_term(init));
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            auto val = abs(A[i, j]);
-            sum += static_cast<T>(val * val);
+            sum += static_cast<T>(__detail::__norm_square_term(A[i, j]));
         }
     }
     return std::sqrt(sum);

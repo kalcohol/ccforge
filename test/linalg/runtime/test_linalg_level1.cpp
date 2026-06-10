@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <type_traits>
 
 TEST(LinalgLevel1CopyScaleSwapAdd, DenseVectors) {
@@ -107,6 +108,17 @@ TEST(LinalgLevel1Dotc, RealAndComplexInputs) {
     EXPECT_EQ(std::linalg::dotc(complex_x, complex_y), complex(14.0, 1.0));
 }
 
+TEST(LinalgLevel1Dotc, WiderInitAccumulatesProductsInInitType) {
+    float x_data[] = {1.0e20f};
+    float y_data[] = {1.0e20f};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+
+    const double result = std::linalg::dotc(x, y, 0.0);
+    EXPECT_TRUE(std::isfinite(result));
+    EXPECT_NEAR(result, 1.0e40, 1.0e34);
+}
+
 TEST(LinalgLevel1Reductions, ExplicitInitControlsReturnType) {
     double x_data[] = {3.0, 4.0};
     double y_data[] = {5.0, 6.0};
@@ -129,6 +141,15 @@ TEST(LinalgLevel1Reductions, VectorTwoNormCombinesInitEuclideanly) {
     std::mdspan x(x_data, std::extents<int, 1>{});
 
     EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 3.0), 5.0);
+}
+
+TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
+    using complex = std::complex<double>;
+    double x_data[] = {4.0};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    EXPECT_EQ(
+        std::linalg::vector_two_norm(x, complex{0.0, 3.0}),
+        (complex{5.0, 0.0}));
 }
 
 TEST(LinalgLevel1NormSIMD, DoubleEquivalence) {
@@ -171,10 +192,20 @@ TEST(LinalgLevel1Asum, ComplexUsesOneNorm) {
 TEST(LinalgLevel1IdxAbsMax, HandlesEmptyTiesAndNegativeValues) {
     double empty_data[] = {0.0};
     std::mdspan empty(empty_data, std::extents<int, 0>{});
-    EXPECT_EQ(std::linalg::vector_idx_abs_max(empty), 0);
+    EXPECT_EQ(
+        std::linalg::vector_idx_abs_max(empty),
+        std::numeric_limits<int>::max());
 
     double data[] = {-5.0, 2.0, 5.0, -4.0};
     std::mdspan v(data, std::extents<int, 4>{});
+    EXPECT_EQ(std::linalg::vector_idx_abs_max(v), 0);
+}
+
+TEST(LinalgLevel1IdxAbsMax, ComplexUsesOneNormTerm) {
+    using complex = std::complex<double>;
+    complex data[] = {{3.0, 4.0}, {5.5, 0.0}};
+    std::mdspan v(data, std::extents<int, 2>{});
+
     EXPECT_EQ(std::linalg::vector_idx_abs_max(v), 0);
 }
 
@@ -213,6 +244,16 @@ TEST(LinalgLevel1MatrixNorms, ComplexMatrixUsesMagnitude) {
     EXPECT_NEAR(std::linalg::matrix_frob_norm(matrix), std::sqrt(31.0), 1e-12);
     EXPECT_NEAR(std::linalg::matrix_one_norm(matrix), 5.0 + std::sqrt(2.0), 1e-12);
     EXPECT_NEAR(std::linalg::matrix_inf_norm(matrix), 5.0, 1e-12);
+}
+
+TEST(LinalgLevel1MatrixNorms, FrobeniusInitUsesMagnitudeSquared) {
+    using complex = std::complex<double>;
+    complex data[] = {{4.0, 0.0}};
+    std::mdspan matrix(data, std::extents<int, 1, 1>{});
+
+    EXPECT_EQ(
+        std::linalg::matrix_frob_norm(matrix, complex{0.0, 3.0}),
+        (complex{5.0, 0.0}));
 }
 
 TEST(LinalgLevel1Givens, SetupAndApplyRotation) {

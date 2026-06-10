@@ -115,6 +115,16 @@ TEST(LayoutBlasPackedTest, SingleElementMappingsAreUnique) {
     EXPECT_EQ(mapping.required_span_size(), 1);
 }
 
+TEST(LayoutBlasPackedTest, DegenerateStaticSecondExtentIsAlwaysUnique) {
+    using extents_t = std::extents<int, 3, 1>;
+    using lower_layout = std::linalg::layout_blas_packed<
+        std::linalg::lower_triangle_t, std::linalg::row_major_t>;
+
+    static_assert(lower_layout::mapping<extents_t>::is_always_unique());
+    lower_layout::mapping<extents_t> mapping(extents_t{});
+    EXPECT_TRUE(mapping.is_unique());
+}
+
 TEST(LayoutBlasPackedTest, UpperAndLowerRowMajorMappings) {
     using extents_t = std::extents<int, 3, 3>;
     using upper_layout = std::linalg::layout_blas_packed<

@@ -102,10 +102,14 @@ struct layout_blas_packed {
             }
         }
 
-        [[nodiscard]] constexpr bool is_unique()            const noexcept { return extents_.extent(0) <= 1; }
+        [[nodiscard]] constexpr bool is_unique()            const noexcept {
+            return extents_.extent(0) <= 1 || extents_.extent(1) <= 1;
+        }
         [[nodiscard]] static constexpr bool is_always_unique()            noexcept {
-            constexpr auto n = Extents::static_extent(0);
-            return n != std::dynamic_extent && n <= 1;
+            constexpr auto n0 = Extents::static_extent(0);
+            constexpr auto n1 = Extents::static_extent(1);
+            return (n0 != std::dynamic_extent && n0 <= 1) ||
+                (n1 != std::dynamic_extent && n1 <= 1);
         }
         [[nodiscard]] static constexpr bool is_always_exhaustive()        noexcept { return true;  }
         [[nodiscard]] static constexpr bool is_always_strided()           noexcept { return false; }

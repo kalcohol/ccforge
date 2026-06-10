@@ -661,7 +661,17 @@ struct __stop_sender {
         using up_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<const typename self_t::source_t&>(),
             std::declval<child_env_t>()));
-        return up_cs_t{};
+        if constexpr (__declares_exception_error<up_cs_t>::value) {
+            return __forge_meta::__concat_unique_cs_t<
+                up_cs_t,
+                completion_signatures<
+                    set_error_t(std::exception_ptr),
+                    set_stopped_t()>>{};
+        } else {
+            return __forge_meta::__concat_unique_cs_t<
+                up_cs_t,
+                completion_signatures<set_stopped_t()>>{};
+        }
     }
 
     template<receiver R>
