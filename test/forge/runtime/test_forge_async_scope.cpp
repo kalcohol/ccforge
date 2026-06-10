@@ -360,18 +360,64 @@ TEST(AsyncScopeTest, OptionsConstructorUsesCustomMemoryResourceForSpawnNode) {
 TEST(AsyncScopeTest, DestructorWaitsForOwnedWork) {
     forge::static_thread_pool pool{1};
     std::atomic<bool> completed{false};
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    bool before_scope_destructor = false;
+    bool destructor_returned = false;
+    std::atomic<bool> spawned{false};
+
+    struct destructor_probe {
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* flag;
+
+        ~destructor_probe() {
+            std::lock_guard lk{*mtx};
+            *flag = true;
+            cv->notify_all();
+        }
+    };
+
+    std::thread owner{[&] {
+        {
+            forge::async_scope scope;
+            destructor_probe probe{&mtx, &cv, &before_scope_destructor};
+            spawned.store(scope.spawn(
+                std::execution::schedule(pool.get_scheduler()) |
+                std::execution::then([&] noexcept {
+                    std::unique_lock lk{mtx};
+                    started = true;
+                    cv.notify_all();
+                    cv.wait(lk, [&] { return release; });
+                    completed.store(true, std::memory_order_release);
+                })),
+                std::memory_order_release);
+        }
+        std::lock_guard lk{mtx};
+        destructor_returned = true;
+        cv.notify_all();
+    }};
 
     {
-        forge::async_scope scope;
-        ASSERT_TRUE(scope.spawn(
-            std::execution::schedule(pool.get_scheduler()) |
-            std::execution::then([&] noexcept {
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                completed.store(true, std::memory_order_release);
-            })));
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return started && before_scope_destructor; }));
+        EXPECT_TRUE(spawned.load(std::memory_order_acquire));
+        EXPECT_FALSE(cv.wait_for(
+            lk,
+            std::chrono::milliseconds{50},
+            [&] { return destructor_returned; }));
+        release = true;
+        cv.notify_all();
     }
 
+    owner.join();
     pool.wait();
+    EXPECT_TRUE(spawned.load(std::memory_order_acquire));
     EXPECT_TRUE(completed.load(std::memory_order_acquire));
 }
 

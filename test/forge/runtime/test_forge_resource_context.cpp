@@ -221,16 +221,63 @@ TEST(ResourceContextTest, TimerCallbackCanSpawnCpuWork) {
 
 TEST(ResourceContextTest, DestructorWaitsForScopedWork) {
     std::atomic<bool> completed{false};
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    bool before_context_destructor = false;
+    bool destructor_returned = false;
+    std::atomic<bool> spawned{false};
+
+    struct destructor_probe {
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* flag;
+
+        ~destructor_probe() {
+            std::lock_guard lk{*mtx};
+            *flag = true;
+            cv->notify_all();
+        }
+    };
+
+    std::thread owner{[&] {
+        {
+            forge::resource_context ctx{1};
+            destructor_probe probe{&mtx, &cv, &before_context_destructor};
+            spawned.store(ctx.spawn(
+                std::execution::schedule(ctx.get_scheduler())
+                | std::execution::then([&] noexcept {
+                    std::unique_lock lk{mtx};
+                    started = true;
+                    cv.notify_all();
+                    cv.wait(lk, [&] { return release; });
+                    completed.store(true, std::memory_order_release);
+                })),
+                std::memory_order_release);
+        }
+        std::lock_guard lk{mtx};
+        destructor_returned = true;
+        cv.notify_all();
+    }};
 
     {
-        forge::resource_context ctx{1};
-        ASSERT_TRUE(ctx.spawn(
-            std::execution::schedule(ctx.get_scheduler())
-            | std::execution::then([&] noexcept {
-                completed.store(true, std::memory_order_release);
-            })));
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return started && before_context_destructor; }));
+        EXPECT_TRUE(spawned.load(std::memory_order_acquire));
+        EXPECT_FALSE(cv.wait_for(
+            lk,
+            std::chrono::milliseconds{50},
+            [&] { return destructor_returned; }));
+        release = true;
+        cv.notify_all();
     }
 
+    owner.join();
+    EXPECT_TRUE(spawned.load(std::memory_order_acquire));
     EXPECT_TRUE(completed.load(std::memory_order_acquire));
 }
 

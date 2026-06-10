@@ -184,10 +184,11 @@ auto sync = forge::accel::mock::synchronize_stream(
     forge::accel::mock::stream_sync_options{.timeout = 100ms});
 ```
 
-Sticky error 的 v3 proof 语义是：stream 记录第一条 non-success error，后续 node 仍继续
-执行；`query_stream` 只观察不清除；`synchronize_stream` 默认返回并清除当前 sticky error。
-这更接近 runtime 的 sync-point error aggregation，而不是把每个 stream 变成 error 后自动
-跳过后续节点的 dependency graph。
+Sticky error 的 runtime proof 语义是：stream 记录第一条 non-success error，后续 node 仍
+继续执行；`query_stream` 只观察不清除。`synchronize_stream` 等到 stream idle 且成功取得
+sync point 时，默认会返回并清除当前 sticky error；如果这次 sync 因 timeout / stop 提前
+结束，sticky error 会保留给后续 sync point 观察。这更接近 runtime 的 sync-point error
+aggregation，而不是把每个 stream 变成 error 后自动跳过后续节点的 dependency graph。
 
 ## Memory 与 buffer
 
