@@ -19,6 +19,7 @@ esac
 FORGE_BUILD="${BUILD_ROOT}/forge-build"
 PREFIX="${BUILD_ROOT}/prefix"
 CONSUMER_BUILD="${BUILD_ROOT}/consumer-build"
+CONSUMER_PREFIX="${BUILD_ROOT}/consumer-prefix"
 
 GENERATOR_ARGS=()
 if [[ -n "${GENERATOR}" ]]; then
@@ -56,6 +57,9 @@ cmake -S "${REPO_ROOT}/test/install_consumer" -B "${CONSUMER_BUILD}" \
 
 log "building external consumer"
 cmake --build "${CONSUMER_BUILD}"
+
+log "installing external consumer export set"
+cmake --install "${CONSUMER_BUILD}" --prefix "${CONSUMER_PREFIX}"
 
 log "running external consumer"
 "${CONSUMER_BUILD}/ccforge_install_consumer"

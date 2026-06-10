@@ -52,6 +52,12 @@ include(CheckCXXSourceCompiles)
 
 find_package(Threads REQUIRED)
 
+if(DEFINED _CCFORGE_PACKAGE_PREFIX)
+    set(_FORGE_PACKAGE_MODE ON)
+else()
+    set(_FORGE_PACKAGE_MODE OFF)
+endif()
+
 if(DEFINED CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD LESS 23)
     message(FATAL_ERROR "CC Forge requires C++23 or later. Please set CMAKE_CXX_STANDARD to 23 or newer.")
 endif()
@@ -145,23 +151,37 @@ endif()
 
 # Create the standard-header target first. It exposes only standard-shaped
 # headers such as <execution> and <simd>, using native stand-aside or Forge
-# backport injection according to the probes below.
-if(NOT TARGET forge_std)
-    add_library(forge_std INTERFACE)
-    add_library(forge::std ALIAS forge_std)
+# backport injection according to the probes below. Installed package configs
+# create imported namespace targets directly so downstream install(EXPORT)
+# graphs do not depend on local implementation target names.
+if(_FORGE_PACKAGE_MODE)
+    set(_FORGE_STD_TARGET forge::std)
+    if(NOT TARGET forge::std)
+        add_library(forge::std INTERFACE IMPORTED GLOBAL)
+    endif()
+else()
+    set(_FORGE_STD_TARGET forge_std)
+    if(NOT TARGET forge_std)
+        add_library(forge_std INTERFACE)
+        add_library(forge::std ALIAS forge_std)
+    endif()
+endif()
+
+if(NOT _FORGE_STD_TARGET_CONFIGURED)
+    set(_FORGE_STD_TARGET_CONFIGURED ON)
 
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
-        target_compile_features(forge_std INTERFACE cxx_std_23)
+        target_compile_features(${_FORGE_STD_TARGET} INTERFACE cxx_std_23)
     endif()
 
-    target_compile_options(forge_std INTERFACE
+    target_compile_options(${_FORGE_STD_TARGET} INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
         $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     )
 
-    target_link_libraries(forge_std INTERFACE Threads::Threads)
+    target_link_libraries(${_FORGE_STD_TARGET} INTERFACE Threads::Threads)
 
-    set(FORGE_BACKPORT_TARGET forge_std)
+    set(FORGE_BACKPORT_TARGET ${_FORGE_STD_TARGET})
     include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
     unset(FORGE_BACKPORT_TARGET)
 
@@ -169,25 +189,33 @@ if(NOT TARGET forge_std)
     if(FORGE_NEEDS_BACKPORT)
         if(MSVC)
             include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
-            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_MEMORY_HEADER memory TRUE)
-            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_UTILITY_HEADER utility TRUE)
-            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_SIMD_HEADER simd FALSE)
-            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_EXECUTION_HEADER execution TRUE)
-            _forge_define_msvc_standard_header(forge_std FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MEMORY_HEADER memory TRUE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_UTILITY_HEADER utility TRUE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_SIMD_HEADER simd FALSE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_EXECUTION_HEADER execution TRUE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
         endif()
 
-        target_include_directories(forge_std BEFORE INTERFACE
-            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
-        )
+        if(_FORGE_PACKAGE_MODE)
+            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+                "${FORGE_BACKPORT_DIR}")
+        else()
+            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+                $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>)
+        endif()
     endif()
 
     # Add the backport root for experimental TS headers. Do not add
     # backport/experimental directly: that would make <memory> resolve to
     # backport/experimental/memory instead of the standard-header wrapper.
     if(FORGE_NEEDS_EXPERIMENTAL)
-        target_include_directories(forge_std BEFORE INTERFACE
-            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>
-        )
+        if(_FORGE_PACKAGE_MODE)
+            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+                "${FORGE_BACKPORT_DIR}")
+        else()
+            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+                $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>)
+        endif()
     endif()
 
     message(STATUS "CC Forge standard-header target configured")
@@ -195,34 +223,51 @@ endif()
 
 # Create the full extension target for include/forge utilities. Existing
 # consumers keep linking forge::forge; std-only consumers can link forge::std.
-if(NOT TARGET forge)
-    add_library(forge INTERFACE)
-    add_library(forge::forge ALIAS forge)
+if(_FORGE_PACKAGE_MODE)
+    set(_FORGE_FULL_TARGET forge::forge)
+    if(NOT TARGET forge::forge)
+        add_library(forge::forge INTERFACE IMPORTED GLOBAL)
+    endif()
+else()
+    set(_FORGE_FULL_TARGET forge)
+    if(NOT TARGET forge)
+        add_library(forge INTERFACE)
+        add_library(forge::forge ALIAS forge)
+    endif()
+endif()
 
-    target_include_directories(forge INTERFACE
-        $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:include>
-    )
+if(NOT _FORGE_FULL_TARGET_CONFIGURED)
+    set(_FORGE_FULL_TARGET_CONFIGURED ON)
 
-    target_link_libraries(forge INTERFACE forge::std)
+    if(_FORGE_PACKAGE_MODE)
+        target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
+            "${FORGE_INCLUDE_DIR}")
+    else()
+        target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
+            $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
+            $<INSTALL_INTERFACE:include>
+        )
+    endif()
+
+    target_link_libraries(${_FORGE_FULL_TARGET} INTERFACE forge::std)
 
     if(FORGE_HAS_FORGE_IO_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_ACCEL_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_ACCEL_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND=1)
     endif()
     if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND)
-        target_compile_definitions(forge INTERFACE FORGE_HAS_FORGE_ACCEL_CPU_BACKEND=1)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_ACCEL_CPU_BACKEND=1)
     endif()
 
     message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")

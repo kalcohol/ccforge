@@ -17,3 +17,17 @@ target_link_libraries(ccforge_install_consumer PRIVATE forge::forge)
 
 add_executable(ccforge_install_std_consumer std_main.cpp)
 target_link_libraries(ccforge_install_std_consumer PRIVATE forge::std)
+
+add_library(ccforge_install_exported_consumer INTERFACE)
+target_link_libraries(ccforge_install_exported_consumer INTERFACE forge::forge)
+
+add_library(ccforge_install_std_exported_consumer INTERFACE)
+target_link_libraries(ccforge_install_std_exported_consumer INTERFACE forge::std)
+
+install(TARGETS
+        ccforge_install_exported_consumer
+        ccforge_install_std_exported_consumer
+    EXPORT CCForgeInstallConsumerTargets)
+install(EXPORT CCForgeInstallConsumerTargets
+    NAMESPACE ccforge_install_consumer::
+    DESTINATION lib/cmake/CCForgeInstallConsumer)
