@@ -67,6 +67,13 @@ struct async_receiver {
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
 }
 
+[[nodiscard]] auto wait_done_for(
+    const std::shared_ptr<async_state>& state,
+    std::chrono::milliseconds timeout) -> bool {
+    std::unique_lock lk{state->mtx};
+    return state->cv.wait_for(lk, timeout, [&] { return state->done(); });
+}
+
 struct request_packet {
     int value = 0;
 };
@@ -222,6 +229,63 @@ TEST(AccelDeviceTest, DeviceOpensSessionAndRunsCommand) {
     EXPECT_EQ(observed, 42);
     EXPECT_TRUE(device.available());
     EXPECT_FALSE(session.reset_requested());
+}
+
+TEST(AccelDeviceTest, DeviceQueuesAreStablePerKind) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+        .queue_capacity = std::nullopt,
+    }};
+    auto device = ctx.get_device();
+    auto first = device.get_queue(forge::accel::queue_kind::compute);
+    auto second = device.get_queue(forge::accel::queue_kind::compute);
+
+    EXPECT_EQ(
+        forge::accel::mock::query_stream(first).stream,
+        forge::accel::mock::query_stream(second).stream);
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    auto first_state = std::make_shared<async_state>();
+    auto second_state = std::make_shared<async_state>();
+
+    auto first_sender = forge::accel::mock::submit(first, [&] {
+        {
+            std::lock_guard lk{mtx};
+            started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release; });
+    });
+    auto first_op =
+        std::execution::connect(std::move(first_sender), async_receiver{first_state});
+    std::execution::start(first_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return started; }));
+    }
+
+    auto second_sender = forge::accel::mock::submit(second, [] {});
+    auto second_op =
+        std::execution::connect(std::move(second_sender), async_receiver{second_state});
+    std::execution::start(second_op);
+
+    EXPECT_FALSE(wait_done_for(second_state, 50ms));
+
+    {
+        std::lock_guard lk{mtx};
+        release = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_state));
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(second_state->value);
 }
 
 TEST(AccelDeviceTest, DeviceLostWhileCommandPendingRoutesError) {

@@ -1043,6 +1043,98 @@ TEST(AccelEventTest, EventElapsedTimeRequiresCompletedRecord) {
     EXPECT_GE(elapsed, std::chrono::steady_clock::duration::zero());
 }
 
+TEST(AccelEventTest, EventElapsedTimeRequiresCurrentGenerationCompletion) {
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 1,
+        .queue_capacity = std::nullopt,
+    }};
+    auto q = ctx.get_queue();
+    forge::accel::mock::event ev;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool first_started = false;
+    bool release_first = false;
+    bool second_started = false;
+    bool release_second = false;
+
+    auto first_block_state = std::make_shared<async_state>();
+    auto first_record_state = std::make_shared<async_state>();
+    auto second_block_state = std::make_shared<async_state>();
+    auto second_record_state = std::make_shared<async_state>();
+
+    auto first_block = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_first; });
+    });
+    auto first_block_op =
+        std::execution::connect(std::move(first_block), async_receiver{first_block_state});
+    std::execution::start(first_block_op);
+
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return first_started; }));
+    }
+
+    auto first_record = forge::accel::mock::record_event(q, ev);
+    auto first_record_op =
+        std::execution::connect(std::move(first_record), async_receiver{first_record_state});
+    std::execution::start(first_record_op);
+
+    auto second_block = forge::accel::mock::submit(q, [&] {
+        {
+            std::lock_guard lk{mtx};
+            second_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock lk{mtx};
+        cv.wait(lk, [&] { return release_second; });
+    });
+    auto second_block_op =
+        std::execution::connect(std::move(second_block), async_receiver{second_block_state});
+    std::execution::start(second_block_op);
+
+    auto second_record = forge::accel::mock::record_event(q, ev);
+    auto second_record_op =
+        std::execution::connect(std::move(second_record), async_receiver{second_record_state});
+    std::execution::start(second_record_op);
+
+    EXPECT_EQ(ev.record_generation().value, 2U);
+
+    {
+        std::lock_guard lk{mtx};
+        release_first = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_record_state));
+    {
+        std::unique_lock lk{mtx};
+        ASSERT_TRUE(cv.wait_for(lk, 2s, [&] { return second_started; }));
+    }
+    EXPECT_EQ(ev.completed_generation().value, 1U);
+    EXPECT_THROW(
+        (void)forge::accel::mock::elapsed_time(ev),
+        forge::accel::operation_error);
+
+    {
+        std::lock_guard lk{mtx};
+        release_second = true;
+    }
+    cv.notify_all();
+
+    ASSERT_TRUE(wait_done(first_block_state));
+    ASSERT_TRUE(wait_done(second_block_state));
+    ASSERT_TRUE(wait_done(second_record_state));
+    const auto elapsed = forge::accel::mock::elapsed_time(ev);
+    EXPECT_GE(elapsed, std::chrono::steady_clock::duration::zero());
+}
+
 TEST(AccelEventTest, FenceCompletesAfterEarlierAcceptedCommand) {
     forge::accel::mock::context ctx{forge::accel::mock::context_options{
         .thread_count = 1,

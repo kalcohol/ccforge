@@ -434,7 +434,8 @@ auto op = forge::accel::mock::submit_packet(
 `mock::request_session` 在 `device_session` 之上构建小型 request/response runtime：它分配
 单调递增的 `request_id`，追踪 pending request，支持可选 timeout，并统计 late response。
 当 caller 需要 posted 或 synchronous request correlation，但不想自己 own raw callback
-record 时，可以使用它。
+record 时，可以使用它。`request_session::wait()` 只 drain 这个 request runtime 自己的
+timeout timer；它不等待 `device_session` command queue，也不替代 `context::wait()`。
 
 ## Protocol envelope proof（协议封装验证）
 

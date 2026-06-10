@@ -70,6 +70,34 @@ TEST(AccelRequestRuntimeTest, SubmitRequestReturnsCorrelatedResponse) {
     EXPECT_EQ(requests.late_response_count(), 0U);
 }
 
+TEST(AccelRequestRuntimeTest, CompletedRequestCancelsTimeoutItem) {
+    using namespace std::chrono_literals;
+
+    forge::accel::mock::context ctx{forge::accel::mock::context_options{
+        .thread_count = 2,
+    }};
+    auto session = ctx.get_device().open_session();
+    forge::accel::mock::request_session requests{session};
+
+    auto result = std::execution::sync_wait(
+        requests.submit_request(
+            5,
+            0,
+            [](int& request, int& response) noexcept {
+                response = request + 10;
+            },
+            forge::accel::mock::request_options{.timeout = 2s}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result).response, 15);
+    const auto before_wait = std::chrono::steady_clock::now();
+    requests.wait();
+    const auto wait_elapsed = std::chrono::steady_clock::now() - before_wait;
+    EXPECT_LT(wait_elapsed, 1s);
+    EXPECT_EQ(requests.pending_count(), 0U);
+    EXPECT_EQ(requests.late_response_count(), 0U);
+}
+
 TEST(AccelRequestRuntimeTest, RequestIdsAreMonotonic) {
     forge::accel::mock::context ctx;
     auto dev = ctx.get_device();

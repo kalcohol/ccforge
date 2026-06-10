@@ -194,7 +194,8 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 timeout 从 `start()` 开始计时，排队超时会完成 `timeout` error，但不会中断已经开始运行
 的 handler。backend 还提供 `flush` / `invalidate` coherence proof command，以及最小
 `event` / `record_event` / `wait_event` / `fence` completion boundary。
-`request_session` 提供 request ID、pending map、timeout 和 late-response 计数；
+`request_session` 提供 request ID、pending map、timeout、late-response 计数和
+request-timeout timer drain (`wait()`)；
 `protocol_envelope` / `mock::protocol::loopback_transport` 提供 in-memory message
 transport proof；`trace_sink` 可选记录 mock command/lifecycle timeline。
 `context_options::device_count` 可构造 no-device 或 multi-device mock 场景；

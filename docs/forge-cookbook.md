@@ -347,8 +347,9 @@ OS IO handoff 建议按这个顺序读：
   `device_lost`，reset 后旧 session 会映射到 `stale_session`。
 - `submit_message` 借用 response；`submit_packet` 持有 request/response packet 并在
   成功时返回完成后的 packet，适合 callback/completion bridge 风格。
-- `request_session` 持有 pending request map、分配递增 request ID，并统计 late
-  response；`protocol_envelope` 是对象级 envelope proof，不是 ABI。
+- `request_session` 持有 pending request map、分配递增 request ID，统计 late
+  response，并用 `wait()` drain 自己的 timeout timer；`protocol_envelope` 是对象级
+  envelope proof，不是 ABI。
 - `trace_sink` 是可选 in-memory telemetry proof，不是生产 profiler。
 - `model` proof 只绑定 byte spans 并检查 IO byte size，不提供 tensor/graph/operator
   语义。

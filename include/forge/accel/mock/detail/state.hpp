@@ -62,6 +62,7 @@ struct __event_state {
         std::lock_guard lk{mtx};
         record_time = std::chrono::steady_clock::now();
         completed_time = {};
+        elapsed_generation = 0;
         has_elapsed_time = false;
         return event_generation{++record_generation};
     }
@@ -72,8 +73,15 @@ struct __event_state {
             std::lock_guard lk{mtx};
             if (completed_generation < generation.value) {
                 completed_generation = generation.value;
-                completed_time = now;
-                has_elapsed_time = true;
+                if (generation.value == record_generation) {
+                    completed_time = now;
+                    elapsed_generation = generation.value;
+                    has_elapsed_time = true;
+                } else {
+                    completed_time = {};
+                    elapsed_generation = 0;
+                    has_elapsed_time = false;
+                }
             }
         }
         cv.notify_all();
@@ -105,7 +113,8 @@ struct __event_state {
     [[nodiscard]] auto elapsed_time() const noexcept
         -> std::optional<std::chrono::steady_clock::duration> {
         std::lock_guard lk{mtx};
-        if (!has_elapsed_time || completed_time < record_time) {
+        if (!has_elapsed_time || elapsed_generation != record_generation ||
+            completed_time < record_time) {
             return std::nullopt;
         }
         return completed_time - record_time;
@@ -120,6 +129,7 @@ struct __event_state {
     std::condition_variable cv;
     std::uint64_t record_generation = 0;
     std::uint64_t completed_generation = 0;
+    std::uint64_t elapsed_generation = 0;
     std::chrono::steady_clock::time_point record_time{};
     std::chrono::steady_clock::time_point completed_time{};
     bool has_elapsed_time = false;
@@ -574,6 +584,15 @@ inline auto __state::make_queue(
     queue_kind kind,
     std::shared_ptr<__device_state> device) -> std::shared_ptr<__queue_state> {
     auto self = shared_from_this();
+    {
+        std::lock_guard lk{mtx};
+        for (auto& existing : queues) {
+            if (existing && existing->device == device && existing->kind == kind) {
+                return existing;
+            }
+        }
+    }
+
     const auto stream = (kind == queue_kind::general || kind == queue_kind::command)
         ? stream_id{}
         : next_stream_id();
@@ -582,12 +601,19 @@ inline auto __state::make_queue(
         std::move(self),
         kind,
         stream,
-        std::move(device));
+        device);
+    bool should_shutdown = false;
     {
         std::lock_guard lk{mtx};
+        for (auto& existing : queues) {
+            if (existing && existing->device == device && existing->kind == kind) {
+                return existing;
+            }
+        }
         queues.push_back(queue);
+        should_shutdown = closed || stop_requested;
     }
-    if (is_closed()) {
+    if (should_shutdown) {
         queue->shutdown();
     }
     return queue;

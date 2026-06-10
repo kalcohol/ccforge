@@ -754,7 +754,7 @@ public:
     host_buffer(const host_buffer&) = delete;
     host_buffer& operator=(const host_buffer&) = delete;
     host_buffer(host_buffer&&) noexcept = default;
-    host_buffer& operator=(host_buffer&&) noexcept = default;
+    host_buffer& operator=(host_buffer&&) = default;
     ~host_buffer() = default;
 
     [[nodiscard]] std::size_t size() const noexcept {
@@ -812,7 +812,7 @@ public:
     device_buffer(const device_buffer&) = delete;
     device_buffer& operator=(const device_buffer&) = delete;
     device_buffer(device_buffer&&) noexcept = default;
-    device_buffer& operator=(device_buffer&&) noexcept = default;
+    device_buffer& operator=(device_buffer&&) = default;
     ~device_buffer() = default;
 
     [[nodiscard]] std::size_t size() const noexcept {

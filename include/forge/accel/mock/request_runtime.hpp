@@ -35,6 +35,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
@@ -106,6 +107,10 @@ struct __state {
         return late_responses.load(std::memory_order_relaxed);
     }
 
+    void wait() noexcept {
+        timers.wait();
+    }
+
     std::pmr::memory_resource* memory;
     mutable std::mutex mtx;
     std::pmr::unordered_set<std::uint64_t> pending;
@@ -122,11 +127,18 @@ struct __record {
         , rcvr(std::move(rcvr))
     {}
 
+    void cancel_timeout() noexcept {
+        if (timeout_stop) {
+            timeout_stop->request_stop();
+        }
+    }
+
     void complete_response(Packet packet) noexcept {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             state->note_late_response();
             return;
         }
+        cancel_timeout();
         state->erase(id);
         std::execution::set_value(std::move(rcvr), std::move(packet));
     }
@@ -148,6 +160,7 @@ struct __record {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        cancel_timeout();
         state->erase(id);
         std::execution::set_error(std::move(rcvr), std::move(ep));
     }
@@ -156,6 +169,7 @@ struct __record {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
+        cancel_timeout();
         state->erase(id);
         std::execution::set_stopped(std::move(rcvr));
     }
@@ -163,6 +177,7 @@ struct __record {
     std::shared_ptr<__state> state;
     request_id id;
     R rcvr;
+    std::shared_ptr<std::inplace_stop_source> timeout_stop;
     std::atomic<bool> done{false};
 };
 
@@ -221,19 +236,28 @@ struct __sender {
         __op& operator=(const __op&) = delete;
 
         void start() & noexcept {
-            auto id = state_->next_request();
-            using allocator_t = std::pmr::polymorphic_allocator<
-                __record<R, packet_t>>;
-            record_ = std::allocate_shared<__record<R, packet_t>>(
-                allocator_t{state_->memory},
-                state_,
-                id,
-                std::move(*rcvr_));
-            state_->insert(id);
-
             try {
+                auto id = state_->next_request();
+                using allocator_t = std::pmr::polymorphic_allocator<
+                    __record<R, packet_t>>;
+                record_ = std::allocate_shared<__record<R, packet_t>>(
+                    allocator_t{state_->memory},
+                    state_,
+                    id,
+                    std::move(*rcvr_));
+                state_->insert(id);
+
                 if (options_.timeout) {
-                    auto timeout = state_->timers.schedule_after(*options_.timeout)
+                    record_->timeout_stop =
+                        std::allocate_shared<std::inplace_stop_source>(
+                            std::pmr::polymorphic_allocator<
+                                std::inplace_stop_source>{state_->memory});
+                    auto timeout_env = std::execution::make_prop(
+                        std::execution::get_stop_token_t{},
+                        record_->timeout_stop->get_token());
+                    auto timeout =
+                        (state_->timers.schedule_after(*options_.timeout)
+                         | std::execution::write_env(std::move(timeout_env)))
                         | std::execution::then([record = record_]() noexcept {
                               record->complete_timeout();
                           })
@@ -265,7 +289,14 @@ struct __sender {
                       });
                 forge::start_detached(std::move(response));
             } catch (...) {
-                record_->complete_error(std::current_exception());
+                if (record_) {
+                    record_->complete_error(std::current_exception());
+                } else if (rcvr_) {
+                    std::execution::set_error(
+                        std::move(*rcvr_),
+                        std::current_exception());
+                    rcvr_.reset();
+                }
             }
         }
 
@@ -316,6 +347,12 @@ public:
 
     [[nodiscard]] auto late_response_count() const noexcept -> std::size_t {
         return state_ ? state_->late_response_count() : 0;
+    }
+
+    void wait() noexcept {
+        if (state_) {
+            state_->wait();
+        }
     }
 
     template<class Request, class Response, class Handler>
