@@ -9,7 +9,7 @@
   `let_stopped`、`write_env`、`unstoppable`
 - 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`on`、`affine`、
   `transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
-- 组合器：`into_variant`、`when_all`（完整笛卡尔积签名、外层取消传播）、
+- 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
   `when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
   value completions 返回 `optional<variant<tuple<...>, ...>>`）、

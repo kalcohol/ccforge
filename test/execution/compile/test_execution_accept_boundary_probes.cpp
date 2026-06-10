@@ -39,5 +39,9 @@ int main() {
 
     std::execution::simple_counting_scope scope;
     std::execution::spawn(std::execution::just(), scope.get_token());
+
+    auto joined = std::execution::when_all(std::execution::just());
+    auto joined_op = std::execution::connect(std::move(joined), noexcept_receiver{});
+    std::execution::start(joined_op);
     return 0;
 }

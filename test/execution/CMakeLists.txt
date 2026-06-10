@@ -93,6 +93,11 @@ forge_expect_execution_cxx_source_compiles(
     test_execution_reject_spawn_error_sender.cpp
     OFF
     "std::execution::spawn must reject error-completing senders")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_EMPTY_WHEN_ALL
+    test_execution_reject_empty_when_all.cpp
+    OFF
+    "std::execution::when_all must reject zero senders")
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(

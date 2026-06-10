@@ -466,6 +466,7 @@ struct __sender {
 } // namespace __forge_when_all
 
 template<sender... Senders>
+    requires (sizeof...(Senders) > 0)
 [[nodiscard]] auto when_all(Senders&&... sndrs) {
     return __forge_when_all::__sender<std::decay_t<Senders>...>{
         std::tuple<std::decay_t<Senders>...>{
