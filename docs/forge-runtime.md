@@ -74,6 +74,8 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `spawn(sender)` 会 destructive move；如果代码需要在 native C++26 实现下保持同一源码，
   请显式写 `std::move(sender)`。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 scope state 和 spawned op-state node 分配。
+  该 resource 必须活到 scope 对象和已接受工作的 terminal completion 释放尾部之后；
+  `wait()` 等待 scope work 计数归零，但不把用户 resource 变成 owned teardown barrier。
 - `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session
   根对象。它的 `options` 会把 resource policy 传给内部 runtime 和 scope op-state
   allocation path。Destructor 执行 owning-context shutdown 和 wait。
@@ -83,7 +85,8 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   中调用，会立即返回以避免 self-deadlock；完整 drain 应由外层 owner 执行。底层
   scheduler 若在 runner launch 时拒绝或失败，strand 会保守地 fail closed：pending
   work 完成为 stopped，并拒绝后续 work。当前 API 不区分 bounded queue full 这类瞬态
-  失败与 shutdown。
+  失败与 shutdown。`strand_options::memory` 同样是 non-owning：调用方应让该 resource
+  活过 strand 对象和 runner keepalive node 的 terminal release tail。
 - `forge::bounded_channel` 提供 graceful `close()` draining 和 cancel-now
   `request_stop()`。`options` 可为 buffer、pending operation、action batch 和 record
   提供 memory resource。Pending send/recv 在 receiver stop token 可用时注册 stop

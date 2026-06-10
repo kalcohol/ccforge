@@ -63,6 +63,7 @@ template<class T>
 struct __send_base {
     virtual ~__send_base() = default;
     virtual auto take_value() -> T = 0;
+    virtual bool stop_requested() const noexcept = 0;
     virtual void complete_value() noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
 };
@@ -70,6 +71,7 @@ struct __send_base {
 template<class T>
 struct __recv_base {
     virtual ~__recv_base() = default;
+    virtual bool stop_requested() const noexcept = 0;
     virtual void complete_value(T value) noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
 };
@@ -126,6 +128,8 @@ struct __state : std::enable_shared_from_this<__state<T>> {
             std::lock_guard lk{mtx};
             if (stopped || closed) {
                 actions.send_stopped.push_back(std::move(send));
+            } else if (send->stop_requested()) {
+                actions.send_stopped.push_back(std::move(send));
             } else if (!pending_recvs.empty()) {
                 auto recv = std::move(pending_recvs.front());
                 pending_recvs.pop_front();
@@ -136,7 +140,11 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 actions.send_value.push_back(std::move(send));
             } else {
                 pending_sends.push_back(std::move(send));
-                return true;
+                if (!pending_sends.back()->stop_requested()) {
+                    return true;
+                }
+                actions.send_stopped.push_back(std::move(pending_sends.back()));
+                pending_sends.pop_back();
             }
         }
         actions.run();
@@ -158,9 +166,15 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 actions.send_value.push_back(std::move(send));
             } else if (stopped || closed) {
                 actions.recv_stopped.push_back(std::move(recv));
+            } else if (recv->stop_requested()) {
+                actions.recv_stopped.push_back(std::move(recv));
             } else {
                 pending_recvs.push_back(std::move(recv));
-                return true;
+                if (!pending_recvs.back()->stop_requested()) {
+                    return true;
+                }
+                actions.recv_stopped.push_back(std::move(pending_recvs.back()));
+                pending_recvs.pop_back();
             }
         }
         actions.run();
@@ -340,7 +354,7 @@ struct __send_record final : __send_base<T> {
         void operator()() noexcept {
             auto rec = record.lock();
             if (rec) {
-                rec->stop_requested.store(true, std::memory_order_release);
+                rec->stop_requested_flag.store(true, std::memory_order_release);
             }
             auto st = state.lock();
             if (st && rec) {
@@ -354,7 +368,7 @@ struct __send_record final : __send_base<T> {
     R rcvr;
     std::optional<T> value;
     std::optional<callback_t> stop_callback;
-    std::atomic<bool> stop_requested{false};
+    std::atomic<bool> stop_requested_flag{false};
     std::atomic<bool> done{false};
 
     __send_record(R r, T v)
@@ -362,6 +376,10 @@ struct __send_record final : __send_base<T> {
 
     auto take_value() -> T override {
         return std::move(*value);
+    }
+
+    bool stop_requested() const noexcept override {
+        return stop_requested_flag.load(std::memory_order_acquire);
     }
 
     void complete_value() noexcept override {
@@ -422,7 +440,7 @@ struct __recv_record final : __recv_base<T> {
         void operator()() noexcept {
             auto rec = record.lock();
             if (rec) {
-                rec->stop_requested.store(true, std::memory_order_release);
+                rec->stop_requested_flag.store(true, std::memory_order_release);
             }
             auto st = state.lock();
             if (st && rec) {
@@ -435,10 +453,14 @@ struct __recv_record final : __recv_base<T> {
 
     R rcvr;
     std::optional<callback_t> stop_callback;
-    std::atomic<bool> stop_requested{false};
+    std::atomic<bool> stop_requested_flag{false};
     std::atomic<bool> done{false};
 
     explicit __recv_record(R r) : rcvr(std::move(r)) {}
+
+    bool stop_requested() const noexcept override {
+        return stop_requested_flag.load(std::memory_order_acquire);
+    }
 
     void complete_value(T value) noexcept override {
         if (done.exchange(true, std::memory_order_acq_rel)) {
@@ -516,7 +538,7 @@ struct __send_op {
             return;
         }
         if (state->start_send(rec)) {
-            if (rec->stop_requested.load(std::memory_order_acquire)) {
+            if (rec->stop_requested()) {
                 state->cancel_send(rec);
             }
         }
@@ -554,7 +576,7 @@ struct __recv_op {
             return;
         }
         if (state->start_recv(rec)) {
-            if (rec->stop_requested.load(std::memory_order_acquire)) {
+            if (rec->stop_requested()) {
                 state->cancel_recv(rec);
             }
         }

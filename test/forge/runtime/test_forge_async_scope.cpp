@@ -6,8 +6,10 @@
 #include <execution>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 
@@ -200,17 +202,54 @@ TEST(AsyncScopeTest, WaitBlocksUntilScheduledWorkCompletes) {
     forge::static_thread_pool pool{1};
     forge::async_scope scope;
     std::atomic<bool> completed{false};
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    bool wait_returned = false;
 
     ASSERT_TRUE(scope.spawn(
         std::execution::schedule(pool.get_scheduler()) |
         std::execution::then([&] noexcept {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            std::unique_lock lk{mtx};
+            started = true;
+            cv.notify_all();
+            cv.wait(lk, [&] { return release; });
             completed.store(true, std::memory_order_release);
         })));
 
-    scope.wait();
+    bool worker_started = false;
+    {
+        std::unique_lock lk{mtx};
+        worker_started = cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return started; });
+    }
+    ASSERT_TRUE(worker_started);
+
+    std::thread waiter{[&] {
+        scope.wait();
+        std::lock_guard lk{mtx};
+        wait_returned = true;
+        cv.notify_all();
+    }};
+
+    bool returned_before_release = false;
+    {
+        std::unique_lock lk{mtx};
+        returned_before_release = cv.wait_for(
+            lk,
+            std::chrono::milliseconds{50},
+            [&] { return wait_returned; });
+        release = true;
+        cv.notify_all();
+    }
+
+    waiter.join();
     pool.wait();
 
+    EXPECT_FALSE(returned_before_release);
     EXPECT_TRUE(completed.load(std::memory_order_acquire));
 }
 
