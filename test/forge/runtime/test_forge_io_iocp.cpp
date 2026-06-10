@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/io.hpp>
+#include <forge/wait_result.hpp>
 #include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
@@ -683,6 +684,19 @@ TEST(IoIocpTest, InvalidHandleCompletesWithError) {
         (void)std::execution::sync_wait(
             ctx.async_read_some(INVALID_HANDLE_VALUE, std::span{buffer})),
         std::system_error);
+}
+
+TEST(IoIocpTest, TypedInvalidHandleCrossesWaitResult) {
+    forge::io::context ctx;
+    std::array<std::byte, 1> buffer{};
+
+    auto result = forge::wait_result(
+        ctx.async_read_some_typed(INVALID_HANDLE_VALUE, std::span{buffer}));
+
+    ASSERT_TRUE(result.has_error());
+    auto* error = result.error_if<forge::io::error>();
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->kind, forge::io::error_kind::invalid_handle);
 }
 
 TEST(IoIocpTest, InvalidHandleAllowsReceiverToDestroyOperation) {

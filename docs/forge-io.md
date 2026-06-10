@@ -65,6 +65,7 @@ std::execution::set_stopped_t()
 
 返回值是该次 syscall 的 byte count。这些 convenience sender 要求 fd 处于
 nonblocking 模式；如果传入 blocking fd，poller thread 可能在后续 syscall 中被阻塞。
+空 span 是特殊情况：Linux backend 不等待 readiness，直接完成 `set_value(0)`。
 `0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
 span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；
 其它 syscall error 通过 `std::exception_ptr` 传出。

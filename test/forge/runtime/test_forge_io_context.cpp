@@ -241,8 +241,50 @@ struct self_destroying_io_receiver {
     forge_test::destroy_context_base* context = nullptr;
 
     void set_value() && noexcept { context->destroy(); }
+    void set_value(std::size_t) && noexcept { context->destroy(); }
     void set_error(std::exception_ptr) && noexcept { context->destroy(); }
     void set_stopped() && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+struct self_destroying_size_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    std::shared_ptr<typed_io_state> state;
+
+    void set_value(std::size_t bytes) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->bytes = bytes;
+        }
+        state->cv.notify_all();
+        context->destroy();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = true;
+            state->typed_error = forge::io::error{
+                forge::io::error_kind::system,
+                {}};
+        }
+        (void)error;
+        state->cv.notify_all();
+        context->destroy();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+        context->destroy();
+    }
+
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
@@ -372,7 +414,6 @@ TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
 TEST(IoContextTest, AsyncReadSomeZeroLengthReturnsZero) {
     auto pipe = make_pipe();
     forge::io::context ctx;
-    ASSERT_EQ(::write(pipe.second.get(), "x", 1), 1);
 
     std::array<std::byte, 1> buffer{};
     auto result = std::execution::sync_wait(
@@ -380,6 +421,24 @@ TEST(IoContextTest, AsyncReadSomeZeroLengthReturnsZero) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 0u);
+}
+
+TEST(IoContextTest, AsyncReadSomeTypedZeroLengthDoesNotWaitForReadiness) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+
+    std::array<std::byte, 1> buffer{};
+    auto op = std::execution::connect(
+        ctx.async_read_some_typed(pipe.first.get(), std::span{buffer}.first(0)),
+        typed_size_receiver{state});
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(state->bytes, 0u);
 }
 
 TEST(IoContextTest, AsyncReadSomeReturnsZeroAtEof) {
@@ -441,6 +500,21 @@ TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     ASSERT_EQ(::read(pipe.first.get(), received.data(), received.size()),
               static_cast<ssize_t>(received.size()));
     EXPECT_EQ(received, payload);
+}
+
+TEST(IoContextTest, AsyncWriteSomeZeroLengthDoesNotWaitForReadiness) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+
+    std::array<std::byte, 1> payload{};
+    auto result = std::execution::sync_wait(
+        ctx.async_write_some(
+            sockets.first.get(),
+            std::span<const std::byte>{payload}.first(0)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 0u);
 }
 
 TEST(IoContextTest, TypedReadableReportsDuplicateWaiter) {
@@ -804,6 +878,44 @@ TEST(IoContextTest, InvalidFdAllowsReceiverToDestroyOperation) {
     });
     std::execution::start(op);
 
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+}
+
+TEST(IoContextTest, AsyncReadCompletionAllowsReceiverToDestroyOperation) {
+    auto pipe = make_pipe();
+    const char payload[] = {'z'};
+    ASSERT_EQ(::write(pipe.second.get(), payload, sizeof(payload)),
+              static_cast<ssize_t>(sizeof(payload)));
+
+    forge::io::context ctx;
+    std::array<std::byte, 1> buffer{};
+    auto state = std::make_shared<typed_io_state>();
+
+    using sender_t = decltype(ctx.async_read_some(pipe.first.get(), std::span{buffer}));
+    using receiver_t = self_destroying_size_io_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(pipe.first.get(), std::span{buffer}),
+            self_destroying_size_io_receiver{&context, state});
+    });
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_EQ(state->bytes, 1u);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+
+    ctx.shutdown();
+    ctx.wait();
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
 }

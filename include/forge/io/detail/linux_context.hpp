@@ -786,6 +786,211 @@ struct __sender {
     }
 };
 
+template<class R>
+using __receiver_slot = std::shared_ptr<std::optional<R>>;
+
+template<class R>
+auto __make_receiver_slot(R&& rcvr)
+    -> __receiver_slot<std::remove_cvref_t<R>> {
+    using receiver_t = std::remove_cvref_t<R>;
+    return std::make_shared<std::optional<receiver_t>>(std::forward<R>(rcvr));
+}
+
+template<class R>
+[[nodiscard]] auto __has_receiver(const __receiver_slot<R>& slot) noexcept
+    -> bool {
+    return slot && slot->has_value();
+}
+
+template<class R>
+auto __take_receiver(__receiver_slot<R>& slot) noexcept -> R {
+    auto rcvr = std::move(**slot);
+    slot->reset();
+    return rcvr;
+}
+
+template<class R>
+void __set_slot_value(__receiver_slot<R>& slot, std::size_t value) noexcept {
+    if (__has_receiver(slot)) {
+        std::execution::set_value(__take_receiver(slot), value);
+    }
+}
+
+template<class R>
+void __set_slot_error(
+    __receiver_slot<R>& slot,
+    std::exception_ptr ep) noexcept {
+    if (__has_receiver(slot)) {
+        std::execution::set_error(__take_receiver(slot), std::move(ep));
+    }
+}
+
+template<class R>
+void __set_slot_stopped(__receiver_slot<R>& slot) noexcept {
+    if (__has_receiver(slot)) {
+        std::execution::set_stopped(__take_receiver(slot));
+    }
+}
+
+struct __read_operation {
+    int fd = -1;
+    std::span<std::byte> buffer{};
+
+    [[nodiscard]] auto empty() const noexcept -> bool {
+        return buffer.empty();
+    }
+
+    [[nodiscard]] auto operator()() const -> std::size_t {
+        return __read_some(fd, buffer);
+    }
+};
+
+struct __write_operation {
+    int fd = -1;
+    std::span<const std::byte> buffer{};
+
+    [[nodiscard]] auto empty() const noexcept -> bool {
+        return buffer.empty();
+    }
+
+    [[nodiscard]] auto operator()() const -> std::size_t {
+        return __write_some(fd, buffer);
+    }
+};
+
+template<class R, class Operation>
+struct __byte_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    __receiver_slot<R> rcvr;
+    Operation operation;
+
+    void set_value() && noexcept {
+        try {
+            __set_slot_value(rcvr, operation());
+        } catch (...) {
+            __set_slot_error(rcvr, std::current_exception());
+        }
+    }
+
+    void set_error(std::exception_ptr ep) && noexcept {
+        __set_slot_error(rcvr, std::move(ep));
+    }
+
+    void set_stopped() && noexcept {
+        __set_slot_stopped(rcvr);
+    }
+
+    auto get_env() const noexcept(noexcept(std::execution::get_env(**rcvr)))
+        -> decltype(std::execution::get_env(**rcvr)) {
+        return std::execution::get_env(**rcvr);
+    }
+};
+
+template<class Operation>
+struct __byte_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<__state> state;
+    int fd = -1;
+    readiness kind = readiness::read;
+    Operation operation;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(std::size_t),
+            std::execution::set_error_t(std::exception_ptr),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    struct __op {
+        using receiver_t = __byte_receiver<R, Operation>;
+        using inner_op_t = std::execution::connect_result_t<__sender, receiver_t>;
+        struct inner_state_t {
+            template<class Factory>
+            explicit inner_state_t(Factory&& factory)
+                : op(static_cast<Factory&&>(factory)()) {}
+
+            inner_op_t op;
+        };
+
+        __op(
+            std::shared_ptr<__state> st,
+            int file,
+            readiness ready,
+            Operation op,
+            R rcvr)
+            : state(std::move(st))
+            , fd(file)
+            , kind(ready)
+            , operation(op)
+            , rcvr(__make_receiver_slot(std::move(rcvr)))
+        {}
+
+        __op(__op&&) = delete;
+        auto operator=(__op&&) -> __op& = delete;
+        __op(const __op&) = delete;
+        auto operator=(const __op&) -> __op& = delete;
+
+        void start() & noexcept {
+            try {
+                if (!state) {
+                    __set_slot_stopped(rcvr);
+                    return;
+                }
+                if (__stop_requested(**rcvr)) {
+                    __set_slot_stopped(rcvr);
+                    return;
+                }
+                if (operation.empty()) {
+                    __set_slot_value(rcvr, 0);
+                    return;
+                }
+
+                auto sender = __sender{state, fd, kind};
+                inner = std::make_shared<inner_state_t>([&]() -> inner_op_t {
+                    return std::execution::connect(
+                        std::move(sender),
+                        receiver_t{rcvr, operation});
+                });
+                auto keepalive = inner;
+                std::execution::start(keepalive->op);
+            } catch (...) {
+                __set_slot_error(rcvr, std::current_exception());
+            }
+        }
+
+        std::shared_ptr<__state> state;
+        int fd = -1;
+        readiness kind = readiness::read;
+        Operation operation;
+        __receiver_slot<R> rcvr;
+        std::shared_ptr<inner_state_t> inner;
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) && -> __op<R> {
+        return __op<R>{
+            std::move(state),
+            fd,
+            kind,
+            operation,
+            std::move(rcvr)};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{state, fd, kind, operation, std::move(rcvr)};
+    }
+};
+
 } // namespace __detail
 
 class context {
@@ -821,10 +1026,11 @@ public:
     }
 
     [[nodiscard]] auto async_read_some(int fd, std::span<std::byte> buffer) {
-        return readable(fd)
-             | std::execution::then([fd, buffer] {
-                   return __detail::__read_some(fd, buffer);
-               });
+        return __detail::__byte_sender<__detail::__read_operation>{
+            state_,
+            fd,
+            readiness::read,
+            __detail::__read_operation{fd, buffer}};
     }
 
     [[nodiscard]] auto async_read_some_typed(
@@ -836,10 +1042,11 @@ public:
     [[nodiscard]] auto async_write_some(
         int fd,
         std::span<const std::byte> buffer) {
-        return writable(fd)
-             | std::execution::then([fd, buffer] {
-                   return __detail::__write_some(fd, buffer);
-               });
+        return __detail::__byte_sender<__detail::__write_operation>{
+            state_,
+            fd,
+            readiness::write,
+            __detail::__write_operation{fd, buffer}};
     }
 
     [[nodiscard]] auto async_write_some_typed(
