@@ -368,7 +368,7 @@ public:
     explicit __fused_stop_callback(__fused_stop_token token, Cb&& cb)
         : __state(std::move(token.__state)) {
         if (__state) {
-            __callback.emplace(
+            __cb.emplace(
                 __state->__source.get_token(),
                 static_cast<Cb&&>(cb));
         }
@@ -379,7 +379,7 @@ public:
 
 private:
     std::shared_ptr<__fused_stop_state> __state;
-    std::optional<std::inplace_stop_callback<Callback>> __callback;
+    std::optional<std::inplace_stop_callback<Callback>> __cb;
 };
 
 template<class BaseEnv>
@@ -433,11 +433,11 @@ struct __optional_stop_callback<Token, true> {
             return;
         }
         if (token.stop_possible()) {
-            __callback.emplace(std::move(token), __request_fused_stop{&source});
+            __cb.emplace(std::move(token), __request_fused_stop{&source});
         }
     }
 
-    std::optional<callback_t> __callback;
+    std::optional<callback_t> __cb;
 };
 
 template<class CS>
