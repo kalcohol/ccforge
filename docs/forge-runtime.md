@@ -46,6 +46,12 @@ Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 前显式 join，并把 outstanding work 下析构视为 precondition violation。Forge 的
 owning contexts 更偏向 resource/session management 场景里的安全析构。
 
+`wait()` 的 self-deadlock guard 不等于 destructor 可以从自己的 worker 或 owned
+completion 中运行。`static_thread_pool`、`io::context`、`accel::*::context` 和
+`async_scope` 这类 owning primitive 必须由外层 owner 管理 lifetime；不要在它们自己
+拥有的 work body / completion callback 内销毁该 primitive。完整 teardown 应由外层
+owner 调用 `shutdown()` / `wait()` 后离开作用域。
+
 Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
 ## 当前 utilities
@@ -58,6 +64,7 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   accepted 的 work。`wait()` 等待 queue 和 active task 清空；如果从 pool 自己的
   worker thread 调用，它会立即返回以避免 self-deadlock。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 queue node 和 queued task callable-record 分配。
+  Pool 对象本身不得在自己的 worker thread 上析构；外层 owner 负责 teardown。
 - `forge::timer_context::shutdown()` 停止接受新的 timer，并把 pending timer 完成为
   stopped。`wait()` 等待 accepted timer operation。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 state、timer op data、timer item control block
@@ -76,6 +83,7 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `std::pmr::memory_resource*`，用于 scope state 和 spawned op-state node 分配。
   该 resource 必须活到 scope 对象和已接受工作的 terminal completion 释放尾部之后；
   `wait()` 等待 scope work 计数归零，但不把用户 resource 变成 owned teardown barrier。
+  Scope 对象不得在它自己拥有的 spawned work body / completion callback 内析构。
 - `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session
   根对象。它的 `options` 会把 resource policy 传给内部 runtime 和 scope op-state
   allocation path。Destructor 执行 owning-context shutdown 和 wait。
@@ -103,7 +111,8 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `close()` 拒绝后续 command 并 drain accepted work；`request_stop()` 尽可能停止
   pending queued command；`shutdown()` 组合二者。`wait()` drain accepted command work；
   若从 accel command completion 中调用，会立即返回以避免 self-deadlock。Host spans 是
-  borrowed；`mock::host_buffer<T>` / `mock::device_buffer<T>` own mock storage。
+  borrowed；context 对象不得在自己的 command completion 内析构；
+  `mock::host_buffer<T>` / `mock::device_buffer<T>` own mock storage。
   `memory_kind` 是 portable metadata，不代表真实 vendor allocation。
 - Mock device 是 context-owned handle，带 portable metadata。Device-bound queue 和
   session 会在运行 command 前检查 availability。Mock device loss 映射到

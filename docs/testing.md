@@ -80,7 +80,9 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `gcc16`：GCC 16 容器，验证 `std::simd` / `std::constant_wrapper` / padded mdspan layouts / `std::submdspan` native stand-aside
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
-- `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与 `forge::` 扩展子集
+- `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与
+  `forge::` 扩展子集，并额外运行 focused SIMD memory
+  load/store/gather/scatter/support-type tests
 - `all`：`gcc16 + llvm + zig + local + gcc-exec + tsan + asan`
 
 手动运行容器时，使用：

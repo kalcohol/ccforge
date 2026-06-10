@@ -107,7 +107,8 @@ Failure policy:
   shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以
   `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列
   和正在运行的任务清空；如果从 pool 自己的 worker 线程调用，`wait()` 会立即返回以避免
-  自锁。其 schedule sender env 会通过 Forge backport 的
+  自锁。pool 对象本身不得在自己的 worker 线程上析构；完整 teardown 应由外层 owner
+  调用 `shutdown()` / `wait()`。其 schedule sender env 会通过 Forge backport 的
   `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例
@@ -143,7 +144,8 @@ Failure policy:
   `spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，
   `request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，
   `shutdown()` 等价于 close + request stop。析构会 `shutdown()` 并 `wait()`，因此可能
-  阻塞到 scope-owned work 完成或响应停止。scope 捕获第一个 error 为
+  阻塞到 scope-owned work 完成或响应停止。scope 对象不得在它自己拥有的 spawned
+  work body / completion callback 内析构；外层 owner 应负责 drain。scope 捕获第一个 error 为
   `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
 
 `spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge runtime convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。

@@ -23,11 +23,21 @@ forge_add_simd_configure_probe(
     "reject_long_double_value.cpp"
     FALSE
     "Forge simd backport must reject non-vectorizable long double SIMD specializations")
-forge_add_simd_configure_probe(
-    FORGE_SIMD_REJECTS_EXTENDED_INTEGER
-    "reject_extended_integer.cpp"
-    FALSE
-    "Forge simd backport must reject non-standard extended integer SIMD specializations")
+check_cxx_source_compiles(
+    "#if !defined(__SIZEOF_INT128__)
+     #error __int128 unavailable
+     #endif
+     int main() { __int128 value = 0; return static_cast<int>(value); }"
+    FORGE_SIMD_HAS_EXTENDED_INTEGER_TYPE)
+if(FORGE_SIMD_HAS_EXTENDED_INTEGER_TYPE)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_EXTENDED_INTEGER
+        "reject_extended_integer.cpp"
+        FALSE
+        "Forge simd backport must reject non-standard extended integer SIMD specializations")
+else()
+    message(STATUS "Forge: skipping extended-integer SIMD rejection probe; compiler has no __int128")
+endif()
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER
     "reject_implicit_vec_converter.cpp"

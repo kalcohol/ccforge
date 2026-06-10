@@ -235,7 +235,37 @@ target_asan() {
             echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
             setarch "$(uname -m)" -R ctest --test-dir build/asan -R "execution|forge" --output-on-failure
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
-    ok "asan verified (execution + forge utility subsets, no UAF/leak/UB)"
+    log "asan: building focused SIMD memory tests with -fsanitize=address,undefined"
+    "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
+        -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
+            set -e
+            rm -rf build/asan-simd-memory
+            cmake -S . -B build/asan-simd-memory -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=ON \
+                  -DFORGE_BUILD_EXAMPLES=OFF \
+                  -DFORGE_TEST_ENABLE_EXECUTION=OFF \
+                  -DFORGE_TEST_ENABLE_SIMD=ON \
+                  -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
+                  -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
+                  -DFORGE_TEST_ENABLE_LINALG=OFF \
+                  -DFORGE_TEST_ENABLE_FORGE=OFF \
+                  -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
+                  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+            cmake --build build/asan-simd-memory --target \
+                  test_simd_memory_load_store \
+                  test_simd_memory_gather_scatter \
+                  test_simd_memory_supported_types
+            export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
+            export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
+            if ctest --test-dir build/asan-simd-memory -R "simd_memory" --output-on-failure; then
+                exit 0
+            fi
+            echo "[asan-simd] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
+            setarch "$(uname -m)" -R ctest --test-dir build/asan-simd-memory -R "simd_memory" --output-on-failure
+        '
+    ok "asan verified (execution + forge utility subsets plus SIMD memory tests, no UAF/leak/UB)"
 }
 
 targets=("$@")

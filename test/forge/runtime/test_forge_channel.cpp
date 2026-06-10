@@ -481,12 +481,19 @@ TEST(ChannelTest, TrySendTryRecv) {
 TEST(ChannelTest, ConcurrentProducersConsumers) {
     forge::bounded_channel<int> channel{8};
     std::atomic<int> sum{0};
+    std::atomic<bool> failed{false};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
     std::vector<std::thread> threads;
 
     for (int i = 0; i < 4; ++i) {
         threads.emplace_back([&, i] {
             for (int j = 0; j < 25; ++j) {
                 while (!channel.try_send(i * 25 + j)) {
+                    if (failed.load(std::memory_order_acquire)
+                        || std::chrono::steady_clock::now() >= deadline) {
+                        failed.store(true, std::memory_order_release);
+                        return;
+                    }
                     std::this_thread::yield();
                 }
             }
@@ -498,6 +505,11 @@ TEST(ChannelTest, ConcurrentProducersConsumers) {
             for (int j = 0; j < 25; ++j) {
                 std::optional<int> value;
                 while (!(value = channel.try_recv())) {
+                    if (failed.load(std::memory_order_acquire)
+                        || std::chrono::steady_clock::now() >= deadline) {
+                        failed.store(true, std::memory_order_release);
+                        return;
+                    }
                     std::this_thread::yield();
                 }
                 sum.fetch_add(*value, std::memory_order_acq_rel);
@@ -509,5 +521,6 @@ TEST(ChannelTest, ConcurrentProducersConsumers) {
         thread.join();
     }
 
+    ASSERT_FALSE(failed.load(std::memory_order_acquire));
     EXPECT_EQ(sum.load(std::memory_order_acquire), 4950);
 }
