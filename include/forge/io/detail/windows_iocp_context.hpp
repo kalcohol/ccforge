@@ -135,7 +135,6 @@ struct __state;
 
 struct __overlapped_entry {
     OVERLAPPED overlapped{};
-    __record_base* record = nullptr;
 };
 
 enum class __operation_kind {
@@ -179,7 +178,6 @@ struct __record final : __record_base {
         kind = op;
         read_buffer = read;
         write_buffer = write;
-        entry.record = this;
     }
 
     void complete_value(std::size_t bytes) noexcept override {
@@ -399,10 +397,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 continue;
             }
 
-            auto* entry = reinterpret_cast<__overlapped_entry*>(
-                reinterpret_cast<char*>(overlapped) -
-                offsetof(__overlapped_entry, overlapped));
-            complete(entry->record, ok != FALSE, bytes, error);
+            complete(overlapped, ok != FALSE, bytes, error);
 
             if (should_exit()) {
                 break;
@@ -434,7 +429,6 @@ struct __state : std::enable_shared_from_this<__state> {
 private:
     [[nodiscard]] bool issue_locked(__record_base& record) noexcept {
         record.entry.overlapped = OVERLAPPED{};
-        record.entry.record = &record;
 
         const auto byte_count = record.kind == __operation_kind::read
             ? record.read_buffer.size()
@@ -497,14 +491,22 @@ private:
     }
 
     void complete(
-        __record_base* raw_record,
+        OVERLAPPED* overlapped,
         bool ok,
         DWORD bytes,
         DWORD error) noexcept {
         __record_ptr record;
         {
             std::lock_guard lk{mtx};
-            auto it = pending_records.find(raw_record);
+            auto it = pending_records.end();
+            for (auto candidate = pending_records.begin();
+                 candidate != pending_records.end();
+                 ++candidate) {
+                if (&candidate->second->entry.overlapped == overlapped) {
+                    it = candidate;
+                    break;
+                }
+            }
             if (it == pending_records.end()) {
                 return;
             }
@@ -521,6 +523,9 @@ private:
 
         if (ok) {
             record->complete_value(static_cast<std::size_t>(bytes));
+        } else if (record->kind == __operation_kind::read &&
+                   (error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE)) {
+            record->complete_value(0);
         } else if (error == ERROR_OPERATION_ABORTED) {
             record->complete_stopped();
         } else {

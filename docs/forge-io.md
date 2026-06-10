@@ -63,17 +63,22 @@ std::execution::set_error_t(std::exception_ptr)
 std::execution::set_stopped_t()
 ```
 
-返回值是该次 syscall 的 byte count。`0` 对 read 表示 EOF 或零长度 buffer；write
-可能因非阻塞 fd 状态只完成部分 bytes。span 是 borrowed，调用方必须保证 buffer 活到
-operation 完成。`EINTR` 会重试；其它 syscall error 通过 `std::exception_ptr` 传出。
+返回值是该次 syscall 的 byte count。这些 convenience sender 要求 fd 处于
+nonblocking 模式；如果传入 blocking fd，poller thread 可能在后续 syscall 中被阻塞。
+`0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
+span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；
+其它 syscall error 通过 `std::exception_ptr` 传出。
 因为 Linux backend 使用 level-triggered readiness，ready 到实际 syscall 之间如果有其它
 consumer 抽干 fd，`EAGAIN` / `EWOULDBLOCK` 会作为普通 syscall error 通过
 `set_error(std::exception_ptr)` 传播。
 
 Windows `async_read_some(HANDLE, std::span<std::byte>)` 和
 `async_write_some(HANDLE, std::span<const std::byte>)` 直接发起 overlapped IO，并通过
-IOCP completion 完成。返回值同样是该次 operation 的 byte count。V1 要求传入的
-`HANDLE` 支持 overlapped IO，且未绑定到其它 completion port。
+IOCP completion 完成。返回值同样是该次 operation 的 byte count。Read completion
+遇到 byte-stream EOF（例如 named pipe peer close）时返回 `0`。V1 要求传入的
+`HANDLE` 支持 overlapped IO，且未绑定到其它 completion port；它面向 named pipe /
+socket-like byte stream，不提供 random-access file offset 参数。对文件 HANDLE 的
+显式 offset IO 需要后续公共 API 扩展。
 
 ## Typed-error variants（类型化错误变体）
 
@@ -196,6 +201,10 @@ Windows 强行压成 Linux readiness。
 - handle 必须保持有效直到 operation completion 或 context drain；
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
+- V1 不接收外部 `OVERLAPPED*` 包，也不允许同一 HANDLE 上混用用户自发的 overlapped
+  IO；worker 会丢弃不属于本 context pending record 的 completion packet。
+- V1 不支持 random-access file offset；如果需要文件 offset，请先扩展公共 API，而不是
+  依赖隐式 file pointer。
 
 V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果同一个 live handle
 已经关联过，Windows 可能拒绝重复关联，此时 backend 使用内部 associated-handle cache

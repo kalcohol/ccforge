@@ -324,6 +324,27 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     EXPECT_EQ(buffer, payload);
 }
 
+TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+
+    std::array<std::byte, 1> buffer{};
+    auto state = std::make_shared<io_state>();
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        io_receiver{state});
+    std::execution::start(op);
+
+    pipe.client.reset();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(state->bytes, 0u);
+    EXPECT_EQ(state->completions, 1);
+}
+
 TEST(IoIocpTest, AsyncWriteSomeTypedReturnsByteCount) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;

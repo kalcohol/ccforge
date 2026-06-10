@@ -53,9 +53,10 @@ namespace typed_detail {
     if (code == std::make_error_code(std::errc::bad_file_descriptor)) {
         return error_kind::invalid_handle;
     }
-#if defined(ERROR_INVALID_HANDLE)
+#if defined(_WIN32)
+    constexpr int windows_invalid_handle = 6; // ERROR_INVALID_HANDLE
     if (code.category() == std::system_category()
-            && code.value() == ERROR_INVALID_HANDLE) {
+            && code.value() == windows_invalid_handle) {
         return error_kind::invalid_handle;
     }
 #endif
