@@ -83,6 +83,31 @@ struct self_destroying_schedule_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct stop_aware_schedule_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source = nullptr;
+    bool* value = nullptr;
+    bool* stopped = nullptr;
+
+    void set_value() && noexcept {
+        *value = true;
+    }
+
+    void set_error(std::exception_ptr) && noexcept {}
+
+    void set_stopped() && noexcept {
+        *stopped = true;
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_stop_token_t{},
+                source->get_token()));
+    }
+};
+
 } // namespace
 
 TEST(AnySchedulerTest, DefaultEmpty) {
@@ -142,6 +167,24 @@ TEST(AnySchedulerTest, ShutdownUnderlyingPoolCompletesStopped) {
     auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
 
     EXPECT_FALSE(result.has_value());
+}
+
+TEST(AnySchedulerTest, PropagatesReceiverStopTokenThroughErasedReceiver) {
+    forge::static_thread_pool pool{1};
+    forge::any_scheduler scheduler{pool.get_scheduler()};
+    std::inplace_stop_source stop_source;
+    bool value = false;
+    bool stopped = false;
+
+    auto op = std::execution::connect(
+        std::execution::schedule(scheduler),
+        stop_aware_schedule_receiver{&stop_source, &value, &stopped});
+    EXPECT_TRUE(stop_source.request_stop());
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(value);
+    EXPECT_TRUE(stopped);
 }
 
 TEST(AnySchedulerTest, TrackingSchedulerLifetimeIsShared) {

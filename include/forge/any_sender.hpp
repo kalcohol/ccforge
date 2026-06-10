@@ -123,7 +123,9 @@ public:
               && std::execution::sender<std::remove_cvref_t<S>>
     any_sender_of(S&& sndr) {
         using D = std::remove_cvref_t<S>;
-        if constexpr (sizeof(D) <= kSBOSize && alignof(D) <= kSBOAlign) {
+        if constexpr (sizeof(D) <= kSBOSize &&
+                      alignof(D) <= kSBOAlign &&
+                      std::is_nothrow_move_constructible_v<D>) {
             __ptr = ::new(static_cast<void*>(__buf)) D(std::forward<S>(sndr));
             __on_heap = false;
         } else {

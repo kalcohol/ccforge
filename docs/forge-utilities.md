@@ -132,7 +132,8 @@ Failure policy:
   receiver record 分配。`shutdown()` 会把 pending/future work 以 stopped 完成；从该
   strand 正在执行的 completion 内部调用 `wait()` 会立即返回以避免自锁，完整 drain 应由
   外部 owner 调用；其 schedule sender env 同样暴露 Forge backport
-  completion-scheduler roundtrip。
+  completion-scheduler roundtrip。若底层 scheduler launch 失败，strand 会 fail closed
+  并把 pending work 完成为 stopped；当前不区分瞬态 full queue 与永久 shutdown。
 - `forge::async_scope`：拥有一组 eager-start sender work 的结构化并发 scope。
   `spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，
   `request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，
@@ -237,6 +238,8 @@ stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level
 当前限制：`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；
 自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的
 task operation-state。
+Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，用户 `catch(...)`
+可以捕获它；一旦 promise 标记 stopped，后续异常不会改写最终 stopped completion。
 
 ## 类型擦除
 
@@ -247,7 +250,8 @@ task operation-state。
   并提供 `sync_wait()` 直接运行存储的 sender。
 - `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按
   共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除
-  同一个 concrete scheduler 的对象也会因为 state 不同而不相等。
+  同一个 concrete scheduler 的对象也会因为 state 不同而不相等。内部 erased receiver
+  会转发 downstream receiver stop token，因此底层 scheduler operation 仍能观察调用方取消。
 - `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。当前实现是
   move-only、heap-first，支持多个唯一 value 形状、closed-set `set_error_t(E)` typed
   errors（包括 `std::exception_ptr`）和 `set_stopped_t()`；allocator-aware storage、

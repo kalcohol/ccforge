@@ -80,7 +80,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 - `forge::strand` 串行化 accepted scheduler work。Shutdown 会把 pending 和 future
   strand work 完成为 stopped。`options` 可为 pending queue、receiver record 和 runner
   keepalive node 提供 memory resource。若 `wait()` 从该 strand 正在运行的 completion
-  中调用，会立即返回以避免 self-deadlock；完整 drain 应由外层 owner 执行。
+  中调用，会立即返回以避免 self-deadlock；完整 drain 应由外层 owner 执行。底层
+  scheduler 若在 runner launch 时拒绝或失败，strand 会保守地 fail closed：pending
+  work 完成为 stopped，并拒绝后续 work。当前 API 不区分 bounded queue full 这类瞬态
+  失败与 shutdown。
 - `forge::bounded_channel` 提供 graceful `close()` draining 和 cancel-now
   `request_stop()`。`options` 可为 buffer、pending operation、action batch 和 record
   提供 memory resource。Pending send/recv 在 receiver stop token 可用时注册 stop
@@ -107,13 +110,18 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   execute proof 验证 byte-span IO binding 和 session/context lifecycle；它不是 tensor
   或 inference engine layer。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
+- `forge::any_scheduler` 是窄 scheduler 类型擦除；通过内部 erased receiver 保留
+  downstream receiver stop-token visibility，因此底层 scheduler operation 仍能观察
+  调用方的 stop token。
 - `forge::system_context` 是 process-lifetime singleton。它故意不在 C++ static teardown
   阶段销毁；`shutdown()` 只请求停止，不隐式阻塞或 join worker。需要排空已经接受的
   work 时应显式调用 `wait()`。长生命周期服务如果需要 deterministic shutdown，仍应显式
   own pool/context。
 - `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
   不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
-  operation-state。
+  operation-state。Stopped completion 通过 coroutine bridge 的内部异常返回 task frame，
+  可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常不会覆盖
+  stopped completion。
 
 ## V1 cancellation 边界
 

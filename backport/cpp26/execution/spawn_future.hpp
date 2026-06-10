@@ -211,6 +211,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
         std::weak_ptr<consumer_base_t> consumer_cb;
+        Association association;
         {
             std::lock_guard lk{__mtx};
             if (__phase == __phase_t::done) {
@@ -220,12 +221,13 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
                 __result.template emplace<std::decay_t<Alt>>(std::move(alt));
             } catch (...) {
                 __result.template emplace<__error_result<std::exception_ptr>>(
-                    std::current_exception());
+                std::current_exception());
             }
             __phase = __phase_t::done;
-            __association = {};
+            association = std::move(__association);
             consumer_cb = std::move(__consumer_cb);
         }
+        association = {};
 
         if (auto consumer = consumer_cb.lock()) {
             consumer->__deliver(*this);

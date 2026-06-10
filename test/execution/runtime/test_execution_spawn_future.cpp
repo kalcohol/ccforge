@@ -2,6 +2,7 @@
 #include <execution>
 #include "test_execution_manual_sender.hpp"
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <exception>
 #include <memory>
@@ -18,6 +19,7 @@ using forge_execution_test::manual_value_completer;
 using forge_execution_test::wait_until_completed;
 using forge_execution_test::wait_until_started;
 using forge_execution_test::wait_until_stop_requested;
+using namespace std::chrono_literals;
 
 struct spawn_future_marker_error {};
 
@@ -88,6 +90,45 @@ struct spawn_future_stop_receiver {
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
+
+template<class Future>
+struct reset_future_on_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::optional<Future>* future = nullptr;
+    std::atomic<bool>* completed = nullptr;
+
+    void set_value() && noexcept {
+        future->reset();
+        completed->store(true, std::memory_order_release);
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    void set_stopped() && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+bool wait_for_flag(
+    const std::atomic<bool>& flag,
+    std::chrono::milliseconds timeout = 500ms) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (flag.load(std::memory_order_acquire)) {
+            return true;
+        }
+        std::this_thread::yield();
+    }
+    return flag.load(std::memory_order_acquire);
+}
 
 void complete_manual_value(const std::shared_ptr<manual_state>& state, int value) {
     auto complete = manual_value_completer(state);
@@ -243,6 +284,32 @@ TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
 
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, CompletionReleasesAssociationOutsideStateLock) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<manual_state>();
+
+    using future_t = decltype(std::execution::spawn_future(
+        manual_sender{state}, token));
+    std::optional<future_t> future;
+    future.emplace(std::execution::spawn_future(manual_sender{state}, token));
+
+    ASSERT_TRUE(wait_until_started(state));
+    EXPECT_EQ(scope.count(), 1u);
+
+    std::atomic<bool> joined{false};
+    auto join_op = std::execution::connect(
+        scope.join(),
+        reset_future_on_join_receiver<future_t>{&future, &joined});
+    std::execution::start(join_op);
+
+    complete_manual_value(state, 5);
+
+    EXPECT_TRUE(wait_for_flag(joined));
+    EXPECT_FALSE(future.has_value());
     EXPECT_EQ(scope.count(), 0u);
 }
 

@@ -95,6 +95,14 @@ struct __subscriber {
     R rcvr;
 };
 
+template<class R>
+void deliver_exception_to_subscriber(const std::shared_ptr<__subscriber<R>>& sub,
+                                     std::exception_ptr ep) noexcept {
+    if (sub && sub->active.exchange(false, std::memory_order_acq_rel)) {
+        std::execution::set_error(std::move(sub->rcvr), std::move(ep));
+    }
+}
+
 template<class S, class R>
 void deliver_to_subscriber(const std::shared_ptr<__shared_state<S>>& sh,
                            const std::shared_ptr<__subscriber<R>>& sub) noexcept {
@@ -180,6 +188,17 @@ struct __op : __forge_detail::__immovable {
         auto sub = __sub;
         auto weak_sub = std::weak_ptr<__subscriber<R>>{sub};
         auto& st = *sh;
+        std::function<void()> callback;
+        try {
+            callback = [sh, weak_sub]() mutable {
+                if (auto locked = weak_sub.lock()) {
+                    deliver_to_subscriber(sh, locked);
+                }
+            };
+        } catch (...) {
+            deliver_exception_to_subscriber(sub, std::current_exception());
+            return;
+        }
         std::unique_lock lk{st.mtx};
 
         if (st.phase == __shared_state<S>::Phase::done) {
@@ -187,19 +206,25 @@ struct __op : __forge_detail::__immovable {
             deliver_to_subscriber(sh, sub);
         } else if (st.phase == __shared_state<S>::Phase::idle) {
             st.phase = __shared_state<S>::Phase::running;
-            st.on_done.push_back([sh, weak_sub]() mutable {
-                if (auto locked = weak_sub.lock()) {
-                    deliver_to_subscriber(sh, locked);
-                }
-            });
+            try {
+                st.on_done.push_back(std::move(callback));
+            } catch (...) {
+                st.result.template emplace<2>(std::current_exception());
+                st.phase = __shared_state<S>::Phase::done;
+                lk.unlock();
+                deliver_to_subscriber(sh, sub);
+                return;
+            }
             lk.unlock();
             st.op_start(st.op_ptr);
         } else {
-            st.on_done.push_back([sh, weak_sub]() mutable {
-                if (auto locked = weak_sub.lock()) {
-                    deliver_to_subscriber(sh, locked);
-                }
-            });
+            try {
+                st.on_done.push_back(std::move(callback));
+            } catch (...) {
+                auto error = std::current_exception();
+                lk.unlock();
+                deliver_exception_to_subscriber(sub, std::move(error));
+            }
         }
     }
 };
@@ -214,9 +239,12 @@ struct __sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
-        return decltype(std::execution::get_completion_signatures(
+        using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
-            std::declval<Env>())){};
+            std::declval<Env>()));
+        return __forge_meta::__concat_unique_cs_t<
+            source_cs_t,
+            completion_signatures<set_error_t(std::exception_ptr)>>{};
     }
 
     template<receiver R>

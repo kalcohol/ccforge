@@ -50,7 +50,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`；env query forwarding 在本 backport 中基于 tag-invoke。 |
 | `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`；可支持时 exception fallback 报告 `std::exception_ptr`。 |
 | `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`；lifecycle-sensitive storage 由 execution adaptor 测试覆盖。 |
-| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`；schedule errors 已进入 completion signatures，并有运行时测试。 |
+| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`；schedule errors 已进入 completion signatures，并有运行时测试。`continues_on` 当前只覆盖单一 value completion shape，value 参数会 decay-copy 到调度 hop；多 alternative / 引用 value-signature 的逐位 WD 语义需单独重构。 |
 | `on` | Implemented subset | `on.hpp` 暴露 current-WD 两种形式。Closure form 要求 child attributes 通过本 backport 的 one-argument query model 暴露 `get_completion_scheduler<set_value_t>`。 |
 | `bulk` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls，并在 completing agent 中串行执行。Policy 不引入并行。 |
 | `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls。`bulk_unchunked` 等价 serial `bulk`，`bulk_chunked` 使用一个非空 `[0, shape)` chunk。 |
@@ -58,7 +58,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`；作为 backport 中实用 stopped adapters。 |
 | `into_variant` | Implemented | `into_variant.hpp`；被 `sync_wait` / `when_all` value-shape handling 复用。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | Cartesian value signature support 和 outer stop propagation 已实现；修改 shared state 时保留 lifecycle tests。 |
-| `split` | Implemented subset | `split.hpp`；impossible empty result state 会 fail-fast terminate。 |
+| `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成，但完整 stop-source/on_done cycle 未实现。 |
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future sender；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
@@ -74,7 +74,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 tag-invoke query object；没有提供 default adaptor。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
 | `get_allocator` | Implemented subset | Tag-invoke query object；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
-| `get_stop_token` | Implemented subset | Tag-invoke query object，`empty_env -> never_stop_token` fallback。 |
+| `get_stop_token` | Implemented subset | Tag-invoke query object；任何缺失 stop-token query 的 env 都 fallback 到 `never_stop_token`。 |
 | `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object，对 local scheduler-shaped types 提供 `weakly_parallel` fallback；内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
 
 ## 兼容性分类

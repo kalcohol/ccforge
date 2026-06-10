@@ -177,6 +177,10 @@ struct get_stop_token_t {
         return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
     }
 
+    template<class Env>
+        requires (!__forge_detail::tag_invocable<get_stop_token_t, Env>)
+    std::never_stop_token operator()(Env&&) const noexcept { return {}; }
+
     // Fallback: return never_stop_token.
     std::never_stop_token operator()(const empty_env&) const noexcept { return {}; }
 

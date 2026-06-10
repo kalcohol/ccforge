@@ -9,7 +9,14 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
+
+namespace {
+
+struct env_without_stop_query {};
+
+} // namespace
 
 TEST(ExecutionStopTokenTest, InplaceStopCallbackIsInvoked) {
     std::inplace_stop_source src;
@@ -241,6 +248,14 @@ TEST(ExecutionStopTokenTest, NeverStopTokenBehavior) {
     EXPECT_FALSE(token.stop_requested());
     EXPECT_FALSE(token.stop_possible());
     EXPECT_TRUE(token == std::never_stop_token{});
+}
+
+TEST(ExecutionStopTokenTest, MissingEnvStopQueryFallsBackToNeverStopToken) {
+    auto token = std::execution::get_stop_token(env_without_stop_query{});
+
+    static_assert(std::is_same_v<decltype(token), std::never_stop_token>);
+    EXPECT_FALSE(token.stop_requested());
+    EXPECT_FALSE(token.stop_possible());
 }
 
 TEST(ExecutionStopTokenTest, DefaultConstructedToken) {

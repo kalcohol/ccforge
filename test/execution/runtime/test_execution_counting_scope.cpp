@@ -172,7 +172,9 @@ struct pending_sender {
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
-        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr)> {
         return {};
     }
 
@@ -200,6 +202,36 @@ struct pending_sender {
     template<std::execution::receiver R>
     auto connect(R r) const& -> op<R> {
         return op<R>{std::move(r), started};
+    }
+};
+
+struct throwing_connect_error {};
+
+struct throwing_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        void start() & noexcept {}
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R) && -> op<R> {
+        throw throwing_connect_error{};
     }
 };
 
@@ -756,6 +788,15 @@ TEST(CountingScopeTest, WrapInjectsScopeStopToken) {
 
     EXPECT_TRUE(scope.request_stop());
     EXPECT_TRUE(stop_token.stop_requested());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapConnectFailureCompletesErrorInsteadOfTerminating) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+        token.wrap(throwing_connect_sender{})), throwing_connect_error);
     EXPECT_EQ(scope.count(), 0u);
 }
 

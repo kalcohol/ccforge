@@ -52,6 +52,12 @@
   sender attributes 暴露 `get_completion_scheduler<set_value_t>`，再通过
   `continues_on(closure(continues_on(child, sch)), orig_sch)` 返回原
   value-completion scheduler。
+- `continues_on` / `affine` 当前只实现单一 value completion shape 的 transfer subset；
+  value 参数会 decay-copy 到调度 hop 的 operation state。多 value-alternative 和引用
+  value-signature 的逐位 WD 语义需要单独重构，不应从当前 subset 推断。
+- `split` 是保留的非 WD extension。它缓存单一 value completion shape，并在内部订阅者
+  callback 入链分配失败时以 `set_error(std::exception_ptr)` 完成；它没有实现完整
+  stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是
   当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应
   使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留
@@ -77,7 +83,10 @@
   operation，最后一个 scope association 释放时在锁外完成 join receiver。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义
   receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task
-  operation-state。
+  operation-state。当前 coroutine bridge 把 stopped completion 作为内部异常回到 task
+  frame；用户代码里的 `catch(...)` 可以捕获该取消路径。一旦 task promise 进入 stopped
+  状态，后续异常不会覆盖 stopped completion；不要在 task body 中吞掉 catch-all 后继续
+  假设可以报告普通 error。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如
 `connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke`

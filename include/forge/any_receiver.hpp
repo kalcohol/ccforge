@@ -79,11 +79,28 @@ class any_receiver_of {
         return &vt;
     }
 
+    template<class R>
+    static auto __make_stop_token(const R& receiver) -> std::any_stop_token {
+        return std::any_stop_token{
+            std::execution::get_stop_token(std::execution::get_env(receiver))};
+    }
+
+    struct __env {
+        std::any_stop_token token;
+
+        friend auto tag_invoke(
+            std::execution::get_stop_token_t,
+            const __env& self) noexcept -> std::any_stop_token {
+            return self.token;
+        }
+    };
+
     static constexpr std::size_t kSBOSize = 64;
     alignas(std::max_align_t) unsigned char __buf[kSBOSize]{};
     bool __on_heap = false;
     void* __ptr = nullptr;
     const __vtable* __vt = nullptr;
+    std::any_stop_token __stop_token{};
 
 public:
     using receiver_concept = std::execution::receiver_t;
@@ -107,12 +124,25 @@ public:
             __ptr = new D(std::forward<R>(r));
             __on_heap = true;
         }
+        try {
+            __stop_token = __make_stop_token(*static_cast<D*>(__ptr));
+        } catch (...) {
+            if (__on_heap) {
+                delete static_cast<D*>(__ptr);
+            } else {
+                static_cast<D*>(__ptr)->~D();
+            }
+            __ptr = nullptr;
+            __on_heap = false;
+            throw;
+        }
         __vt = __make_vtable<D>();
     }
 
     any_receiver_of(any_receiver_of&& o) noexcept {
         if (!o.__ptr) return;
         __vt = o.__vt;
+        __stop_token = std::move(o.__stop_token);
         if (!o.__on_heap) {
             __vt->move_to(o.__ptr, static_cast<void*>(__buf));
             __vt->destroy(o.__ptr);
@@ -125,6 +155,7 @@ public:
         o.__ptr = nullptr;
         o.__vt = nullptr;
         o.__on_heap = false;
+        o.__stop_token = {};
     }
 
     any_receiver_of& operator=(any_receiver_of&&) = delete;
@@ -165,8 +196,8 @@ public:
         if (__ptr && __vt) __vt->complete_stopped(__ptr);
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept -> __env {
+        return {__stop_token};
     }
 };
 
