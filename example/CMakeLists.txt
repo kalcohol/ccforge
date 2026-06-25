@@ -49,6 +49,7 @@ forge_add_example(forge_byte_vocabulary forge_byte_vocabulary_example.cpp)
 forge_add_example(forge_memory_stream forge_memory_stream_example.cpp)
 forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp)
 forge_add_example(forge_coro_io forge_coro_io_example.cpp THREADS TBB)
+forge_add_example(forge_coro_interop forge_coro_interop_example.cpp THREADS TBB)
 
 # std::execution examples are built unconditionally to ensure wrapper injection
 # stays functional.

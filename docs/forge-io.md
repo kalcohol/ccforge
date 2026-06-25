@@ -105,6 +105,24 @@ timer awaitable、platform IO awaitable，或把 sender cancellation 规则重�
 async model。frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation
 确实经由指定 resource。
 
+Sender interop 分两层：
+
+- 对现有 `forge::task`，优先使用 `<execution>` backport 已有的
+  `std::execution::with_awaitable_senders` / `as_awaitable`；本路线不修改 backport 的
+  coroutine awaitability 规则。
+- 对 `forge::io::experimental::io_task<T>`，使用显式
+  `forge::io::experimental::await_sender(sender)` 在 coroutine 内 await sender。它会把
+  sender value 作为 `std::tuple<...>`（或多 value alternative 的 `std::variant`）返回，
+  error 以异常重新抛出，stopped 以 `sender_stopped` 抛出，并把 `io_env` 的 stop token
+  暴露给 receiver env。
+- `forge::io::experimental::as_sender(io_task<T>, io_env)` 把简单 `io_task<T>` 暴露成
+  sender，completion shape 是 `set_value(T)` / `set_error(std::exception_ptr)` /
+  `set_stopped()`；`io_task<void>` 使用 `set_value()`。
+- `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine
+  返回 `io_result<std::size_t>`，它作为单个 value 传出，保留 error code 与 partial byte count。
+  需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
+  partial progress。
+
 ## 平台与 gate
 
 当前 backend：
