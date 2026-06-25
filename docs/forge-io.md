@@ -22,6 +22,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/result.hpp>
 #include <forge/io/buffer.hpp>
 #include <forge/io/memory_stream.hpp>
+#include <forge/io/stream.hpp>
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -62,6 +63,26 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
 这些类型的直接价值是让 length-prefixed、line-oriented、frame parser 等协议层可以在
 没有 OS backend 的构建里测试 partial IO、EOF 和错误传播。它们不是网络库，不提供 TCP、
 DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
+
+`forge::io::stream.hpp` 在这些测试流之上定义最小同步 byte stream 边界：
+
+- `read_stream<T>`：`T&` 支持 `read_some(mutable_buffer)`，返回
+  `io_result<std::size_t>`。
+- `write_stream<T>`：`T&` 支持 `write_some(const_buffer)`，返回
+  `io_result<std::size_t>`。
+- `read_write_stream<T>`：同时满足 read/write 两侧。
+- `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
+  算法；遇到 stream error 时返回累计 byte count，遇到提前 EOF/容量耗尽导致的
+  `0` byte progress 时返回 `std::errc::io_error` 和累计 byte count。
+- `any_read_stream` 和 `any_write_stream` 是 non-owning borrowed wrappers。构造时只保存
+  目标 stream 的地址和一个函数指针；copy/move 只复制这条引用，调用方必须保证 concrete
+  stream 比 erased wrapper 活得更久。空 wrapper 调用会返回
+  `std::errc::bad_address`，不抛异常。
+
+这层的设计目标是 separate-compilation friendly 的协议边界：协议函数可以接收
+`any_read_stream&` / `any_write_stream&`，测试时传入 `memory_read_stream` 或
+`scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
+owning erased storage 或 per-operation allocation 策略。
 
 ## 平台与 gate
 

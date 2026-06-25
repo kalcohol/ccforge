@@ -47,6 +47,7 @@ forge_add_example(simd_example simd_example.cpp)
 forge_add_example(simd_complete_example simd_complete_example.cpp)
 forge_add_example(forge_byte_vocabulary forge_byte_vocabulary_example.cpp)
 forge_add_example(forge_memory_stream forge_memory_stream_example.cpp)
+forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp)
 
 # std::execution examples are built unconditionally to ensure wrapper injection
 # stays functional.
