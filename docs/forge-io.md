@@ -16,11 +16,12 @@ Windows IOCP 的 backend 语义。
 
 ## 纯 byte vocabulary
 
-Coroutine-native byte IO track 的第一批设施是无 backend 依赖的 direct headers：
+Coroutine-native byte IO track 的 backend-free 设施当前通过 direct headers 使用：
 
 ```cpp
 #include <forge/io/result.hpp>
 #include <forge/io/buffer.hpp>
+#include <forge/io/memory_stream.hpp>
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -42,6 +43,25 @@ descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer
 `buffer_empty`、`buffer_prefix` 和 `buffer_copy` 覆盖单 buffer 与 scatter/gather
 buffer sequence 的最小用法。纯 vocabulary 不受 `FORGE_ENABLE_FORGE_IO` backend gate
 控制；backend gate 仍只控制 OS IO context、backend examples 和 backend tests。
+
+`forge::io::memory_read_stream`、`forge::io::memory_write_stream`、
+`forge::io::memory_stream` 和 `forge::io::scripted_read_stream` 是同一条路线的第二批
+backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_some` /
+`write_some` 结果形状，但不打开 socket、pipe、file，也不依赖 `forge::io::context`。
+
+- `memory_read_stream` 从 borrowed input 读取，支持配置单次最大读量，用于稳定复现
+  short read 和 EOF。
+- `memory_write_stream` 写入 owned storage，或写入 borrowed output buffer；只有容量
+  限制会造成 short write。
+- `memory_stream` 把一个 read side 和一个 write side 合在一起，适合 request/response
+  风格的小型协议测试。
+- `scripted_read_stream` 按脚本返回 bytes、EOF、错误，或 “bytes 后错误”。错误路径仍返回
+  byte count，因此协议代码可以检查 partial progress，而不是只能走 exception-only
+  控制流。
+
+这些类型的直接价值是让 length-prefixed、line-oriented、frame parser 等协议层可以在
+没有 OS backend 的构建里测试 partial IO、EOF 和错误传播。它们不是网络库，不提供 TCP、
+DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 
 ## 平台与 gate
 
