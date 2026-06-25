@@ -122,6 +122,11 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 `when_all` 类 domain-aware combinator 只有在 sibling cancellation 可验证时才实现，否则只保留
 设计记录。
 
+Stage 7 当前实现选择保持保守：`read_exactly` / `write_all` 已由 Stage 3 提供，
+`read_until` 覆盖小型 line/record 场景；P4124 风格的 domain-aware `when_all` 暂不实现，
+因为当前 coroutine substrate 尚未证明 sibling cancellation、partial result 保留和
+exactly-once completion 的组合语义。
+
 ### Stage 8：收敛与 deferred decisions
 
 审计 public names、umbrella header policy、docs、verification floor，并写明 deferred items：

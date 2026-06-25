@@ -76,6 +76,10 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 - `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
   算法；遇到 stream error 时返回累计 byte count，遇到提前 EOF/容量耗尽导致的
   `0` byte progress 时返回 `std::errc::io_error` 和累计 byte count。
+- `read_until(stream, std::string&, delimiter, max_bytes)` 是小型 line/record helper；
+  它逐 byte 读取直到 delimiter，输出包含 delimiter，routine error 仍通过
+  `io_result` 返回并保留已读取文本。超过 `max_bytes` 时返回
+  `std::errc::message_size` 和累计 byte count。
 - `any_read_stream` 和 `any_write_stream` 是 non-owning borrowed wrappers。构造时只保存
   目标 stream 的地址和一个函数指针；copy/move 只复制这条引用，调用方必须保证 concrete
   stream 比 erased wrapper 活得更久。空 wrapper 调用会返回
@@ -85,6 +89,10 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 `any_read_stream&` / `any_write_stream&`，测试时传入 `memory_read_stream` 或
 `scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
 owning erased storage 或 per-operation allocation 策略。
+
+P4124 风格的 domain-aware `when_all` 当前只保留为设计方向，没有实现公共 helper。原因是
+Stage 7 还不能证明 sibling operation 的取消、partial result 保留和 exactly-once completion
+可以在当前 substrate 上同时满足。
 
 `forge::io::coro.hpp` 是 `forge::io::experimental` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
@@ -358,6 +366,8 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 
 ## 示例
 
+- `example/forge_line_protocol_example.cpp`：`read_until` + memory streams 上的
+  tiny line request/response。
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。

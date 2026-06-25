@@ -27,7 +27,9 @@
 
 #include <concepts>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <string>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -56,6 +58,10 @@ namespace __stream_detail {
 
 [[nodiscard]] inline auto short_transfer_error() -> std::error_code {
     return std::make_error_code(std::errc::io_error);
+}
+
+[[nodiscard]] inline auto record_too_large_error() -> std::error_code {
+    return std::make_error_code(std::errc::message_size);
 }
 
 } // namespace __stream_detail
@@ -102,6 +108,46 @@ template<write_stream Stream>
     }
 
     return io_result<std::size_t>::success(total);
+}
+
+template<read_stream Stream>
+[[nodiscard]] auto read_until(
+    Stream& stream,
+    std::string& output,
+    char delimiter = '\n',
+    std::size_t max_bytes = std::numeric_limits<std::size_t>::max())
+        -> io_result<std::size_t> {
+    output.clear();
+
+    std::size_t total = 0;
+    while (total < max_bytes) {
+        std::byte byte{};
+        auto [error, count] =
+            stream.read_some(mutable_buffer{std::addressof(byte), 1});
+
+        if (count > 0) {
+            ++total;
+            const auto ch =
+                static_cast<char>(std::to_integer<unsigned char>(byte));
+            output.push_back(ch);
+        }
+
+        if (error) {
+            return io_result<std::size_t>::failure(error, total);
+        }
+        if (count == 0) {
+            return io_result<std::size_t>::failure(
+                __stream_detail::short_transfer_error(),
+                total);
+        }
+        if (output.back() == delimiter) {
+            return io_result<std::size_t>::success(total);
+        }
+    }
+
+    return io_result<std::size_t>::failure(
+        __stream_detail::record_too_large_error(),
+        total);
 }
 
 class any_read_stream {

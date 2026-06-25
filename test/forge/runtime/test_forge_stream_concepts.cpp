@@ -139,6 +139,55 @@ TEST(ForgeStreamConceptsTest, ReadExactlyPropagatesErrorWithProgress) {
     EXPECT_EQ(std::string_view(output.data(), count), "abc");
 }
 
+TEST(ForgeStreamConceptsTest, ReadUntilConsumesShortReads) {
+    forge::io::memory_read_stream stream{"ab\nrest", 1};
+    std::string line{"stale"};
+
+    auto [error, count] = forge::io::read_until(stream, line);
+
+    EXPECT_FALSE(error);
+    EXPECT_EQ(count, 3u);
+    EXPECT_EQ(line, "ab\n");
+    EXPECT_EQ(stream.position(), 3u);
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilReturnsPartialLineOnEof) {
+    forge::io::memory_read_stream stream{"partial", 2};
+    std::string line;
+
+    auto [error, count] = forge::io::read_until(stream, line);
+
+    EXPECT_EQ(error, std::make_error_code(std::errc::io_error));
+    EXPECT_EQ(count, 7u);
+    EXPECT_EQ(line, "partial");
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilPropagatesErrorWithProgress) {
+    forge::io::scripted_read_stream stream{
+        forge::io::scripted_read_step::bytes("ab"),
+        forge::io::scripted_read_step::bytes_then_error(
+            "c",
+            std::make_error_code(std::errc::connection_reset))};
+    std::string line;
+
+    auto [error, count] = forge::io::read_until(stream, line);
+
+    EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
+    EXPECT_EQ(count, 3u);
+    EXPECT_EQ(line, "abc");
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilLimitsRecordSize) {
+    forge::io::memory_read_stream stream{"abcd\n", 2};
+    std::string line;
+
+    auto [error, count] = forge::io::read_until(stream, line, '\n', 3);
+
+    EXPECT_EQ(error, std::make_error_code(std::errc::message_size));
+    EXPECT_EQ(count, 3u);
+    EXPECT_EQ(line, "abc");
+}
+
 TEST(ForgeStreamConceptsTest, WriteAllConsumesShortWrites) {
     forge::io::memory_write_stream stream;
 
