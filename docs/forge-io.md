@@ -9,6 +9,11 @@ completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是�
 [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md) 和
 [backend proof policy](roadmap/forge-backend-proof-policy.md) 中。
 
+Coroutine-native byte IO vocabulary 和 stream boundary 的长期跟踪记录在
+[`coroutine-native byte IO 路线图`](roadmap/coroutine-native-io.md)。该路线不会把
+`forge::io::context` 扩展成完整 networking library，也不会改变 Linux readiness 与
+Windows IOCP 的 backend 语义。
+
 ## 平台与 gate
 
 当前 backend：
