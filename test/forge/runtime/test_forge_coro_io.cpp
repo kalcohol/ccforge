@@ -7,6 +7,7 @@
 #include <memory_resource>
 #include <stdexcept>
 #include <stop_token>
+#include <type_traits>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
@@ -31,6 +32,10 @@ struct regular_awaitable {
 
 static_assert(cio::io_awaitable<env_shape_awaitable>);
 static_assert(!cio::io_awaitable<regular_awaitable>);
+static_assert(!std::execution::scheduler<cio::executor_ref>);
+static_assert(std::copy_constructible<cio::io_env>);
+static_assert(std::move_constructible<cio::io_env>);
+static_assert(!std::constructible_from<forge::any_scheduler, cio::executor_ref>);
 
 auto observes_stop_token() -> cio::io_task<bool> {
     const auto& env = co_await cio::this_io_env();

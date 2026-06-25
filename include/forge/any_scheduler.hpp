@@ -24,6 +24,7 @@
 
 #include "any_receiver.hpp"
 
+#include <concepts>
 #include <execution>
 #include <exception>
 #include <memory>
@@ -69,6 +70,13 @@ struct __state_base {
 };
 
 struct __scheduler_access;
+
+template<class Scheduler>
+concept __scheduler_candidate =
+    requires { typename std::remove_cvref_t<Scheduler>::scheduler_concept; } &&
+    std::derived_from<
+        typename std::remove_cvref_t<Scheduler>::scheduler_concept,
+        std::execution::scheduler_t>;
 
 template<class Scheduler>
 struct __state_model final : __state_base {
@@ -170,6 +178,7 @@ public:
 
     template<class Scheduler>
         requires (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
+              && __any_scheduler_detail::__scheduler_candidate<Scheduler>
               && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
     any_scheduler(Scheduler&& scheduler)
         : state_(std::make_shared<
