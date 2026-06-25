@@ -83,7 +83,13 @@ struct io_env {
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
+template<class T>
+class io_task;
+
 namespace __coro_detail {
+
+template<class T>
+class task_awaitable;
 
 template<class... Ts>
 struct type_list {};
@@ -244,6 +250,7 @@ private:
 template<class Promise>
 struct promise_base {
     const io_env* env = nullptr;
+    std::coroutine_handle<> continuation{};
     void* completion_object = nullptr;
     void (*complete)(void*) noexcept = nullptr;
 
@@ -258,11 +265,16 @@ struct promise_base {
 
         template<class P>
         auto await_suspend(std::coroutine_handle<P> continuation) noexcept
-            -> void {
+            -> std::coroutine_handle<> {
             auto& promise = continuation.promise();
             if (promise.complete != nullptr) {
                 promise.complete(promise.completion_object);
+                return std::noop_coroutine();
             }
+            if (promise.continuation) {
+                return promise.continuation;
+            }
+            return std::noop_coroutine();
         }
 
         auto await_resume() noexcept -> void {}
@@ -270,6 +282,11 @@ struct promise_base {
 
     [[nodiscard]] auto final_suspend() noexcept -> final_awaiter {
         return {};
+    }
+
+    template<class T>
+    [[nodiscard]] auto await_transform(io_task<T>&& task) {
+        return task_awaitable<T>{std::move(task), &env};
     }
 
     template<class Awaitable>
@@ -542,6 +559,11 @@ public:
         coro_.promise().complete = complete;
     }
 
+    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
+        -> void {
+        coro_.promise().continuation = continuation;
+    }
+
     [[nodiscard]] auto result() && -> T {
         if (!done()) {
             throw std::logic_error{"forge::io::experimental::io_task is not done"};
@@ -632,6 +654,11 @@ public:
         coro_.promise().complete = complete;
     }
 
+    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
+        -> void {
+        coro_.promise().continuation = continuation;
+    }
+
     auto result() && -> void {
         if (!done()) {
             throw std::logic_error{"forge::io::experimental::io_task is not done"};
@@ -654,6 +681,48 @@ private:
 };
 
 namespace __coro_detail {
+
+template<class T>
+class task_awaitable {
+public:
+    task_awaitable(io_task<T> task, const io_env** env) noexcept
+        : task_(std::move(task))
+        , env_(env)
+    {}
+
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return !task_ || task_.done();
+    }
+
+    auto await_suspend(std::coroutine_handle<> continuation) -> void {
+        if (env_ == nullptr || *env_ == nullptr) {
+            missing_env_ = true;
+            continuation.resume();
+            return;
+        }
+
+        task_.__set_continuation(continuation);
+        task_.start(**env_);
+    }
+
+    decltype(auto) await_resume() {
+        if (missing_env_) {
+            throw std::logic_error{
+                "forge::io::experimental::io_task continuation has no io_env"};
+        }
+
+        if constexpr (std::is_void_v<T>) {
+            std::move(task_).result();
+        } else {
+            return std::move(task_).result();
+        }
+    }
+
+private:
+    io_task<T> task_;
+    const io_env** env_ = nullptr;
+    bool missing_env_ = false;
+};
 
 template<class T, class Receiver>
 class io_task_sender_op {

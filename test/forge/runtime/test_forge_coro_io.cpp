@@ -68,6 +68,15 @@ auto completes_void(bool* observed) -> cio::io_task<void> {
     co_return;
 }
 
+auto awaits_child_task() -> cio::io_task<bool> {
+    co_return co_await observes_stop_token();
+}
+
+auto awaits_void_child_task(bool* observed) -> cio::io_task<bool> {
+    co_await completes_void(observed);
+    co_return *observed;
+}
+
 } // namespace
 
 TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
@@ -88,6 +97,32 @@ TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
     memory_task.start(env);
     ASSERT_TRUE(memory_task.done());
     EXPECT_TRUE(std::move(memory_task).result());
+}
+
+TEST(ForgeCoroIoTest, IoTaskCanAwaitChildTaskWithSameEnv) {
+    std::stop_source source;
+    source.request_stop();
+
+    cio::io_env env;
+    env.stop_token = source.get_token();
+
+    auto task = awaits_child_task();
+    task.start(env);
+
+    ASSERT_TRUE(task.done());
+    EXPECT_TRUE(std::move(task).result());
+}
+
+TEST(ForgeCoroIoTest, IoTaskCanAwaitVoidChildTask) {
+    cio::io_env env;
+    bool observed = false;
+
+    auto task = awaits_void_child_task(&observed);
+    task.start(env);
+
+    ASSERT_TRUE(task.done());
+    EXPECT_TRUE(std::move(task).result());
+    EXPECT_TRUE(observed);
 }
 
 TEST(ForgeCoroIoTest, ExecutorRefAdaptsForgeScheduler) {

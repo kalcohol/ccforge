@@ -24,6 +24,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
 #include <forge/io/coro.hpp> // experimental coroutine substrate proof
+#include <forge/io/context_await.hpp> // experimental facade over context backend
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -122,6 +123,23 @@ Sender interop 分两层：
   返回 `io_result<std::size_t>`，它作为单个 value 传出，保留 error code 与 partial byte count。
   需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
   partial progress。
+
+`forge::io::context_await.hpp` 是 `forge::io::experimental` 下对现有
+`forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；
+在 backend 关闭时可以直接 include，但不会暴露需要 `forge::io::context` 的函数。
+
+- `async_read_some(context, handle, std::span<std::byte>)` 和
+  `async_write_some(context, handle, std::span<const std::byte>)` 返回
+  `io_task<io_result<std::size_t>>`。成功时 byte count 来自现有 backend sender。
+- backend 的 `set_error(std::exception_ptr)` 会映射成 `io_result` 的 `std::error_code`；
+  `std::system_error` 保留原始 code，其它异常退化为 `std::errc::io_error`。当前 backend
+  error path 没有 partial byte count，因此 failure payload 是 `0`。
+- backend 的 `set_stopped()` 不会被压成 error code；`as_sender(io_task<T>)` 仍把它交付为
+  stopped channel。
+- Linux `readable(context, fd)` / `writable(context, fd)` 返回 `io_task<io_result<>>`，
+  只表示 readiness 完成，没有 byte count。真实 `read(2)` / `write(2)` 仍由用户代码执行。
+- handle、span buffer 和 `context` 都是 borrowed；调用方必须保证它们活到 operation
+  完成。`context` 析构仍可能因为 `shutdown()` / `wait()` 而阻塞。
 
 ## 平台与 gate
 
@@ -344,6 +362,8 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。
 - `example/forge_io_read_write_example.cpp`：borrowed span + async read/write convenience。
+- `example/forge_context_await_example.cpp`：coroutine facade over context sender；
+  Linux 下演示 await readiness 后由用户代码执行 nonblocking `read(2)`。
 - `example/forge_io_accel_pipeline_example.cpp`：Linux pipe read/write handoff
   到 CPU reference accel queue。
 - `example/forge_io_iocp_example.cpp`：Windows named pipe + IOCP async read/write。

@@ -79,6 +79,7 @@ if(FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_stream_concepts test_forge_stream_concepts.cpp forge_stream_concepts)
     forge_add_forge_test(test_forge_coro_io test_forge_coro_io.cpp forge_coro_io)
     forge_add_forge_test(test_forge_coro_interop test_forge_coro_interop.cpp forge_coro_interop)
+    forge_add_forge_test(test_forge_context_await test_forge_context_await.cpp forge_context_await)
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
