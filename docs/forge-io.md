@@ -23,6 +23,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/buffer.hpp>
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
+#include <forge/io/coro.hpp> // experimental coroutine substrate proof
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -83,6 +84,26 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 `any_read_stream&` / `any_write_stream&`，测试时传入 `memory_read_stream` 或
 `scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
 owning erased storage 或 per-operation allocation 策略。
+
+`forge::io::coro.hpp` 是 `forge::io::experimental` 下的 coroutine-native substrate
+proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
+`forge::task`：
+
+- `executor_ref` 是对现有 Forge scheduler 的窄适配，内部使用 `forge::any_scheduler`，
+  当前只承诺能产生 schedule sender。
+- `io_env` 携带 `executor_ref`、`std::stop_token` 和可选
+  `std::pmr::memory_resource*`。
+- `io_awaitable<T>` 检查 awaitable 是否提供
+  `await_suspend(std::coroutine_handle<>, io_env const*)` 形态。
+- `io_task<T>` 是最小 coroutine proof，用于把 `io_env` 传给 env-aware awaitable；它不是
+  sender，不是 `forge::task` 的替代品，也没有 final-suspend receiver completion 语义。
+- `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
+
+当前 Stage 4 实现只证明 stop token、resource pointer 和 scheduler handle 可以沿
+coroutine-native 边界传递。它没有实现 owning frame allocator、symmetric transfer、
+timer awaitable、platform IO awaitable，或把 sender cancellation 规则重新包装成另一套稳定
+async model。frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation
+确实经由指定 resource。
 
 ## 平台与 gate
 

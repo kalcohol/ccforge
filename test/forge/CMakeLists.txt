@@ -77,6 +77,7 @@ if(FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_byte_vocabulary test_forge_byte_vocabulary.cpp forge_byte_vocabulary)
     forge_add_forge_test(test_forge_memory_streams test_forge_memory_streams.cpp forge_memory_streams)
     forge_add_forge_test(test_forge_stream_concepts test_forge_stream_concepts.cpp forge_stream_concepts)
+    forge_add_forge_test(test_forge_coro_io test_forge_coro_io.cpp forge_coro_io)
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
