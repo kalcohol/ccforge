@@ -134,6 +134,12 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   operation-state。Stopped completion 通过 coroutine bridge 的内部异常返回 task frame，
   可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常不会覆盖
   stopped completion。
+- `forge::io::experimental::io_task` 是 coroutine-native byte IO track 的实验性 proof。
+  它不替代 `forge::task`，也不是 owning runtime primitive。`as_sender(io_task<T>)`
+  的 operation state owns 单个 task，`await_sender(sender)` 会把 `io_env` 的 stop token
+  和 scheduler 暴露给被 await 的 sender。子 `io_task` await 会沿用父 coroutine 的
+  `io_env`。Stopped sender 目前通过 `sender_stopped` 在 task 内传播，再由 `as_sender`
+  映射回 stopped channel。
 
 ## V1 cancellation 边界
 

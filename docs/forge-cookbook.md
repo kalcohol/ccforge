@@ -99,6 +99,20 @@ OS IO handoff 建议按这个顺序读：
    accelerator-shaped work。
 6. `example/forge_io_iocp_example.cpp`：验证 Windows completion backend。
 
+Coroutine-native byte IO / protocol code 建议按这个顺序读：
+
+1. `example/forge_memory_stream_example.cpp`：scripted reads 上的 length-prefixed parser。
+2. `example/forge_stream_erasure_example.cpp`：`any_read_stream` / `any_write_stream`
+   上的 protocol boundary。
+3. `example/forge_line_protocol_example.cpp`：`read_until` + memory streams 上的 line
+   request/response。
+4. `example/forge_coro_io_example.cpp`：`io_env` propagation proof。
+5. `example/forge_coro_interop_example.cpp`：`io_task` 与 sender/erased sender 互通。
+6. `example/forge_context_await_example.cpp`：现有 `forge::io::context` sender 的
+   coroutine facade。
+7. `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine parse
+   -> strand state update -> response write。
+
 不依赖 vendor SDK 的 accelerator-shaped work 建议按这个顺序读：
 
 1. `example/forge_accel_copy_example.cpp`
@@ -138,6 +152,8 @@ OS IO handoff 建议按这个顺序读：
 | C++26 constant / padded layout foundations | `example/constant_wrapper_example.cpp`, `example/padded_mdspan_layout_example.cpp` |
 | serialized session state | `example/forge_strand_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
 | type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
+| backend-free protocol streams | `example/forge_memory_stream_example.cpp`, `example/forge_stream_erasure_example.cpp`, `example/forge_line_protocol_example.cpp` |
+| coroutine-native byte IO proofs | `example/forge_coro_io_example.cpp`, `example/forge_coro_interop_example.cpp`, `example/forge_context_await_example.cpp`, `example/forge_coro_line_pipeline_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
 | IO to accelerator-shaped work | `example/forge_io_accel_pipeline_example.cpp` |

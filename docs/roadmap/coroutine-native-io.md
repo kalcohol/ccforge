@@ -22,6 +22,26 @@ Forge 可以吸收的是“可替换 backend 的异步字节流支撑层”，�
 networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Corosio 适配器
 和新平台 backend 都需要独立 taskbook 与 owner decision。
 
+## 当前实现状态
+
+截至 Stage 8 收敛，已实现的 public surface 都位于 `forge::io` 或
+`forge::io::experimental`，并保持 direct-header 使用：
+
+- `<forge/io/result.hpp>`：`io_result<Ts...>` compound result。
+- `<forge/io/buffer.hpp>`：borrowed byte buffers 和 buffer sequence helpers。
+- `<forge/io/memory_stream.hpp>`：memory/scripted streams。
+- `<forge/io/stream.hpp>`：stream concepts、`read_exactly`、`write_all`、`read_until`、
+  borrowed `any_read_stream` / `any_write_stream`。
+- `<forge/io/coro.hpp>`：experimental `io_env`、`io_task`、`await_sender`、`as_sender`。
+- `<forge/io/context_await.hpp>`：experimental bridge over existing `forge::io::context`
+  operations when a backend exists.
+
+Umbrella policy 保持保守：`<forge/io.hpp>` 继续只暴露 OS backend `context`（在 backend
+可用时），不把纯 vocabulary 或 experimental coroutine headers 自动拉入；`<forge/execution.hpp>`
+不承载 coroutine-native byte IO track。当前不新增 feature-test-like Forge macro；用户需要
+backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设施以 direct include 和
+普通 C++ name detection 为主。
+
 ## 提案基线
 
 这些提案仍在移动中。每个实现 stage 开始前必须重新检查官方 WG21 paper index，而不是只依赖
@@ -139,6 +159,21 @@ composition smoke。
 - true ABI-stable `any_stream`；
 - frame allocator propagation；
 - 将来若 WG21 adopted wording 后是否做 standard backport。
+
+当前 deferred decision：
+
+- TCP/DNS/UDP/TLS 仍不是本 track 的目标；需要独立 networking taskbook、backend owner 和
+  security/release policy。
+- Boost.Asio、Capy、Corosio 或其它 adapter 暂不引入，避免把 Forge 的小型 substrate 变成
+  adapter matrix。
+- Linux `io_uring` 只有在需要 submission/completion queue 语义时才单独立项；它不是
+  `epoll` readiness backend 的替代写法。
+- `any_read_stream` / `any_write_stream` 保持 borrowed wrapper；true ABI-stable owning
+  `any_stream` 需要对象布局、allocation 和 lifetime 设计。
+- `io_env::memory` 当前只传播 pointer；coroutine frame allocator propagation 没有实现，
+  等能用测试证明 frame allocation timing 后再开。
+- 若 WG21 后续 adopted wording，是否做 `<io>` 或 standard-shaped backport 需要重新审计；
+  当前不会添加 `backport/io`、`<io>`、`<networking>` 或 `std::io`。
 
 ## 验收规则
 

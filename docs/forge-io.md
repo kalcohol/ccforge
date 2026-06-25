@@ -14,6 +14,17 @@ Coroutine-native byte IO vocabulary 和 stream boundary 的长期跟踪记录在
 `forge::io::context` 扩展成完整 networking library，也不会改变 Linux readiness 与
 Windows IOCP 的 backend 语义。
 
+## 这不是什么
+
+- 不是 `std::io`、`std::networking`、`<io>` 或 `<networking>` backport。
+- 不是 TCP/DNS/UDP/TLS、socket option、endpoint/address-resolution library。
+- 不是 `std::execution` 的替代模型；coroutine bridge 只在 `forge::io::experimental`
+  下与现有 sender runtime 互通。
+- 不是稳定 ABI 的 stream erasure layer；当前 `any_read_stream` / `any_write_stream` 是
+  borrowed wrapper。
+- 不是 platform semantics normalizer；Linux readiness 和 Windows IOCP completion
+  继续按各自 backend 语义暴露。
+
 ## 纯 byte vocabulary
 
 Coroutine-native byte IO track 的 backend-free 设施当前通过 direct headers 使用：
@@ -148,6 +159,17 @@ Sender interop 分两层：
   只表示 readiness 完成，没有 byte count。真实 `read(2)` / `write(2)` 仍由用户代码执行。
 - handle、span buffer 和 `context` 都是 borrowed；调用方必须保证它们活到 operation
   完成。`context` 析构仍可能因为 `shutdown()` / `wait()` 而阻塞。
+
+## 使用选择
+
+- 协议 parser/unit test：优先用 `memory_read_stream`、`memory_write_stream` 和
+  `scripted_read_stream`，覆盖 short read、EOF、错误和 partial progress。
+- separate-compilation 或插件边界：接收 `any_read_stream&` / `any_write_stream&`，
+  让调用方决定 concrete stream。
+- coroutine 与 sender runtime 互通：在 `io_task` 内使用 `await_sender(sender)`，
+  或用 `as_sender(io_task<T>)` 把 coroutine operation 暴露给 sender consumer。
+- 已有 OS backend handoff：只在需要现有 `forge::io::context` 时使用
+  `<forge/io/context_await.hpp>`；fd/HANDLE、buffer 和 context lifetime 仍由调用方负责。
 
 ## 平台与 gate
 
