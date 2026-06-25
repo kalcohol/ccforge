@@ -73,6 +73,10 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         forge_execution_header)
 endif()
 
+if(FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_test(test_forge_byte_vocabulary test_forge_byte_vocabulary.cpp forge_byte_vocabulary)
+endif()
+
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
     forge_add_forge_test(test_forge_start_detached test_forge_start_detached.cpp forge_start_detached)

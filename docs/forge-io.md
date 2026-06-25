@@ -14,6 +14,35 @@ Coroutine-native byte IO vocabulary 和 stream boundary 的长期跟踪记录在
 `forge::io::context` 扩展成完整 networking library，也不会改变 Linux readiness 与
 Windows IOCP 的 backend 语义。
 
+## 纯 byte vocabulary
+
+Coroutine-native byte IO track 的第一批设施是无 backend 依赖的 direct headers：
+
+```cpp
+#include <forge/io/result.hpp>
+#include <forge/io/buffer.hpp>
+```
+
+`forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
+支持 structured binding：
+
+```cpp
+forge::io::io_result<std::size_t> result{
+    std::make_error_code(std::errc::connection_reset),
+    12};
+
+auto [ec, n] = result;
+```
+
+`ec` 永远存在；`!ec` 表示成功，后续 payload 有成功语义。`ec` 为错误时，payload
+仍保留，用于表达 partial IO progress。普通 IO 失败不需要通过异常传播。
+
+`forge::io::const_buffer` 和 `forge::io::mutable_buffer` 是 borrowed byte-region
+descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer_size`、
+`buffer_empty`、`buffer_prefix` 和 `buffer_copy` 覆盖单 buffer 与 scatter/gather
+buffer sequence 的最小用法。纯 vocabulary 不受 `FORGE_ENABLE_FORGE_IO` backend gate
+控制；backend gate 仍只控制 OS IO context、backend examples 和 backend tests。
+
 ## 平台与 gate
 
 当前 backend：
