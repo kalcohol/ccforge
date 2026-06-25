@@ -125,7 +125,9 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 Stage 7 当前实现选择保持保守：`read_exactly` / `write_all` 已由 Stage 3 提供，
 `read_until` 覆盖小型 line/record 场景；P4124 风格的 domain-aware `when_all` 暂不实现，
 因为当前 coroutine substrate 尚未证明 sibling cancellation、partial result 保留和
-exactly-once completion 的组合语义。
+exactly-once completion 的组合语义。示例覆盖纯 memory line protocol，以及
+memory stream -> coroutine parse -> strand state update -> response write 的 runtime
+composition smoke。
 
 ### Stage 8：收敛与 deferred decisions
 

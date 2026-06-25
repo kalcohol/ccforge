@@ -368,6 +368,8 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 
 - `example/forge_line_protocol_example.cpp`：`read_until` + memory streams 上的
   tiny line request/response。
+- `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine
+  parse -> strand state update -> response write 的 runtime composition smoke。
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。
