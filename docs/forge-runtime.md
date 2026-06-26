@@ -120,11 +120,14 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常不会覆盖
   stopped completion。
 - `forge::io::io_task` 是 coroutine-native byte IO track 的 Forge extension。
-  它不替代 `forge::task`，也不是 owning runtime primitive。`as_sender(io_task<T>)`
-  的 operation state owns 单个 task，`await_sender(sender)` 会把 `io_env` 的 stop token
-  和 scheduler 暴露给被 await 的 sender。子 `io_task` await 会沿用父 coroutine 的
-  `io_env`。Stopped sender 目前通过 `sender_stopped` 在 task 内传播，再由 `as_sender`
-  映射回 stopped channel。
+  它不替代 `forge::task`，也不是 owning runtime primitive。`io_task` 没有 public
+  fire-and-forget start；只能被父 `io_task` await，或通过 `as_sender(io_task<T>, env)`
+  交给 sender operation-state 持有到完成。`io_env` 是 borrowed environment：
+  `std::inplace_stop_source`、scheduler/runtime 和 memory resource 必须活过对应 operation。
+  `await_sender(sender)` 会把 `io_env` 的 stop token 和 scheduler 暴露给被 await 的 sender，
+  并在源 sender 的 completion 线程上 resume coroutine；需要 executor hop 时应显式 await
+  `env.executor.schedule()`。Stopped sender 目前通过 `sender_stopped` 在 task 内传播，再由
+  `as_sender` 映射回 stopped channel。
 
 ## V1 cancellation 边界
 

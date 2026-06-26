@@ -112,11 +112,16 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
 - `executor_ref` 是对现有 Forge scheduler 的窄适配，内部使用 `forge::any_scheduler`，
   当前只承诺能产生 schedule sender。
 - `io_env` 携带 `executor_ref`、`std::inplace_stop_token` 和可选
-  `std::pmr::memory_resource*`。
+  `std::pmr::memory_resource*`。它是轻量 borrowed environment：`executor_ref`、
+  stop token 和 memory resource pointer 都不拥有底层 runtime。若使用
+  `std::inplace_stop_source` 提供 token，source 必须活过使用该 `io_env` 的
+  `as_sender(io_task<T>, env)` operation 或父 `io_task` await 链。
 - `io_awaitable<T>` 检查 awaitable 是否提供
   `await_suspend(std::coroutine_handle<>, io_env const*)` 形态。
 - `io_task<T>` 是最小 coroutine proof，用于把 `io_env` 传给 env-aware awaitable；它不是
-  sender，不是 `forge::task` 的替代品，也没有 final-suspend receiver completion 语义。
+  sender，也不是 `forge::task` 的替代品。它没有 public fire-and-forget `start()`；
+  支持的 ownership 形态只有两种：在父 `io_task` 内 `co_await` 子 task，或用
+  `as_sender(io_task<T>, env)` 交给 sender operation-state 持有到 terminal completion。
 - `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
 
 当前 Stage 4 实现只证明 stop token、resource pointer 和 scheduler handle 可以沿
@@ -137,11 +142,19 @@ Sender interop 分两层：
   暴露给 receiver env。
 - `forge::io::as_sender(io_task<T>, io_env)` 把简单 `io_task<T>` 暴露成
   sender，completion shape 是 `set_value(T)` / `set_error(std::exception_ptr)` /
-  `set_stopped()`；`io_task<void>` 使用 `set_value()`。
+  `set_stopped()`；`io_task<void>` 使用 `set_value()`。该 bridge 是 single-use：
+  connect 会 move 走 task，并由 operation-state 持有 task 与 `io_env` 副本直到完成。
+  和 `forge::task` 一样，receiver 不应在 final-suspend completion callback 内同步销毁
+  已连接的 operation-state。
 - `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine
   返回 `io_result<std::size_t>`，它作为单个 value 传出，保留 error code 与 partial byte count。
   需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
   partial progress。
+
+`await_sender(sender)` 当前在源 sender 的 completion 线程上 resume coroutine，不会自动
+hop 到 `io_env.executor`。因此经 `context_await.hpp` await backend operation 时，后续
+coroutine body 可能运行在 Linux poller thread 或 Windows IOCP completion thread 上。
+需要切回业务 executor 时，应显式 `co_await await_sender(env.executor.schedule())`。
 
 `forge::io::context_await.hpp` 是 `forge::io` 下对现有
 `forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；

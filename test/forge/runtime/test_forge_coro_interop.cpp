@@ -6,11 +6,16 @@
 #include <forge/static_thread_pool.hpp>
 
 #include <exception>
+#include <condition_variable>
 #include <execution>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -20,6 +25,208 @@ namespace {
 namespace cio = forge::io;
 
 struct interop_marker_error {};
+
+enum class gated_completion {
+    value,
+    error,
+    stopped
+};
+
+struct gated_async_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool release = false;
+    bool returned = false;
+};
+
+auto wait_until_started(const std::shared_ptr<gated_async_state>& state)
+    -> void {
+    std::unique_lock lock{state->mtx};
+    state->cv.wait(lock, [&] { return state->started; });
+}
+
+auto release_async_completion(const std::shared_ptr<gated_async_state>& state)
+    -> void {
+    {
+        std::lock_guard lock{state->mtx};
+        state->release = true;
+    }
+    state->cv.notify_all();
+}
+
+auto wait_until_returned(const std::shared_ptr<gated_async_state>& state)
+    -> void {
+    std::unique_lock lock{state->mtx};
+    state->cv.wait(lock, [&] { return state->returned; });
+}
+
+template<class T>
+struct task_result_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool done = false;
+    std::optional<T> value;
+    std::exception_ptr error;
+    bool stopped = false;
+};
+
+template<class T>
+struct task_result_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<task_result_state<T>> state;
+
+    auto set_value(T value) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            state->value.emplace(std::move(value));
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+
+    template<class Error>
+    auto set_error(Error&& error) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            if constexpr (std::is_same_v<std::decay_t<Error>, std::exception_ptr>) {
+                state->error = static_cast<Error&&>(error);
+            } else {
+                state->error = std::make_exception_ptr(static_cast<Error&&>(error));
+            }
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto set_stopped() && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            state->stopped = true;
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+};
+
+template<class T>
+auto wait_task_done(const std::shared_ptr<task_result_state<T>>& state)
+    -> void {
+    std::unique_lock lock{state->mtx};
+    state->cv.wait(lock, [&] { return state->done; });
+}
+
+template<class R>
+struct gated_async_delivery {
+    R receiver;
+    std::shared_ptr<gated_async_state> state;
+    gated_completion completion = gated_completion::value;
+
+    gated_async_delivery(R rcvr,
+                         std::shared_ptr<gated_async_state> st,
+                         gated_completion c)
+        : receiver(std::move(rcvr))
+        , state(std::move(st))
+        , completion(c)
+    {}
+};
+
+template<class R>
+struct gated_async_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    std::shared_ptr<gated_async_delivery<R>> delivery;
+
+    gated_async_op(R rcvr,
+                   std::shared_ptr<gated_async_state> st,
+                   gated_completion c)
+        : delivery(std::make_shared<gated_async_delivery<R>>(
+              std::move(rcvr),
+              std::move(st),
+              c))
+    {}
+
+    gated_async_op(gated_async_op&&) = delete;
+    auto operator=(gated_async_op&&) -> gated_async_op& = delete;
+    gated_async_op(const gated_async_op&) = delete;
+    auto operator=(const gated_async_op&) -> gated_async_op& = delete;
+
+    ~gated_async_op() {
+        if (delivery) {
+            release_async_completion(delivery->state);
+        }
+    }
+
+    auto start() & noexcept -> void {
+        try {
+            auto shared = delivery;
+            std::thread([shared] {
+                {
+                    std::unique_lock lock{shared->state->mtx};
+                    shared->state->started = true;
+                    shared->state->cv.notify_all();
+                    shared->state->cv.wait(
+                        lock,
+                        [&] { return shared->state->release; });
+                }
+
+                switch (shared->completion) {
+                case gated_completion::value:
+                    std::execution::set_value(std::move(shared->receiver), 21);
+                    break;
+                case gated_completion::error:
+                    std::execution::set_error(
+                        std::move(shared->receiver),
+                        interop_marker_error{});
+                    break;
+                case gated_completion::stopped:
+                    std::execution::set_stopped(std::move(shared->receiver));
+                    break;
+                }
+
+                {
+                    std::lock_guard lock{shared->state->mtx};
+                    shared->state->returned = true;
+                }
+                shared->state->cv.notify_all();
+            }).detach();
+        } catch (...) {
+            std::execution::set_error(
+                std::move(delivery->receiver),
+                std::current_exception());
+        }
+    }
+};
+
+struct gated_async_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<gated_async_state> state;
+    gated_completion completion = gated_completion::value;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(interop_marker_error),
+            std::execution::set_error_t(std::exception_ptr),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) && -> gated_async_op<R> {
+        return gated_async_op<R>{
+            std::move(receiver),
+            std::move(state),
+            completion};
+    }
+};
 
 template<class R>
 struct stop_probe_op {
@@ -102,59 +309,80 @@ auto await_io_result_task() -> cio::io_task<forge::io::io_result<std::size_t>> {
         3);
 }
 
+auto await_gated_async_task(std::shared_ptr<gated_async_state> state)
+    -> cio::io_task<int> {
+    auto [value] = co_await cio::await_sender(gated_async_sender{
+        std::move(state),
+        gated_completion::value});
+    co_return value + 1;
+}
+
+auto await_gated_async_error_task(std::shared_ptr<gated_async_state> state)
+    -> cio::io_task<int> {
+    co_await cio::await_sender(gated_async_sender{
+        std::move(state),
+        gated_completion::error});
+    co_return 0;
+}
+
+auto await_gated_async_stopped_task(std::shared_ptr<gated_async_state> state)
+    -> cio::io_task<int> {
+    co_await cio::await_sender(gated_async_sender{
+        std::move(state),
+        gated_completion::stopped});
+    co_return 0;
+}
+
 } // namespace
 
 TEST(ForgeCoroInteropTest, AwaitSenderConsumesJust) {
-    cio::io_env env;
-    auto task = await_just_task();
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_just_task()));
 
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_EQ(std::move(task).result(), 42);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderSchedulesOnExecutorRef) {
     forge::static_thread_pool pool{1};
     cio::io_env env;
     env.executor = cio::executor_ref{pool.get_scheduler()};
-    auto task = await_schedule_task();
+    auto result = std::make_shared<task_result_state<bool>>();
+    auto sender = cio::as_sender(await_schedule_task(), env);
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<bool>{result});
 
-    task.start(env);
+    std::execution::start(op);
+    wait_task_done(result);
     pool.wait();
 
-    ASSERT_TRUE(task.done());
-    EXPECT_TRUE(std::move(task).result());
+    std::lock_guard lock{result->mtx};
+    ASSERT_TRUE(result->value.has_value());
+    EXPECT_TRUE(*result->value);
+    EXPECT_FALSE(result->error);
+    EXPECT_FALSE(result->stopped);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesError) {
-    cio::io_env env;
-    auto task = await_error_task();
-
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_THROW((void)std::move(task).result(), interop_marker_error);
+    EXPECT_THROW((void)std::execution::sync_wait(
+                     cio::as_sender(await_error_task())),
+                 interop_marker_error);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesStopped) {
-    cio::io_env env;
-    auto task = await_stopped_task();
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_stopped_task()));
 
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_THROW((void)std::move(task).result(), cio::sender_stopped);
+    EXPECT_FALSE(result.has_value());
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPreservesMoveOnlyValue) {
-    cio::io_env env;
-    auto task = await_move_only_task();
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_move_only_task()));
 
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_EQ(std::move(task).result(), 17);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 17);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
@@ -162,12 +390,10 @@ TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
     stop.request_stop();
     cio::io_env env;
     env.stop_token = stop.get_token();
-    auto task = await_stop_probe_task();
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_stop_probe_task(), env));
 
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_THROW((void)std::move(task).result(), cio::sender_stopped);
+    EXPECT_FALSE(result.has_value());
 }
 
 TEST(ForgeCoroInteropTest, AsSenderExposesValueTask) {
@@ -215,6 +441,72 @@ TEST(ForgeCoroInteropTest, AsSenderWorksAcrossErasedSenderBoundary) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ForgeCoroInteropTest, AwaitSenderCompletesAfterAsyncSuspension) {
+    auto state = std::make_shared<gated_async_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    auto sender = cio::as_sender(await_gated_async_task(state));
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<int>{result});
+
+    std::execution::start(op);
+    wait_until_started(state);
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
+    release_async_completion(state);
+    wait_task_done(result);
+    wait_until_returned(state);
+
+    std::lock_guard lock{result->mtx};
+    ASSERT_TRUE(result->value.has_value());
+    EXPECT_EQ(*result->value, 22);
+    EXPECT_FALSE(result->error);
+    EXPECT_FALSE(result->stopped);
+}
+
+TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncError) {
+    auto state = std::make_shared<gated_async_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    auto sender = cio::as_sender(await_gated_async_error_task(state));
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<int>{result});
+
+    std::execution::start(op);
+    wait_until_started(state);
+    release_async_completion(state);
+    wait_task_done(result);
+    wait_until_returned(state);
+
+    std::lock_guard lock{result->mtx};
+    ASSERT_TRUE(result->error);
+    EXPECT_THROW(std::rethrow_exception(result->error), interop_marker_error);
+    EXPECT_FALSE(result->value.has_value());
+    EXPECT_FALSE(result->stopped);
+}
+
+TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncStopped) {
+    auto state = std::make_shared<gated_async_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    auto sender = cio::as_sender(await_gated_async_stopped_task(state));
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<int>{result});
+
+    std::execution::start(op);
+    wait_until_started(state);
+    release_async_completion(state);
+    wait_task_done(result);
+    wait_until_returned(state);
+
+    std::lock_guard lock{result->mtx};
+    EXPECT_TRUE(result->stopped);
+    EXPECT_FALSE(result->value.has_value());
+    EXPECT_FALSE(result->error);
 }
 
 #else

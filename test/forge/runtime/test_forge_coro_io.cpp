@@ -7,6 +7,7 @@
 #include <memory_resource>
 #include <stdexcept>
 #include <type_traits>
+#include <tuple>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
@@ -36,6 +37,15 @@ static_assert(std::copy_constructible<cio::io_env>);
 static_assert(std::move_constructible<cio::io_env>);
 static_assert(!std::constructible_from<forge::any_scheduler, cio::executor_ref>);
 
+template<class Task>
+concept publicly_startable_io_task =
+    requires(Task task, const cio::io_env& env) {
+        task.start(env);
+    };
+
+static_assert(!publicly_startable_io_task<cio::io_task<int>>);
+static_assert(!publicly_startable_io_task<cio::io_task<void>>);
+
 auto observes_stop_token() -> cio::io_task<bool> {
     const auto& env = co_await cio::this_io_env();
     co_return env.stop_token.stop_requested();
@@ -59,11 +69,6 @@ auto awaits_regular_awaitable() -> cio::io_task<int> {
 auto throws_from_task() -> cio::io_task<int> {
     throw std::runtime_error{"coro io failure"};
     co_return 0;
-}
-
-auto suspends_forever() -> cio::io_task<int> {
-    co_await std::suspend_always{};
-    co_return 1;
 }
 
 auto completes_void(bool* observed) -> cio::io_task<void> {
@@ -92,15 +97,15 @@ TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
     env.stop_token = source.get_token();
     env.memory = &memory;
 
-    auto stop_task = observes_stop_token();
-    stop_task.start(env);
-    ASSERT_TRUE(stop_task.done());
-    EXPECT_TRUE(std::move(stop_task).result());
+    auto stop_result = std::execution::sync_wait(
+        cio::as_sender(observes_stop_token(), env));
+    ASSERT_TRUE(stop_result.has_value());
+    EXPECT_TRUE(std::get<0>(*stop_result));
 
-    auto memory_task = observes_memory(&memory);
-    memory_task.start(env);
-    ASSERT_TRUE(memory_task.done());
-    EXPECT_TRUE(std::move(memory_task).result());
+    auto memory_result = std::execution::sync_wait(
+        cio::as_sender(observes_memory(&memory), env));
+    ASSERT_TRUE(memory_result.has_value());
+    EXPECT_TRUE(std::get<0>(*memory_result));
 }
 
 TEST(ForgeCoroIoTest, IoTaskCanAwaitChildTaskWithSameEnv) {
@@ -110,22 +115,22 @@ TEST(ForgeCoroIoTest, IoTaskCanAwaitChildTaskWithSameEnv) {
     cio::io_env env;
     env.stop_token = source.get_token();
 
-    auto task = awaits_child_task();
-    task.start(env);
+    auto result = std::execution::sync_wait(
+        cio::as_sender(awaits_child_task(), env));
 
-    ASSERT_TRUE(task.done());
-    EXPECT_TRUE(std::move(task).result());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
 }
 
 TEST(ForgeCoroIoTest, IoTaskCanAwaitVoidChildTask) {
     cio::io_env env;
     bool observed = false;
 
-    auto task = awaits_void_child_task(&observed);
-    task.start(env);
+    auto result = std::execution::sync_wait(
+        cio::as_sender(awaits_void_child_task(&observed), env));
 
-    ASSERT_TRUE(task.done());
-    EXPECT_TRUE(std::move(task).result());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
     EXPECT_TRUE(observed);
 }
 
@@ -140,51 +145,34 @@ TEST(ForgeCoroIoTest, ExecutorRefAdaptsForgeScheduler) {
     pool.wait();
     ASSERT_TRUE(scheduled.has_value());
 
-    auto task = observes_executor();
-    task.start(env);
-    ASSERT_TRUE(task.done());
-    EXPECT_TRUE(std::move(task).result());
+    auto result = std::execution::sync_wait(
+        cio::as_sender(observes_executor(), env));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
 }
 
 TEST(ForgeCoroIoTest, IoTaskPassesThroughRegularAwaitables) {
-    cio::io_env env;
-    auto task = awaits_regular_awaitable();
+    auto result = std::execution::sync_wait(
+        cio::as_sender(awaits_regular_awaitable()));
 
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_EQ(std::move(task).result(), 7);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 7);
 }
 
 TEST(ForgeCoroIoTest, IoTaskRethrowsStoredException) {
-    cio::io_env env;
-    auto task = throws_from_task();
-
-    task.start(env);
-
-    ASSERT_TRUE(task.done());
-    EXPECT_THROW((void)std::move(task).result(), std::runtime_error);
-}
-
-TEST(ForgeCoroIoTest, IoTaskReportsSuspendedState) {
-    cio::io_env env;
-    auto task = suspends_forever();
-
-    task.start(env);
-
-    EXPECT_FALSE(task.done());
-    EXPECT_THROW((void)std::move(task).result(), std::logic_error);
+    EXPECT_THROW((void)std::execution::sync_wait(
+                     cio::as_sender(throws_from_task())),
+                 std::runtime_error);
 }
 
 TEST(ForgeCoroIoTest, VoidIoTaskUsesEnv) {
     cio::io_env env;
     bool observed = false;
-    auto task = completes_void(&observed);
 
-    task.start(env);
+    auto result = std::execution::sync_wait(
+        cio::as_sender(completes_void(&observed), env));
 
-    ASSERT_TRUE(task.done());
-    std::move(task).result();
+    ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(observed);
 }
 

@@ -116,7 +116,9 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 
 实验 `io_env`、executor adaptation、stop token propagation 和可选 frame allocator policy。
 默认不改 `forge::task`。如确实需要把 `io_task` 扩展成更通用的 public task family，
-必须先写设计审计。
+必须先写设计审计。当前 `io_env` 明确是 borrowed environment：`executor_ref`、
+`std::inplace_stop_token` 和 memory resource pointer 不拥有底层对象，调用方必须保证它们
+活过父 `io_task` await 链或 `as_sender(io_task<T>, env)` operation。
 
 ### Stage 5：sender interop
 
@@ -125,6 +127,11 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 - sender -> coroutine awaitable；
 - coroutine awaitable -> sender；
 - compound IO result 不被静默折叠到错误通道并丢失 partial progress。
+
+`io_task` 的安全 ownership 形态只保留两条：父 `io_task` `co_await` 子 task，或
+`as_sender(io_task<T>, env)` 让 sender operation-state 持有 task。裸 fire-and-forget
+start 不作为 public API。`await_sender` 当前 inline/source-thread resume；它不自动 hop 回
+`io_env.executor`，需要 hop 时由 coroutine body 显式 await `env.executor.schedule()`。
 
 ### Stage 6：现有 `forge::io` coroutine façade
 

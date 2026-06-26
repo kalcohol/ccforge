@@ -90,6 +90,9 @@ namespace __coro_detail {
 template<class T>
 class task_awaitable;
 
+template<class T, class Receiver>
+class io_task_sender_op;
+
 template<class... Ts>
 struct type_list {};
 
@@ -535,14 +538,6 @@ public:
         }
     }
 
-    auto start(const io_env& env) -> void {
-        if (!coro_ || coro_.done()) {
-            return;
-        }
-        coro_.promise().env = &env;
-        coro_.resume();
-    }
-
     [[nodiscard]] auto done() const noexcept -> bool {
         return !coro_ || coro_.done();
     }
@@ -579,9 +574,21 @@ public:
     }
 
 private:
+    friend class __coro_detail::task_awaitable<T>;
+    template<class, class>
+    friend class __coro_detail::io_task_sender_op;
+
     explicit io_task(std::coroutine_handle<promise_type> coro) noexcept
         : coro_(coro)
     {}
+
+    auto __start_borrowed(const io_env& env) -> void {
+        if (!coro_ || coro_.done()) {
+            return;
+        }
+        coro_.promise().env = &env;
+        coro_.resume();
+    }
 
     std::coroutine_handle<promise_type> coro_{};
 };
@@ -630,14 +637,6 @@ public:
         }
     }
 
-    auto start(const io_env& env) -> void {
-        if (!coro_ || coro_.done()) {
-            return;
-        }
-        coro_.promise().env = &env;
-        coro_.resume();
-    }
-
     [[nodiscard]] auto done() const noexcept -> bool {
         return !coro_ || coro_.done();
     }
@@ -672,9 +671,21 @@ public:
     }
 
 private:
+    friend class __coro_detail::task_awaitable<void>;
+    template<class, class>
+    friend class __coro_detail::io_task_sender_op;
+
     explicit io_task(std::coroutine_handle<promise_type> coro) noexcept
         : coro_(coro)
     {}
+
+    auto __start_borrowed(const io_env& env) -> void {
+        if (!coro_ || coro_.done()) {
+            return;
+        }
+        coro_.promise().env = &env;
+        coro_.resume();
+    }
 
     std::coroutine_handle<promise_type> coro_{};
 };
@@ -701,7 +712,7 @@ public:
         }
 
         task_.__set_continuation(continuation);
-        task_.start(**env_);
+        task_.__start_borrowed(**env_);
     }
 
     decltype(auto) await_resume() {
@@ -742,7 +753,7 @@ public:
     auto start() & noexcept -> void {
         try {
             task_.__set_completion(this, &complete_callback);
-            task_.start(env_);
+            task_.__start_borrowed(env_);
         } catch (...) {
             std::execution::set_error(std::move(receiver_), std::current_exception());
         }

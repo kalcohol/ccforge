@@ -28,6 +28,7 @@
 #include <execution>
 #include <iostream>
 #include <memory_resource>
+#include <tuple>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -55,10 +56,10 @@ int main() {
     env.stop_token = stop.get_token();
     env.memory = &memory;
 
-    auto task = observe_env(&memory);
-    task.start(env);
-    forge_example::require(task.done());
-    forge_example::require(std::move(task).result());
+    auto observed = std::execution::sync_wait(
+        cio::as_sender(observe_env(&memory), env));
+    forge_example::require(observed.has_value());
+    forge_example::require(std::get<0>(*observed));
 
     auto scheduled = std::execution::sync_wait(env.executor.schedule());
     pool.wait();
