@@ -51,7 +51,9 @@ forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp)
 forge_add_example(forge_line_protocol forge_line_protocol_example.cpp)
 forge_add_example(forge_coro_io forge_coro_io_example.cpp THREADS TBB)
 forge_add_example(forge_coro_interop forge_coro_interop_example.cpp THREADS TBB)
+forge_add_example(forge_coro_executor_hop forge_coro_executor_hop_example.cpp THREADS TBB)
 forge_add_example(forge_context_await forge_context_await_example.cpp THREADS TBB)
+forge_add_example(forge_context_cancel forge_context_cancel_example.cpp THREADS TBB)
 forge_add_example(forge_coro_line_pipeline forge_coro_line_pipeline_example.cpp THREADS TBB)
 
 # std::execution examples are built unconditionally to ensure wrapper injection

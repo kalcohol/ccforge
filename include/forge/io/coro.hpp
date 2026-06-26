@@ -826,7 +826,6 @@ public:
 
     auto start() & noexcept -> void {
         try {
-            effective_env_ = env_;
             env_stop_.install(env_.stop_token, fused_stop_);
             receiver_stop_.install(
                 std::execution::get_stop_token(

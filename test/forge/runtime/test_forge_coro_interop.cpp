@@ -440,10 +440,14 @@ auto await_just_task() -> cio::io_task<int> {
     co_return value + 1;
 }
 
-auto await_schedule_task() -> cio::io_task<bool> {
+auto await_schedule_thread_task(
+    std::thread::id* before,
+    std::thread::id* after) -> cio::io_task<bool> {
+    *before = std::this_thread::get_id();
     const auto& env = co_await cio::this_io_env();
     co_await cio::await_sender(env.executor.schedule());
-    co_return true;
+    *after = std::this_thread::get_id();
+    co_return *after != *before;
 }
 
 auto await_error_task() -> cio::io_task<int> {
@@ -536,8 +540,13 @@ TEST(ForgeCoroInteropTest, AwaitSenderSchedulesOnExecutorRef) {
     forge::static_thread_pool pool{1};
     cio::io_env env;
     env.executor = cio::executor_ref{pool.get_scheduler()};
+    std::thread::id before;
+    std::thread::id after;
+    const auto caller = std::this_thread::get_id();
     auto result = std::make_shared<task_result_state<bool>>();
-    auto sender = cio::as_sender(await_schedule_task(), env);
+    auto sender = cio::as_sender(
+        await_schedule_thread_task(&before, &after),
+        env);
     auto op = std::execution::connect(
         std::move(sender),
         task_result_receiver<bool>{result});
@@ -549,6 +558,9 @@ TEST(ForgeCoroInteropTest, AwaitSenderSchedulesOnExecutorRef) {
     std::lock_guard lock{result->mtx};
     ASSERT_TRUE(result->value.has_value());
     EXPECT_TRUE(*result->value);
+    EXPECT_EQ(before, caller);
+    EXPECT_NE(after, caller);
+    EXPECT_NE(after, before);
     EXPECT_FALSE(result->error);
     EXPECT_FALSE(result->stopped);
 }
