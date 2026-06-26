@@ -35,6 +35,8 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
 - `<forge/io/coro.hpp>`：`io_env`、`io_task`、`await_sender`、`as_sender`。
 - `<forge/io/context_await.hpp>`：bridge over existing `forge::io::context`
   operations when a backend exists.
+- `<forge/io/combinators.hpp>`：two-child `when_all_results` proof helper for
+  `io_task<io_result<...>>` composition.
 
 Umbrella policy 保持保守：`<forge/io.hpp>` 继续只暴露 OS backend `context`（在 backend
 可用时），不把纯 vocabulary 或 coroutine headers 自动拉入；`<forge/execution.hpp>`
@@ -160,14 +162,14 @@ receiver/env stop token；任一 stop source 请求都会让 coroutine 内的 `a
 
 Stage 7 当前实现选择保持保守：`read_exactly` / `write_all` 已由 Stage 3 提供，
 `read_until` 覆盖小型 line/record 场景；`io_result` 已有 value / EOF / error 三态，
-从而能保留 EOF 与 partial progress。P4124 风格的 domain-aware `when_all` 暂不实现，
-因为当前 coroutine substrate 尚未证明 sibling cancellation、partial result 保留和
-exactly-once completion 的组合语义。未来若实现，至少需要 mock two-child operations
-证明：一个 child error 时 sibling 能被请求停止；已完成 child 的 partial result 不丢失；
-EOF 与 error/stopped/value 的组合优先级明确；receiver completion 不在内部锁下运行；
-race cancellation/completion 在 TSAN/ASAN 下稳定。示例覆盖纯 memory line protocol，以及
-memory stream -> coroutine parse -> strand state update -> response write 的 runtime
-composition smoke。
+从而能保留 EOF 与 partial progress。P4124 风格 combinator 只实现
+`when_all_results(io_task<io_result<...>>, io_task<io_result<...>>, io_env)` 这一条
+two-child proof helper。它证明了：一个 child error/EOF/stopped 时 sibling 会收到 stop；
+已完成 child result 不丢失；error > EOF > stopped > value 的 aggregate priority 明确；
+receiver completion 不在 helper mutex 下运行；race cancellation/completion 有 focused
+stress test。variadic combinator、任意 sender combinator、policy-based priority 和
+owning result storage 都继续 deferred。示例覆盖纯 memory line protocol，以及 memory
+stream -> coroutine parse -> strand state update -> response write 的 runtime composition smoke。
 
 ### Stage 8：收敛与 deferred decisions
 
@@ -177,6 +179,7 @@ composition smoke。
 - Boost.Asio/Capy/Corosio adapter；
 - Linux `io_uring`；
 - true ABI-stable `any_stream`；
+- variadic or policy-based IO-aware combinators beyond `when_all_results`;
 - frame allocator propagation；
 - 将来若 WG21 adopted wording 后是否做 standard backport。
 

@@ -36,6 +36,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/stream.hpp>
 #include <forge/io/coro.hpp> // coroutine substrate proof
 #include <forge/io/context_await.hpp> // coroutine facade over context backend
+#include <forge/io/combinators.hpp> // narrow P4124-style proof helper
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -112,12 +113,27 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 `scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
 owning erased storage 或 per-operation allocation 策略。
 
-P4124 风格的 domain-aware `when_all` 当前只保留为设计方向，没有实现公共 helper。原因是
-Stage 7 还不能证明 sibling operation 的取消、partial result 保留和 exactly-once completion
-可以在当前 substrate 上同时满足。引入 EOF channel 是该方向的前置收敛：compound result
-现在可以同时表达 success、EOF、routine error 和 partial progress；真正的 combinator 还需要
-为每个 child 定义独立结果保留、sibling stop propagation 和混合 value/error/eof/stopped 的
-完成优先级。
+P4124 风格的 domain-aware combinator 目前只实现一个窄 proof helper：
+`forge::io::when_all_results(first, second, env)`。它只接受两个
+`io_task<io_result<...>>` child，并返回 sender；它不是 `std::execution::when_all`
+替代品，也不组合任意 sender。
+
+`when_all_results` 的 value payload 是
+`when_all_result<First, Second>`，其中 `first` / `second` 是各自 child
+`io_result` 的 `std::optional` slot。这样 routine error 或 EOF 触发 sibling stop 时，
+已经完成的 child result 仍可保留。aggregate priority 是：
+
+1. 任一 child `io_result` 为 error：aggregate `io_result` 为 error，使用 index 最小的
+   child error code，并保留 child slots；
+2. 否则任一 child 为 EOF：aggregate `io_result` 为 EOF，并保留 child slots；
+3. 否则任一 child stopped 或被 sibling stop 后没有产出 `io_result`：aggregate sender
+   交付 `set_stopped()`；
+4. 否则两个 child 都是 value：aggregate `io_result` 为 value。
+
+child error / EOF / stopped 都会请求 shared stop source，pending sibling 会通过
+`as_sender` 的 fused stop-token 观察到 stop。这个 helper 的 proof surface 是
+two-child、IO-result-specific；更通用的 domain-aware combinator、variadic shape、
+policy-based priority 或 owning result storage 都保持 deferred。
 
 `forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
