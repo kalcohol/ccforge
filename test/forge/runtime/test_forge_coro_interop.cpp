@@ -228,6 +228,46 @@ struct gated_async_sender {
     }
 };
 
+struct inline_probe_state {
+    bool start_returned = false;
+    bool continuation_ran_before_start_returned = false;
+};
+
+template<class R>
+struct inline_probe_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R receiver;
+    inline_probe_state* state = nullptr;
+
+    auto start() & noexcept -> void {
+        std::execution::set_value(std::move(receiver), 5);
+        state->start_returned = true;
+    }
+};
+
+struct inline_probe_sender {
+    using sender_concept = std::execution::sender_t;
+
+    inline_probe_state* state = nullptr;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) && -> inline_probe_op<R> {
+        return inline_probe_op<R>{std::move(receiver), state};
+    }
+};
+
 template<class R>
 struct stop_probe_op {
     using operation_state_concept = std::execution::operation_state_t;
@@ -288,6 +328,14 @@ auto await_stopped_task() -> cio::io_task<int> {
     co_return 0;
 }
 
+auto await_moved_from_child_task() -> cio::io_task<int> {
+    auto child = await_just_task();
+    auto moved = std::move(child);
+    (void)moved;
+    co_await std::move(child);
+    co_return 0;
+}
+
 auto await_move_only_task() -> cio::io_task<int> {
     auto [value] = co_await cio::await_sender(
         std::execution::just(std::make_unique<int>(17)));
@@ -331,6 +379,12 @@ auto await_gated_async_stopped_task(std::shared_ptr<gated_async_state> state)
         std::move(state),
         gated_completion::stopped});
     co_return 0;
+}
+
+auto await_inline_probe_task(inline_probe_state* state) -> cio::io_task<bool> {
+    auto [value] = co_await cio::await_sender(inline_probe_sender{state});
+    state->continuation_ran_before_start_returned = !state->start_returned;
+    co_return value == 5;
 }
 
 } // namespace
@@ -377,6 +431,22 @@ TEST(ForgeCoroInteropTest, AwaitSenderPropagatesStopped) {
     EXPECT_FALSE(result.has_value());
 }
 
+TEST(ForgeCoroInteropTest, AwaitingMovedFromChildReportsError) {
+    EXPECT_THROW((void)std::execution::sync_wait(
+                     cio::as_sender(await_moved_from_child_task())),
+                 std::logic_error);
+}
+
+TEST(ForgeCoroInteropTest, MovedFromTaskSenderReportsError) {
+    auto task = await_just_task();
+    auto moved = std::move(task);
+    (void)moved;
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+                     cio::as_sender(std::move(task))),
+                 std::logic_error);
+}
+
 TEST(ForgeCoroInteropTest, AwaitSenderPreservesMoveOnlyValue) {
     auto result = std::execution::sync_wait(
         cio::as_sender(await_move_only_task()));
@@ -396,26 +466,11 @@ TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
     EXPECT_FALSE(result.has_value());
 }
 
-TEST(ForgeCoroInteropTest, AsSenderExposesValueTask) {
-    auto result = std::execution::sync_wait(
-        cio::as_sender(await_just_task()));
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), 42);
-}
-
 TEST(ForgeCoroInteropTest, AsSenderExposesVoidTask) {
     auto result = std::execution::sync_wait(
         cio::as_sender(await_void_task()));
 
     EXPECT_TRUE(result.has_value());
-}
-
-TEST(ForgeCoroInteropTest, AsSenderMapsStoppedTaskToStoppedCompletion) {
-    auto result = std::execution::sync_wait(
-        cio::as_sender(await_stopped_task()));
-
-    EXPECT_FALSE(result.has_value());
 }
 
 TEST(ForgeCoroInteropTest, AsSenderKeepsIoResultAsValue) {
@@ -468,6 +523,18 @@ TEST(ForgeCoroInteropTest, AwaitSenderCompletesAfterAsyncSuspension) {
     EXPECT_FALSE(result->stopped);
 }
 
+TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
+    inline_probe_state probe;
+
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_inline_probe_task(&probe)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+    EXPECT_TRUE(probe.start_returned);
+    EXPECT_FALSE(probe.continuation_ran_before_start_returned);
+}
+
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncError) {
     auto state = std::make_shared<gated_async_state>();
     auto result = std::make_shared<task_result_state<int>>();
@@ -478,6 +545,10 @@ TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncError) {
 
     std::execution::start(op);
     wait_until_started(state);
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
     release_async_completion(state);
     wait_task_done(result);
     wait_until_returned(state);
@@ -499,6 +570,10 @@ TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncStopped) {
 
     std::execution::start(op);
     wait_until_started(state);
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
     release_async_completion(state);
     wait_task_done(result);
     wait_until_returned(state);

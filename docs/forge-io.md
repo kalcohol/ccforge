@@ -64,14 +64,16 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
 `write_some` 结果形状，但不打开 socket、pipe、file，也不依赖 `forge::io::context`。
 
 - `memory_read_stream` 从 borrowed input 读取，支持配置单次最大读量，用于稳定复现
-  short read 和 EOF。
+  short read 和 EOF；调用方必须保证输入 memory 活过 stream 使用期。
 - `memory_write_stream` 写入 owned storage，或写入 borrowed output buffer；只有容量
-  限制会造成 short write。
+  限制会造成 short write。`bytes()` 返回的是 view；owned storage 后续写入可能 reallocate，
+  因而会使之前取得的 span 失效。
 - `memory_stream` 把一个 read side 和一个 write side 合在一起，适合 request/response
-  风格的小型协议测试。
+  风格的小型协议测试；`written_bytes()` 与 `memory_write_stream::bytes()` 有相同的 span
+  invalidation 规则。
 - `scripted_read_stream` 按脚本返回 bytes、EOF、错误，或 “bytes 后错误”。错误路径仍返回
-  byte count，因此协议代码可以检查 partial progress，而不是只能走 exception-only
-  控制流。
+  `0` byte progress；需要 partial progress 时使用 “bytes 后错误”，这样返回的 byte count
+  一定对应已经写入 caller buffer 的 bytes。
 
 这些类型的直接价值是让 length-prefixed、line-oriented、frame parser 等协议层可以在
 没有 OS backend 的构建里测试 partial IO、EOF 和错误传播。它们不是网络库，不提供 TCP、
@@ -79,9 +81,9 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 
 `forge::io::stream.hpp` 在这些测试流之上定义最小同步 byte stream 边界：
 
-- `read_stream<T>`：`T&` 支持 `read_some(mutable_buffer)`，返回
+- `read_stream<T>`：`T&` 支持用 prvalue `mutable_buffer` 调用 `read_some(...)`，返回
   `io_result<std::size_t>`。
-- `write_stream<T>`：`T&` 支持 `write_some(const_buffer)`，返回
+- `write_stream<T>`：`T&` 支持用 prvalue `const_buffer` 调用 `write_some(...)`，返回
   `io_result<std::size_t>`。
 - `read_write_stream<T>`：同时满足 read/write 两侧。
 - `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
@@ -144,6 +146,8 @@ Sender interop 分两层：
   sender，completion shape 是 `set_value(T)` / `set_error(std::exception_ptr)` /
   `set_stopped()`；`io_task<void>` 使用 `set_value()`。该 bridge 是 single-use：
   connect 会 move 走 task，并由 operation-state 持有 task 与 `io_env` 副本直到完成。
+  当前 proof bridge 的 cancellation channel 是传入 `io_env.stop_token`；receiver 侧
+  stop token 不会自动与它融合。
   和 `forge::task` 一样，receiver 不应在 final-suspend completion callback 内同步销毁
   已连接的 operation-state。
 - `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine
@@ -152,9 +156,17 @@ Sender interop 分两层：
   partial progress。
 
 `await_sender(sender)` 当前在源 sender 的 completion 线程上 resume coroutine，不会自动
-hop 到 `io_env.executor`。因此经 `context_await.hpp` await backend operation 时，后续
-coroutine body 可能运行在 Linux poller thread 或 Windows IOCP completion thread 上。
-需要切回业务 executor 时，应显式 `co_await await_sender(env.executor.schedule())`。
+hop 到 `io_env.executor`。如果源 sender inline 完成，awaiter 会在 `await_suspend`
+返回后继续 coroutine，避免从 completion callback 递归 resume。经 `context_await.hpp`
+await backend operation 时，后续 coroutine body 仍可能运行在 Linux poller thread 或
+Windows IOCP completion thread 上。需要切回业务 executor 时，应显式
+`co_await await_sender(env.executor.schedule())`。
+
+`await_sender` 的 source sender 还必须满足常见 sender-awaitable 的 lifetime 约束：它的
+operation-state 不能要求 receiver completion callback 返回后才允许销毁。`await_sender`
+会在 completion 中 resume coroutine；若 coroutine 随即完成，awaiter 会随 frame 一起析构。
+这与 `forge::task` 对自定义 receiver 的 final-suspend 约束同类。需要 await 不满足该约束的
+sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安全 owner 上。
 
 `forge::io::context_await.hpp` 是 `forge::io` 下对现有
 `forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；

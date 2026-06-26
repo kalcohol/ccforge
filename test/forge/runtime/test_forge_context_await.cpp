@@ -163,6 +163,20 @@ TEST(ForgeContextAwaitTest, ReadinessAwaitableHasNoByteCount) {
     EXPECT_FALSE(error);
 }
 
+TEST(ForgeContextAwaitTest, WritableReadinessAwaitableHasNoByteCount) {
+    forge::io::context context;
+    auto pipe = make_pipe();
+
+    auto ready_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::writable(context, pipe.write.get())));
+
+    ASSERT_TRUE(ready_result.has_value());
+    auto [ready_io] = std::move(*ready_result);
+    auto [error] = ready_io;
+    EXPECT_FALSE(error);
+}
+
 TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {
     forge::io::context context;
     auto pipe = make_pipe();

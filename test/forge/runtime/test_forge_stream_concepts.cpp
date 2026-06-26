@@ -3,6 +3,7 @@
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <span>
@@ -25,9 +26,51 @@ struct read_takes_const_buffer {
         -> forge::io::io_result<std::size_t>;
 };
 
+struct read_takes_const_buffer_rvalue {
+    auto read_some(forge::io::const_buffer&&)
+        -> forge::io::io_result<std::size_t>;
+};
+
+struct read_takes_mutable_buffer_lvalue {
+    auto read_some(forge::io::mutable_buffer&)
+        -> forge::io::io_result<std::size_t>;
+};
+
 struct write_takes_mutable_buffer {
     auto write_some(forge::io::mutable_buffer)
         -> forge::io::io_result<std::size_t>;
+};
+
+struct write_takes_const_buffer_lvalue {
+    auto write_some(forge::io::const_buffer&)
+        -> forge::io::io_result<std::size_t>;
+};
+
+class write_error_after_prefix_stream {
+public:
+    [[nodiscard]] auto bytes() const noexcept -> std::span<const std::byte> {
+        return std::span<const std::byte>{storage_.data(), storage_.size()};
+    }
+
+    [[nodiscard]] auto write_some(forge::io::const_buffer input)
+        -> forge::io::io_result<std::size_t> {
+        if (first_) {
+            first_ = false;
+            const auto count = std::min<std::size_t>(2, input.size());
+            storage_.resize(count);
+            forge::io::buffer_copy(
+                forge::io::mutable_buffer{storage_.data(), storage_.size()},
+                forge::io::buffer_prefix(count, input));
+            return forge::io::io_result<std::size_t>::success(count);
+        }
+        return forge::io::io_result<std::size_t>::failure(
+            std::make_error_code(std::errc::connection_reset),
+            0);
+    }
+
+private:
+    bool first_ = true;
+    std::vector<std::byte> storage_{};
 };
 
 auto to_bytes(std::string_view text) -> std::vector<std::byte> {
@@ -92,7 +135,10 @@ static_assert(!forge::io::read_stream<not_a_stream>);
 static_assert(!forge::io::write_stream<not_a_stream>);
 static_assert(!forge::io::read_stream<wrong_read_result>);
 static_assert(!forge::io::read_stream<read_takes_const_buffer>);
+static_assert(!forge::io::read_stream<read_takes_const_buffer_rvalue>);
+static_assert(!forge::io::read_stream<read_takes_mutable_buffer_lvalue>);
 static_assert(!forge::io::write_stream<write_takes_mutable_buffer>);
+static_assert(!forge::io::write_stream<write_takes_const_buffer_lvalue>);
 static_assert(!forge::io::write_stream<forge::io::memory_read_stream>);
 static_assert(!forge::io::read_stream<forge::io::memory_write_stream>);
 
@@ -208,6 +254,18 @@ TEST(ForgeStreamConceptsTest, WriteAllReturnsPartialCountOnCapacity) {
         forge::io::const_buffer{"abcd", 4});
 
     EXPECT_EQ(error, std::make_error_code(std::errc::io_error));
+    EXPECT_EQ(count, 2u);
+    EXPECT_EQ(to_string(stream.bytes()), "ab");
+}
+
+TEST(ForgeStreamConceptsTest, WriteAllPropagatesStreamErrorWithProgress) {
+    write_error_after_prefix_stream stream;
+
+    auto [error, count] = forge::io::write_all(
+        stream,
+        forge::io::const_buffer{"abcd", 4});
+
+    EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
     EXPECT_EQ(count, 2u);
     EXPECT_EQ(to_string(stream.bytes()), "ab");
 }

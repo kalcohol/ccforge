@@ -25,6 +25,7 @@
 #include <forge/any_scheduler.hpp>
 #include <forge/resource_policy.hpp>
 
+#include <atomic>
 #include <concepts>
 #include <exception>
 #include <execution>
@@ -378,13 +379,16 @@ public:
 
     template<class Promise>
     auto await_suspend(std::coroutine_handle<Promise> continuation, const io_env* env)
-        -> void {
+        -> bool {
         env_ = env;
         continuation_ = continuation;
         ::new (op_storage()) op_t{
             std::execution::connect(std::move(sender_), receiver{this})};
         op_constructed_ = true;
         std::execution::start(*op_ptr());
+        return state_.exchange(
+            completion_state::suspended,
+            std::memory_order_acq_rel) != completion_state::completed;
     }
 
     auto await_resume() {
@@ -430,7 +434,7 @@ private:
             } catch (...) {
                 self->exception_ = std::current_exception();
             }
-            self->continuation_.resume();
+            self->complete();
         }
 
         template<class Error>
@@ -440,12 +444,12 @@ private:
             } else {
                 self->exception_ = std::make_exception_ptr(static_cast<Error&&>(error));
             }
-            self->continuation_.resume();
+            self->complete();
         }
 
         auto set_stopped() && noexcept -> void {
             self->stopped_ = true;
-            self->continuation_.resume();
+            self->complete();
         }
 
         [[nodiscard]] auto get_env() const noexcept -> await_sender_receiver_env {
@@ -475,6 +479,20 @@ private:
         }
     }
 
+    enum class completion_state {
+        starting,
+        suspended,
+        completed
+    };
+
+    auto complete() noexcept -> void {
+        if (state_.exchange(
+                completion_state::completed,
+                std::memory_order_acq_rel) == completion_state::suspended) {
+            continuation_.resume();
+        }
+    }
+
     Sender sender_;
     const io_env* env_ = nullptr;
     std::coroutine_handle<> continuation_{};
@@ -483,6 +501,7 @@ private:
     bool stopped_ = false;
     alignas(op_t) unsigned char op_buffer_[sizeof(op_t)];
     bool op_constructed_ = false;
+    std::atomic<completion_state> state_{completion_state::starting};
 };
 
 } // namespace __coro_detail
@@ -546,19 +565,10 @@ public:
         return static_cast<bool>(coro_);
     }
 
-    auto __set_completion(
-        void* object,
-        void (*complete)(void*) noexcept) noexcept -> void {
-        coro_.promise().completion_object = object;
-        coro_.promise().complete = complete;
-    }
-
-    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
-        -> void {
-        coro_.promise().continuation = continuation;
-    }
-
     [[nodiscard]] auto result() && -> T {
+        if (!coro_) {
+            throw std::logic_error{"forge::io::io_task is empty"};
+        }
         if (!done()) {
             throw std::logic_error{"forge::io::io_task is not done"};
         }
@@ -588,6 +598,22 @@ private:
         }
         coro_.promise().env = &env;
         coro_.resume();
+    }
+
+    auto __set_completion(
+        void* object,
+        void (*complete)(void*) noexcept) noexcept -> void {
+        if (coro_) {
+            coro_.promise().completion_object = object;
+            coro_.promise().complete = complete;
+        }
+    }
+
+    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
+        -> void {
+        if (coro_) {
+            coro_.promise().continuation = continuation;
+        }
     }
 
     std::coroutine_handle<promise_type> coro_{};
@@ -645,19 +671,10 @@ public:
         return static_cast<bool>(coro_);
     }
 
-    auto __set_completion(
-        void* object,
-        void (*complete)(void*) noexcept) noexcept -> void {
-        coro_.promise().completion_object = object;
-        coro_.promise().complete = complete;
-    }
-
-    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
-        -> void {
-        coro_.promise().continuation = continuation;
-    }
-
     auto result() && -> void {
+        if (!coro_) {
+            throw std::logic_error{"forge::io::io_task is empty"};
+        }
         if (!done()) {
             throw std::logic_error{"forge::io::io_task is not done"};
         }
@@ -685,6 +702,22 @@ private:
         }
         coro_.promise().env = &env;
         coro_.resume();
+    }
+
+    auto __set_completion(
+        void* object,
+        void (*complete)(void*) noexcept) noexcept -> void {
+        if (coro_) {
+            coro_.promise().completion_object = object;
+            coro_.promise().complete = complete;
+        }
+    }
+
+    auto __set_continuation(std::coroutine_handle<> continuation) noexcept
+        -> void {
+        if (coro_) {
+            coro_.promise().continuation = continuation;
+        }
     }
 
     std::coroutine_handle<promise_type> coro_{};
@@ -827,7 +860,7 @@ public:
 private:
     template<class Receiver>
     auto connect_impl(Receiver receiver) -> io_task_sender_op<T, Receiver> {
-        if (!task_) {
+        if (!task_ || !*task_) {
             throw std::logic_error{
                 "forge::io::io_task sender is empty"};
         }

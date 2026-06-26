@@ -125,9 +125,13 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   交给 sender operation-state 持有到完成。`io_env` 是 borrowed environment：
   `std::inplace_stop_source`、scheduler/runtime 和 memory resource 必须活过对应 operation。
   `await_sender(sender)` 会把 `io_env` 的 stop token 和 scheduler 暴露给被 await 的 sender，
-  并在源 sender 的 completion 线程上 resume coroutine；需要 executor hop 时应显式 await
-  `env.executor.schedule()`。Stopped sender 目前通过 `sender_stopped` 在 task 内传播，再由
-  `as_sender` 映射回 stopped channel。
+  并在源 sender 的 completion 线程上 resume coroutine；inline completion 会在
+  `await_suspend` 返回后继续，避免递归 resume。需要 executor hop 时应显式 await
+  `env.executor.schedule()`。`as_sender(io_task<T>, env)` 当前只使用 `io_env.stop_token`
+  作为 cancellation channel，不会自动融合 receiver 侧 stop token。Stopped sender 目前通过
+  `sender_stopped` 在 task 内传播，再由 `as_sender` 映射回 stopped channel。被
+  `await_sender` await 的 source sender 必须允许其 operation-state 在 receiver completion
+  callback 内被销毁；否则需要先用 owning adapter 或 executor hop 包装。
 
 ## V1 cancellation 边界
 

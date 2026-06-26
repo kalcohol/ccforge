@@ -307,13 +307,10 @@ public:
             std::move(error));
     }
 
-    [[nodiscard]] static auto error(
-        std::error_code error,
-        std::size_t byte_count = 0) -> scripted_read_step {
+    [[nodiscard]] static auto error(std::error_code error) -> scripted_read_step {
         scripted_read_step step;
         step.kind_ = kind::error;
         step.error_ = std::move(error);
-        step.byte_count_ = byte_count;
         return step;
     }
 
@@ -334,7 +331,6 @@ private:
     std::vector<std::byte> bytes_{};
     std::size_t position_ = 0;
     std::error_code error_{};
-    std::size_t byte_count_ = 0;
     bool completes_with_error_ = false;
 };
 
@@ -375,9 +371,8 @@ public:
 
         case scripted_read_step::kind::error: {
             const auto error = step.error_;
-            const auto byte_count = std::min(step.byte_count_, output.size());
             steps_.pop_front();
-            return io_result<std::size_t>::failure(error, byte_count);
+            return io_result<std::size_t>::failure(error, 0);
         }
 
         case scripted_read_step::kind::bytes:

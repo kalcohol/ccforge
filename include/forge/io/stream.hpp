@@ -38,17 +38,20 @@ namespace forge::io {
 
 template<class Stream>
 concept read_stream =
-    requires(Stream& stream, mutable_buffer output) {
-        { stream.read_some(output) } -> std::same_as<io_result<std::size_t>>;
+    requires(Stream& stream) {
+        { stream.read_some(mutable_buffer{}) } -> std::same_as<io_result<std::size_t>>;
     } &&
     (!requires(Stream& stream, const_buffer input) {
         stream.read_some(input);
+    }) &&
+    (!requires(Stream& stream) {
+        stream.read_some(const_buffer{});
     });
 
 template<class Stream>
 concept write_stream =
-    requires(Stream& stream, const_buffer input) {
-        { stream.write_some(input) } -> std::same_as<io_result<std::size_t>>;
+    requires(Stream& stream) {
+        { stream.write_some(const_buffer{}) } -> std::same_as<io_result<std::size_t>>;
     };
 
 template<class Stream>
