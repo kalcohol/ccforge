@@ -32,6 +32,7 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -93,6 +94,42 @@ class task_awaitable;
 
 template<class T, class Receiver>
 class io_task_sender_op;
+
+struct request_fused_stop {
+    std::inplace_stop_source* source = nullptr;
+
+    auto operator()() const noexcept -> void {
+        if (source != nullptr) {
+            source->request_stop();
+        }
+    }
+};
+
+template<class Token, bool = std::stoppable_token_for<Token, request_fused_stop>>
+struct optional_stop_callback {
+    auto install(Token token, std::inplace_stop_source& source) -> void {
+        if (token.stop_requested()) {
+            source.request_stop();
+        }
+    }
+};
+
+template<class Token>
+struct optional_stop_callback<Token, true> {
+    using callback_t = std::stop_callback_for_t<Token, request_fused_stop>;
+
+    auto install(Token token, std::inplace_stop_source& source) -> void {
+        if (token.stop_requested()) {
+            source.request_stop();
+            return;
+        }
+        if (token.stop_possible()) {
+            callback.emplace(std::move(token), request_fused_stop{&source});
+        }
+    }
+
+    std::optional<callback_t> callback;
+};
 
 template<class... Ts>
 struct type_list {};
@@ -771,10 +808,14 @@ template<class T, class Receiver>
 class io_task_sender_op {
 public:
     using operation_state_concept = std::execution::operation_state_t;
+    using receiver_env_t = std::execution::env_of_t<Receiver>;
+    using receiver_stop_token_t = decltype(
+        std::execution::get_stop_token(std::declval<receiver_env_t>()));
 
     io_task_sender_op(io_task<T> task, io_env env, Receiver receiver)
-        : task_(std::move(task))
-        , env_(std::move(env))
+        : env_(std::move(env))
+        , effective_env_(env_)
+        , task_(std::move(task))
         , receiver_(std::move(receiver))
     {}
 
@@ -785,8 +826,15 @@ public:
 
     auto start() & noexcept -> void {
         try {
+            effective_env_ = env_;
+            env_stop_.install(env_.stop_token, fused_stop_);
+            receiver_stop_.install(
+                std::execution::get_stop_token(
+                    std::execution::get_env(receiver_)),
+                fused_stop_);
+            effective_env_.stop_token = fused_stop_.get_token();
             task_.__set_completion(this, &complete_callback);
-            task_.__start_borrowed(env_);
+            task_.__start_borrowed(effective_env_);
         } catch (...) {
             std::execution::set_error(std::move(receiver_), std::current_exception());
         }
@@ -813,8 +861,12 @@ private:
         }
     }
 
-    io_task<T> task_;
     io_env env_;
+    io_env effective_env_;
+    std::inplace_stop_source fused_stop_{};
+    optional_stop_callback<std::inplace_stop_token> env_stop_;
+    optional_stop_callback<receiver_stop_token_t> receiver_stop_;
+    io_task<T> task_;
     Receiver receiver_;
 };
 

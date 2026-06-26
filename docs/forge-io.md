@@ -147,8 +147,8 @@ Sender interop 分两层：
   sender，completion shape 是 `set_value(T)` / `set_error(std::exception_ptr)` /
   `set_stopped()`；`io_task<void>` 使用 `set_value()`。该 bridge 是 single-use：
   connect 会 move 走 task，并由 operation-state 持有 task 与 `io_env` 副本直到完成。
-  当前 proof bridge 的 cancellation channel 是传入 `io_env.stop_token`；receiver 侧
-  stop token 不会自动与它融合。
+  operation-state 会把传入的 `io_env.stop_token` 与连接方 receiver/env stop token
+  融合；任一 stop source 请求都会让 coroutine 内的 `await_sender` 观察到 stopped。
   和 `forge::task` 一样，receiver 不应在 final-suspend completion callback 内同步销毁
   已连接的 operation-state。
 - `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine

@@ -133,8 +133,9 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 start 不作为 public API。`await_sender` 当前 inline/source-thread resume；它不自动 hop 回
 `io_env.executor`，但 inline completion 会在 `await_suspend` 返回后继续，避免递归 resume。
 需要 hop 时由 coroutine body 显式 await `env.executor.schedule()`。Stage-5 proof bridge
-当前只把 `io_env.stop_token` 暴露给 awaited sender；`as_sender(io_task<T>, env)` 不融合
-receiver 侧 stop token，这一点保持为已记录限制。
+会在 `as_sender(io_task<T>, env)` 的 operation-state 内融合 `io_env.stop_token` 与
+receiver/env stop token；任一 stop source 请求都会让 coroutine 内的 `await_sender`
+观察到 stopped。
 
 ### Stage 6：现有 `forge::io` coroutine façade
 

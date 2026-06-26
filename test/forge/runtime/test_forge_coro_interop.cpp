@@ -8,6 +8,7 @@
 #include <exception>
 #include <condition_variable>
 #include <execution>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -23,6 +24,7 @@
 namespace {
 
 namespace cio = forge::io;
+using namespace std::chrono_literals;
 
 struct interop_marker_error {};
 
@@ -75,7 +77,18 @@ template<class T>
 struct task_result_receiver {
     using receiver_concept = std::execution::receiver_t;
 
+    struct env {
+        std::inplace_stop_source* source = nullptr;
+
+        friend auto tag_invoke(
+            std::execution::get_stop_token_t,
+            const env& self) noexcept -> std::inplace_stop_token {
+            return self.source ? self.source->get_token() : std::inplace_stop_token{};
+        }
+    };
+
     std::shared_ptr<task_result_state<T>> state;
+    std::inplace_stop_source* stop_source = nullptr;
 
     auto set_value(T value) && noexcept -> void {
         {
@@ -108,6 +121,10 @@ struct task_result_receiver {
         }
         state->cv.notify_all();
     }
+
+    [[nodiscard]] auto get_env() const noexcept -> env {
+        return env{stop_source};
+    }
 };
 
 template<class T>
@@ -116,6 +133,118 @@ auto wait_task_done(const std::shared_ptr<task_result_state<T>>& state)
     std::unique_lock lock{state->mtx};
     state->cv.wait(lock, [&] { return state->done; });
 }
+
+template<class T>
+auto wait_task_done_for(const std::shared_ptr<task_result_state<T>>& state,
+                        std::chrono::milliseconds timeout) -> bool {
+    std::unique_lock lock{state->mtx};
+    return state->cv.wait_for(lock, timeout, [&] { return state->done; });
+}
+
+struct stop_wait_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool started = false;
+    bool completed = false;
+    int stop_attempts = 0;
+};
+
+auto wait_stop_wait_started(const std::shared_ptr<stop_wait_state>& state)
+    -> void {
+    std::unique_lock lock{state->mtx};
+    state->cv.wait(lock, [&] { return state->started; });
+}
+
+template<class R>
+struct stop_wait_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    struct stop_callback {
+        stop_wait_op* self = nullptr;
+
+        void operator()() noexcept {
+            self->complete_stopped();
+        }
+    };
+
+    using env_t = std::execution::env_of_t<R>;
+    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
+
+    R receiver;
+    std::shared_ptr<stop_wait_state> state;
+    std::optional<callback_t> callback;
+    std::atomic<bool> done{false};
+
+    stop_wait_op(R rcvr, std::shared_ptr<stop_wait_state> st)
+        : receiver(std::move(rcvr))
+        , state(std::move(st))
+    {}
+
+    stop_wait_op(stop_wait_op&&) = delete;
+    auto operator=(stop_wait_op&&) -> stop_wait_op& = delete;
+    stop_wait_op(const stop_wait_op&) = delete;
+    auto operator=(const stop_wait_op&) -> stop_wait_op& = delete;
+
+    auto start() & noexcept -> void {
+        auto token = std::execution::get_stop_token(
+            std::execution::get_env(receiver));
+        {
+            std::lock_guard lock{state->mtx};
+            state->started = true;
+        }
+        state->cv.notify_all();
+
+        if (token.stop_requested()) {
+            complete_stopped();
+            return;
+        }
+        if (token.stop_possible()) {
+            callback.emplace(token, stop_callback{this});
+        }
+    }
+
+    auto complete_stopped() noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->stop_attempts;
+        }
+        if (done.exchange(true, std::memory_order_acq_rel)) {
+            state->cv.notify_all();
+            return;
+        }
+        {
+            std::lock_guard lock{state->mtx};
+            state->completed = true;
+        }
+        state->cv.notify_all();
+        callback.reset();
+        std::execution::set_stopped(std::move(receiver));
+    }
+};
+
+struct stop_wait_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<stop_wait_state> state;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) && -> stop_wait_op<R> {
+        return stop_wait_op<R>{std::move(receiver), std::move(state)};
+    }
+};
 
 template<class R>
 struct gated_async_delivery {
@@ -381,6 +510,12 @@ auto await_gated_async_stopped_task(std::shared_ptr<gated_async_state> state)
     co_return 0;
 }
 
+auto await_stop_wait_task(std::shared_ptr<stop_wait_state> state)
+    -> cio::io_task<int> {
+    auto [value] = co_await cio::await_sender(stop_wait_sender{std::move(state)});
+    co_return value;
+}
+
 auto await_inline_probe_task(inline_probe_state* state) -> cio::io_task<bool> {
     auto [value] = co_await cio::await_sender(inline_probe_sender{state});
     state->continuation_ran_before_start_returned = !state->start_returned;
@@ -464,6 +599,118 @@ TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
         cio::as_sender(await_stop_probe_task(), env));
 
     EXPECT_FALSE(result.has_value());
+}
+
+TEST(ForgeCoroInteropTest, AsSenderPropagatesReceiverStopToken) {
+    auto wait_state = std::make_shared<stop_wait_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    std::inplace_stop_source receiver_stop;
+    auto sender = cio::as_sender(await_stop_wait_task(wait_state));
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<int>{result, &receiver_stop});
+
+    std::execution::start(op);
+    wait_stop_wait_started(wait_state);
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
+
+    receiver_stop.request_stop();
+
+    ASSERT_TRUE(wait_task_done_for(result, 500ms));
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_TRUE(result->stopped);
+        EXPECT_FALSE(result->value.has_value());
+        EXPECT_FALSE(result->error);
+    }
+    {
+        std::lock_guard lock{wait_state->mtx};
+        EXPECT_TRUE(wait_state->completed);
+        EXPECT_EQ(wait_state->stop_attempts, 1);
+    }
+}
+
+TEST(ForgeCoroInteropTest, AsSenderStillPropagatesIoEnvStopTokenAfterStart) {
+    auto wait_state = std::make_shared<stop_wait_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    std::inplace_stop_source env_stop;
+    cio::io_env env;
+    env.stop_token = env_stop.get_token();
+    auto sender = cio::as_sender(await_stop_wait_task(wait_state), env);
+    auto op = std::execution::connect(
+        std::move(sender),
+        task_result_receiver<int>{result});
+
+    std::execution::start(op);
+    wait_stop_wait_started(wait_state);
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
+
+    env_stop.request_stop();
+
+    ASSERT_TRUE(wait_task_done_for(result, 500ms));
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_TRUE(result->stopped);
+        EXPECT_FALSE(result->value.has_value());
+        EXPECT_FALSE(result->error);
+    }
+    {
+        std::lock_guard lock{wait_state->mtx};
+        EXPECT_TRUE(wait_state->completed);
+        EXPECT_EQ(wait_state->stop_attempts, 1);
+    }
+}
+
+TEST(ForgeCoroInteropTest, AsSenderCompletesOnceWhenIoEnvAndReceiverStopRace) {
+    constexpr int iterations = 64;
+    for (int i = 0; i < iterations; ++i) {
+        auto wait_state = std::make_shared<stop_wait_state>();
+        auto result = std::make_shared<task_result_state<int>>();
+        std::inplace_stop_source env_stop;
+        std::inplace_stop_source receiver_stop;
+        cio::io_env env;
+        env.stop_token = env_stop.get_token();
+        auto sender = cio::as_sender(await_stop_wait_task(wait_state), env);
+        auto op = std::execution::connect(
+            std::move(sender),
+            task_result_receiver<int>{result, &receiver_stop});
+        std::atomic<bool> go{false};
+
+        std::execution::start(op);
+        wait_stop_wait_started(wait_state);
+
+        std::thread env_thread([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            env_stop.request_stop();
+        });
+        std::thread receiver_thread([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            receiver_stop.request_stop();
+        });
+
+        go.store(true, std::memory_order_release);
+        env_thread.join();
+        receiver_thread.join();
+
+        ASSERT_TRUE(wait_task_done_for(result, 500ms));
+        {
+            std::lock_guard lock{result->mtx};
+            EXPECT_TRUE(result->stopped);
+            EXPECT_FALSE(result->value.has_value());
+            EXPECT_FALSE(result->error);
+        }
+        {
+            std::lock_guard lock{wait_state->mtx};
+            EXPECT_TRUE(wait_state->completed);
+            EXPECT_EQ(wait_state->stop_attempts, 1);
+        }
+    }
 }
 
 TEST(ForgeCoroInteropTest, AsSenderExposesVoidTask) {
