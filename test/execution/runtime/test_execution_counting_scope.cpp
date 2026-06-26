@@ -846,7 +846,100 @@ TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
     EXPECT_TRUE(completed_by_downstream);
     EXPECT_TRUE(sync_wait_returned.load(std::memory_order_acquire));
     EXPECT_TRUE(sync_wait_stopped.load(std::memory_order_acquire));
+    {
+        std::lock_guard lk{state->mtx};
+        EXPECT_EQ(state->stop_completion_attempts, 1);
+    }
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapFusesScopeStopAfterStart) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<manual_state>();
+
+    std::atomic<bool> sync_wait_returned{false};
+    std::atomic<bool> sync_wait_stopped{false};
+    std::thread waiter([&] {
+        auto result = std::execution::sync_wait(
+            token.wrap(manual_sender{state}));
+        sync_wait_stopped.store(!result.has_value(), std::memory_order_release);
+        sync_wait_returned.store(true, std::memory_order_release);
+    });
+
+    if (!wait_until_started(state)) {
+        scope.request_stop();
+        waiter.join();
+        FAIL() << "wrapped sender did not start";
+    }
+
+    EXPECT_TRUE(scope.request_stop());
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    EXPECT_TRUE(wait_until_completed(state));
+
+    waiter.join();
+
+    EXPECT_TRUE(sync_wait_returned.load(std::memory_order_acquire));
+    EXPECT_TRUE(sync_wait_stopped.load(std::memory_order_acquire));
+    {
+        std::lock_guard lk{state->mtx};
+        EXPECT_EQ(state->stop_completion_attempts, 1);
+    }
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
+    constexpr int iterations = 64;
+    for (int i = 0; i < iterations; ++i) {
+        std::execution::counting_scope scope;
+        auto token = scope.get_token();
+        std::inplace_stop_source downstream_stop;
+        auto env = std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+        auto state = std::make_shared<manual_state>();
+        std::atomic<bool> sync_wait_stopped{false};
+        std::atomic<bool> go{false};
+
+        std::thread waiter([&] {
+            auto result = std::execution::sync_wait(
+                std::execution::write_env(
+                    token.wrap(manual_sender{state}),
+                    env));
+            sync_wait_stopped.store(!result.has_value(), std::memory_order_release);
+        });
+
+        if (!wait_until_started(state)) {
+            scope.request_stop();
+            downstream_stop.request_stop();
+            waiter.join();
+            FAIL() << "wrapped sender did not start";
+        }
+
+        std::thread scope_stop([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            scope.request_stop();
+        });
+        std::thread receiver_stop([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            downstream_stop.request_stop();
+        });
+
+        go.store(true, std::memory_order_release);
+        scope_stop.join();
+        receiver_stop.join();
+
+        EXPECT_TRUE(wait_until_completed(state));
+        waiter.join();
+
+        EXPECT_TRUE(sync_wait_stopped.load(std::memory_order_acquire));
+        {
+            std::lock_guard lk{state->mtx};
+            EXPECT_TRUE(state->stop_requested);
+            EXPECT_EQ(state->stop_completion_attempts, 1);
+        }
+        EXPECT_EQ(scope.count(), 0u);
+    }
 }
 
 TEST(CountingScopeTest, WrapConnectFailureCompletesErrorInsteadOfTerminating) {
