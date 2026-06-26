@@ -134,6 +134,8 @@ child error / EOF / stopped 都会请求 shared stop source，pending sibling �
 `as_sender` 的 fused stop-token 观察到 stop。这个 helper 的 proof surface 是
 two-child、IO-result-specific；更通用的 domain-aware combinator、variadic shape、
 policy-based priority 或 owning result storage 都保持 deferred。
+和 `as_sender` 一样，consumer receiver 不应在 completion callback 内同步销毁已连接的
+`when_all_results` operation-state。
 
 `forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
