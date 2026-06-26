@@ -47,11 +47,12 @@ backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设�
 这些提案仍在移动中。每个实现 stage 开始前必须重新检查官方 WG21 paper index，而不是只依赖
 本文或外部文章。
 
-截至 2026-06-25，官方 WG21 2026 paper index 的 2026-05 mailing 显示：
+截至 2026-06-26，官方 WG21 2026 paper index 的 2026-05 mailing 显示：
 
 | Paper | Facility | Status in index | Useful Forge capability | Planned stage | Why not `std` in Forge |
 | --- | --- | --- | --- | --- | --- |
 | P4003R3 | Minimal coroutine execution model: `IoAwaitable`, `io_env`, executor shape | Ask, LEWG | 实验性 coroutine execution substrate、env propagation、executor adaptation | Stage 4 | 尚非 adopted wording；Forge extension 不向 `namespace std` 加名 |
+| P4007R3 | Open issues in `std::execution::task` | Info, All of WG21 | 审计 `io_task`/`as_sender` 的 ownership、completion 和 error/stopped 边界 | Stage 5 | 讨论 `std::execution::task` 的开放问题，不定义 Forge 可注入的标准 surface |
 | P4088R1 | Coroutine mechanics and rationale | Info, All of WG21 | 设计依据：type erasure、frame state、separate compilation 的取舍 | Stage 0/4 | rationale paper，不定义可 backport 的标准 surface |
 | P4092R1 | Consuming senders from coroutine-native code | Info, All of WG21 | `await_sender` 类 bridge，与现有 `std::execution`/Forge runtime 互通 | Stage 5 | 仍是 bridge sketch；不改变 `<execution>` backport 行为 |
 | P4093R1 | Producing senders from coroutine-native code | Info, All of WG21 | `as_sender` 类 bridge，并明确 compound IO result 的通道边界 | Stage 5 | compound result 映射策略未标准化，不能静默进 `std` |
@@ -59,6 +60,9 @@ backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设�
 | P4123R0 | Cost of senders for coroutine IO | Info, All of WG21 | 性能风险清单，帮助决定哪些 bridge 不应进入 hot path | Stage 5/8 | 证据/rationale，不是 API wording |
 | P4124R0 | IO-aware combinators and compound results | Info, All of WG21 | `io_result` 与 domain-aware helper/combinator 设计约束 | Stage 1/7 | helper 语义仍在讨论，先做 `forge::` 实验 |
 | P4125R1 | Production field report | Info, All of WG21 | 风险/收益参考，不作为 Forge API 依据 | Stage 0/8 | field report，不定义接口 |
+| P4126R1 | Universal continuation model | Info, All of WG21 | 检查 coroutine final continuation、inline completion 和 resume 位置的设计风险 | Stage 5 | continuation model 仍是设计资料，不是稳定 library wording |
+| P4127R0 | Coroutine frame allocator timing problem | Info, All of WG21 | 解释为什么 `io_env::memory` 只传播 pointer，不承诺接管 coroutine frame allocation | Stage 4/8 | frame allocation timing 尚无可实现的标准 contract |
+| P4166R0 | Frame-visible coroutines for senders | Info, All of WG21 | 长期方向：compound result preservation、frame visibility 与 sender zero-allocation 取舍 | Deferred | 需要语言能力，不是 header-only library 可以 backport 的设施 |
 | P4172R1 | IoAwaitable design rationale | Info, All of WG21 | env propagation、executor_ref、frame allocator decision record | Stage 4 | companion rationale，不是稳定标准 header |
 | P4178R0 | Async abstraction trade-offs | Info, All of WG21 | 用于 review sender/coroutine 边界是否合理 | Stage 5/8 | trade-off paper，不定义可注入标准名 |
 
