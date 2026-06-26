@@ -9,7 +9,6 @@ option(FORGE_TEST_ENABLE_FORGE "Build Forge extension tests" ON)
 option(FORGE_TEST_ENABLE_FORGE_RUNTIME "Build Forge runtime extension tests" ON)
 option(FORGE_TEST_ENABLE_FORGE_RESOURCE "Build Forge resource policy extension tests" ON)
 option(FORGE_TEST_ENABLE_FORGE_IO "Build Forge IO extension tests when available" ON)
-option(FORGE_TEST_ENABLE_FORGE_ACCEL "Build Forge accelerator extension tests when available" ON)
 option(FORGE_TEST_ENABLE_FORGE_ERASURE "Build Forge erasure extension tests" ON)
 option(FORGE_TEST_ENABLE_NATIVE_HANDOFF "Build Forge native handoff tests" ON)
 
@@ -21,8 +20,6 @@ if(FORGE_TEST_ENABLE_FORGE
             OR FORGE_TEST_ENABLE_FORGE_IO
             OR (FORGE_HAS_FORGE_IO_BACKEND
                 AND FORGE_TEST_ENABLE_FORGE_IO)
-            OR (FORGE_HAS_FORGE_ACCEL_BACKEND
-                AND FORGE_TEST_ENABLE_FORGE_ACCEL)
             OR FORGE_TEST_ENABLE_FORGE_ERASURE))
     set(FORGE_TEST_ENABLE_ANY_FORGE ON)
 endif()

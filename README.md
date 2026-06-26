@@ -11,8 +11,8 @@ The project has two layers:
 - `backport/`: standard-header backports such as `<execution>`, `<simd>`,
   `<mdspan>`, `<linalg>`, `<memory>`, and `<utility>`.
 - `include/forge/`: non-standard utilities in `namespace forge`, including
-  schedulers, scopes, channels, IO/accel proofs, coroutine tasks, and type
-  erasure helpers.
+  schedulers, scopes, channels, IO proofs, coroutine tasks, and type erasure
+  helpers.
 
 `forge.cmake` probes the consumer toolchain at configure time. Complete native
 support stands aside, partial native support stands aside with a warning, and
@@ -30,7 +30,6 @@ missing native support injects Forge's backport headers.
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer: pool, scope, channel, strand, timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP proof backends |
-| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 For exact behavior and caveats, see the [documentation index](docs/README.md).
 
@@ -139,7 +138,6 @@ and install-package verification.
 - [backport notes](docs/backports/)
 - [`forge::` utilities](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
-- [`forge::accel`](docs/forge-accel.md)
 - [native handoff](docs/native-handoff.md)
 - [testing and verification](docs/testing.md)
 - [roadmap](ROADMAP.md)

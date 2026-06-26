@@ -11,7 +11,7 @@ backport と、構造化された非同期システムを作るための小さ�
 - `backport/`: `<execution>`、`<simd>`、`<mdspan>`、`<linalg>`、
   `<memory>`、`<utility>` など、標準ヘッダー名で公開される backport。
 - `include/forge/`: `namespace forge` に置かれる非標準の拡張。scheduler、
-  scope、channel、strand、IO/accel proof、coroutine task、型消去 helper
+  scope、channel、strand、IO proof、coroutine task、型消去 helper
   などを含みます。
 
 `forge.cmake` は consumer の configure 時に、compiler、standard library、
@@ -31,7 +31,6 @@ backport ヘッダーを注入します。
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backends |
-| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
 
@@ -137,7 +136,6 @@ scripts/verify-install-package.sh
 - [backport notes](docs/backports/)
 - [`forge::` utilities](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
-- [`forge::accel`](docs/forge-accel.md)
 - [native handoff](docs/native-handoff.md)
 - [testing and verification](docs/testing.md)
 - [roadmap](ROADMAP.md)

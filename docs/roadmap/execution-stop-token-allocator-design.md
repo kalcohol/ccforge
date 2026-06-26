@@ -42,7 +42,7 @@ Forge-only allocator 参数塞进一个未来应当无感让位的类型。
 
 - API compatibility：好，只要放在 `forge::detail` 或本地 operation-state 实现里即可。
 - Template/code-size 影响：中等。runtime 路径会多实例化一个小 wrapper，但 public sender signatures 不变。
-- Runtime allocation overhead：对 Forge runtime 路径最好。Channel、timer、IO、accel 以及未来
+- Runtime allocation overhead：对 Forge runtime 路径最好。Channel、timer、IO 以及未来
   `spawn_future` consumer path 都可走已有 resource/allocator。
 - Native-handoff 影响：好。标准形状代码仍看见 `std::any_stop_token`；Forge-only resource control 是实现细节。
 - 使用路径：先用于 Forge runtime primitives，再在 allocator channel 可用时考虑

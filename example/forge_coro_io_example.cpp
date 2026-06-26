@@ -33,7 +33,7 @@
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
-namespace cio = forge::io::experimental;
+namespace cio = forge::io;
 
 auto observe_env(std::pmr::memory_resource* expected) -> cio::io_task<bool> {
     const auto& env = co_await cio::this_io_env();

@@ -1,7 +1,8 @@
 # Forge 稳定性基线
 
-这份文档记录 `include/forge/` 工作的当前交付基线，以及判断是否继续扩展 runtime/IO/accel
-工作的自循环规则。它是维护指南，不承诺每个 optional proof backend 都达到 production complete。
+这份文档记录 `include/forge/` 工作的当前交付基线，以及判断是否继续扩展 runtime/IO
+工作的自循环规则。它是维护指南，不承诺每个 optional proof backend 都达到 production
+complete。
 
 ## 范围
 
@@ -9,13 +10,12 @@
 
 - C++ backport library，加可选 `forge::` runtime support；
 - ownership、cancellation、drain 和 typed-error 边界清晰；
-- IO 和 accelerator-shaped command systems 有 portable proof surface；
+- IO 和 coroutine-native byte stream facilities 有 portable proof surface；
 - examples 能教会用户安全组合。
 
 稳定目标不是：
 
 - 完整 networking framework；
-- CUDA/HIP/SYCL runtime；
 - tensor 或 model-serving framework；
 - NVIDIA stdexec/exec 克隆；
 - 因为 `forge::` 工作而顺手改变标准 backport behavior。
@@ -46,9 +46,8 @@ Platform/proof surfaces：
 
 - `forge::io` Linux epoll/eventfd readiness backend
 - `forge::io` Windows IOCP proof backend
-- `forge::accel` runtime vocabulary、portable mock backend 和 CPU reference backend
+- coroutine-native byte IO helpers under `forge::io`
 - `forge::io` opt-in typed-error variants
-- `forge::accel` opt-in typed-error variants
 
 ## Verification floor（验证基线）
 
@@ -70,7 +69,7 @@ Windows SSH/matrix wrapper，后者再调用 Windows-native PowerShell entrypoin
 - TSAN forge/execution subset：全部测试通过；
 - ASAN/UBSAN forge/execution subset：全部测试通过；
 - install package consumer smoke：通过；
-- Windows/MSVC smoke：通过，包含 IOCP 和 accel gate checks。
+- Windows/MSVC smoke：通过，包含 IOCP gate checks。
 
 不要把这些总数写成硬编码 policy。测试总数预期会增长。优先使用命名 critical tests 和
 feature-gate registration checks。
@@ -86,10 +85,6 @@ Optional features 通过 registration shape 验证行为：
   - `ON` 且无 backend：configure 应失败。
 - `FORGE_ENABLE_FORGE_IO=OFF`
   - 注册零 IO backend tests/examples。
-- `FORGE_ENABLE_FORGE_ACCEL=AUTO` 或 `ON`
-  - runtime/resource gates 可用时注册 portable mock/CPU accel tests/examples。
-- `FORGE_ENABLE_FORGE_ACCEL=OFF`
-  - 注册零 accel tests/examples。
 
 Sanitizer coverage 中，新 runtime tests 应使用 `forge_` test prefix，除非有明确理由不用。
 Sanitizer gate filters 旨在捕捉 execution 和 `forge::` lifetime issues。
@@ -101,12 +96,11 @@ Sanitizer gate filters 旨在捕捉 execution 和 `forge::` lifetime issues。
 | 目标 | 证据 | 当前状态 |
 | --- | --- | --- |
 | Verification 可重复 | `scripts/verify-selfhosted-floor.sh`, `scripts/verify-native.sh`, `scripts/verify-install-package.sh`, `scripts/verify-windows-msvc.ps1`, `scripts/verify-windows-msvc-ssh.sh`, `docs/testing.md` | 已就位 |
-| Feature gates 可测试 | `scripts/verify-windows-msvc.ps1` 中 IO/accel ON/AUTO/OFF registration checks；Windows example smoke 覆盖 IOCP、accel 和 reference runtime；本地 `ctest -N -R 'forge_io\|forge_accel'` gate checks | 已就位 |
+| Feature gates 可测试 | Windows gate checks；本地 `ctest -N -R 'forge_io'` gate checks | 已就位 |
 | Resource behavior 可审计 | `docs/forge-utilities.md`, `forge_resource_policy`, `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` | Audit table 已就位；新增 primitive 时逐项 review |
 | IO lifecycle 明确 | `docs/forge-io.md`, `forge_io_context`, `forge_io_iocp`, `example/forge_io_read_write_example.cpp` | Per-op cancellation 和 IOCP handle-cache pruning 已就位；IO 语义变更时重新审计 |
-| Accel lifecycle 明确 | `docs/forge-accel.md`, `docs/roadmap/forge-accel-runtime-design.md`, `forge_accel_backend_conformance`, `forge_accel_context`, `forge_accel_event`, `forge_accel_typed_error`, `example/forge_accel_pipeline_example.cpp` | Portable conformance harness 与 host/device runtime-substrate contracts 已就位；vendor backend proof 仍需单独 gate |
-| Typed-error boundaries 可用 | `forge_wait_result`, `forge_erased_sender`, `forge_accel_typed_error`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` | `wait_result` helper 已就位；新增 typed surface 时 review |
-| Examples 教会组合 | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp`, `^example_` smoke tests | Reference runtime pattern 已就位；public helper 延后到重复 lifecycle shape 足够稳定时再冻结 |
+| Typed-error boundaries 可用 | `forge_wait_result`, `forge_erased_sender`, `example/forge_io_typed_error_example.cpp` | `wait_result` helper 已就位；新增 typed surface 时 review |
+| Examples 教会组合 | `docs/forge-cookbook.md`, `example/forge_graceful_shutdown_example.cpp`, `example/forge_bounded_pipeline_example.cpp`, `^example_` smoke tests | 组合示例已就位；public helper 延后到重复 lifecycle shape 足够稳定时再冻结 |
 | Deferred large backends 保持显式 | `docs/roadmap/forge-runtime-vision.md`, `docs/roadmap/forge-backend-proof-policy.md`, backend SPI sketches | 已就位 |
 
 一轮完成的条件是每个变更过的行都有具体证据：test name、example path、doc section 或刻意限制条目。
@@ -123,7 +117,7 @@ Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state
 
 ## 自循环协议
 
-每个新的 runtime/IO/accel taskbook 都应遵循：
+每个新的 runtime/IO taskbook 都应遵循：
 
 1. **Inspect** 当前代码和文档。不要从过时 taskbook facts 直接实现。
 2. **Implement one slice**，并形成聚焦提交。
@@ -132,18 +126,16 @@ Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state
 5. **Update backlog**：如果发现新的高价值 gap，编辑相关 roadmap/taskbook。
 6. **Converge check**：回到上面的清单逐项确认。
 
-如果剩余项高价值且风险低/中，创建下一小轮并重复。若剩余工作需要 vendor SDK、新 OS
-backend 或广泛 API commitment，停止并要求独立 owner decision。
+如果剩余项高价值且风险低/中，创建下一小轮并重复。若剩余工作需要新 OS backend、
+广泛 API commitment 或外部生态 adapter，停止并要求独立 owner decision。
 
 ## 已知刻意边界
 
 - Windows/MSVC smoke 是 manual/self-hosted optional gate，不替代 Linux container verification。
-- `forge::accel` 是 mock/in-memory 和 vendor-neutral；它不表示 CUDA、HIP、SYCL、FPGA 或 NPU driver support。
 - macOS/BSD kqueue 在出现具体 BSD/macOS 需求前不在范围内。
 - Linux `io_uring` 延后，除非 kernel submission/completion queue 语义变成必需且可测试。
 - Additional IOCP hardening 是 requirement-driven。当前 proof 覆盖 completion drain、
   per-operation cancellation 和 conservative associated handle pruning；更强 handle ownership
   或 high-churn pooling 需要新 taskbook。
-- `timer_context` 对 pending timer cancellation 使用 receiver stop callbacks；`forge::accel`
-  仍把 per-receiver post-accept command cancellation 留在范围外，直到真实 backend 需要 command-level cancellation model。
+- `timer_context` 对 pending timer cancellation 使用 receiver stop callbacks。
 - 不应只为了支持 `forge::` extension 而改变 `std::execution` backport behavior。

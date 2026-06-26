@@ -39,7 +39,7 @@
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
-namespace cio = forge::io::experimental;
+namespace cio = forge::io;
 
 struct shared_state {
     std::size_t handled = 0;

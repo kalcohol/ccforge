@@ -106,55 +106,6 @@ if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_iocp test_forge_io_iocp.cpp forge_io_iocp)
 endif()
 
-if(FORGE_HAS_FORGE_ACCEL_MOCK_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
-    forge_add_forge_compile_probe(
-        test_forge_accel_vocabulary
-        test_forge_accel_vocabulary.cpp
-        forge_accel_vocabulary)
-    forge_expect_forge_cxx_source_compiles(
-        FORGE_ACCEPTS_MOCK_TRIVIAL_BUFFER
-        test_forge_accept_mock_trivial_buffer.cpp
-        TRUE
-        "forge::accel::mock buffers must accept trivially-copyable element types")
-    forge_expect_forge_cxx_source_compiles(
-        FORGE_REJECTS_MOCK_NON_TRIVIAL_BUFFER
-        test_forge_reject_mock_non_trivial_buffer.cpp
-        FALSE
-        "forge::accel::mock buffers must reject non-trivially-copyable element types")
-    forge_add_forge_test(test_forge_accel_context test_forge_accel_context.cpp forge_accel_context)
-    forge_add_forge_test(test_forge_accel_callback test_forge_accel_callback.cpp forge_accel_callback)
-    target_compile_definitions(test_forge_accel_callback PRIVATE FORGE_ENABLE_TEST_HOOKS=1)
-    forge_add_forge_test(test_forge_accel_copy test_forge_accel_copy.cpp forge_accel_copy)
-    forge_add_forge_test(test_forge_accel_event test_forge_accel_event.cpp forge_accel_event)
-    target_compile_definitions(test_forge_accel_event PRIVATE FORGE_ENABLE_TEST_HOOKS=1)
-    forge_add_forge_test(test_forge_accel_submit test_forge_accel_submit.cpp forge_accel_submit)
-    forge_add_forge_test(test_forge_accel_request test_forge_accel_request.cpp forge_accel_request)
-    forge_add_forge_test(test_forge_accel_protocol test_forge_accel_protocol.cpp forge_accel_protocol)
-    forge_add_forge_test(test_forge_accel_device test_forge_accel_device.cpp forge_accel_device)
-    forge_add_forge_test(test_forge_accel_trace test_forge_accel_trace.cpp forge_accel_trace)
-    forge_add_forge_test(test_forge_accel_backend_conformance test_forge_accel_backend_conformance.cpp forge_accel_backend_conformance)
-    forge_add_forge_test(test_forge_accel_model test_forge_accel_model.cpp forge_accel_model)
-    forge_add_forge_test(test_forge_accel_typed_error test_forge_accel_typed_error.cpp forge_accel_typed_error)
-endif()
-
-if(FORGE_HAS_FORGE_ACCEL_CPU_BACKEND AND FORGE_TEST_ENABLE_FORGE_ACCEL)
-    forge_add_forge_compile_probe(
-        test_forge_accel_cpu_header
-        test_forge_accel_cpu_header.cpp
-        forge_accel_cpu_header)
-    forge_expect_forge_cxx_source_compiles(
-        FORGE_ACCEPTS_CPU_TRIVIAL_BUFFER
-        test_forge_accept_cpu_trivial_buffer.cpp
-        TRUE
-        "forge::accel::cpu buffers must accept trivially-copyable element types")
-    forge_expect_forge_cxx_source_compiles(
-        FORGE_REJECTS_CPU_NON_TRIVIAL_BUFFER
-        test_forge_reject_cpu_non_trivial_buffer.cpp
-        FALSE
-        "forge::accel::cpu buffers must reject non-trivially-copyable element types")
-    forge_add_forge_test(test_forge_accel_cpu test_forge_accel_cpu.cpp forge_accel_cpu)
-endif()
-
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
     forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()

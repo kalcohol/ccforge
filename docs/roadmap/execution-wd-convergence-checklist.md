@@ -48,5 +48,5 @@ working-draft-shaped subset 的执行口径。它与更完整的
 
 ## 隐私和平台说明
 
-这轮不依赖私有硬件、私有 Windows 路径或 vendor accelerator SDK。若触碰
+这轮不依赖私有硬件、私有 Windows 路径或 vendor SDK。若触碰
 Windows-sensitive 脚本或 IOCP 代码，按公开文档运行 Windows matrix，不要提交主机名或本地安装路径。

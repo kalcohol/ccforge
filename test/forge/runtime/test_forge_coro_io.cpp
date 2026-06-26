@@ -14,7 +14,7 @@
 
 namespace {
 
-namespace cio = forge::io::experimental;
+namespace cio = forge::io;
 
 struct env_shape_awaitable {
     bool await_ready() noexcept { return false; }

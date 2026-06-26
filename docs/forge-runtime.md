@@ -47,8 +47,8 @@ Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 owning contexts 更偏向 resource/session management 场景里的安全析构。
 
 `wait()` 的 self-deadlock guard 不等于 destructor 可以从自己的 worker 或 owned
-completion 中运行。`static_thread_pool`、`io::context`、`accel::*::context` 和
-`async_scope` 这类 owning primitive 必须由外层 owner 管理 lifetime；不要在它们自己
+completion 中运行。`static_thread_pool`、`io::context` 和 `async_scope`
+这类 owning primitive 必须由外层 owner 管理 lifetime；不要在它们自己
 拥有的 work body / completion callback 内销毁该 primitive。完整 teardown 应由外层
 owner 调用 `shutdown()` / `wait()` 后离开作用域。
 
@@ -106,21 +106,6 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   operation 完成为 stopped 或发起取消；`shutdown()` 组合 close 和 context stop。
   `wait()` join worker。File descriptor、Windows handle 和 user buffer 都是 borrowed，
   必须活到 pending operation 完成，或在 close 前先 cancel 并 drain。
-- `forge::accel::mock::context` owns portable mock / in-memory accelerator-shaped
-  command queues。每个 queue 是 FIFO；cross-queue ordering 通过 event 表达。
-  `close()` 拒绝后续 command 并 drain accepted work；`request_stop()` 尽可能停止
-  pending queued command；`shutdown()` 组合二者。`wait()` drain accepted command work；
-  若从 accel command completion 中调用，会立即返回以避免 self-deadlock。Host spans 是
-  borrowed；context 对象不得在自己的 command completion 内析构；
-  `mock::host_buffer<T>` / `mock::device_buffer<T>` own mock storage。
-  `memory_kind` 是 portable metadata，不代表真实 vendor allocation。
-- Mock device 是 context-owned handle，带 portable metadata。Device-bound queue 和
-  session 会在运行 command 前检查 availability。Mock device loss 映射到
-  `device_lost`；`reset` 增加 `device_epoch`，旧 session 后续映射到 `stale_session`。
-  Session packet command 可以 own request/response storage 直到 terminal completion。
-  Packet timeout 是 queued-command deadline，不会打断已经运行中的 user code。Model
-  execute proof 验证 byte-span IO binding 和 session/context lifecycle；它不是 tensor
-  或 inference engine layer。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
 - `forge::any_scheduler` 是窄 scheduler 类型擦除；通过内部 erased receiver 保留
   downstream receiver stop-token visibility，因此底层 scheduler operation 仍能观察
@@ -134,7 +119,7 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   operation-state。Stopped completion 通过 coroutine bridge 的内部异常返回 task frame，
   可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常不会覆盖
   stopped completion。
-- `forge::io::experimental::io_task` 是 coroutine-native byte IO track 的实验性 proof。
+- `forge::io::io_task` 是 coroutine-native byte IO track 的 Forge extension。
   它不替代 `forge::task`，也不是 owning runtime primitive。`as_sender(io_task<T>)`
   的 operation state owns 单个 task，`await_sender(sender)` 会把 `io_env` 的 stop token
   和 scheduler 暴露给被 await 的 sender。子 `io_task` await 会沿用父 coroutine 的

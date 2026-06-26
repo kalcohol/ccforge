@@ -36,7 +36,7 @@
 #include <forge/io/context.hpp>
 #endif
 
-namespace forge::io::experimental {
+namespace forge::io {
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
@@ -117,4 +117,4 @@ template<class Handle>
 
 #endif // __cpp_impl_coroutine
 
-} // namespace forge::io::experimental
+} // namespace forge::io

@@ -41,7 +41,7 @@
 #include <coroutine>
 #endif
 
-namespace forge::io::experimental {
+namespace forge::io {
 
 class executor_ref {
 public:
@@ -325,7 +325,7 @@ public:
 
     [[nodiscard]] auto await_resume() const -> const io_env& {
         if (env_ == nullptr) {
-            throw std::logic_error{"forge::io::experimental::io_env is not set"};
+            throw std::logic_error{"forge::io::io_env is not set"};
         }
         return *env_;
     }
@@ -341,7 +341,7 @@ private:
 class sender_stopped : public std::exception {
 public:
     [[nodiscard]] auto what() const noexcept -> const char* override {
-        return "forge::io::experimental sender stopped";
+        return "forge::io sender stopped";
     }
 };
 
@@ -566,7 +566,7 @@ public:
 
     [[nodiscard]] auto result() && -> T {
         if (!done()) {
-            throw std::logic_error{"forge::io::experimental::io_task is not done"};
+            throw std::logic_error{"forge::io::io_task is not done"};
         }
 
         auto& storage = coro_.promise().result;
@@ -574,7 +574,7 @@ public:
             std::rethrow_exception(std::get<2>(storage));
         }
         if (storage.index() != 1) {
-            throw std::logic_error{"forge::io::experimental::io_task has no result"};
+            throw std::logic_error{"forge::io::io_task has no result"};
         }
         return std::move(std::get<1>(storage));
     }
@@ -661,14 +661,14 @@ public:
 
     auto result() && -> void {
         if (!done()) {
-            throw std::logic_error{"forge::io::experimental::io_task is not done"};
+            throw std::logic_error{"forge::io::io_task is not done"};
         }
 
         if (coro_.promise().error) {
             std::rethrow_exception(coro_.promise().error);
         }
         if (!coro_.promise().returned) {
-            throw std::logic_error{"forge::io::experimental::io_task has no result"};
+            throw std::logic_error{"forge::io::io_task has no result"};
         }
     }
 
@@ -708,7 +708,7 @@ public:
     decltype(auto) await_resume() {
         if (missing_env_) {
             throw std::logic_error{
-                "forge::io::experimental::io_task continuation has no io_env"};
+                "forge::io::io_task continuation has no io_env"};
         }
 
         if constexpr (std::is_void_v<T>) {
@@ -819,7 +819,7 @@ private:
     auto connect_impl(Receiver receiver) -> io_task_sender_op<T, Receiver> {
         if (!task_) {
             throw std::logic_error{
-                "forge::io::experimental::io_task sender is empty"};
+                "forge::io::io_task sender is empty"};
         }
         auto task = std::move(*task_);
         task_.reset();
@@ -842,4 +842,4 @@ template<class T>
 
 #endif // __cpp_impl_coroutine
 
-} // namespace forge::io::experimental
+} // namespace forge::io

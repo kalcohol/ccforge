@@ -2,8 +2,8 @@
 
 这份文档把 `include/forge/` 扩展设施按工程用法串起来。它不是 API
 reference；reference 见 [`forge::` 扩展工具](forge-utilities.md)、[runtime
-lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and backends](forge-accel.md)
-和 [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
+lifecycle contract](forge-runtime.md)、[`forge::io`](forge-io.md) 和
+[`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)。
 
 核心心智模型：
 
@@ -12,7 +12,7 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and b
 - 用 scope/context 表达“谁拥有正在运行的工作”；
 - 用 channel 表达“消息与 backpressure”；
 - 用 strand 表达“共享状态串行化”；
-- 用 resource policy 表达“队列、pending record 和命令记录从哪里分配”。
+- 用 resource policy 表达“队列、pending record 和 callback record 从哪里分配”。
 
 ## 先读哪几个例子
 
@@ -32,45 +32,17 @@ lifecycle contract](forge-runtime.md)、[`forge::accel` runtime vocabulary and b
    serial transfer subset。
 9. `example/execution_unstoppable_example.cpp`：把内层 sender 从外部 stop-token 中隔离。
 10. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
-11. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender
-   边界，并用 `forge::wait_result` 消费。
+11. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender 边界，
+    并用 `forge::wait_result` 消费。
 12. `example/forge_io_iocp_example.cpp`：Windows IOCP completion proof。
 13. `example/forge_io_pipeline_example.cpp`：Linux fd readiness 与 CPU runtime handoff。
-14. `example/forge_accel_staging_buffer_example.cpp`：owning host staging buffer 与 mock
-   device buffer。
-15. `example/forge_accel_memory_example.cpp`：memory kinds、byte buffers、cached-memory
-    `flush` / `invalidate` proof 和 typed coherence error。
-16. `example/forge_accel_message_device_example.cpp`：device session 与 message command
-    形状。
-17. `example/forge_accel_session_reset_example.cpp`：session reset 如何停止后续 command。
-18. `example/forge_accel_packet_example.cpp`：owning command packet 与 completion
-    bridge。
-19. `example/forge_accel_request_runtime_example.cpp`：request ID、sync/post request
-    handling 和 typed error boundary。
-20. `example/forge_accel_protocol_transport_example.cpp`：portable envelope、late
-    response discard 和 lifecycle signal。
-21. `example/forge_accel_model_example.cpp`：NPU-style model/session/IO-binding proof。
-22. `example/forge_accel_typed_error_example.cpp`：在 accelerator boundary 保留 typed
-    error。
-23. `example/forge_accel_trace_example.cpp`：可选 in-memory command timeline。
-24. `example/forge_accel_pipeline_example.cpp`：mock device buffer、copy、submit 和 CPU
-   continuation。
-25. `example/forge_accel_cpu_copy_example.cpp`：用 CPU reference backend 跑真实
-    H2D/D2H copy。
-26. `example/forge_accel_cpu_pipeline_example.cpp`：CPU reference copy/compute queue
-    和 event ordering。
-27. `example/forge_accel_cpu_simd_example.cpp`：在 aligned CPU device buffer 上跑
-    `std::simd`。
-28. `example/forge_accel_backend_switch_example.cpp`：同一份 command vocabulary
-    逻辑在 mock 和 CPU reference backend 上运行。
-29. `example/forge_io_accel_pipeline_example.cpp`：Linux IO read/write handoff 到
-    CPU reference accel queue。
-30. `example/forge_inference_runtime_sketch.cpp`：把请求通道、runtime、strand、accel queue
-   和资源生命周期放在同一个推理 runtime sketch 里。
-31. `example/forge_reference_runtime_example.cpp`：一个拥有型 request/response service
-    pattern，展示 bounded ingress、accel command、serialized stats、typed boundary
-    errors、device-loss recovery、trace snapshot 和 graceful drain 如何放在同一个
-    reference runtime 中。
+14. `example/forge_memory_stream_example.cpp`：backend-free scripted stream。
+15. `example/forge_coro_io_example.cpp`：`io_env` propagation proof。
+16. `example/forge_coro_interop_example.cpp`：`io_task` 与 sender / erased sender 互通。
+17. `example/forge_context_await_example.cpp`：现有 `forge::io::context` sender 的
+    coroutine facade。
+18. `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine parse
+    -> strand state update -> response write。
 
 这些例子优先展示“资源在哪里、取消如何传播、何时 drain、谁拥有谁”，不是为了把 API
 调用堆到最多。
@@ -87,7 +59,6 @@ CPU service 或 message pipeline 建议按这个顺序读：
 6. `example/forge_channel_example.cpp`
 7. `example/forge_graceful_shutdown_example.cpp`
 8. `example/forge_bounded_pipeline_example.cpp`
-9. `example/forge_reference_runtime_example.cpp`
 
 OS IO handoff 建议按这个顺序读：
 
@@ -95,9 +66,7 @@ OS IO handoff 建议按这个顺序读：
 2. `example/forge_io_read_write_example.cpp`
 3. `example/forge_io_pipeline_example.cpp`
 4. `example/forge_io_typed_error_example.cpp`
-5. `example/forge_io_accel_pipeline_example.cpp`：验证 Linux IO handoff 到
-   accelerator-shaped work。
-6. `example/forge_io_iocp_example.cpp`：验证 Windows completion backend。
+5. `example/forge_io_iocp_example.cpp`：验证 Windows completion backend。
 
 Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
@@ -112,28 +81,6 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
    coroutine facade。
 7. `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine parse
    -> strand state update -> response write。
-
-不依赖 vendor SDK 的 accelerator-shaped work 建议按这个顺序读：
-
-1. `example/forge_accel_copy_example.cpp`
-2. `example/forge_accel_event_example.cpp`
-3. `example/forge_accel_memory_example.cpp`
-4. `example/forge_accel_pipeline_example.cpp`
-5. `example/forge_accel_message_device_example.cpp`
-6. `example/forge_accel_session_reset_example.cpp`
-7. `example/forge_accel_packet_example.cpp`
-8. `example/forge_accel_request_runtime_example.cpp`
-9. `example/forge_accel_protocol_transport_example.cpp`
-10. `example/forge_accel_model_example.cpp`
-11. `example/forge_accel_typed_error_example.cpp`
-12. `example/forge_accel_trace_example.cpp`
-13. `example/forge_accel_cpu_copy_example.cpp`
-14. `example/forge_accel_cpu_pipeline_example.cpp`
-15. `example/forge_accel_cpu_simd_example.cpp`
-16. `example/forge_accel_backend_switch_example.cpp`
-17. `example/forge_io_accel_pipeline_example.cpp`
-18. `example/forge_inference_runtime_sketch.cpp`
-19. `example/forge_reference_runtime_example.cpp`
 
 这些路径刻意保持 example-first。详细契约放在各 feature docs 中，因此 cookbook 只是地图，
 不是重复的 API reference。
@@ -151,20 +98,14 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 | PMR / bounded allocation | `example/forge_resource_policy_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
 | C++26 constant / padded layout foundations | `example/constant_wrapper_example.cpp`, `example/padded_mdspan_layout_example.cpp` |
 | serialized session state | `example/forge_strand_example.cpp`, `example/forge_bounded_pipeline_example.cpp` |
-| type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp`, `example/forge_accel_typed_error_example.cpp` |
+| type-erased boundary | `example/forge_type_erased_boundary_example.cpp`, `example/forge_io_typed_error_example.cpp` |
 | backend-free protocol streams | `example/forge_memory_stream_example.cpp`, `example/forge_stream_erasure_example.cpp`, `example/forge_line_protocol_example.cpp` |
 | coroutine-native byte IO proofs | `example/forge_coro_io_example.cpp`, `example/forge_coro_interop_example.cpp`, `example/forge_context_await_example.cpp`, `example/forge_coro_line_pipeline_example.cpp` |
 | Linux IO readiness/read-write | `example/forge_io_readiness_example.cpp`, `example/forge_io_read_write_example.cpp`, `example/forge_io_pipeline_example.cpp` |
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
-| IO to accelerator-shaped work | `example/forge_io_accel_pipeline_example.cpp` |
-| accelerator-shaped commands | `example/forge_accel_copy_example.cpp`, `example/forge_accel_event_example.cpp`, `example/forge_accel_memory_example.cpp`, `example/forge_accel_pipeline_example.cpp`, `example/forge_accel_cpu_copy_example.cpp`, `example/forge_accel_cpu_pipeline_example.cpp`, `example/forge_accel_cpu_simd_example.cpp`, `example/forge_accel_backend_switch_example.cpp` |
-| device/session lifecycle and commands | `example/forge_accel_message_device_example.cpp`, `example/forge_accel_session_reset_example.cpp`, `example/forge_accel_packet_example.cpp`, `example/forge_accel_request_runtime_example.cpp` |
-| protocol and telemetry proofs | `example/forge_accel_protocol_transport_example.cpp`, `example/forge_accel_trace_example.cpp` |
-| model/session IO binding | `example/forge_accel_model_example.cpp` |
-| reference runtime pattern | `example/forge_inference_runtime_sketch.cpp`, `example/forge_reference_runtime_example.cpp` |
 
 `example/CMakeLists.txt` 会把已构建的示例注册成 `example_<target>_smoke`，所以这些
-路径不是只编译不运行的文档片段；受 IO、accel 或 mdspan gate 控制的示例只在对应 target
+路径不是只编译不运行的文档片段；受 IO 或 mdspan gate 控制的示例只在对应 target
 存在时注册 smoke test。
 
 ## Recipe：CPU work queue（CPU 工作队列）
@@ -192,7 +133,7 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
 ## Recipe：bounded producer/consumer（有界生产消费）
 
-适用场景：消息系统、推理请求队列、设备 command staging、跨线程 backpressure。
+适用场景：消息系统、协议请求队列、跨线程 backpressure。
 
 使用：
 
@@ -237,7 +178,7 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
 ## Recipe：own a session（拥有会话生命周期）
 
-适用场景：一个连接、一个设备会话、一个推理 worker、一个资源型服务实例。
+适用场景：一个连接、一个协议会话、一个资源型服务实例。
 
 使用：
 
@@ -258,11 +199,10 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `example/forge_resource_context_example.cpp`
 - `example/forge_graceful_shutdown_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
-- `example/forge_inference_runtime_sketch.cpp`
 
 ## Recipe：bounded allocations（有界分配）
 
-适用场景：嵌入式、实时-ish pipeline、服务端热路径、推理 runtime 中的稳定分配边界。
+适用场景：嵌入式、实时-ish pipeline、服务端热路径中的稳定分配边界。
 
 使用：
 
@@ -272,22 +212,21 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `bounded_channel_options{.memory = resource}`
 - `strand_options{.memory = resource}`
 - `timer_context_options{.memory = resource}` 或 `runtime_context_options{.memory = resource}`
-- `forge::accel::mock::context_options{.memory = resource}`
 
 关键点：
 
 - pool 的 queue node 和 queued task callable record 受 resource 控制；
-- channel、strand、timer callback/queue records、accel command/pending records 的受控路径使用传入 resource；
+- channel、strand、timer callback/queue records 的受控路径使用传入 resource；
 - 如果同一个 resource 会被多个 runtime primitive 或 worker 线程共享，不要直接使用裸
   `std::pmr::monotonic_buffer_resource`；可把固定 buffer 放在 monotonic upstream
   后面，再由 `std::pmr::synchronized_pool_resource` 作为对外 resource；
-- `async_scope` op-state、strand runner keepalive node 和 timer callback callable record 已受 resource 控制。
+- `async_scope` op-state、strand runner keepalive node 和 timer callback callable record
+  已受 resource 控制。
 
 参考：
 
 - `example/forge_resource_policy_example.cpp`
 - `example/forge_bounded_pipeline_example.cpp`
-- `example/forge_inference_runtime_sketch.cpp`
 
 ## Recipe：IO into protocol work（IO 转协议工作）
 
@@ -317,122 +256,36 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `example/forge_io_typed_error_example.cpp`
 - `example/forge_io_iocp_example.cpp`
 - `example/forge_io_pipeline_example.cpp`
-- `example/forge_io_accel_pipeline_example.cpp`
 
-## Recipe：accelerator-shaped pipeline（加速器形状流水线）
+## Recipe：coroutine-native protocol work（协程协议工作）
 
-适用场景：先用 portable mock backend 验证 command queue / buffer / copy / submit
-形状，再用 CPU reference backend 证明同一套 vocabulary 能跑真实 CPU/SIMD work，
-最后再决定是否需要真实 vendor backend。
+适用场景：希望把 byte stream protocol 写成 `co_await` 流程，同时仍能和 sender/runtime
+设施互通。
 
 使用：
 
-- `forge::accel::mock::context`
-- `forge::accel::cpu::context`
-- `forge::accel::mock::host_buffer<T>`
-- `forge::accel::mock::device_buffer<T>`
-- `forge::accel::cpu::device_buffer<T>`
-- `forge::accel::mock::host_byte_buffer` / `device_byte_buffer`
-- `copy_to_device` / `copy_to_host` / `copy_device_to_device`
-- `flush` / `invalidate` for cached-memory proof
-- `submit(queue, callable)`
-- `submit_packet(session, command_packet{...}, handler, command_options{...})`
-- `request_session`
-- `protocol_envelope` / `mock::protocol::loopback_transport`
-- `model` / `model_session` / `model_bindings` / `execute`
-- `copy_to_device_typed` / `copy_to_host_typed` / `submit_typed` for typed
-  boundary errors
-- `event` / `record_event` / `wait_event` / `fence`
-- `device` / `device_session` / `submit_message`
-- `trace_sink`
+- `forge::io::memory_read_stream` / `memory_write_stream` 做 backend-free 测试；
+- `forge::io::read_exactly` / `write_all` / `read_until` 做小型 stream algorithm；
+- `forge::io::io_task<T>` 表达 coroutine-native byte IO flow；
+- `forge::io::await_sender` / `as_sender` 桥接 sender 与 coroutine；
+- `forge::io::context_await` 在现有 IO context sender 上提供 coroutine facade。
 
 关键点：
 
-- 当前 backend 是 in-memory mock，不依赖 CUDA/HIP/SYCL；
-- CPU reference backend 同样不依赖 CUDA/HIP/SYCL；它使用 aligned CPU storage，
-  让 H2D/D2H/D2D copy 和 `std::simd` submit 在真实内存路径上运行；
-- 每个 queue 命令按 FIFO 运行；跨 queue ordering 用 `event` 显式表达，不隐式生成 graph；
-- host spans 是 borrowed，`device_buffer` 拥有 mock device storage；
-- `host_buffer` 可表达由 Forge resource 分配的 owning host staging storage，但不是
-  vendor pinned memory；
-- `memory_kind` 是 portable metadata；`cached_device` 用 `flush` / `invalidate`
-  模拟 command-boundary coherence error；
-- event 是 one-shot completion marker，不建模跨 queue dependency graph。
-- `device_info` / `device` / `device_session` 是 vendor-neutral discovery 和
-  message-command proof，不暴露真实设备 handle；mock device loss 会映射到
-  `device_lost`，reset 后旧 session 会映射到 `stale_session`。
-- `submit_message` 借用 response；`submit_packet` 持有 request/response packet 并在
-  成功时返回完成后的 packet，适合 callback/completion bridge 风格。
-- `request_session` 持有 pending request map、分配递增 request ID，统计 late
-  response，并用 `wait()` drain 自己的 timeout timer；`protocol_envelope` 是对象级
-  envelope proof，不是 ABI。
-- `trace_sink` 是可选 in-memory telemetry proof，不是生产 profiler。
-- `model` proof 只绑定 byte spans 并检查 IO byte size，不提供 tensor/graph/operator
-  语义。
-- 默认 accel API 使用 `set_error(std::exception_ptr)`；`*_typed` variants 使用
-  `set_error(forge::accel::error)`，适合类型擦除或插件边界。
+- stream erasure 是 borrowed wrapper，不拥有底层 stream；
+- `as_sender(io_task<T>)` 是 single-use bridge；
+- IO context 的 fd / `HANDLE` / buffer 仍由调用方拥有；
+- Windows IOCP named-pipe coroutine smoke 是后续验证 gate，不是当前默认 Linux lane 的一部分。
 
 参考：
 
-- `example/forge_accel_copy_example.cpp`
-- `example/forge_accel_event_example.cpp`
-- `example/forge_accel_memory_example.cpp`
-- `example/forge_accel_staging_buffer_example.cpp`
-- `example/forge_accel_message_device_example.cpp`
-- `example/forge_accel_session_reset_example.cpp`
-- `example/forge_accel_packet_example.cpp`
-- `example/forge_accel_request_runtime_example.cpp`
-- `example/forge_accel_protocol_transport_example.cpp`
-- `example/forge_accel_model_example.cpp`
-- `example/forge_accel_typed_error_example.cpp`
-- `example/forge_accel_trace_example.cpp`
-- `example/forge_accel_pipeline_example.cpp`
-- `example/forge_accel_cpu_copy_example.cpp`
-- `example/forge_accel_cpu_pipeline_example.cpp`
-- `example/forge_accel_cpu_simd_example.cpp`
-- `example/forge_accel_backend_switch_example.cpp`
-- `example/forge_io_accel_pipeline_example.cpp`
-- `example/forge_inference_runtime_sketch.cpp`
-
-## Recipe：reference runtime service（参考 runtime 服务）
-
-适用场景：把 CPU runtime、bounded message queue、accelerator-like command queue、
-resource policy 和序列化 session state 组合成一个拥有型服务对象。这个 recipe 是
-pattern，不是新的 framework API；它展示在用户代码里如何把已有原语拼成清晰的
-runtime 边界。
-
-使用：
-
-- `forge::resource_context` 拥有 worker；
-- `forge::bounded_channel<Request>` 表达 bounded ingress；
-- `forge::bounded_channel<Response>` 表达 bounded response path；
-- `forge::accel::mock::context` / `queue` / `device_buffer` 表达 device-like work；
-- `forge::strand` 序列化统计或 session state；
-- `forge::wait_result` 消费 opt-in typed accel errors。
-
-关键点：
-
-- 当前保持 example-only。`inference_runtime_sketch` 和 `reference_runtime_example`
-  还没有重复到足以冻结一个新的 public helper；
-- 如果未来新增 helper，它应是小的 lifecycle utility，例如 `service_scope` 或
-  `owned_service`，只封装 scheduler/spawn/close/request_stop/shutdown/wait，
-  不内置 IO、accel、tensor 或 serving policy；
-- service 析构可以阻塞，因为它显式拥有 runtime/context；
-- request channel `close()` 后，worker 会 drain 已接受请求并关闭 response channel；
-- close 后新 request 会被拒绝，示例用断言钉住这个 admission boundary；
-- response channel capacity 小于 request 数时，consumer 必须继续 drain response，
-  这正是 backpressure 的教学点；
-- typed errors 保留在 command boundary，默认 surface 不需要扩大成全局错误体系；
-- reference runtime 示例会执行一个 `size_mismatch` 和一个 `device_lost` command，
-  然后 reset mock device 并继续处理后续 request；
-- trace snapshot 用来验证 command timeline 和 lifecycle event 可观察，但不会改变
-  runtime 行为。
-
-参考：
-
-- `example/forge_reference_runtime_example.cpp`
-- `example/forge_inference_runtime_sketch.cpp`
-- `example/forge_io_accel_pipeline_example.cpp`
+- `example/forge_memory_stream_example.cpp`
+- `example/forge_stream_erasure_example.cpp`
+- `example/forge_line_protocol_example.cpp`
+- `example/forge_coro_io_example.cpp`
+- `example/forge_coro_interop_example.cpp`
+- `example/forge_context_await_example.cpp`
+- `example/forge_coro_line_pipeline_example.cpp`
 
 ## Recipe：type erase at boundaries（边界类型擦除）
 
@@ -457,7 +310,6 @@ runtime 边界。
 - `example/forge_any_scheduler_example.cpp`
 - `example/forge_type_erased_boundary_example.cpp`
 - `example/forge_io_typed_error_example.cpp`
-- `example/forge_accel_typed_error_example.cpp`
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 

@@ -10,6 +10,4 @@ as a short root index so the repository top level stays compact.
 - [`std::execution` 一致性台账](docs/roadmap/execution-conformance-ledger.md)
 - [`std::execution` 当前 WD 收敛清单](docs/roadmap/execution-wd-convergence-checklist.md)
 - [`forge::io` backend SPI 草案](docs/roadmap/forge-io-backend-spi.md)
-- [`forge::accel` backend SPI 草案](docs/roadmap/forge-accel-backend-spi.md)
-- [`forge::accel` runtime 设计](docs/roadmap/forge-accel-runtime-design.md)
 - [Execution stop-token allocator 设计记录](docs/roadmap/execution-stop-token-allocator-design.md)

@@ -11,11 +11,11 @@ int main() {
     std::mdspan xv(x, std::extents<int, N>{});
     std::mdspan yv(y, std::extents<int, N>{});
 
-    // dot product (SIMD-accelerated when simd backport available)
+    // dot product (SIMD fast path when simd backport available)
     double d = std::linalg::dot(xv, yv, 0.0);
     forge_example::require(std::abs(d - N) < 1e-10);
 
-    // vector_two_norm (SIMD-accelerated)
+    // vector_two_norm (SIMD fast path)
     float fdata[4] = {3.0f, 4.0f, 0.0f, 0.0f};
     std::mdspan fv(fdata, std::extents<int, 4>{});
     float nrm = std::linalg::vector_two_norm(fv);

@@ -34,7 +34,7 @@
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
-namespace cio = forge::io::experimental;
+namespace cio = forge::io;
 
 auto parse_frame_size(std::byte length_byte) -> cio::io_task<std::size_t> {
     auto [bias] = co_await cio::await_sender(std::execution::just(0u));

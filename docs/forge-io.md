@@ -18,7 +18,7 @@ Windows IOCP 的 backend 语义。
 
 - 不是 `std::io`、`std::networking`、`<io>` 或 `<networking>` backport。
 - 不是 TCP/DNS/UDP/TLS、socket option、endpoint/address-resolution library。
-- 不是 `std::execution` 的替代模型；coroutine bridge 只在 `forge::io::experimental`
+- 不是 `std::execution` 的替代模型；coroutine bridge 只在 `forge::io`
   下与现有 sender runtime 互通。
 - 不是稳定 ABI 的 stream erasure layer；当前 `any_read_stream` / `any_write_stream` 是
   borrowed wrapper。
@@ -34,8 +34,8 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/buffer.hpp>
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
-#include <forge/io/coro.hpp> // experimental coroutine substrate proof
-#include <forge/io/context_await.hpp> // experimental facade over context backend
+#include <forge/io/coro.hpp> // coroutine substrate proof
+#include <forge/io/context_await.hpp> // coroutine facade over context backend
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
@@ -105,7 +105,7 @@ P4124 风格的 domain-aware `when_all` 当前只保留为设计方向，没有�
 Stage 7 还不能证明 sibling operation 的取消、partial result 保留和 exactly-once completion
 可以在当前 substrate 上同时满足。
 
-`forge::io::coro.hpp` 是 `forge::io::experimental` 下的 coroutine-native substrate
+`forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
 `forge::task`：
 
@@ -130,12 +130,12 @@ Sender interop 分两层：
 - 对现有 `forge::task`，优先使用 `<execution>` backport 已有的
   `std::execution::with_awaitable_senders` / `as_awaitable`；本路线不修改 backport 的
   coroutine awaitability 规则。
-- 对 `forge::io::experimental::io_task<T>`，使用显式
-  `forge::io::experimental::await_sender(sender)` 在 coroutine 内 await sender。它会把
+- 对 `forge::io::io_task<T>`，使用显式
+  `forge::io::await_sender(sender)` 在 coroutine 内 await sender。它会把
   sender value 作为 `std::tuple<...>`（或多 value alternative 的 `std::variant`）返回，
   error 以异常重新抛出，stopped 以 `sender_stopped` 抛出，并把 `io_env` 的 stop token
   暴露给 receiver env。
-- `forge::io::experimental::as_sender(io_task<T>, io_env)` 把简单 `io_task<T>` 暴露成
+- `forge::io::as_sender(io_task<T>, io_env)` 把简单 `io_task<T>` 暴露成
   sender，completion shape 是 `set_value(T)` / `set_error(std::exception_ptr)` /
   `set_stopped()`；`io_task<void>` 使用 `set_value()`。
 - `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine
@@ -143,7 +143,7 @@ Sender interop 分两层：
   需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
   partial progress。
 
-`forge::io::context_await.hpp` 是 `forge::io::experimental` 下对现有
+`forge::io::context_await.hpp` 是 `forge::io` 下对现有
 `forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；
 在 backend 关闭时可以直接 include，但不会暴露需要 `forge::io::context` 的函数。
 
@@ -398,6 +398,4 @@ event buffer、action batch 和 receiver record 等 context-owned allocation。r
 - `example/forge_io_read_write_example.cpp`：borrowed span + async read/write convenience。
 - `example/forge_context_await_example.cpp`：coroutine facade over context sender；
   Linux 下演示 await readiness 后由用户代码执行 nonblocking `read(2)`。
-- `example/forge_io_accel_pipeline_example.cpp`：Linux pipe read/write handoff
-  到 CPU reference accel queue。
 - `example/forge_io_iocp_example.cpp`：Windows named pipe + IOCP async read/write。

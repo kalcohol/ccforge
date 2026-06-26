@@ -25,7 +25,6 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [Forge runtime lifecycle contract](forge-runtime.md)
 - [`forge::` 扩展工具](forge-utilities.md)
 - [`forge::io` backend](forge-io.md)
-- [`forge::accel` runtime vocabulary 与 backend proof](forge-accel.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 
 ## 集成与验证
@@ -48,8 +47,6 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [Coroutine-native byte IO 路线图](roadmap/coroutine-native-io.md)
 - [Backend proof 策略](roadmap/forge-backend-proof-policy.md)
 - [`forge::io` backend SPI 草案](roadmap/forge-io-backend-spi.md)
-- [`forge::accel` backend SPI 草案](roadmap/forge-accel-backend-spi.md)
-- [`forge::accel` runtime 设计](roadmap/forge-accel-runtime-design.md)
 - [`std::execution` 一致性台账](roadmap/execution-conformance-ledger.md)
 - [`std::execution` 当前 WD 收敛清单](roadmap/execution-wd-convergence-checklist.md)
 - [Execution stop-token allocator 设计记录](roadmap/execution-stop-token-allocator-design.md)

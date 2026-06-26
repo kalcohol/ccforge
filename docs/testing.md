@@ -151,12 +151,9 @@ PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`。`FORGE
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
 关键 Forge gate 状态和最终 CTest 数量。它还会做 gate 注册检查：
 Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend 并注册
-IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/examples；
-`FORGE_ENABLE_FORGE_ACCEL=AUTO` / `ON` 应注册 accel tests/examples，
-`FORGE_ENABLE_FORGE_ACCEL=OFF` 应注册 0 个 accel tests/examples。gate 检查还会
-实际 build/run 少量稳定 examples：IOCP example、basic accel copy/event examples
-和 reference runtime example。这保证 Windows smoke 覆盖 cookbook 的关键路径，而不把
-所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
+IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/examples。
+gate 检查还会实际 build/run 少量稳定 examples，例如 IOCP example。这保证 Windows
+smoke 覆盖 cookbook 的关键路径，而不把所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
 因为测试总数会随覆盖增长而变化；但 targeted regex lane 会先断言至少选中 1 个测试，
 gate-off 检查则显式断言注册数为 0。可设置 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过
 这些 gate 检查。默认 smoke 也会执行 install package consumer check；可设置
@@ -227,7 +224,7 @@ Atomic predicate 加 unlocked notify 仍可能 lost wakeup。
 | `forge::bounded_channel` | pending send/recv stop callback 与 close/stop drain | `forge_channel` 覆盖 rendezvous、backpressure、close-drain、cancellation 和 self-destroying receiver；`forge_runtime_stress` 竞争 pending recv/send stop callback 与 direct send/recv handoff |
 | `forge::async_scope` | active-count drain 与 request-stop propagation | `forge_async_scope` 覆盖 spawn lifetime、blocking destructor/wait、stop propagation 和 first-error handling；`forge_runtime_stress` 竞争 `wait()` 与 last scheduled completion |
 | `forge::strand` / pool | serialized queue drain、shutdown 和 worker handoff | `forge_strand`、`forge_thread_pool` 和 scheduler roundtrip tests 覆盖 FIFO、reentrant scheduling、bounded queues、shutdown 和 worker self-wait；`forge_runtime_stress` 覆盖 concurrent strand scheduling 与 pool schedule-vs-shutdown completion |
-| `forge::io` / `forge::accel` | backend stop callback、pending record completion 和 context drain | `forge_io_*` 与 `forge_accel_*` 覆盖 exactly-once completion、typed error、stop/drain、event wait，以及支持处的 self-destroying receiver |
+| `forge::io` | backend stop callback、pending record completion 和 context drain | `forge_io_*` 覆盖 exactly-once completion、typed error、stop/drain，以及支持处的 self-destroying receiver |
 
 这张表是 representative map，不是“每一条 audit line 都有独立 stress”的证明。修改
 wakeup site 后，应指向一个覆盖同类 predicate/notify discipline 的现有测试，或补一个
@@ -246,13 +243,12 @@ focused stress case，再把该 audit 视为 closed。
 - `FORGE_TEST_ENABLE_FORGE_RUNTIME`
 - `FORGE_TEST_ENABLE_FORGE_RESOURCE`
 - `FORGE_TEST_ENABLE_FORGE_IO`
-- `FORGE_TEST_ENABLE_FORGE_ACCEL`
 - `FORGE_TEST_ENABLE_FORGE_ERASURE`
 - `FORGE_TEST_ENABLE_NATIVE_HANDOFF`
 
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future
-resource、IO、accel 和 erasure subsets 被独立配置。Resource-policy tests 还要求
+resource、IO 和 erasure subsets 被独立配置。Resource-policy tests 还要求
 `FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON`。
 
 也可以独立设置 Forge extension feature gates：
@@ -260,17 +256,10 @@ resource、IO、accel 和 erasure subsets 被独立配置。Resource-policy test
 - `FORGE_ENABLE_FORGE_RUNTIME`
 - `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
 - `FORGE_ENABLE_FORGE_IO`
-- `FORGE_ENABLE_FORGE_ACCEL`
-- `FORGE_ENABLE_FORGE_ACCEL_CPU`
 
 `FORGE_ENABLE_FORGE_IO=AUTO` 在平台支持时启用 Linux epoll/eventfd backend 或 Windows
 IOCP backend，其它平台跳过 IO tests/examples。`ON` 要求 supported backend，缺失时
-configure 报错；`OFF` 跳过 IO tests/examples。`FORGE_ENABLE_FORGE_ACCEL=AUTO` 在
-Forge runtime/resource gates 启用时启用 portable mock accel backend；`ON` 要求这些
-gate 可用，`OFF` 跳过 accel tests/examples。它不会探测 CUDA、HIP、SYCL 或 vendor
-SDK。`FORGE_ENABLE_FORGE_ACCEL_CPU=AUTO` / `ON` 在 accel umbrella gate 启用时注册
-CPU reference backend tests/examples；若 `FORGE_ENABLE_FORGE_ACCEL=OFF`，CPU backend
-即使显式 `ON` 也不会注册任何 accel target。Erasure facilities 是 header-only 且总是可用；用
+configure 报错；`OFF` 跳过 IO tests/examples。Erasure facilities 是 header-only 且总是可用；用
 `FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
 
 ## Example smoke tests（示例冒烟）
@@ -278,11 +267,11 @@ CPU reference backend tests/examples；若 `FORGE_ENABLE_FORGE_ACCEL=OFF`，CPU 
 当 `FORGE_BUILD_EXAMPLES=ON` 且 `FORGE_BUILD_TESTS=ON` 时，实际构建出来的 examples
 也会注册为 CTest smoke tests，名称为 `example_<target>_smoke`。这样 cookbook 中的路径
 不是只 compile-check，而是可执行的 smoke。受 feature gate 控制的 examples，例如
-platform IO、accel 或 mdspan-based linalg examples，只在对应 target 存在时注册 smoke。
+platform IO 或 mdspan-based linalg examples，只在对应 target 存在时注册 smoke。
 
 Example smoke tests 按决定 target 是否构建的 feature gates 分组。它们不逐一镜像所有
 `FORGE_TEST_ENABLE_FORGE_*` 细分测试开关。这样 examples 聚焦 public build surface，
-test tree 则继续保留 runtime、resource、IO、accel 和 erasure coverage 的细粒度启停。
+test tree 则继续保留 runtime、resource、IO 和 erasure coverage 的细粒度启停。
 
 Focused example 检查：
 
@@ -307,12 +296,6 @@ cmake -S . -B build/gate-io-off -G Ninja \
   -DFORGE_BUILD_EXAMPLES=ON \
   -DFORGE_ENABLE_FORGE_IO=OFF
 ctest --test-dir build/gate-io-off -N -R 'forge_io|example_forge_io'
-
-cmake -S . -B build/gate-accel-off -G Ninja \
-  -DFORGE_BUILD_TESTS=ON \
-  -DFORGE_BUILD_EXAMPLES=ON \
-  -DFORGE_ENABLE_FORGE_ACCEL=OFF
-ctest --test-dir build/gate-accel-off -N -R 'forge_accel|example_forge_accel|inference_runtime'
 ```
 
 未来 platform/vendor backend proofs 也必须记录 focused tests、sanitizer expectation、

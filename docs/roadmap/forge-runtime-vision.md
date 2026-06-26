@@ -1,9 +1,8 @@
 # Forge runtime 远景图
 
-本文记录 `include/forge/` 扩展设施的中长期方向。它不是标准 backport
-计划，也不向 `namespace std` 增加名字。目标是让 Forge 在
-`std::execution` backport 之上，提供一组小而实用的运行时原语，服务
-结构化并发、消息通路、推理 runtime、设备/加速卡会话和资源生命周期管理。
+本文记录 `include/forge/` 扩展设施的中长期方向。它不是标准 backport 计划，也不向
+`namespace std` 增加名字。目标是让 Forge 在 `std::execution` backport 之上，提供一组
+小而实用的运行时原语，服务结构化并发、消息通路、IO/protocol flow 和资源生命周期管理。
 当前稳定交付基线和自循环验收规则见
 [`Forge 稳定性基线`](forge-stability-baseline.md)。
 
@@ -18,87 +17,70 @@
 - `resource_context`
 - `strand`
 - `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
-- `accel` backend-neutral vocabulary (`device_id`, `device_info`, memory/queue/copy
-  kinds, command/error/model metadata)
-- `accel::mock::context` / `accel::mock::device` /
-  `accel::mock::device_session` / `accel::mock::queue` /
-  `accel::mock::device_buffer` / `accel::mock::event`
-- `accel::mock` copy / submit / submit_message / submit_packet / event / fence
-  command senders
-- `accel::mock` stream query / per-stream synchronize / stream-ordered host
-  callback proof
-- `accel::mock::request_session`
-- `accel::protocol_envelope` and `accel::mock::protocol::loopback_transport`
-- `accel::mock::trace_sink`
+- coroutine-native byte IO helpers (`memory_read_stream`, `memory_write_stream`,
+  `read_exactly`, `write_all`, `read_until`, `io_task`, `await_sender`, `as_sender`,
+  `context_await`)
 - `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
 - 窄 `any_sender_of` / `any_receiver_of`
 - connectable `erased_sender` with closed-set typed errors
 - opt-in `forge::io` typed-error sender variants
-- opt-in `forge::accel` typed-error sender variants
 
 这些设施的生命周期词汇由 `docs/forge-runtime.md` 固定：
-`close()` 是 graceful ingress close，`request_stop()` 是协作取消，
-`shutdown()` 是 close + stop，`wait()` 是阻塞 drain。拥有型 context 的析构允许
-`shutdown()` + `wait()`，因此可能阻塞。
+`close()` 是 graceful ingress close，`request_stop()` 是协作取消，`shutdown()` 是
+close + stop，`wait()` 是阻塞 drain。拥有型 context 的析构允许 `shutdown()` +
+`wait()`，因此可能阻塞。
 
 ## 设计原则
 
 - Backport 与 extension 分层清楚：标准设施在 `backport/`，Forge 扩展在
   `include/forge/`。
 - 不克隆 NVIDIA stdexec/exec 的完整扩展栈；只吸收明确有用、能测试、能维护的小原语。
-- 默认体验应可直接用；涉及平台、厂商或重依赖的功能使用 `AUTO`/`ON`/`OFF`
-  feature gate。
+- 默认体验应可直接用；涉及平台或重依赖的功能使用 `AUTO` / `ON` / `OFF` feature gate。
 - 结构化并发优先：资源生命周期、取消、drain、错误传播必须比裸线程/回调更清楚。
-- Examples 是一等交付物。每个新设施都要有简单示例和至少一个组合示例，展示现代
-  C++ 如何优雅地表达生命周期、并发、取消和资源边界。
+- Examples 是一等交付物。每个新设施都要有简单示例和至少一个组合示例，展示现代 C++
+  如何表达生命周期、并发、取消和资源边界。
 
 ## 推荐推进顺序
 
 1. Resource policy / allocator policy
-2. IO backend
-3. `accel` scheduler and command pipeline
-4. typed-error integration for IO and accel boundaries
+2. Runtime primitives and type erasure
+3. IO backend and coroutine-native byte IO
+4. Typed-error integration for IO/protocol boundaries
 
 顺序理由：
 
-- Resource policy 是 IO 和 accel 的基础。队列节点、pending operation、timer item、
-  command record、host/device staging buffer 都需要明确内存来源和容量策略。
-- IO 和 accel 会引入平台/厂商后端。先统一资源策略，可以避免后端各自发明 allocation
-  和 backpressure 规则。
-- Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；
-  IO 和 accel 都已有 opt-in typed variants。后续问题是具体 platform/vendor backend
-  是否需要自己的错误映射，而不是默认扩大现有 API。
+- Resource policy 是 runtime 和 IO 的基础。队列节点、pending operation、timer item 和
+  callback record 都需要明确内存来源和容量策略。
+- IO 会引入平台后端。先统一资源策略，可以避免后端各自发明 allocation 和 backpressure
+  规则。
+- Typed-error integration 最抽象。`erased_sender` 已能保留声明内的 typed error；IO 已有
+  opt-in typed variants。后续问题是具体 platform backend 是否需要自己的错误映射，而不是
+  默认扩大现有 API。
 
 ## 项目身份检查点
 
-Forge 的目标不是变成完整 runtime framework、网络库、GPU runtime、tensor runtime 或
-vendor driver wrapper。更准确的身份是：
+Forge 的目标不是变成完整 runtime framework、网络库、tensor runtime 或 vendor driver
+wrapper。更准确的身份是：
 
 > C++ backport + 面向资源型异步系统的组合式支撑层。
 
-Resource policy、IO readiness、`accel` command queue sketch 和 typed-error integration
-都应服务这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是
-绑定某个具体平台或厂商栈。
+Resource policy、IO readiness、coroutine-native byte IO 和 typed-error integration 都应服务
+这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是绑定某个具体
+平台或厂商栈。
 
-未来 backend shape 记录在 [`forge::io` backend SPI 草案](forge-io-backend-spi.md)
-和 [`forge::accel` backend SPI 草案](forge-accel-backend-spi.md)。Gate、lifetime、
-verification 和 typed-error 规则记录在
-[`backend proof` 策略](forge-backend-proof-policy.md)。这些是 design constraints，
-不是已发布的 plugin ABI。
-
-Dependency-free accelerator foundation 和 host/device runtime substrate 的当前完成态记录在
-[`forge::accel` runtime 设计](forge-accel-runtime-design.md)：transport、control/lifecycle、
-worker stream semantics、stream-ordered callbacks、power/resume assumptions 和 framework
-glue contracts 已作为 portable proof 收敛。Vendor SDK backend 仍是独立 owner gate。
+未来 backend shape 记录在 [`forge::io` backend SPI 草案](forge-io-backend-spi.md)。
+Gate、lifetime、verification 和 typed-error 规则记录在
+[`backend proof` 策略](forge-backend-proof-policy.md)。这些是 design constraints，不是
+已发布的 plugin ABI。
 
 具体要求：
 
-- vendor/platform backend 只是验证支撑层是否能表达真实系统的 optional proof；
-- 任何 vendor/platform backend 都必须有清楚的 optional gate、examples 和验证边界；
-- 不以 "full stdexec parity" 或 "general-purpose networking/GPU framework" 为目标。
-- 不把 CUDA/HIP/SYCL、IOCP、io_uring、tensor kernel runtime 做成默认依赖。
+- platform backend 只是验证支撑层是否能表达真实系统的 optional proof；
+- 任何 platform backend 都必须有清楚的 optional gate、examples 和验证边界；
+- 不以 "full stdexec parity" 或 "general-purpose networking framework" 为目标；
+- 不把 IOCP、io_uring、TLS、DNS 或完整 socket framework 做成默认依赖。
 
 ## 维护态与决策 gate
 
@@ -110,32 +92,31 @@ glue contracts 已作为 portable proof 收敛。Vendor SDK backend 仍是独立
   子集；
 - 小而明确的 ergonomic helpers，前提是能复用现有 runtime/lifetime 模型。
 
-Reference runtime helpers 仍延后。当前 reference examples 已证明组合模式，但尚未重复出足够小、
-足够稳定的 public shape 来冻结成 helper。若未来确实需要 helper，优先考虑
-`service_scope` 或 `owned_service` 这种只表达 lifecycle 的 utility，暴露
-scheduler/spawn/close/request_stop/shutdown/wait；避免 `serving_runtime`、
-`inference_runtime` 以及任何拥有 IO、accel、tensor 或 model-serving policy 的 helper。
+Reference runtime helpers 仍延后。当前 examples 已证明组合模式，但尚未重复出足够小、足够
+稳定的 public shape 来冻结成 helper。若未来确实需要 helper，优先考虑 `service_scope` 或
+`owned_service` 这种只表达 lifecycle 的 utility，暴露
+scheduler/spawn/close/request_stop/shutdown/wait；避免把 IO、protocol、tensor 或 serving
+policy 内置进通用 helper。
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
 - 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 超出当前 proof 的 production
   hardening，例如 explicit owned-handle lifetimes 或 high-churn handle-pool policy；
-- 真实 accelerator backend：CUDA/HIP/SYCL 或厂商 SDK proof；
-- 真实 backend 的 vendor/platform typed-error mapping；
-- 标准 backport 的未来 conformance 复查。`std::execution` stop-token
-  type-erasure control block 已接受 allocator-neutral 取舍；不要把它当成开放
-  bug 继续打磨。
+- 完整 networking 方向：TCP/DNS/UDP/TLS、socket option、endpoint/address resolution、
+  certificate/security policy；
+- 外部生态 adapter：Boost.Asio、OpenSSL、WolfSSL 或其它库的 adapter matrix；
+- 标准 backport 的未来 conformance 复查。`std::execution` stop-token type-erasure
+  control block 已接受 allocator-neutral 取舍；不要把它当成开放 bug 继续打磨。
 
-每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和
-回滚边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。
-Backend proof work 也必须满足
+每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和回滚
+边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。Backend proof work 也必须满足
 [`backend proof` 策略](forge-backend-proof-policy.md)。
 
 ## 可移植性与 Windows 预期
 
 Linux 是当前最容易持续验证的平台，因为已有 podman 验证镜像和 `epoll/eventfd`
-backend。Windows 支持已经有可重复 smoke 脚本和 IOCP proof backend；后续仍应保持为
-独立 backend，而不是通过在 Linux 状态机里堆兼容分支来假装跨平台。
+backend。Windows 支持已经有可重复 smoke 脚本和 IOCP proof backend；后续仍应保持为独立
+backend，而不是通过在 Linux 状态机里堆兼容分支来假装跨平台。
 
 Windows 阶段性预期：
 
@@ -152,13 +133,13 @@ Windows 阶段性预期：
 5. IOCP 与 `epoll` 的 completion 语义不同，应继续作为独立 backend 维护，不应强行套
    Linux fd readiness 状态机。
 
-如果 owner 提供 Windows 主机，建议作为 self-hosted/manual verification 环境先接入；
-不依赖 GitHub hosted CI。当前可复现入口是 `scripts/verify-windows-msvc.ps1`：
-它应在 Windows 主机上直接运行，并通过参数或环境变量接收 MSVC Build Tools 位置等
-本机信息。`scripts/verify-windows-msvc-ssh.sh` 和
-`scripts/verify-windows-msvc-matrix.sh` 只是从 Linux/macOS 调用远端 Windows 主机的
-transport wrapper。公开文档和脚本不得写入私有主机名或本地安装路径。整体
-local/self-hosted verification floor 入口见 `scripts/verify-selfhosted-floor.sh`。
+如果 owner 提供 Windows 主机，建议作为 self-hosted/manual verification 环境先接入；不依赖
+GitHub hosted CI。当前可复现入口是 `scripts/verify-windows-msvc.ps1`：它应在 Windows
+主机上直接运行，并通过参数或环境变量接收 MSVC Build Tools 位置等本机信息。
+`scripts/verify-windows-msvc-ssh.sh` 和 `scripts/verify-windows-msvc-matrix.sh` 只是从
+Linux/macOS 调用远端 Windows 主机的 transport wrapper。公开文档和脚本不得写入私有主机名
+或本地安装路径。整体 local/self-hosted verification floor 入口见
+`scripts/verify-selfhosted-floor.sh`。
 
 ## Feature gates（功能 gate）
 
@@ -170,7 +151,6 @@ local/self-hosted verification floor 入口见 `scripts/verify-selfhosted-floor.
 FORGE_ENABLE_FORGE_RUNTIME=ON
 FORGE_ENABLE_FORGE_RESOURCE_POLICY=ON
 FORGE_ENABLE_FORGE_IO=AUTO
-FORGE_ENABLE_FORGE_ACCEL=AUTO
 ```
 
 测试开关：
@@ -179,16 +159,13 @@ FORGE_ENABLE_FORGE_ACCEL=AUTO
 FORGE_TEST_ENABLE_FORGE_RUNTIME=ON
 FORGE_TEST_ENABLE_FORGE_RESOURCE=ON
 FORGE_TEST_ENABLE_FORGE_IO=ON
-FORGE_TEST_ENABLE_FORGE_ACCEL=ON
 FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 ```
 
-`AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header
-设施不应因为全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、
-tests 和带外部依赖的 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness
-backend 和 Windows IOCP proof backend；accel gate 已用于 portable mock backend；
-erasure 设施是 header-only，不再有独立功能 gate。accel 当前不做 CUDA、HIP、SYCL
-或 vendor SDK 探测。
+`AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header 设施不应因为
+全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、tests 和带外部依赖的
+backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness backend 和 Windows IOCP proof
+backend；erasure 设施是 header-only，不再有独立功能 gate。
 
 ## Resource policy（资源策略）
 
@@ -196,139 +173,72 @@ Resource policy 解决实际 runtime 资源问题：
 
 - 队列和 pending operation 的内存来源；
 - bounded queue/channel 的容量和 backpressure；
-- command/event record 的复用；
-- host/device staging buffer 的分配；
+- callback/timer record 的复用；
 - OOM 或 capacity full 时的 completion 策略。
 
-V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy
-framework。`static_thread_pool` 已把 queued task callable record 纳入 pool
-resource，`timer_context` 已把 state、timer op data、timer item control block、
-timer queue 和 timer callback callable record 纳入 resource；`async_scope`
-op-state 和 `strand` runner keepalive node 也已纳入 resource。仍需如实记录其它
-未纳入路径，例如 OS thread、kernel object 或 vendor-owned allocation。
+V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大型 policy framework。
+`static_thread_pool` 已把 queued task callable record 纳入 pool resource，`timer_context`
+已把 state、timer op data、timer item control block、timer queue 和 timer callback callable
+record 纳入 resource；`async_scope` op-state 和 `strand` runner keepalive node 也已纳入
+resource。仍需如实记录其它未纳入路径，例如 OS thread 或 kernel object。
 
 ## IO backend（IO 后端）
 
-IO backend 必须接触真实底层设施，否则只是多包一层线程池。当前已落地 Linux
-fd readiness backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
+IO backend 必须接触真实底层设施，否则只是多包一层线程池。当前已落地 Linux fd readiness
+backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 
 - 通用 API 层：readiness sender、async read/write、close/shutdown；
 - 后端层：Linux `epoll`/`eventfd` 与 Windows IOCP 已有 proof；Linux `io_uring`
   仅在明确需要 kernel submission/completion queue 语义时再做；
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
-第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；
-macOS/BSD kqueue 当前不在项目需求内。`io_uring` 当前 defer：现有需求由 epoll
-readiness + one-shot read/write 覆盖，后续只有在需要 kernel SQ/CQ 语义且能稳定验证时
-才重新立项。IOCP 当前 proof 已覆盖 completion drain、per-operation cancellation
-和 conservative associated-handle pruning；更强的 owned-handle lifetime 或
-high-churn handle-pool policy 仍需独立 taskbook。Zig 可以帮助构建和 C ABI 互操作，但不能消除
-epoll/io_uring/IOCP 语义差异。
+第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；macOS/BSD
+kqueue 当前不在项目需求内。`io_uring` 当前 defer：现有需求由 epoll readiness + one-shot
+read/write 覆盖，后续只有在需要 kernel SQ/CQ 语义且能稳定验证时才重新立项。IOCP 当前
+proof 已覆盖 completion drain、per-operation cancellation 和 conservative associated-handle
+pruning；更强的 owned-handle lifetime 或 high-churn handle-pool policy 仍需独立 taskbook。
 
-## Accel scheduler（加速器调度）
+## Coroutine-native byte IO
 
-短命名采用 `forge::accel`，避免 `gpu` 过窄，也避免 `device` 与普通 IO 设备混淆。
-目标覆盖 GPU、NPU、FPGA、DSP、专用推理卡和 GPGPU。
+Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是标准库 `<io>` backport。
+它应继续满足：
 
-`accel` 的第一目标不是绑定 CUDA/HIP/SYCL。当前 dependency-free mock backend 和
-CPU/SIMD reference backend 已经落地，用真实 CPU work 验证同一 vocabulary；这不是
-release tag 或 CI policy 变更，也不改变 vendor backend 的 owner gate。当前
-mock/reference backend 已落地以下共同结构：
+- API 放在 `forge::io`，不进入 `namespace std`；
+- stream erasure 默认是 borrowed wrapper，owning/ABI-stable erasure 需要独立设计；
+- `io_task<T>` 与 sender bridge 必须清楚说明 single-use、stopped 和 frame lifetime；
+- `context_await` 是现有 `forge::io::context` sender 的 coroutine facade，不改变底层 fd /
+  `HANDLE` / buffer 的 borrowed lifetime；
+- Windows IOCP named-pipe coroutine smoke 应作为未来 Windows gate 补上。
 
-- command queue / stream 的生命周期；
-- event/fence 的 sender completion 形状；
-- host/device/staging buffer 的资源策略；
-- H2D、D2H、D2D copy 的 backpressure 和错误模型；
-- kernel-like command 的提交、完成、取消和 drain 语义；
-- request/response packet、protocol envelope、device/session lifecycle 和
-  optional telemetry proof。
-
-当前 surface：
-
-```cpp
-forge::accel::mock::context
-forge::accel::mock::device
-forge::accel::mock::device_session
-forge::accel::mock::queue
-forge::accel::mock::device_buffer
-forge::accel::mock::event
-forge::accel::mock::copy_to_device(...)
-forge::accel::mock::copy_to_host(...)
-forge::accel::mock::copy_device_to_device(...)
-forge::accel::mock::submit(...)
-forge::accel::mock::submit_message(...)
-forge::accel::mock::submit_packet(...)
-forge::accel::mock::request_session
-forge::accel::protocol_envelope
-forge::accel::mock::protocol::loopback_transport
-forge::accel::mock::record_event(...)
-forge::accel::mock::wait_event(...)
-forge::accel::mock::fence(...)
-forge::accel::mock::trace_sink
-```
-
-具体后端若未来需要，可放在：
-
-```cpp
-forge::accel::cuda
-forge::accel::hip
-forge::accel::sycl
-```
-
-核心接口不应强依赖 CUDA/HIP/SYCL。mock/in-memory backend、CPU/SIMD reference backend
-和 examples 已用于验证语义。当前 host/device runtime substrate 已按
-[`forge::accel` runtime 设计](forge-accel-runtime-design.md) 收敛：posted/non-posted
-transport、control/lifecycle、worker stream semantics、stream-ordered callback、
-power/resume contract 和 framework glue 都有 portable proof。只有当这些 portable
-contracts 需要真实设备语义证明时，才选择一个可选 vendor/platform backend 做 proof。
+不要提前承诺 `std::io`、`std::networking`、`<io>` 或 `<networking>`。若 WG21 后续 adopted
+wording，另开 taskbook 评估是否做 standard-shaped backport。
 
 ## Typed-error erased sender（类型化错误擦除 sender）
 
-`forge::erased_sender` 已支持多个 value shape，并保留目标
-`CompletionSignatures` 中声明的 typed error 形状，例如：
+`forge::erased_sender` 已支持多个 value shape，并保留目标 `CompletionSignatures` 中声明的
+typed error 形状，例如：
 
 - `std::error_code` for IO；
-- driver error code for CUDA/HIP；
-- device status for FPGA/NPU；
 - allocation failure / capacity exceeded；
 - resource closed / operation canceled。
 
-当前剩余问题不是 erased sender 的基本 typed-error vtable。IO 已提供
-`readable_typed` / `writable_typed` / `async_read_some_typed` /
-`async_write_some_typed` 这组 opt-in typed variants；默认 IO surface 仍使用
-`std::exception_ptr`。accel 已提供 `copy_to_device_typed` / `copy_to_host_typed` /
-`copy_device_to_device_typed` / `submit_typed` / `submit_message_typed` /
-`submit_packet_typed` / `submit_request_typed` / `record_event_typed` /
-`wait_event_typed` / `synchronize_event_typed` / `fence_typed` /
-`enqueue_callback_typed` 这组 opt-in typed variants；
-`forge::wait_result(sender)` 可在同步边界保留 value / typed error / stopped，
-避免示例和插件边界重复手写 receiver。
-
-默认 accel surface 仍使用 `std::exception_ptr`。真实 backend 若引入 vendor-specific
-错误码，应作为独立 mapping 决策，不应反向污染 portable vocabulary 或 mock API。
+当前剩余问题不是 erased sender 的基本 typed-error vtable。IO 已提供 `readable_typed` /
+`writable_typed` / `async_read_some_typed` / `async_write_some_typed` 这组 opt-in typed
+variants；默认 IO surface 仍使用 `std::exception_ptr`。`forge::wait_result(sender)` 可在同步
+边界保留 value / typed error / stopped，避免示例和插件边界重复手写 receiver。
 
 ## Examples 策略
 
 Examples 必须从“能编译”升级为“能教会人怎么组合”：
 
-- `forge_resource_policy_example.cpp`：`forge::resource_policy`、固定 arena 和
-  bounded pool/channel；
+- `forge_resource_policy_example.cpp`：`forge::resource_policy`、固定 arena 和 bounded
+  pool/channel；
 - `forge_bounded_pipeline_example.cpp`：thread pool + strand + channel + scope；
 - `forge_io_readiness_example.cpp`：fd readiness sender + resource lifetime；
-- `forge_accel_copy_example.cpp`：host/device copy + CPU continuation；
-- `forge_accel_memory_example.cpp`：memory kinds、byte buffer 和 cached-memory
-  `flush` / `invalidate` proof；
-- `forge_accel_pipeline_example.cpp`：H2D -> kernel -> D2H -> CPU postprocess；
-- `forge_accel_message_device_example.cpp`：device session + message command；
-- `forge_accel_session_reset_example.cpp`：session reset、device lost、stale
-  session 和 recovery；
-- `forge_accel_packet_example.cpp` / `forge_accel_request_runtime_example.cpp`：
-  owning packet、request ID、sync/post request 和 typed boundary；
-- `forge_accel_protocol_transport_example.cpp`：portable envelope、late response
-  discard 和 lifecycle signal；
-- `forge_accel_trace_example.cpp`：optional command timeline；
-- `forge_inference_runtime_sketch.cpp`：请求 channel、strand 顺序控制、accel queue、
-  scope 生命周期和 resource shutdown。
+- `forge_io_read_write_example.cpp`：borrowed span async read/write；
+- `forge_io_typed_error_example.cpp`：typed IO error 穿过 erased sender；
+- `forge_memory_stream_example.cpp`：backend-free stream protocol；
+- `forge_coro_line_pipeline_example.cpp`：coroutine protocol + strand state update。
 
 这些 examples 应避免营销式代码，重点展示“资源在哪里、取消如何传播、何时 drain、
 错误如何处理、谁拥有谁”。

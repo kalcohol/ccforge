@@ -4,14 +4,14 @@
 
 CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backport，
 以及一组小而实用的 `forge::` 运行时工具，用于结构化异步、资源生命周期管理、
-消息通路、IO proof 和中立的 accel command proof。
+消息通路和 IO proof。
 
 项目分两层：
 
 - `backport/`：标准设施 backport，按标准头文件名暴露，例如 `<execution>`、
   `<simd>`、`<mdspan>`、`<linalg>`、`<memory>` 和 `<utility>`。
 - `include/forge/`：非标准扩展，全部在 `namespace forge`，包括线程池、
-  scope、channel、strand、IO/accel proof、coroutine task 和类型擦除工具。
+  scope、channel、strand、IO proof、coroutine task 和类型擦除工具。
 
 `forge.cmake` 会在 consumer configure 阶段按当前 compiler、standard library 和
 `CMAKE_CXX_STANDARD` 探测原生支持：完整原生则让位，部分原生则让位并警告，无原生则
@@ -29,7 +29,6 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::constant_wrapper` | `<utility>` | C++26 backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP proof backend |
-| `forge::accel` | `<forge/accel.hpp>` | runtime vocabulary plus mock/reference command backend |
 
 更精确的语义、限制和状态说明见 [文档目录](docs/README.md)。
 
@@ -133,7 +132,6 @@ scripts/verify-install-package.sh
 - [标准 backport 说明](docs/backports/)
 - [`forge::` 扩展工具](docs/forge-utilities.md)
 - [`forge::io`](docs/forge-io.md)
-- [`forge::accel`](docs/forge-accel.md)
 - [native handoff 与无感注入](docs/native-handoff.md)
 - [测试与验证](docs/testing.md)
 - [roadmap](ROADMAP.md)

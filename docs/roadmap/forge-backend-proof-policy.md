@@ -4,7 +4,7 @@
 `backport/` 下的标准 backport。
 
 目标是证明 Forge 的 runtime substrate 能表达真实系统，同时不把项目变成 networking、
-GPU、tensor 或 driver framework。
+tensor 或 driver framework。
 
 ## Gate 策略
 
@@ -14,8 +14,8 @@ GPU、tensor 或 driver framework。
 - `ON`：要求 backend 可用，不可用时 configure 失败；
 - `OFF`：该 backend 的 tests/examples 注册数为零。
 
-Backend 代码不存在时，不要提前添加 SDK probe。未来 CUDA/HIP/SYCL、`io_uring` 或
-vendor-device proof 必须在同一份 taskbook 里同时添加 probe、backend 代码和测试。
+Backend 代码不存在时，不要提前添加 SDK probe。未来 `io_uring` 或其它 platform proof
+必须在同一份 taskbook 里同时添加 probe、backend 代码和测试。
 
 Package install 不能冻结构建机器上的 probe 结果。Installed configs 应在 consumer project
 中重新运行 backend probes。
@@ -90,6 +90,5 @@ Linux `io_uring` 延后，直到项目需要 `epoll` readiness 加 one-shot read
 kernel submission/completion queue 语义。若将来需要，把它作为新的 backend proof，带独立
 gate、examples 和 sanitizer story。
 
-当前 accel 立场是 vendor-neutral。Portable surface 继续围绕 queues、command submission、
-buffers、async copy、event/fence boundaries 和 message-style device sessions。CUDA/HIP/SYCL、
-FPGA、NPU 或 driver SDK support 只有在 mock shape 证明稳定需求后，才作为独立 proof 启动。
+其它平台或外部生态 adapter 只有在现有 IO/runtime surface 证明需求后，才作为独立 proof
+启动。不要为尚不存在的 backend 先冻结 public ABI。

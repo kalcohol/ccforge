@@ -1,7 +1,7 @@
 # Coroutine-native byte IO 路线图
 
-本文记录 Forge 如何跟踪 WG21 Network Endeavor 系列提案，并把其中对本仓库有用的
-Stage One 能力吸收到 `forge::` extension layer。它不是 `std::io`、不是
+本文记录 Forge 如何跟踪 WG21 Network Endeavor / coroutine-native IO 的 C++29 讨论，
+并把其中对本仓库有用的 Stage One 能力吸收到 `forge::` extension layer。它不是 `std::io`、不是
 `std::networking` backport，也不是完整网络库计划。
 
 ## 当前判断
@@ -12,7 +12,7 @@ Forge 可以吸收的是“可替换 backend 的异步字节流支撑层”，�
 1. byte buffer 与 compound IO result vocabulary；
 2. memory/scripted streams，用于无 OS handle 的协议测试；
 3. read/write stream concepts 和 type-erased stream boundary；
-4. coroutine-native awaitable/execution substrate 的小型实验；
+4. coroutine-native awaitable/execution substrate 的小型 Forge extension；
 5. sender/coroutine interop bridge；
 6. 现有 `forge::io::context` 的 coroutine-facing façade，保持 Linux readiness 和
    Windows IOCP 语义诚实；
@@ -24,20 +24,20 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
 
 ## 当前实现状态
 
-截至 Stage 8 收敛，已实现的 public surface 都位于 `forge::io` 或
-`forge::io::experimental`，并保持 direct-header 使用：
+截至 Stage 8 收敛，已实现的 public surface 都位于 `forge::io`，并保持 direct-header
+使用：
 
 - `<forge/io/result.hpp>`：`io_result<Ts...>` compound result。
 - `<forge/io/buffer.hpp>`：borrowed byte buffers 和 buffer sequence helpers。
 - `<forge/io/memory_stream.hpp>`：memory/scripted streams。
 - `<forge/io/stream.hpp>`：stream concepts、`read_exactly`、`write_all`、`read_until`、
   borrowed `any_read_stream` / `any_write_stream`。
-- `<forge/io/coro.hpp>`：experimental `io_env`、`io_task`、`await_sender`、`as_sender`。
-- `<forge/io/context_await.hpp>`：experimental bridge over existing `forge::io::context`
+- `<forge/io/coro.hpp>`：`io_env`、`io_task`、`await_sender`、`as_sender`。
+- `<forge/io/context_await.hpp>`：bridge over existing `forge::io::context`
   operations when a backend exists.
 
 Umbrella policy 保持保守：`<forge/io.hpp>` 继续只暴露 OS backend `context`（在 backend
-可用时），不把纯 vocabulary 或 experimental coroutine headers 自动拉入；`<forge/execution.hpp>`
+可用时），不把纯 vocabulary 或 coroutine headers 自动拉入；`<forge/execution.hpp>`
 不承载 coroutine-native byte IO track。当前不新增 feature-test-like Forge macro；用户需要
 backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设施以 direct include 和
 普通 C++ name detection 为主。
@@ -115,7 +115,7 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 ### Stage 4：coroutine execution substrate
 
 实验 `io_env`、executor adaptation、stop token propagation 和可选 frame allocator policy。
-默认不改 `forge::task`；如确实需要 `forge::io::task` 或 `forge::io::experimental::task`，
+默认不改 `forge::task`。如确实需要把 `io_task` 扩展成更通用的 public task family，
 必须先写设计审计。
 
 ### Stage 5：sender interop

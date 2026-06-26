@@ -43,7 +43,7 @@
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L \
     && defined(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
 
-namespace cio = forge::io::experimental;
+namespace cio = forge::io;
 
 class unique_fd {
 public:
