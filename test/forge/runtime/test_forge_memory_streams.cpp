@@ -36,12 +36,16 @@ template<class Stream>
 auto read_length_prefixed_packet(Stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
-    auto [length_error, length_count] = stream.read_some(
+    auto length_result = stream.read_some(
         forge::io::mutable_buffer{std::span{length_storage}});
+    auto [length_error, length_count] = length_result;
     if (length_error) {
         return forge::io::io_result<std::string>::failure(
             length_error,
             std::string{});
+    }
+    if (length_result.eof()) {
+        return forge::io::io_result<std::string>::end_of_file(std::string{});
     }
     if (length_count != 1) {
         return forge::io::io_result<std::string>::failure(
@@ -55,15 +59,21 @@ auto read_length_prefixed_packet(Stream& stream)
     std::string payload(expected, '\0');
     std::size_t offset = 0;
     while (offset < expected) {
-        auto [read_error, read_count] = stream.read_some(
+        auto read_result = stream.read_some(
             forge::io::mutable_buffer{
                 payload.data() + offset,
                 payload.size() - offset});
+        auto [read_error, read_count] = read_result;
         offset += read_count;
         if (read_error) {
             payload.resize(offset);
             return forge::io::io_result<std::string>::failure(
                 read_error,
+                std::move(payload));
+        }
+        if (read_result.eof()) {
+            payload.resize(offset);
+            return forge::io::io_result<std::string>::end_of_file(
                 std::move(payload));
         }
         if (read_count == 0) {
@@ -114,10 +124,13 @@ TEST(ForgeMemoryStreamsTest, MemoryReadStreamReadsAllBytesInChunks) {
     EXPECT_EQ(third_count, 2u);
     EXPECT_EQ(std::string_view(buffer.data(), third_count), "ef");
 
-    auto [eof_error, eof_count] = stream.read_some(
+    auto eof_result = stream.read_some(
         forge::io::mutable_buffer{std::span{buffer}});
+    auto [eof_error, eof_count] = eof_result;
     EXPECT_FALSE(eof_error);
     EXPECT_EQ(eof_count, 0u);
+    EXPECT_TRUE(eof_result.eof());
+    EXPECT_FALSE(eof_result);
     EXPECT_TRUE(stream.eof());
 }
 
@@ -218,10 +231,13 @@ TEST(ForgeMemoryStreamsTest, ScriptedReadStreamForcesShortReadsAndEof) {
     EXPECT_EQ(second_count, 3u);
     EXPECT_EQ(std::string_view(buffer.data(), second_count), "llo");
 
-    auto [eof_error, eof_count] = stream.read_some(
+    auto eof_result = stream.read_some(
         forge::io::mutable_buffer{std::span{buffer}});
+    auto [eof_error, eof_count] = eof_result;
     EXPECT_FALSE(eof_error);
     EXPECT_EQ(eof_count, 0u);
+    EXPECT_TRUE(eof_result.eof());
+    EXPECT_FALSE(eof_result);
 }
 
 TEST(ForgeMemoryStreamsTest, ScriptedReadStreamKeepsResidualBytes) {
@@ -293,4 +309,20 @@ TEST(ForgeMemoryStreamsTest, ProtocolCanInspectPayloadOnPartialError) {
 
     EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
     EXPECT_EQ(payload, "hello");
+}
+
+TEST(ForgeMemoryStreamsTest, ProtocolCanInspectPayloadOnPartialEof) {
+    auto prefix = to_bytes("he");
+    prefix.insert(prefix.begin(), std::byte{5});
+    forge::io::scripted_read_stream stream{
+        forge::io::scripted_read_step::bytes(
+            forge::io::const_buffer{prefix.data(), prefix.size()}),
+        forge::io::scripted_read_step::eof()};
+
+    auto result = read_length_prefixed_packet(stream);
+    auto [error, payload] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(payload, "he");
 }

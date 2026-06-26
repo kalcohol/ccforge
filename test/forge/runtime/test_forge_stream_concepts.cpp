@@ -94,13 +94,17 @@ auto to_string(std::span<const std::byte> bytes) -> std::string {
 auto read_erased_packet(forge::io::any_read_stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
-    auto [length_error, length_count] = forge::io::read_exactly(
+    auto length_result = forge::io::read_exactly(
         stream,
         forge::io::mutable_buffer{std::span{length_storage}});
+    auto [length_error, length_count] = length_result;
     if (length_error) {
         return forge::io::io_result<std::string>::failure(
             length_error,
             std::string{});
+    }
+    if (length_result.eof()) {
+        return forge::io::io_result<std::string>::end_of_file(std::string{});
     }
 
     EXPECT_EQ(length_count, 1u);
@@ -108,13 +112,19 @@ auto read_erased_packet(forge::io::any_read_stream& stream)
         static_cast<std::size_t>(std::to_integer<unsigned char>(
             length_storage[0]));
     std::string payload(expected, '\0');
-    auto [payload_error, payload_count] = forge::io::read_exactly(
+    auto payload_result = forge::io::read_exactly(
         stream,
         forge::io::mutable_buffer{payload.data(), payload.size()});
+    auto [payload_error, payload_count] = payload_result;
     if (payload_error) {
         payload.resize(payload_count);
         return forge::io::io_result<std::string>::failure(
             payload_error,
+            std::move(payload));
+    }
+    if (payload_result.eof()) {
+        payload.resize(payload_count);
+        return forge::io::io_result<std::string>::end_of_file(
             std::move(payload));
     }
 
@@ -159,11 +169,13 @@ TEST(ForgeStreamConceptsTest, ReadExactlyReturnsPartialCountOnEof) {
     forge::io::memory_read_stream stream{"hi"};
     std::array<char, 4> output{};
 
-    auto [error, count] = forge::io::read_exactly(
+    auto result = forge::io::read_exactly(
         stream,
         forge::io::mutable_buffer{std::span{output}});
+    auto [error, count] = result;
 
-    EXPECT_EQ(error, std::make_error_code(std::errc::io_error));
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.eof());
     EXPECT_EQ(count, 2u);
     EXPECT_EQ(std::string_view(output.data(), count), "hi");
 }
@@ -201,9 +213,11 @@ TEST(ForgeStreamConceptsTest, ReadUntilReturnsPartialLineOnEof) {
     forge::io::memory_read_stream stream{"partial", 2};
     std::string line;
 
-    auto [error, count] = forge::io::read_until(stream, line);
+    auto result = forge::io::read_until(stream, line);
+    auto [error, count] = result;
 
-    EXPECT_EQ(error, std::make_error_code(std::errc::io_error));
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.eof());
     EXPECT_EQ(count, 7u);
     EXPECT_EQ(line, "partial");
 }

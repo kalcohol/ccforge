@@ -46,10 +46,15 @@ auto to_string(std::span<const std::byte> bytes) -> std::string {
 auto read_command(forge::io::any_read_stream& input)
     -> forge::io::io_result<std::string> {
     std::string line;
-    auto [error, count] = forge::io::read_until(input, line, '\n', 32);
+    auto result = forge::io::read_until(input, line, '\n', 32);
+    auto [error, count] = result;
     if (error) {
         return forge::io::io_result<std::string>::failure(
             error,
+            std::move(line));
+    }
+    if (result.eof()) {
+        return forge::io::io_result<std::string>::end_of_file(
             std::move(line));
     }
 

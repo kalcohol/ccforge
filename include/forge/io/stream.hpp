@@ -82,9 +82,7 @@ template<read_stream Stream>
             return io_result<std::size_t>::failure(error, total);
         }
         if (count == 0) {
-            return io_result<std::size_t>::failure(
-                __stream_detail::short_transfer_error(),
-                total);
+            return io_result<std::size_t>::end_of_file(total);
         }
     }
 
@@ -139,9 +137,7 @@ template<read_stream Stream>
             return io_result<std::size_t>::failure(error, total);
         }
         if (count == 0) {
-            return io_result<std::size_t>::failure(
-                __stream_detail::short_transfer_error(),
-                total);
+            return io_result<std::size_t>::end_of_file(total);
         }
         if (output.back() == delimiter) {
             return io_result<std::size_t>::success(total);

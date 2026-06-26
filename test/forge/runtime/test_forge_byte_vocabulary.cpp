@@ -23,6 +23,10 @@ auto sample_error() -> forge::io::io_result<std::size_t> {
         2);
 }
 
+auto sample_eof() -> forge::io::io_result<std::size_t> {
+    return forge::io::io_result<std::size_t>::end_of_file(3);
+}
+
 } // namespace
 
 static_assert(std::tuple_size_v<forge::io::io_result<>> == 1);
@@ -43,6 +47,8 @@ TEST(ForgeByteVocabularyTest, IoResultSupportsStructuredBinding) {
     EXPECT_EQ(count, 4u);
     EXPECT_TRUE(result);
     EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.status(), forge::io::io_status::value);
+    EXPECT_FALSE(result.eof());
 }
 
 TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnError) {
@@ -55,7 +61,22 @@ TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnError) {
         EXPECT_EQ(count, 2u);
         EXPECT_FALSE(result);
         EXPECT_FALSE(result.has_value());
+        EXPECT_EQ(result.status(), forge::io::io_status::error);
+        EXPECT_FALSE(result.eof());
     }()));
+}
+
+TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnEof) {
+    auto result = sample_eof();
+
+    auto [ec, count] = result;
+
+    EXPECT_FALSE(ec);
+    EXPECT_EQ(count, 3u);
+    EXPECT_FALSE(result);
+    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(result.status(), forge::io::io_status::eof);
 }
 
 TEST(ForgeByteVocabularyTest, IoResultCanExposeReferences) {
@@ -67,6 +88,8 @@ TEST(ForgeByteVocabularyTest, IoResultCanExposeReferences) {
 
     EXPECT_EQ(forge::io::get<1>(result), 9u);
     EXPECT_EQ(result.error(), std::make_error_code(std::errc::timed_out));
+    EXPECT_EQ(result.status(), forge::io::io_status::error);
+    EXPECT_FALSE(result.has_value());
 }
 
 TEST(ForgeByteVocabularyTest, IoResultWithoutPayloadStillBindsError) {
@@ -75,6 +98,18 @@ TEST(ForgeByteVocabularyTest, IoResultWithoutPayloadStillBindsError) {
     auto [ec] = result;
 
     EXPECT_EQ(ec, std::make_error_code(std::errc::broken_pipe));
+    EXPECT_EQ(result.status(), forge::io::io_status::error);
+}
+
+TEST(ForgeByteVocabularyTest, IoResultWithoutPayloadCanRepresentEof) {
+    auto result = forge::io::io_result<>::end_of_file();
+
+    auto [ec] = result;
+
+    EXPECT_FALSE(ec);
+    EXPECT_FALSE(result);
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(result.status(), forge::io::io_status::eof);
 }
 
 TEST(ForgeByteVocabularyTest, BuffersExposeBorrowedByteRegions) {

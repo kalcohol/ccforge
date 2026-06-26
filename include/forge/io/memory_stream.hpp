@@ -106,8 +106,11 @@ public:
 
     [[nodiscard]] auto read_some(mutable_buffer output) noexcept
         -> io_result<std::size_t> {
-        if (output.empty() || eof()) {
+        if (output.empty()) {
             return io_result<std::size_t>::success(0);
+        }
+        if (eof()) {
+            return io_result<std::size_t>::end_of_file(0);
         }
 
         const auto transfer_limit = max_read_size_ == 0
@@ -376,13 +379,13 @@ public:
         }
 
         if (steps_.empty()) {
-            return io_result<std::size_t>::success(0);
+            return io_result<std::size_t>::end_of_file(0);
         }
 
         auto& step = steps_.front();
         switch (step.kind_) {
         case scripted_read_step::kind::eof:
-            return io_result<std::size_t>::success(0);
+            return io_result<std::size_t>::end_of_file(0);
 
         case scripted_read_step::kind::error: {
             const auto error = step.error_;

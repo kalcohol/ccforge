@@ -49,12 +49,21 @@ auto to_bytes(std::string_view text) -> std::vector<std::byte> {
 auto read_packet(forge::io::any_read_stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
-    auto [length_error, length_count] = forge::io::read_exactly(
+    auto length_result = forge::io::read_exactly(
         stream,
         forge::io::mutable_buffer{std::span{length_storage}});
-    if (length_error || length_count != 1) {
+    auto [length_error, length_count] = length_result;
+    if (length_error) {
         return forge::io::io_result<std::string>::failure(
-            length_error ? length_error : std::make_error_code(std::errc::io_error),
+            length_error,
+            std::string{});
+    }
+    if (length_result.eof()) {
+        return forge::io::io_result<std::string>::end_of_file(std::string{});
+    }
+    if (length_count != 1) {
+        return forge::io::io_result<std::string>::failure(
+            std::make_error_code(std::errc::io_error),
             std::string{});
     }
 
@@ -62,13 +71,19 @@ auto read_packet(forge::io::any_read_stream& stream)
         static_cast<std::size_t>(std::to_integer<unsigned char>(
             length_storage[0]));
     std::string payload(expected, '\0');
-    auto [payload_error, payload_count] = forge::io::read_exactly(
+    auto payload_result = forge::io::read_exactly(
         stream,
         forge::io::mutable_buffer{payload.data(), payload.size()});
+    auto [payload_error, payload_count] = payload_result;
     if (payload_error) {
         payload.resize(payload_count);
         return forge::io::io_result<std::string>::failure(
             payload_error,
+            std::move(payload));
+    }
+    if (payload_result.eof()) {
+        payload.resize(payload_count);
+        return forge::io::io_result<std::string>::end_of_file(
             std::move(payload));
     }
 

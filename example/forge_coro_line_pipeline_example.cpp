@@ -69,12 +69,15 @@ auto handle_request(
     forge::strand::scheduler serial,
     shared_state& state) -> cio::io_task<forge::io::io_result<std::size_t>> {
     std::string command;
-    auto [read_error, read_count] =
-        forge::io::read_until(input, command, '\n', 32);
+    auto read_result = forge::io::read_until(input, command, '\n', 32);
+    auto [read_error, read_count] = read_result;
     if (read_error) {
         co_return forge::io::io_result<std::size_t>::failure(
             read_error,
             read_count);
+    }
+    if (read_result.eof()) {
+        co_return forge::io::io_result<std::size_t>::end_of_file(read_count);
     }
     if (!command.empty() && command.back() == '\n') {
         command.pop_back();

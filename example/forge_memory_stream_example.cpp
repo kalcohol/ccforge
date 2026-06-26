@@ -49,11 +49,20 @@ template<class Stream>
 auto read_length_prefixed_packet(Stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
-    auto [length_error, length_count] = stream.read_some(
+    auto length_result = stream.read_some(
         forge::io::mutable_buffer{std::span{length_storage}});
-    if (length_error || length_count != 1) {
+    auto [length_error, length_count] = length_result;
+    if (length_error) {
         return forge::io::io_result<std::string>::failure(
-            length_error ? length_error : std::make_error_code(std::errc::io_error),
+            length_error,
+            std::string{});
+    }
+    if (length_result.eof()) {
+        return forge::io::io_result<std::string>::end_of_file(std::string{});
+    }
+    if (length_count != 1) {
+        return forge::io::io_result<std::string>::failure(
+            std::make_error_code(std::errc::io_error),
             std::string{});
     }
 
@@ -63,15 +72,27 @@ auto read_length_prefixed_packet(Stream& stream)
     std::string payload(expected, '\0');
     std::size_t offset = 0;
     while (offset < expected) {
-        auto [read_error, read_count] = stream.read_some(
+        auto read_result = stream.read_some(
             forge::io::mutable_buffer{
                 payload.data() + offset,
                 payload.size() - offset});
+        auto [read_error, read_count] = read_result;
         offset += read_count;
-        if (read_error || read_count == 0) {
+        if (read_error) {
             payload.resize(offset);
             return forge::io::io_result<std::string>::failure(
-                read_error ? read_error : std::make_error_code(std::errc::io_error),
+                read_error,
+                std::move(payload));
+        }
+        if (read_result.eof()) {
+            payload.resize(offset);
+            return forge::io::io_result<std::string>::end_of_file(
+                std::move(payload));
+        }
+        if (read_count == 0) {
+            payload.resize(offset);
+            return forge::io::io_result<std::string>::failure(
+                std::make_error_code(std::errc::io_error),
                 std::move(payload));
         }
     }

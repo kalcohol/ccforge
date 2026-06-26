@@ -66,6 +66,24 @@ auto await_size_result(Sender sender) -> io_task<io_result<std::size_t>> {
 }
 
 template<class Sender>
+auto await_read_size_result(Sender sender, bool empty_buffer)
+    -> io_task<io_result<std::size_t>> {
+    try {
+        auto [count] = co_await await_sender(std::move(sender));
+        if (!empty_buffer && count == 0) {
+            co_return io_result<std::size_t>::end_of_file(0);
+        }
+        co_return io_result<std::size_t>::success(count);
+    } catch (const sender_stopped&) {
+        throw;
+    } catch (...) {
+        co_return io_result<std::size_t>::failure(
+            exception_code(std::current_exception()),
+            0);
+    }
+}
+
+template<class Sender>
 auto await_void_result(Sender sender) -> io_task<io_result<>> {
     try {
         co_await await_sender(std::move(sender));
@@ -86,8 +104,9 @@ template<class Handle>
     forge::io::context& context,
     Handle handle,
     std::span<std::byte> buffer) -> io_task<io_result<std::size_t>> {
-    return __context_await_detail::await_size_result(
-        context.async_read_some(handle, buffer));
+    return __context_await_detail::await_read_size_result(
+        context.async_read_some(handle, buffer),
+        buffer.empty());
 }
 
 template<class Handle>

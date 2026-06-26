@@ -39,7 +39,8 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 ```
 
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
-支持 structured binding：
+同时带一个轻量状态位：`value`、`eof` 或 `error`。它保留原有 structured binding
+形状：
 
 ```cpp
 forge::io::io_result<std::size_t> result{
@@ -49,8 +50,11 @@ forge::io::io_result<std::size_t> result{
 auto [ec, n] = result;
 ```
 
-`ec` 永远存在；`!ec` 表示成功，后续 payload 有成功语义。`ec` 为错误时，payload
-仍保留，用于表达 partial IO progress。普通 IO 失败不需要通过异常传播。
+`ec` 永远存在；`result.has_value()` / `static_cast<bool>(result)` 表示成功，
+`result.eof()` 表示 EOF，`ec` 非空表示 routine error。EOF 不使用 error channel，
+但 payload 仍保留，用于表达 partial IO progress。普通 IO 失败不需要通过异常传播。
+保留 `std::error_code` 作为 tuple element 0 是为了让既有 structured-binding 代码继续编译；
+需要区分 EOF 的代码必须检查 `result` 或 `result.eof()`，不能只检查 `ec`。
 
 `forge::io::const_buffer` 和 `forge::io::mutable_buffer` 是 borrowed byte-region
 descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer_size`、
@@ -72,7 +76,9 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
 - `memory_stream` 把一个 read side 和一个 write side 合在一起，适合 request/response
   风格的小型协议测试；`written_bytes()` 与 `memory_write_stream::bytes()` 有相同的 span
   invalidation 规则。
-- `scripted_read_stream` 按脚本返回 bytes、EOF、错误，或 “bytes 后错误”。错误路径仍返回
+- `scripted_read_stream` 按脚本返回 bytes、EOF、错误，或 “bytes 后错误”。EOF 使用
+  `result.eof()` 状态，通常由 `io_result<T...>::end_of_file(...)` 构造；error code
+  为空，byte count 保留。错误路径仍返回
   `0` byte progress；需要 partial progress 时使用 “bytes 后错误”，这样返回的 byte count
   一定对应已经写入 caller buffer 的 bytes。
 
@@ -88,11 +94,13 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
   `io_result<std::size_t>`。
 - `read_write_stream<T>`：同时满足 read/write 两侧。
 - `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
-  算法；遇到 stream error 时返回累计 byte count，遇到提前 EOF/容量耗尽导致的
-  `0` byte progress 时返回 `std::errc::io_error` 和累计 byte count。
+  算法；遇到 stream error 时返回累计 byte count。`read_exactly` 遇到提前 EOF 时返回
+  EOF 状态和累计 byte count；`write_all` 遇到容量耗尽导致的 `0` byte progress 时仍返回
+  `std::errc::io_error` 和累计 byte count，因为 write side 没有 EOF 语义。
 - `read_until(stream, std::string&, delimiter, max_bytes)` 是小型 line/record helper；
   它逐 byte 读取直到 delimiter，输出包含 delimiter，routine error 仍通过
-  `io_result` 返回并保留已读取文本。超过 `max_bytes` 时返回
+  `io_result` 返回并保留已读取文本。提前 EOF 返回 EOF 状态并保留 partial line；
+  超过 `max_bytes` 时返回
   `std::errc::message_size` 和累计 byte count。
 - `any_read_stream` 和 `any_write_stream` 是 non-owning borrowed wrappers。构造时只保存
   目标 stream 的地址和一个函数指针；copy/move 只复制这条引用，调用方必须保证 concrete
@@ -106,7 +114,10 @@ owning erased storage 或 per-operation allocation 策略。
 
 P4124 风格的 domain-aware `when_all` 当前只保留为设计方向，没有实现公共 helper。原因是
 Stage 7 还不能证明 sibling operation 的取消、partial result 保留和 exactly-once completion
-可以在当前 substrate 上同时满足。
+可以在当前 substrate 上同时满足。引入 EOF channel 是该方向的前置收敛：compound result
+现在可以同时表达 success、EOF、routine error 和 partial progress；真正的 combinator 还需要
+为每个 child 定义独立结果保留、sibling stop propagation 和混合 value/error/eof/stopped 的
+完成优先级。
 
 `forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
@@ -179,6 +190,8 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
 - backend 的 `set_error(std::exception_ptr)` 会映射成 `io_result` 的 `std::error_code`；
   `std::system_error` 保留原始 code，其它异常退化为 `std::errc::io_error`。当前 backend
   error path 没有 partial byte count，因此 failure payload 是 `0`。
+- `async_read_some(context, handle, non_empty_buffer)` 看到 byte count `0` 时会映射成
+  EOF 状态；零长度 read 仍是成功 `0`。`async_write_some` 不合成 EOF。
 - backend 的 `set_stopped()` 不会被压成 error code；`as_sender(io_task<T>)` 仍把它交付为
   stopped channel。
 - Linux `readable(context, fd)` / `writable(context, fd)` 返回 `io_task<io_result<>>`，

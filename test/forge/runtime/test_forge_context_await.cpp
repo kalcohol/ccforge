@@ -127,6 +127,28 @@ TEST(ForgeContextAwaitTest, EmptyReadPreservesBackendBehavior) {
     auto [error, count] = read_io;
     EXPECT_FALSE(error);
     EXPECT_EQ(count, 0u);
+    EXPECT_FALSE(read_io.eof());
+}
+
+TEST(ForgeContextAwaitTest, PeerCloseMapsReadZeroToEof) {
+    forge::io::context context;
+    auto pipe = make_pipe();
+    pipe.write.reset();
+    std::array<std::byte, 1> input{};
+
+    auto read_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::async_read_some(
+                context,
+                pipe.read.get(),
+                std::span{input})));
+
+    ASSERT_TRUE(read_result.has_value());
+    auto [read_io] = std::move(*read_result);
+    auto [error, count] = read_io;
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(read_io.eof());
+    EXPECT_EQ(count, 0u);
 }
 
 TEST(ForgeContextAwaitTest, InvalidHandleMapsToIoResultError) {

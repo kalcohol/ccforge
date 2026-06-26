@@ -31,6 +31,12 @@
 
 namespace forge::io {
 
+enum class io_status {
+    value,
+    eof,
+    error
+};
+
 template<class... Ts>
 class io_result {
 public:
@@ -43,7 +49,8 @@ public:
               && ((std::constructible_from<Ts, Us&&> && ...))
     explicit(sizeof...(Ts) == 0)
     io_result(std::error_code error, Us&&... values)
-        : error_(std::move(error))
+        : status_(error ? io_status::error : io_status::value)
+        , error_(std::move(error))
         , values_(std::forward<Us>(values)...)
     {}
 
@@ -59,7 +66,29 @@ public:
               && ((std::constructible_from<Ts, Us&&> && ...))
     [[nodiscard]] static auto failure(std::error_code error, Us&&... values)
         -> io_result {
-        return io_result{std::move(error), std::forward<Us>(values)...};
+        io_result result{std::move(error), std::forward<Us>(values)...};
+        result.status_ = io_status::error;
+        return result;
+    }
+
+    template<class... Us>
+        requires (sizeof...(Us) == sizeof...(Ts))
+              && ((std::constructible_from<Ts, Us&&> && ...))
+    [[nodiscard]] static auto end_of_file(Us&&... values) -> io_result {
+        io_result result{{}, std::forward<Us>(values)...};
+        result.status_ = io_status::eof;
+        return result;
+    }
+
+    [[nodiscard]] auto status() const noexcept -> io_status {
+        if (error_) {
+            return io_status::error;
+        }
+        return status_;
+    }
+
+    [[nodiscard]] auto eof() const noexcept -> bool {
+        return status() == io_status::eof;
     }
 
     [[nodiscard]] auto error() & noexcept -> std::error_code& {
@@ -95,7 +124,7 @@ public:
     }
 
     [[nodiscard]] auto has_value() const noexcept -> bool {
-        return !error_;
+        return status() == io_status::value;
     }
 
     [[nodiscard]] explicit operator bool() const noexcept {
@@ -103,6 +132,7 @@ public:
     }
 
 private:
+    io_status status_ = io_status::value;
     std::error_code error_{};
     std::tuple<Ts...> values_{};
 };
