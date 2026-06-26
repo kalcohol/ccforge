@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <execution>
 #include <span>
-#include <stop_token>
 #include <system_error>
 #include <utility>
 
@@ -167,7 +166,7 @@ TEST(ForgeContextAwaitTest, ReadinessAwaitableHasNoByteCount) {
 TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {
     forge::io::context context;
     auto pipe = make_pipe();
-    std::stop_source source;
+    std::inplace_stop_source source;
     source.request_stop();
 
     forge::io::io_env env;

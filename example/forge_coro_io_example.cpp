@@ -28,7 +28,6 @@
 #include <execution>
 #include <iostream>
 #include <memory_resource>
-#include <stop_token>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -47,7 +46,7 @@ auto observe_env(std::pmr::memory_resource* expected) -> cio::io_task<bool> {
 int main() {
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
     forge::static_thread_pool pool{1};
-    std::stop_source stop;
+    std::inplace_stop_source stop;
     stop.request_stop();
     std::pmr::monotonic_buffer_resource memory;
 

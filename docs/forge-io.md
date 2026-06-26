@@ -111,7 +111,7 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
 
 - `executor_ref` 是对现有 Forge scheduler 的窄适配，内部使用 `forge::any_scheduler`，
   当前只承诺能产生 schedule sender。
-- `io_env` 携带 `executor_ref`、`std::stop_token` 和可选
+- `io_env` 携带 `executor_ref`、`std::inplace_stop_token` 和可选
   `std::pmr::memory_resource*`。
 - `io_awaitable<T>` 检查 awaitable 是否提供
   `await_suspend(std::coroutine_handle<>, io_env const*)` 形态。

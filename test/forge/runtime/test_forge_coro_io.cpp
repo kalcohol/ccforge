@@ -6,7 +6,6 @@
 #include <execution>
 #include <memory_resource>
 #include <stdexcept>
-#include <stop_token>
 #include <type_traits>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -85,7 +84,7 @@ auto awaits_void_child_task(bool* observed) -> cio::io_task<bool> {
 } // namespace
 
 TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
-    std::stop_source source;
+    std::inplace_stop_source source;
     source.request_stop();
     std::pmr::monotonic_buffer_resource memory;
 
@@ -105,7 +104,7 @@ TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
 }
 
 TEST(ForgeCoroIoTest, IoTaskCanAwaitChildTaskWithSameEnv) {
-    std::stop_source source;
+    std::inplace_stop_source source;
     source.request_stop();
 
     cio::io_env env;

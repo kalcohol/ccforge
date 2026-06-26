@@ -31,7 +31,6 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
-#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -77,7 +76,7 @@ private:
 
 struct io_env {
     executor_ref executor{};
-    std::stop_token stop_token{};
+    std::inplace_stop_token stop_token{};
     std::pmr::memory_resource* memory = forge::default_memory_resource();
 };
 
@@ -352,8 +351,8 @@ struct await_sender_receiver_env {
 
     friend auto tag_invoke(
         std::execution::get_stop_token_t,
-        const await_sender_receiver_env& self) noexcept -> std::stop_token {
-        return self.env ? self.env->stop_token : std::stop_token{};
+        const await_sender_receiver_env& self) noexcept -> std::inplace_stop_token {
+        return self.env ? self.env->stop_token : std::inplace_stop_token{};
     }
 
     friend auto tag_invoke(

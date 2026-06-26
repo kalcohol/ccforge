@@ -9,7 +9,6 @@
 #include <execution>
 #include <memory>
 #include <stdexcept>
-#include <stop_token>
 #include <system_error>
 #include <tuple>
 #include <utility>
@@ -159,7 +158,7 @@ TEST(ForgeCoroInteropTest, AwaitSenderPreservesMoveOnlyValue) {
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
-    std::stop_source stop;
+    std::inplace_stop_source stop;
     stop.request_stop();
     cio::io_env env;
     env.stop_token = stop.get_token();
