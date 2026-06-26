@@ -26,13 +26,16 @@
 #include <forge/io/result.hpp>
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <deque>
 #include <initializer_list>
 #include <limits>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -77,6 +80,13 @@ public:
               const_buffer{input.data(), input.size()},
               max_read_size)
     {}
+
+    template<class String>
+        requires std::same_as<std::remove_cvref_t<String>, std::string> &&
+                 (!std::is_lvalue_reference_v<String>)
+    explicit memory_read_stream(
+        String&& input,
+        std::size_t max_read_size = dynamic_extent_limit) = delete;
 
     [[nodiscard]] auto position() const noexcept -> std::size_t {
         return position_;
@@ -222,6 +232,11 @@ public:
     explicit memory_stream(std::string_view input) noexcept
         : reader_(input)
     {}
+
+    template<class String>
+        requires std::same_as<std::remove_cvref_t<String>, std::string> &&
+                 (!std::is_lvalue_reference_v<String>)
+    explicit memory_stream(String&& input) = delete;
 
     memory_stream(const_buffer input, std::size_t write_capacity)
         : reader_(input)

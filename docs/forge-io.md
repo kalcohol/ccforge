@@ -64,7 +64,8 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
 `write_some` 结果形状，但不打开 socket、pipe、file，也不依赖 `forge::io::context`。
 
 - `memory_read_stream` 从 borrowed input 读取，支持配置单次最大读量，用于稳定复现
-  short read 和 EOF；调用方必须保证输入 memory 活过 stream 使用期。
+  short read 和 EOF；调用方必须保证输入 memory 活过 stream 使用期。为避免常见悬垂误用，
+  直接从临时 `std::string` 构造会被拒绝。
 - `memory_write_stream` 写入 owned storage，或写入 borrowed output buffer；只有容量
   限制会造成 short write。`bytes()` 返回的是 view；owned storage 后续写入可能 reallocate，
   因而会使之前取得的 span 失效。

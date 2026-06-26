@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -77,6 +78,18 @@ auto read_length_prefixed_packet(Stream& stream)
 }
 
 } // namespace
+
+static_assert(
+    std::is_constructible_v<forge::io::memory_read_stream, std::string&>);
+static_assert(
+    !std::is_constructible_v<forge::io::memory_read_stream, std::string&&>);
+static_assert(
+    !std::is_constructible_v<
+        forge::io::memory_read_stream,
+        std::string&&,
+        std::size_t>);
+static_assert(std::is_constructible_v<forge::io::memory_stream, std::string&>);
+static_assert(!std::is_constructible_v<forge::io::memory_stream, std::string&&>);
 
 TEST(ForgeMemoryStreamsTest, MemoryReadStreamReadsAllBytesInChunks) {
     forge::io::memory_read_stream stream{"abcdef", 2};
