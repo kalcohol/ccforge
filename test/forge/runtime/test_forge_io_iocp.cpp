@@ -347,6 +347,20 @@ TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {
     EXPECT_EQ(state->completions, 1);
 }
 
+TEST(IoIocpTest, AsyncReadReturnsZeroWhenPipeIsDisconnected) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    ASSERT_TRUE(::DisconnectNamedPipe(pipe.server.get()))
+        << "DisconnectNamedPipe failed with " << ::GetLastError();
+
+    std::array<std::byte, 1> buffer{};
+    auto read_result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+
+    ASSERT_TRUE(read_result.has_value());
+    EXPECT_EQ(std::get<0>(*read_result), 0u);
+}
+
 TEST(IoIocpTest, ContextAwaitAsyncReadWriteReturnIoResult) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;

@@ -87,6 +87,11 @@ bool __stop_requested(const R& rcvr) noexcept {
         static_cast<int>(code), std::system_category(), what});
 }
 
+[[nodiscard]] inline bool __windows_read_eof_error(DWORD code) noexcept {
+    return code == ERROR_HANDLE_EOF || code == ERROR_BROKEN_PIPE ||
+        code == ERROR_PIPE_NOT_CONNECTED;
+}
+
 class __handle {
 public:
     __handle() noexcept = default;
@@ -313,7 +318,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 }
 
                 if (record->kind == __operation_kind::read &&
-                    (error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE)) {
+                    __windows_read_eof_error(error)) {
                     result.kind = __start_result_kind::value;
                     result.bytes = 0;
                     return result;
@@ -524,7 +529,7 @@ private:
         if (ok) {
             record->complete_value(static_cast<std::size_t>(bytes));
         } else if (record->kind == __operation_kind::read &&
-                   (error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE)) {
+                   __windows_read_eof_error(error)) {
             record->complete_value(0);
         } else if (error == ERROR_OPERATION_ABORTED) {
             record->complete_stopped();
