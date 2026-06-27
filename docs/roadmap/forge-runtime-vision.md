@@ -122,8 +122,9 @@ Windows 阶段性预期：
 
 1. 基础 backport 与 `forge::` 纯 header/runtime 设施应能在 Windows + MSVC 或 clang-cl
    上 configure/build/test。
-2. 有 IOCP backend 时，`FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP tests/examples；
-   `FORGE_ENABLE_FORGE_IO=OFF` 应跳过 IO tests/examples。
+2. 有 IOCP backend 时，`FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用
+   backend-specific IOCP tests/examples；`FORGE_ENABLE_FORGE_IO=OFF` 应跳过
+   backend-specific IO tests/examples，但不关闭 backend-free byte IO/coroutine tests。
 3. Linux-only IO headers 不应在 IO disabled 或非 Linux build 下破坏普通用户 include。
 4. 若准备 Windows 机器，优先建立一个可重复执行的验证脚本，而不是依赖手工点击：
    - 使用 `FORGE_BUILD_TESTS=ON` 进行 CMake configure/build；

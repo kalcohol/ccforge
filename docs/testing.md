@@ -151,7 +151,9 @@ PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`。`FORGE
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、
 关键 Forge gate 状态和最终 CTest 数量。它还会做 gate 注册检查：
 Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend 并注册
-IO tests/examples，`FORGE_ENABLE_FORGE_IO=OFF` 应注册 0 个 IO tests/examples。
+backend-specific `forge_io|example_forge_io` tests/examples，`FORGE_ENABLE_FORGE_IO=OFF`
+应在同一 backend regex 下注册 0 个 tests/examples。`forge_coro_*`、memory stream 和
+byte vocabulary 等 backend-free IO tests/examples 不属于这个 OS backend gate。
 gate 检查还会实际 build/run 少量稳定 examples，例如 IOCP example。这保证 Windows
 smoke 覆盖 cookbook 的关键路径，而不把所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
 因为测试总数会随覆盖增长而变化；但 targeted regex lane 会先断言至少选中 1 个测试，
@@ -258,8 +260,10 @@ resource、IO 和 erasure subsets 被独立配置。Resource-policy tests 还要
 - `FORGE_ENABLE_FORGE_IO`
 
 `FORGE_ENABLE_FORGE_IO=AUTO` 在平台支持时启用 Linux epoll/eventfd backend 或 Windows
-IOCP backend，其它平台跳过 IO tests/examples。`ON` 要求 supported backend，缺失时
-configure 报错；`OFF` 跳过 IO tests/examples。Erasure facilities 是 header-only 且总是可用；用
+IOCP backend，其它平台跳过 OS backend tests/examples。`ON` 要求 supported backend，
+缺失时 configure 报错；`OFF` 跳过 OS backend、`forge::io::context` 和
+backend-specific tests/examples。Backend-free IO/coroutine tests 仍由
+`FORGE_TEST_ENABLE_FORGE_IO` 控制。Erasure facilities 是 header-only 且总是可用；用
 `FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
 
 ## Example smoke tests（示例冒烟）

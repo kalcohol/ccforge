@@ -79,8 +79,8 @@ feature-gate registration checks。
 Optional features 通过 registration shape 验证行为：
 
 - `FORGE_ENABLE_FORGE_IO=AUTO` 或 `ON`
-  - Linux：注册 Linux IO tests/examples；
-  - Windows：注册 IOCP tests/examples；
+  - Linux：注册 backend-specific Linux IO tests/examples；
+  - Windows：注册 backend-specific IOCP tests/examples；
   - unsupported platform 且为 `AUTO`：跳过 IO backend tests/examples；
   - `ON` 且无 backend：configure 应失败。
 - `FORGE_ENABLE_FORGE_IO=OFF`

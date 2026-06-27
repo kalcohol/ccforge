@@ -24,13 +24,16 @@
 `system_context.hpp`、`timer_context.hpp`、`task.hpp` 和 `wait_result.hpp`。如果只需要
 单个设施，也可以直接包含对应头文件。
 
-IO backend 使用独立头：
+IO backend umbrella 使用独立头：
 
 ```cpp
 #include <forge/io.hpp>
 ```
 
-它受 `FORGE_ENABLE_FORGE_IO` gate 控制；详见 [`forge::io`](forge-io.md)。
+它只在 `FORGE_ENABLE_FORGE_IO` gate 探测到 backend 时暴露 `forge::io::context`；byte
+IO vocabulary、memory streams、coroutine bridge 和 combinators 使用
+`<forge/io/...>` direct headers，不受 OS backend gate 控制。详见
+[`forge::io`](forge-io.md)。
 
 ## Resource policy（资源策略）
 

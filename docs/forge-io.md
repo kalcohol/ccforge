@@ -1,7 +1,7 @@
 # `forge::io` 使用说明
 
-`forge::io` 是 Forge runtime extension 的 OS IO backend。它不是标准 backport，
-不向 `namespace std` 增加名字。
+`forge::io` 是 Forge runtime extension 的 byte IO vocabulary、coroutine bridge 与可选
+OS IO backend。它不是标准 backport，不向 `namespace std` 增加名字。
 
 Linux backend 是 `epoll/eventfd` readiness backend；Windows backend 是小型 IOCP
 completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
@@ -237,10 +237,14 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
 - Linux：`epoll` + `eventfd` readiness。
 - Windows：IOCP completion proof。
 
-- `FORGE_ENABLE_FORGE_IO=AUTO`：Linux 或 Windows backend 可用时启用；其它平台跳过。
+- `FORGE_ENABLE_FORGE_IO=AUTO`：Linux 或 Windows backend 可用时启用 OS
+  backend；其它平台跳过 backend context、backend examples 和 backend tests。
 - `FORGE_ENABLE_FORGE_IO=ON`：缺少 Linux `epoll/eventfd` 或 Windows IOCP 支持时
   configure 报错。
-- `FORGE_ENABLE_FORGE_IO=OFF`：跳过 IO examples/tests。
+- `FORGE_ENABLE_FORGE_IO=OFF`：禁用 OS backend、`forge::io::context` 以及
+  backend-specific examples/tests。`result.hpp`、`buffer.hpp`、`memory_stream.hpp`、
+  `stream.hpp`、`coro.hpp` 和 `combinators.hpp` 等 direct headers 仍可使用；对应的
+  backend-free tests/examples 仍由 `FORGE_TEST_ENABLE_FORGE_IO` 和 example build 开关控制。
 
 `<forge/io.hpp>` 在没有 backend 时可以 include，但不会暴露 `forge::io::context`。
 直接包含 backend 头 `<forge/io/context.hpp>` 需要 `FORGE_HAS_FORGE_IO_BACKEND`。
