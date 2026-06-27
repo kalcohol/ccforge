@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/io.hpp>
+#include <forge/io/context_await.hpp>
 #include <forge/wait_result.hpp>
 #include "forge_operation_destroy.hpp"
 #include <execution>
@@ -344,6 +345,78 @@ TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {
     EXPECT_FALSE(state->error);
     EXPECT_EQ(state->bytes, 0u);
     EXPECT_EQ(state->completions, 1);
+}
+
+TEST(IoIocpTest, ContextAwaitAsyncReadWriteReturnIoResult) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+
+    std::array<std::byte, 3> payload{byte('c'), byte('o'), byte('r')};
+    auto write_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::async_write_some(
+                ctx,
+                pipe.client.get(),
+                std::span<const std::byte>{payload})));
+
+    ASSERT_TRUE(write_result.has_value());
+    auto [write_io] = std::move(*write_result);
+    auto [write_error, written] = write_io;
+    EXPECT_FALSE(write_error);
+    EXPECT_FALSE(write_io.eof());
+    EXPECT_EQ(written, payload.size());
+
+    std::array<std::byte, 3> buffer{};
+    auto read_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::async_read_some(ctx, pipe.server.get(), std::span{buffer})));
+
+    ASSERT_TRUE(read_result.has_value());
+    auto [read_io] = std::move(*read_result);
+    auto [read_error, read_count] = read_io;
+    EXPECT_FALSE(read_error);
+    EXPECT_FALSE(read_io.eof());
+    ASSERT_EQ(read_count, payload.size());
+    EXPECT_EQ(buffer, payload);
+}
+
+TEST(IoIocpTest, ContextAwaitPeerCloseMapsReadZeroToEof) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    pipe.client.reset();
+
+    std::array<std::byte, 1> buffer{};
+    auto read_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::async_read_some(ctx, pipe.server.get(), std::span{buffer})));
+
+    ASSERT_TRUE(read_result.has_value());
+    auto [read_io] = std::move(*read_result);
+    auto [read_error, read_count] = read_io;
+    EXPECT_FALSE(read_error);
+    EXPECT_TRUE(read_io.eof());
+    EXPECT_EQ(read_count, 0u);
+}
+
+TEST(IoIocpTest, ContextAwaitInvalidHandleMapsToIoResultError) {
+    forge::io::context ctx;
+    std::array<std::byte, 1> buffer{};
+
+    auto read_result = std::execution::sync_wait(
+        forge::io::as_sender(
+            forge::io::async_read_some(
+                ctx,
+                INVALID_HANDLE_VALUE,
+                std::span{buffer})));
+
+    ASSERT_TRUE(read_result.has_value());
+    auto [read_io] = std::move(*read_result);
+    auto [read_error, read_count] = read_io;
+    EXPECT_TRUE(read_error);
+    EXPECT_FALSE(read_io.eof());
+    EXPECT_EQ(read_error.category(), std::system_category());
+    EXPECT_EQ(read_error.value(), static_cast<int>(ERROR_INVALID_HANDLE));
+    EXPECT_EQ(read_count, 0u);
 }
 
 TEST(IoIocpTest, AsyncWriteSomeTypedReturnsByteCount) {

@@ -219,12 +219,14 @@ struct __handle_hash {
 
 enum class __start_result_kind {
     accepted,
+    value,
     stopped,
     error
 };
 
 struct __start_result {
     __start_result_kind kind = __start_result_kind::accepted;
+    std::size_t bytes = 0;
     std::exception_ptr error;
 };
 
@@ -308,6 +310,13 @@ struct __state : std::enable_shared_from_this<__state> {
                 --pending;
                 if (pending == 0) {
                     cv.notify_all();
+                }
+
+                if (record->kind == __operation_kind::read &&
+                    (error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE)) {
+                    result.kind = __start_result_kind::value;
+                    result.bytes = 0;
+                    return result;
                 }
 
                 result.kind = __start_result_kind::error;
@@ -638,6 +647,9 @@ struct __op {
                 if (record->stop_requested.load(std::memory_order_acquire)) {
                     state->cancel_record(record);
                 }
+                break;
+            case __start_result_kind::value:
+                record->complete_value(result.bytes);
                 break;
             case __start_result_kind::stopped:
                 record->complete_stopped();
