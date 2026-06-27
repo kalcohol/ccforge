@@ -136,6 +136,8 @@ two-child、IO-result-specific；更通用的 domain-aware combinator、variadic
 policy-based priority 或 owning result storage 都保持 deferred。
 和 `as_sender` 一样，consumer receiver 不应在 completion callback 内同步销毁已连接的
 `when_all_results` operation-state。
+`example/forge_io_combinator_example.cpp` 展示了 value+EOF 和 value+error
+组合时如何检查 aggregate status，并读取保留下来的 child partial result。
 
 `forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
