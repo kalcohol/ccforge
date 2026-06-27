@@ -319,10 +319,13 @@ struct self_destroying_aggregate_receiver {
             std::lock_guard lock{state->mtx};
             ++state->completions;
             state->value.emplace(std::move(result));
+        }
+        context->destroy();
+        {
+            std::lock_guard lock{state->mtx};
             state->done = true;
         }
         state->cv.notify_all();
-        context->destroy();
     }
 
     auto set_error(std::exception_ptr error) && noexcept -> void {
@@ -330,10 +333,13 @@ struct self_destroying_aggregate_receiver {
             std::lock_guard lock{state->mtx};
             ++state->completions;
             state->error = std::move(error);
+        }
+        context->destroy();
+        {
+            std::lock_guard lock{state->mtx};
             state->done = true;
         }
         state->cv.notify_all();
-        context->destroy();
     }
 
     auto set_stopped() && noexcept -> void {
@@ -341,10 +347,13 @@ struct self_destroying_aggregate_receiver {
             std::lock_guard lock{state->mtx};
             ++state->completions;
             state->stopped = true;
+        }
+        context->destroy();
+        {
+            std::lock_guard lock{state->mtx};
             state->done = true;
         }
         state->cv.notify_all();
-        context->destroy();
     }
 
     [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
@@ -624,6 +633,54 @@ TEST(ForgeCoroCombinatorsTest, WhenAllResultsAllowsReceiverToDestroyOperation) {
     ASSERT_TRUE(payload.second.has_value());
     EXPECT_EQ(cio::get<1>(*payload.first), 3u);
     EXPECT_EQ(cio::get<1>(*payload.second), 5u);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsAllowsSelfDestroyDuringSiblingStop) {
+    fixture f;
+    using sender_t = decltype(cio::when_all_results(
+        child_task(f.first),
+        child_task(f.second)));
+    using receiver_t = self_destroying_aggregate_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            cio::when_all_results(
+                child_task(f.first),
+                child_task(f.second)),
+            self_destroying_aggregate_receiver{&context, f.aggregate});
+    });
+    std::execution::start(op);
+
+    release_child(
+        f.first,
+        controlled_completion::error,
+        child_result::failure(
+            std::make_error_code(std::errc::connection_reset),
+            6));
+
+    wait_done(f.aggregate);
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+
+    {
+        std::lock_guard second_lock{f.second->mtx};
+        EXPECT_EQ(f.second->stop_attempts, 1);
+    }
+
+    std::lock_guard aggregate_lock{f.aggregate->mtx};
+    ASSERT_EQ(f.aggregate->completions, 1);
+    ASSERT_TRUE(f.aggregate->value.has_value());
+    auto [error, payload] = *f.aggregate->value;
+    EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
+    ASSERT_TRUE(payload.first.has_value());
+    EXPECT_FALSE(payload.second.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 6u);
 }
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {
