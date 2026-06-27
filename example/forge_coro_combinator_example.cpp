@@ -83,8 +83,8 @@ int main() {
     forge_example::require(cio::get<1>(*error_payload.first) == 3u);
     forge_example::require(cio::get<1>(*error_payload.second) == 2u);
 
-    std::cout << "io combinator kept partial results across EOF and error\n";
+    std::cout << "coro combinator kept partial results across EOF and error\n";
 #else
-    std::cout << "io combinator unavailable\n";
+    std::cout << "coro combinator unavailable\n";
 #endif
 }

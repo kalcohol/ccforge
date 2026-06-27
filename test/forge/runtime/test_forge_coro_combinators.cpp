@@ -336,7 +336,7 @@ struct fixture {
 
 } // namespace
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsCombinesTwoValues) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsCombinesTwoValues) {
     fixture f;
     auto op = f.connect();
     f.start(op);
@@ -366,7 +366,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsCombinesTwoValues) {
     EXPECT_FALSE(f.aggregate->error);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsPreservesValueBeforeEof) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsPreservesValueBeforeEof) {
     fixture f;
     auto op = f.connect();
     f.start(op);
@@ -395,7 +395,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsPreservesValueBeforeEof) {
     EXPECT_EQ(cio::get<1>(*payload.second), 5u);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorWinsOverPriorValue) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsErrorWinsOverPriorValue) {
     fixture f;
     auto op = f.connect();
     f.start(op);
@@ -428,7 +428,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorWinsOverPriorValue) {
     EXPECT_EQ(cio::get<1>(*payload.second), 4u);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorWinsOverPriorEof) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsErrorWinsOverPriorEof) {
     fixture f;
     f.second->stop_completes = false;
     auto op = f.connect();
@@ -460,7 +460,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorWinsOverPriorEof) {
     EXPECT_EQ(cio::get<1>(*payload.second), 8u);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorStopsPendingSibling) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsErrorStopsPendingSibling) {
     fixture f;
     auto op = f.connect();
     f.start(op);
@@ -488,7 +488,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsErrorStopsPendingSibling) {
     EXPECT_EQ(f.second->stop_attempts, 1);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsStopsWhenChildStopsFirst) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsStopsWhenChildStopsFirst) {
     fixture f;
     auto op = f.connect();
     f.start(op);
@@ -507,7 +507,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsStopsWhenChildStopsFirst) {
     EXPECT_EQ(f.second->stop_attempts, 1);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsDownstreamStopCancelsChildren) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsDownstreamStopCancelsChildren) {
     fixture f;
     std::inplace_stop_source downstream_stop;
     auto op = std::execution::connect(
@@ -534,7 +534,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsDownstreamStopCancelsChildren) {
     EXPECT_EQ(f.second->stop_attempts, 1);
 }
 
-TEST(ForgeIoCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {
     constexpr int iterations = 64;
     for (int i = 0; i < iterations; ++i) {
         fixture f;
@@ -579,7 +579,7 @@ TEST(ForgeIoCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {
 
 #else
 
-TEST(ForgeIoCombinatorsTest, CoroutinesNotAvailable) {
+TEST(ForgeCoroCombinatorsTest, CoroutinesNotAvailable) {
     GTEST_SKIP() << "C++20 coroutines not available on this toolchain";
 }
 
