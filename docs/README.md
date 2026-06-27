@@ -45,6 +45,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [Forge 稳定性基线](roadmap/forge-stability-baseline.md)
 - [Forge runtime 远景图](roadmap/forge-runtime-vision.md)
 - [Coroutine-native byte IO 路线图](roadmap/coroutine-native-io.md)
+- [统一取消语义设计](roadmap/unified-cancellation-design.md)
 - [Backend proof 策略](roadmap/forge-backend-proof-policy.md)
 - [`forge::io` backend SPI 草案](roadmap/forge-io-backend-spi.md)
 - [`std::execution` 一致性台账](roadmap/execution-conformance-ledger.md)

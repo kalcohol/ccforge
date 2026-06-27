@@ -6,6 +6,7 @@ as a short root index so the repository top level stays compact.
 - [Forge 稳定性基线](docs/roadmap/forge-stability-baseline.md)
 - [Forge runtime 远景图](docs/roadmap/forge-runtime-vision.md)
 - [Coroutine-native byte IO 路线图](docs/roadmap/coroutine-native-io.md)
+- [统一取消语义设计](docs/roadmap/unified-cancellation-design.md)
 - [Backend proof 策略](docs/roadmap/forge-backend-proof-policy.md)
 - [`std::execution` 一致性台账](docs/roadmap/execution-conformance-ledger.md)
 - [`std::execution` 当前 WD 收敛清单](docs/roadmap/execution-wd-convergence-checklist.md)
