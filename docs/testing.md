@@ -98,6 +98,10 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 Windows 验证是可选的本机或 self-hosted smoke gate。它不替代 Linux/podman 全量矩阵；
 当前目标是确认 MSVC 能 configure/build/test `std::execution` backport、
 `std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend。
+这条 lane 的定位是可移植的 self-hosted floor：脚本不依赖 GitHub hosted CI，也不写入
+私有主机名或工具链路径。Jenkins、Buildkite、GitHub self-hosted runner 或人工 SSH
+调用都应使用同一组入口，只从外部传入 host、source/ref、MSVC discovery 信息和可选
+CTest regex。
 
 主入口是 Windows 主机上直接运行的 PowerShell 脚本：
 
@@ -114,6 +118,18 @@ FORGE_WINDOWS_HOST=<windows-host> \
 FORGE_WINDOWS_VC_VARS='C:\path\to\VC\Auxiliary\Build\vcvars64.bat' \
 scripts/verify-windows-msvc-ssh.sh
 ```
+
+SSH wrapper 的参数只描述验证环境，不改变测试语义：
+
+- `FORGE_WINDOWS_HOST`：远端 Windows SSH 主机；
+- `FORGE_WINDOWS_VS_VERSION` / `FORGE_WINDOWS_VS_ROOT` / `FORGE_WINDOWS_VC_VARS`：
+  MSVC discovery override；
+- `FORGE_WINDOWS_REPO` / `FORGE_WINDOWS_REF`：远端 clone 模式的 source；
+- `FORGE_WINDOWS_USE_LOCAL_SOURCE=1`：把当前 worktree 打包到远端临时目录，适合验证
+  尚未 push 的改动；
+- `FORGE_WINDOWS_CTEST_REGEX`：focused smoke，例如 `forge_io_iocp`；
+- `FORGE_WINDOWS_SKIP_GATE_CHECKS` / `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK`：
+  临时缩小 smoke；默认不建议跳过。
 
 To run the repeatable smoke as a small self-hosted/manual matrix, use the
 wrapper. It defaults to the current VS lane (`18`) and uses local-source mode

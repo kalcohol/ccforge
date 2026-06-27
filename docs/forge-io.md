@@ -39,6 +39,13 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/combinators.hpp> // narrow P4124-style proof helper
 ```
 
+`<forge/io.hpp>` 不是“全部 IO 词汇”的 umbrella header；它是 OS backend entry
+header。backend 可用时它暴露 `forge::io::context`，backend 关闭或平台不支持时它仍可
+include 但不暴露 context。纯 vocabulary、memory stream、stream concepts、
+coroutine substrate 和 combinator proof helper 都应直接包含对应 `<forge/io/*.hpp>`。
+这让不需要 OS backend 的代码可以在 `FORGE_ENABLE_FORGE_IO=OFF` 或无 epoll/IOCP 平台上
+继续使用 byte vocabulary。
+
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
 同时带一个轻量状态位：`value`、`eof` 或 `error`。它保留原有 structured binding
 形状：
@@ -422,6 +429,15 @@ auto work = std::execution::continues_on(
 Windows backend 是 completion model，不提供 `readable()` / `writable()` readiness
 sender。它的 V1 目标是证明 Forge 的 IO 抽象能承载 completion-based backend，而不是把
 Windows 强行压成 Linux readiness。
+
+当前 Windows parity 明确只覆盖 byte-stream one-shot read/write completion、stop/cancel
+finalization、EOF 映射和 package/gate smoke。以下格子故意 scoped out：
+
+- random-access file offset：公共 API 不接收 offset，seekable file IO 需要后续 API 扩展；
+- handle ownership / association lifecycle：context 只维护 borrowed-handle cache，不成为
+  handle owner；
+- Windows-only completion semantics：IOCP completion packet 是已提交 operation 的完成，
+  不会被包装成 Linux readiness sender。
 
 要求：
 
