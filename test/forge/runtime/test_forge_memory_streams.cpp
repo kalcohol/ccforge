@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <forge/io/memory_stream.hpp>
+#include "forge_io_test_bytes.hpp"
 
 #include <array>
 #include <cstddef>
@@ -10,27 +11,8 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace {
-
-auto to_bytes(std::string_view text) -> std::vector<std::byte> {
-    std::vector<std::byte> bytes;
-    bytes.reserve(text.size());
-    for (char ch : text) {
-        bytes.push_back(std::byte{static_cast<unsigned char>(ch)});
-    }
-    return bytes;
-}
-
-auto to_string(std::span<const std::byte> bytes) -> std::string {
-    std::string text;
-    text.reserve(bytes.size());
-    for (std::byte byte : bytes) {
-        text.push_back(static_cast<char>(std::to_integer<unsigned char>(byte)));
-    }
-    return text;
-}
 
 template<class Stream>
 auto read_length_prefixed_packet(Stream& stream)
@@ -163,7 +145,7 @@ TEST(ForgeMemoryStreamsTest, MemoryWriteStreamAppendsAndShortWritesOnCapacity) {
         forge::io::const_buffer{"defg", 4});
     EXPECT_FALSE(second_error);
     EXPECT_EQ(second_count, 2u);
-    EXPECT_EQ(to_string(stream.bytes()), "abcde");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "abcde");
 
     auto [full_error, full_count] = stream.write_some(
         forge::io::const_buffer{"z", 1});
@@ -182,7 +164,7 @@ TEST(ForgeMemoryStreamsTest, MemoryWriteStreamCanUseBorrowedOutput) {
     EXPECT_FALSE(error);
     EXPECT_EQ(count, 4u);
     EXPECT_EQ(std::string_view(storage.data(), storage.size()), "forg");
-    EXPECT_EQ(to_string(stream.bytes()), "forg");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "forg");
 }
 
 TEST(ForgeMemoryStreamsTest, MemoryWriteStreamZeroLengthDoesNotGrow) {
@@ -209,7 +191,7 @@ TEST(ForgeMemoryStreamsTest, MemoryStreamCombinesReadAndWriteSides) {
         forge::io::const_buffer{"reply", 5});
     EXPECT_FALSE(write_error);
     EXPECT_EQ(write_count, 3u);
-    EXPECT_EQ(to_string(stream.written_bytes()), "rep");
+    EXPECT_EQ(forge_test::to_string(stream.written_bytes()), "rep");
 }
 
 TEST(ForgeMemoryStreamsTest, ScriptedReadStreamForcesShortReadsAndEof) {
@@ -296,7 +278,7 @@ TEST(ForgeMemoryStreamsTest, ScriptedReadStreamCanErrorAfterBytes) {
 }
 
 TEST(ForgeMemoryStreamsTest, ProtocolCanInspectPayloadOnPartialError) {
-    auto prefix = to_bytes("hel");
+    auto prefix = forge_test::to_bytes("hel");
     prefix.insert(prefix.begin(), std::byte{5});
     forge::io::scripted_read_stream stream{
         forge::io::scripted_read_step::bytes(
@@ -312,7 +294,7 @@ TEST(ForgeMemoryStreamsTest, ProtocolCanInspectPayloadOnPartialError) {
 }
 
 TEST(ForgeMemoryStreamsTest, ProtocolCanInspectPayloadOnPartialEof) {
-    auto prefix = to_bytes("he");
+    auto prefix = forge_test::to_bytes("he");
     prefix.insert(prefix.begin(), std::byte{5});
     forge::io::scripted_read_stream stream{
         forge::io::scripted_read_step::bytes(

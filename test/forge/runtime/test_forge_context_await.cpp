@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <forge/io/context_await.hpp>
+#include "forge_io_posix_fd.hpp"
 
 #include <array>
 #include <cstddef>
@@ -11,8 +12,6 @@
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L \
     && defined(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
-#include <fcntl.h>
-#include <stdexcept>
 #include <unistd.h>
 #endif
 
@@ -21,53 +20,7 @@ namespace {
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L \
     && defined(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
 
-class unique_fd {
-public:
-    unique_fd() noexcept = default;
-    explicit unique_fd(int fd) noexcept : fd_(fd) {}
-    ~unique_fd() noexcept { reset(); }
-
-    unique_fd(unique_fd&& other) noexcept
-        : fd_(std::exchange(other.fd_, -1))
-    {}
-
-    auto operator=(unique_fd&& other) noexcept -> unique_fd& {
-        if (this != &other) {
-            reset(std::exchange(other.fd_, -1));
-        }
-        return *this;
-    }
-
-    unique_fd(const unique_fd&) = delete;
-    auto operator=(const unique_fd&) -> unique_fd& = delete;
-
-    [[nodiscard]] auto get() const noexcept -> int {
-        return fd_;
-    }
-
-    auto reset(int next = -1) noexcept -> void {
-        if (fd_ >= 0) {
-            ::close(fd_);
-        }
-        fd_ = next;
-    }
-
-private:
-    int fd_ = -1;
-};
-
-struct fd_pair {
-    unique_fd read;
-    unique_fd write;
-};
-
-auto make_pipe() -> fd_pair {
-    int fds[2]{-1, -1};
-    if (::pipe2(fds, O_NONBLOCK | O_CLOEXEC) != 0) {
-        throw std::runtime_error{"pipe2 failed"};
-    }
-    return fd_pair{unique_fd{fds[0]}, unique_fd{fds[1]}};
-}
+using forge_test::make_pipe;
 
 #endif
 
@@ -85,7 +38,7 @@ TEST(ForgeContextAwaitTest, AsyncReadWriteSomeReturnIoResult) {
         forge::io::as_sender(
             forge::io::async_write_some(
                 context,
-                pipe.write.get(),
+                pipe.second.get(),
                 std::as_bytes(std::span{payload}))));
     ASSERT_TRUE(write_result.has_value());
     auto [write_io] = std::move(*write_result);
@@ -98,7 +51,7 @@ TEST(ForgeContextAwaitTest, AsyncReadWriteSomeReturnIoResult) {
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
-                pipe.read.get(),
+                pipe.first.get(),
                 std::span{input})));
     ASSERT_TRUE(read_result.has_value());
     auto [read_io] = std::move(*read_result);
@@ -119,7 +72,7 @@ TEST(ForgeContextAwaitTest, EmptyReadPreservesBackendBehavior) {
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
-                pipe.read.get(),
+                pipe.first.get(),
                 std::span{input}.first(0))));
 
     ASSERT_TRUE(read_result.has_value());
@@ -133,14 +86,14 @@ TEST(ForgeContextAwaitTest, EmptyReadPreservesBackendBehavior) {
 TEST(ForgeContextAwaitTest, PeerCloseMapsReadZeroToEof) {
     forge::io::context context;
     auto pipe = make_pipe();
-    pipe.write.reset();
+    pipe.second.reset();
     std::array<std::byte, 1> input{};
 
     auto read_result = std::execution::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
-                pipe.read.get(),
+                pipe.first.get(),
                 std::span{input})));
 
     ASSERT_TRUE(read_result.has_value());
@@ -173,11 +126,11 @@ TEST(ForgeContextAwaitTest, ReadinessAwaitableHasNoByteCount) {
     forge::io::context context;
     auto pipe = make_pipe();
     const char byte = 'x';
-    ASSERT_EQ(::write(pipe.write.get(), &byte, 1), 1);
+    ASSERT_EQ(::write(pipe.second.get(), &byte, 1), 1);
 
     auto ready_result = std::execution::sync_wait(
         forge::io::as_sender(
-            forge::io::readable(context, pipe.read.get())));
+            forge::io::readable(context, pipe.first.get())));
 
     ASSERT_TRUE(ready_result.has_value());
     auto [ready_io] = std::move(*ready_result);
@@ -191,7 +144,7 @@ TEST(ForgeContextAwaitTest, WritableReadinessAwaitableHasNoByteCount) {
 
     auto ready_result = std::execution::sync_wait(
         forge::io::as_sender(
-            forge::io::writable(context, pipe.write.get())));
+            forge::io::writable(context, pipe.second.get())));
 
     ASSERT_TRUE(ready_result.has_value());
     auto [ready_io] = std::move(*ready_result);
@@ -210,7 +163,7 @@ TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {
 
     auto ready_result = std::execution::sync_wait(
         forge::io::as_sender(
-            forge::io::readable(context, pipe.read.get()),
+            forge::io::readable(context, pipe.first.get()),
             env));
 
     EXPECT_FALSE(ready_result.has_value());

@@ -2,6 +2,7 @@
 
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
+#include "forge_io_test_bytes.hpp"
 
 #include <algorithm>
 #include <array>
@@ -72,24 +73,6 @@ private:
     bool first_ = true;
     std::vector<std::byte> storage_{};
 };
-
-auto to_bytes(std::string_view text) -> std::vector<std::byte> {
-    std::vector<std::byte> bytes;
-    bytes.reserve(text.size());
-    for (char ch : text) {
-        bytes.push_back(std::byte{static_cast<unsigned char>(ch)});
-    }
-    return bytes;
-}
-
-auto to_string(std::span<const std::byte> bytes) -> std::string {
-    std::string text;
-    text.reserve(bytes.size());
-    for (std::byte byte : bytes) {
-        text.push_back(static_cast<char>(std::to_integer<unsigned char>(byte)));
-    }
-    return text;
-}
 
 auto read_erased_packet(forge::io::any_read_stream& stream)
     -> forge::io::io_result<std::string> {
@@ -257,7 +240,7 @@ TEST(ForgeStreamConceptsTest, WriteAllConsumesShortWrites) {
 
     EXPECT_FALSE(error);
     EXPECT_EQ(count, 5u);
-    EXPECT_EQ(to_string(stream.bytes()), "forge");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "forge");
 }
 
 TEST(ForgeStreamConceptsTest, WriteAllReturnsPartialCountOnCapacity) {
@@ -269,7 +252,7 @@ TEST(ForgeStreamConceptsTest, WriteAllReturnsPartialCountOnCapacity) {
 
     EXPECT_EQ(error, std::make_error_code(std::errc::io_error));
     EXPECT_EQ(count, 2u);
-    EXPECT_EQ(to_string(stream.bytes()), "ab");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "ab");
 }
 
 TEST(ForgeStreamConceptsTest, WriteAllPropagatesStreamErrorWithProgress) {
@@ -281,7 +264,7 @@ TEST(ForgeStreamConceptsTest, WriteAllPropagatesStreamErrorWithProgress) {
 
     EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
     EXPECT_EQ(count, 2u);
-    EXPECT_EQ(to_string(stream.bytes()), "ab");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "ab");
 }
 
 TEST(ForgeStreamConceptsTest, AnyReadStreamWrapsBorrowedStream) {
@@ -310,11 +293,11 @@ TEST(ForgeStreamConceptsTest, AnyWriteStreamWrapsBorrowedStream) {
     EXPECT_TRUE(erased);
     EXPECT_FALSE(error);
     EXPECT_EQ(count, 2u);
-    EXPECT_EQ(to_string(stream.bytes()), "io");
+    EXPECT_EQ(forge_test::to_string(stream.bytes()), "io");
 }
 
 TEST(ForgeStreamConceptsTest, GenericProtocolAcceptsErasedReadStream) {
-    auto prefix = to_bytes("he");
+    auto prefix = forge_test::to_bytes("he");
     prefix.insert(prefix.begin(), std::byte{5});
     forge::io::scripted_read_stream concrete{
         forge::io::scripted_read_step::bytes(

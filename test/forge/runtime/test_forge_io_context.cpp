@@ -3,6 +3,7 @@
 #include <forge/io.hpp>
 #include <forge/wait_result.hpp>
 #include "forge_counting_resource.hpp"
+#include "forge_io_posix_fd.hpp"
 #include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
@@ -11,7 +12,6 @@
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
-#include <fcntl.h>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -26,56 +26,8 @@ namespace {
 
 using namespace std::chrono_literals;
 
-class unique_fd {
-public:
-    unique_fd() noexcept = default;
-    explicit unique_fd(int fd) noexcept : fd_(fd) {}
-    ~unique_fd() noexcept { reset(); }
-
-    unique_fd(unique_fd&& other) noexcept : fd_(std::exchange(other.fd_, -1)) {}
-    auto operator=(unique_fd&& other) noexcept -> unique_fd& {
-        if (this != &other) {
-            reset(std::exchange(other.fd_, -1));
-        }
-        return *this;
-    }
-
-    unique_fd(const unique_fd&) = delete;
-    auto operator=(const unique_fd&) -> unique_fd& = delete;
-
-    [[nodiscard]] auto get() const noexcept -> int { return fd_; }
-
-    void reset(int next = -1) noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-        }
-        fd_ = next;
-    }
-
-private:
-    int fd_ = -1;
-};
-
-struct fd_pair {
-    unique_fd first;
-    unique_fd second;
-};
-
-auto make_pipe() -> fd_pair {
-    int fds[2]{-1, -1};
-    if (::pipe2(fds, O_NONBLOCK | O_CLOEXEC) != 0) {
-        throw std::runtime_error{"pipe2 failed"};
-    }
-    return fd_pair{unique_fd{fds[0]}, unique_fd{fds[1]}};
-}
-
-auto make_socketpair() -> fd_pair {
-    int fds[2]{-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds) != 0) {
-        throw std::runtime_error{"socketpair failed"};
-    }
-    return fd_pair{unique_fd{fds[0]}, unique_fd{fds[1]}};
-}
+using forge_test::make_pipe;
+using forge_test::make_socketpair;
 
 void write_byte(int fd) {
     const char value = 'x';
