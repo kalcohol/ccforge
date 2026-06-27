@@ -637,6 +637,7 @@ TEST(ForgeCoroCombinatorsTest, WhenAllResultsAllowsReceiverToDestroyOperation) {
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsAllowsSelfDestroyDuringSiblingStop) {
     fixture f;
+    f.second->stop_completes = true;
     using sender_t = decltype(cio::when_all_results(
         child_task(f.first),
         child_task(f.second)));
