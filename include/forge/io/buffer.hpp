@@ -114,16 +114,6 @@ private:
     std::size_t size_ = 0;
 };
 
-namespace __buffer_detail {
-
-template<class T>
-concept const_buffer_arg = std::constructible_from<const_buffer, T>;
-
-template<class T>
-concept mutable_buffer_arg = std::constructible_from<mutable_buffer, T>;
-
-} // namespace __buffer_detail
-
 template<class R>
 concept const_buffer_sequence =
     std::ranges::input_range<R> &&

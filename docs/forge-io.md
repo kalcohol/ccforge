@@ -158,7 +158,7 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
   `as_sender(io_task<T>, env)` 交给 sender operation-state 持有到 terminal completion。
 - `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
 
-当前 Stage 4 实现只证明 stop token、resource pointer 和 scheduler handle 可以沿
+当前 coroutine-native IO track 只证明 stop token、resource pointer 和 scheduler handle 可以沿
 coroutine-native 边界传递。它没有实现 owning frame allocator、symmetric transfer、
 timer awaitable、platform IO awaitable，或把 sender cancellation 规则重新包装成另一套稳定
 async model。frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation
@@ -242,8 +242,9 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
 - `FORGE_ENABLE_FORGE_IO=ON`：缺少 Linux `epoll/eventfd` 或 Windows IOCP 支持时
   configure 报错。
 - `FORGE_ENABLE_FORGE_IO=OFF`：禁用 OS backend、`forge::io::context` 以及
-  backend-specific examples/tests。`result.hpp`、`buffer.hpp`、`memory_stream.hpp`、
-  `stream.hpp`、`coro.hpp` 和 `combinators.hpp` 等 direct headers 仍可使用；对应的
+  backend-specific examples/tests。`error.hpp`、`result.hpp`、`buffer.hpp`、
+  `memory_stream.hpp`、`stream.hpp`、`coro.hpp`、`combinators.hpp` 和
+  `context_await.hpp` 等 direct headers 仍可使用；对应的
   backend-free tests/examples 仍由 `FORGE_TEST_ENABLE_FORGE_IO` 和 example build 开关控制。
 
 `<forge/io.hpp>` 在没有 backend 时可以 include，但不会暴露 `forge::io::context`。

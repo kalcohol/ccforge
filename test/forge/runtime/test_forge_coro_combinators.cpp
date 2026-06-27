@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <forge/io/combinators.hpp>
+#include "forge_operation_destroy.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <system_error>
 #include <thread>
+#include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
@@ -306,6 +308,50 @@ struct aggregate_receiver {
     }
 };
 
+struct self_destroying_aggregate_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    std::shared_ptr<aggregate_state> state;
+
+    auto set_value(aggregate_result result) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->value.emplace(std::move(result));
+            state->done = true;
+        }
+        state->cv.notify_all();
+        context->destroy();
+    }
+
+    auto set_error(std::exception_ptr error) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->error = std::move(error);
+            state->done = true;
+        }
+        state->cv.notify_all();
+        context->destroy();
+    }
+
+    auto set_stopped() && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->stopped = true;
+            state->done = true;
+        }
+        state->cv.notify_all();
+        context->destroy();
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 auto wait_done(const std::shared_ptr<aggregate_state>& state) -> void {
     std::unique_lock lock{state->mtx};
     ASSERT_TRUE(state->cv.wait_for(lock, 1s, [&] { return state->done; }));
@@ -532,6 +578,52 @@ TEST(ForgeCoroCombinatorsTest, WhenAllResultsDownstreamStopCancelsChildren) {
 
     std::lock_guard second_lock{f.second->mtx};
     EXPECT_EQ(f.second->stop_attempts, 1);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsAllowsReceiverToDestroyOperation) {
+    fixture f;
+    using sender_t = decltype(cio::when_all_results(
+        child_task(f.first),
+        child_task(f.second)));
+    using receiver_t = self_destroying_aggregate_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            cio::when_all_results(
+                child_task(f.first),
+                child_task(f.second)),
+            self_destroying_aggregate_receiver{&context, f.aggregate});
+    });
+    std::execution::start(op);
+
+    release_child(
+        f.first,
+        controlled_completion::value,
+        child_result::success(3));
+    release_child(
+        f.second,
+        controlled_completion::value,
+        child_result::success(5));
+
+    wait_done(f.aggregate);
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+
+    std::lock_guard lock{f.aggregate->mtx};
+    ASSERT_EQ(f.aggregate->completions, 1);
+    ASSERT_TRUE(f.aggregate->value.has_value());
+    auto [error, payload] = *f.aggregate->value;
+    EXPECT_FALSE(error);
+    ASSERT_TRUE(payload.first.has_value());
+    ASSERT_TRUE(payload.second.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 3u);
+    EXPECT_EQ(cio::get<1>(*payload.second), 5u);
 }
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {

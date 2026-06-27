@@ -31,12 +31,19 @@ auto sample_eof() -> forge::io::io_result<std::size_t> {
 
 static_assert(std::tuple_size_v<forge::io::io_result<>> == 1);
 static_assert(std::tuple_size_v<forge::io::io_result<std::size_t>> == 2);
+static_assert(
+    std::tuple_size_v<forge::io::io_result<std::size_t, std::string_view>> == 3);
 static_assert(std::is_same_v<
     std::tuple_element_t<0, forge::io::io_result<std::size_t>>,
     std::error_code>);
 static_assert(std::is_same_v<
     std::tuple_element_t<1, forge::io::io_result<std::size_t>>,
     std::size_t>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<
+        2,
+        forge::io::io_result<std::size_t, std::string_view>>,
+    std::string_view>);
 
 TEST(ForgeByteVocabularyTest, IoResultSupportsStructuredBinding) {
     auto result = sample_success();
@@ -77,6 +84,21 @@ TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnEof) {
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(result.eof());
     EXPECT_EQ(result.status(), forge::io::io_status::eof);
+}
+
+TEST(ForgeByteVocabularyTest, IoResultSupportsMultiplePayloadValues) {
+    using result_t = forge::io::io_result<std::size_t, std::string_view>;
+    auto result = result_t::end_of_file(7, "tail");
+
+    auto [ec, count, label] = result;
+
+    EXPECT_FALSE(ec);
+    EXPECT_EQ(count, 7u);
+    EXPECT_EQ(label, "tail");
+    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(forge::io::get<1>(result), 7u);
+    EXPECT_EQ(forge::io::get<2>(result), "tail");
 }
 
 TEST(ForgeByteVocabularyTest, IoResultCanExposeReferences) {

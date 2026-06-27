@@ -58,42 +58,6 @@ struct is_io_result<io_result<Ts...>> : std::true_type {};
 template<class T>
 inline constexpr bool is_io_result_v = is_io_result<T>::value;
 
-struct request_stop_source {
-    std::inplace_stop_source* source = nullptr;
-
-    auto operator()() const noexcept -> void {
-        if (source != nullptr) {
-            source->request_stop();
-        }
-    }
-};
-
-template<class Token, bool = std::stoppable_token_for<Token, request_stop_source>>
-struct optional_stop_callback {
-    auto install(Token token, std::inplace_stop_source& source) -> void {
-        if (token.stop_requested()) {
-            source.request_stop();
-        }
-    }
-};
-
-template<class Token>
-struct optional_stop_callback<Token, true> {
-    using callback_t = std::stop_callback_for_t<Token, request_stop_source>;
-
-    auto install(Token token, std::inplace_stop_source& source) -> void {
-        if (token.stop_requested()) {
-            source.request_stop();
-            return;
-        }
-        if (token.stop_possible()) {
-            callback.emplace(std::move(token), request_stop_source{&source});
-        }
-    }
-
-    std::optional<callback_t> callback;
-};
-
 template<class First, class Second, class Receiver>
 class shared_state {
 public:
@@ -453,7 +417,8 @@ public:
         std::shared_ptr<state_t> state_;
         first_op_t first_op_;
         second_op_t second_op_;
-        optional_stop_callback<receiver_stop_token_t> receiver_stop_;
+        __coro_detail::optional_stop_callback<receiver_stop_token_t>
+            receiver_stop_;
     };
 
     template<std::execution::receiver Receiver>
