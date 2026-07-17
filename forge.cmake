@@ -47,6 +47,7 @@ option(FORGE_ENABLE_FORGE_RESOURCE_POLICY "Enable forge:: resource policy facili
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO backends when available")
 
 include(CheckCXXSourceCompiles)
+include("${FORGE_CMAKE_DIR}/ForgeProbeFingerprint.cmake")
 
 find_package(Threads REQUIRED)
 
@@ -60,8 +61,8 @@ if(DEFINED CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD LESS 23)
     message(FATAL_ERROR "CC Forge requires C++23 or later. Please set CMAKE_CXX_STANDARD to 23 or newer.")
 endif()
 
-set(_forge_runtime_probe_fingerprint
-    "${CMAKE_CXX_STANDARD}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_ID}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_CXX_FLAGS}|${CMAKE_SYSTEM_NAME}|${CMAKE_SYSTEM_PROCESSOR}")
+_forge_compute_probe_fingerprint(
+    _forge_runtime_probe_fingerprint "${CMAKE_CXX_STANDARD}")
 if(DEFINED FORGE_RUNTIME_PROBE_FINGERPRINT
         AND NOT "${FORGE_RUNTIME_PROBE_FINGERPRINT}" STREQUAL "${_forge_runtime_probe_fingerprint}")
     foreach(_forge_probe_var

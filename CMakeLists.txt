@@ -56,6 +56,7 @@ if(FORGE_ENABLE_INSTALL)
         "${CMAKE_CURRENT_SOURCE_DIR}/forge.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeBackportProbes.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeMsvcHeaders.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeProbeFingerprint.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
         DESTINATION "${FORGE_INSTALL_CMAKEDIR}")

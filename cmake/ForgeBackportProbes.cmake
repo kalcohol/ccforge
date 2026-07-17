@@ -8,6 +8,7 @@
 # and publishes FORGE_HAS_NATIVE_* / FORGE_FORCE_* definitions on that target.
 
 include(CheckCXXSourceCompiles)
+include("${CMAKE_CURRENT_LIST_DIR}/ForgeProbeFingerprint.cmake")
 
 set(FORGE_NEEDS_BACKPORT FALSE)
 
@@ -28,8 +29,7 @@ else()
     set(_forge_std 23)
 endif()
 
-set(_forge_probe_fingerprint
-    "${_forge_std}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_ID}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_CXX_FLAGS}|${CMAKE_SYSTEM_NAME}|${CMAKE_SYSTEM_PROCESSOR}")
+_forge_compute_probe_fingerprint(_forge_probe_fingerprint "${_forge_std}")
 if(DEFINED FORGE_BACKPORT_PROBE_FINGERPRINT
         AND NOT "${FORGE_BACKPORT_PROBE_FINGERPRINT}" STREQUAL "${_forge_probe_fingerprint}")
     foreach(_forge_probe_var
