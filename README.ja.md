@@ -104,7 +104,7 @@ header 名の衝突も避けられます。
 ## 要件と検証
 
 - C++23 以上
-- CMake 3.17 以上
+- CMake 3.20 以上
 - 任意: podman。提供されている native-verification containers に使用します。
 - 任意: Windows/MSVC host。Windows IOCP smoke gate に使用します。
 

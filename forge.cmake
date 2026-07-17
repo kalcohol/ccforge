@@ -1,7 +1,7 @@
 # CC Forge CMake Configuration
 # Include this file in your project to use CC Forge library
 
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.20)
 
 # Get the directory where this file is located. Installed package configs set
 # the _CCFORGE_PACKAGE_* variables before including this file so probes still
@@ -146,9 +146,7 @@ endif()
 if(NOT _FORGE_STD_TARGET_CONFIGURED)
     set(_FORGE_STD_TARGET_CONFIGURED ON)
 
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
-        target_compile_features(${_FORGE_STD_TARGET} INTERFACE cxx_std_23)
-    endif()
+    target_compile_features(${_FORGE_STD_TARGET} INTERFACE cxx_std_23)
 
     target_compile_options(${_FORGE_STD_TARGET} INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:/utf-8>

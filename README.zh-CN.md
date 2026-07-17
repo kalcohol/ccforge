@@ -100,7 +100,7 @@ target_link_libraries(myapp PRIVATE forge::forge)
 ## 要求与验证
 
 - C++23 或更新
-- CMake 3.17 或更新
+- CMake 3.20 或更新
 - 可选：podman，用于容器验证
 - 可选：Windows/MSVC 主机，用于 Windows IOCP smoke gate
 

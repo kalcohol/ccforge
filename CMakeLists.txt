@@ -1,5 +1,5 @@
 # Forge Project CMakeLists.txt
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.20)
 project(CCForge VERSION 1.0.0 LANGUAGES CXX)
 
 # This project relies on C++23 language features (e.g. requires-expressions).

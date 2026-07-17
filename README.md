@@ -104,7 +104,7 @@ standard-library headers and avoid directory/header name collisions.
 ## Requirements
 
 - C++23 or newer
-- CMake 3.17 or newer
+- CMake 3.20 or newer
 - Optional: podman for the provided native-verification containers
 - Optional: a Windows/MSVC host for the Windows IOCP smoke gate
 
