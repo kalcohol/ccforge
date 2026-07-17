@@ -68,6 +68,34 @@ struct self_destroying_join_receiver {
     }
 };
 
+struct destruction_order_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::atomic<bool>* operation_destroyed = nullptr;
+    std::atomic<bool>* observed_destroyed = nullptr;
+    std::atomic<bool>* completed = nullptr;
+
+    void set_value() && noexcept {
+        observed_destroyed->store(
+            operation_destroyed->load(std::memory_order_acquire),
+            std::memory_order_release);
+        completed->store(true, std::memory_order_release);
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    void set_stopped() && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 bool wait_for_flag(
     const std::atomic<bool>& flag,
     std::chrono::milliseconds timeout = 500ms) {
@@ -315,6 +343,7 @@ struct manual_void_sender {
     using sender_concept = std::execution::sender_t;
 
     std::shared_ptr<manual_state> state;
+    std::atomic<bool>* operation_destroyed = nullptr;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -346,8 +375,15 @@ struct manual_void_sender {
 
         R rcvr;
         std::shared_ptr<manual_state> state;
+        std::atomic<bool>* operation_destroyed;
         std::optional<callback_t> callback;
         std::atomic<bool> done{false};
+
+        ~op() {
+            if (operation_destroyed) {
+                operation_destroyed->store(true, std::memory_order_release);
+            }
+        }
 
         void start() & noexcept {
             auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
@@ -396,7 +432,10 @@ struct manual_void_sender {
 
     template<std::execution::receiver R>
     auto connect(R r) && -> op<R> {
-        return op<R>{std::move(r), std::move(state)};
+        return op<R>{
+            std::move(r),
+            std::move(state),
+            operation_destroyed};
     }
 };
 
@@ -545,6 +584,38 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
     // inline_scheduler runs synchronously, so counter is already 1
     EXPECT_EQ(counter.load(), 1);
     (void)std::execution::sync_wait(scope.join());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(CountingScopeTest, SpawnDisassociatesAfterOperationDestruction) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<manual_state>();
+    std::atomic<bool> operation_destroyed{false};
+    std::atomic<bool> observed_destroyed{false};
+    std::atomic<bool> join_completed{false};
+
+    std::execution::spawn(
+        manual_void_sender{state, &operation_destroyed},
+        token);
+    ASSERT_TRUE(wait_until_started(state));
+
+    auto join_op = std::execution::connect(
+        scope.join(),
+        destruction_order_join_receiver{
+            &operation_destroyed,
+            &observed_destroyed,
+            &join_completed});
+    std::execution::start(join_op);
+    EXPECT_FALSE(join_completed.load(std::memory_order_acquire));
+
+    auto complete = forge_execution_test::manual_value_completer(state);
+    ASSERT_TRUE(static_cast<bool>(complete));
+    complete(0);
+
+    EXPECT_TRUE(wait_for_flag(join_completed));
+    EXPECT_TRUE(observed_destroyed.load(std::memory_order_acquire));
+    EXPECT_TRUE(operation_destroyed.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 }
 

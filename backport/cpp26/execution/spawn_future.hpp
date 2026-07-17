@@ -182,7 +182,6 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     ~__shared_state() noexcept {
         __op_storage.destroy();
-        __association = {};
     }
 
     [[nodiscard]] bool __has_association() const noexcept {
@@ -211,7 +210,6 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
         std::weak_ptr<consumer_base_t> consumer_cb;
-        Association association;
         {
             std::lock_guard lk{__mtx};
             if (__phase == __phase_t::done) {
@@ -224,10 +222,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
                 std::current_exception());
             }
             __phase = __phase_t::done;
-            association = std::move(__association);
             consumer_cb = std::move(__consumer_cb);
         }
-        association = {};
 
         if (auto consumer = consumer_cb.lock()) {
             consumer->__deliver(*this);
@@ -242,6 +238,10 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     void __request_stop() noexcept {
         __stop_source.request_stop();
+    }
+
+    [[nodiscard]] Association __take_association_for_destroy() noexcept {
+        return std::move(__association);
     }
 
     void __abandon_unconsumed() noexcept {
@@ -396,10 +396,12 @@ struct __consumer : __consumer_base<State> {
         }
     }
 
-    void __abandon(State& state) noexcept {
+    void __abandon() noexcept {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             __stop_callback.reset();
-            state.__request_stop();
+            if (auto state = __state.lock()) {
+                state->__request_stop();
+            }
         }
     }
 
@@ -437,13 +439,13 @@ struct __op : __forge_detail::__immovable {
     {}
 
     ~__op() noexcept {
-        if (__state && __consumer_state) {
-            __consumer_state->__abandon(*__state);
+        if (__consumer_state) {
+            __consumer_state->__abandon();
         }
     }
 
     void start() & noexcept {
-        auto state = __state;
+        auto state = std::move(__state);
         auto consumer = __consumer_state;
         consumer->__install_stop_callback(state);
         std::weak_ptr<typename State::consumer_base_t> weak_consumer{consumer};
@@ -520,8 +522,32 @@ template<class State, class Env, class... Args>
     auto alloc = __allocator_for_env<Env>::get(env);
     using state_alloc_t = typename std::allocator_traits<decltype(alloc)>
         ::template rebind_alloc<State>;
-    return std::allocate_shared<State>(
-        state_alloc_t{alloc}, std::forward<Args>(args)..., std::move(alloc));
+    using state_traits_t = std::allocator_traits<state_alloc_t>;
+
+    struct state_deleter {
+        state_alloc_t alloc;
+
+        void operator()(State* state) noexcept {
+            auto association = state->__take_association_for_destroy();
+            auto local_alloc = alloc;
+            state_traits_t::destroy(local_alloc, state);
+            state_traits_t::deallocate(local_alloc, state, 1);
+        }
+    };
+
+    state_alloc_t state_alloc{alloc};
+    State* state = state_traits_t::allocate(state_alloc, 1);
+    try {
+        state_traits_t::construct(
+            state_alloc,
+            state,
+            std::forward<Args>(args)...,
+            std::move(alloc));
+    } catch (...) {
+        state_traits_t::deallocate(state_alloc, state, 1);
+        throw;
+    }
+    return std::shared_ptr<State>{state, state_deleter{std::move(state_alloc)}};
 }
 
 template<sender S, scope_token Token, queryable Env>

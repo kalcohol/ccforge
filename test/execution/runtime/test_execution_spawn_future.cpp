@@ -91,15 +91,12 @@ struct spawn_future_stop_receiver {
     }
 };
 
-template<class Future>
-struct reset_future_on_join_receiver {
+struct join_probe_receiver {
     using receiver_concept = std::execution::receiver_t;
 
-    std::optional<Future>* future = nullptr;
     std::atomic<bool>* completed = nullptr;
 
     void set_value() && noexcept {
-        future->reset();
         completed->store(true, std::memory_order_release);
     }
 
@@ -151,7 +148,7 @@ TEST(SpawnFutureTest, CompletedBeforeConsumerDeliversValue) {
 
     complete_manual_value(state, 42);
     ASSERT_TRUE(wait_until_completed(state));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.count(), 1u);
 
     auto result = std::execution::sync_wait(std::move(future));
 
@@ -287,7 +284,7 @@ TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
-TEST(SpawnFutureTest, CompletionReleasesAssociationOutsideStateLock) {
+TEST(SpawnFutureTest, AssociationOutlivesProducerUntilFutureIsReleased) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
     auto state = std::make_shared<manual_state>();
@@ -303,10 +300,16 @@ TEST(SpawnFutureTest, CompletionReleasesAssociationOutsideStateLock) {
     std::atomic<bool> joined{false};
     auto join_op = std::execution::connect(
         scope.join(),
-        reset_future_on_join_receiver<future_t>{&future, &joined});
+        join_probe_receiver{&joined});
     std::execution::start(join_op);
 
     complete_manual_value(state, 5);
+
+    EXPECT_TRUE(wait_until_completed(state));
+    EXPECT_FALSE(joined.load(std::memory_order_acquire));
+    EXPECT_EQ(scope.count(), 1u);
+
+    future.reset();
 
     EXPECT_TRUE(wait_for_flag(joined));
     EXPECT_FALSE(future.has_value());
@@ -320,21 +323,24 @@ TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
     std::inplace_stop_source downstream_stop;
     std::atomic<bool> receiver_stopped{false};
 
-    auto future = std::execution::spawn_future(
-        manual_sender{state}, token);
-    auto op = std::execution::connect(
-        std::move(future),
-        spawn_future_stop_receiver{&downstream_stop, &receiver_stopped});
+    {
+        auto future = std::execution::spawn_future(
+            manual_sender{state}, token);
+        auto op = std::execution::connect(
+            std::move(future),
+            spawn_future_stop_receiver{&downstream_stop, &receiver_stopped});
 
-    std::execution::start(op);
-    ASSERT_TRUE(wait_until_started(state));
-    EXPECT_EQ(scope.count(), 1u);
+        std::execution::start(op);
+        ASSERT_TRUE(wait_until_started(state));
+        EXPECT_EQ(scope.count(), 1u);
 
-    downstream_stop.request_stop();
+        downstream_stop.request_stop();
 
-    EXPECT_TRUE(wait_until_stop_requested(state));
-    EXPECT_TRUE(wait_until_completed(state));
-    EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
+        EXPECT_TRUE(wait_until_stop_requested(state));
+        EXPECT_TRUE(wait_until_completed(state));
+        EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
+        EXPECT_EQ(scope.count(), 0u);
+    }
     EXPECT_EQ(scope.count(), 0u);
 }
 

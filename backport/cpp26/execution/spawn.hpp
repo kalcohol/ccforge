@@ -107,6 +107,7 @@ struct __state {
             return;
         }
 
+        auto association = std::move(__association);
         using traits_t = std::allocator_traits<Alloc>;
         using rebound_alloc_t = typename traits_t::template rebind_alloc<state_t>;
         using rebound_traits_t = std::allocator_traits<rebound_alloc_t>;
@@ -116,7 +117,6 @@ struct __state {
     }
 
     void __complete() noexcept {
-        __association = {};
         __release();
     }
 
