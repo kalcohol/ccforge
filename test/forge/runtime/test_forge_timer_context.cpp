@@ -207,6 +207,45 @@ TEST(TimerContextTest, ScheduleAfterDoesNotCompleteBeforeDeadline) {
     EXPECT_FALSE(state.stopped);
 }
 
+TEST(TimerContextTest, ScheduleAtSteadyClockDeadlineDoesNotCompleteEarly) {
+    forge::timer_context ctx;
+    timer_state state;
+    auto op = std::execution::connect(
+        ctx.schedule_at(std::chrono::steady_clock::now() + 100ms),
+        timer_receiver{&state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state.value);
+    EXPECT_FALSE(state.stopped);
+}
+
+TEST(TimerContextTest, ScheduleAtSystemClockDeadlineDoesNotCompleteEarly) {
+    forge::timer_context ctx;
+    timer_state state;
+    auto op = std::execution::connect(
+        ctx.schedule_at(std::chrono::system_clock::now() + 100ms),
+        timer_receiver{&state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state.value);
+    EXPECT_FALSE(state.stopped);
+}
+
+TEST(TimerContextTest, ScheduleAtPastSystemClockDeadlineCompletesPromptly) {
+    forge::timer_context ctx;
+
+    auto result = std::execution::sync_wait(
+        ctx.schedule_at(std::chrono::system_clock::now() - 1h));
+
+    EXPECT_TRUE(result.has_value());
+}
+
 TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
     forge::timer_context ctx;
     std::mutex mtx;
