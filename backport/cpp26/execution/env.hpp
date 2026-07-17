@@ -26,6 +26,7 @@
 #include "stop_token.hpp"
 
 #include <concepts>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -226,7 +227,52 @@ template<class Tag, class Value>
 }
 
 template<class... Envs>
-struct env : Envs... {};
+struct env {
+    constexpr explicit env(Envs... envs)
+        noexcept((std::is_nothrow_move_constructible_v<Envs> && ...))
+        : __envs(std::move(envs)...)
+    {}
+
+private:
+    template<class Query>
+    static constexpr bool __query_available =
+        (__forge_detail::tag_invocable<Query, const Envs&> || ...);
+
+    template<std::size_t I, class Query>
+    static constexpr decltype(auto) __query(Query query, const env& self) {
+        static_assert(I < sizeof...(Envs));
+        using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
+        if constexpr (__forge_detail::tag_invocable<Query, const current_env_t&>) {
+            return __forge_detail::tag_invoke_fn(
+                std::move(query), std::get<I>(self.__envs));
+        } else {
+            return __query<I + 1>(std::move(query), self);
+        }
+    }
+
+    template<std::size_t I, class Query>
+    static consteval bool __query_nothrow() {
+        if constexpr (I == sizeof...(Envs)) {
+            return true;
+        } else {
+            using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
+            if constexpr (__forge_detail::tag_invocable<Query, const current_env_t&>) {
+                return __forge_detail::nothrow_tag_invocable<Query, const current_env_t&>;
+            } else {
+                return __query_nothrow<I + 1, Query>();
+            }
+        }
+    }
+
+    template<class Query>
+        requires __query_available<Query>
+    friend constexpr decltype(auto) tag_invoke(Query query, const env& self)
+        noexcept(__query_nothrow<0, Query>()) {
+        return __query<0>(std::move(query), self);
+    }
+
+    [[no_unique_address]] std::tuple<Envs...> __envs;
+};
 
 template<class... Envs>
 env(Envs...) -> env<Envs...>;

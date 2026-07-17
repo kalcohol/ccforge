@@ -278,6 +278,26 @@ TEST(WriteEnvTest, PreservesReceiverStopTokenWhenNotOverridden) {
     EXPECT_TRUE(stop_possible);
 }
 
+TEST(EnvTest, DuplicateQueriesUseTheLeftmostEnvironment) {
+    std::inplace_stop_source first;
+    std::inplace_stop_source second;
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, first.get_token()),
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, second.get_token()));
+
+    auto token = std::execution::get_stop_token(env);
+    EXPECT_TRUE(token.stop_possible());
+    EXPECT_FALSE(token.stop_requested());
+
+    second.request_stop();
+    EXPECT_FALSE(token.stop_requested());
+
+    first.request_stop();
+    EXPECT_TRUE(token.stop_requested());
+}
+
 TEST(QueryCpoTest, ReadsAwaitCompletionAdaptorThroughBackportQueryModel) {
     await_completion_adaptor_env env{42};
 
