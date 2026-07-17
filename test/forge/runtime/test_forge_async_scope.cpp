@@ -189,6 +189,32 @@ struct error_sender {
     }
 };
 
+struct connect_error {};
+
+struct throwing_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        void start() & noexcept {}
+    };
+
+    template<class R>
+    auto connect(R) && -> op<R> {
+        throw connect_error{};
+    }
+};
+
 } // namespace
 
 TEST(AsyncScopeTest, SpawnReturnsFalseAfterClose) {
@@ -196,6 +222,14 @@ TEST(AsyncScopeTest, SpawnReturnsFalseAfterClose) {
     scope.close();
 
     EXPECT_FALSE(scope.spawn(std::execution::just()));
+}
+
+TEST(AsyncScopeTest, ConnectFailureReleasesAcquiredSlot) {
+    forge::async_scope scope;
+
+    EXPECT_FALSE(scope.spawn(throwing_connect_sender{}));
+    scope.wait();
+    EXPECT_THROW(scope.rethrow_if_error(), connect_error);
 }
 
 TEST(AsyncScopeTest, WaitBlocksUntilScheduledWorkCompletes) {

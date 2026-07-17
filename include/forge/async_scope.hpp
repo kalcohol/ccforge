@@ -329,7 +329,7 @@ public:
             node = alloc.allocate(1);
             std::construct_at(node,
                 memory,
-                std::move(st),
+                st,
                 sender_t(__async_scope_detail::__copy_or_move_lvalue(
                     static_cast<S&&>(sender))));
         } catch (...) {
