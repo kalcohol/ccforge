@@ -40,11 +40,14 @@
 #include <memory_resource>
 #include <mutex>
 #include <optional>
+#include <pthread.h>
+#include <signal.h>
 #include <span>
 #include <stop_token>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
+#include <time.h>
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
@@ -109,17 +112,75 @@ bool __stop_requested(const R& rcvr) noexcept {
     }
 }
 
+class __sigpipe_guard {
+public:
+    __sigpipe_guard() {
+        ::sigemptyset(&mask_);
+        ::sigaddset(&mask_, SIGPIPE);
+        const int mask_error = ::pthread_sigmask(SIG_BLOCK, &mask_, &old_mask_);
+        if (mask_error != 0) {
+            throw std::system_error{
+                mask_error,
+                std::generic_category(),
+                "forge::io block SIGPIPE"};
+        }
+        active_ = true;
+
+        sigset_t pending{};
+        if (::sigpending(&pending) != 0) {
+            const int error = errno;
+            restore();
+            throw std::system_error{
+                error,
+                std::generic_category(),
+                "forge::io inspect SIGPIPE"};
+        }
+        was_pending_ = ::sigismember(&pending, SIGPIPE) == 1;
+    }
+
+    ~__sigpipe_guard() { restore(); }
+
+    __sigpipe_guard(const __sigpipe_guard&) = delete;
+    auto operator=(const __sigpipe_guard&) -> __sigpipe_guard& = delete;
+
+    void consume_generated_signal() noexcept {
+        if (was_pending_) {
+            return;
+        }
+        const timespec timeout{};
+        while (::sigtimedwait(&mask_, nullptr, &timeout) < 0 && errno == EINTR) {}
+    }
+
+private:
+    void restore() noexcept {
+        if (active_) {
+            (void)::pthread_sigmask(SIG_SETMASK, &old_mask_, nullptr);
+            active_ = false;
+        }
+    }
+
+    sigset_t mask_{};
+    sigset_t old_mask_{};
+    bool active_ = false;
+    bool was_pending_ = false;
+};
+
 [[nodiscard]] inline auto __write_some(int fd, std::span<const std::byte> buffer)
     -> std::size_t {
     while (true) {
+        __sigpipe_guard guard;
         const auto result = ::write(fd, buffer.data(), buffer.size());
         if (result >= 0) {
             return static_cast<std::size_t>(result);
         }
-        if (errno == EINTR) {
+        const int error = errno;
+        if (error == EPIPE) {
+            guard.consume_generated_signal();
+        }
+        if (error == EINTR) {
             continue;
         }
-        throw std::system_error{errno, std::generic_category(),
+        throw std::system_error{error, std::generic_category(),
                                 "forge::io async_write_some"};
     }
 }
@@ -289,9 +350,9 @@ struct __fd_waiters {
     }
 
     [[nodiscard]] auto events() const noexcept -> std::uint32_t {
-        std::uint32_t result = EPOLLERR | EPOLLHUP | EPOLLRDHUP;
+        std::uint32_t result = EPOLLERR | EPOLLHUP;
         if (read) {
-            result |= EPOLLIN;
+            result |= EPOLLIN | EPOLLRDHUP;
         }
         if (write) {
             result |= EPOLLOUT;
@@ -582,7 +643,7 @@ struct __state : std::enable_shared_from_this<__state> {
         const bool read_ready =
             (event_mask & (EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP)) != 0;
         const bool write_ready =
-            (event_mask & (EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP)) != 0;
+            (event_mask & (EPOLLOUT | EPOLLERR | EPOLLHUP)) != 0;
 
         if (read_ready) {
             take_one_locked(waiters.read, actions, __completion_kind::value);

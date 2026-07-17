@@ -345,6 +345,30 @@ TEST(IoContextTest, WritableCompletesForSocketpair) {
     EXPECT_TRUE(result.has_value());
 }
 
+TEST(IoContextTest, PeerReadHalfCloseDoesNotSignalWritable) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+    std::inplace_stop_source stop;
+    auto state = std::make_shared<io_state>();
+    auto op = std::execution::connect(
+        ctx.writable(sockets.first.get()),
+        stopped_receiver{io_receiver{state}, &stop});
+    std::execution::start(op);
+
+    ASSERT_EQ(::shutdown(sockets.second.get(), SHUT_WR), 0);
+    {
+        std::unique_lock lk{state->mtx};
+        EXPECT_FALSE(state->cv.wait_for(lk, 50ms, [&] { return state->done(); }));
+    }
+
+    stop.request_stop();
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
 TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
     auto pipe = make_pipe();
     forge::io::context ctx;
@@ -452,6 +476,22 @@ TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     ASSERT_EQ(::read(pipe.first.get(), received.data(), received.size()),
               static_cast<ssize_t>(received.size()));
     EXPECT_EQ(received, payload);
+}
+
+TEST(IoContextTest, AsyncWriteSomeBrokenPipeReportsErrorWithoutSignal) {
+    auto pipe = make_pipe();
+    pipe.first.reset();
+    forge::io::context ctx;
+    std::array<std::byte, 1> payload{std::byte{'x'}};
+
+    try {
+        (void)std::execution::sync_wait(
+            ctx.async_write_some(pipe.second.get(), std::span{payload}));
+        FAIL() << "expected a broken-pipe error";
+    } catch (const std::system_error& error) {
+        const std::error_code expected{EPIPE, std::generic_category()};
+        EXPECT_EQ(error.code(), expected);
+    }
 }
 
 TEST(IoContextTest, AsyncWriteSomeZeroLengthDoesNotWaitForReadiness) {
