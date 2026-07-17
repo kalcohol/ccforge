@@ -27,6 +27,7 @@
 #include "env.hpp"
 #include "run_loop.hpp"
 
+#include <cstddef>
 #include <exception>
 #include <stdexcept>
 #include <tuple>
@@ -36,6 +37,26 @@
 namespace std::execution {
 
 namespace __forge_continues_on {
+
+template<class Sig>
+struct __is_value_completion : std::false_type {};
+
+template<class... Vs>
+struct __is_value_completion<set_value_t(Vs...)> : std::true_type {};
+
+template<class CS>
+struct __value_completion_count;
+
+template<class... Sigs>
+struct __value_completion_count<completion_signatures<Sigs...>>
+    : std::integral_constant<
+          std::size_t,
+          (std::size_t{0} + ... +
+           static_cast<std::size_t>(__is_value_completion<Sigs>::value))> {};
+
+template<class CS>
+inline constexpr std::size_t __value_completion_count_v =
+    __value_completion_count<CS>::value;
 
 template<class R>
 concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
@@ -196,6 +217,9 @@ template<class Scheduler, class S, class R>
 struct __op_selector {
     using cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<S>(), std::declval<env_of_t<R>>()));
+    static_assert(
+        __value_completion_count_v<cs_t> <= 1,
+        "continues_on supports at most one value completion shape");
     using val_tup_t = __forge_meta::__single_value_tuple_t<cs_t>;
     using type = __op_impl<Scheduler, S, R, val_tup_t>;
 };
@@ -214,6 +238,9 @@ struct __sender {
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<const typename self_t::source_t&>(),
             std::declval<Env>()));
+        static_assert(
+            __value_completion_count_v<source_cs_t> <= 1,
+            "continues_on supports at most one value completion shape");
         using sched_sndr_t = decltype(std::execution::schedule(
             std::declval<Scheduler&>()));
         using sched_cs_t = decltype(std::execution::get_completion_signatures(

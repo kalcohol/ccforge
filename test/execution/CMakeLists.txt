@@ -98,6 +98,11 @@ forge_expect_execution_cxx_source_compiles(
     test_execution_reject_empty_when_all.cpp
     OFF
     "std::execution::when_all must reject zero senders")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_CONTINUES_ON_MULTI_VALUE
+    test_execution_reject_continues_on_multi_value.cpp
+    OFF
+    "std::execution::continues_on subset must reject multiple value completion shapes")
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
