@@ -267,10 +267,32 @@ T expint_fallback(T x) {
         return -infinity<T>();
     }
 
-    constexpr T series_cutoff = static_cast<T>(6);
+    constexpr T negative_series_cutoff = static_cast<T>(6);
+    constexpr T positive_series_cutoff = static_cast<T>(40);
     constexpr T epsilon = static_cast<T>(1e-15L);
 
-    if (std::abs(x) <= series_cutoff) {
+    if (x < -negative_series_cutoff) {
+        const T positive_x = -x;
+        T b = positive_x + T{1};
+        T c = T{1} / std::numeric_limits<T>::min();
+        T d = T{1} / b;
+        T fraction = d;
+        for (unsigned k = 1; k < 256u; ++k) {
+            const T kt = static_cast<T>(k);
+            const T a = -(kt * kt);
+            b += T{2};
+            d = T{1} / (a * d + b);
+            c = b + a / c;
+            const T delta = c * d;
+            fraction *= delta;
+            if (std::abs(delta - T{1}) <= epsilon) {
+                break;
+            }
+        }
+        return -std::exp(-positive_x) * fraction;
+    }
+
+    if (x <= positive_series_cutoff) {
         T sum = T{};
         T term = x;
         for (unsigned k = 1; k < 512u; ++k) {
@@ -286,12 +308,18 @@ T expint_fallback(T x) {
 
     T sum = T{1};
     T term = T{1};
+    T previous_magnitude = infinity<T>();
     for (unsigned k = 1; k < 256u; ++k) {
         term *= static_cast<T>(k) / x;
-        sum += term;
-        if (std::abs(term) <= epsilon * std::max(T{1}, std::abs(sum))) {
+        const T magnitude = std::abs(term);
+        if (magnitude >= previous_magnitude) {
             break;
         }
+        sum += term;
+        if (magnitude <= epsilon * std::max(T{1}, std::abs(sum))) {
+            break;
+        }
+        previous_magnitude = magnitude;
     }
     return std::exp(x) * sum / x;
 }

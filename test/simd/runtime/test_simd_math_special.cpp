@@ -127,4 +127,17 @@ TEST(SimdMathSpecialTest, VectorizedSpecialMathCommonResultTypeMatchesScalarSema
 #endif
 }
 
+#if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
+TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
+    EXPECT_NEAR(
+        std::simd::detail::special_math::expint_fallback(10.0),
+        2492.2289762418777,
+        1e-10);
+    EXPECT_NEAR(
+        std::simd::detail::special_math::expint_fallback(-10.0),
+        -4.156968929685325e-6,
+        1e-12);
+}
+#endif
+
 } // namespace
