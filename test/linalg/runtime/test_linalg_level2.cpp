@@ -177,6 +177,20 @@ TEST(LinalgLevel2SymmetricProduct, UpperLowerAndUpdateForms) {
     expect_vector_near(y, {24.0, 45.0, 61.0});
 }
 
+TEST(LinalgLevel2SymmetricProduct, UpdateOutputMayAliasInput) {
+    double a_data[] = {1.0, 2.0, 100.0, 3.0};
+    double x_data[] = {1.0, 1.0};
+    double y_data[] = {10.0, 20.0};
+    std::mdspan A(a_data, std::extents<int, 2, 2>{});
+    std::mdspan x(x_data, std::extents<int, 2>{});
+    std::mdspan y(y_data, std::extents<int, 2>{});
+
+    std::linalg::symmetric_matrix_vector_product(
+        A, std::linalg::upper_triangle, x, y, y);
+
+    expect_vector_near(y, {13.0, 25.0});
+}
+
 TEST(LinalgLevel2HermitianProduct, IgnoresDiagonalImaginaryAndSupportsLower) {
     complex upper_data[] = {{2.0, 99.0}, {1.0, 1.0}, {99.0, 99.0}, {3.0, -88.0}};
     complex lower_data[] = {{2.0, 99.0}, {99.0, 99.0}, {1.0, -1.0}, {3.0, -88.0}};
@@ -200,6 +214,21 @@ TEST(LinalgLevel2HermitianProduct, IgnoresDiagonalImaginaryAndSupportsLower) {
     std::linalg::hermitian_matrix_vector_product(upper, std::linalg::upper_triangle, x, base, y);
     expect_complex_near(y[0], {15.0, 3.0});
     expect_complex_near(y[1], {28.0, -3.0});
+}
+
+TEST(LinalgLevel2HermitianProduct, UpdateOutputMayAliasInput) {
+    complex a_data[] = {{2.0, 9.0}, {1.0, 1.0}, {100.0, 100.0}, {3.0, -9.0}};
+    complex x_data[] = {{1.0, 0.0}, {2.0, 0.0}};
+    complex y_data[] = {{10.0, 0.0}, {20.0, 0.0}};
+    std::mdspan A(a_data, std::extents<int, 2, 2>{});
+    std::mdspan x(x_data, std::extents<int, 2>{});
+    std::mdspan y(y_data, std::extents<int, 2>{});
+
+    std::linalg::hermitian_matrix_vector_product(
+        A, std::linalg::upper_triangle, x, y, y);
+
+    expect_complex_near(y[0], {14.0, 2.0});
+    expect_complex_near(y[1], {27.0, -1.0});
 }
 
 TEST(LinalgLevel2RankUpdate, NonsymmetricOverwriteAndUpdateForms) {

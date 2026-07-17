@@ -31,9 +31,9 @@
 - 未实现 execution policy 重载，不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
-- 旧的 `triangular_matrix_product(..., Side, ...)` 仍作为兼容 wrapper 保留，但文档化 API
-  以后续 draft 的 `triangular_matrix_left_product` / `triangular_matrix_right_product`
-  拼写为准。
+- Triangular matrix-matrix product 使用当前 draft 的
+  `triangular_matrix_left_product` / `triangular_matrix_right_product` 拼写；旧的
+  `triangular_matrix_product(..., Side, ...)` 非标准 wrapper 不再暴露。
 - Level 3 目前覆盖左右两侧 triangular product；triangular solve 仍只覆盖左侧矩阵版本，
   Hermitian rank-2k 仍未实现。
 

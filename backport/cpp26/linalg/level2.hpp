@@ -253,14 +253,27 @@ template<class Triangle,
          class ZExtents, class ZLayout, class ZAccessor>
 void symmetric_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    Triangle t,
+    Triangle,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
     std::mdspan<typename ZAccessor::element_type, ZExtents, ZLayout, ZAccessor> z)
 {
-    symmetric_matrix_vector_product(A, t, x, z);
-    for (typename ZExtents::index_type i = 0; i < z.extent(0); ++i)
-        z[i] += y[i];
+    using idx_t = typename AExtents::index_type;
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    const idx_t n = A.extent(0);
+    for (idx_t i = 0; i < n; ++i) {
+        typename ZAccessor::element_type sum{};
+        for (idx_t j = 0; j < n; ++j) {
+            if (i == j) {
+                sum += A[i, i] * x[j];
+            } else if constexpr (is_upper) {
+                sum += (i < j ? A[i, j] : A[j, i]) * x[j];
+            } else {
+                sum += (i < j ? A[j, i] : A[i, j]) * x[j];
+            }
+        }
+        z[i] = y[i] + sum;
+    }
 }
 
 // hermitian_matrix_vector_product — y = A*x (hermitian A)  [linalg.algs.blas2.hemv]
@@ -300,14 +313,31 @@ template<class Triangle,
          class ZExtents, class ZLayout, class ZAccessor>
 void hermitian_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    Triangle t,
+    Triangle,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
     std::mdspan<typename ZAccessor::element_type, ZExtents, ZLayout, ZAccessor> z)
 {
-    hermitian_matrix_vector_product(A, t, x, z);
-    for (typename ZExtents::index_type i = 0; i < z.extent(0); ++i)
-        z[i] += y[i];
+    using idx_t = typename AExtents::index_type;
+    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
+    const idx_t n = A.extent(0);
+    for (idx_t i = 0; i < n; ++i) {
+        typename ZAccessor::element_type sum{};
+        for (idx_t j = 0; j < n; ++j) {
+            if (i == j) {
+                sum += __detail::__real_if_needed(A[i, i]) * x[j];
+            } else if constexpr (is_upper) {
+                sum += (i < j
+                    ? A[i, j]
+                    : __detail::__conj_if_needed(A[j, i])) * x[j];
+            } else {
+                sum += (i < j
+                    ? __detail::__conj_if_needed(A[j, i])
+                    : A[i, j]) * x[j];
+            }
+        }
+        z[i] = y[i] + sum;
+    }
 }
 
 // matrix_rank_1_update — A = x * y^T  [linalg.algs.blas2.rank1]

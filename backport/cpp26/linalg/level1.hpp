@@ -475,7 +475,10 @@ T matrix_one_norm(
     T init)
 {
     using std::abs;
-    T max_col_sum = init;
+    if (A.extent(1) == 0) {
+        return init;
+    }
+    T max_col_sum{};
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
         T col_sum = T{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
@@ -483,7 +486,7 @@ T matrix_one_norm(
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
-    return max_col_sum;
+    return init + max_col_sum;
 }
 
 template<class Extents, class Layout, class Accessor>
