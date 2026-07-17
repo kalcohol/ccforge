@@ -1,0 +1,8 @@
+# Containerfiles install toolchains and do not copy repository contents into
+# their images. Keep local build and dependency trees out of the build context.
+build*/
+.cache/
+.git/
+3rdparty/
+Testing/
+cmake-build-*/
