@@ -55,8 +55,8 @@ work 已经 drain，不表示 non-owning PMR resource 已被库拥有或可由�
 
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task
   callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
-- `bounded_channel` 使用 resource 控制 buffer、pending send/recv 队列、action 批次和
-  send/recv record control block。
+- `bounded_channel` 使用 resource 控制 state、buffer 和 send/recv record control
+  block；pending send/recv 使用 record 内嵌链，不另行分配。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次、receiver record 和
   runner keepalive node。
 - `timer_context` 使用 resource 控制 state、timer op data、timer item control block、
@@ -73,7 +73,7 @@ Allocation audit:
 | `timer_context` | context state, timer op data, timer item control blocks, timer queue, timer callback callable records | OS timer worker thread resources | `forge_timer_context` |
 | `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
 | `resource_context` | forwards the resource to the internal runtime and async scope spawned op-state | no separate allocation policy beyond its members | `forge_resource_context` |
-| `bounded_channel<T>` | channel state, buffer, pending send/recv queues, action batches, send/recv record control blocks | storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
+| `bounded_channel<T>` | channel state, buffer, send/recv record control blocks | pending send/recv links are embedded in records; storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
 | `strand` | strand state, pending queue, stopped batches, receiver records, runner keepalive nodes | underlying scheduler resources remain owned by that scheduler | `forge_strand` |
 | `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
@@ -87,6 +87,9 @@ Failure policy:
 - Allocation failure generally follows the default exception path. Typed-error
   variants only classify allocation/capacity failures when the classification is
   stable for that surface.
+- `bounded_channel::async_send` reports a buffer-node allocation failure through
+  `set_error(std::exception_ptr)`; `strand` treats an enqueue allocation failure
+  like a scheduler launch failure and fails closed with stopped completions.
 - Forge does not claim global zero allocation. The policy is scoped to the
   paths listed above.
 
@@ -176,7 +179,9 @@ submission/completion queue 语义时才应单独立项。详细语义见 [`forg
 - `forge::bounded_channel<T>`：有界 FIFO 消息通道，提供 `async_send(T)`、
   `async_recv()`、`try_send(T)`、`try_recv()`、`close()`、`request_stop()` 和
   `shutdown()`。可用 `bounded_channel_options{.capacity = N, .memory = resource}` 控制
-  容量和 channel 内部 buffer/pending/record 分配。send 在值被缓冲或直接交给等待中的
+  容量和 channel 内部 state/buffer/record 分配。`T` 必须 nothrow move constructible，
+  以保证 asynchronous `start()`、close 和 cancellation 路径不因值移动抛异常。send
+  在值被缓冲或直接交给等待中的
   receiver 后完成 `set_value()`；recv 在收到值时完成 `set_value(T)`。`close()` 拒绝新
   send 并允许已缓冲值 drain；`request_stop()` 取消 pending send/recv 并丢弃缓冲值。
 

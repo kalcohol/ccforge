@@ -28,14 +28,13 @@
 #include <execution>
 #include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <exception>
+#include <list>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace forge {
 
@@ -175,6 +174,8 @@ struct __runner final : __runner_base {
 };
 
 struct __state : std::enable_shared_from_this<__state> {
+    using queue_t = std::pmr::list<std::shared_ptr<__record_base>>;
+
     __state(any_scheduler scheduler, strand_options options)
         : scheduler_(std::move(scheduler))
         , memory_(normalize_memory_resource(options.memory))
@@ -185,15 +186,22 @@ struct __state : std::enable_shared_from_this<__state> {
         auto keepalive = shared_from_this();
         std::shared_ptr<__record_base> stopped;
         bool launch = false;
+        bool failed = false;
         {
             std::lock_guard lk{mtx_};
             if (closed_) {
                 stopped = std::move(record);
             } else {
-                queue_.push_back(std::move(record));
-                if (!running_) {
-                    running_ = true;
-                    launch = true;
+                try {
+                    queue_.push_back(record);
+                    if (!running_) {
+                        running_ = true;
+                        launch = true;
+                    }
+                } catch (...) {
+                    closed_ = true;
+                    stopped = std::move(record);
+                    failed = true;
                 }
             }
         }
@@ -201,22 +209,23 @@ struct __state : std::enable_shared_from_this<__state> {
         if (stopped) {
             stopped->complete_stopped();
         }
+        if (failed) {
+            stop_all();
+            return;
+        }
         if (launch) {
             launch_runner();
         }
     }
 
     void shutdown() noexcept {
-        std::pmr::vector<std::shared_ptr<__record_base>> stopped{memory_};
+        queue_t stopped{memory_};
         bool notify = false;
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
-            while (!queue_.empty()) {
-                stopped.push_back(std::move(queue_.front()));
-                queue_.pop_front();
-            }
-            if (!active_ && queue_.empty()) {
+            stopped.splice(stopped.end(), queue_);
+            if (!active_) {
                 running_ = false;
                 notify = true;
             }
@@ -270,15 +279,12 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void stop_all() noexcept {
-        std::pmr::vector<std::shared_ptr<__record_base>> stopped{memory_};
+        queue_t stopped{memory_};
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
             running_ = false;
-            while (!queue_.empty()) {
-                stopped.push_back(std::move(queue_.front()));
-                queue_.pop_front();
-            }
+            stopped.splice(stopped.end(), queue_);
             cv_.notify_all();
         }
 
@@ -334,7 +340,7 @@ private:
     std::pmr::memory_resource* memory_;
     mutable std::mutex mtx_;
     std::condition_variable cv_;
-    std::pmr::deque<std::shared_ptr<__record_base>> queue_;
+    queue_t queue_;
     bool running_ = false;
     bool active_ = false;
     bool closed_ = false;

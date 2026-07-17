@@ -25,17 +25,16 @@
 #include "resource_policy.hpp"
 
 #include <execution>
-#include <algorithm>
 #include <atomic>
 #include <cstddef>
-#include <deque>
+#include <exception>
+#include <list>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace forge {
 
@@ -61,19 +60,82 @@ bool __stop_requested(const R& rcvr) noexcept {
 
 template<class T>
 struct __send_base {
+    std::shared_ptr<__send_base> next;
+
     virtual ~__send_base() = default;
     virtual auto take_value() -> T = 0;
     virtual bool stop_requested() const noexcept = 0;
     virtual void complete_value() noexcept = 0;
+    virtual void complete_error(std::exception_ptr error) noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
 };
 
 template<class T>
 struct __recv_base {
+    std::shared_ptr<__recv_base> next;
+
     virtual ~__recv_base() = default;
     virtual bool stop_requested() const noexcept = 0;
-    virtual void complete_value(T value) noexcept = 0;
+    virtual void prepare_value(T value) noexcept = 0;
+    virtual bool has_prepared_value() const noexcept = 0;
+    virtual void complete_value() noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
+};
+
+template<class Record>
+struct __record_queue {
+    using pointer = std::shared_ptr<Record>;
+
+    [[nodiscard]] bool empty() const noexcept { return !head; }
+    [[nodiscard]] auto front() const noexcept -> const pointer& { return head; }
+
+    void push_back(pointer record) noexcept {
+        record->next.reset();
+        if (tail) {
+            tail->next = record;
+        } else {
+            head = record;
+        }
+        tail = std::move(record);
+    }
+
+    auto pop_front() noexcept -> pointer {
+        auto record = std::move(head);
+        if (record) {
+            head = std::move(record->next);
+            if (!head) {
+                tail.reset();
+            }
+        }
+        return record;
+    }
+
+    auto remove(const pointer& record) noexcept -> pointer {
+        pointer* link = &head;
+        pointer previous;
+        while (*link && *link != record) {
+            previous = *link;
+            link = &(*link)->next;
+        }
+        if (!*link) {
+            return {};
+        }
+
+        auto removed = std::move(*link);
+        *link = std::move(removed->next);
+        if (!*link) {
+            tail = std::move(previous);
+        }
+        return removed;
+    }
+
+    auto take_all() noexcept -> pointer {
+        tail.reset();
+        return std::move(head);
+    }
+
+    pointer head;
+    pointer tail;
 };
 
 template<class T>
@@ -81,30 +143,28 @@ struct __actions {
     using send_ptr = std::shared_ptr<__send_base<T>>;
     using recv_ptr = std::shared_ptr<__recv_base<T>>;
 
-    explicit __actions(std::pmr::memory_resource* memory)
-        : send_value(memory)
-        , send_stopped(memory)
-        , recv_value(memory)
-        , recv_stopped(memory)
-    {}
-
-    std::pmr::vector<send_ptr> send_value;
-    std::pmr::vector<send_ptr> send_stopped;
-    std::pmr::vector<std::pair<recv_ptr, T>> recv_value;
-    std::pmr::vector<recv_ptr> recv_stopped;
+    send_ptr send_value;
+    send_ptr send_error;
+    send_ptr send_stopped;
+    recv_ptr recv_value;
+    recv_ptr recv_stopped;
+    std::exception_ptr send_exception;
 
     void run() noexcept {
-        for (auto& item : recv_value) {
-            item.first->complete_value(std::move(item.second));
+        if (recv_value) {
+            recv_value->complete_value();
         }
-        for (auto& send : send_value) {
-            send->complete_value();
+        if (send_value) {
+            send_value->complete_value();
         }
-        for (auto& recv : recv_stopped) {
-            recv->complete_stopped();
+        if (send_error) {
+            send_error->complete_error(std::move(send_exception));
         }
-        for (auto& send : send_stopped) {
-            send->complete_stopped();
+        if (recv_stopped) {
+            recv_stopped->complete_stopped();
+        }
+        if (send_stopped) {
+            send_stopped->complete_stopped();
         }
     }
 };
@@ -113,68 +173,73 @@ template<class T>
 struct __state : std::enable_shared_from_this<__state<T>> {
     using send_ptr = std::shared_ptr<__send_base<T>>;
     using recv_ptr = std::shared_ptr<__recv_base<T>>;
+    using buffer_t = std::pmr::list<T>;
+    using send_queue_t = __record_queue<__send_base<T>>;
+    using recv_queue_t = __record_queue<__recv_base<T>>;
 
     explicit __state(bounded_channel_options options)
         : capacity(options.capacity)
         , memory(normalize_memory_resource(options.memory))
         , buffer(memory)
-        , pending_sends(memory)
-        , pending_recvs(memory)
     {}
 
-    [[nodiscard]] bool start_send(send_ptr send) {
-        __actions<T> actions{memory};
+    [[nodiscard]] bool start_send(send_ptr send) noexcept {
+        __actions<T> actions;
         {
             std::lock_guard lk{mtx};
             if (stopped || closed) {
-                actions.send_stopped.push_back(std::move(send));
+                actions.send_stopped = std::move(send);
             } else if (send->stop_requested()) {
-                actions.send_stopped.push_back(std::move(send));
+                actions.send_stopped = std::move(send);
             } else if (!pending_recvs.empty()) {
-                auto recv = std::move(pending_recvs.front());
-                pending_recvs.pop_front();
-                actions.recv_value.emplace_back(std::move(recv), send->take_value());
-                actions.send_value.push_back(std::move(send));
+                auto recv = pending_recvs.pop_front();
+                recv->prepare_value(send->take_value());
+                actions.recv_value = std::move(recv);
+                actions.send_value = std::move(send);
             } else if (buffer.size() < capacity) {
-                buffer.push_back(send->take_value());
-                actions.send_value.push_back(std::move(send));
+                try {
+                    buffer.push_back(send->take_value());
+                    actions.send_value = std::move(send);
+                } catch (...) {
+                    actions.send_exception = std::current_exception();
+                    actions.send_error = std::move(send);
+                }
             } else {
-                pending_sends.push_back(std::move(send));
-                if (!pending_sends.back()->stop_requested()) {
+                pending_sends.push_back(send);
+                if (!send->stop_requested()) {
                     return true;
                 }
-                actions.send_stopped.push_back(std::move(pending_sends.back()));
-                pending_sends.pop_back();
+                actions.send_stopped = pending_sends.remove(send);
             }
         }
         actions.run();
         return false;
     }
 
-    [[nodiscard]] bool start_recv(recv_ptr recv) {
-        __actions<T> actions{memory};
+    [[nodiscard]] bool start_recv(recv_ptr recv) noexcept {
+        __actions<T> actions;
         {
             std::lock_guard lk{mtx};
             if (!buffer.empty()) {
-                actions.recv_value.emplace_back(std::move(recv), std::move(buffer.front()));
+                recv->prepare_value(std::move(buffer.front()));
                 buffer.pop_front();
+                actions.recv_value = std::move(recv);
                 promote_one_send_locked(actions);
             } else if (!pending_sends.empty()) {
-                auto send = std::move(pending_sends.front());
-                pending_sends.pop_front();
-                actions.recv_value.emplace_back(std::move(recv), send->take_value());
-                actions.send_value.push_back(std::move(send));
+                auto send = pending_sends.pop_front();
+                recv->prepare_value(send->take_value());
+                actions.recv_value = std::move(recv);
+                actions.send_value = std::move(send);
             } else if (stopped || closed) {
-                actions.recv_stopped.push_back(std::move(recv));
+                actions.recv_stopped = std::move(recv);
             } else if (recv->stop_requested()) {
-                actions.recv_stopped.push_back(std::move(recv));
+                actions.recv_stopped = std::move(recv);
             } else {
-                pending_recvs.push_back(std::move(recv));
-                if (!pending_recvs.back()->stop_requested()) {
+                pending_recvs.push_back(recv);
+                if (!recv->stop_requested()) {
                     return true;
                 }
-                actions.recv_stopped.push_back(std::move(pending_recvs.back()));
-                pending_recvs.pop_back();
+                actions.recv_stopped = pending_recvs.remove(recv);
             }
         }
         actions.run();
@@ -182,7 +247,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     bool try_send(T value) {
-        __actions<T> actions{memory};
+        __actions<T> actions;
         bool accepted = false;
         {
             std::lock_guard lk{mtx};
@@ -190,9 +255,9 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 return false;
             }
             if (!pending_recvs.empty()) {
-                auto recv = std::move(pending_recvs.front());
-                pending_recvs.pop_front();
-                actions.recv_value.emplace_back(std::move(recv), std::move(value));
+                auto recv = pending_recvs.pop_front();
+                recv->prepare_value(std::move(value));
+                actions.recv_value = std::move(recv);
                 accepted = true;
             } else if (buffer.size() < capacity) {
                 buffer.push_back(std::move(value));
@@ -204,7 +269,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     auto try_recv() -> std::optional<T> {
-        __actions<T> actions{memory};
+        __actions<T> actions;
         std::optional<T> result;
         {
             std::lock_guard lk{mtx};
@@ -213,10 +278,9 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 buffer.pop_front();
                 promote_one_send_locked(actions);
             } else if (!pending_sends.empty()) {
-                auto send = std::move(pending_sends.front());
-                pending_sends.pop_front();
+                auto send = pending_sends.pop_front();
                 result.emplace(send->take_value());
-                actions.send_value.push_back(std::move(send));
+                actions.send_value = std::move(send);
             }
         }
         actions.run();
@@ -224,39 +288,59 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     }
 
     void close() noexcept {
-        __actions<T> actions{memory};
+        send_ptr sends;
+        recv_ptr recvs;
         {
             std::lock_guard lk{mtx};
             closed = true;
-            while (!pending_sends.empty()) {
-                actions.send_stopped.push_back(std::move(pending_sends.front()));
-                pending_sends.pop_front();
+            auto recv = pending_recvs.front();
+            while (recv && !buffer.empty()) {
+                recv->prepare_value(std::move(buffer.front()));
+                buffer.pop_front();
+                recv = recv->next;
             }
-            drain_buffer_to_receivers_locked(actions);
-            if (buffer.empty()) {
-                stop_pending_receivers_locked(actions);
-            }
+            sends = pending_sends.take_all();
+            recvs = pending_recvs.take_all();
         }
-        actions.run();
+
+        while (recvs) {
+            auto next = std::move(recvs->next);
+            if (recvs->has_prepared_value()) {
+                recvs->complete_value();
+            } else {
+                recvs->complete_stopped();
+            }
+            recvs = std::move(next);
+        }
+        while (sends) {
+            auto next = std::move(sends->next);
+            sends->complete_stopped();
+            sends = std::move(next);
+        }
     }
 
     void request_stop() noexcept {
-        __actions<T> actions{memory};
-        std::pmr::deque<T> discarded{memory};
+        send_ptr sends;
+        recv_ptr recvs;
+        buffer_t discarded{memory};
         {
             std::lock_guard lk{mtx};
             stopped = true;
-            while (!pending_sends.empty()) {
-                actions.send_stopped.push_back(std::move(pending_sends.front()));
-                pending_sends.pop_front();
-            }
-            while (!pending_recvs.empty()) {
-                actions.recv_stopped.push_back(std::move(pending_recvs.front()));
-                pending_recvs.pop_front();
-            }
-            discarded.swap(buffer);
+            sends = pending_sends.take_all();
+            recvs = pending_recvs.take_all();
+            discarded.splice(discarded.end(), buffer);
         }
-        actions.run();
+
+        while (recvs) {
+            auto next = std::move(recvs->next);
+            recvs->complete_stopped();
+            recvs = std::move(next);
+        }
+        while (sends) {
+            auto next = std::move(sends->next);
+            sends->complete_stopped();
+            sends = std::move(next);
+        }
     }
 
     void shutdown() noexcept {
@@ -268,28 +352,22 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         send_ptr stopped;
         {
             std::lock_guard lk{mtx};
-            auto it = std::find(pending_sends.begin(), pending_sends.end(), send);
-            if (it == pending_sends.end()) {
-                return;
-            }
-            stopped = std::move(*it);
-            pending_sends.erase(it);
+            stopped = pending_sends.remove(send);
         }
-        stopped->complete_stopped();
+        if (stopped) {
+            stopped->complete_stopped();
+        }
     }
 
     void cancel_recv(const recv_ptr& recv) noexcept {
         recv_ptr stopped;
         {
             std::lock_guard lk{mtx};
-            auto it = std::find(pending_recvs.begin(), pending_recvs.end(), recv);
-            if (it == pending_recvs.end()) {
-                return;
-            }
-            stopped = std::move(*it);
-            pending_recvs.erase(it);
+            stopped = pending_recvs.remove(recv);
         }
-        stopped->complete_stopped();
+        if (stopped) {
+            stopped->complete_stopped();
+        }
     }
 
     [[nodiscard]] bool is_closed() const noexcept {
@@ -297,38 +375,19 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         return closed;
     }
 
-    void promote_one_send_locked(__actions<T>& actions) {
+    void promote_one_send_locked(__actions<T>& actions) noexcept {
         if (pending_sends.empty()) {
             return;
         }
-        if (!pending_recvs.empty()) {
-            auto send = std::move(pending_sends.front());
-            auto recv = std::move(pending_recvs.front());
-            pending_sends.pop_front();
-            pending_recvs.pop_front();
-            actions.recv_value.emplace_back(std::move(recv), send->take_value());
-            actions.send_value.push_back(std::move(send));
-        } else if (buffer.size() < capacity) {
-            auto send = std::move(pending_sends.front());
-            pending_sends.pop_front();
-            buffer.push_back(send->take_value());
-            actions.send_value.push_back(std::move(send));
-        }
-    }
-
-    void drain_buffer_to_receivers_locked(__actions<T>& actions) {
-        while (!buffer.empty() && !pending_recvs.empty()) {
-            auto recv = std::move(pending_recvs.front());
-            pending_recvs.pop_front();
-            actions.recv_value.emplace_back(std::move(recv), std::move(buffer.front()));
-            buffer.pop_front();
-        }
-    }
-
-    void stop_pending_receivers_locked(__actions<T>& actions) {
-        while (!pending_recvs.empty()) {
-            actions.recv_stopped.push_back(std::move(pending_recvs.front()));
-            pending_recvs.pop_front();
+        if (buffer.size() < capacity) {
+            auto send = pending_sends.pop_front();
+            try {
+                buffer.push_back(send->take_value());
+                actions.send_value = std::move(send);
+            } catch (...) {
+                actions.send_exception = std::current_exception();
+                actions.send_error = std::move(send);
+            }
         }
     }
 
@@ -337,9 +396,9 @@ struct __state : std::enable_shared_from_this<__state<T>> {
     std::pmr::memory_resource* memory;
     bool closed = false;
     bool stopped = false;
-    std::pmr::deque<T> buffer;
-    std::pmr::deque<send_ptr> pending_sends;
-    std::pmr::deque<recv_ptr> pending_recvs;
+    buffer_t buffer;
+    send_queue_t pending_sends;
+    recv_queue_t pending_recvs;
 };
 
 template<class T, class R>
@@ -389,6 +448,15 @@ struct __send_record final : __send_base<T> {
         stop_callback.reset();
         value.reset();
         std::execution::set_value(std::move(rcvr));
+    }
+
+    void complete_error(std::exception_ptr error) noexcept override {
+        if (done.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        stop_callback.reset();
+        value.reset();
+        std::execution::set_error(std::move(rcvr), std::move(error));
     }
 
     void complete_stopped() noexcept override {
@@ -452,6 +520,7 @@ struct __recv_record final : __recv_base<T> {
     using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
 
     R rcvr;
+    std::optional<T> value;
     std::optional<callback_t> stop_callback;
     std::atomic<bool> stop_requested_flag{false};
     std::atomic<bool> done{false};
@@ -462,12 +531,20 @@ struct __recv_record final : __recv_base<T> {
         return stop_requested_flag.load(std::memory_order_acquire);
     }
 
-    void complete_value(T value) noexcept override {
+    void prepare_value(T next) noexcept override {
+        value.emplace(std::move(next));
+    }
+
+    bool has_prepared_value() const noexcept override {
+        return value.has_value();
+    }
+
+    void complete_value() noexcept override {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
         stop_callback.reset();
-        std::execution::set_value(std::move(rcvr), std::move(value));
+        std::execution::set_value(std::move(rcvr), std::move(*value));
     }
 
     void complete_stopped() noexcept override {
@@ -588,6 +665,7 @@ struct __send_sender {
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr),
             std::execution::set_stopped_t()> {
         return {};
     }
@@ -629,6 +707,8 @@ class bounded_channel {
 public:
     static_assert(std::move_constructible<T>,
                   "forge::bounded_channel<T> requires move-constructible T");
+    static_assert(std::is_nothrow_move_constructible_v<T>,
+                  "forge::bounded_channel<T> requires nothrow-move-constructible T");
 
     explicit bounded_channel(std::size_t capacity)
         : bounded_channel(bounded_channel_options{capacity})

@@ -15,6 +15,7 @@ namespace {
 
 struct send_state {
     bool value = false;
+    bool error = false;
     bool stopped = false;
 };
 
@@ -26,7 +27,7 @@ struct send_receiver {
     void set_value() && noexcept { state->value = true; }
     void set_stopped() && noexcept { state->stopped = true; }
     template<class E>
-    void set_error(E&&) && noexcept {}
+    void set_error(E&&) && noexcept { state->error = true; }
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
@@ -164,6 +165,29 @@ TEST(ChannelTest, OptionsConstructorUsesCustomMemoryResource) {
     }
 
     EXPECT_EQ(resource.allocations(), resource.deallocations());
+}
+
+TEST(ChannelTest, BufferAllocationFailureCompletesErrorAndPreservesChannel) {
+    forge_test::fail_next_resource resource;
+    forge::bounded_channel<int> channel{forge::bounded_channel_options{
+        .capacity = 1,
+        .memory = &resource,
+    }};
+    auto state = std::make_shared<send_state>();
+    auto sender = channel.async_send(1);
+    auto op = std::execution::connect(std::move(sender), send_receiver{state});
+
+    resource.fail_next_allocation();
+    std::execution::start(op);
+
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->error);
+    EXPECT_FALSE(state->stopped);
+
+    EXPECT_TRUE(std::execution::sync_wait(channel.async_send(2)).has_value());
+    auto received = std::execution::sync_wait(channel.async_recv());
+    ASSERT_TRUE(received.has_value());
+    EXPECT_EQ(std::get<0>(*received), 2);
 }
 
 TEST(ChannelTest, RecvThenSendDirectlyHandsOffValue) {
@@ -405,6 +429,40 @@ TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingSend) {
     auto first = channel.try_recv();
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(*first, 1);
+    EXPECT_FALSE(channel.try_recv().has_value());
+}
+
+TEST(ChannelTest, CancelingMiddlePendingSendPreservesFifo) {
+    forge::bounded_channel<int> channel{0};
+    std::inplace_stop_source middle_stop;
+    auto first_state = std::make_shared<send_state>();
+    auto middle_state = std::make_shared<send_state>();
+    auto last_state = std::make_shared<send_state>();
+
+    auto first_op = std::execution::connect(
+        channel.async_send(1),
+        send_receiver{first_state});
+    auto middle_op = std::execution::connect(
+        channel.async_send(2),
+        stopped_send_receiver{middle_state, &middle_stop});
+    auto last_op = std::execution::connect(
+        channel.async_send(3),
+        send_receiver{last_state});
+    std::execution::start(first_op);
+    std::execution::start(middle_op);
+    std::execution::start(last_op);
+
+    middle_stop.request_stop();
+    EXPECT_TRUE(middle_state->stopped);
+
+    auto first = channel.try_recv();
+    auto last = channel.try_recv();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(last.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_EQ(*last, 3);
+    EXPECT_TRUE(first_state->value);
+    EXPECT_TRUE(last_state->value);
     EXPECT_FALSE(channel.try_recv().has_value());
 }
 

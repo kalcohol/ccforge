@@ -151,6 +151,24 @@ TEST(StrandTest, OptionsConstructorUsesCustomMemoryResourceForRecords) {
     EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
+TEST(StrandTest, QueueAllocationFailureStopsWorkAndClosesStrand) {
+    forge_test::fail_next_resource resource;
+    forge::strand strand{
+        std::execution::inline_scheduler{},
+        forge::strand_options{.memory = &resource}};
+    auto state = std::make_shared<stopped_state>();
+    auto sender = std::execution::schedule(strand.get_scheduler());
+    auto op = std::execution::connect(std::move(sender), stopped_receiver{state});
+
+    resource.fail_next_allocation();
+    std::execution::start(op);
+
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_TRUE(strand.closed());
+    strand.wait();
+}
+
 TEST(StrandTest, NoOverlapAcrossPoolThreads) {
     forge::static_thread_pool pool{4};
     forge::strand strand{pool.get_scheduler()};
