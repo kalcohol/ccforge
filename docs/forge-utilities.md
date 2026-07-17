@@ -140,7 +140,8 @@ Failure policy:
   `request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，
   `shutdown()` 等价于 close + request stop。析构会 `shutdown()` 并 `wait()`，因此可能
   阻塞到 scope-owned work 完成或响应停止。scope 对象不得在它自己拥有的 spawned
-  work body / completion callback 内析构；外层 owner 应负责 drain。scope 捕获第一个 error 为
+  work body / completion callback 内调用 `wait()` 或析构；该 work 自身仍计入 active
+  count，外层 owner 应负责 drain。scope 捕获第一个 error 为
   `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
 
 `spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge runtime convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。

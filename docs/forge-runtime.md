@@ -83,7 +83,8 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `std::pmr::memory_resource*`，用于 scope state 和 spawned op-state node 分配。
   该 resource 必须活到 scope 对象和已接受工作的 terminal completion 释放尾部之后；
   `wait()` 等待 scope work 计数归零，但不把用户 resource 变成 owned teardown barrier。
-  Scope 对象不得在它自己拥有的 spawned work body / completion callback 内析构。
+  Scope 对象不得在它自己拥有的 spawned work body / completion callback 内调用
+  `wait()` 或析构；该 work 本身计入 active count，等待自身完成会形成循环依赖。
 - `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session
   根对象。它的 `options` 会把 resource policy 传给内部 runtime 和 scope op-state
   allocation path。Destructor 执行 owning-context shutdown 和 wait。
