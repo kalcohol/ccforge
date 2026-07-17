@@ -442,16 +442,9 @@ public:
         destroy_op();
     }
 
-    sender_awaitable(sender_awaitable&& other) noexcept(
-        std::is_nothrow_move_constructible_v<Sender>)
-        : sender_(std::move(other.sender_))
-        , env_(std::exchange(other.env_, nullptr))
-        , continuation_(std::exchange(other.continuation_, {}))
-        , result_(std::move(other.result_))
-        , exception_(std::exchange(other.exception_, {}))
-        , stopped_(std::exchange(other.stopped_, false))
+    sender_awaitable(sender_awaitable&& other)
+        : sender_(__take_unstarted_sender(other))
     {}
-
     auto operator=(sender_awaitable&&) -> sender_awaitable& = delete;
     sender_awaitable(const sender_awaitable&) = delete;
     auto operator=(const sender_awaitable&) -> sender_awaitable& = delete;
@@ -521,6 +514,17 @@ private:
         suspended,
         completed
     };
+
+    static auto __take_unstarted_sender(sender_awaitable& other) -> Sender {
+        if (other.op_constructed_ || other.env_ != nullptr ||
+            other.continuation_ ||
+            other.state_.load(std::memory_order_acquire) !=
+                completion_state::starting) {
+            throw std::logic_error{
+                "forge::io::await_sender cannot move after suspension starts"};
+        }
+        return std::move(other.sender_);
+    }
 
     auto complete() noexcept -> void {
         if (state_.exchange(

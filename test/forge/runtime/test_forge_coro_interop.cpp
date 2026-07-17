@@ -26,6 +26,10 @@ namespace {
 namespace cio = forge::io;
 using namespace std::chrono_literals;
 
+using sender_awaitable_probe =
+    decltype(cio::await_sender(std::execution::just()));
+static_assert(std::move_constructible<sender_awaitable_probe>);
+
 struct interop_marker_error {};
 
 enum class gated_completion {
@@ -792,6 +796,17 @@ TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
     EXPECT_TRUE(std::get<0>(*result));
     EXPECT_TRUE(probe.start_returned);
     EXPECT_FALSE(probe.continuation_ran_before_start_returned);
+}
+
+TEST(ForgeCoroInteropTest, AwaitSenderRejectsMoveAfterStart) {
+    auto awaitable = cio::await_sender(std::execution::just());
+    cio::io_env env;
+
+    (void)awaitable.await_suspend(std::noop_coroutine(), &env);
+
+    EXPECT_THROW(
+        (void)sender_awaitable_probe{std::move(awaitable)},
+        std::logic_error);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncError) {
