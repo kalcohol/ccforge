@@ -471,9 +471,14 @@ TEST(ContinuesOnTest, TransfersErrorToScheduler) {
     std::thread::id observed_id;
 
     auto sndr = std::execution::continues_on(std::execution::just_error(42), sch)
-              | std::execution::upon_error([&](int value) {
-                    observed_id = std::this_thread::get_id();
-                    EXPECT_EQ(value, 42);
+              | std::execution::upon_error([&](auto error) {
+                    using error_t = std::remove_cvref_t<decltype(error)>;
+                    if constexpr (std::same_as<error_t, int>) {
+                        observed_id = std::this_thread::get_id();
+                        EXPECT_EQ(error, 42);
+                    } else {
+                        FAIL() << "unexpected scheduler error";
+                    }
                 });
     auto result = std::execution::sync_wait(std::move(sndr));
 
