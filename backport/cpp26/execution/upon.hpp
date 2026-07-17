@@ -59,6 +59,13 @@ struct __is_error_sig : std::false_type {};
 template<class E>
 struct __is_error_sig<set_error_t(E)> : std::true_type {};
 
+template<class Fn, class Sig>
+struct __accepts_error_sig : std::true_type {};
+
+template<class Fn, class E>
+struct __accepts_error_sig<Fn, set_error_t(E)>
+    : std::bool_constant<std::is_invocable_v<Fn, E>> {};
+
 template<class Fn, class Sig, bool IsError>
 struct __transform_sig {
     using type = completion_signatures<Sig>;
@@ -90,6 +97,10 @@ struct __completion_sigs;
 
 template<class Fn, bool IsError, class... Sigs>
 struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
+    static_assert(
+        !IsError || (__accepts_error_sig<Fn, Sigs>::value && ...),
+        "upon_error handler must accept every error completion shape");
+
     static constexpr bool handles_completion = IsError
         ? (__is_error_sig<Sigs>::value || ...)
         : (std::is_same_v<Sigs, set_stopped_t()> || ...);
