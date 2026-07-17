@@ -23,3 +23,6 @@ target_include_directories(test_simd_native_handoff BEFORE PRIVATE
 add_test(
     NAME simd_native_handoff_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_native_handoff)
+set_tests_properties(simd_native_handoff_compile PROPERTIES
+    RESOURCE_LOCK forge_main_build
+    TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})

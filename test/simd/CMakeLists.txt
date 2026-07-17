@@ -10,6 +10,7 @@ function(forge_add_simd_runtime_test target_name source_name)
     target_link_libraries(${target_name} PRIVATE gtest_main forge::forge)
     target_include_directories(${target_name} PRIVATE "${FORGE_SIMD_SUPPORT_DIR}")
     add_test(NAME ${target_name} COMMAND ${target_name})
+    set_tests_properties(${target_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
 function(forge_add_simd_compile_probe target_name source_name)
@@ -24,6 +25,9 @@ function(forge_add_simd_compile_probe target_name source_name)
     add_test(
         NAME ${test_name}
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target_name})
+    set_tests_properties(${test_name} PROPERTIES
+        RESOURCE_LOCK forge_main_build
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
 function(forge_add_simd_configure_probe result_var source_name should_compile failure_message)

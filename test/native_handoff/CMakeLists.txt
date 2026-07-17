@@ -14,3 +14,5 @@ add_test(
         "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
         "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_partial_simd.cmake)
+set_tests_properties(native_handoff_partial_simd_configure PROPERTIES
+    TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
