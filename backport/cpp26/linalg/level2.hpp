@@ -95,7 +95,7 @@ void matrix_vector_product(
     }
 #endif
     for (idx_t i = 0; i < A.extent(0); ++i) {
-        typename YAccessor::element_type sum{};
+        __detail::__accessor_value_t<YAccessor> sum{};
         for (idx_t j = 0; j < A.extent(1); ++j)
             sum += A[i, j] * x[j];
         y[i] = sum;
@@ -115,7 +115,7 @@ void matrix_vector_product(
 {
     using idx_t = typename AExtents::index_type;
     for (idx_t i = 0; i < A.extent(0); ++i) {
-        typename ZAccessor::element_type sum{};
+        __detail::__accessor_value_t<ZAccessor> sum{};
         for (idx_t j = 0; j < A.extent(1); ++j)
             sum += A[i, j] * x[j];
         z[i] = y[i] + sum;
@@ -136,7 +136,7 @@ void triangular_matrix_vector_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
     auto compute_row = [&](idx_t i) {
-        typename XAccessor::element_type sum{};
+        __detail::__accessor_value_t<XAccessor> sum{};
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 if constexpr (is_unit) { if (j == i) { sum += x[j]; continue; } }
@@ -173,7 +173,7 @@ void triangular_matrix_vector_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
     for (idx_t i = 0; i < n; ++i) {
-        typename YAccessor::element_type sum{};
+        __detail::__accessor_value_t<YAccessor> sum{};
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 if constexpr (is_unit) { if (j == i) { sum += x[j]; continue; } }
@@ -262,7 +262,7 @@ void symmetric_matrix_vector_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     const idx_t n = A.extent(0);
     for (idx_t i = 0; i < n; ++i) {
-        typename ZAccessor::element_type sum{};
+        __detail::__accessor_value_t<ZAccessor> sum{};
         for (idx_t j = 0; j < n; ++j) {
             if (i == j) {
                 sum += A[i, i] * x[j];
@@ -322,7 +322,7 @@ void hermitian_matrix_vector_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     const idx_t n = A.extent(0);
     for (idx_t i = 0; i < n; ++i) {
-        typename ZAccessor::element_type sum{};
+        __detail::__accessor_value_t<ZAccessor> sum{};
         for (idx_t j = 0; j < n; ++j) {
             if (i == j) {
                 sum += __detail::__real_if_needed(A[i, i]) * x[j];

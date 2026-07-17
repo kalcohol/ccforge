@@ -45,7 +45,7 @@ void matrix_product(
     const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(1);
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
-            typename CAccessor::element_type sum{};
+            __detail::__accessor_value_t<CAccessor> sum{};
             for (idx_t l = 0; l < k; ++l)
                 sum += A[i, l] * B[l, j];
             C[i, j] = sum;
@@ -67,7 +67,7 @@ void matrix_product(
     const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(1);
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
-            typename CAccessor::element_type sum{};
+            __detail::__accessor_value_t<CAccessor> sum{};
             for (idx_t l = 0; l < k; ++l)
                 sum += A[i, l] * B[l, j];
             C[i, j] = E[i, j] + sum;
@@ -215,7 +215,7 @@ void symmetric_matrix_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
-            typename CAccessor::element_type sum{};
+            __detail::__accessor_value_t<CAccessor> sum{};
             for (idx_t l = 0; l < k; ++l) {
                 auto ail = [&]() -> decltype(auto) {
                     if (i == l) return A[i, i];
@@ -248,14 +248,14 @@ void symmetric_matrix_rank_k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
@@ -283,14 +283,14 @@ void symmetric_matrix_rank_k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = E[i, j] + alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = E[i, j] + alpha * sum;
@@ -327,14 +327,14 @@ void symmetric_matrix_rank_2k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = sum;
@@ -362,14 +362,14 @@ void symmetric_matrix_rank_2k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = E[i, j] + sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = E[i, j] + sum;
@@ -394,14 +394,14 @@ void symmetric_matrix_rank_2k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
@@ -425,7 +425,7 @@ void hermitian_matrix_product(
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < C.extent(0); ++i) {
         for (idx_t j = 0; j < C.extent(1); ++j) {
-            typename CAccessor::element_type sum{};
+            __detail::__accessor_value_t<CAccessor> sum{};
             for (idx_t l = 0; l < A.extent(1); ++l) {
                 auto ail = [&]() -> typename CAccessor::element_type {
                     if (i == l) return __detail::__real_if_needed(A[i, i]);
@@ -473,7 +473,7 @@ void hermitian_matrix_rank_k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = alpha * sum;
@@ -481,7 +481,7 @@ void hermitian_matrix_rank_k_update(
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = alpha * sum;
@@ -511,7 +511,7 @@ void hermitian_matrix_rank_k_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = E[i, j] + alpha * sum;
@@ -519,7 +519,7 @@ void hermitian_matrix_rank_k_update(
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                typename CAccessor::element_type sum{};
+                __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = E[i, j] + alpha * sum;

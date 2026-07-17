@@ -3,11 +3,30 @@
 #include <mdspan>
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <complex>
 
 namespace {
 
 using complex = std::complex<double>;
+
+template<class T>
+struct writable_const_accessor {
+    using offset_policy = writable_const_accessor;
+    using element_type = const T;
+    using reference = T&;
+    using data_handle_type = T*;
+
+    [[nodiscard]] constexpr reference
+    access(data_handle_type ptr, std::size_t index) const noexcept {
+        return ptr[index];
+    }
+
+    [[nodiscard]] constexpr data_handle_type
+    offset(data_handle_type ptr, std::size_t index) const noexcept {
+        return ptr + index;
+    }
+};
 
 void expect_complex_near(complex actual, complex expected)
 {
@@ -36,6 +55,31 @@ TEST(LinalgLevel3Gemm, RectangularAndUpdateForms) {
     std::linalg::matrix_product(A, B, E, C);
     EXPECT_DOUBLE_EQ((C[0, 0]), 68.0);
     EXPECT_DOUBLE_EQ((C[1, 1]), 164.0);
+}
+
+TEST(LinalgLevel3Gemm, WritableConstElementAccessorsUseMutableAccumulators) {
+    using vector_extents = std::extents<int, 1>;
+    using matrix_extents = std::extents<int, 1, 1>;
+    using accessor = writable_const_accessor<double>;
+
+    double a_data[] = {2.0};
+    double b_data[] = {4.0};
+    double x_data[] = {3.0};
+    double y_data[] = {0.0};
+    double c_data[] = {0.0};
+    std::mdspan A(a_data, matrix_extents{});
+    std::mdspan B(b_data, matrix_extents{});
+    std::mdspan x(x_data, vector_extents{});
+    std::mdspan<const double, vector_extents, std::layout_right, accessor>
+        y(y_data);
+    std::mdspan<const double, matrix_extents, std::layout_right, accessor>
+        C(c_data);
+
+    std::linalg::matrix_vector_product(A, x, y);
+    std::linalg::matrix_product(A, B, C);
+
+    EXPECT_DOUBLE_EQ(y_data[0], 6.0);
+    EXPECT_DOUBLE_EQ(c_data[0], 8.0);
 }
 
 TEST(LinalgLevel3Gemm, LayoutLeftAndLayoutStrideInputs) {
