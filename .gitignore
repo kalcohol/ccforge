@@ -28,9 +28,6 @@ Makefile
 Testing/
 CTestTestfile.cmake
 
-# Local test dependency checkout
-3rdparty/googletest/
-
 # Agent files
 AGENTS.md
 .claude/
