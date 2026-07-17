@@ -120,6 +120,7 @@ class task {
 public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         std::variant<std::monostate, T, std::exception_ptr> result;
+        std::any_stop_token __stop_token_;
         bool stopped_ = false;
         __task_detail::__op_base* __op_ = nullptr;
 
@@ -137,6 +138,12 @@ public:
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
             return std::coroutine_handle<promise_type>::from_promise(*this);
+        }
+        auto get_env() const noexcept {
+            return std::execution::prop<
+                std::execution::get_stop_token_t,
+                std::any_stop_token>{
+                    std::execution::get_stop_token_t{}, __stop_token_};
         }
     };
 
@@ -168,6 +175,15 @@ public:
     auto connect(R r) &&
         -> __task_detail::__op<T, R>
     {
+        if (!__coro_) {
+            throw std::logic_error{"task: empty"};
+        }
+        auto token = std::execution::get_stop_token(std::execution::get_env(r));
+        std::any_stop_token erased_token;
+        if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
+            erased_token = std::any_stop_token{std::move(token)};
+        }
+        __coro_.promise().__stop_token_ = std::move(erased_token);
         return __task_detail::__op<T, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 
@@ -184,6 +200,7 @@ public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         bool done_ = false;
         std::exception_ptr exc_;
+        std::any_stop_token __stop_token_;
         __task_detail::__op_base* __op_ = nullptr;
 
         task get_return_object() noexcept {
@@ -200,6 +217,12 @@ public:
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
             return std::coroutine_handle<promise_type>::from_promise(*this);
+        }
+        auto get_env() const noexcept {
+            return std::execution::prop<
+                std::execution::get_stop_token_t,
+                std::any_stop_token>{
+                    std::execution::get_stop_token_t{}, __stop_token_};
         }
         bool stopped_ = false;
     };
@@ -231,6 +254,15 @@ public:
     auto connect(R r) &&
         -> __task_detail::__op<void, R>
     {
+        if (!__coro_) {
+            throw std::logic_error{"task: empty"};
+        }
+        auto token = std::execution::get_stop_token(std::execution::get_env(r));
+        std::any_stop_token erased_token;
+        if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
+            erased_token = std::any_stop_token{std::move(token)};
+        }
+        __coro_.promise().__stop_token_ = std::move(erased_token);
         return __task_detail::__op<void, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 

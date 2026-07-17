@@ -263,6 +263,35 @@ TEST(TaskTest, CoAwaitStaticThreadPoolResumesAsynchronously) {
     EXPECT_EQ(std::get<0>(*result), 123);
 }
 
+TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
+    forge::static_thread_pool pool{1};
+    std::inplace_stop_source source;
+    source.request_stop();
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, source.get_token()));
+
+    auto result = std::execution::sync_wait(
+        std::execution::write_env(
+            await_thread_pool_task(pool.get_scheduler()), env));
+    pool.wait();
+
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(TaskTest, ConnectingMovedFromTaskThrows) {
+    auto empty = simple_task();
+    auto live = std::move(empty);
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(std::move(empty)),
+        std::logic_error);
+
+    auto result = std::execution::sync_wait(std::move(live));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
 TEST(TaskTest, CoAwaitErrorPropagates) {
     EXPECT_THROW((void)std::execution::sync_wait(await_error_task()), task_marker_error);
 }
