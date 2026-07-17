@@ -83,18 +83,22 @@ public:
     template<std::size_t I, class Result>
     auto set_value(Result result) noexcept -> void {
         const bool should_stop = result.status() != io_status::value;
-        auto action = store_result<I>(std::move(result));
+        if (!store_result<I>(std::move(result))) {
+            return;
+        }
         if (should_stop) {
             stop_source_.request_stop();
         }
-        deliver(std::move(action));
+        deliver(finish_child());
     }
 
     template<std::size_t I>
     auto set_stopped() noexcept -> void {
-        auto action = store_stopped<I>();
+        if (!store_stopped<I>()) {
+            return;
+        }
         stop_source_.request_stop();
-        deliver(std::move(action));
+        deliver(finish_child());
     }
 
     template<class Error>
@@ -118,9 +122,11 @@ public:
         } else {
             ep = std::make_exception_ptr(static_cast<Error&&>(error));
         }
-        auto action = store_unexpected_error<I>(std::move(ep));
+        if (!store_unexpected_error<I>(std::move(ep))) {
+            return;
+        }
         stop_source_.request_stop();
-        deliver(std::move(action));
+        deliver(finish_child());
     }
 
 private:
@@ -139,43 +145,41 @@ private:
     };
 
     template<std::size_t I, class Result>
-    auto store_result(Result result) noexcept -> completion_action {
+    auto store_result(Result result) noexcept -> bool {
         std::lock_guard lock{mtx_};
         if constexpr (I == 0) {
             if (first_done_) {
-                return {};
+                return false;
             }
             first_ = std::move(result);
             first_done_ = true;
         } else {
             if (second_done_) {
-                return {};
+                return false;
             }
             second_ = std::move(result);
             second_done_ = true;
         }
-        --pending_;
-        return maybe_complete_locked();
+        return true;
     }
 
     template<std::size_t I>
-    auto store_stopped() noexcept -> completion_action {
+    auto store_stopped() noexcept -> bool {
         std::lock_guard lock{mtx_};
         if constexpr (I == 0) {
             if (first_done_) {
-                return {};
+                return false;
             }
             first_stopped_ = true;
             first_done_ = true;
         } else {
             if (second_done_) {
-                return {};
+                return false;
             }
             second_stopped_ = true;
             second_done_ = true;
         }
-        --pending_;
-        return maybe_complete_locked();
+        return true;
     }
 
     auto store_start_error(std::exception_ptr ep) noexcept
@@ -193,22 +197,27 @@ private:
 
     template<std::size_t I>
     auto store_unexpected_error(std::exception_ptr ep) noexcept
-        -> completion_action {
+        -> bool {
         std::lock_guard lock{mtx_};
         if constexpr (I == 0) {
             if (first_done_) {
-                return {};
+                return false;
             }
             first_done_ = true;
         } else {
             if (second_done_) {
-                return {};
+                return false;
             }
             second_done_ = true;
         }
         if (!unexpected_error_) {
             unexpected_error_ = std::move(ep);
         }
+        return true;
+    }
+
+    auto finish_child() noexcept -> completion_action {
+        std::lock_guard lock{mtx_};
         --pending_;
         return maybe_complete_locked();
     }
@@ -316,16 +325,19 @@ struct child_receiver {
     std::shared_ptr<State> state;
 
     auto set_value(Result result) && noexcept -> void {
-        state->template set_value<I>(std::move(result));
+        auto keepalive = state;
+        keepalive->template set_value<I>(std::move(result));
     }
 
     template<class Error>
     auto set_error(Error&& error) && noexcept -> void {
-        state->template set_error<I>(static_cast<Error&&>(error));
+        auto keepalive = state;
+        keepalive->template set_error<I>(static_cast<Error&&>(error));
     }
 
     auto set_stopped() && noexcept -> void {
-        state->template set_stopped<I>();
+        auto keepalive = state;
+        keepalive->template set_stopped<I>();
     }
 
     [[nodiscard]] auto get_env() const noexcept -> env {
@@ -401,15 +413,27 @@ public:
         auto operator=(const operation&) -> operation& = delete;
 
         auto start() & noexcept -> void {
+            auto state = state_;
             try {
                 receiver_stop_.install(
                     std::execution::get_stop_token(
-                        std::execution::get_env(state_->receiver())),
-                    state_->stop_source());
+                        std::execution::get_env(state->receiver())),
+                    state->stop_source());
+            } catch (...) {
+                state->set_start_error(std::current_exception());
+                return;
+            }
+            try {
                 std::execution::start(first_op_);
+            } catch (...) {
+                state->template set_error<0>(std::current_exception());
+                state->template set_stopped<1>();
+                return;
+            }
+            try {
                 std::execution::start(second_op_);
             } catch (...) {
-                state_->set_start_error(std::current_exception());
+                state->template set_error<1>(std::current_exception());
             }
         }
 
