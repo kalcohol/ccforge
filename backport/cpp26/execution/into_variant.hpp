@@ -26,6 +26,7 @@
 #include "env.hpp"
 
 #include <exception>
+#include <optional>
 #include <tuple>
 #include <variant>
 
@@ -290,9 +291,18 @@ namespace std::this_thread {
 
 template<std::execution::sender S>
 auto sync_wait_with_variant(S&& sndr) {
-    return std::this_thread::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::into_variant(
             std::execution::__forge_detail::__forward_as_given(std::forward<S>(sndr))));
+    using result_t = decltype(result);
+    using tuple_t = typename result_t::value_type;
+    using variant_t = std::remove_cvref_t<std::tuple_element_t<0, tuple_t>>;
+
+    if (!result) {
+        return std::optional<variant_t>{};
+    }
+    return std::optional<variant_t>{
+        std::in_place, std::move(std::get<0>(*result))};
 }
 
 } // namespace std::this_thread

@@ -3,6 +3,7 @@
 #include <execution>
 #include <atomic>
 #include <future>
+#include <optional>
 #include <thread>
 #include <type_traits>
 #include <variant>
@@ -263,7 +264,11 @@ TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
 
 TEST(SyncWaitWithVariantTest, Works) {
     auto result = std::this_thread::sync_wait_with_variant(std::execution::just(42));
+    static_assert(std::is_same_v<
+        decltype(result),
+        std::optional<std::variant<std::tuple<int>>>>);
     ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
 }
 
 TEST(BulkTest, SerialExecution) {
