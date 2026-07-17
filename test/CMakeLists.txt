@@ -31,8 +31,15 @@ if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_LINALG
         OR FORGE_TEST_ENABLE_ANY_FORGE
         OR FORGE_TEST_ENABLE_NATIVE_HANDOFF)
+    # GoogleTest is a build-only test dependency. Do not leak its install rules
+    # into a CC Forge prefix when tests and installation are enabled together.
+    set(INSTALL_GTEST OFF CACHE BOOL
+        "Do not install CC Forge's GoogleTest dependency" FORCE)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
 endif()
+
+set(FORGE_TEST_TIMEOUT_SECONDS 300 CACHE STRING
+    "Timeout in seconds for individual CC Forge tests")
 
 set(FORGE_TEST_ENABLE_STD_TARGET OFF)
 if(FORGE_TEST_ENABLE_EXECUTION
@@ -88,6 +95,7 @@ function(forge_add_runtime_test target_name source_file)
     add_executable(${target_name} ${source_file})
     target_link_libraries(${target_name} PRIVATE gtest_main forge::forge)
     add_test(NAME ${test_name} COMMAND ${target_name})
+    set_tests_properties(${test_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
 function(forge_add_compile_probe target_name source_file)
@@ -101,6 +109,7 @@ function(forge_add_compile_probe target_name source_file)
     add_test(
         NAME ${test_name}
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target_name})
+    set_tests_properties(${test_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
