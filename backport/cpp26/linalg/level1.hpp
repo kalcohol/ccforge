@@ -505,7 +505,10 @@ T matrix_inf_norm(
     T init)
 {
     using std::abs;
-    T max_row_sum = init;
+    if (A.extent(0) == 0) {
+        return init;
+    }
+    T max_row_sum{};
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         T row_sum = T{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
@@ -513,7 +516,7 @@ T matrix_inf_norm(
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }
-    return max_row_sum;
+    return init + max_row_sum;
 }
 
 template<class Extents, class Layout, class Accessor>

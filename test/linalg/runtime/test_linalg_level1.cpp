@@ -240,6 +240,13 @@ TEST(LinalgLevel1MatrixNorms, OneNormAddsExplicitInit) {
     EXPECT_DOUBLE_EQ(std::linalg::matrix_one_norm(matrix, 10.0), 19.0);
 }
 
+TEST(LinalgLevel1MatrixNorms, InfinityNormAddsExplicitInit) {
+    double data[] = {1.0, -2.0, 3.0, -4.0, 5.0, -6.0};
+    std::mdspan matrix(data, std::extents<int, 2, 3>{});
+
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_inf_norm(matrix, 10.0), 25.0);
+}
+
 TEST(LinalgLevel1MatrixNorms, ComplexMatrixUsesMagnitude) {
     using complex = std::complex<double>;
     complex data[] = {{3.0, 4.0}, {0.0, 0.0}, {1.0, -1.0}, {-2.0, 0.0}};
