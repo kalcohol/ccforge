@@ -455,6 +455,12 @@ public:
         return __op<R>{state_, std::move(rcvr)};
     }
 
+    template<class R>
+        requires std::execution::receiver_of<R, CompletionSignatures>
+    auto connect(R rcvr) const& -> __op<R> {
+        return __op<R>{state_, std::move(rcvr)};
+    }
+
 private:
     std::shared_ptr<
         __erased_sender_detail::__sender_state_base<CompletionSignatures>> state_;

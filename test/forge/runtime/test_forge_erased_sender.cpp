@@ -538,6 +538,16 @@ TEST(ErasedSenderTest, DeliversZeroValueShape) {
     EXPECT_EQ(state->zero_values, 1);
 }
 
+TEST(ErasedSenderTest, ConstSenderRemainsConnectable) {
+    const forge::erased_sender<zero_cs> sender{zero_sender{}};
+    auto state = std::make_shared<observed_state>();
+    auto op = std::execution::connect(sender, zero_receiver{state});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(state->zero_values, 1);
+}
+
 TEST(ErasedSenderTest, DeliversExceptionPtrError) {
     forge::erased_sender<error_cs> sender{error_sender{}};
     auto state = std::make_shared<observed_state>();
