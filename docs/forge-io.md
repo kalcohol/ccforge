@@ -445,6 +445,9 @@ finalization、EOF 映射和 package/gate smoke。以下格子故意 scoped out�
 - handle 必须保持有效直到 operation completion 或 context drain；
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
+- overlapped 调用同步成功时，context 会立即交付 byte count；普通 handle 随后产生的
+  completion packet 会被当作已完成记录忽略，因此也兼容设置了
+  `FILE_SKIP_COMPLETION_PORT_ON_SUCCESS` 的 handle。
 - V1 不接收外部 `OVERLAPPED*` 包，也不允许同一 HANDLE 上混用用户自发的 overlapped
   IO；worker 会丢弃不属于本 context pending record 的 completion packet。
 - V1 不支持 random-access file offset；如果需要文件 offset，请先扩展公共 API，而不是

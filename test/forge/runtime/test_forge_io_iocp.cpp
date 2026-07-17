@@ -326,6 +326,30 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     EXPECT_EQ(buffer, payload);
 }
 
+TEST(IoIocpTest, SynchronousSuccessWithoutCompletionPacketStillCompletes) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 3> payload{byte('s'), byte('y'), byte('n')};
+    std::array<std::byte, 3> received{};
+
+    auto written = std::execution::sync_wait(
+        ctx.async_write_some(pipe.server.get(), std::span{payload}));
+    ASSERT_TRUE(written.has_value());
+    ASSERT_EQ(std::get<0>(*written), payload.size());
+
+    ASSERT_TRUE(::SetFileCompletionNotificationModes(
+        pipe.client.get(),
+        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS))
+        << "SetFileCompletionNotificationModes failed with "
+        << ::GetLastError();
+
+    auto read = std::execution::sync_wait(
+        ctx.async_read_some(pipe.client.get(), std::span{received}));
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(std::get<0>(*read), received.size());
+    EXPECT_EQ(received, payload);
+}
+
 TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;

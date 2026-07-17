@@ -304,7 +304,8 @@ struct __state : std::enable_shared_from_this<__state> {
             ++pending;
             increment_association_locked(record->handle);
 
-            if (!issue_locked(*record)) {
+            DWORD synchronous_bytes = 0;
+            if (!issue_locked(*record, synchronous_bytes)) {
                 auto error = ::GetLastError();
                 if (error == ERROR_IO_PENDING) {
                     return result;
@@ -328,6 +329,15 @@ struct __state : std::enable_shared_from_this<__state> {
                 result.error = __windows_error(error, "forge::io IOCP issue");
                 return result;
             }
+
+            pending_records.erase(key);
+            decrement_association_locked(record->handle);
+            --pending;
+            if (pending == 0) {
+                cv.notify_all();
+            }
+            result.kind = __start_result_kind::value;
+            result.bytes = static_cast<std::size_t>(synchronous_bytes);
         }
         return result;
     }
@@ -432,7 +442,9 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
 private:
-    [[nodiscard]] bool issue_locked(__record_base& record) noexcept {
+    [[nodiscard]] bool issue_locked(
+        __record_base& record,
+        DWORD& synchronous_bytes) noexcept {
         record.entry.overlapped = OVERLAPPED{};
 
         const auto byte_count = record.kind == __operation_kind::read
@@ -444,20 +456,30 @@ private:
         }
 
         const auto bytes = static_cast<DWORD>(byte_count);
+        BOOL issued = FALSE;
         if (record.kind == __operation_kind::read) {
-            return ::ReadFile(
+            issued = ::ReadFile(
                 record.handle,
                 record.read_buffer.data(),
                 bytes,
                 nullptr,
-                &record.entry.overlapped) != FALSE;
+                &record.entry.overlapped);
+        } else {
+            issued = ::WriteFile(
+                record.handle,
+                record.write_buffer.data(),
+                bytes,
+                nullptr,
+                &record.entry.overlapped);
         }
-        return ::WriteFile(
+        if (issued == FALSE) {
+            return false;
+        }
+        return ::GetOverlappedResult(
             record.handle,
-            record.write_buffer.data(),
-            bytes,
-            nullptr,
-            &record.entry.overlapped) != FALSE;
+            &record.entry.overlapped,
+            &synchronous_bytes,
+            FALSE) != FALSE;
     }
 
     static bool handle_is_invalid(HANDLE handle) noexcept {
