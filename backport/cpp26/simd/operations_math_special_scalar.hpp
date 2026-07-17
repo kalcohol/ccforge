@@ -217,6 +217,26 @@ T sph_bessel_fallback(unsigned n, T x) {
         return n == 0u ? T{1} : T{};
     }
 
+    if (std::abs(x) <= static_cast<T>(n + 1u)) {
+        T leading = T{1};
+        for (unsigned i = 1; i <= n; ++i) {
+            leading *= x / static_cast<T>(2u * i + 1u);
+        }
+
+        T sum = T{1};
+        T term = T{1};
+        for (unsigned k = 0; k < 512u; ++k) {
+            term *= -(x * x) /
+                (static_cast<T>(2u * (k + 1u)) *
+                 static_cast<T>(2u * n + 2u * k + 3u));
+            sum += term;
+            if (std::abs(term) <= std::numeric_limits<T>::epsilon() * std::abs(sum)) {
+                break;
+            }
+        }
+        return leading * sum;
+    }
+
     const T j0 = std::sin(x) / x;
     if (n == 0u) {
         return j0;
@@ -488,15 +508,19 @@ T cyl_bessel_y_fallback(T nu, T x) {
         return quiet_nan<T>();
     }
 
-    T adjusted_nu = nu;
-    if (almost_integer(adjusted_nu, static_cast<T>(1e-10L))) {
-        adjusted_nu += static_cast<T>(1e-7L);
+    const auto evaluate = [x](T order) {
+        const T sin_term = std::sin(pi_v<T> * order);
+        return (cyl_bessel_j_series(order, x) * std::cos(pi_v<T> * order) -
+                cyl_bessel_j_series(-order, x)) /
+            sin_term;
+    };
+    if (almost_integer(nu, static_cast<T>(1e-10L))) {
+        const T integer_order = std::round(nu);
+        const T delta = std::cbrt(std::numeric_limits<T>::epsilon());
+        return (evaluate(integer_order - delta) +
+                evaluate(integer_order + delta)) / T{2};
     }
-
-    const T sin_term = std::sin(pi_v<T> * adjusted_nu);
-    return (cyl_bessel_j_series(adjusted_nu, x) * std::cos(pi_v<T> * adjusted_nu) -
-            cyl_bessel_j_series(-adjusted_nu, x)) /
-        sin_term;
+    return evaluate(nu);
 }
 
 template<class T>
@@ -505,13 +529,19 @@ T cyl_bessel_k_fallback(T nu, T x) {
         return quiet_nan<T>();
     }
 
-    T adjusted_nu = nu;
-    if (almost_integer(adjusted_nu, static_cast<T>(1e-10L))) {
-        adjusted_nu += static_cast<T>(1e-7L);
+    const auto evaluate = [x](T order) {
+        const T sin_term = std::sin(pi_v<T> * order);
+        return (pi_v<T> / T{2}) *
+            (cyl_bessel_i_series(-order, x) - cyl_bessel_i_series(order, x)) /
+            sin_term;
+    };
+    if (almost_integer(nu, static_cast<T>(1e-10L))) {
+        const T integer_order = std::round(nu);
+        const T delta = std::cbrt(std::numeric_limits<T>::epsilon());
+        return (evaluate(integer_order - delta) +
+                evaluate(integer_order + delta)) / T{2};
     }
-
-    const T sin_term = std::sin(pi_v<T> * adjusted_nu);
-    return (pi_v<T> / T{2}) * (cyl_bessel_i_series(-adjusted_nu, x) - cyl_bessel_i_series(adjusted_nu, x)) / sin_term;
+    return evaluate(nu);
 }
 
 template<class T>

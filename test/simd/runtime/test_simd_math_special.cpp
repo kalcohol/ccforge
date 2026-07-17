@@ -138,6 +138,25 @@ TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
         -4.156968929685325e-6,
         1e-12);
 }
+
+TEST(SimdMathSpecialTest, BesselFallbacksRemainStableOutsideSmallArguments) {
+    EXPECT_NEAR(
+        std::simd::detail::special_math::sph_bessel_fallback(8u, 0.5),
+        1.126143960212129e-10,
+        1e-14);
+    EXPECT_NEAR(
+        std::simd::detail::special_math::cyl_bessel_j_series(0.0, 20.0),
+        0.16702466434058344,
+        1e-10);
+    EXPECT_NEAR(
+        std::simd::detail::special_math::cyl_bessel_y_fallback(2.0, 3.0),
+        -0.16040039348492402,
+        1e-10);
+    EXPECT_NEAR(
+        std::simd::detail::special_math::cyl_bessel_k_fallback(2.0, 3.0),
+        0.061510458471742052,
+        1e-10);
+}
 #endif
 
 } // namespace
