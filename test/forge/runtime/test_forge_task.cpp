@@ -132,6 +132,45 @@ struct throwing_connect_sender {
     }
 };
 
+struct inline_completion_state {
+    bool start_returned = false;
+    bool resumed_before_start_returned = false;
+};
+
+template<class R>
+struct inline_completion_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    R rcvr;
+    inline_completion_state* state = nullptr;
+
+    void start() & noexcept {
+        std::execution::set_value(std::move(rcvr));
+        state->start_returned = true;
+    }
+};
+
+struct inline_completion_sender {
+    using sender_concept = std::execution::sender_t;
+
+    inline_completion_state* state = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) && -> inline_completion_op<R> {
+        return inline_completion_op<R>{std::move(rcvr), state};
+    }
+};
+
 } // namespace
 
 forge::task<int> simple_task() {
@@ -179,6 +218,11 @@ forge::task<int> await_stopped_task() {
     co_return 1;
 }
 
+forge::task<void> await_inline_completion_task(inline_completion_state* state) {
+    co_await inline_completion_sender{state};
+    state->resumed_before_start_returned = !state->start_returned;
+}
+
 forge::task<void> await_pending_task(std::shared_ptr<pending_state> state) {
     co_await pending_sender{std::move(state)};
 }
@@ -199,6 +243,16 @@ TEST(TaskTest, CoAwaitJustStillWorks) {
     auto result = std::execution::sync_wait(await_just_task());
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(TaskTest, InlineSenderResumesAfterStartReturns) {
+    inline_completion_state state;
+
+    auto result = std::execution::sync_wait(await_inline_completion_task(&state));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(state.start_returned);
+    EXPECT_FALSE(state.resumed_before_start_returned);
 }
 
 TEST(TaskTest, CoAwaitNonCopyableLvalueSenderRequiresMove) {

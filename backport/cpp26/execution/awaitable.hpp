@@ -29,6 +29,7 @@
 
 // Coroutine bridge — only compiled when coroutines are available
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+#include <atomic>
 #include <coroutine>
 #include <optional>
 #include <tuple>
@@ -70,6 +71,9 @@ struct __awaitable {
     S __sndr;
     Promise* __promise;
 
+    __awaitable(S sndr, Promise* promise)
+        : __sndr(std::move(sndr)), __promise(promise) {}
+
     using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
     using cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<S>(), std::declval<env_t>()));
@@ -90,7 +94,7 @@ struct __awaitable {
             } catch (...) {
                 __self->__exc = std::current_exception();
             }
-            __self->__coro.resume();
+            __self->__complete(__self->__coro);
         }
         template<class E>
         void set_error(E&& e) && noexcept {
@@ -98,15 +102,15 @@ struct __awaitable {
                 __self->__exc = static_cast<E&&>(e);
             else
                 __self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
-            __self->__coro.resume();
+            __self->__complete(__self->__coro);
         }
         void set_stopped() && noexcept {
             __self->__stopped = true;
             if constexpr (__has_unhandled_stopped<Promise>) {
-                static_cast<std::coroutine_handle<>>(
-                    __self->__promise->unhandled_stopped()).resume();
+                __self->__complete(static_cast<std::coroutine_handle<>>(
+                    __self->__promise->unhandled_stopped()));
             } else {
-                __self->__coro.resume();
+                __self->__complete(__self->__coro);
             }
         }
         auto get_env() const noexcept -> env_t {
@@ -131,12 +135,19 @@ struct __awaitable {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<Promise> h) {
+    auto await_suspend(std::coroutine_handle<Promise> h)
+        -> std::coroutine_handle<> {
         __coro = h;
         ::new(__op_buf) op_t(std::execution::connect(std::move(__sndr), __recv{this}));
         __op_constructed = true;
         __op_dtor = [](void* p) noexcept { static_cast<op_t*>(p)->~op_t(); };
         std::execution::start(*static_cast<op_t*>(static_cast<void*>(__op_buf)));
+        if (__state.exchange(
+                __completion_state::suspended,
+                std::memory_order_acq_rel) == __completion_state::completed) {
+            return __resume;
+        }
+        return std::noop_coroutine();
     }
 
     auto await_resume() {
@@ -144,6 +155,25 @@ struct __awaitable {
         if (__stopped) throw __stopped_awaitable_exception{};
         return std::move(*__result);
     }
+
+private:
+    enum class __completion_state : unsigned char {
+        starting,
+        suspended,
+        completed
+    };
+
+    void __complete(std::coroutine_handle<> next) noexcept {
+        __resume = next;
+        if (__state.exchange(
+                __completion_state::completed,
+                std::memory_order_acq_rel) == __completion_state::suspended) {
+            next.resume();
+        }
+    }
+
+    std::coroutine_handle<> __resume{};
+    std::atomic<__completion_state> __state{__completion_state::starting};
 };
 
 } // namespace __forge_awaitable
