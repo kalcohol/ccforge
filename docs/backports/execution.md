@@ -55,8 +55,9 @@
 - `continues_on` / `affine` 当前只实现单一 value completion shape 的 transfer subset；
   value 参数会 decay-copy 到调度 hop 的 operation state。多 value-alternative 和引用
   value-signature 的逐位 WD 语义需要单独重构，不应从当前 subset 推断。
-- `split` 是保留的非 WD extension。它缓存单一 value completion shape，并在内部订阅者
-  callback 入链分配失败时以 `set_error(std::exception_ptr)` 完成；它没有实现完整
+- `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
+  向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
+  `set_error(std::exception_ptr)` 完成。它没有实现完整
   stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是
   当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应

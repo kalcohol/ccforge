@@ -3,6 +3,7 @@
 #include <forge/static_thread_pool.hpp>
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -71,6 +72,34 @@ struct oversized_value_sender {
     }
 };
 
+struct cached_string_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    bool* received_mutable;
+
+    void set_value(std::string& value) && noexcept {
+        *received_mutable = true;
+        value.clear();
+    }
+
+    void set_value(const std::string&) && noexcept {
+        *received_mutable = false;
+    }
+
+    void set_value(std::string&&) && noexcept {
+        *received_mutable = true;
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    void set_stopped() && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 template<class Pred>
 bool wait_until(Pred pred) {
     for (int i = 0; i < 100; ++i) {
@@ -95,6 +124,20 @@ TEST(SplitTest, HappyPath) {
     EXPECT_EQ(std::get<0>(*r1), 42);
     EXPECT_EQ(std::get<0>(*r2), 42);
     EXPECT_EQ(std::get<0>(*r3), 42);
+}
+
+TEST(SplitTest, SubscribersCannotMutateCachedValues) {
+    auto sndr = std::execution::split(std::execution::just(std::string{"cached"}));
+    bool received_mutable = false;
+
+    auto first = std::execution::connect(
+        sndr, cached_string_receiver{&received_mutable});
+    std::execution::start(first);
+
+    EXPECT_FALSE(received_mutable);
+    auto second = std::execution::sync_wait(sndr);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(std::get<0>(*second), "cached");
 }
 
 TEST(SplitTest, ErrorPath) {

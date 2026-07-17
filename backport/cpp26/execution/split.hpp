@@ -27,6 +27,7 @@
 #include "env.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -39,6 +40,41 @@ namespace std::execution {
 namespace __forge_split {
 
 struct __stopped_tag {};
+
+template<class Sig>
+struct __cached_completion {
+    using type = completion_signatures<>;
+    static constexpr std::size_t value_count = 0;
+};
+
+template<class... Vs>
+struct __cached_completion<set_value_t(Vs...)> {
+    using type = completion_signatures<set_value_t(const std::decay_t<Vs>&...)>;
+    static constexpr std::size_t value_count = 1;
+};
+
+template<>
+struct __cached_completion<set_stopped_t()> {
+    using type = completion_signatures<set_stopped_t()>;
+    static constexpr std::size_t value_count = 0;
+};
+
+template<class CS>
+struct __cached_completion_signatures;
+
+template<class... Sigs>
+struct __cached_completion_signatures<completion_signatures<Sigs...>> {
+    static_assert(
+        (std::size_t{0} + ... + __cached_completion<Sigs>::value_count) <= 1,
+        "split supports at most one value completion shape");
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __cached_completion<Sigs>::type...,
+        completion_signatures<set_error_t(std::exception_ptr)>>;
+};
+
+template<class CS>
+using __cached_completion_signatures_t =
+    typename __cached_completion_signatures<CS>::type;
 
 template<class S>
 struct __shared_state {
@@ -69,18 +105,18 @@ struct __shared_state {
 
 template<class S, class OuterRecv>
 void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
-    std::visit([&](auto& v) {
+    std::visit([&](const auto& v) {
         using V = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<V, std::monostate>) {
             // Invariant violation: subscribers are only delivered after the
             // source operation stored value/error/stopped and marked done.
             std::terminate();
         } else if constexpr (std::is_same_v<V, typename __shared_state<S>::value_tuple_t>) {
-            std::apply([&](auto&... vs) {
+            std::apply([&](const auto&... vs) {
                 std::execution::set_value(std::move(rcvr), vs...);
             }, v);
         } else if constexpr (std::is_same_v<V, std::exception_ptr>) {
-            std::execution::set_error(std::move(rcvr), v);
+            std::execution::set_error(std::move(rcvr), std::exception_ptr{v});
         } else {
             std::execution::set_stopped(std::move(rcvr));
         }
@@ -242,9 +278,7 @@ struct __sender {
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
-        return __forge_meta::__concat_unique_cs_t<
-            source_cs_t,
-            completion_signatures<set_error_t(std::exception_ptr)>>{};
+        return __cached_completion_signatures_t<source_cs_t>{};
     }
 
     template<receiver R>

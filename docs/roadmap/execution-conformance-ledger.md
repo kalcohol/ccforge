@@ -58,7 +58,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`；作为 backport 中实用 stopped adapters。 |
 | `into_variant` | Implemented | `into_variant.hpp`；被 `sync_wait` / `when_all` value-shape handling 复用。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | `when_all` 按 WD 要求至少一个 child sender；Cartesian value signature support 和 outer stop propagation 已实现；修改 shared state 时保留 lifecycle tests。 |
-| `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成。完整 stop-source/on_done cycle 未实现；abandoned source sender 是已接受 residual。 |
+| `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape 并以 `const&` 广播，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成。完整 stop-source/on_done cycle 未实现；abandoned source sender 是已接受 residual。 |
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future sender；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
