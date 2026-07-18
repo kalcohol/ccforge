@@ -23,7 +23,6 @@
 #pragma once
 
 #include <compare>
-#include <functional>
 #include <type_traits>
 
 namespace std {
@@ -55,6 +54,119 @@ inline constexpr bool __forge_cw_comparison_category =
     is_same_v<remove_cvref_t<T>, strong_ordering> ||
     is_same_v<remove_cvref_t<T>, weak_ordering> ||
     is_same_v<remove_cvref_t<T>, partial_ordering>;
+
+template <class T>
+inline constexpr bool __forge_cw_is_reference_wrapper =
+    !is_same_v<unwrap_reference_t<remove_cvref_t<T>>, remove_cvref_t<T>>;
+
+template <class T>
+struct __forge_cw_member_pointer_class;
+
+template <class M, class C>
+struct __forge_cw_member_pointer_class<M C::*> {
+    using type = C;
+};
+
+template <class F>
+using __forge_cw_member_pointer_class_t =
+    typename __forge_cw_member_pointer_class<remove_cvref_t<F>>::type;
+
+template <class F, class... Args>
+    requires (!is_member_pointer_v<remove_cvref_t<F>> &&
+              requires(F&& fn, Args&&... args) {
+                  static_cast<F&&>(fn)(static_cast<Args&&>(args)...);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn, Args&&... args)
+    noexcept(noexcept(static_cast<F&&>(fn)(static_cast<Args&&>(args)...))) {
+    return static_cast<F&&>(fn)(static_cast<Args&&>(args)...);
+}
+
+template <class F, class T, class... Args>
+    requires (is_member_function_pointer_v<remove_cvref_t<F>> &&
+              is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                           remove_cvref_t<T>> &&
+              requires(F&& fn, T&& target, Args&&... args) {
+                  (static_cast<T&&>(target).*static_cast<F&&>(fn))(
+                      static_cast<Args&&>(args)...);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn,
+                                            T&& target,
+                                            Args&&... args)
+    noexcept(noexcept((static_cast<T&&>(target).*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...))) {
+    return (static_cast<T&&>(target).*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...);
+}
+
+template <class F, class T, class... Args>
+    requires (is_member_function_pointer_v<remove_cvref_t<F>> &&
+              __forge_cw_is_reference_wrapper<T> &&
+              requires(F&& fn, T&& target, Args&&... args) {
+                  (static_cast<T&&>(target).get().*static_cast<F&&>(fn))(
+                      static_cast<Args&&>(args)...);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn,
+                                            T&& target,
+                                            Args&&... args)
+    noexcept(noexcept((static_cast<T&&>(target).get().*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...))) {
+    return (static_cast<T&&>(target).get().*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...);
+}
+
+template <class F, class T, class... Args>
+    requires (is_member_function_pointer_v<remove_cvref_t<F>> &&
+              !is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                            remove_cvref_t<T>> &&
+              !__forge_cw_is_reference_wrapper<T> &&
+              requires(F&& fn, T&& target, Args&&... args) {
+                  ((*static_cast<T&&>(target)).*static_cast<F&&>(fn))(
+                      static_cast<Args&&>(args)...);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn,
+                                            T&& target,
+                                            Args&&... args)
+    noexcept(noexcept(((*static_cast<T&&>(target)).*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...))) {
+    return ((*static_cast<T&&>(target)).*static_cast<F&&>(fn))(
+        static_cast<Args&&>(args)...);
+}
+
+template <class F, class T>
+    requires (is_member_object_pointer_v<remove_cvref_t<F>> &&
+              is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                           remove_cvref_t<T>> &&
+              requires(F&& fn, T&& target) {
+                  static_cast<T&&>(target).*static_cast<F&&>(fn);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn, T&& target)
+    noexcept(noexcept(static_cast<T&&>(target).*static_cast<F&&>(fn))) {
+    return static_cast<T&&>(target).*static_cast<F&&>(fn);
+}
+
+template <class F, class T>
+    requires (is_member_object_pointer_v<remove_cvref_t<F>> &&
+              __forge_cw_is_reference_wrapper<T> &&
+              requires(F&& fn, T&& target) {
+                  static_cast<T&&>(target).get().*static_cast<F&&>(fn);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn, T&& target)
+    noexcept(noexcept(static_cast<T&&>(target).get().*static_cast<F&&>(fn))) {
+    return static_cast<T&&>(target).get().*static_cast<F&&>(fn);
+}
+
+template <class F, class T>
+    requires (is_member_object_pointer_v<remove_cvref_t<F>> &&
+              !is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                            remove_cvref_t<T>> &&
+              !__forge_cw_is_reference_wrapper<T> &&
+              requires(F&& fn, T&& target) {
+                  (*static_cast<T&&>(target)).*static_cast<F&&>(fn);
+              })
+constexpr decltype(auto) __forge_cw_invoke(F&& fn, T&& target)
+    noexcept(noexcept((*static_cast<T&&>(target)).*static_cast<F&&>(fn))) {
+    return (*static_cast<T&&>(target)).*static_cast<F&&>(fn);
+}
 
 template <class T>
 consteval bool __forge_cw_constant_expression(T) noexcept {
@@ -165,8 +277,22 @@ private:
     static constexpr bool __constant_invocable = requires {
         requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
         typename FORGE_CW_RESULT(
-            invoke(X, remove_cvref_t<Args>::value...));
+            __forge_cw_invoke(X, remove_cvref_t<Args>::value...));
     };
+
+    template <class... Args>
+    static constexpr bool __runtime_invocable = requires(Args&&... args) {
+        __forge_cw_invoke(value, static_cast<Args&&>(args)...);
+    };
+
+    template <class... Args>
+    static consteval bool __call_is_nothrow() {
+        if constexpr (__constant_invocable<Args...>) {
+            return true;
+        } else {
+            return noexcept(__forge_cw_invoke(value, declval<Args>()...));
+        }
+    }
 
     template <class... Args>
     static constexpr bool __constant_subscriptable = requires {
@@ -192,15 +318,14 @@ private:
 public:
     template <class... Args>
         requires (__constant_invocable<Args...> ||
-                  is_invocable_v<decltype(value), Args...>)
+                  __runtime_invocable<Args...>)
     static constexpr decltype(auto) operator()(Args&&... args)
-        noexcept(__constant_invocable<Args...> ||
-                 is_nothrow_invocable_v<decltype(value), Args...>) {
+        noexcept(__call_is_nothrow<Args...>()) {
         if constexpr (__constant_invocable<Args...>) {
             return FORGE_CW_RESULT(
-                invoke(X, remove_cvref_t<Args>::value...)){};
+                __forge_cw_invoke(X, remove_cvref_t<Args>::value...)){};
         } else {
-            return invoke(value, static_cast<Args&&>(args)...);
+            return __forge_cw_invoke(value, static_cast<Args&&>(args)...);
         }
     }
 

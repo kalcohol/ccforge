@@ -1,11 +1,10 @@
-#include <utility>
+#include <gtest/gtest.h>
 
 #include <compare>
 #include <cstddef>
 #include <functional>
 #include <type_traits>
-
-#include <gtest/gtest.h>
+#include <utility>
 
 namespace {
 
@@ -308,6 +307,19 @@ TEST(ConstantWrapper, RuntimeCallAndSubscriptPreserveReferencesAndNoexcept) {
     EXPECT_EQ(values[1zu], 4);
     EXPECT_EQ(&values[1zu], &decltype(values)::value.values[1]);
     EXPECT_EQ((matrix[0zu, 1zu]), 2);
+}
+
+TEST(ConstantWrapper, RuntimeCallUsesInvokeMemberPointerRules) {
+    member_owner value{11};
+    auto add = std::cw<&member_owner::add>;
+    auto member = std::cw<&member_owner::value>;
+
+    EXPECT_EQ(add(value, 2), 13);
+    EXPECT_EQ(add(&value, 3), 14);
+    EXPECT_EQ(add(std::ref(value), 4), 15);
+    EXPECT_EQ(member(value), 11);
+    EXPECT_EQ(member(&value), 11);
+    EXPECT_EQ(member(std::ref(value)), 11);
 }
 
 } // namespace
