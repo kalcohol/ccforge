@@ -8,9 +8,10 @@
 #   scripts/verify-native.sh [target ...]
 #
 # Targets:
-#   gcc16   GCC 16 container, -std=c++26. Asserts std::simd, std::constant_wrapper,
-#           padded mdspan layouts, and std::submdspan STAND ASIDE (native present)
-#           and that no ODR/redefinition occurs.
+#   gcc16   GCC 16 container, -std=c++26. Asserts std::simd, padded mdspan
+#           layouts, and std::submdspan stand aside as complete native
+#           surfaces; its pre-P4206 std::constant_wrapper must stand aside as
+#           partial native. Also verifies no ODR/redefinition occurs.
 #   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
 #           native support; full suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
@@ -116,6 +117,18 @@ assert_stands_aside() {
     fi
 }
 
+assert_partial_stands_aside() {
+    local logfile="$1" feature="$2"
+    if grep -q "CC Forge: ${feature} backport enabled" "${logfile}"; then
+        fail "${feature}: backport was INJECTED — expected partial-native stand-aside on this toolchain (ODR risk). See ${logfile}"
+    fi
+    if grep -q "CC Forge: ${feature} native support is present but INCOMPLETE" "${logfile}"; then
+        ok "${feature}: Forge stood aside for partial native support"
+    else
+        fail "${feature}: no partial-native stand-aside message found in configure log ${logfile}"
+    fi
+}
+
 target_gcc16() {
     build_image forge-gcc16 containers/Containerfile.gcc16
     local logfile="${LOG_DIR}/gcc16-configure.log"
@@ -133,7 +146,7 @@ target_gcc16() {
         ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
     assert_stands_aside "${logfile}" "std::simd"
-    assert_stands_aside "${logfile}" "std::constant_wrapper"
+    assert_partial_stands_aside "${logfile}" "std::constant_wrapper"
     assert_stands_aside "${logfile}" "std::mdspan padded layouts"
     assert_stands_aside "${logfile}" "std::submdspan"
     log "gcc16: building + testing (native handoff must compile cleanly)"
