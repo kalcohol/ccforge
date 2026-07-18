@@ -244,6 +244,22 @@ TEST(SubmdspanPaddedLayouts, LayoutRightPaddedMapping) {
     EXPECT_FALSE(map.is_exhaustive());
 }
 
+TEST(SubmdspanPaddedLayouts, StaticZeroPaddingUsesUnpaddedStride) {
+    using ext_t = std::extents<int, 3, 4>;
+    using left_map_t = std::layout_left_padded<0>::mapping<ext_t>;
+    using right_map_t = std::layout_right_padded<0>::mapping<ext_t>;
+
+    left_map_t left{ext_t{}};
+    right_map_t right{ext_t{}};
+
+    EXPECT_EQ(left.stride(1), 3);
+    EXPECT_EQ(left.required_span_size(), 12);
+    EXPECT_TRUE(left.is_exhaustive());
+    EXPECT_EQ(right.stride(0), 4);
+    EXPECT_EQ(right.required_span_size(), 12);
+    EXPECT_TRUE(right.is_exhaustive());
+}
+
 TEST(SubmdspanPaddedLayouts, StaticPaddedStrideControlsAlwaysExhaustive) {
     using left_ext_t = std::extents<int, 8, 2>;
     using right_ext_t = std::extents<int, 2, 8>;

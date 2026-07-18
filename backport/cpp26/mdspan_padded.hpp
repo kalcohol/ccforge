@@ -48,6 +48,9 @@ constexpr bool empty_extents(const Extents& e) noexcept {
 
 template <class I>
 constexpr I least_multiple_at_least(I alignment, I value) noexcept {
+    if (alignment == I(0)) {
+        return value;
+    }
     if (value == I(0)) {
         return I(0);
     }
