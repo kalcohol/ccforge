@@ -77,7 +77,8 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 
 - `llvm`：LLVM/libc++ 容器，`-std=c++26`，覆盖 libc++ inject-path 全量测试
 - `zig`：Zig 容器，C++23 backport inject path
-- `gcc16`：GCC 16 容器，验证 `std::simd` / `std::constant_wrapper` / padded mdspan layouts / `std::submdspan` native stand-aside
+- `gcc16`：GCC 16 容器，验证 `std::simd`、pre-P4206 `std::constant_wrapper`
+  partial surface、padded mdspan layouts 与 `std::submdspan` native stand-aside
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
 - `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与
@@ -183,6 +184,7 @@ gate-off 检查则显式断言注册数为 0。可设置 `FORGE_WINDOWS_SKIP_GAT
 ```cmake
 FORGE_ENABLE_FORGE_IO=AUTO
 FORGE_TEST_ENABLE_SIMD=OFF
+FORGE_TEST_ENABLE_CONSTANT_WRAPPER=ON
 FORGE_TEST_ENABLE_SUBMDSPAN=OFF
 FORGE_TEST_ENABLE_LINALG=OFF
 FORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
@@ -254,6 +256,7 @@ focused stress case，再把该 audit 视为 closed。
 
 - `FORGE_TEST_ENABLE_EXECUTION`
 - `FORGE_TEST_ENABLE_SIMD`
+- `FORGE_TEST_ENABLE_CONSTANT_WRAPPER`
 - `FORGE_TEST_ENABLE_UNIQUE_RESOURCE`
 - `FORGE_TEST_ENABLE_SUBMDSPAN`
 - `FORGE_TEST_ENABLE_LINALG`
@@ -263,6 +266,12 @@ focused stress case，再把该 audit 视为 closed。
 - `FORGE_TEST_ENABLE_FORGE_IO`
 - `FORGE_TEST_ENABLE_FORGE_ERASURE`
 - `FORGE_TEST_ENABLE_NATIVE_HANDOFF`
+
+`FORGE_TEST_ENABLE_CONSTANT_WRAPPER` 覆盖 P2781/P3978/P4206 的专用 compile-time
+与 runtime matrix。检测到 pre-P4206 partial-native 声明时该组会跳过，因为 Forge
+必须让位且不能在同一 `namespace std` 中补声明；`gcc16` lane 另外断言这个
+stand-aside 决策。纯 execution、TSan 和 ASan 子集会显式关闭该组，完整 `llvm`、
+`zig`、本地与 Windows lanes 则保留覆盖。
 
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future

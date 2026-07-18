@@ -292,8 +292,8 @@ TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
 // ---------------------------------------------------------------------------
 
 TEST(SubmdspanFeatureMacro, MacroDefined) {
-    static_assert(__cpp_lib_constant_wrapper >= 202603L,
-                  "__cpp_lib_constant_wrapper must be defined and >= 202603L");
+    static_assert(__cpp_lib_constant_wrapper >= 202606L,
+                  "__cpp_lib_constant_wrapper must expose the P4206 DR baseline");
     // If the native version ships, it will also define this macro.
     static_assert(__cpp_lib_submdspan >= 202603L,
                   "__cpp_lib_submdspan must be defined and >= 202603L");

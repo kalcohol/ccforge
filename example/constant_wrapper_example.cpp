@@ -21,6 +21,10 @@
 // SOFTWARE.
 
 #include <utility>
+
+#include <cstddef>
+#include <type_traits>
+
 #include "example_support.hpp"
 
 template<auto V>
@@ -28,13 +32,42 @@ constexpr auto doubled(std::constant_wrapper<V>) {
     return std::cw<(V * 2)>;
 }
 
+template<auto V>
+struct external_constant {
+    static constexpr auto value = V;
+};
+
+struct lookup {
+    int values[3];
+
+    constexpr const int& operator[](std::size_t index) const noexcept {
+        return values[index];
+    }
+};
+
+constexpr int plus_one(int value) noexcept {
+    return value + 1;
+}
+
 int main() {
     constexpr auto rows = std::cw<3zu>;
     constexpr auto cols = std::cw<4zu>;
-    constexpr auto elements = rows * cols;
+    constexpr auto elements = rows * external_constant<4zu>{};
+    constexpr auto next = std::cw<&plus_one>(rows);
+    constexpr auto selected = std::cw<lookup{{2, 4, 8}}>[std::cw<2zu>];
 
-    static_assert(decltype(elements)::value == 12zu);
+    static_assert(std::is_same_v<
+                  decltype(elements),
+                  const std::constant_wrapper<12zu>>);
     static_assert(doubled(rows) == std::cw<6zu>);
+    static_assert(std::is_same_v<
+                  decltype(next),
+                  const std::constant_wrapper<4>>);
+    static_assert(std::is_same_v<
+                  decltype(selected),
+                  const std::constant_wrapper<8>>);
 
     forge_example::require(elements.value == 12zu);
+    forge_example::require(next.value == 4);
+    forge_example::require(selected.value == 8);
 }

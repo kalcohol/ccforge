@@ -1,6 +1,8 @@
 # `std::submdspan` / `std::constant_wrapper` backport 说明
 
-当前对齐 2026-05 C++26 working draft 的 `submdspan` surface。
+当前对齐 2026-05 C++26 working draft 的 `submdspan` surface；
+`constant_wrapper` 采用 P2781 operator algebra、P3978 call/subscript 语义与
+P4206 DR 后的直接 `template<auto>` 形状。
 
 ## 覆盖范围
 
@@ -23,7 +25,7 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 对应示例：
 
 - `example/constant_wrapper_example.cpp`：`std::constant_wrapper` / `std::cw` 的
-  compile-time value 组合；
+  mixed-wrapper algebra 与 call/subscript constant preservation；
 - `example/padded_mdspan_layout_example.cpp`：`layout_left_padded` /
   `layout_right_padded` 的 stride 与 full-slice layout 保留。
 
@@ -36,8 +38,24 @@ Padded layout mapping 的 converting constructor 只在不会改变 mapping 唯�
 
 当 Forge 注入 backport 时定义：
 
-- `__cpp_lib_constant_wrapper = 202603L`
+- `__cpp_lib_constant_wrapper = 202606L`
 - `__cpp_lib_submdspan = 202603L`
+
+GCC 16 当前提供 `202603L` 的 pre-P4206 native surface。它属于 partial native：
+Forge 会警告并让位，不会在同一 `namespace std` 中叠加声明。专用
+`constant_wrapper` conformance tests 只在 Forge 注入或检测到完整 `202606L`
+native surface 时运行。
+
+## `constant_wrapper` conformance ledger
+
+- 已实现：P4206 的 `constant_wrapper<auto X, class T = decltype(X)>` / `cw<X>`
+  类型形状、显式第二类型一致性要求、P2781 运算符与伪变异运算、P3978
+  constant/runtime call 和 subscript 分支。
+- 已验证：C++23 injected path、Clang/libc++ injected path、MSVC injected path，
+  以及 GCC 16 `202603L` partial-native stand-aside。
+- 有意不提供：被 P4206 撤回的 `cw-fixed-value` 与字符串字面量兼容 surface。
+- native stdlib 只要已经声明任意 partial surface，Forge 就不会覆盖注入；这是
+  项目的 ODR 安全策略，不代表该 native 实现满足上述完整 baseline。
 
 ## 旧拼写
 

@@ -7,14 +7,14 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 只需要 `<execution>`、`<simd>`、`<mdspan>` 等标准入口的 consumer 应优先链接
 `forge::std`。
 
-## 工具链原生进度（截至 2026-05）
+## 工具链原生进度（截至 2026-07）
 
 这些特性均已（除 `unique_resource` 外）并入或服务于 C++26，但主流标准库的原生落地进度差异很大，直接决定哪个 backport 会在你的工具链上自动退场：
 
 | 特性 | libstdc++ (GCC) | libc++ (Clang) | 含义 |
 |------|-----------------|----------------|------|
 | `std::simd` | GCC 16 起部分原生（experimental，`-std=c++26`，命名仍在演进） | 未实现 | 新工具链上 backport 开始让位 |
-| `std::constant_wrapper` / padded mdspan layouts | 随 C++26 `<utility>` / `<mdspan>` 逐步出现 | 未实现 | `submdspan` 的前置 foundation，单独探测、单独让位 |
+| `std::constant_wrapper` / padded mdspan layouts | GCC 16 已有 `202603L` pre-P4206 `constant_wrapper` 与 padded layouts | 未实现 | `constant_wrapper` 对完整 `202606L` DR surface 单独探测；旧 native 声明按 partial 让位 |
 | `std::submdspan` | GCC 16 起部分原生（新词汇为 `extent_slice` / `range_slice` / `subextents` / `canonical_slices`） | 未实现 | 同上 |
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::linalg` | 未实现 | 未实现 | backport 仍是唯一路径 |

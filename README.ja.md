@@ -28,7 +28,7 @@ backport ヘッダーを注入します。
 | `std::submdspan` と padded layouts | `<mdspan>` | 現行 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
-| `std::constant_wrapper` | `<utility>` | C++26 backport |
+| `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backends |
 

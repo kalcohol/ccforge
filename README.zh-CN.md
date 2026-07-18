@@ -26,7 +26,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::submdspan` 与 padded layouts | `<mdspan>` | 当前 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
 | `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
-| `std::constant_wrapper` | `<utility>` | C++26 backport |
+| `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层 |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP proof backend |
 
