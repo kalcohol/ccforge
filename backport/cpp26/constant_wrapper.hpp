@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <compare>
+#include <functional>
 #include <type_traits>
 
 namespace std {
@@ -29,98 +31,392 @@ namespace std {
 #if defined(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT) || \
     (!defined(FORGE_HAS_NATIVE_CONSTANT_WRAPPER) && !defined(__cpp_lib_constant_wrapper))
 
-template <auto V>
-struct constant_wrapper {
-    static constexpr auto value = V;
-    using type = constant_wrapper;
-    using value_type = decltype(V);
+template <auto X, class T = decltype(X)>
+struct constant_wrapper;
 
-    constexpr operator value_type() const noexcept { return value; }
+template <class T, T X>
+using __forge_cw_result = constant_wrapper<X, T>;
 
-    template <class... Args>
-    constexpr decltype(auto) operator()(Args&&... args) const
-        noexcept(noexcept(value(static_cast<Args&&>(args)...)))
-        requires requires { value(static_cast<Args&&>(args)...); }
-    {
-        return value(static_cast<Args&&>(args)...);
-    }
-};
-
-template <auto V>
-inline constexpr auto cw = constant_wrapper<V>{};
+#define FORGE_CW_RESULT(...)                                                    \
+    __forge_cw_result<remove_cvref_t<decltype((__VA_ARGS__))>, (__VA_ARGS__)>
 
 template <class T>
 struct __forge_is_constant_wrapper : false_type {};
 
-template <auto V>
-struct __forge_is_constant_wrapper<constant_wrapper<V>> : true_type {};
+template <auto X, class T>
+struct __forge_is_constant_wrapper<constant_wrapper<X, T>> : true_type {};
 
 template <class T>
 concept __forge_constant_wrapper =
     __forge_is_constant_wrapper<remove_cvref_t<T>>::value;
 
-template <auto V>
-constexpr auto operator+(constant_wrapper<V>) noexcept -> constant_wrapper<(+V)> { return {}; }
-template <auto V>
-constexpr auto operator-(constant_wrapper<V>) noexcept -> constant_wrapper<(-V)> { return {}; }
-template <auto V>
-constexpr auto operator~(constant_wrapper<V>) noexcept -> constant_wrapper<(~V)> { return {}; }
-template <auto V>
-constexpr auto operator!(constant_wrapper<V>) noexcept -> constant_wrapper<(!V)> { return {}; }
+template <class T>
+inline constexpr bool __forge_cw_comparison_category =
+    is_same_v<remove_cvref_t<T>, strong_ordering> ||
+    is_same_v<remove_cvref_t<T>, weak_ordering> ||
+    is_same_v<remove_cvref_t<T>, partial_ordering>;
 
-template <auto L, auto R>
-constexpr auto operator+(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L + R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator-(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L - R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator*(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L * R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator/(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L / R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator%(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L % R)> { return {}; }
+template <class T>
+consteval bool __forge_cw_constant_expression(T) noexcept {
+    return true;
+}
 
-template <auto L, auto R>
-constexpr auto operator<<(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L << R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator>>(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L >> R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator&(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L & R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator|(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L | R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator^(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L ^ R)> { return {}; }
+template <class T>
+concept __forge_constexpr_param = requires {
+    typename bool_constant<__forge_cw_constant_expression(
+        remove_cvref_t<T>::value)>;
+    requires (!__forge_cw_comparison_category<
+              decltype(remove_cvref_t<T>::value)>);
+} && (__forge_constant_wrapper<T> || requires {
+    typename __forge_cw_result<
+        remove_cvref_t<decltype(remove_cvref_t<T>::value)>,
+        remove_cvref_t<T>::value>;
+});
 
-template <auto L, auto R>
-constexpr auto operator<(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L < R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator<=(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L <= R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator==(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L == R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator!=(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L != R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator>(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L > R)> { return {}; }
-template <auto L, auto R>
-constexpr auto operator>=(constant_wrapper<L>, constant_wrapper<R>) noexcept
-    -> constant_wrapper<(L >= R)> { return {}; }
+struct __forge_cw_operators {
+    template <__forge_constexpr_param T>
+        requires requires(remove_cvref_t<typename T::value_type> value) { ++value; }
+    constexpr auto operator++(this T) noexcept {
+        return FORGE_CW_RESULT([] {
+            auto value = T::value;
+            return ++value;
+        }()){};
+    }
+
+    template <__forge_constexpr_param T>
+        requires requires(remove_cvref_t<typename T::value_type> value) { value++; }
+    constexpr auto operator++(this T, int) noexcept {
+        return FORGE_CW_RESULT([] {
+            auto value = T::value;
+            return value++;
+        }()){};
+    }
+
+    template <__forge_constexpr_param T>
+        requires requires(remove_cvref_t<typename T::value_type> value) { --value; }
+    constexpr auto operator--(this T) noexcept {
+        return FORGE_CW_RESULT([] {
+            auto value = T::value;
+            return --value;
+        }()){};
+    }
+
+    template <__forge_constexpr_param T>
+        requires requires(remove_cvref_t<typename T::value_type> value) { value--; }
+    constexpr auto operator--(this T, int) noexcept {
+        return FORGE_CW_RESULT([] {
+            auto value = T::value;
+            return value--;
+        }()){};
+    }
+
+#define FORGE_CW_COMPOUND_OPERATOR(op)                                             \
+    template <__forge_constexpr_param T, __forge_constexpr_param R>                \
+        requires requires(remove_cvref_t<typename T::value_type> value) {           \
+            value op R::value;                                                      \
+        }                                                                           \
+    constexpr auto operator op(this T, R) noexcept {                               \
+        return FORGE_CW_RESULT([] {                                                \
+            auto value = T::value;                                                  \
+            return value op R::value;                                               \
+        }()){};                                                                      \
+    }
+
+    FORGE_CW_COMPOUND_OPERATOR(+=)
+    FORGE_CW_COMPOUND_OPERATOR(-=)
+    FORGE_CW_COMPOUND_OPERATOR(*=)
+    FORGE_CW_COMPOUND_OPERATOR(/=)
+    FORGE_CW_COMPOUND_OPERATOR(%=)
+    FORGE_CW_COMPOUND_OPERATOR(&=)
+    FORGE_CW_COMPOUND_OPERATOR(|=)
+    FORGE_CW_COMPOUND_OPERATOR(^=)
+    FORGE_CW_COMPOUND_OPERATOR(<<=)
+    FORGE_CW_COMPOUND_OPERATOR(>>=)
+
+#undef FORGE_CW_COMPOUND_OPERATOR
+};
+
+template <auto X, class T>
+struct constant_wrapper : __forge_cw_operators {
+    static constexpr decltype(auto) value = (X);
+    using type = constant_wrapper;
+    using value_type = decltype(X);
+
+    static_assert(is_same_v<T, value_type>,
+                  "constant_wrapper's second template argument must match decltype(X)");
+    static_assert(!__forge_cw_comparison_category<value_type>,
+                  "constant_wrapper requires a structural value type");
+
+    template <__forge_constexpr_param R>
+        requires requires(remove_cvref_t<value_type> result) { result = R::value; }
+    constexpr auto operator=(R) const noexcept {
+        return FORGE_CW_RESULT([] {
+            auto result = value;
+            return result = R::value;
+        }()){};
+    }
+
+    constexpr operator decltype(value)() const noexcept {
+        return value;
+    }
+
+private:
+    template <class... Args>
+    static constexpr bool __constant_invocable = requires {
+        requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+        typename FORGE_CW_RESULT(
+            invoke(X, remove_cvref_t<Args>::value...));
+    };
+
+    template <class... Args>
+    static constexpr bool __constant_subscriptable = requires {
+        requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+        typename FORGE_CW_RESULT(
+            X[remove_cvref_t<Args>::value...]);
+    };
+
+    template <class... Args>
+    static constexpr bool __runtime_subscriptable = requires(Args&&... args) {
+        value[static_cast<Args&&>(args)...];
+    };
+
+    template <class... Args>
+    static consteval bool __subscript_is_nothrow() {
+        if constexpr (__constant_subscriptable<Args...>) {
+            return true;
+        } else {
+            return noexcept(value[declval<Args>()...]);
+        }
+    }
+
+public:
+    template <class... Args>
+        requires (__constant_invocable<Args...> ||
+                  is_invocable_v<decltype(value), Args...>)
+    static constexpr decltype(auto) operator()(Args&&... args)
+        noexcept(__constant_invocable<Args...> ||
+                 is_nothrow_invocable_v<decltype(value), Args...>) {
+        if constexpr (__constant_invocable<Args...>) {
+            return FORGE_CW_RESULT(
+                invoke(X, remove_cvref_t<Args>::value...)){};
+        } else {
+            return invoke(value, static_cast<Args&&>(args)...);
+        }
+    }
+
+    template <class... Args>
+        requires (__constant_subscriptable<Args...> ||
+                  __runtime_subscriptable<Args...>)
+    static constexpr decltype(auto) operator[](Args&&... args)
+        noexcept(__subscript_is_nothrow<Args...>()) {
+        if constexpr (__constant_subscriptable<Args...>) {
+            return FORGE_CW_RESULT(
+                X[remove_cvref_t<Args>::value...]){};
+        } else {
+            return value[static_cast<Args&&>(args)...];
+        }
+    }
+};
+
+#define FORGE_CW_UNARY_OPERATOR(op)                                      \
+    template <auto X, class T>                                           \
+    constexpr auto operator op(constant_wrapper<X, T>) noexcept          \
+        -> FORGE_CW_RESULT(op X) {                                      \
+        return {};                                                       \
+    }
+
+FORGE_CW_UNARY_OPERATOR(+)
+FORGE_CW_UNARY_OPERATOR(-)
+FORGE_CW_UNARY_OPERATOR(~)
+FORGE_CW_UNARY_OPERATOR(!)
+FORGE_CW_UNARY_OPERATOR(*)
+
+#undef FORGE_CW_UNARY_OPERATOR
+
+template <auto X, class T>
+constexpr auto operator&(constant_wrapper<X, T>) noexcept
+    -> FORGE_CW_RESULT(&constant_wrapper<X, T>::value) {
+    return {};
+}
+
+#define FORGE_CW_BINARY_OPERATOR(op)                                           \
+    template <auto X, class XT, auto Y, class YT>                              \
+    constexpr auto operator op(constant_wrapper<X, XT>,                        \
+                               constant_wrapper<Y, YT>) noexcept                \
+        -> FORGE_CW_RESULT(X op Y) {                                           \
+        return {};                                                              \
+    }                                                                           \
+                                                                                \
+    template <auto X, class XT, __forge_constexpr_param R>                      \
+        requires (!__forge_constant_wrapper<R>)                                 \
+    constexpr auto operator op(constant_wrapper<X, XT>, R) noexcept             \
+        -> FORGE_CW_RESULT(X op remove_cvref_t<R>::value) {                     \
+        return {};                                                              \
+    }                                                                           \
+                                                                                \
+    template <__forge_constexpr_param L, auto Y, class YT>                      \
+        requires (!__forge_constant_wrapper<L>)                                 \
+    constexpr auto operator op(L, constant_wrapper<Y, YT>) noexcept             \
+        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op Y) {                     \
+        return {};                                                              \
+    }
+
+FORGE_CW_BINARY_OPERATOR(+)
+FORGE_CW_BINARY_OPERATOR(-)
+FORGE_CW_BINARY_OPERATOR(*)
+FORGE_CW_BINARY_OPERATOR(/)
+FORGE_CW_BINARY_OPERATOR(%)
+FORGE_CW_BINARY_OPERATOR(<<)
+FORGE_CW_BINARY_OPERATOR(>>)
+FORGE_CW_BINARY_OPERATOR(&)
+FORGE_CW_BINARY_OPERATOR(|)
+FORGE_CW_BINARY_OPERATOR(^)
+FORGE_CW_BINARY_OPERATOR(<)
+FORGE_CW_BINARY_OPERATOR(<=)
+FORGE_CW_BINARY_OPERATOR(==)
+FORGE_CW_BINARY_OPERATOR(!=)
+FORGE_CW_BINARY_OPERATOR(>)
+FORGE_CW_BINARY_OPERATOR(>=)
+
+#undef FORGE_CW_BINARY_OPERATOR
+
+template <auto X, auto Y>
+    requires requires { X ->* Y; }
+consteval auto __forge_cw_member_access() {
+    return X ->* Y;
+}
+
+template <auto X, class XT, auto Y, class YT>
+    requires requires {
+        typename FORGE_CW_RESULT(__forge_cw_member_access<X, Y>());
+    }
+constexpr auto operator->*(constant_wrapper<X, XT>,
+                           constant_wrapper<Y, YT>) noexcept
+    -> FORGE_CW_RESULT(__forge_cw_member_access<X, Y>()) {
+    return {};
+}
+
+template <auto X, class XT, __forge_constexpr_param R>
+    requires (!__forge_constant_wrapper<R> &&
+              requires {
+                  typename FORGE_CW_RESULT(__forge_cw_member_access<
+                                           X,
+                                           remove_cvref_t<R>::value>());
+              })
+constexpr auto operator->*(constant_wrapper<X, XT>, R) noexcept
+    -> FORGE_CW_RESULT(__forge_cw_member_access<
+                       X,
+                       remove_cvref_t<R>::value>()) {
+    return {};
+}
+
+template <__forge_constexpr_param L, auto Y, class YT>
+    requires (!__forge_constant_wrapper<L> &&
+              requires {
+                  typename FORGE_CW_RESULT(__forge_cw_member_access<
+                                           remove_cvref_t<L>::value,
+                                           Y>());
+              })
+constexpr auto operator->*(L, constant_wrapper<Y, YT>) noexcept
+    -> FORGE_CW_RESULT(__forge_cw_member_access<
+                       remove_cvref_t<L>::value,
+                       Y>()) {
+    return {};
+}
+
+// MSVC accepts the standard comparison categories as NTTPs even though they
+// are not structural types. Exclude them explicitly so the built-in fallback
+// remains available and relational rewritten candidates do not shadow the
+// constant-preserving overloads above.
+template <auto X, class XT, auto Y, class YT>
+    requires (!__forge_cw_comparison_category<decltype(X <=> Y)> &&
+              requires { typename FORGE_CW_RESULT(X <=> Y); })
+constexpr auto operator<=>(constant_wrapper<X, XT>,
+                           constant_wrapper<Y, YT>) noexcept
+    -> FORGE_CW_RESULT(X <=> Y) {
+    return {};
+}
+
+template <auto X, class XT, __forge_constexpr_param R>
+    requires (!__forge_constant_wrapper<R> &&
+              !__forge_cw_comparison_category<
+                  decltype(X <=> remove_cvref_t<R>::value)> &&
+              requires {
+                  typename FORGE_CW_RESULT(
+                      X <=> remove_cvref_t<R>::value);
+              })
+constexpr auto operator<=>(constant_wrapper<X, XT>, R) noexcept
+    -> FORGE_CW_RESULT(X <=> remove_cvref_t<R>::value) {
+    return {};
+}
+
+template <__forge_constexpr_param L, auto Y, class YT>
+    requires (!__forge_constant_wrapper<L> &&
+              !__forge_cw_comparison_category<
+                  decltype(remove_cvref_t<L>::value <=> Y)> &&
+              requires {
+                  typename FORGE_CW_RESULT(
+                      remove_cvref_t<L>::value <=> Y);
+              })
+constexpr auto operator<=>(L, constant_wrapper<Y, YT>) noexcept
+    -> FORGE_CW_RESULT(remove_cvref_t<L>::value <=> Y) {
+    return {};
+}
+
+#define FORGE_CW_LOGICAL_OPERATOR(op)                                         \
+    template <auto X, class XT, auto Y, class YT>                             \
+        requires (!is_constructible_v<bool, decltype(X)> ||                   \
+                  !is_constructible_v<bool, decltype(Y)>)                     \
+    constexpr auto operator op(constant_wrapper<X, XT>,                       \
+                               constant_wrapper<Y, YT>) noexcept               \
+        -> FORGE_CW_RESULT(X op Y) {                                          \
+        return {};                                                             \
+    }                                                                          \
+                                                                               \
+    template <auto X, class XT, __forge_constexpr_param R>                     \
+        requires (!__forge_constant_wrapper<R> &&                              \
+                  (!is_constructible_v<bool, decltype(X)> ||                   \
+                   !is_constructible_v<                                        \
+                       bool, decltype(remove_cvref_t<R>::value)>))              \
+    constexpr auto operator op(constant_wrapper<X, XT>, R) noexcept            \
+        -> FORGE_CW_RESULT(X op remove_cvref_t<R>::value) {                    \
+        return {};                                                             \
+    }                                                                          \
+                                                                               \
+    template <__forge_constexpr_param L, auto Y, class YT>                     \
+        requires (!__forge_constant_wrapper<L> &&                              \
+                  (!is_constructible_v<                                        \
+                       bool, decltype(remove_cvref_t<L>::value)> ||             \
+                   !is_constructible_v<bool, decltype(Y)>))                     \
+    constexpr auto operator op(L, constant_wrapper<Y, YT>) noexcept            \
+        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op Y) {                    \
+        return {};                                                             \
+    }
+
+FORGE_CW_LOGICAL_OPERATOR(&&)
+FORGE_CW_LOGICAL_OPERATOR(||)
+
+#undef FORGE_CW_LOGICAL_OPERATOR
+
+template <auto X, class XT, auto Y, class YT>
+constexpr auto operator,(constant_wrapper<X, XT>,
+                         constant_wrapper<Y, YT>) noexcept = delete;
+
+template <auto X, class XT, __forge_constexpr_param R>
+    requires (!__forge_constant_wrapper<R>)
+constexpr auto operator,(constant_wrapper<X, XT>, R) noexcept = delete;
+
+template <__forge_constexpr_param L, auto Y, class YT>
+    requires (!__forge_constant_wrapper<L>)
+constexpr auto operator,(L, constant_wrapper<Y, YT>) noexcept = delete;
+
+template <auto X>
+constexpr auto cw = constant_wrapper<X, decltype(X)>{};
+
+#undef FORGE_CW_RESULT
 
 #  if !defined(__cpp_lib_constant_wrapper)
-#    define __cpp_lib_constant_wrapper 202603L
+#    define __cpp_lib_constant_wrapper 202606L
 #  endif
 
 #endif // forced or no native constant_wrapper

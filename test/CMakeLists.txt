@@ -2,6 +2,7 @@
 
 option(FORGE_TEST_ENABLE_EXECUTION "Build Forge std::execution tests" ON)
 option(FORGE_TEST_ENABLE_SIMD "Build Forge std::simd tests" ON)
+option(FORGE_TEST_ENABLE_CONSTANT_WRAPPER "Build Forge std::constant_wrapper tests" ON)
 option(FORGE_TEST_ENABLE_UNIQUE_RESOURCE "Build Forge std::unique_resource tests" ON)
 option(FORGE_TEST_ENABLE_SUBMDSPAN "Build Forge std::submdspan tests" ON)
 option(FORGE_TEST_ENABLE_LINALG "Build Forge std::linalg tests" ON)
@@ -26,6 +27,7 @@ endif()
 
 if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_SIMD
+        OR FORGE_TEST_ENABLE_CONSTANT_WRAPPER
         OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
@@ -44,6 +46,7 @@ set(FORGE_TEST_TIMEOUT_SECONDS 300 CACHE STRING
 set(FORGE_TEST_ENABLE_STD_TARGET OFF)
 if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_SIMD
+        OR FORGE_TEST_ENABLE_CONSTANT_WRAPPER
         OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
@@ -121,6 +124,16 @@ if(FORGE_TEST_ENABLE_EXECUTION)
 endif()
 if(FORGE_TEST_ENABLE_SIMD)
     add_subdirectory(simd)
+endif()
+if(FORGE_TEST_ENABLE_CONSTANT_WRAPPER)
+    if(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT
+            OR FORGE_CONSTANT_WRAPPER_FULL
+            OR NOT FORGE_CONSTANT_WRAPPER_PARTIAL)
+        add_subdirectory(constant_wrapper)
+    else()
+        message(STATUS
+            "Forge: constant_wrapper conformance tests skipped for partial-native standard library")
+    endif()
 endif()
 if(FORGE_TEST_ENABLE_UNIQUE_RESOURCE)
     add_subdirectory(unique_resource)
