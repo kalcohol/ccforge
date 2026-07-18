@@ -371,12 +371,20 @@ try {
     }
 
     $gtestDir = Join-Path $sourceRoot "3rdparty\googletest"
-    if ((-not (Test-Path $gtestDir)) -and (-not $SkipGoogletestProvision)) {
-        New-Item -ItemType Directory -Force -Path (Join-Path $sourceRoot "3rdparty") | Out-Null
-        Invoke-Native "provision googletest" "git clone --depth 1 `"https://github.com/google/googletest.git`" `"$gtestDir`""
+    $gtestCMake = Join-Path $gtestDir "CMakeLists.txt"
+    if ((-not (Test-Path $gtestCMake)) -and (-not $SkipGoogletestProvision)) {
+        if ((Test-Path (Join-Path $sourceRoot ".git")) -and
+            (Test-Path (Join-Path $sourceRoot ".gitmodules"))) {
+            Invoke-Native `
+                "initialize googletest submodule" `
+                "cd /d `"$sourceRoot`" && git submodule update --init --depth 1 -- 3rdparty/googletest"
+        } else {
+            New-Item -ItemType Directory -Force -Path (Join-Path $sourceRoot "3rdparty") | Out-Null
+            Invoke-Native "provision googletest" "git clone --depth 1 `"https://github.com/google/googletest.git`" `"$gtestDir`""
+        }
     }
 
-    if (-not (Test-Path $gtestDir)) {
+    if (-not (Test-Path $gtestCMake)) {
         throw "Missing 3rdparty\googletest. Re-run without -SkipGoogletestProvision or provide it manually."
     }
 
