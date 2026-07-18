@@ -12,6 +12,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(CCForge CONFIG REQUIRED)
 
+foreach(_ccforge_gtest_target IN ITEMS
+        gtest
+        gtest_main
+        gmock
+        gmock_main
+        GTest::gtest
+        GTest::gtest_main
+        GTest::gmock
+        GTest::gmock_main
+        GTest::GTest
+        GTest::Main)
+    if(TARGET ${_ccforge_gtest_target})
+        message(FATAL_ERROR
+            "The installed CC Forge package unexpectedly exposed ${_ccforge_gtest_target}")
+    endif()
+endforeach()
+
 add_executable(ccforge_install_consumer main.cpp)
 target_link_libraries(ccforge_install_consumer PRIVATE forge::forge)
 

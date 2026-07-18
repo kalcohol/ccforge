@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Verify that CC Forge can be installed and consumed from an install prefix via
-# find_package(CCForge CONFIG). This is intentionally separate from default
-# CTest because it configures, installs, and builds a second external project.
+# Verify source-tree and installed-package consumption without exposing CC
+# Forge's test-only GoogleTest dependency. This is intentionally separate from
+# default CTest because it performs multiple configure/build cycles.
 
 set -euo pipefail
 
@@ -20,6 +20,8 @@ FORGE_BUILD="${BUILD_ROOT}/forge-build"
 PREFIX="${BUILD_ROOT}/prefix"
 CONSUMER_BUILD="${BUILD_ROOT}/consumer-build"
 CONSUMER_PREFIX="${BUILD_ROOT}/consumer-prefix"
+SOURCE_INCLUDE_BUILD="${BUILD_ROOT}/source-include-build"
+SOURCE_SUBDIR_BUILD="${BUILD_ROOT}/source-subdir-build"
 
 GENERATOR_ARGS=()
 if [[ -n "${GENERATOR}" ]]; then
@@ -32,6 +34,28 @@ log() {
 
 rm -rf "${BUILD_ROOT}"
 mkdir -p "${BUILD_ROOT}"
+
+verify_source_consumer() {
+    local mode="$1"
+    local build_dir="$2"
+
+    log "configuring source consumer in ${mode} mode"
+    cmake -S "${REPO_ROOT}/test/source_consumer" -B "${build_dir}" \
+        "${GENERATOR_ARGS[@]}" \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_CXX_STANDARD="${STD}" \
+        -DCCFORGE_SOURCE_DIR="${REPO_ROOT}" \
+        -DCCFORGE_CONSUMER_MODE="${mode}"
+
+    log "building source consumer in ${mode} mode"
+    cmake --build "${build_dir}"
+
+    log "running source consumer in ${mode} mode"
+    "${build_dir}/ccforge_source_consumer"
+}
+
+verify_source_consumer INCLUDE "${SOURCE_INCLUDE_BUILD}"
+verify_source_consumer ADD_SUBDIRECTORY "${SOURCE_SUBDIR_BUILD}"
 
 log "configuring Forge package build"
 cmake -S "${REPO_ROOT}" -B "${FORGE_BUILD}" "${GENERATOR_ARGS[@]}" \
@@ -47,6 +71,12 @@ cmake --build "${FORGE_BUILD}"
 
 log "installing to ${PREFIX}"
 cmake --install "${FORGE_BUILD}"
+
+if find "${PREFIX}" \( -iname '*gtest*' -o -iname '*googletest*' \) \
+        -print -quit | grep -q .; then
+    log "ERROR: GoogleTest artifacts leaked into the CC Forge install prefix"
+    exit 1
+fi
 
 log "configuring external consumer with find_package(CCForge CONFIG)"
 cmake -S "${REPO_ROOT}/test/install_consumer" -B "${CONSUMER_BUILD}" \

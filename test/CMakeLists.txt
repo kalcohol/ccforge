@@ -19,8 +19,6 @@ if(FORGE_TEST_ENABLE_FORGE
             OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
                 AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
             OR FORGE_TEST_ENABLE_FORGE_IO
-            OR (FORGE_HAS_FORGE_IO_BACKEND
-                AND FORGE_TEST_ENABLE_FORGE_IO)
             OR FORGE_TEST_ENABLE_FORGE_ERASURE))
     set(FORGE_TEST_ENABLE_ANY_FORGE ON)
 endif()
@@ -33,11 +31,24 @@ if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_LINALG
         OR FORGE_TEST_ENABLE_ANY_FORGE
         OR FORGE_TEST_ENABLE_NATIVE_HANDOFF)
-    # GoogleTest is a build-only test dependency. Do not leak its install rules
-    # into a CC Forge prefix when tests and installation are enabled together.
+    set(_FORGE_GTEST_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/googletest")
+    if(NOT EXISTS "${_FORGE_GTEST_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "CC Forge tests require 3rdparty/googletest. Initialize it with: "
+            "git submodule update --init --depth 1 -- 3rdparty/googletest")
+    endif()
+
+    # GoogleTest is a build-only test dependency. Build only gtest, and do not
+    # leak its install rules into a CC Forge prefix when tests and installation
+    # are enabled together.
+    set(BUILD_GMOCK OFF CACHE BOOL
+        "CC Forge tests do not use GoogleMock" FORCE)
     set(INSTALL_GTEST OFF CACHE BOOL
         "Do not install CC Forge's GoogleTest dependency" FORCE)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    add_subdirectory("${_FORGE_GTEST_SOURCE_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/googletest")
+    unset(_FORGE_GTEST_SOURCE_DIR)
 endif()
 
 set(FORGE_TEST_TIMEOUT_SECONDS 300 CACHE STRING

@@ -27,7 +27,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
 | `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
-| `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层 |
+| `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层：线程池、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP proof backend |
 
 更精确的语义、限制和状态说明见 [文档目录](docs/README.md)。
@@ -89,6 +89,10 @@ target_link_libraries(myapp PRIVATE forge::forge)
 add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
+
+GoogleTest 只用于 CC Forge 自身的顶层测试构建。直接包含 `forge.cmake`、把 CC Forge
+作为子项目 `add_subdirectory`，以及消费安装后的 package，都不会配置或安装
+GoogleTest，也不要求初始化 `3rdparty/googletest` submodule。
 
 安装后的 package config 会在 consumer 项目里重新运行 native-vs-backport probes，
 不会固化打包机器的探测结果。

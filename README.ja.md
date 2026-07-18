@@ -29,7 +29,7 @@ backport ヘッダーを注入します。
 | `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
-| `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化非同期の支援層 |
+| `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化 async support：pool、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP proof backends |
 
 正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
@@ -91,6 +91,11 @@ target_link_libraries(myapp PRIVATE forge::forge)
 add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
+
+GoogleTest は CC Forge 自身のトップレベル test build だけで使う依存です。
+`forge.cmake` の直接 include、subproject としての `add_subdirectory`、install 済み
+package の利用では GoogleTest を configure/install せず、`3rdparty/googletest`
+submodule の初期化も不要です。
 
 インストールされた package config は consumer project 側で native-vs-backport probes
 を再実行します。そのため、一つの install prefix を異なる compiler、standard library、

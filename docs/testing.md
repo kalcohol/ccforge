@@ -338,12 +338,17 @@ cmake --build build/llvm --target test_execution_wave1
 ctest --test-dir build/llvm -R 'execution_wave1' --output-on-failure
 ```
 
-## Install package smoke（安装包冒烟）
+## CMake consumer / install package smoke（CMake 消费与安装包冒烟）
 
-Install package smoke 验证一个已安装 prefix 能被独立项目通过
-`find_package(CCForge CONFIG REQUIRED)` 消费。它会把 headers、backport wrappers 和
-CMake package config 安装到临时 build prefix，然后 configure 并运行
-`test/install_consumer`：
+Install package smoke 同时验证三种 header-only CMake 消费方式：直接
+`include(forge.cmake)`、把源码树作为 subproject `add_subdirectory`，以及从独立项目
+调用 `find_package(CCForge CONFIG REQUIRED)`。前两种方式会 configure/build/run
+`test/source_consumer`；安装方式会把 headers、backport wrappers 和 CMake package
+config 安装到临时 prefix，再 configure/build/run `test/install_consumer`。
+
+三条路径都会断言没有创建 GoogleTest target；安装路径还会检查 prefix 中没有
+GoogleTest artifact。`3rdparty/googletest` 只用于 CC Forge 自身的顶层测试构建，普通
+header-only consumer 不需要初始化该 submodule：
 
 ```bash
 scripts/verify-install-package.sh
@@ -354,7 +359,9 @@ scripts/verify-install-package.sh
 
 ## 注意事项
 
-- `test/CMakeLists.txt` expects `3rdparty/googletest`; fresh checkout 缺失时需要初始化 submodule 或提供该目录
+- 只有构建 CC Forge 自身测试时，`test/CMakeLists.txt` 才需要
+  `3rdparty/googletest`；fresh checkout 可用
+  `git submodule update --init --depth 1 -- 3rdparty/googletest` 初始化
 - 不要意外 stage vendored/untracked `3rdparty/` 内容
 - SIMD configure probes 在 CMake configure 阶段运行；configure failure 可能是 probe failure，还没进入 build target
 - `linalg` 和 `submdspan` tests/examples 依赖 `<mdspan>`，在较旧标准库上会跳过

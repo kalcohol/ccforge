@@ -92,6 +92,11 @@ add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
 
+GoogleTest is only a dependency of CC Forge's own top-level test build. Direct
+`forge.cmake` inclusion, subproject `add_subdirectory`, and installed-package
+consumption neither configure nor install GoogleTest, and do not require the
+`3rdparty/googletest` submodule.
+
 The installed package config reruns native-vs-backport probes in the consumer
 project, so one install prefix can adapt to different compilers, standard
 libraries, and `CMAKE_CXX_STANDARD` values.
