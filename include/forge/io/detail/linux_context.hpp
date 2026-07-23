@@ -421,11 +421,14 @@ struct __state : std::enable_shared_from_this<__state> {
                     slot = std::move(record);
                     ++pending;
                     if (!update_interest_locked(it->first, waiters)) {
+                        const int update_error = errno;
                         auto failed = record_from_slot(waiters, slot);
                         if (failed) {
                             --pending;
                             actions.error(std::move(failed),
-                                __system_error(errno, "epoll_ctl readiness add"));
+                                __system_error(
+                                    update_error,
+                                    "epoll_ctl readiness add"));
                         }
                         if (waiters.empty()) {
                             fd_waiters.erase(it);
