@@ -74,6 +74,28 @@ using just_int_value_types_t = std::execution::value_types_of_t<
 using just_error_types_t = std::execution::error_types_of_t<
     decltype(std::execution::just_error(std::string{"error"}))>;
 
+struct reference_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    friend auto tag_invoke(
+        std::execution::get_env_t,
+        const reference_value_sender&) noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    friend auto tag_invoke(
+        std::execution::get_completion_signatures_t,
+        reference_value_sender,
+        auto) noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(const std::string&)> {
+        return {};
+    }
+};
+
+using reference_value_types_t =
+    std::execution::value_types_of_t<reference_value_sender>;
+
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
     std::execution::completion_signatures<std::execution::set_value_t(int)>>);
@@ -85,6 +107,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     just_error_types_t,
     std::variant<std::string>>);
+static_assert(std::is_same_v<
+    reference_value_types_t,
+    std::variant<std::tuple<std::string>>>);
 static_assert(!std::execution::sends_stopped<decltype(std::execution::just(42))>);
 static_assert(std::execution::sends_stopped<
     decltype(std::execution::just_stopped())>);

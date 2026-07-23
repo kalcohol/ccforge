@@ -247,6 +247,9 @@ namespace __forge_meta {
 template<class... Ts>
 struct type_list {};
 
+template<class... Ts>
+using __decayed_tuple = std::tuple<std::decay_t<Ts>...>;
+
 template<class List, class T>
 struct list_contains;
 
@@ -317,7 +320,7 @@ struct value_types_impl<Tuple, type_list, Sig, Rest...> {
 
 template<template<class...> class Tuple>
 struct value_types_impl<Tuple, type_list> {
-    using type = type_list<Tuple<>>;
+    using type = type_list<>;
 };
 
 template<template<class...> class Tuple, class... Vs, class... Rest>
@@ -348,7 +351,7 @@ struct error_types_impl<type_list, Sig, Rest...> {
 
 template<>
 struct error_types_impl<type_list> {
-    using type = type_list<std::monostate>;
+    using type = type_list<>;
 };
 
 template<class E, class... Rest>
@@ -793,7 +796,7 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
 
 template<class S,
          class Env = env<>,
-         template<class...> class Tuple = std::tuple,
+         template<class...> class Tuple = __forge_meta::__decayed_tuple,
          template<class...> class Variant = std::variant>
     requires sender_in<S, Env>
 using value_types_of_t =
