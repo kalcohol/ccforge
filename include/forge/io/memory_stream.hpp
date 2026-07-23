@@ -29,6 +29,7 @@
 #include <concepts>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <span>
@@ -207,6 +208,19 @@ public:
             position_ += count;
         } else {
             const auto old_size = storage_.size();
+            std::vector<std::byte> staged_input;
+            if (old_size != 0) {
+                const auto less = std::less<const std::byte*>{};
+                const auto* const begin = storage_.data();
+                const auto* const end = begin + old_size;
+                if (!less(input.data(), begin) && less(input.data(), end)) {
+                    staged_input = __memory_stream_detail::copy_to_vector(
+                        buffer_prefix(count, input));
+                    input = const_buffer{
+                        staged_input.data(),
+                        staged_input.size()};
+                }
+            }
             storage_.resize(old_size + count);
             buffer_copy(
                 mutable_buffer{storage_.data() + old_size, count},

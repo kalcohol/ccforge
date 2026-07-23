@@ -177,6 +177,31 @@ TEST(ForgeMemoryStreamsTest, MemoryWriteStreamZeroLengthDoesNotGrow) {
     EXPECT_TRUE(stream.bytes().empty());
 }
 
+TEST(ForgeMemoryStreamsTest, MemoryWriteStreamCanAppendItsOwnedBytes) {
+    forge::io::memory_write_stream stream;
+    auto [initial_error, initial_count] = stream.write_some(
+        forge::io::const_buffer{"x", 1});
+    ASSERT_FALSE(initial_error);
+    ASSERT_EQ(initial_count, 1u);
+
+    for (int i = 0; i < 8; ++i) {
+        const auto current = stream.bytes();
+        const auto expected_size = current.size() * 2;
+
+        auto [error, count] = stream.write_some(
+            forge::io::const_buffer{current.data(), current.size()});
+
+        ASSERT_FALSE(error);
+        EXPECT_EQ(count, expected_size / 2);
+        ASSERT_EQ(stream.size(), expected_size);
+        const auto bytes = stream.bytes();
+        EXPECT_TRUE(std::equal(
+            bytes.begin(),
+            bytes.begin() + static_cast<std::ptrdiff_t>(count),
+            bytes.begin() + static_cast<std::ptrdiff_t>(count)));
+    }
+}
+
 TEST(ForgeMemoryStreamsTest, MemoryStreamCombinesReadAndWriteSides) {
     forge::io::memory_stream stream{forge::io::const_buffer{"rx", 2}, 3};
     std::array<char, 4> input{};
