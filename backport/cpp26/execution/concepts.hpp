@@ -791,6 +791,25 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
     std::execution::get_completion_signatures(static_cast<std::remove_cvref_t<S>&&>(s), env);
 };
 
+template<class S,
+         class Env = env<>,
+         template<class...> class Tuple = std::tuple,
+         template<class...> class Variant = std::variant>
+    requires sender_in<S, Env>
+using value_types_of_t =
+    typename value_types_of<S, Env, Tuple, Variant>::type;
+
+template<class S,
+         class Env = env<>,
+         template<class...> class Variant = std::variant>
+    requires sender_in<S, Env>
+using error_types_of_t =
+    typename error_types_of<S, Env, Variant>::type;
+
+template<class S, class Env = env<>>
+    requires sender_in<S, Env>
+inline constexpr bool sends_stopped = sends_stopped_v<S, Env>;
+
 struct connect_t;
 
 namespace __forge_domain {

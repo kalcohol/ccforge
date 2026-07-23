@@ -69,12 +69,25 @@ using just_int_envless_cs_t = decltype(std::execution::get_completion_signatures
     std::execution::just(42)));
 using just_int_alias_cs_t = std::execution::completion_signatures_of_t<
     decltype(std::execution::just(42))>;
+using just_int_value_types_t = std::execution::value_types_of_t<
+    decltype(std::execution::just(42))>;
+using just_error_types_t = std::execution::error_types_of_t<
+    decltype(std::execution::just_error(std::string{"error"}))>;
 
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
     std::execution::completion_signatures<std::execution::set_value_t(int)>>);
 static_assert(std::is_same_v<just_int_envless_cs_t, just_int_cs_t>);
 static_assert(std::is_same_v<just_int_alias_cs_t, just_int_cs_t>);
+static_assert(std::is_same_v<
+    just_int_value_types_t,
+    std::variant<std::tuple<int>>>);
+static_assert(std::is_same_v<
+    just_error_types_t,
+    std::variant<std::string>>);
+static_assert(!std::execution::sends_stopped<decltype(std::execution::just(42))>);
+static_assert(std::execution::sends_stopped<
+    decltype(std::execution::just_stopped())>);
 
 // just_stopped() should produce completion_signatures<set_stopped_t()>.
 using just_stopped_cs_t = decltype(std::execution::get_completion_signatures(

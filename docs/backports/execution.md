@@ -20,7 +20,8 @@
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
   单一 value completion 保持返回 `tuple`，多组 value completions 返回
   `variant<tuple<...>, ...>`）
-- 基础设施：`completion_signatures_of_t`、`enable_sender`、`forwarding_query`、
+- 基础设施：`completion_signatures_of_t`、`value_types_of_t`、`error_types_of_t`、
+  `sends_stopped`、`enable_sender`、`forwarding_query`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、
   `get_completion_scheduler`、`get_completion_domain`、`get_await_completion_adaptor`、
   `transform_completion_signatures`、CPO 分发基础设施

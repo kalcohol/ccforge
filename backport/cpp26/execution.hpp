@@ -44,6 +44,7 @@
 //                      any_stop_token, stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : completion_signatures_of_t,
+//                      value_types_of_t, error_types_of_t, sends_stopped,
 //                      transform_completion_signatures, enable_sender,
 //                      get_start_scheduler/get_delegation_scheduler,
 //                      forwarding_query, get_forward_progress_guarantee,
