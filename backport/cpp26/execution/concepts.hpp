@@ -781,6 +781,7 @@ concept operation_state =
 template<class R>
 concept receiver =
     std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>> &&
+    std::constructible_from<std::remove_cvref_t<R>, R> &&
     !std::is_final_v<std::remove_cvref_t<R>> &&
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
@@ -837,14 +838,18 @@ template<class S>
 concept sender =
     enable_sender<std::remove_cvref_t<S>> &&
     std::move_constructible<std::remove_cvref_t<S>> &&
+    std::constructible_from<std::remove_cvref_t<S>, S> &&
     requires(const std::remove_cvref_t<S>& s) {
         { std::execution::get_env(s) } -> queryable;
     };
 
 template<class S, class Env = empty_env>
-concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
-    std::execution::get_completion_signatures(static_cast<std::remove_cvref_t<S>&&>(s), env);
-};
+concept sender_in =
+    sender<S> &&
+    queryable<Env> &&
+    requires {
+        typename completion_signatures_of_t<S, Env>;
+    };
 
 template<class S,
          class Env = env<>,
@@ -1063,8 +1068,13 @@ using connect_result_t = decltype(connect_t{}(std::declval<S>(), std::declval<R>
 
 template<class S, class R>
 concept sender_to =
-    sender<S> && receiver<R> && requires(std::remove_cvref_t<S>&& s, std::remove_cvref_t<R>&& r) {
-        std::execution::connect(static_cast<std::remove_cvref_t<S>&&>(s), static_cast<std::remove_cvref_t<R>&&>(r));
+    receiver<R> &&
+    sender_in<S, env_of_t<R>> &&
+    receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
+    requires(S&& s, R&& r) {
+        std::execution::connect(
+            static_cast<S&&>(s),
+            static_cast<R&&>(r));
     };
 
 struct schedule_t;

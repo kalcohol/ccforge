@@ -312,7 +312,8 @@ public:
         return state_->is_closed();
     }
 
-    template<std::execution::sender S>
+    template<class S>
+        requires std::execution::sender<std::remove_cvref_t<S>>
     bool spawn(S&& sender) {
         using sender_t = std::remove_cvref_t<S>;
         using node_t = __async_scope_detail::__op_node<sender_t>;

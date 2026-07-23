@@ -244,7 +244,7 @@ struct __into_variant_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         return __iv_cs_t<up_cs_t>{};
     }
@@ -253,7 +253,7 @@ struct __into_variant_sender {
     auto connect(R r) && {
         using env_t = env_of_t<R>;
         using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<S&>(), std::declval<env_t>()));
+            std::declval<S>(), std::declval<env_t>()));
         using var_t = __variant_type_of_t<cs_t>;
         return std::execution::connect(
             std::move(__sndr),
@@ -265,7 +265,7 @@ struct __into_variant_sender {
     auto connect(R r) const& {
         using env_t = env_of_t<R>;
         using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const S&>(), std::declval<env_t>()));
+            std::declval<S>(), std::declval<env_t>()));
         using var_t = __variant_type_of_t<cs_t>;
         return std::execution::connect(
             S(__sndr),

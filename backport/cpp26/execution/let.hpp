@@ -225,7 +225,7 @@ struct __sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         return typename __let_cs<
             typename self_t::fn_t,

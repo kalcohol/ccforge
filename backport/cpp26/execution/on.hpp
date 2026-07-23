@@ -133,7 +133,7 @@ struct __starts_on_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using source_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         using sched_sndr_t = decltype(std::execution::schedule(
             std::declval<Scheduler&>()));
@@ -247,7 +247,8 @@ struct __sender {
         using scheduler_t = typename self_t::scheduler_t;
         using source_t = typename self_t::source_t;
         using orig_scheduler_t = decltype(std::execution::get_start_scheduler(std::declval<Env>()));
-        using composed_t = __composed_sender_t<const scheduler_t&, const source_t&, orig_scheduler_t>;
+        using composed_t =
+            __composed_sender_t<scheduler_t, source_t, orig_scheduler_t>;
         return decltype(std::execution::get_completion_signatures(
             std::declval<composed_t>(), std::declval<Env>())){};
     }
@@ -352,7 +353,7 @@ struct __closure_sender {
         using closure_t = typename self_t::closure_t;
         using orig_scheduler_t = __completion_scheduler_t<source_t>;
         using composed_t = __closure_composed_sender_t<
-            const source_t&, const scheduler_t&, const closure_t&, orig_scheduler_t>;
+            source_t, scheduler_t, closure_t, orig_scheduler_t>;
         return decltype(std::execution::get_completion_signatures(
             std::declval<composed_t>(), std::declval<Env>())){};
     }

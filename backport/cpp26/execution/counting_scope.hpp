@@ -759,7 +759,7 @@ struct __stop_sender {
         using self_t = std::remove_cvref_t<Self>;
         using child_env_t = __stop_env_t<Env>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<child_env_t>()));
         if constexpr (__declares_exception_error<up_cs_t>::value) {
             return __forge_meta::__concat_unique_cs_t<

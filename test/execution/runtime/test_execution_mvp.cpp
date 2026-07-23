@@ -116,6 +116,106 @@ struct mixed_completion_sender {
     }
 };
 
+struct rvalue_only_sender {
+    using sender_concept = std::execution::sender_t;
+
+    explicit rvalue_only_sender(int value) noexcept
+        : value(value) {}
+
+    rvalue_only_sender(rvalue_only_sender&&) noexcept = default;
+    rvalue_only_sender(const rvalue_only_sender&) = delete;
+
+    template<class Self, class Env>
+        requires (!std::is_lvalue_reference_v<Self>)
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R receiver;
+        int value;
+
+        operation(R receiver, int value) noexcept
+            : receiver(std::move(receiver))
+            , value(value) {}
+
+        operation(operation&&) = delete;
+        operation(const operation&) = delete;
+
+        void start() & noexcept {
+            std::execution::set_value(std::move(receiver), value);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) && noexcept -> operation<R> {
+        return operation<R>{std::move(receiver), value};
+    }
+
+    int value;
+};
+
+struct increment_value {
+    auto operator()(int value) const noexcept -> int {
+        return value + 1;
+    }
+};
+
+struct recover_error_value {
+    auto operator()(std::exception_ptr) const noexcept -> int {
+        return 0;
+    }
+};
+
+struct recover_stopped_value {
+    auto operator()() const noexcept -> int {
+        return 0;
+    }
+};
+
+struct bind_next_sender {
+    auto operator()(int value) const {
+        return std::execution::just(value + 1);
+    }
+};
+
+struct observe_bulk_value {
+    void operator()(int, int&) const noexcept {}
+};
+
+struct stopped_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    void set_stopped() && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct move_only_stopped_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    move_only_stopped_receiver() = default;
+    move_only_stopped_receiver(move_only_stopped_receiver&&) noexcept = default;
+    move_only_stopped_receiver(const move_only_stopped_receiver&) = delete;
+
+    void set_stopped() && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 using reference_value_types_t =
     std::execution::value_types_of_t<reference_value_sender>;
 using mixed_value_types_t =
@@ -138,6 +238,42 @@ using stopped_custom_value_types_t = std::execution::value_types_of_t<
     std::execution::empty_env,
     std::tuple,
     type_pack>;
+using adapted_rvalue_only_sender_t = decltype(std::execution::then(
+    rvalue_only_sender{41},
+    increment_value{}));
+using upon_error_rvalue_only_sender_t = decltype(std::execution::upon_error(
+    rvalue_only_sender{1},
+    recover_error_value{}));
+using upon_stopped_rvalue_only_sender_t = decltype(std::execution::upon_stopped(
+    rvalue_only_sender{1},
+    recover_stopped_value{}));
+using let_rvalue_only_sender_t = decltype(std::execution::let_value(
+    rvalue_only_sender{1},
+    bind_next_sender{}));
+using bulk_rvalue_only_sender_t = decltype(std::execution::bulk(
+    rvalue_only_sender{1},
+    1,
+    observe_bulk_value{}));
+using write_env_rvalue_only_sender_t = decltype(std::execution::write_env(
+    rvalue_only_sender{1},
+    std::execution::empty_env{}));
+using variant_rvalue_only_sender_t = decltype(std::execution::into_variant(
+    rvalue_only_sender{1}));
+using continues_on_rvalue_only_sender_t = decltype(std::execution::continues_on(
+    rvalue_only_sender{1},
+    std::execution::inline_scheduler{}));
+using starts_on_rvalue_only_sender_t = decltype(std::execution::starts_on(
+    std::execution::inline_scheduler{},
+    rvalue_only_sender{1}));
+using optional_rvalue_only_sender_t = decltype(
+    std::execution::stopped_as_optional(rvalue_only_sender{1}));
+using stopped_error_rvalue_only_sender_t = decltype(
+    std::execution::stopped_as_error(
+        rvalue_only_sender{1},
+        std::exception_ptr{}));
+using scoped_rvalue_only_sender_t = decltype(
+    std::declval<std::execution::counting_scope::scope_token>().wrap(
+        rvalue_only_sender{1}));
 
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
@@ -169,6 +305,33 @@ static_assert(!std::is_default_constructible_v<stopped_value_types_t>);
 static_assert(std::is_same_v<
     stopped_custom_value_types_t,
     type_pack<>>);
+static_assert(std::execution::sender<rvalue_only_sender>);
+static_assert(!std::execution::sender<rvalue_only_sender&>);
+static_assert(std::execution::sender_in<rvalue_only_sender>);
+static_assert(!std::execution::sender_in<rvalue_only_sender&>);
+static_assert(std::execution::sender_in<adapted_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<upon_error_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<upon_stopped_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<let_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<bulk_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<write_env_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<variant_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<continues_on_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<starts_on_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<optional_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<stopped_error_rvalue_only_sender_t>);
+static_assert(std::execution::sender_in<scoped_rvalue_only_sender_t>);
+static_assert(std::execution::receiver<move_only_stopped_receiver>);
+static_assert(!std::execution::receiver<move_only_stopped_receiver&>);
+static_assert(std::execution::sender_to<
+    decltype(std::execution::just_stopped()),
+    stopped_only_receiver>);
+static_assert(!std::execution::sender_to<
+    decltype(std::execution::just(1)),
+    stopped_only_receiver>);
+static_assert(!std::execution::sender_to<
+    decltype(std::execution::just(1)),
+    int>);
 static_assert(!std::execution::sends_stopped<decltype(std::execution::just(42))>);
 static_assert(std::execution::sends_stopped<
     decltype(std::execution::just_stopped())>);
@@ -567,6 +730,16 @@ TEST(ExecutionMvpTest, ThenWorksWithPipeOperator) {
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 17);
+}
+
+TEST(ExecutionMvpTest, ThenAcceptsRvalueOnlySourceSignatures) {
+    auto sender = std::execution::then(
+        rvalue_only_sender{41},
+        increment_value{});
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ExecutionMvpTest, ThenVoidReturnBecomesEmptyTuple) {

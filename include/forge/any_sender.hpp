@@ -69,6 +69,31 @@ class any_sender_of {
     };
 
     template<class S>
+    struct __stored_sender_ref {
+        using sender_concept = std::execution::sender_t;
+
+        S* sender;
+
+        template<class Self, class Env>
+        static auto get_completion_signatures() noexcept
+            -> std::execution::completion_signatures_of_t<S&, Env> {
+            return {};
+        }
+
+        template<std::execution::receiver R>
+        auto connect(R receiver) &&
+            -> std::execution::connect_result_t<S&, R> {
+            return std::execution::connect(
+                *sender,
+                std::move(receiver));
+        }
+
+        auto get_env() const noexcept -> std::execution::env_of_t<S> {
+            return std::execution::get_env(*sender);
+        }
+    };
+
+    template<class S>
     static const __vtable* __make_vtable() {
         using VT = value_tuple_of_t<CompletionSignatures>;
         static const __vtable vt{
@@ -78,7 +103,8 @@ class any_sender_of {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
             .do_sync_wait = [](void* p) -> std::optional<VT> {
-                return std::execution::sync_wait(*static_cast<S*>(p));
+                return std::execution::sync_wait(
+                    __stored_sender_ref<S>{static_cast<S*>(p)});
             },
         };
         return &vt;

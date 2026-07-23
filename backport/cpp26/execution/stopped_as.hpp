@@ -227,7 +227,7 @@ struct __optional_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         return typename __optional_cs<up_cs_t>::type{};
     }
@@ -306,7 +306,7 @@ struct __error_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         return typename __error_cs<up_cs_t, typename self_t::err_t>::type{};
     }

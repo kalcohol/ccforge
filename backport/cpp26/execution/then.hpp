@@ -183,7 +183,7 @@ struct then_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         using out_cs_t = transform_completion_signatures_t<typename self_t::fn_t, up_cs_t>;
         return out_cs_t{};

@@ -135,7 +135,7 @@ struct __sender {
             std::declval<const typename self_t::override_env_t&>(),
             std::declval<Env>()));
         using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<const typename self_t::source_t&>(),
+            std::declval<typename self_t::source_t>(),
             std::declval<joined_env_t>()));
         return up_cs_t{};
     }
