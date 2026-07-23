@@ -298,66 +298,109 @@ struct list_to_variant<Variant, type_list<Ts...>> {
 template<template<class...> class Variant, class List>
 using list_to_variant_t = typename list_to_variant<Variant, List>::type;
 
-template<template<class...> class Tuple, template<class...> class Variant, class... Sigs>
-struct value_types_impl;
-
-template<template<class...> class Tuple, template<class...> class Variant>
-struct value_types_impl<Tuple, Variant> {
-    using type = Variant<Tuple<>>;
+struct __empty_variant {
+    __empty_variant() = delete;
 };
 
-template<template<class...> class Tuple, template<class...> class Variant, class... Vs, class... Rest>
-struct value_types_impl<Tuple, Variant, set_value_t(Vs...), Rest...> {
-    using tail_list = typename value_types_impl<Tuple, type_list, Rest...>::type;
-    using pushed = list_push_unique_t<tail_list, Tuple<Vs...>>;
-    using type = list_to_variant_t<Variant, pushed>;
-};
-
-template<template<class...> class Tuple, class Sig, class... Rest>
-struct value_types_impl<Tuple, type_list, Sig, Rest...> {
-    using type = typename value_types_impl<Tuple, type_list, Rest...>::type;
-};
-
-template<template<class...> class Tuple>
-struct value_types_impl<Tuple, type_list> {
-    using type = type_list<>;
-};
-
-template<template<class...> class Tuple, class... Vs, class... Rest>
-struct value_types_impl<Tuple, type_list, set_value_t(Vs...), Rest...> {
-    using tail = typename value_types_impl<Tuple, type_list, Rest...>::type;
-    using type = list_push_unique_t<tail, Tuple<Vs...>>;
-};
-
-template<template<class...> class Variant, class... Sigs>
-struct error_types_impl;
-
-template<template<class...> class Variant>
-struct error_types_impl<Variant> {
-    using type = Variant<std::monostate>;
-};
-
-template<template<class...> class Variant, class E, class... Rest>
-struct error_types_impl<Variant, set_error_t(E), Rest...> {
-    using tail_list = typename error_types_impl<type_list, Rest...>::type;
-    using pushed = list_push_unique_t<tail_list, E>;
-    using type = list_to_variant_t<Variant, pushed>;
-};
-
-template<class Sig, class... Rest>
-struct error_types_impl<type_list, Sig, Rest...> {
-    using type = typename error_types_impl<type_list, Rest...>::type;
+template<class... Ts>
+struct __variant_or_empty_impl {
+    using unique_types =
+        list_push_unique_all_t<type_list<>, std::decay_t<Ts>...>;
+    using type = list_to_variant_t<std::variant, unique_types>;
 };
 
 template<>
-struct error_types_impl<type_list> {
-    using type = type_list<>;
+struct __variant_or_empty_impl<> {
+    using type = __empty_variant;
 };
 
-template<class E, class... Rest>
-struct error_types_impl<type_list, set_error_t(E), Rest...> {
-    using tail = typename error_types_impl<type_list, Rest...>::type;
-    using type = list_push_unique_t<tail, E>;
+template<class... Ts>
+using __variant_or_empty = typename __variant_or_empty_impl<Ts...>::type;
+
+template<
+    template<class...> class Tuple,
+    template<class...> class Variant,
+    class Accumulated,
+    class... Sigs>
+struct value_types_impl;
+
+template<
+    template<class...> class Tuple,
+    template<class...> class Variant,
+    class... Values>
+struct value_types_impl<Tuple, Variant, type_list<Values...>> {
+    using type = Variant<Values...>;
+};
+
+template<
+    template<class...> class Tuple,
+    template<class...> class Variant,
+    class... Values,
+    class... Vs,
+    class... Rest>
+struct value_types_impl<
+    Tuple,
+    Variant,
+    type_list<Values...>,
+    set_value_t(Vs...),
+    Rest...>
+    : value_types_impl<
+          Tuple,
+          Variant,
+          type_list<Values..., Tuple<Vs...>>,
+          Rest...> {
+};
+
+template<
+    template<class...> class Tuple,
+    template<class...> class Variant,
+    class... Values,
+    class Sig,
+    class... Rest>
+struct value_types_impl<
+    Tuple,
+    Variant,
+    type_list<Values...>,
+    Sig,
+    Rest...>
+    : value_types_impl<Tuple, Variant, type_list<Values...>, Rest...> {
+};
+
+template<
+    template<class...> class Variant,
+    class Accumulated,
+    class... Sigs>
+struct error_types_impl;
+
+template<template<class...> class Variant, class... Errors>
+struct error_types_impl<Variant, type_list<Errors...>> {
+    using type = Variant<Errors...>;
+};
+
+template<
+    template<class...> class Variant,
+    class... Errors,
+    class Error,
+    class... Rest>
+struct error_types_impl<
+    Variant,
+    type_list<Errors...>,
+    set_error_t(Error),
+    Rest...>
+    : error_types_impl<Variant, type_list<Errors..., Error>, Rest...> {
+};
+
+template<
+    template<class...> class Variant,
+    class... Errors,
+    class Sig,
+    class... Rest>
+struct error_types_impl<
+    Variant,
+    type_list<Errors...>,
+    Sig,
+    Rest...>
+    : error_types_impl<Variant, type_list<Errors...>, Rest...> {
 };
 
 template<class... Sigs>
@@ -566,7 +609,8 @@ struct value_types_from;
 
 template<template<class...> class Tuple, template<class...> class Variant, class... Sigs>
 struct value_types_from<completion_signatures<Sigs...>, Tuple, Variant> {
-    using type = typename value_types_impl<Tuple, Variant, Sigs...>::type;
+    using type =
+        typename value_types_impl<Tuple, Variant, type_list<>, Sigs...>::type;
 };
 
 template<class CompletionSignatures, template<class...> class Variant>
@@ -574,7 +618,8 @@ struct error_types_from;
 
 template<template<class...> class Variant, class... Sigs>
 struct error_types_from<completion_signatures<Sigs...>, Variant> {
-    using type = typename error_types_impl<Variant, Sigs...>::type;
+    using type =
+        typename error_types_impl<Variant, type_list<>, Sigs...>::type;
 };
 
 template<class CompletionSignatures>
@@ -585,13 +630,20 @@ struct sends_stopped_from<completion_signatures<Sigs...>> : std::bool_constant<h
 
 } // namespace __forge_meta
 
-template<class Sender, class Env, template<class...> class Tuple = std::tuple, template<class...> class Variant = std::variant>
+template<
+    class Sender,
+    class Env,
+    template<class...> class Tuple = __forge_meta::__decayed_tuple,
+    template<class...> class Variant = __forge_meta::__variant_or_empty>
 struct value_types_of {
     using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
     using type = typename __forge_meta::value_types_from<cs_t, Tuple, Variant>::type;
 };
 
-template<class Sender, class Env, template<class...> class Variant = std::variant>
+template<
+    class Sender,
+    class Env,
+    template<class...> class Variant = __forge_meta::__variant_or_empty>
 struct error_types_of {
     using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
     using type = typename __forge_meta::error_types_from<cs_t, Variant>::type;
@@ -797,14 +849,14 @@ concept sender_in = sender<S> && requires(std::remove_cvref_t<S>&& s, Env env) {
 template<class S,
          class Env = env<>,
          template<class...> class Tuple = __forge_meta::__decayed_tuple,
-         template<class...> class Variant = std::variant>
+         template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
 using value_types_of_t =
     typename value_types_of<S, Env, Tuple, Variant>::type;
 
 template<class S,
          class Env = env<>,
-         template<class...> class Variant = std::variant>
+         template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
 using error_types_of_t =
     typename error_types_of<S, Env, Variant>::type;

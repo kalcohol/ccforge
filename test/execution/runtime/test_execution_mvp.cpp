@@ -93,8 +93,51 @@ struct reference_value_sender {
     }
 };
 
+template<class... Ts>
+struct type_pack {};
+
+struct mixed_completion_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_stopped_t(),
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(const long&),
+            std::execution::set_value_t(double),
+            std::execution::set_error_t(short),
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 using reference_value_types_t =
     std::execution::value_types_of_t<reference_value_sender>;
+using mixed_value_types_t =
+    std::execution::value_types_of_t<mixed_completion_sender>;
+using mixed_custom_value_types_t = std::execution::value_types_of_t<
+    mixed_completion_sender,
+    std::execution::empty_env,
+    std::tuple,
+    type_pack>;
+using mixed_error_types_t =
+    std::execution::error_types_of_t<mixed_completion_sender>;
+using mixed_custom_error_types_t = std::execution::error_types_of_t<
+    mixed_completion_sender,
+    std::execution::empty_env,
+    type_pack>;
+using stopped_value_types_t =
+    std::execution::value_types_of_t<decltype(std::execution::just_stopped())>;
+using stopped_custom_value_types_t = std::execution::value_types_of_t<
+    decltype(std::execution::just_stopped()),
+    std::execution::empty_env,
+    std::tuple,
+    type_pack>;
 
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
@@ -110,6 +153,22 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     reference_value_types_t,
     std::variant<std::tuple<std::string>>>);
+static_assert(std::is_same_v<
+    mixed_value_types_t,
+    std::variant<std::tuple<int>, std::tuple<double>>>);
+static_assert(std::is_same_v<
+    mixed_custom_value_types_t,
+    type_pack<std::tuple<int>, std::tuple<double>, std::tuple<int>>>);
+static_assert(std::is_same_v<
+    mixed_error_types_t,
+    std::variant<long, short>>);
+static_assert(std::is_same_v<
+    mixed_custom_error_types_t,
+    type_pack<const long&, short>>);
+static_assert(!std::is_default_constructible_v<stopped_value_types_t>);
+static_assert(std::is_same_v<
+    stopped_custom_value_types_t,
+    type_pack<>>);
 static_assert(!std::execution::sends_stopped<decltype(std::execution::just(42))>);
 static_assert(std::execution::sends_stopped<
     decltype(std::execution::just_stopped())>);
