@@ -225,8 +225,8 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
 - `forge::wait_result(sender)`：同步运行 sender 并返回一个小 result 对象，保留 value、
   closed-set typed error 和 stopped。它是 Forge 便利设施，不改变
   `std::execution::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization
-  或 sender/adaptor 显式传出的 `std::exception_ptr` 会作为 `std::exception_ptr` error
-  保存。
+  失败、typed error materialization 失败，或 sender/adaptor 显式传出的
+  `std::exception_ptr` 会作为 `std::exception_ptr` error 保存。
 
 `any_sender_of` 不是通用 connectable erased sender：它不做多 completion-shape vtable 分发，
 也不承诺保留任意 `set_error_t(E)` 类型。需要 connectable erased sender 时使用

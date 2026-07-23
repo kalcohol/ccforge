@@ -74,6 +74,45 @@ struct multi_value_sender {
     }
 };
 
+struct throwing_move_error {
+    throwing_move_error() = default;
+    throwing_move_error(const throwing_move_error&) = delete;
+    throwing_move_error(throwing_move_error&&) {
+        throw std::runtime_error{"typed error materialization"};
+    }
+};
+
+struct throwing_error_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(throwing_move_error)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+
+        void start() & noexcept {
+            std::execution::set_error(
+                std::move(rcvr),
+                throwing_move_error{});
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
 } // namespace
 
 TEST(ForgeWaitResultTest, CapturesValueTuple) {
@@ -112,6 +151,16 @@ TEST(ForgeWaitResultTest, CapturesTypedError) {
     ASSERT_NE(error, nullptr);
     EXPECT_EQ(*error, std::make_error_code(std::errc::invalid_argument));
     EXPECT_EQ(result.error_if<std::exception_ptr>(), nullptr);
+}
+
+TEST(ForgeWaitResultTest, ConvertsTypedErrorMaterializationFailure) {
+    auto result = forge::wait_result(throwing_error_sender{});
+
+    ASSERT_TRUE(result.has_error());
+    auto* captured = result.error_if<std::exception_ptr>();
+    ASSERT_NE(captured, nullptr);
+    EXPECT_THROW(std::rethrow_exception(*captured), std::runtime_error);
+    EXPECT_EQ(result.error_if<throwing_move_error>(), nullptr);
 }
 
 TEST(ForgeWaitResultTest, PreservesMultiValueShape) {

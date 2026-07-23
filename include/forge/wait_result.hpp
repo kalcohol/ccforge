@@ -157,14 +157,18 @@ struct __receiver {
                 tuple_t{static_cast<Vs&&>(vs)...});
             state->set_value(std::move(value));
         } catch (...) {
-            state->set_error(std::current_exception());
+            state->set_exception(std::current_exception());
         }
         loop->finish();
     }
 
     template<class E>
     void set_error(E&& error) && noexcept {
-        state->set_error(static_cast<E&&>(error));
+        try {
+            state->set_error(static_cast<E&&>(error));
+        } catch (...) {
+            state->set_exception(std::current_exception());
+        }
         loop->finish();
     }
 
@@ -197,6 +201,16 @@ struct __state {
     void set_error(E&& error) {
         result.template emplace<2>(
             __make_error<error_t>(static_cast<E&&>(error)));
+    }
+
+    void set_exception(std::exception_ptr error) {
+        if constexpr (std::is_same_v<error_t, std::exception_ptr>) {
+            result.template emplace<2>(std::move(error));
+        } else {
+            result.template emplace<2>(
+                std::in_place_type<std::exception_ptr>,
+                std::move(error));
+        }
     }
 
     void set_stopped() {
@@ -304,7 +318,7 @@ template<std::execution::sender_in S>
         std::execution::start(op);
         loop.run();
     } catch (...) {
-        state.set_error(std::current_exception());
+        state.set_exception(std::current_exception());
     }
 
     return result_t{std::move(state.result)};
