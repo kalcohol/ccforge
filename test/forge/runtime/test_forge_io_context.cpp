@@ -240,6 +240,42 @@ struct self_destroying_size_io_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct context_destroying_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::unique_ptr<forge::io::context>* owner = nullptr;
+    std::shared_ptr<io_state> state;
+
+    void set_value() && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = std::move(error);
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
     std::unique_lock lk{state->mtx};
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
@@ -484,6 +520,57 @@ TEST(IoContextTest, PeerReadHalfCloseDoesNotSignalWritable) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, ReadAndWriteWaitersShareOneDescriptor) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+    auto read_state = std::make_shared<io_state>();
+    auto write_state = std::make_shared<io_state>();
+    std::inplace_stop_source write_stop;
+
+    auto read_op = std::execution::connect(
+        ctx.readable(sockets.first.get()),
+        io_receiver{read_state});
+    auto write_op = std::execution::connect(
+        ctx.writable(sockets.first.get()),
+        stopped_receiver{{write_state}, &write_stop});
+    std::execution::start(read_op);
+    std::execution::start(write_op);
+
+    {
+        std::unique_lock lk{write_state->mtx};
+        EXPECT_FALSE(write_state->cv.wait_for(
+            lk, 20ms, [&] { return write_state->done(); }));
+    }
+
+    write_byte(sockets.second.get());
+    ASSERT_TRUE(wait_done(read_state));
+    EXPECT_TRUE(read_state->value);
+    {
+        std::lock_guard lk{write_state->mtx};
+        EXPECT_FALSE(write_state->done());
+    }
+
+    write_stop.request_stop();
+    ASSERT_TRUE(wait_done(write_state));
+    EXPECT_TRUE(write_state->stopped);
+
+    char consumed{};
+    ASSERT_EQ(::read(sockets.first.get(), &consumed, 1), 1);
+
+    auto next_state = std::make_shared<io_state>();
+    auto next_op = std::execution::connect(
+        ctx.readable(sockets.first.get()),
+        io_receiver{next_state});
+    std::execution::start(next_op);
+    write_byte(sockets.second.get());
+
+    ASSERT_TRUE(wait_done(next_state));
+    EXPECT_TRUE(next_state->value);
+    EXPECT_FALSE(next_state->stopped);
+    EXPECT_FALSE(next_state->error);
 }
 
 TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
@@ -1027,6 +1114,41 @@ TEST(IoContextTest, AsyncReadCompletionAllowsReceiverToDestroyOperation) {
     ctx.wait();
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
+}
+
+TEST(IoContextTest, DestroyingContextInsideCompletionIsSafe) {
+    auto pipe = make_pipe();
+    forge_test::counting_resource memory;
+    auto owner = std::make_unique<forge::io::context>(
+        forge::io::context_options{.memory = &memory});
+    auto state = std::make_shared<io_state>();
+
+    using sender_t = decltype(owner->readable(pipe.first.get()));
+    using receiver_t = context_destroying_receiver;
+    using op_t = std::execution::connect_result_t<sender_t, receiver_t>;
+
+    bool operation_destroyed = false;
+    forge_test::operation_destroy_context<op_t> operation{
+        &operation_destroyed};
+    auto& op = operation.emplace_from([&] {
+        return std::execution::connect(
+            owner->readable(pipe.first.get()),
+            context_destroying_receiver{&owner, state});
+    });
+    std::execution::start(op);
+    write_byte(pipe.second.get());
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_EQ(owner, nullptr);
+
+    operation.reset();
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (memory.outstanding() != 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    EXPECT_EQ(memory.outstanding(), 0u);
 }
 
 TEST(IoContextTest, TypedInvalidFdAllowsReceiverToDestroyOperation) {
