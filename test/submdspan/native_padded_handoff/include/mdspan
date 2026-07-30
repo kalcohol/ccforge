@@ -1,0 +1,19 @@
+#pragma once
+
+#include_next <mdspan>
+
+namespace std {
+
+template<size_t>
+struct layout_left_padded {
+    template<class>
+    struct mapping;
+};
+
+template<size_t>
+struct layout_right_padded {
+    template<class>
+    struct mapping;
+};
+
+} // namespace std

@@ -675,6 +675,15 @@ consteval size_t static_extent_product(
     return result;
 }
 
+constexpr size_t least_multiple_at_least(
+    size_t alignment, size_t value) noexcept {
+    if (alignment == 0 || value == 0) {
+        return value;
+    }
+    const size_t remainder = value % alignment;
+    return remainder == 0 ? value : value + (alignment - remainder);
+}
+
 template <class Mapping>
 consteval size_t left_static_padding_stride() {
     using extents_t = typename Mapping::extents_type;
@@ -685,7 +694,7 @@ consteval size_t left_static_padding_stride() {
         extents_t::static_extent(0) == dynamic_extent) {
         return dynamic_extent;
     } else {
-        return __forge_mdspan_padded_detail::least_multiple_at_least(
+        return least_multiple_at_least(
             Mapping::padding_value, extents_t::static_extent(0));
     }
 }
@@ -700,7 +709,7 @@ consteval size_t right_static_padding_stride() {
         extents_t::static_extent(extents_t::rank() - 1) == dynamic_extent) {
         return dynamic_extent;
     } else {
-        return __forge_mdspan_padded_detail::least_multiple_at_least(
+        return least_multiple_at_least(
             Mapping::padding_value,
             extents_t::static_extent(extents_t::rank() - 1));
     }
