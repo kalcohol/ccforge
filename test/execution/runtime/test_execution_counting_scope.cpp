@@ -24,6 +24,15 @@ using forge_execution_test::wait_until_started;
 using forge_execution_test::wait_until_stop_requested;
 using namespace std::chrono_literals;
 
+template<class Sig, class CS>
+struct completion_contains;
+
+template<class Sig, class... Sigs>
+struct completion_contains<
+    Sig,
+    std::execution::completion_signatures<Sigs...>>
+    : std::bool_constant<(std::is_same_v<Sig, Sigs> || ...)> {};
+
 struct scope_probe_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -242,8 +251,7 @@ struct throwing_connect_sender {
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
-            std::execution::set_value_t(),
-            std::execution::set_error_t(std::exception_ptr)> {
+            std::execution::set_value_t()> {
         return {};
     }
 
@@ -1091,9 +1099,22 @@ TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
     }
 }
 
-TEST(CountingScopeTest, WrapConnectFailureCompletesErrorInsteadOfTerminating) {
+TEST(CountingScopeTest, WrapConnectFailurePropagatesFromConnect) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
+    using wrapped_t = decltype(token.wrap(throwing_connect_sender{}));
+    using signatures_t = std::execution::completion_signatures_of_t<
+        wrapped_t,
+        std::execution::empty_env>;
+    static_assert(!completion_contains<
+        std::execution::set_error_t(std::exception_ptr),
+        signatures_t>::value);
+    static_assert(std::execution::sender_in<
+        wrapped_t,
+        std::execution::empty_env>);
+    static_assert(std::execution::receiver_of<
+        scope_probe_receiver,
+        signatures_t>);
 
     EXPECT_THROW((void)std::execution::sync_wait(
         token.wrap(throwing_connect_sender{})), throwing_connect_error);

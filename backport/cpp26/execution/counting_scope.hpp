@@ -509,35 +509,6 @@ struct __optional_stop_callback<Token, true> {
     std::optional<callback_t> __cb;
 };
 
-template<class CS>
-struct __declares_exception_error : std::false_type {};
-
-template<class... Sigs>
-struct __declares_exception_error<completion_signatures<Sigs...>>
-    : std::bool_constant<
-          __forge_meta::list_contains_v<
-              __forge_meta::type_list<Sigs...>,
-              set_error_t(std::exception_ptr)>> {};
-
-template<class S, class R, class = void>
-struct __can_report_connect_exception : std::false_type {};
-
-template<class S, class R>
-struct __can_report_connect_exception<
-    S,
-    R,
-    std::void_t<completion_signatures_of_t<
-        const S&,
-        __stop_env_t<env_of_t<R>>>>>
-    : __declares_exception_error<
-          completion_signatures_of_t<
-              const S&,
-              __stop_env_t<env_of_t<R>>>> {};
-
-template<class S, class R>
-inline constexpr bool __can_report_connect_exception_v =
-    __can_report_connect_exception<S, R>::value;
-
 } // namespace __forge_counting_scope
 
 inline auto simple_counting_scope::join() noexcept {
@@ -803,33 +774,26 @@ struct __stop_op : __forge_detail::__immovable {
         : __token(token)
         , __sndr(std::move(sndr))
         , __rcvr(std::move(rcvr))
-    {}
+        , __fused_state(std::make_shared<__fused_stop_state>())
+    {
+        __scope_stop.install(__token.__stop_token(), __fused_state->__source);
+        __downstream_stop.install(
+            std::execution::get_stop_token(std::execution::get_env(__rcvr)),
+            __fused_state->__source);
+        auto stop_token = __fused_stop_token{__fused_state};
+        __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
+            return std::execution::connect(
+                std::move(__sndr),
+                __recv{&__rcvr, stop_token});
+        });
+    }
 
     ~__stop_op() {
         __inner_storage.destroy();
     }
 
     void start() & noexcept {
-        try {
-            __fused_state = std::make_shared<__fused_stop_state>();
-            __scope_stop.install(__token.__stop_token(), __fused_state->__source);
-            __downstream_stop.install(
-                std::execution::get_stop_token(std::execution::get_env(__rcvr)),
-                __fused_state->__source);
-            auto stop_token = __fused_stop_token{__fused_state};
-            auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(
-                    std::move(__sndr),
-                    __recv{&__rcvr, stop_token});
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            if constexpr (__can_report_connect_exception_v<S, R>) {
-                std::execution::set_error(std::move(__rcvr), std::current_exception());
-            } else {
-                std::execution::set_stopped(std::move(__rcvr));
-            }
-        }
+        std::execution::start(__inner_storage.template get<inner_op_t>());
     }
 };
 
@@ -845,20 +809,12 @@ struct __stop_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using child_env_t = __stop_env_t<Env>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<child_env_t>()));
-        if constexpr (__declares_exception_error<up_cs_t>::value) {
-            return __forge_meta::__concat_unique_cs_t<
-                up_cs_t,
-                completion_signatures<
-                    set_error_t(std::exception_ptr),
-                    set_stopped_t()>>{};
-        } else {
-            return __forge_meta::__concat_unique_cs_t<
-                up_cs_t,
-                completion_signatures<set_stopped_t()>>{};
-        }
+        using up_cs_t = completion_signatures_of_t<
+            typename self_t::source_t&&,
+            child_env_t>;
+        return __forge_meta::__concat_unique_cs_t<
+            up_cs_t,
+            completion_signatures<set_stopped_t()>>{};
     }
 
     template<receiver R>
