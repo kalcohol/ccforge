@@ -316,18 +316,19 @@ auto vector_abs_sum(
 
 // vector_idx_abs_max — [linalg.algs.blas1.iamax]
 template<class Extents, class Layout, class Accessor>
-typename Extents::index_type vector_idx_abs_max(
+typename Extents::size_type vector_idx_abs_max(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
     using idx_t = typename Extents::index_type;
-    if (x.extent(0) == 0) return std::numeric_limits<idx_t>::max();
+    using size_type = typename Extents::size_type;
+    if (x.extent(0) == 0) return std::numeric_limits<size_type>::max();
     idx_t best = 0;
     auto best_v = __detail::__abs_sum_term(x[0]);
     for (idx_t i = 1; i < x.extent(0); ++i) {
         auto v = __detail::__abs_sum_term(x[i]);
         if (v > best_v) { best_v = v; best = i; }
     }
-    return best;
+    return static_cast<size_type>(best);
 }
 
 // sum_of_squares helper struct — [linalg.algs.blas1.ssq]

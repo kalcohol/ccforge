@@ -192,13 +192,19 @@ TEST(LinalgLevel1Asum, ComplexUsesOneNorm) {
 TEST(LinalgLevel1IdxAbsMax, HandlesEmptyTiesAndNegativeValues) {
     double empty_data[] = {0.0};
     std::mdspan empty(empty_data, std::extents<int, 0>{});
+    using empty_view_t = decltype(empty);
+    static_assert(std::is_same_v<
+                  decltype(std::linalg::vector_idx_abs_max(empty)),
+                  typename empty_view_t::size_type>);
     EXPECT_EQ(
         std::linalg::vector_idx_abs_max(empty),
-        std::numeric_limits<int>::max());
+        std::numeric_limits<typename empty_view_t::size_type>::max());
 
     double data[] = {-5.0, 2.0, 5.0, -4.0};
     std::mdspan v(data, std::extents<int, 4>{});
-    EXPECT_EQ(std::linalg::vector_idx_abs_max(v), 0);
+    EXPECT_EQ(
+        std::linalg::vector_idx_abs_max(v),
+        typename decltype(v)::size_type{0});
 }
 
 TEST(LinalgLevel1IdxAbsMax, ComplexUsesOneNormTerm) {
