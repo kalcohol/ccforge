@@ -144,8 +144,10 @@ child error / EOF / stopped 都会请求 shared stop source，pending sibling �
 `as_sender` 的 fused stop-token 观察到 stop。这个 helper 的 proof surface 是
 two-child、IO-result-specific；更通用的 domain-aware combinator、variadic shape、
 policy-based priority 或 owning result storage 都保持 deferred。
-和 `as_sender` 一样，consumer receiver 不应在 completion callback 内同步销毁已连接的
-`when_all_results` operation-state。
+`when_all_results` 允许 consumer receiver 在 terminal completion callback 内同步销毁
+已连接的 operation-state；value 路径和 sibling-stop 重入路径都有 sanitizer
+regression test。这个保证不改变 `as_sender` 的 source-sender lifetime 约束：
+source operation-state 仍必须允许在其 receiver completion callback 内销毁。
 `example/forge_coro_combinator_example.cpp` 展示了 value+EOF 和 value+error
 组合时如何检查 aggregate status，并读取保留下来的 child partial result。
 
@@ -210,7 +212,7 @@ operation-state 不能要求 receiver completion callback 返回后才允许销�
 这与 `forge::task` 对自定义 receiver 的 final-suspend 约束同类。需要 await 不满足该约束的
 sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安全 owner 上。
 
-`forge::io::context_await.hpp` 是 `forge::io` 下对现有
+`<forge/io/context_await.hpp>` 是 `forge::io` 下对现有
 `forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；
 在 backend 关闭时可以直接 include，但不会暴露需要 `forge::io::context` 的函数。
 
@@ -258,7 +260,18 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
   backend-free tests/examples 仍由 `FORGE_TEST_ENABLE_FORGE_IO` 和 example build 开关控制。
 
 `<forge/io.hpp>` 在没有 backend 时可以 include，但不会暴露 `forge::io::context`。
-直接包含 backend 头 `<forge/io/context.hpp>` 需要 `FORGE_HAS_FORGE_IO_BACKEND`。
+链接 `forge::forge` 时，CMake target 会提供一组一致的 backend feature macros；consumer
+不应手工定义它们：
+
+- `FORGE_HAS_FORGE_IO_BACKEND`：至少选中了一个 OS backend，因而可以使用
+  `<forge/io/context.hpp>`；
+- `FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND`：选中 Linux epoll backend，并提供
+  `readable` / `writable` / `*_typed` readiness surface；
+- `FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND`：选中 Windows IOCP backend，提供
+  completion-based byte IO surface，不提供 Linux readiness surface。
+
+Portable source 应使用 per-backend macro 守卫 backend-specific API；参考
+`example/forge_context_await_example.cpp`。
 
 macOS/BSD kqueue 当前不在项目需求内，不作为本轮目标。Linux `io_uring` 只有在需要
 kernel submission/completion queue 语义时才会单独立项；它不是 `epoll` readiness

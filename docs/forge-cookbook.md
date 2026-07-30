@@ -268,7 +268,10 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `forge::io::read_exactly` / `write_all` / `read_until` 做小型 stream algorithm；
 - `forge::io::io_task<T>` 表达 coroutine-native byte IO flow；
 - `forge::io::await_sender` / `as_sender` 桥接 sender 与 coroutine；
-- `forge::io::context_await` 在现有 IO context sender 上提供 coroutine facade。
+- `<forge/io/context_await.hpp>` 提供
+  `forge::io::async_read_some(context, handle, span)` /
+  `async_write_some(...)` coroutine facade；Linux 另有
+  `readable(context, fd)` / `writable(context, fd)`。
 
 关键点：
 

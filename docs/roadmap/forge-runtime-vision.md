@@ -19,7 +19,7 @@
 - `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
 - coroutine-native byte IO helpers (`memory_read_stream`, `memory_write_stream`,
   `read_exactly`, `write_all`, `read_until`, `io_task`, `await_sender`, `as_sender`,
-  `context_await`)
+  `<forge/io/context_await.hpp>` bridge)
 - `resource_policy` and resource-backed pool callable storage
 - `task`
 - `any_scheduler`
@@ -207,8 +207,10 @@ Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是�
 - API 放在 `forge::io`，不进入 `namespace std`；
 - stream erasure 默认是 borrowed wrapper，owning/ABI-stable erasure 需要独立设计；
 - `io_task<T>` 与 sender bridge 必须清楚说明 single-use、stopped 和 frame lifetime；
-- `context_await` 是现有 `forge::io::context` sender 的 coroutine facade，不改变底层 fd /
-  `HANDLE` / buffer 的 borrowed lifetime；
+- `<forge/io/context_await.hpp>` 中的 `async_read_some` / `async_write_some`
+  context overload（Linux 另有 `readable` / `writable`）是现有
+  `forge::io::context` sender 的 coroutine facade，不改变底层 fd / `HANDLE` /
+  buffer 的 borrowed lifetime；
 - Windows IOCP named-pipe coroutine smoke 应作为未来 Windows gate 补上。
 
 不要提前承诺 `std::io`、`std::networking`、`<io>` 或 `<networking>`。若 WG21 后续 adopted
