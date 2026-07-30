@@ -225,6 +225,126 @@ struct __op_selector {
     using type = __op_impl<Scheduler, S, R, val_tup_t>;
 };
 
+template<class Query>
+inline constexpr bool __completion_scheduler_query_v =
+    std::same_as<
+        std::remove_cvref_t<Query>,
+        get_completion_scheduler_t<set_value_t>> ||
+    std::same_as<
+        std::remove_cvref_t<Query>,
+        get_completion_scheduler_t<set_error_t>> ||
+    std::same_as<
+        std::remove_cvref_t<Query>,
+        get_completion_scheduler_t<set_stopped_t>>;
+
+template<class Scheduler, class ChildEnv>
+struct __completion_attrs {
+    using __schedule_sender_t = decltype(
+        std::execution::schedule(std::declval<const Scheduler&>()));
+    using __schedule_attrs_t = env_of_t<__schedule_sender_t>;
+
+    template<class CPO, class Env>
+    static consteval bool __domain_query_nothrow() {
+        if constexpr (__forge_detail::tag_invocable<
+                          get_completion_domain_t<CPO>,
+                          const __schedule_attrs_t&,
+                          Env>) {
+            return noexcept(std::execution::schedule(
+                       std::declval<const Scheduler&>())) &&
+                noexcept(std::execution::get_env(
+                    std::declval<const __schedule_sender_t&>())) &&
+                __forge_detail::nothrow_tag_invocable<
+                    get_completion_domain_t<CPO>,
+                    const __schedule_attrs_t&,
+                    Env>;
+        } else {
+            if constexpr (__forge_detail::tag_invocable<
+                              get_completion_domain_t<CPO>,
+                              const Scheduler&,
+                              Env>) {
+                return __forge_detail::nothrow_tag_invocable<
+                    get_completion_domain_t<CPO>,
+                    const Scheduler&,
+                    Env>;
+            } else {
+                return __forge_detail::nothrow_tag_invocable<
+                    get_completion_domain_t<CPO>,
+                    const ChildEnv&,
+                    Env>;
+            }
+        }
+    }
+
+    [[no_unique_address]] Scheduler __sch;
+    [[no_unique_address]] ChildEnv __child;
+
+    friend auto tag_invoke(
+        get_completion_scheduler_t<set_value_t>,
+        const __completion_attrs& self) noexcept
+            -> Scheduler {
+        return self.__sch;
+    }
+
+    friend auto tag_invoke(
+        get_completion_scheduler_t<set_stopped_t>,
+        const __completion_attrs& self) noexcept
+            -> Scheduler {
+        return self.__sch;
+    }
+
+    template<class CPO, class Env>
+        requires (!std::same_as<CPO, set_error_t>) &&
+                 (__forge_detail::tag_invocable<
+                      get_completion_domain_t<CPO>,
+                      const __schedule_attrs_t&,
+                      Env> ||
+                  __forge_detail::tag_invocable<
+                      get_completion_domain_t<CPO>,
+                      const Scheduler&,
+                      Env> ||
+                  __forge_detail::tag_invocable<
+                      get_completion_domain_t<CPO>,
+                      const ChildEnv&,
+                      Env>)
+    friend auto tag_invoke(
+        get_completion_domain_t<CPO> query,
+        const __completion_attrs& self,
+        Env&& env)
+        noexcept(__domain_query_nothrow<CPO, Env>()) {
+        if constexpr (__forge_detail::tag_invocable<
+                          get_completion_domain_t<CPO>,
+                          const __schedule_attrs_t&,
+                          Env>) {
+            auto sched_sender = std::execution::schedule(self.__sch);
+            auto attrs = std::execution::get_env(sched_sender);
+            return __forge_detail::tag_invoke_fn(
+                query, attrs, static_cast<Env&&>(env));
+        } else if constexpr (__forge_detail::tag_invocable<
+                                 get_completion_domain_t<CPO>,
+                                 const Scheduler&,
+                                 Env>) {
+            return __forge_detail::tag_invoke_fn(
+                query, self.__sch, static_cast<Env&&>(env));
+        } else {
+            return __forge_detail::tag_invoke_fn(
+                query, self.__child, static_cast<Env&&>(env));
+        }
+    }
+
+    template<class Query>
+        requires (!__completion_scheduler_query_v<Query>) &&
+                 __forge_detail::tag_invocable<Query, const ChildEnv&>
+    friend decltype(auto) tag_invoke(
+        Query query,
+        const __completion_attrs& self)
+        noexcept(__forge_detail::nothrow_tag_invocable<
+                 Query,
+                 const ChildEnv&>) {
+        return __forge_detail::tag_invoke_fn(
+            std::move(query), self.__child);
+    }
+};
+
 template<class Scheduler, class S>
 struct __sender {
     using sender_concept = sender_t;
@@ -273,14 +393,9 @@ struct __sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::make_prop(
-                std::execution::get_completion_scheduler<set_value_t>, __sch),
-            std::execution::make_prop(
-                std::execution::get_completion_scheduler<set_error_t>, __sch),
-            std::execution::make_prop(
-                std::execution::get_completion_scheduler<set_stopped_t>, __sch),
-            std::execution::get_env(__sndr));
+        return __completion_attrs<Scheduler, env_of_t<S>>{
+            __sch,
+            std::execution::get_env(__sndr)};
     }
 };
 

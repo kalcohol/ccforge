@@ -222,6 +222,80 @@ struct error_stopped_scheduler {
 
 static_assert(std::execution::scheduler<error_stopped_scheduler>);
 
+struct destination_completion_domain {
+    int identity = 0;
+};
+
+struct child_completion_domain {
+    int identity = 0;
+};
+
+struct child_domain_env {
+    int identity = 0;
+
+    template<class CPO, class Env>
+    friend auto tag_invoke(
+        std::execution::get_completion_domain_t<CPO>,
+        const child_domain_env& self,
+        const Env&) noexcept -> child_completion_domain {
+        return {self.identity};
+    }
+};
+
+struct child_domain_sender {
+    using sender_concept = std::execution::sender_t;
+
+    int identity = 0;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> child_domain_env {
+        return {identity};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && {
+        return std::execution::connect(
+            std::execution::just(),
+            std::move(r));
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& {
+        return std::execution::connect(
+            std::execution::just(),
+            std::move(r));
+    }
+};
+
+struct domain_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    int identity = 0;
+
+    auto schedule() const noexcept {
+        return std::execution::just();
+    }
+
+    template<class CPO, class Env>
+    friend auto tag_invoke(
+        std::execution::get_completion_domain_t<CPO>,
+        domain_scheduler self,
+        const Env&) noexcept -> destination_completion_domain {
+        return {self.identity};
+    }
+
+    friend bool operator==(domain_scheduler, domain_scheduler) noexcept =
+        default;
+};
+
+static_assert(std::execution::scheduler<domain_scheduler>);
+
 } // namespace
 
 TEST(IntoVariantTest, WrapsValue) {
@@ -377,7 +451,7 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     EXPECT_EQ(result, 42);
 }
 
-TEST(ContinuesOnTest, ReportsDestinationCompletionSchedulerForEveryDisposition) {
+TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions) {
     std::execution::run_loop source_loop;
     std::execution::run_loop destination_loop;
     auto source = source_loop.get_scheduler();
@@ -391,11 +465,54 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionSchedulerForEveryDisposition) 
         std::execution::get_completion_scheduler<std::execution::set_value_t>(env)
         == destination);
     EXPECT_TRUE(
-        std::execution::get_completion_scheduler<std::execution::set_error_t>(env)
-        == destination);
-    EXPECT_TRUE(
         std::execution::get_completion_scheduler<std::execution::set_stopped_t>(env)
         == destination);
+    static_assert(!std::execution::__forge_detail::tag_invocable<
+        std::execution::get_completion_scheduler_t<std::execution::set_error_t>,
+        const decltype(env)&>);
+}
+
+TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
+    auto sndr = std::execution::continues_on(
+        std::execution::just(),
+        domain_scheduler{37});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto domain = std::execution::get_completion_domain<>(
+        attrs,
+        std::execution::empty_env{});
+
+    EXPECT_EQ(domain.identity, 37);
+    static_assert(!std::execution::__forge_detail::tag_invocable<
+        std::execution::get_completion_domain_t<std::execution::set_error_t>,
+        const decltype(attrs)&,
+        std::execution::empty_env>);
+}
+
+TEST(ContinuesOnTest, PreservesChildDomainWhenDestinationHasNone) {
+    auto sndr = std::execution::continues_on(
+        child_domain_sender{29},
+        std::execution::inline_scheduler{});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto domain = std::execution::get_completion_domain<>(
+        attrs,
+        std::execution::empty_env{});
+
+    EXPECT_EQ(domain.identity, 29);
+}
+
+TEST(AffineTest, ReportsDestinationCompletionDomain) {
+    auto sndr = std::execution::affine(
+        std::execution::just(),
+        domain_scheduler{41});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto domain = std::execution::get_completion_domain<>(
+        attrs,
+        std::execution::empty_env{});
+
+    EXPECT_EQ(domain.identity, 41);
 }
 
 TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
