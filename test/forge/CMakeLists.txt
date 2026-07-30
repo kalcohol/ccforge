@@ -105,6 +105,8 @@ endif()
 
 if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_iocp test_forge_io_iocp.cpp forge_io_iocp)
+    target_compile_definitions(
+        test_forge_io_iocp PRIVATE FORGE_IO_ENABLE_TEST_HOOKS)
 endif()
 
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)

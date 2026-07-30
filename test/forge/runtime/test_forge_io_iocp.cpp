@@ -5,6 +5,7 @@
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
 #include <execution>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -87,7 +88,9 @@ struct pipe_pair {
     unique_handle client;
 };
 
-[[nodiscard]] auto make_pipe_pair() -> pipe_pair {
+[[nodiscard]] auto make_pipe_pair(
+    DWORD pipe_mode =
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT) -> pipe_pair {
     static std::atomic<unsigned long long> sequence{0};
     auto name = std::wstring{LR"(\\.\pipe\ccforge-iocp-)"} +
         std::to_wstring(::GetCurrentProcessId()) + L"-" +
@@ -97,7 +100,7 @@ struct pipe_pair {
     unique_handle server{::CreateNamedPipeW(
         name.c_str(),
         PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+        pipe_mode,
         1,
         4096,
         4096,
@@ -135,6 +138,7 @@ struct io_state {
     std::exception_ptr error;
     std::size_t bytes = 0;
     int completions = 0;
+    std::thread::id completion_thread;
 
     [[nodiscard]] bool done() const noexcept {
         return value || stopped || error;
@@ -166,6 +170,7 @@ struct io_receiver {
             state->value = true;
             state->bytes = bytes;
             ++state->completions;
+            state->completion_thread = std::this_thread::get_id();
         }
         state->cv.notify_all();
     }
@@ -175,6 +180,7 @@ struct io_receiver {
             std::lock_guard lk{state->mtx};
             state->error = std::move(error);
             ++state->completions;
+            state->completion_thread = std::this_thread::get_id();
         }
         state->cv.notify_all();
     }
@@ -184,6 +190,7 @@ struct io_receiver {
             std::lock_guard lk{state->mtx};
             state->stopped = true;
             ++state->completions;
+            state->completion_thread = std::this_thread::get_id();
         }
         state->cv.notify_all();
     }
@@ -255,6 +262,11 @@ public:
         }
     }
 
+    [[nodiscard]] auto reuses() const -> std::size_t {
+        std::lock_guard lk{mtx_};
+        return reuses_;
+    }
+
 private:
     struct block {
         void* ptr;
@@ -268,6 +280,7 @@ private:
             if (it->bytes == bytes && it->alignment == alignment) {
                 auto* ptr = it->ptr;
                 blocks_.erase(std::next(it).base());
+                ++reuses_;
                 return ptr;
             }
         }
@@ -288,8 +301,9 @@ private:
     }
 
     std::pmr::memory_resource* upstream_ = std::pmr::new_delete_resource();
-    std::mutex mtx_;
+    mutable std::mutex mtx_;
     std::vector<block> blocks_;
+    std::size_t reuses_ = 0;
 };
 
 struct blocking_completion_state {
@@ -573,6 +587,82 @@ TEST(IoIocpTest, SynchronousSuccessCannotCompleteARecycledRecord) {
     EXPECT_EQ(second_state->bytes, fresh_payload.size());
     EXPECT_EQ(second_buffer, fresh_payload);
     EXPECT_EQ(second_state->completions, 1);
+}
+
+TEST(IoIocpTest, CompletionPacketFallbackRetainsRecordUntilWorkerDrainsIt) {
+    recycling_memory_resource memory;
+    auto pipe = make_pipe_pair();
+    forge::io::context_options options{.memory = &memory};
+    options.force_completion_packets_on_success = true;
+    forge::io::context ctx{options};
+    const auto caller = std::this_thread::get_id();
+
+    const std::array first_payload{byte('o'), byte('l'), byte('d')};
+    write_overlapped(pipe.server.get(), first_payload);
+
+    std::array<std::byte, 3> first_buffer{};
+    auto first_state = std::make_shared<io_state>();
+    using op_t = decltype(std::execution::connect(
+        ctx.async_read_some(pipe.client.get(), std::span{first_buffer}),
+        io_receiver{first_state}));
+    op_slot<op_t> slot;
+    auto& first_op = slot.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(pipe.client.get(), std::span{first_buffer}),
+            io_receiver{first_state});
+    });
+    std::execution::start(first_op);
+
+    ASSERT_TRUE(wait_done(first_state));
+    EXPECT_TRUE(first_state->value);
+    EXPECT_EQ(first_state->bytes, first_payload.size());
+    EXPECT_EQ(first_state->completions, 1);
+    EXPECT_NE(first_state->completion_thread, caller);
+    EXPECT_EQ(first_buffer, first_payload);
+    slot.reset();
+
+    std::array<std::byte, 3> second_buffer{};
+    auto second_state = std::make_shared<io_state>();
+    auto& second_op = slot.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(pipe.client.get(), std::span{second_buffer}),
+            io_receiver{second_state});
+    });
+    std::execution::start(second_op);
+    EXPECT_GT(memory.reuses(), 0u);
+
+    {
+        std::unique_lock lk{second_state->mtx};
+        EXPECT_FALSE(second_state->cv.wait_for(
+            lk, 100ms, [&] { return second_state->done(); }));
+    }
+
+    const std::array second_payload{byte('n'), byte('e'), byte('w')};
+    write_overlapped(pipe.server.get(), second_payload);
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(second_state->value);
+    EXPECT_EQ(second_state->bytes, second_payload.size());
+    EXPECT_EQ(second_state->completions, 1);
+    EXPECT_EQ(second_buffer, second_payload);
+}
+
+TEST(IoIocpTest, MessagePipePartialReadCompletesWithTransferredBytes) {
+    auto pipe = make_pipe_pair(
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT);
+    forge::io::context ctx;
+    std::array<std::byte, 64> payload{};
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = std::byte{static_cast<unsigned char>(i)};
+    }
+    write_overlapped(pipe.client.get(), payload);
+
+    std::array<std::byte, 8> buffer{};
+    auto result = std::execution::sync_wait(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), buffer.size());
+    EXPECT_TRUE(std::equal(buffer.begin(), buffer.end(), payload.begin()));
 }
 
 TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {

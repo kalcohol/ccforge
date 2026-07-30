@@ -62,6 +62,9 @@ namespace forge::io {
 struct context_options {
     std::pmr::memory_resource* memory = forge::default_memory_resource();
     std::size_t max_events = 64;
+#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
+    bool force_completion_packets_on_success = false;
+#endif
 };
 
 class context;
@@ -243,6 +246,10 @@ struct __start_result {
 struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
         : memory(forge::normalize_memory_resource(options.memory))
+#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
+        , force_completion_packets_on_success(
+              options.force_completion_packets_on_success)
+#endif
         , pending_records(
               0,
               std::hash<OVERLAPPED*>{},
@@ -308,6 +315,9 @@ struct __state : std::enable_shared_from_this<__state> {
                 association = it;
                 if (inserted || it->second.active == 0) {
                     it->second.skips_completion_on_success =
+#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
+                        !force_completion_packets_on_success &&
+#endif
                         ::SetFileCompletionNotificationModes(
                             record->handle,
                             FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) != FALSE;
@@ -324,7 +334,11 @@ struct __state : std::enable_shared_from_this<__state> {
             DWORD synchronous_bytes = 0;
             if (!issue_locked(*record, synchronous_bytes)) {
                 auto error = ::GetLastError();
-                if (error == ERROR_IO_PENDING) {
+                // A message-mode partial read reports ERROR_MORE_DATA
+                // synchronously but still queues a packet with the byte count.
+                if (error == ERROR_IO_PENDING ||
+                    (record->kind == __operation_kind::read &&
+                     error == ERROR_MORE_DATA)) {
                     return result;
                 }
 
@@ -566,6 +580,9 @@ private:
         if (ok) {
             record->complete_value(static_cast<std::size_t>(bytes));
         } else if (record->kind == __operation_kind::read &&
+                   error == ERROR_MORE_DATA) {
+            record->complete_value(static_cast<std::size_t>(bytes));
+        } else if (record->kind == __operation_kind::read &&
                    __windows_read_eof_error(error)) {
             record->complete_value(0);
         } else if (error == ERROR_OPERATION_ABORTED) {
@@ -582,6 +599,9 @@ private:
 
 public:
     std::pmr::memory_resource* memory;
+#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
+    bool force_completion_packets_on_success;
+#endif
     __handle port;
     std::mutex mtx;
     std::condition_variable cv;
