@@ -81,8 +81,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `spawn(sender)` 会 destructive move；如果代码需要在 native C++26 实现下保持同一源码，
   请显式写 `std::move(sender)`。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 scope state 和 spawned op-state node 分配。
-  该 resource 必须活到 scope 对象和已接受工作的 terminal completion 释放尾部之后；
-  `wait()` 等待 scope work 计数归零，但不把用户 resource 变成 owned teardown barrier。
+  Spawned op-state node 会先析构并 deallocate，再把 scope work 计数减到零，因此
+  `wait()` 是 scope-owned operation-state destruction barrier。该 resource 仍是
+  non-owning，必须活过 scope 对象本身。
   Scope 对象不得在它自己拥有的 spawned work body / completion callback 内调用
   `wait()` 或析构；该 work 本身计入 active count，等待自身完成会形成循环依赖。
 - `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session

@@ -107,6 +107,48 @@ struct destruction_sender {
     }
 };
 
+struct destruction_tail_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool work_started = false;
+    bool allow_completion = false;
+    bool destructor_started = false;
+    bool allow_destructor = false;
+    bool wait_started = false;
+    bool wait_returned = false;
+};
+
+struct destruction_tail_callable {
+    std::shared_ptr<destruction_tail_state> state;
+
+    explicit destruction_tail_callable(
+        std::shared_ptr<destruction_tail_state> s) noexcept
+        : state(std::move(s)) {}
+    destruction_tail_callable(destruction_tail_callable&&) noexcept = default;
+    destruction_tail_callable& operator=(destruction_tail_callable&&) noexcept =
+        default;
+    destruction_tail_callable(const destruction_tail_callable&) = delete;
+    destruction_tail_callable& operator=(const destruction_tail_callable&) =
+        delete;
+
+    ~destruction_tail_callable() {
+        if (!state) {
+            return;
+        }
+        std::unique_lock lk{state->mtx};
+        state->destructor_started = true;
+        state->cv.notify_all();
+        state->cv.wait(lk, [&] { return state->allow_destructor; });
+    }
+
+    void operator()() noexcept {
+        std::unique_lock lk{state->mtx};
+        state->work_started = true;
+        state->cv.notify_all();
+        state->cv.wait(lk, [&] { return state->allow_completion; });
+    }
+};
+
 struct move_only_lvalue_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -348,6 +390,80 @@ TEST(AsyncScopeTest, ReclaimsCompletedOperationState) {
     scope.wait();
 }
 
+TEST(AsyncScopeTest, WaitIncludesOperationStateDestruction) {
+    forge::static_thread_pool pool{1};
+    forge::async_scope scope;
+    auto state = std::make_shared<destruction_tail_state>();
+
+    ASSERT_TRUE(scope.spawn(
+        std::execution::schedule(pool.get_scheduler())
+        | std::execution::then(destruction_tail_callable{state})));
+
+    {
+        std::unique_lock lk{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return state->work_started; }));
+    }
+
+    std::thread waiter{[&] {
+        {
+            std::lock_guard lk{state->mtx};
+            state->wait_started = true;
+            state->cv.notify_all();
+        }
+        scope.wait();
+        {
+            std::lock_guard lk{state->mtx};
+            state->wait_returned = true;
+            state->cv.notify_all();
+        }
+    }};
+
+    struct waiter_guard {
+        std::thread* waiter;
+        std::shared_ptr<destruction_tail_state> state;
+
+        ~waiter_guard() {
+            if (waiter != nullptr && waiter->joinable()) {
+                {
+                    std::lock_guard lk{state->mtx};
+                    state->allow_completion = true;
+                    state->allow_destructor = true;
+                }
+                state->cv.notify_all();
+                waiter->join();
+            }
+        }
+    };
+    [[maybe_unused]] waiter_guard guard{&waiter, state};
+
+    {
+        std::unique_lock lk{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return state->wait_started; }));
+        state->allow_completion = true;
+        state->cv.notify_all();
+        ASSERT_TRUE(state->cv.wait_for(
+            lk,
+            std::chrono::seconds{2},
+            [&] { return state->destructor_started; }));
+        EXPECT_FALSE(state->cv.wait_for(
+            lk,
+            std::chrono::milliseconds{50},
+            [&] { return state->wait_returned; }));
+        state->allow_destructor = true;
+        state->cv.notify_all();
+    }
+
+    waiter.join();
+    pool.wait();
+    EXPECT_TRUE(state->wait_returned);
+}
+
 TEST(AsyncScopeTest, SpawnConsumesMoveOnlyLvalueSender) {
     forge::async_scope scope;
     auto starts = std::make_shared<std::atomic<int>>(0);
@@ -381,11 +497,13 @@ TEST(AsyncScopeTest, OptionsConstructorUsesCustomMemoryResourceForSpawnNode) {
     {
         forge::async_scope scope{forge::async_scope_options{.memory = &resource}};
         auto before_spawn = resource.allocations();
+        auto outstanding_before_spawn = resource.outstanding();
 
         ASSERT_TRUE(scope.spawn(std::execution::just()));
         scope.wait();
 
         EXPECT_GT(resource.allocations(), before_spawn);
+        EXPECT_EQ(resource.outstanding(), outstanding_before_spawn);
     }
 
     EXPECT_EQ(resource.allocations(), resource.deallocations());

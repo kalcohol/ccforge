@@ -48,7 +48,7 @@ coroutine stopped 传播上重新推导。
 | Forge scheduler | `strand` | Primitive-owned shutdown + fail closed | pending/future strand work 在 shutdown 或 runner launch failure 后 stopped；self-wait guard 避免死锁。 | 底层 scheduler transient refusal 与 shutdown 不区分，文档化为 fail closed。 |
 | Forge runtime | `bounded_channel` async send/recv | Per-operation callback | pending send/recv 注册 receiver stop token；callback 从 queue 移除并在 mutex 外完成 stopped。 | Direct send/recv 是同步 value path，不代表 pending cancellation。 |
 | Forge runtime | `timer_context` timer sender | Per-operation callback + primitive-owned shutdown | receiver stop callback 唤醒 worker；shutdown 把 pending timer 完成为 stopped。 | 已 started operation-state 必须活到 terminal completion；提前销毁不是取消协议。 |
-| Forge runtime | `async_scope` | Primitive-owned shutdown + env stop propagation | `request_stop()` 通过 owned receiver env 暴露 stop token；destructor shutdown + wait。 | `wait()` 不是 user memory_resource teardown barrier；scope 不应在 own work/completion 内调用 `wait()` 或析构。 |
+| Forge runtime | `async_scope` | Primitive-owned shutdown + env stop propagation | `request_stop()` 通过 owned receiver env 暴露 stop token；destructor shutdown + wait；active credit 在 spawned op-state node 析构和 deallocate 后释放。 | `wait()` 是 scope-owned operation-state destruction barrier，但不拥有 user memory resource；scope 不应在 own work/completion 内调用 `wait()` 或析构。 |
 | Forge runtime | `forge::task` | Stop-token forwarding + stopped-as-coroutine-exception | connect 时把 downstream receiver stop token 擦除进 promise env；task 内 awaited sender 可观察该 token。final_suspend 同步完成 receiver；stopped 经内部异常回到 task frame，最终映射为 stopped completion。 | 只转发 stop token，不转发任意 receiver env query。用户 `catch(...)` 可捕获取消；promise stopped 状态是 sticky，后续异常不会覆盖 stopped。Custom receiver 不应在 completion 中销毁 connected task op-state。 |
 | Forge erasure | `erased_sender` | Stop-token forwarding | erased receiver env 暴露 downstream stop token as `std::any_stop_token`。 | 只承诺 bounded env model 中的 stop token，不擦除任意 env query。 |
 | Forge erasure | `any_scheduler` | Stop-token preserving schedule erasure | 内部 erased receiver 保留 downstream stop token visibility。 | Scheduler surface 很窄，只擦除 `schedule()`。 |
@@ -116,8 +116,8 @@ taskbook，而不是本轮小修。
 - `split` 是非 WD extension；不实现完整 stop-source/on_done cycle。
 - `bulk` policy 入口仍是串行 subset；execution policy 不引入 parallel cancellation。
 - `timer_context` operation-state 提前销毁不是取消协议。
-- `async_scope::wait()` / destructor 等待 scope work 计数归零，但不拥有用户 memory resource
-  teardown。
+- `async_scope::wait()` / destructor 会等待 scope-owned operation-state 析构，但仍不拥有
+  用户 memory resource；resource 必须活过 scope 对象。
 - `system_context` 是 process-lifetime singleton；`shutdown()` 不隐式 join，确定性排空请显式
   `wait()`。
 - `io_env` 是 borrowed；`std::inplace_stop_source`、scheduler 和 memory resource lifetime

@@ -248,16 +248,24 @@ struct __op_node final : __op_node_base {
             return;
         }
 
-        auto st = state_;
-        st->complete(std::move(error));
+        completion_error_ = std::move(error);
         release();
     }
 
     void destroy_self() noexcept override {
+        auto st = std::move(state_);
+        auto error = std::move(completion_error_);
+        auto* state = st.get();
         auto* memory = memory_resource();
         std::pmr::polymorphic_allocator<__op_node> alloc{memory};
         std::destroy_at(this);
         alloc.deallocate(this, 1);
+
+        // The owning scope keeps state alive while active work remains. Drop
+        // the worker's state reference before publishing the final completion,
+        // so wait() is also a barrier for node and state-reference release.
+        st.reset();
+        state->complete(std::move(error));
     }
 
 private:
@@ -265,6 +273,7 @@ private:
     [[no_unique_address]] sender_t sender_;
     op_t op_;
     std::atomic<bool> completed_{false};
+    std::exception_ptr completion_error_;
 };
 
 } // namespace __async_scope_detail

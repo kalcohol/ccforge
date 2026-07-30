@@ -49,9 +49,9 @@ worker 线程共享，resource 本身也必须是线程安全的，例如使用
 `std::pmr::monotonic_buffer_resource` 同时交给多线程 runtime 路径。V1 只控制明确接入
 的路径，不承诺全局零分配：
 
-对于 `async_scope` 和 `strand` 这类会在 terminal completion 尾部释放 op-state /
-runner node 的 primitive，resource 还必须活到这些释放路径结束；`wait()` 表示 accepted
-work 已经 drain，不表示 non-owning PMR resource 已被库拥有或可由库替调用方延寿。
+`async_scope::wait()` 会等到 spawned op-state node 已析构并归还给 resource；resource
+仍然是 non-owning，必须继续活过 scope 对象本身。`strand` 的 runner node 则可能在
+terminal completion 尾部释放，因此它的 resource 还必须活到该释放路径结束。
 
 - `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task
   callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
@@ -146,10 +146,12 @@ Failure policy:
 
 `spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge runtime convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。
 
-`async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在 source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion 释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion 的 sender。
-
-因此 `async_scope_options::memory` 也必须覆盖 terminal completion 尾部释放；不要在
-`scope.wait()` 刚返回后立刻销毁仍可能被完成线程用于 deallocate 的短寿命 PMR 对象。
+`async_scope` 使用 start-detached 风格的 heap op-state keepalive：同步完成时不会在
+source `start()` 调用栈内销毁 source operation-state，异步完成时由 terminal completion
+释放最后引用。这允许它安全接住 `forge::task` 这类在 `final_suspend` 同步发 completion
+的 sender。Node 析构和 deallocate 发生在 active count 归零之前，因此
+`async_scope::wait()` 也是 scope-owned operation-state destruction barrier；
+`async_scope_options::memory` 仍必须活过 scope 对象本身。
 
 - `forge::resource_context`：资源/会话 owning runtime shell，组合 `runtime_context` 与
   `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量
