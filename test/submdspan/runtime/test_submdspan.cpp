@@ -348,6 +348,180 @@ TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
     EXPECT_EQ((sub[2, 3]), 26);
 }
 
+TEST(SubmdspanPaddedLayouts, UnpaddedStaticSlicesSelectPaddedLayouts) {
+    auto data = make_data<20>();
+    using ext_t = std::extents<int, 4, 5>;
+
+    std::mdspan<int, ext_t, std::layout_left> left(data.data());
+    auto left_sub = std::submdspan(left, std::pair{0, 2}, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<4>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 4);
+    EXPECT_EQ((left_sub[1, 4]), 17);
+
+    std::mdspan<int, ext_t, std::layout_right> right(data.data());
+    auto right_sub = std::submdspan(right, std::full_extent, std::pair{0, 3});
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<5>>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 5);
+    EXPECT_EQ((right_sub[3, 2]), 17);
+}
+
+TEST(SubmdspanPaddedLayouts, UnpaddedDynamicSlicesSelectDynamicPadding) {
+    auto data = make_data<20>();
+    using ext_t = std::dextents<int, 2>;
+
+    std::mdspan<int, ext_t, std::layout_left> left(data.data(), 4, 5);
+    auto left_sub = std::submdspan(left, std::pair{0, 2}, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<std::dynamic_extent>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 4);
+
+    std::mdspan<int, ext_t, std::layout_right> right(data.data(), 4, 5);
+    auto right_sub = std::submdspan(right, std::full_extent, std::pair{0, 3});
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<std::dynamic_extent>>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 5);
+}
+
+TEST(SubmdspanPaddedLayouts, PaddedSlicesPreserveStaticPaddingStride) {
+    auto left_data = make_data<24>();
+    using left_ext_t = std::extents<int, 8, 3>;
+    using left_map_t = std::layout_left_padded<4>::mapping<left_ext_t>;
+    std::mdspan<int, left_ext_t, std::layout_left_padded<4>> left(
+        left_data.data(), left_map_t{left_ext_t{}});
+
+    auto left_sub = std::submdspan(
+        left, std::full_extent, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<8>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 8);
+    EXPECT_EQ((left_sub[7, 2]), 23);
+
+    auto right_data = make_data<24>();
+    using right_ext_t = std::extents<int, 3, 8>;
+    using right_map_t = std::layout_right_padded<4>::mapping<right_ext_t>;
+    std::mdspan<int, right_ext_t, std::layout_right_padded<4>> right(
+        right_data.data(), right_map_t{right_ext_t{}});
+
+    auto right_sub = std::submdspan(
+        right, std::full_extent, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<8>>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 8);
+    EXPECT_EQ((right_sub[2, 7]), 23);
+}
+
+TEST(SubmdspanPaddedLayouts, PaddedRankThreeSlicesAccumulateStaticStride) {
+    auto left_data = make_data<40>();
+    using left_ext_t = std::extents<int, 3, 2, 5>;
+    using left_map_t = std::layout_left_padded<4>::mapping<left_ext_t>;
+    std::mdspan<int, left_ext_t, std::layout_left_padded<4>> left(
+        left_data.data(), left_map_t{left_ext_t{}});
+
+    auto left_sub = std::submdspan(
+        left, std::pair{0, 2}, 1, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<8>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 8);
+    EXPECT_EQ((left_sub[1, 4]), 37);
+
+    auto right_data = make_data<40>();
+    using right_ext_t = std::extents<int, 5, 2, 3>;
+    using right_map_t = std::layout_right_padded<4>::mapping<right_ext_t>;
+    std::mdspan<int, right_ext_t, std::layout_right_padded<4>> right(
+        right_data.data(), right_map_t{right_ext_t{}});
+
+    auto right_sub = std::submdspan(
+        right, std::full_extent, 1, std::pair{0, 2});
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<8>>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 8);
+    EXPECT_EQ((right_sub[4, 1]), 37);
+}
+
+TEST(SubmdspanPaddedLayouts, DynamicPaddedSourcesKeepDynamicPadding) {
+    auto left_data = make_data<32>();
+    using ext_t = std::dextents<int, 2>;
+    using left_map_t = std::layout_left_padded<>::mapping<ext_t>;
+    std::mdspan<int, ext_t, std::layout_left_padded<>> left(
+        left_data.data(), left_map_t{ext_t{3, 4}, 8});
+
+    auto left_sub = std::submdspan(
+        left, std::full_extent, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<std::dynamic_extent>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 8);
+    EXPECT_EQ((left_sub[2, 3]), 26);
+
+    auto right_data = make_data<32>();
+    using right_map_t = std::layout_right_padded<>::mapping<ext_t>;
+    std::mdspan<int, ext_t, std::layout_right_padded<>> right(
+        right_data.data(), right_map_t{ext_t{3, 4}, 8});
+
+    auto right_sub = std::submdspan(
+        right, std::full_extent, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<std::dynamic_extent>>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 8);
+    EXPECT_EQ((right_sub[2, 3]), 19);
+}
+
+TEST(SubmdspanPaddedLayouts, UnpaddedRankFourSlicesAccumulateStaticExtents) {
+    auto left_data = make_data<120>();
+    using left_ext_t = std::extents<int, 2, 3, 4, 5>;
+    std::mdspan<int, left_ext_t, std::layout_left> left(left_data.data());
+
+    auto left_sub = std::submdspan(
+        left, std::pair{0, 2}, 1, std::full_extent, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_left_padded<6>>);
+    EXPECT_EQ(left_sub.mapping().stride(1), 6);
+    EXPECT_EQ((left_sub[1, 3, 4]), 117);
+
+    auto right_data = make_data<120>();
+    using right_ext_t = std::extents<int, 5, 4, 3, 2>;
+    std::mdspan<int, right_ext_t, std::layout_right> right(right_data.data());
+
+    auto right_sub = std::submdspan(
+        right, std::full_extent, std::full_extent, 1, std::pair{0, 2});
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_right_padded<6>>);
+    EXPECT_EQ(right_sub.mapping().stride(1), 6);
+    EXPECT_EQ((right_sub[4, 3, 1]), 117);
+}
+
+TEST(SubmdspanPaddedLayouts, NonUnitBoundarySliceUsesLayoutStride) {
+    auto data = make_data<20>();
+    using ext_t = std::extents<int, 4, 5>;
+
+    std::mdspan<int, ext_t, std::layout_left> left(data.data());
+    auto left_sub = std::submdspan(
+        left, std::extent_slice{0, 2, 2}, std::full_extent);
+    static_assert(std::is_same_v<
+                  decltype(left_sub)::layout_type,
+                  std::layout_stride>);
+
+    std::mdspan<int, ext_t, std::layout_right> right(data.data());
+    auto right_sub = std::submdspan(
+        right, std::full_extent, std::extent_slice{0, 2, 2});
+    static_assert(std::is_same_v<
+                  decltype(right_sub)::layout_type,
+                  std::layout_stride>);
+}
+
 // ---------------------------------------------------------------------------
 // Feature-test macro
 // ---------------------------------------------------------------------------

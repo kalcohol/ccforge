@@ -580,6 +580,132 @@ constexpr bool lr_preserving() {
     }
 }
 
+// [mdspan.sub.map.left] and [mdspan.sub.map.leftpad] p1.4.
+// Returns the source stride index u + 1, or SrcRank when p1.4 does not apply.
+template <size_t SubRank, size_t SrcRank, class... Ss>
+consteval size_t left_padded_stride_index() {
+    static_assert(sizeof...(Ss) == SrcRank);
+    if constexpr (SubRank < 2 || SrcRank < 2) {
+        return SrcRank;
+    } else {
+        constexpr array<bool, SrcRank> is_full{
+            is_same_v<remove_cvref_t<Ss>, full_extent_t>...};
+        constexpr array<bool, SrcRank> is_unit{
+            is_unit_stride_slice_v<Ss>...};
+
+        if (!is_unit[0]) {
+            return SrcRank;
+        }
+
+        size_t stride_index = SrcRank;
+        for (size_t k = 1; k < SrcRank; ++k) {
+            if (is_unit[k]) {
+                stride_index = k;
+                break;
+            }
+        }
+        if (stride_index == SrcRank ||
+            SubRank - 2 > SrcRank - 1 - stride_index) {
+            return SrcRank;
+        }
+
+        const size_t final_unit = stride_index + SubRank - 2;
+        for (size_t k = stride_index; k < final_unit; ++k) {
+            if (!is_full[k]) {
+                return SrcRank;
+            }
+        }
+        return is_unit[final_unit] ? stride_index : SrcRank;
+    }
+}
+
+// [mdspan.sub.map.right] and [mdspan.sub.map.rightpad] p1.4.
+// Returns the source stride index rank_ - u - 2, or SrcRank on no match.
+template <size_t SubRank, size_t SrcRank, class... Ss>
+consteval size_t right_padded_stride_index() {
+    static_assert(sizeof...(Ss) == SrcRank);
+    if constexpr (SubRank < 2 || SrcRank < 2) {
+        return SrcRank;
+    } else {
+        constexpr array<bool, SrcRank> is_full{
+            is_same_v<remove_cvref_t<Ss>, full_extent_t>...};
+        constexpr array<bool, SrcRank> is_unit{
+            is_unit_stride_slice_v<Ss>...};
+
+        if (!is_unit[SrcRank - 1]) {
+            return SrcRank;
+        }
+
+        size_t stride_index = SrcRank;
+        for (size_t k = SrcRank - 1; k > 0; --k) {
+            if (is_unit[k - 1]) {
+                stride_index = k - 1;
+                break;
+            }
+        }
+        if (stride_index == SrcRank || SubRank - 2 > stride_index) {
+            return SrcRank;
+        }
+
+        const size_t final_unit = stride_index - (SubRank - 2);
+        for (size_t k = final_unit + 1; k <= stride_index; ++k) {
+            if (!is_full[k]) {
+                return SrcRank;
+            }
+        }
+        return is_unit[final_unit] ? stride_index : SrcRank;
+    }
+}
+
+template <class Extents>
+consteval size_t static_extent_product(
+    size_t first, size_t last, size_t initial = size_t(1)) {
+    if (initial == dynamic_extent) {
+        return dynamic_extent;
+    }
+
+    size_t result = initial;
+    for (size_t k = first; k < last; ++k) {
+        const size_t extent = Extents::static_extent(k);
+        if (extent == dynamic_extent) {
+            return dynamic_extent;
+        }
+        result *= extent;
+    }
+    return result;
+}
+
+template <class Mapping>
+consteval size_t left_static_padding_stride() {
+    using extents_t = typename Mapping::extents_type;
+    if constexpr (extents_t::rank() <= 1) {
+        return size_t(1);
+    } else if constexpr (
+        Mapping::padding_value == dynamic_extent ||
+        extents_t::static_extent(0) == dynamic_extent) {
+        return dynamic_extent;
+    } else {
+        return __forge_mdspan_padded_detail::least_multiple_at_least(
+            Mapping::padding_value, extents_t::static_extent(0));
+    }
+}
+
+template <class Mapping>
+consteval size_t right_static_padding_stride() {
+    using extents_t = typename Mapping::extents_type;
+    if constexpr (extents_t::rank() <= 1) {
+        return size_t(1);
+    } else if constexpr (
+        Mapping::padding_value == dynamic_extent ||
+        extents_t::static_extent(extents_t::rank() - 1) == dynamic_extent) {
+        return dynamic_extent;
+    } else {
+        return __forge_mdspan_padded_detail::least_multiple_at_least(
+            Mapping::padding_value,
+            extents_t::static_extent(extents_t::rank() - 1));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Canonicalization helpers
 // ---------------------------------------------------------------------------
@@ -724,6 +850,17 @@ constexpr auto submdspan_mapping(const layout_left::mapping<Extents>& src,
     } else if constexpr (D::ll_preserving<dr, sr, SliceSpecifiers...>()) {
         return submdspan_mapping_result<layout_left::mapping<sub_t>>{
             layout_left::mapping<sub_t>{sub_ext}, off};
+    // Padded preservation [mdspan.sub.map.left p1.4]
+    } else if constexpr (
+        D::left_padded_stride_index<dr, sr, SliceSpecifiers...>() != sr) {
+        constexpr size_t stride_index =
+            D::left_padded_stride_index<dr, sr, SliceSpecifiers...>();
+        constexpr size_t static_padding =
+            D::static_extent_product<Extents>(0, stride_index);
+        using dst_t =
+            typename layout_left_padded<static_padding>::template mapping<sub_t>;
+        return submdspan_mapping_result<dst_t>{
+            dst_t{sub_ext, src.stride(stride_index)}, off};
     // General: layout_stride [mdspan.sub.map.left p1.5]
     } else {
         auto inv = D::inv_map_rank(integral_constant<size_t,0>{}, index_sequence<>{}, slices...);
@@ -765,6 +902,17 @@ constexpr auto submdspan_mapping(const layout_right::mapping<Extents>& src,
     } else if constexpr (D::lr_preserving<dr, sr, SliceSpecifiers...>()) {
         return submdspan_mapping_result<layout_right::mapping<sub_t>>{
             layout_right::mapping<sub_t>{sub_ext}, off};
+    // Padded preservation [mdspan.sub.map.right p1.4]
+    } else if constexpr (
+        D::right_padded_stride_index<dr, sr, SliceSpecifiers...>() != sr) {
+        constexpr size_t stride_index =
+            D::right_padded_stride_index<dr, sr, SliceSpecifiers...>();
+        constexpr size_t static_padding =
+            D::static_extent_product<Extents>(stride_index + 1, sr);
+        using dst_t =
+            typename layout_right_padded<static_padding>::template mapping<sub_t>;
+        return submdspan_mapping_result<dst_t>{
+            dst_t{sub_ext, src.stride(stride_index)}, off};
     // General: layout_stride [mdspan.sub.map.right p1.5]
     } else {
         auto inv = D::inv_map_rank(integral_constant<size_t,0>{}, index_sequence<>{}, slices...);
@@ -823,8 +971,6 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
     using sub_t = decltype(sub_ext);
     constexpr size_t sr = extents_t::rank();
     constexpr size_t dr = sub_t::rank();
-    constexpr size_t padding_value = Mapping::padding_value;
-    constexpr bool all_full = (is_same_v<remove_cvref_t<SliceSpecifiers>, full_extent_t> && ...);
 
     if constexpr (sr == 0) {
         return submdspan_mapping_result<Mapping>{src, size_t(0)};
@@ -841,14 +987,17 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
                              D::is_unit_stride_slice_v<tuple_element_t<0, tuple<SliceSpecifiers...>>>) {
             return submdspan_mapping_result<layout_left::mapping<sub_t>>{
                 layout_left::mapping<sub_t>{sub_ext}, off};
-        } else if constexpr (D::ll_preserving<dr, sr, SliceSpecifiers...>()) {
-            if constexpr (all_full) {
-                using dst_t = layout_left_padded<padding_value>::template mapping<sub_t>;
-                return submdspan_mapping_result<dst_t>{dst_t{sub_ext, src.stride(1)}, off};
-            } else {
-                using dst_t = layout_left_padded<dynamic_extent>::mapping<sub_t>;
-                return submdspan_mapping_result<dst_t>{dst_t{sub_ext, src.stride(1)}, off};
-            }
+        } else if constexpr (
+            D::left_padded_stride_index<dr, sr, SliceSpecifiers...>() != sr) {
+            constexpr size_t stride_index =
+                D::left_padded_stride_index<dr, sr, SliceSpecifiers...>();
+            constexpr size_t static_padding =
+                D::static_extent_product<extents_t>(
+                    1, stride_index, D::left_static_padding_stride<Mapping>());
+            using dst_t =
+                typename layout_left_padded<static_padding>::template mapping<sub_t>;
+            return submdspan_mapping_result<dst_t>{
+                dst_t{sub_ext, src.stride(stride_index)}, off};
         } else {
             auto inv = D::inv_map_rank(integral_constant<size_t,0>{}, index_sequence<>{}, slices...);
             auto sf  = D::make_stride_factors<sr>(slices...);
@@ -874,8 +1023,6 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
     using sub_t = decltype(sub_ext);
     constexpr size_t sr = extents_t::rank();
     constexpr size_t dr = sub_t::rank();
-    constexpr size_t padding_value = Mapping::padding_value;
-    constexpr bool all_full = (is_same_v<remove_cvref_t<SliceSpecifiers>, full_extent_t> && ...);
 
     if constexpr (sr == 0) {
         return submdspan_mapping_result<Mapping>{src, size_t(0)};
@@ -892,14 +1039,18 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
                              D::is_unit_stride_slice_v<tuple_element_t<sr - 1, tuple<SliceSpecifiers...>>>) {
             return submdspan_mapping_result<layout_right::mapping<sub_t>>{
                 layout_right::mapping<sub_t>{sub_ext}, off};
-        } else if constexpr (D::lr_preserving<dr, sr, SliceSpecifiers...>()) {
-            if constexpr (all_full) {
-                using dst_t = layout_right_padded<padding_value>::template mapping<sub_t>;
-                return submdspan_mapping_result<dst_t>{dst_t{sub_ext, src.stride(sr - 2)}, off};
-            } else {
-                using dst_t = layout_right_padded<dynamic_extent>::mapping<sub_t>;
-                return submdspan_mapping_result<dst_t>{dst_t{sub_ext, src.stride(sr - 2)}, off};
-            }
+        } else if constexpr (
+            D::right_padded_stride_index<dr, sr, SliceSpecifiers...>() != sr) {
+            constexpr size_t stride_index =
+                D::right_padded_stride_index<dr, sr, SliceSpecifiers...>();
+            constexpr size_t static_padding =
+                D::static_extent_product<extents_t>(
+                    stride_index + 1, sr - 1,
+                    D::right_static_padding_stride<Mapping>());
+            using dst_t =
+                typename layout_right_padded<static_padding>::template mapping<sub_t>;
+            return submdspan_mapping_result<dst_t>{
+                dst_t{sub_ext, src.stride(stride_index)}, off};
         } else {
             auto inv = D::inv_map_rank(integral_constant<size_t,0>{}, index_sequence<>{}, slices...);
             auto sf  = D::make_stride_factors<sr>(slices...);
