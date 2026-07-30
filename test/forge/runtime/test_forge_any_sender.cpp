@@ -30,6 +30,49 @@ struct sender_move_counts {
     int destroyed = 0;
 };
 
+struct rvalue_connect_only_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> cs_int {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+
+        void start() & noexcept {
+            std::execution::set_value(std::move(rcvr), 5);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
+constexpr int select_sender(rvalue_connect_only_sender) {
+    return 1;
+}
+
+constexpr int select_sender(forge::any_sender_of<cs_int>) {
+    return 2;
+}
+
+static_assert(std::execution::sender<rvalue_connect_only_sender>);
+static_assert(!std::constructible_from<
+              forge::any_sender_of<cs_int>,
+              rvalue_connect_only_sender>);
+static_assert(select_sender(rvalue_connect_only_sender{}) == 1);
+
 struct tracking_sender {
     using sender_concept = std::execution::sender_t;
 

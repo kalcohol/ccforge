@@ -95,6 +95,28 @@ class any_sender_of {
 
     template<class S>
     static consteval bool __has_exact_sync_wait_result() {
+#if defined(FORGE_FORCE_SENDERS_BACKPORT) || \
+    (!defined(FORGE_HAS_NATIVE_SENDERS) && \
+     (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)))
+        using stored_ref_t = __stored_sender_ref<S>;
+        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
+        if constexpr (std::execution::sender_in<stored_ref_t, env_t>) {
+            using cs_t =
+                std::execution::completion_signatures_of_t<stored_ref_t, env_t>;
+            using value_t =
+                std::execution::__forge_sync_wait::value_t_for<cs_t>;
+            using state_t =
+                std::execution::__forge_sync_wait::shared_state<value_t>;
+            using receiver_t =
+                std::execution::__forge_sync_wait::receiver<state_t>;
+            return std::execution::sender_to<stored_ref_t, receiver_t> &&
+                std::same_as<
+                    value_t,
+                    value_tuple_of_t<CompletionSignatures>>;
+        } else {
+            return false;
+        }
+#else
         if constexpr (requires(S& sender) {
                           std::execution::sync_wait(
                               __stored_sender_ref<S>{&sender});
@@ -106,6 +128,7 @@ class any_sender_of {
         } else {
             return false;
         }
+#endif
     }
 
     template<class S>
@@ -163,6 +186,7 @@ public:
     // tolerated the recursion; libc++/clang-19 diagnoses it as a hard error.)
     template<class S>
         requires (!std::is_same_v<std::remove_cvref_t<S>, any_sender_of>)
+              && std::constructible_from<std::remove_cvref_t<S>, S>
               && std::execution::sender<std::remove_cvref_t<S>>
               && (__has_exact_sync_wait_result<std::remove_cvref_t<S>>())
     any_sender_of(S&& sndr) {

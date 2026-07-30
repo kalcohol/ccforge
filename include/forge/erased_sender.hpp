@@ -64,9 +64,32 @@ struct __valid_completion_signatures<std::execution::completion_signatures<Sigs.
 template<class Sig, class CS>
 struct __contains_signature;
 
+template<class Left, class Right>
+struct __matching_signature : std::false_type {};
+
+template<class... Left, class... Right>
+struct __matching_signature<
+    std::execution::set_value_t(Left...),
+    std::execution::set_value_t(Right...)>
+    : std::bool_constant<
+          std::same_as<
+              std::tuple<Left&&...>,
+              std::tuple<Right&&...>>> {};
+
+template<class Left, class Right>
+struct __matching_signature<
+    std::execution::set_error_t(Left),
+    std::execution::set_error_t(Right)>
+    : std::bool_constant<std::same_as<Left&&, Right&&>> {};
+
+template<>
+struct __matching_signature<
+    std::execution::set_stopped_t(),
+    std::execution::set_stopped_t()> : std::true_type {};
+
 template<class Sig, class... Sigs>
 struct __contains_signature<Sig, std::execution::completion_signatures<Sigs...>>
-    : std::bool_constant<(std::is_same_v<Sig, Sigs> || ...)> {};
+    : std::bool_constant<(__matching_signature<Sig, Sigs>::value || ...)> {};
 
 template<class SourceCS, class TargetCS>
 struct __source_is_subset : std::false_type {};
@@ -98,7 +121,7 @@ struct __push_value<
     std::execution::set_value_t(Vs...)> {
     using type = meta::list_push_unique_t<
         meta::type_list<Tuples...>,
-        std::tuple<Vs...>>;
+        std::tuple<Vs&&...>>;
 };
 
 template<class List, class... Sigs>
@@ -153,7 +176,7 @@ template<class... Errors, class E>
 struct __push_error<meta::type_list<Errors...>, std::execution::set_error_t(E)> {
     using type = meta::list_push_unique_t<
         meta::type_list<Errors...>,
-        std::tuple<E>>;
+        std::tuple<E&&>>;
 };
 
 template<class List, class... Sigs>
@@ -180,16 +203,6 @@ struct __error_list<std::execution::completion_signatures<Sigs...>> {
 
 template<class CS>
 using __error_list_t = typename __error_list<CS>::type;
-
-template<class Error, class List>
-struct __error_in_list;
-
-template<class Error, class... Errors>
-struct __error_in_list<Error, meta::type_list<Errors...>>
-    : std::bool_constant<(std::is_same_v<Error, Errors> || ...)> {};
-
-template<class Error, class List>
-inline constexpr bool __error_in_list_v = __error_in_list<Error, List>::value;
 
 template<class Error, class List>
 struct __error_index;
@@ -252,18 +265,18 @@ struct __receiver {
     std::shared_ptr<__receiver_state_base<CS>> state;
 
     template<class... Vs>
-        requires __tuple_in_list_v<std::tuple<Vs...>, value_list>
+        requires __tuple_in_list_v<std::tuple<Vs&&...>, value_list>
     void set_value(Vs&&... vs) && noexcept {
-        using tuple_t = std::tuple<Vs...>;
+        using tuple_t = std::tuple<Vs&&...>;
         auto values = tuple_t{static_cast<Vs&&>(vs)...};
         constexpr auto index = __tuple_index<tuple_t, value_list>::value;
         state->complete_value(index, &values);
     }
 
     template<class E>
-        requires __error_in_list_v<std::tuple<E>, error_list>
+        requires __tuple_in_list_v<std::tuple<E&&>, error_list>
     void set_error(E&& e) && noexcept {
-        using error_t = std::tuple<E>;
+        using error_t = std::tuple<E&&>;
         auto error = error_t{static_cast<E&&>(e)};
         constexpr auto index = __error_index<error_t, error_list>::value;
         state->complete_error(index, &error);

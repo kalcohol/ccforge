@@ -331,6 +331,77 @@ struct reference_error_sender {
     }
 };
 
+struct rvalue_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::string value{"rvalue"};
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(std::string&&)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::string value;
+
+        void start() & noexcept {
+            std::execution::set_value(
+                std::move(rcvr),
+                std::move(value));
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr), std::move(value)};
+    }
+};
+
+struct rvalue_error_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(std::error_code&&)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::error_code error =
+            std::make_error_code(std::errc::timed_out);
+
+        void start() & noexcept {
+            std::execution::set_error(
+                std::move(rcvr),
+                std::move(error));
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
 struct stopped_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -546,6 +617,12 @@ using stopped_cs =
     std::execution::completion_signatures<std::execution::set_stopped_t()>;
 using stop_probe_cs =
     std::execution::completion_signatures<std::execution::set_value_t(bool, bool)>;
+using rvalue_value_cs =
+    std::execution::completion_signatures<
+        std::execution::set_value_t(std::string&&)>;
+using rvalue_error_cs =
+    std::execution::completion_signatures<
+        std::execution::set_error_t(std::error_code&&)>;
 
 struct reentrant_connect_sender {
     using sender_concept = std::execution::sender_t;
@@ -597,6 +674,23 @@ static_assert(std::execution::sender_to<
 static_assert(std::constructible_from<forge::erased_sender<
     std::execution::completion_signatures<std::execution::set_error_t(int)>>,
     typed_error_sender>);
+static_assert(std::constructible_from<
+              forge::erased_sender<rvalue_value_cs>,
+              rvalue_value_sender>);
+static_assert(std::constructible_from<
+              forge::erased_sender<
+                  std::execution::completion_signatures<
+                      std::execution::set_value_t(std::string)>>,
+              rvalue_value_sender>);
+static_assert(std::constructible_from<
+              forge::erased_sender<rvalue_error_cs>,
+              rvalue_error_sender>);
+static_assert(std::execution::receiver_of<
+              forge::__erased_sender_detail::__receiver<rvalue_value_cs>,
+              rvalue_value_cs>);
+static_assert(std::execution::receiver_of<
+              forge::__erased_sender_detail::__receiver<rvalue_error_cs>,
+              rvalue_error_cs>);
 static_assert(!std::constructible_from<forge::erased_sender<error_cs>, typed_error_sender>);
 static_assert(!std::constructible_from<forge::erased_sender<
     std::execution::completion_signatures<std::execution::set_error_t(status)>>,
@@ -662,6 +756,20 @@ TEST(ErasedSenderTest, PreservesSplitConstReferenceValueCategory) {
     EXPECT_EQ(observed, "shared");
 }
 
+TEST(ErasedSenderTest, PreservesDeclaredRvalueValueCategory) {
+    forge::erased_sender<rvalue_value_cs> sender{rvalue_value_sender{}};
+    int selected = 0;
+    std::string observed;
+    auto op = std::execution::connect(
+        std::move(sender),
+        reference_value_receiver{&selected, &observed});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(selected, 2);
+    EXPECT_EQ(observed, "rvalue");
+}
+
 TEST(ErasedSenderTest, DeliversZeroValueShape) {
     forge::erased_sender<zero_cs> sender{zero_sender{}};
     auto state = std::make_shared<observed_state>();
@@ -717,6 +825,20 @@ TEST(ErasedSenderTest, PreservesTypedErrorReferenceCategory) {
     std::execution::start(op);
 
     EXPECT_EQ(selected_overload, 1);
+    EXPECT_EQ(observed, std::make_error_code(std::errc::timed_out));
+}
+
+TEST(ErasedSenderTest, PreservesDeclaredRvalueErrorCategory) {
+    forge::erased_sender<rvalue_error_cs> sender{rvalue_error_sender{}};
+    int selected = 0;
+    std::error_code observed;
+    auto op = std::execution::connect(
+        std::move(sender),
+        reference_error_receiver{&selected, &observed});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(selected, 2);
     EXPECT_EQ(observed, std::make_error_code(std::errc::timed_out));
 }
 
