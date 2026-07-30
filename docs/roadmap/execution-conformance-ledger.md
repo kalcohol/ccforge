@@ -96,7 +96,7 @@ risk triage 的事实来源。
 | Execution domain dispatch | Tested current-WD subset | `connect` 应用 sender completion-domain recursion，再应用 receiver start-domain recursion；非 default-domain 的 `get_completion_signatures(sender, env)` 使用同一 transformed sender type。 | 保持 recursive transforms 和 transformed-signature computation 覆盖，包括 rawless source senders。 |
 | `forge::any_scheduler` | Forge local utility | 建模 Forge local scheduler concept，使用 shared-state identity equality 和 backport CPO completion-scheduler roundtrip。 | Native member-query scheduler roundtrip 仍是 forward-compat caveat。 |
 | `forge::wait_result` | Forge local utility | 同步保留 value、stopped 和 closed-set typed error，不通过 throw 表达。 | typed error 需要跨同步边界时使用；它不是 `std::execution::sync_wait`。 |
-| `forge::erased_sender` | Forge local utility | Connectable erased sender，支持 multiple value shapes、closed-set typed errors 和 bounded env/stop-token forwarding。 | 保持在 `forge::`；不要当作标准 execution surface。 |
+| `forge::erased_sender` | Forge local utility | Connectable erased sender，支持保留引用类别的 multiple value shapes、closed-set typed errors 和 bounded env/stop-token forwarding。 | 保持在 `forge::`；reference payload 只在同步 completion stack 内借用；不要当作标准 execution surface。 |
 | Receiver env stop-token propagation | Forge utilities 的 required behavior | `wait_result`、`erased_sender`、runtime senders 和 IO wrappers 在支持的 env model 中保留 receiver stop-token visibility。 | 修改 type erasure 或 wrapper receivers 时保持回归测试。 |
 
 ## 已接受 residuals 与未来风险

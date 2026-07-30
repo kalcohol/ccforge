@@ -78,6 +78,52 @@ struct observing_receiver {
     }
 };
 
+struct reference_value_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* selected_overload = nullptr;
+    std::string* observed = nullptr;
+
+    void set_value(const std::string& value) && noexcept {
+        *selected_overload = 1;
+        *observed = value;
+    }
+
+    void set_value(std::string&& value) && noexcept {
+        *selected_overload = 2;
+        *observed = std::move(value);
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        *selected_overload = -1;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct reference_error_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* selected_overload = nullptr;
+    std::error_code* observed = nullptr;
+
+    void set_error(const std::error_code& error) && noexcept {
+        *selected_overload = 1;
+        *observed = error;
+    }
+
+    void set_error(std::error_code&& error) && noexcept {
+        *selected_overload = 2;
+        *observed = std::move(error);
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 struct zero_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -237,6 +283,40 @@ struct error_sender {
     }
 };
 
+struct reference_error_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::error_code error = std::make_error_code(std::errc::timed_out);
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(const std::error_code&)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        const std::error_code* error;
+
+        void start() & noexcept {
+            std::execution::set_error(std::move(rcvr), *error);
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr), &error};
+    }
+};
+
 struct stopped_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -331,7 +411,9 @@ struct move_only_sender {
         op& operator=(op&&) = delete;
         op(const op&) = delete;
         op& operator=(const op&) = delete;
-        void start() & noexcept { std::execution::set_value(std::move(rcvr), value); }
+        void start() & noexcept {
+            std::execution::set_value(std::move(rcvr), std::move(value));
+        }
     };
 
     template<class R>
@@ -528,6 +610,28 @@ TEST(ErasedSenderTest, DeliversSelectedValueAlternative) {
     EXPECT_EQ(state->string_value, "text");
 }
 
+TEST(ErasedSenderTest, PreservesSplitConstReferenceValueCategory) {
+    auto split_sender = std::execution::split(
+        std::execution::just(std::string{"shared"}));
+    using split_sender_t = decltype(split_sender);
+    using split_cs_t = std::execution::completion_signatures_of_t<split_sender_t>;
+    static_assert(std::constructible_from<
+                  forge::erased_sender<split_cs_t>,
+                  split_sender_t>);
+
+    forge::erased_sender<split_cs_t> sender{std::move(split_sender)};
+    int selected_overload = 0;
+    std::string observed;
+    auto op = std::execution::connect(
+        std::move(sender),
+        reference_value_receiver{&selected_overload, &observed});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(selected_overload, 1);
+    EXPECT_EQ(observed, "shared");
+}
+
 TEST(ErasedSenderTest, DeliversZeroValueShape) {
     forge::erased_sender<zero_cs> sender{zero_sender{}};
     auto state = std::make_shared<observed_state>();
@@ -568,6 +672,22 @@ TEST(ErasedSenderTest, DeliversErrorCodeTypedError) {
     EXPECT_TRUE(state->error_code_seen);
     EXPECT_EQ(state->error_code, std::make_error_code(std::errc::timed_out));
     EXPECT_FALSE(state->status_seen);
+}
+
+TEST(ErasedSenderTest, PreservesTypedErrorReferenceCategory) {
+    using cs_t = std::execution::completion_signatures<
+        std::execution::set_error_t(const std::error_code&)>;
+    forge::erased_sender<cs_t> sender{reference_error_sender{}};
+    int selected_overload = 0;
+    std::error_code observed;
+    auto op = std::execution::connect(
+        std::move(sender),
+        reference_error_receiver{&selected_overload, &observed});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(selected_overload, 1);
+    EXPECT_EQ(observed, std::make_error_code(std::errc::timed_out));
 }
 
 TEST(ErasedSenderTest, DeliversEnumTypedError) {

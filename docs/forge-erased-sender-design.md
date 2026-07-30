@@ -34,8 +34,8 @@ class erased_sender;
 
 支持的 completion signatures：
 
-- 任意数量的唯一 `set_value_t(Vs...)` value 形状；
-- 任意数量显式声明的 `set_error_t(E)` error 形状；
+- 任意数量的唯一 `set_value_t(Vs...)` value 形状，保留参数的引用类别；
+- 任意数量显式声明的 `set_error_t(E)` error 形状，保留参数的引用类别；
 - 可选 `set_stopped_t()`。
 
 不支持：
@@ -64,17 +64,21 @@ v1 是 heap-first 实现：
 
 ## Value dispatch（值分发）
 
-实现使用 `include/forge/detail/completion_meta.hpp` 中的 Forge-local value-shape meta：
+实现使用 Forge-local type-list 和 exact tuple dispatch：
 
-- value shape 以 decayed `tuple<...>` 归一；
+- 每个 value shape 以 `tuple<Vs...>` 为 dispatch key；reference elements 只在 source
+  completion 的同步调用栈内借用，不存进 operation state；
 - 多 value shape 通过生成的 erased receiver 分发表按实际 completion 分派；
+- 下游按目标 `CompletionSignatures` 声明的 value category 接收参数，因此
+  `split` 的共享 `const T&` 不会被 materialize 成副本或改成 `T&&`；
 - 这套 meta 只依赖 public `<execution>` surface，避免 `include/forge/` 继续耦合
   backport 私有 detail。
 
 ## Error、stopped 与 env
 
-`set_error` 会按目标 `CompletionSignatures` 中声明的 error type 分派并原样交给下游
-receiver。`std::exception_ptr` 只是其中一种普通 error type，不再是唯一支持类型。
+`set_error` 会按目标 `CompletionSignatures` 中声明的 exact error type 和引用类别分派并
+原样交给下游 receiver。`std::exception_ptr` 只是其中一种普通 error type，不再是唯一支持
+类型。
 
 `set_stopped_t()` 只有在 `CompletionSignatures` 声明时才属于有效契约。
 
@@ -89,6 +93,8 @@ receiver env v1 只保证 stop token 传播：erased receiver 会把下游 recei
 - 零参数 `set_value_t()`；
 - `set_error_t(std::exception_ptr)`；
 - 多 typed error 形状；
+- `split` 共享 value 的 `const&` 分派；
+- reference-qualified typed error 分派；
 - `set_stopped_t()`；
 - undeclared typed error 编译期拒绝；
 - downstream stop token 传播；

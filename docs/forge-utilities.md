@@ -220,8 +220,10 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
   会转发 downstream receiver stop token，因此底层 scheduler operation 仍能观察调用方取消。
 - `forge::erased_sender<CompletionSignatures>`：connectable sender 类型擦除。当前实现是
   move-only、heap-first，支持多个唯一 value 形状、closed-set `set_error_t(E)` typed
-  errors（包括 `std::exception_ptr`）和 `set_stopped_t()`；allocator-aware storage、
-  语义 equality 和任意自定义 receiver env 查询不属于当前范围。
+  errors（包括 `std::exception_ptr`）和 `set_stopped_t()`。Value/error dispatch 保留
+  `CompletionSignatures` 声明的引用类别；reference payload 只在同步 completion call
+  stack 内借用。allocator-aware storage、语义 equality 和任意自定义 receiver env 查询
+  不属于当前范围。
 - `forge::wait_result(sender)`：同步运行 sender 并返回一个小 result 对象，保留 value、
   closed-set typed error 和 stopped。它是 Forge 便利设施，不改变
   `std::execution::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization

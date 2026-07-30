@@ -87,6 +87,45 @@ struct __tuple_in_list<Tuple, meta::type_list<Tuples...>>
 template<class Tuple, class List>
 inline constexpr bool __tuple_in_list_v = __tuple_in_list<Tuple, List>::value;
 
+template<class List, class Sig>
+struct __push_value {
+    using type = List;
+};
+
+template<class... Tuples, class... Vs>
+struct __push_value<
+    meta::type_list<Tuples...>,
+    std::execution::set_value_t(Vs...)> {
+    using type = meta::list_push_unique_t<
+        meta::type_list<Tuples...>,
+        std::tuple<Vs...>>;
+};
+
+template<class List, class... Sigs>
+struct __collect_values;
+
+template<class List>
+struct __collect_values<List> {
+    using type = List;
+};
+
+template<class List, class Sig, class... Rest>
+struct __collect_values<List, Sig, Rest...> {
+    using next = typename __push_value<List, Sig>::type;
+    using type = typename __collect_values<next, Rest...>::type;
+};
+
+template<class CS>
+struct __value_list;
+
+template<class... Sigs>
+struct __value_list<std::execution::completion_signatures<Sigs...>> {
+    using type = typename __collect_values<meta::type_list<>, Sigs...>::type;
+};
+
+template<class CS>
+using __value_list_t = typename __value_list<CS>::type;
+
 template<class Tuple, class List>
 struct __tuple_index;
 
@@ -114,7 +153,7 @@ template<class... Errors, class E>
 struct __push_error<meta::type_list<Errors...>, std::execution::set_error_t(E)> {
     using type = meta::list_push_unique_t<
         meta::type_list<Errors...>,
-        std::decay_t<E>>;
+        std::tuple<E>>;
 };
 
 template<class List, class... Sigs>
@@ -194,7 +233,7 @@ struct __receiver_state_base {
 template<class CS>
 struct __receiver {
     using receiver_concept = std::execution::receiver_t;
-    using value_list = meta::value_tuple_list_t<CS>;
+    using value_list = __value_list_t<CS>;
     using error_list = __error_list_t<CS>;
 
     struct __env {
@@ -213,18 +252,18 @@ struct __receiver {
     std::shared_ptr<__receiver_state_base<CS>> state;
 
     template<class... Vs>
-        requires __tuple_in_list_v<std::tuple<std::decay_t<Vs>...>, value_list>
+        requires __tuple_in_list_v<std::tuple<Vs...>, value_list>
     void set_value(Vs&&... vs) && noexcept {
-        using tuple_t = std::tuple<std::decay_t<Vs>...>;
+        using tuple_t = std::tuple<Vs...>;
         auto values = tuple_t{static_cast<Vs&&>(vs)...};
         constexpr auto index = __tuple_index<tuple_t, value_list>::value;
         state->complete_value(index, &values);
     }
 
     template<class E>
-        requires __error_in_list_v<std::decay_t<E>, error_list>
+        requires __error_in_list_v<std::tuple<E>, error_list>
     void set_error(E&& e) && noexcept {
-        using error_t = std::decay_t<E>;
+        using error_t = std::tuple<E>;
         auto error = error_t{static_cast<E&&>(e)};
         constexpr auto index = __error_index<error_t, error_list>::value;
         state->complete_error(index, &error);
@@ -241,7 +280,7 @@ struct __receiver {
 
 template<class CS, class R>
 struct __receiver_state_model final : __receiver_state_base<CS> {
-    using value_list = meta::value_tuple_list_t<CS>;
+    using value_list = __value_list_t<CS>;
     using error_list = __error_list_t<CS>;
 
     explicit __receiver_state_model(R rcvr)
@@ -257,7 +296,13 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
     }
 
     void complete_stopped() noexcept override {
-        std::execution::set_stopped(std::move(rcvr_));
+        if constexpr (__contains_signature<
+                          std::execution::set_stopped_t(),
+                          CS>::value) {
+            std::execution::set_stopped(std::move(rcvr_));
+        } else {
+            std::terminate();
+        }
     }
 
     auto stop_token() const noexcept -> std::any_stop_token override {
@@ -269,7 +314,9 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
         if (index == 0) {
             auto& values = *static_cast<Tuple*>(tuple);
             std::apply([this](auto&&... vs) noexcept {
-                std::execution::set_value(std::move(rcvr_), std::move(vs)...);
+                std::execution::set_value(
+                    std::move(rcvr_),
+                    static_cast<decltype(vs)&&>(vs)...);
             }, std::move(values));
             return;
         }
@@ -280,11 +327,18 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
         std::terminate();
     }
 
-    template<class Error, class... Rest>
-    void complete_error_impl(std::size_t index, void* error, meta::type_list<Error, Rest...>) noexcept {
+    template<class ErrorTuple, class... Rest>
+    void complete_error_impl(
+        std::size_t index,
+        void* error,
+        meta::type_list<ErrorTuple, Rest...>) noexcept {
         if (index == 0) {
-            auto& value = *static_cast<Error*>(error);
-            std::execution::set_error(std::move(rcvr_), std::move(value));
+            auto& values = *static_cast<ErrorTuple*>(error);
+            std::apply([this](auto&& value) noexcept {
+                std::execution::set_error(
+                    std::move(rcvr_),
+                    static_cast<decltype(value)&&>(value));
+            }, std::move(values));
             return;
         }
         complete_error_impl(index - 1, error, meta::type_list<Rest...>{});
