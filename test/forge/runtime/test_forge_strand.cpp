@@ -36,6 +36,40 @@ struct stopped_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct blocking_stopped_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool active_started = false;
+    bool active_running = false;
+    bool release_active = false;
+    bool stopped_started = false;
+    bool stopped_completed = false;
+    bool release_stopped = false;
+    bool overlapped = false;
+};
+
+struct blocking_stopped_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<blocking_stopped_state> state;
+
+    void set_value() && noexcept {}
+
+    void set_stopped() && noexcept {
+        std::unique_lock lk{state->mtx};
+        state->overlapped = state->active_running;
+        state->stopped_started = true;
+        state->cv.notify_all();
+        state->cv.wait(lk, [&] { return state->release_stopped; });
+        state->stopped_completed = true;
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 struct delayed_scheduler_state {
     std::mutex mtx;
     std::condition_variable cv;
@@ -316,7 +350,7 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
     std::execution::start(pending_op);
 
     strand.shutdown();
-    EXPECT_TRUE(pending_state->stopped);
+    EXPECT_FALSE(pending_state->stopped);
     EXPECT_FALSE(pending_state->value);
 
     auto future_state = std::make_shared<stopped_state>();
@@ -335,6 +369,102 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
     cv.notify_all();
     strand.wait();
     pool.wait();
+
+    EXPECT_TRUE(pending_state->stopped);
+    EXPECT_FALSE(pending_state->value);
+}
+
+TEST(StrandTest, ShutdownSerializesStoppedCompletionsAndWaitsForThem) {
+    forge::static_thread_pool pool{1};
+    forge::strand strand{pool.get_scheduler()};
+    auto scheduler = strand.get_scheduler();
+    auto state = std::make_shared<blocking_stopped_state>();
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([state] noexcept {
+            std::unique_lock lk{state->mtx};
+            state->active_started = true;
+            state->active_running = true;
+            state->cv.notify_all();
+            state->cv.wait(lk, [&] { return state->release_active; });
+            state->active_running = false;
+        }));
+
+    bool active_started = false;
+    {
+        std::unique_lock lk{state->mtx};
+        active_started = state->cv.wait_for(lk, 2s, [&] {
+            return state->active_started;
+        });
+    }
+    if (!active_started) {
+        {
+            std::lock_guard lk{state->mtx};
+            state->release_active = true;
+            state->release_stopped = true;
+        }
+        state->cv.notify_all();
+        strand.shutdown();
+        strand.wait();
+        pool.wait();
+        FAIL() << "active strand completion did not start";
+        return;
+    }
+
+    auto pending = std::execution::schedule(scheduler);
+    auto pending_op = std::execution::connect(
+        std::move(pending),
+        blocking_stopped_receiver{state});
+    std::execution::start(pending_op);
+
+    strand.shutdown();
+    {
+        std::lock_guard lk{state->mtx};
+        EXPECT_FALSE(state->stopped_started);
+        state->release_active = true;
+    }
+    state->cv.notify_all();
+
+    bool stopped_started = false;
+    {
+        std::unique_lock lk{state->mtx};
+        stopped_started = state->cv.wait_for(lk, 2s, [&] {
+            return state->stopped_started;
+        });
+    }
+    if (!stopped_started) {
+        {
+            std::lock_guard lk{state->mtx};
+            state->release_stopped = true;
+        }
+        state->cv.notify_all();
+        strand.wait();
+        pool.wait();
+        FAIL() << "pending stopped completion did not start";
+        return;
+    }
+
+    std::atomic<bool> wait_returned{false};
+    std::thread waiter{[&] {
+        strand.wait();
+        wait_returned.store(true, std::memory_order_release);
+    }};
+
+    std::this_thread::sleep_for(50ms);
+    EXPECT_FALSE(wait_returned.load(std::memory_order_acquire));
+
+    {
+        std::lock_guard lk{state->mtx};
+        state->release_stopped = true;
+    }
+    state->cv.notify_all();
+    waiter.join();
+    pool.wait();
+
+    EXPECT_TRUE(wait_returned.load(std::memory_order_acquire));
+    EXPECT_FALSE(state->overlapped);
+    EXPECT_TRUE(state->stopped_completed);
 }
 
 TEST(StrandTest, ShutdownBeforeLaunchedRunnerStartsDoesNotBlockWait) {

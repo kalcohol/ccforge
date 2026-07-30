@@ -219,39 +219,61 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void shutdown() noexcept {
+        auto keepalive = shared_from_this();
         queue_t stopped{memory_};
+        bool drain = false;
         bool notify = false;
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
-            stopped.splice(stopped.end(), queue_);
             if (!active_) {
-                running_ = false;
-                notify = true;
+                if (queue_.empty()) {
+                    running_ = false;
+                    notify = true;
+                } else {
+                    stopped.splice(stopped.end(), queue_);
+                    active_ = true;
+                    running_ = true;
+                    drain = true;
+                }
             }
         }
 
-        if (notify) {
+        if (drain) {
+            complete_stopped_batch(stopped);
+        } else if (notify) {
             cv_.notify_all();
-        }
-
-        for (auto& record : stopped) {
-            record->complete_stopped();
         }
     }
 
     void run_one() noexcept {
         std::shared_ptr<__record_base> record;
+        queue_t stopped{memory_};
+        bool drain = false;
         {
             std::lock_guard lk{mtx_};
+            if (active_) {
+                return;
+            }
             if (queue_.empty()) {
                 running_ = false;
                 cv_.notify_all();
                 return;
             }
-            record = std::move(queue_.front());
-            queue_.pop_front();
+
             active_ = true;
+            if (closed_) {
+                stopped.splice(stopped.end(), queue_);
+                drain = true;
+            } else {
+                record = std::move(queue_.front());
+                queue_.pop_front();
+            }
+        }
+
+        if (drain) {
+            complete_stopped_batch(stopped);
+            return;
         }
 
         {
@@ -260,37 +282,34 @@ struct __state : std::enable_shared_from_this<__state> {
         }
 
         bool launch = false;
+        bool drain_after_value = false;
         {
             std::lock_guard lk{mtx_};
-            active_ = false;
-            if (queue_.empty()) {
-                running_ = false;
+            if (closed_ && !queue_.empty()) {
+                stopped.splice(stopped.end(), queue_);
+                drain_after_value = true;
             } else {
-                launch = true;
-            }
-            if (!running_) {
-                cv_.notify_all();
+                active_ = false;
+                if (queue_.empty()) {
+                    running_ = false;
+                } else {
+                    launch = true;
+                }
+                if (!running_) {
+                    cv_.notify_all();
+                }
             }
         }
 
-        if (launch) {
+        if (drain_after_value) {
+            complete_stopped_batch(stopped);
+        } else if (launch) {
             launch_runner();
         }
     }
 
     void stop_all() noexcept {
-        queue_t stopped{memory_};
-        {
-            std::lock_guard lk{mtx_};
-            closed_ = true;
-            running_ = false;
-            stopped.splice(stopped.end(), queue_);
-            cv_.notify_all();
-        }
-
-        for (auto& record : stopped) {
-            record->complete_stopped();
-        }
+        shutdown();
     }
 
     void wait() noexcept {
@@ -314,6 +333,22 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
 private:
+    void complete_stopped_batch(queue_t& stopped) noexcept {
+        {
+            __current_state_guard guard{this};
+            for (auto& record : stopped) {
+                record->complete_stopped();
+            }
+        }
+
+        {
+            std::lock_guard lk{mtx_};
+            active_ = false;
+            running_ = false;
+        }
+        cv_.notify_all();
+    }
+
     void launch_runner() noexcept {
         try {
             auto sender = std::execution::schedule(scheduler_);
