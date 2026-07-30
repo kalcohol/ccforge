@@ -210,6 +210,20 @@ TEST(WriteEnvTest, ReadsInjectedDelegationScheduler) {
     EXPECT_TRUE(std::get<0>(*result) == injected);
 }
 
+TEST(SyncWaitEnvTest, ExposesTheSameRunLoopSchedulerForAllRoles) {
+    auto result = std::execution::sync_wait(
+        std::execution::when_all(
+            std::execution::read_env(std::execution::get_scheduler),
+            std::execution::read_env(std::execution::get_start_scheduler),
+            std::execution::read_env(std::execution::get_delegation_scheduler))
+        | std::execution::then([](auto scheduler, auto start, auto delegation) {
+              return scheduler == start && scheduler == delegation;
+          }));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+}
+
 TEST(WriteEnvTest, FallsBackToReceiverEnvForMissingQuery) {
     std::execution::inline_scheduler downstream;
     bool got_expected = false;

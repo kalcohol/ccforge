@@ -40,11 +40,26 @@ namespace __forge_sync_wait {
 
 struct stopped_t {};
 
+struct sync_wait_env {
+    run_loop* loop_;
+
+    friend auto tag_invoke(get_scheduler_t, const sync_wait_env& self) noexcept {
+        return self.loop_->get_scheduler();
+    }
+
+    friend auto tag_invoke(get_start_scheduler_t, const sync_wait_env& self) noexcept {
+        return self.loop_->get_scheduler();
+    }
+
+    friend auto tag_invoke(get_delegation_scheduler_t, const sync_wait_env& self) noexcept {
+        return self.loop_->get_scheduler();
+    }
+};
+
 template<class Value>
 struct shared_state {
     using value_t = Value;
     std::variant<std::monostate, value_t, std::exception_ptr, stopped_t> result_;
-    std::inplace_stop_source stop_source_;
 };
 
 template<class CompletionSignatures>
@@ -85,10 +100,8 @@ struct receiver {
         loop_->finish();
     }
 
-    auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::make_prop(get_stop_token_t{}, state_->stop_source_.get_token()),
-            std::execution::make_prop(get_scheduler_t{}, loop_->get_scheduler()));
+    auto get_env() const noexcept -> sync_wait_env {
+        return sync_wait_env{loop_};
     }
 };
 
@@ -98,9 +111,12 @@ struct receiver {
 
 namespace std::this_thread {
 
-template<std::execution::sender_in S>
+template<class S>
+    requires std::execution::sender_in<
+        S, std::execution::__forge_sync_wait::sync_wait_env>
 auto sync_wait(S&& sndr) {
-    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<S>(), std::execution::empty_env{}));
+    using env_t = std::execution::__forge_sync_wait::sync_wait_env;
+    using cs_t = std::execution::completion_signatures_of_t<S, env_t>;
     using value_t = std::execution::__forge_sync_wait::value_t_for<cs_t>;
     using state_t = std::execution::__forge_sync_wait::shared_state<value_t>;
     using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;

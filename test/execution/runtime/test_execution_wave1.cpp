@@ -271,6 +271,16 @@ TEST(SyncWaitWithVariantTest, Works) {
     EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
 }
 
+TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
+    auto result = std::this_thread::sync_wait_with_variant(
+        std::execution::on(
+            std::execution::inline_scheduler{},
+            std::execution::just(42)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
+}
+
 TEST(BulkTest, SerialExecution) {
     int sum = 0;
     auto sndr = std::execution::just(0)

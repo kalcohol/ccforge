@@ -406,6 +406,16 @@ TEST(OnTest, ClosureFormReturnsToChildCompletionScheduler) {
     EXPECT_EQ(std::get<0>(*result), 9);
 }
 
+TEST(OnTest, SyncWaitSuppliesTheStartScheduler) {
+    auto result = std::execution::sync_wait(
+        std::execution::on(
+            std::execution::inline_scheduler{},
+            std::execution::just(42)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
 TEST(OnTest, ClosureFormReturnsToTransferredChildCompletionScheduler) {
     std::execution::run_loop source_loop;
     std::execution::run_loop child_loop;
