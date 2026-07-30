@@ -8,6 +8,10 @@ using cs_int = std::execution::completion_signatures<
     std::execution::set_value_t(int),
     std::execution::set_error_t(std::exception_ptr),
     std::execution::set_stopped_t()>;
+using cs_value_only = std::execution::completion_signatures<
+    std::execution::set_value_t(int)>;
+using cs_zero_value = std::execution::completion_signatures<
+    std::execution::set_value_t()>;
 
 struct test_recv {
     using receiver_concept = std::execution::receiver_t;
@@ -18,6 +22,20 @@ struct test_recv {
     friend void tag_invoke(std::execution::set_error_t, test_recv&&, std::exception_ptr) noexcept {}
     friend void tag_invoke(std::execution::set_stopped_t, test_recv&&) noexcept {}
     friend std::execution::empty_env tag_invoke(std::execution::get_env_t, const test_recv&) noexcept {
+        return {};
+    }
+};
+
+struct value_only_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* out;
+
+    void set_value(int value) && noexcept {
+        *out = value;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
 };
@@ -93,6 +111,21 @@ struct alignas(64) over_aligned_recv {
 static_assert(alignof(over_aligned_recv) > alignof(std::max_align_t));
 
 static_assert(std::execution::receiver<forge::any_receiver_of<cs_int>>);
+static_assert(std::constructible_from<
+              forge::any_receiver_of<cs_int>,
+              test_recv>);
+static_assert(!std::constructible_from<
+              forge::any_receiver_of<cs_int>,
+              value_only_recv>);
+static_assert(!std::execution::receiver_of<
+              forge::any_receiver_of<cs_int>,
+              cs_zero_value>);
+static_assert(std::execution::receiver_of<
+              forge::any_receiver_of<cs_value_only>,
+              cs_value_only>);
+static_assert(std::constructible_from<
+              forge::any_receiver_of<cs_value_only>,
+              value_only_recv>);
 
 TEST(AnyReceiverTest, DefaultEmpty) {
     forge::any_receiver_of<cs_int> r;
@@ -110,6 +143,16 @@ TEST(AnyReceiverTest, SetValueDelivered) {
     forge::any_receiver_of<cs_int> r = test_recv{&val};
     std::execution::set_value(std::move(r), 42);
     EXPECT_EQ(val, 42);
+}
+
+TEST(AnyReceiverTest, SupportsValueOnlyClosedSet) {
+    int value = 0;
+    forge::any_receiver_of<cs_value_only> receiver =
+        value_only_recv{&value};
+
+    std::execution::set_value(std::move(receiver), 17);
+
+    EXPECT_EQ(value, 17);
 }
 
 TEST(AnyReceiverTest, MoveConstructsSmallObjectStorageReceiver) {

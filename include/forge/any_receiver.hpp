@@ -33,6 +33,19 @@
 
 namespace forge {
 
+template<class Sig, class CompletionSignatures>
+struct __any_receiver_contains_signature : std::false_type {};
+
+template<class Sig, class... Sigs>
+struct __any_receiver_contains_signature<
+    Sig,
+    std::execution::completion_signatures<Sigs...>>
+    : std::bool_constant<(std::is_same_v<Sig, Sigs> || ...)> {};
+
+template<class Sig, class CompletionSignatures>
+inline constexpr bool __any_receiver_contains_signature_v =
+    __any_receiver_contains_signature<Sig, CompletionSignatures>::value;
+
 // any_receiver_of<CS> — type-erased receiver with virtual dispatch (no-template virtual fix)
 // Uses std::function for the complete callbacks since template virtual is not allowed.
 
@@ -61,10 +74,24 @@ class any_receiver_of {
                 }, std::move(v));
             },
             .complete_error = [](void* p, std::exception_ptr ep) noexcept {
-                std::execution::set_error(std::move(*static_cast<R*>(p)), std::move(ep));
+                if constexpr (__any_receiver_contains_signature_v<
+                                  std::execution::set_error_t(std::exception_ptr),
+                                  cs_t>) {
+                    std::execution::set_error(
+                        std::move(*static_cast<R*>(p)),
+                        std::move(ep));
+                } else {
+                    std::terminate();
+                }
             },
             .complete_stopped = [](void* p) noexcept {
-                std::execution::set_stopped(std::move(*static_cast<R*>(p)));
+                if constexpr (__any_receiver_contains_signature_v<
+                                  std::execution::set_stopped_t(),
+                                  cs_t>) {
+                    std::execution::set_stopped(std::move(*static_cast<R*>(p)));
+                } else {
+                    std::terminate();
+                }
             },
             .destroy = [](void* p) noexcept {
                 static_cast<R*>(p)->~R();
@@ -114,7 +141,7 @@ public:
     // (libstdc++ tolerated it; libc++/clang-19 diagnoses it as a hard error.)
     template<class R>
         requires (!std::is_same_v<std::remove_cvref_t<R>, any_receiver_of>)
-              && std::execution::receiver<std::remove_cvref_t<R>>
+              && std::execution::receiver_of<std::remove_cvref_t<R>, cs_t>
     any_receiver_of(R&& r) {
         using D = std::remove_cvref_t<R>;
         if constexpr (sizeof(D) <= kSBOSize && alignof(D) <= alignof(std::max_align_t)) {
@@ -174,6 +201,9 @@ public:
     explicit operator bool() const noexcept { return __ptr != nullptr; }
 
     template<class... Vs>
+        requires std::is_same_v<
+            std::tuple<std::decay_t<Vs>...>,
+            value_tuple_t>
     void set_value(Vs&&... vs) && noexcept {
         if (__ptr && __vt)
             __vt->complete_value(__ptr,
@@ -181,6 +211,9 @@ public:
     }
 
     template<class E>
+        requires __any_receiver_contains_signature_v<
+            std::execution::set_error_t(std::exception_ptr),
+            cs_t>
     void set_error(E&& e) && noexcept {
         if (__ptr && __vt) {
             std::exception_ptr ep;
@@ -192,7 +225,11 @@ public:
         }
     }
 
-    void set_stopped() && noexcept {
+    void set_stopped() && noexcept
+        requires __any_receiver_contains_signature_v<
+            std::execution::set_stopped_t(),
+            cs_t>
+    {
         if (__ptr && __vt) __vt->complete_stopped(__ptr);
     }
 

@@ -212,10 +212,11 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
 ## 类型擦除
 
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO +
-  堆回退。value completion 采用声明的单一 value tuple 形状；error completion 折叠为
-  `std::exception_ptr`。
+  堆回退。构造和 value completion 都要求与声明的单一 value tuple 精确匹配，不做隐式
+  窄化或缺省补值；error completion 折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，
-  并提供 `sync_wait()` 直接运行存储的 sender。
+  并提供 `sync_wait()` 直接运行存储的 sender。底层 sender 的单一 value tuple 必须与
+  `CompletionSignatures` 精确一致。
 - `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按
   共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除
   同一个 concrete scheduler 的对象也会因为 state 不同而不相等。内部 erased receiver

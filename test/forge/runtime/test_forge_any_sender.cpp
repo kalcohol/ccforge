@@ -11,6 +11,20 @@ using cs_int = std::execution::completion_signatures<
     std::execution::set_error_t(std::exception_ptr),
     std::execution::set_stopped_t()>;
 
+using int_sender_t = decltype(std::execution::just(1));
+using long_long_sender_t = decltype(std::execution::just(1LL));
+using zero_sender_t = decltype(std::execution::just());
+
+static_assert(std::constructible_from<
+              forge::any_sender_of<cs_int>,
+              int_sender_t>);
+static_assert(!std::constructible_from<
+              forge::any_sender_of<cs_int>,
+              long_long_sender_t>);
+static_assert(!std::constructible_from<
+              forge::any_sender_of<cs_int>,
+              zero_sender_t>);
+
 struct sender_move_counts {
     int moves = 0;
     int destroyed = 0;

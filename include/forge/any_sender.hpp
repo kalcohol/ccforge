@@ -94,6 +94,21 @@ class any_sender_of {
     };
 
     template<class S>
+    static consteval bool __has_exact_sync_wait_result() {
+        if constexpr (requires(S& sender) {
+                          std::execution::sync_wait(
+                              __stored_sender_ref<S>{&sender});
+                      }) {
+            return std::same_as<
+                decltype(std::execution::sync_wait(
+                    __stored_sender_ref<S>{std::declval<S*>()})),
+                std::optional<value_tuple_of_t<CompletionSignatures>>>;
+        } else {
+            return false;
+        }
+    }
+
+    template<class S>
     static const __vtable* __make_vtable() {
         using VT = value_tuple_of_t<CompletionSignatures>;
         static const __vtable vt{
@@ -103,8 +118,10 @@ class any_sender_of {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
             .do_sync_wait = [](void* p) -> std::optional<VT> {
-                return std::execution::sync_wait(
+                auto result = std::execution::sync_wait(
                     __stored_sender_ref<S>{static_cast<S*>(p)});
+                static_assert(std::same_as<decltype(result), std::optional<VT>>);
+                return result;
             },
         };
         return &vt;
@@ -147,6 +164,7 @@ public:
     template<class S>
         requires (!std::is_same_v<std::remove_cvref_t<S>, any_sender_of>)
               && std::execution::sender<std::remove_cvref_t<S>>
+              && (__has_exact_sync_wait_result<std::remove_cvref_t<S>>())
     any_sender_of(S&& sndr) {
         using D = std::remove_cvref_t<S>;
         if constexpr (sizeof(D) <= kSBOSize &&

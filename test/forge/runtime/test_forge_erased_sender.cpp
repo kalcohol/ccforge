@@ -135,6 +135,20 @@ struct zero_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct int_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* value = nullptr;
+
+    void set_value(int v) && noexcept {
+        *value = v;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 struct self_destroying_zero_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -576,6 +590,10 @@ struct reentrant_connect_sender {
 static_assert(std::execution::sender<forge::erased_sender<int_cs>>);
 static_assert(!std::copy_constructible<forge::erased_sender<int_cs>>);
 static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_sender>);
+static_assert(std::execution::receiver_of<int_only_receiver, int_cs>);
+static_assert(std::execution::sender_to<
+              forge::erased_sender<int_cs>,
+              int_only_receiver>);
 static_assert(std::constructible_from<forge::erased_sender<
     std::execution::completion_signatures<std::execution::set_error_t(int)>>,
     typed_error_sender>);
@@ -596,6 +614,18 @@ TEST(ErasedSenderTest, DeliversSingleValueShape) {
     EXPECT_EQ(state->int_values, 1);
     EXPECT_EQ(state->int_value, 42);
     EXPECT_EQ(state->string_values, 0);
+}
+
+TEST(ErasedSenderTest, SupportsReceiverWithoutUndeclaredCompletions) {
+    forge::erased_sender<int_cs> sender{move_only_sender{23}};
+    int value = 0;
+    auto op = std::execution::connect(
+        std::move(sender),
+        int_only_receiver{&value});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(value, 23);
 }
 
 TEST(ErasedSenderTest, DeliversSelectedValueAlternative) {
