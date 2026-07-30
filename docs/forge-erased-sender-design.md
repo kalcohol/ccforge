@@ -66,8 +66,14 @@ v1 是 heap-first 实现：
 
 实现使用 Forge-local type-list 和 exact tuple dispatch：
 
-- 每个 value shape 以 `tuple<Vs...>` 为 dispatch key；reference elements 只在 source
-  completion 的同步调用栈内借用，不存进 operation state；
+- 每个 value shape 按 execution `MATCHING-SIG` 规则归一为 `tuple<Vs&&...>`
+  dispatch key；因此声明 `T` 与 `T&&` 都匹配 xvalue completion，而 `T&` /
+  `const T&` 保持不同引用类别；
+- source sender 实际调用 `set_value` / `set_error` 时，参数类别必须与其声明的
+  completion signature 经上述引用折叠后的类别一致；例如声明 `set_value_t(T)`
+  却传入 `T` lvalue 不属于该签名；
+- reference elements 只在 source completion 的同步调用栈内借用，不存进 operation
+  state；
 - 多 value shape 通过生成的 erased receiver 分发表按实际 completion 分派；
 - 下游按目标 `CompletionSignatures` 声明的 value category 接收参数，因此
   `split` 的共享 `const T&` 不会被 materialize 成副本或改成 `T&&`；
