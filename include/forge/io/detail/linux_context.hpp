@@ -223,6 +223,12 @@ private:
     int fd_ = -1;
 };
 
+enum class __completion_kind {
+    value,
+    error,
+    stopped
+};
+
 struct __record_base {
     virtual ~__record_base() = default;
     virtual void complete_value() noexcept = 0;
@@ -233,6 +239,9 @@ struct __record_base {
     readiness kind = readiness::read;
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
+    std::shared_ptr<__record_base> next_action;
+    std::exception_ptr action_error;
+    __completion_kind action_kind = __completion_kind::value;
 };
 
 struct __state;
@@ -289,55 +298,66 @@ struct __record final : __record_base {
 
 using __record_ptr = std::shared_ptr<__record_base>;
 
-enum class __completion_kind {
-    value,
-    error,
-    stopped
-};
-
-struct __action {
-    __record_ptr record;
-    __completion_kind kind = __completion_kind::value;
-    std::exception_ptr error;
-};
-
 struct __actions {
-    explicit __actions(std::pmr::memory_resource* memory)
-        : items(memory) {}
-
-    void value(__record_ptr record) {
-        items.push_back(__action{std::move(record), __completion_kind::value, {}});
+    void value(__record_ptr record) noexcept {
+        push(std::move(record), __completion_kind::value, {});
     }
 
-    void error(__record_ptr record, std::exception_ptr error) {
-        items.push_back(__action{
-            std::move(record), __completion_kind::error, std::move(error)});
+    void error(
+        __record_ptr record,
+        std::exception_ptr error) noexcept {
+        push(
+            std::move(record),
+            __completion_kind::error,
+            std::move(error));
     }
 
-    void stopped(__record_ptr record) {
-        items.push_back(__action{std::move(record), __completion_kind::stopped, {}});
+    void stopped(__record_ptr record) noexcept {
+        push(std::move(record), __completion_kind::stopped, {});
     }
 
     void run() noexcept {
-        for (auto& item : items) {
-            if (!item.record) {
-                continue;
+        while (head) {
+            auto record = std::move(head);
+            head = std::move(record->next_action);
+            if (!head) {
+                tail = nullptr;
             }
-            switch (item.kind) {
+            auto error = std::move(record->action_error);
+            const auto kind = record->action_kind;
+            switch (kind) {
             case __completion_kind::value:
-                item.record->complete_value();
+                record->complete_value();
                 break;
             case __completion_kind::error:
-                item.record->complete_error(std::move(item.error));
+                record->complete_error(std::move(error));
                 break;
             case __completion_kind::stopped:
-                item.record->complete_stopped();
+                record->complete_stopped();
                 break;
             }
         }
     }
 
-    std::pmr::vector<__action> items;
+private:
+    void push(
+        __record_ptr record,
+        __completion_kind kind,
+        std::exception_ptr error) noexcept {
+        record->action_kind = kind;
+        record->action_error = std::move(error);
+        record->next_action.reset();
+        auto* next_tail = record.get();
+        if (tail) {
+            tail->next_action = std::move(record);
+        } else {
+            head = std::move(record);
+        }
+        tail = next_tail;
+    }
+
+    __record_ptr head;
+    __record_base* tail = nullptr;
 };
 
 struct __fd_waiters {
@@ -395,7 +415,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     [[nodiscard]] auto start(__record_ptr record) -> bool {
-        __actions actions{memory};
+        __actions actions;
         bool should_wake = false;
         bool became_pending = false;
         {
@@ -448,7 +468,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void cancel(int fd) noexcept {
-        __actions actions{memory};
+        __actions actions;
         {
             std::lock_guard lk{mtx};
             auto it = fd_waiters.find(fd);
@@ -499,7 +519,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void request_stop() noexcept {
-        __actions actions{memory};
+        __actions actions;
         {
             std::lock_guard lk{mtx};
             stopped = true;
@@ -533,7 +553,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 break;
             }
 
-            __actions actions{memory};
+            __actions actions;
             bool should_exit = false;
             {
                 std::lock_guard lk{mtx};
@@ -693,7 +713,7 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void complete_all_with_error(std::exception_ptr error) noexcept {
-        __actions actions{memory};
+        __actions actions;
         {
             std::lock_guard lk{mtx};
             stopped = true;

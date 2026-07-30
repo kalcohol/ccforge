@@ -285,6 +285,107 @@ TEST(IoContextTest, OptionsConstructorUsesCustomMemoryResource) {
     EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
+TEST(IoContextTest, ReadinessCompletionDoesNotAllocate) {
+    auto pipe = make_pipe();
+    forge_test::fail_next_resource resource;
+    forge::io::context ctx{forge::io::context_options{
+        .memory = &resource,
+        .max_events = 8,
+    }};
+    auto state = std::make_shared<io_state>();
+    auto op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        io_receiver{state});
+    std::execution::start(op);
+
+    resource.fail_next_allocation();
+    write_byte(pipe.second.get());
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, RequestStopCompletionDoesNotAllocate) {
+    auto first_pipe = make_pipe();
+    auto second_pipe = make_pipe();
+    forge_test::fail_next_resource resource;
+    forge::io::context ctx{forge::io::context_options{
+        .memory = &resource,
+        .max_events = 8,
+    }};
+    auto first = std::make_shared<io_state>();
+    auto second = std::make_shared<io_state>();
+    auto first_op = std::execution::connect(
+        ctx.readable(first_pipe.first.get()),
+        io_receiver{first});
+    auto second_op = std::execution::connect(
+        ctx.readable(second_pipe.first.get()),
+        io_receiver{second});
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+
+    resource.fail_next_allocation();
+    ctx.request_stop();
+
+    ASSERT_TRUE(wait_done(first));
+    ASSERT_TRUE(wait_done(second));
+    EXPECT_FALSE(first->value);
+    EXPECT_TRUE(first->stopped);
+    EXPECT_FALSE(first->error);
+    EXPECT_FALSE(second->value);
+    EXPECT_TRUE(second->stopped);
+    EXPECT_FALSE(second->error);
+}
+
+TEST(IoContextTest, ShutdownCompletionDoesNotAllocate) {
+    auto pipe = make_pipe();
+    forge_test::fail_next_resource resource;
+    forge::io::context ctx{forge::io::context_options{
+        .memory = &resource,
+        .max_events = 8,
+    }};
+    auto state = std::make_shared<io_state>();
+    auto op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        io_receiver{state});
+    std::execution::start(op);
+
+    resource.fail_next_allocation();
+    ctx.shutdown();
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state->value);
+    EXPECT_TRUE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, ImmediateErrorCompletionDoesNotAllocate) {
+    forge_test::fail_next_resource resource;
+    forge::io::context ctx{forge::io::context_options{
+        .memory = &resource,
+        .max_events = 8,
+    }};
+    auto state = std::make_shared<io_state>();
+    auto op = std::execution::connect(ctx.readable(-1), io_receiver{state});
+
+    resource.fail_next_allocation();
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    ASSERT_TRUE(state->error);
+    try {
+        std::rethrow_exception(state->error);
+        FAIL() << "expected readiness error";
+    } catch (const std::system_error& error) {
+        EXPECT_EQ(error.code(),
+                  std::make_error_code(std::errc::bad_file_descriptor));
+    } catch (...) {
+        FAIL() << "unexpected error type";
+    }
+}
+
 TEST(IoContextTest, ReadableCompletesWhenPipeHasData) {
     auto pipe = make_pipe();
     forge::io::context ctx;

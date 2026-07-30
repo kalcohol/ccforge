@@ -465,8 +465,10 @@ V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果
 ## Resource policy（资源策略）
 
 `forge::io::context_options{.memory = resource}` 控制 context state、pending fd map、
-event buffer、action batch 和 receiver record 等 context-owned allocation。resource
-非拥有，必须比 context 活得更久。
+event buffer 和 receiver record 等 context-owned allocation。Linux backend 从 pending
+map 摘下 record 后，通过 record 内嵌的 intrusive action chain 在锁外完成 receiver；
+readiness、cancel、shutdown 和 error completion 的 deferred batch 本身不再分配。
+resource 非拥有，必须比 context 活得更久。
 
 这不控制用户 fd、用户 buffer，也不承诺标准库内部对象零分配。
 

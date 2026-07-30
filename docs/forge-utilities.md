@@ -76,7 +76,7 @@ Allocation audit:
 | `bounded_channel<T>` | channel state, buffer, send/recv record control blocks | pending send/recv links are embedded in records; storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
 | `strand` | strand state, pending queue, stopped batches, receiver records, runner keepalive nodes | underlying scheduler resources remain owned by that scheduler | `forge_strand` |
 | `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
-| `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, action batches, readiness records | fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
+| `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, readiness records | deferred completion batches use an allocation-free intrusive record chain; fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
 | type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, `any_scheduler`, and `erased_sender` use SBO/default heap storage and are not allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
 
