@@ -79,6 +79,8 @@
   `any_stop_token` 类型擦除注册 callback；该标准形状的类型擦除层内部 control block 保持
   allocator-neutral，这是为了降低 native handoff 风险而接受的取舍。设计记录见
   [`execution-stop-token-allocator-design.md`](../roadmap/execution-stop-token-allocator-design.md)。
+  丢弃未消费的 future sender，或销毁尚未 `start()` 的 connected consumer operation，
+  都会请求停止 eager producer 并最终释放 scope association。
 - Scope-token surface 已改为 current-WD-shaped：
   `simple_counting_scope::token::wrap(sender)` 是 identity forwarding，
   `counting_scope::token::wrap(sender)` 会给 child env 暴露一个 fused stop token：

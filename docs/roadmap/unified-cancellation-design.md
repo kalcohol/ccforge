@@ -42,7 +42,7 @@ coroutine stopped 传播上重新推导。
 | Execution scope | `simple_counting_scope::token::wrap` | No child-token fusion | Current-WD shape 下 simple scope wrap 是 identity forwarding。 | Association 由 `associate` / `spawn` / `spawn_future` 拥有。 |
 | Execution scope | `counting_scope::token::wrap` | Fused token / composed stop source | child env 暴露 fused stop token；scope stop 与 downstream receiver/env stop 任一请求都会让 child 观察 stop。 | 这是当前实现选择；签名可能声明 stopped 兜底以覆盖 deferred connect failure。 |
 | Execution scope | `spawn` | Scope-owned execution | 只接受 `set_value()` / `set_stopped()` sender；error/value sender 需先转换。 | 不提供 fire-and-forget error channel。 |
-| Execution scope | `spawn_future` | Cancel-on-abandon + single-consumer future | abandoned/unconsumed future 请求 stop；consumer stop token 也请求 producer stop。 | Single-consumer；typed result 经 future sender 交付。 |
+| Execution scope | `spawn_future` | Cancel-on-abandon + single-consumer future | abandoned/unconsumed future 和 unstarted connected operation 请求 stop；consumer stop token 也请求 producer stop。 | Single-consumer；typed result 经 future sender 交付。 |
 | Forge scheduler | `static_thread_pool` schedule op | Pre-start observation + primitive-owned shutdown | start 边沿观察 receiver stop token；shutdown 后/queue 拒绝时完成 stopped。 | 已运行 user work 不被强制中断。 |
 | Forge scheduler | `single_thread_context` / `resource_context` | Primitive-owned shutdown | 组合内部 runtime/scope，destructor shutdown + wait。 | Owner 负责不在 own worker/completion 内销毁。 |
 | Forge scheduler | `strand` | Primitive-owned shutdown + fail closed | pending/future strand work 在 shutdown 或 runner launch failure 后 stopped；self-wait guard 避免死锁。 | 底层 scheduler transient refusal 与 shutdown 不区分，文档化为 fail closed。 |

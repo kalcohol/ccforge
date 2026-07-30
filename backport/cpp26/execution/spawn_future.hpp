@@ -439,6 +439,9 @@ struct __op : __forge_detail::__immovable {
     {}
 
     ~__op() noexcept {
+        if (__state) {
+            __state->__abandon_unconsumed();
+        }
         if (__consumer_state) {
             __consumer_state->__abandon();
         }

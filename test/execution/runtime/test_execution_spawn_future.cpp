@@ -284,6 +284,39 @@ TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SpawnFutureTest, UnstartedConsumerOperationRequestsStopOnDestruction) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<manual_state>();
+    std::inplace_stop_source downstream_stop;
+    std::atomic<bool> receiver_stopped{false};
+
+    {
+        auto future = std::execution::spawn_future(
+            manual_sender{state}, token);
+        ASSERT_TRUE(wait_until_started(state));
+        EXPECT_EQ(scope.count(), 1u);
+
+        auto op = std::execution::connect(
+            std::move(future),
+            spawn_future_stop_receiver{&downstream_stop, &receiver_stopped});
+        (void)op;
+    }
+
+    const bool stop_requested = wait_until_stop_requested(state);
+    EXPECT_TRUE(stop_requested);
+    if (!stop_requested) {
+        complete_manual_value(state, 0);
+    }
+
+    EXPECT_TRUE(wait_until_completed(state));
+    EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto joined = std::execution::sync_wait(scope.join());
+    EXPECT_TRUE(joined.has_value());
+}
+
 TEST(SpawnFutureTest, AssociationOutlivesProducerUntilFutureIsReleased) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
