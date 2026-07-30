@@ -439,6 +439,66 @@ struct manual_void_sender {
     }
 };
 
+template<class Scope>
+void expect_empty_join_establishes_terminal_state() {
+    const auto run = [](bool close_before_join) {
+        Scope scope;
+        auto token = scope.get_token();
+        if (close_before_join) {
+            scope.close();
+        }
+
+        auto result = std::execution::sync_wait(scope.join());
+        ASSERT_TRUE(result.has_value());
+
+        EXPECT_TRUE(scope.is_closed());
+        EXPECT_FALSE(static_cast<bool>(token.try_associate()));
+
+        std::atomic<int> counter{0};
+        std::execution::spawn(increment_sender{&counter}, token);
+        EXPECT_EQ(counter.load(std::memory_order_relaxed), 0);
+
+        auto second_join = std::execution::sync_wait(scope.join());
+        EXPECT_TRUE(second_join.has_value());
+    };
+
+    run(false);
+    run(true);
+}
+
+template<class Scope>
+void expect_draining_join_establishes_terminal_state() {
+    const auto run = [](bool close_before_join) {
+        Scope scope;
+        auto token = scope.get_token();
+        auto assoc = token.try_associate();
+        ASSERT_TRUE(static_cast<bool>(assoc));
+        if (close_before_join) {
+            scope.close();
+        }
+
+        bool completed = false;
+        auto op = std::execution::connect(
+            scope.join(),
+            scope_probe_receiver{&completed});
+        std::execution::start(op);
+        EXPECT_FALSE(completed);
+
+        assoc = decltype(assoc){};
+        ASSERT_TRUE(completed);
+        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_TRUE(scope.is_closed());
+        EXPECT_FALSE(static_cast<bool>(token.try_associate()));
+
+        std::atomic<int> counter{0};
+        std::execution::spawn(increment_sender{&counter}, token);
+        EXPECT_EQ(counter.load(std::memory_order_relaxed), 0);
+    };
+
+    run(false);
+    run(true);
+}
+
 } // namespace
 
 // counting_scope tests
@@ -481,6 +541,16 @@ TEST(SimpleCountingScopeTest, JoinSenderCompletesWhenEmpty) {
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SimpleCountingScopeTest, EmptyJoinEstablishesTerminalState) {
+    expect_empty_join_establishes_terminal_state<
+        std::execution::simple_counting_scope>();
+}
+
+TEST(SimpleCountingScopeTest, DrainingJoinEstablishesTerminalState) {
+    expect_draining_join_establishes_terminal_state<
+        std::execution::simple_counting_scope>();
 }
 
 TEST(SimpleCountingScopeTest, JoinStartReturnsWhileScopeIsNonEmpty) {
@@ -805,6 +875,14 @@ TEST(CountingScopeTest, IsDistinctAndAssociatesWork) {
 
 TEST(CountingScopeTest, JoinStartReturnsWhileScopeIsNonEmpty) {
     expect_join_start_returns_while_nonempty<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, EmptyJoinEstablishesTerminalState) {
+    expect_empty_join_establishes_terminal_state<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, DrainingJoinEstablishesTerminalState) {
+    expect_draining_join_establishes_terminal_state<std::execution::counting_scope>();
 }
 
 TEST(CountingScopeTest, MultipleJoinersCompleteWhenScopeDrains) {

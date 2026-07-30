@@ -91,7 +91,11 @@
   downstream callback 只在 operation active 期间保持注册。
 - `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用
   `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join
-  operation，最后一个 scope association 释放时在锁外完成 join receiver。
+  operation，最后一个 scope association 释放时在锁外完成 join receiver。join
+  completion 会建立 terminal `joined` state；此后 `try_associate()` 返回 disengaged
+  association，`spawn()` 不再接受新 work。Scope destructor 仍保留 Forge 既有的宽松
+  diagnostic：只在 outstanding association count 非零时 terminate；已经自然 drain
+  但未消费 `join()` 的 scope 不额外终止。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义
   receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task
   operation-state。当前 coroutine bridge 把 stopped completion 作为内部异常回到 task

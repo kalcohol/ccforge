@@ -49,6 +49,57 @@ struct __join_state_base {
     void (*__complete)(__join_state_base*) noexcept = nullptr;
 };
 
+enum class __scope_state : std::uint8_t {
+    unused,
+    unused_and_closed,
+    open,
+    open_and_joining,
+    closed,
+    closed_and_joining,
+    joined,
+};
+
+constexpr __scope_state __scope_after_close(__scope_state state) noexcept {
+    switch (state) {
+    case __scope_state::unused:
+        return __scope_state::unused_and_closed;
+    case __scope_state::open:
+        return __scope_state::closed;
+    case __scope_state::open_and_joining:
+        return __scope_state::closed_and_joining;
+    default:
+        return state;
+    }
+}
+
+constexpr __scope_state __scope_after_association(__scope_state state) noexcept {
+    return state == __scope_state::unused ? __scope_state::open : state;
+}
+
+inline __scope_state __scope_after_join_start(__scope_state state) noexcept {
+    switch (state) {
+    case __scope_state::open:
+    case __scope_state::open_and_joining:
+        return __scope_state::open_and_joining;
+    case __scope_state::closed:
+    case __scope_state::closed_and_joining:
+        return __scope_state::closed_and_joining;
+    default:
+        std::terminate();
+    }
+}
+
+constexpr bool __scope_is_joining(__scope_state state) noexcept {
+    return state == __scope_state::open_and_joining
+        || state == __scope_state::closed_and_joining;
+}
+
+constexpr bool __scope_rejects_association(__scope_state state) noexcept {
+    return state != __scope_state::unused
+        && state != __scope_state::open
+        && state != __scope_state::open_and_joining;
+}
+
 inline void __complete_joiners(__join_state_base* head) noexcept {
     while (head) {
         auto* current = head;
@@ -134,13 +185,17 @@ public:
     // Close: prevent new work from being associated
     void close() noexcept {
         std::lock_guard lk{__mtx_};
-        __closed_.store(true, std::memory_order_release);
+        __state_.store(
+            __forge_counting_scope::__scope_after_close(
+                __state_.load(std::memory_order_relaxed)),
+            std::memory_order_release);
     }
 
     [[nodiscard]] auto join() noexcept;
 
     [[nodiscard]] bool is_closed() const noexcept {
-        return __closed_.load(std::memory_order_acquire);
+        return __forge_counting_scope::__scope_rejects_association(
+            __state_.load(std::memory_order_acquire));
     }
 
     [[nodiscard]] std::size_t count() const noexcept {
@@ -158,7 +213,8 @@ private:
     void __decrement() noexcept;
 
     std::atomic<std::size_t> __count_{0};
-    std::atomic<bool> __closed_{false};
+    std::atomic<__forge_counting_scope::__scope_state> __state_{
+        __forge_counting_scope::__scope_state::unused};
     std::mutex __mtx_;
     __forge_counting_scope::__join_state_base* __joiners_ = nullptr;
 };
@@ -218,7 +274,12 @@ static_assert(std::execution::scope_association<simple_counting_scope::scope_ass
 
 inline auto simple_counting_scope::__try_associate() noexcept -> scope_association {
     std::lock_guard lk{__mtx_};
-    if (__closed_.load(std::memory_order_acquire)) return {};
+    auto state = __state_.load(std::memory_order_relaxed);
+    if (__forge_counting_scope::__scope_rejects_association(state)) return {};
+
+    __state_.store(
+        __forge_counting_scope::__scope_after_association(state),
+        std::memory_order_release);
     __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
 }
@@ -229,16 +290,18 @@ inline void simple_counting_scope::__start_join(
     {
         std::lock_guard lk{__mtx_};
         if (__count_.load(std::memory_order_acquire) == 0) {
+            __state_.store(
+                __forge_counting_scope::__scope_state::joined,
+                std::memory_order_release);
             ready = joiner;
         } else {
+            __state_.store(
+                __forge_counting_scope::__scope_after_join_start(
+                    __state_.load(std::memory_order_relaxed)),
+                std::memory_order_release);
             joiner->__next = __joiners_;
             joiner->__registered = true;
             __joiners_ = joiner;
-
-            if (__count_.load(std::memory_order_acquire) == 0) {
-                __joiners_ = joiner->__next;
-                ready = joiner;
-            }
         }
     }
     __forge_counting_scope::__complete_joiners(ready);
@@ -249,7 +312,13 @@ inline void simple_counting_scope::__decrement() noexcept {
     {
         std::lock_guard lk{__mtx_};
         if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            ready = std::exchange(__joiners_, nullptr);
+            auto state = __state_.load(std::memory_order_relaxed);
+            if (__forge_counting_scope::__scope_is_joining(state)) {
+                __state_.store(
+                    __forge_counting_scope::__scope_state::joined,
+                    std::memory_order_release);
+                ready = std::exchange(__joiners_, nullptr);
+            }
         }
     }
     __forge_counting_scope::__complete_joiners(ready);
@@ -512,7 +581,10 @@ public:
 
     void close() noexcept {
         std::lock_guard lk{__mtx_};
-        __closed_.store(true, std::memory_order_release);
+        __state_.store(
+            __forge_counting_scope::__scope_after_close(
+                __state_.load(std::memory_order_relaxed)),
+            std::memory_order_release);
     }
 
     bool request_stop() noexcept {
@@ -522,7 +594,8 @@ public:
     [[nodiscard]] auto join() noexcept;
 
     [[nodiscard]] bool is_closed() const noexcept {
-        return __closed_.load(std::memory_order_acquire);
+        return __forge_counting_scope::__scope_rejects_association(
+            __state_.load(std::memory_order_acquire));
     }
 
     [[nodiscard]] std::size_t count() const noexcept {
@@ -544,7 +617,8 @@ private:
     void __decrement() noexcept;
 
     std::atomic<std::size_t> __count_{0};
-    std::atomic<bool> __closed_{false};
+    std::atomic<__forge_counting_scope::__scope_state> __state_{
+        __forge_counting_scope::__scope_state::unused};
     std::inplace_stop_source __stop_source_{};
     std::mutex __mtx_;
     __forge_counting_scope::__join_state_base* __joiners_ = nullptr;
@@ -601,7 +675,12 @@ static_assert(std::execution::scope_association<counting_scope::scope_associatio
 
 inline auto counting_scope::__try_associate() noexcept -> scope_association {
     std::lock_guard lk{__mtx_};
-    if (__closed_.load(std::memory_order_acquire)) return {};
+    auto state = __state_.load(std::memory_order_relaxed);
+    if (__forge_counting_scope::__scope_rejects_association(state)) return {};
+
+    __state_.store(
+        __forge_counting_scope::__scope_after_association(state),
+        std::memory_order_release);
     __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
 }
@@ -612,16 +691,18 @@ inline void counting_scope::__start_join(
     {
         std::lock_guard lk{__mtx_};
         if (__count_.load(std::memory_order_acquire) == 0) {
+            __state_.store(
+                __forge_counting_scope::__scope_state::joined,
+                std::memory_order_release);
             ready = joiner;
         } else {
+            __state_.store(
+                __forge_counting_scope::__scope_after_join_start(
+                    __state_.load(std::memory_order_relaxed)),
+                std::memory_order_release);
             joiner->__next = __joiners_;
             joiner->__registered = true;
             __joiners_ = joiner;
-
-            if (__count_.load(std::memory_order_acquire) == 0) {
-                __joiners_ = joiner->__next;
-                ready = joiner;
-            }
         }
     }
     __forge_counting_scope::__complete_joiners(ready);
@@ -632,7 +713,13 @@ inline void counting_scope::__decrement() noexcept {
     {
         std::lock_guard lk{__mtx_};
         if (__count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            ready = std::exchange(__joiners_, nullptr);
+            auto state = __state_.load(std::memory_order_relaxed);
+            if (__forge_counting_scope::__scope_is_joining(state)) {
+                __state_.store(
+                    __forge_counting_scope::__scope_state::joined,
+                    std::memory_order_release);
+                ready = std::exchange(__joiners_, nullptr);
+            }
         }
     }
     __forge_counting_scope::__complete_joiners(ready);
