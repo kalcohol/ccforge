@@ -62,6 +62,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future sender；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
+| `inplace_stop_source/token/callback` | Implemented subset | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 current-WD conditional `noexcept`。见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 保留历史 single-value tuple 行为，multi-value alternatives 使用 `variant<tuple<...>>`。 |
 | `affine` | Implemented subset | `affine.hpp`；当前 WD spelling 上的 thin wrapper，语义复用现有 `continues_on` transfer subset。 |
@@ -104,6 +105,10 @@ risk triage 的事实来源。
   callback/type-erasure control blocks 按已接受设计保持 allocator-neutral，因为修改
   standard-shaped erased stop-token API 会增加 native-handoff 风险。见
   [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)。
+- `inplace_stop_callback` 的 allocation / exception-spec 偏差是独立 residual，不由上述
+  `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
+  allocation-free rewrite；见
+  [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。
 - Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、tag-invoke environment queries、
   `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` transfer subset 都是已接受
   residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。

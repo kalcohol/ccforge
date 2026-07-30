@@ -35,6 +35,11 @@
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和
   `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile
   probe 覆盖。
+- `inplace_stop_callback` 当前为保持 Forge 已验证的 callback/source 重入销毁路径，使用
+  allocator-neutral control block。因此 registration 会分配，constructor 尚未满足
+  current WD 对 nothrow callback 的条件 `noexcept`。不要在 `noexcept` 路径中假设注册
+  不会失败；收敛方案和实现门槛见
+  [`inplace-stop-callback-design.md`](../roadmap/inplace-stop-callback-design.md)。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和 copyable lvalue 拷贝路径；
   non-copyable lvalue sender 需要显式传入 `std::move(sndr)`，以保持 native C++26
   handoff 时的源码形态一致。const non-copyable lvalue 仍不可连接。

@@ -75,6 +75,9 @@
 //     transformed sender type before reading signatures on non-default-domain
 //     paths.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
+//   - inplace_stop_callback registration currently allocates an internal
+//     rendezvous control block, so its constructor is not conditionally
+//     noexcept as required by the current working draft.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
 //
