@@ -447,8 +447,10 @@ Windows backend 是 completion model，不提供 `readable()` / `writable()` rea
 sender。它的 V1 目标是证明 Forge 的 IO 抽象能承载 completion-based backend，而不是把
 Windows 强行压成 Linux readiness。
 
-当前 Windows parity 明确只覆盖 byte-stream one-shot read/write completion、stop/cancel
-finalization、EOF 映射和 package/gate smoke。以下格子故意 scoped out：
+当前 Windows parity 覆盖 byte-stream one-shot read/write completion、message-mode read
+的 partial-progress completion、stop/cancel finalization、EOF 映射和 package/gate smoke。
+message-mode read 遇到 `ERROR_MORE_DATA` 时会以 value completion 返回本次已传输的 byte
+count；消息边界与后续分片仍由调用者管理。以下格子故意 scoped out：
 
 - random-access file offset：公共 API 不接收 offset，seekable file IO 需要后续 API 扩展；
 - handle ownership / association lifecycle：context 只维护 borrowed-handle cache，不成为

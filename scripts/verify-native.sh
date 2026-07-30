@@ -23,8 +23,8 @@
 #           execution + forge utility subsets under ThreadSanitizer
 #           (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
-#           Runs the execution + forge utility subsets under ASan+UBSan
-#           (UAF / leak / UB check).
+#           Runs the execution + forge utility subsets and focused SIMD memory
+#           tests under ASan+UBSan (UAF / leak / UB check).
 #   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
 set -euo pipefail
