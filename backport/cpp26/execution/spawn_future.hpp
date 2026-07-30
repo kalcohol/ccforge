@@ -96,10 +96,39 @@ public:
 template<class CS>
 using __result_variant_t = typename __result_variant<CS>::type;
 
+template<class Sig>
+struct __future_completion_signature;
+
+template<class... Vs>
+struct __future_completion_signature<set_value_t(Vs...)> {
+    using type = completion_signatures<set_value_t(std::decay_t<Vs>...)>;
+};
+
+template<class Error>
+struct __future_completion_signature<set_error_t(Error)> {
+    using type = completion_signatures<set_error_t(std::decay_t<Error>)>;
+};
+
+template<>
+struct __future_completion_signature<set_stopped_t()> {
+    using type = completion_signatures<set_stopped_t()>;
+};
+
 template<class CS>
-using __future_completion_signatures_t = __forge_meta::__concat_unique_cs_t<
-    CS,
-    completion_signatures<set_error_t(std::exception_ptr), set_stopped_t()>>;
+struct __future_completion_signatures;
+
+template<class... Sigs>
+struct __future_completion_signatures<completion_signatures<Sigs...>> {
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __future_completion_signature<Sigs>::type...,
+        completion_signatures<
+            set_error_t(std::exception_ptr),
+            set_stopped_t()>>;
+};
+
+template<class CS>
+using __future_completion_signatures_t =
+    typename __future_completion_signatures<CS>::type;
 
 template<class Env>
 struct __spawn_env {

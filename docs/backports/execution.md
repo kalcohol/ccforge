@@ -80,7 +80,9 @@
   allocator-neutral，这是为了降低 native handoff 风险而接受的取舍。设计记录见
   [`execution-stop-token-allocator-design.md`](../roadmap/execution-stop-token-allocator-design.md)。
   丢弃未消费的 future sender，或销毁尚未 `start()` 的 connected consumer operation，
-  都会请求停止 eager producer 并最终释放 scope association。
+  都会请求停止 eager producer 并最终释放 scope association。Child 的 value/error
+  completion 会先存为 decay-copy，再以 rvalue 交给 future receiver；future 公开的
+  completion signatures 也使用这些 decayed types，不保留 child 的引用类别。
 - Scope-token surface 已改为 current-WD-shaped：
   `simple_counting_scope::token::wrap(sender)` 是 identity forwarding，
   `counting_scope::token::wrap(sender)` 会给 child env 暴露一个 fused stop token：

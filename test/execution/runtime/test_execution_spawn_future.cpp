@@ -23,6 +23,83 @@ using namespace std::chrono_literals;
 
 struct spawn_future_marker_error {};
 
+template<class CompletionSignatures, class Signature>
+struct contains_completion_signature : std::false_type {};
+
+template<class... Signatures, class Signature>
+struct contains_completion_signature<
+    std::execution::completion_signatures<Signatures...>,
+    Signature>
+    : std::bool_constant<(std::same_as<Signatures, Signature> || ...)> {};
+
+struct reference_value_sender {
+    using sender_concept = std::execution::sender_t;
+
+    int* value = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int&)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        int* value;
+
+        void start() & noexcept {
+            std::execution::set_value(std::move(rcvr), *value);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) const -> op<R> {
+        return op<R>{std::move(rcvr), value};
+    }
+};
+
+struct reference_error_sender {
+    using sender_concept = std::execution::sender_t;
+
+    const spawn_future_marker_error* error = nullptr;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(const spawn_future_marker_error&)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        const spawn_future_marker_error* error;
+
+        void start() & noexcept {
+            std::execution::set_error(std::move(rcvr), *error);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) const -> op<R> {
+        return op<R>{std::move(rcvr), error};
+    }
+};
+
 struct deref_unique {
     int operator()(std::unique_ptr<int> value) const noexcept {
         return *value;
@@ -221,6 +298,48 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 31);
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+
+    int value = 42;
+    auto value_future = std::execution::spawn_future(
+        reference_value_sender{&value}, token);
+    using value_cs_t = std::execution::completion_signatures_of_t<
+        decltype(value_future)>;
+    static_assert(contains_completion_signature<
+                  value_cs_t,
+                  std::execution::set_value_t(int)>::value);
+    static_assert(!contains_completion_signature<
+                  value_cs_t,
+                  std::execution::set_value_t(int&)>::value);
+
+    auto value_result = std::execution::sync_wait(std::move(value_future));
+    ASSERT_TRUE(value_result.has_value());
+    EXPECT_EQ(std::get<0>(*value_result), 42);
+
+    const spawn_future_marker_error error{};
+    auto error_future = std::execution::spawn_future(
+        reference_error_sender{&error}, token);
+    using error_cs_t = std::execution::completion_signatures_of_t<
+        decltype(error_future)>;
+    static_assert(contains_completion_signature<
+                  error_cs_t,
+                  std::execution::set_error_t(spawn_future_marker_error)>::value);
+    static_assert(!contains_completion_signature<
+                  error_cs_t,
+                  std::execution::set_error_t(
+                      const spawn_future_marker_error&)>::value);
+
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(std::move(error_future)),
+        spawn_future_marker_error);
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto joined = std::execution::sync_wait(scope.join());
+    EXPECT_TRUE(joined.has_value());
 }
 
 TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
