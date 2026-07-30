@@ -272,7 +272,14 @@ struct __sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_completion_scheduler<set_value_t>, __sch),
+            std::execution::make_prop(
+                std::execution::get_completion_scheduler<set_error_t>, __sch),
+            std::execution::make_prop(
+                std::execution::get_completion_scheduler<set_stopped_t>, __sch),
+            std::execution::get_env(__sndr));
     }
 };
 

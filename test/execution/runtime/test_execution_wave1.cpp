@@ -367,6 +367,27 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     EXPECT_EQ(result, 42);
 }
 
+TEST(ContinuesOnTest, ReportsDestinationCompletionSchedulerForEveryDisposition) {
+    std::execution::run_loop source_loop;
+    std::execution::run_loop destination_loop;
+    auto source = source_loop.get_scheduler();
+    auto destination = destination_loop.get_scheduler();
+    auto sndr = std::execution::continues_on(
+        std::execution::schedule(source),
+        destination);
+    auto env = std::execution::get_env(sndr);
+
+    EXPECT_TRUE(
+        std::execution::get_completion_scheduler<std::execution::set_value_t>(env)
+        == destination);
+    EXPECT_TRUE(
+        std::execution::get_completion_scheduler<std::execution::set_error_t>(env)
+        == destination);
+    EXPECT_TRUE(
+        std::execution::get_completion_scheduler<std::execution::set_stopped_t>(env)
+        == destination);
+}
+
 TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
     auto sndr = std::execution::continues_on(
         std::execution::just(),

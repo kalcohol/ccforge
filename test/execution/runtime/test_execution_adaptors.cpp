@@ -1,12 +1,13 @@
 #include <gtest/gtest.h>
 #include <execution>
-#include <optional>
 #include <atomic>
+#include <exception>
+#include <future>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <type_traits>
-#include <exception>
 
 namespace {
 
@@ -21,6 +22,30 @@ struct throws_on_copy {
     throws_on_copy() = default;
     throws_on_copy(const throws_on_copy&) {
         throw std::runtime_error("optional value construction failed");
+    }
+};
+
+struct run_loop_workers_guard {
+    std::execution::run_loop& first_loop;
+    std::execution::run_loop& second_loop;
+    std::execution::run_loop& third_loop;
+    std::thread& first_worker;
+    std::thread& second_worker;
+    std::thread& third_worker;
+
+    ~run_loop_workers_guard() {
+        first_loop.finish();
+        second_loop.finish();
+        third_loop.finish();
+        if (first_worker.joinable()) {
+            first_worker.join();
+        }
+        if (second_worker.joinable()) {
+            second_worker.join();
+        }
+        if (third_worker.joinable()) {
+            third_worker.join();
+        }
     }
 };
 
@@ -379,6 +404,60 @@ TEST(OnTest, ClosureFormReturnsToChildCompletionScheduler) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 9);
+}
+
+TEST(OnTest, ClosureFormReturnsToTransferredChildCompletionScheduler) {
+    std::execution::run_loop source_loop;
+    std::execution::run_loop child_loop;
+    std::execution::run_loop closure_loop;
+    std::promise<std::thread::id> source_id_promise;
+    std::promise<std::thread::id> child_id_promise;
+    std::promise<std::thread::id> closure_id_promise;
+    auto source_id = source_id_promise.get_future();
+    auto child_id = child_id_promise.get_future();
+    auto closure_id = closure_id_promise.get_future();
+
+    std::thread source_worker([&] {
+        source_id_promise.set_value(std::this_thread::get_id());
+        source_loop.run();
+    });
+    std::thread child_worker([&] {
+        child_id_promise.set_value(std::this_thread::get_id());
+        child_loop.run();
+    });
+    std::thread closure_worker([&] {
+        closure_id_promise.set_value(std::this_thread::get_id());
+        closure_loop.run();
+    });
+    run_loop_workers_guard workers{
+        source_loop, child_loop, closure_loop,
+        source_worker, child_worker, closure_worker};
+
+    const auto expected_source_id = source_id.get();
+    const auto expected_child_id = child_id.get();
+    const auto expected_closure_id = closure_id.get();
+    std::thread::id closure_observed;
+    std::thread::id returned_observed;
+
+    auto child = std::execution::continues_on(
+        std::execution::schedule(source_loop.get_scheduler()),
+        child_loop.get_scheduler());
+    auto sndr = std::execution::on(
+        std::move(child),
+        closure_loop.get_scheduler(),
+        std::execution::then([&] {
+            closure_observed = std::this_thread::get_id();
+        }))
+        | std::execution::then([&] {
+              returned_observed = std::this_thread::get_id();
+          });
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_NE(expected_source_id, expected_child_id);
+    EXPECT_EQ(closure_observed, expected_closure_id);
+    EXPECT_EQ(returned_observed, expected_child_id);
 }
 
 TEST(AffineTest, CompletesOnRequestedScheduler) {
