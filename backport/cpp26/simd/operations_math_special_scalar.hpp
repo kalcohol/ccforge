@@ -604,7 +604,10 @@ auto cyl_bessel_hankel_asymptotic(
         converged};
 }
 
-inline auto cyl_bessel_reduced_integral(long double nu, long double x)
+inline auto cyl_bessel_reduced_integral(
+    long double nu,
+    long double x,
+    long double epsilon)
     -> cyl_bessel_hankel_result<long double> {
     const auto half_order = [x](long double order)
         -> cyl_bessel_hankel_result<long double> {
@@ -630,8 +633,6 @@ inline auto cyl_bessel_reduced_integral(long double nu, long double x)
     const unsigned segments = static_cast<unsigned>(std::max(
         8.0L,
         std::ceil(2.0L * (x + std::abs(nu)))));
-    const long double epsilon =
-        8.0L * std::numeric_limits<long double>::epsilon();
     const long double finite_j = segmented_simpson_integral(
         [=](long double theta) {
             return std::cos(x * std::sin(theta) - nu * theta);
@@ -692,7 +693,15 @@ auto cyl_bessel_reduced_pair(long double nu, long double x)
             return asymptotic;
         }
     }
-    return cyl_bessel_reduced_integral(nu, x);
+    // The accumulator may be wider than the public result type (notably
+    // binary128 under Zig), so do not over-solve the quadrature for T.
+    const long double integration_tolerance = std::max(
+        8.0L * std::numeric_limits<long double>::epsilon(),
+        static_cast<long double>(std::numeric_limits<T>::epsilon()));
+    return cyl_bessel_reduced_integral(
+        nu,
+        x,
+        integration_tolerance);
 }
 
 inline long double cyl_bessel_j_miller(
