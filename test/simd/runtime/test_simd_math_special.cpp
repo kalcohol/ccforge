@@ -192,6 +192,33 @@ TEST(SimdMathSpecialTest, CylindricalBesselFunctionsCoverHighOrderTransitionBand
     }
 }
 
+TEST(SimdMathSpecialTest, CylindricalBesselFloatFallbackCoversFormerSignAndPrecisionFailures) {
+    const float4 orders = load_vec<float4>(
+        std::array<float, 4>{{0.0f, 10.0f, 0.0f, 10.0f}});
+    const float4 arguments = load_vec<float4>(
+        std::array<float, 4>{{11.9f, 20.0f, 11.9f, 20.0f}});
+
+    const auto j = std::simd::cyl_bessel_j(orders, arguments);
+    const auto y = std::simd::cyl_neumann(orders, arguments);
+    constexpr std::array<float, 4> expected_j{{
+        0.0250494417f,
+        0.1864825580f,
+        0.0250494417f,
+        0.1864825580f}};
+    constexpr std::array<float, 4> expected_y{{
+        -0.2298332139f,
+        -0.0438946535f,
+        -0.2298332139f,
+        -0.0438946535f}};
+
+    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+        const auto index = static_cast<std::size_t>(i);
+        EXPECT_NEAR(j[i], expected_j[index], 5e-7f);
+        EXPECT_NEAR(y[i], expected_y[index], 5e-7f);
+    }
+    EXPECT_LT(y[1], 0.0f);
+}
+
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
 TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
     EXPECT_NEAR(
