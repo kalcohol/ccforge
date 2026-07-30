@@ -10,15 +10,19 @@
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
+#include <iterator>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <new>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <thread>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -242,6 +246,131 @@ struct stopped_receiver : io_receiver {
     }
 };
 
+class recycling_memory_resource final : public std::pmr::memory_resource {
+public:
+    ~recycling_memory_resource() override {
+        for (const auto& block : blocks_) {
+            upstream_->deallocate(block.ptr, block.bytes, block.alignment);
+        }
+    }
+
+private:
+    struct block {
+        void* ptr;
+        std::size_t bytes;
+        std::size_t alignment;
+    };
+
+    void* do_allocate(std::size_t bytes, std::size_t alignment) override {
+        std::lock_guard lk{mtx_};
+        for (auto it = blocks_.rbegin(); it != blocks_.rend(); ++it) {
+            if (it->bytes == bytes && it->alignment == alignment) {
+                auto* ptr = it->ptr;
+                blocks_.erase(std::next(it).base());
+                return ptr;
+            }
+        }
+        return upstream_->allocate(bytes, alignment);
+    }
+
+    void do_deallocate(
+        void* ptr,
+        std::size_t bytes,
+        std::size_t alignment) override {
+        std::lock_guard lk{mtx_};
+        blocks_.push_back(block{ptr, bytes, alignment});
+    }
+
+    [[nodiscard]] bool do_is_equal(
+        const std::pmr::memory_resource& other) const noexcept override {
+        return this == &other;
+    }
+
+    std::pmr::memory_resource* upstream_ = std::pmr::new_delete_resource();
+    std::mutex mtx_;
+    std::vector<block> blocks_;
+};
+
+struct blocking_completion_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool entered = false;
+    bool release = false;
+};
+
+class blocking_completion_release_guard {
+public:
+    explicit blocking_completion_release_guard(
+        std::shared_ptr<blocking_completion_state> state)
+        : state_(std::move(state)) {}
+
+    ~blocking_completion_release_guard() {
+        release();
+    }
+
+    void release() noexcept {
+        if (!state_) {
+            return;
+        }
+        {
+            std::lock_guard lk{state_->mtx};
+            state_->release = true;
+        }
+        state_->cv.notify_all();
+        state_.reset();
+    }
+
+private:
+    std::shared_ptr<blocking_completion_state> state_;
+};
+
+struct blocking_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<blocking_completion_state> state;
+
+    void set_value(std::size_t) && noexcept { block(); }
+    void set_error(std::exception_ptr) && noexcept { block(); }
+    void set_stopped() && noexcept { block(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+private:
+    void block() noexcept {
+        std::unique_lock lk{state->mtx};
+        state->entered = true;
+        state->cv.notify_all();
+        state->cv.wait(lk, [&] { return state->release; });
+    }
+};
+
+void write_overlapped(HANDLE handle, std::span<const std::byte> bytes) {
+    unique_handle event{::CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    if (!event) {
+        throw_last_error("CreateEventW");
+    }
+
+    OVERLAPPED overlapped{};
+    overlapped.hEvent = event.get();
+    const BOOL issued = ::WriteFile(
+        handle,
+        bytes.data(),
+        static_cast<DWORD>(bytes.size()),
+        nullptr,
+        &overlapped);
+    if (issued == FALSE && ::GetLastError() != ERROR_IO_PENDING) {
+        throw_last_error("WriteFile");
+    }
+
+    DWORD transferred = 0;
+    if (::GetOverlappedResult(
+            handle, &overlapped, &transferred, TRUE) == FALSE) {
+        throw_last_error("GetOverlappedResult");
+    }
+    if (transferred != bytes.size()) {
+        throw std::runtime_error("short overlapped write");
+    }
+}
+
 struct self_destroying_io_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -326,7 +455,7 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     EXPECT_EQ(buffer, payload);
 }
 
-TEST(IoIocpTest, SynchronousSuccessWithoutCompletionPacketStillCompletes) {
+TEST(IoIocpTest, BackendOwnedSkipModeCompletesSynchronousSuccess) {
     auto pipe = make_pipe_pair();
     forge::io::context ctx;
     std::array<std::byte, 3> payload{byte('s'), byte('y'), byte('n')};
@@ -337,17 +466,83 @@ TEST(IoIocpTest, SynchronousSuccessWithoutCompletionPacketStillCompletes) {
     ASSERT_TRUE(written.has_value());
     ASSERT_EQ(std::get<0>(*written), payload.size());
 
-    ASSERT_TRUE(::SetFileCompletionNotificationModes(
-        pipe.client.get(),
-        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS))
-        << "SetFileCompletionNotificationModes failed with "
-        << ::GetLastError();
-
     auto read = std::execution::sync_wait(
         ctx.async_read_some(pipe.client.get(), std::span{received}));
     ASSERT_TRUE(read.has_value());
     EXPECT_EQ(std::get<0>(*read), received.size());
     EXPECT_EQ(received, payload);
+}
+
+TEST(IoIocpTest, SynchronousSuccessCannotCompleteARecycledRecord) {
+    recycling_memory_resource memory;
+    auto blocker_pipe = make_pipe_pair();
+    auto target_pipe = make_pipe_pair();
+    forge::io::context ctx{{.memory = &memory}};
+
+    auto blocker_state = std::make_shared<blocking_completion_state>();
+    blocking_completion_release_guard blocker_release{blocker_state};
+    std::array<std::byte, 1> blocker_buffer{};
+    auto blocker_op = std::execution::connect(
+        ctx.async_read_some(
+            blocker_pipe.client.get(), std::span{blocker_buffer}),
+        blocking_io_receiver{blocker_state});
+    std::execution::start(blocker_op);
+    const std::array blocker_payload{byte('b')};
+    write_overlapped(blocker_pipe.server.get(), blocker_payload);
+    {
+        std::unique_lock lk{blocker_state->mtx};
+        ASSERT_TRUE(blocker_state->cv.wait_for(
+            lk, 2s, [&] { return blocker_state->entered; }));
+    }
+
+    const std::array stale_payload{
+        byte('o'), byte('l'), byte('d')};
+    write_overlapped(target_pipe.server.get(), stale_payload);
+
+    std::array<std::byte, 3> first_buffer{};
+    auto first_state = std::make_shared<io_state>();
+    using op_t = decltype(std::execution::connect(
+        ctx.async_read_some(
+            target_pipe.client.get(), std::span{first_buffer}),
+        io_receiver{first_state}));
+    op_slot<op_t> slot;
+    auto& first_op = slot.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(
+                target_pipe.client.get(), std::span{first_buffer}),
+            io_receiver{first_state});
+    });
+    std::execution::start(first_op);
+    ASSERT_TRUE(wait_done(first_state));
+    EXPECT_EQ(first_buffer, stale_payload);
+    slot.reset();
+
+    std::array<std::byte, 3> second_buffer{};
+    auto second_state = std::make_shared<io_state>();
+    auto& second_op = slot.emplace_from([&] {
+        return std::execution::connect(
+            ctx.async_read_some(
+                target_pipe.client.get(), std::span{second_buffer}),
+            io_receiver{second_state});
+    });
+    std::execution::start(second_op);
+
+    blocker_release.release();
+
+    {
+        std::unique_lock lk{second_state->mtx};
+        EXPECT_FALSE(second_state->cv.wait_for(
+            lk, 100ms, [&] { return second_state->done(); }));
+    }
+
+    const std::array fresh_payload{
+        byte('n'), byte('e'), byte('w')};
+    write_overlapped(target_pipe.server.get(), fresh_payload);
+    ASSERT_TRUE(wait_done(second_state));
+    EXPECT_TRUE(second_state->value);
+    EXPECT_EQ(second_state->bytes, fresh_payload.size());
+    EXPECT_EQ(second_buffer, fresh_payload);
+    EXPECT_EQ(second_state->completions, 1);
 }
 
 TEST(IoIocpTest, AsyncReadReturnsZeroWhenPeerCloses) {

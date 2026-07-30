@@ -222,6 +222,11 @@ struct __handle_hash {
     }
 };
 
+struct __association_state {
+    std::size_t active = 0;
+    bool skips_completion_on_success = false;
+};
+
 enum class __start_result_kind {
     accepted,
     value,
@@ -240,16 +245,16 @@ struct __state : std::enable_shared_from_this<__state> {
         : memory(forge::normalize_memory_resource(options.memory))
         , pending_records(
               0,
-              std::hash<__record_base*>{},
-              std::equal_to<__record_base*>{},
+              std::hash<OVERLAPPED*>{},
+              std::equal_to<OVERLAPPED*>{},
               std::pmr::polymorphic_allocator<
-                  std::pair<__record_base* const, __record_ptr>>{memory})
+                  std::pair<OVERLAPPED* const, __record_ptr>>{memory})
         , associated_handles(
               0,
               __handle_hash{},
               std::equal_to<HANDLE>{},
               std::pmr::polymorphic_allocator<
-                  std::pair<HANDLE const, std::size_t>>{memory}) {
+                  std::pair<HANDLE const, __association_state>>{memory}) {
         (void)options.max_events;
         port.reset(::CreateIoCompletionPort(
             INVALID_HANDLE_VALUE, nullptr, 0, 1));
@@ -283,12 +288,14 @@ struct __state : std::enable_shared_from_this<__state> {
 
             prune_idle_associations_locked();
 
-            HANDLE associated = ::CreateIoCompletionPort(
+            const HANDLE associated = ::CreateIoCompletionPort(
                 record->handle, port.get(), 0, 0);
+            auto association = associated_handles.end();
             if (!associated) {
                 const auto error = ::GetLastError();
+                association = associated_handles.find(record->handle);
                 if (error != ERROR_INVALID_PARAMETER ||
-                    !associated_handles.contains(record->handle)) {
+                    association == associated_handles.end()) {
                     result.kind = __start_result_kind::error;
                     result.error = __windows_error(
                         error,
@@ -296,10 +303,20 @@ struct __state : std::enable_shared_from_this<__state> {
                     return result;
                 }
             } else {
-                associated_handles.try_emplace(record->handle, 0);
+                auto [it, inserted] =
+                    associated_handles.try_emplace(record->handle);
+                association = it;
+                if (inserted || it->second.active == 0) {
+                    it->second.skips_completion_on_success =
+                        ::SetFileCompletionNotificationModes(
+                            record->handle,
+                            FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) != FALSE;
+                }
             }
 
-            auto* key = record.get();
+            auto* key = &record->entry.overlapped;
+            const bool skips_completion_on_success =
+                association->second.skips_completion_on_success;
             pending_records.emplace(key, record);
             ++pending;
             increment_association_locked(record->handle);
@@ -330,6 +347,12 @@ struct __state : std::enable_shared_from_this<__state> {
                 return result;
             }
 
+            // A successful overlapped call still queues a packet unless this
+            // mode was enabled, so the packet retains completion ownership.
+            if (!skips_completion_on_success) {
+                return result;
+            }
+
             pending_records.erase(key);
             decrement_association_locked(record->handle);
             --pending;
@@ -357,7 +380,7 @@ struct __state : std::enable_shared_from_this<__state> {
     void cancel_record(const __record_ptr& target) noexcept {
         {
             std::lock_guard lk{mtx};
-            auto it = pending_records.find(target.get());
+            auto it = pending_records.find(&target->entry.overlapped);
             if (it == pending_records.end()) {
                 return;
             }
@@ -496,7 +519,7 @@ private:
     void prune_idle_associations_locked() noexcept {
         for (auto it = associated_handles.begin();
              it != associated_handles.end();) {
-            if (it->second == 0 && handle_is_invalid(it->first)) {
+            if (it->second.active == 0 && handle_is_invalid(it->first)) {
                 it = associated_handles.erase(it);
             } else {
                 ++it;
@@ -505,16 +528,16 @@ private:
     }
 
     void increment_association_locked(HANDLE handle) {
-        auto [it, _] = associated_handles.try_emplace(handle, 0);
-        ++it->second;
+        auto [it, _] = associated_handles.try_emplace(handle);
+        ++it->second.active;
     }
 
     void decrement_association_locked(HANDLE handle) noexcept {
         auto it = associated_handles.find(handle);
-        if (it == associated_handles.end() || it->second == 0) {
+        if (it == associated_handles.end() || it->second.active == 0) {
             return;
         }
-        --it->second;
+        --it->second.active;
     }
 
     void complete(
@@ -525,15 +548,7 @@ private:
         __record_ptr record;
         {
             std::lock_guard lk{mtx};
-            auto it = pending_records.end();
-            for (auto candidate = pending_records.begin();
-                 candidate != pending_records.end();
-                 ++candidate) {
-                if (&candidate->second->entry.overlapped == overlapped) {
-                    it = candidate;
-                    break;
-                }
-            }
+            auto it = pending_records.find(overlapped);
             if (it == pending_records.end()) {
                 return;
             }
@@ -570,8 +585,9 @@ public:
     __handle port;
     std::mutex mtx;
     std::condition_variable cv;
-    std::pmr::unordered_map<__record_base*, __record_ptr> pending_records;
-    std::pmr::unordered_map<HANDLE, std::size_t, __handle_hash> associated_handles;
+    std::pmr::unordered_map<OVERLAPPED*, __record_ptr> pending_records;
+    std::pmr::unordered_map<
+        HANDLE, __association_state, __handle_hash> associated_handles;
     bool closed = false;
     bool stopped = false;
     bool worker_done = false;
