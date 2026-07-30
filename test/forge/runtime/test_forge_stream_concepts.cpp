@@ -215,6 +215,38 @@ TEST(ForgeStreamConceptsTest, ReadExactlyHonorsEofWithProgress) {
     EXPECT_EQ(std::string_view(output.data(), count), "hi");
 }
 
+TEST(ForgeStreamConceptsTest, ReadExactlyExactFillWinsOverTerminalEof) {
+    eof_with_progress_stream stream{"hi"};
+    std::array<char, 2> output{};
+
+    auto result = forge::io::read_exactly(
+        stream,
+        forge::io::mutable_buffer{std::span{output}});
+    auto [error, count] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_FALSE(result.eof());
+    EXPECT_EQ(count, output.size());
+    EXPECT_EQ(stream.calls(), 1u);
+    EXPECT_EQ(std::string_view(output.data(), count), "hi");
+}
+
+TEST(ForgeStreamConceptsTest, ErasedPacketAcceptsTerminalEofAtPacketBoundary) {
+    std::string packet;
+    packet.push_back('\x05');
+    packet.append("hello");
+    eof_with_progress_stream source{std::move(packet)};
+    forge::io::any_read_stream stream{source};
+
+    auto result = read_erased_packet(stream);
+    auto [error, payload] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_FALSE(result.eof());
+    EXPECT_EQ(payload, "hello");
+    EXPECT_EQ(source.calls(), 2u);
+}
+
 TEST(ForgeStreamConceptsTest, ReadExactlyPropagatesErrorWithProgress) {
     forge::io::scripted_read_stream stream{
         forge::io::scripted_read_step::bytes("ab"),

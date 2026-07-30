@@ -82,6 +82,9 @@ template<read_stream Stream>
         if (error) {
             return io_result<std::size_t>::failure(error, total);
         }
+        if (total == output.size()) {
+            return io_result<std::size_t>::success(total);
+        }
         if (result.eof() || count == 0) {
             return io_result<std::size_t>::end_of_file(total);
         }

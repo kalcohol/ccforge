@@ -105,6 +105,7 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 - `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
   算法；遇到 stream error 时返回累计 byte count。`read_exactly` 遇到提前 EOF 时返回
   EOF 状态和累计 byte count，包括一次 read 同时报告 progress 与 EOF 的情况；
+  如果同一次 read 的 progress 恰好填满目标 buffer，则完整读取优先并返回 value；
   `write_all` 遇到容量耗尽导致的 `0` byte progress 时仍返回
   `std::errc::io_error` 和累计 byte count，因为 write side 没有 EOF 语义。
 - `read_until(stream, std::string&, delimiter, max_bytes)` 是小型 line/record helper；
