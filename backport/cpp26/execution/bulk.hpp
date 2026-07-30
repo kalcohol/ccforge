@@ -45,11 +45,11 @@ struct __op : __forge_detail::__immovable {
         void set_value(Vs&&... vs) && noexcept {
             try {
                 if constexpr (Chunked) {
-                    if (__shape != Shape{}) {
+                    if (Shape{} < __shape) {
                         __fn(Shape{}, __shape, vs...);
                     }
                 } else {
-                    for (Shape i = Shape{}; i != __shape; ++i) {
+                    for (Shape i = Shape{}; i < __shape; ++i) {
                         __fn(i, vs...);
                     }
                 }

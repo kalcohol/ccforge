@@ -2,6 +2,7 @@
 
 #include <execution>
 
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -167,6 +168,48 @@ TEST(BulkTest, ZeroShapeDoesNotCallFunction) {
     ASSERT_TRUE(chunked_result.has_value());
     EXPECT_EQ(unchunked_calls, 0);
     EXPECT_EQ(chunked_calls, 0);
+    EXPECT_EQ(std::get<0>(*unchunked_result), 7);
+    EXPECT_EQ(std::get<0>(*chunked_result), 9);
+}
+
+TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
+    constexpr auto negative_shape = std::int8_t{-1};
+
+    int bulk_calls = 0;
+    auto bulk = std::execution::bulk(
+        std::execution::just(5),
+        negative_shape,
+        [&bulk_calls](std::int8_t, int&) {
+            ++bulk_calls;
+        });
+
+    int unchunked_calls = 0;
+    auto unchunked = std::execution::bulk_unchunked(
+        std::execution::just(7),
+        negative_shape,
+        [&unchunked_calls](std::int8_t, int&) {
+            ++unchunked_calls;
+        });
+
+    int chunked_calls = 0;
+    auto chunked = std::execution::bulk_chunked(
+        std::execution::just(9),
+        negative_shape,
+        [&chunked_calls](std::int8_t, std::int8_t, int&) {
+            ++chunked_calls;
+        });
+
+    auto bulk_result = std::execution::sync_wait(std::move(bulk));
+    auto unchunked_result = std::execution::sync_wait(std::move(unchunked));
+    auto chunked_result = std::execution::sync_wait(std::move(chunked));
+
+    ASSERT_TRUE(bulk_result.has_value());
+    ASSERT_TRUE(unchunked_result.has_value());
+    ASSERT_TRUE(chunked_result.has_value());
+    EXPECT_EQ(bulk_calls, 0);
+    EXPECT_EQ(unchunked_calls, 0);
+    EXPECT_EQ(chunked_calls, 0);
+    EXPECT_EQ(std::get<0>(*bulk_result), 5);
     EXPECT_EQ(std::get<0>(*unchunked_result), 7);
     EXPECT_EQ(std::get<0>(*chunked_result), 9);
 }
