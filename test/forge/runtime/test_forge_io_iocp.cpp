@@ -2,6 +2,7 @@
 #include <forge/io.hpp>
 #include <forge/io/context_await.hpp>
 #include <forge/wait_result.hpp>
+#include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
 #include <execution>
 #include <array>
@@ -453,6 +454,35 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     ASSERT_TRUE(read_result.has_value());
     EXPECT_EQ(std::get<0>(*read_result), payload.size());
     EXPECT_EQ(buffer, payload);
+}
+
+TEST(IoIocpTest, ContextUsesConfiguredMemoryResource) {
+    forge_test::counting_resource memory;
+    {
+        auto pipe = make_pipe_pair();
+        forge::io::context ctx{{.memory = &memory}};
+
+        std::array<std::byte, 3> payload{byte('p'), byte('m'), byte('r')};
+        auto write_result = std::execution::sync_wait(
+            ctx.async_write_some(
+                pipe.client.get(),
+                std::span<const std::byte>{payload}));
+        ASSERT_TRUE(write_result.has_value());
+        EXPECT_EQ(std::get<0>(*write_result), payload.size());
+
+        std::array<std::byte, 3> buffer{};
+        auto read_result = std::execution::sync_wait(
+            ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+        ASSERT_TRUE(read_result.has_value());
+        EXPECT_EQ(std::get<0>(*read_result), payload.size());
+        EXPECT_EQ(buffer, payload);
+
+        ctx.shutdown();
+        ctx.wait();
+    }
+
+    EXPECT_GT(memory.allocations(), 0u);
+    EXPECT_EQ(memory.outstanding(), 0u);
 }
 
 TEST(IoIocpTest, BackendOwnedSkipModeCompletesSynchronousSuccess) {
