@@ -88,10 +88,21 @@ static int g_coro_result = -1;
 static int g_env_result = -1;
 static int g_multi_result = -1;
 static int g_empty_alt_result = -1;
+static int g_ordinary_awaitable_result = -1;
+
+struct immediate_int_awaiter {
+    bool await_ready() const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+    int await_resume() const noexcept { return 17; }
+};
 
 SimpleTask run_coro() {
     auto tup = co_await std::execution::just(42);
     g_coro_result = std::get<0>(tup);
+}
+
+SimpleTask run_ordinary_awaitable_coro() {
+    g_ordinary_awaitable_result = co_await immediate_int_awaiter{};
 }
 
 EnvTask run_env_coro() {
@@ -207,6 +218,12 @@ TEST(CoroutineBridgeTest, CoAwaitSender) {
     EXPECT_EQ(g_coro_result, 42);
 }
 
+TEST(CoroutineBridgeTest, CoAwaitOrdinaryAwaitable) {
+    g_ordinary_awaitable_result = -1;
+    run_ordinary_awaitable_coro();
+    EXPECT_EQ(g_ordinary_awaitable_result, 17);
+}
+
 TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {
     g_env_result = -1;
     run_env_coro();
@@ -263,12 +280,85 @@ struct StoppedProbeTask {
     std::coroutine_handle<promise_type> handle;
 };
 
+struct DefaultStoppedTask {
+    struct promise_type : std::execution::with_awaitable_senders<promise_type> {
+        DefaultStoppedTask get_return_object() noexcept {
+            return DefaultStoppedTask{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept { std::terminate(); }
+    };
+
+    using handle_t = std::coroutine_handle<promise_type>;
+
+    struct awaiter {
+        explicit awaiter(handle_t child) noexcept : child(child) {}
+        awaiter(awaiter&& other) noexcept
+            : child(std::exchange(other.child, {})) {}
+        awaiter(const awaiter&) = delete;
+        ~awaiter() {
+            if (child) {
+                child.destroy();
+            }
+        }
+
+        bool await_ready() const noexcept { return false; }
+
+        template<class ParentPromise>
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<ParentPromise> parent) noexcept {
+            child.promise().set_continuation(parent);
+            return child;
+        }
+
+        void await_resume() const noexcept {}
+
+        handle_t child;
+    };
+
+    explicit DefaultStoppedTask(handle_t handle) noexcept : handle(handle) {}
+    DefaultStoppedTask(DefaultStoppedTask&& other) noexcept
+        : handle(std::exchange(other.handle, {})) {}
+    DefaultStoppedTask(const DefaultStoppedTask&) = delete;
+    ~DefaultStoppedTask() {
+        if (handle) {
+            handle.destroy();
+        }
+    }
+
+    auto operator co_await() && noexcept -> awaiter {
+        return awaiter{std::exchange(handle, {})};
+    }
+
+    handle_t handle;
+};
+
 StoppedProbeTask run_stopped_probe() {
     co_await std::execution::just_stopped();
 }
 
+DefaultStoppedTask default_stopped_task() {
+    co_await std::execution::just_stopped();
+}
+
+StoppedProbeTask run_nested_stopped_probe() {
+    co_await default_stopped_task();
+}
+
 TEST(CoroutineBridgeTest, StoppedSenderCallsPromiseUnhandledStopped) {
     auto task = run_stopped_probe();
+    ASSERT_TRUE(task.handle);
+    auto& promise = task.handle.promise();
+    EXPECT_TRUE(promise.stopped);
+    EXPECT_FALSE(promise.returned);
+    EXPECT_FALSE(promise.errored);
+}
+
+TEST(CoroutineBridgeTest, DefaultUnhandledStoppedPropagatesToContinuation) {
+    auto task = run_nested_stopped_probe();
     ASSERT_TRUE(task.handle);
     auto& promise = task.handle.promise();
     EXPECT_TRUE(promise.stopped);

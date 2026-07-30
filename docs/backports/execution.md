@@ -19,7 +19,8 @@
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
   单一 value completion 保持返回 `tuple`，多组 value completions 返回
-  `variant<tuple<...>, ...>`）
+  `variant<tuple<...>, ...>`）；mixin 会保留普通 awaitable，并按 current WD
+  提供 continuation / stopped 传播接口
 - 基础设施：`completion_signatures_of_t`、`value_types_of_t`、`error_types_of_t`、
   `sends_stopped`、`enable_sender`、`forwarding_query`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、

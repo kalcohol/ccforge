@@ -31,6 +31,7 @@
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <atomic>
 #include <coroutine>
+#include <exception>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -186,15 +187,58 @@ template<sender S, class Promise>
         __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};
 }
 
+template<class Value, class Promise>
+    requires (!sender<Value>)
+[[nodiscard]] decltype(auto) as_awaitable(Value&& value, Promise&) noexcept {
+    return std::forward<Value>(value);
+}
+
 // with_awaitable_senders<Promise> — CRTP mixin — [exec.with.awaitable.senders]
 // Makes a coroutine promise_type support co_await on senders.
 template<class Promise>
 struct with_awaitable_senders {
-    template<sender S>
-    auto await_transform(S&& sndr) {
-        auto& prom = static_cast<Promise&>(*this);
-        return as_awaitable(std::forward<S>(sndr), prom);
+    template<class OtherPromise>
+        requires (!std::same_as<OtherPromise, void>)
+    void set_continuation(std::coroutine_handle<OtherPromise> continuation) noexcept {
+        __continuation = continuation;
+        if constexpr (requires(OtherPromise& promise) {
+                          { promise.unhandled_stopped() }
+                              -> std::convertible_to<std::coroutine_handle<>>;
+                      }) {
+            __stopped_handler = [](void* address) noexcept
+                -> std::coroutine_handle<> {
+                return std::coroutine_handle<OtherPromise>::from_address(address)
+                    .promise()
+                    .unhandled_stopped();
+            };
+        } else {
+            __stopped_handler = &__default_unhandled_stopped;
+        }
     }
+
+    std::coroutine_handle<> continuation() const noexcept {
+        return __continuation;
+    }
+
+    std::coroutine_handle<> unhandled_stopped() noexcept {
+        return __stopped_handler(__continuation.address());
+    }
+
+    template<class Value>
+    decltype(auto) await_transform(Value&& value) {
+        auto& prom = static_cast<Promise&>(*this);
+        return as_awaitable(std::forward<Value>(value), prom);
+    }
+
+private:
+    [[noreturn]] static std::coroutine_handle<>
+    __default_unhandled_stopped(void*) noexcept {
+        std::terminate();
+    }
+
+    std::coroutine_handle<> __continuation{};
+    std::coroutine_handle<> (*__stopped_handler)(void*) noexcept =
+        &__default_unhandled_stopped;
 };
 
 } // namespace std::execution

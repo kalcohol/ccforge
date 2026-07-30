@@ -63,7 +63,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future sender；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
-| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | Coroutine bridge 保留历史 single-value tuple 行为；multi-value alternatives 使用 `variant<tuple<...>>`。 |
+| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 保留历史 single-value tuple 行为，multi-value alternatives 使用 `variant<tuple<...>>`。 |
 | `affine` | Implemented subset | `affine.hpp`；当前 WD spelling 上的 thin wrapper，语义复用现有 `continues_on` transfer subset。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
 | `get_scheduler` | Implemented subset | Tag-invoke query object；不完全等同当前 WD member `query(...)` 措辞。 |
