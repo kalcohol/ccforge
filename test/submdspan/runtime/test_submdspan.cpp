@@ -291,6 +291,51 @@ TEST(SubmdspanPaddedLayouts, OppositeRankTwoPaddedMappingIsNotConvertible) {
     static_assert(std::is_constructible_v<left_rank1_t, right_rank1_t>);
 }
 
+TEST(SubmdspanPaddedLayouts, PaddedConversionsRequireCompatibleExtents) {
+    using target_extents_t = std::extents<int, 3, 5>;
+    using conflicting_extents_t = std::extents<int, 4, 5>;
+    using rank1_extents_t = std::extents<int, 5>;
+    using conflicting_rank1_extents_t = std::extents<int, 4>;
+
+    using left_target_t =
+        std::layout_left_padded<8>::mapping<target_extents_t>;
+    using left_compatible_t =
+        std::layout_left_padded<>::mapping<target_extents_t>;
+    using left_conflicting_t =
+        std::layout_left_padded<>::mapping<conflicting_extents_t>;
+    using left_rank1_t =
+        std::layout_left_padded<>::mapping<rank1_extents_t>;
+
+    using right_target_t =
+        std::layout_right_padded<8>::mapping<target_extents_t>;
+    using right_compatible_t =
+        std::layout_right_padded<>::mapping<target_extents_t>;
+    using right_conflicting_t =
+        std::layout_right_padded<>::mapping<conflicting_extents_t>;
+    using right_rank1_t =
+        std::layout_right_padded<>::mapping<rank1_extents_t>;
+
+    using left_rank1_target_t =
+        std::layout_left_padded<8>::mapping<rank1_extents_t>;
+    using right_bad_rank1_t =
+        std::layout_right_padded<>::mapping<conflicting_rank1_extents_t>;
+    using right_rank1_target_t =
+        std::layout_right_padded<8>::mapping<rank1_extents_t>;
+    using left_bad_rank1_t =
+        std::layout_left_padded<>::mapping<conflicting_rank1_extents_t>;
+
+    static_assert(std::is_constructible_v<left_target_t, left_compatible_t>);
+    static_assert(std::is_constructible_v<right_target_t, right_compatible_t>);
+    static_assert(!std::is_constructible_v<left_target_t, left_conflicting_t>);
+    static_assert(!std::is_constructible_v<right_target_t, right_conflicting_t>);
+    static_assert(!std::is_constructible_v<left_target_t, left_rank1_t>);
+    static_assert(!std::is_constructible_v<right_target_t, right_rank1_t>);
+    static_assert(
+        !std::is_constructible_v<left_rank1_target_t, right_bad_rank1_t>);
+    static_assert(
+        !std::is_constructible_v<right_rank1_target_t, left_bad_rank1_t>);
+}
+
 TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
     auto data = make_data<32>();
     using ext_t = std::extents<int, 3, 4>;

@@ -147,7 +147,10 @@ struct layout_left_padded {
                 typename OtherMapping::extents_type;
                 other.extents();
                 other.stride(rank_type{});
-            } && (rank_ <= 1 ||
+            } && is_constructible_v<
+                    extents_type,
+                    typename OtherMapping::extents_type>
+              && (rank_ <= 1 ||
                   is_same_v<
                       typename OtherMapping::layout_type,
                       layout_left_padded<OtherMapping::padding_value>>)
@@ -346,7 +349,10 @@ struct layout_right_padded {
                 typename OtherMapping::extents_type;
                 other.extents();
                 other.stride(rank_type{});
-            } && (rank_ <= 1 ||
+            } && is_constructible_v<
+                    extents_type,
+                    typename OtherMapping::extents_type>
+              && (rank_ <= 1 ||
                   is_same_v<
                       typename OtherMapping::layout_type,
                       layout_right_padded<OtherMapping::padding_value>>)
