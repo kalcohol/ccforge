@@ -137,6 +137,25 @@ TEST(TimerContextTest, CustomMemoryResourceControlsTimerStorage) {
     EXPECT_EQ(resource.allocations(), resource.deallocations());
 }
 
+TEST(TimerContextTest, AllocationFailureCompletesStopped) {
+    forge_test::fail_next_resource resource;
+    forge::timer_context ctx{
+        forge::timer_context_options{.memory = &resource}};
+    timer_state state;
+    auto op = std::execution::connect(
+        ctx.schedule_after(1h),
+        timer_receiver{&state});
+
+    resource.fail_next_allocation();
+    std::execution::start(op);
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state.value);
+    EXPECT_TRUE(state.stopped);
+    ctx.shutdown();
+    ctx.wait();
+}
+
 TEST(TimerContextTest, AllocatorBackedCallableUsesProvidedResource) {
     forge_test::counting_resource resource;
     bool called = false;

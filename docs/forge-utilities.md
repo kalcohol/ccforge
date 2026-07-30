@@ -116,7 +116,8 @@ Failure policy:
   shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。
   `timer_context_options{.memory = resource}` 可控制 state、timer op data、timer item
   control block、timer queue 和 timer callback callable record 分配；`wait()` 会等待已
-  接受 timer 操作完成。
+  接受 timer 操作完成。timer sender 只有 value/stopped completion；item 或 callback
+  storage 分配失败也完成为 stopped，不保留 allocation exception。
   - 入队后取消使用 per-item stop callback 唤醒 worker。callback 只标记 item 并通知
     condition variable；真正的 value/stopped completion 仍由 timer worker 在线程外部锁
     之外执行，且 completion 前会先销毁 callback registration，避免 stop callback 与
