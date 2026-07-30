@@ -142,6 +142,16 @@ TEST(SimdRuntimeTest, SelectBlendsVectorAndScalarBranches) {
     EXPECT_EQ(scalar_vector[1], 21);
     EXPECT_EQ(scalar_vector[2], -2);
     EXPECT_EQ(scalar_vector[3], 23);
+
+    const auto whole_true =
+        std::simd::select(true, when_true, when_false);
+    const auto whole_false =
+        std::simd::select(false, when_true, when_false);
+
+    EXPECT_EQ(whole_true[0], 10);
+    EXPECT_EQ(whole_true[3], 13);
+    EXPECT_EQ(whole_false[0], 20);
+    EXPECT_EQ(whole_false[3], 23);
 }
 
 TEST(SimdRuntimeTest, BeginEndAndDefaultSentinelTraverseAllLanes) {

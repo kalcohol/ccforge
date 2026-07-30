@@ -300,7 +300,9 @@ public:
     }
 
     friend constexpr basic_mask simd_select_impl(
-        const basic_mask& cond, bool when_true, bool when_false) noexcept {
+        const basic_mask& cond,
+        same_as<bool> auto when_true,
+        same_as<bool> auto when_false) noexcept {
         basic_mask result;
         for (simd_size_type i = 0; i < size; ++i) {
             result.data_[i] = cond[i] ? when_true : when_false;

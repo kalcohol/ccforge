@@ -56,6 +56,16 @@ struct has_vector_rshift<V,
                          std::void_t<decltype(std::declval<V>() >> std::declval<const Shift&>())>>
     : std::true_type {};
 
+template<class Cond, class True, class False>
+concept has_select = requires(
+    const Cond& cond,
+    const True& when_true,
+    const False& when_false) {
+    std::simd::select(cond, when_true, when_false);
+};
+
+using byte_mask4 = std::simd::mask<signed char, 4>;
+
 static_assert(std::is_same<typename int4::value_type, int>::value,
     "vec<int, 4> should expose int as value_type");
 static_assert(std::is_signed<std::simd::simd_size_type>::value,
@@ -103,6 +113,17 @@ static_assert(!has_vector_lshift<float4, float4>::value,
     "floating vec should not expose per-lane left shift");
 static_assert(!has_vector_rshift<float4, float4>::value,
     "floating vec should not expose per-lane right shift");
+static_assert(std::is_same_v<
+                  decltype(std::simd::select(
+                      true,
+                      std::declval<const int4&>(),
+                      std::declval<const int4&>())),
+                  int4>,
+    "a scalar boolean condition should select whole data-parallel objects");
+static_assert(has_select<byte_mask4, bool, bool>,
+    "a mask should accept exact boolean scalar branches");
+static_assert(!has_select<byte_mask4, int, int>,
+    "a byte mask should reject scalar branches whose element size does not match");
 
 } // namespace
 

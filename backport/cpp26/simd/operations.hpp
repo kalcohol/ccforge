@@ -239,14 +239,10 @@ constexpr Result select(const basic_mask<Bytes, Abi>& mask_value,
     return simd_select_impl(mask_value, true_value, false_value);
 }
 
-template<class T, class U,
-         typename enable_if<
-             !detail::is_data_parallel_type<detail::remove_cvref_t<T>>::value &&
-                 !detail::is_data_parallel_type<detail::remove_cvref_t<U>>::value,
-             int>::type = 0>
-constexpr common_type_t<T, U> select(bool cond, const T& true_value, const U& false_value) noexcept(
-	noexcept(static_cast<common_type_t<T, U>>(true_value)) && noexcept(static_cast<common_type_t<T, U>>(false_value))) {
-	return cond ? static_cast<common_type_t<T, U>>(true_value) : static_cast<common_type_t<T, U>>(false_value);
+template<class T, class U>
+constexpr auto select(bool cond, const T& true_value, const U& false_value)
+    -> remove_cvref_t<decltype(cond ? true_value : false_value)> {
+    return cond ? true_value : false_value;
 }
 
 namespace detail {
