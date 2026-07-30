@@ -62,6 +62,15 @@ struct __is_complex<std::complex<T>> : std::true_type {};
 template<class T>
 inline constexpr bool __is_complex_v = __is_complex<std::remove_cvref_t<T>>::value;
 
+template<class T>
+constexpr auto __real_if_needed(const T& value) {
+    if constexpr (requires { value.real(); value.imag(); }) {
+        return value.real();
+    } else {
+        return value;
+    }
+}
+
 template<class Accessor>
 using __accessor_value_t =
     std::remove_cv_t<typename Accessor::element_type>;

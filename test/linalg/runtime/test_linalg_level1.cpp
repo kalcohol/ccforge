@@ -266,6 +266,20 @@ TEST(LinalgLevel1MatrixNorms, ComplexMatrixUsesMagnitude) {
     EXPECT_NEAR(std::linalg::matrix_inf_norm(matrix), 5.0, 1e-12);
 }
 
+TEST(LinalgLevel1MatrixNorms, OneAndInfinityNormAcceptComplexInit) {
+    using complex = std::complex<double>;
+    complex data[] = {{3.0, 4.0}, {0.0, 0.0}, {1.0, -1.0}, {-2.0, 0.0}};
+    std::mdspan matrix(data, std::extents<int, 2, 2>{});
+    const complex init{1.0, 2.0};
+
+    EXPECT_EQ(
+        std::linalg::matrix_one_norm(matrix, init),
+        (complex{6.0 + std::sqrt(2.0), 2.0}));
+    EXPECT_EQ(
+        std::linalg::matrix_inf_norm(matrix, init),
+        (complex{6.0, 2.0}));
+}
+
 TEST(LinalgLevel1MatrixNorms, FrobeniusInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     complex data[] = {{4.0, 0.0}};

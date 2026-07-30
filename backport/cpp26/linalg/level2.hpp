@@ -39,16 +39,6 @@ auto __conj_if_needed(const T& value)
     }
 }
 
-template<class T>
-auto __real_if_needed(const T& value)
-{
-    if constexpr (requires { value.real(); value.imag(); }) {
-        return value.real();
-    } else {
-        return value;
-    }
-}
-
 } // namespace __detail
 
 // ──────────────────────────────────────────────────────────────────────────

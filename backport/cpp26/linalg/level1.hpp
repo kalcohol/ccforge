@@ -479,15 +479,17 @@ T matrix_one_norm(
     if (A.extent(1) == 0) {
         return init;
     }
-    T max_col_sum{};
+    using sum_type = std::remove_cvref_t<
+        decltype(__detail::__real_if_needed(init))>;
+    sum_type max_col_sum{};
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-        T col_sum = T{};
+        sum_type col_sum{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            col_sum += static_cast<T>(abs(A[i, j]));
+            col_sum += static_cast<sum_type>(abs(A[i, j]));
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
-    return init + max_col_sum;
+    return init + static_cast<T>(max_col_sum);
 }
 
 template<class Extents, class Layout, class Accessor>
@@ -509,15 +511,17 @@ T matrix_inf_norm(
     if (A.extent(0) == 0) {
         return init;
     }
-    T max_row_sum{};
+    using sum_type = std::remove_cvref_t<
+        decltype(__detail::__real_if_needed(init))>;
+    sum_type max_row_sum{};
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-        T row_sum = T{};
+        sum_type row_sum{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            row_sum += static_cast<T>(abs(A[i, j]));
+            row_sum += static_cast<sum_type>(abs(A[i, j]));
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }
-    return init + max_row_sum;
+    return init + static_cast<T>(max_row_sum);
 }
 
 template<class Extents, class Layout, class Accessor>
