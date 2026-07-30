@@ -22,9 +22,10 @@ struct timer_state {
     std::condition_variable cv;
     bool value = false;
     bool stopped = false;
+    bool error = false;
 
     bool done() const noexcept {
-        return value || stopped;
+        return value || stopped || error;
     }
 };
 
@@ -44,7 +45,7 @@ struct timer_receiver {
     void set_error(std::exception_ptr) && noexcept {
         {
             std::lock_guard lk{state->mtx};
-            state->stopped = true;
+            state->error = true;
             state->cv.notify_all();
         }
     }
@@ -145,6 +146,15 @@ TEST(TimerContextTest, AllocationFailureCompletesStopped) {
     auto op = std::execution::connect(
         ctx.schedule_after(1h),
         timer_receiver{&state});
+    using sender_t = decltype(ctx.schedule_after(1h));
+    using signatures_t = std::execution::completion_signatures_of_t<
+        sender_t,
+        std::execution::empty_env>;
+    static_assert(std::same_as<
+        signatures_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_stopped_t()>>);
 
     resource.fail_next_allocation();
     std::execution::start(op);
@@ -152,6 +162,7 @@ TEST(TimerContextTest, AllocationFailureCompletesStopped) {
     ASSERT_TRUE(wait_done(state));
     EXPECT_FALSE(state.value);
     EXPECT_TRUE(state.stopped);
+    EXPECT_FALSE(state.error);
     ctx.shutdown();
     ctx.wait();
 }

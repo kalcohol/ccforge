@@ -3,6 +3,7 @@
 #include <forge/io/buffer.hpp>
 #include <forge/io/result.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <span>
@@ -195,21 +196,36 @@ TEST(ForgeByteVocabularyTest, BufferCopyCopiesSingleBuffers) {
 }
 
 TEST(ForgeByteVocabularyTest, BufferCopySupportsOverlappingSingleBuffers) {
-    std::array<char, 8> shift_left{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'};
+    constexpr std::size_t size = 4096;
+    std::array<char, size + 1> shift_left{};
+    for (std::size_t i = 0; i < shift_left.size(); ++i) {
+        shift_left[i] = static_cast<char>(i % 127);
+    }
+    const auto original_left = shift_left;
     auto left_count = forge::io::buffer_copy(
-        forge::io::mutable_buffer{shift_left.data(), 4},
-        forge::io::const_buffer{shift_left.data() + 2, 4});
+        forge::io::mutable_buffer{shift_left.data(), size},
+        forge::io::const_buffer{shift_left.data() + 1, size});
 
-    EXPECT_EQ(left_count, 4u);
-    EXPECT_EQ(std::string_view(shift_left.data(), shift_left.size()), "CDEFEFGH");
+    EXPECT_EQ(left_count, size);
+    EXPECT_TRUE(std::equal(
+        shift_left.begin(),
+        shift_left.begin() + static_cast<std::ptrdiff_t>(size),
+        original_left.begin() + 1));
 
-    std::array<char, 8> shift_right{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'};
+    std::array<char, size + 1> shift_right{};
+    for (std::size_t i = 0; i < shift_right.size(); ++i) {
+        shift_right[i] = static_cast<char>(i % 127);
+    }
+    const auto original_right = shift_right;
     auto right_count = forge::io::buffer_copy(
-        forge::io::mutable_buffer{shift_right.data() + 2, 4},
-        forge::io::const_buffer{shift_right.data(), 4});
+        forge::io::mutable_buffer{shift_right.data() + 1, size},
+        forge::io::const_buffer{shift_right.data(), size});
 
-    EXPECT_EQ(right_count, 4u);
-    EXPECT_EQ(std::string_view(shift_right.data(), shift_right.size()), "ABABCDGH");
+    EXPECT_EQ(right_count, size);
+    EXPECT_TRUE(std::equal(
+        shift_right.begin() + 1,
+        shift_right.end(),
+        original_right.begin()));
 }
 
 TEST(ForgeByteVocabularyTest, BufferCopyCrossesScatterGatherBoundaries) {

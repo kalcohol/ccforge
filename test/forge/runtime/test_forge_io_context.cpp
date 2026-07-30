@@ -573,6 +573,51 @@ TEST(IoContextTest, ReadAndWriteWaitersShareOneDescriptor) {
     EXPECT_FALSE(next_state->error);
 }
 
+TEST(IoContextTest, ModRegisteredWriteWaiterCanFire) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+    auto read_state = std::make_shared<io_state>();
+    auto write_state = std::make_shared<io_state>();
+
+    auto read_op = std::execution::connect(
+        ctx.readable(sockets.first.get()),
+        io_receiver{read_state});
+    auto write_op = std::execution::connect(
+        ctx.writable(sockets.first.get()),
+        io_receiver{write_state});
+    std::execution::start(read_op);
+    std::execution::start(write_op);
+
+    std::array<char, 4096> drained{};
+    while (true) {
+        const auto count = ::recv(
+            sockets.second.get(),
+            drained.data(),
+            drained.size(),
+            0);
+        if (count > 0) {
+            continue;
+        }
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        ASSERT_EQ(errno, EAGAIN);
+        break;
+    }
+
+    ASSERT_TRUE(wait_done(write_state));
+    EXPECT_TRUE(write_state->value);
+    EXPECT_FALSE(write_state->stopped);
+    EXPECT_FALSE(write_state->error);
+
+    write_byte(sockets.second.get());
+    ASSERT_TRUE(wait_done(read_state));
+    EXPECT_TRUE(read_state->value);
+    EXPECT_FALSE(read_state->stopped);
+    EXPECT_FALSE(read_state->error);
+}
+
 TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
     auto pipe = make_pipe();
     forge::io::context ctx;
@@ -1117,13 +1162,13 @@ TEST(IoContextTest, AsyncReadCompletionAllowsReceiverToDestroyOperation) {
 }
 
 TEST(IoContextTest, DestroyingContextInsideCompletionIsSafe) {
-    auto pipe = make_pipe();
-    forge_test::counting_resource memory;
+    auto pipe = std::make_unique<forge_test::fd_pair>(make_pipe());
+    auto memory = std::make_unique<forge_test::counting_resource>();
     auto owner = std::make_unique<forge::io::context>(
-        forge::io::context_options{.memory = &memory});
+        forge::io::context_options{.memory = memory.get()});
     auto state = std::make_shared<io_state>();
 
-    using sender_t = decltype(owner->readable(pipe.first.get()));
+    using sender_t = decltype(owner->readable(pipe->first.get()));
     using receiver_t = context_destroying_receiver;
     using op_t = std::execution::connect_result_t<sender_t, receiver_t>;
 
@@ -1132,11 +1177,11 @@ TEST(IoContextTest, DestroyingContextInsideCompletionIsSafe) {
         &operation_destroyed};
     auto& op = operation.emplace_from([&] {
         return std::execution::connect(
-            owner->readable(pipe.first.get()),
+            owner->readable(pipe->first.get()),
             context_destroying_receiver{&owner, state});
     });
     std::execution::start(op);
-    write_byte(pipe.second.get());
+    write_byte(pipe->second.get());
 
     ASSERT_TRUE(wait_done(state));
     EXPECT_TRUE(state->value);
@@ -1144,11 +1189,15 @@ TEST(IoContextTest, DestroyingContextInsideCompletionIsSafe) {
 
     operation.reset();
     const auto deadline = std::chrono::steady_clock::now() + 2s;
-    while (memory.outstanding() != 0 &&
+    while (memory->outstanding() != 0 &&
            std::chrono::steady_clock::now() < deadline) {
         std::this_thread::yield();
     }
-    EXPECT_EQ(memory.outstanding(), 0u);
+    if (memory->outstanding() != 0) {
+        (void)memory.release();
+        (void)pipe.release();
+        FAIL() << "detached context state did not release its resources";
+    }
 }
 
 TEST(IoContextTest, TypedInvalidFdAllowsReceiverToDestroyOperation) {
