@@ -293,12 +293,8 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         {
             std::lock_guard lk{mtx};
             closed = true;
-            auto recv = pending_recvs.front();
-            while (recv && !buffer.empty()) {
-                recv->prepare_value(std::move(buffer.front()));
-                buffer.pop_front();
-                recv = recv->next;
-            }
+            // Buffered values and pending receivers cannot coexist: receive
+            // operations consume buffered values before joining this list.
             sends = pending_sends.take_all();
             recvs = pending_recvs.take_all();
         }
