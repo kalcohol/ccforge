@@ -236,6 +236,43 @@ struct rawless_signature_domain_env {
     }
 };
 
+struct explicit_empty_signature_source;
+
+struct explicit_empty_signature_domain {
+    template<class Env>
+    auto transform_sender(
+        std::execution::set_value_t,
+        explicit_empty_signature_source&&,
+        const Env&) const noexcept -> signature_transformed_sender {
+        return {};
+    }
+};
+
+struct explicit_empty_signature_attributes {
+    template<class Env>
+    friend auto tag_invoke(
+        std::execution::get_completion_domain_t<>,
+        const explicit_empty_signature_attributes&,
+        const Env&) noexcept -> explicit_empty_signature_domain {
+        return {};
+    }
+};
+
+struct explicit_empty_signature_source {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> explicit_empty_signature_attributes {
+        return {};
+    }
+};
+
 struct rescue_domain {
     static inline bool transformed = false;
 
@@ -614,6 +651,29 @@ TEST(DefaultDomainTest, GetCompletionSignaturesAllowsRawlessSourceAfterTransform
         cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(double)>>);
+}
+
+TEST(DefaultDomainTest, ExplicitEmptyEnvUsesCompletionDomainTransform) {
+    using raw_cs_t = std::execution::completion_signatures_of_t<
+        explicit_empty_signature_source>;
+    using transformed_cs_t = std::execution::completion_signatures_of_t<
+        explicit_empty_signature_source,
+        std::execution::empty_env>;
+
+    static_assert(std::is_same_v<
+        raw_cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int)>>);
+    static_assert(std::is_same_v<
+        transformed_cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(double)>>);
+}
+
+TEST(DefaultDomainTest, InvalidTransformedSenderFailsSenderInConstraint) {
+    static_assert(!std::execution::sender_in<
+        rawless_signature_source_sender,
+        receiver_domain_env>);
 }
 
 TEST(DefaultDomainTest, CompletionDomainRecursesBeforeStartDomain) {

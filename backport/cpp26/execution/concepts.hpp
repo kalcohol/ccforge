@@ -160,6 +160,12 @@ concept __nothrow_instance_completion_signatures = requires(S&& s, Env&& env) {
 };
 
 template<class S, class Env>
+concept __raw_completion_signatures_available =
+    __static_completion_signatures<S, Env> ||
+    __instance_completion_signatures<S, Env> ||
+    __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>;
+
+template<class S, class Env>
 consteval bool __completion_signatures_noexcept() {
     if constexpr (__static_completion_signatures<S, Env>) {
         return __nothrow_static_completion_signatures<S, Env>;
@@ -171,8 +177,32 @@ consteval bool __completion_signatures_noexcept() {
 }
 
 template<class S, class Env>
+    requires __raw_completion_signatures_available<S, Env>
 decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
     noexcept(__completion_signatures_noexcept<S, Env>());
+
+template<class S, class Env>
+using __completion_transformed_sender_t = decltype(
+    __forge_domain::__transform_sender_for_completion_signatures(
+        std::declval<S>(),
+        std::declval<std::remove_reference_t<Env>&>()));
+
+template<class S, class Env, class = void>
+struct __has_transformed_completion_signatures : std::false_type {};
+
+template<class S, class Env>
+struct __has_transformed_completion_signatures<
+    S,
+    Env,
+    std::void_t<__completion_transformed_sender_t<S, Env>>>
+    : std::bool_constant<
+          __raw_completion_signatures_available<
+              __completion_transformed_sender_t<S, Env>,
+              Env>> {};
+
+template<class S, class Env>
+concept __transformed_completion_signatures_available =
+    __has_transformed_completion_signatures<S, Env>::value;
 
 template<class S, class Env>
 decltype(auto) __transformed_completion_signatures(S&& s, Env&& env);
@@ -181,20 +211,16 @@ decltype(auto) __transformed_completion_signatures(S&& s, Env&& env);
 
 struct get_completion_signatures_t {
     template<class S, class Env>
-        requires (__forge_cpo_detail::__static_completion_signatures<S, Env> ||
-                  __forge_cpo_detail::__instance_completion_signatures<S, Env> ||
-                  __forge_detail::tag_invocable<get_completion_signatures_t, S, Env> ||
-                  (!std::same_as<std::remove_cvref_t<Env>, empty_env> &&
-                   !__forge_domain::__completion_signatures_use_default_transform<S, Env>()))
+        requires (
+            (__forge_domain::__completion_signatures_use_default_transform<S, Env>() &&
+             __forge_cpo_detail::__raw_completion_signatures_available<S, Env>) ||
+            (!__forge_domain::__completion_signatures_use_default_transform<S, Env>() &&
+             __forge_cpo_detail::__transformed_completion_signatures_available<S, Env>))
     auto operator()(S&& s, Env&& env) const
-        noexcept(std::same_as<std::remove_cvref_t<Env>, empty_env> &&
+        noexcept(__forge_domain::__completion_signatures_use_default_transform<S, Env>() &&
                  __forge_cpo_detail::__completion_signatures_noexcept<S, Env>()) {
-        if constexpr (std::same_as<std::remove_cvref_t<Env>, empty_env> ||
-                      __forge_domain::__completion_signatures_use_default_transform<S, Env>()) {
+        if constexpr (__forge_domain::__completion_signatures_use_default_transform<S, Env>()) {
             return __forge_cpo_detail::__raw_completion_signatures(
-                static_cast<S&&>(s), static_cast<Env&&>(env));
-        } else if constexpr (__forge_cpo_detail::__instance_completion_signatures<S, Env>) {
-            return __forge_cpo_detail::__transformed_completion_signatures(
                 static_cast<S&&>(s), static_cast<Env&&>(env));
         } else {
             return __forge_cpo_detail::__transformed_completion_signatures(
@@ -203,12 +229,11 @@ struct get_completion_signatures_t {
     }
 
     template<class S>
-        requires (__forge_cpo_detail::__static_completion_signatures<S, empty_env> ||
-                  __forge_cpo_detail::__instance_completion_signatures<S, empty_env> ||
-                  __forge_detail::tag_invocable<get_completion_signatures_t, S, empty_env>)
+        requires __forge_cpo_detail::__raw_completion_signatures_available<S, empty_env>
     auto operator()(S&& s) const
         noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, empty_env>()) {
-        return (*this)(static_cast<S&&>(s), empty_env{});
+        return __forge_cpo_detail::__raw_completion_signatures(
+            static_cast<S&&>(s), empty_env{});
     }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};
@@ -216,6 +241,7 @@ inline constexpr get_completion_signatures_t get_completion_signatures{};
 namespace __forge_cpo_detail {
 
 template<class S, class Env>
+    requires __raw_completion_signatures_available<S, Env>
 decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
     noexcept(__completion_signatures_noexcept<S, Env>()) {
     if constexpr (__static_completion_signatures<S, Env>) {
@@ -240,9 +266,12 @@ decltype(auto) __transformed_completion_signatures(S&& s, Env&& env) {
 
 } // namespace __forge_cpo_detail
 
-template<class S, class Env = empty_env>
+template<class S, class... Env>
+    requires (sizeof...(Env) <= 1)
 using completion_signatures_of_t = decltype(
-    std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()));
+    std::execution::get_completion_signatures(
+        std::declval<S>(),
+        std::declval<Env>()...));
 
 namespace __forge_meta {
 
@@ -845,12 +874,13 @@ concept sender =
         { std::execution::get_env(s) } -> queryable;
     };
 
-template<class S, class Env = empty_env>
+template<class S, class... Env>
 concept sender_in =
     sender<S> &&
-    queryable<Env> &&
+    (sizeof...(Env) <= 1) &&
+    (queryable<Env> && ...) &&
     requires {
-        typename completion_signatures_of_t<S, Env>;
+        typename completion_signatures_of_t<S, Env...>;
     };
 
 template<class S,
