@@ -107,8 +107,10 @@ struct deref_unique {
 };
 
 struct allocation_counts {
+    std::atomic<int> attempts{0};
     std::atomic<int> allocations{0};
     std::atomic<int> deallocations{0};
+    std::atomic<int> fail_on_attempt{0};
 };
 
 template<class T>
@@ -128,6 +130,12 @@ struct counting_allocator {
 
     [[nodiscard]] T* allocate(std::size_t n) {
         if (counts) {
+            const int attempt =
+                counts->attempts.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (counts->fail_on_attempt.load(std::memory_order_relaxed) ==
+                attempt) {
+                throw std::bad_alloc{};
+            }
             counts->allocations.fetch_add(1, std::memory_order_relaxed);
         }
         return std::allocator<T>{}.allocate(n);
@@ -364,6 +372,51 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto source = std::make_shared<manual_state>();
+    auto counts = std::make_shared<allocation_counts>();
+    counts->fail_on_attempt.store(2, std::memory_order_relaxed);
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_allocator_t{},
+            counting_allocator<std::byte>{counts}));
+    auto future = std::execution::spawn_future(
+        manual_sender{source},
+        token,
+        env);
+
+    ASSERT_TRUE(wait_until_started(source));
+    EXPECT_EQ(scope.count(), 1u);
+
+    std::inplace_stop_source downstream_stop;
+    std::atomic<bool> receiver_stopped{false};
+    EXPECT_THROW(
+        (void)std::execution::connect(
+            std::move(future),
+            spawn_future_stop_receiver{
+                &downstream_stop,
+                &receiver_stopped}),
+        std::bad_alloc);
+
+    const bool stop_requested = wait_until_stop_requested(source);
+    EXPECT_TRUE(stop_requested);
+    if (!stop_requested) {
+        complete_manual_value(source, 0);
+    }
+
+    EXPECT_TRUE(wait_until_completed(source));
+    EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
+    EXPECT_EQ(scope.count(), 0u);
+
+    auto joined = std::execution::sync_wait(scope.join());
+    EXPECT_TRUE(joined.has_value());
+    EXPECT_EQ(
+        counts->allocations.load(std::memory_order_relaxed),
+        counts->deallocations.load(std::memory_order_relaxed));
 }
 
 TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {

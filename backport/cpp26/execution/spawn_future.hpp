@@ -462,9 +462,11 @@ struct __op : __forge_detail::__immovable {
     std::shared_ptr<State> __state;
     std::shared_ptr<consumer_t> __consumer_state;
 
-    __op(std::shared_ptr<State> state, R rcvr)
+    __op(
+        std::shared_ptr<State> state,
+        std::shared_ptr<consumer_t> consumer) noexcept
         : __state(std::move(state))
-        , __consumer_state(__state->template __allocate_shared_aux<consumer_t>(std::move(rcvr)))
+        , __consumer_state(std::move(consumer))
     {}
 
     ~__op() noexcept {
@@ -539,7 +541,18 @@ struct __sender {
 
     template<receiver R>
     auto connect(R rcvr) && -> __op<State, R> {
-        return __op<State, R>{std::exchange(__state, nullptr), std::move(rcvr)};
+        auto state = std::exchange(__state, nullptr);
+        try {
+            auto consumer =
+                state->template __allocate_shared_aux<__consumer<State, R>>(
+                    std::move(rcvr));
+            return __op<State, R>{
+                std::move(state),
+                std::move(consumer)};
+        } catch (...) {
+            state->__abandon_unconsumed();
+            throw;
+        }
     }
 
     auto get_env() const noexcept -> empty_env {
