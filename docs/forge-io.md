@@ -67,7 +67,8 @@ auto [ec, n] = result;
 `forge::io::const_buffer` 和 `forge::io::mutable_buffer` 是 borrowed byte-region
 descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer_size`、
 `buffer_empty`、`buffer_prefix` 和 `buffer_copy` 覆盖单 buffer 与 scatter/gather
-buffer sequence 的最小用法。纯 vocabulary 不受 `FORGE_ENABLE_FORGE_IO` backend gate
+buffer sequence 的最小用法；单个 source/destination region 即使重叠也按
+`memmove` 语义复制。纯 vocabulary 不受 `FORGE_ENABLE_FORGE_IO` backend gate
 控制；backend gate 仍只控制 OS IO context、backend examples 和 backend tests。
 
 `forge::io::memory_read_stream`、`forge::io::memory_write_stream`、
@@ -103,11 +104,13 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 - `read_write_stream<T>`：同时满足 read/write 两侧。
 - `read_exactly(stream, mutable_buffer)` 和 `write_all(stream, const_buffer)` 是小型验证
   算法；遇到 stream error 时返回累计 byte count。`read_exactly` 遇到提前 EOF 时返回
-  EOF 状态和累计 byte count；`write_all` 遇到容量耗尽导致的 `0` byte progress 时仍返回
+  EOF 状态和累计 byte count，包括一次 read 同时报告 progress 与 EOF 的情况；
+  `write_all` 遇到容量耗尽导致的 `0` byte progress 时仍返回
   `std::errc::io_error` 和累计 byte count，因为 write side 没有 EOF 语义。
 - `read_until(stream, std::string&, delimiter, max_bytes)` 是小型 line/record helper；
   它逐 byte 读取直到 delimiter，输出包含 delimiter，routine error 仍通过
   `io_result` 返回并保留已读取文本。提前 EOF 返回 EOF 状态并保留 partial line；
+  若同一次 read 同时读到 delimiter 和 EOF，则 delimiter 完成优先并返回成功；
   超过 `max_bytes` 时返回
   `std::errc::message_size` 和累计 byte count。
 - `any_read_stream` 和 `any_write_stream` 是 non-owning borrowed wrappers。构造时只保存

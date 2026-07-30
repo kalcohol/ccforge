@@ -264,6 +264,22 @@ static_assert(std::execution::sender<
     decltype(std::declval<forge::io::context&>().async_write_some_typed(
         0,
         std::declval<std::span<const std::byte>>()))>);
+using raw_read_sender_t = decltype(
+    std::declval<forge::io::context&>().async_read_some(
+        0,
+        std::declval<std::span<std::byte>>()));
+using raw_read_op_t = std::execution::connect_result_t<
+    raw_read_sender_t,
+    self_destroying_io_receiver>;
+using typed_read_sender_t = decltype(
+    std::declval<forge::io::context&>().async_read_some_typed(
+        0,
+        std::declval<std::span<std::byte>>()));
+using typed_read_op_t = std::execution::connect_result_t<
+    typed_read_sender_t,
+    typed_size_receiver>;
+static_assert(std::execution::operation_state<raw_read_op_t>);
+static_assert(std::execution::operation_state<typed_read_op_t>);
 
 TEST(IoContextTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;

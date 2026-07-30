@@ -413,6 +413,14 @@ struct fixture {
     }
 };
 
+using when_all_sender_t = decltype(cio::when_all_results(
+    child_task(std::declval<std::shared_ptr<controlled_state>>()),
+    child_task(std::declval<std::shared_ptr<controlled_state>>())));
+using when_all_op_t = std::execution::connect_result_t<
+    when_all_sender_t,
+    aggregate_receiver>;
+static_assert(std::execution::operation_state<when_all_op_t>);
+
 } // namespace
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsCombinesTwoValues) {

@@ -374,6 +374,8 @@ public:
     template<std::execution::receiver Receiver>
     class operation {
     public:
+        using operation_state_concept =
+            std::execution::operation_state_t;
         using state_t = shared_state<First, Second, Receiver>;
         using first_receiver_t = child_receiver<0, state_t, First>;
         using second_receiver_t = child_receiver<1, state_t, Second>;

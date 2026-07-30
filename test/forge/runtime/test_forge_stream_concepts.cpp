@@ -74,6 +74,42 @@ private:
     std::vector<std::byte> storage_{};
 };
 
+class eof_with_progress_stream {
+public:
+    explicit eof_with_progress_stream(std::string input)
+        : input_(std::move(input))
+    {}
+
+    [[nodiscard]] auto calls() const noexcept -> std::size_t {
+        return calls_;
+    }
+
+    [[nodiscard]] auto read_some(forge::io::mutable_buffer output)
+        -> forge::io::io_result<std::size_t> {
+        ++calls_;
+        if (position_ == input_.size()) {
+            return forge::io::io_result<std::size_t>::failure(
+                std::make_error_code(std::errc::bad_file_descriptor),
+                0);
+        }
+
+        const auto count = std::min(output.size(), input_.size() - position_);
+        forge::io::buffer_copy(
+            forge::io::buffer_prefix(count, output),
+            forge::io::const_buffer{input_.data() + position_, count});
+        position_ += count;
+        if (position_ == input_.size()) {
+            return forge::io::io_result<std::size_t>::end_of_file(count);
+        }
+        return forge::io::io_result<std::size_t>::success(count);
+    }
+
+private:
+    std::string input_;
+    std::size_t position_ = 0;
+    std::size_t calls_ = 0;
+};
+
 auto read_erased_packet(forge::io::any_read_stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
@@ -163,6 +199,22 @@ TEST(ForgeStreamConceptsTest, ReadExactlyReturnsPartialCountOnEof) {
     EXPECT_EQ(std::string_view(output.data(), count), "hi");
 }
 
+TEST(ForgeStreamConceptsTest, ReadExactlyHonorsEofWithProgress) {
+    eof_with_progress_stream stream{"hi"};
+    std::array<char, 4> output{};
+
+    auto result = forge::io::read_exactly(
+        stream,
+        forge::io::mutable_buffer{std::span{output}});
+    auto [error, count] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(count, 2u);
+    EXPECT_EQ(stream.calls(), 1u);
+    EXPECT_EQ(std::string_view(output.data(), count), "hi");
+}
+
 TEST(ForgeStreamConceptsTest, ReadExactlyPropagatesErrorWithProgress) {
     forge::io::scripted_read_stream stream{
         forge::io::scripted_read_step::bytes("ab"),
@@ -203,6 +255,34 @@ TEST(ForgeStreamConceptsTest, ReadUntilReturnsPartialLineOnEof) {
     EXPECT_TRUE(result.eof());
     EXPECT_EQ(count, 7u);
     EXPECT_EQ(line, "partial");
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilHonorsEofWithProgress) {
+    eof_with_progress_stream stream{"hi"};
+    std::string line;
+
+    auto result = forge::io::read_until(stream, line);
+    auto [error, count] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.eof());
+    EXPECT_EQ(count, 2u);
+    EXPECT_EQ(stream.calls(), 2u);
+    EXPECT_EQ(line, "hi");
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilDelimiterWinsOverTerminalEof) {
+    eof_with_progress_stream stream{"x\n"};
+    std::string line;
+
+    auto result = forge::io::read_until(stream, line);
+    auto [error, count] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(count, 2u);
+    EXPECT_EQ(stream.calls(), 2u);
+    EXPECT_EQ(line, "x\n");
 }
 
 TEST(ForgeStreamConceptsTest, ReadUntilPropagatesErrorWithProgress) {

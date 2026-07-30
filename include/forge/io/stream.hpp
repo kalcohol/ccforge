@@ -74,14 +74,15 @@ template<read_stream Stream>
     -> io_result<std::size_t> {
     std::size_t total = 0;
     while (total < output.size()) {
-        auto [error, count] = stream.read_some(
+        auto result = stream.read_some(
             mutable_buffer{output.data() + total, output.size() - total});
+        auto [error, count] = result;
         total += count;
 
         if (error) {
             return io_result<std::size_t>::failure(error, total);
         }
-        if (count == 0) {
+        if (result.eof() || count == 0) {
             return io_result<std::size_t>::end_of_file(total);
         }
     }
@@ -123,8 +124,9 @@ template<read_stream Stream>
     std::size_t total = 0;
     while (total < max_bytes) {
         std::byte byte{};
-        auto [error, count] =
+        auto result =
             stream.read_some(mutable_buffer{std::addressof(byte), 1});
+        auto [error, count] = result;
 
         if (count > 0) {
             ++total;
@@ -136,11 +138,11 @@ template<read_stream Stream>
         if (error) {
             return io_result<std::size_t>::failure(error, total);
         }
-        if (count == 0) {
-            return io_result<std::size_t>::end_of_file(total);
-        }
-        if (output.back() == delimiter) {
+        if (count > 0 && output.back() == delimiter) {
             return io_result<std::size_t>::success(total);
+        }
+        if (result.eof() || count == 0) {
+            return io_result<std::size_t>::end_of_file(total);
         }
     }
 

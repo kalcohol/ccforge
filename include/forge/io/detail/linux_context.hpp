@@ -995,6 +995,8 @@ struct __byte_sender {
 
     template<std::execution::receiver R>
     struct __op {
+        using operation_state_concept =
+            std::execution::operation_state_t;
         using receiver_t = __byte_receiver<R, Operation>;
         using inner_op_t = std::execution::connect_result_t<__sender, receiver_t>;
         struct inner_state_t {

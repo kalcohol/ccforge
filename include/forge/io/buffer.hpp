@@ -170,7 +170,7 @@ inline auto buffer_copy(mutable_buffer dest, const_buffer source) noexcept
     -> std::size_t {
     const auto count = std::min(dest.size(), source.size());
     if (count != 0) {
-        std::memcpy(dest.data(), source.data(), count);
+        std::memmove(dest.data(), source.data(), count);
     }
     return count;
 }

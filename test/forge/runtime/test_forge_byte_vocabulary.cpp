@@ -194,6 +194,24 @@ TEST(ForgeByteVocabularyTest, BufferCopyCopiesSingleBuffers) {
     EXPECT_EQ(std::string_view(dest.data(), copied), source);
 }
 
+TEST(ForgeByteVocabularyTest, BufferCopySupportsOverlappingSingleBuffers) {
+    std::array<char, 8> shift_left{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'};
+    auto left_count = forge::io::buffer_copy(
+        forge::io::mutable_buffer{shift_left.data(), 4},
+        forge::io::const_buffer{shift_left.data() + 2, 4});
+
+    EXPECT_EQ(left_count, 4u);
+    EXPECT_EQ(std::string_view(shift_left.data(), shift_left.size()), "CDEFEFGH");
+
+    std::array<char, 8> shift_right{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'};
+    auto right_count = forge::io::buffer_copy(
+        forge::io::mutable_buffer{shift_right.data() + 2, 4},
+        forge::io::const_buffer{shift_right.data(), 4});
+
+    EXPECT_EQ(right_count, 4u);
+    EXPECT_EQ(std::string_view(shift_right.data(), shift_right.size()), "ABABCDGH");
+}
+
 TEST(ForgeByteVocabularyTest, BufferCopyCrossesScatterGatherBoundaries) {
     constexpr std::string_view first = "ab";
     constexpr std::string_view second = "cdef";

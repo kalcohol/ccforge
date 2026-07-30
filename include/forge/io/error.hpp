@@ -159,6 +159,8 @@ struct typed_sender {
     template<class R>
         requires std::execution::receiver_of<R, completion_signatures>
     struct typed_op {
+        using operation_state_concept =
+            std::execution::operation_state_t;
         using receiver_t =
             std::conditional_t<Sized, size_receiver<R>, void_receiver<R>>;
         using op_t = std::execution::connect_result_t<Sender, receiver_t>;
