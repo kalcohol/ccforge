@@ -111,9 +111,13 @@ constexpr auto chunk(const V& value) {
     if constexpr (tail_size == 0) {
         return detail::chunk_array_impl<chunk_type>(value, make_index_sequence<static_cast<size_t>(full_chunk_count)>{});
     } else {
-        return make_tuple(
-            detail::chunk_array_impl<chunk_type>(value, make_index_sequence<static_cast<size_t>(full_chunk_count)>{}),
-            detail::tail_chunk<resize_t<tail_size, chunk_type>>(value, full_chunk_count * chunk_size));
+        return tuple_cat(
+            detail::chunk_tuple_impl<chunk_type>(
+                value,
+                make_index_sequence<static_cast<size_t>(full_chunk_count)>{}),
+            make_tuple(detail::tail_chunk<resize_t<tail_size, chunk_type>>(
+                value,
+                full_chunk_count * chunk_size)));
     }
 }
 

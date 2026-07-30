@@ -35,16 +35,31 @@ TEST(SimdRuntimeExpansionTest, ChunkByWidthUsesLaneCountSemantics) {
 }
 
 TEST(SimdRuntimeExpansionTest, ChunkReturnsTailForUnevenWidths) {
-    const std::array<int, 4> data{{1, 2, 3, 4}};
-    const int4 values = load_vec<int4>(data);
-    auto pieces = std::simd::chunk<3>(values);
-    const auto& full = std::get<0>(pieces);
-    const auto& tail = std::get<1>(pieces);
+    using int5 = std::simd::vec<int, 5>;
+    const std::array<int, 5> data{{1, 2, 3, 4, 5}};
+    const int5 values = load_vec<int5>(data);
+    auto [first, second, tail] = std::simd::chunk<int2>(values);
 
-    EXPECT_EQ(full[0][0], 1);
-    EXPECT_EQ(full[0][1], 2);
-    EXPECT_EQ(full[0][2], 3);
-    EXPECT_EQ(tail[0], 4);
+    EXPECT_EQ(first[0], 1);
+    EXPECT_EQ(first[1], 2);
+    EXPECT_EQ(second[0], 3);
+    EXPECT_EQ(second[1], 4);
+    EXPECT_EQ(tail[0], 5);
+}
+
+TEST(SimdRuntimeExpansionTest, MaskChunkReturnsFlatTailTuple) {
+    using mask5 = std::simd::mask<int, 5>;
+    using mask2 = std::simd::mask<int, 2>;
+    const mask5 values([](auto lane) {
+        return decltype(lane)::value % 2 == 0;
+    });
+    auto [first, second, tail] = std::simd::chunk<mask2>(values);
+
+    EXPECT_TRUE(first[0]);
+    EXPECT_FALSE(first[1]);
+    EXPECT_TRUE(second[0]);
+    EXPECT_FALSE(second[1]);
+    EXPECT_TRUE(tail[0]);
 }
 
 TEST(SimdRuntimeExpansionTest, CatConcatenatesFixedPieces) {
