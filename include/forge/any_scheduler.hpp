@@ -128,7 +128,7 @@ struct __op {
         auto rcvr = std::move(*rcvr_);
         auto error = error_;
         rcvr_.reset();
-        std::execution::set_error(std::move(rcvr), error);
+        std::execution::set_error(std::move(rcvr), std::move(error));
     }
 
     std::shared_ptr<__state_base> state_;

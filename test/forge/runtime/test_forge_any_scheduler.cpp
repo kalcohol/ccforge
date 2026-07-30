@@ -108,6 +108,30 @@ struct stop_aware_schedule_receiver {
     }
 };
 
+struct error_category_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* selected_overload = nullptr;
+
+    void set_value() && noexcept {
+        *selected_overload = -1;
+    }
+
+    void set_error(const std::exception_ptr&) && noexcept {
+        *selected_overload = 1;
+    }
+
+    void set_error(std::exception_ptr&&) && noexcept {
+        *selected_overload = 2;
+    }
+
+    void set_stopped() && noexcept {
+        *selected_overload = -1;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 } // namespace
 
 TEST(AnySchedulerTest, DefaultEmpty) {
@@ -123,6 +147,18 @@ TEST(AnySchedulerTest, EmptyScheduleCompletesWithError) {
     EXPECT_THROW(
         (void)std::execution::sync_wait(std::execution::schedule(scheduler)),
         std::runtime_error);
+}
+
+TEST(AnySchedulerTest, EmptyScheduleDeliversDeclaredErrorCategory) {
+    forge::any_scheduler scheduler;
+    int selected_overload = 0;
+    auto op = std::execution::connect(
+        std::execution::schedule(scheduler),
+        error_category_receiver{&selected_overload});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(selected_overload, 2);
 }
 
 TEST(AnySchedulerTest, WrappedThreadPoolSchedulerRunsWork) {
