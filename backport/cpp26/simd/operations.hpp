@@ -227,42 +227,6 @@ constexpr basic_vec<T, Abi> clamp(const basic_vec<T, Abi>& value,
     return min(max(value, low), high);
 }
 
-template<class T, class Abi>
-constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& mask_value,
-                                   const basic_vec<T, Abi>& true_value,
-                                   const basic_vec<T, Abi>& false_value) noexcept {
-	basic_vec<T, Abi> result;
-	for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-		detail::set_lane(result, i, mask_value[i] ? true_value[i] : false_value[i]);
-	}
-	return result;
-}
-
-template<class T, class Abi>
-constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& mask_value,
-                                   const basic_vec<T, Abi>& true_value,
-                                   const T& false_value) noexcept {
-	return select(mask_value, true_value, basic_vec<T, Abi>(false_value));
-}
-
-template<class T, class Abi>
-constexpr basic_vec<T, Abi> select(const typename basic_vec<T, Abi>::mask_type& mask_value,
-                                   const T& true_value,
-                                   const basic_vec<T, Abi>& false_value) noexcept {
-	return select(mask_value, basic_vec<T, Abi>(true_value), false_value);
-}
-
-template<size_t Bytes, class Abi>
-constexpr basic_mask<Bytes, Abi> select(const basic_mask<Bytes, Abi>& mask_value,
-                                        const basic_mask<Bytes, Abi>& true_value,
-                                        const basic_mask<Bytes, Abi>& false_value) noexcept {
-	basic_mask<Bytes, Abi> result;
-	for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size); ++i) {
-		detail::lane_ref(result, i) = mask_value[i] ? true_value[i] : false_value[i];
-	}
-	return result;
-}
-
 template<size_t Bytes, class Abi, class T, class U,
          class Result = decltype(simd_select_impl(declval<const basic_mask<Bytes, Abi>&>(), declval<const T&>(), declval<const U&>()))>
 constexpr Result select(const basic_mask<Bytes, Abi>& mask_value,

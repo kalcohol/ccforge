@@ -110,6 +110,40 @@ TEST(SimdRuntimeTest, ScalarSelectBuildsLaneVectorFromMask) {
     EXPECT_EQ(values[3], -3);
 }
 
+TEST(SimdRuntimeTest, SelectBlendsVectorAndScalarBranches) {
+    const mask4 selected(0b0101u);
+    const int4 when_true([](auto lane) {
+        return 10 + static_cast<int>(decltype(lane)::value);
+    });
+    const int4 when_false([](auto lane) {
+        return 20 + static_cast<int>(decltype(lane)::value);
+    });
+
+    const auto vector_vector =
+        std::simd::select(selected, when_true, when_false);
+    const auto vector_scalar = std::simd::select(selected, when_true, -1);
+    const auto scalar_vector = std::simd::select(selected, -2, when_false);
+
+    static_assert(std::is_same_v<decltype(vector_vector), const int4>);
+    static_assert(std::is_same_v<decltype(vector_scalar), const int4>);
+    static_assert(std::is_same_v<decltype(scalar_vector), const int4>);
+
+    EXPECT_EQ(vector_vector[0], 10);
+    EXPECT_EQ(vector_vector[1], 21);
+    EXPECT_EQ(vector_vector[2], 12);
+    EXPECT_EQ(vector_vector[3], 23);
+
+    EXPECT_EQ(vector_scalar[0], 10);
+    EXPECT_EQ(vector_scalar[1], -1);
+    EXPECT_EQ(vector_scalar[2], 12);
+    EXPECT_EQ(vector_scalar[3], -1);
+
+    EXPECT_EQ(scalar_vector[0], -2);
+    EXPECT_EQ(scalar_vector[1], 21);
+    EXPECT_EQ(scalar_vector[2], -2);
+    EXPECT_EQ(scalar_vector[3], 23);
+}
+
 TEST(SimdRuntimeTest, BeginEndAndDefaultSentinelTraverseAllLanes) {
     const std::array<int, 4> data{{1, 2, 3, 4}};
     int4 values = load_vec<int4>(data);

@@ -288,7 +288,19 @@ public:
         return result;
     }
 
-    friend constexpr basic_mask simd_select_impl(const basic_mask& cond, bool when_true, bool when_false) noexcept {
+    friend constexpr basic_mask simd_select_impl(
+        const basic_mask& cond,
+        const basic_mask& when_true,
+        const basic_mask& when_false) noexcept {
+        basic_mask result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            result.data_[i] = cond[i] ? when_true[i] : when_false[i];
+        }
+        return result;
+    }
+
+    friend constexpr basic_mask simd_select_impl(
+        const basic_mask& cond, bool when_true, bool when_false) noexcept {
         basic_mask result;
         for (simd_size_type i = 0; i < size; ++i) {
             result.data_[i] = cond[i] ? when_true : when_false;
