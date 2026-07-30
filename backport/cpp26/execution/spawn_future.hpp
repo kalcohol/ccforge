@@ -238,7 +238,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
-        std::weak_ptr<consumer_base_t> consumer_cb;
+        std::shared_ptr<consumer_base_t> consumer_cb;
         {
             std::lock_guard lk{__mtx};
             if (__phase == __phase_t::done) {
@@ -254,8 +254,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
             consumer_cb = std::move(__consumer_cb);
         }
 
-        if (auto consumer = consumer_cb.lock()) {
-            consumer->__deliver(*this);
+        if (consumer_cb) {
+            consumer_cb->__deliver(*this);
         }
 
         std::shared_ptr<__shared_state> keepalive;
@@ -287,7 +287,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         }
     }
 
-    __consume_result __consume(std::weak_ptr<consumer_base_t> cb) {
+    __consume_result __consume(std::shared_ptr<consumer_base_t> cb) {
         std::lock_guard lk{__mtx};
         if (__consumer_taken) {
             return __consume_result::already_consumed;
@@ -298,6 +298,13 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         }
         __consumer_cb = std::move(cb);
         return __consume_result::registered;
+    }
+
+    void __detach_consumer(consumer_base_t* consumer) noexcept {
+        std::lock_guard lk{__mtx};
+        if (__consumer_cb.get() == consumer) {
+            __consumer_cb.reset();
+        }
     }
 
     template<class R>
@@ -322,7 +329,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     __phase_t __phase = __phase_t::running;
     bool __consumer_taken = false;
     result_t __result{};
-    std::weak_ptr<consumer_base_t> __consumer_cb{};
+    std::shared_ptr<consumer_base_t> __consumer_cb{};
     std::inplace_stop_source __stop_source{};
     Association __association{};
     allocator_t __state_allocator;
@@ -420,6 +427,7 @@ struct __consumer : __consumer_base<State> {
 
     void __deliver(State& state) noexcept override {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
+            auto keepalive = std::move(__state);
             __stop_callback.reset();
             state.__deliver_to(__rcvr);
         }
@@ -427,8 +435,12 @@ struct __consumer : __consumer_base<State> {
 
     void __abandon() noexcept {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
+            auto state = std::move(__state);
+            if (state) {
+                state->__detach_consumer(this);
+            }
             __stop_callback.reset();
-            if (auto state = __state.lock()) {
+            if (state) {
                 state->__request_stop();
             }
         }
@@ -436,6 +448,7 @@ struct __consumer : __consumer_base<State> {
 
     void __deliver_stopped() noexcept {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
+            auto keepalive = std::move(__state);
             __stop_callback.reset();
             std::execution::set_stopped(std::move(__rcvr));
         }
@@ -443,13 +456,17 @@ struct __consumer : __consumer_base<State> {
 
     void __deliver_error(std::exception_ptr error) noexcept {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
+            auto keepalive = std::move(__state);
             __stop_callback.reset();
             std::execution::set_error(std::move(__rcvr), std::move(error));
         }
     }
 
     R __rcvr;
-    std::weak_ptr<State> __state{};
+    // Registration temporarily forms state <-> consumer ownership. Completion
+    // moves the state-to-consumer edge out before delivery; abandonment
+    // detaches it before requesting stop.
+    std::shared_ptr<State> __state{};
     std::optional<callback_t> __stop_callback{};
     std::atomic<bool> __active{true};
 };
@@ -482,10 +499,9 @@ struct __op : __forge_detail::__immovable {
         auto state = std::move(__state);
         auto consumer = __consumer_state;
         consumer->__install_stop_callback(state);
-        std::weak_ptr<typename State::consumer_base_t> weak_consumer{consumer};
         typename State::__consume_result consume_result;
         try {
-            consume_result = state->__consume(std::move(weak_consumer));
+            consume_result = state->__consume(consumer);
         } catch (...) {
             consumer->__deliver_error(std::current_exception());
             state->__request_stop();
