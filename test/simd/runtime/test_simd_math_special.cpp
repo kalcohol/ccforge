@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <string>
 
 namespace {
@@ -166,6 +167,31 @@ TEST(SimdMathSpecialTest, CylindricalBesselFunctionsRemainStableAtLargeArguments
     }
 }
 
+TEST(SimdMathSpecialTest, CylindricalBesselFunctionsCoverHighOrderTransitionBand) {
+    const double4 orders = load_vec<double4>(
+        std::array<double, 4>{{11.0, 20.0, 40.0, 50.0}});
+    const double4 arguments = load_vec<double4>(
+        std::array<double, 4>{{27.5, 40.0, 60.0, 80.0}});
+    const auto j = std::simd::cyl_bessel_j(orders, arguments);
+    const auto y = std::simd::cyl_neumann(orders, arguments);
+    constexpr std::array<double, 4> expected_j{{
+        0.097996970459618742,
+        0.12779393355084890,
+        -0.077646197404715064,
+        -0.039457764590251248}};
+    constexpr std::array<double, 4> expected_y{{
+        -0.12507464721647156,
+        0.045161820565805892,
+        -0.090545084909696294,
+        -0.092924250967987226}};
+
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        const auto index = static_cast<std::size_t>(i);
+        EXPECT_NEAR(j[i], expected_j[index], 3e-13);
+        EXPECT_NEAR(y[i], expected_y[index], 3e-13);
+    }
+}
+
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
 TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
     EXPECT_NEAR(
@@ -244,6 +270,102 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchIndependentLargeArgumentReferences
                 value.order, value.argument),
             value.k,
             tolerance(value.k));
+    }
+}
+
+TEST(SimdMathSpecialTest, BesselFallbacksMatchHighOrderReferences) {
+    struct reference {
+        double order;
+        double argument;
+        double j;
+        double y;
+    };
+    constexpr reference cases[] = {
+        {10.5, 26.5, 0.052056953767819247, -0.15310930260804576},
+        {12.0, 30.0, 0.14825335109966010, 0.034143171346460223},
+        {15.0, 35.0, 0.031442018146929440, 0.13833502839668673},
+        {20.0, 2.0, 3.9189728050907538e-19, -4.0816513889983666e16},
+        {20.0, 50.0, -0.11670435275957974, 0.016442633948115776},
+        {50.0, 50.0, 0.12140902189761506, -0.21031655464397741},
+        {100.0, 99.0, 0.077687161700459401, -0.20107219957383567},
+        {100.0, 101.0, 0.11480132142789915, -0.13322738381561640},
+    };
+
+    for (const auto& value : cases) {
+        SCOPED_TRACE(
+            "order=" + std::to_string(value.order) +
+            ", argument=" + std::to_string(value.argument));
+        const auto tolerance = [](double expected) {
+            return std::max(2e-14, std::abs(expected) * 2e-12);
+        };
+        EXPECT_NEAR(
+            std::simd::detail::special_math::cyl_bessel_j_fallback(
+                value.order, value.argument),
+            value.j,
+            tolerance(value.j));
+        EXPECT_NEAR(
+            std::simd::detail::special_math::cyl_bessel_y_fallback(
+                value.order, value.argument),
+            value.y,
+            tolerance(value.y));
+    }
+}
+
+TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
+    constexpr std::pair<double, double> cases[] = {
+        {0.2, 0.1},
+        {2.5, 3.0},
+        {20.0, 20.0},
+        {50.0, 49.5},
+        {100.0, 101.0},
+    };
+
+    for (const auto [order, argument] : cases) {
+        SCOPED_TRACE(
+            "order=" + std::to_string(order) +
+            ", argument=" + std::to_string(argument));
+        const auto current =
+            std::simd::detail::special_math::cyl_bessel_jy_fallback(
+                order, argument);
+        const auto next =
+            std::simd::detail::special_math::cyl_bessel_jy_fallback(
+                order + 1.0, argument);
+        const double expected =
+            -2.0 / (std::numbers::pi * argument);
+        const double actual =
+            current.j * next.y - next.j * current.y;
+
+        EXPECT_NEAR(
+            actual,
+            expected,
+            std::max(2e-14, std::abs(expected) * 2e-12));
+    }
+}
+
+TEST(SimdMathSpecialTest, ModifiedBesselKUsesStableHighOrderRoute) {
+    struct reference {
+        double order;
+        double argument;
+        double value;
+    };
+    constexpr reference cases[] = {
+        {20.0, 2.0, 5.7708568527002410e16},
+        {20.0, 50.0, 1.7061483797220351e-21},
+        {40.0, 120.0, 6.3193916548716839e-51},
+        {50.0, 125.0, 1.0814480519541901e-51},
+    };
+
+    for (const auto& value : cases) {
+        SCOPED_TRACE(
+            "order=" + std::to_string(value.order) +
+            ", argument=" + std::to_string(value.argument));
+        const auto actual =
+            std::simd::detail::special_math::cyl_bessel_k_fallback(
+                value.order, value.argument);
+        EXPECT_NEAR(
+            actual,
+            value.value,
+            std::abs(value.value) * 2e-12);
     }
 }
 #endif
