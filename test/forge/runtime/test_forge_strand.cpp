@@ -296,6 +296,28 @@ TEST(StrandTest, WaitFromOwnCompletionDoesNotSelfDeadlock) {
     pool.wait();
 }
 
+TEST(StrandTest, WaitRecognizesOuterNestedStrandCompletion) {
+    forge::static_thread_pool pool{1};
+    forge::strand outer{pool.get_scheduler()};
+    forge::strand inner{outer.get_scheduler()};
+    auto scheduler = inner.get_scheduler();
+    std::promise<void> completed;
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            outer.wait();
+            completed.set_value();
+        }));
+
+    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+
+    inner.wait();
+    outer.wait();
+    pool.shutdown();
+    pool.wait();
+}
+
 TEST(StrandTest, DestructorFromOwnCompletionDoesNotSelfDeadlock) {
     forge::static_thread_pool pool{1};
     auto strand = std::make_unique<forge::strand>(pool.get_scheduler());

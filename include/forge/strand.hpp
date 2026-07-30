@@ -79,19 +79,22 @@ struct __record final : __record_base {
 };
 
 struct __state;
-inline thread_local __state* __current_state = nullptr;
+struct __current_state_guard;
+inline thread_local __current_state_guard* __current_guard = nullptr;
 
 struct __current_state_guard {
     explicit __current_state_guard(__state* state) noexcept
-        : previous(__current_state) {
-        __current_state = state;
+        : state(state)
+        , previous(__current_guard) {
+        __current_guard = this;
     }
 
     ~__current_state_guard() {
-        __current_state = previous;
+        __current_guard = previous;
     }
 
-    __state* previous;
+    __state* state;
+    __current_state_guard* previous;
 };
 
 struct __runner_base {
@@ -313,8 +316,12 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void wait() noexcept {
-        if (__current_state == this) {
-            return;
+        for (auto* guard = __current_guard;
+             guard != nullptr;
+             guard = guard->previous) {
+            if (guard->state == this) {
+                return;
+            }
         }
         std::unique_lock lk{mtx_};
         cv_.wait(lk, [this] {
