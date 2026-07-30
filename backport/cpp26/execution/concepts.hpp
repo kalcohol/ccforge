@@ -25,6 +25,8 @@
 #include "detail.hpp"
 #include "env.hpp"
 
+#include <variant>
+
 namespace std::execution {
 
 // Forge limitation: receiver completion callbacks are required to be noexcept,

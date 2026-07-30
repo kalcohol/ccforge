@@ -159,8 +159,9 @@ if(NOT _FORGE_STD_TARGET_CONFIGURED)
     include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
     unset(FORGE_BACKPORT_TARGET)
 
-    # Add backport path if any feature needs it.
-    if(FORGE_NEEDS_BACKPORT)
+    # The shadowing backport root requires the real standard-header paths on
+    # MSVC even when only an experimental TS header needs the root.
+    if(FORGE_NEEDS_BACKPORT OR FORGE_NEEDS_EXPERIMENTAL)
         if(MSVC)
             include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
             _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MEMORY_HEADER memory TRUE)
@@ -170,19 +171,6 @@ if(NOT _FORGE_STD_TARGET_CONFIGURED)
             _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
         endif()
 
-        if(_FORGE_PACKAGE_MODE)
-            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
-                "${FORGE_BACKPORT_DIR}")
-        else()
-            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
-                $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>)
-        endif()
-    endif()
-
-    # Add the backport root for experimental TS headers. Do not add
-    # backport/experimental directly: that would make <memory> resolve to
-    # backport/experimental/memory instead of the standard-header wrapper.
-    if(FORGE_NEEDS_EXPERIMENTAL)
         if(_FORGE_PACKAGE_MODE)
             target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
                 "${FORGE_BACKPORT_DIR}")

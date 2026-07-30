@@ -74,6 +74,8 @@ forge_add_example(execution_coro execution_coro_example.cpp BACKPORT TBB)
 # std::submdspan/linalg examples need <mdspan>; older libstdc++ releases do not
 # provide it, so keep them guarded.
 include(CheckCXXSourceCompiles)
+unset(FORGE_EXAMPLE_HAS_MDSPAN CACHE)
+unset(FORGE_EXAMPLE_HAS_MDSPAN)
 check_cxx_source_compiles("
     #include <mdspan>
     int main() { return 0; }

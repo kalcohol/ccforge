@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "detail/op_storage.hpp"
 #include "env.hpp"
+#include "just.hpp"
 #include "run_loop.hpp"
 
 #include <cstddef>

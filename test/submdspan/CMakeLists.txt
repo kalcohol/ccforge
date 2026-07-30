@@ -6,6 +6,8 @@ set(FORGE_SUBMDSPAN_COMPILE_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/compile")
 # On toolchains without <mdspan> (e.g. GCC 13 libstdc++) the test binary
 # will simply not be buildable; CMake skips it gracefully via the guard below.
 include(CheckCXXSourceCompiles)
+unset(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER CACHE)
+unset(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
 check_cxx_source_compiles("
     #include <mdspan>
     int main() { return 0; }

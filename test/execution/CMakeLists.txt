@@ -56,6 +56,18 @@ forge_add_execution_compile_probe(
     test_execution_api_core
     test_execution_api_core.cpp
     execution_api_core_compile)
+forge_add_execution_compile_probe(
+    test_execution_include_continues_on
+    test_execution_include_continues_on.cpp
+    execution_include_continues_on_compile)
+forge_add_execution_compile_probe(
+    test_execution_include_into_variant
+    test_execution_include_into_variant.cpp
+    execution_include_into_variant_compile)
+forge_add_execution_compile_probe(
+    test_execution_include_when_all
+    test_execution_include_when_all.cpp
+    execution_include_when_all_compile)
 
 forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_ACCEPTS_BOUNDARY_PROBES

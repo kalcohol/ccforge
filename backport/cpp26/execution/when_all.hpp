@@ -26,6 +26,7 @@
 #include "detail/value_result.hpp"
 #include "detail/op_storage.hpp"
 #include "env.hpp"
+#include "into_variant.hpp"
 #include "stop_token.hpp"
 
 #include <atomic>

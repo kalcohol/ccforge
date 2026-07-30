@@ -19,6 +19,8 @@ function(forge_add_linalg_compile_probe target_name source_name test_name)
 endfunction()
 
 include(CheckCXXSourceCompiles)
+unset(FORGE_LINALG_HAS_MDSPAN_HEADER CACHE)
+unset(FORGE_LINALG_HAS_MDSPAN_HEADER)
 check_cxx_source_compiles("
     #include <mdspan>
     int main() { return 0; }

@@ -107,16 +107,19 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
     -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=ON
 )
 
-# Assert the cmake configure log shows a feature standing aside (NOT injected).
-assert_stands_aside() {
+# Assert the cmake configure log shows complete native support.
+assert_complete_stands_aside() {
     local logfile="$1" feature="$2"
     if grep -q "CC Forge: ${feature} backport enabled" "${logfile}"; then
-        fail "${feature}: backport was INJECTED — expected stand-aside on this toolchain (ODR risk). See ${logfile}"
+        fail "${feature}: backport was INJECTED — expected complete native support on this toolchain (ODR risk). See ${logfile}"
     fi
-    if grep -q "CC Forge: ${feature} native support" "${logfile}"; then
-        ok "${feature}: Forge stood aside for native support"
+    if grep -q "CC Forge: ${feature} native support is present but INCOMPLETE" "${logfile}"; then
+        fail "${feature}: native support regressed from complete to partial. See ${logfile}"
+    fi
+    if grep -q "CC Forge: ${feature} native support detected - backport disabled" "${logfile}"; then
+        ok "${feature}: Forge stood aside for complete native support"
     else
-        fail "${feature}: no stand-aside message found in configure log ${logfile}"
+        fail "${feature}: no complete-native stand-aside message found in configure log ${logfile}"
     fi
 }
 
@@ -148,10 +151,10 @@ target_gcc16() {
                   "$@"
         ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
-    assert_stands_aside "${logfile}" "std::simd"
+    assert_complete_stands_aside "${logfile}" "std::simd"
     assert_partial_stands_aside "${logfile}" "std::constant_wrapper"
-    assert_stands_aside "${logfile}" "std::mdspan padded layouts"
-    assert_stands_aside "${logfile}" "std::submdspan"
+    assert_complete_stands_aside "${logfile}" "std::mdspan padded layouts"
+    assert_complete_stands_aside "${logfile}" "std::submdspan"
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
     ok "gcc16 verified"
