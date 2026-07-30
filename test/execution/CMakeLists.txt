@@ -69,6 +69,52 @@ forge_add_execution_compile_probe(
     test_execution_include_when_all.cpp
     execution_include_when_all_compile)
 
+file(GLOB _forge_execution_fragment_headers CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/backport/cpp26/execution/*.hpp")
+set(_forge_execution_fragment_sources)
+set(_forge_execution_fragment_dir
+    "${CMAKE_CURRENT_BINARY_DIR}/fragment_includes")
+file(MAKE_DIRECTORY "${_forge_execution_fragment_dir}")
+foreach(_forge_execution_fragment IN LISTS _forge_execution_fragment_headers)
+    get_filename_component(
+        _forge_execution_fragment_name
+        "${_forge_execution_fragment}"
+        NAME)
+    set(_forge_execution_fragment_source
+        "${_forge_execution_fragment_dir}/${_forge_execution_fragment_name}.cpp")
+    file(WRITE "${_forge_execution_fragment_source}"
+        "#include \"cpp26/execution/${_forge_execution_fragment_name}\"\n")
+    list(APPEND
+        _forge_execution_fragment_sources
+        "${_forge_execution_fragment_source}")
+endforeach()
+add_library(
+    test_execution_fragment_includes
+    OBJECT
+    EXCLUDE_FROM_ALL
+    ${_forge_execution_fragment_sources})
+target_link_libraries(
+    test_execution_fragment_includes PRIVATE
+    forge::forge)
+target_include_directories(
+    test_execution_fragment_includes BEFORE PRIVATE
+    "${CMAKE_SOURCE_DIR}/backport")
+add_test(
+    NAME execution_fragment_includes_compile
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+        ${FORGE_TEST_BUILD_CONFIG_ARGS}
+        --target test_execution_fragment_includes)
+set_tests_properties(
+    execution_fragment_includes_compile PROPERTIES
+    RESOURCE_LOCK forge_main_build
+    TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+unset(_forge_execution_fragment_headers)
+unset(_forge_execution_fragment_sources)
+unset(_forge_execution_fragment_dir)
+unset(_forge_execution_fragment)
+unset(_forge_execution_fragment_name)
+unset(_forge_execution_fragment_source)
+
 forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_ACCEPTS_BOUNDARY_PROBES
     test_execution_accept_boundary_probes.cpp

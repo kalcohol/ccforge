@@ -7,7 +7,7 @@ FROM docker.io/library/debian:trixie
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        clang lld libc++-dev libc++abi-dev libclang-rt-dev \
+        clang lld llvm libc++-dev libc++abi-dev libclang-rt-dev \
         cmake ninja-build ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

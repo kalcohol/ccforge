@@ -24,6 +24,8 @@
 
 #include "concepts.hpp"
 
+#include <exception>
+
 namespace std::execution {
 
 namespace __forge_then {

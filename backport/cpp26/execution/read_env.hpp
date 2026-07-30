@@ -25,6 +25,8 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <exception>
+
 namespace std::execution {
 
 namespace __forge_read_env {

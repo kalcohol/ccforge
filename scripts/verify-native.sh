@@ -109,14 +109,14 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
 
 # Assert the cmake configure log shows complete native support.
 assert_complete_stands_aside() {
-    local logfile="$1" feature="$2"
-    if grep -q "CC Forge: ${feature} backport enabled" "${logfile}"; then
+    local logfile="$1" feature="$2" probe="$3"
+    if grep -q "CC Forge probe: ${probe}=BACKPORT" "${logfile}"; then
         fail "${feature}: backport was INJECTED — expected complete native support on this toolchain (ODR risk). See ${logfile}"
     fi
-    if grep -q "CC Forge: ${feature} native support is present but INCOMPLETE" "${logfile}"; then
+    if grep -q "CC Forge probe: ${probe}=PARTIAL" "${logfile}"; then
         fail "${feature}: native support regressed from complete to partial. See ${logfile}"
     fi
-    if grep -q "CC Forge: ${feature} native support detected - backport disabled" "${logfile}"; then
+    if grep -q "CC Forge probe: ${probe}=COMPLETE" "${logfile}"; then
         ok "${feature}: Forge stood aside for complete native support"
     else
         fail "${feature}: no complete-native stand-aside message found in configure log ${logfile}"
@@ -124,11 +124,11 @@ assert_complete_stands_aside() {
 }
 
 assert_partial_stands_aside() {
-    local logfile="$1" feature="$2"
-    if grep -q "CC Forge: ${feature} backport enabled" "${logfile}"; then
+    local logfile="$1" feature="$2" probe="$3"
+    if grep -q "CC Forge probe: ${probe}=BACKPORT" "${logfile}"; then
         fail "${feature}: backport was INJECTED — expected partial-native stand-aside on this toolchain (ODR risk). See ${logfile}"
     fi
-    if grep -q "CC Forge: ${feature} native support is present but INCOMPLETE" "${logfile}"; then
+    if grep -q "CC Forge probe: ${probe}=PARTIAL" "${logfile}"; then
         ok "${feature}: Forge stood aside for partial native support"
     else
         fail "${feature}: no partial-native stand-aside message found in configure log ${logfile}"
@@ -151,10 +151,10 @@ target_gcc16() {
                   "$@"
         ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
-    assert_complete_stands_aside "${logfile}" "std::simd"
-    assert_partial_stands_aside "${logfile}" "std::constant_wrapper"
-    assert_complete_stands_aside "${logfile}" "std::mdspan padded layouts"
-    assert_complete_stands_aside "${logfile}" "std::submdspan"
+    assert_complete_stands_aside "${logfile}" "std::simd" SIMD
+    assert_partial_stands_aside "${logfile}" "std::constant_wrapper" CONSTANT_WRAPPER
+    assert_complete_stands_aside "${logfile}" "std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS
+    assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
     ok "gcc16 verified"
@@ -201,10 +201,12 @@ target_tsan() {
             cmake -S . -B build/tsan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON \
-                  -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
-                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+                  -DCMAKE_CXX_FLAGS="${CXXFLAGS:-} -fsanitize=thread -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS:-} -fsanitize=thread" \
                   "$@"
             cmake --build build/tsan
+            command -v llvm-symbolizer >/dev/null
+            ldd build/tsan/test/forge/test_forge_strand | grep -Fq "libc++.so"
             export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1"
             selected_tests=$(ctest --test-dir build/tsan -N -R "execution|forge" | sed -n "s/^Total Tests: //p")
             if [ -z "${selected_tests}" ] || [ "${selected_tests}" -le 0 ]; then
@@ -234,10 +236,12 @@ target_asan() {
             cmake -S . -B build/asan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON \
-                  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
-                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+                  -DCMAKE_CXX_FLAGS="${CXXFLAGS:-} -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS:-} -fsanitize=address,undefined" \
                   "$@"
             cmake --build build/asan
+            command -v llvm-symbolizer >/dev/null
+            ldd build/asan/test/forge/test_forge_async_scope | grep -Fq "libc++.so"
             # detect_container_overflow=0 avoids false positives against a
             # non-ASan-instrumented system libc++; UBSan halts on first error.
             export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
@@ -271,8 +275,8 @@ target_asan() {
                   -DFORGE_TEST_ENABLE_LINALG=OFF \
                   -DFORGE_TEST_ENABLE_FORGE=OFF \
                   -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
-                  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
-                  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+                  -DCMAKE_CXX_FLAGS="${CXXFLAGS:-} -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+                  -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS:-} -fsanitize=address,undefined"
             cmake --build build/asan-simd-memory --target \
                   test_simd_memory_load_store \
                   test_simd_memory_gather_scatter \
