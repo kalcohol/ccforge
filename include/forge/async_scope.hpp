@@ -253,18 +253,16 @@ struct __op_node final : __op_node_base {
     }
 
     void destroy_self() noexcept override {
-        auto st = std::move(state_);
         auto error = std::move(completion_error_);
-        auto* state = st.get();
+        auto* state = state_.get();
         auto* memory = memory_resource();
         std::pmr::polymorphic_allocator<__op_node> alloc{memory};
         std::destroy_at(this);
         alloc.deallocate(this, 1);
 
-        // The owning scope keeps state alive while active work remains. Drop
-        // the worker's state reference before publishing the final completion,
-        // so wait() is also a barrier for node and state-reference release.
-        st.reset();
+        // The owning scope keeps state alive while active work remains.
+        // Destroying the node releases its state reference before publishing
+        // the final completion, so wait() remains a teardown barrier.
         state->complete(std::move(error));
     }
 

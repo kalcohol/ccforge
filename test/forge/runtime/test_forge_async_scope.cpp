@@ -107,6 +107,52 @@ struct destruction_sender {
     }
 };
 
+struct teardown_env_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<stop_probe> probe;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+        std::shared_ptr<stop_probe> probe;
+
+        op(R r, std::shared_ptr<stop_probe> p)
+            : rcvr(std::move(r)), probe(std::move(p)) {}
+        op(op&&) = delete;
+        op& operator=(op&&) = delete;
+        op(const op&) = delete;
+        op& operator=(const op&) = delete;
+
+        ~op() {
+            auto token = std::execution::get_stop_token(
+                std::execution::get_env(rcvr));
+            probe->possible = token.stop_possible();
+            probe->requested = token.stop_requested();
+        }
+
+        void start() & noexcept {
+            std::execution::set_value(std::move(rcvr));
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(rcvr), std::move(probe)};
+    }
+};
+
 struct destruction_tail_state {
     std::mutex mtx;
     std::condition_variable cv;
@@ -388,6 +434,18 @@ TEST(AsyncScopeTest, ReclaimsCompletedOperationState) {
     EXPECT_EQ(state->destroyed.load(std::memory_order_acquire), 1);
     EXPECT_TRUE(scope.spawn(std::execution::just()));
     scope.wait();
+}
+
+TEST(AsyncScopeTest, TeardownKeepsReceiverEnvironmentAlive) {
+    forge::async_scope scope;
+    auto probe = std::make_shared<stop_probe>();
+    scope.request_stop();
+
+    ASSERT_TRUE(scope.spawn(teardown_env_sender{probe}));
+    scope.wait();
+
+    EXPECT_TRUE(probe->possible);
+    EXPECT_TRUE(probe->requested);
 }
 
 TEST(AsyncScopeTest, WaitIncludesOperationStateDestruction) {
