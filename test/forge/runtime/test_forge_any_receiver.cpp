@@ -3,6 +3,7 @@
 #include <execution>
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 
 using cs_int = std::execution::completion_signatures<
     std::execution::set_value_t(int),
@@ -12,6 +13,9 @@ using cs_value_only = std::execution::completion_signatures<
     std::execution::set_value_t(int)>;
 using cs_zero_value = std::execution::completion_signatures<
     std::execution::set_value_t()>;
+using cs_error_stopped = std::execution::completion_signatures<
+    std::execution::set_error_t(std::exception_ptr),
+    std::execution::set_stopped_t()>;
 
 struct test_recv {
     using receiver_concept = std::execution::receiver_t;
@@ -38,6 +42,30 @@ struct value_only_recv {
     auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
+};
+
+struct error_stopped_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    bool* error;
+    bool* stopped;
+
+    void set_error(std::exception_ptr) && noexcept {
+        *error = true;
+    }
+
+    void set_stopped() && noexcept {
+        *stopped = true;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+template<class R>
+concept zero_value_completable = requires(R receiver) {
+    std::execution::set_value(std::move(receiver));
 };
 
 struct receiver_move_counts {
@@ -126,6 +154,14 @@ static_assert(std::execution::receiver_of<
 static_assert(std::constructible_from<
               forge::any_receiver_of<cs_value_only>,
               value_only_recv>);
+static_assert(std::execution::receiver_of<
+              forge::any_receiver_of<cs_error_stopped>,
+              cs_error_stopped>);
+static_assert(std::constructible_from<
+              forge::any_receiver_of<cs_error_stopped>,
+              error_stopped_recv>);
+static_assert(!zero_value_completable<
+              forge::any_receiver_of<cs_error_stopped>>);
 
 TEST(AnyReceiverTest, DefaultEmpty) {
     forge::any_receiver_of<cs_int> r;
@@ -153,6 +189,32 @@ TEST(AnyReceiverTest, SupportsValueOnlyClosedSet) {
     std::execution::set_value(std::move(receiver), 17);
 
     EXPECT_EQ(value, 17);
+}
+
+TEST(AnyReceiverTest, SupportsErrorOnlyClosedSet) {
+    bool error = false;
+    bool stopped = false;
+    forge::any_receiver_of<cs_error_stopped> receiver =
+        error_stopped_recv{&error, &stopped};
+
+    std::execution::set_error(
+        std::move(receiver),
+        std::make_exception_ptr(std::runtime_error{"failure"}));
+
+    EXPECT_TRUE(error);
+    EXPECT_FALSE(stopped);
+}
+
+TEST(AnyReceiverTest, SupportsStoppedOnlyDeliveryInClosedSet) {
+    bool error = false;
+    bool stopped = false;
+    forge::any_receiver_of<cs_error_stopped> receiver =
+        error_stopped_recv{&error, &stopped};
+
+    std::execution::set_stopped(std::move(receiver));
+
+    EXPECT_FALSE(error);
+    EXPECT_TRUE(stopped);
 }
 
 TEST(AnyReceiverTest, MoveConstructsSmallObjectStorageReceiver) {

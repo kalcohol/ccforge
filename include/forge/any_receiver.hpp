@@ -53,6 +53,9 @@ template<class CompletionSignatures>
 class any_receiver_of {
     using cs_t = CompletionSignatures;
     using value_tuple_t = forge::__detail::meta::single_value_tuple_t<cs_t>;
+    static constexpr bool __has_value_completion =
+        !forge::__detail::meta::type_list_empty_v<
+            forge::__detail::meta::value_tuple_list_t<cs_t>>;
 
     struct __vtable {
         void (*complete_value)(void*, value_tuple_t) noexcept;
@@ -67,11 +70,15 @@ class any_receiver_of {
     static const __vtable* __make_vtable() {
         static const __vtable vt{
             .complete_value = [](void* p, value_tuple_t v) noexcept {
-                std::apply([&](auto&&... vs) {
-                    std::execution::set_value(
-                        std::move(*static_cast<R*>(p)),
-                        std::move(vs)...);
-                }, std::move(v));
+                if constexpr (__has_value_completion) {
+                    std::apply([&](auto&&... vs) {
+                        std::execution::set_value(
+                            std::move(*static_cast<R*>(p)),
+                            std::move(vs)...);
+                    }, std::move(v));
+                } else {
+                    std::terminate();
+                }
             },
             .complete_error = [](void* p, std::exception_ptr ep) noexcept {
                 if constexpr (__any_receiver_contains_signature_v<
@@ -201,9 +208,10 @@ public:
     explicit operator bool() const noexcept { return __ptr != nullptr; }
 
     template<class... Vs>
-        requires std::is_same_v<
-            std::tuple<std::decay_t<Vs>...>,
-            value_tuple_t>
+        requires __has_value_completion &&
+                 std::is_same_v<
+                     std::tuple<std::decay_t<Vs>...>,
+                     value_tuple_t>
     void set_value(Vs&&... vs) && noexcept {
         if (__ptr && __vt)
             __vt->complete_value(__ptr,
