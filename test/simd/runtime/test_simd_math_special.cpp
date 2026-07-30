@@ -2,8 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <string>
 
 namespace {
 
@@ -127,6 +130,42 @@ TEST(SimdMathSpecialTest, VectorizedSpecialMathCommonResultTypeMatchesScalarSema
 #endif
 }
 
+TEST(SimdMathSpecialTest, CylindricalBesselFunctionsRemainStableAtLargeArguments) {
+    const float4 orders = load_vec<float4>(
+        std::array<float, 4>{{0.0f, 0.0f, 0.0f, 0.0f}});
+    const float4 arguments = load_vec<float4>(
+        std::array<float, 4>{{30.0f, 40.0f, 50.0f, 80.0f}});
+
+    const auto j = std::simd::cyl_bessel_j(orders, arguments);
+    const auto y = std::simd::cyl_neumann(orders, arguments);
+    const auto k = std::simd::cyl_bessel_k(orders, arguments);
+    const std::array<double, 4> expected_j{{
+        -0.086367983581039975,
+        0.0073668905842394303,
+        0.055812327669249769,
+        -0.069742165512205884}};
+    const std::array<double, 4> expected_y{{
+        -0.11729573168666423,
+        0.12593641705826081,
+        -0.098064995470078242,
+        -0.05562033908977522}};
+    const std::array<double, 4> expected_k{{
+        2.1324774964630563e-14,
+        8.39286110009957e-19,
+        3.4101677497894956e-23,
+        2.5251198425054723e-36}};
+
+    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+        const auto index = static_cast<std::size_t>(i);
+        EXPECT_NEAR(j[i], static_cast<float>(expected_j[index]), 5e-6f);
+        EXPECT_NEAR(y[i], static_cast<float>(expected_y[index]), 5e-6f);
+        EXPECT_NEAR(
+            k[i],
+            static_cast<float>(expected_k[index]),
+            std::max(1e-40f, static_cast<float>(expected_k[index] * 2e-5)));
+    }
+}
+
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
 TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
     EXPECT_NEAR(
@@ -156,6 +195,56 @@ TEST(SimdMathSpecialTest, BesselFallbacksRemainStableOutsideSmallArguments) {
         std::simd::detail::special_math::cyl_bessel_k_fallback(2.0, 3.0),
         0.061510458471742052,
         1e-10);
+}
+
+TEST(SimdMathSpecialTest, BesselFallbacksMatchIndependentLargeArgumentReferences) {
+    struct reference {
+        double order;
+        double argument;
+        double j;
+        double y;
+        double k;
+    };
+    constexpr reference cases[] = {
+        {0.0, 16.0, -0.17489907398362922, 0.095810997080712376,
+         3.4994116639364986e-08},
+        {0.0, 30.0, -0.086367983581039975, -0.11729573168666423,
+         2.1324774964630563e-14},
+        {0.0, 50.0, 0.055812327669249769, -0.098064995470078242,
+         3.4101677497894956e-23},
+        {0.5, 30.0, -0.14392965337039978, -0.022470290598831624,
+         2.1412375659560111e-14},
+        {2.5, 16.0, 0.092572681583959579, -0.17801902369130165,
+         4.2285030375216419e-08},
+        {5.0, 25.0, -0.066007995398423697, -0.14705799311372242,
+         5.6485921365284157e-12},
+        {10.0, 100.0, -0.054732176935467808, 0.058331574236418902,
+         7.6554279773881018e-45},
+    };
+
+    for (const auto& value : cases) {
+        SCOPED_TRACE(
+            "order=" + std::to_string(value.order) +
+            ", argument=" + std::to_string(value.argument));
+        const auto tolerance = [](double expected) {
+            return std::max(1e-300, std::abs(expected) * 5e-12);
+        };
+        EXPECT_NEAR(
+            std::simd::detail::special_math::cyl_bessel_j_fallback(
+                value.order, value.argument),
+            value.j,
+            tolerance(value.j));
+        EXPECT_NEAR(
+            std::simd::detail::special_math::cyl_bessel_y_fallback(
+                value.order, value.argument),
+            value.y,
+            tolerance(value.y));
+        EXPECT_NEAR(
+            std::simd::detail::special_math::cyl_bessel_k_fallback(
+                value.order, value.argument),
+            value.k,
+            tolerance(value.k));
+    }
 }
 #endif
 

@@ -503,9 +503,89 @@ T cyl_bessel_i_series(T nu, T x) {
 }
 
 template<class T>
+struct cyl_bessel_hankel_result {
+    T j;
+    T y;
+};
+
+template<class T>
+bool use_cyl_bessel_asymptotic(T nu, T x) noexcept {
+    const T order = std::abs(nu);
+    // Stay beyond the turning region x ~= order, where the fixed-order
+    // Hankel expansion is stable and its terms decrease before truncation.
+    return x >= static_cast<T>(12) &&
+        x >= static_cast<T>(2.5L) * order;
+}
+
+template<class T>
+auto cyl_bessel_hankel_asymptotic(T nu, T x)
+    -> cyl_bessel_hankel_result<T> {
+    const T mu = T{4} * nu * nu;
+    T p = T{1};
+    T q = T{};
+    T term = T{1};
+    T previous = infinity<T>();
+
+    // Build the shared Hankel P/Q coefficient series and stop at its least
+    // term; the expansion is asymptotic rather than convergent.
+    for (unsigned k = 1; k <= 64u; ++k) {
+        const T odd = static_cast<T>(2u * k - 1u);
+        const T next = term * (mu - odd * odd) /
+            (static_cast<T>(8u * k) * x);
+        const T magnitude = std::abs(next);
+        if (k > 1u && magnitude > previous) {
+            break;
+        }
+
+        term = next;
+        if ((k & 1u) == 0u) {
+            const bool subtract = ((k / 2u) & 1u) != 0u;
+            p += subtract ? -term : term;
+        } else {
+            const bool subtract = (((k - 1u) / 2u) & 1u) != 0u;
+            q += subtract ? -term : term;
+        }
+
+        if (magnitude <= std::numeric_limits<T>::epsilon() *
+                std::max(T{1}, std::abs(p) + std::abs(q))) {
+            break;
+        }
+        previous = magnitude;
+    }
+
+    const T phase = x - nu * pi_v<T> / T{2} - pi_v<T> / T{4};
+    const T scale = std::sqrt(T{2} / (pi_v<T> * x));
+    const T cos_phase = std::cos(phase);
+    const T sin_phase = std::sin(phase);
+    return {
+        scale * (cos_phase * p - sin_phase * q),
+        scale * (sin_phase * p + cos_phase * q)};
+}
+
+template<class T>
+T cyl_bessel_j_fallback(T nu, T x) {
+    if (std::isnan(nu) || std::isnan(x) || x < T{}) {
+        return quiet_nan<T>();
+    }
+    if (std::isinf(x)) {
+        return T{};
+    }
+    if (use_cyl_bessel_asymptotic(nu, x)) {
+        return cyl_bessel_hankel_asymptotic(nu, x).j;
+    }
+    return cyl_bessel_j_series(nu, x);
+}
+
+template<class T>
 T cyl_bessel_y_fallback(T nu, T x) {
     if (!(x > T{})) {
         return quiet_nan<T>();
+    }
+    if (std::isinf(x)) {
+        return T{};
+    }
+    if (use_cyl_bessel_asymptotic(nu, x)) {
+        return cyl_bessel_hankel_asymptotic(nu, x).y;
     }
 
     const auto evaluate = [x](T order) {
@@ -524,24 +604,107 @@ T cyl_bessel_y_fallback(T nu, T x) {
 }
 
 template<class T>
-T cyl_bessel_k_fallback(T nu, T x) {
-    if (!(x > T{})) {
-        return quiet_nan<T>();
+T cyl_bessel_k_asymptotic(T nu, T x) {
+    const T mu = T{4} * nu * nu;
+    T sum = T{1};
+    T term = T{1};
+    T previous = infinity<T>();
+
+    for (unsigned k = 1; k <= 64u; ++k) {
+        const T odd = static_cast<T>(2u * k - 1u);
+        const T next = term * (mu - odd * odd) /
+            (static_cast<T>(8u * k) * x);
+        const T magnitude = std::abs(next);
+        if (k > 1u && magnitude > previous) {
+            break;
+        }
+
+        term = next;
+        sum += term;
+        if (magnitude <= std::numeric_limits<T>::epsilon() *
+                std::max(T{1}, std::abs(sum))) {
+            break;
+        }
+        previous = magnitude;
     }
 
-    const auto evaluate = [x](T order) {
-        const T sin_term = std::sin(pi_v<T> * order);
-        return (pi_v<T> / T{2}) *
-            (cyl_bessel_i_series(-order, x) - cyl_bessel_i_series(order, x)) /
-            sin_term;
+    return std::sqrt(pi_v<T> / (T{2} * x)) * std::exp(-x) * sum;
+}
+
+template<class T>
+T cyl_bessel_k_integral(T nu, T x) {
+    const long double order = std::abs(static_cast<long double>(nu));
+    const long double argument = static_cast<long double>(x);
+    const auto log_cosh = [](long double value) {
+        value = std::abs(value);
+        return value + std::log1p(std::exp(-2.0L * value)) -
+            std::log(2.0L);
     };
-    if (almost_integer(nu, static_cast<T>(1e-10L))) {
-        const T integer_order = std::round(nu);
-        const T delta = std::cbrt(std::numeric_limits<T>::epsilon());
-        return (evaluate(integer_order - delta) +
-                evaluate(integer_order + delta)) / T{2};
+
+    const auto log_integrand = [&](long double t) {
+        return -argument * std::cosh(t) + log_cosh(order * t);
+    };
+
+    // K_nu(x) = integral exp(-x cosh(t)) cosh(nu t) dt. Locate the
+    // integrand peak and remove its exponential scale before quadrature.
+    long double peak = 0.0L;
+    if (order * order > argument) {
+        long double low = 0.0L;
+        long double high = std::asinh(order / argument) + 1.0L;
+        for (unsigned i = 0; i < 96u; ++i) {
+            const long double mid = (low + high) / 2.0L;
+            const long double derivative =
+                -argument * std::sinh(mid) +
+                order * std::tanh(order * mid);
+            if (derivative > 0.0L) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        peak = (low + high) / 2.0L;
     }
-    return evaluate(nu);
+
+    const long double log_scale =
+        std::max(log_integrand(0.0L), log_integrand(peak));
+    const long double upper = std::max(
+        peak + 2.0L,
+        std::asinh((order + 64.0L) / argument) + 1.0L);
+    const auto scaled_integrand = [&](long double t) {
+        return std::exp(log_integrand(t) - log_scale);
+    };
+
+    long double integral = 0.0L;
+    if (peak > 0.0L) {
+        integral += adaptive_simpson_integral(
+            scaled_integrand, 0.0L, peak);
+        integral += adaptive_simpson_integral(
+            scaled_integrand, peak, upper);
+    } else {
+        integral = adaptive_simpson_integral(
+            scaled_integrand, 0.0L, upper);
+    }
+
+    const long double log_value = log_scale + std::log(integral);
+    if (log_value > std::log(
+            static_cast<long double>(std::numeric_limits<T>::max()))) {
+        return infinity<T>();
+    }
+    return static_cast<T>(std::exp(log_value));
+}
+
+template<class T>
+T cyl_bessel_k_fallback(T nu, T x) {
+    if (!(x > T{}) || std::isnan(nu)) {
+        return quiet_nan<T>();
+    }
+    if (std::isinf(x)) {
+        return T{};
+    }
+    if (use_cyl_bessel_asymptotic(nu, x)) {
+        return cyl_bessel_k_asymptotic(nu, x);
+    }
+    return cyl_bessel_k_integral(nu, x);
 }
 
 template<class T>
@@ -612,7 +775,7 @@ T cyl_bessel_j(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
     return std::cyl_bessel_j(nu, x);
 #else
-    return cyl_bessel_j_series(nu, x);
+    return cyl_bessel_j_fallback(nu, x);
 #endif
 }
 
