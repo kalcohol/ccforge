@@ -254,6 +254,22 @@ TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
 }
 
 #if !defined(__cpp_lib_math_special_functions)
+TEST(SimdMathSpecialTest, RiemannZetaPreservesNearPoleAndLargeNegativeInputs) {
+    const double4 values = load_vec<double4>(std::array<double, 4>{{
+        1.0 + 1.0e-13,
+        1.0 - 1.0e-13,
+        -1.0e30,
+        -2.0}});
+    const auto zeta = std::simd::riemann_zeta(values);
+
+    EXPECT_TRUE(std::isfinite(zeta[0]));
+    EXPECT_TRUE(std::isfinite(zeta[1]));
+    EXPECT_GT(zeta[0], 1.0e12);
+    EXPECT_LT(zeta[1], -1.0e12);
+    EXPECT_EQ(zeta[2], 0.0);
+    EXPECT_EQ(zeta[3], 0.0);
+}
+
 TEST(SimdMathSpecialTest, PublicBesselApiExercisesForgeFallback) {
     const double4 double_orders = load_vec<double4>(
         std::array<double, 4>{{140.0, 100.0, 0.3137, 0.49}});

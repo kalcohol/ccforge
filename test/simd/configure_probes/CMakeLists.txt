@@ -1,9 +1,4 @@
 forge_add_simd_configure_probe(
-    FORGE_SIMD_HAS_MASK_CAST
-    "mask_cast.cpp"
-    TRUE
-    "Forge simd backport must support mask simd_cast/static_simd_cast")
-forge_add_simd_configure_probe(
     FORGE_SIMD_REJECTS_NONSTANDARD_WHERE
     "reject_nonstandard_where.cpp"
     FALSE
@@ -140,6 +135,21 @@ forge_add_simd_configure_probe(
     "bit_rejects_signed.cpp"
     FALSE
     "Forge simd backport must reject unsigned-only bit algorithms on signed vectors")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_CONSTEXPR_NONPOSITIVE_BIT_REPEAT
+    "bit_rejects_constexpr_nonpositive_repeat.cpp"
+    FALSE
+    "Forge simd backport must reject non-positive bit_repeat lengths in constant expressions")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_LEGACY_SPLIT
+    "reject_legacy_split.cpp"
+    FALSE
+    "Forge simd backport must not expose the removed parallelism-TS split extension")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_LEGACY_SIMD_CAST
+    "reject_legacy_simd_cast.cpp"
+    FALSE
+    "Forge simd backport must not expose the removed parallelism-TS simd_cast extension")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_MATH_SURFACE
     "math_surface.cpp"

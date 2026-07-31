@@ -432,15 +432,16 @@ T riemann_zeta_hasse(T s) {
 
 template<class T>
 T riemann_zeta_fallback(T s) {
-    if (almost_equal(s, T{1})) {
+    if (s == T{1}) {
         return infinity<T>();
     }
-    if (almost_equal(s, T{0})) {
+    if (s == T{0}) {
         return static_cast<T>(-0.5L);
     }
     if (s < T{}) {
         const T rounded = std::round(s);
-        if (almost_equal(s, rounded) && static_cast<long long>(rounded) % 2ll == 0ll) {
+        const T half = rounded / T{2};
+        if (s == rounded && std::trunc(half) == half) {
             return T{};
         }
         return std::pow(T{2}, s) * std::pow(pi_v<T>, s - T{1}) * std::sin(pi_v<T> * s / T{2}) *

@@ -93,7 +93,64 @@ constexpr T reduce_max(const basic_vec<T, Abi>& value, const typename basic_vec<
 			result = value[i];
 		}
 	}
-	return result;
+    return result;
+}
+
+template<class T,
+         class BinaryOperation = plus<>,
+         typename enable_if<
+             detail::is_supported_scalar_value<T>::value &&
+                 detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             int>::type = 0>
+constexpr T reduce(const T& value, BinaryOperation = {}) {
+    return value;
+}
+
+template<class T,
+         class Mask,
+         class BinaryOperation = plus<>,
+         typename enable_if<
+             detail::is_supported_scalar_value<T>::value &&
+                 is_same<detail::remove_cvref_t<Mask>, bool>::value &&
+                 detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             int>::type = 0>
+constexpr T reduce(
+    const T& value,
+    Mask mask,
+    BinaryOperation = {},
+    type_identity_t<T> identity_element =
+        detail::reduction_identity<T, BinaryOperation>::value()) {
+    return mask ? value : identity_element;
+}
+
+template<class T>
+    requires(detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
+constexpr T reduce_min(const T& value) noexcept {
+    return value;
+}
+
+template<class T, class Mask>
+    requires(
+        detail::is_supported_scalar_value<T>::value &&
+        totally_ordered<T> &&
+        same_as<Mask, bool>)
+constexpr T reduce_min(const T& value, Mask mask) noexcept {
+    return mask ? value : numeric_limits<T>::max();
+}
+
+template<class T>
+    requires(detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
+constexpr T reduce_max(const T& value) noexcept {
+    return value;
+}
+
+template<class T, class Mask>
+    requires(
+        detail::is_supported_scalar_value<T>::value &&
+        totally_ordered<T> &&
+        same_as<Mask, bool>)
+constexpr T reduce_max(const T& value, Mask mask) noexcept {
+    return mask ? value : numeric_limits<T>::lowest();
 }
 
 template<size_t Bytes, class Abi>

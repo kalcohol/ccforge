@@ -93,6 +93,15 @@ constexpr T shift_right_scalar(T value, S shift) noexcept {
 
 template<class T>
 constexpr T bit_repeat_scalar(T value, int length) {
+    if (length <= 0) {
+        if consteval {
+            throw "std::simd::bit_repeat requires a positive repeat length";
+        } else {
+            assert(length > 0);
+            return T{};
+        }
+    }
+
     constexpr unsigned digits =
         static_cast<unsigned>(numeric_limits<T>::digits);
     const auto pattern_length = static_cast<unsigned>(length);
@@ -507,7 +516,7 @@ constexpr basic_vec<T, Abi> bit_compress(
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_compress(
     const basic_vec<T, Abi>& value,
-    T mask) noexcept
+    type_identity_t<T> mask) noexcept
     requires(is_unsigned<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -537,7 +546,7 @@ constexpr basic_vec<T, Abi> bit_expand(
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_expand(
     const basic_vec<T, Abi>& value,
-    T mask) noexcept
+    type_identity_t<T> mask) noexcept
     requires(is_unsigned<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {

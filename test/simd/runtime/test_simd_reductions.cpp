@@ -50,4 +50,17 @@ TEST(SimdRuntimeTest, MaskedBitwiseReduceUsesStandardDefaultIdentities) {
     EXPECT_EQ(std::simd::reduce(values, selected, std::bit_xor<>{}), 0b0101);
 }
 
+TEST(SimdRuntimeTest, ScalarReductionsMirrorVectorGenericCode) {
+    EXPECT_EQ(std::simd::reduce(7), 7);
+    EXPECT_EQ(std::simd::reduce(7, true), 7);
+    EXPECT_EQ(std::simd::reduce(7, false), 0);
+    EXPECT_EQ(std::simd::reduce(7, false, std::multiplies<>{}), 1);
+    EXPECT_EQ(std::simd::reduce_min(7), 7);
+    EXPECT_EQ(std::simd::reduce_min(7, true), 7);
+    EXPECT_EQ(std::simd::reduce_min(7, false), std::numeric_limits<int>::max());
+    EXPECT_EQ(std::simd::reduce_max(7), 7);
+    EXPECT_EQ(std::simd::reduce_max(7, true), 7);
+    EXPECT_EQ(std::simd::reduce_max(7, false), std::numeric_limits<int>::lowest());
+}
+
 } // namespace

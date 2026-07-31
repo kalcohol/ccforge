@@ -2,6 +2,200 @@
 
 namespace detail {
 
+template<class T>
+constexpr T constexpr_math_integral_bound() noexcept {
+    T result{1};
+    for (int i = 0; i < numeric_limits<T>::digits; ++i) {
+        result *= T{2};
+    }
+    return result;
+}
+
+template<class T>
+constexpr T constexpr_math_trunc(T value) noexcept {
+    if (value != value || value == T{}) {
+        return value;
+    }
+
+    constexpr T integral_bound = constexpr_math_integral_bound<T>();
+    if (value >= integral_bound || value <= -integral_bound) {
+        return value;
+    }
+    return static_cast<T>(static_cast<long long>(value));
+}
+
+template<class T>
+using floating_bits_t = make_unsigned_t<typename integer_from_size<sizeof(T)>::type>;
+
+template<class T>
+constexpr floating_bits_t<T> floating_sign_mask() noexcept {
+    return floating_bits_t<T>{1}
+        << (sizeof(T) * numeric_limits<unsigned char>::digits - 1);
+}
+
+template<class T>
+constexpr bool constexpr_math_signbit(T value) noexcept {
+    static_assert(numeric_limits<T>::is_iec559);
+    return (bit_cast<floating_bits_t<T>>(value) & floating_sign_mask<T>()) != 0;
+}
+
+template<class T>
+constexpr T constexpr_math_copysign(T magnitude, T sign) noexcept {
+    static_assert(numeric_limits<T>::is_iec559);
+    auto bits = bit_cast<floating_bits_t<T>>(magnitude);
+    bits &= ~floating_sign_mask<T>();
+    if (constexpr_math_signbit(sign)) {
+        bits |= floating_sign_mask<T>();
+    }
+    return bit_cast<T>(bits);
+}
+
+template<class T>
+constexpr T math_fabs(T value) {
+    if consteval {
+        return constexpr_math_copysign(value, T{1});
+    } else {
+        return std::fabs(value);
+    }
+}
+
+template<class T>
+constexpr T math_ceil(T value) {
+    if consteval {
+        const T integral = constexpr_math_trunc(value);
+        return integral < value ? integral + T{1} : integral;
+    } else {
+        return std::ceil(value);
+    }
+}
+
+template<class T>
+constexpr T math_floor(T value) {
+    if consteval {
+        const T integral = constexpr_math_trunc(value);
+        return integral > value ? integral - T{1} : integral;
+    } else {
+        return std::floor(value);
+    }
+}
+
+template<class T>
+constexpr T math_round(T value) {
+    if consteval {
+        const T integral = constexpr_math_trunc(value);
+        const T fraction = value - integral;
+        if (fraction >= T{0.5}) {
+            return integral + T{1};
+        }
+        if (fraction <= T{-0.5}) {
+            return integral - T{1};
+        }
+        return integral;
+    } else {
+        return std::round(value);
+    }
+}
+
+template<class Int, class T>
+constexpr Int math_round_to_integer(T value) {
+    if consteval {
+        const T rounded = math_round(value);
+        if (rounded < static_cast<T>(numeric_limits<Int>::lowest()) ||
+            rounded > static_cast<T>(numeric_limits<Int>::max())) {
+            throw "SIMD rounding result is not representable in the destination integer type";
+        }
+        return static_cast<Int>(rounded);
+    } else {
+        if constexpr (is_same<Int, long int>::value) {
+            return std::lround(value);
+        } else {
+            return std::llround(value);
+        }
+    }
+}
+
+template<class T>
+constexpr T math_trunc(T value) {
+    if consteval {
+        return constexpr_math_trunc(value);
+    } else {
+        return std::trunc(value);
+    }
+}
+
+template<class T>
+constexpr T math_copysign(T magnitude, T sign) {
+    if consteval {
+        return constexpr_math_copysign(magnitude, sign);
+    } else {
+        return std::copysign(magnitude, sign);
+    }
+}
+
+template<class T>
+constexpr T math_fmax(T left, T right) {
+    if consteval {
+        if (left != left) {
+            return right;
+        }
+        if (right != right) {
+            return left;
+        }
+        if (left == right) {
+            return constexpr_math_signbit(left) ? right : left;
+        }
+        return left < right ? right : left;
+    } else {
+        return std::fmax(left, right);
+    }
+}
+
+template<class T>
+constexpr T math_fmin(T left, T right) {
+    if consteval {
+        if (left != left) {
+            return right;
+        }
+        if (right != right) {
+            return left;
+        }
+        if (left == right) {
+            return constexpr_math_signbit(left) ? left : right;
+        }
+        return left < right ? left : right;
+    } else {
+        return std::fmin(left, right);
+    }
+}
+
+template<class T>
+constexpr int math_fpclassify(T value) {
+    if consteval {
+        if (value != value) {
+            return FP_NAN;
+        }
+        const T magnitude = math_fabs(value);
+        if (magnitude == numeric_limits<T>::infinity()) {
+            return FP_INFINITE;
+        }
+        if (magnitude == T{}) {
+            return FP_ZERO;
+        }
+        return magnitude < numeric_limits<T>::min() ? FP_SUBNORMAL : FP_NORMAL;
+    } else {
+        return std::fpclassify(value);
+    }
+}
+
+template<class T>
+constexpr bool math_signbit(T value) {
+    if consteval {
+        return constexpr_math_signbit(value);
+    } else {
+        return std::signbit(value);
+    }
+}
+
 template<class T, bool = is_data_parallel_type<remove_cvref_t<T>>::value>
 struct math_scalar_value {
     using type = remove_cvref_t<T>;

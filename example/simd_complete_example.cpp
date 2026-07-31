@@ -37,7 +37,7 @@ int main() {
     const auto reversed = std::simd::permute(sum, [](auto index, auto size) {
         return std::simd::simd_size_type(decltype(size)::value - 1 - decltype(index)::value);
     });
-    const int8 eight = std::simd::iota<int8>(1);
+    const int8 eight = std::simd::iota<int8> + int8(1);
     const auto pieces = std::simd::chunk<int4>(eight);
     const auto stitched = std::simd::cat(pieces[0], pieces[1]);
 

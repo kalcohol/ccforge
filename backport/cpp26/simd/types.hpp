@@ -384,6 +384,9 @@ public:
     template<class R, class... Flags,
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
+                 detail::is_explicitly_simd_convertible<
+                     typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+                     T>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
     constexpr basic_vec(R&& r, flags<Flags...> f = {}) noexcept : data_{} {
         auto* first = ranges::data(r);
@@ -395,6 +398,9 @@ public:
     template<class R, class... Flags,
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
+                 detail::is_explicitly_simd_convertible<
+                     typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+                     T>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
     constexpr basic_vec(R&& r, const mask_type& mask_value, flags<Flags...> f = {}) noexcept : data_{} {
         auto* first = ranges::data(r);
@@ -807,6 +813,27 @@ public:
     basic_vec(const basic_vec&) = delete;
     basic_vec& operator=(const basic_vec&) = delete;
 };
+
+template<class R, class... Ts>
+    requires(
+        detail::is_contiguous_load_store_range<R>::value &&
+        detail::fixed_range_size<detail::remove_cvref_t<R>>::value > 0 &&
+        detail::is_deduce_abi_available<
+            typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+            detail::fixed_range_size<detail::remove_cvref_t<R>>::value>::value)
+basic_vec(R&&, Ts...)
+    -> basic_vec<
+        typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+        deduce_abi_t<
+            typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+            detail::fixed_range_size<detail::remove_cvref_t<R>>::value>>;
+
+template<size_t Bytes, class Abi>
+    requires(
+        detail::is_enabled_basic_mask<Bytes, Abi>::value &&
+        detail::has_vectorizable_signed_integer_of_size<Bytes>::value)
+basic_vec(basic_mask<Bytes, Abi>)
+    -> basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
 
 // This metadata models the ABI-aligned memory contract used by load/store APIs.
 // It does not require alignof(basic_vec<T, Abi>) to equal alignment_v.

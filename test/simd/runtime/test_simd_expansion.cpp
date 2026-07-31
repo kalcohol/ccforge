@@ -125,33 +125,6 @@ TEST(SimdDraftRuntimeTest, ChunkCatPermuteCoveragePending) {
 
 #endif
 
-TEST(SimdRuntimeTest, SplitByChunkTypeMatchesLaneOrder) {
-    const std::array<int, 8> data{{1, 2, 3, 4, 5, 6, 7, 8}};
-    const int8 values = load_vec<int8>(data);
-    const auto parts = std::simd::split<int4>(values);
-
-    EXPECT_EQ(parts[0][0], 1);
-    EXPECT_EQ(parts[0][3], 4);
-    EXPECT_EQ(parts[1][0], 5);
-    EXPECT_EQ(parts[1][3], 8);
-}
-
-TEST(SimdRuntimeTest, SplitBySizesSupportsUnevenPieces) {
-    const std::array<int, 8> data{{1, 2, 3, 4, 5, 6, 7, 8}};
-    const int8 values = load_vec<int8>(data);
-    const auto pieces = std::simd::split<2, 3, 3>(values);
-    const auto& first = std::get<0>(pieces);
-    const auto& second = std::get<1>(pieces);
-    const auto& third = std::get<2>(pieces);
-
-    EXPECT_EQ(first[0], 1);
-    EXPECT_EQ(first[1], 2);
-    EXPECT_EQ(second[0], 3);
-    EXPECT_EQ(second[2], 5);
-    EXPECT_EQ(third[0], 6);
-    EXPECT_EQ(third[2], 8);
-}
-
 TEST(SimdRuntimeTest, CompressAndExpandRearrangeLanesUsingMask) {
     const std::array<int, 4> data{{10, 20, 30, 40}};
     const int4 values = load_vec<int4>(data);

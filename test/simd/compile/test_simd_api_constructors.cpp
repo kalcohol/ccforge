@@ -62,12 +62,24 @@ static_assert(!std::is_constructible<mask4, int_returning_generator>::value,
     "basic_mask must not accept generator returning int");
 static_assert(!std::is_constructible<mask4, std::span<const int, 4>>::value,
     "basic_mask must not expose a public contiguous-range constructor");
+static_assert(!std::is_constructible<int4, std::array<std::complex<float>, 4>>::value,
+    "basic_vec range construction must reject lane values that are not explicitly convertible");
 
 } // namespace
 
 int main() {
+    std::array<int, 4> input{{1, 2, 3, 4}};
+    std::simd::basic_vec deduced_from_range{input};
     simd_test::int4 values(simd_test::explicit_to_int{});
     simd_test::int4 from_bool(true);
     simd_test::mask4 selected(true);
-    return values[0] == 7 && from_bool[0] == 1 && selected[0] ? 0 : 1;
+    std::simd::basic_vec deduced_from_mask{selected};
+
+    static_assert(std::is_same_v<decltype(deduced_from_range), simd_test::int4>);
+    static_assert(std::is_same_v<decltype(deduced_from_mask), simd_test::int4>);
+
+    return values[0] == 7 && from_bool[0] == 1 && selected[0] &&
+            deduced_from_range[3] == 4 && deduced_from_mask[0] == 1
+        ? 0
+        : 1;
 }

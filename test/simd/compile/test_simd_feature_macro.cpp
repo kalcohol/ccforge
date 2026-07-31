@@ -7,7 +7,7 @@
 #endif
 
 #if defined(__cpp_lib_simd)
-static_assert(__cpp_lib_simd >= 202411L, "Expected __cpp_lib_simd >= 202411L");
+static_assert(__cpp_lib_simd >= 202606L, "Expected __cpp_lib_simd >= 202606L");
 #endif
 
 int main() {

@@ -11,8 +11,8 @@ constexpr bool constexpr_broadcast_reduce() {
 
 constexpr bool constexpr_generator_and_iota() {
     constexpr int4 generated(int_generator{});
-    constexpr auto sequence = std::simd::iota<int4>(3);
-    return generated[0] == 1 && generated[3] == 7 && sequence[0] == 3 && sequence[3] == 6;
+    constexpr auto sequence = std::simd::iota<int4>;
+    return generated[0] == 1 && generated[3] == 7 && sequence[0] == 0 && sequence[3] == 3;
 }
 
 consteval bool consteval_flag_union() {
@@ -89,6 +89,8 @@ static_assert(constexpr_broadcast_reduce(),
     "basic_vec broadcast construction and reduce should be constexpr-capable");
 static_assert(constexpr_generator_and_iota(),
     "generator construction and iota should be constexpr-capable");
+static_assert(std::simd::iota<int> == 0,
+    "scalar iota should be the arithmetic zero value");
 static_assert(consteval_flag_union(),
     "std::simd::flags operator| should remain usable in immediate contexts");
 static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::simd_size_type{}]), int>::value,

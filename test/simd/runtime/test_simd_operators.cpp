@@ -60,28 +60,28 @@ TEST(SimdOperatorsTest, ConversionConstructorCastsEachLane) {
     EXPECT_FLOAT_EQ(converted[3], 4.0f);
 }
 
-TEST(SimdOperatorsTest, SimdCastAndStaticSimdCastConvertEachLane) {
+TEST(SimdOperatorsTest, ConvertingConstructorsConvertEachLane) {
     const int4 source = make_int4(1, 2, 3, 4);
 
-    const auto widened = std::simd::simd_cast<longlong4>(source);
+    const longlong4 widened(source);
     EXPECT_EQ(widened[0], 1);
     EXPECT_EQ(widened[3], 4);
 
-    const auto narrowed = std::simd::static_simd_cast<int4>(widened);
+    const int4 narrowed(widened, std::simd::flag_convert);
     EXPECT_EQ(narrowed[0], 1);
     EXPECT_EQ(narrowed[3], 4);
 }
 
-TEST(SimdOperatorsTest, MaskSimdCastAndStaticSimdCastPreserveSelectedLanes) {
+TEST(SimdOperatorsTest, MaskConvertingConstructorsPreserveSelectedLanes) {
     const mask4 source(0b0101u);
 
-    const auto widened = std::simd::simd_cast<longlong_mask4>(source);
+    const longlong_mask4 widened(source);
     EXPECT_TRUE(widened[0]);
     EXPECT_FALSE(widened[1]);
     EXPECT_TRUE(widened[2]);
     EXPECT_FALSE(widened[3]);
 
-    const auto roundtrip = std::simd::static_simd_cast<mask4>(widened);
+    const mask4 roundtrip(widened);
     EXPECT_TRUE(roundtrip[0]);
     EXPECT_FALSE(roundtrip[1]);
     EXPECT_TRUE(roundtrip[2]);

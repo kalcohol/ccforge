@@ -53,6 +53,43 @@ template<class A, class B>
 struct has_pair_remquo<A, B, std::void_t<decltype(std::simd::remquo(std::declval<const A&>(), std::declval<const B&>()))>>
     : std::true_type {};
 
+constexpr bool constexpr_libm_free_math() {
+    constexpr float4 values([](auto lane) {
+        constexpr float input[] = {-1.75f, -0.0f, 1.25f, 2.75f};
+        return input[decltype(lane)::value];
+    });
+    constexpr float4 signs([](auto lane) {
+        return decltype(lane)::value % 2 == 0 ? -1.0f : 1.0f;
+    });
+    constexpr auto absolute = std::fabs(values);
+    constexpr auto ceiled = std::ceil(values);
+    constexpr auto floored = std::floor(values);
+    constexpr auto rounded = std::round(values);
+    constexpr auto truncated = std::trunc(values);
+    constexpr auto copied_sign = std::copysign(absolute, signs);
+    constexpr auto maxima = std::fmax(values, float4(1.5f));
+    constexpr auto minima = std::fmin(values, float4(1.5f));
+    constexpr auto classes = std::fpclassify(values);
+    constexpr auto signs_set = std::signbit(values);
+    constexpr auto rounded_long = std::lround(values);
+    constexpr auto rounded_long_long = std::llround(values);
+
+    return absolute[0] == 1.75f && !std::signbit(absolute)[1] &&
+        ceiled[0] == -1.0f && ceiled[3] == 3.0f &&
+        floored[0] == -2.0f && floored[2] == 1.0f &&
+        rounded[0] == -2.0f && rounded[3] == 3.0f &&
+        truncated[0] == -1.0f && truncated[3] == 2.0f &&
+        copied_sign[0] == -1.75f && copied_sign[1] == 0.0f &&
+        maxima[0] == 1.5f && minima[3] == 1.5f &&
+        classes[0] == FP_NORMAL && classes[1] == FP_ZERO &&
+        signs_set[0] && signs_set[1] && !signs_set[2] &&
+        rounded_long[0] == -2 && rounded_long[3] == 3 &&
+        rounded_long_long[0] == -2 && rounded_long_long[3] == 3;
+}
+
+static_assert(constexpr_libm_free_math(),
+    "libm-free SIMD math should remain usable during constant evaluation");
+
 static_assert(std::is_same_v<decltype(std::simd::byteswap(std::declval<const uint4&>())), uint4>,
     "byteswap should preserve the vector type");
 static_assert(std::is_same_v<decltype(std::simd::popcount(std::declval<const uint4&>())), int4>,
@@ -75,6 +112,17 @@ static_assert(std::is_same_v<decltype(std::simd::has_single_bit(std::declval<con
     "has_single_bit should return the vector mask type");
 static_assert(std::is_same_v<decltype(std::simd::bit_floor(std::declval<const uint4&>())), uint4>,
     "bit_floor should preserve the vector type");
+static_assert(std::is_same_v<decltype(std::min(std::declval<const int4&>(), std::declval<const int4&>())), int4>,
+    "[simd.syn] should add SIMD min to the std overload set");
+static_assert(!noexcept(std::simd::clamp(
+    std::declval<const int4&>(),
+    std::declval<const int4&>(),
+    std::declval<const int4&>())),
+    "clamp should preserve the standard potentially-throwing function type");
+static_assert(std::is_same_v<decltype(std::sqrt(std::declval<const float4&>())), float4>,
+    "[simd.syn] should add SIMD sqrt to the std overload set");
+static_assert(std::is_same_v<decltype(std::popcount(std::declval<const uint4&>())), int4>,
+    "[simd.syn] should add SIMD popcount to the std overload set");
 static_assert(std::is_same_v<decltype(std::simd::bit_ceil(std::declval<const uint4&>())), uint4>,
     "bit_ceil should preserve the vector type");
 static_assert(noexcept(std::simd::bit_floor(std::declval<const uint4&>())),

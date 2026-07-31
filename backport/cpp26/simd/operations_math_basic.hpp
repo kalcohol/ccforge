@@ -4,21 +4,23 @@ template<class V>
 constexpr remove_cvref_t<V> abs(const V& value)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::abs(lane); });
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_fabs(lane); });
 }
 
 template<class V>
 constexpr remove_cvref_t<V> abs(const V& value)
     requires(detail::is_simd_signed_integral_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::abs(lane); });
+    return detail::unary_math_transform<result_type>(value, [](auto lane) {
+        return lane < 0 ? -lane : lane;
+    });
 }
 
 template<class V>
 constexpr remove_cvref_t<V> fabs(const V& value)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::fabs(lane); });
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_fabs(lane); });
 }
 
 #define FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(name) \
@@ -77,25 +79,86 @@ constexpr typename detail::binary_math_result_t<A, B>::mask_type name(const A& l
     return detail::binary_math_mask_transform<result_type>(left, right, [](auto lhs, auto rhs) { return std::name(lhs, rhs); }); \
 }
 
-FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(ceil)
-FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(floor)
+template<class V>
+constexpr remove_cvref_t<V> ceil(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_ceil(lane); });
+}
+
+template<class V>
+constexpr remove_cvref_t<V> floor(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_floor(lane); });
+}
+
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(nearbyint)
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(rint)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(ilogb, int)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(lrint, long int)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(llrint, long long int)
-FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(round)
-FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(lround, long int)
-FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(llround, long long int)
-FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(trunc)
+template<class V>
+constexpr remove_cvref_t<V> round(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_round(lane); });
+}
+
+template<class V>
+constexpr rebind_t<long int, remove_cvref_t<V>> lround(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = rebind_t<long int, remove_cvref_t<V>>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) {
+        return detail::math_round_to_integer<long int>(lane);
+    });
+}
+
+template<class V>
+constexpr rebind_t<long long int, remove_cvref_t<V>> llround(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = rebind_t<long long int, remove_cvref_t<V>>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) {
+        return detail::math_round_to_integer<long long int>(lane);
+    });
+}
+
+template<class V>
+constexpr remove_cvref_t<V> trunc(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_trunc(lane); });
+}
 
 FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(fmod)
 FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(remainder)
-FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(copysign)
+template<class A, class B>
+constexpr detail::binary_math_result_t<A, B> copysign(const A& left, const B& right)
+    requires(detail::is_binary_math_floating<A, B>::value) {
+    using result_type = detail::binary_math_result_t<A, B>;
+    return detail::binary_math_transform<result_type>(left, right, [](auto lhs, auto rhs) {
+        return detail::math_copysign(lhs, rhs);
+    });
+}
 FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(nextafter)
 FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(fdim)
-FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(fmax)
-FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(fmin)
+template<class A, class B>
+constexpr detail::binary_math_result_t<A, B> fmax(const A& left, const B& right)
+    requires(detail::is_binary_math_floating<A, B>::value) {
+    using result_type = detail::binary_math_result_t<A, B>;
+    return detail::binary_math_transform<result_type>(left, right, [](auto lhs, auto rhs) {
+        return detail::math_fmax(lhs, rhs);
+    });
+}
+
+template<class A, class B>
+constexpr detail::binary_math_result_t<A, B> fmin(const A& left, const B& right)
+    requires(detail::is_binary_math_floating<A, B>::value) {
+    using result_type = detail::binary_math_result_t<A, B>;
+    return detail::binary_math_transform<result_type>(left, right, [](auto lhs, auto rhs) {
+        return detail::math_fmin(lhs, rhs);
+    });
+}
 
 template<class A, class B, class C>
 constexpr detail::ternary_math_result_t<A, B, C> fma(const A& x, const B& y, const C& z)
@@ -110,7 +173,7 @@ template<class V>
 constexpr rebind_t<int, remove_cvref_t<V>> fpclassify(const V& value)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<int, remove_cvref_t<V>>;
-    return detail::unary_math_transform<result_type>(value, [](auto lane) { return std::fpclassify(lane); });
+    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::math_fpclassify(lane); });
 }
 
 template<class V>
@@ -140,7 +203,7 @@ constexpr typename remove_cvref_t<V>::mask_type isnormal(const V& value)
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type signbit(const V& value)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, [](auto lane) { return std::signbit(lane); });
+    return detail::unary_math_mask_transform(value, [](auto lane) { return detail::math_signbit(lane); });
 }
 
 FORGE_SIMD_BINARY_FLOAT_MASK_CONSTEXPR(isgreater)

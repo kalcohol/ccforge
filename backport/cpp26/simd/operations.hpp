@@ -150,51 +150,40 @@ constexpr auto chunk(const V& value) {
 		    return result;
 		}
 
-	namespace detail {
+namespace detail {
 
-	template<class V, simd_size_type Offset, simd_size_type N>
-	constexpr resize_t<N, V> split_piece(const V& value) {
-	    static_assert(N > 0, "std::simd::split requires positive chunk sizes");
-	    return resize_t<N, V>([&](auto lane) {
-	        return value[Offset + decltype(lane)::value];
-	    });
-	}
+template<class T>
+struct iota_vec_traits {
+    static constexpr bool enabled = false;
+};
 
-	template<class V, simd_size_type Offset, simd_size_type First>
-	constexpr auto split_sizes_impl(const V& value) {
-	    return std::make_tuple(split_piece<V, Offset, First>(value));
-	}
+template<class T, class Abi>
+struct iota_vec_traits<basic_vec<T, Abi>> {
+    static constexpr bool enabled =
+        is_enabled_basic_vec<T, Abi>::value &&
+        is_arithmetic<T>::value &&
+        static_cast<long double>(basic_vec<T, Abi>::size - 1) <=
+            static_cast<long double>(numeric_limits<T>::max());
+};
 
-	template<class V, simd_size_type Offset, simd_size_type First, simd_size_type Second, simd_size_type... Rest>
-	constexpr auto split_sizes_impl(const V& value) {
-	    return std::tuple_cat(
-	        std::make_tuple(split_piece<V, Offset, First>(value)),
-	        split_sizes_impl<V, Offset + First, Second, Rest...>(value));
-	}
+template<class T>
+constexpr T make_iota() {
+    static_assert(
+        (is_supported_scalar_value<T>::value && is_arithmetic<T>::value) ||
+            iota_vec_traits<T>::enabled,
+        "std::simd::iota requires an arithmetic vectorizable type or an enabled arithmetic basic_vec");
 
-	} // namespace detail
+    if constexpr (is_arithmetic<T>::value) {
+        return T{};
+    } else {
+        return T([](typename T::value_type index) { return index; });
+    }
+}
 
-	template<class Chunk, class V>
-	constexpr auto split(const V& value) {
-	    return simd::chunk<Chunk>(value);
-	}
+} // namespace detail
 
-	template<simd_size_type... Sizes, class V>
-	constexpr auto split(const V& value) {
-	    static_assert(sizeof...(Sizes) > 0, "std::simd::split requires at least one chunk size");
-	    static_assert(((Sizes > 0) && ...), "std::simd::split requires positive chunk sizes");
-	    static_assert((Sizes + ...) == static_cast<simd_size_type>(V::size),
-	        "std::simd::split<Sizes...>(value) requires sum(Sizes...) == value.size()");
-	    return detail::split_sizes_impl<V, 0, Sizes...>(value);
-	}
-
-		template<class V>
-		constexpr V iota(typename V::value_type start = {}) noexcept {
-		    using value_type = typename V::value_type;
-		    return V([&](auto lane) {
-		        return static_cast<value_type>(start + static_cast<value_type>(decltype(lane)::value));
-	    });
-	}
+template<class T>
+constexpr T iota = detail::make_iota<T>();
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> min(const basic_vec<T, Abi>& left, const basic_vec<T, Abi>& right) noexcept
@@ -226,7 +215,7 @@ constexpr pair<basic_vec<T, Abi>, basic_vec<T, Abi>> minmax(const basic_vec<T, A
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> clamp(const basic_vec<T, Abi>& value,
                                   const basic_vec<T, Abi>& low,
-                                  const basic_vec<T, Abi>& high) noexcept
+                                  const basic_vec<T, Abi>& high)
     requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -251,76 +240,6 @@ template<class T, class U>
 constexpr auto select(bool cond, const T& true_value, const U& false_value)
     -> remove_cvref_t<decltype(cond ? true_value : false_value)> {
     return cond ? true_value : false_value;
-}
-
-namespace detail {
-
-template<class>
-struct is_basic_vec_type : false_type {};
-
-template<class T, class Abi>
-struct is_basic_vec_type<basic_vec<T, Abi>> : true_type {};
-
-template<class>
-struct is_basic_mask_type : false_type {};
-
-template<size_t Bytes, class Abi>
-struct is_basic_mask_type<basic_mask<Bytes, Abi>> : true_type {};
-
-} // namespace detail
-
-template<class To, class T, class Abi,
-         typename enable_if<detail::is_basic_vec_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
-constexpr detail::remove_cvref_t<To> simd_cast(const basic_vec<T, Abi>& value) noexcept(
-	noexcept(static_cast<typename detail::remove_cvref_t<To>::value_type>(std::declval<T>()))) {
-	using to_type = detail::remove_cvref_t<To>;
-	using to_value = typename to_type::value_type;
-	static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_vec<T, Abi>::size),
-		"std::simd::simd_cast requires matching lane count");
-	static_assert(detail::is_value_preserving_conversion<T, to_value>::value,
-		"std::simd::simd_cast requires a value-preserving conversion");
-
-	to_type result;
-	for (simd_size_type i = 0; i < static_cast<simd_size_type>(to_type::size); ++i) {
-		detail::set_lane(result, i, static_cast<to_value>(value[i]));
-	}
-	return result;
-}
-
-template<class To, class T, class Abi,
-         typename enable_if<detail::is_basic_vec_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
-constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_vec<T, Abi>& value) noexcept(
-	noexcept(static_cast<typename detail::remove_cvref_t<To>::value_type>(std::declval<T>()))) {
-	using to_type = detail::remove_cvref_t<To>;
-	using to_value = typename to_type::value_type;
-	static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_vec<T, Abi>::size),
-		"std::simd::static_simd_cast requires matching lane count");
-
-	to_type result;
-	for (simd_size_type i = 0; i < static_cast<simd_size_type>(to_type::size); ++i) {
-		detail::set_lane(result, i, static_cast<to_value>(value[i]));
-	}
-	return result;
-}
-
-template<class To, size_t Bytes, class Abi,
-         typename enable_if<detail::is_basic_mask_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
-constexpr detail::remove_cvref_t<To> simd_cast(const basic_mask<Bytes, Abi>& value) noexcept {
-	using to_type = detail::remove_cvref_t<To>;
-	static_assert(static_cast<simd_size_type>(to_type::size) == static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size),
-		"std::simd::simd_cast(mask) requires matching lane count");
-
-	to_type result;
-	for (simd_size_type i = 0; i < static_cast<simd_size_type>(to_type::size); ++i) {
-		detail::lane_ref(result, i) = value[i];
-	}
-	return result;
-}
-
-template<class To, size_t Bytes, class Abi,
-         typename enable_if<detail::is_basic_mask_type<detail::remove_cvref_t<To>>::value, int>::type = 0>
-constexpr detail::remove_cvref_t<To> static_simd_cast(const basic_mask<Bytes, Abi>& value) noexcept {
-	return simd_cast<To>(value);
 }
 
 #include "operations_bit.hpp"

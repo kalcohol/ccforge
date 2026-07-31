@@ -73,17 +73,8 @@ TEST(SimdRuntimeTest, GeneratorConstructorUsesLaneIndices) {
     EXPECT_EQ(lane(values, 3), 10);
 }
 
-TEST(SimdRuntimeTest, IotaGeneratesIncrementingSequenceFromStart) {
-    const auto values = std::simd::iota<int4>(3);
-
-    EXPECT_EQ(values[0], 3);
-    EXPECT_EQ(values[1], 4);
-    EXPECT_EQ(values[2], 5);
-    EXPECT_EQ(values[3], 6);
-}
-
-TEST(SimdRuntimeTest, IotaDefaultsToZeroForIntegers) {
-    const auto values = std::simd::iota<int4>();
+TEST(SimdRuntimeTest, IotaBuildsCanonicalIndexVector) {
+    const auto values = std::simd::iota<int4>;
 
     EXPECT_EQ(values[0], 0);
     EXPECT_EQ(values[1], 1);
@@ -91,13 +82,19 @@ TEST(SimdRuntimeTest, IotaDefaultsToZeroForIntegers) {
     EXPECT_EQ(values[3], 3);
 }
 
-TEST(SimdRuntimeTest, IotaSupportsFloatingPointStarts) {
-    const auto values = std::simd::iota<std::simd::vec<float, 4>>(1.5f);
+TEST(SimdRuntimeTest, IotaCanBeShiftedWithVectorArithmetic) {
+    const auto values = std::simd::iota<int4> + int4(3);
 
-    EXPECT_FLOAT_EQ(values[0], 1.5f);
-    EXPECT_FLOAT_EQ(values[1], 2.5f);
-    EXPECT_FLOAT_EQ(values[2], 3.5f);
-    EXPECT_FLOAT_EQ(values[3], 4.5f);
+    EXPECT_EQ(values[0], 3);
+    EXPECT_EQ(values[1], 4);
+    EXPECT_EQ(values[2], 5);
+    EXPECT_EQ(values[3], 6);
+}
+
+TEST(SimdRuntimeTest, ScalarIotaIsZeroInitialized) {
+    constexpr auto value = std::simd::iota<double>;
+
+    EXPECT_DOUBLE_EQ(value, 0.0);
 }
 
 TEST(SimdRuntimeTest, ScalarSelectBuildsLaneVectorFromMask) {

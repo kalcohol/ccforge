@@ -18,6 +18,12 @@ static_assert(std::is_same<decltype(std::simd::reduce(std::declval<const int4&>(
     "reduce(vec) should return the scalar lane type");
 static_assert(std::is_same<decltype(std::simd::reduce(std::declval<const int4&>(), std::declval<const mask4&>())), int>::value,
     "reduce(vec, mask) should return the scalar lane type");
+static_assert(std::is_same_v<decltype(std::simd::reduce(1)), int>,
+    "reduce(scalar) should preserve the scalar type");
+static_assert(std::is_same_v<decltype(std::simd::reduce_min(1, false)), int>,
+    "reduce_min(scalar, bool) should preserve the scalar type");
+static_assert(std::is_same_v<decltype(std::simd::reduce_max(1, false)), int>,
+    "reduce_max(scalar, bool) should preserve the scalar type");
 
 } // namespace
 
@@ -31,6 +37,11 @@ int main() {
     const int masked_and = std::simd::reduce(values, selected, std::bit_and<>{});
     const int masked_or = std::simd::reduce(values, selected, std::bit_or<>{});
     const int masked_xor = std::simd::reduce(values, selected, std::bit_xor<>{});
+    const int scalar_sum = std::simd::reduce(7);
+    const int scalar_identity = std::simd::reduce(7, false);
 
-    return reduced == 10 && masked_and == (1 & 3) && masked_or == (1 | 3) && masked_xor == (1 ^ 3) ? 0 : 1;
+    return reduced == 10 && masked_and == (1 & 3) && masked_or == (1 | 3) &&
+            masked_xor == (1 ^ 3) && scalar_sum == 7 && scalar_identity == 0
+        ? 0
+        : 1;
 }

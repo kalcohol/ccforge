@@ -23,8 +23,8 @@ int main() {
     auto shifted_right = std::simd::shr(values, 1);
     auto rotated = std::simd::rotl(values, shifts);
     auto repeated = std::simd::bit_repeat(values, shifts);
-    auto compressed = std::simd::bit_compress(values, values);
-    auto expanded = std::simd::bit_expand(values, 1u);
+    auto compressed = std::simd::bit_compress(values, 3);
+    auto expanded = std::simd::bit_expand(values, 1);
     auto floored = std::simd::bit_floor(values);
 
     return static_cast<int>(
