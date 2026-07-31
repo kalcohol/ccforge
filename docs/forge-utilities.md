@@ -214,7 +214,9 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
 
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO +
   堆回退。构造和 value completion 都要求与声明的单一 value tuple 精确匹配，不做隐式
-  窄化或缺省补值；error completion 折叠为 `std::exception_ptr`。
+  窄化或缺省补值；声明中的 `T` / `T&` / `const T&` 类别会原样保留，reference payload
+  只在同步 completion call stack 内借用，不会在擦除边界物化副本；error completion
+  折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，
   并提供 `sync_wait()` 直接运行存储的 sender。底层 sender 的单一 value tuple 必须与
   `CompletionSignatures` 精确一致。
@@ -226,8 +228,9 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
   move-only、heap-first，支持多个唯一 value 形状、closed-set `set_error_t(E)` typed
   errors（包括 `std::exception_ptr`）和 `set_stopped_t()`。Value/error dispatch 保留
   `CompletionSignatures` 声明的引用类别；reference payload 只在同步 completion call
-  stack 内借用。allocator-aware storage、语义 equality 和任意自定义 receiver env 查询
-  不属于当前范围。
+  stack 内借用。构造约束按实际 erased receiver env（含 downstream stop token）推导，
+  因而会拒绝在该 env 下新增未声明 completion 的 source sender。allocator-aware storage、
+  语义 equality 和任意自定义 receiver env 查询不属于当前范围。
 - `forge::wait_result(sender)`：同步运行 sender 并返回一个小 result 对象，保留 value、
   closed-set typed error 和 stopped。它是 Forge 便利设施，不改变
   `std::execution::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization

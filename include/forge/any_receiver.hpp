@@ -22,12 +22,10 @@
 
 #pragma once
 
-#include "detail/completion_meta.hpp"
-
 #include <execution>
 #include <cstddef>
-#include <functional>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -46,19 +44,39 @@ template<class Sig, class CompletionSignatures>
 inline constexpr bool __any_receiver_contains_signature_v =
     __any_receiver_contains_signature<Sig, CompletionSignatures>::value;
 
-// any_receiver_of<CS> — type-erased receiver with virtual dispatch (no-template virtual fix)
-// Uses std::function for the complete callbacks since template virtual is not allowed.
+template<class CompletionSignatures>
+struct __any_receiver_value_shape {
+    using tuple_type = std::tuple<>;
+    static constexpr bool present = false;
+};
+
+template<class... Vs, class... Rest>
+struct __any_receiver_value_shape<
+    std::execution::completion_signatures<
+        std::execution::set_value_t(Vs...),
+        Rest...>> {
+    using tuple_type = std::tuple<Vs&&...>;
+    static constexpr bool present = true;
+};
+
+template<class Other, class... Rest>
+struct __any_receiver_value_shape<
+    std::execution::completion_signatures<Other, Rest...>>
+    : __any_receiver_value_shape<
+          std::execution::completion_signatures<Rest...>> {};
+
+// any_receiver_of<CS> — narrow receiver erasure with a fixed completion vtable.
 
 template<class CompletionSignatures>
 class any_receiver_of {
     using cs_t = CompletionSignatures;
-    using value_tuple_t = forge::__detail::meta::single_value_tuple_t<cs_t>;
+    using value_shape_t = __any_receiver_value_shape<cs_t>;
+    using value_tuple_t = typename value_shape_t::tuple_type;
     static constexpr bool __has_value_completion =
-        !forge::__detail::meta::type_list_empty_v<
-            forge::__detail::meta::value_tuple_list_t<cs_t>>;
+        value_shape_t::present;
 
     struct __vtable {
-        void (*complete_value)(void*, value_tuple_t) noexcept;
+        void (*complete_value)(void*, void*) noexcept;
         void (*complete_error)(void*, std::exception_ptr) noexcept;
         void (*complete_stopped)(void*) noexcept;
         void (*destroy)(void*) noexcept;
@@ -69,13 +87,14 @@ class any_receiver_of {
     template<class R>
     static const __vtable* __make_vtable() {
         static const __vtable vt{
-            .complete_value = [](void* p, value_tuple_t v) noexcept {
+            .complete_value = [](void* p, void* tuple) noexcept {
                 if constexpr (__has_value_completion) {
-                    std::apply([&](auto&&... vs) {
+                    auto& values = *static_cast<value_tuple_t*>(tuple);
+                    std::apply([&](auto&&... vs) noexcept {
                         std::execution::set_value(
                             std::move(*static_cast<R*>(p)),
-                            std::move(vs)...);
-                    }, std::move(v));
+                            static_cast<decltype(vs)&&>(vs)...);
+                    }, std::move(values));
                 } else {
                     std::terminate();
                 }
@@ -210,12 +229,13 @@ public:
     template<class... Vs>
         requires __has_value_completion &&
                  std::is_same_v<
-                     std::tuple<std::decay_t<Vs>...>,
+                     std::tuple<Vs&&...>,
                      value_tuple_t>
     void set_value(Vs&&... vs) && noexcept {
-        if (__ptr && __vt)
-            __vt->complete_value(__ptr,
-                value_tuple_t{static_cast<Vs&&>(vs)...});
+        if (__ptr && __vt) {
+            auto values = value_tuple_t{static_cast<Vs&&>(vs)...};
+            __vt->complete_value(__ptr, &values);
+        }
     }
 
     template<class E>

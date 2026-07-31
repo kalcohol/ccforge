@@ -417,12 +417,22 @@ concept __connectable_to_erased_receiver =
         std::execution::connect(sender, std::move(rcvr));
     };
 
+template<class CS>
+using __receiver_env_t = std::execution::env_of_t<__receiver<CS>>;
+
 template<class S, class CS>
 concept __acceptable_source_sender =
-    std::execution::sender_in<S> &&
+    std::execution::sender_in<S, __receiver_env_t<CS>> &&
     __valid_completion_signatures<CS>::value &&
-    __valid_completion_signatures<std::execution::completion_signatures_of_t<S>>::value &&
-    __source_is_subset<std::execution::completion_signatures_of_t<S>, CS>::value &&
+    __valid_completion_signatures<
+        std::execution::completion_signatures_of_t<
+            S,
+            __receiver_env_t<CS>>>::value &&
+    __source_is_subset<
+        std::execution::completion_signatures_of_t<
+            S,
+            __receiver_env_t<CS>>,
+        CS>::value &&
     __connectable_to_erased_receiver<std::remove_cvref_t<S>, CS>;
 
 template<class CS, class R>

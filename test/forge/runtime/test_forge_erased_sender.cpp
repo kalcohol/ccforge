@@ -624,6 +624,50 @@ using rvalue_error_cs =
     std::execution::completion_signatures<
         std::execution::set_error_t(std::error_code&&)>;
 
+struct env_pruned_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using token_t = std::remove_cvref_t<decltype(
+            std::execution::get_stop_token(std::declval<const Env&>()))>;
+        if constexpr (std::unstoppable_token<token_t>) {
+            return std::execution::completion_signatures<
+                std::execution::set_value_t(int)>{};
+        } else {
+            return std::execution::completion_signatures<
+                std::execution::set_value_t(int),
+                std::execution::set_stopped_t()>{};
+        }
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        R rcvr;
+
+        void start() & noexcept {
+            auto token =
+                std::execution::get_stop_token(std::execution::get_env(rcvr));
+            if (token.stop_possible()) {
+                std::execution::set_stopped(std::move(rcvr));
+            } else {
+                std::execution::set_value(std::move(rcvr), 42);
+            }
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) & -> op<R> {
+        return op<R>{std::move(rcvr)};
+    }
+};
+
 struct reentrant_connect_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -695,6 +739,15 @@ static_assert(!std::constructible_from<forge::erased_sender<error_cs>, typed_err
 static_assert(!std::constructible_from<forge::erased_sender<
     std::execution::completion_signatures<std::execution::set_error_t(status)>>,
     error_code_sender>);
+static_assert(!std::constructible_from<
+              forge::erased_sender<int_cs>,
+              env_pruned_sender>);
+static_assert(std::constructible_from<
+              forge::erased_sender<
+                  std::execution::completion_signatures<
+                      std::execution::set_value_t(int),
+                      std::execution::set_stopped_t()>>,
+              env_pruned_sender>);
 
 } // namespace
 

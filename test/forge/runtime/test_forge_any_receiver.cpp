@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 using cs_int = std::execution::completion_signatures<
     std::execution::set_value_t(int),
@@ -16,6 +18,11 @@ using cs_zero_value = std::execution::completion_signatures<
 using cs_error_stopped = std::execution::completion_signatures<
     std::execution::set_error_t(std::exception_ptr),
     std::execution::set_stopped_t()>;
+struct counted_payload;
+using cs_const_reference = std::execution::completion_signatures<
+    std::execution::set_value_t(const counted_payload&)>;
+using cs_mutable_reference = std::execution::completion_signatures<
+    std::execution::set_value_t(int&)>;
 
 struct test_recv {
     using receiver_concept = std::execution::receiver_t;
@@ -56,6 +63,54 @@ struct error_stopped_recv {
 
     void set_stopped() && noexcept {
         *stopped = true;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct counted_payload {
+    int* copies = nullptr;
+    std::string value;
+
+    counted_payload(int* count, std::string text)
+        : copies(count), value(std::move(text)) {}
+
+    counted_payload(const counted_payload& other)
+        : copies(other.copies), value(other.value) {
+        ++*copies;
+    }
+
+    counted_payload(counted_payload&&) noexcept = default;
+};
+
+struct reference_category_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* selected;
+    const counted_payload** observed;
+
+    void set_value(const counted_payload& value) && noexcept {
+        *selected = 1;
+        *observed = &value;
+    }
+
+    void set_value(counted_payload&& value) && noexcept {
+        *selected = 2;
+        *observed = &value;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct mutable_reference_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    void set_value(int& value) && noexcept {
+        value = 41;
     }
 
     auto get_env() const noexcept -> std::execution::empty_env {
@@ -162,6 +217,12 @@ static_assert(std::constructible_from<
               error_stopped_recv>);
 static_assert(!zero_value_completable<
               forge::any_receiver_of<cs_error_stopped>>);
+static_assert(std::constructible_from<
+              forge::any_receiver_of<cs_const_reference>,
+              reference_category_recv>);
+static_assert(std::constructible_from<
+              forge::any_receiver_of<cs_mutable_reference>,
+              mutable_reference_recv>);
 
 TEST(AnyReceiverTest, DefaultEmpty) {
     forge::any_receiver_of<cs_int> r;
@@ -215,6 +276,31 @@ TEST(AnyReceiverTest, SupportsStoppedOnlyDeliveryInClosedSet) {
 
     EXPECT_FALSE(error);
     EXPECT_TRUE(stopped);
+}
+
+TEST(AnyReceiverTest, PreservesConstReferenceWithoutMaterializingPayload) {
+    int copies = 0;
+    counted_payload payload{&copies, "shared"};
+    int selected = 0;
+    const counted_payload* observed = nullptr;
+    forge::any_receiver_of<cs_const_reference> receiver =
+        reference_category_recv{&selected, &observed};
+
+    std::execution::set_value(std::move(receiver), std::as_const(payload));
+
+    EXPECT_EQ(selected, 1);
+    EXPECT_EQ(observed, &payload);
+    EXPECT_EQ(copies, 0);
+}
+
+TEST(AnyReceiverTest, SupportsMutableReferenceCompletion) {
+    int value = 0;
+    forge::any_receiver_of<cs_mutable_reference> receiver =
+        mutable_reference_recv{};
+
+    std::execution::set_value(std::move(receiver), value);
+
+    EXPECT_EQ(value, 41);
 }
 
 TEST(AnyReceiverTest, MoveConstructsSmallObjectStorageReceiver) {
