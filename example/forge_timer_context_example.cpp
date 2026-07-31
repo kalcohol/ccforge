@@ -28,6 +28,6 @@ int main() {
     using namespace std::chrono_literals;
 
     forge::timer_context timers;
-    auto result = std::execution::sync_wait(timers.schedule_after(1ms));
+    auto result = std::this_thread::sync_wait(timers.schedule_after(1ms));
     forge_example::require(result.has_value());
 }

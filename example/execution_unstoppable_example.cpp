@@ -53,8 +53,8 @@ int main() {
                   })),
         stop_env(source.get_token()));
 
-    auto outer = std::execution::sync_wait(std::move(observes_outer_stop));
-    auto inner = std::execution::sync_wait(std::move(shielded));
+    auto outer = std::this_thread::sync_wait(std::move(observes_outer_stop));
+    auto inner = std::this_thread::sync_wait(std::move(shielded));
 
     std::cout << "outer_stop_requested=" << std::get<0>(*outer)
               << ", inner_stop_possible=" << std::get<0>(*inner) << '\n';

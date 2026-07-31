@@ -61,13 +61,13 @@ struct error_code_sender {
 } // namespace
 
 int main() {
-    auto just_result = std::execution::sync_wait(std::execution::just(42));
+    auto just_result = std::this_thread::sync_wait(std::execution::just(42));
     if (!just_result || std::get<0>(*just_result) != 42) {
         return 1;
     }
 
     forge::static_thread_pool pool{1};
-    auto scheduled = std::execution::sync_wait(
+    auto scheduled = std::this_thread::sync_wait(
         std::execution::schedule(pool.get_scheduler()));
     pool.shutdown();
     pool.wait();

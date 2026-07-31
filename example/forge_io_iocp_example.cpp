@@ -117,9 +117,9 @@ int main() {
         byte('f'), byte('o'), byte('r'), byte('g'), byte('e')};
     std::array<std::byte, 5> buffer{};
 
-    auto written = std::execution::sync_wait(
+    auto written = std::this_thread::sync_wait(
         io.async_write_some(pipe.client.get(), std::span<const std::byte>{payload}));
-    auto read = std::execution::sync_wait(
+    auto read = std::this_thread::sync_wait(
         io.async_read_some(pipe.server.get(), std::span{buffer}));
 
     if (!written || !read || buffer != payload) {

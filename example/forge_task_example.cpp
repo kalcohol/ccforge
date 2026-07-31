@@ -33,7 +33,7 @@ forge::task<int> compute() {
 }
 
 int main() {
-    auto value = std::execution::sync_wait(compute());
+    auto value = std::this_thread::sync_wait(compute());
     forge_example::require(value);
     forge_example::require(std::get<0>(*value) == 42);
     std::cout << "forge task value: " << std::get<0>(*value) << '\n';

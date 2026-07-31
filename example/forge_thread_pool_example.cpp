@@ -27,7 +27,7 @@
 int main() {
     forge::static_thread_pool pool(2);
     auto main_id = std::this_thread::get_id();
-    auto ran_on_worker = std::execution::sync_wait(
+    auto ran_on_worker = std::this_thread::sync_wait(
         std::execution::schedule(pool.get_scheduler())
         | std::execution::then([main_id] {
               return std::this_thread::get_id() != main_id;

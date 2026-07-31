@@ -78,7 +78,7 @@ int main() {
     const char out = 'm';
     forge_example::require(::write(write_fd.get(), &out, 1) == 1);
 
-    auto processed = std::execution::sync_wait(
+    auto processed = std::this_thread::sync_wait(
         std::execution::continues_on(
             io.readable(read_fd.get()),
             protocol.get_scheduler())
@@ -90,7 +90,7 @@ int main() {
         }));
     forge_example::require(processed.has_value());
 
-    auto message = std::execution::sync_wait(messages.async_recv());
+    auto message = std::this_thread::sync_wait(messages.async_recv());
     forge_example::require(message.has_value());
     forge_example::require(std::get<0>(*message) == out);
 

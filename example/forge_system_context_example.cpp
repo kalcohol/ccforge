@@ -25,7 +25,7 @@
 
 int main() {
     auto& ctx = forge::system_context::get();
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([&ctx] { return ctx.thread_count(); }));
 

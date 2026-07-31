@@ -21,7 +21,7 @@ struct cleanup_counter {
 } // namespace
 
 int main() {
-    auto result = std::execution::sync_wait(std::execution::just(7));
+    auto result = std::this_thread::sync_wait(std::execution::just(7));
     if (!result || std::get<0>(*result) != 7) {
         return 1;
     }

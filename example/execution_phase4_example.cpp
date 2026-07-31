@@ -33,7 +33,7 @@ int main() {
     std::cout << "scope task\n";
 
     scope.close();
-    std::execution::sync_wait(scope.join());
+    std::this_thread::sync_wait(scope.join());
 
     forge_example::require(scope.count() == 0);
     std::cout << "scope_count=" << scope.count() << '\n';

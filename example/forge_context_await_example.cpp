@@ -122,7 +122,7 @@ int main() {
     std::array<char, 5> outbound{'h', 'e', 'l', 'l', 'o'};
     std::array<std::byte, 5> inbound{};
 
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         cio::as_sender(write_then_read(
             context,
             read_fd.get(),

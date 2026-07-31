@@ -104,7 +104,7 @@ int main() {
     std::exception_ptr error;
     std::thread waiter([&] {
         try {
-            result = std::execution::sync_wait(cio::as_sender(
+            result = std::this_thread::sync_wait(cio::as_sender(
                 wait_for_readiness(context, read_fd.get()),
                 env));
         } catch (...) {

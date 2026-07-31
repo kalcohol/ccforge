@@ -58,7 +58,7 @@ public:
     }
 
     bool submit(request req) {
-        auto accepted = std::execution::sync_wait(requests_.async_send(req));
+        auto accepted = std::this_thread::sync_wait(requests_.async_send(req));
         return accepted.has_value();
     }
 
@@ -82,9 +82,9 @@ public:
 
 private:
     void run() noexcept {
-        while (auto item = std::execution::sync_wait(requests_.async_recv())) {
+        while (auto item = std::this_thread::sync_wait(requests_.async_recv())) {
             auto req = std::get<0>(*item);
-            (void)std::execution::sync_wait(
+            (void)std::this_thread::sync_wait(
                 std::execution::schedule(serial_.get_scheduler())
                 | std::execution::then([this, req] noexcept {
                     results_.push_back(req.id * 100 + req.payload);

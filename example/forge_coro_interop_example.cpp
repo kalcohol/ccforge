@@ -52,7 +52,7 @@ int main() {
 
     forge::erased_sender<completions> operation{
         cio::as_sender(parse_frame_size(std::byte{5}))};
-    auto result = std::execution::sync_wait(std::move(operation));
+    auto result = std::this_thread::sync_wait(std::move(operation));
     forge_example::require(result.has_value());
     forge_example::require(std::get<0>(*result) == 5u);
 

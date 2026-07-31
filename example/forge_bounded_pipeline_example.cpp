@@ -57,9 +57,9 @@ int main() {
     bool spawned = ctx.spawn(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([&] noexcept {
-            while (auto command = std::execution::sync_wait(commands.async_recv())) {
+            while (auto command = std::this_thread::sync_wait(commands.async_recv())) {
                 int value = std::get<0>(*command);
-                (void)std::execution::sync_wait(
+                (void)std::this_thread::sync_wait(
                     std::execution::schedule(serial.get_scheduler())
                     | std::execution::then([&results, value] noexcept {
                         results.push_back(value * 2);
@@ -69,7 +69,7 @@ int main() {
     forge_example::require(spawned);
 
     for (int value : {1, 2, 3, 4}) {
-        forge_example::require(std::execution::sync_wait(commands.async_send(value)).has_value());
+        forge_example::require(std::this_thread::sync_wait(commands.async_send(value)).has_value());
     }
     commands.close();
 

@@ -29,7 +29,7 @@ int main() {
     forge::static_thread_pool pool{2};
     forge::any_scheduler scheduler{pool.get_scheduler()};
 
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::schedule(scheduler)
         | std::execution::then([] { return 7; }));
 

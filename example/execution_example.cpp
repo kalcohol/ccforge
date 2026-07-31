@@ -9,7 +9,7 @@ int main() {
         std::execution::just(10) |
         std::execution::then([](int v) { return v + 1; });
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     if (!static_cast<bool>(result)) {
         return 1;
     }

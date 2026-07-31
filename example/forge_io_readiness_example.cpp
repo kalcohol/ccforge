@@ -68,7 +68,7 @@ int main() {
     const char out = 'x';
     forge_example::require(::write(write_fd.get(), &out, 1) == 1);
 
-    auto ready = std::execution::sync_wait(io.readable(read_fd.get()));
+    auto ready = std::this_thread::sync_wait(io.readable(read_fd.get()));
     forge_example::require(ready.has_value());
 
     char in = 0;

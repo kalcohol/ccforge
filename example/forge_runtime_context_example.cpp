@@ -30,12 +30,12 @@ int main() {
 
     forge::runtime_context ctx{2};
 
-    auto value = std::execution::sync_wait(
+    auto value = std::this_thread::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([] { return 42; }));
     forge_example::require(value.has_value());
     forge_example::require(std::get<0>(*value) == 42);
 
-    auto timer = std::execution::sync_wait(ctx.schedule_after(1ms));
+    auto timer = std::this_thread::sync_wait(ctx.schedule_after(1ms));
     forge_example::require(timer.has_value());
 }

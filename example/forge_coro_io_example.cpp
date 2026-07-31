@@ -56,12 +56,12 @@ int main() {
     env.stop_token = stop.get_token();
     env.memory = &memory;
 
-    auto observed = std::execution::sync_wait(
+    auto observed = std::this_thread::sync_wait(
         cio::as_sender(observe_env(&memory), env));
     forge_example::require(observed.has_value());
     forge_example::require(std::get<0>(*observed));
 
-    auto scheduled = std::execution::sync_wait(env.executor.schedule());
+    auto scheduled = std::this_thread::sync_wait(env.executor.schedule());
     pool.wait();
     forge_example::require(scheduled.has_value());
 

@@ -54,7 +54,7 @@ int main() {
 
     std::thread::id before;
     std::thread::id after;
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         cio::as_sender(hop_to_executor(&before, &after), env));
     pool.wait();
 

@@ -118,11 +118,11 @@ class any_sender_of {
         }
 #else
         if constexpr (requires(S& sender) {
-                          std::execution::sync_wait(
+                          std::this_thread::sync_wait(
                               __stored_sender_ref<S>{&sender});
                       }) {
             return std::same_as<
-                decltype(std::execution::sync_wait(
+                decltype(std::this_thread::sync_wait(
                     __stored_sender_ref<S>{std::declval<S*>()})),
                 std::optional<value_tuple_of_t<CompletionSignatures>>>;
         } else {
@@ -141,7 +141,7 @@ class any_sender_of {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
             .do_sync_wait = [](void* p) -> std::optional<VT> {
-                auto result = std::execution::sync_wait(
+                auto result = std::this_thread::sync_wait(
                     __stored_sender_ref<S>{static_cast<S*>(p)});
                 static_assert(std::same_as<decltype(result), std::optional<VT>>);
                 return result;

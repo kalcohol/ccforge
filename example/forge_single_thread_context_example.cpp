@@ -28,10 +28,10 @@
 int main() {
     forge::single_thread_context ctx;
     auto sch = ctx.get_scheduler();
-    auto first = std::execution::sync_wait(
+    auto first = std::this_thread::sync_wait(
         std::execution::schedule(sch)
             | std::execution::then([] { return std::this_thread::get_id(); }));
-    auto second = std::execution::sync_wait(
+    auto second = std::this_thread::sync_wait(
         std::execution::schedule(sch)
             | std::execution::then([] { return std::this_thread::get_id(); }));
 

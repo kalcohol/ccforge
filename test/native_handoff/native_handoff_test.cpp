@@ -40,7 +40,7 @@ TEST(NativeHandoff, Simd) {
 }
 
 TEST(NativeHandoff, Senders) {
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::just(21)
         | std::execution::then([](int x) { return x * 2; }));
     ASSERT_TRUE(result.has_value());

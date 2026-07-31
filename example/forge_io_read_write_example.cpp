@@ -71,13 +71,13 @@ int main() {
     forge::io::context io;
 
     std::array<char, 5> outbound{'h', 'e', 'l', 'l', 'o'};
-    auto wrote = std::execution::sync_wait(
+    auto wrote = std::this_thread::sync_wait(
         io.async_write_some(write_fd.get(), std::as_bytes(std::span{outbound})));
     forge_example::require(wrote.has_value());
     forge_example::require(std::get<0>(*wrote) == outbound.size());
 
     std::array<std::byte, 5> inbound{};
-    auto read = std::execution::sync_wait(
+    auto read = std::this_thread::sync_wait(
         io.async_read_some(read_fd.get(), std::span{inbound}));
     forge_example::require(read.has_value());
     forge_example::require(std::get<0>(*read) == inbound.size());

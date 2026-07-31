@@ -118,7 +118,7 @@ int main() {
     forge::strand serial{pool.get_scheduler()};
     shared_state state;
 
-    auto result = std::execution::sync_wait(
+    auto result = std::this_thread::sync_wait(
         cio::as_sender(handle_request(
             input,
             output,

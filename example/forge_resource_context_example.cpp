@@ -34,17 +34,17 @@ int main() {
     bool spawned = ctx.spawn(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([&] noexcept {
-            auto command = std::execution::sync_wait(commands.async_recv());
+            auto command = std::this_thread::sync_wait(commands.async_recv());
             if (command) {
-                (void)std::execution::sync_wait(
+                (void)std::this_thread::sync_wait(
                     events.async_send(std::get<0>(*command) + 1));
             }
         }));
 
     forge_example::require(spawned);
-    forge_example::require(std::execution::sync_wait(commands.async_send(6)).has_value());
+    forge_example::require(std::this_thread::sync_wait(commands.async_send(6)).has_value());
 
-    auto event = std::execution::sync_wait(events.async_recv());
+    auto event = std::this_thread::sync_wait(events.async_recv());
     forge_example::require(event.has_value());
     forge_example::require(std::get<0>(*event) == 7);
 

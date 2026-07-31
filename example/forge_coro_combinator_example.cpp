@@ -55,7 +55,7 @@ auto write_error_after(std::size_t count) -> cio::io_task<byte_count> {
 
 int main() {
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
-    auto eof_join = std::execution::sync_wait(cio::when_all_results(
+    auto eof_join = std::this_thread::sync_wait(cio::when_all_results(
         bytes_read(12),
         eof_after(4)));
     forge_example::require(eof_join.has_value());
@@ -69,7 +69,7 @@ int main() {
     forge_example::require(cio::get<1>(*eof_payload.first) == 12u);
     forge_example::require(cio::get<1>(*eof_payload.second) == 4u);
 
-    auto error_join = std::execution::sync_wait(cio::when_all_results(
+    auto error_join = std::this_thread::sync_wait(cio::when_all_results(
         bytes_read(3),
         write_error_after(2)));
     forge_example::require(error_join.has_value());

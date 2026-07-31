@@ -47,7 +47,7 @@ plugin_operation make_plugin_operation(forge::any_scheduler scheduler, int value
 }
 
 int run_plugin(plugin_operation op) {
-    auto result = std::execution::sync_wait(std::move(op));
+    auto result = std::this_thread::sync_wait(std::move(op));
     forge_example::require(result.has_value());
     return std::get<0>(*result);
 }

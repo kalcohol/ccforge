@@ -87,7 +87,7 @@ int main() {
                           return 21;
                       });
             });
-    auto closure_result = std::execution::sync_wait(std::move(closure_form));
+    auto closure_result = std::this_thread::sync_wait(std::move(closure_form));
 
     std::cout << "on_start=" << first_form_value
               << ", on_closure=" << std::get<0>(*closure_result) << '\n';

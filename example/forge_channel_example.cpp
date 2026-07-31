@@ -28,15 +28,15 @@
 int main() {
     forge::bounded_channel<int> channel{2};
 
-    auto sent = std::execution::sync_wait(channel.async_send(7));
+    auto sent = std::this_thread::sync_wait(channel.async_send(7));
     forge_example::require(sent.has_value());
 
-    auto received = std::execution::sync_wait(channel.async_recv());
+    auto received = std::this_thread::sync_wait(channel.async_recv());
     forge_example::require(received.has_value());
     forge_example::require(std::get<0>(*received) == 7);
 
     channel.close();
-    auto stopped = std::execution::sync_wait(channel.async_recv());
+    auto stopped = std::this_thread::sync_wait(channel.async_recv());
     forge_example::require(!stopped.has_value());
 }
 

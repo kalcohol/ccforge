@@ -32,7 +32,7 @@ int main() {
               return std::execution::just(v * 3);
           });
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     forge_example::require(result);
     forge_example::require(std::get<0>(*result) == 21);
     std::cout << "let_value=" << std::get<0>(*result) << '\n';
