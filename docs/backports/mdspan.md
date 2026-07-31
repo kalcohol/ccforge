@@ -18,6 +18,13 @@ Forge 的 `<mdspan>` backport 扩展覆盖：
   `layout_right_padded` 的 `submdspan_mapping`
 - `submdspan()` 本体
 
+Portable code 应优先调用 `std::submdspan(...)`。需要直接检查 mapping customization
+时，按 working draft 的 hidden-friend 模型使用不限定名
+`submdspan_mapping(mapping, slices...)`，让 ADL 找到实现；不要写
+`std::submdspan_mapping(...)`。Forge backport 当前保留 namespace-scope overload
+作为内部 dispatch extension，但 qualified spelling 不是 native-handoff contract，
+原生标准库可以只提供 hidden friends。
+
 Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdspan layouts
 作为 `submdspan` foundation。这些 foundation 由 `forge.cmake` 单独探测，检测到原生或
 部分原生声明时会主动让位，避免 ODR 冲突。

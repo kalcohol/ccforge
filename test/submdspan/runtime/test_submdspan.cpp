@@ -432,7 +432,7 @@ TEST(SubmdspanPaddedLayouts, DirectMappingUnitStrideClassificationMatchesCurrent
     using mapping_t = layout_t::mapping<extents_t>;
     const mapping_t source(extents_t{});
 
-    auto integral_constant_slice = std::submdspan_mapping(
+    auto integral_constant_slice = submdspan_mapping(
         source,
         std::extent_slice{
             0, 2, std::integral_constant<int, 1>{}});
@@ -440,12 +440,12 @@ TEST(SubmdspanPaddedLayouts, DirectMappingUnitStrideClassificationMatchesCurrent
         typename decltype(integral_constant_slice.mapping)::layout_type,
         std::layout_stride>);
 
-    auto range = std::submdspan_mapping(source, std::range_slice{0, 2});
+    auto range = submdspan_mapping(source, std::range_slice{0, 2});
     static_assert(std::is_same_v<
         typename decltype(range.mapping)::layout_type,
         std::layout_stride>);
 
-    auto constant_wrapper_slice = std::submdspan_mapping(
+    auto constant_wrapper_slice = submdspan_mapping(
         source,
         std::extent_slice{
             0, 2, std::constant_wrapper<1zu>{}});
