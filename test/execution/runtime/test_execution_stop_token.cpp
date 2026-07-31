@@ -284,6 +284,17 @@ TEST(ExecutionStopTokenTest, MemberStopQueryTakesPriority) {
     EXPECT_TRUE(token.stop_requested());
 }
 
+TEST(ExecutionStopTokenTest, ComposedEnvPreservesMemberQueryPriority) {
+    std::inplace_stop_source source;
+    auto env = std::execution::make_env(member_stop_env{source.get_token()});
+
+    EXPECT_TRUE(source.request_stop());
+    auto token = std::execution::get_stop_token(env);
+
+    static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
+    EXPECT_TRUE(token.stop_requested());
+}
+
 TEST(ExecutionStopTokenTest, DefaultConstructedToken) {
     std::inplace_stop_token token{};
     EXPECT_FALSE(token.stop_requested());

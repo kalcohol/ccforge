@@ -189,6 +189,33 @@ struct outer_stop_receiver {
     }
 };
 
+struct value_error_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* value;
+    bool* errored;
+
+    friend void tag_invoke(
+        std::execution::set_value_t,
+        value_error_receiver&& self,
+        int result) noexcept {
+        *self.value = result;
+    }
+
+    friend void tag_invoke(
+        std::execution::set_error_t,
+        value_error_receiver&& self,
+        std::exception_ptr) noexcept {
+        *self.errored = true;
+    }
+
+    friend auto tag_invoke(
+        std::execution::get_env_t,
+        const value_error_receiver&) noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 } // namespace
 
 TEST(WhenAllTest, AggregatesMultipleValues) {
@@ -206,6 +233,19 @@ TEST(WhenAllTest, SingleSender) {
     auto result = std::execution::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(WhenAllTest, DoesNotRequireUndeclaredStoppedCompletion) {
+    int value = 0;
+    bool errored = false;
+    auto op = std::execution::connect(
+        std::execution::when_all(std::execution::just(42)),
+        value_error_receiver{&value, &errored});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(value, 42);
+    EXPECT_FALSE(errored);
 }
 
 TEST(WhenAllTest, ErrorPropagates) {

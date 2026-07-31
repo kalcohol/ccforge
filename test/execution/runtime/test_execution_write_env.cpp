@@ -134,6 +134,15 @@ struct await_completion_adaptor_env {
     }
 };
 
+struct member_stop_query_env {
+    std::inplace_stop_token token;
+
+    auto query(std::execution::get_stop_token_t) const noexcept
+        -> std::inplace_stop_token {
+        return token;
+    }
+};
+
 } // namespace
 
 static_assert(std::forwarding_query(std::execution::get_scheduler));
@@ -290,6 +299,18 @@ TEST(WriteEnvTest, PreservesReceiverStopTokenWhenNotOverridden) {
 
     EXPECT_TRUE(completed);
     EXPECT_TRUE(stop_possible);
+}
+
+TEST(WriteEnvTest, ReadsMemberQueriedStopTokenFromInjectedEnv) {
+    std::inplace_stop_source source;
+    EXPECT_TRUE(source.request_stop());
+
+    auto result = std::execution::sync_wait(std::execution::write_env(
+        std::execution::read_env(std::execution::get_stop_token),
+        member_stop_query_env{source.get_token()}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result).stop_requested());
 }
 
 TEST(EnvTest, DuplicateQueriesUseTheLeftmostEnvironment) {

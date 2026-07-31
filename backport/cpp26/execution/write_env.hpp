@@ -38,29 +38,18 @@ struct __joined_env {
     [[no_unique_address]] OverrideEnv __overlay_env;
     [[no_unique_address]] BaseEnv __base;
 
-    friend auto tag_invoke(get_stop_token_t, const __joined_env& self) noexcept {
-        if constexpr (__forge_detail::tag_invocable<get_stop_token_t, const OverrideEnv&>) {
-            return __forge_detail::tag_invoke_fn(get_stop_token_t{}, self.__overlay_env);
-        } else if constexpr (__forge_detail::tag_invocable<get_stop_token_t, const BaseEnv&>) {
-            return __forge_detail::tag_invoke_fn(get_stop_token_t{}, self.__base);
-        } else {
-            return std::never_stop_token{};
-        }
-    }
-
     template<class Tag>
-        requires (!std::same_as<std::remove_cvref_t<Tag>, get_stop_token_t> &&
-                  (__forge_detail::tag_invocable<Tag, const OverrideEnv&> ||
-                   __forge_detail::tag_invocable<Tag, const BaseEnv&>))
+        requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
+                  __forge_env_detail::__queryable<Tag, const BaseEnv&>)
     friend decltype(auto) tag_invoke(Tag tag, const __joined_env& self)
-        noexcept((__forge_detail::tag_invocable<Tag, const OverrideEnv&> &&
-                  __forge_detail::nothrow_tag_invocable<Tag, const OverrideEnv&>) ||
-                 (!__forge_detail::tag_invocable<Tag, const OverrideEnv&> &&
-                  __forge_detail::nothrow_tag_invocable<Tag, const BaseEnv&>)) {
-        if constexpr (__forge_detail::tag_invocable<Tag, const OverrideEnv&>) {
-            return __forge_detail::tag_invoke_fn(tag, self.__overlay_env);
+        noexcept((__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
+                  __forge_env_detail::__nothrow_query<Tag, const OverrideEnv&>) ||
+                 (!__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
+                  __forge_env_detail::__nothrow_query<Tag, const BaseEnv&>)) {
+        if constexpr (__forge_env_detail::__queryable<Tag, const OverrideEnv&>) {
+            return __forge_env_detail::__query(tag, self.__overlay_env);
         } else {
-            return __forge_detail::tag_invoke_fn(tag, self.__base);
+            return __forge_env_detail::__query(tag, self.__base);
         }
     }
 };

@@ -329,7 +329,7 @@ TEST(IntoVariantTest, WrapsValue) {
 
 TEST(IntoVariantTest, SupportsPipeForm) {
     auto result = std::execution::sync_wait(
-        std::execution::just(42) | std::execution::into_variant());
+        std::execution::just(42) | std::execution::into_variant);
 
     ASSERT_TRUE(result.has_value());
     auto& var = std::get<0>(*result);

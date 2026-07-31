@@ -505,7 +505,7 @@ TEST(StoppedAsOptionalTest, SenderExists) {
 
 TEST(StoppedAsOptionalTest, SupportsPipeForm) {
     auto result = std::execution::sync_wait(
-        std::execution::just_stopped() | std::execution::stopped_as_optional());
+        std::execution::just_stopped() | std::execution::stopped_as_optional);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(std::get<0>(*result).has_value());

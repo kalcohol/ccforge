@@ -305,6 +305,11 @@ struct __into_variant_t {
     [[nodiscard]] auto operator()() const noexcept {
         return __into_variant_closure{};
     }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, __into_variant_t self) {
+        return self(std::forward<S>(sndr));
+    }
 };
 
 } // namespace __forge_into_variant

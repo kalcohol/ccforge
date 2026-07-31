@@ -343,6 +343,11 @@ struct __optional_t {
     [[nodiscard]] auto operator()() const noexcept {
         return __optional_closure{};
     }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, __optional_t self) {
+        return self(std::forward<S>(sndr));
+    }
 };
 
 template<class Err>

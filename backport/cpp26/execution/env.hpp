@@ -86,6 +86,30 @@ concept __nothrow_member_query = requires(
     { env.query(query) } noexcept;
 };
 
+template<class Query, class Env>
+concept __queryable =
+    __member_query<Query, Env> ||
+    __forge_detail::tag_invocable<Query, Env>;
+
+template<class Query, class Env>
+inline constexpr bool __nothrow_query =
+    (__member_query<Query, Env> && __nothrow_member_query<Query, Env>) ||
+    (!__member_query<Query, Env> &&
+     __forge_detail::nothrow_tag_invocable<Query, Env>);
+
+template<class Query, class Env>
+    requires __queryable<Query, Env>
+constexpr decltype(auto) __query(Query query, Env&& env)
+    noexcept(__nothrow_query<Query, Env>) {
+    if constexpr (__member_query<Query, Env>) {
+        return static_cast<const std::remove_reference_t<Env>&>(env)
+            .query(query);
+    } else {
+        return __forge_detail::tag_invoke_fn(
+            std::move(query), static_cast<Env&&>(env));
+    }
+}
+
 } // namespace __forge_env_detail
 
 struct get_env_t {
@@ -185,31 +209,14 @@ inline constexpr get_forward_progress_guarantee_t get_forward_progress_guarantee
 
 struct get_stop_token_t {
     template<class Env>
-        requires __forge_env_detail::__member_query<get_stop_token_t, Env>
+        requires __forge_env_detail::__queryable<get_stop_token_t, Env>
     decltype(auto) operator()(Env&& env) const
-        noexcept(__forge_env_detail::__nothrow_member_query<
-                 get_stop_token_t,
-                 Env>) {
-        return static_cast<const std::remove_reference_t<Env>&>(env)
-            .query(*this);
+        noexcept(__forge_env_detail::__nothrow_query<get_stop_token_t, Env>) {
+        return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
     template<class Env>
-        requires (!__forge_env_detail::__member_query<
-                      get_stop_token_t,
-                      Env>) &&
-                 __forge_detail::tag_invocable<get_stop_token_t, Env>
-    auto operator()(Env&& env) const
-        noexcept(__forge_detail::nothrow_tag_invocable<get_stop_token_t, Env>)
-            -> __forge_detail::tag_invoke_result_t<get_stop_token_t, Env> {
-        return __forge_detail::tag_invoke_fn(*this, static_cast<Env&&>(env));
-    }
-
-    template<class Env>
-        requires (!__forge_env_detail::__member_query<
-                      get_stop_token_t,
-                      Env>) &&
-                 (!__forge_detail::tag_invocable<get_stop_token_t, Env>)
+        requires (!__forge_env_detail::__queryable<get_stop_token_t, Env>)
     std::never_stop_token operator()(Env&&) const noexcept { return {}; }
 
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_stop_token_t) noexcept {
@@ -263,14 +270,14 @@ struct env {
 private:
     template<class Query>
     static constexpr bool __query_available =
-        (__forge_detail::tag_invocable<Query, const Envs&> || ...);
+        (__forge_env_detail::__queryable<Query, const Envs&> || ...);
 
     template<std::size_t I, class Query>
     static constexpr decltype(auto) __query(Query query, const env& self) {
         static_assert(I < sizeof...(Envs));
         using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
-        if constexpr (__forge_detail::tag_invocable<Query, const current_env_t&>) {
-            return __forge_detail::tag_invoke_fn(
+        if constexpr (__forge_env_detail::__queryable<Query, const current_env_t&>) {
+            return __forge_env_detail::__query(
                 std::move(query), std::get<I>(self.__envs));
         } else {
             return __query<I + 1>(std::move(query), self);
@@ -283,8 +290,8 @@ private:
             return true;
         } else {
             using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
-            if constexpr (__forge_detail::tag_invocable<Query, const current_env_t&>) {
-                return __forge_detail::nothrow_tag_invocable<Query, const current_env_t&>;
+            if constexpr (__forge_env_detail::__queryable<Query, const current_env_t&>) {
+                return __forge_env_detail::__nothrow_query<Query, const current_env_t&>;
             } else {
                 return __query_nothrow<I + 1, Query>();
             }

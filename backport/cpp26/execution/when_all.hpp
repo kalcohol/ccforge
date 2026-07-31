@@ -272,7 +272,14 @@ struct __op : __forge_detail::__immovable {
         decltype(std::execution::get_completion_signatures(
             std::declval<S>(), std::declval<child_env_t>()))>>::value;
 
+    template<class S>
+    static constexpr bool __sender_sends_stopped =
+        __forge_meta::sends_stopped_from<decltype(
+            std::execution::get_completion_signatures(
+                std::declval<S>(), std::declval<child_env_t>()))>::value;
+
     static constexpr bool __can_value_complete = (__sender_has_value<Senders> && ...);
+    static constexpr bool __sends_stopped = (__sender_sends_stopped<Senders> || ...);
 
     OuterRecv __outer_recv;
     inplace_stop_source __stop_src;
@@ -382,12 +389,18 @@ struct __op : __forge_detail::__immovable {
                 std::execution::set_error(std::move(__outer_recv), std::move(err));
             }, std::get<1>(__result));
         } else if (__result.index() == 2) {
-            std::execution::set_stopped(std::move(__outer_recv));
+            if constexpr (__sends_stopped) {
+                std::execution::set_stopped(std::move(__outer_recv));
+            } else {
+                std::terminate();
+            }
         } else {
             if constexpr (__can_value_complete) {
                 try_deliver_values(std::index_sequence_for<Senders...>{});
-            } else {
+            } else if constexpr (__sends_stopped) {
                 std::execution::set_stopped(std::move(__outer_recv));
+            } else {
+                std::terminate();
             }
         }
     }
