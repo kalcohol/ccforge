@@ -72,6 +72,88 @@ long double adaptive_simpson_integral(Fun&& fun, long double a, long double b) {
     return adaptive_simpson_integral(fun, a, b, 1e-12L, whole, 18);
 }
 
+struct checked_integral_result {
+    long double value;
+    long double error;
+    bool converged;
+};
+
+template<class Fun>
+auto checked_simpson_integral(
+    Fun&& fun,
+    long double a,
+    long double b,
+    long double tolerance,
+    long double whole,
+    unsigned depth) -> checked_integral_result {
+    const long double mid = (a + b) / 2.0L;
+    const long double left = simpson_integral(fun, a, mid);
+    const long double right = simpson_integral(fun, mid, b);
+    const long double delta = left + right - whole;
+    const long double error = std::abs(delta) / 15.0L;
+    const long double corrected = left + right + delta / 15.0L;
+    if (error <= tolerance) {
+        return {corrected, error, true};
+    }
+    if (depth == 0u) {
+        return {corrected, error, false};
+    }
+
+    const auto left_result = checked_simpson_integral(
+        fun, a, mid, tolerance / 2.0L, left, depth - 1u);
+    const auto right_result = checked_simpson_integral(
+        fun, mid, b, tolerance / 2.0L, right, depth - 1u);
+    return {
+        left_result.value + right_result.value,
+        left_result.error + right_result.error,
+        left_result.converged && right_result.converged};
+}
+
+template<class Fun>
+auto checked_simpson_integral(
+    Fun&& fun,
+    long double a,
+    long double b,
+    long double tolerance,
+    unsigned depth = 18u) -> checked_integral_result {
+    if (a == b) {
+        return {0.0L, 0.0L, true};
+    }
+    const long double whole = simpson_integral(fun, a, b);
+    return checked_simpson_integral(
+        fun, a, b, tolerance, whole, depth);
+}
+
+template<class Fun>
+auto segmented_checked_simpson_integral(
+    Fun&& fun,
+    long double a,
+    long double b,
+    unsigned segments,
+    long double tolerance) -> checked_integral_result {
+    checked_integral_result result{0.0L, 0.0L, true};
+    for (unsigned i = 0u; i < segments; ++i) {
+        const long double left =
+            a + (b - a) * static_cast<long double>(i) /
+                static_cast<long double>(segments);
+        const long double right =
+            a + (b - a) * static_cast<long double>(i + 1u) /
+                static_cast<long double>(segments);
+        const auto part = checked_simpson_integral(
+            fun,
+            left,
+            right,
+            tolerance / static_cast<long double>(segments));
+        result.value += part.value;
+        result.error += part.error;
+        result.converged = result.converged && part.converged;
+    }
+    return result;
+}
+
+template<class T>
+T cyl_bessel_j_fallback(T nu, T x);
+
 template<class T>
 T beta_fallback(T x, T y) {
     if (!(x > T{}) || !(y > T{})) {
@@ -217,43 +299,18 @@ T sph_bessel_fallback(unsigned n, T x) {
         return n == 0u ? T{1} : T{};
     }
 
-    if (std::abs(x) <= static_cast<T>(n + 1u)) {
-        T leading = T{1};
-        for (unsigned i = 1; i <= n; ++i) {
-            leading *= x / static_cast<T>(2u * i + 1u);
-        }
-
-        T sum = T{1};
-        T term = T{1};
-        for (unsigned k = 0; k < 512u; ++k) {
-            term *= -(x * x) /
-                (static_cast<T>(2u * (k + 1u)) *
-                 static_cast<T>(2u * n + 2u * k + 3u));
-            sum += term;
-            if (std::abs(term) <= std::numeric_limits<T>::epsilon() * std::abs(sum)) {
-                break;
-            }
-        }
-        return leading * sum;
+    const long double argument =
+        std::abs(static_cast<long double>(x));
+    const long double cylindrical = cyl_bessel_j_fallback(
+        static_cast<long double>(n) + 0.5L,
+        argument);
+    long double result =
+        std::sqrt(pi_v<long double> / (2.0L * argument)) *
+        cylindrical;
+    if (x < T{} && (n & 1u) != 0u) {
+        result = -result;
     }
-
-    const T j0 = std::sin(x) / x;
-    if (n == 0u) {
-        return j0;
-    }
-
-    T jm2 = j0;
-    T jm1 = std::sin(x) / (x * x) - std::cos(x) / x;
-    if (n == 1u) {
-        return jm1;
-    }
-
-    for (unsigned i = 1; i < n; ++i) {
-        const T next = (static_cast<T>(2 * i + 1) / x) * jm1 - jm2;
-        jm2 = jm1;
-        jm1 = next;
-    }
-    return jm1;
+    return static_cast<T>(result);
 }
 
 template<class T>
@@ -684,6 +741,35 @@ template<class T>
 auto cyl_bessel_reduced_series_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
     const long double target = cyl_bessel_target_tolerance<T>();
+    const long double half_distance =
+        std::abs(std::abs(nu) - 0.5L);
+    if (half_distance <=
+        64.0L * std::numeric_limits<long double>::epsilon()) {
+        const long double scale =
+            std::sqrt(2.0L / (pi_v<long double> * x));
+        if (nu < 0.0L) {
+            return {
+                scale * std::cos(x),
+                scale * std::sin(x),
+                target,
+                true};
+        }
+        return {
+            scale * std::sin(x),
+            -scale * std::cos(x),
+            target,
+            true};
+    }
+    if (std::abs(nu - 1.5L) <=
+        64.0L * std::numeric_limits<long double>::epsilon()) {
+        const long double scale =
+            std::sqrt(2.0L / (pi_v<long double> * x));
+        return {
+            scale * (std::sin(x) / x - std::cos(x)),
+            scale * (-std::cos(x) / x - std::sin(x)),
+            target,
+            true};
+    }
     const long double integer_distance =
         std::abs(nu - std::round(nu));
     if (integer_distance <=
@@ -747,6 +833,82 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
 }
 
 template<class T>
+auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
+    -> cyl_bessel_hankel_result<long double> {
+    const long double target = cyl_bessel_target_tolerance<T>();
+    const long double tolerance = std::max(
+        64.0L * std::numeric_limits<long double>::epsilon(),
+        target * 0.01L);
+    const unsigned segments = static_cast<unsigned>(std::max(
+        8.0L,
+        std::ceil(2.0L * (x + std::abs(nu)))));
+    const auto finite_j = segmented_checked_simpson_integral(
+        [=](long double theta) {
+            return std::cos(x * std::sin(theta) - nu * theta);
+        },
+        0.0L,
+        pi_v<long double>,
+        segments,
+        tolerance);
+    const auto finite_y = segmented_checked_simpson_integral(
+        [=](long double theta) {
+            return std::sin(x * std::sin(theta) - nu * theta);
+        },
+        0.0L,
+        pi_v<long double>,
+        segments,
+        tolerance);
+
+    const long double upper = std::max(
+        4.0L,
+        std::asinh((std::abs(nu) + 64.0L) / x) + 1.0L);
+    const auto tail_j = checked_simpson_integral(
+        [=](long double t) {
+            return std::exp(-x * std::sinh(t) - nu * t);
+        },
+        0.0L,
+        upper,
+        tolerance);
+    const long double cos_order =
+        std::cos(pi_v<long double> * nu);
+    const auto tail_y = checked_simpson_integral(
+        [=](long double t) {
+            const long double decay = -x * std::sinh(t);
+            return std::exp(decay + nu * t) +
+                cos_order * std::exp(decay - nu * t);
+        },
+        0.0L,
+        upper,
+        tolerance);
+
+    const long double sin_order =
+        std::sin(pi_v<long double> * nu);
+    const long double j =
+        finite_j.value / pi_v<long double> -
+        sin_order * tail_j.value / pi_v<long double>;
+    const long double y =
+        finite_y.value / pi_v<long double> -
+        tail_y.value / pi_v<long double>;
+    const long double error = std::max(
+        (finite_j.error + std::abs(sin_order) * tail_j.error) /
+            pi_v<long double>,
+        (finite_y.error + tail_y.error) / pi_v<long double>);
+    const long double scale = std::max({
+        std::abs(j),
+        std::abs(y),
+        std::numeric_limits<long double>::min()});
+    return {
+        j,
+        y,
+        error,
+        finite_j.converged &&
+            finite_y.converged &&
+            tail_j.converged &&
+            tail_y.converged &&
+            error <= target * scale};
+}
+
+template<class T>
 auto cyl_bessel_reduced_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
     if (x > 16.0L) {
@@ -758,7 +920,11 @@ auto cyl_bessel_reduced_pair(long double nu, long double x)
             return asymptotic;
         }
     }
-    return cyl_bessel_reduced_series_pair<T>(nu, x);
+    auto series = cyl_bessel_reduced_series_pair<T>(nu, x);
+    if (series.converged) {
+        return series;
+    }
+    return cyl_bessel_reduced_integral_pair<T>(nu, x);
 }
 
 inline long double cyl_bessel_j_miller(
@@ -887,12 +1053,14 @@ auto cyl_bessel_jy_fallback(T nu, T x)
 
 template<class T>
 T cyl_bessel_j_fallback(T nu, T x) {
-    return cyl_bessel_jy_fallback(nu, x).j;
+    const auto result = cyl_bessel_jy_fallback(nu, x);
+    return result.converged ? result.j : quiet_nan<T>();
 }
 
 template<class T>
 T cyl_bessel_y_fallback(T nu, T x) {
-    return cyl_bessel_jy_fallback(nu, x).y;
+    const auto result = cyl_bessel_jy_fallback(nu, x);
+    return result.converged ? result.y : quiet_nan<T>();
 }
 
 template<class T>

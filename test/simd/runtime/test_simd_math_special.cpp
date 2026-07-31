@@ -425,7 +425,7 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchHighOrderReferences) {
 }
 
 TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
-    constexpr std::pair<double, double> cases[] = {
+    const std::pair<double, double> cases[] = {
         {0.3137, 1.0e-8},
         {0.49, 0.01},
         {0.2, 0.1},
@@ -434,6 +434,11 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
         {20.0, 20.0},
         {50.0, 49.5},
         {100.0, 101.0},
+        {std::nextafter(1.0, 2.0), 2.0},
+        {1.0e-17, 10.0},
+        {1.0 + 1.0e-12, 2.0},
+        {2.0 + 1.0e-8, 3.0},
+        {20.0 + 1.0e-5, 10.0},
     };
 
     for (const auto [order, argument] : cases) {
@@ -451,10 +456,45 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
         const double actual =
             current.j * next.y - next.j * current.y;
 
+        EXPECT_TRUE(current.converged);
+        EXPECT_TRUE(next.converged);
         EXPECT_NEAR(
             actual,
             expected,
             std::max(2e-14, std::abs(expected) * 2e-12));
+    }
+}
+
+TEST(SimdMathSpecialTest, SphericalBesselFallbackCoversTurningBand) {
+    namespace sm = std::simd::detail::special_math;
+
+    const double j100 = sm::sph_bessel_fallback(100u, 100.0);
+    const double j127 = sm::sph_bessel_fallback(127u, 128.0);
+    const float j50 = sm::sph_bessel_fallback(50u, 50.0f);
+
+    EXPECT_LE(std::abs(j100), 1.0);
+    EXPECT_NEAR(j127, 0.01073050471, 2e-11);
+    EXPECT_NEAR(j50, 0.0188290642f, 5e-7f);
+
+    constexpr unsigned orders[] = {15u, 30u, 50u, 75u, 100u, 125u, 126u};
+    for (const unsigned order : orders) {
+        const double argument = static_cast<double>(order);
+        const double previous =
+            sm::sph_bessel_fallback(order - 1u, argument);
+        const double current =
+            sm::sph_bessel_fallback(order, argument);
+        const double next =
+            sm::sph_bessel_fallback(order + 1u, argument);
+        const double expected =
+            (2.0 * static_cast<double>(order) + 1.0) /
+            argument * current;
+        const double actual = previous + next;
+        const double scale = std::max({
+            std::abs(actual), std::abs(expected), 1e-300});
+
+        SCOPED_TRACE("order=" + std::to_string(order));
+        EXPECT_LE(std::abs(current), 1.0);
+        EXPECT_NEAR(actual, expected, scale * 2e-11);
     }
 }
 
