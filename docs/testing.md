@@ -77,8 +77,10 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 
 - `llvm`：LLVM/libc++ 容器，`-std=c++26`，覆盖 libc++ inject-path 全量测试
 - `zig`：Zig 容器，C++23 backport inject path
-- `gcc16`：GCC 16 容器，验证 `std::simd`、pre-P4206 `std::constant_wrapper`
-  partial surface、padded mdspan layouts 与 `std::submdspan` native stand-aside
+- `gcc16`：GCC 16 容器，在 C++26 验证 `std::simd`、pre-P4206
+  `std::constant_wrapper` partial surface、padded mdspan layouts 与
+  `std::submdspan` native stand-aside；另在 C++23 运行 SIMD-only suite，确认
+  declaration-free `<simd>` 不会被误判为 partial native，而会正常注入 backport
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
 - `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与
@@ -217,8 +219,9 @@ MSVC 19.44 可以 configure，但在 P2300/domain/write_env 的 constrained CPO
 改 wrapper、probe 或 feature-test macro 时，优先使用 lane-specific evidence，不要只看
 单个全局 CTest 数量：
 
-- `scripts/verify-native.sh gcc16` 检查 GCC 已暴露标准库特性时的 partial-native
-  stand-aside path。
+- `scripts/verify-native.sh gcc16` 同时检查 GCC 在 C++26 已暴露标准库特性时的
+  complete/partial-native stand-aside path，以及同一工具链在 C++23
+  declaration-free `<simd>` 上的 backport inject path。
 - `scripts/verify-native.sh llvm` 和 `scripts/verify-native.sh zig` 检查仍缺这些特性
   的工具链上的 backport inject path。
 - `scripts/verify-native.sh gcc-exec` 是当前 libstdc++ execution backport lane；native

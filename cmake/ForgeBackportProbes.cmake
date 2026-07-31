@@ -121,9 +121,8 @@ if(NOT HAS_STD_UNIQUE_RESOURCE)
     message(STATUS "CC Forge: std::unique_resource backport enabled (TS v3)")
 endif()
 
-# std::simd (P1928). The C++26 <simd> header is brand new; toolchains before
-# native support only ship <experimental/simd>, so __has_include(<simd>)
-# succeeding is itself the signal that a native C++26 simd has arrived.
+# std::simd (P1928). Probe a core declaration rather than header presence:
+# some libraries install an empty <simd> outside C++26 mode.
 check_cxx_source_compiles("
     #include <simd>
     int main() {
@@ -134,10 +133,13 @@ check_cxx_source_compiles("
     }
 " FORGE_SIMD_FULL)
 check_cxx_source_compiles("
-    #if !defined(__has_include) || !__has_include(<simd>)
-    #error no native <simd>
-    #endif
-    int main() { return 0; }
+    #include <simd>
+    using probe = std::simd::basic_vec<float>;
+    int main() {
+        probe* p = nullptr;
+        (void)p;
+        return 0;
+    }
 " FORGE_SIMD_PARTIAL)
 _forge_decide("std::simd" SIMD FORGE_SIMD_FULL FORGE_SIMD_PARTIAL)
 
@@ -283,8 +285,8 @@ if(FORGE_SUBMDSPAN_PARTIAL_CURRENT OR FORGE_SUBMDSPAN_PARTIAL_LEGACY)
 endif()
 _forge_decide("std::submdspan" SUBMDSPAN FORGE_SUBMDSPAN_FULL FORGE_SUBMDSPAN_PARTIAL)
 
-# std::linalg (P1673) is a new <linalg> header, so its mere presence is the
-# partial native signal.
+# std::linalg (P1673). As with <simd>, an installed but declaration-free header
+# is not partial native support at the configured language standard.
 check_cxx_source_compiles("
     #include <linalg>
     #include <mdspan>
@@ -296,10 +298,13 @@ check_cxx_source_compiles("
     }
 " FORGE_LINALG_FULL)
 check_cxx_source_compiles("
-    #if !defined(__has_include) || !__has_include(<linalg>)
-    #error no native <linalg>
-    #endif
-    int main() { return 0; }
+    #include <linalg>
+    using probe = std::linalg::setup_givens_rotation_result<double>;
+    int main() {
+        probe* p = nullptr;
+        (void)p;
+        return 0;
+    }
 " FORGE_LINALG_PARTIAL)
 _forge_decide("std::linalg" LINALG FORGE_LINALG_FULL FORGE_LINALG_PARTIAL)
 

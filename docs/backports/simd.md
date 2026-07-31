@@ -14,4 +14,6 @@
 
 已在 x86_64、aarch64、riscv64、loongarch64 四架构验证。
 
-GCC 16 起已有部分原生 `std::simd`，Forge 会在检测到原生或 partial-native 声明时让位，避免 ODR 冲突。
+当前 GCC 16 在 C++26 提供完整原生 `std::simd`，Forge 会严格让位；同一标准库在
+C++23 虽可安装 `<simd>` 文件但不暴露声明，此时声明级 probe 会启用 backport。真正检测到
+partial-native 声明时 Forge 仍会让位，避免 ODR 冲突。

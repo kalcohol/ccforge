@@ -11,7 +11,8 @@
 #   gcc16   GCC 16 container, -std=c++26. Asserts std::simd, padded mdspan
 #           layouts, and std::submdspan stand aside as complete native
 #           surfaces; its pre-P4206 std::constant_wrapper must stand aside as
-#           partial native. Also verifies no ODR/redefinition occurs.
+#           partial native. Also runs the SIMD-only suite at -std=c++23, where
+#           an installed but declaration-free <simd> must select the backport.
 #   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
 #           native support; full suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
@@ -107,6 +108,18 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
     -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=ON
 )
 
+FORGE_SIMD_ONLY_TEST_ARGS=(
+    -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_EXECUTION=OFF
+    -DFORGE_TEST_ENABLE_SIMD=ON
+    -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=OFF
+    -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF
+    -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF
+    -DFORGE_TEST_ENABLE_LINALG=OFF
+    -DFORGE_TEST_ENABLE_FORGE=OFF
+    -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF
+)
+
 # Assert the cmake configure log shows complete native support.
 assert_complete_stands_aside() {
     local logfile="$1" feature="$2" probe="$3"
@@ -135,6 +148,15 @@ assert_partial_stands_aside() {
     fi
 }
 
+assert_backport_injects() {
+    local logfile="$1" feature="$2" probe="$3"
+    if grep -q "CC Forge probe: ${probe}=BACKPORT" "${logfile}"; then
+        ok "${feature}: Forge injected the backport"
+    else
+        fail "${feature}: no backport-injection message found in configure log ${logfile}"
+    fi
+}
+
 target_gcc16() {
     build_image forge-gcc16 containers/Containerfile.gcc16
     local logfile="${LOG_DIR}/gcc16-configure.log"
@@ -157,6 +179,23 @@ target_gcc16() {
     assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
+
+    local floor_logfile="${LOG_DIR}/gcc16-cxx23-configure.log"
+    log "gcc16: verifying the C++23 std::simd backport floor"
+    "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
+        bash -lc '
+            set -euo pipefail
+            rm -rf build/gcc16-cxx23
+            cmake -S . -B build/gcc16-cxx23 -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DCMAKE_CXX_STANDARD=23 \
+                  -DFORGE_BUILD_TESTS=ON \
+                  "$@"
+            cmake --build build/gcc16-cxx23
+            ctest --test-dir build/gcc16-cxx23 --output-on-failure
+        ' bash "${FORGE_SIMD_ONLY_TEST_ARGS[@]}" \
+        2>&1 | tee "${floor_logfile}"
+    assert_backport_injects "${floor_logfile}" "std::simd at the C++23 floor" SIMD
     ok "gcc16 verified"
 }
 

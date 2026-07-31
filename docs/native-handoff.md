@@ -13,7 +13,7 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 
 | 特性 | libstdc++ (GCC) | libc++ (Clang) | 含义 |
 |------|-----------------|----------------|------|
-| `std::simd` | 当前 GCC 16 验证镜像通过 Forge 的完整 surface probe | 未实现 | GCC 16 lane 要求完整原生并严格让位 |
+| `std::simd` | 当前 GCC 16 验证镜像在 C++26 通过完整 surface probe；C++23 下 `<simd>` 不提供声明 | 未实现 | GCC 16 lane 同时要求 C++26 严格让位、C++23 正确注入 |
 | `std::constant_wrapper` / padded mdspan layouts | GCC 16 已有 `202603L` pre-P4206 `constant_wrapper` 与 padded layouts | 未实现 | `constant_wrapper` 对完整 `202606L` DR surface 单独探测；旧 native 声明按 partial 让位 |
 | `std::submdspan` | 当前 GCC 16 验证镜像通过 Forge 的完整 surface probe | 未实现 | GCC 16 lane 要求完整原生并严格让位 |
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
@@ -33,7 +33,11 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 
 Native handoff 的回归应优先看“是否正确让位”和“是否正确注册/不注册对应测试”，不要依赖单个全局 CTest 数量：
 
-- `scripts/verify-native.sh gcc16` 是 native stand-aside 的主线验证：当前固定镜像要求 `std::simd`、padded mdspan layouts 与 `std::submdspan` 通过完整原生 probe，并要求 pre-DR `std::constant_wrapper` 命中 partial-native 让位分支。脚本分别匹配两类诊断，完整能力退化为 partial 时会失败。
+- `scripts/verify-native.sh gcc16` 是 native stand-aside 的主线验证：当前固定镜像在
+  C++26 要求 `std::simd`、padded mdspan layouts 与 `std::submdspan` 通过完整原生
+  probe，并要求 pre-DR `std::constant_wrapper` 命中 partial-native 让位分支；随后
+  以 C++23 运行 SIMD-only suite，要求 declaration-free `<simd>` 命中 BACKPORT。
+  脚本分别匹配这些诊断，完整能力退化或空头文件误报 partial 时都会失败。
 - `native_handoff_partial_simd_configure` 使用合成的 incomplete `<simd>` 头验证 partial-native 分支：CMake probe 必须报告 incomplete native support，wrapper 必须 stand aside，不能把 backport 注入到已有 `std::simd` 声明之上。
 - `scripts/verify-native.sh llvm` / `zig` 覆盖 backport inject path。
 - `scripts/verify-native.sh gcc-exec` 单独覆盖 libstdc++ 上的 `std::execution` backport，因为主流标准库还没有稳定 native `std::execution` 实现。
