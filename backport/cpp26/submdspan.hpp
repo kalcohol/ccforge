@@ -231,14 +231,8 @@ inline constexpr bool is_range_slice_v =
 
 template <class S, class = void>
 struct uss_s : bool_constant<is_same_v<remove_cvref_t<S>, full_extent_t>> {};
-template <class O, class E, class I, I V>
-struct uss_s<extent_slice<O, E, integral_constant<I,V>>> : bool_constant<V == I(1)> {};
 template <class O, class E, auto V>
 struct uss_s<extent_slice<O, E, constant_wrapper<V>>> : bool_constant<V == decltype(V)(1)> {};
-template <class F, class L, class I, I V>
-struct uss_s<range_slice<F, L, integral_constant<I,V>>> : bool_constant<V == I(1)> {};
-template <class F, class L, auto V>
-struct uss_s<range_slice<F, L, constant_wrapper<V>>> : bool_constant<V == decltype(V)(1)> {};
 template <class S>
 inline constexpr bool is_unit_stride_slice_v = uss_s<S>::value;
 

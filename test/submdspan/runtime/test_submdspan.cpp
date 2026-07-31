@@ -426,6 +426,38 @@ TEST(SubmdspanPaddedLayouts, RankOneStridedSliceUsesLayoutStride) {
     EXPECT_EQ(right_sub[3], 6);
 }
 
+TEST(SubmdspanPaddedLayouts, DirectMappingUnitStrideClassificationMatchesCurrentWording) {
+    using extents_t = std::extents<int, 8>;
+    using layout_t = std::layout_left_padded<4>;
+    using mapping_t = layout_t::mapping<extents_t>;
+    const mapping_t source(extents_t{});
+
+    auto integral_constant_slice = std::submdspan_mapping(
+        source,
+        std::extent_slice{
+            0, 2, std::integral_constant<int, 1>{}});
+    static_assert(std::is_same_v<
+        typename decltype(integral_constant_slice.mapping)::layout_type,
+        std::layout_stride>);
+
+    auto range = std::submdspan_mapping(source, std::range_slice{0, 2});
+    static_assert(std::is_same_v<
+        typename decltype(range.mapping)::layout_type,
+        std::layout_stride>);
+
+    auto constant_wrapper_slice = std::submdspan_mapping(
+        source,
+        std::extent_slice{
+            0, 2, std::constant_wrapper<1zu>{}});
+    static_assert(std::is_same_v<
+        typename decltype(constant_wrapper_slice.mapping)::layout_type,
+        std::layout_left>);
+
+    EXPECT_EQ(integral_constant_slice.mapping.stride(0), 1);
+    EXPECT_EQ(range.mapping.stride(0), 1);
+    EXPECT_EQ(constant_wrapper_slice.mapping.stride(0), 1);
+}
+
 TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {
     auto data = make_data<32>();
     using ext_t = std::extents<int, 3, 4>;
