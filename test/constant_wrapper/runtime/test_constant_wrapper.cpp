@@ -83,6 +83,10 @@ struct member_owner {
     }
 };
 
+struct array_member_owner {
+    int values[3];
+};
+
 struct overload_callable {
     constexpr int operator()(int) const noexcept {
         return 1;
@@ -130,6 +134,7 @@ struct nonstructural_static_value {
 
 inline constexpr int pointed_value = 9;
 inline constexpr member_owner member_value{11};
+inline constexpr array_member_owner array_member_value{{2, 4, 8}};
 
 constexpr int plus_one(int value) noexcept {
     return value + 1;
@@ -288,6 +293,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
               decltype(std::cw<&member_owner::value>(std::cw<member_value>)),
               std::constant_wrapper<11>>);
+static_assert(
+    decltype(std::cw<&array_member_owner::values>(
+        std::cw<array_member_value>))::value[2] == 8);
 static_assert(std::is_same_v<
               decltype(std::cw<overload_callable{}>(std::cw<1>)),
               std::constant_wrapper<1>>);

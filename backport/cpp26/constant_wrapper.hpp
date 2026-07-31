@@ -33,11 +33,11 @@ namespace std {
 template <auto X, class T = decltype(X)>
 struct constant_wrapper;
 
-template <class T, T X>
-using __forge_cw_result = constant_wrapper<X, T>;
+template <auto X>
+using __forge_cw_result = constant_wrapper<X, decltype(X)>;
 
 #define FORGE_CW_RESULT(...)                                                    \
-    __forge_cw_result<remove_cvref_t<decltype((__VA_ARGS__))>, (__VA_ARGS__)>
+    __forge_cw_result<(__VA_ARGS__)>
 
 template <class T>
 struct __forge_is_constant_wrapper : false_type {};
@@ -181,7 +181,6 @@ concept __forge_constexpr_param = requires {
               decltype(remove_cvref_t<T>::value)>);
 } && (__forge_constant_wrapper<T> || requires {
     typename __forge_cw_result<
-        remove_cvref_t<decltype(remove_cvref_t<T>::value)>,
         remove_cvref_t<T>::value>;
 });
 
