@@ -28,8 +28,8 @@ lifecycle contract](forge-runtime.md)、[`forge::io`](forge-io.md) 和
    内临时切换再切回原 completion scheduler。
 7. `example/execution_spawn_future_example.cpp`：对比 scope token 下的 fire-and-forget
    `spawn` 与可等待的 `spawn_future`。
-8. `example/execution_affine_example.cpp`：用 `affine` 表达目标 scheduler affinity 的
-   serial transfer subset。
+8. `example/execution_affine_example.cpp`：用 `affine` 把完成切回消费方 receiver
+   environment 的 start scheduler。
 9. `example/execution_unstoppable_example.cpp`：把内层 sender 从外部 stop-token 中隔离。
 10. `example/forge_io_read_write_example.cpp`：borrowed buffer async read/write。
 11. `example/forge_io_typed_error_example.cpp`：typed IO error 跨 erased sender 边界，

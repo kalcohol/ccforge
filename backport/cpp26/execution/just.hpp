@@ -74,12 +74,16 @@ struct sender {
 
 } // namespace __forge_just
 
-template<class... Vs>
-    requires (std::move_constructible<std::decay_t<Vs>> && ...)
-[[nodiscard]] auto just(Vs&&... vs) {
-    return __forge_just::sender<std::decay_t<Vs>...>{
-        std::tuple<std::decay_t<Vs>...>{std::forward<Vs>(vs)...}};
-}
+struct just_t {
+    template<class... Vs>
+        requires (std::move_constructible<std::decay_t<Vs>> && ...)
+    [[nodiscard]] auto operator()(Vs&&... vs) const {
+        return __forge_just::sender<std::decay_t<Vs>...>{
+            std::tuple<std::decay_t<Vs>...>{std::forward<Vs>(vs)...}};
+    }
+};
+
+inline constexpr just_t just{};
 
 namespace __forge_just_error {
 
@@ -125,11 +129,15 @@ struct sender {
 
 } // namespace __forge_just_error
 
-template<class E>
-    requires std::move_constructible<std::decay_t<E>>
-[[nodiscard]] auto just_error(E&& e) {
-    return __forge_just_error::sender<std::decay_t<E>>{std::forward<E>(e)};
-}
+struct just_error_t {
+    template<class E>
+        requires std::move_constructible<std::decay_t<E>>
+    [[nodiscard]] auto operator()(E&& e) const {
+        return __forge_just_error::sender<std::decay_t<E>>{std::forward<E>(e)};
+    }
+};
+
+inline constexpr just_error_t just_error{};
 
 namespace __forge_just_stopped {
 
@@ -168,6 +176,12 @@ struct sender {
 
 } // namespace __forge_just_stopped
 
-[[nodiscard]] inline auto just_stopped() noexcept { return __forge_just_stopped::sender{}; }
+struct just_stopped_t {
+    [[nodiscard]] auto operator()() const noexcept {
+        return __forge_just_stopped::sender{};
+    }
+};
+
+inline constexpr just_stopped_t just_stopped{};
 
 } // namespace std::execution

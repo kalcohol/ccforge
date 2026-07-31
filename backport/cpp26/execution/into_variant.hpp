@@ -320,21 +320,26 @@ inline constexpr __forge_into_variant::__into_variant_t into_variant{};
 
 namespace std::this_thread {
 
-template<std::execution::sender S>
-auto sync_wait_with_variant(S&& sndr) {
-    auto result = std::this_thread::sync_wait(
-        std::execution::into_variant(
-            std::execution::__forge_detail::__forward_as_given(std::forward<S>(sndr))));
-    using result_t = decltype(result);
-    using tuple_t = typename result_t::value_type;
-    using variant_t = std::remove_cvref_t<std::tuple_element_t<0, tuple_t>>;
+struct sync_wait_with_variant_t {
+    template<std::execution::sender S>
+    auto operator()(S&& sndr) const {
+        auto result = std::this_thread::sync_wait(
+            std::execution::into_variant(
+                std::execution::__forge_detail::__forward_as_given(
+                    std::forward<S>(sndr))));
+        using result_t = decltype(result);
+        using tuple_t = typename result_t::value_type;
+        using variant_t = std::remove_cvref_t<std::tuple_element_t<0, tuple_t>>;
 
-    if (!result) {
-        return std::optional<variant_t>{};
+        if (!result) {
+            return std::optional<variant_t>{};
+        }
+        return std::optional<variant_t>{
+            std::in_place, std::move(std::get<0>(*result))};
     }
-    return std::optional<variant_t>{
-        std::in_place, std::move(std::get<0>(*result))};
-}
+};
+
+inline constexpr sync_wait_with_variant_t sync_wait_with_variant{};
 
 } // namespace std::this_thread
 

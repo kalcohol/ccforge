@@ -479,20 +479,30 @@ struct __sender {
 
 } // namespace __forge_when_all
 
-template<sender... Senders>
-    requires (sizeof...(Senders) > 0)
-[[nodiscard]] auto when_all(Senders&&... sndrs) {
-    return __forge_when_all::__sender<std::decay_t<Senders>...>{
-        std::tuple<std::decay_t<Senders>...>{
-            __forge_detail::__forward_as_given(std::forward<Senders>(sndrs))...}};
-}
+struct when_all_t {
+    template<sender... Senders>
+        requires (sizeof...(Senders) > 0)
+    [[nodiscard]] auto operator()(Senders&&... sndrs) const {
+        return __forge_when_all::__sender<std::decay_t<Senders>...>{
+            std::tuple<std::decay_t<Senders>...>{
+                __forge_detail::__forward_as_given(
+                    std::forward<Senders>(sndrs))...}};
+    }
+};
 
-template<sender... Senders>
-    requires (sizeof...(Senders) > 0)
-[[nodiscard]] auto when_all_with_variant(Senders&&... sndrs) {
-    return std::execution::when_all(
-        std::execution::into_variant(
-            __forge_detail::__forward_as_given(std::forward<Senders>(sndrs)))...);
-}
+inline constexpr when_all_t when_all{};
+
+struct when_all_with_variant_t {
+    template<sender... Senders>
+        requires (sizeof...(Senders) > 0)
+    [[nodiscard]] auto operator()(Senders&&... sndrs) const {
+        return std::execution::when_all(
+            std::execution::into_variant(
+                __forge_detail::__forward_as_given(
+                    std::forward<Senders>(sndrs)))...);
+    }
+};
+
+inline constexpr when_all_with_variant_t when_all_with_variant{};
 
 } // namespace std::execution

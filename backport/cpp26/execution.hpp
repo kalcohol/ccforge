@@ -32,9 +32,9 @@
 //   Sender factories : just, just_error, just_stopped, read_env
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
-//   Scheduler ops    : starts_on, continues_on (schedule_from), on,
-//                      affine, transfer_just,
+//   Scheduler ops    : starts_on, continues_on, on, affine,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
+//   Forge extensions : transfer_just, split
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
@@ -57,8 +57,8 @@
 // DEVIATIONS from current working draft [exec]:
 //   - CPO customization is member-first for Forge-provided senders/receivers,
 //     with tag_invoke fallback retained for existing custom types.
-//     get_stop_token is member-query-first; most other environment and
-//     scheduler query CPOs remain tag_invoke-based in this backport.
+//     One-argument environment and scheduler queries are also member-query-
+//     first, with tag_invoke fallback.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce
@@ -81,6 +81,7 @@
 //     noexcept as required by the current working draft.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
+//   - schedule_from, apply_sender, and transform_env are not implemented.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - standard type-erased sender surface.

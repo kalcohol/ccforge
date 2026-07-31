@@ -242,6 +242,34 @@ struct error_stopped_scheduler {
 
 static_assert(std::execution::scheduler<error_stopped_scheduler>);
 
+struct affine_error_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    int* error;
+
+    void set_value(int) && noexcept {
+        *error = 0;
+    }
+
+    void set_error(int value) && noexcept {
+        *error = value;
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        *error = -1;
+    }
+
+    void set_stopped() && noexcept {
+        *error = -2;
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(std::execution::make_prop(
+            std::execution::get_start_scheduler_t{},
+            error_stopped_scheduler{}));
+    }
+};
+
 struct destination_completion_domain {
     int identity = 0;
 };
@@ -541,19 +569,6 @@ TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
         std::execution::empty_env>);
 }
 
-TEST(AffineTest, ReportsDestinationCompletionDomain) {
-    auto sndr = std::execution::affine(
-        std::execution::just(),
-        domain_scheduler{41});
-    auto attrs = std::execution::get_env(sndr);
-
-    auto domain = std::execution::get_completion_domain<>(
-        attrs,
-        std::execution::empty_env{});
-
-    EXPECT_EQ(domain.identity, 41);
-}
-
 TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
     auto sndr = std::execution::continues_on(
         std::execution::just(),
@@ -587,11 +602,11 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
 }
 
 TEST(AffineTest, DeclaresSchedulerErrorsAndSetupError) {
-    auto sndr = std::execution::affine(
-        std::execution::just(7),
-        error_stopped_scheduler{});
+    auto sndr = std::execution::affine(std::execution::just(7));
+    affine_error_receiver receiver{nullptr};
+    using env_t = decltype(receiver.get_env());
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, std::declval<env_t>()));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -600,12 +615,12 @@ TEST(AffineTest, DeclaresSchedulerErrorsAndSetupError) {
             std::execution::set_stopped_t(),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    try {
-        (void)std::execution::sync_wait(std::move(sndr));
-        FAIL() << "expected scheduler set_error(int) to propagate";
-    } catch (int value) {
-        EXPECT_EQ(value, 17);
-    }
+    int error = 0;
+    auto op = std::execution::connect(
+        std::move(sndr), affine_error_receiver{&error});
+    std::execution::start(op);
+
+    EXPECT_EQ(error, 17);
 }
 
 TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {

@@ -19,6 +19,18 @@ static_assert(std::execution::sender<decltype(std::execution::just(42))>);
 static_assert(std::execution::sender_in<decltype(std::execution::just(42))>);
 static_assert(std::execution::sender<decltype(std::execution::just_error(std::make_exception_ptr(0)))>);
 static_assert(std::execution::sender<decltype(std::execution::just_stopped())>);
+static_assert(std::is_object_v<decltype(std::execution::just)>);
+static_assert(std::is_object_v<decltype(std::execution::just_error)>);
+static_assert(std::is_object_v<decltype(std::execution::just_stopped)>);
+static_assert(std::is_object_v<decltype(std::execution::read_env)>);
+static_assert(std::is_object_v<decltype(std::execution::starts_on)>);
+static_assert(std::is_object_v<decltype(std::execution::continues_on)>);
+static_assert(std::is_object_v<decltype(std::execution::when_all)>);
+static_assert(std::is_object_v<decltype(std::execution::when_all_with_variant)>);
+static_assert(std::is_object_v<decltype(std::execution::spawn_future)>);
+static_assert(std::is_object_v<decltype(std::execution::as_awaitable)>);
+static_assert(std::is_object_v<decltype(std::this_thread::sync_wait)>);
+static_assert(std::is_object_v<decltype(std::this_thread::sync_wait_with_variant)>);
 
 // Negative probes — plain types must NOT satisfy execution concepts.
 static_assert(!std::execution::sender<int>);

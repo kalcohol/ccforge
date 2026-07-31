@@ -26,15 +26,13 @@
 #include <tuple>
 
 int main() {
-    std::execution::inline_scheduler scheduler;
-
     auto sender = std::execution::just(40)
         | std::execution::then([](int value) {
               return value + 2;
           })
-        | std::execution::affine(scheduler);
+        | std::execution::affine;
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     std::cout << "affine_result=" << std::get<0>(*result) << '\n';
     return 0;

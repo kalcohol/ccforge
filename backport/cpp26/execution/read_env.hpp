@@ -83,9 +83,13 @@ struct __sender {
 
 } // namespace __forge_read_env
 
-template<class Tag>
-[[nodiscard]] auto read_env(Tag tag) {
-    return __forge_read_env::__sender<Tag>{std::move(tag)};
-}
+struct read_env_t {
+    template<class Tag>
+    [[nodiscard]] auto operator()(Tag tag) const {
+        return __forge_read_env::__sender<Tag>{std::move(tag)};
+    }
+};
+
+inline constexpr read_env_t read_env{};
 
 } // namespace std::execution

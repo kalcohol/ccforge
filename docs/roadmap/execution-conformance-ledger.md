@@ -20,8 +20,9 @@ Execution backport 当前包含：
 - sender factories：`just`、`just_error`、`just_stopped`、`read_env`；
 - adaptors：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、
   `let_stopped`、`write_env`、`unstoppable`；
-- scheduler adaptors：`starts_on`、`continues_on`、`on`、`affine`、
-  `transfer_just`、policy-shaped serial `bulk`、`bulk_chunked` 和 `bulk_unchunked`；
+- scheduler adaptors：`starts_on`、`continues_on`、`on`、`affine`、policy-shaped
+  serial `bulk`、`bulk_chunked` 和 `bulk_unchunked`；
+- Forge compatibility extensions：`transfer_just`、`split`；
 - composition：`into_variant`、`when_all`、`when_all_with_variant`、`split`、
   `associate`、`spawn`、`spawn_future`；
 - consumers：`sync_wait`、`sync_wait_with_variant`；
@@ -51,16 +52,16 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | Surface | 状态 | 证据 / 剩余差异 |
 | --- | --- | --- |
 | `just`, `just_error`, `just_stopped` | Implemented | `just.hpp`；MVP/wave 测试覆盖。 |
-| `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`；env query forwarding 在本 backport 中基于 tag-invoke。 |
+| `read_env`, `write_env` | Implemented subset | `read_env.hpp`, `write_env.hpp`；一参数 environment/scheduler query 及组合 environment 保持 member-query-first、tag-invoke fallback 和 leftmost-wins。 |
 | `then`, `upon_error`, `upon_stopped` | Implemented | `then.hpp`, `upon.hpp`；可支持时 exception fallback 报告 `std::exception_ptr`。 |
 | `let_value`, `let_error`, `let_stopped` | Implemented | `let.hpp`；lifecycle-sensitive storage 由 execution adaptor 测试覆盖。 |
-| `starts_on`, `continues_on`, `transfer_just` | Implemented subset | `on.hpp`, `continues_on.hpp`；schedule errors 已进入 completion signatures，并有运行时测试。`continues_on` 当前只覆盖单一 value completion shape，value 参数会 decay-copy 到调度 hop；只发布可保证的 value completion scheduler，不为可能在 schedule failure agent 上发生的 error / stopped disposition 声称唯一 scheduler；completion domain 只来自 destination scheduler/schedule sender，不会借用 child domain；多 alternative / 引用 value-signature 的逐位 WD 语义需单独重构。 |
+| `starts_on`, `continues_on` | Implemented subset | `on.hpp`, `continues_on.hpp`；以 CPO object 暴露 direct-call，`continues_on` 也支持标准 scheduler closure pipe。Schedule errors 已进入 completion signatures，并有运行时测试。`continues_on` 当前只覆盖单一 value completion shape，value 参数会 decay-copy 到调度 hop；只发布可保证的 value completion scheduler，不为可能在 schedule failure agent 上发生的 error / stopped disposition 声称唯一 scheduler；completion domain 只来自 destination scheduler/schedule sender，不会借用 child domain；多 alternative / 引用 value-signature 的逐位 WD 语义需单独重构。 |
 | `on` | Implemented subset | `on.hpp` 暴露 current-WD 两种形式。Closure form 要求 child attributes 通过本 backport 的 one-argument query model 暴露 `get_completion_scheduler<set_value_t>`。 |
 | `bulk` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls，并在 completing agent 中串行执行。Policy 不引入并行。 |
 | `bulk_chunked`, `bulk_unchunked` | Implemented serial subset | `bulk.hpp`；当底层标准库暴露 execution policy traits/objects 时接受 current-WD policy-shaped calls。`bulk_unchunked` 等价 serial `bulk`，`bulk_chunked` 使用一个非空 `[0, shape)` chunk。 |
 | `unstoppable` sender adaptor | Implemented | `unstoppable.hpp`；用 thin `write_env` wrapper 注入 `never_stop_token`。 |
-| `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`；提供 direct-call 和 pipeable adaptor-closure 形式。 |
-| `into_variant` | Implemented | `into_variant.hpp`；提供 direct-call 和 pipeable adaptor-closure 形式，并被 `sync_wait` / `when_all` value-shape handling 复用。 |
+| `stopped_as_optional`, `stopped_as_error` | Implemented | `stopped_as.hpp`；提供 direct-call；`stopped_as_optional` CPO 自身可直接 pipe，nullary closure 保留为 source-compatibility extension；`stopped_as_error(error)` 返回标准 pipe closure。 |
+| `into_variant` | Implemented | `into_variant.hpp`；CPO 自身支持 direct-call 和 bare pipe；nullary closure 保留为 source-compatibility extension，并被 `sync_wait` / `when_all` value-shape handling 复用。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | `when_all` 按 WD 要求至少一个 child sender；Cartesian value signature support 和 outer stop propagation 已实现；修改 shared state 时保留 lifecycle tests。 |
 | `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape 并以 `const&` 广播，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成。完整 stop-source/on_done cycle 未实现；abandoned source sender 是已接受 residual。 |
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
@@ -69,19 +70,19 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `inplace_stop_source/token/callback` | Implemented subset | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 current-WD conditional `noexcept`。见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 保留历史 single-value tuple 行为，multi-value alternatives 使用 `variant<tuple<...>>`。 |
-| `affine` | Implemented subset | `affine.hpp`；当前 WD spelling 上的 thin wrapper，语义复用现有 `continues_on` transfer subset。 |
+| `affine` | Implemented subset | `affine.hpp`；单参数 CPO / bare-pipe 形式从 receiver env 查询 `get_start_scheduler`，通过 unstoppable schedule sender 复用 `continues_on` transfer subset；因此仍受单一 value completion shape 限制。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
 | `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
-| `get_scheduler` | Implemented subset | Tag-invoke query object；不完全等同当前 WD member `query(...)` 措辞。 |
-| `get_start_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
-| `get_delegation_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
-| `get_completion_scheduler` | Implemented subset | Tag-invoke query object；scheduler envs 在 Forge/backport style 下暴露 roundtrip。 |
+| `get_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；组合 environment 保持 leftmost-wins。 |
+| `get_start_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` / `affine` forwarding tests 覆盖。 |
+| `get_delegation_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` forwarding tests 覆盖。 |
+| `get_completion_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；scheduler envs 暴露 roundtrip。 |
 | `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。 |
-| `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 tag-invoke query object；没有提供 default adaptor。 |
+| `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 member-first、tag-invoke fallback query object；没有提供 default adaptor。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
-| `get_allocator` | Implemented subset | Tag-invoke query object；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
+| `get_allocator` | Implemented subset | Member `.query` 优先、tag-invoke fallback；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
 | `get_stop_token` | Implemented subset | Current-WD member `.query(get_stop_token)` 优先，保留 tag-invoke fallback；两者都缺失时返回 `never_stop_token`。 |
-| `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object，对 local scheduler-shaped types 提供 `weakly_parallel` fallback；内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
+| `get_forward_progress_guarantee` | Implemented subset | Member `.query` 优先、tag-invoke fallback；对 local scheduler-shaped types 提供 `weakly_parallel` fallback，内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
 
 ### 未实现 / 暂不纳入的 current-draft surface
 
@@ -93,6 +94,8 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |
 | `inlinable_receiver` | Not implemented | 当前 operation-state ownership 不对外承诺该优化查询；不能由现有 inline completion 行为推导。 |
 | `sender_adaptor_closure` | Out of scope as public type | Adaptors 使用内部 closure machinery 并提供 pipe syntax，但不暴露 current-draft public closure base/type。 |
+| `schedule_from` | Not implemented | 当前 `continues_on` 是直接实现；尚无可诚实表达 scheduler/domain customization 的 `schedule_from` CPO。 |
+| `apply_sender`, `transform_env` | Not implemented | 当前 domain subset 有 `transform_sender`，但没有这两个 current-draft customization surfaces；只有形成配套 domain tests 后才实现。 |
 
 ## 兼容性分类
 
@@ -130,9 +133,9 @@ risk triage 的事实来源。
   `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
   allocation-free rewrite；见
   [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。
-- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、除 `get_stop_token` 外仍基于
-  tag-invoke 的 environment queries、
-  `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` transfer subset 都是已接受
+- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、`transfer_just` extension、
+  `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` 的 single-value transfer
+  subset 都是已接受
   residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。
 - 常规验证矩阵中尚无稳定主流 native `std::execution` 实现，因此 execution 自身的 native
   handoff 仍是未来 integration risk。

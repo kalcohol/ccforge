@@ -111,30 +111,36 @@ struct receiver {
 
 namespace std::this_thread {
 
-template<class S>
-    requires std::execution::sender_in<
-        S, std::execution::__forge_sync_wait::sync_wait_env>
-auto sync_wait(S&& sndr) {
-    using env_t = std::execution::__forge_sync_wait::sync_wait_env;
-    using cs_t = std::execution::completion_signatures_of_t<S, env_t>;
-    using value_t = std::execution::__forge_sync_wait::value_t_for<cs_t>;
-    using state_t = std::execution::__forge_sync_wait::shared_state<value_t>;
-    using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
+struct sync_wait_t {
+    template<class S>
+        requires std::execution::sender_in<
+            S, std::execution::__forge_sync_wait::sync_wait_env>
+    auto operator()(S&& sndr) const {
+        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
+        using cs_t = std::execution::completion_signatures_of_t<S, env_t>;
+        using value_t = std::execution::__forge_sync_wait::value_t_for<cs_t>;
+        using state_t = std::execution::__forge_sync_wait::shared_state<value_t>;
+        using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
 
-    std::execution::run_loop loop;
-    state_t state;
-    auto op = std::execution::connect(std::forward<S>(sndr), recv_t{&state, &loop});
-    std::execution::start(op);
-    loop.run();
+        std::execution::run_loop loop;
+        state_t state;
+        auto op = std::execution::connect(
+            std::forward<S>(sndr), recv_t{&state, &loop});
+        std::execution::start(op);
+        loop.run();
 
-    if (state.result_.index() == 2) {
-        std::rethrow_exception(std::get<2>(state.result_));
+        if (state.result_.index() == 2) {
+            std::rethrow_exception(std::get<2>(state.result_));
+        }
+        if (state.result_.index() == 3) {
+            return std::optional<typename state_t::value_t>{std::nullopt};
+        }
+        return std::optional<typename state_t::value_t>{
+            std::move(std::get<1>(state.result_))};
     }
-    if (state.result_.index() == 3) {
-        return std::optional<typename state_t::value_t>{std::nullopt};
-    }
-    return std::optional<typename state_t::value_t>{std::move(std::get<1>(state.result_))};
-}
+};
+
+inline constexpr sync_wait_t sync_wait{};
 
 } // namespace std::this_thread
 

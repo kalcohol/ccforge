@@ -170,14 +170,18 @@ struct __starts_on_sender {
 
 } // namespace __forge_on
 
-template<class Scheduler, sender S>
-    requires scheduler<std::remove_cvref_t<Scheduler>>
-[[nodiscard]] auto starts_on(Scheduler&& sch, S&& sndr) {
-    return __forge_on::__starts_on_sender<
-        std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
-        __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
-        __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-}
+struct starts_on_t {
+    template<class Scheduler, sender S>
+        requires scheduler<std::remove_cvref_t<Scheduler>>
+    [[nodiscard]] auto operator()(Scheduler&& sch, S&& sndr) const {
+        return __forge_on::__starts_on_sender<
+            std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+};
+
+inline constexpr starts_on_t starts_on{};
 
 namespace __forge_on_adaptor {
 

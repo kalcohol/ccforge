@@ -119,10 +119,9 @@ struct stack_value_sender {
 struct start_scheduler_env {
     std::execution::inline_scheduler scheduler;
 
-    friend auto tag_invoke(
-        std::execution::get_start_scheduler_t,
-        const start_scheduler_env& self) noexcept -> std::execution::inline_scheduler {
-        return self.scheduler;
+    auto query(std::execution::get_start_scheduler_t) const noexcept
+        -> std::execution::inline_scheduler {
+        return scheduler;
     }
 };
 
@@ -471,11 +470,9 @@ TEST(OnTest, ClosureFormReturnsToTransferredChildCompletionScheduler) {
 }
 
 TEST(AffineTest, CompletesOnRequestedScheduler) {
-    auto sndr = std::execution::affine(
-        std::execution::just(5),
-        std::execution::inline_scheduler{});
+    auto sndr = std::execution::affine(std::execution::just(5));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, start_scheduler_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
@@ -489,10 +486,19 @@ TEST(AffineTest, CompletesOnRequestedScheduler) {
 
 TEST(AffineTest, PipeFormCompletesOnRequestedScheduler) {
     auto result = std::execution::sync_wait(
-        std::execution::just(6) | std::execution::affine(std::execution::inline_scheduler{}));
+        std::execution::just(6) | std::execution::affine);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 6);
+}
+
+TEST(ContinuesOnTest, SupportsStandardPipeForm) {
+    auto result = std::execution::sync_wait(
+        std::execution::just(7)
+        | std::execution::continues_on(std::execution::inline_scheduler{}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 7);
 }
 
 TEST(StoppedAsOptionalTest, SenderExists) {

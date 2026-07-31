@@ -627,22 +627,26 @@ template<sender S, scope_token Token, queryable Env>
 
 } // namespace __forge_spawn_future
 
-template<sender S, scope_token Token, queryable Env>
-[[nodiscard]] auto spawn_future(S&& sndr, Token token, Env env) {
-    auto wrapped = token.wrap(static_cast<S&&>(sndr));
-    return __forge_spawn_future::__spawn_future(
-        std::move(wrapped),
-        std::move(token),
-        std::move(env));
-}
+struct spawn_future_t {
+    template<sender S, scope_token Token, queryable Env>
+    [[nodiscard]] auto operator()(S&& sndr, Token token, Env env) const {
+        auto wrapped = token.wrap(static_cast<S&&>(sndr));
+        return __forge_spawn_future::__spawn_future(
+            std::move(wrapped),
+            std::move(token),
+            std::move(env));
+    }
 
-template<sender S, scope_token Token>
-[[nodiscard]] auto spawn_future(S&& sndr, Token token) {
-    auto wrapped = token.wrap(static_cast<S&&>(sndr));
-    return __forge_spawn_future::__spawn_future(
-        std::move(wrapped),
-        std::move(token),
-        empty_env{});
-}
+    template<sender S, scope_token Token>
+    [[nodiscard]] auto operator()(S&& sndr, Token token) const {
+        auto wrapped = token.wrap(static_cast<S&&>(sndr));
+        return __forge_spawn_future::__spawn_future(
+            std::move(wrapped),
+            std::move(token),
+            empty_env{});
+    }
+};
+
+inline constexpr spawn_future_t spawn_future{};
 
 } // namespace std::execution

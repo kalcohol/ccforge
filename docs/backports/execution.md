@@ -7,8 +7,9 @@
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、
   `let_stopped`、`write_env`、`unstoppable`
-- 调度器适配器：`starts_on`、`continues_on`（schedule_from）、`on`、`affine`、
-  `transfer_just`、`bulk` / `bulk_chunked` / `bulk_unchunked`（串行 subset）
+- 调度器适配器：`starts_on`、`continues_on`、`on`、`affine`、`bulk` /
+  `bulk_chunked` / `bulk_unchunked`（串行 subset）
+- Forge 兼容扩展：`transfer_just`、`split`
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
   `when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
@@ -64,12 +65,17 @@
   sender attributes 暴露 `get_completion_scheduler<set_value_t>`，再通过
   `continues_on(closure(continues_on(child, sch)), orig_sch)` 返回原
   value-completion scheduler。
-- `continues_on` / `affine` 当前只实现单一 value completion shape 的 transfer subset；
-  value 参数会 decay-copy 到调度 hop 的 operation state。多 value-alternative 和引用
-  value-signature 的逐位 WD 语义需要单独重构，不应从当前 subset 推断。
+- `continues_on` 当前只实现单一 value completion shape 的 transfer subset；value
+  参数会 decay-copy 到调度 hop 的 operation state。`affine(sender)` / `sender | affine`
+  从 receiver environment 的 `get_start_scheduler` 取得目标 scheduler，并通过
+  unstoppable schedule sender 返回该 execution resource；它继承同一个单一 value
+  shape 限制。多 value-alternative 和引用 value-signature 的逐位 WD 语义需要单独
+  重构，不应从当前 subset 推断。
   `continues_on` 只发布能够保证的 value completion scheduler attribute；目标 scheduler
   自身的 error / stopped completion 可能在未转移的 agent 上发生，因此不为这两个
   disposition 声称唯一 completion scheduler。
+- `schedule_from`、`apply_sender` 和 `transform_env` 尚未实现。它们需要与 domain
+  customization 一起设计，不能用只转发到 `continues_on` 的同名空壳代替。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
   `set_error(std::exception_ptr)` 完成。它没有实现完整
@@ -121,9 +127,10 @@
   假设可以报告普通 error。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如
-`connect` / `get_env` / `set_value` / `schedule`）。CPO 层仍保留 `tag_invoke`
-fallback 以兼容既有自定义类型；新代码建议优先使用成员式定制。当原生 `<execution>`
-可用时，整个 backport 自动禁用。
+`connect` / `get_env` / `set_value` / `schedule`）。一参数 environment/scheduler query
+也采用 member `.query(cpo)` 优先、`tag_invoke` fallback；组合 environment 保持这一
+优先级和 leftmost-wins。新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，
+整个 backport 自动禁用。
 
 ## 验证
 

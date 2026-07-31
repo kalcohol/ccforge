@@ -181,17 +181,21 @@ private:
 
 // as_awaitable(sndr) — [exec.as.awaitable]
 // Returns an awaitable that bridges the sender into a coroutine context.
-template<sender S, class Promise>
-[[nodiscard]] auto as_awaitable(S&& sndr, Promise& promise) {
-    return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
-        __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};
-}
+struct as_awaitable_t {
+    template<sender S, class Promise>
+    [[nodiscard]] auto operator()(S&& sndr, Promise& promise) const {
+        return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};
+    }
 
-template<class Value, class Promise>
-    requires (!sender<Value>)
-[[nodiscard]] decltype(auto) as_awaitable(Value&& value, Promise&) noexcept {
-    return std::forward<Value>(value);
-}
+    template<class Value, class Promise>
+        requires (!sender<Value>)
+    [[nodiscard]] decltype(auto) operator()(Value&& value, Promise&) const noexcept {
+        return std::forward<Value>(value);
+    }
+};
+
+inline constexpr as_awaitable_t as_awaitable{};
 
 // with_awaitable_senders<Promise> — CRTP mixin — [exec.with.awaitable.senders]
 // Makes a coroutine promise_type support co_await on senders.

@@ -24,7 +24,10 @@
 
 #include "concepts.hpp"
 #include "continues_on.hpp"
+#include "env.hpp"
+#include "unstoppable.hpp"
 
+#include <type_traits>
 #include <utility>
 
 namespace std::execution {
@@ -32,54 +35,85 @@ namespace std::execution {
 namespace __forge_affine {
 
 template<class Scheduler>
-struct __closure {
-    Scheduler __sch;
+struct __unstoppable_scheduler {
+    using scheduler_concept = scheduler_t;
 
-    template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) && {
-        return std::execution::continues_on(
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-            std::move(__sch));
+    Scheduler __scheduler;
+
+    [[nodiscard]] auto schedule()
+        noexcept(noexcept(std::execution::unstoppable(
+            std::execution::schedule(__scheduler)))) {
+        return std::execution::unstoppable(
+            std::execution::schedule(__scheduler));
     }
 
-    template<sender S>
-        requires std::copy_constructible<Scheduler>
-    [[nodiscard]] auto operator()(S&& sndr) const& {
-        return std::execution::continues_on(
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)), __sch);
-    }
-
-    template<sender S>
-    friend constexpr auto operator|(S&& sndr, __closure&& self) {
-        return std::move(self)(std::forward<S>(sndr));
-    }
-
-    template<sender S>
-        requires std::copy_constructible<Scheduler>
-    friend constexpr auto operator|(S&& sndr, const __closure& self) {
-        return self(std::forward<S>(sndr));
-    }
+    friend bool operator==(
+        const __unstoppable_scheduler&,
+        const __unstoppable_scheduler&) noexcept = default;
 };
 
-struct affine_t {
-    template<sender S, class Scheduler>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
-    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch) const {
-        return std::execution::continues_on(
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)));
+template<class S>
+struct __sender {
+    using sender_concept = sender_t;
+    using source_t = S;
+
+    S __source;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        using self_t = std::remove_cvref_t<Self>;
+        using scheduler_t = std::remove_cvref_t<decltype(
+            std::execution::get_start_scheduler(std::declval<Env>()))>;
+        using shifted_t = decltype(std::execution::continues_on(
+            std::declval<typename self_t::source_t>(),
+            std::declval<__unstoppable_scheduler<scheduler_t>>()));
+        return decltype(std::execution::get_completion_signatures(
+            std::declval<shifted_t>(), std::declval<Env>())){};
     }
 
-    template<class Scheduler>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
-    [[nodiscard]] auto operator()(Scheduler&& sch) const {
-        return __closure<std::remove_cvref_t<Scheduler>>{
-            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch))};
+    template<receiver R>
+    auto connect(R receiver) && {
+        auto scheduler = std::execution::get_start_scheduler(
+            std::execution::get_env(receiver));
+        using scheduler_t = std::remove_cvref_t<decltype(scheduler)>;
+        auto shifted = std::execution::continues_on(
+            std::move(__source),
+            __unstoppable_scheduler<scheduler_t>{std::move(scheduler)});
+        return std::execution::connect(std::move(shifted), std::move(receiver));
+    }
+
+    template<receiver R>
+        requires std::copy_constructible<S>
+    auto connect(R receiver) const& {
+        auto scheduler = std::execution::get_start_scheduler(
+            std::execution::get_env(receiver));
+        using scheduler_t = std::remove_cvref_t<decltype(scheduler)>;
+        auto shifted = std::execution::continues_on(
+            __source,
+            __unstoppable_scheduler<scheduler_t>{std::move(scheduler)});
+        return std::execution::connect(std::move(shifted), std::move(receiver));
+    }
+
+    auto get_env() const noexcept -> empty_env {
+        return {};
     }
 };
 
 } // namespace __forge_affine
 
-inline constexpr __forge_affine::affine_t affine{};
+struct affine_t {
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) const {
+        return __forge_affine::__sender<std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, affine_t self) {
+        return self(std::forward<S>(sndr));
+    }
+};
+
+inline constexpr affine_t affine{};
 
 } // namespace std::execution
