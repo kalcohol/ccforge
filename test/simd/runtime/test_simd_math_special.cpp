@@ -91,6 +91,35 @@ TEST(SimdMathSpecialTest, SpecialFunctionsApplyPerLane) {
 #endif
 }
 
+#if !defined(__cpp_lib_math_special_functions)
+TEST(SimdMathSpecialTest, EllipticFallbackBoundsLargeAmplitudeWork) {
+    std::size_t evaluations = 0;
+    const auto integral = std::simd::detail::special_math::elliptic_integral(
+        1000.0,
+        [&](double theta) {
+            ++evaluations;
+            const double sine = std::sin(theta);
+            return 1.0 / std::sqrt(1.0 - 0.25 * sine * sine);
+        });
+
+    EXPECT_NEAR(integral, 1073.1454638747948, 2e-9);
+    EXPECT_LT(evaluations, 100000u);
+
+    const double4 modulus(0.5);
+    const double4 amplitudes = load_vec<double4>(
+        std::array<double, 4>{{1000.0, 150.0, -1000.0, 0.0}});
+    const auto values = std::simd::ellint_1(modulus, amplitudes);
+    const std::array<double, 4> expected{{
+        1073.1454638747948,
+        161.01584652277398,
+        -1073.1454638747948,
+        0.0}};
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_NEAR(values[i], expected[static_cast<std::size_t>(i)], 2e-9);
+    }
+}
+#endif
+
 TEST(SimdMathSpecialTest, VectorizedSpecialMathCommonResultTypeMatchesScalarSemantics) {
     const float4 left = load_vec<float4>(std::array<float, 4>{{0.1f, 0.2f, 0.3f, 0.4f}});
     const float4 right = load_vec<float4>(std::array<float, 4>{{0.2f, 0.3f, 0.4f, 0.5f}});

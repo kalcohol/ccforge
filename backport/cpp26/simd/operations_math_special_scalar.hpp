@@ -69,7 +69,12 @@ long double adaptive_simpson_integral(Fun&& fun, long double a, long double b) {
     }
 
     const long double whole = simpson_integral(fun, a, b);
-    return adaptive_simpson_integral(fun, a, b, 1e-12L, whole, 18);
+    const long double scale = std::max(1.0L, std::abs(whole));
+    const long double tolerance = std::max(
+        1e-12L * scale,
+        64.0L * std::numeric_limits<long double>::epsilon() * scale);
+    return adaptive_simpson_integral(
+        fun, a, b, tolerance, whole, 18);
 }
 
 struct checked_integral_result {
@@ -459,12 +464,22 @@ T elliptic_integral(T upper, Fun&& integrand) {
 
     const T sign = upper < T{} ? T{-1} : T{1};
     const long double bound = std::abs(static_cast<long double>(upper));
-    const long double integral = adaptive_simpson_integral(
-        [&](long double theta) {
+    constexpr long double period = pi_v<long double>;
+    const long double full_periods = std::floor(bound / period);
+    const long double remainder = std::fmod(bound, period);
+    const auto wide_integrand = [&](long double theta) {
             return static_cast<long double>(integrand(static_cast<T>(theta)));
-        },
-        0.0L,
-        bound);
+        };
+
+    long double integral = 0.0L;
+    if (full_periods > 0.0L) {
+        integral += full_periods * adaptive_simpson_integral(
+            wide_integrand, 0.0L, period);
+    }
+    if (remainder > 0.0L) {
+        integral += adaptive_simpson_integral(
+            wide_integrand, 0.0L, remainder);
+    }
     return sign * static_cast<T>(integral);
 }
 
