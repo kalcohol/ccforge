@@ -175,6 +175,3 @@ constexpr simd_size_type reduce_min_index(bool) noexcept {
 constexpr simd_size_type reduce_max_index(bool) noexcept {
 	return 0;
 }
-
-} // namespace simd
-} // namespace std

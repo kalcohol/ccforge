@@ -76,3 +76,6 @@ namespace simd {
 #include "simd/memory.hpp"
 #include "simd/operations.hpp"
 #include "simd/reductions.hpp"
+
+} // namespace simd
+} // namespace std

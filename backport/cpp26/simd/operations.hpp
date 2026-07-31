@@ -201,7 +201,7 @@ constexpr basic_vec<T, Abi> min(const basic_vec<T, Abi>& left, const basic_vec<T
     requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-        detail::set_lane(result, i, left[i] < right[i] ? left[i] : right[i]);
+        detail::set_lane(result, i, right[i] < left[i] ? right[i] : left[i]);
     }
     return result;
 }
@@ -228,7 +228,15 @@ constexpr basic_vec<T, Abi> clamp(const basic_vec<T, Abi>& value,
                                   const basic_vec<T, Abi>& low,
                                   const basic_vec<T, Abi>& high) noexcept
     requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
-    return min(max(value, low), high);
+    basic_vec<T, Abi> result;
+    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+        detail::set_lane(
+            result,
+            i,
+            value[i] < low[i] ? low[i]
+                              : (high[i] < value[i] ? high[i] : value[i]));
+    }
+    return result;
 }
 
 template<size_t Bytes, class Abi, class T, class U,

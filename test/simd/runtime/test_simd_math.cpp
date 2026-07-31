@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 
 namespace {
 
@@ -62,6 +63,36 @@ TEST(SimdMathTest, BasicMathFunctionsApplyPerLane) {
     EXPECT_FLOAT_EQ(sqrt_value[3], 4.0f);
     EXPECT_FLOAT_EQ(min_value[1], 4.0f);
     EXPECT_FLOAT_EQ(max_value[2], 6.0f);
+}
+
+TEST(SimdMathTest, MinAndMaxPreserveTheFirstEquivalentOperand) {
+    using float2 = std::simd::vec<float, 2>;
+    const float positive_zero = 0.0f;
+    const float negative_zero = -0.0f;
+    const float2 left([&](auto lane) {
+        return decltype(lane)::value == 0 ? positive_zero : negative_zero;
+    });
+    const float2 right([&](auto lane) {
+        return decltype(lane)::value == 0 ? negative_zero : positive_zero;
+    });
+
+    const auto minimum = std::simd::min(left, right);
+    const auto maximum = std::simd::max(left, right);
+
+    EXPECT_FALSE(std::signbit(minimum[0]));
+    EXPECT_TRUE(std::signbit(minimum[1]));
+    EXPECT_FALSE(std::signbit(maximum[0]));
+    EXPECT_TRUE(std::signbit(maximum[1]));
+}
+
+TEST(SimdMathTest, ClampPreservesAnUnorderedValue) {
+    using float1 = std::simd::vec<float, 1>;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+
+    const auto clamped = std::simd::clamp(
+        float1(nan), float1(0.0f), float1(1.0f));
+
+    EXPECT_TRUE(std::isnan(clamped[0]));
 }
 
 TEST(SimdMathTest, RoundingAndTranscendentalFunctionsRemainComposable) {
