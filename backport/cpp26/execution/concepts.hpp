@@ -695,10 +695,15 @@ template<class T>
 concept queryable = std::destructible<T>;
 
 // Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
-struct receiver_t {};
-struct sender_t {};
-struct operation_state_t {};
-struct scheduler_t {};
+struct receiver_tag {};
+struct sender_tag {};
+struct operation_state_tag {};
+struct scheduler_tag {};
+
+using receiver_t = receiver_tag;
+using sender_t = sender_tag;
+using operation_state_t = operation_state_tag;
+using scheduler_t = scheduler_tag;
 
 // ──────────────────────────────────────────────────────────────────────────
 // default_domain / get_domain — [exec.domain.default], [exec.get.domain]
@@ -873,6 +878,10 @@ concept sender =
     requires(const std::remove_cvref_t<S>& s) {
         { std::execution::get_env(s) } -> queryable;
     };
+
+template<sender Sndr>
+using tag_of_t = std::remove_cvref_t<
+    decltype(std::declval<Sndr>().template get<0>())>;
 
 template<class S, class... Env>
 concept sender_in =

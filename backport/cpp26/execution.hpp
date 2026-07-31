@@ -56,8 +56,9 @@
 //
 // DEVIATIONS from current working draft [exec]:
 //   - CPO customization is member-first for Forge-provided senders/receivers,
-//     with tag_invoke fallback retained for existing custom types. Environment
-//     and scheduler query CPOs remain tag_invoke-based in this backport.
+//     with tag_invoke fallback retained for existing custom types.
+//     get_stop_token is member-query-first; most other environment and
+//     scheduler query CPOs remain tag_invoke-based in this backport.
 //   - sync_wait value_type inference uses empty_env for conservative type computation.
 //   - as_awaitable preserves Forge's historical tuple result for a single
 //     value-completion shape; multiple value alternatives produce

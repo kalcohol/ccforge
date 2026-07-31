@@ -26,8 +26,42 @@ static_assert(!std::execution::receiver<int>);
 static_assert(!std::execution::scheduler<int>);
 static_assert(!std::execution::operation_state<int>);
 
+static_assert(std::same_as<
+    std::execution::sender_t,
+    std::execution::sender_tag>);
+static_assert(std::same_as<
+    std::execution::receiver_t,
+    std::execution::receiver_tag>);
+static_assert(std::same_as<
+    std::execution::operation_state_t,
+    std::execution::operation_state_tag>);
+static_assert(std::same_as<
+    std::execution::scheduler_t,
+    std::execution::scheduler_tag>);
+
 // ── T-5: receiver concept requires nothrow-move and non-final ────────────
 namespace {
+
+struct probe_sender_tag {};
+
+struct tag_probe_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<std::size_t I>
+        requires (I == 0)
+    auto get() && noexcept -> probe_sender_tag {
+        return {};
+    }
+};
+
+static_assert(std::execution::sender<tag_probe_sender>);
+static_assert(std::same_as<
+    std::execution::tag_of_t<tag_probe_sender>,
+    probe_sender_tag>);
 
 struct throwing_move_receiver {
     using receiver_concept = std::execution::receiver_t;

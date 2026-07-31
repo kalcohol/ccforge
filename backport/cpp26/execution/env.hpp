@@ -72,6 +72,20 @@ concept __nothrow_member_get_env = requires(const T& obj) {
     { obj.get_env() } noexcept;
 };
 
+template<class Query, class Env>
+concept __member_query = requires(
+    const std::remove_reference_t<Env>& env,
+    const Query& query) {
+    env.query(query);
+};
+
+template<class Query, class Env>
+concept __nothrow_member_query = requires(
+    const std::remove_reference_t<Env>& env,
+    const Query& query) {
+    { env.query(query) } noexcept;
+};
+
 } // namespace __forge_env_detail
 
 struct get_env_t {
@@ -171,7 +185,20 @@ inline constexpr get_forward_progress_guarantee_t get_forward_progress_guarantee
 
 struct get_stop_token_t {
     template<class Env>
-        requires __forge_detail::tag_invocable<get_stop_token_t, Env>
+        requires __forge_env_detail::__member_query<get_stop_token_t, Env>
+    decltype(auto) operator()(Env&& env) const
+        noexcept(__forge_env_detail::__nothrow_member_query<
+                 get_stop_token_t,
+                 Env>) {
+        return static_cast<const std::remove_reference_t<Env>&>(env)
+            .query(*this);
+    }
+
+    template<class Env>
+        requires (!__forge_env_detail::__member_query<
+                      get_stop_token_t,
+                      Env>) &&
+                 __forge_detail::tag_invocable<get_stop_token_t, Env>
     auto operator()(Env&& env) const
         noexcept(__forge_detail::nothrow_tag_invocable<get_stop_token_t, Env>)
             -> __forge_detail::tag_invoke_result_t<get_stop_token_t, Env> {
@@ -179,11 +206,11 @@ struct get_stop_token_t {
     }
 
     template<class Env>
-        requires (!__forge_detail::tag_invocable<get_stop_token_t, Env>)
+        requires (!__forge_env_detail::__member_query<
+                      get_stop_token_t,
+                      Env>) &&
+                 (!__forge_detail::tag_invocable<get_stop_token_t, Env>)
     std::never_stop_token operator()(Env&&) const noexcept { return {}; }
-
-    // Fallback: return never_stop_token.
-    std::never_stop_token operator()(const empty_env&) const noexcept { return {}; }
 
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_stop_token_t) noexcept {
         return true;

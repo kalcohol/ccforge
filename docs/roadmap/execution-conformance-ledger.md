@@ -11,7 +11,7 @@ Owner 已接受为了贴近当前 working draft 而做 breaking API change，因
 
 ## 当前实现状态
 
-本快照在 2026-06-03 对照 live working draft `[exec]`
+本快照在 2026-07-31 对照 live working draft `[exec]`
 <https://eel.is/c++draft/exec> 审计。下面的分类以 working draft 为准；论文和参考实现只作为
 解释上下文。
 
@@ -67,6 +67,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 保留历史 single-value tuple 行为，multi-value alternatives 使用 `variant<tuple<...>>`。 |
 | `affine` | Implemented subset | `affine.hpp`；当前 WD spelling 上的 thin wrapper，语义复用现有 `continues_on` transfer subset。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
+| `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
 | `get_scheduler` | Implemented subset | Tag-invoke query object；不完全等同当前 WD member `query(...)` 措辞。 |
 | `get_start_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
 | `get_delegation_scheduler` | Implemented subset | Tag-invoke environment query object；`make_prop` / `write_env` forwarding tests 覆盖当前 backport query model。 |
@@ -75,7 +76,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 tag-invoke query object；没有提供 default adaptor。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
 | `get_allocator` | Implemented subset | Tag-invoke query object；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
-| `get_stop_token` | Implemented subset | Tag-invoke query object；任何缺失 stop-token query 的 env 都 fallback 到 `never_stop_token`。 |
+| `get_stop_token` | Implemented subset | Current-WD member `.query(get_stop_token)` 优先，保留 tag-invoke fallback；两者都缺失时返回 `never_stop_token`。 |
 | `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object，对 local scheduler-shaped types 提供 `weakly_parallel` fallback；内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
 
 ## 兼容性分类
@@ -109,7 +110,8 @@ risk triage 的事实来源。
   `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
   allocation-free rewrite；见
   [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。
-- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、tag-invoke environment queries、
+- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、除 `get_stop_token` 外仍基于
+  tag-invoke 的 environment queries、
   `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` transfer subset 都是已接受
   residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。
 - 常规验证矩阵中尚无稳定主流 native `std::execution` 实现，因此 execution 自身的 native

@@ -16,6 +16,21 @@ namespace {
 
 struct env_without_stop_query {};
 
+struct member_stop_env {
+    std::inplace_stop_token token;
+
+    auto query(std::execution::get_stop_token_t) const noexcept
+        -> std::inplace_stop_token {
+        return token;
+    }
+
+    friend auto tag_invoke(
+        std::execution::get_stop_token_t,
+        const member_stop_env&) noexcept -> std::never_stop_token {
+        return {};
+    }
+};
+
 } // namespace
 
 TEST(ExecutionStopTokenTest, InplaceStopCallbackIsInvoked) {
@@ -256,6 +271,17 @@ TEST(ExecutionStopTokenTest, MissingEnvStopQueryFallsBackToNeverStopToken) {
     static_assert(std::is_same_v<decltype(token), std::never_stop_token>);
     EXPECT_FALSE(token.stop_requested());
     EXPECT_FALSE(token.stop_possible());
+}
+
+TEST(ExecutionStopTokenTest, MemberStopQueryTakesPriority) {
+    std::inplace_stop_source source;
+    member_stop_env env{source.get_token()};
+
+    EXPECT_TRUE(source.request_stop());
+    auto token = std::execution::get_stop_token(env);
+
+    static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
+    EXPECT_TRUE(token.stop_requested());
 }
 
 TEST(ExecutionStopTokenTest, DefaultConstructedToken) {
