@@ -273,3 +273,23 @@ TEST(LinalgLevel3RankUpdate, HermitianRankKOverwriteAndUpdate) {
     expect_complex_near(C[1, 0], {32.0, -10.0});
     expect_complex_near(C[1, 1], {62.0, 0.0});
 }
+
+TEST(LinalgLevel3RankUpdate, HermitianRankKUsesRealPartOfComplexAlpha) {
+    complex a_data[] = {{1.0, 1.0}, {2.0, 0.0}, {3.0, 0.0}, {4.0, -1.0}};
+    complex e_data[] = {{10.0, 0.0}, {10.0, 0.0}, {10.0, 0.0}, {10.0, 0.0}};
+    complex upper_data[4]{};
+    complex lower_data[4]{};
+    std::mdspan A(a_data, std::extents<int, 2, 2>{});
+    std::mdspan E(e_data, std::extents<int, 2, 2>{});
+    std::mdspan upper(upper_data, std::extents<int, 2, 2>{});
+    std::mdspan lower(lower_data, std::extents<int, 2, 2>{});
+
+    std::linalg::hermitian_matrix_rank_k_update(
+        complex{2.0, 3.0}, A, upper, std::linalg::upper_triangle);
+    std::linalg::hermitian_matrix_rank_k_update(
+        complex{2.0, 3.0}, A, E, lower, std::linalg::lower_triangle);
+
+    expect_complex_near(upper[0, 1], {22.0, 10.0});
+    expect_complex_near(lower[1, 0], {32.0, -10.0});
+    expect_complex_near(upper[0, 1], std::conj(lower[1, 0] - complex{10.0, 0.0}));
+}

@@ -546,16 +546,17 @@ void hermitian_matrix_rank_1_update(
 {
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
+    const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                auto value = scaling * x[i] * __detail::__conj_if_needed(x[j]);
                 A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                auto value = scaling * x[i] * __detail::__conj_if_needed(x[j]);
                 A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         }
@@ -577,16 +578,17 @@ void hermitian_matrix_rank_1_update(
 {
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
+    const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                auto value = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(x[j]);
                 A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = E[i, j] + alpha * x[i] * __detail::__conj_if_needed(x[j]);
+                auto value = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(x[j]);
                 A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         }

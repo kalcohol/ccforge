@@ -469,6 +469,7 @@ void hermitian_matrix_rank_k_update(
     using idx_t = typename CExtents::index_type;
     const idx_t n = C.extent(0);
     const idx_t k = A.extent(1);
+    const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
@@ -476,7 +477,7 @@ void hermitian_matrix_rank_k_update(
                 __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
-                auto value = alpha * sum;
+                auto value = scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         } else {
@@ -484,7 +485,7 @@ void hermitian_matrix_rank_k_update(
                 __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
-                auto value = alpha * sum;
+                auto value = scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         }
@@ -507,6 +508,7 @@ void hermitian_matrix_rank_k_update(
     using idx_t = typename CExtents::index_type;
     const idx_t n = C.extent(0);
     const idx_t k = A.extent(1);
+    const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
@@ -514,7 +516,7 @@ void hermitian_matrix_rank_k_update(
                 __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
-                auto value = E[i, j] + alpha * sum;
+                auto value = E[i, j] + scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         } else {
@@ -522,7 +524,7 @@ void hermitian_matrix_rank_k_update(
                 __detail::__accessor_value_t<CAccessor> sum{};
                 for (idx_t l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
-                auto value = E[i, j] + alpha * sum;
+                auto value = E[i, j] + scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
             }
         }
