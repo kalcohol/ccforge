@@ -260,20 +260,10 @@ struct __completion_attrs {
                     const __schedule_attrs_t&,
                     Env>;
         } else {
-            if constexpr (__forge_detail::tag_invocable<
-                              get_completion_domain_t<CPO>,
-                              const Scheduler&,
-                              Env>) {
-                return __forge_detail::nothrow_tag_invocable<
-                    get_completion_domain_t<CPO>,
-                    const Scheduler&,
-                    Env>;
-            } else {
-                return __forge_detail::nothrow_tag_invocable<
-                    get_completion_domain_t<CPO>,
-                    const ChildEnv&,
-                    Env>;
-            }
+            return __forge_detail::nothrow_tag_invocable<
+                get_completion_domain_t<CPO>,
+                const Scheduler&,
+                Env>;
         }
     }
 
@@ -296,10 +286,6 @@ struct __completion_attrs {
                   __forge_detail::tag_invocable<
                       get_completion_domain_t<CPO>,
                       const Scheduler&,
-                      Env> ||
-                  __forge_detail::tag_invocable<
-                      get_completion_domain_t<CPO>,
-                      const ChildEnv&,
                       Env>)
     friend auto tag_invoke(
         get_completion_domain_t<CPO> query,
@@ -321,9 +307,6 @@ struct __completion_attrs {
                                  Env>) {
             return __forge_detail::tag_invoke_fn(
                 query, self.__sch, static_cast<Env&&>(env));
-        } else {
-            return __forge_detail::tag_invoke_fn(
-                query, self.__child, static_cast<Env&&>(env));
         }
     }
 

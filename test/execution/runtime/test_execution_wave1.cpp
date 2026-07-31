@@ -529,17 +529,16 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
         std::execution::empty_env>);
 }
 
-TEST(ContinuesOnTest, PreservesChildDomainWhenDestinationHasNone) {
+TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
     auto sndr = std::execution::continues_on(
         child_domain_sender{29},
         std::execution::inline_scheduler{});
     auto attrs = std::execution::get_env(sndr);
 
-    auto domain = std::execution::get_completion_domain<>(
-        attrs,
-        std::execution::empty_env{});
-
-    EXPECT_EQ(domain.identity, 29);
+    static_assert(!std::execution::__forge_detail::tag_invocable<
+        std::execution::get_completion_domain_t<>,
+        const decltype(attrs)&,
+        std::execution::empty_env>);
 }
 
 TEST(AffineTest, ReportsDestinationCompletionDomain) {
