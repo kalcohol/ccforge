@@ -55,6 +55,7 @@ struct __record_base {
     virtual void complete_value() noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
 
+    bool stop_only_ = false;
     std::shared_ptr<__record_base> deferred_stopped_next_;
 };
 
@@ -195,9 +196,7 @@ struct __state : std::enable_shared_from_this<__state> {
         {
             std::lock_guard lk{mtx_};
             if (closed_) {
-                if (!active_) {
-                    defer_queue_locked();
-                }
+                defer_queue_locked();
                 append_deferred_stopped_locked(std::move(record));
                 if (!active_) {
                     active_ = true;
@@ -214,9 +213,7 @@ struct __state : std::enable_shared_from_this<__state> {
                     }
                 } catch (...) {
                     closed_ = true;
-                    if (!active_) {
-                        defer_queue_locked();
-                    }
+                    defer_queue_locked();
                     append_deferred_stopped_locked(std::move(record));
                     if (!active_) {
                         active_ = true;
@@ -234,6 +231,11 @@ struct __state : std::enable_shared_from_this<__state> {
         if (launch) {
             launch_runner();
         }
+    }
+
+    void enqueue_stopped(std::shared_ptr<__record_base> record) noexcept {
+        record->stop_only_ = true;
+        enqueue(std::move(record));
     }
 
     void shutdown() noexcept {
@@ -305,7 +307,11 @@ struct __state : std::enable_shared_from_this<__state> {
 
         {
             __current_state_guard guard{this};
-            record->complete_value();
+            if (record->stop_only_) {
+                record->complete_stopped();
+            } else {
+                record->complete_value();
+            }
         }
 
         bool launch = false;
@@ -532,7 +538,7 @@ struct __op {
 
     void start() & noexcept {
         if (stop_requested(record_->rcvr_)) {
-            record_->complete_stopped();
+            state_->enqueue_stopped(record_);
             return;
         }
         state_->enqueue(record_);

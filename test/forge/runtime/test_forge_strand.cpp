@@ -70,6 +70,53 @@ struct blocking_stopped_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct pre_stopped_blocking_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<blocking_stopped_state> state;
+    std::inplace_stop_token token;
+
+    void set_value() && noexcept {}
+
+    void set_stopped() && noexcept {
+        std::unique_lock lk{state->mtx};
+        state->overlapped = state->active_running;
+        state->stopped_started = true;
+        state->cv.notify_all();
+        state->cv.wait(lk, [&] { return state->release_stopped; });
+        state->stopped_completed = true;
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_stop_token_t{}, token));
+    }
+};
+
+struct ordered_stopped_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::mutex* mtx;
+    std::vector<int>* order;
+    int id;
+
+    void set_value() && noexcept {}
+
+    void set_stopped() && noexcept {
+        std::lock_guard lk{*mtx};
+        order->push_back(id);
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 struct delayed_scheduler_state {
     std::mutex mtx;
     std::condition_variable cv;
@@ -549,6 +596,120 @@ TEST(StrandTest, ShutdownSerializesStoppedCompletionsAndWaitsForThem) {
     EXPECT_TRUE(wait_returned.load(std::memory_order_acquire));
     EXPECT_FALSE(state->overlapped);
     EXPECT_TRUE(state->stopped_completed);
+}
+
+TEST(StrandTest, PreRequestedStopUsesTheStrandCompletionTurn) {
+    forge::static_thread_pool pool{1};
+    forge::strand strand{pool.get_scheduler()};
+    auto scheduler = strand.get_scheduler();
+    auto state = std::make_shared<blocking_stopped_state>();
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([state] noexcept {
+            std::unique_lock lk{state->mtx};
+            state->active_started = true;
+            state->active_running = true;
+            state->cv.notify_all();
+            state->cv.wait(lk, [&] { return state->release_active; });
+            state->active_running = false;
+        }));
+
+    {
+        std::unique_lock lk{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(lk, 2s, [&] {
+            return state->active_started;
+        }));
+    }
+
+    std::inplace_stop_source stop_source;
+    ASSERT_TRUE(stop_source.request_stop());
+    auto stopped = std::execution::schedule(scheduler);
+    auto stopped_op = std::execution::connect(
+        std::move(stopped),
+        pre_stopped_blocking_receiver{state, stop_source.get_token()});
+
+    std::thread starter{[&] {
+        std::execution::start(stopped_op);
+    }};
+
+    {
+        std::unique_lock lk{state->mtx};
+        EXPECT_FALSE(state->cv.wait_for(lk, 50ms, [&] {
+            return state->stopped_started;
+        }));
+        state->release_active = true;
+    }
+    state->cv.notify_all();
+
+    {
+        std::unique_lock lk{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(lk, 2s, [&] {
+            return state->stopped_started;
+        }));
+        state->release_stopped = true;
+    }
+    state->cv.notify_all();
+
+    starter.join();
+    strand.wait();
+    pool.wait();
+
+    EXPECT_FALSE(state->overlapped);
+    EXPECT_TRUE(state->stopped_completed);
+}
+
+TEST(StrandTest, ShutdownPreservesPendingAndFutureSubmissionOrder) {
+    forge::static_thread_pool pool{1};
+    forge::strand strand{pool.get_scheduler()};
+    auto scheduler = strand.get_scheduler();
+    std::mutex gate_mtx;
+    std::condition_variable gate_cv;
+    bool active = false;
+    bool release = false;
+    std::mutex order_mtx;
+    std::vector<int> order;
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            std::unique_lock lk{gate_mtx};
+            active = true;
+            gate_cv.notify_all();
+            gate_cv.wait(lk, [&] { return release; });
+        }));
+
+    {
+        std::unique_lock lk{gate_mtx};
+        ASSERT_TRUE(gate_cv.wait_for(lk, 2s, [&] { return active; }));
+    }
+
+    auto first = std::execution::connect(
+        std::execution::schedule(scheduler),
+        ordered_stopped_receiver{&order_mtx, &order, 1});
+    auto second = std::execution::connect(
+        std::execution::schedule(scheduler),
+        ordered_stopped_receiver{&order_mtx, &order, 2});
+    std::execution::start(first);
+    std::execution::start(second);
+
+    strand.shutdown();
+
+    auto future = std::execution::connect(
+        std::execution::schedule(scheduler),
+        ordered_stopped_receiver{&order_mtx, &order, 3});
+    std::execution::start(future);
+
+    {
+        std::lock_guard lk{gate_mtx};
+        release = true;
+    }
+    gate_cv.notify_all();
+
+    strand.wait();
+    pool.wait();
+
+    EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
 }
 
 TEST(StrandTest, ShutdownBeforeLaunchedRunnerStartsDoesNotBlockWait) {
