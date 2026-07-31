@@ -392,26 +392,29 @@ public:
             return io_result<std::size_t>::success(0);
         }
 
-        if (steps_.empty()) {
-            return io_result<std::size_t>::end_of_file(0);
+        while (!steps_.empty()) {
+            auto& step = steps_.front();
+            switch (step.kind_) {
+            case scripted_read_step::kind::eof:
+                return io_result<std::size_t>::end_of_file(0);
+
+            case scripted_read_step::kind::error: {
+                const auto error = step.error_;
+                steps_.pop_front();
+                return io_result<std::size_t>::failure(error, 0);
+            }
+
+            case scripted_read_step::kind::bytes:
+                if (step.position_ == step.bytes_.size() &&
+                    !step.completes_with_error_) {
+                    steps_.pop_front();
+                    continue;
+                }
+                return read_bytes_step(output);
+            }
         }
 
-        auto& step = steps_.front();
-        switch (step.kind_) {
-        case scripted_read_step::kind::eof:
-            return io_result<std::size_t>::end_of_file(0);
-
-        case scripted_read_step::kind::error: {
-            const auto error = step.error_;
-            steps_.pop_front();
-            return io_result<std::size_t>::failure(error, 0);
-        }
-
-        case scripted_read_step::kind::bytes:
-            return read_bytes_step(output);
-        }
-
-        return io_result<std::size_t>::success(0);
+        return io_result<std::size_t>::end_of_file(0);
     }
 
 private:
@@ -426,7 +429,7 @@ private:
             if (completes_with_error) {
                 return io_result<std::size_t>::failure(error, 0);
             }
-            return io_result<std::size_t>::success(0);
+            return io_result<std::size_t>::end_of_file(0);
         }
 
         const auto source = const_buffer{

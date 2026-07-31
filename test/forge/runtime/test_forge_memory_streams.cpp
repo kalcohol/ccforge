@@ -272,6 +272,23 @@ TEST(ForgeMemoryStreamsTest, ScriptedReadStreamKeepsResidualBytes) {
     EXPECT_TRUE(stream.empty());
 }
 
+TEST(ForgeMemoryStreamsTest, ScriptedReadStreamSkipsEmptyByteSteps) {
+    forge::io::scripted_read_stream stream{
+        forge::io::scripted_read_step::bytes(""),
+        forge::io::scripted_read_step::bytes("abc")};
+    std::array<char, 3> buffer{};
+
+    auto result = stream.read_some(
+        forge::io::mutable_buffer{std::span{buffer}});
+    auto [error, count] = result;
+
+    EXPECT_FALSE(error);
+    EXPECT_FALSE(result.eof());
+    EXPECT_EQ(count, 3u);
+    EXPECT_EQ(std::string_view(buffer.data(), count), "abc");
+    EXPECT_TRUE(stream.empty());
+}
+
 TEST(ForgeMemoryStreamsTest, ScriptedReadStreamErrorReportsNoProgress) {
     forge::io::scripted_read_stream stream{
         forge::io::scripted_read_step::error(
