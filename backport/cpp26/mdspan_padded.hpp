@@ -195,6 +195,26 @@ struct layout_left_padded {
             : stride_1_(index_type(1)),
               extents_(other.extents()) {}
 
+        template <class OtherExtents>
+            requires is_constructible_v<OtherExtents, extents_type>
+        constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
+        operator layout_left::mapping<OtherExtents>() const noexcept {
+            return layout_left::mapping<OtherExtents>(OtherExtents(extents_));
+        }
+
+        template <class OtherExtents>
+            requires is_constructible_v<OtherExtents, extents_type>
+        constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
+        operator layout_stride::mapping<OtherExtents>() const noexcept {
+            array<typename OtherExtents::index_type, rank_> converted{};
+            for (rank_type r = 0; r < rank_; ++r) {
+                converted[r] = static_cast<typename OtherExtents::index_type>(
+                    stride(r));
+            }
+            return layout_stride::mapping<OtherExtents>(
+                OtherExtents(extents_), converted);
+        }
+
         constexpr mapping& operator=(const mapping&) noexcept = default;
 
         constexpr const extents_type& extents() const noexcept { return extents_; }
@@ -279,11 +299,12 @@ struct layout_left_padded {
                 OtherMapping::padding_value;
                 typename OtherMapping::layout_type;
                 typename OtherMapping::extents_type;
-            }
+            } && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_left_padded<OtherMapping::padding_value>>
+              && (OtherMapping::extents_type::rank() == rank_)
         {
-            if constexpr (OtherMapping::extents_type::rank() != rank_) {
-                return false;
-            } else if constexpr (rank_ <= 1) {
+            if constexpr (rank_ <= 1) {
                 return x.extents() == y.extents();
             } else {
                 return x.extents() == y.extents() && x.stride(1) == y.stride(1);
@@ -427,6 +448,26 @@ struct layout_right_padded {
             : stride_rm2_(index_type(1)),
               extents_(other.extents()) {}
 
+        template <class OtherExtents>
+            requires is_constructible_v<OtherExtents, extents_type>
+        constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
+        operator layout_right::mapping<OtherExtents>() const noexcept {
+            return layout_right::mapping<OtherExtents>(OtherExtents(extents_));
+        }
+
+        template <class OtherExtents>
+            requires is_constructible_v<OtherExtents, extents_type>
+        constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
+        operator layout_stride::mapping<OtherExtents>() const noexcept {
+            array<typename OtherExtents::index_type, rank_> converted{};
+            for (rank_type r = 0; r < rank_; ++r) {
+                converted[r] = static_cast<typename OtherExtents::index_type>(
+                    stride(r));
+            }
+            return layout_stride::mapping<OtherExtents>(
+                OtherExtents(extents_), converted);
+        }
+
         constexpr mapping& operator=(const mapping&) noexcept = default;
 
         constexpr const extents_type& extents() const noexcept { return extents_; }
@@ -511,11 +552,12 @@ struct layout_right_padded {
                 OtherMapping::padding_value;
                 typename OtherMapping::layout_type;
                 typename OtherMapping::extents_type;
-            }
+            } && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_right_padded<OtherMapping::padding_value>>
+              && (OtherMapping::extents_type::rank() == rank_)
         {
-            if constexpr (OtherMapping::extents_type::rank() != rank_) {
-                return false;
-            } else if constexpr (rank_ <= 1) {
+            if constexpr (rank_ <= 1) {
                 return x.extents() == y.extents();
             } else {
                 return x.extents() == y.extents() && x.stride(rank_ - 2) == y.stride(rank_ - 2);

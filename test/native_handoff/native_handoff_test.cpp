@@ -17,13 +17,21 @@
 #include <simd>
 #include <execution>
 #include <mdspan>
+#include <concepts>
 #include <tuple>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 
 #if defined(__cpp_lib_mdspan)
 #  include <linalg>
 #endif
+
+template<class Left, class Right>
+concept native_handoff_mapping_equality = requires(
+    const Left& left, const Right& right) {
+    { left == right } -> std::convertible_to<bool>;
+};
 
 TEST(NativeHandoff, Simd) {
     std::simd::vec<float> v(2.0f);
@@ -50,6 +58,15 @@ TEST(NativeHandoff, Submdspan) {
     using range_slice_t = std::range_slice<int, int>;
     using left_padded_t = std::layout_left_padded<8>::mapping<std::extents<int, 3, 4>>;
     using right_padded_t = std::layout_right_padded<8>::mapping<std::extents<int, 3, 4>>;
+    using left_compact_t = std::layout_left::mapping<std::extents<int, 3, 4>>;
+    using right_compact_t = std::layout_right::mapping<std::extents<int, 3, 4>>;
+    using strided_t = std::layout_stride::mapping<std::extents<int, 3, 4>>;
+    static_assert(std::is_convertible_v<left_padded_t, left_compact_t>);
+    static_assert(std::is_convertible_v<right_padded_t, right_compact_t>);
+    static_assert(std::is_convertible_v<left_padded_t, strided_t>);
+    static_assert(std::is_convertible_v<right_padded_t, strided_t>);
+    static_assert(!native_handoff_mapping_equality<
+                  left_padded_t, right_padded_t>);
     EXPECT_EQ(row.extent(0), 4);
     EXPECT_EQ(sub_ext.extent(1), 2);
     EXPECT_EQ(std::tuple_size_v<decltype(canonical)>, 2u);
