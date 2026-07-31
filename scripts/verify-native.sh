@@ -24,8 +24,8 @@
 #           execution + forge utility subsets under ThreadSanitizer
 #           (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
-#           Runs the execution + forge utility subsets and focused SIMD memory
-#           tests under ASan+UBSan (UAF / leak / UB check).
+#           Runs the execution + forge utility subsets and focused SIMD
+#           memory/operator/math/bit tests under ASan+UBSan.
 #   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
 set -euo pipefail
@@ -297,12 +297,12 @@ target_asan() {
             echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
             setarch "$(uname -m)" -R ctest --test-dir build/asan -R "execution|forge" --output-on-failure
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
-    log "asan: building focused SIMD memory tests with -fsanitize=address,undefined"
+    log "asan: building focused SIMD tests with -fsanitize=address,undefined"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
             set -e
-            rm -rf build/asan-simd-memory
-            cmake -S . -B build/asan-simd-memory -G Ninja \
+            rm -rf build/asan-simd
+            cmake -S . -B build/asan-simd -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
                   -DFORGE_BUILD_TESTS=ON \
                   -DFORGE_BUILD_EXAMPLES=OFF \
@@ -316,19 +316,32 @@ target_asan() {
                   -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF \
                   -DCMAKE_CXX_FLAGS="${CXXFLAGS:-} -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
                   -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS:-} -fsanitize=address,undefined"
-            cmake --build build/asan-simd-memory --target \
+            cmake --build build/asan-simd --target \
                   test_simd_memory_load_store \
                   test_simd_memory_gather_scatter \
-                  test_simd_memory_supported_types
+                  test_simd_memory_supported_types \
+                  test_simd_operators \
+                  test_simd_math \
+                  test_simd_math_special \
+                  test_simd_bit
+            command -v llvm-symbolizer >/dev/null
+            ldd build/asan-simd/test/simd/runtime/test_simd_math_special | grep -Fq "libc++.so"
             export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
             export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
-            if ctest --test-dir build/asan-simd-memory -R "simd_memory" --output-on-failure; then
+            regex="^(test_simd_memory_(load_store|gather_scatter|supported_types)|test_simd_(operators|math|math_special|bit))$"
+            selected_tests=$(ctest --test-dir build/asan-simd -N -R "${regex}" | sed -n "s/^Total Tests: //p")
+            if [ "${selected_tests:-0}" -ne 7 ]; then
+                echo "[asan-simd] expected 7 focused tests, got ${selected_tests:-0}" >&2
+                exit 1
+            fi
+            echo "[asan-simd] ctest-count=${selected_tests}"
+            if ctest --test-dir build/asan-simd -R "${regex}" --output-on-failure; then
                 exit 0
             fi
             echo "[asan-simd] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/asan-simd-memory -R "simd_memory" --output-on-failure
+            setarch "$(uname -m)" -R ctest --test-dir build/asan-simd -R "${regex}" --output-on-failure
         '
-    ok "asan verified (execution + forge utility subsets plus SIMD memory tests, no UAF/leak/UB)"
+    ok "asan verified (execution + forge utility subsets plus focused SIMD tests, no UAF/leak/UB)"
 }
 
 targets=("$@")

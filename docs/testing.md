@@ -84,8 +84,8 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
 - `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与
-  `forge::` 扩展子集，并额外运行 focused SIMD memory
-  load/store/gather/scatter/support-type tests
+  `forge::` 扩展子集，并额外运行 7 个 focused SIMD
+  memory/operator/math/special-math/bit tests；脚本精确校验选中数量，零匹配不能通过
 - `all`：`gcc16 + llvm + zig + local + gcc-exec + tsan + asan`
 
 SIMD special-math fallback 的结果证据必须来自 fallback 真正生效的 lane。当前

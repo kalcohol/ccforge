@@ -12,7 +12,7 @@ filters, and build directories stay consistent.
 | `gcc16` | `forge-gcc16` | `Containerfile.gcc16` | GCC 16 native stand-aside path for `std::simd`, `std::constant_wrapper`, padded mdspan layouts, and `std::submdspan`. |
 | `zig` | `forge-zig` | `Containerfile.zig` | Zig C++ compiler path at C++23; exercises the backport injection path. |
 | `tsan` | `forge-tsan` | `Containerfile.tsan` | ThreadSanitizer gate for the execution and `forge::` utility subsets. |
-| `asan` | `forge-asan` | `Containerfile.asan` | AddressSanitizer + UBSan gate for the execution and `forge::` utility subsets, plus focused SIMD memory tests. |
+| `asan` | `forge-asan` | `Containerfile.asan` | AddressSanitizer + UBSan gate for the execution and `forge::` utility subsets, plus focused SIMD memory, operator, math, special-math, and bit tests. |
 | `gcc-exec` | `forge-gcc16` | `Containerfile.gcc16` | Execution-only libstdc++ path without SIMD/native handoff probes. |
 
 ## Normal use
@@ -34,7 +34,7 @@ SELinux mount issues.
 
 - `all` runs `gcc16`, `llvm`, `zig`, `local`, `gcc-exec`, `tsan`, and `asan`.
 - Sanitizer images intentionally run the execution and `forge::` utility
-  subsets; ASan/UBSan also runs focused SIMD memory tests. They are targeted
+  subsets; ASan/UBSan also runs focused SIMD memory/operator/math/bit tests. They are targeted
   lifetime/race/memory gates, not full feature-matrix gates.
 - The Zig image uses build args for the Zig version and tarball name. Update both
   together if the upstream archive naming changes.
