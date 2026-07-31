@@ -62,9 +62,8 @@ namespace forge::io {
 struct context_options {
     std::pmr::memory_resource* memory = forge::default_memory_resource();
     std::size_t max_events = 64;
-#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
+    // Diagnostic option for exercising the completion-packet fallback path.
     bool force_completion_packets_on_success = false;
-#endif
 };
 
 class context;
@@ -246,10 +245,8 @@ struct __start_result {
 struct __state : std::enable_shared_from_this<__state> {
     explicit __state(context_options options)
         : memory(forge::normalize_memory_resource(options.memory))
-#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
         , force_completion_packets_on_success(
               options.force_completion_packets_on_success)
-#endif
         , pending_records(
               0,
               std::hash<OVERLAPPED*>{},
@@ -315,9 +312,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 association = it;
                 if (inserted || it->second.active == 0) {
                     it->second.skips_completion_on_success =
-#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
                         !force_completion_packets_on_success &&
-#endif
                         ::SetFileCompletionNotificationModes(
                             record->handle,
                             FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) != FALSE;
@@ -599,9 +594,7 @@ private:
 
 public:
     std::pmr::memory_resource* memory;
-#if defined(FORGE_IO_ENABLE_TEST_HOOKS)
     bool force_completion_packets_on_success;
-#endif
     __handle port;
     std::mutex mtx;
     std::condition_variable cv;
