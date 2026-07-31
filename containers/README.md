@@ -9,7 +9,7 @@ filters, and build directories stay consistent.
 | Script target | Image | Containerfile | Purpose |
 | --- | --- | --- | --- |
 | `llvm` | `forge-llvm` | `Containerfile.llvm` | LLVM/libc++ path at `-std=c++26`; exercises backport injection where libc++ lacks C++26 facilities. |
-| `gcc16` | `forge-gcc16` | `Containerfile.gcc16` | GCC 16 native stand-aside path for `std::simd`, `std::constant_wrapper`, padded mdspan layouts, and `std::submdspan`. |
+| `gcc16` | `forge-gcc16` | `Containerfile.gcc16` | GCC 16 partial-native stand-aside for `std::simd`, `std::constant_wrapper`, and padded mdspan layouts; complete-native handoff for `std::submdspan`; C++23 SIMD backport floor. |
 | `zig` | `forge-zig` | `Containerfile.zig` | Zig C++ compiler path at C++23; exercises the backport injection path. |
 | `tsan` | `forge-tsan` | `Containerfile.tsan` | ThreadSanitizer gate for the execution and `forge::` utility subsets. |
 | `asan` | `forge-asan` | `Containerfile.asan` | AddressSanitizer + UBSan gate for the execution and `forge::` utility subsets, plus focused SIMD memory, operator, math, special-math, and bit tests. |

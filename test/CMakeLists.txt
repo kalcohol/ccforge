@@ -135,12 +135,11 @@ if(FORGE_TEST_ENABLE_EXECUTION)
 endif()
 if(FORGE_TEST_ENABLE_SIMD)
     if(FORGE_FORCE_SIMD_BACKPORT
-            OR FORGE_SIMD_FULL
-            OR NOT FORGE_SIMD_PARTIAL)
+            OR (NOT FORGE_SIMD_FULL AND NOT FORGE_SIMD_PARTIAL))
         add_subdirectory(simd)
     else()
         message(STATUS
-            "Forge: SIMD conformance tests skipped for partial-native standard library")
+            "Forge: SIMD backport conformance tests skipped because the native standard library stands aside")
     endif()
 endif()
 if(FORGE_TEST_ENABLE_CONSTANT_WRAPPER)

@@ -126,11 +126,35 @@ endif()
 # some libraries install an empty <simd> outside C++26 mode.
 check_cxx_source_compiles("
     #include <simd>
+    #include <array>
+    #include <bit>
+    #include <cmath>
+    #include <complex>
+    #include <span>
     int main() {
-        std::simd::vec<float> v(1.0f);
+        using float4 = std::simd::vec<float, 4>;
+        using uint4 = std::simd::vec<unsigned, 4>;
+        using complex4 = std::simd::vec<std::complex<float>, 4>;
+        float4 v(1.0f);
+        uint4 bits(1u);
         auto sum = std::simd::reduce(v);
         auto mask = v == v;
-        return static_cast<int>(sum + std::simd::reduce_count(mask));
+        auto math = std::simd::sin(v);
+        auto top_level_math = std::sin(v);
+        auto counted = std::simd::popcount(bits);
+        auto top_level_counted = std::popcount(bits);
+        complex4 complex_values(float4(1.0f), float4(2.0f));
+        auto real_values = std::simd::real(complex_values);
+        auto sequence = std::simd::iota<float4>;
+        std::array<float, 8> input{};
+        std::span<const float, 8> input_view(input);
+        std::simd::vec<int, 4> indices(0);
+        auto gathered = std::simd::partial_gather_from(input_view, indices);
+        return static_cast<int>(
+            sum + std::simd::reduce_count(mask) + math[0] +
+            top_level_math[0] + static_cast<float>(counted[0]) +
+            static_cast<float>(top_level_counted[0]) + real_values[0] +
+            sequence[0] + gathered[0]);
     }
 " FORGE_SIMD_FULL)
 check_cxx_source_compiles("
@@ -234,11 +258,19 @@ check_cxx_source_compiles("
     int main() {
         using ext_t = std::extents<int, 3, 4>;
         ext_t e;
+        using dynamic_left = std::layout_left_padded<>;
+        using dynamic_right = std::layout_right_padded<>;
         std::layout_left_padded<8>::mapping<ext_t> left(e, 8);
         std::layout_right_padded<8>::mapping<ext_t> right(e, 8);
+        dynamic_left::mapping<ext_t> left_dynamic(e, 8);
+        dynamic_right::mapping<ext_t> right_dynamic(e, 8);
         static_assert(decltype(left)::padding_value == 8);
         static_assert(decltype(right)::padding_value == 8);
-        return static_cast<int>(left.stride(1) + right.stride(0));
+        static_assert(decltype(left_dynamic)::padding_value == std::dynamic_extent);
+        static_assert(decltype(right_dynamic)::padding_value == std::dynamic_extent);
+        return static_cast<int>(
+            left.stride(1) + right.stride(0) +
+            left_dynamic.stride(1) + right_dynamic.stride(0));
     }
 " FORGE_MDSPAN_PADDED_LAYOUTS_FULL)
 check_cxx_source_compiles("

@@ -78,8 +78,9 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 - `llvm`：LLVM/libc++ 容器，`-std=c++26`，覆盖 libc++ inject-path 全量测试
 - `zig`：Zig 容器，C++23 backport inject path
 - `gcc16`：GCC 16 容器，在 C++26 验证 `std::simd`、pre-P4206
-  `std::constant_wrapper` partial surface、padded mdspan layouts 与
-  `std::submdspan` native stand-aside；另在 C++23 运行 SIMD-only suite，确认
+  `std::constant_wrapper` 与 padded mdspan layouts 的 partial-native stand-aside，
+  以及 `std::submdspan` 的 complete-native stand-aside；另在 C++23 运行
+  SIMD-only suite，确认
   declaration-free `<simd>` 不会被误判为 partial native，而会正常注入 backport
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集

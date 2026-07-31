@@ -8,11 +8,10 @@
 #   scripts/verify-native.sh [target ...]
 #
 # Targets:
-#   gcc16   GCC 16 container, -std=c++26. Asserts std::simd, padded mdspan
-#           layouts, and std::submdspan stand aside as complete native
-#           surfaces; its pre-P4206 std::constant_wrapper must stand aside as
-#           partial native. Also runs the SIMD-only suite at -std=c++23, where
-#           an installed but declaration-free <simd> must select the backport.
+#   gcc16   GCC 16 container, -std=c++26. Verifies partial-native stand-aside
+#           for std::simd, padded mdspan layouts, and std::constant_wrapper,
+#           plus complete std::submdspan handoff. Also runs the SIMD-only suite
+#           at -std=c++23, where a declaration-free <simd> selects the backport.
 #   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
 #           native support; full suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
@@ -173,9 +172,9 @@ target_gcc16() {
                   "$@"
         ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
         2>&1 | tee "${logfile}"
-    assert_complete_stands_aside "${logfile}" "std::simd" SIMD
+    assert_partial_stands_aside "${logfile}" "std::simd" SIMD
     assert_partial_stands_aside "${logfile}" "std::constant_wrapper" CONSTANT_WRAPPER
-    assert_complete_stands_aside "${logfile}" "std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS
+    assert_partial_stands_aside "${logfile}" "std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS
     assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
