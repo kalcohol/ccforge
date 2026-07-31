@@ -416,8 +416,17 @@ constexpr auto inv_map_rank(integral_constant<size_t,C>, index_sequence<Ms...>,
 template <size_t Rank, size_t... Ks, class... Ss>
 constexpr array<size_t, Rank>
 make_sf_impl(index_sequence<Ks...>, const Ss&... ss) {
+    const auto stride_factor = []<class Slice>(const Slice& slice) {
+        if constexpr (is_extent_slice_v<Slice>) {
+            return static_cast<size_t>(slice.extent) > size_t(1)
+                ? static_cast<size_t>(slice.stride)
+                : size_t(1);
+        } else {
+            return static_cast<size_t>(stride_of(slice));
+        }
+    };
     array<size_t, Rank> sf{};
-    ((sf[Ks] = static_cast<size_t>(stride_of(ss))), ...);
+    ((sf[Ks] = stride_factor(ss)), ...);
     return sf;
 }
 template <size_t Rank, class... Ss>
@@ -989,7 +998,7 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
             : static_cast<size_t>(
                   src(static_cast<typename extents_t::index_type>(D::first_of(slices))...));
 
-        if constexpr (sr == 1 || dr == 0) {
+        if constexpr (dr == 0) {
             return submdspan_mapping_result<layout_left::mapping<sub_t>>{
                 layout_left::mapping<sub_t>{sub_ext}, off};
         } else if constexpr (dr == 1 &&
@@ -1041,7 +1050,7 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
             : static_cast<size_t>(
                   src(static_cast<typename extents_t::index_type>(D::first_of(slices))...));
 
-        if constexpr (sr == 1 || dr == 0) {
+        if constexpr (dr == 0) {
             return submdspan_mapping_result<layout_right::mapping<sub_t>>{
                 layout_right::mapping<sub_t>{sub_ext}, off};
         } else if constexpr (dr == 1 &&

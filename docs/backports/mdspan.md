@@ -31,8 +31,15 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 
 Padded layout mapping 的 converting constructor 只在不会改变 mapping 唯一性的形状下
 接受相反 layout：rank-1 mapping 可互转，rank>1 的 left-padded 与 right-padded mapping
-不会互转。静态 padding stride 也会参与 `is_always_exhaustive()` 判定；动态 padding
-仍保守返回 false。
+不会互转；rank-0/rank-1 mapping 也接受相反的未 padded layout。rank>1 的
+padded-to-padded 转换按 padding 是否从 dynamic 收紧为 static 决定是否为 explicit。
+静态 padding stride 也会参与 `is_always_exhaustive()` 判定；动态 padding 仍保守返回
+false。
+
+当前 working draft 对 rank-1 padded source 无条件返回紧凑的 `layout_left` /
+`layout_right` submapping。这在输入为非单位 `extent_slice` 时无法满足
+sliceable-mapping 的逐元素地址等式。Forge 在这一格有意返回 `layout_stride`，保留实际
+slice stride；若后续 wording 修正该冲突，再按新的标准结果收敛。
 
 ## Feature macros（特性宏）
 

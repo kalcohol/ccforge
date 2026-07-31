@@ -200,6 +200,22 @@ TEST(SubmdspanLayoutStride, FromStridedMapping) {
     EXPECT_EQ((sub[2,3]), 17);  // 2 + 3*5 = 17
 }
 
+TEST(SubmdspanLayoutStride, SingletonExtentSliceKeepsSourceStride) {
+    auto data = make_data<20>();
+    using extents_t = std::extents<int, 8>;
+    const std::array<int, 1> strides{2};
+    std::mdspan<int, extents_t, std::layout_stride> source(
+        data.data(),
+        std::layout_stride::mapping<extents_t>(extents_t{}, strides));
+
+    auto sub = std::submdspan(source, std::extent_slice{1, 1, 7});
+    static_assert(std::is_same_v<
+        typename decltype(sub)::layout_type, std::layout_stride>);
+    EXPECT_EQ(sub.extent(0), 1);
+    EXPECT_EQ(sub.mapping().stride(0), 2);
+    EXPECT_EQ(sub[0], 2);
+}
+
 // ---------------------------------------------------------------------------
 // Rank-3 test
 // ---------------------------------------------------------------------------
@@ -323,6 +339,27 @@ TEST(SubmdspanPaddedLayouts, PaddedConversionsRequireCompatibleExtents) {
         std::layout_right_padded<8>::mapping<rank1_extents_t>;
     using left_bad_rank1_t =
         std::layout_left_padded<>::mapping<conflicting_rank1_extents_t>;
+    using left_dynamic_target_t =
+        std::layout_left_padded<>::mapping<target_extents_t>;
+    using right_dynamic_target_t =
+        std::layout_right_padded<>::mapping<target_extents_t>;
+    using left_unpadded_rank1_t =
+        std::layout_left::mapping<rank1_extents_t>;
+    using right_unpadded_rank1_t =
+        std::layout_right::mapping<rank1_extents_t>;
+    using left_unpadded_rank2_t =
+        std::layout_left::mapping<target_extents_t>;
+    using right_unpadded_rank2_t =
+        std::layout_right::mapping<target_extents_t>;
+    using rank0_extents_t = std::extents<int>;
+    using left_rank0_target_t =
+        std::layout_left_padded<8>::mapping<rank0_extents_t>;
+    using right_rank0_target_t =
+        std::layout_right_padded<8>::mapping<rank0_extents_t>;
+    using left_unpadded_rank0_t =
+        std::layout_left::mapping<rank0_extents_t>;
+    using right_unpadded_rank0_t =
+        std::layout_right::mapping<rank0_extents_t>;
 
     static_assert(std::is_constructible_v<left_target_t, left_compatible_t>);
     static_assert(std::is_constructible_v<right_target_t, right_compatible_t>);
@@ -334,6 +371,59 @@ TEST(SubmdspanPaddedLayouts, PaddedConversionsRequireCompatibleExtents) {
         !std::is_constructible_v<left_rank1_target_t, right_bad_rank1_t>);
     static_assert(
         !std::is_constructible_v<right_rank1_target_t, left_bad_rank1_t>);
+    static_assert(!std::is_convertible_v<left_compatible_t, left_target_t>);
+    static_assert(!std::is_convertible_v<right_compatible_t, right_target_t>);
+    static_assert(std::is_convertible_v<left_target_t, left_dynamic_target_t>);
+    static_assert(std::is_convertible_v<right_target_t, right_dynamic_target_t>);
+    static_assert(
+        std::is_convertible_v<right_unpadded_rank1_t, left_rank1_target_t>);
+    static_assert(
+        std::is_convertible_v<left_unpadded_rank1_t, right_rank1_target_t>);
+    static_assert(std::is_convertible_v<right_rank1_target_t, left_rank1_target_t>);
+    static_assert(std::is_convertible_v<left_rank1_target_t, right_rank1_target_t>);
+    static_assert(
+        !std::is_constructible_v<left_target_t, right_unpadded_rank2_t>);
+    static_assert(
+        !std::is_constructible_v<right_target_t, left_unpadded_rank2_t>);
+    static_assert(
+        std::is_convertible_v<right_unpadded_rank0_t, left_rank0_target_t>);
+    static_assert(
+        std::is_convertible_v<left_unpadded_rank0_t, right_rank0_target_t>);
+
+    left_rank1_target_t left_from_right =
+        right_unpadded_rank1_t(rank1_extents_t{});
+    right_rank1_target_t right_from_left =
+        left_unpadded_rank1_t(rank1_extents_t{});
+    EXPECT_EQ(left_from_right.extents().extent(0), 5);
+    EXPECT_EQ(right_from_left.extents().extent(0), 5);
+}
+
+TEST(SubmdspanPaddedLayouts, RankOneStridedSliceUsesLayoutStride) {
+    auto data = make_data<8>();
+    using extents_t = std::extents<int, 8>;
+    using left_layout = std::layout_left_padded<4>;
+    using right_layout = std::layout_right_padded<4>;
+
+    std::mdspan<int, extents_t, left_layout> left(
+        data.data(), left_layout::mapping<extents_t>(extents_t{}));
+    auto left_sub =
+        std::submdspan(left, std::extent_slice{1, 3, 2});
+    static_assert(std::is_same_v<
+        typename decltype(left_sub)::layout_type, std::layout_stride>);
+    EXPECT_EQ(left_sub.mapping().stride(0), 2);
+    EXPECT_EQ(left_sub[0], 1);
+    EXPECT_EQ(left_sub[1], 3);
+    EXPECT_EQ(left_sub[2], 5);
+
+    std::mdspan<int, extents_t, right_layout> right(
+        data.data(), right_layout::mapping<extents_t>(extents_t{}));
+    auto right_sub =
+        std::submdspan(right, std::extent_slice{0, 4, 2});
+    static_assert(std::is_same_v<
+        typename decltype(right_sub)::layout_type, std::layout_stride>);
+    EXPECT_EQ(right_sub.mapping().stride(0), 2);
+    EXPECT_EQ(right_sub[0], 0);
+    EXPECT_EQ(right_sub[3], 6);
 }
 
 TEST(SubmdspanPaddedLayouts, FullSlicePreservesPaddedLayout) {

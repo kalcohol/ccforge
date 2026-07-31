@@ -61,6 +61,12 @@ constexpr I least_multiple_at_least(I alignment, I value) noexcept {
 } // namespace __forge_mdspan_padded_detail
 
 template <size_t PaddingValue = dynamic_extent>
+struct layout_left_padded;
+
+template <size_t PaddingValue = dynamic_extent>
+struct layout_right_padded;
+
+template <size_t PaddingValue>
 struct layout_left_padded {
     template <class Extents>
     class mapping {
@@ -150,13 +156,43 @@ struct layout_left_padded {
             } && is_constructible_v<
                     extents_type,
                     typename OtherMapping::extents_type>
-              && (rank_ <= 1 ||
-                  is_same_v<
-                      typename OtherMapping::layout_type,
-                      layout_left_padded<OtherMapping::padding_value>>)
-        constexpr explicit(!is_convertible_v<typename OtherMapping::extents_type, extents_type>)
+              && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_left_padded<OtherMapping::padding_value>>
+        constexpr explicit(
+            !is_convertible_v<typename OtherMapping::extents_type, extents_type> ||
+            (rank_ > 1 &&
+             (PaddingValue != dynamic_extent ||
+              OtherMapping::padding_value == dynamic_extent)))
         mapping(const OtherMapping& other)
             : stride_1_(rank_ > 1 ? static_cast<index_type>(other.stride(1)) : index_type(1)),
+              extents_(other.extents()) {}
+
+        template <class OtherMapping>
+            requires requires(const OtherMapping& other) {
+                OtherMapping::padding_value;
+                typename OtherMapping::layout_type;
+                typename OtherMapping::extents_type;
+                other.extents();
+            } && (rank_ <= 1)
+              && is_constructible_v<
+                    extents_type,
+                    typename OtherMapping::extents_type>
+              && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_right_padded<OtherMapping::padding_value>>
+        constexpr explicit(
+            !is_convertible_v<typename OtherMapping::extents_type, extents_type>)
+        mapping(const OtherMapping& other) noexcept
+            : stride_1_(index_type(1)),
+              extents_(other.extents()) {}
+
+        template <class OtherExtents>
+            requires (rank_ <= 1) &&
+                     is_constructible_v<extents_type, OtherExtents>
+        constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
+        mapping(const layout_right::mapping<OtherExtents>& other) noexcept
+            : stride_1_(index_type(1)),
               extents_(other.extents()) {}
 
         constexpr mapping& operator=(const mapping&) noexcept = default;
@@ -262,7 +298,7 @@ struct layout_left_padded {
     };
 };
 
-template <size_t PaddingValue = dynamic_extent>
+template <size_t PaddingValue>
 struct layout_right_padded {
     template <class Extents>
     class mapping {
@@ -352,13 +388,43 @@ struct layout_right_padded {
             } && is_constructible_v<
                     extents_type,
                     typename OtherMapping::extents_type>
-              && (rank_ <= 1 ||
-                  is_same_v<
-                      typename OtherMapping::layout_type,
-                      layout_right_padded<OtherMapping::padding_value>>)
-        constexpr explicit(!is_convertible_v<typename OtherMapping::extents_type, extents_type>)
+              && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_right_padded<OtherMapping::padding_value>>
+        constexpr explicit(
+            !is_convertible_v<typename OtherMapping::extents_type, extents_type> ||
+            (rank_ > 1 &&
+             (PaddingValue != dynamic_extent ||
+              OtherMapping::padding_value == dynamic_extent)))
         mapping(const OtherMapping& other)
             : stride_rm2_(rank_ > 1 ? static_cast<index_type>(other.stride(rank_ - 2)) : index_type(1)),
+              extents_(other.extents()) {}
+
+        template <class OtherMapping>
+            requires requires(const OtherMapping& other) {
+                OtherMapping::padding_value;
+                typename OtherMapping::layout_type;
+                typename OtherMapping::extents_type;
+                other.extents();
+            } && (rank_ <= 1)
+              && is_constructible_v<
+                    extents_type,
+                    typename OtherMapping::extents_type>
+              && is_same_v<
+                    typename OtherMapping::layout_type,
+                    layout_left_padded<OtherMapping::padding_value>>
+        constexpr explicit(
+            !is_convertible_v<typename OtherMapping::extents_type, extents_type>)
+        mapping(const OtherMapping& other) noexcept
+            : stride_rm2_(index_type(1)),
+              extents_(other.extents()) {}
+
+        template <class OtherExtents>
+            requires (rank_ <= 1) &&
+                     is_constructible_v<extents_type, OtherExtents>
+        constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
+        mapping(const layout_left::mapping<OtherExtents>& other) noexcept
+            : stride_rm2_(index_type(1)),
               extents_(other.extents()) {}
 
         constexpr mapping& operator=(const mapping&) noexcept = default;
