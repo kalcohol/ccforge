@@ -189,18 +189,19 @@ struct __state : std::enable_shared_from_this<__state> {
 
     void enqueue(std::shared_ptr<__record_base> record) noexcept {
         auto keepalive = shared_from_this();
-        queue_t stopped{memory_};
         std::shared_ptr<__record_base> deferred_stopped;
         bool launch = false;
         bool drain = false;
         {
             std::lock_guard lk{mtx_};
             if (closed_) {
+                if (!active_) {
+                    defer_queue_locked();
+                }
                 append_deferred_stopped_locked(std::move(record));
                 if (!active_) {
                     active_ = true;
                     running_ = true;
-                    stopped.splice(stopped.end(), queue_);
                     deferred_stopped = take_deferred_stopped_locked();
                     drain = true;
                 }
@@ -213,11 +214,13 @@ struct __state : std::enable_shared_from_this<__state> {
                     }
                 } catch (...) {
                     closed_ = true;
+                    if (!active_) {
+                        defer_queue_locked();
+                    }
                     append_deferred_stopped_locked(std::move(record));
                     if (!active_) {
                         active_ = true;
                         running_ = true;
-                        stopped.splice(stopped.end(), queue_);
                         deferred_stopped = take_deferred_stopped_locked();
                         drain = true;
                     }
@@ -226,7 +229,7 @@ struct __state : std::enable_shared_from_this<__state> {
         }
 
         if (drain) {
-            complete_stopped_batch(stopped, std::move(deferred_stopped));
+            complete_stopped_batch(std::move(deferred_stopped));
         }
         if (launch) {
             launch_runner();
@@ -235,7 +238,6 @@ struct __state : std::enable_shared_from_this<__state> {
 
     void shutdown() noexcept {
         auto keepalive = shared_from_this();
-        queue_t stopped{memory_};
         std::shared_ptr<__record_base> deferred_stopped;
         bool drain = false;
         bool notify = false;
@@ -247,7 +249,7 @@ struct __state : std::enable_shared_from_this<__state> {
                     running_ = false;
                     notify = true;
                 } else {
-                    stopped.splice(stopped.end(), queue_);
+                    defer_queue_locked();
                     deferred_stopped = take_deferred_stopped_locked();
                     active_ = true;
                     running_ = true;
@@ -257,7 +259,7 @@ struct __state : std::enable_shared_from_this<__state> {
         }
 
         if (drain) {
-            complete_stopped_batch(stopped, std::move(deferred_stopped));
+            complete_stopped_batch(std::move(deferred_stopped));
         } else if (notify) {
             cv_.notify_all();
         }
@@ -265,7 +267,6 @@ struct __state : std::enable_shared_from_this<__state> {
 
     void run_one() noexcept {
         std::shared_ptr<__record_base> record;
-        queue_t stopped{memory_};
         std::shared_ptr<__record_base> deferred_stopped;
         bool drain = false;
         {
@@ -287,7 +288,7 @@ struct __state : std::enable_shared_from_this<__state> {
             } else {
                 active_ = true;
                 if (closed_) {
-                    stopped.splice(stopped.end(), queue_);
+                    defer_queue_locked();
                     deferred_stopped = take_deferred_stopped_locked();
                     drain = true;
                 } else {
@@ -298,7 +299,7 @@ struct __state : std::enable_shared_from_this<__state> {
         }
 
         if (drain) {
-            complete_stopped_batch(stopped, std::move(deferred_stopped));
+            complete_stopped_batch(std::move(deferred_stopped));
             return;
         }
 
@@ -313,7 +314,7 @@ struct __state : std::enable_shared_from_this<__state> {
             std::lock_guard lk{mtx_};
             if (closed_ &&
                 (!queue_.empty() || deferred_stopped_head_)) {
-                stopped.splice(stopped.end(), queue_);
+                defer_queue_locked();
                 deferred_stopped = take_deferred_stopped_locked();
                 drain_after_value = true;
             } else {
@@ -330,7 +331,7 @@ struct __state : std::enable_shared_from_this<__state> {
         }
 
         if (drain_after_value) {
-            complete_stopped_batch(stopped, std::move(deferred_stopped));
+            complete_stopped_batch(std::move(deferred_stopped));
         } else if (launch) {
             launch_runner();
         }
@@ -365,6 +366,14 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
 private:
+    void defer_queue_locked() noexcept {
+        while (!queue_.empty()) {
+            auto record = std::move(queue_.front());
+            queue_.pop_front();
+            append_deferred_stopped_locked(std::move(record));
+        }
+    }
+
     void append_deferred_stopped_locked(
         std::shared_ptr<__record_base> record) noexcept {
         record->deferred_stopped_next_.reset();
@@ -384,15 +393,9 @@ private:
     }
 
     void complete_stopped_batch(
-        queue_t& stopped,
-        std::shared_ptr<__record_base> deferred_stopped = {}) noexcept {
+        std::shared_ptr<__record_base> deferred_stopped) noexcept {
         __current_state_guard guard{this};
         for (;;) {
-            for (auto& record : stopped) {
-                record->complete_stopped();
-            }
-            stopped.clear();
-
             while (deferred_stopped) {
                 auto record = std::move(deferred_stopped);
                 deferred_stopped =
@@ -403,9 +406,9 @@ private:
             bool complete = false;
             {
                 std::lock_guard lk{mtx_};
-                stopped.splice(stopped.end(), queue_);
+                defer_queue_locked();
                 deferred_stopped = take_deferred_stopped_locked();
-                if (stopped.empty() && !deferred_stopped) {
+                if (!deferred_stopped) {
                     active_ = false;
                     running_ = false;
                     complete = true;

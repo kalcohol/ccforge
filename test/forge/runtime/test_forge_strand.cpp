@@ -277,64 +277,124 @@ TEST(StrandTest, ReentrantSchedulingStaysSerialAndFifo) {
 }
 
 TEST(StrandTest, WaitFromOwnCompletionDoesNotSelfDeadlock) {
-    forge::static_thread_pool pool{1};
-    forge::strand strand{pool.get_scheduler()};
-    auto scheduler = strand.get_scheduler();
-    std::promise<void> completed;
+    auto* pool = new forge::static_thread_pool{1};
+    auto* strand = new forge::strand{pool->get_scheduler()};
+    auto scheduler = strand->get_scheduler();
+    auto completed = std::make_shared<std::promise<void>>();
+    auto future = completed->get_future();
 
     forge::start_detached(
         std::execution::schedule(scheduler)
-        | std::execution::then([&] noexcept {
-            strand.wait();
-            completed.set_value();
+        | std::execution::then([strand, completed] noexcept {
+            strand->wait();
+            completed->set_value();
         }));
 
-    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+    if (future.wait_for(2s) != std::future_status::ready) {
+        ADD_FAILURE() << "strand wait deadlocked inside its own completion";
+        return;
+    }
 
-    strand.wait();
-    pool.shutdown();
-    pool.wait();
+    strand->wait();
+    pool->shutdown();
+    pool->wait();
+    delete strand;
+    delete pool;
 }
 
 TEST(StrandTest, WaitRecognizesOuterNestedStrandCompletion) {
-    forge::static_thread_pool pool{1};
-    forge::strand outer{pool.get_scheduler()};
-    forge::strand inner{outer.get_scheduler()};
-    auto scheduler = inner.get_scheduler();
-    std::promise<void> completed;
+    auto* pool = new forge::static_thread_pool{1};
+    auto* outer = new forge::strand{pool->get_scheduler()};
+    auto* inner = new forge::strand{outer->get_scheduler()};
+    auto scheduler = inner->get_scheduler();
+    auto completed = std::make_shared<std::promise<void>>();
+    auto future = completed->get_future();
 
     forge::start_detached(
         std::execution::schedule(scheduler)
-        | std::execution::then([&] noexcept {
-            outer.wait();
-            completed.set_value();
+        | std::execution::then([outer, completed] noexcept {
+            outer->wait();
+            completed->set_value();
         }));
 
-    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+    if (future.wait_for(2s) != std::future_status::ready) {
+        ADD_FAILURE() << "outer strand wait missed a nested completion";
+        return;
+    }
 
-    inner.wait();
-    outer.wait();
-    pool.shutdown();
-    pool.wait();
+    inner->wait();
+    outer->wait();
+    pool->shutdown();
+    pool->wait();
+    delete inner;
+    delete outer;
+    delete pool;
 }
 
 TEST(StrandTest, DestructorFromOwnCompletionDoesNotSelfDeadlock) {
-    forge::static_thread_pool pool{1};
-    auto strand = std::make_unique<forge::strand>(pool.get_scheduler());
-    auto scheduler = strand->get_scheduler();
-    std::promise<void> completed;
+    auto* pool = new forge::static_thread_pool{1};
+    auto* strand =
+        new std::unique_ptr<forge::strand>(
+            std::make_unique<forge::strand>(pool->get_scheduler()));
+    auto scheduler = (*strand)->get_scheduler();
+    auto completed = std::make_shared<std::promise<void>>();
+    auto future = completed->get_future();
 
     forge::start_detached(
         std::execution::schedule(scheduler)
-        | std::execution::then([&] noexcept {
-            strand.reset();
-            completed.set_value();
+        | std::execution::then([strand, completed] noexcept {
+            strand->reset();
+            completed->set_value();
         }));
 
-    EXPECT_EQ(completed.get_future().wait_for(2s), std::future_status::ready);
+    if (future.wait_for(2s) != std::future_status::ready) {
+        ADD_FAILURE() << "strand destruction deadlocked inside its own completion";
+        return;
+    }
 
-    pool.shutdown();
-    pool.wait();
+    delete strand;
+    pool->shutdown();
+    pool->wait();
+    delete pool;
+}
+
+TEST(StrandTest, WaitFromOwnStoppedDrainDoesNotSelfDeadlock) {
+    auto delayed = std::make_shared<delayed_scheduler_state>();
+    auto* strand = new forge::strand{delayed_scheduler{delayed}};
+    auto scheduler = strand->get_scheduler();
+    auto completed = std::make_shared<std::promise<void>>();
+    auto future = completed->get_future();
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::upon_stopped([strand, completed] noexcept {
+            strand->wait();
+            completed->set_value();
+        }));
+
+    std::thread shutdown_thread{[strand] {
+        strand->shutdown();
+    }};
+    if (future.wait_for(2s) != std::future_status::ready) {
+        ADD_FAILURE() << "strand wait deadlocked inside its stopped drain";
+        shutdown_thread.detach();
+        return;
+    }
+    shutdown_thread.join();
+    strand->wait();
+
+    {
+        std::lock_guard lk{delayed->mtx};
+        delayed->release = true;
+    }
+    delayed->cv.notify_all();
+
+    std::unique_lock lk{delayed->mtx};
+    EXPECT_TRUE(delayed->cv.wait_for(lk, 2s, [&] {
+        return delayed->completed;
+    }));
+    lk.unlock();
+    delete strand;
 }
 
 TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
