@@ -40,6 +40,7 @@
 // If this wrapper is used without forge.cmake, any native __cpp_lib_linalg value
 // is still treated as a stand-aside signal.
 #if defined(FORGE_FORCE_LINALG_BACKPORT) || \
-    (!defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg))
+    (!defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg) && \
+     defined(__cpp_lib_mdspan))
 #include "cpp26/linalg.hpp"
 #endif

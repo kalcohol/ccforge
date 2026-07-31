@@ -40,6 +40,7 @@ if(DEFINED FORGE_BACKPORT_PROBE_FINGERPRINT
             FORGE_SENDERS_PARTIAL
             FORGE_CONSTANT_WRAPPER_FULL
             FORGE_CONSTANT_WRAPPER_PARTIAL
+            FORGE_BASE_MDSPAN_AVAILABLE
             FORGE_MDSPAN_PADDED_LAYOUTS_FULL
             FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL
             FORGE_SUBMDSPAN_FULL
@@ -91,7 +92,7 @@ macro(_forge_decide _disp _suffix _full _partial)
     elseif(${_partial})
         target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
         message(STATUS "CC Forge probe: ${_suffix}=PARTIAL")
-        message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE at -std=c++${_forge_std}; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it, or set -DFORGE_FORCE_${_suffix}_BACKPORT=ON to force the backport (UB-prone).")
+        message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE at -std=c++${_forge_std}; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it or select a language mode where these declarations are absent. FORGE_FORCE_${_suffix}_BACKPORT remains a diagnostic-only switch and may fail to compile or violate the ODR on this toolchain.")
     else()
         set(FORGE_NEEDS_BACKPORT TRUE)
         message(STATUS "CC Forge probe: ${_suffix}=BACKPORT")
@@ -214,6 +215,18 @@ check_cxx_source_compiles("
 " FORGE_CONSTANT_WRAPPER_PARTIAL)
 _forge_decide("std::constant_wrapper" CONSTANT_WRAPPER FORGE_CONSTANT_WRAPPER_FULL FORGE_CONSTANT_WRAPPER_PARTIAL)
 
+# The mdspan-dependent backports extend a toolchain-provided base <mdspan>;
+# CC Forge does not ship the C++23 mdspan foundation itself.
+check_cxx_source_compiles("
+    #include <mdspan>
+    int main() {
+        int data[1]{};
+        std::mdspan<int, std::extents<int, 1>> view(data);
+        return view[0];
+    }
+" FORGE_BASE_MDSPAN_AVAILABLE)
+
+if(FORGE_BASE_MDSPAN_AVAILABLE)
 # C++26 mdspan padded layouts (P2642). These are not useful only to submdspan,
 # so they get a native guard before the submdspan wrapper can inject mappings.
 check_cxx_source_compiles("
@@ -307,5 +320,12 @@ check_cxx_source_compiles("
     }
 " FORGE_LINALG_PARTIAL)
 _forge_decide("std::linalg" LINALG FORGE_LINALG_FULL FORGE_LINALG_PARTIAL)
+else()
+    message(STATUS "CC Forge probe: MDSPAN_BASE=UNAVAILABLE")
+    message(STATUS "CC Forge probe: MDSPAN_PADDED_LAYOUTS=UNAVAILABLE")
+    message(STATUS "CC Forge probe: SUBMDSPAN=UNAVAILABLE")
+    message(STATUS "CC Forge probe: LINALG=UNAVAILABLE")
+    message(WARNING "CC Forge: the configured standard library has no usable base <mdspan>; padded layouts, submdspan, and linalg backports are unavailable")
+endif()
 
 set(CMAKE_REQUIRED_FLAGS "${_forge_saved_required_flags}")

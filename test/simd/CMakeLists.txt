@@ -39,12 +39,29 @@ function(forge_add_simd_configure_probe result_var source_name should_compile fa
 endfunction()
 
 set(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
+set(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
 set(CMAKE_REQUIRED_INCLUDES
     "${CMAKE_SOURCE_DIR}/backport"
     "${CMAKE_SOURCE_DIR}/include")
+foreach(_forge_required_target IN ITEMS forge_std forge)
+    if(TARGET ${_forge_required_target})
+        get_target_property(
+            _forge_target_definitions
+            ${_forge_required_target}
+            INTERFACE_COMPILE_DEFINITIONS)
+        if(_forge_target_definitions)
+            foreach(_forge_definition IN LISTS _forge_target_definitions)
+                list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
+            endforeach()
+        endif()
+    endif()
+endforeach()
 add_subdirectory(configure_probes)
 set(CMAKE_REQUIRED_INCLUDES "${_FORGE_SIMD_SAVED_CMAKE_REQUIRED_INCLUDES}")
+set(CMAKE_REQUIRED_DEFINITIONS "${_FORGE_SIMD_SAVED_CMAKE_REQUIRED_DEFINITIONS}")
 unset(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_INCLUDES)
+unset(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_DEFINITIONS)
+unset(_forge_target_definitions)
 
 add_subdirectory(runtime)
 add_subdirectory(compile)
