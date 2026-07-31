@@ -41,6 +41,6 @@
 // is still treated as a stand-aside signal.
 #if defined(FORGE_FORCE_LINALG_BACKPORT) || \
     (!defined(FORGE_HAS_NATIVE_LINALG) && !defined(__cpp_lib_linalg) && \
-     defined(__cpp_lib_mdspan))
+     !defined(FORGE_NO_BASE_MDSPAN))
 #include "cpp26/linalg.hpp"
 #endif

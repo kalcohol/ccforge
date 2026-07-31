@@ -321,6 +321,8 @@ check_cxx_source_compiles("
 " FORGE_LINALG_PARTIAL)
 _forge_decide("std::linalg" LINALG FORGE_LINALG_FULL FORGE_LINALG_PARTIAL)
 else()
+    target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE
+        FORGE_NO_BASE_MDSPAN=1)
     message(STATUS "CC Forge probe: MDSPAN_BASE=UNAVAILABLE")
     message(STATUS "CC Forge probe: MDSPAN_PADDED_LAYOUTS=UNAVAILABLE")
     message(STATUS "CC Forge probe: SUBMDSPAN=UNAVAILABLE")
