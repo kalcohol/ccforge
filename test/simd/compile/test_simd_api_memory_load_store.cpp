@@ -65,6 +65,14 @@ static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const 
     "partial_store(pointer, sentinel, mask) should be a public entry point");
 static_assert(std::is_same<decltype(std::simd::partial_store(std::declval<const int4&>(), std::declval<int_iter>(), std::declval<int_iter>(), mask4{})), void>::value,
     "partial_store(iterator, sentinel, mask) should be a public entry point");
+static_assert(std::is_same<decltype(std::simd::unchecked_load<int4>(static_cast<const int*>(nullptr), static_cast<const int*>(nullptr))), int4>::value,
+    "unchecked_load<V>(pointer, sentinel) should default its flags");
+static_assert(std::is_same<decltype(std::simd::unchecked_load<int4>(static_cast<const int*>(nullptr), static_cast<const int*>(nullptr), mask4{})), int4>::value,
+    "unchecked_load<V>(pointer, sentinel, mask) should default its flags");
+static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), static_cast<int*>(nullptr), static_cast<int*>(nullptr))), void>::value,
+    "unchecked_store(pointer, sentinel) should default its flags");
+static_assert(std::is_same<decltype(std::simd::unchecked_store(std::declval<const int4&>(), static_cast<int*>(nullptr), static_cast<int*>(nullptr), mask4{})), void>::value,
+    "unchecked_store(pointer, sentinel, mask) should default its flags");
 
 static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr), std::simd::simd_size_type{})), default_complexf>,
     "partial_load(pointer, count) should infer supported complex value types");

@@ -18,8 +18,17 @@ int main() {
     auto swapped = std::simd::byteswap(values);
     auto counted = std::simd::popcount(values);
     auto leading = std::simd::countl_zero(values);
+    auto reversed = std::simd::bit_reverse(values);
+    auto shifted_left = std::simd::shl(values, shifts);
+    auto shifted_right = std::simd::shr(values, 1);
     auto rotated = std::simd::rotl(values, shifts);
+    auto repeated = std::simd::bit_repeat(values, shifts);
+    auto compressed = std::simd::bit_compress(values, values);
+    auto expanded = std::simd::bit_expand(values, 1u);
     auto floored = std::simd::bit_floor(values);
 
-    return static_cast<int>(swapped[0] + rotated[0] + floored[0] + static_cast<unsigned>(counted[0] + leading[0]));
+    return static_cast<int>(
+        swapped[0] + reversed[0] + shifted_left[0] + shifted_right[0] +
+        rotated[0] + repeated[0] + compressed[0] + expanded[0] +
+        floored[0] + static_cast<unsigned>(counted[0] + leading[0]));
 }

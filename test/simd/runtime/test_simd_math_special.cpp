@@ -309,6 +309,14 @@ TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
         1e-12);
 }
 
+TEST(SimdMathSpecialTest, ExpintFloatFallbackAvoidsNegativeSeriesCancellation) {
+    const float actual =
+        std::simd::detail::special_math::expint_fallback(-6.0f);
+    constexpr float expected = -0.000360082452163f;
+
+    EXPECT_NEAR(actual, expected, std::abs(expected) * 8e-7f);
+}
+
 TEST(SimdMathSpecialTest, BesselFallbacksRemainStableOutsideSmallArguments) {
     EXPECT_NEAR(
         std::simd::detail::special_math::sph_bessel_fallback(8u, 0.5),

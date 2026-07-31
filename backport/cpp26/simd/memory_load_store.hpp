@@ -216,7 +216,7 @@ template<class V,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
-constexpr V unchecked_load(I first, S last, flags<Flags...> f);
+constexpr V unchecked_load(I first, S last, flags<Flags...> f = {});
 
 template<class V,
          class I,
@@ -224,7 +224,7 @@ template<class V,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value), int>::type = 0>
-constexpr V unchecked_load(I first, S last, const typename V::mask_type& mask_value, flags<Flags...> f);
+constexpr V unchecked_load(I first, S last, const typename V::mask_type& mask_value, flags<Flags...> f = {});
 
 template<class T, class Abi, class U, class... Flags>
 constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f);
@@ -239,7 +239,7 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f);
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f = {});
 
 template<class T,
          class Abi,
@@ -248,7 +248,7 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {});
 
 template<class I,
          class... Flags,

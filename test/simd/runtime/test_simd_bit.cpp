@@ -13,6 +13,7 @@ TEST(SimdBitTest, UnaryBitAlgorithmsApplyPerLane) {
     const uint4 values = load_vec<uint4>(data);
 
     const auto swapped = std::simd::byteswap(values);
+    const auto reversed = std::simd::bit_reverse(values);
     const auto counted = std::simd::popcount(values);
     const auto leading_zero = std::simd::countl_zero(values);
     const auto leading_one = std::simd::countl_one(values);
@@ -27,6 +28,11 @@ TEST(SimdBitTest, UnaryBitAlgorithmsApplyPerLane) {
     EXPECT_EQ(swapped[1], 0x0f000000u);
     EXPECT_EQ(swapped[2], 0x00000080u);
     EXPECT_EQ(swapped[3], 0x01000000u);
+
+    EXPECT_EQ(reversed[0], 0x1e6a2c48u);
+    EXPECT_EQ(reversed[1], 0xf0000000u);
+    EXPECT_EQ(reversed[2], 0x00000001u);
+    EXPECT_EQ(reversed[3], 0x80000000u);
 
     EXPECT_EQ(counted[0], 13);
     EXPECT_EQ(counted[1], 4);
@@ -128,6 +134,77 @@ TEST(SimdBitTest, RotateAlgorithmsSupportScalarAndMixedVectorCounts) {
     EXPECT_EQ(vector_right[1], 4u);
     EXPECT_EQ(vector_right[2], 4u);
     EXPECT_EQ(vector_right[3], 4u);
+}
+
+TEST(SimdBitTest, ShiftAlgorithmsDefineNegativeAndOutOfRangeCounts) {
+    const int4 values =
+        load_vec<int4>(std::array<int, 4>{{-8, -1, 1, 3}});
+    const int4 shifts =
+        load_vec<int4>(std::array<int, 4>{{1, 2, -1, 40}});
+
+    const auto vector_left = std::simd::shl(values, shifts);
+    const auto vector_right = std::simd::shr(values, shifts);
+    const auto scalar_left = std::simd::shl(values, -1);
+    const auto scalar_right = std::simd::shr(values, -1);
+
+    EXPECT_EQ(vector_left[0], -16);
+    EXPECT_EQ(vector_left[1], -4);
+    EXPECT_EQ(vector_left[2], 0);
+    EXPECT_EQ(vector_left[3], 0);
+
+    EXPECT_EQ(vector_right[0], -4);
+    EXPECT_EQ(vector_right[1], -1);
+    EXPECT_EQ(vector_right[2], 2);
+    EXPECT_EQ(vector_right[3], 0);
+
+    EXPECT_EQ(scalar_left[0], -4);
+    EXPECT_EQ(scalar_left[2], 0);
+    EXPECT_EQ(scalar_right[0], -16);
+    EXPECT_EQ(scalar_right[2], 2);
+}
+
+TEST(SimdBitTest, BitPermutationAlgorithmsApplyScalarAndVectorPatterns) {
+    const uint4 values = load_vec<uint4>(
+        std::array<unsigned, 4>{{0xcu, 0x2u, 0x5u, 0x1u}});
+    const int4 repeat_lengths =
+        load_vec<int4>(std::array<int, 4>{{4, 4, 4, 4}});
+    const uint4 masks = load_vec<uint4>(
+        std::array<unsigned, 4>{{0xau, 0x5u, 0xcu, 0x3u}});
+
+    const auto repeated_scalar = std::simd::bit_repeat(values, 4);
+    const auto repeated_vector =
+        std::simd::bit_repeat(values, repeat_lengths);
+    const auto compressed_scalar =
+        std::simd::bit_compress(values, 0xau);
+    const auto compressed_vector =
+        std::simd::bit_compress(values, masks);
+    const auto expanded_scalar =
+        std::simd::bit_expand(values, 0xau);
+    const auto expanded_vector =
+        std::simd::bit_expand(values, masks);
+
+    EXPECT_EQ(repeated_scalar[0], 0xccccccccu);
+    EXPECT_EQ(repeated_scalar[1], 0x22222222u);
+    EXPECT_EQ(repeated_scalar[2], 0x55555555u);
+    EXPECT_EQ(repeated_scalar[3], 0x11111111u);
+    for (std::simd::simd_size_type i = 0; i < uint4::size; ++i) {
+        EXPECT_EQ(repeated_vector[i], repeated_scalar[i]);
+    }
+
+    EXPECT_EQ(compressed_scalar[0], 2u);
+    EXPECT_EQ(compressed_vector[0], 2u);
+    EXPECT_EQ(compressed_vector[1], 0u);
+    EXPECT_EQ(compressed_vector[2], 1u);
+    EXPECT_EQ(compressed_vector[3], 1u);
+
+    EXPECT_EQ(expanded_scalar[0], 0u);
+    EXPECT_EQ(expanded_scalar[1], 0x8u);
+    EXPECT_EQ(expanded_scalar[2], 0x2u);
+    EXPECT_EQ(expanded_scalar[3], 0x2u);
+    EXPECT_EQ(expanded_vector[0], 0u);
+    EXPECT_EQ(expanded_vector[1], 0x4u);
+    EXPECT_EQ(expanded_vector[2], 0x4u);
+    EXPECT_EQ(expanded_vector[3], 0x1u);
 }
 
 } // namespace

@@ -385,8 +385,7 @@ public:
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
-    constexpr explicit
-        basic_vec(R&& r, flags<Flags...> f = {}) noexcept : data_{} {
+    constexpr basic_vec(R&& r, flags<Flags...> f = {}) noexcept : data_{} {
         auto* first = ranges::data(r);
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = detail::convert_or_copy<T>(first[i], f);
@@ -397,7 +396,7 @@ public:
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
-    constexpr explicit basic_vec(R&& r, const mask_type& mask_value, flags<Flags...> f = {}) noexcept : data_{} {
+    constexpr basic_vec(R&& r, const mask_type& mask_value, flags<Flags...> f = {}) noexcept : data_{} {
         auto* first = ranges::data(r);
         for (simd_size_type i = 0; i < size; ++i) {
             if (mask_value[i]) {

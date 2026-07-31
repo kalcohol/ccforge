@@ -313,17 +313,22 @@ T expint_fallback(T x) {
     }
 
     if (x <= positive_series_cutoff) {
-        T sum = T{};
-        T term = x;
+        using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+        const wide_t wide_x = static_cast<wide_t>(x);
+        constexpr wide_t series_epsilon = static_cast<wide_t>(1e-18L);
+        wide_t sum = wide_t{};
+        wide_t term = wide_x;
         for (unsigned k = 1; k < 512u; ++k) {
-            const T add = term / static_cast<T>(k);
+            const wide_t add = term / static_cast<wide_t>(k);
             sum += add;
-            term *= x / static_cast<T>(k + 1u);
-            if (std::abs(add) <= epsilon * std::max(T{1}, std::abs(sum))) {
+            term *= wide_x / static_cast<wide_t>(k + 1u);
+            if (std::abs(add) <=
+                series_epsilon * std::max(wide_t{1}, std::abs(sum))) {
                 break;
             }
         }
-        return euler_gamma_v<T> + std::log(std::abs(x)) + sum;
+        return static_cast<T>(
+            euler_gamma_v<wide_t> + std::log(std::abs(wide_x)) + sum);
     }
 
     T sum = T{1};

@@ -32,6 +32,8 @@ static_assert(std::is_convertible<wrapper_bad_value, int4>::value,
     "types that fail constexpr-wrapper-like should still use the ordinary implicit scalar-broadcast path when convertible");
 static_assert(std::is_constructible<int4, std::span<const int, 4>>::value,
     "basic_vec should support contiguous fixed-extent range construction");
+static_assert(std::is_convertible<std::span<const int, 4>, int4>::value,
+    "basic_vec fixed-extent range construction should be implicit");
 static_assert(std::is_constructible<int4, std::span<const int, 4>, mask4>::value,
     "vec<int,4> must be constructible from span<const int,4> and mask");
 static_assert(!std::is_constructible<int4, std::span<const int>>::value,
