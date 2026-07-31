@@ -37,7 +37,16 @@ template <auto X>
 using __forge_cw_result = constant_wrapper<X, decltype(X)>;
 
 #define FORGE_CW_RESULT(...)                                                    \
-    __forge_cw_result<(__VA_ARGS__)>
+    constant_wrapper<(__VA_ARGS__)>
+
+template <class T>
+inline constexpr bool __forge_cw_constant_result_supported =
+#if defined(_MSC_VER)
+    // MSVC cannot form constant_wrapper from an array-lvalue NTTP expression.
+    !is_array_v<remove_reference_t<T>>;
+#else
+    true;
+#endif
 
 template <class T>
 struct __forge_is_constant_wrapper : false_type {};
@@ -275,6 +284,8 @@ private:
     template <class... Args>
     static constexpr bool __constant_invocable = requires {
         requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+        requires __forge_cw_constant_result_supported<decltype(
+            __forge_cw_invoke(X, remove_cvref_t<Args>::value...))>;
         typename FORGE_CW_RESULT(
             __forge_cw_invoke(X, remove_cvref_t<Args>::value...));
     };
@@ -285,9 +296,26 @@ private:
     };
 
     template <class... Args>
+    static constexpr bool __msvc_array_invocable =
+#if defined(_MSC_VER)
+        requires {
+            requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+            requires is_array_v<remove_reference_t<decltype(
+                __forge_cw_invoke(X, remove_cvref_t<Args>::value...))>>;
+        };
+#else
+        false;
+#endif
+
+    template <class... Args>
     static consteval bool __call_is_nothrow() {
         if constexpr (__constant_invocable<Args...>) {
             return true;
+#if defined(_MSC_VER)
+        } else if constexpr (__msvc_array_invocable<Args...>) {
+            return noexcept(
+                __forge_cw_invoke(X, remove_cvref_t<Args>::value...));
+#endif
         } else {
             return noexcept(__forge_cw_invoke(value, declval<Args>()...));
         }
@@ -296,6 +324,8 @@ private:
     template <class... Args>
     static constexpr bool __constant_subscriptable = requires {
         requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+        requires __forge_cw_constant_result_supported<decltype(
+            X[remove_cvref_t<Args>::value...])>;
         typename FORGE_CW_RESULT(
             X[remove_cvref_t<Args>::value...]);
     };
@@ -306,9 +336,25 @@ private:
     };
 
     template <class... Args>
+    static constexpr bool __msvc_array_subscriptable =
+#if defined(_MSC_VER)
+        requires {
+            requires (__forge_constexpr_param<remove_cvref_t<Args>> && ...);
+            requires is_array_v<remove_reference_t<decltype(
+                X[remove_cvref_t<Args>::value...])>>;
+        };
+#else
+        false;
+#endif
+
+    template <class... Args>
     static consteval bool __subscript_is_nothrow() {
         if constexpr (__constant_subscriptable<Args...>) {
             return true;
+#if defined(_MSC_VER)
+        } else if constexpr (__msvc_array_subscriptable<Args...>) {
+            return noexcept(X[remove_cvref_t<Args>::value...]);
+#endif
         } else {
             return noexcept(value[declval<Args>()...]);
         }
@@ -317,12 +363,17 @@ private:
 public:
     template <class... Args>
         requires (__constant_invocable<Args...> ||
+                  __msvc_array_invocable<Args...> ||
                   __runtime_invocable<Args...>)
     static constexpr decltype(auto) operator()(Args&&... args)
         noexcept(__call_is_nothrow<Args...>()) {
         if constexpr (__constant_invocable<Args...>) {
             return FORGE_CW_RESULT(
                 __forge_cw_invoke(X, remove_cvref_t<Args>::value...)){};
+#if defined(_MSC_VER)
+        } else if constexpr (__msvc_array_invocable<Args...>) {
+            return __forge_cw_invoke(X, remove_cvref_t<Args>::value...);
+#endif
         } else {
             return __forge_cw_invoke(value, static_cast<Args&&>(args)...);
         }
@@ -330,12 +381,17 @@ public:
 
     template <class... Args>
         requires (__constant_subscriptable<Args...> ||
+                  __msvc_array_subscriptable<Args...> ||
                   __runtime_subscriptable<Args...>)
     static constexpr decltype(auto) operator[](Args&&... args)
         noexcept(__subscript_is_nothrow<Args...>()) {
         if constexpr (__constant_subscriptable<Args...>) {
             return FORGE_CW_RESULT(
                 X[remove_cvref_t<Args>::value...]){};
+#if defined(_MSC_VER)
+        } else if constexpr (__msvc_array_subscriptable<Args...>) {
+            return X[remove_cvref_t<Args>::value...];
+#endif
         } else {
             return value[static_cast<Args&&>(args)...];
         }

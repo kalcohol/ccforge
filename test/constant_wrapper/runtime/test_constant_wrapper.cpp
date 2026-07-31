@@ -199,9 +199,7 @@ static_assert(std::is_same_v<
               std::constant_wrapper<9>>);
 static_assert(std::is_same_v<
               decltype(&std::cw<42>),
-              std::constant_wrapper<
-                  &std::constant_wrapper<42, int>::value,
-                  const int*>>);
+              std::constant_wrapper<&std::constant_wrapper<42, int>::value>>);
 
 static_assert(decltype(std::cw<8> + std::cw<3>)::value == 11);
 static_assert(decltype(std::cw<8> - std::cw<3>)::value == 5);
@@ -293,9 +291,19 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
               decltype(std::cw<&member_owner::value>(std::cw<member_value>)),
               std::constant_wrapper<11>>);
+#if defined(_MSC_VER)
+using array_member_result_t = decltype(
+    std::cw<&array_member_owner::values>(std::cw<array_member_value>));
+static_assert(std::is_lvalue_reference_v<array_member_result_t>);
+static_assert(std::is_array_v<std::remove_reference_t<array_member_result_t>>);
+static_assert(std::extent_v<std::remove_reference_t<array_member_result_t>> == 3);
+static_assert(
+    std::cw<&array_member_owner::values>(std::cw<array_member_value>)[2] == 8);
+#else
 static_assert(
     decltype(std::cw<&array_member_owner::values>(
         std::cw<array_member_value>))::value[2] == 8);
+#endif
 static_assert(std::is_same_v<
               decltype(std::cw<overload_callable{}>(std::cw<1>)),
               std::constant_wrapper<1>>);

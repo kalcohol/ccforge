@@ -73,6 +73,9 @@ native surface 时运行。
   constant/runtime call 和 subscript 分支。
 - 已验证：C++23 injected path、Clang/libc++ injected path、MSVC injected path，
   以及 GCC 16 `202603L` partial-native stand-aside。
+- MSVC 当前不能形成以数组左值表达式为模板实参的 `constant_wrapper`；这类
+  `operator()` / `operator[]` 结果按 wording 的无效 constant-call 分支回退为
+  `constexpr` 数组引用，其他结果仍形成 `constant_wrapper`。
 - 有意不提供：被 P4206 撤回的 `cw-fixed-value` 与字符串字面量兼容 surface。
 - native stdlib 只要已经声明任意 partial surface，Forge 就不会覆盖注入；这是
   项目的 ODR 安全策略，不代表该 native 实现满足上述完整 baseline。
