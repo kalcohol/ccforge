@@ -40,7 +40,7 @@ namespace forge {
 class system_context {
 public:
     // Get the global system_context singleton
-    [[nodiscard]] static system_context& get() noexcept {
+    [[nodiscard]] static system_context& get() {
         static system_context* instance = new system_context;
         return *instance;
     }
@@ -73,7 +73,7 @@ private:
     static_thread_pool __pool_;
 };
 
-[[nodiscard]] inline static_thread_pool::scheduler get_system_scheduler() noexcept {
+[[nodiscard]] inline static_thread_pool::scheduler get_system_scheduler() {
     return system_context::get().get_scheduler();
 }
 

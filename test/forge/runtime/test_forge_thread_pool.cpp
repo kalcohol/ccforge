@@ -15,6 +15,8 @@
 #include <tuple>
 
 static_assert(std::execution::scheduler<forge::static_thread_pool::scheduler>);
+static_assert(!noexcept(forge::system_context::get()));
+static_assert(!noexcept(forge::get_system_scheduler()));
 
 namespace {
 
@@ -226,6 +228,15 @@ TEST(StaticThreadPoolTest, ThreadCount) {
 
 TEST(StaticThreadPoolTest, ZeroThreadCountNormalizesToOne) {
     forge::static_thread_pool pool{0};
+    EXPECT_EQ(pool.thread_count(), 1u);
+}
+
+TEST(StaticThreadPoolTest, ConstructorJoinsStartedWorkersBeforeRethrowing) {
+    forge::__pool_detail::test_fail_thread_launch_after(1);
+    EXPECT_THROW((void)forge::static_thread_pool{2}, std::bad_alloc);
+    forge::__pool_detail::test_reset_thread_launch_failure();
+
+    forge::static_thread_pool pool{1};
     EXPECT_EQ(pool.thread_count(), 1u);
 }
 

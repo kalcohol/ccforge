@@ -85,6 +85,9 @@ endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
+    target_compile_definitions(
+        test_forge_thread_pool
+        PRIVATE FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
     forge_add_forge_test(test_forge_start_detached test_forge_start_detached.cpp forge_start_detached)
     forge_add_forge_test(test_forge_single_thread_context test_forge_single_thread_context.cpp forge_single_thread_context)
     forge_add_forge_test(test_forge_timer_context test_forge_timer_context.cpp forge_timer_context)

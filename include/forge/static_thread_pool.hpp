@@ -52,6 +52,18 @@ struct static_thread_pool_options {
 
 namespace __pool_detail {
 
+#if defined(FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
+inline std::optional<std::size_t> __test_thread_launch_failure_after;
+
+inline void test_fail_thread_launch_after(std::size_t successful_launches) noexcept {
+    __test_thread_launch_failure_after = successful_launches;
+}
+
+inline void test_reset_thread_launch_failure() noexcept {
+    __test_thread_launch_failure_after.reset();
+}
+#endif
+
 struct __env {
     static_thread_pool* pool;
 };
@@ -225,8 +237,24 @@ public:
         auto thread_count = options.thread_count;
         if (thread_count == 0) thread_count = 1;
         __threads_.reserve(thread_count);
-        for (std::size_t i = 0; i < thread_count; ++i)
-            __threads_.emplace_back([this] { __run(); });
+        try {
+            for (std::size_t i = 0; i < thread_count; ++i) {
+#if defined(FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
+                if (__pool_detail::__test_thread_launch_failure_after == i) {
+                    throw std::bad_alloc{};
+                }
+#endif
+                __threads_.emplace_back([this] { __run(); });
+            }
+        } catch (...) {
+            shutdown();
+            for (auto& thread : __threads_) {
+                if (thread.joinable()) {
+                    thread.join();
+                }
+            }
+            throw;
+        }
     }
 
     ~static_thread_pool() noexcept {
