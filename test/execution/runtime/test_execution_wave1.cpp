@@ -327,6 +327,15 @@ TEST(IntoVariantTest, WrapsValue) {
     EXPECT_EQ(std::get<std::tuple<int>>(var), std::make_tuple(42));
 }
 
+TEST(IntoVariantTest, SupportsPipeForm) {
+    auto result = std::execution::sync_wait(
+        std::execution::just(42) | std::execution::into_variant());
+
+    ASSERT_TRUE(result.has_value());
+    auto& var = std::get<0>(*result);
+    EXPECT_EQ(std::get<std::tuple<int>>(var), std::make_tuple(42));
+}
+
 TEST(IntoVariantTest, ReportsConstructionFailureAsError) {
     auto sndr = std::execution::into_variant(throwing_value_sender{});
     EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);

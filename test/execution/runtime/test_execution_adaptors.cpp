@@ -503,6 +503,14 @@ TEST(StoppedAsOptionalTest, SenderExists) {
     SUCCEED();
 }
 
+TEST(StoppedAsOptionalTest, SupportsPipeForm) {
+    auto result = std::execution::sync_wait(
+        std::execution::just_stopped() | std::execution::stopped_as_optional());
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(std::get<0>(*result).has_value());
+}
+
 TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
     auto sndr = std::execution::stopped_as_optional(std::execution::just(42));
     using cs_t = decltype(std::execution::get_completion_signatures(
@@ -563,6 +571,13 @@ TEST(StoppedAsErrorTest, ConvertsStoppedToError) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<std::execution::set_error_t(int)>>);
+
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+}
+
+TEST(StoppedAsErrorTest, SupportsPipeForm) {
+    auto sndr =
+        std::execution::just_stopped() | std::execution::stopped_as_error(42);
 
     EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
 }

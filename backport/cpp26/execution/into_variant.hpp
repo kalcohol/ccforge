@@ -280,11 +280,36 @@ struct __into_variant_sender {
 
 } // namespace __forge_into_variant
 
-template<sender S>
-[[nodiscard]] auto into_variant(S&& sndr) {
-    return __forge_into_variant::__into_variant_sender<std::decay_t<S>>{
-        __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-}
+namespace __forge_into_variant {
+
+struct __into_variant_closure {
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) const {
+        return __into_variant_sender<std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, __into_variant_closure self) {
+        return self(std::forward<S>(sndr));
+    }
+};
+
+struct __into_variant_t {
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) const {
+        return __into_variant_sender<std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    [[nodiscard]] auto operator()() const noexcept {
+        return __into_variant_closure{};
+    }
+};
+
+} // namespace __forge_into_variant
+
+inline constexpr __forge_into_variant::__into_variant_t into_variant{};
 
 } // namespace std::execution
 

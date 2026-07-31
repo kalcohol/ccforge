@@ -318,17 +318,80 @@ struct __error_sender {
 
 } // namespace __forge_stopped
 
-template<sender S>
-[[nodiscard]] auto stopped_as_optional(S&& sndr) {
-    return __forge_stopped::__optional_sender<std::decay_t<S>>{
-        __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-}
+namespace __forge_stopped {
 
-template<sender S, class Err>
-[[nodiscard]] auto stopped_as_error(S&& sndr, Err&& err) {
-    return __forge_stopped::__error_sender<std::decay_t<S>, std::decay_t<Err>>{
-        __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-        std::forward<Err>(err)};
-}
+struct __optional_closure {
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) const {
+        return __optional_sender<std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, __optional_closure self) {
+        return self(std::forward<S>(sndr));
+    }
+};
+
+struct __optional_t {
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) const {
+        return __optional_sender<std::decay_t<S>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    [[nodiscard]] auto operator()() const noexcept {
+        return __optional_closure{};
+    }
+};
+
+template<class Err>
+struct __error_closure {
+    [[no_unique_address]] Err __err;
+
+    template<sender S>
+        requires std::copy_constructible<Err>
+    [[nodiscard]] auto operator()(S&& sndr) const& {
+        return __error_sender<std::decay_t<S>, Err>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)), __err};
+    }
+
+    template<sender S>
+    [[nodiscard]] auto operator()(S&& sndr) && {
+        return __error_sender<std::decay_t<S>, Err>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
+            std::move(__err)};
+    }
+
+    template<sender S>
+        requires std::copy_constructible<Err>
+    friend auto operator|(S&& sndr, const __error_closure& self) {
+        return self(std::forward<S>(sndr));
+    }
+
+    template<sender S>
+    friend auto operator|(S&& sndr, __error_closure&& self) {
+        return std::move(self)(std::forward<S>(sndr));
+    }
+};
+
+struct __error_t {
+    template<sender S, class Err>
+    [[nodiscard]] auto operator()(S&& sndr, Err&& err) const {
+        return __error_sender<std::decay_t<S>, std::decay_t<Err>>{
+            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
+            std::forward<Err>(err)};
+    }
+
+    template<class Err>
+    [[nodiscard]] auto operator()(Err&& err) const {
+        return __error_closure<std::decay_t<Err>>{std::forward<Err>(err)};
+    }
+};
+
+} // namespace __forge_stopped
+
+inline constexpr __forge_stopped::__optional_t stopped_as_optional{};
+inline constexpr __forge_stopped::__error_t stopped_as_error{};
 
 } // namespace std::execution
