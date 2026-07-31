@@ -59,6 +59,33 @@ TEST(LinalgLevel1CopyScaleSwapAdd, DenseMatrices) {
     EXPECT_DOUBLE_EQ((c[1, 1]), 12.0);
 }
 
+TEST(LinalgLevel1CompatibleExtents, AcceptsDifferentMdspanExtentsTypes) {
+    std::array<double, 3> x_data{1.0, 2.0, 3.0};
+    std::array<double, 3> y_data{4.0, 5.0, 6.0};
+    std::array<double, 3> z_data{};
+
+    std::mdspan<double, std::extents<std::size_t, 3>> x(x_data.data());
+    std::mdspan<double, std::dextents<int, 1>> y(y_data.data(), 3);
+    std::mdspan<double, std::extents<long, std::dynamic_extent>> z(
+        z_data.data(), 3);
+
+    EXPECT_DOUBLE_EQ(std::linalg::dot(x, y, 0.0), 32.0);
+    EXPECT_DOUBLE_EQ(std::linalg::dotc(x, y, 0.0), 32.0);
+    EXPECT_DOUBLE_EQ(std::linalg::dot(x, y), 32.0);
+    EXPECT_DOUBLE_EQ(std::linalg::dotc(x, y), 32.0);
+
+    std::linalg::add(x, y, z);
+    EXPECT_EQ(z_data, (std::array<double, 3>{5.0, 7.0, 9.0}));
+
+    std::linalg::swap_elements(x, y);
+    EXPECT_EQ(x_data, (std::array<double, 3>{4.0, 5.0, 6.0}));
+    EXPECT_EQ(y_data, (std::array<double, 3>{1.0, 2.0, 3.0}));
+
+    std::linalg::apply_givens_rotation(x, y, 0.0, 1.0);
+    EXPECT_EQ(x_data, (std::array<double, 3>{1.0, 2.0, 3.0}));
+    EXPECT_EQ(y_data, (std::array<double, 3>{-4.0, -5.0, -6.0}));
+}
+
 TEST(LinalgLevel1Dot, LayoutStrideUsesMappedElements) {
     double x_data[] = {1.0, 100.0, 2.0, 100.0, 3.0};
     double y_data[] = {4.0, 100.0, 5.0, 100.0, 6.0};

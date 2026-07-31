@@ -110,49 +110,49 @@ void scale(
 }
 
 // swap_elements — [linalg.algs.blas1.swap]
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2>
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2>
 void swap_elements(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y)
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
     using std::swap;
-    if constexpr (Extents::rank() == 1) {
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
+    if constexpr (Extents1::rank() == 1) {
+        for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
             swap(x[i], y[i]);
     } else {
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
-            for (typename Extents::index_type j = 0; j < x.extent(1); ++j)
+        for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
+            for (typename Extents1::index_type j = 0; j < x.extent(1); ++j)
                 swap(x[i, j], y[i, j]);
     }
 }
 
 // add — [linalg.algs.blas1.add]
-template<class InExtents, class InLayout1, class InAccessor1,
-                          class InLayout2, class InAccessor2,
+template<class InExtents1, class InLayout1, class InAccessor1,
+         class InExtents2, class InLayout2, class InAccessor2,
          class OutExtents, class OutLayout, class OutAccessor>
 void add(
-    std::mdspan<typename InAccessor1::element_type, InExtents, InLayout1, InAccessor1> x,
-    std::mdspan<typename InAccessor2::element_type, InExtents, InLayout2, InAccessor2> y,
+    std::mdspan<typename InAccessor1::element_type, InExtents1, InLayout1, InAccessor1> x,
+    std::mdspan<typename InAccessor2::element_type, InExtents2, InLayout2, InAccessor2> y,
     std::mdspan<typename OutAccessor::element_type, OutExtents, OutLayout, OutAccessor> z)
 {
-    if constexpr (InExtents::rank() == 1) {
-        for (typename InExtents::index_type i = 0; i < x.extent(0); ++i)
+    if constexpr (InExtents1::rank() == 1) {
+        for (typename InExtents1::index_type i = 0; i < x.extent(0); ++i)
             z[i] = x[i] + y[i];
     } else {
-        for (typename InExtents::index_type i = 0; i < x.extent(0); ++i)
-            for (typename InExtents::index_type j = 0; j < x.extent(1); ++j)
+        for (typename InExtents1::index_type i = 0; i < x.extent(0); ++i)
+            for (typename InExtents1::index_type j = 0; j < x.extent(1); ++j)
                 z[i, j] = x[i, j] + y[i, j];
     }
 }
 
 // dot — [linalg.algs.blas1.dot]
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2,
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2,
          class T>
 T dot(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     T init)
 {
     using ElemT = std::remove_const_t<typename Accessor1::element_type>;
@@ -166,7 +166,7 @@ T dot(
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
         static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
         const auto n = x.extent(0);
-        typename Extents::index_type i = 0;
+        typename Extents1::index_type i = 0;
         const ElemT* px = x.data_handle();
         const ElemT* py = y.data_handle();
         ElemT acc = ElemT{};
@@ -179,31 +179,31 @@ T dot(
         return init + acc;
     }
 #endif
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
+    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
         init += static_cast<T>(x[i]) * static_cast<T>(y[i]);
     return init;
 }
 
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2>
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2>
 auto dot(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y)
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
     using T = decltype(x[0] * y[0]);
     return dot(x, y, T{});
 }
 
 // dotc — [linalg.algs.blas1.dotc] (conjugate dot)
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2,
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2,
          class T>
 T dotc(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     T init)
 {
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
         if constexpr (requires { xi.real(); xi.imag(); }) {
             init += static_cast<T>(std::conj(xi)) * static_cast<T>(y[i]);
@@ -214,11 +214,11 @@ T dotc(
     return init;
 }
 
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2>
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2>
 auto dotc(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y)
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
     using T = decltype(x[0] * y[0]);
     return dotc(x, y, T{});
@@ -414,14 +414,14 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
 }
 
 // apply_givens_rotation — [linalg.algs.blas1.givens]
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2, class T>
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2, class T>
 void apply_givens_rotation(
-    std::mdspan<typename Accessor1::element_type, Extents, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents, Layout2, Accessor2> y,
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     T c, T s)
 {
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
         auto yi = y[i];
         x[i] = c * xi + s * yi;
@@ -429,15 +429,15 @@ void apply_givens_rotation(
     }
 }
 
-template<class Extents, class Layout1, class Accessor1,
-                        class Layout2, class Accessor2, class Real>
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2, class Real>
 void apply_givens_rotation(
-    std::mdspan<std::complex<Real>, Extents, Layout1, Accessor1> x,
-    std::mdspan<std::complex<Real>, Extents, Layout2, Accessor2> y,
+    std::mdspan<std::complex<Real>, Extents1, Layout1, Accessor1> x,
+    std::mdspan<std::complex<Real>, Extents2, Layout2, Accessor2> y,
     Real c, std::complex<Real> s)
 {
     using std::conj;
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
         auto yi = y[i];
         x[i] = c * xi + s * yi;
