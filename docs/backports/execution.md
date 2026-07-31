@@ -32,6 +32,11 @@
 
 ## 当前限制
 
+- 支持的 public include 是 `<execution>`，并应通过 `forge::std` / `forge::forge`
+  target 消费。`backport/cpp26/execution/*.hpp` 是实现 fragment，不是独立公共入口；
+  直接 include fragment（尤其先于平台 `<execution>`）不受支持，可能绕过 wrapper
+  prelude / feature decisions，并在 libc++ inline namespace 或
+  `FORGE_HAS_NATIVE_EXECUTION_POLICIES` 等配置上形成跨 TU 不一致。
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和
   `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile
   probe 覆盖。
@@ -86,6 +91,11 @@
   都会请求停止 eager producer 并最终释放 scope association。Child 的 value/error
   completion 会先存为 decay-copy，再以 rvalue 交给 future receiver；future 公开的
   completion signatures 也使用这些 decayed types，不保留 child 的引用类别。
+  Consumer record 在 future sender 的 `connect()` 中分配，因此 `connect()` 可以因
+  allocator 或 receiver construction 失败而抛出；不要把该 backport 路径放进假设
+  `connect()` 无条件 `noexcept` 的代码。Connected consumer 与 shared state 在 active
+  期间有短暂的双向 strong ownership，terminal completion、未启动 operation 析构和
+  abandon 路径负责切断该关系；不要绕过这些公开 ownership 路径手工拆状态。
 - Scope-token surface 已改为 current-WD-shaped：
   `simple_counting_scope::token::wrap(sender)` 是 identity forwarding，
   `counting_scope::token::wrap(sender)` 会给 child env 暴露一个 fused stop token：

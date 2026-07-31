@@ -118,6 +118,9 @@ taskbook，而不是本轮小修。
 - `timer_context` operation-state 提前销毁不是取消协议。
 - `async_scope::wait()` / destructor 会等待 scope-owned operation-state 析构，但仍不拥有
   用户 memory resource；resource 必须活过 scope 对象。
+- owning context 的 `wait()` 只 drain primitive-owned accepted work，不 join 外部
+  submission thread；teardown 前必须先让并发 `start()` / submitter quiescent，因为
+  shutdown 后的 rejection 可以在 submitter 栈上同步完成。
 - `system_context` 是 process-lifetime singleton；`shutdown()` 不隐式 join，确定性排空请显式
   `wait()`。
 - `io_env` 是 borrowed；`std::inplace_stop_source`、scheduler 和 memory resource lifetime

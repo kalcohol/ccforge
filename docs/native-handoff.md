@@ -45,9 +45,9 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 
 改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
 
-## Force flags（强制开关）
+## Force flags（诊断开关）
 
-若确需在部分原生工具链上强制启用 backport（UB 风险，仅供诊断），可设：
+以下开关仅用于诊断 backport 本身：
 
 - `FORGE_FORCE_SIMD_BACKPORT`
 - `FORGE_FORCE_SENDERS_BACKPORT`
@@ -56,7 +56,11 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 - `FORGE_FORCE_SUBMDSPAN_BACKPORT`
 - `FORGE_FORCE_LINALG_BACKPORT`
 
-这些开关会强制把对应 backport 注入到 include path 和 wrapper guard 中。它们不适合生产配置，因为 partial-native 工具链上很容易触发 `namespace std` 重定义。
+这些开关会要求 wrapper 走 backport guard，但不会移除标准库已经声明的同名实体。
+因此它们只在 declaration-free 的语言模式 / 标准库组合上可靠；partial-native 或
+complete-native 工具链可能直接因 `namespace std` 重定义而编译失败，也可能形成 ODR
+风险。它们不是 partial-native 的兼容逃生通道，更不能作为 production 配置。遇到
+partial native 时，应等待工具链补全，或选择尚未暴露这些声明的语言模式。
 
 ## 注入方式
 
@@ -68,6 +72,13 @@ Forge backport 满足以下要素：
 - **自动开关（三态让位）**：完整原生和部分原生均让位，无原生才注入 backport
 
 实现方式：`forge.cmake` 将 `backport/` 前置到 include path；`backport/` 内提供与标准同名的包装头（如 `backport/memory`、`backport/linalg`），先包含真实标准库头，再条件注入 backport 实现。
+
+受支持的消费方式是链接 `forge::std` / `forge::forge`（或使用安装包导出的同名
+target），让 `forge.cmake` 的探针宏与 include path 一起传播。仅手工添加
+`-I backport` 不属于兼容契约：在已有 partial/native 声明的工具链上，缺少
+`FORGE_HAS_NATIVE_*` 决策宏可能产生重定义。Padded layouts、`submdspan` 和 `linalg`
+还依赖工具链先提供可用的 C++23 base `<mdspan>`；没有该 foundation 时 CMake 会把这些
+依赖面报告为 `UNAVAILABLE`，不会声称已注入。
 
 标准入口保持无后缀头名；`forge::` 扩展入口保持 `.hpp` 头名。这是有意边界：
 extensionless 头只模拟标准库入口，项目扩展不伪装成标准库头。

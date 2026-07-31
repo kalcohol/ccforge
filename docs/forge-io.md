@@ -399,6 +399,12 @@ context `shutdown()` / `wait()` 之后再关闭。否则 OS 可能复用同一�
 `forge::io::context` 是 owning runtime primitive，析构会 `shutdown()` + `wait()`，
 因此可能阻塞。
 
+Context drain 只覆盖 context 已接受的 operation 和 poller worker，不会 join 调用方的
+submission thread。开始 teardown 前必须先停止并 join 仍可能并发调用 readiness /
+read-write sender `start()` 的线程；shutdown 后被拒绝的 operation 可以在该 submitter
+线程内同步完成为 stopped。若 external submission 尚未 quiescent，仅调用
+`shutdown()` / `wait()` 不能保护 completion 所访问的 user state。
+
 - `close()`：关闭 ingress，拒绝新 readiness operation；已 pending operation 仍可正常
   因 readiness 完成。若 close 后没有 pending operation，poller 会退出。
 - `request_stop()`：请求取消 pending operation。若取消先赢，operation 以 `set_stopped()`

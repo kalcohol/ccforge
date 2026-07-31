@@ -31,6 +31,12 @@ standard backport，也不会向 `namespace std` 添加名字。
 - 当它从该 primitive 自己的 worker 或 completion callback 中被调用时，必须避免
   self-deadlock。
 
+`wait()` 不是外部提交线程的 join。开始 teardown 前，owner 必须先停止并 join 可能并发
+调用 sender `start()` / primitive submission API 的线程；shutdown 后被拒绝的 operation
+可以在提交线程内同步完成为 stopped，而 primitive 无法把该外部调用栈纳入自己的 drain
+计数。只有在 external submission 已 quiescent 后，`shutdown()` + `wait()` 才构成完整的
+owning-context teardown barrier。
+
 `join()` 是 primitive 可以暴露 sender 时的首选 async surface。它在对象 drain 后完成。
 Blocking `wait()` 仍可用于测试、destructor 和简单 shutdown path。
 
@@ -75,7 +81,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   因而调用方不能仅凭 stopped 区分取消、shutdown 与分配失败。Timer operation state
   必须保持存活直到 value / stopped completion；提前销毁
   operation state 不是取消协议，调用方应通过 receiver stop token 或
-  `timer_context::shutdown()` 取消。
+  `timer_context::shutdown()` 取消。Teardown 前还必须停止并 join 外部 timer
+  submitter；shutdown 后才调用 `start()` 的 timer 可以在 submitter 线程内同步完成
+  stopped，不属于 `wait()` 可 join 的 worker work。
 - `forge::runtime_context::wait()` 是 practical single-hop drain：`pool -> timers ->
   pool`。它不是 unbounded quiescence protocol。
 - `forge::async_scope` owns eager-start sender work。`close()` 拒绝后续 spawn，
@@ -110,7 +118,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   operation，同时允许已 pending operation 正常完成；`request_stop()` 会把 pending
   operation 完成为 stopped 或发起取消；`shutdown()` 组合 close 和 context stop。
   `wait()` join worker。File descriptor、Windows handle 和 user buffer 都是 borrowed，
-  必须活到 pending operation 完成，或在 close 前先 cancel 并 drain。
+  必须活到 pending operation 完成，或在 close 前先 cancel 并 drain。Context teardown
+  也要求外部 IO submitter 已 quiescent；`wait()` 不 join 正在其他线程执行的
+  operation `start()`。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
 - `forge::any_scheduler` 是窄 scheduler 类型擦除；通过内部 erased receiver 保留
   downstream receiver stop-token visibility，因此底层 scheduler operation 仍能观察

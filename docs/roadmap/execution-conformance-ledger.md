@@ -44,6 +44,10 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 
 ## Working-draft 覆盖矩阵
 
+下表有 32 个按能力分组的 implemented / subset 行，不是 `[execution.syn]` 声明数的完整
+分母；一个表格行可能覆盖多个标准名字。为避免把“未列出”误读成“已实现”，当前 draft
+中明确未实现或暂不纳入本 backport 的分组紧随其后列出。
+
 | Surface | 状态 | 证据 / 剩余差异 |
 | --- | --- | --- |
 | `just`, `just_error`, `just_stopped` | Implemented | `just.hpp`；MVP/wave 测试覆盖。 |
@@ -79,6 +83,17 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_stop_token` | Implemented subset | Current-WD member `.query(get_stop_token)` 优先，保留 tag-invoke fallback；两者都缺失时返回 `never_stop_token`。 |
 | `get_forward_progress_guarantee` | Implemented subset | Tag-invoke scheduler query object，对 local scheduler-shaped types 提供 `weakly_parallel` fallback；内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |
 
+### 未实现 / 暂不纳入的 current-draft surface
+
+| Surface | 处置 | 原因 / 后续条件 |
+| --- | --- | --- |
+| `task`, `task_scheduler`, `with_error` | Not implemented | P3552 coroutine task family 尚未 backport。`forge::task` / `forge::io::io_task` 是不同命名空间下的 Forge extensions，不能当作该标准 surface。只有形成独立 taskbook、生命周期模型和 native-handoff 测试后才考虑。 |
+| `parallel_scheduler`, `get_parallel_scheduler` | Out of scope | 当前 `bulk` family 是明确的 serial subset；本仓库没有可承诺标准 parallel scheduler 语义的 execution resource。 |
+| `dependent_sender_error`, dependent-sender concept surface | Not implemented | 当前 completion-signature diagnostics 不建模这组 dependent sender contract。需要先有可移植编译器/参考实现证据。 |
+| `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |
+| `inlinable_receiver` | Not implemented | 当前 operation-state ownership 不对外承诺该优化查询；不能由现有 inline completion 行为推导。 |
+| `sender_adaptor_closure` | Out of scope as public type | Adaptors 使用内部 closure machinery 并提供 pipe syntax，但不暴露 current-draft public closure base/type。 |
+
 ## 兼容性分类
 
 下表区分 current-draft conformance work 和 Forge convenience extensions。它是 native handoff
@@ -106,6 +121,11 @@ risk triage 的事实来源。
   callback/type-erasure control blocks 按已接受设计保持 allocator-neutral，因为修改
   standard-shaped erased stop-token API 会增加 native-handoff 风险。见
   [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)。
+- `spawn_future` 的 consumer record 在 future `connect()` 时分配，因此该路径可以抛出；
+  这偏离 current-WD inline/noexcept future-operation shape。Connected consumer 与
+  shared state 的 transient strong cycle 由 terminal completion、unstarted-op
+  destruction 和 abandon paths 切断；当前保留该 ownership model，除非出现可复现
+  retention 或 native-handoff blocker。
 - `inplace_stop_callback` 的 allocation / exception-spec 偏差是独立 residual，不由上述
   `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
   allocation-free rewrite；见
