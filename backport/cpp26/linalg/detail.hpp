@@ -63,6 +63,47 @@ template<class T>
 inline constexpr bool __is_complex_v = __is_complex<std::remove_cvref_t<T>>::value;
 
 template<class T>
+T conj(const T&) = delete;
+
+template<class T>
+concept __has_adl_conj = requires {
+    conj(std::declval<T>());
+};
+
+template<class T>
+constexpr auto __conj_if_needed(T&& value) {
+    if constexpr (
+        !std::is_arithmetic_v<std::remove_cvref_t<T>> &&
+        requires { conj(std::forward<T>(value)); }) {
+        return conj(std::forward<T>(value));
+    } else {
+        return std::forward<T>(value);
+    }
+}
+
+template<class Extents1, class Extents2>
+consteval bool __compatible_static_extents() {
+    if constexpr (Extents1::rank() != Extents2::rank()) {
+        return false;
+    } else {
+        for (std::size_t r = 0; r < Extents1::rank(); ++r) {
+            const auto first = Extents1::static_extent(r);
+            const auto second = Extents2::static_extent(r);
+            if (first != std::dynamic_extent &&
+                second != std::dynamic_extent &&
+                first != second) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+template<class Extents1, class Extents2>
+inline constexpr bool __compatible_static_extents_v =
+    __compatible_static_extents<Extents1, Extents2>();
+
+template<class T>
 constexpr auto __real_if_needed(const T& value) {
     if constexpr (requires { value.real(); value.imag(); }) {
         return value.real();

@@ -44,35 +44,50 @@ public:
     using element_type     = std::add_const_t<
         decltype(std::declval<ScalingFactor>() *
                  std::declval<typename NestedAccessor::element_type>())>;
-    using reference        = element_type;
+    using reference        = std::remove_const_t<element_type>;
     using data_handle_type = typename NestedAccessor::data_handle_type;
     using offset_policy    = scaled_accessor<ScalingFactor,
                                  typename NestedAccessor::offset_policy>;
 
-    scaled_accessor() noexcept = default;
+    constexpr scaled_accessor() noexcept = default;
 
-    scaled_accessor(ScalingFactor s, NestedAccessor a)
-        : scaling_factor_(std::move(s)), nested_(std::move(a)) {}
+    template<class OtherNestedAccessor>
+        requires std::is_constructible_v<
+            NestedAccessor, const OtherNestedAccessor&>
+    constexpr explicit(
+        !std::is_convertible_v<OtherNestedAccessor, NestedAccessor>)
+    scaled_accessor(
+        const scaled_accessor<ScalingFactor, OtherNestedAccessor>& other)
+        : scaling_factor_(other.scaling_factor()),
+          nested_(other.nested_accessor()) {}
 
-    [[nodiscard]] reference access(data_handle_type p, std::ptrdiff_t i) const {
-        return scaling_factor_ * nested_.access(p, i);
+    constexpr scaled_accessor(
+        const ScalingFactor& s, const NestedAccessor& a)
+        : scaling_factor_(s), nested_(a) {}
+
+    [[nodiscard]] constexpr reference
+    access(data_handle_type p, std::ptrdiff_t i) const {
+        return scaling_factor_ *
+               typename NestedAccessor::element_type(nested_.access(p, i));
     }
 
-    [[nodiscard]] typename offset_policy::data_handle_type
+    [[nodiscard]] constexpr typename offset_policy::data_handle_type
     offset(data_handle_type p, std::ptrdiff_t i) const {
         return nested_.offset(p, i);
     }
 
-    [[nodiscard]] const NestedAccessor& nested_accessor() const noexcept {
+    [[nodiscard]] constexpr const NestedAccessor&
+    nested_accessor() const noexcept {
         return nested_;
     }
-    [[nodiscard]] const ScalingFactor& scaling_factor() const noexcept {
+    [[nodiscard]] constexpr const ScalingFactor&
+    scaling_factor() const noexcept {
         return scaling_factor_;
     }
 
 private:
-    ScalingFactor scaling_factor_;
-    NestedAccessor nested_;
+    ScalingFactor scaling_factor_{};
+    NestedAccessor nested_{};
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -80,19 +95,6 @@ private:
 // ──────────────────────────────────────────────────────────────────────────
 
 namespace __detail {
-template<class T>
-struct __conj_element {
-    using type = T;
-    static T apply(T v) noexcept { return v; }
-};
-template<class T>
-struct __conj_element<std::complex<T>> {
-    using type = std::complex<T>;
-    static std::complex<T> apply(std::complex<T> v) noexcept {
-        return std::conj(v);
-    }
-};
-
 template<class T>
 struct __is_conjugated_accessor : std::false_type {};
 
@@ -173,32 +175,43 @@ template<class NestedAccessor>
 class conjugated_accessor {
 public:
     using element_type     = std::add_const_t<
-        typename __detail::__conj_element<
-            std::remove_const_t<typename NestedAccessor::element_type>>::type>;
-    using reference        = element_type;
+        decltype(__detail::__conj_if_needed(
+            std::declval<typename NestedAccessor::element_type>()))>;
+    using reference        = std::remove_const_t<element_type>;
     using data_handle_type = typename NestedAccessor::data_handle_type;
     using offset_policy    = conjugated_accessor<typename NestedAccessor::offset_policy>;
 
-    conjugated_accessor() noexcept = default;
-    explicit conjugated_accessor(NestedAccessor a) : nested_(std::move(a)) {}
+    constexpr conjugated_accessor() noexcept = default;
 
-    [[nodiscard]] reference access(data_handle_type p, std::ptrdiff_t i) const {
-        return __detail::__conj_element<
-            std::remove_const_t<typename NestedAccessor::element_type>
-        >::apply(nested_.access(p, i));
+    constexpr conjugated_accessor(const NestedAccessor& a) : nested_(a) {}
+
+    template<class OtherNestedAccessor>
+        requires std::is_constructible_v<
+            NestedAccessor, const OtherNestedAccessor&>
+    constexpr explicit(
+        !std::is_convertible_v<OtherNestedAccessor, NestedAccessor>)
+    conjugated_accessor(
+        const conjugated_accessor<OtherNestedAccessor>& other)
+        : nested_(other.nested_accessor()) {}
+
+    [[nodiscard]] constexpr reference
+    access(data_handle_type p, std::ptrdiff_t i) const {
+        return __detail::__conj_if_needed(
+            typename NestedAccessor::element_type(nested_.access(p, i)));
     }
 
-    [[nodiscard]] typename offset_policy::data_handle_type
+    [[nodiscard]] constexpr typename offset_policy::data_handle_type
     offset(data_handle_type p, std::ptrdiff_t i) const {
         return nested_.offset(p, i);
     }
 
-    [[nodiscard]] const NestedAccessor& nested_accessor() const noexcept {
+    [[nodiscard]] constexpr const NestedAccessor&
+    nested_accessor() const noexcept {
         return nested_;
     }
 
 private:
-    NestedAccessor nested_;
+    NestedAccessor nested_{};
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -261,7 +274,8 @@ public:
             return nested_;
         }
 
-        friend bool operator==(const mapping&, const mapping&) noexcept = default;
+        friend constexpr bool
+        operator==(const mapping&, const mapping&) noexcept = default;
 
     private:
         __nested_mapping_type nested_{};
@@ -275,7 +289,7 @@ public:
 
 template<class ScalingFactor,
          class ElementType, class Extents, class Layout, class Accessor>
-[[nodiscard]] auto scaled(
+[[nodiscard]] constexpr auto scaled(
     ScalingFactor alpha,
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
@@ -287,7 +301,7 @@ template<class ScalingFactor,
 }
 
 template<class ElementType, class Extents, class Layout, class Accessor>
-[[nodiscard]] auto conjugated(
+[[nodiscard]] constexpr auto conjugated(
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
     if constexpr (__detail::__is_conjugated_accessor<Accessor>::value) {
@@ -297,7 +311,9 @@ template<class ElementType, class Extents, class Layout, class Accessor>
             typename acc_t::element_type, Extents, Layout, acc_t>(
                 x.data_handle(), x.mapping(),
                 x.accessor().nested_accessor());
-    } else if constexpr (std::is_arithmetic_v<std::remove_cvref_t<ElementType>>) {
+    } else if constexpr (
+        std::is_arithmetic_v<std::remove_cvref_t<ElementType>> ||
+        !__detail::__has_adl_conj<std::remove_cvref_t<ElementType>>) {
         return x;
     } else {
         using acc_t = conjugated_accessor<Accessor>;
@@ -308,7 +324,7 @@ template<class ElementType, class Extents, class Layout, class Accessor>
 }
 
 template<class ElementType, class Extents, class Layout, class Accessor>
-[[nodiscard]] auto transposed(
+[[nodiscard]] constexpr auto transposed(
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
     static_assert(Extents::rank() == 2, "transposed requires a 2D mdspan");
@@ -359,7 +375,7 @@ template<class ElementType, class Extents, class Layout, class Accessor>
 }
 
 template<class ElementType, class Extents, class Layout, class Accessor>
-[[nodiscard]] auto conjugate_transposed(
+[[nodiscard]] constexpr auto conjugate_transposed(
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
     return conjugated(transposed(x));

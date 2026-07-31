@@ -67,9 +67,17 @@ struct layout_blas_packed {
         static_assert(Extents::rank() == 2,
             "layout_blas_packed requires 2D extents");
 
-        mapping() noexcept = default;
+        constexpr mapping() noexcept = default;
 
-        explicit mapping(const Extents& e) noexcept : extents_(e) {}
+        constexpr mapping(const Extents& e) noexcept : extents_(e) {}
+
+        template<class OtherExtents>
+            requires std::is_constructible_v<Extents, OtherExtents>
+        constexpr explicit(!std::is_convertible_v<OtherExtents, Extents>)
+        mapping(
+            const typename layout_blas_packed::template mapping<OtherExtents>&
+                other) noexcept
+            : extents_(other.extents()) {}
 
         [[nodiscard]] constexpr const Extents& extents() const noexcept {
             return extents_;
@@ -121,7 +129,13 @@ struct layout_blas_packed {
         }
         [[nodiscard]] constexpr index_type stride(rank_type) const noexcept { return 1; }
 
-        friend bool operator==(const mapping&, const mapping&) noexcept = default;
+        template<class OtherExtents>
+        friend constexpr bool operator==(
+            const mapping& x,
+            const typename layout_blas_packed::template mapping<OtherExtents>&
+                y) noexcept {
+            return x.extents() == y.extents();
+        }
 
     private:
         [[no_unique_address]] Extents extents_{};

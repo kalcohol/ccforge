@@ -27,20 +27,6 @@
 
 namespace std::linalg {
 
-namespace __detail {
-
-template<class T>
-auto __conj_if_needed(const T& value)
-{
-    if constexpr (requires { value.real(); value.imag(); }) {
-        return std::conj(value);
-    } else {
-        return value;
-    }
-}
-
-} // namespace __detail
-
 // ──────────────────────────────────────────────────────────────────────────
 // BLAS Level 2 — [linalg.algs.blas2]
 // ──────────────────────────────────────────────────────────────────────────

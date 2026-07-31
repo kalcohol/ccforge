@@ -36,8 +36,7 @@ namespace std::linalg {
 // copy — [linalg.algs.blas1.copy]
 template<class InExtents, class InLayout, class InAccessor,
          class OutExtents, class OutLayout, class OutAccessor>
-    requires (std::mdspan<typename InAccessor::element_type, InExtents, InLayout, InAccessor>::rank() ==
-              std::mdspan<typename OutAccessor::element_type, OutExtents, OutLayout, OutAccessor>::rank())
+    requires __detail::__compatible_static_extents_v<InExtents, OutExtents>
 void copy(
     std::mdspan<typename InAccessor::element_type, InExtents, InLayout, InAccessor> from,
     std::mdspan<typename OutAccessor::element_type, OutExtents, OutLayout, OutAccessor> to)
@@ -112,6 +111,7 @@ void scale(
 // swap_elements — [linalg.algs.blas1.swap]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 void swap_elements(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
@@ -131,6 +131,9 @@ void swap_elements(
 template<class InExtents1, class InLayout1, class InAccessor1,
          class InExtents2, class InLayout2, class InAccessor2,
          class OutExtents, class OutLayout, class OutAccessor>
+    requires __detail::__compatible_static_extents_v<InExtents1, InExtents2> &&
+             __detail::__compatible_static_extents_v<InExtents1, OutExtents> &&
+             __detail::__compatible_static_extents_v<InExtents2, OutExtents>
 void add(
     std::mdspan<typename InAccessor1::element_type, InExtents1, InLayout1, InAccessor1> x,
     std::mdspan<typename InAccessor2::element_type, InExtents2, InLayout2, InAccessor2> y,
@@ -150,6 +153,7 @@ void add(
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 T dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -186,6 +190,7 @@ T dot(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 auto dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
@@ -198,6 +203,7 @@ auto dot(
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 T dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -205,17 +211,15 @@ T dotc(
 {
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
-        if constexpr (requires { xi.real(); xi.imag(); }) {
-            init += static_cast<T>(std::conj(xi)) * static_cast<T>(y[i]);
-        } else {
-            init += static_cast<T>(xi) * static_cast<T>(y[i]);
-        }
+        init += static_cast<T>(__detail::__conj_if_needed(xi)) *
+                static_cast<T>(y[i]);
     }
     return init;
 }
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 auto dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
@@ -416,6 +420,7 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
 // apply_givens_rotation — [linalg.algs.blas1.givens]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 void apply_givens_rotation(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -431,6 +436,7 @@ void apply_givens_rotation(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class Real>
+    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
 void apply_givens_rotation(
     std::mdspan<std::complex<Real>, Extents1, Layout1, Accessor1> x,
     std::mdspan<std::complex<Real>, Extents2, Layout2, Accessor2> y,

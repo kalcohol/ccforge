@@ -5,6 +5,68 @@
 #include <complex>
 #include <type_traits>
 
+namespace {
+
+struct unconjugated_value {
+    double value{};
+};
+
+namespace custom_conjugation {
+struct value {
+    double real{};
+    double imaginary{};
+};
+
+constexpr value conj(const value& x) {
+    return {x.real, -x.imaginary};
+}
+} // namespace custom_conjugation
+
+constexpr bool transformed_views_are_constexpr() {
+    double vector_data[] = {1.0, 2.0, 3.0};
+    std::mdspan vector(vector_data, std::extents<int, 3>{});
+    const auto scaled = std::linalg::scaled(2.0, vector);
+
+    double matrix_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    std::mdspan matrix(matrix_data, std::extents<int, 2, 3>{});
+    const auto transposed = std::linalg::transposed(matrix);
+
+    std::complex<double> complex_data[] = {{1.0, 2.0}};
+    std::mdspan complex_vector(
+        complex_data, std::extents<int, 1>{});
+    const auto conjugated = std::linalg::conjugated(complex_vector);
+    const auto conjugate_transposed =
+        std::linalg::conjugate_transposed(
+            std::mdspan(
+                complex_data, std::extents<int, 1, 1>{}));
+
+    return scaled[2] == 6.0 && transposed[2, 1] == 6.0 &&
+           conjugated[0] == std::complex<double>(1.0, -2.0) &&
+           conjugate_transposed[0, 0] ==
+               std::complex<double>(1.0, -2.0);
+}
+
+static_assert(transformed_views_are_constexpr());
+
+using scaled_accessor_t = std::linalg::scaled_accessor<
+    double, std::default_accessor<double>>;
+using conjugated_accessor_t = std::linalg::conjugated_accessor<
+    std::default_accessor<std::complex<double>>>;
+static_assert(std::is_same_v<scaled_accessor_t::reference, double>);
+static_assert(std::is_same_v<
+              conjugated_accessor_t::reference, std::complex<double>>);
+static_assert(std::is_convertible_v<
+              std::default_accessor<std::complex<double>>,
+              conjugated_accessor_t>);
+
+using packed_extents_t = std::extents<int, 3, 3>;
+using packed_mapping_t = std::linalg::layout_blas_packed<
+    std::linalg::upper_triangle_t,
+    std::linalg::column_major_t>::mapping<packed_extents_t>;
+static_assert(std::is_convertible_v<packed_extents_t, packed_mapping_t>);
+
+} // namespace
+
 TEST(LinalgTagsTest, TagsAreEmptyTypes) {
     static_assert(std::is_empty_v<std::linalg::column_major_t>);
     static_assert(std::is_empty_v<std::linalg::row_major_t>);
@@ -137,6 +199,29 @@ TEST(ConjugatedTest, DoubleConjugationRestoresTheNestedAccessor) {
     EXPECT_EQ(restored.data_handle(), v.data_handle());
     EXPECT_EQ(restored[0], data[0]);
     EXPECT_EQ(restored[1], data[1]);
+}
+
+TEST(ConjugatedTest, ClassWithoutConjReturnsTheOriginalView) {
+    unconjugated_value data[] = {{1.0}, {2.0}};
+    std::mdspan input(data, std::extents<int, 2>{});
+    auto result = std::linalg::conjugated(input);
+
+    static_assert(std::is_same_v<decltype(result), decltype(input)>);
+    result[0].value = 3.0;
+    EXPECT_DOUBLE_EQ(data[0].value, 3.0);
+}
+
+TEST(ConjugatedTest, UsesArgumentDependentConjugation) {
+    using custom_conjugation::value;
+    value data[] = {{1.0, 2.0}, {3.0, -4.0}};
+    std::mdspan input(data, std::extents<int, 2>{});
+    auto result = std::linalg::conjugated(input);
+
+    static_assert(!std::is_same_v<decltype(result), decltype(input)>);
+    EXPECT_DOUBLE_EQ(result[0].real, 1.0);
+    EXPECT_DOUBLE_EQ(result[0].imaginary, -2.0);
+    EXPECT_DOUBLE_EQ(result[1].real, 3.0);
+    EXPECT_DOUBLE_EQ(result[1].imaginary, 4.0);
 }
 
 TEST(ConjugateTransposedTest, ComposesTransposeAndConjugation) {
