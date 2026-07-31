@@ -172,6 +172,26 @@ struct throwing_scheduler {
 
 static_assert(std::execution::scheduler<throwing_scheduler>);
 
+struct mutable_schedule_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    auto schedule() & noexcept {
+        return std::execution::just();
+    }
+
+    friend bool operator==(
+        const mutable_schedule_scheduler&,
+        const mutable_schedule_scheduler&) noexcept = default;
+};
+
+static_assert(std::execution::scheduler<mutable_schedule_scheduler>);
+
+template<class Scheduler>
+concept const_schedule_callable =
+    requires(const Scheduler& scheduler) { scheduler.schedule(); };
+
+static_assert(!const_schedule_callable<mutable_schedule_scheduler>);
+
 template<class R>
 struct error_stopped_schedule_op {
     using operation_state_concept = std::execution::operation_state_t;
@@ -464,12 +484,23 @@ TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions)
     EXPECT_TRUE(
         std::execution::get_completion_scheduler<std::execution::set_value_t>(env)
         == destination);
-    EXPECT_TRUE(
-        std::execution::get_completion_scheduler<std::execution::set_stopped_t>(env)
-        == destination);
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_scheduler_t<std::execution::set_error_t>,
         const decltype(env)&>);
+    static_assert(!std::execution::__forge_detail::tag_invocable<
+        std::execution::get_completion_scheduler_t<std::execution::set_stopped_t>,
+        const decltype(env)&>);
+}
+
+TEST(ContinuesOnTest, SupportsMutableLvalueSchedule) {
+    auto sender = std::execution::continues_on(
+        std::execution::just(42),
+        mutable_schedule_scheduler{});
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {

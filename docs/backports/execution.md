@@ -62,6 +62,9 @@
 - `continues_on` / `affine` 当前只实现单一 value completion shape 的 transfer subset；
   value 参数会 decay-copy 到调度 hop 的 operation state。多 value-alternative 和引用
   value-signature 的逐位 WD 语义需要单独重构，不应从当前 subset 推断。
+  `continues_on` 只发布能够保证的 value completion scheduler attribute；目标 scheduler
+  自身的 error / stopped completion 可能在未转移的 agent 上发生，因此不为这两个
+  disposition 声称唯一 completion scheduler。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
   `set_error(std::exception_ptr)` 完成。它没有实现完整

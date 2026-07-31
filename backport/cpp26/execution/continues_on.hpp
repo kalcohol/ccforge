@@ -136,7 +136,8 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
     using operation_state_concept = operation_state_t;
 
     using __sched_value_recv_t = __sched_value_recv<R, Vs...>;
-    using __sched_sndr_t = decltype(std::execution::schedule(std::declval<Scheduler>()));
+    using __sched_sndr_t = decltype(
+        std::execution::schedule(std::declval<Scheduler&>()));
 
     void __deliver_schedule_failure() noexcept {
         if constexpr (__can_set_exception_ptr<R>) {
@@ -240,7 +241,7 @@ inline constexpr bool __completion_scheduler_query_v =
 template<class Scheduler, class ChildEnv>
 struct __completion_attrs {
     using __schedule_sender_t = decltype(
-        std::execution::schedule(std::declval<const Scheduler&>()));
+        std::execution::schedule(std::declval<Scheduler&>()));
     using __schedule_attrs_t = env_of_t<__schedule_sender_t>;
 
     template<class CPO, class Env>
@@ -250,7 +251,8 @@ struct __completion_attrs {
                           const __schedule_attrs_t&,
                           Env>) {
             return noexcept(std::execution::schedule(
-                       std::declval<const Scheduler&>())) &&
+                       std::declval<Scheduler&>())) &&
+                std::is_nothrow_copy_constructible_v<Scheduler> &&
                 noexcept(std::execution::get_env(
                     std::declval<const __schedule_sender_t&>())) &&
                 __forge_detail::nothrow_tag_invocable<
@@ -285,13 +287,6 @@ struct __completion_attrs {
         return self.__sch;
     }
 
-    friend auto tag_invoke(
-        get_completion_scheduler_t<set_stopped_t>,
-        const __completion_attrs& self) noexcept
-            -> Scheduler {
-        return self.__sch;
-    }
-
     template<class CPO, class Env>
         requires (!std::same_as<CPO, set_error_t>) &&
                  (__forge_detail::tag_invocable<
@@ -315,7 +310,8 @@ struct __completion_attrs {
                           get_completion_domain_t<CPO>,
                           const __schedule_attrs_t&,
                           Env>) {
-            auto sched_sender = std::execution::schedule(self.__sch);
+            auto scheduler = self.__sch;
+            auto sched_sender = std::execution::schedule(scheduler);
             auto attrs = std::execution::get_env(sched_sender);
             return __forge_detail::tag_invoke_fn(
                 query, attrs, static_cast<Env&&>(env));
