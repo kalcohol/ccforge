@@ -381,7 +381,7 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
         std::move(future),
         stopped_receiver{future_state});
     std::execution::start(future_op);
-    EXPECT_TRUE(future_state->stopped);
+    EXPECT_FALSE(future_state->stopped);
     EXPECT_FALSE(future_state->value);
 
     {
@@ -394,6 +394,8 @@ TEST(StrandTest, ShutdownStopsPendingAndFutureWork) {
 
     EXPECT_TRUE(pending_state->stopped);
     EXPECT_FALSE(pending_state->value);
+    EXPECT_TRUE(future_state->stopped);
+    EXPECT_FALSE(future_state->value);
 }
 
 TEST(StrandTest, ShutdownSerializesStoppedCompletionsAndWaitsForThem) {
