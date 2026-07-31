@@ -72,45 +72,6 @@ long double adaptive_simpson_integral(Fun&& fun, long double a, long double b) {
     return adaptive_simpson_integral(fun, a, b, 1e-12L, whole, 18);
 }
 
-template<class Fun>
-long double controlled_simpson_integral(
-    Fun&& fun,
-    long double a,
-    long double b,
-    long double epsilon,
-    int depth = 24) {
-    if (a == b) {
-        return 0.0L;
-    }
-    const long double whole = simpson_integral(fun, a, b);
-    return adaptive_simpson_integral(
-        fun, a, b, epsilon, whole, depth);
-}
-
-template<class Fun>
-long double segmented_simpson_integral(
-    Fun&& fun,
-    long double a,
-    long double b,
-    unsigned segments,
-    long double epsilon) {
-    long double result = 0.0L;
-    for (unsigned i = 0; i < segments; ++i) {
-        const long double left =
-            a + (b - a) * static_cast<long double>(i) /
-                static_cast<long double>(segments);
-        const long double right =
-            a + (b - a) * static_cast<long double>(i + 1u) /
-                static_cast<long double>(segments);
-        result += controlled_simpson_integral(
-            fun,
-            left,
-            right,
-            epsilon / static_cast<long double>(segments));
-    }
-    return result;
-}
-
 template<class T>
 T beta_fallback(T x, T y) {
     if (!(x > T{}) || !(y > T{})) {
@@ -497,48 +458,111 @@ T comp_ellint_3_fallback(T k, T nu) {
     return ellint_3_fallback(k, nu, pi_v<T> / T{2});
 }
 
-template<class T>
-T cyl_bessel_j_series(T nu, T x) {
-    if (x < T{}) {
-        return quiet_nan<T>();
+struct cyl_bessel_series_result {
+    long double value;
+    long double error;
+    bool converged;
+};
+
+inline auto cyl_bessel_power_series(
+    long double nu,
+    long double x,
+    bool alternating)
+    -> cyl_bessel_series_result {
+    if (x < 0.0L || !std::isfinite(nu) || !std::isfinite(x)) {
+        return {
+            quiet_nan<long double>(),
+            infinity<long double>(),
+            false};
     }
-    if (x == T{}) {
-        return almost_equal(nu, T{}) ? T{1} : T{};
+    if (x == 0.0L) {
+        return {
+            almost_equal(nu, 0.0L) ? 1.0L : 0.0L,
+            0.0L,
+            true};
     }
 
-    const T half_x = x / T{2};
-    T term = std::pow(half_x, nu) / std::tgamma(nu + T{1});
-    T sum = term;
-    for (unsigned k = 0; k < 512u; ++k) {
-        term *= -(half_x * half_x) / (static_cast<T>(k + 1u) * (nu + static_cast<T>(k + 1u)));
-        sum += term;
-        if (std::abs(term) <= static_cast<T>(1e-15L) * std::max(T{1}, std::abs(sum))) {
-            break;
-        }
+    const long double half_x = x / 2.0L;
+    const long double gamma = std::tgamma(nu + 1.0L);
+    if (gamma == 0.0L || std::isnan(gamma)) {
+        return {
+            quiet_nan<long double>(),
+            infinity<long double>(),
+            false};
     }
-    return sum;
+
+    const long double log_term =
+        nu * std::log(half_x) - std::log(std::abs(gamma));
+    const long double max_log =
+        std::log(std::numeric_limits<long double>::max());
+    const long double min_log =
+        std::log(std::numeric_limits<long double>::denorm_min());
+    if (log_term > max_log) {
+        return {
+            std::copysign(infinity<long double>(), gamma),
+            infinity<long double>(),
+            false};
+    }
+
+    long double term =
+        log_term < min_log ? 0.0L : std::exp(log_term);
+    term = std::copysign(term, gamma);
+    long double sum = term;
+    long double compensation = 0.0L;
+    long double absolute_sum = std::abs(term);
+    bool converged = term == 0.0L;
+
+    for (unsigned k = 1u; k <= 4096u && !converged; ++k) {
+        const long double divisor =
+            static_cast<long double>(k) *
+            (nu + static_cast<long double>(k));
+        if (divisor == 0.0L) {
+            return {
+                quiet_nan<long double>(),
+                infinity<long double>(),
+                false};
+        }
+
+        term *= (alternating ? -1.0L : 1.0L) *
+            (half_x * half_x) / divisor;
+        const long double adjusted = term - compensation;
+        const long double updated = sum + adjusted;
+        compensation = (updated - sum) - adjusted;
+        sum = updated;
+        absolute_sum += std::abs(term);
+
+        const long double truncation = std::abs(term);
+        converged =
+            term == 0.0L ||
+            (sum != 0.0L &&
+             truncation <=
+                 8.0L * std::numeric_limits<long double>::epsilon() *
+                     std::abs(sum));
+    }
+
+    const long double error =
+        std::abs(term) +
+        8.0L * std::numeric_limits<long double>::epsilon() *
+            absolute_sum;
+    return {sum, error, converged};
+}
+
+template<class T>
+T cyl_bessel_j_series(T nu, T x) {
+    const auto result = cyl_bessel_power_series(
+        static_cast<long double>(nu),
+        static_cast<long double>(x),
+        true);
+    return static_cast<T>(result.value);
 }
 
 template<class T>
 T cyl_bessel_i_series(T nu, T x) {
-    if (x < T{}) {
-        return quiet_nan<T>();
-    }
-    if (x == T{}) {
-        return almost_equal(nu, T{}) ? T{1} : T{};
-    }
-
-    const T half_x = x / T{2};
-    T term = std::pow(half_x, nu) / std::tgamma(nu + T{1});
-    T sum = term;
-    for (unsigned k = 0; k < 512u; ++k) {
-        term *= (half_x * half_x) / (static_cast<T>(k + 1u) * (nu + static_cast<T>(k + 1u)));
-        sum += term;
-        if (std::abs(term) <= static_cast<T>(1e-15L) * std::max(T{1}, std::abs(sum))) {
-            break;
-        }
-    }
-    return sum;
+    const auto result = cyl_bessel_power_series(
+        static_cast<long double>(nu),
+        static_cast<long double>(x),
+        false);
+    return static_cast<T>(result.value);
 }
 
 template<class T>
@@ -604,104 +628,132 @@ auto cyl_bessel_hankel_asymptotic(
         converged};
 }
 
-inline auto cyl_bessel_reduced_integral(
-    long double nu,
-    long double x,
-    long double epsilon)
-    -> cyl_bessel_hankel_result<long double> {
-    const auto half_order = [x](long double order)
-        -> cyl_bessel_hankel_result<long double> {
-        const long double scale = std::sqrt(2.0L / (pi_v<long double> * x));
-        if (order < 0.0L) {
-            return {
-                scale * std::cos(x),
-                scale * std::sin(x),
-                0.0L,
-                true};
+template<class T>
+constexpr long double cyl_bessel_target_tolerance() noexcept {
+    if constexpr (std::numeric_limits<T>::digits <= 24) {
+        return 2.0e-6L;
+    } else if constexpr (std::numeric_limits<T>::digits <= 53) {
+        return 2.0e-12L;
+    } else {
+        return 2.0e-15L;
+    }
+}
+
+inline auto cyl_bessel_integer_base_series(long double x)
+    -> std::array<long double, 4> {
+    const auto j0 = cyl_bessel_power_series(0.0L, x, true);
+    const auto j1 = cyl_bessel_power_series(1.0L, x, true);
+    const long double z = x * x / 4.0L;
+    long double j0_term = 1.0L;
+    long double harmonic = 0.0L;
+    long double correction = 0.0L;
+    long double derivative = 0.0L;
+
+    for (unsigned k = 1u; k <= 4096u; ++k) {
+        const long double order = static_cast<long double>(k);
+        j0_term *= -z / (order * order);
+        harmonic += 1.0L / order;
+        const long double component = -harmonic * j0_term;
+        correction += component;
+        derivative += component * 2.0L * order / x;
+        if (component == 0.0L ||
+            (correction != 0.0L &&
+             std::abs(component) <=
+                 8.0L * std::numeric_limits<long double>::epsilon() *
+                     std::abs(correction))) {
+            break;
         }
-        return {
-            scale * std::sin(x),
-            -scale * std::cos(x),
-            0.0L,
-            true};
-    };
-    if (almost_equal(std::abs(nu), 0.5L, 8.0L *
-            std::numeric_limits<long double>::epsilon())) {
-        return half_order(nu);
     }
 
-    const unsigned segments = static_cast<unsigned>(std::max(
-        8.0L,
-        std::ceil(2.0L * (x + std::abs(nu)))));
-    const long double finite_j = segmented_simpson_integral(
-        [=](long double theta) {
-            return std::cos(x * std::sin(theta) - nu * theta);
-        },
-        0.0L,
-        pi_v<long double>,
-        segments,
-        epsilon) / pi_v<long double>;
-    const long double finite_y = segmented_simpson_integral(
-        [=](long double theta) {
-            return std::sin(x * std::sin(theta) - nu * theta);
-        },
-        0.0L,
-        pi_v<long double>,
-        segments,
-        epsilon) / pi_v<long double>;
+    const long double logarithm =
+        std::log(x / 2.0L) + euler_gamma_v<long double>;
+    const long double factor = 2.0L / pi_v<long double>;
+    const long double y0 =
+        factor * (logarithm * j0.value + correction);
+    const long double y1 =
+        factor * (-j0.value / x + logarithm * j1.value - derivative);
+    return {j0.value, y0, j1.value, y1};
+}
 
-    const long double upper = std::max(
-        4.0L,
-        std::asinh((std::abs(nu) + 64.0L) / x) + 1.0L);
-    const long double tail_j = controlled_simpson_integral(
-        [=](long double t) {
-            return std::exp(-x * std::sinh(t) - nu * t);
-        },
-        0.0L,
-        upper,
-        epsilon);
-    const long double cos_order = std::cos(pi_v<long double> * nu);
-    const long double tail_y = controlled_simpson_integral(
-        [=](long double t) {
-            const long double decay = -x * std::sinh(t);
-            return std::exp(decay + nu * t) +
-                cos_order * std::exp(decay - nu * t);
-        },
-        0.0L,
-        upper,
-        epsilon);
+template<class T>
+auto cyl_bessel_reduced_series_pair(long double nu, long double x)
+    -> cyl_bessel_hankel_result<long double> {
+    const long double target = cyl_bessel_target_tolerance<T>();
+    const long double integer_distance =
+        std::abs(nu - std::round(nu));
+    if (integer_distance <=
+        64.0L * std::numeric_limits<long double>::epsilon()) {
+        const auto values = cyl_bessel_integer_base_series(x);
+        const bool first_order = std::round(nu) == 1.0L;
+        return {
+            values[first_order ? 2u : 0u],
+            values[first_order ? 3u : 1u],
+            target,
+            true};
+    }
 
-    return {
-        finite_j -
-            std::sin(pi_v<long double> * nu) * tail_j /
-                pi_v<long double>,
-        finite_y - tail_y / pi_v<long double>,
-        epsilon,
-        true};
+    const auto j0 = cyl_bessel_power_series(nu, x, true);
+    const auto j1 = cyl_bessel_power_series(nu + 1.0L, x, true);
+    const auto j0_negative = cyl_bessel_power_series(-nu, x, true);
+    const auto j1_negative =
+        cyl_bessel_power_series(-(nu + 1.0L), x, true);
+    const long double sin0 = std::sin(pi_v<long double> * nu);
+    const long double sin1 =
+        std::sin(pi_v<long double> * (nu + 1.0L));
+    const long double cos0 = std::cos(pi_v<long double> * nu);
+    const long double cos1 =
+        std::cos(pi_v<long double> * (nu + 1.0L));
+    if (sin0 == 0.0L || sin1 == 0.0L) {
+        return {
+            quiet_nan<long double>(),
+            quiet_nan<long double>(),
+            infinity<long double>(),
+            false};
+    }
+
+    const long double y0 =
+        (cos0 * j0.value - j0_negative.value) / sin0;
+    const long double y1 =
+        (cos1 * j1.value - j1_negative.value) / sin1;
+    const long double j_error = std::max(j0.error, j1.error);
+    const long double y0_error =
+        (std::abs(cos0) * j0.error + j0_negative.error) /
+        std::abs(sin0);
+    const long double y1_error =
+        (std::abs(cos1) * j1.error + j1_negative.error) /
+        std::abs(sin1);
+    const long double error =
+        std::max({j_error, y0_error, y1_error});
+    const long double scale = std::max({
+        std::abs(j0.value),
+        std::abs(j1.value),
+        std::abs(y0),
+        std::abs(y1),
+        std::numeric_limits<long double>::min()});
+    const bool converged =
+        j0.converged &&
+        j1.converged &&
+        j0_negative.converged &&
+        j1_negative.converged &&
+        std::isfinite(y0) &&
+        std::isfinite(y1) &&
+        error <= target * scale;
+    return {j0.value, y0, error, converged};
 }
 
 template<class T>
 auto cyl_bessel_reduced_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
-    if (x >= 12.0L) {
+    if (x > 16.0L) {
         auto asymptotic = cyl_bessel_hankel_asymptotic(
             nu,
             x,
-            static_cast<long double>(
-                std::numeric_limits<T>::epsilon()));
+            cyl_bessel_target_tolerance<T>());
         if (asymptotic.converged) {
             return asymptotic;
         }
     }
-    // The accumulator may be wider than the public result type (notably
-    // binary128 under Zig), so do not over-solve the quadrature for T.
-    const long double integration_tolerance = std::max(
-        8.0L * std::numeric_limits<long double>::epsilon(),
-        static_cast<long double>(std::numeric_limits<T>::epsilon()));
-    return cyl_bessel_reduced_integral(
-        nu,
-        x,
-        integration_tolerance);
+    return cyl_bessel_reduced_series_pair<T>(nu, x);
 }
 
 inline long double cyl_bessel_j_miller(
@@ -767,6 +819,10 @@ auto cyl_bessel_jy_fallback(T nu, T x)
 
     const long double order = static_cast<long double>(nu);
     const long double argument = static_cast<long double>(x);
+    if (!std::isfinite(order) || order >= 1024.0L) {
+        const T nan = quiet_nan<T>();
+        return {nan, nan, nan, false};
+    }
     const auto n = static_cast<unsigned>(
         std::floor(order + 0.5L));
     const long double reduced =

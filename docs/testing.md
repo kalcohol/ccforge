@@ -86,6 +86,13 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
   load/store/gather/scatter/support-type tests
 - `all`：`gcc16 + llvm + zig + local + gcc-exec + tsan + asan`
 
+SIMD special-math fallback 的结果证据必须来自 fallback 真正生效的 lane。当前
+LLVM/libc++ lane 不定义 `__cpp_lib_math_special_functions`，因此 public
+`std::simd` 调用会进入 Forge fallback；libstdc++ 通常定义该宏并把调用委托给
+原生标量 special math，不能拿该 lane 的“backport 对比 `std::cyl_bessel_*`”
+作为 fallback 正确性证据。测试同时直接调用内部 fallback，并在 libc++ lane
+通过 public API 覆盖同一组数值，以避免原生分派让 oracle 空转。
+
 手动运行容器时，使用：
 
 ```bash

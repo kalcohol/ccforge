@@ -220,6 +220,84 @@ TEST(SimdMathSpecialTest, CylindricalBesselFloatFallbackCoversFormerSignAndPreci
 }
 
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
+TEST(SimdMathSpecialTest, BesselSeriesPreservesSmallResultsAndFloatRange) {
+    namespace sm = std::simd::detail::special_math;
+
+    const double i140 = sm::cyl_bessel_i_series(140.0, 40.0);
+    const double i100 = sm::cyl_bessel_i_series(100.0, 50.0);
+    const float i35f = sm::cyl_bessel_i_series(35.0f, 30.0f);
+    const float i40f = sm::cyl_bessel_i_series(40.0f, 8.0f);
+
+    EXPECT_NEAR(
+        i140,
+        1.7184528001498766e-58,
+        1.7184528001498766e-58 * 2e-12);
+    EXPECT_NEAR(
+        i100,
+        2.7278879470968845e-16,
+        2.7278879470968845e-16 * 2e-12);
+    EXPECT_NEAR(i35f, 4710.137416f, 4710.137416f * 2e-6f);
+    EXPECT_NEAR(i40f, 2.185028153e-24f, 2.185028153e-24f * 2e-6f);
+}
+
+TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
+    namespace sm = std::simd::detail::special_math;
+
+    const float moderate =
+        sm::cyl_bessel_j_fallback(0.3137f, 1.0e-8f);
+    const float tiny =
+        sm::cyl_bessel_j_fallback(0.49f, 1.0e-30f);
+
+    EXPECT_NEAR(moderate, 0.00277911976965f, 8e-9f);
+    EXPECT_GT(tiny, 0.0f);
+    EXPECT_NEAR(tiny, 1.6035720e-15f, 1e-20f);
+}
+
+#if !defined(__cpp_lib_math_special_functions)
+TEST(SimdMathSpecialTest, PublicBesselApiExercisesForgeFallback) {
+    const double4 double_orders = load_vec<double4>(
+        std::array<double, 4>{{140.0, 100.0, 0.3137, 0.49}});
+    const double4 double_arguments = load_vec<double4>(
+        std::array<double, 4>{{40.0, 50.0, 14.0, 1.0e-30}});
+    const auto double_i =
+        std::simd::cyl_bessel_i(double_orders, double_arguments);
+    const auto double_j =
+        std::simd::cyl_bessel_j(double_orders, double_arguments);
+
+    EXPECT_NEAR(
+        double_i[0],
+        1.7184528001498766e-58,
+        1.7184528001498766e-58 * 2e-12);
+    EXPECT_NEAR(
+        double_i[1],
+        2.7278879470968845e-16,
+        2.7278879470968845e-16 * 2e-12);
+    EXPECT_NEAR(double_j[2], 0.21080637129457458, 5e-13);
+    EXPECT_GT(double_j[3], 0.0);
+
+    const float4 float_orders = load_vec<float4>(
+        std::array<float, 4>{{35.0f, 40.0f, 0.3137f, 0.49f}});
+    const float4 float_arguments = load_vec<float4>(
+        std::array<float, 4>{{30.0f, 8.0f, 1.0e-8f, 1.0e-30f}});
+    const auto float_i =
+        std::simd::cyl_bessel_i(float_orders, float_arguments);
+    const auto float_j =
+        std::simd::cyl_bessel_j(float_orders, float_arguments);
+
+    EXPECT_NEAR(float_i[0], 4710.137416f, 4710.137416f * 2e-6f);
+    EXPECT_NEAR(float_i[1], 2.185028153e-24f, 2.185028153e-24f * 2e-6f);
+    EXPECT_NEAR(float_j[2], 0.00277911976965f, 8e-9f);
+    EXPECT_NEAR(float_j[3], 1.6035720e-15f, 1e-20f);
+}
+#endif
+
+TEST(SimdMathSpecialTest, BesselLargeOrderTerminatesBeforeIntegerConversion) {
+    namespace sm = std::simd::detail::special_math;
+
+    EXPECT_TRUE(std::isnan(sm::cyl_bessel_j_fallback(5.0e9, 3.0)));
+    EXPECT_TRUE(std::isnan(sm::cyl_bessel_y_fallback(5.0e9, 3.0)));
+}
+
 TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
     EXPECT_NEAR(
         std::simd::detail::special_math::expint_fallback(10.0),
@@ -340,8 +418,11 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchHighOrderReferences) {
 
 TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
     constexpr std::pair<double, double> cases[] = {
+        {0.3137, 1.0e-8},
+        {0.49, 0.01},
         {0.2, 0.1},
         {2.5, 3.0},
+        {0.9, 16.1},
         {20.0, 20.0},
         {50.0, 49.5},
         {100.0, 101.0},
@@ -366,6 +447,39 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
             actual,
             expected,
             std::max(2e-14, std::abs(expected) * 2e-12));
+    }
+}
+
+TEST(SimdMathSpecialTest, BesselFallbacksSatisfyOrderRecurrenceAcrossRegimes) {
+    constexpr std::pair<double, double> cases[] = {
+        {1.0, 0.01},
+        {2.5, 0.5},
+        {5.0, 10.0},
+        {10.5, 16.1},
+        {20.0, 30.0},
+        {50.0, 100.0},
+    };
+
+    for (const auto [order, argument] : cases) {
+        SCOPED_TRACE(
+            "order=" + std::to_string(order) +
+            ", argument=" + std::to_string(argument));
+        const auto previous =
+            std::simd::detail::special_math::cyl_bessel_j_fallback(
+                order - 1.0, argument);
+        const auto current =
+            std::simd::detail::special_math::cyl_bessel_j_fallback(
+                order, argument);
+        const auto next =
+            std::simd::detail::special_math::cyl_bessel_j_fallback(
+                order + 1.0, argument);
+        const double expected =
+            2.0 * order / argument * current;
+        const double actual = previous + next;
+        const double scale =
+            std::max({std::abs(actual), std::abs(expected), 1e-300});
+
+        EXPECT_NEAR(actual, expected, scale * 2e-10);
     }
 }
 
