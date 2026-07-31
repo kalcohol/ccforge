@@ -202,7 +202,7 @@ stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level
 ## Coroutine sender（协程 sender）
 
 - `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或
-  异步 sender，外部可以用 `std::execution::sync_wait` 或其他 sender 组合器消费。
+  异步 sender，外部可以用 `std::this_thread::sync_wait` 或其他 sender 组合器消费。
 
 当前限制：`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；
 自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的
@@ -213,8 +213,9 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
 ## 类型擦除
 
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO +
-  堆回退。构造和 value completion 都要求与声明的单一 value tuple 精确匹配，不做隐式
-  窄化或缺省补值；声明中的 `T` / `T&` / `const T&` 类别会原样保留，reference payload
+  堆回退。构造阶段按 `receiver_of` 的 call-expression 规则接受底层 receiver，因此其
+  handler 可以接受声明参数的隐式转换；value completion 的调用参数必须与声明的单一
+  value tuple 精确匹配，不做缺省补值。声明中的 `T` / `T&` / `const T&` 类别会原样保留，reference payload
   只在同步 completion call stack 内借用，不会在擦除边界物化副本；error completion
   折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，
@@ -233,7 +234,7 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
   语义 equality 和任意自定义 receiver env 查询不属于当前范围。
 - `forge::wait_result(sender)`：同步运行 sender 并返回一个小 result 对象，保留 value、
   closed-set typed error 和 stopped。它是 Forge 便利设施，不改变
-  `std::execution::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization
+  `std::this_thread::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization
   失败、typed error materialization 失败，或 sender/adaptor 显式传出的
   `std::exception_ptr` 会作为 `std::exception_ptr` error 保存。
 
@@ -253,27 +254,8 @@ C++26 member-query env 口径仍是 forward-compat caveat。
 
 ## 示例与测试
 
-示例位于：
-
-- `example/forge_thread_pool_example.cpp`
-- `example/forge_single_thread_context_example.cpp`
-- `example/forge_system_context_example.cpp`
-- `example/forge_timer_context_example.cpp`
-- `example/forge_runtime_context_example.cpp`
-- `example/forge_async_scope_example.cpp`
-- `example/forge_channel_example.cpp`
-- `example/forge_resource_policy_example.cpp`
-- `example/forge_resource_context_example.cpp`
-- `example/forge_strand_example.cpp`
-- `example/forge_bounded_pipeline_example.cpp`
-- `example/forge_io_readiness_example.cpp`
-- `example/forge_io_pipeline_example.cpp`
-- `example/forge_io_read_write_example.cpp`
-- `example/forge_io_iocp_example.cpp`
-- `example/forge_any_scheduler_example.cpp`
-- `example/forge_type_erased_boundary_example.cpp`
-- `example/forge_any_sender_example.cpp`
-- `example/forge_any_receiver_example.cpp`
+完整示例清单按 backport、execution、runtime/erasure 与 coroutine-native IO 分组维护在
+[`docs/examples.md`](examples.md)。
 
 对应测试在 `test/forge/` 下，可通过以下命令单独运行：
 

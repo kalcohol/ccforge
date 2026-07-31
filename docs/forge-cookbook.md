@@ -116,7 +116,7 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
 - `forge::static_thread_pool` 或 `forge::runtime_context`
 - `std::execution::schedule(scheduler)`
-- `std::execution::sync_wait(...)` 用于示例或边界同步
+- `std::this_thread::sync_wait(...)` 用于示例或边界同步
 
 关键点：
 

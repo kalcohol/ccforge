@@ -23,10 +23,11 @@
   `variant<tuple<...>, ...>`）；mixin 会保留普通 awaitable，并按 current WD
   提供 continuation / stopped 传播接口
 - 基础设施：`completion_signatures_of_t`、`value_types_of_t`、`error_types_of_t`、
-  `sends_stopped`、`enable_sender`、`forwarding_query`、
+  `sends_stopped`、`enable_sender`、`std::forwarding_query`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、
   `get_completion_scheduler`、`get_completion_domain`、`get_await_completion_adaptor`、
-  `transform_completion_signatures`、CPO 分发基础设施
+  CPO 分发基础设施。各 adaptor 内部有私有 completion-signature transform helper，
+  但当前不暴露 public `transform_completion_signatures` 名字
 - 域调度：`default_domain`、`get_domain` CPO、receiver-env start-domain 选取、
   sender-env completion-domain 选取、`connect_t` recursive `transform_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
@@ -88,6 +89,10 @@
   进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费
   value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的
   `forge::wait_result(sender)`。
+- Current-WD 拼写是 `std::this_thread::sync_wait` 与
+  `std::this_thread::sync_wait_with_variant`。Forge backport 暂时也在
+  `std::execution` 中 re-export 这两个对象以兼容旧源码，但 portable consumer、文档与
+  示例不依赖该扩展别名。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和
   consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token 会通过
   `any_stop_token` 类型擦除注册 callback；该标准形状的类型擦除层内部 control block 保持

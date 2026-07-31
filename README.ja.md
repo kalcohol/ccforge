@@ -39,7 +39,7 @@ backport ヘッダーを注入します。
 ```cpp
 #include <execution>
 
-auto result = std::execution::sync_wait(
+auto result = std::this_thread::sync_wait(
     std::execution::just(42)
     | std::execution::then([](int value) { return value * 2; })
 );
@@ -55,7 +55,7 @@ auto work = std::execution::starts_on(
     | std::execution::then([](int value) { return value + 1; })
 );
 
-auto result = std::execution::sync_wait(std::move(work));
+auto result = std::this_thread::sync_wait(std::move(work));
 pool.shutdown();
 pool.wait();
 ```

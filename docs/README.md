@@ -19,6 +19,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 ## 使用入口
 
 - [Forge cookbook](forge-cookbook.md)
+- [示例索引](examples.md)
 
 ## 功能文档
 

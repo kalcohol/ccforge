@@ -5,10 +5,15 @@
 ## 公开 API
 
 - **核心 API**：`std::simd::basic_vec<T, Abi>`、`std::simd::vec<T, N>`、`std::simd::mask<T, N>`、构造/转换/下标/算术/比较/位运算
-- **内存操作**：`partial_load`/`partial_store`、`unchecked_load`/`unchecked_store`（含 flags、mask、range 重载）、`gather`/`scatter`（含 range 重载）
-- **归约与排列**：`reduce`、`reduce_min`/`reduce_max`、`reduce_min_index`/`reduce_max_index`、`split`/`cat`、`select`
+- **内存操作**：`partial_load`/`partial_store`、`unchecked_load`/`unchecked_store`
+  （含 flags、mask、range 重载），以及 `partial_gather_from` /
+  `unchecked_gather_from` / `partial_scatter_to` / `unchecked_scatter_to`
+- **归约与排列**：scalar/vector `reduce`、`reduce_min`/`reduce_max`、
+  `reduce_min_index`/`reduce_max_index`、`chunk`/`cat`、`select`
+- **创建与可见性**：`iota<T>` variable template、两个 `basic_vec` deduction guides，
+  以及 `[simd.syn]` 要求加入顶层 `std` overload set 的 math/bit/complex declarations
 - **Layer 1 向量化**：GCC/Clang vector extension 后端，`if consteval` 保持 constexpr 正确性
-- **Feature macro**：定义 `__cpp_lib_simd = 202411L`，表明完整 [simd.syn] 覆盖
+- **Feature macro**：定义 `__cpp_lib_simd = 202606L`，表明当前 [simd.syn] 覆盖
 
 ## 验证
 

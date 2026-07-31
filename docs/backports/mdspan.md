@@ -39,8 +39,10 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 Padded layout mapping 的 converting constructor 只在不会改变 mapping 唯一性的形状下
 接受相反 layout：rank-1 mapping 可互转，rank>1 的 left-padded 与 right-padded mapping
 不会互转；rank-0/rank-1 mapping 也接受相反的未 padded layout。rank>1 的
-padded-to-padded 转换仅在 padding 由 static 放宽为 dynamic 时是 implicit；
-其余 static-to-static、dynamic-to-dynamic 和 dynamic-to-static 均为 explicit。
+padded-to-padded 转换还受 extents 的隐式可转换性约束。rank-0/rank-1 在 extents 可隐式
+转换时不因 padding 形状而额外收紧；rank>1 只有从 static padding 放宽到 dynamic
+padding 时可以 implicit，其余 static-to-static、dynamic-to-dynamic 和
+dynamic-to-static 均为 explicit。
 同时支持 padded mapping 向对应的 `layout_left` / `layout_right` 以及
 `layout_stride` mapping 转换；向紧凑 layout 转换时，调用者必须满足
 实际 padding stride 等于相应 extent 的前置条件。

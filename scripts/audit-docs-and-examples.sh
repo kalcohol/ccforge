@@ -48,6 +48,27 @@ check_example_refs_exist() {
     rm -f "${refs}"
 }
 
+check_all_examples_are_indexed() {
+    log "check every example is indexed"
+    local refs all_examples
+    refs="$(mktemp -t ccforge-doc-audit-indexed-examples.XXXXXX)"
+    all_examples="$(mktemp -t ccforge-doc-audit-all-indexed-examples.XXXXXX)"
+
+    rg --no-filename -o 'example/[A-Za-z0-9_./+-]+\.cpp' docs README*.md |
+        sort -u >"${refs}" || true
+    find example -maxdepth 1 -type f -name '*.cpp' -printf 'example/%f\n' |
+        sort -u >"${all_examples}"
+
+    while IFS= read -r src; do
+        [[ -z "${src}" ]] && continue
+        if ! grep -qxF "${src}" "${refs}"; then
+            fail "example is not indexed in documentation: ${src}"
+        fi
+    done <"${all_examples}"
+
+    rm -f "${refs}" "${all_examples}"
+}
+
 check_markdown_links() {
     log "check local markdown links"
     local links
@@ -134,6 +155,16 @@ check_stale_execution_names() {
         fi
     fi
     rm -f /tmp/ccforge-doc-audit-exec.$$
+}
+
+check_portable_sync_wait_spelling() {
+    log "check portable sync_wait spelling"
+    if rg -n 'std::execution::sync_wait(_with_variant)?' \
+        docs README*.md example include >/tmp/ccforge-doc-audit-sync-wait.$$; then
+        cat /tmp/ccforge-doc-audit-sync-wait.$$ >&2
+        fail "public docs/examples must use std::this_thread::sync_wait"
+    fi
+    rm -f /tmp/ccforge-doc-audit-sync-wait.$$
 }
 
 check_readme_parity() {
@@ -242,9 +273,11 @@ check_feature_gate_docs() {
 
 check_no_private_paths
 check_example_refs_exist
+check_all_examples_are_indexed
 check_markdown_links
 check_example_cmake_sources
 check_stale_execution_names
+check_portable_sync_wait_spelling
 check_readme_parity
 check_test_switch_docs
 check_feature_gate_docs

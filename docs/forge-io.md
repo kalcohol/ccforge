@@ -63,6 +63,8 @@ auto [ec, n] = result;
 但 payload 仍保留，用于表达 partial IO progress。普通 IO 失败不需要通过异常传播。
 保留 `std::error_code` 作为 tuple element 0 是为了让既有 structured-binding 代码继续编译；
 需要区分 EOF 的代码必须检查 `result` 或 `result.eof()`，不能只检查 `ec`。
+Tuple access 通过 `forge::io` 中的 ADL `get` 提供；支持 structured binding，未承诺
+`std::get<0>(result)` 这一非必要拼写。
 
 `forge::io::const_buffer` 和 `forge::io::mutable_buffer` 是 borrowed byte-region
 descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer_size`、

@@ -37,7 +37,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 ```cpp
 #include <execution>
 
-auto result = std::execution::sync_wait(
+auto result = std::this_thread::sync_wait(
     std::execution::just(42)
     | std::execution::then([](int value) { return value * 2; })
 );
@@ -53,7 +53,7 @@ auto work = std::execution::starts_on(
     | std::execution::then([](int value) { return value + 1; })
 );
 
-auto result = std::execution::sync_wait(std::move(work));
+auto result = std::this_thread::sync_wait(std::move(work));
 pool.shutdown();
 pool.wait();
 ```
@@ -95,7 +95,8 @@ GoogleTest 只用于 CC Forge 自身的顶层测试构建。直接包含 `forge.
 GoogleTest，也不要求初始化 `3rdparty/googletest` submodule。
 
 安装后的 package config 会在 consumer 项目里重新运行 native-vs-backport probes，
-不会固化打包机器的探测结果。
+不会固化打包机器的探测结果；同一个 install prefix 可以适配不同 compiler、standard
+library 和 `CMAKE_CXX_STANDARD`。
 
 标准形态入口刻意保持无后缀，例如 `<execution>` 与 `<simd>`；非标准 `forge::`
 扩展继续使用 `.hpp` 入口，例如 `<forge/io.hpp>`。这样可以清楚区分项目扩展与标准
