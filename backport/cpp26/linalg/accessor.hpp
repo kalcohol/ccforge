@@ -23,9 +23,16 @@
 #pragma once
 
 #include "tags_layout.hpp"
+#include <array>
 #if defined(__cpp_lib_mdspan)
 
 namespace std::linalg {
+
+template<class NestedAccessor>
+class conjugated_accessor;
+
+template<class Layout>
+class layout_transpose;
 
 // ──────────────────────────────────────────────────────────────────────────
 // scaled_accessor — [linalg.scaled.accessor]
@@ -85,6 +92,81 @@ struct __conj_element<std::complex<T>> {
         return std::conj(v);
     }
 };
+
+template<class T>
+struct __is_conjugated_accessor : std::false_type {};
+
+template<class NestedAccessor>
+struct __is_conjugated_accessor<conjugated_accessor<NestedAccessor>>
+    : std::true_type {
+    using nested_accessor_type = NestedAccessor;
+};
+
+enum class __transpose_mapping_kind {
+    wrapped,
+    direct,
+    left_padded,
+    right_padded,
+    strided,
+    nested
+};
+
+template<class Layout>
+struct __transpose_layout {
+    using type = layout_transpose<Layout>;
+    static constexpr auto kind = __transpose_mapping_kind::wrapped;
+};
+
+template<>
+struct __transpose_layout<layout_left> {
+    using type = layout_right;
+    static constexpr auto kind = __transpose_mapping_kind::direct;
+};
+
+template<>
+struct __transpose_layout<layout_right> {
+    using type = layout_left;
+    static constexpr auto kind = __transpose_mapping_kind::direct;
+};
+
+template<size_t PaddingValue>
+struct __transpose_layout<layout_left_padded<PaddingValue>> {
+    using type = layout_right_padded<PaddingValue>;
+    static constexpr auto kind = __transpose_mapping_kind::left_padded;
+};
+
+template<size_t PaddingValue>
+struct __transpose_layout<layout_right_padded<PaddingValue>> {
+    using type = layout_left_padded<PaddingValue>;
+    static constexpr auto kind = __transpose_mapping_kind::right_padded;
+};
+
+template<>
+struct __transpose_layout<layout_stride> {
+    using type = layout_stride;
+    static constexpr auto kind = __transpose_mapping_kind::strided;
+};
+
+template<class Triangle, class StorageOrder>
+struct __transpose_layout<layout_blas_packed<Triangle, StorageOrder>> {
+    using opposite_triangle = std::conditional_t<
+        std::is_same_v<Triangle, upper_triangle_t>,
+        lower_triangle_t,
+        upper_triangle_t>;
+    using opposite_storage_order = std::conditional_t<
+        std::is_same_v<StorageOrder, column_major_t>,
+        row_major_t,
+        column_major_t>;
+    using type =
+        layout_blas_packed<opposite_triangle, opposite_storage_order>;
+    static constexpr auto kind = __transpose_mapping_kind::direct;
+};
+
+template<class NestedLayout>
+struct __transpose_layout<layout_transpose<NestedLayout>> {
+    using type = NestedLayout;
+    static constexpr auto kind = __transpose_mapping_kind::nested;
+};
 } // namespace __detail
 
 template<class NestedAccessor>
@@ -126,6 +208,8 @@ private:
 template<class Layout>
 class layout_transpose {
 public:
+    using nested_layout_type = Layout;
+
     template<class Extents>
     struct mapping {
         static_assert(Extents::rank() == 2, "layout_transpose requires 2D extents");
@@ -143,7 +227,8 @@ public:
         mapping() noexcept = default;
 
         template<class OtherExtents>
-        explicit mapping(const typename Layout::template mapping<OtherExtents>& m)
+        constexpr explicit mapping(
+            const typename Layout::template mapping<OtherExtents>& m)
             : nested_(m)
             , extents_(m.extents().extent(1), m.extents().extent(0))
         {}
@@ -169,6 +254,11 @@ public:
 
         [[nodiscard]] constexpr index_type stride(rank_type r) const {
             return nested_.stride(r == 0 ? 1 : 0);
+        }
+
+        [[nodiscard]] constexpr const __nested_mapping_type&
+        nested_mapping() const noexcept {
+            return nested_;
         }
 
         friend bool operator==(const mapping&, const mapping&) noexcept = default;
@@ -200,10 +290,21 @@ template<class ElementType, class Extents, class Layout, class Accessor>
 [[nodiscard]] auto conjugated(
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
-    using acc_t = conjugated_accessor<Accessor>;
-    return std::mdspan<
-        typename acc_t::element_type, Extents, Layout, acc_t>(
-            x.data_handle(), x.mapping(), acc_t(x.accessor()));
+    if constexpr (__detail::__is_conjugated_accessor<Accessor>::value) {
+        using acc_t = typename __detail::__is_conjugated_accessor<
+            Accessor>::nested_accessor_type;
+        return std::mdspan<
+            typename acc_t::element_type, Extents, Layout, acc_t>(
+                x.data_handle(), x.mapping(),
+                x.accessor().nested_accessor());
+    } else if constexpr (std::is_arithmetic_v<std::remove_cvref_t<ElementType>>) {
+        return x;
+    } else {
+        using acc_t = conjugated_accessor<Accessor>;
+        return std::mdspan<
+            typename acc_t::element_type, Extents, Layout, acc_t>(
+                x.data_handle(), x.mapping(), acc_t(x.accessor()));
+    }
 }
 
 template<class ElementType, class Extents, class Layout, class Accessor>
@@ -211,13 +312,50 @@ template<class ElementType, class Extents, class Layout, class Accessor>
     std::mdspan<ElementType, Extents, Layout, Accessor> x)
 {
     static_assert(Extents::rank() == 2, "transposed requires a 2D mdspan");
-    using layout_t = layout_transpose<Layout>;
+    using traits_t = __detail::__transpose_layout<Layout>;
+    using layout_t = typename traits_t::type;
     using index_t = typename Extents::index_type;
     using new_extents_t = std::extents<
         index_t, Extents::static_extent(1), Extents::static_extent(0)>;
-    typename layout_t::template mapping<new_extents_t> m(x.mapping());
-    return std::mdspan<ElementType, new_extents_t, layout_t, Accessor>(
-        x.data_handle(), m, x.accessor());
+    using mapping_t = typename layout_t::template mapping<new_extents_t>;
+    using result_t =
+        std::mdspan<ElementType, new_extents_t, layout_t, Accessor>;
+    const new_extents_t transposed_extents(
+        x.extent(1), x.extent(0));
+
+    if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::direct) {
+        return result_t(
+            x.data_handle(), mapping_t(transposed_extents), x.accessor());
+    } else if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::left_padded) {
+        return result_t(
+            x.data_handle(),
+            mapping_t(transposed_extents, x.mapping().stride(1)),
+            x.accessor());
+    } else if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::right_padded) {
+        return result_t(
+            x.data_handle(),
+            mapping_t(transposed_extents, x.mapping().stride(0)),
+            x.accessor());
+    } else if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::strided) {
+        return result_t(
+            x.data_handle(),
+            mapping_t(
+                transposed_extents,
+                std::array<index_t, 2>{
+                    x.mapping().stride(1), x.mapping().stride(0)}),
+            x.accessor());
+    } else if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::nested) {
+        return result_t(
+            x.data_handle(), x.mapping().nested_mapping(), x.accessor());
+    } else {
+        return result_t(
+            x.data_handle(), mapping_t(x.mapping()), x.accessor());
+    }
 }
 
 template<class ElementType, class Extents, class Layout, class Accessor>

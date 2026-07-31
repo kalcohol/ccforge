@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <linalg>
 #include <mdspan>
+#include <array>
 #include <complex>
 #include <type_traits>
 
@@ -38,6 +39,8 @@ TEST(TransposedTest, SwapsDimensions) {
     double data[6] = {1,2,3,4,5,6};
     std::mdspan<double, std::extents<int,2,3>> m(data);
     auto mt = std::linalg::transposed(m);
+    static_assert(std::is_same_v<
+        typename decltype(mt)::layout_type, std::layout_left>);
     EXPECT_EQ(mt.extent(0), 3);
     EXPECT_EQ(mt.extent(1), 2);
     EXPECT_EQ(mt.data_handle(), m.data_handle());
@@ -47,10 +50,69 @@ TEST(TransposedTest, SwapsDimensions) {
     EXPECT_EQ(mt.mapping().stride(1), 3);
 }
 
+TEST(TransposedTest, SelectsTheStandardLayoutMapping) {
+    double data[32]{};
+    using extents_t = std::extents<int, 2, 3>;
+
+    std::mdspan<double, extents_t, std::layout_left> left(data);
+    auto left_t = std::linalg::transposed(left);
+    static_assert(std::is_same_v<
+        typename decltype(left_t)::layout_type, std::layout_right>);
+    EXPECT_EQ(left_t.mapping().stride(0), 2);
+    EXPECT_EQ(left_t.mapping().stride(1), 1);
+
+    const std::array<int, 2> strides{5, 1};
+    std::layout_stride::mapping<extents_t> stride_mapping(extents_t{}, strides);
+    std::mdspan<double, extents_t, std::layout_stride> strided(
+        data, stride_mapping);
+    auto strided_t = std::linalg::transposed(strided);
+    static_assert(std::is_same_v<
+        typename decltype(strided_t)::layout_type, std::layout_stride>);
+    EXPECT_EQ(strided_t.mapping().stride(0), 1);
+    EXPECT_EQ(strided_t.mapping().stride(1), 5);
+
+    using padded_layout = std::layout_left_padded<8>;
+    using padded_mapping = padded_layout::mapping<extents_t>;
+    std::mdspan<double, extents_t, padded_layout> padded(
+        data, padded_mapping(extents_t{}, 8));
+    auto padded_t = std::linalg::transposed(padded);
+    static_assert(std::is_same_v<
+        typename decltype(padded_t)::layout_type,
+        std::layout_right_padded<8>>);
+    EXPECT_EQ(padded_t.mapping().stride(0), 8);
+    EXPECT_EQ(padded_t.mapping().stride(1), 1);
+}
+
+TEST(TransposedTest, ReversesPackedAndNestedTransposeLayouts) {
+    double data[16] = {
+        0, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15};
+    using extents_t = std::extents<int, 3, 3>;
+    using packed_layout = std::linalg::layout_blas_packed<
+        std::linalg::upper_triangle_t, std::linalg::column_major_t>;
+    std::mdspan<double, extents_t, packed_layout> packed(data);
+
+    auto packed_t = std::linalg::transposed(packed);
+    using expected_layout = std::linalg::layout_blas_packed<
+        std::linalg::lower_triangle_t, std::linalg::row_major_t>;
+    static_assert(std::is_same_v<
+        typename decltype(packed_t)::layout_type, expected_layout>);
+    EXPECT_EQ((packed_t[2, 0]), (packed[0, 2]));
+
+    auto twice = std::linalg::transposed(
+        std::linalg::transposed(
+            std::mdspan<double, std::extents<int, 2, 3>>(data)));
+    static_assert(std::is_same_v<
+        typename decltype(twice)::layout_type, std::layout_right>);
+    EXPECT_EQ(twice.extent(0), 2);
+    EXPECT_EQ(twice.extent(1), 3);
+}
+
 TEST(ConjugatedTest, RealTypeIsNoop) {
     double data[] = {1.0, 2.0};
     std::mdspan v(data, std::extents<int, 2>{});
     auto cv = std::linalg::conjugated(v);
+    static_assert(std::is_same_v<decltype(cv), decltype(v)>);
     EXPECT_DOUBLE_EQ(cv[0], 1.0);
     EXPECT_DOUBLE_EQ(cv[1], 2.0);
 }
@@ -63,6 +125,18 @@ TEST(ConjugatedTest, ComplexValuesAreConjugated) {
 
     EXPECT_EQ(cv[0], complex(1.0, -2.0));
     EXPECT_EQ(cv[1], complex(3.0, 4.0));
+}
+
+TEST(ConjugatedTest, DoubleConjugationRestoresTheNestedAccessor) {
+    using complex = std::complex<double>;
+    complex data[] = {{1.0, 2.0}, {3.0, -4.0}};
+    std::mdspan v(data, std::extents<int, 2>{});
+
+    auto restored = std::linalg::conjugated(std::linalg::conjugated(v));
+    static_assert(std::is_same_v<decltype(restored), decltype(v)>);
+    EXPECT_EQ(restored.data_handle(), v.data_handle());
+    EXPECT_EQ(restored[0], data[0]);
+    EXPECT_EQ(restored[1], data[1]);
 }
 
 TEST(ConjugateTransposedTest, ComposesTransposeAndConjugation) {
