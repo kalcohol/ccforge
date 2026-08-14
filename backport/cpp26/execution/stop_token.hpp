@@ -313,6 +313,16 @@ template<class Cb>
 inplace_stop_callback(inplace_stop_token, Cb) -> inplace_stop_callback<Cb>;
 
 struct never_stop_token {
+private:
+    struct __callback_type {
+        template<class Initializer>
+        explicit __callback_type(never_stop_token, Initializer&&) noexcept {}
+    };
+
+public:
+    template<class>
+    using callback_type = __callback_type;
+
     [[nodiscard]] static constexpr bool stop_requested() noexcept { return false; }
     [[nodiscard]] static constexpr bool stop_possible() noexcept { return false; }
     bool operator==(const never_stop_token&) const noexcept = default;
@@ -326,6 +336,14 @@ struct never_stop_token {
 template<class Token, class CallbackFn>
 using stop_callback_for_t = typename Token::template callback_type<CallbackFn>;
 
+namespace __forge_stop_detail {
+
+struct stoppable_token_probe_callback {
+    void operator()() const noexcept {}
+};
+
+} // namespace __forge_stop_detail
+
 template<class Token>
 concept stoppable_token =
     std::copy_constructible<Token> &&
@@ -333,6 +351,10 @@ concept stoppable_token =
     std::is_nothrow_copy_constructible_v<Token> &&
     std::is_nothrow_move_constructible_v<Token> &&
     std::equality_comparable<Token> &&
+    requires {
+        typename Token::template callback_type<
+            __forge_stop_detail::stoppable_token_probe_callback>;
+    } &&
     requires(const Token& token) {
         { token.stop_requested() } noexcept -> std::same_as<bool>;
         { token.stop_possible() } noexcept -> std::same_as<bool>;

@@ -9,6 +9,16 @@
 #include <vector>
 
 static_assert(std::execution::scheduler<std::execution::run_loop::scheduler>);
+static_assert(std::stoppable_token<std::never_stop_token>);
+static_assert(std::unstoppable_token<std::never_stop_token>);
+
+struct token_without_callback_type {
+    static constexpr bool stop_requested() noexcept { return false; }
+    static constexpr bool stop_possible() noexcept { return false; }
+    bool operator==(const token_without_callback_type&) const noexcept = default;
+};
+
+static_assert(!std::stoppable_token<token_without_callback_type>);
 
 TEST(RunLoopTest, BasicScheduleThenSyncWait) {
     std::execution::run_loop loop;
@@ -72,6 +82,39 @@ TEST(RunLoopTest, ReportsWeaklyParallelForwardProgress) {
     EXPECT_EQ(
         std::execution::get_forward_progress_guarantee(sch),
         std::execution::forward_progress_guarantee::weakly_parallel);
+}
+
+TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
+    std::execution::run_loop loop;
+    auto scheduler = loop.get_scheduler();
+    std::inplace_stop_source source;
+    source.request_stop();
+    auto env = std::execution::make_env(std::execution::make_prop(
+        std::execution::get_stop_token_t{},
+        source.get_token()));
+    auto sender = std::execution::write_env(
+        std::execution::schedule(scheduler),
+        std::move(env));
+    using signatures_t = decltype(std::execution::get_completion_signatures(
+        sender,
+        std::execution::empty_env{}));
+    static_assert(std::is_same_v<
+        signatures_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(),
+            std::execution::set_stopped_t()>>);
+
+    std::thread worker([&] { loop.run(); });
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    loop.finish();
+    worker.join();
+
+    EXPECT_FALSE(result.has_value());
+    auto attrs = std::execution::get_env(std::execution::schedule(scheduler));
+    EXPECT_EQ(
+        std::execution::get_completion_scheduler<std::execution::set_stopped_t>(attrs),
+        scheduler);
 }
 
 TEST(RunLoopTest, ConcurrentPush) {

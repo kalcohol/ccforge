@@ -119,6 +119,8 @@ struct __env {
         -> run_loop::scheduler;
     friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
         -> run_loop::scheduler;
+    friend auto tag_invoke(get_completion_scheduler_t<set_stopped_t>, const __env& self) noexcept
+        -> run_loop::scheduler;
 };
 
 template<class R>
@@ -131,7 +133,13 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
     __op(run_loop* loop, R rcvr) : __loop(loop), __rcvr(std::move(rcvr)) {
         this->__execute = [](run_loop::__task_base* t) noexcept {
             auto* self = static_cast<__op*>(t);
-            set_value(std::move(self->__rcvr));
+            auto token = std::execution::get_stop_token(
+                std::execution::get_env(self->__rcvr));
+            if (token.stop_requested()) {
+                set_stopped(std::move(self->__rcvr));
+            } else {
+                set_value(std::move(self->__rcvr));
+            }
         };
     }
 
@@ -145,9 +153,14 @@ struct __sender {
     run_loop* __loop;
 
     template<class Self, class Env>
-    static constexpr auto get_completion_signatures() noexcept
-        -> completion_signatures<set_value_t()> {
-        return {};
+    static constexpr auto get_completion_signatures() noexcept {
+        using token_t = std::remove_cvref_t<decltype(
+            std::execution::get_stop_token(std::declval<Env>()))>;
+        if constexpr (std::unstoppable_token<token_t>) {
+            return completion_signatures<set_value_t()>{};
+        } else {
+            return completion_signatures<set_value_t(), set_stopped_t()>{};
+        }
     }
 
     template<receiver R>
@@ -185,6 +198,9 @@ private:
     friend auto tag_invoke(get_completion_scheduler_t<set_value_t>,
                            const __forge_run_loop::__env& env) noexcept
         -> scheduler;
+    friend auto tag_invoke(get_completion_scheduler_t<set_stopped_t>,
+                           const __forge_run_loop::__env& env) noexcept
+        -> scheduler;
     explicit scheduler(run_loop* loop) noexcept : __loop(loop) {}
     run_loop* __loop;
 };
@@ -199,6 +215,10 @@ inline auto tag_invoke(get_scheduler_t, const __env& self) noexcept
     return self.__loop->get_scheduler();
 }
 inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
+    -> run_loop::scheduler {
+    return self.__loop->get_scheduler();
+}
+inline auto tag_invoke(get_completion_scheduler_t<set_stopped_t>, const __env& self) noexcept
     -> run_loop::scheduler {
     return self.__loop->get_scheduler();
 }
