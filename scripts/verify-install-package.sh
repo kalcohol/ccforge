@@ -39,6 +39,7 @@ mkdir -p "${BUILD_ROOT}"
 verify_source_consumer() {
     local mode="$1"
     local build_dir="$2"
+    local install_dir="${build_dir}-prefix"
 
     log "configuring source consumer in ${mode} mode"
     cmake -S "${REPO_ROOT}/test/source_consumer" -B "${build_dir}" \
@@ -53,10 +54,51 @@ verify_source_consumer() {
 
     log "running source consumer in ${mode} mode"
     "${build_dir}/ccforge_source_consumer"
+
+    log "installing source consumer export set in ${mode} mode"
+    cmake --install "${build_dir}" --prefix "${install_dir}"
+
+    local targets_file="${install_dir}/lib/cmake/CCForgeSourceConsumer/CCForgeSourceConsumerTargets.cmake"
+    for public_target in forge::forge forge::std; do
+        if [[ "$(grep -Fc "INTERFACE_LINK_LIBRARIES \"${public_target}\"" "${targets_file}")" -ne 1 ]]; then
+            log "ERROR: source export in ${mode} mode did not preserve ${public_target}"
+            exit 1
+        fi
+    done
+    if grep -Eq 'INTERFACE_LINK_LIBRARIES "(forge|forge_std)"' "${targets_file}"; then
+        log "ERROR: source export in ${mode} mode exposed an internal CC Forge target"
+        exit 1
+    fi
+    if grep -Fq "${REPO_ROOT}" "${targets_file}"; then
+        log "ERROR: source export in ${mode} mode embedded the CC Forge source path"
+        exit 1
+    fi
 }
 
 verify_source_consumer INCLUDE "${SOURCE_INCLUDE_BUILD}"
 verify_source_consumer ADD_SUBDIRECTORY "${SOURCE_SUBDIR_BUILD}"
+
+for foreign_target in std forge; do
+    collision_build="${BUILD_ROOT}/source-collision-${foreign_target}-build"
+    collision_log="${BUILD_ROOT}/source-collision-${foreign_target}.log"
+    log "checking source target collision for forge::${foreign_target}"
+    if cmake -S "${REPO_ROOT}/test/source_consumer" -B "${collision_build}" \
+            "${GENERATOR_ARGS[@]}" \
+            -DCMAKE_CXX_STANDARD="${STD}" \
+            -DCCFORGE_SOURCE_DIR="${REPO_ROOT}" \
+            -DCCFORGE_CONSUMER_MODE=INCLUDE \
+            -DCCFORGE_FOREIGN_TARGET="${foreign_target}" \
+            >"${collision_log}" 2>&1; then
+        log "ERROR: foreign forge::${foreign_target} target was silently reused"
+        exit 1
+    fi
+    if ! grep -Fq \
+            "CC Forge cannot create forge::${foreign_target} because that target already exists" \
+            "${collision_log}"; then
+        log "ERROR: forge::${foreign_target} collision failed for an unexpected reason"
+        exit 1
+    fi
+done
 
 log "configuring Forge package build"
 cmake -S "${REPO_ROOT}" -B "${FORGE_BUILD}" "${GENERATOR_ARGS[@]}" \
