@@ -126,7 +126,8 @@ Failure policy:
   `timer_context`。`runtime_context_options` 可配置线程数、pool 队列容量和共享
   resource。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发
   到内部 timer；`shutdown()` 同时停止 timer 和 pool，`wait()` 执行实用的
-  pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。
+  pool -> timer -> pool drain，覆盖常见 CPU/timer 单跳交接。析构会先 `shutdown()`，再用
+  同一 drain 顺序等待已接受 work，之后才销毁内部 timer 和 pool。
 - `forge::strand`：scheduler 串行化 wrapper。`strand{scheduler}.get_scheduler()` 返回
   一个 scheduler，接受的 schedule work 按 FIFO 运行，并保证同一 strand 上最多一个任务
   处于用户 completion 中。`strand_options{.memory = resource}` 可控制 pending queue 和

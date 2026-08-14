@@ -59,6 +59,7 @@ public:
 
     ~runtime_context() noexcept {
         shutdown();
+        wait();
     }
 
     runtime_context(const runtime_context&) = delete;
