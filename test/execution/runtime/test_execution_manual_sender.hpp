@@ -18,6 +18,7 @@ struct manual_state {
     std::condition_variable cv;
     bool started = false;
     bool stop_requested = false;
+    bool stop_completes = true;
     bool completed = false;
     int stop_completion_attempts = 0;
     std::function<void(int)> complete_value;
@@ -75,17 +76,22 @@ struct manual_op {
     }
 
     void complete_stopped() noexcept {
+        bool stop_completes = true;
         {
             std::lock_guard lk{state->mtx};
             ++state->stop_completion_attempts;
+            state->stop_requested = true;
+            stop_completes = state->stop_completes;
+        }
+        state->cv.notify_all();
+        if (!stop_completes) {
+            return;
         }
         if (done.exchange(true, std::memory_order_acq_rel)) {
-            state->cv.notify_all();
             return;
         }
         {
             std::lock_guard lk{state->mtx};
-            state->stop_requested = true;
             state->completed = true;
             state->complete_value = {};
         }

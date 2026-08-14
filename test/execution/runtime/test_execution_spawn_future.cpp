@@ -580,6 +580,40 @@ TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SpawnFutureTest, DownstreamStopCompletesBeforeStopIgnoringWorkFinishes) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto state = std::make_shared<manual_state>();
+    state->stop_completes = false;
+    std::inplace_stop_source downstream_stop;
+    std::atomic<bool> receiver_stopped{false};
+
+    auto future = std::execution::spawn_future(manual_sender{state}, token);
+    auto op = std::execution::connect(
+        std::move(future),
+        spawn_future_stop_receiver{&downstream_stop, &receiver_stopped});
+
+    std::execution::start(op);
+    ASSERT_TRUE(wait_until_started(state));
+
+    downstream_stop.request_stop();
+
+    EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    {
+        std::lock_guard lk{state->mtx};
+        EXPECT_FALSE(state->completed);
+    }
+    EXPECT_EQ(scope.count(), 1u);
+
+    complete_manual_value(state, 42);
+
+    EXPECT_TRUE(wait_until_completed(state));
+    auto joined = std::execution::sync_wait(scope.join());
+    EXPECT_TRUE(joined.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
 TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
     constexpr int iterations = 128;
 

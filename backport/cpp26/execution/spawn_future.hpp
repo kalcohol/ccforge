@@ -241,17 +241,16 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         std::shared_ptr<consumer_base_t> consumer_cb;
         {
             std::lock_guard lk{__mtx};
-            if (__phase == __phase_t::done) {
-                return;
+            if (__phase != __phase_t::done) {
+                try {
+                    __result.template emplace<std::decay_t<Alt>>(std::move(alt));
+                } catch (...) {
+                    __result.template emplace<__error_result<std::exception_ptr>>(
+                    std::current_exception());
+                }
+                __phase = __phase_t::done;
+                consumer_cb = std::move(__consumer_cb);
             }
-            try {
-                __result.template emplace<std::decay_t<Alt>>(std::move(alt));
-            } catch (...) {
-                __result.template emplace<__error_result<std::exception_ptr>>(
-                std::current_exception());
-            }
-            __phase = __phase_t::done;
-            consumer_cb = std::move(__consumer_cb);
         }
 
         if (consumer_cb) {
@@ -267,6 +266,25 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     void __request_stop() noexcept {
         __stop_source.request_stop();
+    }
+
+    void __try_cancel() noexcept {
+        __request_stop();
+
+        std::shared_ptr<consumer_base_t> consumer_cb;
+        {
+            std::lock_guard lk{__mtx};
+            if (__phase == __phase_t::done) {
+                return;
+            }
+            __result.template emplace<__stopped_result>();
+            __phase = __phase_t::done;
+            consumer_cb = std::move(__consumer_cb);
+        }
+
+        if (consumer_cb) {
+            consumer_cb->__deliver(*this);
+        }
     }
 
     [[nodiscard]] Association __take_association_for_destroy() noexcept {
@@ -398,7 +416,7 @@ struct __consumer : __consumer_base<State> {
 
         void operator()() noexcept {
             if (auto state = __state.lock()) {
-                state->__request_stop();
+                state->__try_cancel();
             }
         }
     };
@@ -415,13 +433,13 @@ struct __consumer : __consumer_base<State> {
             auto token = std::any_stop_token{
                 std::execution::get_stop_token(std::execution::get_env(__rcvr))};
             if (token.stop_requested()) {
-                state->__request_stop();
+                state->__try_cancel();
             }
             if (token.stop_possible()) {
                 __stop_callback.emplace(token, __stop_callback_fn{state});
             }
         } catch (...) {
-            state->__request_stop();
+            state->__try_cancel();
         }
     }
 
