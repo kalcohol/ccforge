@@ -276,6 +276,39 @@ TEST(TimerContextTest, ScheduleAtPastSystemClockDeadlineCompletesPromptly) {
     EXPECT_TRUE(result.has_value());
 }
 
+TEST(TimerContextTest, ScheduleAfterSaturatesHugeDurations) {
+    forge::timer_context ctx;
+    timer_state state;
+    using seconds = std::chrono::duration<long long>;
+    auto op = std::execution::connect(
+        ctx.schedule_after(seconds::max()),
+        timer_receiver{&state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ctx.shutdown();
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state.value);
+    EXPECT_TRUE(state.stopped);
+}
+
+TEST(TimerContextTest, ScheduleAtSaturatesMaximumDeadline) {
+    forge::timer_context ctx;
+    timer_state state;
+    auto op = std::execution::connect(
+        ctx.schedule_at(std::chrono::steady_clock::time_point::max()),
+        timer_receiver{&state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ctx.shutdown();
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state.value);
+    EXPECT_TRUE(state.stopped);
+}
+
 TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
     forge::timer_context ctx;
     std::mutex mtx;

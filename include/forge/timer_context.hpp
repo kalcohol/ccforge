@@ -53,6 +53,50 @@ namespace __timer_detail {
 struct __state;
 struct __item;
 
+template<class ToDuration, class Rep, class Period>
+[[nodiscard]] constexpr auto __saturating_nonnegative_duration_cast(
+    std::chrono::duration<Rep, Period> value) noexcept -> ToDuration {
+    using wide_duration =
+        std::chrono::duration<long double, typename ToDuration::period>;
+
+    const auto ticks = std::chrono::duration_cast<wide_duration>(value).count();
+    if (!(ticks > 0.0L)) {
+        return ToDuration::zero();
+    }
+
+    const auto max_ticks = static_cast<long double>(ToDuration::max().count());
+    if (ticks >= max_ticks) {
+        return ToDuration::max();
+    }
+    return ToDuration{static_cast<typename ToDuration::rep>(ticks)};
+}
+
+template<class ToDuration, class Clock, class TargetDuration>
+[[nodiscard]] constexpr auto __saturating_time_difference(
+    std::chrono::time_point<Clock, TargetDuration> target,
+    std::chrono::time_point<Clock> now) noexcept -> ToDuration {
+    using wide_duration =
+        std::chrono::duration<long double, typename ToDuration::period>;
+
+    const auto target_ticks = std::chrono::duration_cast<wide_duration>(
+        target.time_since_epoch()).count();
+    const auto now_ticks = std::chrono::duration_cast<wide_duration>(
+        now.time_since_epoch()).count();
+    return __saturating_nonnegative_duration_cast<ToDuration>(
+        wide_duration{target_ticks - now_ticks});
+}
+
+template<class Clock>
+[[nodiscard]] constexpr auto __saturating_time_add(
+    std::chrono::time_point<Clock> base,
+    typename Clock::duration delay) noexcept -> std::chrono::time_point<Clock> {
+    if (delay > Clock::duration::zero()
+        && base.time_since_epoch() > Clock::duration::max() - delay) {
+        return std::chrono::time_point<Clock>::max();
+    }
+    return base + delay;
+}
+
 class __callable {
 public:
     __callable() noexcept = default;
@@ -453,12 +497,11 @@ public:
     template<class Rep, class Period>
     [[nodiscard]] auto schedule_after(std::chrono::duration<Rep, Period> delay)
         -> __timer_detail::__sender {
-        auto steady_delay =
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(delay);
-        if (steady_delay < std::chrono::steady_clock::duration::zero()) {
-            steady_delay = std::chrono::steady_clock::duration::zero();
-        }
-        return schedule_at_steady(std::chrono::steady_clock::now() + steady_delay);
+        const auto steady_delay =
+            __timer_detail::__saturating_nonnegative_duration_cast<
+                std::chrono::steady_clock::duration>(delay);
+        return schedule_at_steady(__timer_detail::__saturating_time_add(
+            std::chrono::steady_clock::now(), steady_delay));
     }
 
     template<class Clock, class Duration>
@@ -469,9 +512,10 @@ public:
         if (time <= now) {
             return schedule_at_steady(steady_now);
         }
-        auto delay =
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(time - now);
-        return schedule_at_steady(steady_now + delay);
+        const auto delay = __timer_detail::__saturating_time_difference<
+            std::chrono::steady_clock::duration>(time, now);
+        return schedule_at_steady(
+            __timer_detail::__saturating_time_add(steady_now, delay));
     }
 
     void shutdown() noexcept {
