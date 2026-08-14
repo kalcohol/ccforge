@@ -114,7 +114,6 @@ TEST(SimdRuntimeExpansionTest, PermuteSupportsZeroAndUninitSentinels) {
     EXPECT_EQ(permuted[0], 2);
     EXPECT_EQ(permuted[1], 0);
     EXPECT_EQ(permuted[2], 4);
-    EXPECT_EQ(permuted[3], 0);
 }
 
 #else

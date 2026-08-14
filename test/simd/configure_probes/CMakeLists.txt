@@ -146,6 +146,16 @@ forge_add_simd_configure_probe(
     TRUE
     "Forge simd backport must provide the repaired compress/expand/select overload set")
 forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_STATEFUL_STATIC_PERMUTE
+    "reject_stateful_static_permute.cpp"
+    FALSE
+    "Forge simd backport must diagnose static permute maps whose results are not constant expressions")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_OUT_OF_RANGE_STATIC_PERMUTE
+    "reject_out_of_range_static_permute.cpp"
+    FALSE
+    "Forge simd backport must diagnose static permute maps that produce invalid source indices")
+forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_BIT_SURFACE
     "bit_surface.cpp"
     TRUE

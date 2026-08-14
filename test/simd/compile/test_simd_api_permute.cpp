@@ -20,6 +20,18 @@ struct reverse_with_size_map {
     }
 };
 
+struct floating_index_map {
+    template<class Index>
+    constexpr double operator()(Index) const noexcept {
+        return 0.0;
+    }
+};
+
+template<class IndexMap>
+concept has_static_permute = requires(const int4& value, IndexMap map) {
+    std::simd::permute(value, map);
+};
+
 using chunk_input = std::simd::resize_t<8, int4>;
 using chunk_by_type_result = decltype(std::simd::chunk<int4>(std::declval<const chunk_input&>()));
 using chunk_by_width_result = decltype(std::simd::chunk<2>(std::declval<const chunk_input&>()));
@@ -66,6 +78,8 @@ static_assert(!has_dynamic_permute<int4, fake_index_vector>::value,
     "lookalike integral types should not satisfy the dynamic permute index-vector constraint");
 static_assert(!has_dynamic_subscript<int4, fake_index_vector>::value,
     "operator[](indices) should reject non-data-parallel lookalike index vectors");
+static_assert(!has_static_permute<floating_index_map>,
+    "static permute index maps must return an integral type");
 
 #endif
 
