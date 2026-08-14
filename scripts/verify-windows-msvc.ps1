@@ -3,10 +3,6 @@
 # Run from a Windows host with Visual Studio Build Tools installed. Pass
 # -Vcvars for non-standard installations, or set FORGE_WINDOWS_VC_VARS /
 # FORGE_WINDOWS_VS_ROOT in the environment.
-#
-# This is intentionally a smoke gate, not the full native matrix. It covers the
-# std::execution backport, unique_resource, forge:: runtime utilities, and the
-# Windows forge::io backend when available.
 
 [CmdletBinding()]
 param(
@@ -17,6 +13,8 @@ param(
     [string]$VsVersion = "18",
     [string]$Vcvars = "",
     [string]$BuildName = "",
+    [string]$Generator = "Ninja",
+    [string]$Configuration = "Debug",
     [string]$CTestRegex = "execution|unique_resource|std_target|forge",
     [switch]$Keep,
     [switch]$SkipGoogletestProvision,
@@ -24,64 +22,11 @@ param(
     [switch]$SkipInstallPackageCheck
 )
 
+Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib\WindowsVerification.ps1")
 
-function Invoke-Native {
-    param(
-        [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$Command
-    )
-
-    Write-Host "[msvc] $Label"
-    cmd /s /c $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed ($Label) with exit code $LASTEXITCODE"
-    }
-}
-
-function Invoke-NativeOutput {
-    param(
-        [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$Command
-    )
-
-    Write-Host "[msvc] $Label"
-    $oldPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        $output = cmd /s /c $Command 2>&1
-        $exitCode = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $oldPreference
-    }
-    $output | ForEach-Object { Write-Host $_ }
-    if ($exitCode -ne 0) {
-        throw "Command failed ($Label) with exit code $exitCode"
-    }
-    return ,$output
-}
-
-function Invoke-NativeCapture {
-    param(
-        [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$Command
-    )
-
-    Write-Host "[msvc] $Label"
-    $oldPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        $output = cmd /s /c $Command 2>&1
-        $exitCode = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $oldPreference
-    }
-    $output | ForEach-Object { Write-Host $_ }
-    return @{
-        ExitCode = $exitCode
-        Output = $output
-    }
-}
+$GoogletestCommit = "b514bdc898e2951020cbdca1304b75f5950d1f59"
 
 function Assert-OutputContains {
     param(
@@ -108,9 +53,9 @@ function Get-CtestCount {
 }
 
 function Get-CtestJsonCount {
-    param([Parameter(Mandatory = $true)][object[]]$Output)
+    param([Parameter(Mandatory = $true)][object[]]$StdOut)
 
-    $text = ($Output -join "`n")
+    $text = ($StdOut -join "`n")
     $json = $text | ConvertFrom-Json
     if ($null -eq $json.tests) {
         return 0
@@ -143,13 +88,13 @@ function Assert-CtestNonZero {
 
 function Find-ScriptRepoRoot {
     if ($SourcePath) {
-        return (Resolve-Path $SourcePath).Path
+        return (Resolve-Path -LiteralPath $SourcePath).Path
     }
 
     if ($PSScriptRoot) {
-        $candidate = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-        if ((Test-Path (Join-Path $candidate "CMakeLists.txt")) -and
-            (Test-Path (Join-Path $candidate "forge.cmake"))) {
+        $candidate = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+        if ((Test-Path -LiteralPath (Join-Path $candidate "CMakeLists.txt")) -and
+                (Test-Path -LiteralPath (Join-Path $candidate "forge.cmake"))) {
             return $candidate
         }
     }
@@ -159,11 +104,11 @@ function Find-ScriptRepoRoot {
 
 function Resolve-Vcvars {
     if ($Vcvars) {
-        return (Resolve-Path $Vcvars).Path
+        return (Resolve-Path -LiteralPath $Vcvars).Path
     }
 
     if ($env:FORGE_WINDOWS_VC_VARS) {
-        return (Resolve-Path $env:FORGE_WINDOWS_VC_VARS).Path
+        return (Resolve-Path -LiteralPath $env:FORGE_WINDOWS_VC_VARS).Path
     }
 
     $roots = @()
@@ -182,25 +127,28 @@ function Resolve-Vcvars {
 
     foreach ($root in $roots) {
         $candidate = Join-Path $root "$VsVersion\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-        if (Test-Path $candidate) {
-            return (Resolve-Path $candidate).Path
+        if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
         }
     }
 
     $vswhere = ""
     if (${env:ProgramFiles(x86)}) {
-        $candidate = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $candidate) {
+        $candidate = Join-Path ${env:ProgramFiles(x86)} `
+            "Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path -LiteralPath $candidate) {
             $vswhere = $candidate
         }
     }
 
     if ($vswhere) {
-        $install = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -latest -property installationPath
+        $install = & $vswhere -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -latest -property installationPath
         if ($install) {
             $candidate = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
-            if (Test-Path $candidate) {
-                return (Resolve-Path $candidate).Path
+            if (Test-Path -LiteralPath $candidate) {
+                return (Resolve-Path -LiteralPath $candidate).Path
             }
         }
     }
@@ -208,251 +156,332 @@ function Resolve-Vcvars {
     throw "vcvars64.bat not found. Pass -Vcvars or set FORGE_WINDOWS_VC_VARS / FORGE_WINDOWS_VS_ROOT."
 }
 
-function Invoke-GateChecks {
+function Get-ConfigurePrefix {
     param(
-        [Parameter(Mandatory = $true)][string]$Common,
         [Parameter(Mandatory = $true)][string]$SourceRoot,
-        [Parameter(Mandatory = $true)][string]$BuildName
+        [Parameter(Mandatory = $true)][string]$BuildRoot,
+        [Parameter(Mandatory = $true)][string]$GeneratorName,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [Parameter(Mandatory = $true)][bool]$MultiConfig
     )
 
-    $autoBuild = Join-Path $SourceRoot "build\$BuildName-io-auto"
-    $onBuild = Join-Path $SourceRoot "build\$BuildName-io-on"
-    $offBuild = Join-Path $SourceRoot "build\$BuildName-io-off"
-    foreach ($dir in @($autoBuild, $onBuild, $offBuild)) {
-        if (Test-Path $dir) {
-            Remove-Item -Recurse -Force $dir
-        }
+    $args = @("-S", $SourceRoot, "-B", $BuildRoot)
+    if ($GeneratorName) {
+        $args += @("-G", $GeneratorName)
     }
+    if (-not $MultiConfig) {
+        $args += "-DCMAKE_BUILD_TYPE=$Config"
+    }
+    return $args
+}
 
-    $autoConfigure =
-        $Common +
-        "cmake -S `"$SourceRoot`" -B `"$autoBuild`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DFORGE_BUILD_TESTS=ON " +
-        "-DFORGE_BUILD_EXAMPLES=ON " +
-        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
-        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
-        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
-        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
-        "-DFORGE_ENABLE_FORGE_IO=AUTO"
-    $autoOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=AUTO" $autoConfigure
-    Assert-OutputContains `
-        -Output $autoOutput `
-        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
-        -Label "FORGE_ENABLE_FORGE_IO=AUTO gate check"
-    $autoTests = Invoke-NativeOutput `
-        "gate check: FORGE_ENABLE_FORGE_IO=AUTO registered tests" `
-        ($Common + "ctest --test-dir `"$autoBuild`" --show-only=json-v1 -R `"forge_io|example_forge_io`"")
-    Assert-CtestNonZero `
-        -Count (Get-CtestJsonCount $autoTests) `
-        -Label "FORGE_ENABLE_FORGE_IO=AUTO registration"
-    Invoke-Native `
-        "gate check: FORGE_ENABLE_FORGE_IO=AUTO build selected IO example" `
-        ($Common + "cmake --build `"$autoBuild`" --target forge_io_iocp")
-    Invoke-Native `
-        "gate check: FORGE_ENABLE_FORGE_IO=AUTO run selected IO example" `
-        ($Common + "ctest --test-dir `"$autoBuild`" -R `"^example_forge_io_iocp_smoke$`" --output-on-failure")
+function Get-BuildArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$BuildRoot,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [string]$Target = ""
+    )
 
-    $onConfigure =
-        $Common +
-        "cmake -S `"$SourceRoot`" -B `"$onBuild`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DFORGE_BUILD_TESTS=ON " +
-        "-DFORGE_BUILD_EXAMPLES=ON " +
-        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
-        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
-        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
-        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
-        "-DFORGE_ENABLE_FORGE_IO=ON"
-    $onOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=ON" $onConfigure
-    Assert-OutputContains `
-        -Output $onOutput `
-        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
-        -Label "FORGE_ENABLE_FORGE_IO=ON gate check"
-    $onTests = Invoke-NativeOutput `
-        "gate check: FORGE_ENABLE_FORGE_IO=ON registered tests" `
-        ($Common + "ctest --test-dir `"$onBuild`" --show-only=json-v1 -R `"forge_io|example_forge_io`"")
-    Assert-CtestNonZero `
-        -Count (Get-CtestJsonCount $onTests) `
-        -Label "FORGE_ENABLE_FORGE_IO=ON registration"
+    $args = @("--build", $BuildRoot, "--config", $Config)
+    if ($Target) {
+        $args += @("--target", $Target)
+    }
+    return $args
+}
 
-    $offConfigure =
-        $Common +
-        "cmake -S `"$SourceRoot`" -B `"$offBuild`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DFORGE_BUILD_TESTS=ON " +
-        "-DFORGE_BUILD_EXAMPLES=ON " +
-        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
-        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
-        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
-        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF " +
-        "-DFORGE_ENABLE_FORGE_IO=OFF"
-    $offOutput = Invoke-NativeOutput "gate check: FORGE_ENABLE_FORGE_IO=OFF" $offConfigure
-    Assert-OutputContains `
-        -Output $offOutput `
-        -Needle "CC Forge: forge::io backend disabled" `
-        -Label "FORGE_ENABLE_FORGE_IO=OFF gate check"
-    $offTests = Invoke-NativeOutput `
-        "gate check: FORGE_ENABLE_FORGE_IO=OFF registered tests" `
-        ($Common + "ctest --test-dir `"$offBuild`" --show-only=json-v1 -R `"forge_io|example_forge_io`"")
-    Assert-CtestCount `
-        -Count (Get-CtestJsonCount $offTests) `
-        -Expected 0 `
-        -Label "FORGE_ENABLE_FORGE_IO=OFF registration"
+function Get-CtestArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$BuildRoot,
+        [Parameter(Mandatory = $true)][string]$Config
+    )
+    return @("--test-dir", $BuildRoot, "-C", $Config)
+}
+
+function Get-BuiltExecutable {
+    param(
+        [Parameter(Mandatory = $true)][string]$BuildRoot,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [Parameter(Mandatory = $true)][bool]$MultiConfig
+    )
+
+    $directory = $BuildRoot
+    if ($MultiConfig) {
+        $directory = Join-Path $BuildRoot $Config
+    }
+    return Join-Path $directory "$Name.exe"
+}
+
+function Invoke-GateChecks {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$GeneratorName,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [Parameter(Mandatory = $true)][bool]$MultiConfig
+    )
+
+    $autoBuild = Reset-ForgeBuildChild $SourceRoot "$Name-io-auto"
+    $onBuild = Reset-ForgeBuildChild $SourceRoot "$Name-io-on"
+    $offBuild = Reset-ForgeBuildChild $SourceRoot "$Name-io-off"
+    $commonOptions = @(
+        "-DCMAKE_CXX_STANDARD=23",
+        "-DFORGE_BUILD_TESTS=ON",
+        "-DFORGE_BUILD_EXAMPLES=ON",
+        "-DFORGE_TEST_ENABLE_SIMD=OFF",
+        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF",
+        "-DFORGE_TEST_ENABLE_LINALG=OFF",
+        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF"
+    )
+
+    $autoArgs = @(Get-ConfigurePrefix $SourceRoot $autoBuild $GeneratorName $Config $MultiConfig)
+    $autoArgs += $commonOptions + "-DFORGE_ENABLE_FORGE_IO=AUTO"
+    $autoOutput = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=AUTO" `
+        -FilePath "cmake" -Arguments $autoArgs
+    Assert-OutputContains $autoOutput.Output `
+        "CC Forge: forge::io windows IOCP backend enabled" `
+        "FORGE_ENABLE_FORGE_IO=AUTO gate check"
+    $autoCtest = @(Get-CtestArguments $autoBuild $Config)
+    $autoCtest += @("--show-only=json-v1", "-R", "forge_io|example_forge_io")
+    $autoTests = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=AUTO registered tests" `
+        -FilePath "ctest" -Arguments $autoCtest
+    Assert-CtestNonZero (Get-CtestJsonCount $autoTests.StdOut) `
+        "FORGE_ENABLE_FORGE_IO=AUTO registration"
+    Invoke-ForgeNative `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=AUTO build selected IO example" `
+        -FilePath "cmake" `
+        -Arguments (Get-BuildArguments $autoBuild $Config "forge_io_iocp")
+    $autoExample = @(Get-CtestArguments $autoBuild $Config)
+    $autoExample += @("-R", "^example_forge_io_iocp_smoke$", "--output-on-failure")
+    Invoke-ForgeNative `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=AUTO run selected IO example" `
+        -FilePath "ctest" -Arguments $autoExample
+
+    $onArgs = @(Get-ConfigurePrefix $SourceRoot $onBuild $GeneratorName $Config $MultiConfig)
+    $onArgs += $commonOptions + "-DFORGE_ENABLE_FORGE_IO=ON"
+    $onOutput = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=ON" `
+        -FilePath "cmake" -Arguments $onArgs
+    Assert-OutputContains $onOutput.Output `
+        "CC Forge: forge::io windows IOCP backend enabled" `
+        "FORGE_ENABLE_FORGE_IO=ON gate check"
+    $onCtest = @(Get-CtestArguments $onBuild $Config)
+    $onCtest += @("--show-only=json-v1", "-R", "forge_io|example_forge_io")
+    $onTests = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=ON registered tests" `
+        -FilePath "ctest" -Arguments $onCtest
+    Assert-CtestNonZero (Get-CtestJsonCount $onTests.StdOut) `
+        "FORGE_ENABLE_FORGE_IO=ON registration"
+
+    $offArgs = @(Get-ConfigurePrefix $SourceRoot $offBuild $GeneratorName $Config $MultiConfig)
+    $offArgs += $commonOptions + "-DFORGE_ENABLE_FORGE_IO=OFF"
+    $offOutput = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=OFF" `
+        -FilePath "cmake" -Arguments $offArgs
+    Assert-OutputContains $offOutput.Output `
+        "CC Forge: forge::io backend disabled" `
+        "FORGE_ENABLE_FORGE_IO=OFF gate check"
+    $offCtest = @(Get-CtestArguments $offBuild $Config)
+    $offCtest += @("--show-only=json-v1", "-R", "forge_io|example_forge_io")
+    $offTests = Invoke-ForgeNativeOutput `
+        -Label "gate check: FORGE_ENABLE_FORGE_IO=OFF registered tests" `
+        -FilePath "ctest" -Arguments $offCtest
+    Assert-CtestCount (Get-CtestJsonCount $offTests.StdOut) 0 `
+        "FORGE_ENABLE_FORGE_IO=OFF registration"
 
     Write-Host "[msvc] gate checks verified"
 }
 
 function Invoke-InstallPackageCheck {
     param(
-        [Parameter(Mandatory = $true)][string]$Common,
         [Parameter(Mandatory = $true)][string]$SourceRoot,
-        [Parameter(Mandatory = $true)][string]$BuildName
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$GeneratorName,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [Parameter(Mandatory = $true)][bool]$MultiConfig
     )
 
-    $root = Join-Path $SourceRoot "build\$BuildName-install-package"
+    $root = Reset-ForgeBuildChild $SourceRoot "$Name-install-package"
     $forgeBuild = Join-Path $root "forge-build"
     $prefix = Join-Path $root "prefix"
     $consumerBuild = Join-Path $root "consumer-build"
     $consumerSource = Join-Path $SourceRoot "test\install_consumer"
 
-    if (Test-Path $root) {
-        Remove-Item -Recurse -Force $root
-    }
+    $configure = @(Get-ConfigurePrefix $SourceRoot $forgeBuild $GeneratorName $Config $MultiConfig)
+    $configure += @(
+        "-DCMAKE_CXX_STANDARD=23",
+        "-DFORGE_BUILD_TESTS=OFF",
+        "-DFORGE_BUILD_EXAMPLES=OFF",
+        "-DFORGE_ENABLE_INSTALL=ON",
+        "-DCMAKE_INSTALL_PREFIX=$prefix"
+    )
+    Invoke-ForgeNative "install package: configure Forge" "cmake" $configure
+    Invoke-ForgeNative "install package: build Forge" "cmake" `
+        (Get-BuildArguments $forgeBuild $Config)
+    Invoke-ForgeNative "install package: install Forge" "cmake" `
+        @("--install", $forgeBuild, "--config", $Config)
 
-    $configure =
-        $Common +
-        "cmake -S `"$SourceRoot`" -B `"$forgeBuild`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DFORGE_BUILD_TESTS=OFF " +
-        "-DFORGE_BUILD_EXAMPLES=OFF " +
-        "-DFORGE_ENABLE_INSTALL=ON " +
-        "-DCMAKE_INSTALL_PREFIX=`"$prefix`""
-    Invoke-Native "install package: configure Forge" $configure
-    Invoke-Native "install package: build Forge" ($Common + "cmake --build `"$forgeBuild`"")
-    Invoke-Native "install package: install Forge" ($Common + "cmake --install `"$forgeBuild`"")
-
-    $consumerConfigure =
-        $Common +
-        "cmake -S `"$consumerSource`" -B `"$consumerBuild`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DCMAKE_PREFIX_PATH=`"$prefix`""
-    Invoke-Native "install package: configure consumer" $consumerConfigure
-    Invoke-Native "install package: build consumer" ($Common + "cmake --build `"$consumerBuild`"")
-    Invoke-Native "install package: run consumer" ($Common + "`"$consumerBuild\ccforge_install_consumer.exe`"")
-    Invoke-Native "install package: run std consumer" ($Common + "`"$consumerBuild\ccforge_install_std_consumer.exe`"")
+    $consumerConfigure = @(Get-ConfigurePrefix `
+        $consumerSource $consumerBuild $GeneratorName $Config $MultiConfig)
+    $consumerConfigure += @(
+        "-DCMAKE_CXX_STANDARD=23",
+        "-DCMAKE_PREFIX_PATH=$prefix"
+    )
+    Invoke-ForgeNative "install package: configure consumer" "cmake" $consumerConfigure
+    Invoke-ForgeNative "install package: build consumer" "cmake" `
+        (Get-BuildArguments $consumerBuild $Config)
+    Invoke-ForgeNative "install package: run consumer" `
+        (Get-BuiltExecutable $consumerBuild "ccforge_install_consumer" $Config $MultiConfig)
+    Invoke-ForgeNative "install package: run std consumer" `
+        (Get-BuiltExecutable $consumerBuild "ccforge_install_std_consumer" $Config $MultiConfig)
 
     Write-Host "[msvc] install package smoke verified"
 }
 
+if (-not $BuildName) {
+    $BuildName = "msvc-$VsVersion-smoke"
+}
+Assert-ForgeBuildName $BuildName
+Assert-ForgeBuildName $Configuration
+if ($VsVersion -notmatch '^[0-9]+([.][0-9]+)?$') {
+    throw "VsVersion must be numeric: $VsVersion"
+}
+
 $sourceRoot = Find-ScriptRepoRoot
-$workRoot = Join-Path $env:TEMP ("ccforge-win-msvc-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-$cloned = $false
-$success = $false
+$workRoot = ""
+$workRootCreated = $false
+$verificationSucceeded = $false
 
 try {
     if (-not $sourceRoot) {
-        New-Item -ItemType Directory -Force -Path $workRoot | Out-Null
+        $workRoot = New-ForgeVerificationWorkRoot
+        $workRootCreated = $true
         $sourceRoot = Join-Path $workRoot "src"
-        Invoke-Native "clone $Repo" "git clone `"$Repo`" `"$sourceRoot`""
-        $cloned = $true
-        if ($Ref) {
-            Invoke-Native "checkout $Ref" "cd /d `"$sourceRoot`" && git checkout `"$Ref`""
+        Invoke-ForgeNative "clone $Repo" "git" `
+            @("clone", "--no-checkout", "--", $Repo, $sourceRoot)
+
+        $revision = "$Ref^{commit}"
+        $resolvedOutput = Invoke-ForgeNativeOutput "resolve $Ref" "git" `
+            @("-C", $sourceRoot, "rev-parse", "--verify", `
+              "--end-of-options", $revision)
+        $resolvedRef = ($resolvedOutput.StdOut -join "").Trim()
+        if ($resolvedRef -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "Could not resolve an immutable commit for ref: $Ref"
         }
+        Invoke-ForgeNative "checkout $resolvedRef" "git" `
+            @("-C", $sourceRoot, "checkout", "--detach", $resolvedRef)
+        Write-Host "[msvc] source-commit=$resolvedRef"
     }
 
-    if (-not (Test-Path (Join-Path $sourceRoot "CMakeLists.txt"))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "CMakeLists.txt"))) {
         throw "SourcePath does not look like the CC Forge repo: $sourceRoot"
     }
 
     $gtestDir = Join-Path $sourceRoot "3rdparty\googletest"
     $gtestCMake = Join-Path $gtestDir "CMakeLists.txt"
-    if ((-not (Test-Path $gtestCMake)) -and (-not $SkipGoogletestProvision)) {
-        if ((Test-Path (Join-Path $sourceRoot ".git")) -and
-            (Test-Path (Join-Path $sourceRoot ".gitmodules"))) {
-            Invoke-Native `
-                "initialize googletest submodule" `
-                "cd /d `"$sourceRoot`" && git submodule update --init --depth 1 -- 3rdparty/googletest"
+    if ((-not (Test-Path -LiteralPath $gtestCMake)) -and
+            (-not $SkipGoogletestProvision)) {
+        if ((Test-Path -LiteralPath (Join-Path $sourceRoot ".git")) -and
+                (Test-Path -LiteralPath (Join-Path $sourceRoot ".gitmodules"))) {
+            Invoke-ForgeNative "initialize googletest submodule" "git" `
+                @("-C", $sourceRoot, "submodule", "update", "--init", `
+                  "--depth", "1", "--", "3rdparty/googletest")
         } else {
-            New-Item -ItemType Directory -Force -Path (Join-Path $sourceRoot "3rdparty") | Out-Null
-            Invoke-Native "provision googletest" "git clone --depth 1 `"https://github.com/google/googletest.git`" `"$gtestDir`""
+            $null = New-Item -ItemType Directory -Force `
+                -Path (Join-Path $sourceRoot "3rdparty")
+            $null = New-Item -ItemType Directory -Path $gtestDir -Force
+            Invoke-ForgeNative "initialize googletest repository" "git" `
+                @("-C", $gtestDir, "init")
+            Invoke-ForgeNative "configure googletest origin" "git" `
+                @("-C", $gtestDir, "remote", "add", "origin", `
+                  "https://github.com/google/googletest.git")
+            Invoke-ForgeNative "fetch pinned googletest" "git" `
+                @("-C", $gtestDir, "fetch", "--depth", "1", "origin", `
+                  $GoogletestCommit)
+            Invoke-ForgeNative "checkout pinned googletest" "git" `
+                @("-C", $gtestDir, "checkout", "--detach", "FETCH_HEAD")
+            $gtestHeadOutput = Invoke-ForgeNativeOutput `
+                "verify pinned googletest" "git" `
+                @("-C", $gtestDir, "rev-parse", "HEAD")
+            $gtestHead = ($gtestHeadOutput.StdOut -join "").Trim()
+            if ($gtestHead -ne $GoogletestCommit) {
+                throw "GoogleTest checkout mismatch: expected $GoogletestCommit, got $gtestHead"
+            }
         }
     }
 
-    if (-not (Test-Path $gtestCMake)) {
+    if (-not (Test-Path -LiteralPath $gtestCMake)) {
         throw "Missing 3rdparty\googletest. Re-run without -SkipGoogletestProvision or provide it manually."
     }
 
     $Vcvars = Resolve-Vcvars
-
-    if (-not $BuildName) {
-        $BuildName = "msvc-$VsVersion-smoke"
-    }
-    $buildDir = Join-Path $sourceRoot "build\$BuildName"
-    if (Test-Path $buildDir) {
-        Remove-Item -Recurse -Force $buildDir
-    }
+    Import-ForgeVcvarsEnvironment $Vcvars
+    $multiConfig = Test-ForgeMultiConfigGenerator $Generator
+    $buildDir = Reset-ForgeBuildChild $sourceRoot $BuildName
 
     Write-Host "[msvc] source=$sourceRoot"
     Write-Host "[msvc] build=$buildDir"
     Write-Host "[msvc] vcvars=$Vcvars"
+    Write-Host "[msvc] generator=$Generator config=$Configuration"
 
-    $common = "call `"$Vcvars`" >nul && "
-    $compilerVersion = Invoke-NativeCapture "compiler version" ($common + "cl /Bv 2>&1")
-    Assert-OutputContains `
-        -Output $compilerVersion.Output `
-        -Needle "Microsoft" `
-        -Label "compiler version"
+    $compilerVersion = Invoke-ForgeNativeCapture `
+        -Label "compiler version" -FilePath "cl.exe" -Arguments @("/Bv")
+    Assert-OutputContains $compilerVersion.Output "Microsoft" "compiler version"
 
     if (-not $SkipGateChecks) {
-        Invoke-GateChecks -Common $common -SourceRoot $sourceRoot -BuildName $BuildName
+        Invoke-GateChecks $sourceRoot $BuildName $Generator $Configuration $multiConfig
     }
 
-    $configure =
-        $common +
-        "cmake -S `"$sourceRoot`" -B `"$buildDir`" -G Ninja " +
-        "-DCMAKE_BUILD_TYPE=Debug " +
-        "-DCMAKE_CXX_STANDARD=23 " +
-        "-DFORGE_BUILD_TESTS=ON " +
-        "-DFORGE_BUILD_EXAMPLES=OFF " +
-        "-DFORGE_ENABLE_FORGE_IO=AUTO " +
-        "-DFORGE_TEST_ENABLE_SIMD=OFF " +
-        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF " +
-        "-DFORGE_TEST_ENABLE_LINALG=OFF " +
+    $configure = @(Get-ConfigurePrefix `
+        $sourceRoot $buildDir $Generator $Configuration $multiConfig)
+    $configure += @(
+        "-DCMAKE_CXX_STANDARD=23",
+        "-DFORGE_BUILD_TESTS=ON",
+        "-DFORGE_BUILD_EXAMPLES=OFF",
+        "-DFORGE_ENABLE_FORGE_IO=AUTO",
+        "-DFORGE_TEST_ENABLE_SIMD=OFF",
+        "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF",
+        "-DFORGE_TEST_ENABLE_LINALG=OFF",
         "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF"
-    $build = $common + "cmake --build `"$buildDir`""
-    $listTests = $common + "ctest --test-dir `"$buildDir`" -N -R `"$CTestRegex`""
-    $test = $common + "ctest --test-dir `"$buildDir`" -R `"$CTestRegex`" --output-on-failure"
+    )
+    $configureOutput = Invoke-ForgeNativeOutput "configure" "cmake" $configure
+    Assert-OutputContains $configureOutput.Output `
+        "CC Forge: forge::io windows IOCP backend enabled" "main smoke IO gate"
+    Invoke-ForgeNative "build" "cmake" `
+        (Get-BuildArguments $buildDir $Configuration)
 
-    $configureOutput = Invoke-NativeOutput "configure" $configure
-    Assert-OutputContains `
-        -Output $configureOutput `
-        -Needle "CC Forge: forge::io windows IOCP backend enabled" `
-        -Label "main smoke IO gate"
-    Invoke-Native "build" $build
-    $testListOutput = Invoke-NativeOutput "list tests" $listTests
-    $testCount = Get-CtestCount $testListOutput
+    $listTests = @(Get-CtestArguments $buildDir $Configuration)
+    $listTests += @("-N", "-R", $CTestRegex)
+    $testListOutput = Invoke-ForgeNativeOutput "list tests" "ctest" $listTests
+    $testCount = Get-CtestCount $testListOutput.StdOut
     Write-Host "[msvc] ctest-count=$testCount"
-    Assert-CtestNonZero `
-        -Count $testCount `
-        -Label "main smoke CTest regex '$CTestRegex'"
-    Invoke-Native "test" $test
+    Assert-CtestNonZero $testCount "main smoke CTest regex '$CTestRegex'"
+
+    $test = @(Get-CtestArguments $buildDir $Configuration)
+    $test += @("-R", $CTestRegex, "--output-on-failure")
+    Invoke-ForgeNative "test" "ctest" $test
 
     if (-not $SkipInstallPackageCheck) {
-        Invoke-InstallPackageCheck -Common $common -SourceRoot $sourceRoot -BuildName $BuildName
+        Invoke-InstallPackageCheck `
+            $sourceRoot $BuildName $Generator $Configuration $multiConfig
     }
 
-    $success = $true
     Write-Host "[msvc] verified"
+    $verificationSucceeded = $true
 } finally {
-    if ($success -and $cloned -and (-not $Keep)) {
-        Remove-Item -Recurse -Force $workRoot
-    } elseif ($cloned) {
+    if ($workRootCreated -and (-not $Keep)) {
+        try {
+            Remove-Item -LiteralPath $workRoot -Recurse -Force `
+                -ErrorAction Stop
+        } catch {
+            if ($verificationSucceeded) {
+                throw
+            }
+            Write-Warning "Could not remove failed Windows verification root: $workRoot"
+        }
+    } elseif ($workRootCreated) {
         Write-Host "[msvc] kept work root: $workRoot"
     }
 }

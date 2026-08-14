@@ -136,6 +136,8 @@ SSH wrapper 的参数只描述验证环境，不改变测试语义：
 - `FORGE_WINDOWS_VS_VERSION` / `FORGE_WINDOWS_VS_ROOT` / `FORGE_WINDOWS_VC_VARS`：
   MSVC discovery override；
 - `FORGE_WINDOWS_REPO` / `FORGE_WINDOWS_REF`：远端 clone 模式的 source；
+- `FORGE_WINDOWS_BUILD_NAME` / `FORGE_WINDOWS_GENERATOR` /
+  `FORGE_WINDOWS_CONFIGURATION`：构建目录 basename、CMake generator 和配置；
 - `FORGE_WINDOWS_USE_LOCAL_SOURCE=1`：把当前 worktree 打包到远端临时目录，适合验证
   尚未 push 的改动；
 - `FORGE_WINDOWS_CTEST_REGEX`：focused smoke，例如 `forge_io_iocp`；
@@ -157,9 +159,12 @@ Older MSVC lanes are exploratory. For example, `FORGE_WINDOWS_VS_VERSIONS='18
 lane is not a reason to degrade modern C++ code generation or contort public
 APIs.
 
-默认 SSH wrapper 会在远端 clone `FORGE_WINDOWS_REPO` 的 `FORGE_WINDOWS_REF`。验证本地
-尚未 push 的工作树时，使用 local-source 模式；wrapper 会把当前 worktree 打包到远端
-临时目录，运行后清理：
+默认 SSH wrapper 会在远端 clone `FORGE_WINDOWS_REPO`，并使用调用方仓库当前 `HEAD`
+commit 作为不可变 ref；显式提供 symbolic `FORGE_WINDOWS_REF` 时，远端会在本次运行开始时
+解析成 commit、detached checkout 并把 commit id 写入日志。验证本地尚未 push 的工作树时，
+使用 local-source 模式；wrapper 只打包 tracked 和非 ignored 文件，不携带 `.git`、构建目录、
+agent cache 或 GoogleTest submodule worktree；后者由 Windows verifier 按固定 gitlink commit
+获取。wrapper 在传输前后校验、记录 archive SHA-256，运行结束后清理远端临时目录：
 
 ```bash
 FORGE_WINDOWS_HOST=<windows-host> \
@@ -173,6 +178,11 @@ scripts/verify-windows-msvc-ssh.sh
 PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`。`FORGE_WINDOWS_KEEP=1`
 可保留远端临时源码/clone 以便调试；不要把具体主机名、用户目录或工具链安装路径写进
 仓库文档。
+
+SSH transport 使用 PowerShell encoded command 传递参数；远端脚本只通过一次受控的
+`vcvars64.bat` 调用导入 MSVC 环境，之后按 argv 启动 `git`、`cmake`、`ctest` 和编译器，
+不会把路径或 CTest regex 再拼接成 `cmd /c` 字符串。没有 `.git` metadata 的 source
+archive 若缺少 GoogleTest，会固定获取仓库 gitlink 对应的 commit，而不是跟随上游默认分支。
 
 如果 Visual Studio 使用标准安装位置，也可以省略 `FORGE_WINDOWS_VC_VARS`，
 让脚本按 `VsVersion` 或 `vswhere` 查找。脚本会打印 MSVC compiler version、

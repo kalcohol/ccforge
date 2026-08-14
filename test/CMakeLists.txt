@@ -72,10 +72,27 @@ if(UNIX)
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
     add_test(
+        NAME windows_ssh_transport
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_windows_ssh_transport.sh")
+    set_tests_properties(
+        windows_ssh_transport PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+    add_test(
         NAME sanitizer_retry_policy
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_retry_policy.sh")
     set_tests_properties(
         sanitizer_retry_policy PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+endif()
+
+if(WIN32)
+    add_test(
+        NAME forge_windows_verification_helpers
+        COMMAND powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass
+            -File "${CMAKE_CURRENT_SOURCE_DIR}/test_windows_verification.ps1")
+    set_tests_properties(
+        forge_windows_verification_helpers PROPERTIES
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endif()
 
