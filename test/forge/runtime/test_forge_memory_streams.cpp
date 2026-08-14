@@ -116,6 +116,19 @@ TEST(ForgeMemoryStreamsTest, MemoryReadStreamReadsAllBytesInChunks) {
     EXPECT_TRUE(stream.eof());
 }
 
+TEST(ForgeMemoryStreamsTest, ZeroMaxReadSizeDisablesTheChunkLimit) {
+    forge::io::memory_read_stream stream{"abcdef", 0};
+    std::array<char, 6> buffer{};
+
+    auto [error, count] = stream.read_some(
+        forge::io::mutable_buffer{std::span{buffer}});
+
+    EXPECT_FALSE(error);
+    EXPECT_EQ(count, buffer.size());
+    EXPECT_EQ(std::string_view(buffer.data(), count), "abcdef");
+    EXPECT_TRUE(stream.eof());
+}
+
 TEST(ForgeMemoryStreamsTest, MemoryReadStreamZeroLengthDoesNotConsume) {
     forge::io::memory_read_stream stream{"abc"};
     std::array<char, 1> output{};

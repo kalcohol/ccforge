@@ -80,7 +80,8 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
 
 - `memory_read_stream` 从 borrowed input 读取，支持配置单次最大读量，用于稳定复现
   short read 和 EOF；调用方必须保证输入 memory 活过 stream 使用期。为避免常见悬垂误用，
-  直接从临时 `std::string` 构造会被拒绝。
+  直接从临时 `std::string` 构造会被拒绝。`max_read_size == 0` 是显式的 no-limit 值，
+  等价于默认的 `dynamic_extent_limit`。
 - `memory_write_stream` 写入 owned storage，或写入 borrowed output buffer；只有容量
   限制会造成 short write。`bytes()` 返回的是 view；owned storage 后续写入可能 reallocate，
   因而会使之前取得的 span 失效。
@@ -403,6 +404,13 @@ context `shutdown()` / `wait()` 之后再关闭。否则 OS 可能复用同一�
 `forge::io::context` 是 owning runtime primitive，析构会 `shutdown()` + `wait()`，
 因此可能阻塞。
 
+Linux 和 Windows context 都允许 receiver completion 在 poller/worker thread 上销毁该
+context：`wait()` 会避免 self-join，worker 持有的 state keepalive 会继续完成 terminal
+release。该例外只覆盖 context 自己；若 `context_options::memory` 指向非 process-lifetime
+resource（包括调用方替换过的 default resource），resource 必须在 detached worker、
+pending record 和 completion 尾部全部释放后才能销毁。最简单的安全模式仍是由外层 owner
+先 `shutdown()` / `wait()`，再按逆序销毁 context 与 resource。
+
 Context drain 只覆盖 context 已接受的 operation 和 poller worker，不会 join 调用方的
 submission thread。开始 teardown 前必须先停止并 join 仍可能并发调用 readiness /
 read-write sender `start()` 的线程；shutdown 后被拒绝的 operation 可以在该 submitter
@@ -500,6 +508,8 @@ event buffer 和 receiver record 等 context-owned allocation。Linux backend �
 map 摘下 record 后，通过 record 内嵌的 intrusive action chain 在锁外完成 receiver；
 readiness、cancel、shutdown 和 error completion 的 deferred batch 本身不再分配。
 resource 非拥有，必须比 context 活得更久。
+若 context 在自己的 completion 中析构并 detach worker，resource 还必须活过随后发生的
+state/record terminal release tail；仅活到 context destructor 返回并不够。
 
 这不控制用户 fd、用户 buffer，也不承诺标准库内部对象零分配。
 

@@ -52,11 +52,16 @@ Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 前显式 join，并把 outstanding work 下析构视为 precondition violation。Forge 的
 owning contexts 更偏向 resource/session management 场景里的安全析构。
 
-`wait()` 的 self-deadlock guard 不等于 destructor 可以从自己的 worker 或 owned
-completion 中运行。`static_thread_pool`、`io::context` 和 `async_scope`
-这类 owning primitive 必须由外层 owner 管理 lifetime；不要在它们自己
-拥有的 work body / completion callback 内销毁该 primitive。完整 teardown 应由外层
-owner 调用 `shutdown()` / `wait()` 后离开作用域。
+`wait()` 的 self-deadlock guard 通常不等于 destructor 可以从自己的 worker 或 owned
+completion 中运行。`static_thread_pool` 和 `async_scope` 这类 owning primitive 必须由
+外层 owner 管理 lifetime；不要在它们自己拥有的 work body / completion callback 内销毁。
+完整 teardown 应由外层 owner 调用 `shutdown()` / `wait()` 后离开作用域。
+
+`forge::io::context` 是一个经过测试的窄例外：从自己的 poller completion 中析构时，
+destructor 会 shutdown 并 detach 当前 worker，context state 由 worker/operation keepalive
+留到 terminal release tail。这个能力不延伸到外部 submitter，也不自动延长自定义
+`memory_resource` 的寿命；使用自定义 resource 时，应优先由外层 owner 正常 drain，或保证
+resource 活到 detached worker 和最后一个 record 全部释放。
 
 Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
@@ -120,7 +125,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `wait()` join worker。File descriptor、Windows handle 和 user buffer 都是 borrowed，
   必须活到 pending operation 完成，或在 close 前先 cancel 并 drain。Context teardown
   也要求外部 IO submitter 已 quiescent；`wait()` 不 join 正在其他线程执行的
-  operation `start()`。
+  operation `start()`。Process-lifetime resource（包括未被替换的默认 new-delete resource）
+  支持 poller-completion self-destroy；自定义 resource 仍必须活过 detach 后的 state/record
+  terminal release tail。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
 - `forge::any_scheduler` 是窄 scheduler 类型擦除；通过内部 erased receiver 保留
   downstream receiver stop-token visibility，因此底层 scheduler operation 仍能观察
