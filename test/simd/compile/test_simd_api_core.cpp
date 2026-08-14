@@ -127,32 +127,37 @@ static_assert(has_select<byte_mask4, bool, bool>,
 static_assert(!has_select<byte_mask4, int, int>,
     "a byte mask should reject scalar branches whose element size does not match");
 
-} // namespace
-
-int main() {
+constexpr bool core_values_are_preserved() {
     int input[4] = {1, 2, 3, 4};
     int output[4] = {};
 
-    simd_test::default_int default_values(5);
-    simd_test::int4 generated(simd_test::int_generator{});
-    simd_test::mask4 selected(simd_test::bool_generator{});
-    const auto partial = std::simd::partial_load<simd_test::int4>(input, 3, selected);
+    default_int default_values(5);
+    int4 generated(int_generator{});
+    mask4 selected(bool_generator{});
+    const auto partial = std::simd::partial_load<int4>(input, 3, selected);
     std::simd::partial_store(partial, output, 3, selected);
 
     auto begin = generated.begin();
     auto end = generated.end();
-    const simd_test::int4& const_generated = generated;
+    const int4& const_generated = generated;
     auto cbegin = const_generated.cbegin();
     auto cend = const_generated.cend();
 
-    return simd_test::lane(default_values, 0) == 5 &&
-        simd_test::lane(generated, 0) == 1 &&
-        simd_test::lane(generated, 3) == 7 &&
-        simd_test::lane(selected, 0) && !simd_test::lane(selected, 1) &&
-        output[0] == 1 &&
-        output[1] == 0 &&
-        output[2] == 3 &&
-        output[3] == 0 &&
-        (end - begin) == 4 &&
-        (cend - cbegin) == 4 ? 0 : 1;
+    return lane(default_values, 0) == 5 &&
+           lane(generated, 0) == 1 &&
+           lane(generated, 3) == 7 &&
+           lane(selected, 0) && !lane(selected, 1) &&
+           output[0] == 1 &&
+           output[1] == 0 &&
+           output[2] == 3 &&
+           output[3] == 0 &&
+           (end - begin) == 4 &&
+           (cend - cbegin) == 4;
 }
+
+static_assert(core_values_are_preserved(),
+    "core std::simd operations should preserve their constexpr lane values");
+
+} // namespace
+
+int main() {}

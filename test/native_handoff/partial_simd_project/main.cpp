@@ -8,7 +8,8 @@
 #error Forge simd backport must not inject over partial native std::simd.
 #endif
 
-int main() {
-    std::simd::vec<int, 4> value(1);
-    return value[0] == 1 ? 0 : 1;
-}
+constexpr std::simd::vec<int, 4> value(1);
+static_assert(value[0] == 1,
+    "the partial-native SIMD fixture should preserve its native lane values");
+
+int main() {}

@@ -91,21 +91,24 @@ static_assert(!std::is_constructible<mask4, std::span<const int, 4>>::value,
 static_assert(!std::is_constructible<int4, std::array<std::complex<float>, 4>>::value,
     "basic_vec range construction must reject lane values that are not explicitly convertible");
 
-} // namespace
-
-int main() {
-    std::array<int, 4> input{{1, 2, 3, 4}};
+constexpr bool constructor_values_are_preserved() {
+    constexpr std::array<int, 4> input{{1, 2, 3, 4}};
     std::simd::basic_vec deduced_from_range{input};
-    simd_test::int4 values(simd_test::wrapper_bad_value{});
-    simd_test::int4 from_bool(true);
-    simd_test::mask4 selected(true);
+    int4 values(wrapper_bad_value{});
+    int4 from_bool(true);
+    mask4 selected(true);
     std::simd::basic_vec deduced_from_mask{selected};
 
-    static_assert(std::is_same_v<decltype(deduced_from_range), simd_test::int4>);
-    static_assert(std::is_same_v<decltype(deduced_from_mask), simd_test::int4>);
+    static_assert(std::is_same_v<decltype(deduced_from_range), int4>);
+    static_assert(std::is_same_v<decltype(deduced_from_mask), int4>);
 
     return values[0] == 6 && from_bool[0] == 1 && selected[0] &&
-            deduced_from_range[3] == 4 && deduced_from_mask[0] == 1
-        ? 0
-        : 1;
+           deduced_from_range[3] == 4 && deduced_from_mask[0] == 1;
 }
+
+static_assert(constructor_values_are_preserved(),
+    "basic_vec constructors and deduction guides should preserve lane values");
+
+} // namespace
+
+int main() {}

@@ -67,10 +67,21 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
         OR FORGE_TEST_ENABLE_FORGE_ERASURE)
-    forge_add_forge_compile_probe(
+    add_executable(
         test_forge_execution_header
-        test_forge_execution_header.cpp
-        forge_execution_header)
+        "${FORGE_COMPILE_DIR}/test_forge_execution_header.cpp")
+    target_include_directories(test_forge_execution_header BEFORE PRIVATE
+        "${CMAKE_SOURCE_DIR}/include"
+        "${CMAKE_SOURCE_DIR}/backport")
+    target_link_libraries(test_forge_execution_header PRIVATE
+        forge::forge
+        Threads::Threads)
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(test_forge_execution_header PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+    add_test(NAME forge_execution_header COMMAND test_forge_execution_header)
+    set_tests_properties(forge_execution_header PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_IO)

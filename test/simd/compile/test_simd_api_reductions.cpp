@@ -25,13 +25,11 @@ static_assert(std::is_same_v<decltype(std::simd::reduce_min(1, false)), int>,
 static_assert(std::is_same_v<decltype(std::simd::reduce_max(1, false)), int>,
     "reduce_max(scalar, bool) should preserve the scalar type");
 
-} // namespace
-
-int main() {
-    const simd_test::int4 values([](auto lane) {
+constexpr bool reductions_produce_expected_values() {
+    const int4 values([](auto lane) {
         return static_cast<int>(decltype(lane)::value + 1);
     });
-    const simd_test::mask4 selected(0b0101u);
+    const mask4 selected(0b0101u);
 
     const int reduced = std::simd::reduce(values, simd_plus{});
     const int masked_and = std::simd::reduce(values, selected, std::bit_and<>{});
@@ -40,8 +38,17 @@ int main() {
     const int scalar_sum = std::simd::reduce(7);
     const int scalar_identity = std::simd::reduce(7, false);
 
-    return reduced == 10 && masked_and == (1 & 3) && masked_or == (1 | 3) &&
-            masked_xor == (1 ^ 3) && scalar_sum == 7 && scalar_identity == 0
-        ? 0
-        : 1;
+    return reduced == 10 &&
+           masked_and == (1 & 3) &&
+           masked_or == (1 | 3) &&
+           masked_xor == (1 ^ 3) &&
+           scalar_sum == 7 &&
+           scalar_identity == 0;
 }
+
+static_assert(reductions_produce_expected_values(),
+    "std::simd reductions should preserve their constexpr values");
+
+} // namespace
+
+int main() {}
