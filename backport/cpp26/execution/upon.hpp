@@ -53,18 +53,25 @@ struct __maybe_eptr_cs<true> {
     using type = completion_signatures<set_error_t(std::exception_ptr)>;
 };
 
-template<class Sig>
-struct __is_error_sig : std::false_type {};
-
-template<class E>
-struct __is_error_sig<set_error_t(E)> : std::true_type {};
-
 template<class Fn, class Sig>
 struct __accepts_error_sig : std::true_type {};
 
 template<class Fn, class E>
 struct __accepts_error_sig<Fn, set_error_t(E)>
     : std::bool_constant<std::is_invocable_v<Fn, E>> {};
+
+template<class Fn, class Sig, bool IsError>
+struct __handler_may_throw : std::false_type {};
+
+template<class Fn, class E>
+struct __handler_may_throw<Fn, set_error_t(E), true>
+    : std::bool_constant<
+          std::is_invocable_v<Fn, E> &&
+          !std::is_nothrow_invocable_v<Fn, E>> {};
+
+template<class Fn>
+struct __handler_may_throw<Fn, set_stopped_t(), false>
+    : std::bool_constant<!std::is_nothrow_invocable_v<Fn>> {};
 
 template<class Fn, class Sig, bool IsError>
 struct __transform_sig {
@@ -101,13 +108,12 @@ struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
         !IsError || (__accepts_error_sig<Fn, Sigs>::value && ...),
         "upon_error handler must accept every error completion shape");
 
-    static constexpr bool handles_completion = IsError
-        ? (__is_error_sig<Sigs>::value || ...)
-        : (std::is_same_v<Sigs, set_stopped_t()> || ...);
+    static constexpr bool handler_may_throw =
+        (__handler_may_throw<Fn, Sigs, IsError>::value || ...);
 
     using type = __forge_meta::__concat_unique_cs_t<
         typename __transform_sig<Fn, Sigs, IsError>::type...,
-        typename __maybe_eptr_cs<handles_completion>::type>;
+        typename __maybe_eptr_cs<handler_may_throw>::type>;
 };
 
 template<class R, class Fn>
@@ -125,6 +131,15 @@ struct __recv_error {
     void set_error(E&& e) && noexcept {
         if constexpr (!std::invocable<Fn, E>) {
             std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
+        } else if constexpr (std::is_nothrow_invocable_v<Fn, E>) {
+            if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
+                std::invoke(std::move(__fn), static_cast<E&&>(e));
+                std::execution::set_value(std::move(__rcvr));
+            } else {
+                std::execution::set_value(
+                    std::move(__rcvr),
+                    std::invoke(std::move(__fn), static_cast<E&&>(e)));
+            }
         } else if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
             try {
                 std::invoke(std::move(__fn), static_cast<E&&>(e));
@@ -168,7 +183,15 @@ struct __recv_stopped {
     }
 
     void set_stopped() && noexcept {
-        if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
+        if constexpr (std::is_nothrow_invocable_v<Fn>) {
+            if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
+                std::invoke(std::move(__fn));
+                std::execution::set_value(std::move(__rcvr));
+            } else {
+                std::execution::set_value(
+                    std::move(__rcvr), std::invoke(std::move(__fn)));
+            }
+        } else if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
             try {
                 std::invoke(std::move(__fn));
                 std::execution::set_value(std::move(__rcvr));

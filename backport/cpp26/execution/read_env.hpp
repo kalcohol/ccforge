@@ -40,11 +40,17 @@ struct __op : __forge_detail::__immovable {
     __op(Tag t, R r) : __rcvr(std::move(r)), __tag(std::move(t)) {}
 
     void start() & noexcept {
-        try {
+        using env_t = env_of_t<R>;
+        if constexpr (std::is_nothrow_invocable_v<Tag&, env_t>) {
             set_value(std::move(__rcvr),
                       __tag(std::execution::get_env(__rcvr)));
-        } catch (...) {
-            set_error(std::move(__rcvr), std::current_exception());
+        } else {
+            try {
+                set_value(std::move(__rcvr),
+                          __tag(std::execution::get_env(__rcvr)));
+            } catch (...) {
+                set_error(std::move(__rcvr), std::current_exception());
+            }
         }
     }
 };
@@ -59,10 +65,14 @@ struct __sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using tag_t = typename std::remove_cvref_t<Self>::tag_t;
-        using result_t = std::invoke_result_t<tag_t, Env>;
-        return completion_signatures<
-            set_value_t(result_t),
-            set_error_t(std::exception_ptr)>{};
+        using result_t = std::invoke_result_t<tag_t&, Env>;
+        if constexpr (std::is_nothrow_invocable_v<tag_t&, Env>) {
+            return completion_signatures<set_value_t(result_t)>{};
+        } else {
+            return completion_signatures<
+                set_value_t(result_t),
+                set_error_t(std::exception_ptr)>{};
+        }
     }
 
     template<receiver R>

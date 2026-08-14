@@ -76,22 +76,27 @@ struct value_sig_from_result<void> {
 template<class Fn, class UpSig>
 struct transform_sig {
     using type = UpSig;
+    static constexpr bool may_throw = false;
 };
 
 template<class Fn, class... Vs>
 struct transform_sig<Fn, set_value_t(Vs...)> {
     using r_t = std::invoke_result_t<Fn, Vs...>;
     using type = typename value_sig_from_result<r_t>::type;
+    static constexpr bool may_throw =
+        !std::is_nothrow_invocable_v<Fn, Vs...>;
 };
 
 template<class Fn, class E>
 struct transform_sig<Fn, set_error_t(E)> {
     using type = set_error_t(E);
+    static constexpr bool may_throw = false;
 };
 
 template<class Fn>
 struct transform_sig<Fn, set_stopped_t()> {
     using type = set_stopped_t();
+    static constexpr bool may_throw = false;
 };
 
 template<class Fn, class UpCompletionSignatures>
@@ -122,7 +127,12 @@ private:
 
     using initial = sig_list<>;
     using mapped = typename add_all<initial, UpSigs...>::type;
-    using with_eptr = sig_list_push_unique_t<mapped, set_error_t(std::exception_ptr)>;
+    static constexpr bool may_throw =
+        (transform_sig<Fn, UpSigs>::may_throw || ...);
+    using with_eptr = std::conditional_t<
+        may_throw,
+        sig_list_push_unique_t<mapped, set_error_t(std::exception_ptr)>,
+        mapped>;
 
 public:
     using type = sig_list_to_completion_signatures_t<with_eptr>;
@@ -140,7 +150,16 @@ struct then_receiver {
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
+        if constexpr (std::is_nothrow_invocable_v<Fn, Vs...>) {
+            if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
+                std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(rcvr_));
+            } else {
+                std::execution::set_value(
+                    std::move(rcvr_),
+                    std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...));
+            }
+        } else if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
             try {
                 std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...);
                 std::execution::set_value(std::move(rcvr_));

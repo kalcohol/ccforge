@@ -150,17 +150,43 @@ struct int_start_receiver {
     }
 };
 
+template<class CS>
+struct has_exception_ptr_error : std::false_type {};
+
+template<class... Sigs>
+struct has_exception_ptr_error<std::execution::completion_signatures<Sigs...>>
+    : std::bool_constant<(
+          std::same_as<
+              Sigs,
+              std::execution::set_error_t(std::exception_ptr)> || ...)> {};
+
 } // namespace
 
 TEST(ReadEnvTest, SenderExists) {
     auto sndr = std::execution::read_env(std::execution::get_stop_token);
     static_assert(std::execution::sender<decltype(sndr)>);
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(!has_exception_ptr_error<cs_t>::value);
     SUCCEED();
 }
 
 TEST(ReadEnvTest, ThrowingQueryCompletesWithError) {
     auto sndr = std::execution::read_env(throwing_query{});
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(has_exception_ptr_error<cs_t>::value);
     EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+}
+
+TEST(ThenTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
+    auto sndr = std::execution::just(1)
+              | std::execution::then([](int value) noexcept {
+                    return value + 1;
+                });
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(!has_exception_ptr_error<cs_t>::value);
 }
 
 TEST(UponErrorTest, ValuePassThrough) {
@@ -194,6 +220,14 @@ TEST(UponErrorTest, ReportsHandledErrorAsValueSignature) {
             std::execution::set_error_t(std::exception_ptr)>>);
 }
 
+TEST(UponErrorTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
+    auto sndr = std::execution::just_error(42)
+              | std::execution::upon_error([](int) noexcept { return 3.14; });
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(!has_exception_ptr_error<cs_t>::value);
+}
+
 TEST(UponStoppedTest, ValuePassThrough) {
     bool fn_called = false;
     auto sndr = std::execution::just(10)
@@ -223,6 +257,14 @@ TEST(UponStoppedTest, ReportsHandledStoppedAsValueSignature) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
+}
+
+TEST(UponStoppedTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
+    auto sndr = std::execution::just_stopped()
+              | std::execution::upon_stopped([]() noexcept { return 7; });
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(!has_exception_ptr_error<cs_t>::value);
 }
 
 TEST(LetValueTest, ChainNewSender) {

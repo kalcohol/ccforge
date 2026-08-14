@@ -665,6 +665,23 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SimpleCountingScopeTest, SpawnAcceptsNothrowThenPipeline) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    std::atomic<int> counter{0};
+
+    std::execution::spawn(
+        std::execution::just()
+            | std::execution::then([&counter]() noexcept {
+                  counter.fetch_add(1, std::memory_order_relaxed);
+              }),
+        token);
+
+    auto joined = std::execution::sync_wait(scope.join());
+    EXPECT_TRUE(joined.has_value());
+    EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
+}
+
 TEST(CountingScopeTest, SpawnDisassociatesAfterOperationDestruction) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
