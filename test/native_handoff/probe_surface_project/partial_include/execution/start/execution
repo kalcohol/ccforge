@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct start_t {};
+
+} // namespace std::execution

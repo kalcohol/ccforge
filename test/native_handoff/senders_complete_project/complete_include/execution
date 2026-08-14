@@ -1,0 +1,292 @@
+#pragma once
+
+#include <concepts>
+#include <cstddef>
+#include <exception>
+#include <optional>
+#include <stop_token>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+#define __cpp_lib_senders 202506L
+
+namespace std {
+
+template<class Type>
+concept queryable = destructible<Type>;
+
+} // namespace std
+
+namespace std::execution {
+
+struct scheduler_tag {};
+struct receiver_tag {};
+struct operation_state_tag {};
+struct sender_tag {};
+
+struct set_value_t {
+    template<class Receiver, class... Values>
+    void operator()(Receiver&& receiver, Values&&... values) const noexcept {
+        std::forward<Receiver>(receiver).set_value(
+            std::forward<Values>(values)...);
+    }
+};
+
+struct set_error_t {
+    template<class Receiver, class Error>
+    void operator()(Receiver&& receiver, Error&& error) const noexcept {
+        std::forward<Receiver>(receiver).set_error(
+            std::forward<Error>(error));
+    }
+};
+
+struct set_stopped_t {
+    template<class Receiver>
+    void operator()(Receiver&& receiver) const noexcept {
+        std::forward<Receiver>(receiver).set_stopped();
+    }
+};
+
+inline constexpr set_value_t set_value{};
+inline constexpr set_error_t set_error{};
+inline constexpr set_stopped_t set_stopped{};
+
+template<class... Envs>
+struct env {
+    constexpr env(Envs...) noexcept {}
+};
+
+struct get_env_t {
+    template<class Receiver>
+    constexpr auto operator()(const Receiver& receiver) const
+        noexcept(noexcept(receiver.get_env()))
+        -> decltype(receiver.get_env()) {
+        return receiver.get_env();
+    }
+};
+
+inline constexpr get_env_t get_env{};
+
+template<class Receiver>
+using env_of_t = decltype(get_env(declval<const Receiver&>()));
+
+template<class... Signatures>
+struct completion_signatures {};
+
+template<size_t Arity>
+struct synthetic_signatures;
+
+template<>
+struct synthetic_signatures<0> {
+    using type = execution::completion_signatures<set_value_t()>;
+};
+
+template<>
+struct synthetic_signatures<1> {
+    using type = execution::completion_signatures<set_value_t(int)>;
+};
+
+template<>
+struct synthetic_signatures<2> {
+    using type = execution::completion_signatures<
+        set_value_t(int, int),
+        set_error_t(exception_ptr),
+        set_stopped_t()>;
+};
+
+template<size_t Arity>
+struct synthetic_sender {
+    using sender_concept = sender_tag;
+    using completion_signatures = typename synthetic_signatures<Arity>::type;
+
+    int value = 0;
+};
+
+template<class Sender>
+concept sender = requires {
+    typename remove_cvref_t<Sender>::sender_concept;
+} && derived_from<
+    typename remove_cvref_t<Sender>::sender_concept,
+    sender_tag>;
+
+template<class Sender, class... Envs>
+concept sender_in = sender<Sender>;
+
+template<class Sender, class... Envs>
+    requires sender_in<Sender, Envs...>
+using completion_signatures_of_t =
+    typename remove_cvref_t<Sender>::completion_signatures;
+
+template<class Receiver>
+concept receiver = requires {
+    typename remove_cvref_t<Receiver>::receiver_concept;
+} && derived_from<
+    typename remove_cvref_t<Receiver>::receiver_concept,
+    receiver_tag> &&
+    move_constructible<remove_cvref_t<Receiver>> &&
+    std::queryable<env_of_t<Receiver>>;
+
+template<class Receiver>
+struct synthetic_operation {
+    using operation_state_concept = operation_state_tag;
+
+    Receiver receiver;
+    int value = 0;
+
+    void start() & noexcept {
+        execution::set_value(std::move(receiver), value);
+    }
+};
+
+template<class Operation>
+concept operation_state = requires {
+    typename remove_cvref_t<Operation>::operation_state_concept;
+} && derived_from<
+    typename remove_cvref_t<Operation>::operation_state_concept,
+    operation_state_tag> &&
+    destructible<Operation>;
+
+struct connect_t {
+    template<size_t Arity, receiver Receiver>
+    [[nodiscard]] synthetic_operation<remove_cvref_t<Receiver>> operator()(
+        synthetic_sender<Arity> sender,
+        Receiver&& receiver) const {
+        return {std::forward<Receiver>(receiver), sender.value};
+    }
+};
+
+struct start_t {
+    template<operation_state Operation>
+    void operator()(Operation& operation) const noexcept {
+        operation.start();
+    }
+};
+
+inline constexpr connect_t connect{};
+inline constexpr start_t start{};
+
+struct get_await_completion_adaptor_t {};
+inline constexpr get_await_completion_adaptor_t
+    get_await_completion_adaptor{};
+
+enum class forward_progress_guarantee {
+    concurrent,
+    parallel,
+    weakly_parallel
+};
+
+struct schedule_t {
+    template<class Scheduler>
+    [[nodiscard]] synthetic_sender<0> operator()(Scheduler&&) const {
+        return {};
+    }
+};
+
+struct get_forward_progress_guarantee_t {
+    template<class Scheduler>
+    [[nodiscard]] forward_progress_guarantee operator()(
+        const Scheduler&) const noexcept {
+        return forward_progress_guarantee::weakly_parallel;
+    }
+};
+
+inline constexpr schedule_t schedule{};
+inline constexpr get_forward_progress_guarantee_t
+    get_forward_progress_guarantee{};
+
+template<class Scheduler>
+concept scheduler = derived_from<
+    typename remove_cvref_t<Scheduler>::scheduler_concept,
+    scheduler_tag> &&
+    std::queryable<Scheduler> &&
+    requires(Scheduler&& scheduler_value) {
+        { schedule(std::forward<Scheduler>(scheduler_value)) } -> sender;
+        { get_forward_progress_guarantee(scheduler_value) }
+            -> same_as<forward_progress_guarantee>;
+    } &&
+    equality_comparable<remove_cvref_t<Scheduler>> &&
+    copyable<remove_cvref_t<Scheduler>>;
+
+class run_loop {
+public:
+    class scheduler {
+    public:
+        using scheduler_concept = scheduler_tag;
+
+        friend bool operator==(
+            const scheduler&,
+            const scheduler&) noexcept = default;
+    };
+
+    [[nodiscard]] scheduler get_scheduler() const noexcept {
+        return {};
+    }
+};
+
+struct just_t {
+    template<class Value>
+    [[nodiscard]] synthetic_sender<1> operator()(Value&&) const {
+        return {42};
+    }
+};
+
+struct starts_on_t {
+    template<scheduler Scheduler, sender Sender>
+    [[nodiscard]] remove_cvref_t<Sender> operator()(
+        Scheduler&&,
+        Sender&& sender) const {
+        return std::forward<Sender>(sender);
+    }
+};
+
+struct then_t {
+    template<sender Sender, class Function>
+    [[nodiscard]] remove_cvref_t<Sender> operator()(
+        Sender&& sender,
+        Function&&) const {
+        return std::forward<Sender>(sender);
+    }
+};
+
+struct continues_on_t {
+    template<sender Sender, scheduler Scheduler>
+    [[nodiscard]] remove_cvref_t<Sender> operator()(
+        Sender&& sender,
+        Scheduler&&) const {
+        return std::forward<Sender>(sender);
+    }
+};
+
+struct when_all_t {
+    template<sender First, sender Second>
+    [[nodiscard]] synthetic_sender<2> operator()(First&&, Second&&) const {
+        return {};
+    }
+};
+
+inline constexpr just_t just{};
+inline constexpr starts_on_t starts_on{};
+inline constexpr then_t then{};
+inline constexpr continues_on_t continues_on{};
+inline constexpr when_all_t when_all{};
+
+} // namespace std::execution
+
+namespace std::this_thread {
+
+struct sync_wait_t {
+    [[nodiscard]] optional<tuple<int>> operator()(
+        execution::synthetic_sender<1>) const {
+        return tuple{42};
+    }
+
+    [[nodiscard]] optional<tuple<int, int>> operator()(
+        execution::synthetic_sender<2>) const {
+        return tuple{1, 2};
+    }
+};
+
+inline constexpr sync_wait_t sync_wait{};
+
+} // namespace std::this_thread

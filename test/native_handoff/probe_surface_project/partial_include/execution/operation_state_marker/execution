@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct operation_state_tag {};
+
+} // namespace std::execution

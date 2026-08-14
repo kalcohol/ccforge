@@ -40,7 +40,18 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
   以 C++23 运行 SIMD-only suite，要求 declaration-free `<simd>` 命中 BACKPORT。
   脚本分别匹配这些诊断；FULL probe 覆盖各主要 public sub-surface，不以少数 core
   符号代替完整性证据。
-- `native_handoff_partial_simd_configure` 使用合成的 incomplete `<simd>` 头验证 partial-native 分支：CMake probe 必须报告 incomplete native support，wrapper 必须 stand aside，不能把 backport 注入到已有 `std::simd` 声明之上。
+- `native_handoff_partial_simd_configure` 使用合成的 incomplete `<simd>` 头验证
+  partial-native 分支；`native_handoff_probe_surface_{sampled,independent_roots}`
+  进一步让 `<execution>`、`<simd>`、padded mdspan、submdspan 和 linalg 分别只暴露
+  “被旧探针采样的表面”或“未被采样的独立 marker/completion/connection/query 根”。每个
+  execution 根都有隔离 fixture；两类都必须报告 PARTIAL 并让 wrapper
+  stand aside。`native_handoff_senders_complete_configure` 则使用独立维护的、符合当前
+  `202506L` 表面形状的 synthetic native `<execution>` / `<stop_token>` fixture，避免
+  用 Forge backport 证明自身完整。FULL probe 必须命中 `env<>`、四个当前 protocol
+  marker、`get_env` receiver query、`connect`/`start` operation protocol、完整 scheduler concept 所需的
+  `schedule`/forward-progress 表面、`get_await_completion_adaptor`、stop token、
+  transfer/composition、精确 completion/result shape 和 `std::this_thread::sync_wait`，
+  并能承载 Forge 自有的 `any_stop_token`。
 - `scripts/verify-native.sh llvm` / `zig` 覆盖 backport inject path。
 - `scripts/verify-native.sh gcc-exec` 单独覆盖 libstdc++ 上的 `std::execution` backport，因为主流标准库还没有稳定 native `std::execution` 实现。
 - `scripts/probe-stdexec-feasibility.sh` 只是可选 reference probe。它可以帮助比较 sender/receiver 语义，但 stdexec 使用 `stdexec::` surface，不能证明 Forge `<execution>` 已经完成 native handoff。

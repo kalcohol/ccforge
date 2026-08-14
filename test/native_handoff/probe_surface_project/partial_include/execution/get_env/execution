@@ -1,0 +1,8 @@
+#pragma once
+
+namespace std::execution {
+
+struct get_env_t {};
+inline constexpr get_env_t get_env{};
+
+} // namespace std::execution

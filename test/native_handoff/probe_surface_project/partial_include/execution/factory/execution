@@ -1,0 +1,8 @@
+#pragma once
+
+namespace std::execution {
+
+struct sampled_sender {};
+inline sampled_sender just(int) { return {}; }
+
+} // namespace std::execution

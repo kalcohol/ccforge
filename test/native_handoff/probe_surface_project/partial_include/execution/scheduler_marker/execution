@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct scheduler_tag {};
+
+} // namespace std::execution

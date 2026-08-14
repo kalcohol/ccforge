@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct sender_tag {};
+
+} // namespace std::execution

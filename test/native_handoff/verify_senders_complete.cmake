@@ -1,5 +1,4 @@
-foreach(required_var IN ITEMS
-        SOURCE_DIR BINARY_DIR FORGE_ROOT_DIR SURFACE_CASE EXECUTION_CASE)
+foreach(required_var IN ITEMS SOURCE_DIR BINARY_DIR FORGE_ROOT_DIR)
     if(NOT DEFINED ${required_var} OR "${${required_var}}" STREQUAL "")
         message(FATAL_ERROR "${required_var} is required")
     endif()
@@ -17,9 +16,7 @@ set(configure_args
     -S "${SOURCE_DIR}"
     -B "${BINARY_DIR}"
     -DCMAKE_CXX_STANDARD=${CXX_STANDARD}
-    -DFORGE_ROOT_DIR=${FORGE_ROOT_DIR}
-    -DSURFACE_CASE=${SURFACE_CASE}
-    -DEXECUTION_CASE=${EXECUTION_CASE})
+    -DFORGE_ROOT_DIR=${FORGE_ROOT_DIR})
 if(DEFINED CXX_COMPILER AND NOT CXX_COMPILER STREQUAL "")
     list(APPEND configure_args "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}")
 endif()
@@ -33,19 +30,15 @@ execute_process(
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error)
-
 set(configure_log "${configure_output}\n${configure_error}")
 if(NOT configure_result EQUAL 0)
     message(FATAL_ERROR
-        "${SURFACE_CASE}/${EXECUTION_CASE} probe-surface configure failed:\n${configure_log}")
+        "complete senders fixture configure failed:\n${configure_log}")
 endif()
-
-foreach(feature IN ITEMS SENDERS SIMD MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG)
-    if(NOT configure_log MATCHES "CC Forge probe: ${feature}=PARTIAL")
-        message(FATAL_ERROR
-            "${SURFACE_CASE}/${EXECUTION_CASE} did not classify ${feature} as PARTIAL:\n${configure_log}")
-    endif()
-endforeach()
+if(NOT configure_log MATCHES "CC Forge probe: SENDERS=COMPLETE")
+    message(FATAL_ERROR
+        "complete senders fixture was not classified COMPLETE:\n${configure_log}")
+endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" --build "${BINARY_DIR}"
@@ -54,5 +47,5 @@ execute_process(
     ERROR_VARIABLE build_error)
 if(NOT build_result EQUAL 0)
     message(FATAL_ERROR
-        "${SURFACE_CASE}/${EXECUTION_CASE} probe-surface build failed:\n${build_output}\n${build_error}")
+        "complete senders fixture build failed:\n${build_output}\n${build_error}")
 endif()

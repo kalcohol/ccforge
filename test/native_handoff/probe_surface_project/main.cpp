@@ -1,3 +1,4 @@
+#include <execution>
 #include <linalg>
 #include <mdspan>
 #include <simd>
@@ -13,6 +14,9 @@
 #endif
 #if !defined(FORGE_HAS_NATIVE_LINALG)
 #error A partial std::linalg root must make Forge stand aside.
+#endif
+#if !defined(FORGE_HAS_NATIVE_SENDERS)
+#error A partial std::execution root must make Forge stand aside.
 #endif
 
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)

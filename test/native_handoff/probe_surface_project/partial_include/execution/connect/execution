@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct connect_t {};
+
+} // namespace std::execution

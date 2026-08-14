@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::execution {
+
+struct get_await_completion_adaptor_t {};
+
+} // namespace std::execution
