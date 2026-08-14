@@ -234,48 +234,32 @@ T vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
-    T sum_sq = __detail::__norm_square_term_as<T>(init);
+    using magnitude_type = std::remove_cvref_t<
+        decltype(__detail::__abs_if_needed(init))>;
+    magnitude_type scale{};
+    magnitude_type scaled_sum{1};
+    __detail::__update_scaled_sum_of_squares(
+        static_cast<magnitude_type>(__detail::__abs_if_needed(init)),
+        scale,
+        scaled_sum);
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-        sum_sq += __detail::__norm_square_term_as<T>(x[i]);
+        __detail::__update_scaled_sum_of_squares(
+            static_cast<magnitude_type>(__detail::__abs_if_needed(x[i])),
+            scale,
+            scaled_sum);
     }
     using std::sqrt;
-    return sqrt(sum_sq);
+    return static_cast<T>(scale * sqrt(scaled_sum));
 }
 
 template<class Extents, class Layout, class Accessor>
 auto vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
-    using std::abs;
-    using std::sqrt;
-    using T = decltype(abs(x[0]));
-    using ElemT = std::remove_const_t<typename Accessor::element_type>;
-#if __LINALG_HAS_SIMD
-    if constexpr (!__detail::__is_complex_v<ElemT> &&
-                  std::is_same_v<T, ElemT> &&
-                  __detail::__can_simd_v<ElemT, Layout, Accessor>) {
-        using abi_t  = std::simd::native_abi<ElemT>;
-        using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
-        const auto n = x.extent(0);
-        typename Extents::index_type i = 0;
-        const ElemT* px = x.data_handle();
-        ElemT sum_sq = ElemT{};
-        for (; i + static_cast<decltype(i)>(kN) <= n; i += kN) {
-            simd_t v{std::span<const ElemT, kN>{px + i, kN}};
-            sum_sq += std::simd::reduce(v * v);
-        }
-        for (; i < n; ++i) { ElemT vi = px[i]; sum_sq += vi * vi; }
-        return sqrt(static_cast<T>(sum_sq));
-    }
-#endif
-    T sum_sq = T{};
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-        auto v = abs(x[i]);
-        const T vt = static_cast<T>(v);
-        sum_sq += vt * vt;
-    }
-    return sqrt(sum_sq);
+    using magnitude_type = decltype(__detail::__abs_if_needed(x[0]));
+    using T = decltype(std::declval<magnitude_type>() *
+                       std::declval<magnitude_type>());
+    return vector_two_norm(x, T{});
 }
 
 // vector_abs_sum — [linalg.algs.blas1.asum]
@@ -311,7 +295,7 @@ auto vector_abs_sum(
                 std::simd::basic_vec<ElemT, abi_t>{[&v](auto j) { return v[j] < ElemT{} ? -v[j] : v[j]; }}
             ));
         }
-        for (; i < n; ++i) acc += abs(px[i]);
+        for (; i < n; ++i) acc += __detail::__abs_if_needed(px[i]);
         return acc;
     }
 #endif
@@ -347,11 +331,10 @@ sum_of_squares_result<T> vector_sum_of_squares(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     sum_of_squares_result<T> init)
 {
-    using std::abs;
     T scale = init.scaling_factor;
     T ssq   = init.scaled_sum_of_squares;
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-        auto absxi = abs(x[i]);
+        auto absxi = __detail::__abs_if_needed(x[i]);
         if (absxi != T{}) {
             if (scale < absxi) {
                 ssq = T{1} + ssq * (scale / absxi) * (scale / absxi);
@@ -457,21 +440,33 @@ T matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
-    T sum = __detail::__norm_square_term_as<T>(init);
+    using magnitude_type = std::remove_cvref_t<
+        decltype(__detail::__abs_if_needed(init))>;
+    magnitude_type scale{};
+    magnitude_type scaled_sum{1};
+    __detail::__update_scaled_sum_of_squares(
+        static_cast<magnitude_type>(__detail::__abs_if_needed(init)),
+        scale,
+        scaled_sum);
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            sum += __detail::__norm_square_term_as<T>(A[i, j]);
+            __detail::__update_scaled_sum_of_squares(
+                static_cast<magnitude_type>(__detail::__abs_if_needed(A[i, j])),
+                scale,
+                scaled_sum);
         }
     }
-    return std::sqrt(sum);
+    using std::sqrt;
+    return static_cast<T>(scale * sqrt(scaled_sum));
 }
 
 template<class Extents, class Layout, class Accessor>
 auto matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using std::abs;
-    using T = decltype(abs(A[0, 0]));
+    using magnitude_type = decltype(__detail::__abs_if_needed(A[0, 0]));
+    using T = decltype(std::declval<magnitude_type>() *
+                       std::declval<magnitude_type>());
     return matrix_frob_norm(A, T{});
 }
 
@@ -481,7 +476,6 @@ T matrix_one_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
-    using std::abs;
     if (A.extent(1) == 0) {
         return init;
     }
@@ -491,7 +485,7 @@ T matrix_one_norm(
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
         sum_type col_sum{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            col_sum += static_cast<sum_type>(abs(A[i, j]));
+            col_sum += static_cast<sum_type>(__detail::__abs_if_needed(A[i, j]));
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
@@ -502,8 +496,7 @@ template<class Extents, class Layout, class Accessor>
 auto matrix_one_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using std::abs;
-    using T = decltype(abs(A[0, 0]));
+    using T = decltype(__detail::__abs_if_needed(A[0, 0]));
     return matrix_one_norm(A, T{});
 }
 
@@ -513,7 +506,6 @@ T matrix_inf_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
-    using std::abs;
     if (A.extent(0) == 0) {
         return init;
     }
@@ -523,7 +515,7 @@ T matrix_inf_norm(
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         sum_type row_sum{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            row_sum += static_cast<sum_type>(abs(A[i, j]));
+            row_sum += static_cast<sum_type>(__detail::__abs_if_needed(A[i, j]));
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }
@@ -534,8 +526,7 @@ template<class Extents, class Layout, class Accessor>
 auto matrix_inf_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
-    using std::abs;
-    using T = decltype(abs(A[0, 0]));
+    using T = decltype(__detail::__abs_if_needed(A[0, 0]));
     return matrix_inf_norm(A, T{});
 }
 

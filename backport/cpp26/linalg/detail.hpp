@@ -117,28 +117,40 @@ using __accessor_value_t =
     std::remove_cv_t<typename Accessor::element_type>;
 
 template<class T>
-constexpr auto __abs_sum_term(const T& value) {
-    using std::abs;
-    if constexpr (__is_complex_v<T>) {
-        return abs(value.real()) + abs(value.imag());
+constexpr auto __abs_if_needed(const T& value) {
+    if constexpr (std::is_unsigned_v<std::remove_cvref_t<T>>) {
+        return value;
     } else {
+        using std::abs;
         return abs(value);
     }
 }
 
 template<class T>
-constexpr auto __norm_square_term(const T& value) {
-    using std::abs;
-    const auto magnitude = abs(value);
-    return magnitude * magnitude;
+constexpr auto __abs_sum_term(const T& value) {
+    if constexpr (__is_complex_v<T>) {
+        return __abs_if_needed(value.real()) + __abs_if_needed(value.imag());
+    } else {
+        return __abs_if_needed(value);
+    }
 }
 
-template<class Accum, class T>
-constexpr Accum __norm_square_term_as(const T& value) {
-    using std::abs;
-    const auto magnitude = abs(value);
-    const Accum converted = static_cast<Accum>(magnitude);
-    return converted * converted;
+template<class Real>
+constexpr void __update_scaled_sum_of_squares(
+    Real magnitude, Real& scale, Real& scaled_sum) {
+    if (magnitude == Real{}) {
+        return;
+    }
+    if (scale < magnitude) {
+        const Real ratio = scale / magnitude;
+        scaled_sum = Real{1} + scaled_sum * ratio * ratio;
+        scale = magnitude;
+    } else if (scale == magnitude) {
+        scaled_sum += Real{1};
+    } else {
+        const Real ratio = magnitude / scale;
+        scaled_sum += ratio * ratio;
+    }
 }
 
 template<class T>

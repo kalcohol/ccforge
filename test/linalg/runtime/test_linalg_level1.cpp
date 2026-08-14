@@ -170,6 +170,15 @@ TEST(LinalgLevel1Reductions, VectorTwoNormCombinesInitEuclideanly) {
     EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 3.0), 5.0);
 }
 
+TEST(LinalgLevel1Reductions, VectorTwoNormAvoidsIntermediateOverflow) {
+    double x_data[] = {1.0e200, 1.0e200};
+    std::mdspan x(x_data, std::extents<int, 2>{});
+
+    const double result = std::linalg::vector_two_norm(x);
+    EXPECT_TRUE(std::isfinite(result));
+    EXPECT_NEAR(result, std::sqrt(2.0) * 1.0e200, 1.0e185);
+}
+
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     double x_data[] = {4.0};
@@ -240,6 +249,18 @@ TEST(LinalgLevel1IdxAbsMax, ComplexUsesOneNormTerm) {
     std::mdspan v(data, std::extents<int, 2>{});
 
     EXPECT_EQ(std::linalg::vector_idx_abs_max(v), 0);
+}
+
+TEST(LinalgLevel1Reductions, UnsignedMagnitudesRemainWellFormed) {
+    unsigned vector_data[] = {1u, 4u, 2u};
+    unsigned matrix_data[] = {1u, 2u, 3u, 4u};
+    std::mdspan vector(vector_data, std::extents<int, 3>{});
+    std::mdspan matrix(matrix_data, std::extents<int, 2, 2>{});
+
+    EXPECT_EQ(std::linalg::vector_abs_sum(vector), 7u);
+    EXPECT_EQ(std::linalg::vector_idx_abs_max(vector), 1u);
+    EXPECT_EQ(std::linalg::matrix_one_norm(matrix), 6u);
+    EXPECT_EQ(std::linalg::matrix_inf_norm(matrix), 7u);
 }
 
 TEST(LinalgLevel1SumOfSquares, CombinesScaleAndScaledSum) {
@@ -324,6 +345,15 @@ TEST(LinalgLevel1MatrixNorms, FrobeniusSquaresElementsInAccumulationType) {
     const double result = std::linalg::matrix_frob_norm(matrix, 0.0);
     EXPECT_TRUE(std::isfinite(result));
     EXPECT_NEAR(result, 1.0e20, 1.0e14);
+}
+
+TEST(LinalgLevel1MatrixNorms, FrobeniusNormAvoidsIntermediateOverflow) {
+    double data[] = {1.0e200, 1.0e200};
+    std::mdspan matrix(data, std::extents<int, 1, 2>{});
+
+    const double result = std::linalg::matrix_frob_norm(matrix);
+    EXPECT_TRUE(std::isfinite(result));
+    EXPECT_NEAR(result, std::sqrt(2.0) * 1.0e200, 1.0e185);
 }
 
 TEST(LinalgLevel1Givens, SetupAndApplyRotation) {
