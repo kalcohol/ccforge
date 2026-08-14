@@ -25,10 +25,13 @@
 
 namespace {
 
+#if defined(FORGE_TEST_HAS_EPOLL_CTL_WRAP)
 std::atomic<bool> fail_next_epoll_delete{false};
+#endif
 
 } // namespace
 
+#if defined(FORGE_TEST_HAS_EPOLL_CTL_WRAP)
 extern "C" int __real_epoll_ctl(int, int, int, epoll_event*);
 
 extern "C" int __wrap_epoll_ctl(
@@ -43,6 +46,7 @@ extern "C" int __wrap_epoll_ctl(
     }
     return __real_epoll_ctl(epoll_fd, operation, fd, event);
 }
+#endif
 
 namespace {
 
@@ -1021,6 +1025,7 @@ TEST(IoContextTest, CancelFdStopsPendingWaiter) {
     EXPECT_FALSE(state->error);
 }
 
+#if defined(FORGE_TEST_HAS_EPOLL_CTL_WRAP)
 TEST(IoContextTest, FailedDeleteDoesNotPoisonFdReregistration) {
     auto pipe = make_pipe();
     forge::io::context ctx;
@@ -1048,6 +1053,7 @@ TEST(IoContextTest, FailedDeleteDoesNotPoisonFdReregistration) {
     EXPECT_TRUE(second->value);
     EXPECT_FALSE(second->error);
 }
+#endif
 
 TEST(IoContextTest, DuplicateWaiterCompletesSecondWithError) {
     auto pipe = make_pipe();

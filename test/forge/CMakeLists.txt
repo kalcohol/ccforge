@@ -116,7 +116,15 @@ endif()
 
 if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_context test_forge_io_context.cpp forge_io_context)
-    target_link_options(test_forge_io_context PRIVATE "-Wl,--wrap=epoll_ctl")
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "-Wl,--wrap=epoll_ctl" FORGE_TEST_HAS_EPOLL_CTL_WRAP)
+    if(FORGE_TEST_HAS_EPOLL_CTL_WRAP)
+        target_compile_definitions(test_forge_io_context PRIVATE FORGE_TEST_HAS_EPOLL_CTL_WRAP=1)
+        target_link_options(test_forge_io_context PRIVATE "-Wl,--wrap=epoll_ctl")
+    else()
+        message(STATUS
+            "Forge: epoll_ctl failure-injection test skipped because the linker lacks --wrap")
+    endif()
 endif()
 
 if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
