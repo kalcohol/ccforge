@@ -300,9 +300,14 @@ static_assert(std::extent_v<std::remove_reference_t<array_member_result_t>> == 3
 static_assert(
     std::cw<&array_member_owner::values>(std::cw<array_member_value>)[2] == 8);
 #else
+using array_member_result_t = decltype(
+    std::cw<&array_member_owner::values>(std::cw<array_member_value>));
+static_assert(!std::is_reference_v<array_member_result_t>);
+static_assert(std::is_same_v<
+              typename array_member_result_t::value_type,
+              const int*>);
 static_assert(
-    decltype(std::cw<&array_member_owner::values>(
-        std::cw<array_member_value>))::value[2] == 8);
+    array_member_result_t::value[2] == 8);
 #endif
 static_assert(std::is_same_v<
               decltype(std::cw<overload_callable{}>(std::cw<1>)),

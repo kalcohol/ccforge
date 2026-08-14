@@ -12,6 +12,11 @@ forge_add_compile_probe(
     "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_include.cpp"
     constant_wrapper_include_compile)
 
+forge_add_compile_probe(
+    test_constant_wrapper_array_member
+    "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_array_member.cpp"
+    constant_wrapper_array_member_compile)
+
 set(_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
 set(_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
 set(CMAKE_REQUIRED_INCLUDES

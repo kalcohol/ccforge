@@ -37,7 +37,7 @@ template <auto X>
 using __forge_cw_result = constant_wrapper<X, decltype(X)>;
 
 #define FORGE_CW_RESULT(...)                                                    \
-    constant_wrapper<(__VA_ARGS__)>
+    __forge_cw_result<(__VA_ARGS__)>
 
 template <class T>
 inline constexpr bool __forge_cw_constant_result_supported =
