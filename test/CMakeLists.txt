@@ -54,6 +54,8 @@ endif()
 set(FORGE_TEST_TIMEOUT_SECONDS 300 CACHE STRING
     "Timeout in seconds for individual CC Forge tests")
 
+add_subdirectory(probe_fingerprint)
+
 if(UNIX)
     add_test(
         NAME sanitizer_retry_policy

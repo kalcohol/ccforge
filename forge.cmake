@@ -63,17 +63,10 @@ endif()
 
 _forge_compute_probe_fingerprint(
     _forge_runtime_probe_fingerprint "${CMAKE_CXX_STANDARD}")
-if(DEFINED FORGE_RUNTIME_PROBE_FINGERPRINT
-        AND NOT "${FORGE_RUNTIME_PROBE_FINGERPRINT}" STREQUAL "${_forge_runtime_probe_fingerprint}")
-    foreach(_forge_probe_var
-            FORGE_PROBE_LINUX_EPOLL_EVENTFD
-            FORGE_PROBE_WINDOWS_IOCP)
-        unset(${_forge_probe_var} CACHE)
-        unset(${_forge_probe_var})
-    endforeach()
-endif()
-set(FORGE_RUNTIME_PROBE_FINGERPRINT "${_forge_runtime_probe_fingerprint}"
-    CACHE INTERNAL "CC Forge runtime backend probe fingerprint")
+_forge_refresh_probe_cache(
+    FORGE_RUNTIME_PROBE_FINGERPRINT "${_forge_runtime_probe_fingerprint}"
+    FORGE_PROBE_LINUX_EPOLL_EVENTFD
+    FORGE_PROBE_WINDOWS_IOCP)
 
 check_cxx_source_compiles("
     #include <sys/epoll.h>

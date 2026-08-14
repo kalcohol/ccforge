@@ -1,0 +1,1 @@
+#define FORGE_B03_HEADER_VALUE 0
