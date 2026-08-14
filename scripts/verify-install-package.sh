@@ -20,6 +20,7 @@ FORGE_BUILD="${BUILD_ROOT}/forge-build"
 PREFIX="${BUILD_ROOT}/prefix"
 CONSUMER_BUILD="${BUILD_ROOT}/consumer-build"
 CONSUMER_PREFIX="${BUILD_ROOT}/consumer-prefix"
+OPTIONAL_CONSUMER_BUILD="${BUILD_ROOT}/optional-consumer-build"
 SOURCE_INCLUDE_BUILD="${BUILD_ROOT}/source-include-build"
 SOURCE_SUBDIR_BUILD="${BUILD_ROOT}/source-subdir-build"
 
@@ -77,6 +78,12 @@ if find "${PREFIX}" \( -iname '*gtest*' -o -iname '*googletest*' \) \
     log "ERROR: GoogleTest artifacts leaked into the CC Forge install prefix"
     exit 1
 fi
+
+log "configuring optional consumer without Threads"
+cmake -S "${REPO_ROOT}/test/install_optional_consumer" \
+    -B "${OPTIONAL_CONSUMER_BUILD}" \
+    "${GENERATOR_ARGS[@]}" \
+    -DCMAKE_PREFIX_PATH="${PREFIX}"
 
 log "configuring external consumer with find_package(CCForge CONFIG)"
 cmake -S "${REPO_ROOT}/test/install_consumer" -B "${CONSUMER_BUILD}" \
