@@ -27,6 +27,11 @@ concept equality_comparable_mappings = requires(
     { left == right } -> std::convertible_to<bool>;
 };
 
+struct aggregate_bounds {
+    int first;
+    int last;
+};
+
 // ---------------------------------------------------------------------------
 // layout_right (default, row-major) tests
 // ---------------------------------------------------------------------------
@@ -81,6 +86,19 @@ TEST(SubmdspanLayoutRight, TupleRange) {
     EXPECT_EQ(sub.extent(0), 2u);  // rows 1 and 2
     EXPECT_EQ((sub[0, 0]), 4);  // m[1,0]
     EXPECT_EQ((sub[1, 0]), 8);  // m[2,0]
+}
+
+TEST(SubmdspanLayoutRight, AggregatePairLikeRange) {
+    auto data = make_data<12>();
+    std::mdspan<int, std::dextents<int,2>> m(data.data(), 3, 4);
+
+    auto sub = std::submdspan(
+        m, aggregate_bounds{1, 3}, std::full_extent);
+
+    EXPECT_EQ(sub.extent(0), 2u);
+    EXPECT_EQ(sub.extent(1), 4u);
+    EXPECT_EQ((sub[0, 0]), 4);
+    EXPECT_EQ((sub[1, 3]), 11);
 }
 
 TEST(SubmdspanLayoutRight, StridedSlice) {

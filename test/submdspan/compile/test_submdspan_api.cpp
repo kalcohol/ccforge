@@ -7,6 +7,22 @@
 #include <type_traits>
 #include <utility>
 
+struct aggregate_bounds {
+    int first;
+    int last;
+};
+
+using dynamic_row_major_mapping =
+    std::layout_right::mapping<std::dextents<int, 1>>;
+
+template<class Slice>
+concept directly_sliceable_mapping = requires(
+    dynamic_row_major_mapping mapping, Slice slice) {
+    std::submdspan_mapping(mapping, slice);
+};
+
+static_assert(!directly_sliceable_mapping<std::pair<int, int>>);
+
 // full_extent_t and full_extent must exist
 static_assert(std::is_same_v<decltype(std::full_extent), const std::full_extent_t>);
 
@@ -69,7 +85,10 @@ static void check_submdspan() {
     // all index → rank-0
     auto s5 = std::submdspan(m, 1, 2);
     static_assert(s5.rank() == 0);
-    (void)s1; (void)s2; (void)s3; (void)s4; (void)s5;
+    // Any two-element structured-binding type is pair-like and canonicalized.
+    auto s6 = std::submdspan(m, aggregate_bounds{1, 3}, std::full_extent);
+    static_assert(s6.rank() == 2);
+    (void)s1; (void)s2; (void)s3; (void)s4; (void)s5; (void)s6;
 }
 
 static void check_padded_layouts() {

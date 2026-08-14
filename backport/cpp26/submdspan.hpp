@@ -226,6 +226,71 @@ template <class S, class I>
 inline constexpr bool is_range_slice_v =
     is_same_v<remove_cvref_t<S>, full_extent_t> || is_ipl_v<S,I> || is_range_slice_type_v<S>;
 
+template <class T>
+struct is_constant_wrapper_s : false_type {};
+template <auto V, class T>
+struct is_constant_wrapper_s<constant_wrapper<V, T>> : true_type {};
+template <class T>
+inline constexpr bool is_constant_wrapper_v =
+    is_constant_wrapper_s<remove_cvref_t<T>>::value;
+
+template <class S, class IndexType>
+struct is_canonical_index_slice_s
+    : bool_constant<is_same_v<remove_cvref_t<S>, IndexType>> {};
+template <auto V, class T, class IndexType>
+struct is_canonical_index_slice_s<constant_wrapper<V, T>, IndexType>
+    : bool_constant<
+          is_same_v<decltype(V), IndexType> && V >= IndexType(0)> {};
+template <class S, class IndexType>
+inline constexpr bool is_canonical_index_slice_v =
+    is_canonical_index_slice_s<remove_cvref_t<S>, IndexType>::value;
+
+template <class ExtentType, class StrideType, class IndexType>
+consteval bool has_valid_static_stride() {
+    if constexpr (is_constant_wrapper_v<ExtentType> &&
+                  is_constant_wrapper_v<StrideType>) {
+        return StrideType::value > IndexType(0);
+    } else {
+        return true;
+    }
+}
+
+template <class S, class IndexType>
+struct is_canonical_slice_s
+    : bool_constant<
+          is_same_v<remove_cvref_t<S>, full_extent_t> ||
+          is_canonical_index_slice_v<S, IndexType>> {};
+template <class O, class E, class S, class IndexType>
+struct is_canonical_slice_s<extent_slice<O, E, S>, IndexType>
+    : bool_constant<
+          is_canonical_index_slice_v<O, IndexType> &&
+          is_canonical_index_slice_v<E, IndexType> &&
+          is_canonical_index_slice_v<S, IndexType> &&
+          has_valid_static_stride<E, S, IndexType>()> {};
+template <class S, class IndexType>
+inline constexpr bool is_canonical_slice_v =
+    is_canonical_slice_s<remove_cvref_t<S>, IndexType>::value;
+
+template <class Extents, class... SliceSpecifiers>
+inline constexpr bool has_canonical_mapping_slices_v =
+    sizeof...(SliceSpecifiers) == Extents::rank() &&
+    (is_canonical_slice_v<SliceSpecifiers, typename Extents::index_type> && ...);
+
+template <class Mapping, class... SliceSpecifiers>
+consteval bool mapping_has_canonical_slices() {
+    if constexpr (requires { typename Mapping::extents_type; }) {
+        return has_canonical_mapping_slices_v<
+            typename Mapping::extents_type,
+            SliceSpecifiers...>;
+    } else {
+        return false;
+    }
+}
+
+template <class Mapping, class... SliceSpecifiers>
+inline constexpr bool mapping_has_canonical_slices_v =
+    mapping_has_canonical_slices<Mapping, SliceSpecifiers...>();
+
 // --- unit-stride slice: full_extent_t OR extent-like slice with ct stride==1 --
 // [mdspan.sub.overview] p6
 
@@ -785,10 +850,15 @@ constexpr auto canonical_slice(S s) {
         auto c_last = canonical_index<IndexType>(s.last);
         auto c_stride = canonical_index<IndexType>(s.stride);
         return canonical_range_slice<IndexType>(c_first, c_last - c_first, c_stride);
-    } else {
+    } else if constexpr (is_ipl_v<S, IndexType>) {
         auto c_first = canonical_index<IndexType>(first_of(s));
         auto c_last = canonical_index<IndexType>(
             last_of(integral_constant<size_t,0>{}, extents<IndexType>{}, s));
+        return canonical_range_slice<IndexType>(c_first, c_last - c_first);
+    } else {
+        auto [s_first, s_last] = std::move(s);
+        auto c_first = canonical_index<IndexType>(std::move(s_first));
+        auto c_last = canonical_index<IndexType>(std::move(s_last));
         return canonical_range_slice<IndexType>(c_first, c_last - c_first);
     }
 }
@@ -834,6 +904,8 @@ constexpr auto subextents(const extents<IndexType, Exts...>& src,
 // ---------------------------------------------------------------------------
 
 template <class Extents, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_canonical_mapping_slices_v<
+        Extents, SliceSpecifiers...>
 constexpr auto submdspan_mapping(const layout_left::mapping<Extents>& src,
                                    SliceSpecifiers... slices) {
     static_assert(sizeof...(SliceSpecifiers) == Extents::rank());
@@ -888,6 +960,8 @@ constexpr auto submdspan_mapping(const layout_left::mapping<Extents>& src,
 // ---------------------------------------------------------------------------
 
 template <class Extents, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_canonical_mapping_slices_v<
+        Extents, SliceSpecifiers...>
 constexpr auto submdspan_mapping(const layout_right::mapping<Extents>& src,
                                    SliceSpecifiers... slices) {
     static_assert(sizeof...(SliceSpecifiers) == Extents::rank());
@@ -940,6 +1014,8 @@ constexpr auto submdspan_mapping(const layout_right::mapping<Extents>& src,
 // ---------------------------------------------------------------------------
 
 template <class Extents, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_canonical_mapping_slices_v<
+        Extents, SliceSpecifiers...>
 constexpr auto submdspan_mapping(const layout_stride::mapping<Extents>& src,
                                    SliceSpecifiers... slices) {
     static_assert(sizeof...(SliceSpecifiers) == Extents::rank());
@@ -973,7 +1049,9 @@ constexpr auto submdspan_mapping(const layout_stride::mapping<Extents>& src,
 // ---------------------------------------------------------------------------
 
 template <class Mapping, class... SliceSpecifiers>
-    requires __forge_submdspan_detail::is_layout_left_padded_mapping_v<Mapping>
+    requires (__forge_submdspan_detail::is_layout_left_padded_mapping_v<Mapping> &&
+              __forge_submdspan_detail::mapping_has_canonical_slices_v<
+                  Mapping, SliceSpecifiers...>)
 constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) {
     namespace D = __forge_submdspan_detail;
 
@@ -1025,7 +1103,9 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
 // ---------------------------------------------------------------------------
 
 template <class Mapping, class... SliceSpecifiers>
-    requires __forge_submdspan_detail::is_layout_right_padded_mapping_v<Mapping>
+    requires (__forge_submdspan_detail::is_layout_right_padded_mapping_v<Mapping> &&
+              __forge_submdspan_detail::mapping_has_canonical_slices_v<
+                  Mapping, SliceSpecifiers...>)
 constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) {
     namespace D = __forge_submdspan_detail;
 
