@@ -52,7 +52,7 @@ static_assert(std::same_as<
     std::execution::scheduler_t,
     std::execution::scheduler_tag>);
 
-// ── T-5: receiver concept requires nothrow-move and non-final ────────────
+// ── T-5: receiver concept requires nothrow move but permits final types ──
 namespace {
 
 struct probe_sender_tag {};
@@ -92,8 +92,8 @@ struct final_receiver final {
     friend auto tag_invoke(std::execution::get_env_t, const final_receiver&) noexcept
         -> std::execution::empty_env { return {}; }
 };
-static_assert(!std::execution::receiver<final_receiver>,
-              "final receiver must be rejected");
+static_assert(std::execution::receiver<final_receiver>,
+              "final receiver must be accepted");
 
 // ── T-6: operation_state_concept marker is required ──────────────────────
 
@@ -104,6 +104,27 @@ struct no_marker_opstate {
 };
 static_assert(!std::execution::operation_state<no_marker_opstate>,
               "operation_state without concept marker must be rejected");
+
+struct movable_opstate {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    movable_opstate() = default;
+    movable_opstate(movable_opstate&&) = default;
+
+    void start() & noexcept {}
+};
+static_assert(std::execution::operation_state<movable_opstate>,
+              "operation_state permits movable types");
+
+struct potentially_throwing_destructor_opstate {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    ~potentially_throwing_destructor_opstate() noexcept(false) {}
+
+    void start() & noexcept {}
+};
+static_assert(std::execution::operation_state<potentially_throwing_destructor_opstate>,
+              "operation_state does not constrain destruction beyond the core language");
 
 } // namespace
 

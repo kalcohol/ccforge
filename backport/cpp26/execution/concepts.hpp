@@ -808,22 +808,20 @@ inline constexpr start_t start{};
 
 template<class O>
 concept operation_state =
-    std::destructible<O> && std::is_object_v<O> &&
-    !std::move_constructible<O> &&
     requires { typename O::operation_state_concept; } &&
     std::derived_from<typename O::operation_state_concept, operation_state_t> &&
     requires(O& op) { { std::execution::start(op) } noexcept; };
 
 template<class R>
 concept receiver =
-    std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>> &&
-    std::constructible_from<std::remove_cvref_t<R>, R> &&
-    !std::is_final_v<std::remove_cvref_t<R>> &&
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
     requires(const std::remove_cvref_t<R>& r) {
         { std::execution::get_env(r) } -> queryable;
-    };
+    } &&
+    std::move_constructible<std::remove_cvref_t<R>> &&
+    std::constructible_from<std::remove_cvref_t<R>, R> &&
+    std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>>;
 
 namespace __forge_concepts {
 
