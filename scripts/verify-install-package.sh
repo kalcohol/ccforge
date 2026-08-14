@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="${1:-${REPO_ROOT}/build/install-package}"
 STD="${FORGE_INSTALL_CXX_STANDARD:-23}"
 GENERATOR="${FORGE_INSTALL_CMAKE_GENERATOR:-Ninja}"
+CONFIG="${FORGE_INSTALL_CONFIG:-Debug}"
 source "${REPO_ROOT}/scripts/lib/verification-scratch.sh"
 
 case "${BUILD_ROOT}" in
@@ -28,13 +29,48 @@ OPTIONAL_CONSUMER_BUILD="${BUILD_ROOT}/optional-consumer-build"
 SOURCE_INCLUDE_BUILD="${BUILD_ROOT}/source-include-build"
 SOURCE_SUBDIR_BUILD="${BUILD_ROOT}/source-subdir-build"
 
-GENERATOR_ARGS=()
-if [[ -n "${GENERATOR}" ]]; then
-    GENERATOR_ARGS=(-G "${GENERATOR}")
-fi
+MULTI_CONFIG=0
+case "${GENERATOR}" in
+    *'Multi-Config'*|*'Visual Studio'*|Xcode)
+        MULTI_CONFIG=1
+        ;;
+esac
 
 log() {
     printf '[install-package] %s\n' "$*"
+}
+
+configure_project() {
+    local source_dir="$1"
+    local build_dir="$2"
+    shift 2
+
+    local args=(-S "${source_dir}" -B "${build_dir}")
+    if [[ -n "${GENERATOR}" ]]; then
+        args+=(-G "${GENERATOR}")
+    fi
+    if [[ "${MULTI_CONFIG}" == "0" ]]; then
+        args+=(-DCMAKE_BUILD_TYPE="${CONFIG}")
+    fi
+    cmake "${args[@]}" "$@"
+}
+
+build_project() {
+    cmake --build "$1" --config "${CONFIG}" "${@:2}"
+}
+
+install_project() {
+    cmake --install "$1" --config "${CONFIG}" "${@:2}"
+}
+
+run_built_executable() {
+    local build_dir="$1"
+    local executable="$2"
+    local path="${build_dir}/${executable}"
+    if [[ "${MULTI_CONFIG}" == "1" ]]; then
+        path="${build_dir}/${CONFIG}/${executable}"
+    fi
+    "${path}"
 }
 
 verify_source_consumer() {
@@ -43,21 +79,19 @@ verify_source_consumer() {
     local install_dir="${build_dir}-prefix"
 
     log "configuring source consumer in ${mode} mode"
-    cmake -S "${REPO_ROOT}/test/source_consumer" -B "${build_dir}" \
-        "${GENERATOR_ARGS[@]}" \
-        -DCMAKE_BUILD_TYPE=Debug \
+    configure_project "${REPO_ROOT}/test/source_consumer" "${build_dir}" \
         -DCMAKE_CXX_STANDARD="${STD}" \
         -DCCFORGE_SOURCE_DIR="${REPO_ROOT}" \
         -DCCFORGE_CONSUMER_MODE="${mode}"
 
     log "building source consumer in ${mode} mode"
-    cmake --build "${build_dir}"
+    build_project "${build_dir}"
 
     log "running source consumer in ${mode} mode"
-    "${build_dir}/ccforge_source_consumer"
+    run_built_executable "${build_dir}" ccforge_source_consumer
 
     log "installing source consumer export set in ${mode} mode"
-    cmake --install "${build_dir}" --prefix "${install_dir}"
+    install_project "${build_dir}" --prefix "${install_dir}"
 
     local targets_file="${install_dir}/lib/cmake/CCForgeSourceConsumer/CCForgeSourceConsumerTargets.cmake"
     for public_target in forge::forge forge::std; do
@@ -83,8 +117,7 @@ for foreign_target in std forge; do
     collision_build="${BUILD_ROOT}/source-collision-${foreign_target}-build"
     collision_log="${BUILD_ROOT}/source-collision-${foreign_target}.log"
     log "checking source target collision for forge::${foreign_target}"
-    if cmake -S "${REPO_ROOT}/test/source_consumer" -B "${collision_build}" \
-            "${GENERATOR_ARGS[@]}" \
+    if configure_project "${REPO_ROOT}/test/source_consumer" "${collision_build}" \
             -DCMAKE_CXX_STANDARD="${STD}" \
             -DCCFORGE_SOURCE_DIR="${REPO_ROOT}" \
             -DCCFORGE_CONSUMER_MODE=INCLUDE \
@@ -102,8 +135,7 @@ for foreign_target in std forge; do
 done
 
 log "configuring Forge package build"
-cmake -S "${REPO_ROOT}" -B "${FORGE_BUILD}" "${GENERATOR_ARGS[@]}" \
-    -DCMAKE_BUILD_TYPE=Debug \
+configure_project "${REPO_ROOT}" "${FORGE_BUILD}" \
     -DCMAKE_CXX_STANDARD="${STD}" \
     -DFORGE_BUILD_EXAMPLES=OFF \
     -DFORGE_BUILD_TESTS=OFF \
@@ -111,10 +143,10 @@ cmake -S "${REPO_ROOT}" -B "${FORGE_BUILD}" "${GENERATOR_ARGS[@]}" \
     -DCMAKE_INSTALL_PREFIX="${PREFIX}"
 
 log "building Forge package build"
-cmake --build "${FORGE_BUILD}"
+build_project "${FORGE_BUILD}"
 
 log "installing to ${PREFIX}"
-cmake --install "${FORGE_BUILD}"
+install_project "${FORGE_BUILD}"
 
 if find "${PREFIX}" \( -iname '*gtest*' -o -iname '*googletest*' \) \
         -print -quit | grep -q .; then
@@ -123,26 +155,23 @@ if find "${PREFIX}" \( -iname '*gtest*' -o -iname '*googletest*' \) \
 fi
 
 log "configuring optional consumer without Threads"
-cmake -S "${REPO_ROOT}/test/install_optional_consumer" \
-    -B "${OPTIONAL_CONSUMER_BUILD}" \
-    "${GENERATOR_ARGS[@]}" \
+configure_project "${REPO_ROOT}/test/install_optional_consumer" \
+    "${OPTIONAL_CONSUMER_BUILD}" \
     -DCMAKE_PREFIX_PATH="${PREFIX}"
 
 log "configuring external consumer with find_package(CCForge CONFIG)"
-cmake -S "${REPO_ROOT}/test/install_consumer" -B "${CONSUMER_BUILD}" \
-    "${GENERATOR_ARGS[@]}" \
-    -DCMAKE_BUILD_TYPE=Debug \
+configure_project "${REPO_ROOT}/test/install_consumer" "${CONSUMER_BUILD}" \
     -DCMAKE_CXX_STANDARD="${STD}" \
     -DCMAKE_PREFIX_PATH="${PREFIX}"
 
 log "building external consumer"
-cmake --build "${CONSUMER_BUILD}"
+build_project "${CONSUMER_BUILD}"
 
 log "installing external consumer export set"
-cmake --install "${CONSUMER_BUILD}" --prefix "${CONSUMER_PREFIX}"
+install_project "${CONSUMER_BUILD}" --prefix "${CONSUMER_PREFIX}"
 
 log "running external consumer"
-"${CONSUMER_BUILD}/ccforge_install_consumer"
-"${CONSUMER_BUILD}/ccforge_install_std_consumer"
+run_built_executable "${CONSUMER_BUILD}" ccforge_install_consumer
+run_built_executable "${CONSUMER_BUILD}" ccforge_install_std_consumer
 
 log "ok"

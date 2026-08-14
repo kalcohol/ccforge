@@ -365,6 +365,15 @@ header-only consumer 不需要初始化该 submodule：
 scripts/verify-install-package.sh
 ```
 
+默认使用 `Ninja` 和 `Debug`。可通过 `FORGE_INSTALL_CMAKE_GENERATOR`、
+`FORGE_INSTALL_CONFIG` 和 `FORGE_INSTALL_CXX_STANDARD` 覆盖；脚本会对 single-config
+和 multi-config generator 使用同一选定配置。例如：
+
+```bash
+FORGE_INSTALL_CMAKE_GENERATOR='Ninja Multi-Config' \
+FORGE_INSTALL_CONFIG=Release scripts/verify-install-package.sh
+```
+
 这个检查故意不放进 default CTest，因为它会执行第二轮 configure / install / build cycle。
 修改 CMake packaging 或 install layout、以及 release-oriented change 前应运行它。
 
