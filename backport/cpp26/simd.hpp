@@ -56,6 +56,15 @@
 #if !defined(__cpp_lib_simd)
 #define __cpp_lib_simd 202606L
 #endif
+#if !defined(__cpp_lib_simd_bitops)
+#define __cpp_lib_simd_bitops 202607L
+#endif
+#if !defined(__cpp_lib_simd_complex)
+#define __cpp_lib_simd_complex 202502L
+#endif
+#if !defined(__cpp_lib_simd_permutations)
+#define __cpp_lib_simd_permutations 202506L
+#endif
 
 namespace std {
 
