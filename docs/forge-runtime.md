@@ -128,6 +128,8 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   operation `start()`。Process-lifetime resource（包括未被替换的默认 new-delete resource）
   支持 poller-completion self-destroy；自定义 resource 仍必须活过 detach 后的 state/record
   terminal release tail。
+- `forge::any_stop_token` 是 `<forge/any_stop_token.hpp>` 提供的 allocator-neutral
+  stop-token type erasure。它是 Forge extension，不是 `std::execution` backport surface。
 - `forge::erased_sender` 通过 v1 bounded env model 转发 downstream stop token。
 - `forge::any_scheduler` 是窄 scheduler 类型擦除；通过内部 erased receiver 保留
   downstream receiver stop-token visibility，因此底层 scheduler operation 仍能观察

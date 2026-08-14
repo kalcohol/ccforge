@@ -17,7 +17,7 @@ working-draft-shaped subset 的执行口径。它与更完整的
 | 区域 | 当前 WD 目标 | 当前 Forge 状态 | 操作 |
 | --- | --- | --- | --- |
 | `spawn` | `std::execution::spawn(sndr, token, env)` 是 `void` CPO，分配 detached operation，通过 `token.try_associate()` 关联并 eager start。 | 已实现 `spawn(sndr, token[, env])`；只接受 `set_value()` / `set_stopped()` sender。 | 示例和测试保持 top-level `spawn`；不要让标准路径回到 token-member helper。 |
-| `spawn_future` | 使用 `token.wrap(sndr)`，从 `env` 或 wrapped sender env 取 allocator，eager state，abandon 时取消，consumer stop callback。 | eager state、shared-state allocator 和 consumer record allocator 已实现；未消费 sender 与 unstarted connected operation 都会 abandon producer；`any_stop_token` callback/type-erasure internals 接受 allocator-neutral。 | 剩余 allocator 差异只归类为 stop-token type erasure，不再归到 `spawn_future` state ownership。 |
+| `spawn_future` | 使用 `token.wrap(sndr)`，从 `env` 或 wrapped sender env 取 allocator，eager state，abandon 时取消，consumer stop callback。 | eager state、shared-state allocator 和 consumer record allocator 已实现；未消费 sender 与 unstarted connected operation 都会 abandon producer；consumer callback 直接使用 receiver env 的具体 stop-token 类型。 | `spawn_future` 不依赖非标准 erased-token vocabulary；Forge runtime 的 type erasure 独立留在 `forge::any_stop_token`。 |
 | `simple_counting_scope::token::wrap` | 返回 `std::forward<Sender>(snd)`，不创建 association。 | 已实现为 identity forwarding。 | Association 保留在 top-level algorithms。 |
 | `counting_scope::token::wrap` | 返回带 stop-aware child env 的 sender。 | 已实现 fused stop-token env injection：scope stop 与下游 receiver/env stop 会融合；不拥有 association。 | Association 保留在 top-level algorithms，继续覆盖 fused stop callback lifetime。 |
 | `scope_token::associate` | 当前目标 surface 没有 token-member `associate`。 | 已从 scope token 移除；top-level `associate(sender, token)` 已实现。 | 保持 token surface 精简。 |

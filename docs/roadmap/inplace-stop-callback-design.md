@@ -15,7 +15,7 @@ callback 自身构造产生的异常。当前 Forge implementation 为每个 reg
 - 每次 registration 都产生一次 allocator-neutral heap allocation；
 - constructor 不能声明 WD 要求的条件 `noexcept`。
 
-这是真实偏差，不应与 `any_stop_token` 类型擦除所接受的 allocator-neutral allocation
+这是真实偏差，不应与 `forge::any_stop_token` 类型擦除所接受的 allocator-neutral allocation
 混为一谈。
 
 ## 为什么当前 control block 存在

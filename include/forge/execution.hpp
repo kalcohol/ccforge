@@ -23,6 +23,7 @@
 #pragma once
 
 #include "async_scope.hpp"
+#include "any_stop_token.hpp"
 #include "any_receiver.hpp"
 #include "any_scheduler.hpp"
 #include "any_sender.hpp"

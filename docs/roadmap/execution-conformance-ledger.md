@@ -26,8 +26,7 @@ Execution backport 当前包含：
 - composition：`into_variant`、`when_all`、`when_all_with_variant`、`split`、
   `associate`、`spawn`、`spawn_future`；
 - consumers：`sync_wait`、`sync_wait_with_variant`；
-- stop-token support：`inplace_stop_source/token/callback`、`never_stop_token`、
-  `any_stop_token`；
+- stop-token support：`inplace_stop_source/token/callback`、`never_stop_token`；
 - coroutine bridge：`as_awaitable`、`with_awaitable_senders`；
 - scopes：`simple_counting_scope`、stop-aware `counting_scope`；
 - domain dispatch：receiver-env start-domain selection，以及 `connect` 和
@@ -66,7 +65,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape 并以 `const&` 广播，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成。完整 stop-source/on_done cycle 未实现；abandoned source sender 是已接受 residual。 |
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`associate` 在 outer `connect` 中预连接 wrapped sender，connect failure 不成为 completion channel；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
-| `spawn_future` | Implemented subset | Eager single-consumer future sender；value/error 结果按 decayed types 存储、声明并以 rvalue 交付；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
+| `spawn_future` | Implemented subset | Eager single-consumer future sender；value/error 结果按 decayed types 存储、声明并以 rvalue 交付；shared state 和 consumer records 尊重 `get_allocator(env)`；consumer stop callback 直接使用 receiver env 的具体 token 类型。 |
 | `inplace_stop_source/token/callback` | Implemented subset | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 current-WD conditional `noexcept`。见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`，并拒绝多 value-alternative sender。 |
@@ -120,9 +119,10 @@ risk triage 的事实来源。
 
 ## 已接受 residuals 与未来风险
 
-- `spawn_future` 会为 shared state 和 consumer record 使用 `get_allocator`。`any_stop_token`
-  callback/type-erasure control blocks 按已接受设计保持 allocator-neutral，因为修改
-  standard-shaped erased stop-token API 会增加 native-handoff 风险。见
+- `spawn_future` 会为 shared state 和 consumer record 使用 `get_allocator`，并直接按
+  receiver env 的具体 stop-token 类型注册 callback。Forge runtime 使用独立的
+  `forge::any_stop_token`；其 callback/type-erasure control blocks 按已接受设计保持
+  allocator-neutral。见
   [`execution-stop-token-allocator-design.md`](execution-stop-token-allocator-design.md)。
 - `spawn_future` 的 consumer record 在 future `connect()` 时分配，因此该路径可以抛出；
   这偏离 current-WD inline/noexcept future-operation shape。Connected consumer 与
@@ -130,7 +130,7 @@ risk triage 的事实来源。
   destruction 和 abandon paths 切断；当前保留该 ownership model，除非出现可复现
   retention 或 native-handoff blocker。
 - `inplace_stop_callback` 的 allocation / exception-spec 偏差是独立 residual，不由上述
-  `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
+  `forge::any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
   allocation-free rewrite；见
   [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。
 - Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、`transfer_just` extension，

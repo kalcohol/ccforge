@@ -17,7 +17,7 @@
   `sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
-- Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、`any_stop_token`（类型擦除）、stoppable concepts
+- Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
   单一 value completion 保持返回 `tuple`，多组 value completions 返回
   `variant<tuple<...>, ...>`）；mixin 会保留普通 awaitable，并按 current WD
@@ -104,9 +104,9 @@
   `std::execution` 中 re-export 这两个对象以兼容旧源码，但 portable consumer、文档与
   示例不依赖该扩展别名。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和
-  consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token 会通过
-  `any_stop_token` 类型擦除注册 callback；该标准形状的类型擦除层内部 control block 保持
-  allocator-neutral，这是为了降低 native handoff 风险而接受的取舍。设计记录见
+  consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token callback
+  直接按 receiver env 返回的具体 token 类型注册，不要求 native execution 提供额外的
+  erased-token vocabulary。Forge runtime 自己的类型擦除取舍见
   [`execution-stop-token-allocator-design.md`](../roadmap/execution-stop-token-allocator-design.md)。
   丢弃未消费的 future sender，或销毁尚未 `start()` 的 connected consumer operation，
   都会请求停止 eager producer 并最终释放 scope association。Child 的 value/error

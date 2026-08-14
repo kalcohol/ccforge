@@ -88,7 +88,9 @@ v1 是 heap-first 实现：
 
 `set_stopped_t()` 只有在 `CompletionSignatures` 声明时才属于有效契约。
 
-receiver env v1 只保证 stop token 传播：erased receiver 会把下游 receiver 的 stop token 擦成 `std::any_stop_token` 并通过 `get_stop_token` 暴露给源 sender。任意自定义 env query 不在 v1 范围内。
+receiver env v1 只保证 stop token 传播：erased receiver 会把下游 receiver 的 stop token
+擦成 `forge::any_stop_token` 并通过 `get_stop_token` 暴露给源 sender。任意自定义 env
+query 不在 v1 范围内。
 
 ## 测试覆盖
 

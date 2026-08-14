@@ -17,12 +17,16 @@
 #include <forge/execution.hpp>
 ```
 
-该头会包含 `async_scope.hpp`、`any_sender.hpp`、`any_receiver.hpp`、
+该头会包含 `async_scope.hpp`、`any_stop_token.hpp`、`any_sender.hpp`、`any_receiver.hpp`、
 `any_scheduler.hpp`、`channel.hpp`、`erased_sender.hpp`、`resource_policy.hpp`、
 `resource_context.hpp`、`runtime_context.hpp`、`static_thread_pool.hpp`、
 `start_detached.hpp`、`strand.hpp`、`single_thread_context.hpp`、
 `system_context.hpp`、`timer_context.hpp`、`task.hpp` 和 `wait_result.hpp`。如果只需要
 单个设施，也可以直接包含对应头文件。
+
+`forge::any_stop_token` 是 Forge extension 的 copyable stop-token type erasure，直接入口是
+`<forge/any_stop_token.hpp>`。当前标准 execution vocabulary 不定义
+`std::any_stop_token`；Forge 不向 `namespace std` 注入这个非标准名字。
 
 IO backend umbrella 使用独立头：
 
