@@ -35,6 +35,11 @@ namespace std::linalg {
 template<class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
+    requires (AExtents::rank() == 2 &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0>)
 void matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -83,6 +88,14 @@ template<class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
+    requires (AExtents::rank() == 2 &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              ZExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, ZExtents, 0>)
 void matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -102,6 +115,10 @@ void matrix_vector_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0>)
 void triangular_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle, DiagonalStorage,
@@ -138,6 +155,14 @@ template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, YExtents, 0>)
 void triangular_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle t, DiagonalStorage d,
@@ -169,6 +194,10 @@ void triangular_matrix_vector_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0>)
 void triangular_matrix_vector_solve(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle, DiagonalStorage,
@@ -198,6 +227,14 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, YExtents, 0>)
 void symmetric_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -227,6 +264,19 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              ZExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, ZExtents, 0>)
 void symmetric_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -257,6 +307,14 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, YExtents, 0>)
 void hermitian_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -287,6 +345,19 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
+    requires (__detail::__square_static_extents_v<AExtents> &&
+              XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              ZExtents::rank() == 1 &&
+              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 0, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<AExtents, 1, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, YExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, ZExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, ZExtents, 0>)
 void hermitian_matrix_vector_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -320,6 +391,11 @@ void hermitian_matrix_vector_product(
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires (XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              AExtents::rank() == 2 &&
+              __detail::__compatible_static_extent_v<XExtents, 0, AExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, AExtents, 1>)
 void matrix_rank_1_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -336,6 +412,15 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires (XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              EExtents::rank() == 2 &&
+              AExtents::rank() == 2 &&
+              __detail::__compatible_static_extent_v<XExtents, 0, EExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, AExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, EExtents, 1> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, AExtents, 1> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void matrix_rank_1_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -352,6 +437,11 @@ void matrix_rank_1_update(
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires (XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              AExtents::rank() == 2 &&
+              __detail::__compatible_static_extent_v<XExtents, 0, AExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, AExtents, 1>)
 void matrix_rank_1_update_c(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -368,6 +458,15 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires (XExtents::rank() == 1 &&
+              YExtents::rank() == 1 &&
+              EExtents::rank() == 2 &&
+              AExtents::rank() == 2 &&
+              __detail::__compatible_static_extent_v<XExtents, 0, EExtents, 0> &&
+              __detail::__compatible_static_extent_v<XExtents, 0, AExtents, 0> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, EExtents, 1> &&
+              __detail::__compatible_static_extent_v<YExtents, 0, AExtents, 1> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void matrix_rank_1_update_c(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -385,6 +484,7 @@ template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -411,6 +511,9 @@ template<class ScalingFactor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires (__detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
+              __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -435,6 +538,7 @@ void symmetric_matrix_rank_1_update(
 template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha, Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -448,6 +552,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
 void symmetric_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -474,6 +579,9 @@ template<class XExtents, class XLayout, class XAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires (__detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
+              __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void symmetric_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -499,6 +607,7 @@ template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
 void symmetric_matrix_rank_2_update(
     ScalingFactor alpha, Triangle,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -524,6 +633,7 @@ template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
 void hermitian_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -555,6 +665,9 @@ template<class ScalingFactor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires (__detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
+              __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void hermitian_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -584,6 +697,7 @@ void hermitian_matrix_rank_1_update(
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
 void hermitian_matrix_rank_1_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -597,6 +711,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
 void hermitian_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -629,6 +744,9 @@ template<class XExtents, class XLayout, class XAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
+    requires (__detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
+              __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__compatible_static_extents_v<EExtents, AExtents>)
 void hermitian_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -660,6 +778,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
+    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
 void hermitian_matrix_rank_2_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,

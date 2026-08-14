@@ -105,6 +105,85 @@ template<class Extents1, class Extents2>
 inline constexpr bool __compatible_static_extents_v =
     __compatible_static_extents<Extents1, Extents2>();
 
+template<class Extents1, std::size_t Axis1,
+         class Extents2, std::size_t Axis2>
+consteval bool __compatible_static_extent() {
+    if constexpr (Axis1 >= Extents1::rank() || Axis2 >= Extents2::rank()) {
+        return false;
+    } else {
+        const auto first = Extents1::static_extent(Axis1);
+        const auto second = Extents2::static_extent(Axis2);
+        return first == std::dynamic_extent ||
+               second == std::dynamic_extent ||
+               first == second;
+    }
+}
+
+template<class Extents1, std::size_t Axis1,
+         class Extents2, std::size_t Axis2>
+inline constexpr bool __compatible_static_extent_v =
+    __compatible_static_extent<Extents1, Axis1, Extents2, Axis2>();
+
+template<class Extents>
+inline constexpr bool __square_static_extents_v =
+    Extents::rank() == 2 &&
+    __compatible_static_extent_v<Extents, 0, Extents, 1>;
+
+template<class MatrixExtents, class VectorExtents>
+inline constexpr bool __square_matrix_vector_static_extents_v =
+    __square_static_extents_v<MatrixExtents> &&
+    VectorExtents::rank() == 1 &&
+    __compatible_static_extent_v<MatrixExtents, 0, VectorExtents, 0> &&
+    __compatible_static_extent_v<MatrixExtents, 1, VectorExtents, 0>;
+
+template<class MatrixExtents, class XExtents, class YExtents>
+inline constexpr bool __square_matrix_vectors_static_extents_v =
+    __square_matrix_vector_static_extents_v<MatrixExtents, XExtents> &&
+    __square_matrix_vector_static_extents_v<MatrixExtents, YExtents> &&
+    __compatible_static_extent_v<XExtents, 0, YExtents, 0>;
+
+template<class AExtents, class BExtents, class CExtents>
+inline constexpr bool __matrix_product_static_extents_v =
+    AExtents::rank() == 2 &&
+    BExtents::rank() == 2 &&
+    CExtents::rank() == 2 &&
+    __compatible_static_extent_v<AExtents, 1, BExtents, 0> &&
+    __compatible_static_extent_v<AExtents, 0, CExtents, 0> &&
+    __compatible_static_extent_v<BExtents, 1, CExtents, 1>;
+
+template<class AExtents, class BExtents>
+inline constexpr bool __square_matrix_left_operand_static_extents_v =
+    __square_static_extents_v<AExtents> &&
+    BExtents::rank() == 2 &&
+    __compatible_static_extent_v<AExtents, 0, BExtents, 0> &&
+    __compatible_static_extent_v<AExtents, 1, BExtents, 0>;
+
+template<class AExtents, class BExtents>
+inline constexpr bool __square_matrix_right_operand_static_extents_v =
+    __square_static_extents_v<AExtents> &&
+    BExtents::rank() == 2 &&
+    __compatible_static_extent_v<AExtents, 0, BExtents, 1> &&
+    __compatible_static_extent_v<AExtents, 1, BExtents, 1>;
+
+template<class AExtents, class BExtents, class CExtents>
+inline constexpr bool __square_matrix_product_static_extents_v =
+    __square_matrix_left_operand_static_extents_v<AExtents, BExtents> &&
+    __square_matrix_left_operand_static_extents_v<AExtents, CExtents> &&
+    __compatible_static_extents_v<BExtents, CExtents>;
+
+template<class AExtents, class CExtents>
+inline constexpr bool __matrix_rank_k_static_extents_v =
+    AExtents::rank() == 2 &&
+    __square_static_extents_v<CExtents> &&
+    __compatible_static_extent_v<AExtents, 0, CExtents, 0> &&
+    __compatible_static_extent_v<AExtents, 0, CExtents, 1>;
+
+template<class AExtents, class BExtents, class CExtents>
+inline constexpr bool __matrix_rank_2k_static_extents_v =
+    __matrix_rank_k_static_extents_v<AExtents, CExtents> &&
+    __matrix_rank_k_static_extents_v<BExtents, CExtents> &&
+    __compatible_static_extents_v<AExtents, BExtents>;
+
 template<class Index>
 constexpr std::size_t __checked_matrix_storage_size(
     Index rows, Index columns) {

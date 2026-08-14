@@ -47,6 +47,10 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
         test_linalg_static_extents
         test_linalg_static_extents.cpp
         linalg_static_extents_compile)
+    forge_add_linalg_compile_probe(
+        test_linalg_static_level23_extents
+        test_linalg_static_level23_extents.cpp
+        linalg_static_level23_extents_compile)
 else()
     message(STATUS "Forge: linalg tests skipped (toolchain has no <mdspan>)")
 endif()
