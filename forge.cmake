@@ -169,6 +169,7 @@ if(NOT _FORGE_STD_TARGET_CONFIGURED)
             _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_SIMD_HEADER simd FALSE)
             _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_EXECUTION_HEADER execution TRUE)
             _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
+            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_LINALG_HEADER linalg FALSE)
         endif()
 
         if(_FORGE_PACKAGE_MODE)
