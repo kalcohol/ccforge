@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <forge/io/buffer.hpp>
+#include <forge/io/error.hpp>
 #include <forge/io/result.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <exception>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <system_error>
 #include <tuple>
@@ -57,6 +60,14 @@ TEST(ForgeByteVocabularyTest, IoResultSupportsStructuredBinding) {
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(result.status(), forge::io::io_status::value);
     EXPECT_FALSE(result.eof());
+}
+
+TEST(ForgeByteVocabularyTest, NonSystemExceptionsMapToUnknownTypedErrors) {
+    auto error = forge::io::typed_detail::from_exception(
+        std::make_exception_ptr(std::runtime_error{"typed IO failure"}));
+
+    EXPECT_EQ(error.kind, forge::io::error_kind::unknown);
+    EXPECT_FALSE(error.code);
 }
 
 TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnError) {
