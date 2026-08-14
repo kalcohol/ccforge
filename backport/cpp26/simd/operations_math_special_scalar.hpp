@@ -484,7 +484,51 @@ T elliptic_integral(T upper, Fun&& integrand) {
 }
 
 template<class T>
+T complete_ellint_1_agm(T k) {
+    if (std::isnan(k)) {
+        return quiet_nan<T>();
+    }
+
+    using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+    const wide_t modulus = std::abs(static_cast<wide_t>(k));
+    if (modulus > wide_t{1}) {
+        return quiet_nan<T>();
+    }
+    if (modulus == wide_t{1}) {
+        return infinity<T>();
+    }
+
+    wide_t arithmetic = wide_t{1};
+    wide_t geometric = std::sqrt((wide_t{1} - modulus) * (wide_t{1} + modulus));
+    for (unsigned iteration = 0; iteration < 128u; ++iteration) {
+        const wide_t difference = arithmetic - geometric;
+        if (std::abs(difference) <=
+            8 * std::numeric_limits<wide_t>::epsilon() * arithmetic) {
+            break;
+        }
+
+        const wide_t next_arithmetic = (arithmetic + geometric) / wide_t{2};
+        geometric = std::sqrt(arithmetic * geometric);
+        arithmetic = next_arithmetic;
+    }
+
+    return static_cast<T>(pi_v<wide_t> / (wide_t{2} * arithmetic));
+}
+
+template<class T>
 T ellint_1_fallback(T k, T phi) {
+    if (std::isnan(k) || std::isnan(phi) || std::abs(k) > T{1}) {
+        return quiet_nan<T>();
+    }
+    if (phi == T{}) {
+        return phi;
+    }
+
+    const T half_pi = pi_v<T> / T{2};
+    if (std::abs(phi) == half_pi) {
+        return std::copysign(complete_ellint_1_agm(k), phi);
+    }
+
     return elliptic_integral(phi, [&](T theta) {
         const T s = std::sin(theta);
         const T radicand = T{1} - k * k * s * s;
@@ -523,7 +567,7 @@ T ellint_3_fallback(T k, T nu, T phi) {
 
 template<class T>
 T comp_ellint_1_fallback(T k) {
-    return ellint_1_fallback(k, pi_v<T> / T{2});
+    return complete_ellint_1_agm(k);
 }
 
 template<class T>

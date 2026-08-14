@@ -269,6 +269,41 @@ TEST(SimdMathSpecialTest, BesselSeriesPreservesSmallResultsAndFloatRange) {
     EXPECT_NEAR(i40f, 2.185028153e-24f, 2.185028153e-24f * 2e-6f);
 }
 
+TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) {
+    namespace sm = std::simd::detail::special_math;
+
+    struct reference {
+        double modulus;
+        double value;
+    };
+    const reference cases[] = {
+        {1.0 - 1.0e-12, 14.855242389793774},
+        {1.0 - 1.0e-15, 18.309508767010367},
+        {std::nextafter(1.0, 0.0), 19.408121055678469},
+    };
+
+    for (const auto& value : cases) {
+        SCOPED_TRACE("modulus=" + std::to_string(value.modulus));
+        EXPECT_NEAR(
+            sm::comp_ellint_1_fallback(value.modulus),
+            value.value,
+            value.value * 2e-14);
+        EXPECT_NEAR(
+            sm::ellint_1_fallback(
+                value.modulus,
+                std::numbers::pi_v<double> / 2.0),
+            value.value,
+            value.value * 2e-14);
+    }
+
+    EXPECT_EQ(sm::comp_ellint_1_fallback(1.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::ellint_1_fallback(
+                  -1.0, -std::numbers::pi_v<double> / 2.0),
+              -std::numeric_limits<double>::infinity());
+    EXPECT_TRUE(std::isnan(sm::comp_ellint_1_fallback(1.01)));
+}
+
 TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
     namespace sm = std::simd::detail::special_math;
 
