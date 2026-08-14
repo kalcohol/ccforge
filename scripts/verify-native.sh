@@ -201,7 +201,12 @@ target_gcc16() {
 target_llvm() {
     build_image forge-llvm containers/Containerfile.llvm
     log "llvm/libc++: configuring + testing -std=c++26 (all backports inject)"
-    container_run forge-llvm build/llvm 26
+    local logfile="${LOG_DIR}/llvm-configure.log"
+    container_run forge-llvm build/llvm 26 2>&1 | tee "${logfile}"
+    local probe
+    for probe in SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG; do
+        assert_backport_injects "${logfile}" "${probe}" "${probe}"
+    done
     ok "llvm verified"
 }
 
@@ -234,7 +239,7 @@ target_tsan() {
     log "tsan: building execution + forge utility tests with -fsanitize=thread (libc++)"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-tsan bash -lc '
-            set -e
+            set -euo pipefail
             rm -rf build/tsan
             cmake -S . -B build/tsan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
@@ -266,7 +271,7 @@ target_asan() {
     log "asan: building execution + forge utility tests with -fsanitize=address,undefined (libc++)"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
-            set -e
+            set -euo pipefail
             rm -rf build/asan
             cmake -S . -B build/asan -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
@@ -296,7 +301,7 @@ target_asan() {
     log "asan: building focused SIMD tests with -fsanitize=address,undefined"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
-            set -e
+            set -euo pipefail
             rm -rf build/asan-simd
             cmake -S . -B build/asan-simd -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \

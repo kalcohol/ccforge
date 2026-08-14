@@ -65,6 +65,13 @@ if(UNIX)
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
     add_test(
+        NAME windows_matrix_version_parsing
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_windows_matrix_versions.sh")
+    set_tests_properties(
+        windows_matrix_version_parsing PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+    add_test(
         NAME sanitizer_retry_policy
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_retry_policy.sh")
     set_tests_properties(
