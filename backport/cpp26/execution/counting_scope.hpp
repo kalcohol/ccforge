@@ -209,7 +209,8 @@ private:
     friend struct __forge_counting_scope::__join_sender<simple_counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
-    void __start_join(__forge_counting_scope::__join_state_base* joiner) noexcept;
+    [[nodiscard]] bool __start_join(
+        __forge_counting_scope::__join_state_base* joiner) noexcept;
 
     void __decrement() noexcept;
 
@@ -285,16 +286,15 @@ inline auto simple_counting_scope::__try_associate() noexcept -> scope_associati
     return scope_association{this};
 }
 
-inline void simple_counting_scope::__start_join(
+inline bool simple_counting_scope::__start_join(
     __forge_counting_scope::__join_state_base* joiner) noexcept {
-    __forge_counting_scope::__join_state_base* ready = nullptr;
     {
         std::lock_guard lk{__mtx_};
         if (__count_.load(std::memory_order_acquire) == 0) {
             __state_.store(
                 __forge_counting_scope::__scope_state::joined,
                 std::memory_order_release);
-            ready = joiner;
+            return true;
         } else {
             __state_.store(
                 __forge_counting_scope::__scope_after_join_start(
@@ -305,7 +305,7 @@ inline void simple_counting_scope::__start_join(
             __joiners_ = joiner;
         }
     }
-    __forge_counting_scope::__complete_joiners(ready);
+    return false;
 }
 
 inline void simple_counting_scope::__decrement() noexcept {
@@ -353,6 +353,48 @@ namespace __forge_counting_scope {
 template<class S, class R>
 struct __stop_op;
 
+template<class R>
+struct __join_scheduler_receiver {
+    using receiver_concept = receiver_t;
+
+    R* __rcvr;
+
+    void set_value() && noexcept {
+        std::execution::set_value(std::move(*__rcvr));
+    }
+
+    template<class E>
+    void set_error(E&& error) && noexcept {
+        std::execution::set_error(
+            std::move(*__rcvr), static_cast<E&&>(error));
+    }
+
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__rcvr));
+    }
+
+    decltype(auto) get_env() const
+        noexcept(noexcept(std::execution::get_env(*__rcvr))) {
+        return std::execution::get_env(*__rcvr);
+    }
+};
+
+template<class Env>
+using __join_schedule_sender_t = decltype(std::execution::schedule(
+    std::execution::get_start_scheduler(std::declval<Env>())));
+
+template<class R>
+using __join_schedule_op_t = connect_result_t<
+    __join_schedule_sender_t<env_of_t<R>>,
+    __join_scheduler_receiver<R>>;
+
+template<class R>
+concept __join_receiver =
+    receiver<R> &&
+    sender_to<
+        __join_schedule_sender_t<env_of_t<R>>,
+        __join_scheduler_receiver<R>>;
+
 template<class Scope>
 struct __join_sender {
     using sender_concept = sender_t;
@@ -361,7 +403,7 @@ struct __join_sender {
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
-        -> completion_signatures<set_value_t()> {
+        -> completion_signatures_of_t<__join_schedule_sender_t<Env>, Env> {
         return {};
     }
 
@@ -369,33 +411,45 @@ struct __join_sender {
         return {};
     }
 
-    template<class R>
+    template<__join_receiver R>
     struct __op : __join_state_base, __forge_detail::__immovable {
         using operation_state_concept = operation_state_t;
+        using __schedule_op_t = __join_schedule_op_t<R>;
 
         Scope* __scope;
         R __rcvr;
+        __forge_detail::__op_storage<1024> __schedule_storage;
 
-        __op(Scope* scope, R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>)
+        __op(Scope* scope, R rcvr)
             : __join_state_base(&__complete_join)
             , __scope(scope)
-            , __rcvr(std::move(rcvr)) {}
+            , __rcvr(std::move(rcvr)) {
+            auto scheduler = std::execution::get_start_scheduler(
+                std::execution::get_env(__rcvr));
+            __schedule_storage.template emplace_from<__schedule_op_t>(
+                [&]() -> __schedule_op_t {
+                    return std::execution::connect(
+                        std::execution::schedule(scheduler),
+                        __join_scheduler_receiver<R>{&__rcvr});
+                });
+        }
 
         void start() & noexcept {
-            if (__scope) {
-                __scope->__start_join(this);
+            auto* scope = __scope;
+            if (scope && !scope->__start_join(this)) {
                 return;
             }
-            __complete_join(this);
+            std::execution::set_value(std::move(__rcvr));
         }
 
         static void __complete_join(__join_state_base* base) noexcept {
             auto* self = static_cast<__op*>(base);
-            std::execution::set_value(std::move(self->__rcvr));
+            std::execution::start(
+                self->__schedule_storage.template get<__schedule_op_t>());
         }
     };
 
-    template<receiver R>
+    template<__join_receiver R>
     auto connect(R rcvr) const -> __op<R> {
         return __op<R>{__scope, std::move(rcvr)};
     }
@@ -581,7 +635,8 @@ private:
     friend struct __forge_counting_scope::__join_sender<counting_scope>;
 
     [[nodiscard]] scope_association __try_associate() noexcept;
-    void __start_join(__forge_counting_scope::__join_state_base* joiner) noexcept;
+    [[nodiscard]] bool __start_join(
+        __forge_counting_scope::__join_state_base* joiner) noexcept;
 
     [[nodiscard]] std::inplace_stop_token __stop_token() noexcept {
         return __stop_source_.get_token();
@@ -658,16 +713,15 @@ inline auto counting_scope::__try_associate() noexcept -> scope_association {
     return scope_association{this};
 }
 
-inline void counting_scope::__start_join(
+inline bool counting_scope::__start_join(
     __forge_counting_scope::__join_state_base* joiner) noexcept {
-    __forge_counting_scope::__join_state_base* ready = nullptr;
     {
         std::lock_guard lk{__mtx_};
         if (__count_.load(std::memory_order_acquire) == 0) {
             __state_.store(
                 __forge_counting_scope::__scope_state::joined,
                 std::memory_order_release);
-            ready = joiner;
+            return true;
         } else {
             __state_.store(
                 __forge_counting_scope::__scope_after_join_start(
@@ -678,7 +732,7 @@ inline void counting_scope::__start_join(
             __joiners_ = joiner;
         }
     }
-    __forge_counting_scope::__complete_joiners(ready);
+    return false;
 }
 
 inline void counting_scope::__decrement() noexcept {

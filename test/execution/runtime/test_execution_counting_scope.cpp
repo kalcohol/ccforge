@@ -33,6 +33,12 @@ struct completion_contains<
     std::execution::completion_signatures<Sigs...>>
     : std::bool_constant<(std::is_same_v<Sig, Sigs> || ...)> {};
 
+auto inline_join_env() noexcept {
+    return std::execution::make_env(std::execution::make_prop(
+        std::execution::get_start_scheduler_t{},
+        std::execution::inline_scheduler{}));
+}
+
 struct scope_probe_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -47,8 +53,8 @@ struct scope_probe_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept {
+        return inline_join_env();
     }
 };
 
@@ -72,8 +78,8 @@ struct self_destroying_join_receiver {
         context->destroy();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept {
+        return inline_join_env();
     }
 };
 
@@ -100,10 +106,63 @@ struct destruction_order_join_receiver {
         completed->store(true, std::memory_order_release);
     }
 
+    auto get_env() const noexcept {
+        return inline_join_env();
+    }
+};
+
+template<class Scheduler>
+struct scheduled_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    Scheduler scheduler;
+    std::thread::id* completion_thread = nullptr;
+    std::atomic<bool>* completed = nullptr;
+
+    void set_value() && noexcept {
+        *completion_thread = std::this_thread::get_id();
+        completed->store(true, std::memory_order_release);
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    void set_stopped() && noexcept {
+        completed->store(true, std::memory_order_release);
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(std::execution::make_prop(
+            std::execution::get_start_scheduler_t{}, scheduler));
+    }
+};
+
+struct unscheduled_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    void set_value() && noexcept {}
+
+    template<class E>
+    void set_error(E&&) && noexcept {}
+
+    void set_stopped() && noexcept {}
+
     auto get_env() const noexcept -> std::execution::empty_env {
         return {};
     }
 };
+
+template<class Scope>
+concept accepts_unscheduled_join_receiver = requires(Scope& scope) {
+    std::execution::connect(scope.join(), unscheduled_join_receiver{});
+};
+
+static_assert(!accepts_unscheduled_join_receiver<
+              std::execution::simple_counting_scope>);
+static_assert(!accepts_unscheduled_join_receiver<
+              std::execution::counting_scope>);
 
 bool wait_for_flag(
     const std::atomic<bool>& flag,
@@ -166,6 +225,67 @@ void expect_multiple_joiners_complete_when_scope_drains() {
     EXPECT_TRUE(first_completed);
     EXPECT_TRUE(second_completed);
     EXPECT_EQ(scope.count(), 0u);
+}
+
+template<class Scope>
+void expect_delayed_join_uses_start_scheduler() {
+    forge::static_thread_pool pool{1};
+    auto scheduler = pool.get_scheduler();
+
+    Scope scope;
+    auto assoc = scope.get_token().try_associate();
+    ASSERT_TRUE(static_cast<bool>(assoc));
+
+    std::thread::id completion_thread;
+    std::atomic<bool> completed{false};
+    using receiver_t = scheduled_join_receiver<decltype(scheduler)>;
+    using env_t = std::execution::env_of_t<receiver_t>;
+    using signatures_t = std::execution::completion_signatures_of_t<
+        decltype(scope.join()),
+        env_t>;
+    static_assert(completion_contains<
+                  std::execution::set_stopped_t(),
+                  signatures_t>::value);
+    auto op = std::execution::connect(
+        scope.join(),
+        receiver_t{
+            scheduler,
+            &completion_thread,
+            &completed});
+
+    std::execution::start(op);
+    EXPECT_FALSE(completed.load(std::memory_order_acquire));
+
+    const auto release_thread = std::this_thread::get_id();
+    assoc = decltype(assoc){};
+
+    ASSERT_TRUE(wait_for_flag(completed));
+    EXPECT_NE(completion_thread, release_thread);
+    EXPECT_EQ(scope.count(), 0u);
+    pool.wait();
+}
+
+template<class Scope>
+void expect_empty_join_completes_inline() {
+    forge::static_thread_pool pool{1};
+    auto scheduler = pool.get_scheduler();
+
+    Scope scope;
+    std::thread::id completion_thread;
+    std::atomic<bool> completed{false};
+    auto op = std::execution::connect(
+        scope.join(),
+        scheduled_join_receiver<decltype(scheduler)>{
+            scheduler,
+            &completion_thread,
+            &completed});
+
+    const auto start_thread = std::this_thread::get_id();
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed.load(std::memory_order_acquire));
+    EXPECT_EQ(completion_thread, start_thread);
+    pool.wait();
 }
 
 template<class Scope>
@@ -569,6 +689,16 @@ TEST(SimpleCountingScopeTest, MultipleJoinersCompleteWhenScopeDrains) {
     expect_multiple_joiners_complete_when_scope_drains<std::execution::simple_counting_scope>();
 }
 
+TEST(SimpleCountingScopeTest, DelayedJoinUsesStartScheduler) {
+    expect_delayed_join_uses_start_scheduler<
+        std::execution::simple_counting_scope>();
+}
+
+TEST(SimpleCountingScopeTest, EmptyJoinCompletesInline) {
+    expect_empty_join_completes_inline<
+        std::execution::simple_counting_scope>();
+}
+
 TEST(SimpleCountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {
     expect_join_receiver_may_destroy_operation_on_completion<
         std::execution::simple_counting_scope>();
@@ -587,15 +717,18 @@ TEST(SimpleCountingScopeTest, JoinDoesNotDeadlockSingleThreadScheduler) {
     std::atomic<bool> join_start_returned{false};
     std::atomic<bool> release_ran{false};
     std::atomic<bool> join_completed{false};
+    std::thread::id completion_thread;
+    auto join_op = std::execution::connect(
+        scope.join(),
+        scheduled_join_receiver<decltype(scheduler)>{
+            scheduler,
+            &completion_thread,
+            &join_completed});
 
     forge::start_detached(
         std::execution::schedule(scheduler)
         | std::execution::then([&] noexcept {
-            forge::start_detached(
-                scope.join()
-                | std::execution::then([&] noexcept {
-                    join_completed.store(true, std::memory_order_release);
-                }));
+            std::execution::start(join_op);
             join_start_returned.store(true, std::memory_order_release);
         }));
 
@@ -912,6 +1045,14 @@ TEST(CountingScopeTest, DrainingJoinEstablishesTerminalState) {
 
 TEST(CountingScopeTest, MultipleJoinersCompleteWhenScopeDrains) {
     expect_multiple_joiners_complete_when_scope_drains<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, DelayedJoinUsesStartScheduler) {
+    expect_delayed_join_uses_start_scheduler<std::execution::counting_scope>();
+}
+
+TEST(CountingScopeTest, EmptyJoinCompletesInline) {
+    expect_empty_join_completes_inline<std::execution::counting_scope>();
 }
 
 TEST(CountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {

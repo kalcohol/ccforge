@@ -120,8 +120,10 @@
   downstream callback 只在 operation active 期间保持注册。
 - `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用
   `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join
-  operation，最后一个 scope association 释放时在锁外完成 join receiver。join
-  completion 会建立 terminal `joined` state；此后 `try_associate()` 返回 disengaged
+  operation。若 scope 已空，join 在 `start()` 调用线程内联完成；否则最后一个
+  association 释放后，completion 会调度到 receiver env 的
+  `get_start_scheduler`，并在 scope mutex 外执行。join completion 会建立 terminal
+  `joined` state；此后 `try_associate()` 返回 disengaged
   association，`spawn()` 不再接受新 work。Scope destructor 仍保留 Forge 既有的宽松
   diagnostic：只在 outstanding association count 非零时 terminate；已经自然 drain
   但未消费 `join()` 的 scope 不额外终止。
