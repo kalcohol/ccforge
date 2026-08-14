@@ -167,8 +167,7 @@ struct throwing_connect_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
-            std::execution::set_value_t(),
-            std::execution::set_error_t(std::exception_ptr)> {
+            std::execution::set_value_t()> {
         return {};
     }
 
@@ -564,16 +563,23 @@ TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
     EXPECT_EQ(counter.load(), 1);
 }
 
-TEST(StartsOnTest, SourceConnectFailureBecomesError) {
+TEST(StartsOnTest, SourceConnectFailurePropagatesFromConnect) {
     std::execution::inline_scheduler sch;
     auto sndr = std::execution::starts_on(sch, throwing_connect_sender{});
+    using cs_t = std::execution::completion_signatures_of_t<
+        decltype(sndr),
+        std::execution::empty_env>;
+    static_assert(std::is_same_v<
+        cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t()>>);
 
     EXPECT_THROW(
         (void)std::execution::sync_wait(std::move(sndr)),
         std::runtime_error);
 }
 
-TEST(StartsOnTest, DeclaresSchedulerErrorsAndSetupError) {
+TEST(StartsOnTest, DeclaresOnlySchedulerErrors) {
     auto sndr = std::execution::starts_on(
         error_stopped_scheduler{},
         std::execution::just(42));
@@ -584,8 +590,7 @@ TEST(StartsOnTest, DeclaresSchedulerErrorsAndSetupError) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(int),
-            std::execution::set_stopped_t(),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_stopped_t()>>);
 
     try {
         (void)std::execution::sync_wait(std::move(sndr));

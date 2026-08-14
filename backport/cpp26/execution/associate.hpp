@@ -27,7 +27,6 @@
 #include "detail/op_storage.hpp"
 #include "env.hpp"
 
-#include <exception>
 #include <type_traits>
 #include <utility>
 
@@ -70,15 +69,21 @@ struct __op : __forge_detail::__immovable {
     using inner_op_t = connect_result_t<S, __recv>;
 
     Association __association;
-    S __sndr;
     R __rcvr;
     __forge_detail::__op_storage<1024> __inner_storage;
 
     __op(S sndr, Association association, R rcvr)
         : __association(std::move(association))
-        , __sndr(std::move(sndr))
         , __rcvr(std::move(rcvr))
-    {}
+    {
+        if (__association) {
+            __inner_storage.template emplace_from<inner_op_t>(
+                [&]() -> inner_op_t {
+                    return std::execution::connect(
+                        std::move(sndr), __recv{&__rcvr});
+                });
+        }
+    }
 
     ~__op() noexcept {
         __inner_storage.destroy();
@@ -91,14 +96,7 @@ struct __op : __forge_detail::__immovable {
             return;
         }
 
-        try {
-            auto* op = __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(std::move(__sndr), __recv{&__rcvr});
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            std::execution::set_error(std::move(__rcvr), std::current_exception());
-        }
+        std::execution::start(__inner_storage.template get<inner_op_t>());
     }
 };
 
@@ -156,7 +154,7 @@ struct __sender {
             std::declval<Env>()));
         return __forge_meta::__concat_unique_cs_t<
             up_cs_t,
-            completion_signatures<set_error_t(std::exception_ptr), set_stopped_t()>>{};
+            completion_signatures<set_stopped_t()>>{};
     }
 
     template<receiver R>

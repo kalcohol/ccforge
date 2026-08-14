@@ -28,16 +28,9 @@
 #include "env.hpp"
 #include "run_loop.hpp"
 
-#include <exception>
-
 namespace std::execution {
 
 namespace __forge_on {
-
-template<class R>
-concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
-    std::execution::set_error(std::move(r), std::move(ep));
-};
 
 template<class Scheduler, class S, class R>
 struct __starts_on_op : __forge_detail::__immovable {
@@ -45,7 +38,6 @@ struct __starts_on_op : __forge_detail::__immovable {
 
     R __outer_recv;
     Scheduler __sch;
-    S __sndr;
 
     __forge_detail::__op_storage<1024> __sched_storage;
     __forge_detail::__op_storage<1024> __sndr_storage;
@@ -69,27 +61,15 @@ struct __starts_on_op : __forge_detail::__immovable {
         }
     };
 
+    using __sndr_op_t = connect_result_t<S, __sndr_recv>;
+
     struct __sched_recv {
         using receiver_concept = receiver_t;
         __starts_on_op* __self;
 
         void set_value() && noexcept {
-            try {
-                using inner_op_t = connect_result_t<S, __sndr_recv>;
-                auto* op = __self->__sndr_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                    return std::execution::connect(
-                        std::move(__self->__sndr), __sndr_recv{__self});
-                });
-                std::execution::start(*op);
-            } catch (...) {
-                if constexpr (__can_set_exception_ptr<R>) {
-                    std::execution::set_error(
-                        std::move(__self->__outer_recv),
-                        std::current_exception());
-                } else {
-                    std::terminate();
-                }
-            }
+            std::execution::start(
+                __self->__sndr_storage.template get<__sndr_op_t>());
         }
         template<class E>
         void set_error(E&& e) && noexcept {
@@ -109,10 +89,13 @@ struct __starts_on_op : __forge_detail::__immovable {
     __starts_on_op(Scheduler sch, S sndr, R recv)
         : __outer_recv(std::move(recv))
         , __sch(std::move(sch))
-        , __sndr(std::move(sndr))
     {
         __sched_storage.template emplace_from<__sched_op_t>([&]() -> __sched_op_t {
             return std::execution::connect(std::execution::schedule(__sch), __sched_recv{this});
+        });
+        __sndr_storage.template emplace_from<__sndr_op_t>([&]() -> __sndr_op_t {
+            return std::execution::connect(
+                std::move(sndr), __sndr_recv{this});
         });
     }
 
@@ -144,8 +127,7 @@ struct __starts_on_sender {
             __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
         return __forge_meta::__concat_unique_cs_t<
             source_cs_t,
-            sched_non_value_cs_t,
-            completion_signatures<set_error_t(std::exception_ptr)>>{};
+            sched_non_value_cs_t>{};
     }
 
     template<receiver R>

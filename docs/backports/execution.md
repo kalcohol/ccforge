@@ -79,6 +79,11 @@
   attribute。调度失败的 error completion 允许发生在 unspecified agent，因此不为
   error disposition 声称唯一 completion scheduler；completion domain 同样只从
   destination scheduler 或其 schedule sender 派生，不借用 child domain。
+- `starts_on` 和 `associate` 在 `connect` 阶段构造 child operation；构造失败由
+  `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 与
+  `continues_on` 必须在收到上游 completion 后选择并构造动态 child/schedule
+  operation，因此当前实现会为这些真实的 late-connect 失败保留
+  `set_error(std::exception_ptr)` 通道。
 - `schedule_from`、`apply_sender` 和 `transform_env` 尚未实现。它们需要与 domain
   customization 一起设计，不能用只转发到 `continues_on` 的同名空壳代替。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`

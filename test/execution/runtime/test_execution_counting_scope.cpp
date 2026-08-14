@@ -1279,6 +1279,23 @@ TEST(CountingScopeTest, WrapConnectFailurePropagatesFromConnect) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(CountingScopeTest, AssociateConnectFailurePropagatesFromConnect) {
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto associated = std::execution::associate(
+        throwing_connect_sender{}, token);
+    using signatures_t = std::execution::completion_signatures_of_t<
+        decltype(associated),
+        std::execution::empty_env>;
+    static_assert(!completion_contains<
+        std::execution::set_error_t(std::exception_ptr),
+        signatures_t>::value);
+
+    EXPECT_THROW((void)std::execution::sync_wait(
+        std::move(associated)), throwing_connect_error);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
 TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
