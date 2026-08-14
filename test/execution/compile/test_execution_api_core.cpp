@@ -32,7 +32,7 @@ static_assert(std::same_as<
     decltype(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{})),
     std::execution::forward_progress_guarantee>);
 static_assert(std::execution::get_forward_progress_guarantee(std::execution::inline_scheduler{}) ==
-              std::execution::forward_progress_guarantee::concurrent);
+              std::execution::forward_progress_guarantee::weakly_parallel);
 
 struct default_progress_scheduler {
     using scheduler_concept = std::execution::scheduler_t;

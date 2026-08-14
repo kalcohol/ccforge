@@ -38,7 +38,7 @@ struct demo {
 };
 
 demo run() {
-    auto [v] = co_await (
+    auto v = co_await (
         std::execution::just(20)
         | std::execution::then([](int x) { return x + 22; }));
     std::cout << "execution coro value: " << v << '\n';
