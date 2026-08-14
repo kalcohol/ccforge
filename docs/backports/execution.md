@@ -54,6 +54,9 @@
   domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段
   recursive `transform_sender`；scheduler-derived start domain 仅在 scheduler 显式定制
   `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。
+  `get_domain` 与双参数 `get_completion_domain` 查询均采用 member-query-first、
+  tag-invoke fallback；sender attributes 只跨 adaptor 边界转发声明为
+  `forwarding_query` 的 child query。
   `get_completion_signatures(sender, env)` 会先按同一 transform 模型得到最终 sender 类型，
   再读取 completion signatures；非 default-domain 路径允许原 sender 没有 raw
   completion signatures，只要 transformed sender 提供可用 signatures。
@@ -72,9 +75,10 @@
   unstoppable schedule sender 返回该 execution resource；它继承同一个单一 value
   shape 限制。多 value-alternative 和引用 value-signature 的逐位 WD 语义需要单独
   重构，不应从当前 subset 推断。
-  `continues_on` 只发布能够保证的 value completion scheduler attribute；目标 scheduler
-  自身的 error / stopped completion 可能在未转移的 agent 上发生，因此不为这两个
-  disposition 声称唯一 completion scheduler。
+  `continues_on` 为转移后的 value 和 stopped completion 发布 destination scheduler
+  attribute。调度失败的 error completion 允许发生在 unspecified agent，因此不为
+  error disposition 声称唯一 completion scheduler；completion domain 同样只从
+  destination scheduler 或其 schedule sender 派生，不借用 child domain。
 - `schedule_from`、`apply_sender` 和 `transform_env` 尚未实现。它们需要与 domain
   customization 一起设计，不能用只转发到 `continues_on` 的同名空壳代替。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`

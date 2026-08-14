@@ -73,41 +73,46 @@ concept __nothrow_member_get_env = requires(const T& obj) {
     { obj.get_env() } noexcept;
 };
 
-template<class Query, class Env>
+template<class Query, class Env, class... Args>
 concept __member_query = requires(
     const std::remove_reference_t<Env>& env,
-    const Query& query) {
-    env.query(query);
+    const Query& query,
+    Args&&... args) {
+    env.query(query, static_cast<Args&&>(args)...);
 };
 
-template<class Query, class Env>
+template<class Query, class Env, class... Args>
 concept __nothrow_member_query = requires(
     const std::remove_reference_t<Env>& env,
-    const Query& query) {
-    { env.query(query) } noexcept;
+    const Query& query,
+    Args&&... args) {
+    { env.query(query, static_cast<Args&&>(args)...) } noexcept;
 };
 
-template<class Query, class Env>
+template<class Query, class Env, class... Args>
 concept __queryable =
-    __member_query<Query, Env> ||
-    __forge_detail::tag_invocable<Query, Env>;
+    __member_query<Query, Env, Args...> ||
+    __forge_detail::tag_invocable<Query, Env, Args...>;
 
-template<class Query, class Env>
+template<class Query, class Env, class... Args>
 inline constexpr bool __nothrow_query =
-    (__member_query<Query, Env> && __nothrow_member_query<Query, Env>) ||
-    (!__member_query<Query, Env> &&
-     __forge_detail::nothrow_tag_invocable<Query, Env>);
+    (__member_query<Query, Env, Args...> &&
+     __nothrow_member_query<Query, Env, Args...>) ||
+    (!__member_query<Query, Env, Args...> &&
+     __forge_detail::nothrow_tag_invocable<Query, Env, Args...>);
 
-template<class Query, class Env>
-    requires __queryable<Query, Env>
-constexpr decltype(auto) __query(Query query, Env&& env)
-    noexcept(__nothrow_query<Query, Env>) {
-    if constexpr (__member_query<Query, Env>) {
+template<class Query, class Env, class... Args>
+    requires __queryable<Query, Env, Args...>
+constexpr decltype(auto) __query(Query query, Env&& env, Args&&... args)
+    noexcept(__nothrow_query<Query, Env, Args...>) {
+    if constexpr (__member_query<Query, Env, Args...>) {
         return static_cast<const std::remove_reference_t<Env>&>(env)
-            .query(query);
+            .query(query, static_cast<Args&&>(args)...);
     } else {
         return __forge_detail::tag_invoke_fn(
-            std::move(query), static_cast<Env&&>(env));
+            std::move(query),
+            static_cast<Env&&>(env),
+            static_cast<Args&&>(args)...);
     }
 }
 

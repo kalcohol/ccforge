@@ -729,11 +729,15 @@ struct get_domain_t;
 template<class CPO = void>
 struct get_completion_domain_t {
     template<class Scheduler, class Env>
-        requires __forge_detail::tag_invocable<get_completion_domain_t<CPO>, Scheduler, Env>
-    auto operator()(Scheduler&& sched, Env&& env) const
-        noexcept(__forge_detail::nothrow_tag_invocable<get_completion_domain_t<CPO>, Scheduler, Env>)
-            -> __forge_detail::tag_invoke_result_t<get_completion_domain_t<CPO>, Scheduler, Env> {
-        return __forge_detail::tag_invoke_fn(*this, static_cast<Scheduler&&>(sched), static_cast<Env&&>(env));
+        requires __forge_env_detail::__queryable<
+            get_completion_domain_t<CPO>, Scheduler, Env>
+    decltype(auto) operator()(Scheduler&& sched, Env&& env) const
+        noexcept(__forge_env_detail::__nothrow_query<
+            get_completion_domain_t<CPO>, Scheduler, Env>) {
+        return __forge_env_detail::__query(
+            *this,
+            static_cast<Scheduler&&>(sched),
+            static_cast<Env&&>(env));
     }
 
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_domain_t) noexcept {
@@ -747,7 +751,8 @@ inline constexpr get_completion_domain_t<CPO> get_completion_domain{};
 namespace __forge_domain {
 
 template<class Env>
-concept __env_domain = __forge_detail::tag_invocable<get_domain_t, const Env&>;
+concept __env_domain =
+    __forge_env_detail::__queryable<get_domain_t, const Env&>;
 
 template<class Env>
 concept __scheduler_completion_domain = requires(const Env& env) {
@@ -759,9 +764,9 @@ concept __scheduler_completion_domain = requires(const Env& env) {
 struct get_domain_t {
     template<class Env>
         requires __forge_domain::__env_domain<Env>
-    auto operator()(const Env& env) const noexcept
-        -> __forge_detail::tag_invoke_result_t<get_domain_t, const Env&> {
-        return __forge_detail::tag_invoke_fn(*this, env);
+    decltype(auto) operator()(const Env& env) const
+        noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Env&>) {
+        return __forge_env_detail::__query(*this, env);
     }
 
     template<class Env>

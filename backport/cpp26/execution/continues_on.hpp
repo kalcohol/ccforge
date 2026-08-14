@@ -267,6 +267,16 @@ inline constexpr bool __completion_scheduler_query_v =
         std::remove_cvref_t<Query>,
         get_completion_scheduler_t<set_stopped_t>>;
 
+template<class Query>
+consteval bool __is_forwarding_query() {
+    using query_t = std::remove_cvref_t<Query>;
+    if constexpr (std::default_initializable<query_t>) {
+        return std::forwarding_query(query_t{});
+    } else {
+        return false;
+    }
+}
+
 template<class Scheduler, class ChildEnv>
 struct __completion_attrs {
     using __schedule_sender_t = decltype(
@@ -275,7 +285,7 @@ struct __completion_attrs {
 
     template<class CPO, class Env>
     static consteval bool __domain_query_nothrow() {
-        if constexpr (__forge_detail::tag_invocable<
+        if constexpr (__forge_env_detail::__queryable<
                           get_completion_domain_t<CPO>,
                           const __schedule_attrs_t&,
                           Env>) {
@@ -284,12 +294,12 @@ struct __completion_attrs {
                 std::is_nothrow_copy_constructible_v<Scheduler> &&
                 noexcept(std::execution::get_env(
                     std::declval<const __schedule_sender_t&>())) &&
-                __forge_detail::nothrow_tag_invocable<
+                __forge_env_detail::__nothrow_query<
                     get_completion_domain_t<CPO>,
                     const __schedule_attrs_t&,
                     Env>;
         } else {
-            return __forge_detail::nothrow_tag_invocable<
+            return __forge_env_detail::__nothrow_query<
                 get_completion_domain_t<CPO>,
                 const Scheduler&,
                 Env>;
@@ -306,13 +316,20 @@ struct __completion_attrs {
         return self.__sch;
     }
 
+    friend auto tag_invoke(
+        get_completion_scheduler_t<set_stopped_t>,
+        const __completion_attrs& self) noexcept
+            -> Scheduler {
+        return self.__sch;
+    }
+
     template<class CPO, class Env>
         requires (!std::same_as<CPO, set_error_t>) &&
-                 (__forge_detail::tag_invocable<
+                 (__forge_env_detail::__queryable<
                       get_completion_domain_t<CPO>,
                       const __schedule_attrs_t&,
                       Env> ||
-                  __forge_detail::tag_invocable<
+                  __forge_env_detail::__queryable<
                       get_completion_domain_t<CPO>,
                       const Scheduler&,
                       Env>)
@@ -321,26 +338,27 @@ struct __completion_attrs {
         const __completion_attrs& self,
         Env&& env)
         noexcept(__domain_query_nothrow<CPO, Env>()) {
-        if constexpr (__forge_detail::tag_invocable<
+        if constexpr (__forge_env_detail::__queryable<
                           get_completion_domain_t<CPO>,
                           const __schedule_attrs_t&,
                           Env>) {
             auto scheduler = self.__sch;
             auto sched_sender = std::execution::schedule(scheduler);
             auto attrs = std::execution::get_env(sched_sender);
-            return __forge_detail::tag_invoke_fn(
-                query, attrs, static_cast<Env&&>(env));
-        } else if constexpr (__forge_detail::tag_invocable<
+            return std::execution::get_completion_domain<CPO>(
+                attrs, static_cast<Env&&>(env));
+        } else if constexpr (__forge_env_detail::__queryable<
                                  get_completion_domain_t<CPO>,
                                  const Scheduler&,
                                  Env>) {
-            return __forge_detail::tag_invoke_fn(
-                query, self.__sch, static_cast<Env&&>(env));
+            return std::execution::get_completion_domain<CPO>(
+                self.__sch, static_cast<Env&&>(env));
         }
     }
 
     template<class Query>
         requires (!__completion_scheduler_query_v<Query>) &&
+                 (__is_forwarding_query<Query>()) &&
                  __forge_env_detail::__queryable<Query, const ChildEnv&>
     friend decltype(auto) tag_invoke(
         Query query,

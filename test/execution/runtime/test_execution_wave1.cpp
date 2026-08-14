@@ -305,6 +305,8 @@ struct child_completion_domain {
     int identity = 0;
 };
 
+struct non_forwarding_child_query {};
+
 struct child_domain_env {
     int identity = 0;
 
@@ -314,6 +316,32 @@ struct child_domain_env {
         const child_domain_env& self,
         const Env&) noexcept -> child_completion_domain {
         return {self.identity};
+    }
+
+    friend auto tag_invoke(
+        non_forwarding_child_query,
+        const child_domain_env& self) noexcept -> int {
+        return self.identity;
+    }
+};
+
+struct member_completion_domain_env {
+    int identity = 0;
+
+    template<class CPO, class Env>
+    auto query(
+        std::execution::get_completion_domain_t<CPO>,
+        const Env&) const noexcept -> destination_completion_domain {
+        return {identity};
+    }
+};
+
+struct member_domain_env {
+    int identity = 0;
+
+    auto query(std::execution::get_domain_t) const noexcept
+        -> destination_completion_domain {
+        return {identity};
     }
 };
 
@@ -378,6 +406,29 @@ struct domain_scheduler {
 };
 
 static_assert(std::execution::scheduler<domain_scheduler>);
+
+struct member_domain_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    int identity = 0;
+
+    auto schedule() const noexcept {
+        return std::execution::just();
+    }
+
+    template<class CPO, class Env>
+    auto query(
+        std::execution::get_completion_domain_t<CPO>,
+        const Env&) const noexcept -> destination_completion_domain {
+        return {identity};
+    }
+
+    friend bool operator==(
+        member_domain_scheduler,
+        member_domain_scheduler) noexcept = default;
+};
+
+static_assert(std::execution::scheduler<member_domain_scheduler>);
 
 } // namespace
 
@@ -587,9 +638,10 @@ TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions)
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_scheduler_t<std::execution::set_error_t>,
         const decltype(env)&>);
-    static_assert(!std::execution::__forge_detail::tag_invocable<
-        std::execution::get_completion_scheduler_t<std::execution::set_stopped_t>,
-        const decltype(env)&>);
+    EXPECT_TRUE(
+        std::execution::get_completion_scheduler<
+            std::execution::set_stopped_t>(env)
+        == destination);
 }
 
 TEST(ContinuesOnTest, PreservesMemberQueriedChildAttributes) {
@@ -629,6 +681,61 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
         const decltype(attrs)&,
         std::execution::empty_env>);
+}
+
+TEST(ContinuesOnTest, ReportsDestinationStoppedScheduler) {
+    auto sndr = std::execution::continues_on(
+        std::execution::just_stopped(),
+        domain_scheduler{41});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto scheduler = std::execution::get_completion_scheduler<
+        std::execution::set_stopped_t>(attrs);
+
+    EXPECT_EQ(scheduler.identity, 41);
+    static_assert(!std::execution::__forge_env_detail::__queryable<
+                  std::execution::get_completion_scheduler_t<
+                      std::execution::set_error_t>,
+                  const decltype(attrs)&>);
+}
+
+TEST(ContinuesOnTest, FiltersNonForwardingChildAttributes) {
+    auto sndr = std::execution::continues_on(
+        child_domain_sender{29},
+        std::execution::inline_scheduler{});
+    using attrs_t = std::execution::env_of_t<decltype(sndr)>;
+
+    static_assert(!std::execution::__forge_env_detail::__queryable<
+                  non_forwarding_child_query,
+                  const attrs_t&>);
+}
+
+TEST(CompletionDomainTest, SupportsMemberQueryProtocol) {
+    auto domain = std::execution::get_completion_domain<
+        std::execution::set_value_t>(
+        member_completion_domain_env{43},
+        std::execution::empty_env{});
+
+    EXPECT_EQ(domain.identity, 43);
+}
+
+TEST(CompletionDomainTest, GetDomainSupportsMemberQueryProtocol) {
+    auto domain = std::execution::get_domain(member_domain_env{47});
+
+    EXPECT_EQ(domain.identity, 47);
+}
+
+TEST(ContinuesOnTest, UsesMemberQueriedDestinationDomain) {
+    auto sndr = std::execution::continues_on(
+        std::execution::just(),
+        member_domain_scheduler{53});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto domain = std::execution::get_completion_domain<>(
+        attrs,
+        std::execution::empty_env{});
+
+    EXPECT_EQ(domain.identity, 53);
 }
 
 TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
