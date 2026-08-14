@@ -203,8 +203,10 @@ struct join_probe_receiver {
         completed->store(true, std::memory_order_release);
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept {
+        return std::execution::make_env(std::execution::make_prop(
+            std::execution::get_start_scheduler_t{},
+            std::execution::inline_scheduler{}));
     }
 };
 

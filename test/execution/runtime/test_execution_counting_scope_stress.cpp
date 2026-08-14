@@ -8,6 +8,12 @@
 
 namespace {
 
+auto inline_join_env() noexcept {
+    return std::execution::make_env(std::execution::make_prop(
+        std::execution::get_start_scheduler_t{},
+        std::execution::inline_scheduler{}));
+}
+
 struct counting_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -22,8 +28,8 @@ struct counting_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept {
+        return inline_join_env();
     }
 };
 
@@ -47,8 +53,8 @@ struct chained_join_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env {
-        return {};
+    auto get_env() const noexcept {
+        return inline_join_env();
     }
 };
 
@@ -206,4 +212,3 @@ TEST(SimpleCountingScopeStressTest, JoinCompletionCanStartAnotherJoin) {
 TEST(CountingScopeStressTest, JoinCompletionCanStartAnotherJoin) {
     expect_join_completion_can_start_another_join<std::execution::counting_scope>();
 }
-
