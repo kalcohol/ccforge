@@ -39,8 +39,9 @@
 
 ## SIMD 加速
 
-BLAS Level 1 归约操作（`dot`、`vector_two_norm`、`vector_abs_sum`）以及 `copy`、
-`scale` 在 Forge `std::simd` 可用时自动使用 SIMD 加速路径；
+BLAS Level 1 归约操作（`dot`、`vector_abs_sum`）以及 `copy`、`scale` 在 Forge
+`std::simd` 可用时自动使用 SIMD 加速路径；`vector_two_norm` 和
+`matrix_frob_norm` 使用 scaled sum-of-squares，避免有限范数在逐项平方时先溢出。
 `matrix_vector_product`（GEMV）内层循环也已 SIMD 化。
 
 支持非复数标准算术类型中的 SIMD-friendly 子集；实际启用路径要求 contiguous
