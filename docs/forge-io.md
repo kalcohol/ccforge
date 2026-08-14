@@ -472,6 +472,8 @@ count；消息边界与后续分片仍由调用者管理。以下格子故意 sc
 - handle 必须保持有效直到 operation completion 或 context drain；
 - 一个 handle 不应同时绑定到其它 IOCP；
 - `async_read_some` / `async_write_some` 是 one-shot operation。
+- span 大于 Windows 单次 `DWORD` byte-count 上限时，one-shot operation 只提交
+  `DWORD_MAX` 字节；返回的 byte count 仍表示本次实际进度，剩余部分由调用方继续提交。
 - context 首次关联 handle 时会请求 `FILE_SKIP_COMPLETION_PORT_ON_SUCCESS`。请求成功时，
   overlapped 调用同步成功后会立即交付 byte count，且不会再产生 completion packet；
   请求失败时，context 会保留 operation，直到普通 completion packet 被 worker drain。

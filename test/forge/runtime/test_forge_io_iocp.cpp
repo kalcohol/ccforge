@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <exception>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
@@ -448,6 +449,19 @@ TEST(IoIocpTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
     ctx.shutdown();
     ctx.wait();
+}
+
+TEST(IoIocpTest, OneShotTransferClampsToWindowsByteCount) {
+    constexpr auto dword_max = std::numeric_limits<DWORD>::max();
+    EXPECT_EQ(forge::io::__detail::__windows_transfer_size(17), 17u);
+
+    if constexpr (std::numeric_limits<std::size_t>::max() > dword_max) {
+        constexpr auto oversized =
+            static_cast<std::size_t>(dword_max) + std::size_t{1};
+        EXPECT_EQ(
+            forge::io::__detail::__windows_transfer_size(oversized),
+            dword_max);
+    }
 }
 
 TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {

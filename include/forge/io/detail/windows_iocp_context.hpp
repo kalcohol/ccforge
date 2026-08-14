@@ -94,6 +94,13 @@ bool __stop_requested(const R& rcvr) noexcept {
         code == ERROR_PIPE_NOT_CONNECTED;
 }
 
+[[nodiscard]] constexpr auto __windows_transfer_size(
+    std::size_t byte_count) noexcept -> DWORD {
+    constexpr auto max_bytes =
+        static_cast<std::size_t>(std::numeric_limits<DWORD>::max());
+    return static_cast<DWORD>(byte_count > max_bytes ? max_bytes : byte_count);
+}
+
 class __handle {
 public:
     __handle() noexcept = default;
@@ -482,12 +489,7 @@ private:
         const auto byte_count = record.kind == __operation_kind::read
             ? record.read_buffer.size()
             : record.write_buffer.size();
-        if (byte_count > std::numeric_limits<DWORD>::max()) {
-            ::SetLastError(ERROR_INVALID_PARAMETER);
-            return false;
-        }
-
-        const auto bytes = static_cast<DWORD>(byte_count);
+        const auto bytes = __windows_transfer_size(byte_count);
         BOOL issued = FALSE;
         if (record.kind == __operation_kind::read) {
             issued = ::ReadFile(
