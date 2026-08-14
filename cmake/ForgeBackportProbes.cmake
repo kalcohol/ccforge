@@ -57,11 +57,23 @@ set(FORGE_BACKPORT_PROBE_FINGERPRINT "${_forge_probe_fingerprint}"
 
 set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
 if(MSVC)
-    if(_forge_std GREATER_EQUAL 26)
-        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++latest /Zc:__cplusplus")
+    set(_forge_msvc_standard_option_var
+        "CMAKE_CXX${_forge_std}_STANDARD_COMPILE_OPTION")
+    if(DEFINED ${_forge_msvc_standard_option_var}
+            AND NOT "${${_forge_msvc_standard_option_var}}" STREQUAL "")
+        set(_forge_msvc_standard_option
+            "${${_forge_msvc_standard_option_var}}")
+    elseif(_forge_std GREATER_EQUAL 23)
+        # MSVC versions that provide C++23 through CMake may expose it only
+        # through /std:c++latest; /std:c++23 is not a portable MSVC option.
+        set(_forge_msvc_standard_option "/std:c++latest")
     else()
-        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++${_forge_std} /Zc:__cplusplus")
+        set(_forge_msvc_standard_option "/std:c++${_forge_std}")
     endif()
+    set(CMAKE_REQUIRED_FLAGS
+        "${CMAKE_REQUIRED_FLAGS} ${_forge_msvc_standard_option} /Zc:__cplusplus")
+    unset(_forge_msvc_standard_option)
+    unset(_forge_msvc_standard_option_var)
 else()
     set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++${_forge_std}")
 endif()
