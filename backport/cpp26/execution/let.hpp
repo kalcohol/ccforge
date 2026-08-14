@@ -40,6 +40,131 @@ struct __value_tag  {};
 struct __error_tag  {};
 struct __stopped_tag{};
 
+template<class Which>
+struct __set_cpo;
+
+template<>
+struct __set_cpo<__value_tag> {
+    using type = set_value_t;
+};
+
+template<>
+struct __set_cpo<__error_tag> {
+    using type = set_error_t;
+};
+
+template<>
+struct __set_cpo<__stopped_tag> {
+    using type = set_stopped_t;
+};
+
+template<class Which>
+using __set_cpo_t = typename __set_cpo<Which>::type;
+
+template<class Query>
+consteval bool __is_forwarding_query() {
+    using query_t = std::remove_cvref_t<Query>;
+    if constexpr (std::default_initializable<query_t>) {
+        return std::forwarding_query(query_t{});
+    } else {
+        return false;
+    }
+}
+
+template<class Env>
+struct __forwarding_env {
+    const Env* __env;
+
+    template<class Query>
+        requires (__is_forwarding_query<Query>() &&
+                  __forge_env_detail::__queryable<Query, const Env&>)
+    friend decltype(auto) tag_invoke(
+        Query query,
+        const __forwarding_env& self)
+        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&>) {
+        return __forge_env_detail::__query(std::move(query), *self.__env);
+    }
+};
+
+template<class Scheduler>
+struct __scheduler_env {
+    [[no_unique_address]] Scheduler __scheduler;
+
+    friend auto tag_invoke(
+        get_start_scheduler_t,
+        const __scheduler_env& self) noexcept(
+            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
+        return self.__scheduler;
+    }
+
+    // get_scheduler is retained by this focused backport as the legacy spelling
+    // for the current execution resource.
+    friend auto tag_invoke(
+        get_scheduler_t,
+        const __scheduler_env& self) noexcept(
+            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
+        return self.__scheduler;
+    }
+};
+
+template<class PrimaryEnv, class OuterEnv>
+struct __inner_env {
+    const PrimaryEnv* __primary;
+    const OuterEnv* __outer;
+
+    template<class Query>
+        requires __forge_env_detail::__queryable<Query, const PrimaryEnv&>
+    friend decltype(auto) tag_invoke(
+        Query query,
+        const __inner_env& self)
+        noexcept(__forge_env_detail::__nothrow_query<Query, const PrimaryEnv&>) {
+        return __forge_env_detail::__query(std::move(query), *self.__primary);
+    }
+
+    template<class Query>
+        requires (!__forge_env_detail::__queryable<Query, const PrimaryEnv&> &&
+                  __is_forwarding_query<Query>() &&
+                  __forge_env_detail::__queryable<Query, const OuterEnv&>)
+    friend decltype(auto) tag_invoke(
+        Query query,
+        const __inner_env& self)
+        noexcept(__forge_env_detail::__nothrow_query<Query, const OuterEnv&>) {
+        return __forge_env_detail::__query(std::move(query), *self.__outer);
+    }
+};
+
+template<class Which, class S, class OuterEnv>
+auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
+    using cpo_t = __set_cpo_t<Which>;
+    auto child_env = std::execution::get_env(sndr);
+    if constexpr (requires {
+        std::execution::get_completion_scheduler<cpo_t>(child_env);
+    }) {
+        auto scheduler =
+            std::execution::get_completion_scheduler<cpo_t>(child_env);
+        return __scheduler_env<std::decay_t<decltype(scheduler)>>{
+            std::move(scheduler)};
+    } else if constexpr (requires {
+        std::execution::get_completion_domain<cpo_t>(
+            child_env,
+            __forwarding_env<OuterEnv>{&outer_env});
+    }) {
+        auto domain = std::execution::get_completion_domain<cpo_t>(
+            child_env,
+            __forwarding_env<OuterEnv>{&outer_env});
+        return std::execution::make_prop(
+            get_domain_t{},
+            std::move(domain));
+    } else {
+        return empty_env{};
+    }
+}
+
+template<class Which, class S, class OuterEnv>
+using __let_env_t = decltype(__make_let_env<Which>(
+    std::declval<const S&>(),
+    std::declval<const OuterEnv&>()));
+
 template<class Sig>
 struct __is_value_sig : std::false_type {};
 
@@ -74,49 +199,60 @@ struct __maybe_eptr_cs<true> {
     using type = completion_signatures<set_error_t(std::exception_ptr)>;
 };
 
-template<class Fn, class Which, class Env, class Sig>
+template<class S, class Fn, class Which, class Env, class Sig>
 struct __let_sig {
     using type = completion_signatures<Sig>;
 };
 
-template<class Fn, class Env, class... Vs>
-struct __let_sig<Fn, __value_tag, Env, set_value_t(Vs...)> {
-    using inner_sender_t = std::invoke_result_t<Fn&, std::decay_t<Vs>&...>;
+template<class S, class Fn, class Env, class... Vs>
+struct __let_sig<S, Fn, __value_tag, Env, set_value_t(Vs...)> {
+    using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
+    using let_env_t = __let_env_t<__value_tag, S, std::decay_t<Env>>;
+    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
     using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<Env>()));
+        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
 };
 
-template<class Fn, class Env, class E>
-struct __let_sig<Fn, __error_tag, Env, set_error_t(E)> {
-    using inner_sender_t = std::invoke_result_t<Fn&, std::decay_t<E>&>;
+template<class S, class Fn, class Env, class E>
+struct __let_sig<S, Fn, __error_tag, Env, set_error_t(E)> {
+    using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<E>&>;
+    using let_env_t = __let_env_t<__error_tag, S, std::decay_t<Env>>;
+    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
     using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<Env>()));
+        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
 };
 
-template<class Fn, class Env>
-struct __let_sig<Fn, __stopped_tag, Env, set_stopped_t()> {
-    using inner_sender_t = std::invoke_result_t<Fn&>;
+template<class S, class Fn, class Env>
+struct __let_sig<S, Fn, __stopped_tag, Env, set_stopped_t()> {
+    using inner_sender_t = std::invoke_result_t<Fn>;
+    using let_env_t = __let_env_t<__stopped_tag, S, std::decay_t<Env>>;
+    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
     using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<Env>()));
+        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
 };
 
-template<class Fn, class Which, class Env, class CS>
+template<class S, class Fn, class Which, class Env, class CS>
 struct __let_cs;
 
-template<class Fn, class Which, class Env, class... Sigs>
-struct __let_cs<Fn, Which, Env, completion_signatures<Sigs...>> {
+template<class S, class Fn, class Which, class Env, class... Sigs>
+struct __let_cs<S, Fn, Which, Env, completion_signatures<Sigs...>> {
     static constexpr bool handles_completion = (__matches_which<Which, Sigs>::value || ...);
 
     using type = __forge_meta::__concat_unique_cs_t<
-        typename __let_sig<Fn, Which, Env, Sigs>::type...,
+        typename __let_sig<S, Fn, Which, Env, Sigs>::type...,
         typename __maybe_eptr_cs<handles_completion>::type>;
 };
 
 template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
+    using outer_env_t = env_of_t<R>;
+    using let_env_t = __let_env_t<Which, S, outer_env_t>;
+    using inner_env_t = __inner_env<let_env_t, outer_env_t>;
 
     R __outer_recv_;
+    outer_env_t __outer_env_;
+    let_env_t __let_env_;
     Fn __fn_;
 
     __forge_detail::__op_storage<1024> __outer_storage_;
@@ -137,8 +273,8 @@ struct __op : __forge_detail::__immovable {
         void set_stopped() && noexcept {
             std::execution::set_stopped(std::move(__self->__outer_recv_));
         }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer_recv_);
+        auto get_env() const noexcept -> inner_env_t {
+            return {&__self->__let_env_, &__self->__outer_env_};
         }
     };
 
@@ -149,9 +285,7 @@ struct __op : __forge_detail::__immovable {
             auto* args = __arg_storage_.template emplace_from<args_t>([&]() -> args_t {
                 return args_t{static_cast<Vs&&>(vs)...};
             });
-            auto inner_sndr = std::apply([this](auto&... stored) {
-                return std::invoke(__fn_, stored...);
-            }, *args);
+            auto inner_sndr = std::apply(std::move(__fn_), *args);
             using inner_sender_t = std::decay_t<decltype(inner_sndr)>;
             using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
             auto* op = __inner_storage_.template emplace_from<inner_op_t>([&]() -> inner_op_t {
@@ -199,6 +333,8 @@ struct __op : __forge_detail::__immovable {
 
     __op(S sndr, Fn fn, R r)
         : __outer_recv_(std::move(r))
+        , __outer_env_(std::execution::get_env(__outer_recv_))
+        , __let_env_(__make_let_env<Which>(sndr, __outer_env_))
         , __fn_(std::move(fn))
     {
         __outer_storage_.template emplace_from<__outer_op_t>([&]() -> __outer_op_t {
@@ -228,6 +364,7 @@ struct __sender {
             std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
         return typename __let_cs<
+            typename self_t::source_t,
             typename self_t::fn_t,
             typename self_t::which_t,
             Env,

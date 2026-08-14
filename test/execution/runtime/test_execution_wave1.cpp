@@ -348,6 +348,14 @@ struct child_domain_sender {
     }
 };
 
+struct rvalue_only_let_fn {
+    auto operator()(int& value) && noexcept {
+        return std::execution::just(value + 1);
+    }
+
+    auto operator()(int&) & = delete;
+};
+
 struct domain_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
 
@@ -629,6 +637,56 @@ TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
     EXPECT_THROW(
         (void)std::execution::sync_wait(std::move(sndr)),
         std::runtime_error);
+}
+
+TEST(LetValueTest, InnerSenderSeesChildCompletionScheduler) {
+    std::execution::run_loop child_loop;
+    auto child_scheduler = child_loop.get_scheduler();
+    std::thread child_worker([&] { child_loop.run(); });
+
+    auto sender = std::execution::let_value(
+        std::execution::schedule(child_scheduler),
+        []() noexcept {
+            return std::execution::read_env(
+                std::execution::get_start_scheduler);
+        });
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    auto legacy_sender = std::execution::let_value(
+        std::execution::schedule(child_scheduler),
+        []() noexcept {
+            return std::execution::read_env(std::execution::get_scheduler);
+        });
+    auto legacy_result = std::execution::sync_wait(std::move(legacy_sender));
+
+    child_loop.finish();
+    child_worker.join();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), child_scheduler);
+    ASSERT_TRUE(legacy_result.has_value());
+    EXPECT_EQ(std::get<0>(*legacy_result), child_scheduler);
+}
+
+TEST(LetValueTest, InnerSenderSeesChildCompletionDomain) {
+    auto sender = std::execution::let_value(
+        child_domain_sender{41},
+        []() noexcept {
+            return std::execution::read_env(std::execution::get_domain);
+        });
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result).identity, 41);
+}
+
+TEST(LetValueTest, InvokesStoredFunctionAsRvalue) {
+    auto result = std::execution::sync_wait(std::execution::let_value(
+        std::execution::just(41),
+        rvalue_only_let_fn{}));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
