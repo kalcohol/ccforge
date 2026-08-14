@@ -35,8 +35,8 @@ namespace __forge_write_env {
 
 template<class OverrideEnv, class BaseEnv>
 struct __joined_env {
-    [[no_unique_address]] OverrideEnv __overlay_env;
-    [[no_unique_address]] BaseEnv __base;
+    const OverrideEnv* __overlay_env;
+    const BaseEnv* __base;
 
     template<class Tag>
         requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
@@ -47,25 +47,27 @@ struct __joined_env {
                  (!__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
                   __forge_env_detail::__nothrow_query<Tag, const BaseEnv&>)) {
         if constexpr (__forge_env_detail::__queryable<Tag, const OverrideEnv&>) {
-            return __forge_env_detail::__query(tag, self.__overlay_env);
+            return __forge_env_detail::__query(tag, *self.__overlay_env);
         } else {
-            return __forge_env_detail::__query(tag, self.__base);
+            return __forge_env_detail::__query(tag, *self.__base);
         }
     }
 };
 
 template<class OverrideEnv, class BaseEnv>
-[[nodiscard]] auto __join_env(OverrideEnv&& override_env, BaseEnv&& base_env) {
-    return __joined_env<std::decay_t<OverrideEnv>, std::decay_t<BaseEnv>>{
-        static_cast<OverrideEnv&&>(override_env), static_cast<BaseEnv&&>(base_env)};
+[[nodiscard]] auto __join_env(
+    const OverrideEnv& override_env,
+    const BaseEnv& base_env) noexcept {
+    return __joined_env<OverrideEnv, BaseEnv>{&override_env, &base_env};
 }
 
-template<class OverrideEnv, class R>
+template<class OverrideEnv, class BaseEnv, class R>
 struct __recv {
     using receiver_concept = receiver_t;
 
     R* __rcvr;
     OverrideEnv* __env;
+    BaseEnv* __base_env;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -81,26 +83,29 @@ struct __recv {
         std::execution::set_stopped(std::move(*__rcvr));
     }
 
-    auto get_env() const {
-        return __join_env(*__env, std::execution::get_env(*__rcvr));
+    auto get_env() const noexcept {
+        return __join_env(*__env, *__base_env);
     }
 };
 
 template<class S, class OverrideEnv, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
-    using recv_t = __recv<OverrideEnv, R>;
+    using base_env_t = std::decay_t<env_of_t<R>>;
+    using recv_t = __recv<OverrideEnv, base_env_t, R>;
     using inner_op_t = connect_result_t<S, recv_t>;
 
     R __rcvr;
     OverrideEnv __env;
+    base_env_t __base_env;
     inner_op_t __inner_op;
 
     __op(S sndr, OverrideEnv env, R rcvr)
         : __rcvr(std::move(rcvr))
         , __env(std::move(env))
+        , __base_env(std::execution::get_env(__rcvr))
         , __inner_op(std::execution::connect(
-              std::move(sndr), recv_t{&__rcvr, &__env}))
+              std::move(sndr), recv_t{&__rcvr, &__env, &__base_env}))
     {}
 
     void start() & noexcept {
@@ -120,9 +125,9 @@ struct __sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
-        using joined_env_t = decltype(__join_env(
-            std::declval<const typename self_t::override_env_t&>(),
-            std::declval<Env>()));
+        using joined_env_t = __joined_env<
+            typename self_t::override_env_t,
+            std::decay_t<Env>>;
         using up_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
             std::declval<joined_env_t>()));

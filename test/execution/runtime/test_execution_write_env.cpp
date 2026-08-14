@@ -2,6 +2,7 @@
 #include <execution>
 #include <concepts>
 #include <exception>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 
@@ -143,6 +144,44 @@ struct member_stop_query_env {
     }
 };
 
+struct overlay_value_query_t {
+    template<class Env>
+        requires std::execution::__forge_env_detail::__queryable<
+            overlay_value_query_t,
+            Env>
+    decltype(auto) operator()(Env&& env) const noexcept(
+        std::execution::__forge_env_detail::__nothrow_query<
+            overlay_value_query_t,
+            Env>) {
+        return std::execution::__forge_env_detail::__query(
+            *this,
+            static_cast<Env&&>(env));
+    }
+};
+
+inline constexpr overlay_value_query_t overlay_value_query{};
+
+struct throwing_copy_env {
+    int value = 0;
+
+    throwing_copy_env() = default;
+    explicit throwing_copy_env(int initial) noexcept : value(initial) {}
+    throwing_copy_env(throwing_copy_env&&) noexcept = default;
+    throwing_copy_env& operator=(throwing_copy_env&&) noexcept = default;
+
+    throwing_copy_env(const throwing_copy_env&) {
+        throw std::runtime_error("overlay copied");
+    }
+
+    throwing_copy_env& operator=(const throwing_copy_env&) = delete;
+
+    friend int tag_invoke(
+        overlay_value_query_t,
+        const throwing_copy_env& self) noexcept {
+        return self.value;
+    }
+};
+
 } // namespace
 
 static_assert(std::forwarding_query(std::execution::get_scheduler));
@@ -169,13 +208,24 @@ TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::execution::inline_scheduler),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(std::execution::inline_scheduler)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result) == injected);
+}
+
+TEST(WriteEnvTest, DoesNotCopyOverlayWhileQueryingNestedAdaptorEnv) {
+    auto sender = std::execution::write_env(
+        std::execution::read_env(overlay_value_query)
+            | std::execution::then([](int value) noexcept { return value; }),
+        throwing_copy_env{42});
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(WriteEnvTest, PipeFormInjectsEnv) {
@@ -355,8 +405,7 @@ TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::never_stop_token),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(std::never_stop_token)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
