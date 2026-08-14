@@ -22,6 +22,10 @@
 #include <type_traits>
 #include <utility>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
 namespace {
@@ -539,8 +543,11 @@ __declspec(noinline)
 __attribute__((noinline))
 #endif
 auto current_stack_position() noexcept -> std::uintptr_t {
-    volatile unsigned char marker = 0;
-    return reinterpret_cast<std::uintptr_t>(&marker);
+#if defined(_MSC_VER)
+    return reinterpret_cast<std::uintptr_t>(_AddressOfReturnAddress());
+#else
+    return reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+#endif
 }
 
 struct inline_child_chain_result {
