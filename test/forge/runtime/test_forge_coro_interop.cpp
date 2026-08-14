@@ -5,10 +5,13 @@
 #include <forge/io/result.hpp>
 #include <forge/static_thread_pool.hpp>
 
+#include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <condition_variable>
 #include <execution>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -530,6 +533,44 @@ auto await_inline_probe_task(inline_probe_state* state) -> cio::io_task<bool> {
     co_return value == 5;
 }
 
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+auto current_stack_position() noexcept -> std::uintptr_t {
+    volatile unsigned char marker = 0;
+    return reinterpret_cast<std::uintptr_t>(&marker);
+}
+
+struct inline_child_chain_result {
+    int value = 0;
+    std::uintptr_t stack_span = 0;
+};
+
+auto inline_child_task() -> cio::io_task<int> {
+    co_return 1;
+}
+
+auto await_inline_child_chain(int count)
+    -> cio::io_task<inline_child_chain_result> {
+    int value = 0;
+    auto low = std::numeric_limits<std::uintptr_t>::max();
+    std::uintptr_t high = 0;
+
+    for (int i = 0; i < count; ++i) {
+        value += co_await inline_child_task();
+        const auto position = current_stack_position();
+        low = std::min(low, position);
+        high = std::max(high, position);
+    }
+
+    co_return inline_child_chain_result{
+        .value = value,
+        .stack_span = high - low,
+    };
+}
+
 } // namespace
 
 TEST(ForgeCoroInteropTest, AwaitSenderConsumesJust) {
@@ -796,6 +837,18 @@ TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
     EXPECT_TRUE(std::get<0>(*result));
     EXPECT_TRUE(probe.start_returned);
     EXPECT_FALSE(probe.continuation_ran_before_start_returned);
+}
+
+TEST(ForgeCoroInteropTest, InlineChildTasksUseBoundedNativeStack) {
+    constexpr int child_count = 2048;
+
+    auto result = std::execution::sync_wait(
+        cio::as_sender(await_inline_child_chain(child_count)));
+
+    ASSERT_TRUE(result.has_value());
+    const auto& chain = std::get<0>(*result);
+    EXPECT_EQ(chain.value, child_count);
+    EXPECT_LT(chain.stack_span, 16u * 1024u);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderRejectsMoveAfterStart) {

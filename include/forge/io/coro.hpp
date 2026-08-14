@@ -634,11 +634,16 @@ private:
     {}
 
     auto __start_borrowed(const io_env& env) -> void {
+        __borrowed_handle(env).resume();
+    }
+
+    [[nodiscard]] auto __borrowed_handle(const io_env& env) noexcept
+        -> std::coroutine_handle<> {
         if (!coro_ || coro_.done()) {
-            return;
+            return std::noop_coroutine();
         }
         coro_.promise().env = &env;
-        coro_.resume();
+        return coro_;
     }
 
     auto __set_completion(
@@ -738,11 +743,16 @@ private:
     {}
 
     auto __start_borrowed(const io_env& env) -> void {
+        __borrowed_handle(env).resume();
+    }
+
+    [[nodiscard]] auto __borrowed_handle(const io_env& env) noexcept
+        -> std::coroutine_handle<> {
         if (!coro_ || coro_.done()) {
-            return;
+            return std::noop_coroutine();
         }
         coro_.promise().env = &env;
-        coro_.resume();
+        return coro_;
     }
 
     auto __set_completion(
@@ -778,15 +788,15 @@ public:
         return !task_ || task_.done();
     }
 
-    auto await_suspend(std::coroutine_handle<> continuation) -> void {
+    auto await_suspend(std::coroutine_handle<> continuation)
+        -> std::coroutine_handle<> {
         if (env_ == nullptr || *env_ == nullptr) {
             missing_env_ = true;
-            continuation.resume();
-            return;
+            return continuation;
         }
 
         task_.__set_continuation(continuation);
-        task_.__start_borrowed(**env_);
+        return task_.__borrowed_handle(**env_);
     }
 
     decltype(auto) await_resume() {
