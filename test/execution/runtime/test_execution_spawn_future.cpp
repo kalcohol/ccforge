@@ -405,6 +405,51 @@ TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    std::inplace_stop_source source;
+    source.request_stop();
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, source.get_token()));
+
+    auto future = std::execution::spawn_future(
+        std::execution::read_env(std::execution::get_stop_token)
+            | std::execution::then([](auto observed) noexcept {
+                  return observed.stop_requested();
+              }),
+        token,
+        std::move(env));
+    auto result = std::execution::sync_wait(std::move(future));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    std::inplace_stop_source source;
+    auto env = std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_stop_token_t{}, source.get_token()));
+    auto state = std::make_shared<manual_state>();
+
+    auto future = std::execution::spawn_future(
+        manual_sender{state}, token, std::move(env));
+    ASSERT_TRUE(wait_until_started(state));
+
+    source.request_stop();
+
+    EXPECT_TRUE(wait_until_stop_requested(state));
+    EXPECT_TRUE(wait_until_completed(state));
+    auto result = std::execution::sync_wait(std::move(future));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
 TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();

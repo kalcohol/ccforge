@@ -192,6 +192,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     using inner_op_t = connect_result_t<started_sender_t, inner_recv_t>;
     using consumer_base_t = __consumer_base<__shared_state>;
     using allocator_t = __allocator_for_env_t<Env>;
+    using env_stop_token_t = std::remove_cvref_t<decltype(
+        std::execution::get_stop_token(std::declval<const Env&>()))>;
 
     enum class __phase_t { running, done };
     enum class __consume_result { registered, deliver_now, already_consumed };
@@ -220,6 +222,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     void __start(S sndr, Env env) noexcept {
         __keepalive = this->shared_from_this();
         try {
+            __env_stop.install(
+                std::execution::get_stop_token(env), __stop_source);
             spawn_env_t spawn_env{std::move(env), &__stop_source};
             auto started = std::execution::write_env(std::move(sndr), std::move(spawn_env));
             auto weak = this->weak_from_this();
@@ -349,6 +353,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     result_t __result{};
     std::shared_ptr<consumer_base_t> __consumer_cb{};
     std::inplace_stop_source __stop_source{};
+    __forge_counting_scope::__optional_stop_callback<env_stop_token_t> __env_stop{};
     Association __association{};
     allocator_t __state_allocator;
     __forge_detail::__op_storage<1024> __op_storage{};
