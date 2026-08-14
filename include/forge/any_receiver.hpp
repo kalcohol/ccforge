@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "any_stop_token.hpp"
+
 #include <execution>
 #include <cstddef>
 #include <memory>
@@ -133,17 +135,17 @@ class any_receiver_of {
     }
 
     template<class R>
-    static auto __make_stop_token(const R& receiver) -> std::any_stop_token {
-        return std::any_stop_token{
+    static auto __make_stop_token(const R& receiver) -> any_stop_token {
+        return any_stop_token{
             std::execution::get_stop_token(std::execution::get_env(receiver))};
     }
 
     struct __env {
-        std::any_stop_token token;
+        any_stop_token token;
 
         friend auto tag_invoke(
             std::execution::get_stop_token_t,
-            const __env& self) noexcept -> std::any_stop_token {
+            const __env& self) noexcept -> any_stop_token {
             return self.token;
         }
     };
@@ -153,7 +155,7 @@ class any_receiver_of {
     bool __on_heap = false;
     void* __ptr = nullptr;
     const __vtable* __vt = nullptr;
-    std::any_stop_token __stop_token{};
+    any_stop_token __stop_token{};
 
 public:
     using receiver_concept = std::execution::receiver_t;

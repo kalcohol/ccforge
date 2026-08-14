@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "any_stop_token.hpp"
 #include "resource_policy.hpp"
 
 #include <execution>
@@ -418,7 +419,7 @@ struct __send_record final : __send_base<T> {
         }
     };
 
-    using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+    using callback_t = std::stop_callback_for_t<any_stop_token, __stop_callback_fn>;
 
     R rcvr;
     std::optional<T> value;
@@ -471,12 +472,12 @@ struct __send_record final : __send_base<T> {
             return false;
         }
         if constexpr (requires {
-                          std::any_stop_token{
+                          any_stop_token{
                               std::execution::get_stop_token(
                                   std::execution::get_env(rcvr))};
                       }) {
             try {
-                auto token = std::any_stop_token{
+                auto token = any_stop_token{
                     std::execution::get_stop_token(std::execution::get_env(rcvr))};
                 if (token.stop_possible()) {
                     stop_callback.emplace(
@@ -513,7 +514,7 @@ struct __recv_record final : __recv_base<T> {
         }
     };
 
-    using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+    using callback_t = std::stop_callback_for_t<any_stop_token, __stop_callback_fn>;
 
     R rcvr;
     std::optional<T> value;
@@ -558,12 +559,12 @@ struct __recv_record final : __recv_base<T> {
             return false;
         }
         if constexpr (requires {
-                          std::any_stop_token{
+                          any_stop_token{
                               std::execution::get_stop_token(
                                   std::execution::get_env(rcvr))};
                       }) {
             try {
-                auto token = std::any_stop_token{
+                auto token = any_stop_token{
                     std::execution::get_stop_token(std::execution::get_env(rcvr))};
                 if (token.stop_possible()) {
                     stop_callback.emplace(

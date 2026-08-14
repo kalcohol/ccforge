@@ -27,6 +27,7 @@
 #endif
 
 #include "../error.hpp"
+#include "../../any_stop_token.hpp"
 #include "../../resource_policy.hpp"
 
 #include <execution>
@@ -286,7 +287,7 @@ struct __record final : __record_base {
     }
 
     using callback_t =
-        std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+        std::stop_callback_for_t<forge::any_stop_token, __stop_callback_fn>;
 
     [[nodiscard]] bool install_stop_callback(
         std::weak_ptr<__state> state,
@@ -780,12 +781,12 @@ bool __record<R>::install_stop_callback(
         return false;
     }
     if constexpr (requires {
-                      std::any_stop_token{
+                      forge::any_stop_token{
                           std::execution::get_stop_token(
                               std::execution::get_env(rcvr))};
                   }) {
         try {
-            auto token = std::any_stop_token{
+            auto token = forge::any_stop_token{
                 std::execution::get_stop_token(
                     std::execution::get_env(rcvr))};
             if (token.stop_possible()) {

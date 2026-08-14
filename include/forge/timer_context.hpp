@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "any_stop_token.hpp"
 #include "resource_policy.hpp"
 
 #include <execution>
@@ -208,10 +209,10 @@ struct __stop_callback_fn {
 
 struct __item {
     using callback_t =
-        std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+        std::stop_callback_for_t<any_stop_token, __stop_callback_fn>;
 
     std::chrono::steady_clock::time_point deadline;
-    std::any_stop_token stop_token;
+    any_stop_token stop_token;
     __callable complete_value;
     __callable complete_stopped;
     std::optional<callback_t> stop_callback;
@@ -586,7 +587,7 @@ inline void __op<R>::start() & noexcept {
             return;
         }
         if (token.stop_possible()) {
-            item_->stop_token = std::any_stop_token{std::move(token)};
+            item_->stop_token = any_stop_token{std::move(token)};
             item_->install_stop_callback(state_, item_);
         }
 

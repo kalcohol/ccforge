@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "any_stop_token.hpp"
 #include "detail/completion_meta.hpp"
 
 #include <execution>
@@ -228,10 +229,10 @@ auto __make_stop_token(const R& rcvr) {
     if constexpr (requires { std::execution::get_stop_token(env); }) {
         auto token = std::execution::get_stop_token(env);
         if (token.stop_possible()) {
-            return std::any_stop_token{std::move(token)};
+            return any_stop_token{std::move(token)};
         }
     }
-    return std::any_stop_token{};
+    return any_stop_token{};
 }
 
 template<class CS>
@@ -240,7 +241,7 @@ struct __receiver_state_base {
     virtual void complete_value(std::size_t index, void* tuple) noexcept = 0;
     virtual void complete_error(std::size_t index, void* error) noexcept = 0;
     virtual void complete_stopped() noexcept = 0;
-    virtual auto stop_token() const noexcept -> std::any_stop_token = 0;
+    virtual auto stop_token() const noexcept -> any_stop_token = 0;
 };
 
 template<class CS>
@@ -254,7 +255,7 @@ struct __receiver {
 
         friend auto tag_invoke(
             std::execution::get_stop_token_t,
-            const __env& self) noexcept -> std::any_stop_token {
+            const __env& self) noexcept -> any_stop_token {
             if (!self.state) {
                 return {};
             }
@@ -318,7 +319,7 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
         }
     }
 
-    auto stop_token() const noexcept -> std::any_stop_token override {
+    auto stop_token() const noexcept -> any_stop_token override {
         return stop_token_;
     }
 
@@ -361,7 +362,7 @@ struct __receiver_state_model final : __receiver_state_base<CS> {
         std::terminate();
     }
 
-    std::any_stop_token stop_token_;
+    any_stop_token stop_token_;
     R rcvr_;
 };
 

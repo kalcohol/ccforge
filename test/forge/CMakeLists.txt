@@ -84,6 +84,7 @@ if(FORGE_TEST_ENABLE_FORGE_IO)
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
+    forge_add_forge_test(test_forge_any_stop_token test_forge_any_stop_token.cpp forge_any_stop_token)
     forge_add_forge_test(test_forge_thread_pool test_forge_thread_pool.cpp forge_thread_pool)
     target_compile_definitions(
         test_forge_thread_pool
