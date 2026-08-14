@@ -60,6 +60,26 @@ inline constexpr bool is_io_result_v = is_io_result<T>::value;
 
 template<class First, class Second, class Receiver>
 class shared_state {
+    enum class action_kind {
+        none,
+        value,
+        error,
+        stopped
+    };
+
+    struct completion_action {
+        action_kind kind = action_kind::none;
+        Receiver* receiver = nullptr;
+        std::optional<io_result<when_all_result<First, Second>>> value;
+        std::exception_ptr error;
+    };
+
+    enum class store_result_kind {
+        duplicate,
+        stored,
+        failed
+    };
+
 public:
     using payload_t = when_all_result<First, Second>;
     using aggregate_t = io_result<payload_t>;
@@ -81,15 +101,18 @@ public:
     }
 
     template<std::size_t I, class Result>
-    auto set_value(Result result) noexcept -> void {
+    auto set_value(Result&& result) noexcept -> void {
         const bool should_stop = result.status() != io_status::value;
-        if (!store_result<I>(std::move(result))) {
+        const auto stored = store_result<I>(static_cast<Result&&>(result));
+        if (stored == store_result_kind::duplicate) {
             return;
         }
-        if (should_stop) {
+        if (should_stop || stored == store_result_kind::failed) {
             stop_source_.request_stop();
         }
-        deliver(finish_child());
+        completion_action action;
+        finish_child(action);
+        deliver(action);
     }
 
     template<std::size_t I>
@@ -98,7 +121,9 @@ public:
             return;
         }
         stop_source_.request_stop();
-        deliver(finish_child());
+        completion_action action;
+        finish_child(action);
+        deliver(action);
     }
 
     template<class Error>
@@ -109,9 +134,10 @@ public:
         } else {
             ep = std::make_exception_ptr(static_cast<Error&&>(error));
         }
-        auto action = store_start_error(std::move(ep));
+        completion_action action;
+        store_start_error(std::move(ep), action);
         stop_source_.request_stop();
-        deliver(std::move(action));
+        deliver(action);
     }
 
     template<std::size_t I, class Error>
@@ -126,41 +152,43 @@ public:
             return;
         }
         stop_source_.request_stop();
-        deliver(finish_child());
+        completion_action action;
+        finish_child(action);
+        deliver(action);
     }
 
 private:
-    enum class action_kind {
-        none,
-        value,
-        error,
-        stopped
-    };
-
-    struct completion_action {
-        action_kind kind = action_kind::none;
-        std::optional<Receiver> receiver;
-        std::optional<aggregate_t> value;
-        std::exception_ptr error;
-    };
-
     template<std::size_t I, class Result>
-    auto store_result(Result result) noexcept -> bool {
+    auto store_result(Result&& result) noexcept -> store_result_kind {
         std::lock_guard lock{mtx_};
         if constexpr (I == 0) {
             if (first_done_) {
-                return false;
+                return store_result_kind::duplicate;
             }
-            first_ = std::move(result);
             first_done_ = true;
+            try {
+                first_.emplace(static_cast<Result&&>(result));
+            } catch (...) {
+                if (!unexpected_error_) {
+                    unexpected_error_ = std::current_exception();
+                }
+                return store_result_kind::failed;
+            }
         } else {
             if (second_done_) {
-                return false;
+                return store_result_kind::duplicate;
             }
-            second_ = std::move(result);
             second_done_ = true;
+            try {
+                second_.emplace(static_cast<Result&&>(result));
+            } catch (...) {
+                if (!unexpected_error_) {
+                    unexpected_error_ = std::current_exception();
+                }
+                return store_result_kind::failed;
+            }
         }
-        return true;
+        return store_result_kind::stored;
     }
 
     template<std::size_t I>
@@ -182,17 +210,18 @@ private:
         return true;
     }
 
-    auto store_start_error(std::exception_ptr ep) noexcept
-        -> completion_action {
+    auto store_start_error(
+        std::exception_ptr ep,
+        completion_action& action) noexcept -> void {
         std::lock_guard lock{mtx_};
         if (completion_sent_) {
-            return {};
+            return;
         }
         unexpected_error_ = std::move(ep);
         pending_ = 0;
         first_done_ = true;
         second_done_ = true;
-        return maybe_complete_locked();
+        maybe_complete_locked(action);
     }
 
     template<std::size_t I>
@@ -216,61 +245,66 @@ private:
         return true;
     }
 
-    auto finish_child() noexcept -> completion_action {
+    auto finish_child(completion_action& action) noexcept -> void {
         std::lock_guard lock{mtx_};
         --pending_;
-        return maybe_complete_locked();
+        maybe_complete_locked(action);
     }
 
-    auto maybe_complete_locked() -> completion_action {
+    auto maybe_complete_locked(completion_action& action) noexcept -> void {
         if (completion_sent_ || pending_ != 0) {
-            return {};
+            return;
         }
         completion_sent_ = true;
-
-        completion_action action;
-        action.receiver = std::move(receiver_);
+        action.receiver = std::addressof(*receiver_);
 
         if (unexpected_error_) {
             action.kind = action_kind::error;
             action.error = std::move(unexpected_error_);
-            return action;
+            return;
         }
 
-        payload_t payload;
-        payload.first = std::move(first_);
-        payload.second = std::move(second_);
+        try {
+            payload_t payload{std::move(first_), std::move(second_)};
 
-        if (payload.first && payload.first->status() == io_status::error) {
-            auto error = payload.first->error();
-            action.kind = action_kind::value;
-            action.value = aggregate_t::failure(error, std::move(payload));
-            return action;
-        }
-        if (payload.second && payload.second->status() == io_status::error) {
-            auto error = payload.second->error();
-            action.kind = action_kind::value;
-            action.value = aggregate_t::failure(error, std::move(payload));
-            return action;
-        }
-        if ((payload.first && payload.first->eof()) ||
-            (payload.second && payload.second->eof())) {
-            action.kind = action_kind::value;
-            action.value = aggregate_t::end_of_file(std::move(payload));
-            return action;
-        }
-        if (first_stopped_ || second_stopped_ ||
-            !payload.first || !payload.second) {
-            action.kind = action_kind::stopped;
-            return action;
-        }
+            if (payload.first && payload.first->status() == io_status::error) {
+                auto error = payload.first->error();
+                action.kind = action_kind::value;
+                action.value.emplace(
+                    aggregate_t::failure(error, std::move(payload)));
+                return;
+            }
+            if (payload.second &&
+                payload.second->status() == io_status::error) {
+                auto error = payload.second->error();
+                action.kind = action_kind::value;
+                action.value.emplace(
+                    aggregate_t::failure(error, std::move(payload)));
+                return;
+            }
+            if ((payload.first && payload.first->eof()) ||
+                (payload.second && payload.second->eof())) {
+                action.kind = action_kind::value;
+                action.value.emplace(
+                    aggregate_t::end_of_file(std::move(payload)));
+                return;
+            }
+            if (first_stopped_ || second_stopped_ ||
+                !payload.first || !payload.second) {
+                action.kind = action_kind::stopped;
+                return;
+            }
 
-        action.kind = action_kind::value;
-        action.value = aggregate_t::success(std::move(payload));
-        return action;
+            action.kind = action_kind::value;
+            action.value.emplace(aggregate_t::success(std::move(payload)));
+        } catch (...) {
+            action.kind = action_kind::error;
+            action.value.reset();
+            action.error = std::current_exception();
+        }
     }
 
-    static auto deliver(completion_action action) noexcept -> void {
+    static auto deliver(completion_action& action) noexcept -> void {
         if (!action.receiver) {
             return;
         }
@@ -324,7 +358,7 @@ struct child_receiver {
 
     std::shared_ptr<State> state;
 
-    auto set_value(Result result) && noexcept -> void {
+    auto set_value(Result&& result) && noexcept -> void {
         auto keepalive = state;
         keepalive->template set_value<I>(std::move(result));
     }

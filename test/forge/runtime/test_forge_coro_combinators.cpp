@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -24,6 +25,85 @@ using namespace std::chrono_literals;
 using child_result = cio::io_result<std::size_t>;
 using pair_payload = cio::when_all_result<child_result, child_result>;
 using aggregate_result = cio::io_result<pair_payload>;
+
+struct throwing_move_control {
+    bool throw_on_move = false;
+};
+
+struct throwing_move_payload {
+    std::shared_ptr<throwing_move_control> control;
+    int value = 0;
+
+    throwing_move_payload(
+        std::shared_ptr<throwing_move_control> state,
+        int input) noexcept
+        : control(std::move(state)), value(input) {}
+
+    throwing_move_payload(throwing_move_payload&& other) noexcept(false)
+        : control(other.control), value(other.value) {
+        if (control && control->throw_on_move) {
+            throw std::runtime_error{"injected payload move failure"};
+        }
+    }
+
+    auto operator=(throwing_move_payload&&) -> throwing_move_payload& = delete;
+    throwing_move_payload(const throwing_move_payload&) = delete;
+    auto operator=(const throwing_move_payload&)
+        -> throwing_move_payload& = delete;
+};
+
+using throwing_child_result = cio::io_result<throwing_move_payload>;
+using throwing_pair_payload =
+    cio::when_all_result<throwing_child_result, throwing_child_result>;
+using throwing_aggregate_result = cio::io_result<throwing_pair_payload>;
+
+struct throwing_aggregate_state {
+    int completions = 0;
+    bool value = false;
+    bool error = false;
+    bool stopped = false;
+    int first = 0;
+    int second = 0;
+};
+
+struct throwing_aggregate_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<throwing_aggregate_state> state;
+
+    auto set_value(throwing_aggregate_result&& result) && noexcept -> void {
+        ++state->completions;
+        state->value = true;
+        auto& payload = cio::get<1>(result);
+        if (payload.first) {
+            state->first = cio::get<1>(*payload.first).value;
+        }
+        if (payload.second) {
+            state->second = cio::get<1>(*payload.second).value;
+        }
+    }
+
+    auto set_error(std::exception_ptr) && noexcept -> void {
+        ++state->completions;
+        state->error = true;
+    }
+
+    auto set_stopped() && noexcept -> void {
+        ++state->completions;
+        state->stopped = true;
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+auto throwing_payload_task(
+    std::shared_ptr<throwing_move_control> control,
+    int value) -> cio::io_task<throwing_child_result> {
+    co_return throwing_child_result::success(
+        throwing_move_payload{std::move(control), value});
+}
 
 enum class controlled_completion {
     value,
@@ -422,6 +502,52 @@ using when_all_op_t = std::execution::connect_result_t<
 static_assert(std::execution::operation_state<when_all_op_t>);
 
 } // namespace
+
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsAcceptsNonAssignableThrowingMovePayload) {
+    auto first_control = std::make_shared<throwing_move_control>();
+    auto second_control = std::make_shared<throwing_move_control>();
+    auto state = std::make_shared<throwing_aggregate_state>();
+
+    auto op = std::execution::connect(
+        cio::when_all_results(
+            throwing_payload_task(first_control, 3),
+            throwing_payload_task(second_control, 7)),
+        throwing_aggregate_receiver{state});
+    std::execution::start(op);
+
+    EXPECT_EQ(state->completions, 1);
+    EXPECT_TRUE(state->value);
+    EXPECT_FALSE(state->error);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_EQ(state->first, 3);
+    EXPECT_EQ(state->second, 7);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAllResultsReportsPayloadMoveFailure) {
+    using state_t = cio::__io_combinator_detail::shared_state<
+        throwing_child_result,
+        throwing_child_result,
+        throwing_aggregate_receiver>;
+
+    auto first_control = std::make_shared<throwing_move_control>();
+    auto second_control = std::make_shared<throwing_move_control>();
+    auto observed = std::make_shared<throwing_aggregate_state>();
+    auto state = std::make_shared<state_t>(
+        throwing_aggregate_receiver{observed});
+    auto first = throwing_child_result::success(
+        throwing_move_payload{first_control, 3});
+    auto second = throwing_child_result::success(
+        throwing_move_payload{second_control, 7});
+
+    first_control->throw_on_move = true;
+    state->template set_value<0>(std::move(first));
+    state->template set_value<1>(std::move(second));
+
+    EXPECT_EQ(observed->completions, 1);
+    EXPECT_FALSE(observed->value);
+    EXPECT_TRUE(observed->error);
+    EXPECT_FALSE(observed->stopped);
+}
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsCombinesTwoValues) {
     fixture f;
