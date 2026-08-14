@@ -41,7 +41,7 @@
 //   Stopped utils    : stopped_as_optional, stopped_as_error, unstoppable
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
-//                      any_stop_token, stoppable_token concepts
+//                      stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
 //   Infra            : completion_signatures_of_t,
 //                      value_types_of_t, error_types_of_t, sends_stopped,
@@ -64,8 +64,8 @@
 //     value-completion shape; multiple value alternatives produce
 //     variant<tuple<...>, ...>.
 //   - spawn_future returns a move-only single-consumer future sender. Its
-//     shared state and consumer record honor get_allocator(env); erased
-//     stop-callback registration inside any_stop_token remains allocator-neutral.
+//     shared state and consumer record honor get_allocator(env); consumer
+//     cancellation registers the receiver's concrete stop-token type.
 //   - associate/spawn, current-WD token wrap semantics, and async
 //     sender-returning simple/counting scope join() are implemented.
 //   - on(sender, scheduler, closure) requires the child sender attributes to
@@ -131,7 +131,6 @@
 #include "execution/bulk.hpp"
 #include "execution/split.hpp"
 #include "execution/when_all.hpp"
-#include "execution/any_stop_token.hpp"
 #include "execution/awaitable.hpp"
 #include "execution/domain.hpp"
 #include "execution/counting_scope.hpp"

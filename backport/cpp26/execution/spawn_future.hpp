@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "any_stop_token.hpp"
 #include "concepts.hpp"
 #include "counting_scope.hpp"
 #include "detail/op_storage.hpp"
@@ -426,7 +425,11 @@ struct __consumer : __consumer_base<State> {
         }
     };
 
-    using callback_t = std::stop_callback_for_t<std::any_stop_token, __stop_callback_fn>;
+    using stop_token_t = std::remove_cvref_t<decltype(
+        std::execution::get_stop_token(
+            std::execution::get_env(std::declval<const R&>())))>;
+    using callback_t =
+        std::stop_callback_for_t<stop_token_t, __stop_callback_fn>;
 
     explicit __consumer(R rcvr)
         : __rcvr(std::move(rcvr))
@@ -435,13 +438,15 @@ struct __consumer : __consumer_base<State> {
     void __install_stop_callback(const std::shared_ptr<State>& state) noexcept {
         __state = state;
         try {
-            auto token = std::any_stop_token{
-                std::execution::get_stop_token(std::execution::get_env(__rcvr))};
+            auto token = std::execution::get_stop_token(
+                std::execution::get_env(__rcvr));
             if (token.stop_requested()) {
                 state->__try_cancel();
             }
             if (token.stop_possible()) {
-                __stop_callback.emplace(token, __stop_callback_fn{state});
+                __stop_callback.emplace(
+                    std::move(token),
+                    __stop_callback_fn{state});
             }
         } catch (...) {
             state->__try_cancel();

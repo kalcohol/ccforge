@@ -10,7 +10,6 @@
 #include <mutex>
 #include <thread>
 #include <type_traits>
-#include <vector>
 
 namespace {
 
@@ -119,118 +118,6 @@ TEST(ExecutionStopTokenTest, CallbackDestructionWaitsForConcurrentInvocation) {
     destroyer.join();
     requester.join();
     EXPECT_TRUE(destructor_returned.load(std::memory_order_acquire));
-}
-
-TEST(ExecutionStopTokenTest, AnyStopCallbackDestructionWaitsForConcurrentInvocation) {
-    std::inplace_stop_source src;
-    std::any_stop_token token{src.get_token()};
-
-    std::mutex mtx;
-    std::condition_variable cv;
-    bool entered = false;
-    bool release = false;
-    std::atomic<bool> destructor_returned = false;
-
-    auto fn = [&] {
-        std::unique_lock lk{mtx};
-        entered = true;
-        cv.notify_all();
-        cv.wait(lk, [&] { return release; });
-    };
-    using callback_t = std::stop_callback_for_t<std::any_stop_token, decltype(fn)>;
-    auto cb = std::make_unique<callback_t>(token, fn);
-
-    std::thread requester{[&] {
-        EXPECT_TRUE(src.request_stop());
-    }};
-
-    {
-        std::unique_lock lk{mtx};
-        cv.wait(lk, [&] { return entered; });
-    }
-
-    std::thread destroyer{[&] {
-        cb.reset();
-        destructor_returned.store(true, std::memory_order_release);
-    }};
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    EXPECT_FALSE(destructor_returned.load(std::memory_order_acquire));
-
-    {
-        std::lock_guard lk{mtx};
-        release = true;
-    }
-    cv.notify_all();
-
-    destroyer.join();
-    requester.join();
-    EXPECT_TRUE(destructor_returned.load(std::memory_order_acquire));
-}
-
-TEST(ExecutionStopTokenTest, AnyStopTokenConcurrentRegisterRequestAndDestroy) {
-    constexpr int kIterations = 64;
-    constexpr int kLanes = 4;
-    constexpr int kCallbacksPerLane = 6;
-
-    for (int iteration = 0; iteration < kIterations; ++iteration) {
-        std::inplace_stop_source src;
-        std::any_stop_token token{src.get_token()};
-        std::atomic<int> ready{0};
-        std::atomic<int> registered_lanes{0};
-        std::atomic<int> callbacks{0};
-        std::atomic<bool> go{false};
-        std::atomic<bool> request_done{false};
-        std::vector<std::thread> lanes;
-
-        using callback_t =
-            std::stop_callback_for_t<std::any_stop_token, std::function<void()>>;
-
-        for (int lane = 0; lane < kLanes; ++lane) {
-            lanes.emplace_back([&, lane] {
-                ready.fetch_add(1, std::memory_order_acq_rel);
-                while (!go.load(std::memory_order_acquire)) {
-                    std::this_thread::yield();
-                }
-
-                std::vector<std::unique_ptr<callback_t>> registrations;
-                registrations.reserve(kCallbacksPerLane);
-                for (int i = 0; i < kCallbacksPerLane; ++i) {
-                    registrations.push_back(std::make_unique<callback_t>(
-                        token,
-                        std::function<void()>{[&] {
-                            callbacks.fetch_add(1, std::memory_order_acq_rel);
-                        }}));
-                    if (((iteration + lane + i) % 3) == 0) {
-                        std::this_thread::yield();
-                    }
-                }
-                registered_lanes.fetch_add(1, std::memory_order_acq_rel);
-
-                while (!request_done.load(std::memory_order_acquire)) {
-                    std::this_thread::yield();
-                }
-                registrations.clear();
-            });
-        }
-
-        while (ready.load(std::memory_order_acquire) != kLanes) {
-            std::this_thread::yield();
-        }
-        go.store(true, std::memory_order_release);
-        while (registered_lanes.load(std::memory_order_acquire) != kLanes) {
-            std::this_thread::yield();
-        }
-
-        EXPECT_TRUE(src.request_stop());
-        request_done.store(true, std::memory_order_release);
-
-        for (auto& lane : lanes) {
-            lane.join();
-        }
-        EXPECT_EQ(callbacks.load(std::memory_order_acquire),
-                  kLanes * kCallbacksPerLane);
-    }
 }
 
 TEST(ExecutionStopTokenTest, CallbackCanDestroyPendingCallbackDuringRequestStop) {
