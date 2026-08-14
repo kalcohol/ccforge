@@ -640,7 +640,19 @@ struct __state : std::enable_shared_from_this<__state> {
         event.data.fd = fd;
         const int op = waiters.registered ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
         if (::epoll_ctl(epoll.get(), op, fd, &event) != 0) {
-            return false;
+            const int update_error = errno;
+            const int recovery_op = op == EPOLL_CTL_ADD && update_error == EEXIST
+                ? EPOLL_CTL_MOD
+                : op == EPOLL_CTL_MOD && update_error == ENOENT
+                ? EPOLL_CTL_ADD
+                : -1;
+            if (recovery_op < 0 ||
+                ::epoll_ctl(epoll.get(), recovery_op, fd, &event) != 0) {
+                if (recovery_op < 0) {
+                    errno = update_error;
+                }
+                return false;
+            }
         }
         waiters.registered = true;
         return true;

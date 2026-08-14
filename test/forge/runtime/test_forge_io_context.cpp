@@ -17,10 +17,32 @@
 #include <span>
 #include <stdexcept>
 #include <system_error>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
 #include <utility>
+
+namespace {
+
+std::atomic<bool> fail_next_epoll_delete{false};
+
+} // namespace
+
+extern "C" int __real_epoll_ctl(int, int, int, epoll_event*);
+
+extern "C" int __wrap_epoll_ctl(
+    int epoll_fd,
+    int operation,
+    int fd,
+    epoll_event* event) {
+    if (operation == EPOLL_CTL_DEL &&
+        fail_next_epoll_delete.exchange(false, std::memory_order_acq_rel)) {
+        errno = EIO;
+        return -1;
+    }
+    return __real_epoll_ctl(epoll_fd, operation, fd, event);
+}
 
 namespace {
 
@@ -997,6 +1019,34 @@ TEST(IoContextTest, CancelFdStopsPendingWaiter) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, FailedDeleteDoesNotPoisonFdReregistration) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto first = std::make_shared<io_state>();
+
+    auto first_op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        io_receiver{first});
+    std::execution::start(first_op);
+
+    fail_next_epoll_delete.store(true, std::memory_order_release);
+    ctx.cancel(pipe.first.get());
+
+    ASSERT_TRUE(wait_done(first));
+    EXPECT_TRUE(first->stopped);
+
+    auto second = std::make_shared<io_state>();
+    auto second_op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        io_receiver{second});
+    std::execution::start(second_op);
+
+    write_byte(pipe.second.get());
+    ASSERT_TRUE(wait_done(second));
+    EXPECT_TRUE(second->value);
+    EXPECT_FALSE(second->error);
 }
 
 TEST(IoContextTest, DuplicateWaiterCompletesSecondWithError) {

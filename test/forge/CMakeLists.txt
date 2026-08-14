@@ -104,6 +104,7 @@ endif()
 
 if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_context test_forge_io_context.cpp forge_io_context)
+    target_link_options(test_forge_io_context PRIVATE "-Wl,--wrap=epoll_ctl")
 endif()
 
 if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
