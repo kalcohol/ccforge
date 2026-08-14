@@ -116,6 +116,26 @@ forge_add_simd_configure_probe(
     TRUE
     "Forge simd backport must support masked contiguous range gather/scatter overloads and supported-type default gathers")
 forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_MISMATCHED_PARTIAL_GATHER
+    "reject_mismatched_partial_gather.cpp"
+    FALSE
+    "Forge simd backport must diagnose partial gather vectors whose widths differ from their index vectors")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_MISMATCHED_MASKED_PARTIAL_GATHER
+    "reject_mismatched_masked_partial_gather.cpp"
+    FALSE
+    "Forge simd backport must diagnose masked partial gather vectors whose widths differ from their index vectors")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_MISMATCHED_UNCHECKED_GATHER
+    "reject_mismatched_unchecked_gather.cpp"
+    FALSE
+    "Forge simd backport must diagnose unchecked gather vectors whose widths differ from their index vectors")
+forge_add_simd_configure_probe(
+    FORGE_SIMD_ACCEPTS_MISMATCHED_MASKED_UNCHECKED_GATHER
+    "reject_mismatched_masked_unchecked_gather.cpp"
+    FALSE
+    "Forge simd backport must diagnose masked unchecked gather vectors whose widths differ from their index vectors")
+forge_add_simd_configure_probe(
     FORGE_SIMD_ACCEPTS_LEGACY_MASKED_GATHER_SCATTER_ORDER
     "reject_legacy_masked_gather_scatter_order.cpp"
     FALSE

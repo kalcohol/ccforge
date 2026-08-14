@@ -798,6 +798,21 @@ struct is_simd_index_vector<I,
         !is_same<typename remove_cvref_t<I>::value_type, bool>::value>::type>
     : true_type {};
 
+template<class V, class Indices, bool = is_simd_index_vector<Indices>::value>
+struct has_matching_index_width : false_type {};
+
+template<class V, class Indices>
+struct has_matching_index_width<V, Indices, true>
+    : integral_constant<bool,
+        static_cast<simd_size_type>(V::size) ==
+        static_cast<simd_size_type>(remove_cvref_t<Indices>::size)> {};
+
+template<class V, class Indices>
+constexpr void require_matching_index_width() noexcept {
+    static_assert(has_matching_index_width<V, Indices>::value,
+        "std::simd gather requires the result and index vectors to have matching widths");
+}
+
 template<class V, class Indices>
 using permute_result_t = resize_t<remove_cvref_t<Indices>::size, V>;
 

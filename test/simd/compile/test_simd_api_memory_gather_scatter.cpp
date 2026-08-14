@@ -4,6 +4,50 @@ namespace {
 
 using namespace simd_test;
 
+template<class V, class Indices>
+concept can_partial_scatter_pointer = requires(const V& value, int* out, const Indices& indices) {
+    std::simd::partial_scatter_to(value, out, std::simd::simd_size_type{8}, indices);
+};
+
+template<class V, class Indices>
+concept can_masked_partial_scatter_pointer = requires(
+    const V& value, int* out, const typename Indices::mask_type& mask, const Indices& indices) {
+    std::simd::partial_scatter_to(value, out, std::simd::simd_size_type{8}, mask, indices);
+};
+
+template<class V, class Indices>
+concept can_unchecked_scatter_pointer = requires(const V& value, int* out, const Indices& indices) {
+    std::simd::unchecked_scatter_to(value, out, indices);
+};
+
+template<class V, class Indices>
+concept can_masked_unchecked_scatter_pointer = requires(
+    const V& value, int* out, const typename Indices::mask_type& mask, const Indices& indices) {
+    std::simd::unchecked_scatter_to(value, out, mask, indices);
+};
+
+template<class V, class Indices>
+concept can_partial_scatter_range = requires(const V& value, std::span<int, 8> out, const Indices& indices) {
+    std::simd::partial_scatter_to(value, out, indices);
+};
+
+template<class V, class Indices>
+concept can_masked_partial_scatter_range = requires(
+    const V& value, std::span<int, 8> out, const typename Indices::mask_type& mask, const Indices& indices) {
+    std::simd::partial_scatter_to(value, out, mask, indices);
+};
+
+template<class V, class Indices>
+concept can_unchecked_scatter_range = requires(const V& value, std::span<int, 8> out, const Indices& indices) {
+    std::simd::unchecked_scatter_to(value, out, indices);
+};
+
+template<class V, class Indices>
+concept can_masked_unchecked_scatter_range = requires(
+    const V& value, std::span<int, 8> out, const typename Indices::mask_type& mask, const Indices& indices) {
+    std::simd::unchecked_scatter_to(value, out, mask, indices);
+};
+
 static_assert(std::is_same<decltype(std::simd::partial_gather_from<int4>(static_cast<const int*>(nullptr), std::simd::simd_size_type{}, int4{})), int4>::value,
     "partial_gather_from(pointer, count, indices) should be a public entry point");
 static_assert(requires {
@@ -71,6 +115,14 @@ static_assert(std::is_same<
         std::simd::flag_default)),
     longlong4>::value,
     "masked gather overloads should use Indices::mask_type");
+static_assert(!can_partial_scatter_pointer<int8, int4>);
+static_assert(!can_masked_partial_scatter_pointer<int8, int4>);
+static_assert(!can_unchecked_scatter_pointer<int8, int4>);
+static_assert(!can_masked_unchecked_scatter_pointer<int8, int4>);
+static_assert(!can_partial_scatter_range<int8, int4>);
+static_assert(!can_masked_partial_scatter_range<int8, int4>);
+static_assert(!can_unchecked_scatter_range<int8, int4>);
+static_assert(!can_masked_unchecked_scatter_range<int8, int4>);
 
 } // namespace
 

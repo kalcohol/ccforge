@@ -9,6 +9,7 @@ template<class V,
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr V partial_gather_from(I first, simd_size_type count, const Indices& indices, flags<Flags...> f = {}) {
+    detail::require_matching_index_width<V, Indices>();
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
@@ -37,6 +38,7 @@ constexpr V partial_gather_from(I first,
                                 const typename Indices::mask_type& mask_value,
                                 const Indices& indices,
                                 flags<Flags...> f = {}) {
+    detail::require_matching_index_width<V, Indices>();
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
@@ -58,6 +60,7 @@ template<class V, class I, class Indices, class... Flags,
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {}) {
+    detail::require_matching_index_width<V, Indices>();
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     V result;
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
@@ -105,6 +108,7 @@ template<class V, class I, class Indices, class... Flags,
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr V unchecked_gather_from(I first, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+    detail::require_matching_index_width<V, Indices>();
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     V result;
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
@@ -143,6 +147,7 @@ template<class T,
          class... Flags,
          typename enable_if<
              detail::is_simd_index_vector<Indices>::value &&
+                 detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value &&
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, I first, simd_size_type count, const Indices& indices, flags<Flags...> f = {}) {
@@ -164,6 +169,7 @@ template<class T,
          class... Flags,
          typename enable_if<
              detail::is_simd_index_vector<Indices>::value &&
+                 detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value &&
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
@@ -186,6 +192,7 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
 template<class T, class Abi, class I, class Indices, class... Flags,
          typename enable_if<
              detail::is_simd_index_vector<Indices>::value &&
+                 detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value &&
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I first, const Indices& indices, flags<Flags...> f = {}) {
@@ -200,6 +207,7 @@ constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I first, con
 template<class T, class Abi, class I, class Indices, class... Flags,
          typename enable_if<
              detail::is_simd_index_vector<Indices>::value &&
+                 detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value &&
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
@@ -233,14 +241,16 @@ constexpr V unchecked_gather_from(R&& r, const typename Indices::mask_type& mask
 
 template<class T, class Abi, class R, class Indices, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value &&
-             detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+             detail::is_simd_index_vector<Indices>::value &&
+             detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {}) {
     simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), indices, f);
 }
 
 template<class T, class Abi, class R, class Indices, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value &&
-             detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+             detail::is_simd_index_vector<Indices>::value &&
+             detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
                                   R&& r,
                                   const typename Indices::mask_type& mask_value,
@@ -251,14 +261,16 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
 
 template<class T, class Abi, class R, class Indices, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value &&
-             detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+             detail::is_simd_index_vector<Indices>::value &&
+             detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {}) {
     simd::unchecked_scatter_to(value, ranges::data(r), indices, f);
 }
 
 template<class T, class Abi, class R, class Indices, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value &&
-             detail::is_simd_index_vector<Indices>::value, int>::type = 0>
+             detail::is_simd_index_vector<Indices>::value &&
+             detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
                                     R&& r,
                                     const typename Indices::mask_type& mask_value,
