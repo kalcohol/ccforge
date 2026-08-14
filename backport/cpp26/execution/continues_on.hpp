@@ -59,6 +59,33 @@ template<class CS>
 inline constexpr std::size_t __value_completion_count_v =
     __value_completion_count<CS>::value;
 
+template<class Sig>
+struct __decayed_completion {
+    using type = completion_signatures<Sig>;
+};
+
+template<class... Vs>
+struct __decayed_completion<set_value_t(Vs...)> {
+    using type = completion_signatures<set_value_t(std::decay_t<Vs>...)>;
+};
+
+template<class E>
+struct __decayed_completion<set_error_t(E)> {
+    using type = completion_signatures<set_error_t(std::decay_t<E>)>;
+};
+
+template<class CS>
+struct __decayed_completions;
+
+template<class... Sigs>
+struct __decayed_completions<completion_signatures<Sigs...>> {
+    using type = __forge_meta::__concat_unique_cs_t<
+        typename __decayed_completion<Sigs>::type...>;
+};
+
+template<class CS>
+using __decayed_completions_t = typename __decayed_completions<CS>::type;
+
 template<class R>
 concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
     std::execution::set_error(std::move(r), std::move(ep));
@@ -169,11 +196,13 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         using receiver_concept = receiver_t;
         __op_impl* __self;
 
-        void set_value(Vs&&... vs) && noexcept {
+        template<class... Us>
+            requires std::constructible_from<std::tuple<Vs...>, Us...>
+        void set_value(Us&&... vs) && noexcept {
             try {
                 __self->__start_scheduled(__sched_value_recv_t{
                     &__self->__outer,
-                    std::tuple<Vs...>(static_cast<Vs&&>(vs)...)});
+                    std::tuple<Vs...>(static_cast<Us&&>(vs)...)});
             } catch (...) {
                 __self->__deliver_schedule_failure();
             }
@@ -335,6 +364,7 @@ struct __sender {
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
+        using decayed_source_cs_t = __decayed_completions_t<source_cs_t>;
         static_assert(
             __value_completion_count_v<source_cs_t> <= 1,
             "continues_on supports at most one value completion shape");
@@ -346,7 +376,7 @@ struct __sender {
         using sched_non_value_cs_t =
             __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
         return __forge_meta::__concat_unique_cs_t<
-            source_cs_t,
+            decayed_source_cs_t,
             sched_non_value_cs_t,
             completion_signatures<set_error_t(std::exception_ptr)>>{};
     }

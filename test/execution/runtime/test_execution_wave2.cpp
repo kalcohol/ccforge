@@ -126,6 +126,25 @@ TEST(SplitTest, HappyPath) {
     EXPECT_EQ(std::get<0>(*r3), 42);
 }
 
+TEST(SplitTest, ContinuesOnCopiesCachedReferenceValuesAcrossHop) {
+    auto sender = std::execution::continues_on(
+        std::execution::split(std::execution::just(std::string{"cached"})),
+        std::execution::inline_scheduler{});
+    using signatures_t = decltype(std::execution::get_completion_signatures(
+        sender,
+        std::execution::empty_env{}));
+    static_assert(std::is_same_v<
+        signatures_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(std::string),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), "cached");
+}
+
 TEST(SplitTest, SubscribersCannotMutateCachedValues) {
     auto sndr = std::execution::split(std::execution::just(std::string{"cached"}));
     bool received_mutable = false;
