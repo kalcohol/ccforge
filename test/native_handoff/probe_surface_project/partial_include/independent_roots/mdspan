@@ -1,0 +1,30 @@
+#pragma once
+
+#include <cstddef>
+
+#define __cpp_lib_mdspan 202207L
+
+namespace std {
+
+inline constexpr size_t dynamic_extent = static_cast<size_t>(-1);
+
+template<class IndexType, size_t... Values>
+struct extents {};
+
+template<class Element, class Extents>
+struct mdspan {
+    Element* data;
+    constexpr mdspan(Element* value) : data(value) {}
+    constexpr Element& operator[](size_t index) const { return data[index]; }
+};
+
+template<size_t PaddingValue = dynamic_extent>
+struct layout_left_padded {};
+
+template<class Mapping>
+struct submdspan_mapping_result {
+    Mapping mapping{};
+    size_t offset{};
+};
+
+} // namespace std

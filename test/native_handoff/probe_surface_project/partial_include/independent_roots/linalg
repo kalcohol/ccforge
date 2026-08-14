@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std::linalg {
+
+struct upper_triangle_t {};
+
+} // namespace std::linalg

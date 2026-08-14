@@ -1,0 +1,19 @@
+#pragma once
+
+namespace std::linalg {
+
+template<class T>
+struct setup_givens_rotation_result {
+    T c{};
+    T s{};
+    T r{};
+};
+
+template<class T>
+constexpr setup_givens_rotation_result<T>
+setup_givens_rotation(T, T) { return {}; }
+
+template<class View>
+constexpr double vector_two_norm(View) { return 0.0; }
+
+} // namespace std::linalg

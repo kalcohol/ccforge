@@ -1,0 +1,10 @@
+#pragma once
+
+#include <cstddef>
+
+namespace std::simd {
+
+template<std::size_t Bytes, class Abi>
+struct basic_mask {};
+
+} // namespace std::simd

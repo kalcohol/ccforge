@@ -1,0 +1,91 @@
+#pragma once
+
+#include <bit>
+#include <complex>
+#include <cstddef>
+#include <span>
+#include <type_traits>
+
+namespace std::simd {
+
+using simd_size_type = std::size_t;
+
+template<class T, simd_size_type N = 4>
+struct basic_vec {
+    T data[N]{};
+
+    constexpr basic_vec() = default;
+    constexpr basic_vec(T value) {
+        for (simd_size_type i = 0; i < N; ++i) {
+            data[i] = value;
+        }
+    }
+
+    template<class U, class V>
+    constexpr basic_vec(const basic_vec<U, N>& real,
+                        const basic_vec<V, N>& imag) {
+        for (simd_size_type i = 0; i < N; ++i) {
+            data[i] = T(real[i], imag[i]);
+        }
+    }
+
+    constexpr T operator[](simd_size_type i) const { return data[i]; }
+};
+
+template<class T, simd_size_type N = 4>
+using vec = basic_vec<T, N>;
+
+template<simd_size_type N>
+struct sampled_mask {
+    constexpr bool operator[](simd_size_type) const { return true; }
+};
+
+template<class T, simd_size_type N>
+constexpr sampled_mask<N> operator==(
+    const basic_vec<T, N>&, const basic_vec<T, N>&) { return {}; }
+
+template<class T, simd_size_type N>
+constexpr T reduce(const basic_vec<T, N>& value) { return value[0]; }
+
+template<simd_size_type N>
+constexpr int reduce_count(sampled_mask<N>) { return static_cast<int>(N); }
+
+template<class T, simd_size_type N>
+constexpr basic_vec<T, N> sin(const basic_vec<T, N>& value) { return value; }
+
+template<class T, simd_size_type N>
+constexpr basic_vec<T, N> popcount(const basic_vec<T, N>& value) { return value; }
+
+template<class T, simd_size_type N>
+constexpr auto real(const basic_vec<std::complex<T>, N>& value) {
+    basic_vec<T, N> result{};
+    for (simd_size_type i = 0; i < N; ++i) {
+        result.data[i] = value[i].real();
+    }
+    return result;
+}
+
+template<class V>
+inline constexpr V iota{};
+
+template<class T, std::size_t Extent, class I, simd_size_type N>
+constexpr basic_vec<std::remove_cv_t<T>, N>
+partial_gather_from(std::span<T, Extent>, const basic_vec<I, N>&) {
+    return {};
+}
+
+} // namespace std::simd
+
+namespace std {
+
+template<class T, size_t N>
+constexpr simd::basic_vec<T, N> sin(const simd::basic_vec<T, N>& value) {
+    return value;
+}
+
+template<class T, size_t N>
+constexpr simd::basic_vec<T, N> popcount(const simd::basic_vec<T, N>& value) {
+    return value;
+}
+
+} // namespace std

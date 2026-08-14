@@ -16,3 +16,22 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_partial_simd.cmake)
 set_tests_properties(native_handoff_partial_simd_configure PROPERTIES
     TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+if(NOT MSVC)
+    foreach(surface_case IN ITEMS sampled independent_roots)
+        add_test(
+            NAME native_handoff_probe_surface_${surface_case}
+            COMMAND ${CMAKE_COMMAND}
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/probe_surface_project
+                -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/probe_surface_${surface_case}
+                -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+                -DSURFACE_CASE=${surface_case}
+                -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+                "-DGENERATOR=${CMAKE_GENERATOR}"
+                "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_probe_surface.cmake)
+        set_tests_properties(native_handoff_probe_surface_${surface_case} PROPERTIES
+            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    endforeach()
+endif()
