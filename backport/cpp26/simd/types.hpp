@@ -363,15 +363,13 @@ public:
     }
 
     template<class U,
-             typename enable_if<detail::is_explicitly_simd_convertible<U, T>::value &&
+             typename enable_if<detail::is_implicit_simd_broadcast<U, T>::value &&
                  !detail::is_contiguous_load_store_range<U>::value &&
                  !detail::is_simd_generator<U, T, simd_size<T, Abi>::value>::value,
                  int>::type = 0>
-    constexpr explicit(!detail::is_implicit_simd_broadcast<U, T>::value)
-        basic_vec(U&& value) noexcept(noexcept(static_cast<T>(declval<const detail::remove_cvref_t<U>&>()))) : data_{} {
-        const auto& source = value;
+    constexpr basic_vec(U&& value) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
-            data_[i] = static_cast<T>(source);
+            data_[i] = static_cast<T>(static_cast<U&&>(value));
         }
     }
     template<class G,
@@ -413,19 +411,21 @@ public:
     }
 
     template<class U, class OtherAbi,
-             typename enable_if<detail::is_value_preserving_conversion<U, T>::value, int>::type = 0>
-    constexpr basic_vec(const basic_vec<U, OtherAbi>& other) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
-        static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
-
+             typename enable_if<
+                 simd_size<U, OtherAbi>::value == simd_size<T, Abi>::value &&
+                 detail::is_explicitly_simd_convertible<U, T>::value, int>::type = 0>
+    constexpr explicit(detail::is_explicit_simd_vector_conversion<U, T>::value)
+        basic_vec(const basic_vec<U, OtherAbi>& other) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = static_cast<T>(other[i]);
         }
     }
 
-    template<class U, class OtherAbi>
+    template<class U, class OtherAbi,
+             typename enable_if<
+                 simd_size<U, OtherAbi>::value == simd_size<T, Abi>::value &&
+                 detail::is_explicitly_simd_convertible<U, T>::value, int>::type = 0>
     constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag>) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
-        static_assert(basic_vec<U, OtherAbi>::size == size, "std::simd converting constructor requires matching lane count");
-
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = static_cast<T>(other[i]);
         }

@@ -39,7 +39,7 @@ forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_IMPLICIT_VEC_CONVERTER
     "reject_implicit_vec_converter.cpp"
     FALSE
-    "Forge simd backport must reject vector converting constructors without std::simd::flag_convert")
+    "Forge simd backport must keep non-value-preserving vector converting constructors explicit")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_FLAG_CONVERT_CONSTRUCTOR
     "flag_convert_constructor.cpp"
@@ -64,7 +64,7 @@ forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_IMPLICIT_SCALAR_NARROWING_BROADCAST
     "reject_implicit_scalar_narrowing_broadcast.cpp"
     FALSE
-    "Forge simd backport must reject non-value-preserving implicit scalar broadcasts")
+    "Forge simd backport must reject non-value-preserving scalar broadcasts")
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_NARROWING_GENERATOR
     "reject_narrowing_generator.cpp"

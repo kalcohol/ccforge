@@ -39,11 +39,11 @@ TEST(SimdRuntimeTest, ValuePreservingVectorConstructionWidensLanes) {
     EXPECT_EQ(widened[3], 4);
 }
 
-TEST(SimdRuntimeTest, ExplicitScalarSourceBroadcastsAcrossAllLanes) {
-    const int4 values(explicit_to_int{});
+TEST(SimdRuntimeTest, NonWrapperScalarSourceUsesItsConversionValue) {
+    const int4 values(wrapper_bad_value{});
 
-    EXPECT_EQ(values[0], 7);
-    EXPECT_EQ(values[3], 7);
+    EXPECT_EQ(values[0], 6);
+    EXPECT_EQ(values[3], 6);
 }
 
 TEST(SimdRuntimeTest, BoolScalarBroadcastConvertsToLaneType) {
@@ -71,6 +71,15 @@ TEST(SimdRuntimeTest, GeneratorConstructorUsesLaneIndices) {
     EXPECT_EQ(lane(values, 1), 4);
     EXPECT_EQ(lane(values, 2), 7);
     EXPECT_EQ(lane(values, 3), 10);
+}
+
+TEST(SimdRuntimeTest, GeneratorCanReturnTheIndexObject) {
+    const int4 values(index_object_generator{});
+
+    EXPECT_EQ(lane(values, 0), 0);
+    EXPECT_EQ(lane(values, 1), 1);
+    EXPECT_EQ(lane(values, 2), 2);
+    EXPECT_EQ(lane(values, 3), 3);
 }
 
 TEST(SimdRuntimeTest, IotaBuildsCanonicalIndexVector) {

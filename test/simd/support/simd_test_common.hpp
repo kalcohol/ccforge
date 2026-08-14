@@ -65,6 +65,13 @@ struct int_generator {
     }
 };
 
+struct index_object_generator {
+    template<class Index>
+    constexpr Index operator()(Index index) const noexcept {
+        return index;
+    }
+};
+
 struct bool_generator {
     template<class Index>
     constexpr bool operator()(Index) const noexcept {

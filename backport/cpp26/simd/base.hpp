@@ -559,6 +559,92 @@ struct is_explicitly_simd_convertible<From,
                                       void_t<decltype(static_cast<To>(declval<const remove_cvref_t<From>&>()))>>
     : true_type {};
 
+template<class T>
+consteval int integer_conversion_rank() {
+    using value_type = remove_cvref_t<T>;
+
+    if constexpr (is_same<value_type, bool>::value) {
+        return 0;
+    } else if constexpr (is_same<value_type, char>::value ||
+                         is_same<value_type, signed char>::value ||
+                         is_same<value_type, unsigned char>::value ||
+                         is_same<value_type, char8_t>::value) {
+        return 1;
+    } else if constexpr (is_same<value_type, short>::value ||
+                         is_same<value_type, unsigned short>::value) {
+        return 2;
+    } else if constexpr (is_same<value_type, int>::value ||
+                         is_same<value_type, unsigned int>::value) {
+        return 3;
+    } else if constexpr (is_same<value_type, long>::value ||
+                         is_same<value_type, unsigned long>::value) {
+        return 4;
+    } else if constexpr (is_same<value_type, long long>::value ||
+                         is_same<value_type, unsigned long long>::value) {
+        return 5;
+    } else if constexpr (numeric_limits<value_type>::digits <= numeric_limits<unsigned char>::digits) {
+        return 1;
+    } else if constexpr (numeric_limits<value_type>::digits <= numeric_limits<unsigned short>::digits) {
+        return 2;
+    } else if constexpr (numeric_limits<value_type>::digits <= numeric_limits<unsigned int>::digits) {
+        return 3;
+    } else if constexpr (numeric_limits<value_type>::digits <= numeric_limits<unsigned long>::digits) {
+        return 4;
+    } else {
+        return 5;
+    }
+}
+
+template<class From, class To>
+consteval bool has_greater_floating_conversion_rank() {
+    using source_type = remove_cvref_t<From>;
+    using target_type = remove_cvref_t<To>;
+
+    constexpr bool source_is_superset =
+        numeric_limits<source_type>::digits >= numeric_limits<target_type>::digits &&
+        numeric_limits<source_type>::max_exponent >= numeric_limits<target_type>::max_exponent &&
+        numeric_limits<source_type>::min_exponent <= numeric_limits<target_type>::min_exponent;
+    constexpr bool sets_differ =
+        numeric_limits<source_type>::digits != numeric_limits<target_type>::digits ||
+        numeric_limits<source_type>::max_exponent != numeric_limits<target_type>::max_exponent ||
+        numeric_limits<source_type>::min_exponent != numeric_limits<target_type>::min_exponent;
+
+    if constexpr (source_is_superset && sets_differ) {
+        return true;
+    } else if constexpr (!sets_differ &&
+                         is_same<source_type, double>::value &&
+                         is_same<target_type, float>::value) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class From, class To,
+         bool = is_integral<remove_cvref_t<From>>::value &&
+                is_integral<remove_cvref_t<To>>::value>
+struct has_greater_integer_conversion_rank : false_type {};
+
+template<class From, class To>
+struct has_greater_integer_conversion_rank<From, To, true>
+    : integral_constant<bool, (integer_conversion_rank<From>() > integer_conversion_rank<To>())> {};
+
+template<class From, class To,
+         bool = is_floating_point<remove_cvref_t<From>>::value &&
+                is_floating_point<remove_cvref_t<To>>::value>
+struct has_greater_floating_rank : false_type {};
+
+template<class From, class To>
+struct has_greater_floating_rank<From, To, true>
+    : integral_constant<bool, has_greater_floating_conversion_rank<From, To>()> {};
+
+template<class From, class To>
+struct is_explicit_simd_vector_conversion
+    : integral_constant<bool,
+        !is_value_preserving_conversion<From, To>::value ||
+        has_greater_integer_conversion_rank<From, To>::value ||
+        has_greater_floating_rank<From, To>::value> {};
+
 template<class I, class = void>
 struct has_simd_value_type : false_type {};
 
@@ -577,10 +663,91 @@ struct is_constexpr_wrapper_like : false_type {};
 template<class T>
 struct is_constexpr_wrapper_like<T, void_t<
     decltype(T::value),
-    typename enable_if<is_convertible<T, remove_cvref_t<decltype(T::value)>>::value>::type,
-    decltype(bool_constant<(T{} == T::value)>{}),
-    decltype(bool_constant<(static_cast<remove_cvref_t<decltype(T::value)>>(T{}) == T::value)>{})
+    typename enable_if<is_convertible<T, decltype(T::value)>::value>::type,
+    typename enable_if<equality_comparable_with<T, decltype(T::value)>>::type,
+    typename enable_if<bool_constant<(T{} == T::value)>::value>::type,
+    typename enable_if<
+        bool_constant<(static_cast<decltype(T::value)>(T{}) == T::value)>::value>::type
 >> : true_type {};
+
+template<class To, class From>
+consteval bool is_arithmetic_value_representable(From value) {
+    using target_type = remove_cvref_t<To>;
+    using source_type = remove_cvref_t<From>;
+
+    if constexpr (is_supported_complex_value<target_type>::value) {
+        return is_arithmetic_value_representable<complex_value_t<target_type>>(value);
+    } else if constexpr (is_integral<source_type>::value && is_integral<target_type>::value) {
+        return in_range<target_type>(value);
+    } else if constexpr (is_integral<source_type>::value && is_floating_point<target_type>::value) {
+        if constexpr (is_same<source_type, bool>::value) {
+            return true;
+        } else {
+            using unsigned_source = typename make_unsigned<source_type>::type;
+            auto magnitude = static_cast<unsigned_source>(value);
+            if constexpr (is_signed<source_type>::value) {
+                if (value < 0) {
+                    magnitude = unsigned_source{} - magnitude;
+                }
+            }
+
+            int bit_count = 0;
+            for (auto remaining = magnitude; remaining != 0; remaining >>= 1) {
+                ++bit_count;
+            }
+            if (bit_count > numeric_limits<target_type>::max_exponent) {
+                return false;
+            }
+            if (bit_count <= numeric_limits<target_type>::digits) {
+                return true;
+            }
+
+            const int discarded_bits = bit_count - numeric_limits<target_type>::digits;
+            for (int i = 0; i < discarded_bits; ++i) {
+                if ((magnitude & (unsigned_source{1} << i)) != 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    } else if constexpr (is_floating_point<source_type>::value && is_integral<target_type>::value) {
+        if (value != value) {
+            return false;
+        }
+
+        source_type upper_bound = source_type{1};
+        for (int i = 0; i < numeric_limits<target_type>::digits; ++i) {
+            upper_bound *= source_type{2};
+        }
+        if constexpr (is_signed<target_type>::value) {
+            if (!(value >= -upper_bound && value < upper_bound)) {
+                return false;
+            }
+        } else if (!(value >= source_type{} && value < upper_bound)) {
+            return false;
+        }
+
+        const auto converted = static_cast<target_type>(value);
+        return static_cast<source_type>(converted) == value;
+    } else if constexpr (is_floating_point<source_type>::value && is_floating_point<target_type>::value) {
+        if (value != value) {
+            return false;
+        }
+        if (value == numeric_limits<source_type>::infinity() ||
+            value == -numeric_limits<source_type>::infinity()) {
+            return numeric_limits<target_type>::has_infinity;
+        }
+
+        const auto target_max = static_cast<source_type>(numeric_limits<target_type>::max());
+        if (value > target_max || value < -target_max) {
+            return false;
+        }
+        const auto converted = static_cast<target_type>(value);
+        return static_cast<source_type>(converted) == value;
+    } else {
+        return false;
+    }
+}
 
 template<class Wrapper, class To, class = void>
 struct is_constexpr_wrapper_value_representable : false_type {};
@@ -592,10 +759,8 @@ struct is_constexpr_wrapper_value_representable<
     typename enable_if<
         is_constexpr_wrapper_like<Wrapper>::value &&
         is_arithmetic<remove_cvref_t<decltype(Wrapper::value)>>::value &&
-        is_arithmetic<To>::value>::type>
-    : integral_constant<bool,
-        is_value_preserving_conversion<remove_cvref_t<decltype(Wrapper::value)>, To>::value ||
-        static_cast<remove_cvref_t<decltype(Wrapper::value)>>(static_cast<To>(Wrapper::value)) == Wrapper::value> {};
+        (is_arithmetic<To>::value || is_supported_complex_value<To>::value)>::type>
+    : integral_constant<bool, is_arithmetic_value_representable<To>(Wrapper::value)> {};
 
 template<class From, class To, bool IsArithmetic = is_arithmetic<remove_cvref_t<From>>::value,
          bool IsWrapper = is_constexpr_wrapper_like<remove_cvref_t<From>>::value>
@@ -852,7 +1017,10 @@ struct is_simd_generator_lane : false_type {};
 template<class G, class R, size_t I>
 struct is_simd_generator_lane<G, R, I, void_t<decltype(declval<G&>()(generator_index_constant<I>{}))>>
     : integral_constant<bool,
-        is_implicit_simd_conversion<decltype(declval<G&>()(generator_index_constant<I>{})), R>::value> {};
+        is_convertible<decltype(declval<G&>()(generator_index_constant<I>{})), R>::value &&
+        (!is_arithmetic<remove_cvref_t<decltype(declval<G&>()(generator_index_constant<I>{}))>>::value ||
+         is_value_preserving_conversion<
+             decltype(declval<G&>()(generator_index_constant<I>{})), R>::value)> {};
 
 template<class G, class R, size_t... I>
 struct is_simd_generator_sequence<G, R, index_sequence<I...>>
