@@ -15,6 +15,13 @@
 - **Layer 1 向量化**：GCC/Clang vector extension 后端，`if consteval` 保持 constexpr 正确性
 - **Feature macro**：定义 `__cpp_lib_simd = 202606L`，表明当前 [simd.syn] 覆盖
 
+special-math 向量重载逐 lane 遵循对应的标量特殊函数语义。标准把 Bessel 的
+`nu >= 128`，以及球 Bessel / 球 Neumann / 球谐的阶数 `>= 128` 明确定为
+implementation-defined；Forge 在该范围之外保留有界失败策略，不把超高阶数值质量
+计入 portable conformance 承诺。定义范围内的 fallback 会在 LLVM/libc++ lane 通过
+直接调用与 public `std::simd` 调用共同验证；不能用会转发原生标量 special math 的
+libstdc++ lane 充当 fallback oracle。
+
 ## 验证
 
 已在 x86_64、aarch64、riscv64、loongarch64 四架构验证。
