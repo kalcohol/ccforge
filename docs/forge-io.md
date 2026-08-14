@@ -167,6 +167,8 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
   `as_sender(io_task<T>, env)` operation 或父 `io_task` await 链。
 - `io_awaitable<T>` 检查 awaitable 是否提供
   `await_suspend(std::coroutine_handle<>, io_env const*)` 形态。
+- `io_task` 的 `co_await` 保留 awaitable 的值类别：lvalue awaitable 是 borrowed，必须活过
+  对应 suspension；rvalue awaitable 会被 coroutine frame 持有。
 - `io_task<T>` 是最小 coroutine proof，用于把 `io_env` 传给 env-aware awaitable；它不是
   sender，也不是 `forge::task` 的替代品。它没有 public fire-and-forget `start()`；
   支持的 ownership 形态只有两种：在父 `io_task` 内 `co_await` 子 task，或用
@@ -174,10 +176,10 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
 - `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
 
 当前 coroutine-native IO track 只证明 stop token、resource pointer 和 scheduler handle 可以沿
-coroutine-native 边界传递。它没有实现 owning frame allocator、symmetric transfer、
-timer awaitable、platform IO awaitable，或把 sender cancellation 规则重新包装成另一套稳定
-async model。frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation
-确实经由指定 resource。
+coroutine-native 边界传递。父子 `io_task` await 使用 symmetric transfer；当前仍没有实现
+owning frame allocator、timer awaitable、platform IO awaitable，或把 sender cancellation
+规则重新包装成另一套稳定 async model。frame allocator policy 保持 deferred，直到能用测试
+证明 coroutine frame allocation 确实经由指定 resource。
 
 Sender interop 分两层：
 

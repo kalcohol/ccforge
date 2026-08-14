@@ -261,8 +261,8 @@ template<class Awaitable>
 class env_await_adapter {
 public:
     explicit env_await_adapter(Awaitable awaitable, const io_env** env) noexcept(
-        std::is_nothrow_move_constructible_v<Awaitable>)
-        : awaitable_(std::move(awaitable))
+        std::is_nothrow_constructible_v<Awaitable, Awaitable&&>)
+        : awaitable_(static_cast<Awaitable&&>(awaitable))
         , env_(env)
     {}
 
@@ -330,19 +330,26 @@ struct promise_base {
     }
 
     template<class Awaitable>
-        requires io_awaitable<std::remove_cvref_t<Awaitable>>
+        requires io_awaitable<Awaitable>
     [[nodiscard]] auto await_transform(Awaitable&& awaitable) {
-        using awaitable_t = std::remove_cvref_t<Awaitable>;
+        using awaitable_t = std::conditional_t<
+            std::is_lvalue_reference_v<Awaitable>,
+            Awaitable,
+            std::remove_cvref_t<Awaitable>>;
         return env_await_adapter<awaitable_t>{
-            awaitable_t{static_cast<Awaitable&&>(awaitable)},
+            static_cast<Awaitable&&>(awaitable),
             &env};
     }
 
     template<class Awaitable>
-        requires (!io_awaitable<std::remove_cvref_t<Awaitable>>)
-    [[nodiscard]] auto await_transform(Awaitable&& awaitable) {
-        using awaitable_t = std::remove_cvref_t<Awaitable>;
-        return awaitable_t{static_cast<Awaitable&&>(awaitable)};
+        requires (!io_awaitable<Awaitable>)
+    [[nodiscard]] decltype(auto) await_transform(Awaitable&& awaitable) {
+        if constexpr (std::is_lvalue_reference_v<Awaitable>) {
+            return static_cast<Awaitable&&>(awaitable);
+        } else {
+            using awaitable_t = std::remove_cvref_t<Awaitable>;
+            return awaitable_t{static_cast<Awaitable&&>(awaitable)};
+        }
     }
 };
 

@@ -30,7 +30,47 @@ struct regular_awaitable {
     int await_resume() noexcept { return 7; }
 };
 
+struct noncopyable_env_awaitable {
+    explicit noncopyable_env_awaitable(
+        std::pmr::memory_resource** observed) noexcept
+        : observed_(observed) {}
+
+    noncopyable_env_awaitable(const noncopyable_env_awaitable&) = delete;
+    auto operator=(const noncopyable_env_awaitable&)
+        -> noncopyable_env_awaitable& = delete;
+    noncopyable_env_awaitable(noncopyable_env_awaitable&&) = delete;
+    auto operator=(noncopyable_env_awaitable&&)
+        -> noncopyable_env_awaitable& = delete;
+
+    bool await_ready() noexcept { return false; }
+    bool await_suspend(
+        std::coroutine_handle<>,
+        const cio::io_env* env) noexcept {
+        *observed_ = env == nullptr ? nullptr : env->memory;
+        return false;
+    }
+    int await_resume() noexcept { return 11; }
+
+private:
+    std::pmr::memory_resource** observed_;
+};
+
+struct noncopyable_regular_awaitable {
+    noncopyable_regular_awaitable() = default;
+    noncopyable_regular_awaitable(const noncopyable_regular_awaitable&) = delete;
+    auto operator=(const noncopyable_regular_awaitable&)
+        -> noncopyable_regular_awaitable& = delete;
+    noncopyable_regular_awaitable(noncopyable_regular_awaitable&&) = delete;
+    auto operator=(noncopyable_regular_awaitable&&)
+        -> noncopyable_regular_awaitable& = delete;
+
+    bool await_ready() noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) noexcept {}
+    int await_resume() noexcept { return 13; }
+};
+
 static_assert(cio::io_awaitable<env_shape_awaitable>);
+static_assert(cio::io_awaitable<noncopyable_env_awaitable&>);
 static_assert(!cio::io_awaitable<regular_awaitable>);
 static_assert(!std::execution::scheduler<cio::executor_ref>);
 static_assert(std::copy_constructible<cio::io_env>);
@@ -64,6 +104,16 @@ auto observes_executor() -> cio::io_task<bool> {
 auto awaits_regular_awaitable() -> cio::io_task<int> {
     auto value = co_await regular_awaitable{};
     co_return value;
+}
+
+auto awaits_noncopyable_lvalue(noncopyable_env_awaitable& awaitable)
+    -> cio::io_task<int> {
+    co_return co_await awaitable;
+}
+
+auto awaits_noncopyable_regular_lvalue(
+    noncopyable_regular_awaitable& awaitable) -> cio::io_task<int> {
+    co_return co_await awaitable;
 }
 
 auto throws_from_task() -> cio::io_task<int> {
@@ -157,6 +207,31 @@ TEST(ForgeCoroIoTest, IoTaskPassesThroughRegularAwaitables) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 7);
+}
+
+TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableLvalueAwaitables) {
+    std::pmr::memory_resource* observed = nullptr;
+    noncopyable_env_awaitable awaitable{&observed};
+    std::pmr::monotonic_buffer_resource memory;
+    cio::io_env env;
+    env.memory = &memory;
+
+    auto result = std::execution::sync_wait(
+        cio::as_sender(awaits_noncopyable_lvalue(awaitable), env));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 11);
+    EXPECT_EQ(observed, &memory);
+}
+
+TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableRegularLvalueAwaitables) {
+    noncopyable_regular_awaitable awaitable;
+
+    auto result = std::execution::sync_wait(
+        cio::as_sender(awaits_noncopyable_regular_lvalue(awaitable)));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 13);
 }
 
 TEST(ForgeCoroIoTest, IoTaskRethrowsStoredException) {
