@@ -442,6 +442,47 @@ TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
         1e-12);
 }
 
+TEST(SimdMathSpecialTest, ExpintFallbackAvoidsRepresentableOverflowBand) {
+    namespace sm = std::simd::detail::special_math;
+
+    constexpr double expected = 3.1509156882062014e305;
+    EXPECT_NEAR(sm::expint_fallback(710.0),
+                expected,
+                expected * 3e-14);
+    EXPECT_EQ(sm::expint_fallback(
+                  std::numeric_limits<double>::infinity()),
+              std::numeric_limits<double>::infinity());
+    const double negative_limit = sm::expint_fallback(
+        -std::numeric_limits<double>::infinity());
+    EXPECT_EQ(negative_limit, 0.0);
+    EXPECT_TRUE(std::signbit(negative_limit));
+}
+
+TEST(SimdMathSpecialTest, ZetaReflectionAvoidsIntermediateOverflow) {
+    namespace sm = std::simd::detail::special_math;
+
+    struct reference {
+        double argument;
+        double value;
+    };
+    constexpr reference cases[] = {
+        {-170.5, 1.7363215609094486e171},
+        {-180.5, -5.1567927348836793e185},
+        {-200.5, -2.3200006633528888e215},
+    };
+    for (const auto& value : cases) {
+        SCOPED_TRACE("argument=" + std::to_string(value.argument));
+        EXPECT_NEAR(sm::riemann_zeta_fallback(value.argument),
+                    value.value,
+                    std::abs(value.value) * 5e-13);
+    }
+
+    constexpr float expected_float = 6.424299552063126e11f;
+    EXPECT_NEAR(sm::riemann_zeta_fallback(-35.5f),
+                expected_float,
+                std::abs(expected_float) * 2e-6f);
+}
+
 TEST(SimdMathSpecialTest, ExpintFloatFallbackAvoidsNegativeSeriesCancellation) {
     const float actual =
         std::simd::detail::special_math::expint_fallback(-6.0f);

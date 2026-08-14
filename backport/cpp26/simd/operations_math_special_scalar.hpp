@@ -379,6 +379,12 @@ T sph_neumann_fallback(unsigned n, T x) {
 
 template<class T>
 T expint_fallback(T x) {
+    if (std::isnan(x)) {
+        return quiet_nan<T>();
+    }
+    if (std::isinf(x)) {
+        return x > T{} ? infinity<T>() : std::copysign(T{}, T{-1});
+    }
     if (x == T{}) {
         return -infinity<T>();
     }
@@ -427,22 +433,34 @@ T expint_fallback(T x) {
             euler_gamma_v<wide_t> + std::log(std::abs(wide_x)) + sum);
     }
 
-    T sum = T{1};
-    T term = T{1};
-    T previous_magnitude = infinity<T>();
+    using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+    const wide_t wide_x = static_cast<wide_t>(x);
+    wide_t sum = wide_t{1};
+    wide_t term = wide_t{1};
+    wide_t previous_magnitude = infinity<wide_t>();
     for (unsigned k = 1; k < 256u; ++k) {
-        term *= static_cast<T>(k) / x;
-        const T magnitude = std::abs(term);
+        term *= static_cast<wide_t>(k) / wide_x;
+        const wide_t magnitude = std::abs(term);
         if (magnitude >= previous_magnitude) {
             break;
         }
         sum += term;
-        if (magnitude <= epsilon * std::max(T{1}, std::abs(sum))) {
+        if (magnitude <=
+            static_cast<wide_t>(epsilon) *
+                std::max(wide_t{1}, std::abs(sum))) {
             break;
         }
         previous_magnitude = magnitude;
     }
-    return std::exp(x) * sum / x;
+
+    const wide_t log_value =
+        wide_x + std::log(sum / wide_x);
+    const wide_t max_log = std::log(
+        static_cast<wide_t>(std::numeric_limits<T>::max()));
+    if (log_value > max_log) {
+        return infinity<T>();
+    }
+    return static_cast<T>(std::exp(log_value));
 }
 
 template<class T>
@@ -471,6 +489,12 @@ T riemann_zeta_hasse(T s) {
 
 template<class T>
 T riemann_zeta_fallback(T s) {
+    if (std::isnan(s)) {
+        return quiet_nan<T>();
+    }
+    if (std::isinf(s)) {
+        return s > T{} ? T{1} : quiet_nan<T>();
+    }
     if (s == T{1}) {
         return infinity<T>();
     }
@@ -483,8 +507,33 @@ T riemann_zeta_fallback(T s) {
         if (s == rounded && std::trunc(half) == half) {
             return T{};
         }
-        return std::pow(T{2}, s) * std::pow(pi_v<T>, s - T{1}) * std::sin(pi_v<T> * s / T{2}) *
-            std::tgamma(T{1} - s) * riemann_zeta_hasse(T{1} - s);
+
+        using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+        const wide_t wide_s = static_cast<wide_t>(s);
+        const wide_t sine =
+            std::sin(pi_v<wide_t> * wide_s / wide_t{2});
+        if (sine == wide_t{}) {
+            return T{};
+        }
+        const wide_t reflected = riemann_zeta_hasse(wide_t{1} - wide_s);
+        const wide_t log_magnitude =
+            wide_s * std::log(wide_t{2}) +
+            (wide_s - wide_t{1}) * std::log(pi_v<wide_t>) +
+            std::lgamma(wide_t{1} - wide_s) +
+            std::log(std::abs(sine)) + std::log(reflected);
+        const wide_t max_log = std::log(
+            static_cast<wide_t>(std::numeric_limits<T>::max()));
+        const wide_t min_log = std::log(
+            static_cast<wide_t>(std::numeric_limits<T>::denorm_min()));
+        if (log_magnitude > max_log) {
+            return std::copysign(infinity<T>(), static_cast<T>(sine));
+        }
+        if (log_magnitude < min_log) {
+            return std::copysign(T{}, static_cast<T>(sine));
+        }
+        return std::copysign(
+            static_cast<T>(std::exp(log_magnitude)),
+            static_cast<T>(sine));
     }
 
     return riemann_zeta_hasse(s);
