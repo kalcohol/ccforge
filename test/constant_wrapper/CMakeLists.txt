@@ -36,6 +36,11 @@ foreach(_forge_required_target IN ITEMS forge_std forge)
     endif()
 endforeach()
 forge_expect_cxx_source_compiles(
+    FORGE_CONSTANT_WRAPPER_ACCEPTS_MATCHING_TYPE
+    "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_accept_matching_type.cpp"
+    ON
+    "std::constant_wrapper must accept an explicit second template argument matching decltype(X)")
+forge_expect_cxx_source_compiles(
     FORGE_CONSTANT_WRAPPER_REJECTS_MISMATCHED_TYPE
     "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_reject_mismatched_type.cpp"
     OFF

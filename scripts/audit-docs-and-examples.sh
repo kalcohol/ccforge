@@ -56,8 +56,7 @@ check_all_examples_are_indexed() {
 
     rg --no-filename -o 'example/[A-Za-z0-9_./+-]+\.cpp' docs README*.md |
         sort -u >"${refs}" || true
-    find example -maxdepth 1 -type f -name '*.cpp' -printf 'example/%f\n' |
-        sort -u >"${all_examples}"
+    printf '%s\n' example/*.cpp | sort -u >"${all_examples}"
 
     while IFS= read -r src; do
         [[ -z "${src}" ]] && continue
@@ -96,6 +95,22 @@ check_markdown_links() {
     done <"${links}"
 }
 
+check_forge_header_refs_exist() {
+    log "check documented Forge header references"
+    local headers
+    headers="${audit_tmp}/forge-header-refs"
+    rg --no-filename -o '<forge/[A-Za-z0-9_./+-]+\.hpp>' \
+        docs README*.md example |
+        tr -d '<>' | sort -u >"${headers}" || true
+
+    while IFS= read -r header; do
+        [[ -z "${header}" ]] && continue
+        if [[ ! -f "include/${header}" ]]; then
+            fail "documented Forge header does not exist: <${header}>"
+        fi
+    done <"${headers}"
+}
+
 check_example_cmake_sources() {
     log "check example CMake registrations"
     local registered all_examples
@@ -123,7 +138,8 @@ check_example_cmake_sources() {
     ' example/CMakeLists.txt >>"${registered}"
 
     sort -u "${registered}" -o "${registered}"
-    find example -maxdepth 1 -type f -name '*.cpp' -printf '%f\n' | sort -u >"${all_examples}"
+    printf '%s\n' example/*.cpp | sed 's|^example/||' |
+        sort -u >"${all_examples}"
 
     while IFS= read -r src; do
         [[ -z "${src}" ]] && continue
@@ -155,9 +171,15 @@ check_stale_execution_names() {
 
 check_portable_sync_wait_spelling() {
     log "check portable sync_wait spelling"
-    if rg -n 'std::execution::sync_wait(_with_variant)?' \
-        docs README*.md example include >"${audit_tmp}/sync-wait-spelling"; then
-        cat "${audit_tmp}/sync-wait-spelling" >&2
+    : >"${audit_tmp}/sync-wait-spelling"
+    rg -n '[A-Za-z_][A-Za-z0-9_:]*::sync_wait(_with_variant)?' \
+        docs README*.md example >>"${audit_tmp}/sync-wait-spelling" || true
+    rg -n 'std::execution::sync_wait(_with_variant)?' \
+        include >>"${audit_tmp}/sync-wait-spelling" || true
+    if rg -v 'std::this_thread::sync_wait(_with_variant)?' \
+        "${audit_tmp}/sync-wait-spelling" \
+        >"${audit_tmp}/nonportable-sync-wait"; then
+        cat "${audit_tmp}/nonportable-sync-wait" >&2
         fail "public docs/examples must use std::this_thread::sync_wait"
     fi
 }
@@ -172,29 +194,37 @@ check_readme_parity() {
     reference_links="${audit_tmp}/readme-links"
     current="${audit_tmp}/readme-current"
 
-    rg '^\| `[^`]+`' "${readmes[0]}" |
-        sed -E 's/^\| (`[^`]+`).*/\1/' >"${reference_features}"
-    rg '^```' "${readmes[0]}" >"${reference_fences}"
-    rg --no-filename -o '\]\([^)]*\)' "${readmes[0]}" |
+    if ! rg '^\| `[^`]+`' "${readmes[0]}" >"${current}"; then
+        fail "${readmes[0]}: feature table is missing"
+    fi
+    sed -E 's/^\| (`[^`]+`).*/\1/' "${current}" >"${reference_features}"
+    if ! rg '^```' "${readmes[0]}" >"${reference_fences}"; then
+        fail "${readmes[0]}: fenced code blocks are missing"
+    fi
+    { rg --no-filename -o '\]\([^)]*\)' "${readmes[0]}" || true; } |
         sed -E 's/^\]\((.*)\)$/\1/' |
-        grep -Ev '^README(\.zh-CN|\.ja)?\.md$' |
+        { grep -Ev '^README(\.zh-CN|\.ja)?\.md$' || true; } |
         sort -u >"${reference_links}"
 
     for readme in "${readmes[@]:1}"; do
-        rg '^\| `[^`]+`' "${readme}" |
-            sed -E 's/^\| (`[^`]+`).*/\1/' >"${current}"
+        if ! rg '^\| `[^`]+`' "${readme}" >"${current}.raw"; then
+            fail "${readme}: feature table is missing"
+        fi
+        sed -E 's/^\| (`[^`]+`).*/\1/' "${current}.raw" >"${current}"
         if ! cmp -s "${reference_features}" "${current}"; then
             fail "${readme}: feature table keys differ from README.md"
         fi
 
-        rg '^```' "${readme}" >"${current}"
+        if ! rg '^```' "${readme}" >"${current}"; then
+            fail "${readme}: fenced code blocks are missing"
+        fi
         if ! cmp -s "${reference_fences}" "${current}"; then
             fail "${readme}: fenced code block structure differs from README.md"
         fi
 
-        rg --no-filename -o '\]\([^)]*\)' "${readme}" |
+        { rg --no-filename -o '\]\([^)]*\)' "${readme}" || true; } |
             sed -E 's/^\]\((.*)\)$/\1/' |
-            grep -Ev '^README(\.zh-CN|\.ja)?\.md$' |
+            { grep -Ev '^README(\.zh-CN|\.ja)?\.md$' || true; } |
             sort -u >"${current}"
         if ! cmp -s "${reference_links}" "${current}"; then
             fail "${readme}: local documentation links differ from README.md"
@@ -232,7 +262,7 @@ check_test_switch_docs() {
 
     sed -n 's/^option(\(FORGE_TEST_ENABLE_[A-Z_]*\).*/\1/p' \
         test/CMakeLists.txt | sort -u >"${declared}"
-    rg --no-filename -o 'FORGE_TEST_ENABLE_[A-Z_]*[A-Z]' docs/testing.md |
+    { rg --no-filename -o 'FORGE_TEST_ENABLE_[A-Z_]*[A-Z]' docs/testing.md || true; } |
         sort -u >"${documented}"
 
     if ! cmp -s "${declared}" "${documented}"; then
@@ -252,7 +282,7 @@ check_feature_gate_docs() {
     sed -n -E \
         's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_FORGE_[A-Z_]+).*/\2/p' \
         forge.cmake | sort -u >"${declared}"
-    rg --no-filename -o 'FORGE_ENABLE_FORGE_[A-Z_]+' docs/testing.md |
+    { rg --no-filename -o 'FORGE_ENABLE_FORGE_[A-Z_]+' docs/testing.md || true; } |
         sort -u >"${documented}"
 
     if ! cmp -s "${declared}" "${documented}"; then
@@ -266,6 +296,7 @@ check_no_private_paths
 check_example_refs_exist
 check_all_examples_are_indexed
 check_markdown_links
+check_forge_header_refs_exist
 check_example_cmake_sources
 check_stale_execution_names
 check_portable_sync_wait_spelling

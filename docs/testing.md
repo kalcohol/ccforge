@@ -294,6 +294,10 @@ focused stress case，再把该 audit 视为 closed。
 stand-aside 决策。纯 execution、TSan 和 ASan 子集会显式关闭该组，完整 `llvm`、
 `zig`、本地与 Windows lanes 则保留覆盖。
 
+Execution、SIMD 与 linalg 的 conformance suites 会在对应 Forge backport 实际注入时
+运行；完整或 partial native 实现触发 stand-aside 时，这些依赖 Forge 私有测试辅助符号
+的 suites 会跳过，native handoff fixtures 负责验证探测和让位边界。
+
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future
 resource、IO 和 erasure subsets 被独立配置。Resource-policy tests 还要求

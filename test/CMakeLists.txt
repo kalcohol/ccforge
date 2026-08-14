@@ -173,7 +173,13 @@ endfunction()
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
 
 if(FORGE_TEST_ENABLE_EXECUTION)
-    add_subdirectory(execution)
+    if(FORGE_FORCE_SENDERS_BACKPORT
+            OR (NOT FORGE_SENDERS_FULL AND NOT FORGE_SENDERS_PARTIAL))
+        add_subdirectory(execution)
+    else()
+        message(STATUS
+            "Forge: execution backport conformance tests skipped because the native standard library stands aside")
+    endif()
 endif()
 if(FORGE_TEST_ENABLE_SIMD)
     if(FORGE_FORCE_SIMD_BACKPORT
@@ -201,7 +207,13 @@ if(FORGE_TEST_ENABLE_SUBMDSPAN)
     add_subdirectory(submdspan)
 endif()
 if(FORGE_TEST_ENABLE_LINALG)
-    add_subdirectory(linalg)
+    if(FORGE_FORCE_LINALG_BACKPORT
+            OR (NOT FORGE_LINALG_FULL AND NOT FORGE_LINALG_PARTIAL))
+        add_subdirectory(linalg)
+    else()
+        message(STATUS
+            "Forge: linalg backport conformance tests skipped because the native standard library stands aside")
+    endif()
 endif()
 if(FORGE_TEST_ENABLE_STD_TARGET)
     add_subdirectory(std_target)

@@ -43,5 +43,18 @@ int main() {
     auto joined = std::execution::when_all(std::execution::just());
     auto joined_op = std::execution::connect(std::move(joined), noexcept_receiver{});
     std::execution::start(joined_op);
+
+    auto continued = std::execution::continues_on(
+        std::execution::just(7), std::execution::inline_scheduler{});
+    auto continued_op = std::execution::connect(
+        std::move(continued), value_receiver{});
+    std::execution::start(continued_op);
+
+    auto recovered = std::execution::upon_error(
+        std::execution::just_error(5),
+        [](int error) noexcept { return error + 1; });
+    auto recovered_op = std::execution::connect(
+        std::move(recovered), value_receiver{});
+    std::execution::start(recovered_op);
     return 0;
 }
