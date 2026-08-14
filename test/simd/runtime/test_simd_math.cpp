@@ -24,13 +24,13 @@ TEST(SimdMathTest, ReduceUsesProvidedBinaryOperation) {
     EXPECT_EQ(std::simd::reduce(values, std::multiplies<>{}), 120);
 }
 
-TEST(SimdMathTest, MaskedReduceStartsFromIdentityElement) {
+TEST(SimdMathTest, MaskedReduceUsesAValidIdentityElement) {
     const std::array<int, 4> data{{2, 3, 4, 5}};
     const int4 values = load_vec<int4>(data);
     const mask4 selected(0b0110u);
 
     EXPECT_EQ(std::simd::reduce(values, selected), 7);
-    EXPECT_EQ(std::simd::reduce(values, selected, std::plus<>{}, 10), 17);
+    EXPECT_EQ(std::simd::reduce(values, selected, std::plus<>{}, 0), 7);
     EXPECT_EQ(std::simd::reduce(values, selected, std::multiplies<>{}, 1), 12);
 }
 

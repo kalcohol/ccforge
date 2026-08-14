@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <functional>
 #include <limits>
 
@@ -48,6 +49,24 @@ TEST(SimdRuntimeTest, MaskedBitwiseReduceUsesStandardDefaultIdentities) {
     EXPECT_EQ(std::simd::reduce(values, selected, std::bit_and<>{}), 0b1010);
     EXPECT_EQ(std::simd::reduce(values, selected, std::bit_or<>{}), 0b1111);
     EXPECT_EQ(std::simd::reduce(values, selected, std::bit_xor<>{}), 0b0101);
+}
+
+TEST(SimdRuntimeTest, NonemptyMaskedReduceStartsFromTheFirstSelectedValue) {
+    const std::array<float, 4> data{{-0.0f, 1.0f, 2.0f, 3.0f}};
+    const float4 values = load_vec<float4>(data);
+    const float4::mask_type first_lane(0b0001u);
+
+    EXPECT_TRUE(std::signbit(std::simd::reduce(values, first_lane)));
+    EXPECT_TRUE(std::signbit(std::simd::reduce(values, first_lane, simd_plus{}, 0.0f)));
+}
+
+TEST(SimdRuntimeTest, EmptyMaskedReduceReturnsTheIdentityElement) {
+    const std::array<float, 4> data{{-0.0f, 1.0f, 2.0f, 3.0f}};
+    const float4 values = load_vec<float4>(data);
+    const float4::mask_type no_lanes(0u);
+    const float identity = -7.0f;
+
+    EXPECT_EQ(std::simd::reduce(values, no_lanes, std::plus<>{}, identity), identity);
 }
 
 TEST(SimdRuntimeTest, ScalarReductionsMirrorVectorGenericCode) {

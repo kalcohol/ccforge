@@ -25,8 +25,17 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
                    BinaryOperation binary_op = {},
                    T identity_element = detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
 	noexcept(std::declval<const BinaryOperation&>()(std::declval<const vec<T, 1>&>(), std::declval<const vec<T, 1>&>()))) {
-	vec<T, 1> result(identity_element);
-	for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+	simd_size_type first = 0;
+	while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
+		++first;
+	}
+
+	if (first == basic_vec<T, Abi>::size) {
+		return identity_element;
+	}
+
+	vec<T, 1> result(value[first]);
+	for (simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
 		if (mask_value[i]) {
 			result = binary_op(result, vec<T, 1>(value[i]));
 		}
