@@ -54,6 +54,15 @@ endif()
 set(FORGE_TEST_TIMEOUT_SECONDS 300 CACHE STRING
     "Timeout in seconds for individual CC Forge tests")
 
+if(UNIX)
+    add_test(
+        NAME sanitizer_retry_policy
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_retry_policy.sh")
+    set_tests_properties(
+        sanitizer_retry_policy PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+endif()
+
 set(FORGE_TEST_ENABLE_STD_TARGET OFF)
 if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_SIMD

@@ -252,14 +252,11 @@ target_tsan() {
                 exit 1
             fi
             echo "[tsan] ctest-count=${selected_tests}"
-            # Try plain ctest first; if the instrumented binaries hit the
-            # mmap_rnd_bits TSAN startup crash on high-ASLR-entropy hosts, retry
-            # with ASLR disabled via setarch -R.
-            if ctest --test-dir build/tsan -R "execution|forge" --output-on-failure; then
-                exit 0
-            fi
-            echo "[tsan] retrying under setarch -R (ASLR off; mmap_rnd_bits workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/tsan -R "execution|forge" --output-on-failure
+            scripts/run-sanitizer-ctest.sh \
+                tsan \
+                build/tsan \
+                "execution|forge" \
+                build/tsan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
     ok "tsan verified (execution + forge utility subsets, no data races)"
 }
@@ -290,11 +287,11 @@ target_asan() {
                 exit 1
             fi
             echo "[asan] ctest-count=${selected_tests}"
-            if ctest --test-dir build/asan -R "execution|forge" --output-on-failure; then
-                exit 0
-            fi
-            echo "[asan] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/asan -R "execution|forge" --output-on-failure
+            scripts/run-sanitizer-ctest.sh \
+                asan \
+                build/asan \
+                "execution|forge" \
+                build/asan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
     log "asan: building focused SIMD tests with -fsanitize=address,undefined"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
@@ -334,11 +331,11 @@ target_asan() {
                 exit 1
             fi
             echo "[asan-simd] ctest-count=${selected_tests}"
-            if ctest --test-dir build/asan-simd -R "${regex}" --output-on-failure; then
-                exit 0
-            fi
-            echo "[asan-simd] retrying under setarch -R (ASLR off; shadow-mapping workaround)"
-            setarch "$(uname -m)" -R ctest --test-dir build/asan-simd -R "${regex}" --output-on-failure
+            scripts/run-sanitizer-ctest.sh \
+                asan \
+                build/asan-simd \
+                "${regex}" \
+                build/asan-simd/ctest-first-run.log
         '
     ok "asan verified (execution + forge utility subsets plus focused SIMD tests, no UAF/leak/UB)"
 }
