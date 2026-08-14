@@ -227,7 +227,12 @@ struct __op : __forge_detail::__immovable {
         std::function<void()> callback;
         try {
             callback = [sh, weak_sub]() mutable {
-                if (auto locked = weak_sub.lock()) {
+                auto locked = weak_sub.lock();
+                // User completion may destroy the subscriber operation on a
+                // different thread. Drop the callback's weak ownership first;
+                // the local strong reference pins the receiver through delivery.
+                weak_sub.reset();
+                if (locked) {
                     deliver_to_subscriber(sh, locked);
                 }
             };
