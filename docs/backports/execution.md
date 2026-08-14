@@ -85,8 +85,9 @@
   当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应
   使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留
   `forge::start_detached(sender)`。
-- `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow；其他 typed error 会先包装
-  进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费
+- `sync_wait` 会把 `set_error(std::exception_ptr)` 原样 rethrow，把
+  `set_error(std::error_code)` 映射为保留原 code 的 `std::system_error`；其他 typed error
+  会先包装进 `std::exception_ptr` 再 rethrow，因此调用方需要按原 error 类型捕获。若需要同步消费
   value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的
   `forge::wait_result(sender)`。
 - Current-WD 拼写是 `std::this_thread::sync_wait` 与

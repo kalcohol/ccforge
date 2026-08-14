@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -320,6 +321,18 @@ using stopped_error_rvalue_only_sender_t = decltype(
 using scoped_rvalue_only_sender_t = decltype(
     std::declval<std::execution::counting_scope::scope_token>().wrap(
         rvalue_only_sender{1}));
+static_assert(std::same_as<
+    std::execution::simple_counting_scope::token,
+    std::execution::simple_counting_scope::scope_token>);
+static_assert(std::same_as<
+    std::execution::counting_scope::token,
+    std::execution::counting_scope::scope_token>);
+static_assert(std::same_as<
+    decltype(std::declval<std::execution::simple_counting_scope&>().get_token()),
+    std::execution::simple_counting_scope::token>);
+static_assert(std::same_as<
+    decltype(std::declval<std::execution::counting_scope&>().get_token()),
+    std::execution::counting_scope::token>);
 
 // just(42) should produce completion_signatures<set_value_t(int)>.
 static_assert(std::is_same_v<just_int_cs_t,
@@ -768,6 +781,17 @@ TEST(ExecutionMvpTest, SyncWaitDuplicateValueAlternativesDeduplicate) {
 TEST(ExecutionMvpTest, SyncWaitValueConstructionFailurePropagates) {
     EXPECT_THROW((void)std::execution::sync_wait(sync_wait_throwing_value_sender{}),
                  std::runtime_error);
+}
+
+TEST(ExecutionMvpTest, SyncWaitMapsErrorCodeToSystemError) {
+    const auto code = std::make_error_code(std::errc::permission_denied);
+
+    try {
+        (void)std::execution::sync_wait(std::execution::just_error(code));
+        FAIL() << "sync_wait did not throw";
+    } catch (const std::system_error& error) {
+        EXPECT_EQ(error.code(), code);
+    }
 }
 
 TEST(ExecutionMvpTest, ThenWorksWithPipeOperator) {

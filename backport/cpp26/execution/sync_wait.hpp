@@ -29,6 +29,7 @@
 
 #include <exception>
 #include <optional>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -89,6 +90,9 @@ struct receiver {
     void set_error(E&& e) && noexcept {
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
             state_->result_.template emplace<2>(std::forward<E>(e));
+        } else if constexpr (std::is_same_v<std::decay_t<E>, std::error_code>) {
+            state_->result_.template emplace<2>(
+                std::make_exception_ptr(std::system_error(std::forward<E>(e))));
         } else {
             state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
         }

@@ -165,6 +165,7 @@ class simple_counting_scope {
 public:
     class scope_token;
     class scope_association;
+    using token = scope_token;
 
     simple_counting_scope() noexcept = default;
     ~simple_counting_scope() noexcept {
@@ -536,6 +537,7 @@ class counting_scope {
 public:
     class scope_token;
     class scope_association;
+    using token = scope_token;
 
     counting_scope() noexcept = default;
     ~counting_scope() noexcept {
