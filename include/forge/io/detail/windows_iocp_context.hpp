@@ -26,13 +26,23 @@
 #error "forge::io windows context requires FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND"
 #endif
 
-#ifndef NOMINMAX
+#if !defined(NOMINMAX)
+#define FORGE_IO_UNDEFINE_NOMINMAX
 #define NOMINMAX
 #endif
-#ifndef WIN32_LEAN_AND_MEAN
+#if !defined(WIN32_LEAN_AND_MEAN)
+#define FORGE_IO_UNDEFINE_WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#if defined(FORGE_IO_UNDEFINE_WIN32_LEAN_AND_MEAN)
+#undef WIN32_LEAN_AND_MEAN
+#undef FORGE_IO_UNDEFINE_WIN32_LEAN_AND_MEAN
+#endif
+#if defined(FORGE_IO_UNDEFINE_NOMINMAX)
+#undef NOMINMAX
+#undef FORGE_IO_UNDEFINE_NOMINMAX
+#endif
 
 #include "../error.hpp"
 #include "../../resource_policy.hpp"
@@ -693,6 +703,13 @@ struct __op {
             }
             if (__stop_requested(record->rcvr)) {
                 record->complete_stopped();
+                return;
+            }
+            if ((record->kind == __operation_kind::read &&
+                 record->read_buffer.empty()) ||
+                (record->kind == __operation_kind::write &&
+                 record->write_buffer.empty())) {
+                record->complete_value(0);
                 return;
             }
             if (!record->install_stop_callback(state, record)) {

@@ -1,7 +1,27 @@
 #include <gtest/gtest.h>
+
+#if !defined(NOMINMAX)
+#define FORGE_TEST_EXPECT_NOMINMAX_UNDEFINED
+#endif
+#if !defined(WIN32_LEAN_AND_MEAN)
+#define FORGE_TEST_EXPECT_WIN32_LEAN_AND_MEAN_UNDEFINED
+#endif
+
 #include <forge/io.hpp>
 #include <forge/io/context_await.hpp>
 #include <forge/wait_result.hpp>
+
+#if defined(FORGE_TEST_EXPECT_NOMINMAX_UNDEFINED) && defined(NOMINMAX)
+#error "forge IOCP headers must not leak NOMINMAX"
+#endif
+#if defined(FORGE_TEST_EXPECT_WIN32_LEAN_AND_MEAN_UNDEFINED) && \
+    defined(WIN32_LEAN_AND_MEAN)
+#error "forge IOCP headers must not leak WIN32_LEAN_AND_MEAN"
+#endif
+
+#undef FORGE_TEST_EXPECT_NOMINMAX_UNDEFINED
+#undef FORGE_TEST_EXPECT_WIN32_LEAN_AND_MEAN_UNDEFINED
+
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
 #include <execution>
@@ -1124,6 +1144,22 @@ TEST(IoIocpTest, InvalidHandleCompletesWithError) {
         (void)std::execution::sync_wait(
             ctx.async_read_some(INVALID_HANDLE_VALUE, std::span{buffer})),
         std::system_error);
+}
+
+TEST(IoIocpTest, EmptyTransfersDoNotTouchInvalidHandle) {
+    forge::io::context ctx;
+    std::span<std::byte> empty_read;
+    std::span<const std::byte> empty_write;
+
+    auto read = std::execution::sync_wait(
+        ctx.async_read_some(INVALID_HANDLE_VALUE, empty_read));
+    auto write = std::execution::sync_wait(
+        ctx.async_write_some(INVALID_HANDLE_VALUE, empty_write));
+
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(std::get<0>(*read), 0u);
+    ASSERT_TRUE(write.has_value());
+    EXPECT_EQ(std::get<0>(*write), 0u);
 }
 
 TEST(IoIocpTest, TypedInvalidHandleCrossesWaitResult) {
