@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="${1:-${REPO_ROOT}/build/stdexec-feasibility}"
 CXX="${CXX:-c++}"
 STD="${FORGE_STDEXEC_CXX_STANDARD:-23}"
+source "${REPO_ROOT}/scripts/lib/verification-scratch.sh"
 
 case "${BUILD_ROOT}" in
     /*) ;;
@@ -32,8 +33,8 @@ if [[ ! -f "${STDEXEC_INCLUDE}/stdexec/execution.hpp" ]]; then
     exit 2
 fi
 
-rm -rf "${BUILD_ROOT}"
-mkdir -p "${BUILD_ROOT}"
+BUILD_ROOT="$(forge_prepare_verification_scratch \
+    "${BUILD_ROOT}" "${REPO_ROOT}" stdexec-feasibility)"
 
 COMMON_FLAGS=(-std=c++"${STD}" -pthread)
 FORGE_INCLUDES=(-I"${REPO_ROOT}/backport" -I"${REPO_ROOT}/include")

@@ -13,6 +13,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 failures=0
+audit_tmp="$(mktemp -d -t ccforge-doc-audit.XXXXXX)"
+trap 'rm -rf -- "${audit_tmp}"' EXIT
 
 log() {
     printf '[doc-audit] %s\n' "$*"
@@ -27,17 +29,16 @@ check_no_private_paths() {
     log "check private host/path leaks"
     if rg -n 'px13|D:\\Program|/data/projects|/home/|C:\\Users' \
         docs README* scripts --glob '!scripts/audit-docs-and-examples.sh' \
-        >/tmp/ccforge-doc-audit-private.$$; then
-        cat /tmp/ccforge-doc-audit-private.$$ >&2
+        >"${audit_tmp}/private-paths"; then
+        cat "${audit_tmp}/private-paths" >&2
         fail "private host/path pattern found in committed docs/scripts"
     fi
-    rm -f /tmp/ccforge-doc-audit-private.$$
 }
 
 check_example_refs_exist() {
     log "check documented example references exist"
     local refs
-    refs="$(mktemp -t ccforge-doc-audit-examples.XXXXXX)"
+    refs="${audit_tmp}/example-refs"
     rg --no-filename -o 'example/[A-Za-z0-9_./+-]+\.cpp' docs README*.md >"${refs}" || true
     while IFS= read -r ref; do
         [[ -z "${ref}" ]] && continue
@@ -45,14 +46,13 @@ check_example_refs_exist() {
             fail "documented example does not exist: ${ref}"
         fi
     done < <(sort -u "${refs}")
-    rm -f "${refs}"
 }
 
 check_all_examples_are_indexed() {
     log "check every example is indexed"
     local refs all_examples
-    refs="$(mktemp -t ccforge-doc-audit-indexed-examples.XXXXXX)"
-    all_examples="$(mktemp -t ccforge-doc-audit-all-indexed-examples.XXXXXX)"
+    refs="${audit_tmp}/indexed-example-refs"
+    all_examples="${audit_tmp}/all-indexed-examples"
 
     rg --no-filename -o 'example/[A-Za-z0-9_./+-]+\.cpp' docs README*.md |
         sort -u >"${refs}" || true
@@ -66,13 +66,12 @@ check_all_examples_are_indexed() {
         fi
     done <"${all_examples}"
 
-    rm -f "${refs}" "${all_examples}"
 }
 
 check_markdown_links() {
     log "check local markdown links"
     local links
-    links="$(mktemp -t ccforge-doc-audit-links.XXXXXX)"
+    links="${audit_tmp}/markdown-links"
     rg -n -o '\[[^]]+\]\(([^)#][^)]*)\)' docs README*.md >"${links}" || true
     while IFS=: read -r file line match; do
         [[ -z "${match:-}" ]] && continue
@@ -95,14 +94,13 @@ check_markdown_links() {
             fail "${file}:${line}: local markdown link target missing: ${target}"
         fi
     done <"${links}"
-    rm -f "${links}"
 }
 
 check_example_cmake_sources() {
     log "check example CMake registrations"
     local registered all_examples
-    registered="$(mktemp -t ccforge-doc-audit-registered.XXXXXX)"
-    all_examples="$(mktemp -t ccforge-doc-audit-all-examples.XXXXXX)"
+    registered="${audit_tmp}/registered-examples"
+    all_examples="${audit_tmp}/all-examples"
 
     sed -n 's/.*forge_add_example([^ ]* \([^ )]*\.cpp\).*/\1/p' \
         example/CMakeLists.txt | grep -v '[$]' >>"${registered}" || true
@@ -141,30 +139,27 @@ check_example_cmake_sources() {
         fi
     done <"${all_examples}"
 
-    rm -f "${registered}" "${all_examples}"
 }
 
 check_stale_execution_names() {
     log "check stale std::execution extension names"
     if rg -n 'std::execution::(ensure_started|start_detached)' \
-        docs README*.md >/tmp/ccforge-doc-audit-exec.$$; then
+        docs README*.md >"${audit_tmp}/stale-execution-names"; then
         if rg -v 'Removed non-WD extension name|No longer exposed' \
-            /tmp/ccforge-doc-audit-exec.$$ |
+            "${audit_tmp}/stale-execution-names" |
             rg -v '非 WD|已移除|不再.*暴露' >&2; then
             fail "stale std::execution extension reference found"
         fi
     fi
-    rm -f /tmp/ccforge-doc-audit-exec.$$
 }
 
 check_portable_sync_wait_spelling() {
     log "check portable sync_wait spelling"
     if rg -n 'std::execution::sync_wait(_with_variant)?' \
-        docs README*.md example include >/tmp/ccforge-doc-audit-sync-wait.$$; then
-        cat /tmp/ccforge-doc-audit-sync-wait.$$ >&2
+        docs README*.md example include >"${audit_tmp}/sync-wait-spelling"; then
+        cat "${audit_tmp}/sync-wait-spelling" >&2
         fail "public docs/examples must use std::this_thread::sync_wait"
     fi
-    rm -f /tmp/ccforge-doc-audit-sync-wait.$$
 }
 
 check_readme_parity() {
@@ -172,10 +167,10 @@ check_readme_parity() {
 
     local readmes=(README.md README.zh-CN.md README.ja.md)
     local reference_features reference_fences reference_links current
-    reference_features="$(mktemp -t ccforge-doc-audit-readme-features.XXXXXX)"
-    reference_fences="$(mktemp -t ccforge-doc-audit-readme-fences.XXXXXX)"
-    reference_links="$(mktemp -t ccforge-doc-audit-readme-links.XXXXXX)"
-    current="$(mktemp -t ccforge-doc-audit-readme-current.XXXXXX)"
+    reference_features="${audit_tmp}/readme-features"
+    reference_fences="${audit_tmp}/readme-fences"
+    reference_links="${audit_tmp}/readme-links"
+    current="${audit_tmp}/readme-current"
 
     rg '^\| `[^`]+`' "${readmes[0]}" |
         sed -E 's/^\| (`[^`]+`).*/\1/' >"${reference_features}"
@@ -226,16 +221,14 @@ check_readme_parity() {
         done
     done
 
-    rm -f "${reference_features}" "${reference_fences}" \
-        "${reference_links}" "${current}"
 }
 
 check_test_switch_docs() {
     log "check documented test switches"
 
     local declared documented
-    declared="$(mktemp -t ccforge-doc-audit-test-options.XXXXXX)"
-    documented="$(mktemp -t ccforge-doc-audit-test-docs.XXXXXX)"
+    declared="${audit_tmp}/declared-test-options"
+    documented="${audit_tmp}/documented-test-options"
 
     sed -n 's/^option(\(FORGE_TEST_ENABLE_[A-Z_]*\).*/\1/p' \
         test/CMakeLists.txt | sort -u >"${declared}"
@@ -247,15 +240,14 @@ check_test_switch_docs() {
         fail "docs/testing.md test switches differ from test/CMakeLists.txt"
     fi
 
-    rm -f "${declared}" "${documented}"
 }
 
 check_feature_gate_docs() {
     log "check documented Forge feature gates"
 
     local declared documented
-    declared="$(mktemp -t ccforge-doc-audit-feature-options.XXXXXX)"
-    documented="$(mktemp -t ccforge-doc-audit-feature-docs.XXXXXX)"
+    declared="${audit_tmp}/declared-feature-options"
+    documented="${audit_tmp}/documented-feature-options"
 
     sed -n -E \
         's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_FORGE_[A-Z_]+).*/\2/p' \
@@ -268,7 +260,6 @@ check_feature_gate_docs() {
         fail "docs/testing.md Forge feature gates differ from forge.cmake"
     fi
 
-    rm -f "${declared}" "${documented}"
 }
 
 check_no_private_paths

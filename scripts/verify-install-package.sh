@@ -10,11 +10,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="${1:-${REPO_ROOT}/build/install-package}"
 STD="${FORGE_INSTALL_CXX_STANDARD:-23}"
 GENERATOR="${FORGE_INSTALL_CMAKE_GENERATOR:-Ninja}"
+source "${REPO_ROOT}/scripts/lib/verification-scratch.sh"
 
 case "${BUILD_ROOT}" in
     /*) ;;
     *) BUILD_ROOT="${REPO_ROOT}/${BUILD_ROOT}" ;;
 esac
+
+BUILD_ROOT="$(forge_prepare_verification_scratch \
+    "${BUILD_ROOT}" "${REPO_ROOT}" install-package)"
 
 FORGE_BUILD="${BUILD_ROOT}/forge-build"
 PREFIX="${BUILD_ROOT}/prefix"
@@ -32,9 +36,6 @@ fi
 log() {
     printf '[install-package] %s\n' "$*"
 }
-
-rm -rf "${BUILD_ROOT}"
-mkdir -p "${BUILD_ROOT}"
 
 verify_source_consumer() {
     local mode="$1"

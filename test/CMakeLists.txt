@@ -58,6 +58,13 @@ add_subdirectory(probe_fingerprint)
 
 if(UNIX)
     add_test(
+        NAME verification_scratch_policy
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_verification_scratch.sh")
+    set_tests_properties(
+        verification_scratch_policy PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+    add_test(
         NAME sanitizer_retry_policy
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_retry_policy.sh")
     set_tests_properties(
