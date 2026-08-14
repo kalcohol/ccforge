@@ -366,8 +366,8 @@ struct __op : __forge_detail::__immovable {
         using outer_env_t = env_of_t<OuterRecv>;
 
         if constexpr (requires(outer_env_t env) { std::execution::get_stop_token(env); }) {
-            using outer_token_t = decltype(std::execution::get_stop_token(
-                std::declval<outer_env_t>()));
+            using outer_token_t = std::remove_cvref_t<decltype(
+                std::execution::get_stop_token(std::declval<outer_env_t>()))>;
             if constexpr (std::stoppable_token_for<outer_token_t, __outer_stop_callback>) {
                 auto token = std::execution::get_stop_token(std::execution::get_env(__outer_recv));
                 if (!token.stop_possible()) { return; }

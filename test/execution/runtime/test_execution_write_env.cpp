@@ -2,6 +2,7 @@
 #include <execution>
 #include <concepts>
 #include <exception>
+#include <functional>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -182,6 +183,14 @@ struct throwing_copy_env {
     }
 };
 
+struct move_only_property_value {
+    int value;
+
+    explicit move_only_property_value(int initial) noexcept : value(initial) {}
+    move_only_property_value(move_only_property_value&&) noexcept = default;
+    move_only_property_value(const move_only_property_value&) = delete;
+};
+
 } // namespace
 
 static_assert(std::forwarding_query(std::execution::get_scheduler));
@@ -197,6 +206,30 @@ static_assert(std::forwarding_query(member_forwarding_query{}));
 static_assert(std::forwarding_query(tag_forwarding_query{}));
 static_assert(!std::forwarding_query(std::execution::set_value));
 
+TEST(WriteEnvTest, PropQueriesBorrowMoveOnlyValuesWithoutCopying) {
+    auto property = std::execution::prop{
+        std::execution::get_allocator_t{},
+        move_only_property_value{42}};
+
+    static_assert(std::same_as<
+        decltype(std::execution::get_allocator(property)),
+        const move_only_property_value&>);
+    static_assert(noexcept(std::execution::get_allocator(property)));
+    EXPECT_EQ(std::execution::get_allocator(property).value, 42);
+}
+
+TEST(WriteEnvTest, PropUnwrapsReferenceWrappers) {
+    int value = 42;
+    auto property = std::execution::prop{
+        std::execution::get_allocator_t{},
+        std::ref(value)};
+
+    static_assert(std::same_as<
+        decltype(std::execution::get_allocator(property)),
+        int&>);
+    EXPECT_EQ(&std::execution::get_allocator(property), &value);
+}
+
 TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
     std::execution::inline_scheduler injected;
     auto env = std::execution::make_env(
@@ -208,7 +241,7 @@ TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::execution::inline_scheduler)>>);
+            std::execution::set_value_t(const std::execution::inline_scheduler&)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -405,7 +438,7 @@ TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::never_stop_token)>>);
+            std::execution::set_value_t(const std::never_stop_token&)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 

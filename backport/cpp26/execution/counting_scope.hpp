@@ -732,8 +732,8 @@ struct __stop_op : __forge_detail::__immovable {
 
     using token_t = counting_scope::scope_token;
     using downstream_env_t = env_of_t<R>;
-    using downstream_stop_token_t = decltype(
-        std::execution::get_stop_token(std::declval<downstream_env_t>()));
+    using downstream_stop_token_t = std::remove_cvref_t<decltype(
+        std::execution::get_stop_token(std::declval<downstream_env_t>()))>;
 
     struct __recv {
         using receiver_concept = receiver_t;

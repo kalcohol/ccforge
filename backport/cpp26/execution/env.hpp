@@ -26,6 +26,7 @@
 #include "stop_token.hpp"
 
 #include <concepts>
+#include <functional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -246,18 +247,18 @@ struct prop {
     [[no_unique_address]] Tag tag_;
     [[no_unique_address]] Value value_;
 
-    friend auto tag_invoke(Tag, const prop& self)
-        noexcept(std::is_nothrow_copy_constructible_v<Value>) -> Value {
-        return self.value_;
+    template<class... Args>
+    constexpr const Value& query(Tag, Args&&...) const noexcept {
+        return value_;
     }
 };
 
 template<class Tag, class Value>
-prop(Tag, Value) -> prop<Tag, Value>;
+prop(Tag, Value) -> prop<Tag, std::unwrap_reference_t<Value>>;
 
 template<class Tag, class Value>
 [[nodiscard]] auto make_prop(Tag tag, Value&& val) {
-    return prop<Tag, std::decay_t<Value>>{tag, std::forward<Value>(val)};
+    return prop{tag, std::forward<Value>(val)};
 }
 
 template<class... Envs>
