@@ -34,6 +34,8 @@
 #include <type_traits>
 #include <utility>
 #include <functional>
+#include <limits>
+#include <stdexcept>
 
 // Optional SIMD acceleration using CC Forge simd backport
 #if __has_include(<simd>)
@@ -102,6 +104,18 @@ consteval bool __compatible_static_extents() {
 template<class Extents1, class Extents2>
 inline constexpr bool __compatible_static_extents_v =
     __compatible_static_extents<Extents1, Extents2>();
+
+template<class Index>
+constexpr std::size_t __checked_matrix_storage_size(
+    Index rows, Index columns) {
+    const auto row_count = static_cast<std::size_t>(rows);
+    const auto column_count = static_cast<std::size_t>(columns);
+    if (column_count != 0 &&
+        row_count > std::numeric_limits<std::size_t>::max() / column_count) {
+        throw std::length_error("matrix storage size is not representable");
+    }
+    return row_count * column_count;
+}
 
 template<class T>
 constexpr auto __real_if_needed(const T& value) {

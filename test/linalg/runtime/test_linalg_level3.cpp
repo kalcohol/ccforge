@@ -5,6 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <complex>
+#include <limits>
+#include <stdexcept>
 
 namespace {
 
@@ -35,6 +37,17 @@ void expect_complex_near(complex actual, complex expected)
 }
 
 } // namespace
+
+static_assert(
+    std::linalg::__detail::__checked_matrix_storage_size(50'000, 50'000) ==
+    std::size_t{2'500'000'000});
+
+TEST(LinalgLevel3Storage, RejectsUnrepresentableTemporarySize) {
+    EXPECT_THROW(
+        (void)std::linalg::__detail::__checked_matrix_storage_size(
+            std::numeric_limits<std::size_t>::max(), std::size_t{2}),
+        std::length_error);
+}
 
 TEST(LinalgLevel3Gemm, RectangularAndUpdateForms) {
     double a_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};

@@ -86,13 +86,16 @@ void triangular_matrix_left_product(
     using idx_t = typename CExtents::index_type;
     using value_t = std::remove_cv_t<typename CAccessor::element_type>;
     const idx_t m = C.extent(0), n = C.extent(1);
-    std::vector<value_t> tmp(static_cast<std::size_t>(m * n));
+    const auto column_count = static_cast<std::size_t>(n);
+    std::vector<value_t> tmp(__detail::__checked_matrix_storage_size(m, n));
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j)
-            tmp[static_cast<std::size_t>(i * n + j)] = C[i, j];
+            tmp[static_cast<std::size_t>(i) * column_count +
+                static_cast<std::size_t>(j)] = C[i, j];
 
     auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
-        return tmp[static_cast<std::size_t>(i * n + j)];
+        return tmp[static_cast<std::size_t>(i) * column_count +
+                   static_cast<std::size_t>(j)];
     };
 
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
@@ -133,13 +136,16 @@ void triangular_matrix_right_product(
     using idx_t = typename CExtents::index_type;
     using value_t = std::remove_cv_t<typename CAccessor::element_type>;
     const idx_t m = C.extent(0), n = C.extent(1);
-    std::vector<value_t> tmp(static_cast<std::size_t>(m * n));
+    const auto column_count = static_cast<std::size_t>(n);
+    std::vector<value_t> tmp(__detail::__checked_matrix_storage_size(m, n));
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j)
-            tmp[static_cast<std::size_t>(i * n + j)] = C[i, j];
+            tmp[static_cast<std::size_t>(i) * column_count +
+                static_cast<std::size_t>(j)] = C[i, j];
 
     auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
-        return tmp[static_cast<std::size_t>(i * n + j)];
+        return tmp[static_cast<std::size_t>(i) * column_count +
+                   static_cast<std::size_t>(j)];
     };
 
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
