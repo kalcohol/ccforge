@@ -341,7 +341,7 @@ struct __state : std::enable_shared_from_this<__state> {
                 association->second.skips_completion_on_success;
             pending_records.emplace(key, record);
             ++pending;
-            increment_association_locked(record->handle);
+            ++association->second.active;
 
             DWORD synchronous_bytes = 0;
             if (!issue_locked(*record, synchronous_bytes)) {
@@ -546,11 +546,6 @@ private:
                 ++it;
             }
         }
-    }
-
-    void increment_association_locked(HANDLE handle) {
-        auto [it, _] = associated_handles.try_emplace(handle);
-        ++it->second.active;
     }
 
     void decrement_association_locked(HANDLE handle) noexcept {

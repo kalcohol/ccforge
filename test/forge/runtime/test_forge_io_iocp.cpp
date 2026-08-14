@@ -418,6 +418,46 @@ struct self_destroying_io_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct context_destroying_io_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::unique_ptr<forge::io::context>* owner = nullptr;
+    std::shared_ptr<io_state> state;
+
+    void set_value(std::size_t bytes) && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->bytes = bytes;
+            ++state->completions;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = std::move(error);
+            ++state->completions;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        owner->reset();
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+            ++state->completions;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 [[nodiscard]] auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
     std::unique_lock lk{state->mtx};
     return state->cv.wait_for(lk, 2s, [&] { return state->done(); });
@@ -1199,4 +1239,41 @@ TEST(IoIocpTest, InvalidHandleAllowsReceiverToDestroyOperation) {
 
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
+}
+
+TEST(IoIocpTest, DestroyingContextInsideCompletionIsSafe) {
+    auto pipe = make_pipe_pair();
+    auto owner = std::make_unique<forge::io::context>();
+    auto state = std::make_shared<io_state>();
+    std::array<std::byte, 1> buffer{};
+
+    using sender_t = decltype(owner->async_read_some(
+        pipe.server.get(),
+        std::span{buffer}));
+    using receiver_t = context_destroying_io_receiver;
+    using op_t = std::execution::connect_result_t<sender_t, receiver_t>;
+
+    bool operation_destroyed = false;
+    forge_test::operation_destroy_context<op_t> operation{
+        &operation_destroyed};
+    auto& op = operation.emplace_from([&] {
+        return std::execution::connect(
+            owner->async_read_some(pipe.server.get(), std::span{buffer}),
+            context_destroying_io_receiver{&owner, state});
+    });
+    std::execution::start(op);
+
+    const std::array payload{byte('x')};
+    write_overlapped(pipe.client.get(), std::span<const std::byte>{payload});
+
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_TRUE(state->value);
+    EXPECT_EQ(state->bytes, 1u);
+    EXPECT_EQ(state->completions, 1);
+    EXPECT_EQ(owner, nullptr);
+
+    EXPECT_TRUE(operation.has_value);
+    EXPECT_FALSE(operation_destroyed);
+    operation.reset();
+    EXPECT_FALSE(operation.has_value);
 }
