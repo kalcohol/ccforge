@@ -639,30 +639,43 @@ inline auto cyl_bessel_power_series(
     }
 
     const long double half_x = x / 2.0L;
-    const long double gamma = std::tgamma(nu + 1.0L);
-    if (gamma == 0.0L || std::isnan(gamma)) {
+    const long double gamma_argument = nu + 1.0L;
+    const long double log_gamma = std::lgamma(gamma_argument);
+    if (!std::isfinite(log_gamma)) {
         return {
             quiet_nan<long double>(),
             infinity<long double>(),
             false};
     }
+    long double gamma_sign = 1.0L;
+    if (gamma_argument < 0.0L) {
+        const long double sine =
+            std::sin(pi_v<long double> * gamma_argument);
+        if (sine == 0.0L) {
+            return {
+                quiet_nan<long double>(),
+                infinity<long double>(),
+                false};
+        }
+        gamma_sign = std::copysign(1.0L, sine);
+    }
 
     const long double log_term =
-        nu * std::log(half_x) - std::log(std::abs(gamma));
+        nu * std::log(half_x) - log_gamma;
     const long double max_log =
         std::log(std::numeric_limits<long double>::max());
     const long double min_log =
         std::log(std::numeric_limits<long double>::denorm_min());
     if (log_term > max_log) {
         return {
-            std::copysign(infinity<long double>(), gamma),
+            std::copysign(infinity<long double>(), gamma_sign),
             infinity<long double>(),
             false};
     }
 
     long double term =
         log_term < min_log ? 0.0L : std::exp(log_term);
-    term = std::copysign(term, gamma);
+    term = std::copysign(term, gamma_sign);
     long double sum = term;
     long double compensation = 0.0L;
     long double absolute_sum = std::abs(term);
@@ -714,11 +727,16 @@ T cyl_bessel_j_series(T nu, T x) {
 
 template<class T>
 T cyl_bessel_i_series(T nu, T x) {
+    if (std::isinf(x) && x > T{} && std::isfinite(nu)) {
+        return infinity<T>();
+    }
     const auto result = cyl_bessel_power_series(
         static_cast<long double>(nu),
         static_cast<long double>(x),
         false);
-    return static_cast<T>(result.value);
+    return result.converged
+        ? static_cast<T>(result.value)
+        : quiet_nan<T>();
 }
 
 template<class T>
@@ -1076,8 +1094,8 @@ auto cyl_bessel_jy_fallback(T nu, T x)
     }
     if (x == T{}) {
         return {
-            almost_equal(nu, T{}) ? T{1} : T{},
-            quiet_nan<T>(),
+            nu == T{} ? T{1} : T{},
+            -infinity<T>(),
             T{},
             true};
     }
@@ -1221,8 +1239,11 @@ T cyl_bessel_k_integral(T nu, T x) {
 
 template<class T>
 T cyl_bessel_k_fallback(T nu, T x) {
-    if (!(x > T{}) || std::isnan(nu)) {
+    if (std::isnan(nu) || std::isnan(x) || x < T{}) {
         return quiet_nan<T>();
+    }
+    if (x == T{}) {
+        return infinity<T>();
     }
     if (std::isinf(x)) {
         return T{};

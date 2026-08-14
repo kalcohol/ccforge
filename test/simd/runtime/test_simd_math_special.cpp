@@ -270,6 +270,32 @@ TEST(SimdMathSpecialTest, BesselSeriesPreservesSmallResultsAndFloatRange) {
     EXPECT_NEAR(i40f, 2.185028153e-24f, 2.185028153e-24f * 2e-6f);
 }
 
+TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
+    namespace sm = std::simd::detail::special_math;
+
+    const double y0 = sm::cyl_bessel_y_fallback(0.0, 0.0);
+    const double y2 = sm::cyl_bessel_y_fallback(2.0, 0.0);
+    EXPECT_TRUE(std::isinf(y0));
+    EXPECT_TRUE(std::signbit(y0));
+    EXPECT_TRUE(std::isinf(y2));
+    EXPECT_TRUE(std::signbit(y2));
+    EXPECT_EQ(sm::cyl_bessel_j_fallback(5.0e-13, 0.0), 0.0);
+
+    EXPECT_EQ(sm::cyl_bessel_k_fallback(0.0, 0.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::cyl_bessel_k_fallback(2.0, 0.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::cyl_bessel_i_series(
+                  0.0, std::numeric_limits<double>::infinity()),
+              std::numeric_limits<double>::infinity());
+
+    const double i1755 = sm::cyl_bessel_i_series(1755.0, 1000.0);
+    const double i1800 = sm::cyl_bessel_i_series(1800.0, 2000.0);
+    EXPECT_TRUE(std::isfinite(i1755));
+    EXPECT_GT(i1755, 0.0);
+    EXPECT_EQ(i1800, std::numeric_limits<double>::infinity());
+}
+
 TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) {
     namespace sm = std::simd::detail::special_math;
 
