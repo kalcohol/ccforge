@@ -40,6 +40,27 @@ namespace __wait_result_detail {
 
 namespace meta = forge::__detail::meta;
 
+struct __env {
+    std::execution::run_loop* loop;
+    std::inplace_stop_token stop_token;
+
+    auto query(std::execution::get_scheduler_t) const noexcept {
+        return loop->get_scheduler();
+    }
+
+    auto query(std::execution::get_start_scheduler_t) const noexcept {
+        return loop->get_scheduler();
+    }
+
+    auto query(std::execution::get_delegation_scheduler_t) const noexcept {
+        return loop->get_scheduler();
+    }
+
+    auto query(std::execution::get_stop_token_t) const noexcept {
+        return stop_token;
+    }
+};
+
 template<class List, class Sig>
 struct __push_error {
     using type = List;
@@ -178,13 +199,7 @@ struct __receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::make_prop(
-                std::execution::get_stop_token_t{},
-                state->stop_source.get_token()),
-            std::execution::make_prop(
-                std::execution::get_scheduler_t{},
-                loop->get_scheduler()));
+        return __env{loop, state->stop_source.get_token()};
     }
 };
 
@@ -288,7 +303,8 @@ public:
     }
 
 private:
-    template<std::execution::sender_in S>
+    template<class S>
+        requires std::execution::sender_in<S, __wait_result_detail::__env>
     friend auto wait_result_of(S&&);
 
     explicit wait_result_value(
@@ -299,9 +315,11 @@ private:
     std::variant<std::monostate, value_type, error_type, wait_stopped_t> result_;
 };
 
-template<std::execution::sender_in S>
+template<class S>
+    requires std::execution::sender_in<S, __wait_result_detail::__env>
 [[nodiscard]] auto wait_result_of(S&& sndr) {
-    using cs_t = std::execution::completion_signatures_of_t<S>;
+    using env_t = __wait_result_detail::__env;
+    using cs_t = std::execution::completion_signatures_of_t<S, env_t>;
     using value_t = __wait_result_detail::meta::single_value_or_variant_t<cs_t>;
     using error_t = __wait_result_detail::__single_error_or_variant_t<
         __wait_result_detail::__error_list_t<cs_t>>;
@@ -324,7 +342,8 @@ template<std::execution::sender_in S>
     return result_t{std::move(state.result)};
 }
 
-template<std::execution::sender_in S>
+template<class S>
+    requires std::execution::sender_in<S, __wait_result_detail::__env>
 [[nodiscard]] auto wait_result(S&& sndr) {
     return wait_result_of(static_cast<S&&>(sndr));
 }

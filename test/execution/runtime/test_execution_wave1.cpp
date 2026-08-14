@@ -451,6 +451,20 @@ TEST(SyncWaitWithVariantTest, Works) {
     EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
 }
 
+TEST(SyncWaitWithVariantTest, SupportsStoppedOnlySender) {
+    auto result = std::this_thread::sync_wait_with_variant(
+        std::execution::just_stopped());
+
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(SyncWaitWithVariantTest, SupportsErrorOnlySender) {
+    EXPECT_THROW(
+        (void)std::this_thread::sync_wait_with_variant(
+            std::execution::just_error(42)),
+        int);
+}
+
 TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
     auto result = std::this_thread::sync_wait_with_variant(
         std::execution::on(

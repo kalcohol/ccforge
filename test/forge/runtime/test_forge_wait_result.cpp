@@ -125,6 +125,16 @@ TEST(ForgeWaitResultTest, CapturesValueTuple) {
     EXPECT_EQ(std::get<0>(result.value()), 42);
 }
 
+TEST(ForgeWaitResultTest, DerivesSignaturesFromItsActualEnvironment) {
+    auto result = forge::wait_result(
+        std::execution::read_env(std::execution::get_start_scheduler));
+
+    ASSERT_TRUE(result.has_value());
+    static_assert(std::same_as<
+        std::tuple_element_t<0, typename decltype(result)::value_type>,
+        std::execution::run_loop::scheduler>);
+}
+
 TEST(ForgeWaitResultTest, CapturesStopped) {
     auto result = forge::wait_result(std::execution::just_stopped());
 

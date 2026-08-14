@@ -197,7 +197,7 @@ struct __variant_type_of<completion_signatures<Sigs...>> {
 
     template<class... Ts>
     struct __variant_from_list<true, Ts...> {
-        using type = std::variant<std::monostate>;
+        using type = __forge_meta::__empty_variant;
     };
 
     template<class... Ts>
@@ -347,19 +347,25 @@ namespace std::this_thread {
 struct sync_wait_with_variant_t {
     template<std::execution::sender S>
     auto operator()(S&& sndr) const {
+        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
+        using source_cs_t = std::execution::completion_signatures_of_t<S, env_t>;
+        using variant_t =
+            std::execution::__forge_into_variant::__variant_type_of_t<source_cs_t>;
         auto result = std::this_thread::sync_wait(
             std::execution::into_variant(
                 std::execution::__forge_detail::__forward_as_given(
                     std::forward<S>(sndr))));
-        using result_t = decltype(result);
-        using tuple_t = typename result_t::value_type;
-        using variant_t = std::remove_cvref_t<std::tuple_element_t<0, tuple_t>>;
 
         if (!result) {
             return std::optional<variant_t>{};
         }
-        return std::optional<variant_t>{
-            std::in_place, std::move(std::get<0>(*result))};
+        using tuple_t = typename decltype(result)::value_type;
+        if constexpr (std::tuple_size_v<tuple_t> == 0) {
+            return std::optional<variant_t>{};
+        } else {
+            return std::optional<variant_t>{
+                std::in_place, std::move(std::get<0>(*result))};
+        }
     }
 };
 
