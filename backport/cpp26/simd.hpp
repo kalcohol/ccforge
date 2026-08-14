@@ -72,6 +72,7 @@ namespace simd {
 #include "simd/base.hpp"
 #include "simd/detail/vector_ops.hpp"
 #include "simd/types.hpp"
+static_assert(true); // Keep implementation fragments lexically independent.
 #include "simd/iterator.hpp"
 #include "simd/memory.hpp"
 #include "simd/operations.hpp"

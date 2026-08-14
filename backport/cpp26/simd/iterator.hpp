@@ -1,5 +1,6 @@
 #pragma once
 
+template<class V>
 class simd_iterator {
     template<class>
     friend class simd_iterator;

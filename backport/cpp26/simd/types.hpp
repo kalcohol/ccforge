@@ -865,5 +865,3 @@ template<simd_size_type N, size_t Bytes, class Abi>
 struct resize<N, basic_mask<Bytes, Abi>> {
     using type = basic_mask<Bytes, deduce_abi_t<detail::mask_representative_value_t<Bytes>, N>>;
 };
-
-template<class V>
