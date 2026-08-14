@@ -92,6 +92,23 @@ TEST(SimdMathSpecialTest, SpecialFunctionsApplyPerLane) {
 #endif
 }
 
+TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
+    namespace sm = std::simd::detail::special_math;
+
+    EXPECT_EQ(sm::assoc_legendre_fallback(3u, 4u, 0.25), 0.0);
+
+    constexpr double large = 1.0e305;
+    EXPECT_NEAR(sm::beta_fallback(large, 1.0),
+                1.0 / large,
+                (1.0 / large) * 3e-14);
+    constexpr double moderate = 1.0e8;
+    const double expected = 1.0 / (moderate * (moderate + 1.0));
+    EXPECT_NEAR(sm::beta_fallback(moderate, 2.0),
+                expected,
+                expected * 3e-14);
+    EXPECT_EQ(sm::beta_fallback(2.5e305, 2.5e305), 0.0);
+}
+
 #if !defined(__cpp_lib_math_special_functions)
 TEST(SimdMathSpecialTest, EllipticFallbackBoundsLargeAmplitudeWork) {
     std::size_t evaluations = 0;

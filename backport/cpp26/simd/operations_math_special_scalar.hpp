@@ -165,7 +165,61 @@ T beta_fallback(T x, T y) {
         return quiet_nan<T>();
     }
 
-    return std::exp(std::lgamma(x) + std::lgamma(y) - std::lgamma(x + y));
+    using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+    const wide_t a = std::max(
+        static_cast<wide_t>(x), static_cast<wide_t>(y));
+    const wide_t b = std::min(
+        static_cast<wide_t>(x), static_cast<wide_t>(y));
+
+    wide_t log_value;
+    if (a <= static_cast<wide_t>(1.0e6L)) {
+        log_value = std::lgamma(a) + std::lgamma(b) - std::lgamma(a + b);
+    } else {
+        const wide_t ratio = b / a;
+        const wide_t log_ratio_sum = std::log1p(ratio);
+        const wide_t log_a = std::log(a);
+        const wide_t log_sum = log_a + log_ratio_sum;
+        const auto correction = [](wide_t inverse) {
+            const wide_t inverse2 = inverse * inverse;
+            return inverse *
+                (wide_t{1} / wide_t{12} -
+                 inverse2 / wide_t{360} +
+                 inverse2 * inverse2 / wide_t{1260});
+        };
+        const wide_t inverse_a = wide_t{1} / a;
+        const wide_t inverse_sum = inverse_a / (wide_t{1} + ratio);
+        const wide_t scaled_log_ratio_sum =
+            ratio == wide_t{} ? b : a * log_ratio_sum;
+
+        if (b <= static_cast<wide_t>(1.0e6L)) {
+            log_value =
+                std::lgamma(b) - scaled_log_ratio_sum +
+                wide_t{0.5} * log_ratio_sum - b * log_sum + b +
+                correction(inverse_a) - correction(inverse_sum);
+        } else {
+            const wide_t inverse_b = wide_t{1} / b;
+            log_value =
+                -scaled_log_ratio_sum +
+                b * (std::log(ratio) - log_ratio_sum) +
+                wide_t{0.5} *
+                    (log_sum - log_a - std::log(b) +
+                     std::log(wide_t{2} * pi_v<wide_t>)) +
+                correction(inverse_a) + correction(inverse_b) -
+                correction(inverse_sum);
+        }
+    }
+
+    const wide_t max_log = std::log(
+        static_cast<wide_t>(std::numeric_limits<T>::max()));
+    const wide_t min_log = std::log(
+        static_cast<wide_t>(std::numeric_limits<T>::denorm_min()));
+    if (log_value > max_log) {
+        return infinity<T>();
+    }
+    if (log_value < min_log) {
+        return T{};
+    }
+    return static_cast<T>(std::exp(log_value));
 }
 
 template<class T>
@@ -250,8 +304,11 @@ T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
 
 template<class T>
 T assoc_legendre_fallback(unsigned l, unsigned m, T x) {
-    if (m > l || std::abs(x) > T{1}) {
+    if (std::abs(x) > T{1}) {
         return quiet_nan<T>();
+    }
+    if (m > l) {
+        return T{};
     }
 
     T pmm = T{1};
