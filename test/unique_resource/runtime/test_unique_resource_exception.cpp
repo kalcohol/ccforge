@@ -16,30 +16,32 @@ int acquire_resource() {
     return ++next_resource_id;
 }
 
-struct transfer_handle {
+struct copy_fallback_handle {
     int value;
 
-    explicit transfer_handle(int initial_value) noexcept
+    explicit copy_fallback_handle(int initial_value) noexcept
         : value(initial_value) {}
 
-    transfer_handle(const transfer_handle&) = delete;
-    transfer_handle& operator=(const transfer_handle&) = delete;
+    copy_fallback_handle(const copy_fallback_handle&) = default;
+    auto operator=(const copy_fallback_handle&)
+        -> copy_fallback_handle& = default;
 
-    transfer_handle(transfer_handle&& other) noexcept
+    copy_fallback_handle(copy_fallback_handle&& other) noexcept(false)
         : value(other.value) {
         other.value = 0;
     }
 
-    transfer_handle& operator=(transfer_handle&& other) noexcept {
+    auto operator=(copy_fallback_handle&& other) noexcept(false)
+        -> copy_fallback_handle& {
         value = other.value;
         other.value = 0;
         return *this;
     }
 };
 
-transfer_handle acquire_transfer_handle() {
+copy_fallback_handle acquire_copy_fallback_handle() {
     ++active_resources;
-    return transfer_handle(++next_resource_id);
+    return copy_fallback_handle(++next_resource_id);
 }
 
 void reset_resource_counters() {
@@ -66,21 +68,23 @@ struct constructor_throwing_deleter {
     }
 };
 
-struct move_only_throwing_deleter {
-    struct token {};
+struct controlled_copy_deleter {
+    bool* throw_on_copy;
 
-    move_only_throwing_deleter() = delete;
-    explicit move_only_throwing_deleter(token) noexcept {}
-    move_only_throwing_deleter(const move_only_throwing_deleter&) = delete;
-    move_only_throwing_deleter& operator=(const move_only_throwing_deleter&) = delete;
+    explicit controlled_copy_deleter(bool& should_throw) noexcept
+        : throw_on_copy(&should_throw) {}
 
-    move_only_throwing_deleter(move_only_throwing_deleter&&) {
-        throw std::runtime_error("deleter move failed");
+    controlled_copy_deleter(const controlled_copy_deleter& other)
+        : throw_on_copy(other.throw_on_copy) {
+        if (*throw_on_copy) {
+            throw std::runtime_error("deleter copy failed");
+        }
     }
 
-    move_only_throwing_deleter& operator=(move_only_throwing_deleter&&) = delete;
+    controlled_copy_deleter(controlled_copy_deleter&& other) noexcept(false)
+        : controlled_copy_deleter(other) {}
 
-    void operator()(const transfer_handle& resource) const noexcept {
+    void operator()(copy_fallback_handle& resource) const noexcept {
         if (resource.value != 0) {
             --active_resources;
         }
@@ -102,17 +106,21 @@ TEST(UniqueResourceExceptionTest, ConstructorFailureCleansUpResource) {
     EXPECT_EQ(active_resources, 0);
 }
 
-TEST(UniqueResourceExceptionTest, MoveFailureCleansUpTransferredResource) {
+TEST(UniqueResourceExceptionTest, MoveFailureLeavesCopiedSourceOwning) {
     reset_resource_counters();
+    bool throw_on_copy = false;
 
-    try {
-        std::unique_resource<transfer_handle, move_only_throwing_deleter> original(
-            acquire_transfer_handle(),
-            move_only_throwing_deleter::token{});
-        auto moved = std::move(original);
-        (void)moved;
-        FAIL() << "expected move_only_throwing_deleter to throw";
-    } catch (const std::runtime_error&) {
+    {
+        std::unique_resource<copy_fallback_handle, controlled_copy_deleter> original(
+            acquire_copy_fallback_handle(), controlled_copy_deleter{throw_on_copy});
+        throw_on_copy = true;
+
+        EXPECT_THROW(
+            { auto moved = std::move(original); (void)moved; },
+            std::runtime_error);
+        EXPECT_EQ(active_resources, 1);
+
+        throw_on_copy = false;
     }
 
     EXPECT_EQ(active_resources, 0);

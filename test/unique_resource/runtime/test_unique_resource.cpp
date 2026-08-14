@@ -101,7 +101,7 @@ TEST(UniqueResourceRuntimeTest, MoveTransfersOwnership) {
     EXPECT_EQ(cleanup_count, 1);
 }
 
-TEST(UniqueResourceRuntimeTest, SelfMoveAssignmentIsNoOp) {
+TEST(UniqueResourceRuntimeTest, SelfMoveAssignmentReleasesOwnership) {
     int cleanup_count = 0;
 
     {
@@ -110,6 +110,7 @@ TEST(UniqueResourceRuntimeTest, SelfMoveAssignmentIsNoOp) {
 
         EXPECT_EQ(resource.get(), 42);
         EXPECT_EQ(resource.get_deleter().calls, &cleanup_count);
+        EXPECT_EQ(cleanup_count, 1);
     }
 
     EXPECT_EQ(cleanup_count, 1);

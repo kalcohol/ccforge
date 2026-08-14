@@ -82,33 +82,27 @@ public:
     constexpr unique_resource& operator=(unique_resource&& other) noexcept(
         is_nothrow_move_assignable_v<resource_storage> &&
         is_nothrow_move_assignable_v<D>) {
-        if (this != &other) {
-            reset();
+        reset();
 
-            if constexpr (is_nothrow_move_assignable_v<resource_storage> ||
-                          !is_copy_assignable_v<resource_storage>) {
-                if constexpr (is_nothrow_move_assignable_v<D> ||
-                              !is_copy_assignable_v<D>) {
-                    resource_ = std::move(other.resource_);
-                    deleter_ = std::move(other.deleter_);
-                } else {
-                    deleter_ = other.deleter_;
-                    resource_ = std::move(other.resource_);
-                }
+        if constexpr (is_nothrow_move_assignable_v<resource_storage>) {
+            if constexpr (is_nothrow_move_assignable_v<D>) {
+                resource_ = std::move(other.resource_);
+                deleter_ = std::move(other.deleter_);
             } else {
-                if constexpr (is_nothrow_move_assignable_v<D> ||
-                              !is_copy_assignable_v<D>) {
-                    resource_ = other.resource_;
-                    deleter_ = std::move(other.deleter_);
-                } else {
-                    resource_ = other.resource_;
-                    deleter_ = other.deleter_;
-                }
+                deleter_ = other.deleter_;
+                resource_ = std::move(other.resource_);
             }
-
-            execute_on_reset_ = std::exchange(other.execute_on_reset_, false);
+        } else {
+            if constexpr (is_nothrow_move_assignable_v<D>) {
+                resource_ = other.resource_;
+                deleter_ = std::move(other.deleter_);
+            } else {
+                resource_ = other.resource_;
+                deleter_ = other.deleter_;
+            }
         }
 
+        execute_on_reset_ = std::exchange(other.execute_on_reset_, false);
         return *this;
     }
 
@@ -124,7 +118,7 @@ public:
     }
 
     template<class RR>
-        requires (is_assignable_v<resource_storage&, RR> ||
+        requires (is_nothrow_assignable_v<resource_storage&, RR> ||
                   is_assignable_v<resource_storage&, const remove_reference_t<RR>&>)
     constexpr void reset(RR&& r) {
         reset();
@@ -213,7 +207,7 @@ private:
     }
 
     template<class DD>
-    static constexpr D construct_deleter_from_input(DD&& d, const resource_storage& resource, bool execute_on_reset) {
+    static constexpr D construct_deleter_from_input(DD&& d, resource_storage& resource, bool execute_on_reset) {
         if constexpr (is_nothrow_constructible_v<D, DD> ||
                       !is_constructible_v<D, DD&>) {
             // By the constructor constraints, this path is noexcept.
@@ -232,25 +226,26 @@ private:
     }
 
     static constexpr resource_storage construct_resource_from_other(unique_resource& other) {
-        if constexpr (is_nothrow_move_constructible_v<resource_storage> ||
-                      !is_copy_constructible_v<resource_storage>) {
+        if constexpr (is_nothrow_move_constructible_v<resource_storage>) {
             return resource_storage(std::move(other.resource_));
         } else {
             return resource_storage(other.resource_);
         }
     }
 
-    static constexpr D construct_deleter_from_other(unique_resource& other, const resource_storage& resource) {
+    static constexpr D construct_deleter_from_other(unique_resource& other, resource_storage& resource) {
         try {
-            if constexpr (is_nothrow_move_constructible_v<D> || !is_copy_constructible_v<D>) {
+            if constexpr (is_nothrow_move_constructible_v<D>) {
                 return D(std::move(other.deleter_));
             } else {
                 return D(other.deleter_);
             }
         } catch (...) {
-            if (other.execute_on_reset_) {
-                std::invoke(other.deleter_, resource_value(resource));
-                other.release();
+            if constexpr (is_nothrow_move_constructible_v<resource_storage>) {
+                if (other.execute_on_reset_) {
+                    std::invoke(other.deleter_, resource_value(resource));
+                    other.release();
+                }
             }
             throw;
         }

@@ -42,6 +42,24 @@ struct throwing_assign_reference {
     }
 };
 
+struct throwing_move_only_assignment {
+    throwing_move_only_assignment() = default;
+    throwing_move_only_assignment(const throwing_move_only_assignment&) = default;
+    throwing_move_only_assignment(throwing_move_only_assignment&&) = default;
+
+    auto operator=(const throwing_move_only_assignment&)
+        -> throwing_move_only_assignment& = delete;
+
+    auto operator=(throwing_move_only_assignment&&) noexcept(false)
+        -> throwing_move_only_assignment& {
+        return *this;
+    }
+};
+
+struct throwing_move_only_assignment_deleter {
+    void operator()(const throwing_move_only_assignment&) const noexcept {}
+};
+
 struct constexpr_noop_deleter {
     constexpr void operator()(int) const noexcept {}
 };
@@ -65,6 +83,10 @@ using non_assignable_value_resource =
     std::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
 using reference_move_assignment_resource =
     std::unique_resource<throwing_assign_reference&, void(*)(throwing_assign_reference&)>;
+using throwing_move_only_assignment_resource =
+    std::unique_resource<
+        throwing_move_only_assignment,
+        throwing_move_only_assignment_deleter>;
 using constexpr_value_resource = std::unique_resource<int, constexpr_noop_deleter>;
 using constexpr_pointer_resource = std::unique_resource<constexpr_pointer_object*, constexpr_pointer_deleter>;
 using non_default_deleter_resource = std::unique_resource<int, non_default_deleter>;
@@ -150,6 +172,11 @@ static_assert(resettable_from<value_resource, int>,
 
 static_assert(!resettable_from<non_assignable_value_resource, non_assignable_resource>,
     "reset(RR&&) should be removed from overload resolution when the resource is not assignable");
+
+static_assert(!resettable_from<
+                  throwing_move_only_assignment_resource,
+                  throwing_move_only_assignment>,
+    "reset(RR&&) should reject a throwing move when the selected const-copy assignment is unavailable");
 
 static_assert(!std::is_default_constructible_v<reference_resource>,
     "reference-backed unique_resource should not be default constructible");
