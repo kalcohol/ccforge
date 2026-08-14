@@ -164,6 +164,12 @@ T beta_fallback(T x, T y) {
     if (!(x > T{}) || !(y > T{})) {
         return quiet_nan<T>();
     }
+    if (x == T{1}) {
+        return T{1} / y;
+    }
+    if (y == T{1}) {
+        return T{1} / x;
+    }
 
     using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
     const wide_t a = std::max(

@@ -98,9 +98,8 @@ TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
     EXPECT_EQ(sm::assoc_legendre_fallback(3u, 4u, 0.25), 0.0);
 
     constexpr double large = 1.0e305;
-    EXPECT_NEAR(sm::beta_fallback(large, 1.0),
-                1.0 / large,
-                (1.0 / large) * 3e-14);
+    EXPECT_EQ(sm::beta_fallback(large, 1.0), 1.0 / large);
+    EXPECT_EQ(sm::beta_fallback(1.0, large), 1.0 / large);
     constexpr double moderate = 1.0e8;
     const double expected = 1.0 / (moderate * (moderate + 1.0));
     EXPECT_NEAR(sm::beta_fallback(moderate, 2.0),
