@@ -154,6 +154,15 @@ struct counting_allocator {
     }
 };
 
+struct member_allocator_env {
+    counting_allocator<std::byte> allocator;
+
+    auto query(std::execution::get_allocator_t) const noexcept
+        -> counting_allocator<std::byte> {
+        return allocator;
+    }
+};
+
 struct spawn_future_stop_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -366,6 +375,28 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 42);
+    }
+
+    EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
+    EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
+              counts->deallocations.load(std::memory_order_relaxed));
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    auto counts = std::make_shared<allocation_counts>();
+
+    {
+        auto future = std::execution::spawn_future(
+            std::execution::read_env(std::execution::get_allocator),
+            token,
+            member_allocator_env{counting_allocator<std::byte>{counts}});
+        auto result = std::execution::sync_wait(std::move(future));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(std::get<0>(*result).counts, counts);
     }
 
     EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);

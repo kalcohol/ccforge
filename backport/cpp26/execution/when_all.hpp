@@ -45,17 +45,26 @@ namespace __forge_when_all {
 struct __stopped_tag {};
 
 template<class Env>
-struct __child_env : std::decay_t<Env> {
+struct __child_env {
     using base_t = std::decay_t<Env>;
 
+    [[no_unique_address]] base_t __base;
     inplace_stop_token __token;
 
     __child_env(base_t env, inplace_stop_token token)
-        : base_t(std::move(env)), __token(token) {}
+        : __base(std::move(env)), __token(token) {}
 
     friend auto tag_invoke(get_stop_token_t, const __child_env& self) noexcept
         -> inplace_stop_token {
         return self.__token;
+    }
+
+    template<class Query>
+        requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
+                  __forge_env_detail::__queryable<Query, const base_t&>)
+    friend decltype(auto) tag_invoke(Query query, const __child_env& self)
+        noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
+        return __forge_env_detail::__query(std::move(query), self.__base);
     }
 };
 

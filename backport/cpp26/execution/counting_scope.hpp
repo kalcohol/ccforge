@@ -463,10 +463,10 @@ struct __stop_env {
 
     template<class Tag>
         requires (!std::same_as<std::remove_cvref_t<Tag>, get_stop_token_t> &&
-                  __forge_detail::tag_invocable<Tag, const BaseEnv&>)
+                  __forge_env_detail::__queryable<Tag, const BaseEnv&>)
     friend decltype(auto) tag_invoke(Tag tag, const __stop_env& self)
-        noexcept(__forge_detail::nothrow_tag_invocable<Tag, const BaseEnv&>) {
-        return __forge_detail::tag_invoke_fn(tag, self.__base);
+        noexcept(__forge_env_detail::__nothrow_query<Tag, const BaseEnv&>) {
+        return __forge_env_detail::__query(std::move(tag), self.__base);
     }
 };
 

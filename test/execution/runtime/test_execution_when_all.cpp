@@ -189,6 +189,36 @@ struct outer_stop_receiver {
     }
 };
 
+struct member_stop_env {
+    std::inplace_stop_token token;
+
+    auto query(std::execution::get_stop_token_t) const noexcept
+        -> std::inplace_stop_token {
+        return token;
+    }
+};
+
+struct member_stop_error_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::inplace_stop_source* source;
+    bool* errored;
+
+    template<class... Vs>
+    void set_value(Vs&&...) && noexcept {}
+
+    template<class E>
+    void set_error(E&&) && noexcept {
+        *errored = true;
+    }
+
+    void set_stopped() && noexcept {}
+
+    auto get_env() const noexcept -> member_stop_env {
+        return member_stop_env{source->get_token()};
+    }
+};
+
 struct value_error_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -385,4 +415,24 @@ TEST(WhenAllTest, OuterStopRequestReachesChildren) {
     EXPECT_EQ(observed_stops, 2);
     EXPECT_TRUE(stopped);
     EXPECT_FALSE(errored);
+}
+
+TEST(WhenAllTest, MemberQueryEnvCannotHideSiblingCancellation) {
+    std::inplace_stop_source outer_source;
+    int observed_stops = 0;
+    bool errored = false;
+
+    auto op = std::execution::connect(
+        std::execution::when_all(
+            std::execution::just_error(42),
+            stop_observing_sender{&observed_stops}),
+        member_stop_error_receiver{&outer_source, &errored});
+
+    std::execution::start(op);
+
+    EXPECT_EQ(observed_stops, 1);
+    EXPECT_TRUE(errored);
+    if (observed_stops == 0) {
+        outer_source.request_stop();
+    }
 }

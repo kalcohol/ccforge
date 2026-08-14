@@ -3,6 +3,7 @@
 #include <execution>
 #include <atomic>
 #include <future>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <type_traits>
@@ -97,6 +98,32 @@ struct scheduler_value_sender {
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_sender&) noexcept
         -> std::execution::empty_env {
         return {};
+    }
+};
+
+struct member_allocator_attrs {
+    auto query(std::execution::get_allocator_t) const noexcept
+        -> std::allocator<std::byte> {
+        return {};
+    }
+};
+
+struct member_allocator_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> member_allocator_attrs {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) const {
+        return std::execution::connect(std::execution::just(), std::move(rcvr));
     }
 };
 
@@ -527,6 +554,17 @@ TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions)
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_scheduler_t<std::execution::set_stopped_t>,
         const decltype(env)&>);
+}
+
+TEST(ContinuesOnTest, PreservesMemberQueriedChildAttributes) {
+    auto sndr = std::execution::continues_on(
+        member_allocator_sender{},
+        std::execution::inline_scheduler{});
+    auto attrs = std::execution::get_env(sndr);
+
+    auto allocator = std::execution::get_allocator(attrs);
+
+    static_assert(std::same_as<decltype(allocator), std::allocator<std::byte>>);
 }
 
 TEST(ContinuesOnTest, SupportsMutableLvalueSchedule) {

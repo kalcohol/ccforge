@@ -312,15 +312,12 @@ struct __completion_attrs {
 
     template<class Query>
         requires (!__completion_scheduler_query_v<Query>) &&
-                 __forge_detail::tag_invocable<Query, const ChildEnv&>
+                 __forge_env_detail::__queryable<Query, const ChildEnv&>
     friend decltype(auto) tag_invoke(
         Query query,
         const __completion_attrs& self)
-        noexcept(__forge_detail::nothrow_tag_invocable<
-                 Query,
-                 const ChildEnv&>) {
-        return __forge_detail::tag_invoke_fn(
-            std::move(query), self.__child);
+        noexcept(__forge_env_detail::__nothrow_query<Query, const ChildEnv&>) {
+        return __forge_env_detail::__query(std::move(query), self.__child);
     }
 };
 
