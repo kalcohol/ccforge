@@ -375,9 +375,15 @@ static_assert(std::execution::scheduler<domain_scheduler>);
 
 TEST(IntoVariantTest, WrapsValue) {
     auto sndr = std::execution::into_variant(std::execution::just(42));
+    using var_t = std::variant<std::tuple<int>>;
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(var_t)>>);
+
     auto result = std::execution::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
-    using var_t = std::variant<std::tuple<int>>;
     auto& var = std::get<0>(*result);
     EXPECT_EQ(std::get<std::tuple<int>>(var), std::make_tuple(42));
 }
@@ -393,6 +399,14 @@ TEST(IntoVariantTest, SupportsPipeForm) {
 
 TEST(IntoVariantTest, ReportsConstructionFailureAsError) {
     auto sndr = std::execution::into_variant(throwing_value_sender{});
+    using var_t = std::variant<std::tuple<throwing_move_value>>;
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(var_t),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
     EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
 }
 

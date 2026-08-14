@@ -43,6 +43,24 @@ TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
     EXPECT_EQ(std::get<0>(*result), 16);
 }
 
+TEST(BulkTest, NothrowFunctionDoesNotAdvertiseExceptionPtr) {
+    auto sndr = std::execution::bulk_unchunked(
+        std::execution::just(10),
+        4,
+        [](int index, int& value) noexcept {
+            value += index;
+        });
+
+    using cs_t = signatures_t<decltype(sndr)>;
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int)>>);
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 16);
+}
+
 #if defined(__GLIBCXX__) || defined(_MSC_VER)
 TEST(BulkTest, UnchunkedAcceptsStandardPolicyParameter) {
     static_assert(std::is_execution_policy_v<

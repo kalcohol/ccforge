@@ -33,6 +33,35 @@ namespace __forge_bulk {
 
 struct __serial_policy {};
 
+template<bool Chunked, class Shape, class Fn, class Sig>
+struct __value_may_throw : std::false_type {};
+
+template<class Shape, class Fn, class... Vs>
+struct __value_may_throw<false, Shape, Fn, set_value_t(Vs...)>
+    : std::bool_constant<
+          !std::is_nothrow_invocable_v<Fn&, Shape, Vs&...>> {};
+
+template<class Shape, class Fn, class... Vs>
+struct __value_may_throw<true, Shape, Fn, set_value_t(Vs...)>
+    : std::bool_constant<
+          !std::is_nothrow_invocable_v<Fn&, Shape, Shape, Vs&...>> {};
+
+template<bool Chunked, class Shape, class Fn, class CS>
+struct __completion_signatures;
+
+template<bool Chunked, class Shape, class Fn, class... Sigs>
+struct __completion_signatures<
+    Chunked, Shape, Fn, completion_signatures<Sigs...>> {
+    static constexpr bool may_throw =
+        (__value_may_throw<Chunked, Shape, Fn, Sigs>::value || ...);
+    using type = std::conditional_t<
+        may_throw,
+        __forge_meta::__concat_unique_cs_t<
+            completion_signatures<Sigs...>,
+            completion_signatures<set_error_t(std::exception_ptr)>>,
+        completion_signatures<Sigs...>>;
+};
+
 template<bool Chunked, class S, class Shape, class Fn, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
@@ -45,7 +74,10 @@ struct __op : __forge_detail::__immovable {
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
-            try {
+            constexpr bool nothrow = Chunked
+                ? std::is_nothrow_invocable_v<Fn&, Shape, Shape, Vs&...>
+                : std::is_nothrow_invocable_v<Fn&, Shape, Vs&...>;
+            auto run = [&]() noexcept(nothrow) {
                 if constexpr (Chunked) {
                     if (Shape{} < __shape) {
                         __fn(Shape{}, __shape, vs...);
@@ -56,8 +88,16 @@ struct __op : __forge_detail::__immovable {
                     }
                 }
                 std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
-            } catch (...) {
-                std::execution::set_error(std::move(*__outer), std::current_exception());
+            };
+            if constexpr (nothrow) {
+                run();
+            } else {
+                try {
+                    run();
+                } catch (...) {
+                    std::execution::set_error(
+                        std::move(*__outer), std::current_exception());
+                }
             }
         }
         template<class E>
@@ -104,10 +144,9 @@ struct __sender {
         using up_cs = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
-        using with_eptr = __forge_meta::__concat_cs_t<
-            up_cs,
-            completion_signatures<set_error_t(std::exception_ptr)>>;
-        return with_eptr{};
+        using out_cs = typename __completion_signatures<
+            Chunked, Shape, Fn, up_cs>::type;
+        return out_cs{};
     }
 
     template<receiver R>

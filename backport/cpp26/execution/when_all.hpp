@@ -43,6 +43,7 @@ namespace std::execution {
 namespace __forge_when_all {
 
 struct __stopped_tag {};
+struct __no_error {};
 
 template<class Env>
 struct __child_env {
@@ -180,6 +181,26 @@ struct __error_type_list<completion_signatures<Sigs...>> {
     using type = typename __collect_error_types<__forge_meta::type_list<>, Sigs...>::type;
 };
 
+template<class Sig>
+struct __result_copy_may_throw : std::false_type {};
+
+template<class... Vs>
+struct __result_copy_may_throw<set_value_t(Vs...)>
+    : std::bool_constant<!std::is_nothrow_constructible_v<
+          std::tuple<std::decay_t<Vs>...>, Vs...>> {};
+
+template<class E>
+struct __result_copy_may_throw<set_error_t(E)>
+    : std::bool_constant<
+          !std::is_nothrow_constructible_v<std::decay_t<E>, E>> {};
+
+template<class CS>
+struct __completion_copy_may_throw;
+
+template<class... Sigs>
+struct __completion_copy_may_throw<completion_signatures<Sigs...>>
+    : std::bool_constant<(__result_copy_may_throw<Sigs>::value || ...)> {};
+
 template<class List, class AddList>
 struct __append_type_list_unique;
 
@@ -212,7 +233,11 @@ struct __error_list_to_cs<__forge_meta::type_list<Es...>> {
 
 template<class... CSList>
 using __error_type_list_t = typename __concat_unique_type_lists<
-    __forge_meta::type_list<std::exception_ptr>, typename __error_type_list<CSList>::type...>::type;
+    std::conditional_t<
+        (__completion_copy_may_throw<CSList>::value || ...),
+        __forge_meta::type_list<std::exception_ptr>,
+        __forge_meta::type_list<>>,
+    typename __error_type_list<CSList>::type...>::type;
 
 template<class... CSList>
 using __error_cs_t = typename __error_list_to_cs<__error_type_list_t<CSList...>>::type;
@@ -222,7 +247,7 @@ struct __error_variant_from_list;
 
 template<class... Es>
 struct __error_variant_from_list<__forge_meta::type_list<Es...>> {
-    using type = std::variant<Es...>;
+    using type = std::variant<__no_error, Es...>;
 };
 
 template<class S, class Env>
@@ -244,13 +269,18 @@ struct __child_recv {
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        try {
-            using tuple_t = std::tuple<std::decay_t<Vs>...>;
+        using tuple_t = std::tuple<std::decay_t<Vs>...>;
+        if constexpr (std::is_nothrow_constructible_v<tuple_t, Vs...>) {
             std::get<I>(__self->__partial).emplace(
                 std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
-        } catch (...) {
-            __self->child_fail(std::current_exception());
-            return;
+        } else {
+            try {
+                std::get<I>(__self->__partial).emplace(
+                    std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
+            } catch (...) {
+                __self->child_fail(std::current_exception());
+                return;
+            }
         }
         __self->child_done();
     }
@@ -358,17 +388,26 @@ struct __op : __forge_detail::__immovable {
     void child_fail(E&& e) noexcept {
         bool expected = false;
         __failed.compare_exchange_strong(expected, true);
-        try {
+        if constexpr (std::is_nothrow_constructible_v<std::decay_t<E>, E>) {
             std::lock_guard lk{__mtx};
             if (__result.index() != 1) {
                 __result.template emplace<1>(
                     std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
             }
-        } catch (...) {
-            std::lock_guard lk{__mtx};
-            if (__result.index() != 1) {
-                __result.template emplace<1>(
-                    std::in_place_type<std::exception_ptr>, std::current_exception());
+        } else {
+            try {
+                std::lock_guard lk{__mtx};
+                if (__result.index() != 1) {
+                    __result.template emplace<1>(
+                        std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
+                }
+            } catch (...) {
+                std::lock_guard lk{__mtx};
+                if (__result.index() != 1) {
+                    __result.template emplace<1>(
+                        std::in_place_type<std::exception_ptr>,
+                        std::current_exception());
+                }
             }
         }
         __stop_src.request_stop();
@@ -395,7 +434,13 @@ struct __op : __forge_detail::__immovable {
         __stop_callback_storage.destroy();
         if (__result.index() == 1) {
             std::visit([this](auto& err) noexcept {
-                std::execution::set_error(std::move(__outer_recv), std::move(err));
+                using error_t = std::remove_cvref_t<decltype(err)>;
+                if constexpr (std::same_as<error_t, __no_error>) {
+                    std::terminate();
+                } else {
+                    std::execution::set_error(
+                        std::move(__outer_recv), std::move(err));
+                }
             }, std::get<1>(__result));
         } else if (__result.index() == 2) {
             if constexpr (__sends_stopped) {
@@ -416,19 +461,21 @@ struct __op : __forge_detail::__immovable {
 
     template<std::size_t... Is>
     void try_deliver_values(std::index_sequence<Is...>) noexcept {
-        try {
-            std::visit([this](auto&... values) noexcept {
-                try {
-                    auto combined = std::tuple_cat(std::move(values)...);
-                    std::apply([&](auto&&... vs) {
-                        std::execution::set_value(std::move(__outer_recv), std::move(vs)...);
-                    }, std::move(combined));
-                } catch (...) {
-                    std::execution::set_error(std::move(__outer_recv), std::current_exception());
-                }
-            }, *std::get<Is>(__partial)...);
-        } catch (...) {
-            std::execution::set_error(std::move(__outer_recv), std::current_exception());
+        std::visit([this](auto&... values) noexcept {
+            auto tuples = std::tie(values...);
+            deliver_flattened(tuples);
+        }, *std::get<Is>(__partial)...);
+    }
+
+    template<std::size_t I = 0, class Tuples, class... Vs>
+    void deliver_flattened(Tuples& tuples, Vs&... values) noexcept {
+        if constexpr (I == std::tuple_size_v<Tuples>) {
+            std::execution::set_value(
+                std::move(__outer_recv), std::move(values)...);
+        } else {
+            std::apply([&](auto&... next) noexcept {
+                deliver_flattened<I + 1>(tuples, values..., next...);
+            }, std::get<I>(tuples));
         }
     }
 

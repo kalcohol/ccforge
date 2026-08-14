@@ -565,8 +565,7 @@ TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<int>),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(std::optional<int>)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -581,8 +580,7 @@ TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<int, int>>),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(std::optional<std::tuple<int, int>>)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -598,8 +596,7 @@ TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<>>),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(std::optional<std::tuple<>>)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 
@@ -609,6 +606,9 @@ TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
 
 TEST(StoppedAsOptionalTest, ValueConstructionThrowCompletesWithError) {
     auto sndr = std::execution::stopped_as_optional(throwing_value_sender{});
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::execution::empty_env{}));
+    static_assert(has_exception_ptr_error<cs_t>::value);
 
     EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
 }

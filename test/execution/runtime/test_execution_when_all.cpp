@@ -298,7 +298,6 @@ TEST(WhenAllTest, ReportsCartesianValueAndChildErrorSignatures) {
             std::execution::set_value_t(int, bool),
             std::execution::set_value_t(double, char),
             std::execution::set_value_t(double, bool),
-            std::execution::set_error_t(std::exception_ptr),
             std::execution::set_error_t(short),
             std::execution::set_error_t(long),
             std::execution::set_stopped_t()>>);
@@ -316,7 +315,6 @@ TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(first_variant_t, second_variant_t),
-            std::execution::set_error_t(std::exception_ptr),
             std::execution::set_error_t(short),
             std::execution::set_error_t(long),
             std::execution::set_stopped_t()>>);
@@ -346,7 +344,6 @@ TEST(WhenAllTest, DropsValueSignatureWhenAChildCannotProduceValue) {
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_error_t(std::exception_ptr),
             std::execution::set_error_t(int)>>);
 }
 

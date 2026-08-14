@@ -48,21 +48,28 @@ struct __optional_value_type<V> {
 template<class... Vs>
 using __optional_value_t = typename __optional_value_type<Vs...>::type;
 
-inline auto __make_optional_value() -> std::optional<std::tuple<>> {
-    return std::optional<std::tuple<>>{std::tuple<>{}};
+inline auto __make_optional_value() noexcept -> std::optional<std::tuple<>> {
+    return std::optional<std::tuple<>>{std::in_place};
 }
 
 template<class V>
-auto __make_optional_value(V&& v) -> std::optional<std::decay_t<V>> {
-    return std::optional<std::decay_t<V>>{static_cast<V&&>(v)};
+auto __make_optional_value(V&& v)
+    noexcept(std::is_nothrow_constructible_v<std::decay_t<V>, V>)
+    -> std::optional<std::decay_t<V>> {
+    return std::optional<std::decay_t<V>>{
+        std::in_place, static_cast<V&&>(v)};
 }
 
 template<class V1, class V2, class... Vs>
 auto __make_optional_value(V1&& v1, V2&& v2, Vs&&... vs)
+    noexcept(std::is_nothrow_constructible_v<
+        std::tuple<std::decay_t<V1>, std::decay_t<V2>, std::decay_t<Vs>...>,
+        V1, V2, Vs...>)
     -> std::optional<std::tuple<std::decay_t<V1>, std::decay_t<V2>, std::decay_t<Vs>...>> {
     using tuple_t = std::tuple<std::decay_t<V1>, std::decay_t<V2>, std::decay_t<Vs>...>;
-    return std::optional<tuple_t>{tuple_t(
-        static_cast<V1&&>(v1), static_cast<V2&&>(v2), static_cast<Vs&&>(vs)...)};
+    return std::optional<tuple_t>{
+        std::in_place,
+        static_cast<V1&&>(v1), static_cast<V2&&>(v2), static_cast<Vs&&>(vs)...};
 }
 
 template<class CS>
@@ -82,16 +89,20 @@ struct __first_optional_type<completion_signatures<Other, Rest...>>
 template<class Sig>
 struct __optional_sig {
     using type = completion_signatures<Sig>;
+    static constexpr bool may_throw = false;
 };
 
 template<class... Vs>
 struct __optional_sig<set_value_t(Vs...)> {
     using type = completion_signatures<set_value_t(__optional_value_t<Vs...>)>;
+    static constexpr bool may_throw =
+        !noexcept(__make_optional_value(std::declval<Vs>()...));
 };
 
 template<>
 struct __optional_sig<set_stopped_t()> {
     using type = completion_signatures<>;
+    static constexpr bool may_throw = false;
 };
 
 template<class OptionalT, bool SendsStopped>
@@ -110,10 +121,15 @@ struct __optional_cs;
 template<class... Sigs>
 struct __optional_cs<completion_signatures<Sigs...>> {
     using optional_t = typename __first_optional_type<completion_signatures<Sigs...>>::type;
+    static constexpr bool may_throw = (__optional_sig<Sigs>::may_throw || ...);
+    using eptr_cs = std::conditional_t<
+        may_throw,
+        completion_signatures<set_error_t(std::exception_ptr)>,
+        completion_signatures<>>;
     using type = __forge_meta::__concat_unique_cs_t<
         typename __optional_sig<Sigs>::type...,
         typename __optional_stopped_sig<optional_t, __forge_meta::has_stopped_v<Sigs...>>::type,
-        completion_signatures<set_error_t(std::exception_ptr)>>;
+        eptr_cs>;
 };
 
 template<class Err, bool SendsStopped>
@@ -156,11 +172,19 @@ struct __optional_op : __forge_detail::__immovable {
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
-            try {
+            if constexpr (noexcept(
+                              __make_optional_value(static_cast<Vs&&>(vs)...))) {
                 auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
                 std::execution::set_value(std::move(*__rcvr), std::move(value));
-            } catch (...) {
-                std::execution::set_error(std::move(*__rcvr), std::current_exception());
+            } else {
+                try {
+                    auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
+                    std::execution::set_value(
+                        std::move(*__rcvr), std::move(value));
+                } catch (...) {
+                    std::execution::set_error(
+                        std::move(*__rcvr), std::current_exception());
+                }
             }
         }
         template<class E>

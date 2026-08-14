@@ -133,7 +133,21 @@ private:
 
     using __non_value_list = typename __collect_non_value<__forge_meta::type_list<>, Sigs...>::type;
     using __non_value_cs = typename __list_to_cs<__non_value_list>::type;
-    using __eptr_cs = completion_signatures<set_error_t(std::exception_ptr)>;
+
+    template<class Sig>
+    struct __value_may_throw : std::false_type {};
+
+    template<class... Vs>
+    struct __value_may_throw<set_value_t(Vs...)>
+        : std::bool_constant<!std::is_nothrow_constructible_v<
+              std::tuple<std::decay_t<Vs>...>, Vs...>> {};
+
+    static constexpr bool __may_throw =
+        (__value_may_throw<Sigs>::value || ...);
+    using __eptr_cs = std::conditional_t<
+        __may_throw,
+        completion_signatures<set_error_t(std::exception_ptr)>,
+        completion_signatures<>>;
 
 public:
     using type = __forge_meta::__concat_unique_cs_t<__value_cs, __non_value_cs, __eptr_cs>;
@@ -212,11 +226,21 @@ struct __into_variant_recv {
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
         using tup_t = std::tuple<std::decay_t<Vs>...>;
-        try {
-            VariantT var(tup_t(static_cast<Vs&&>(vs)...));
+        constexpr bool nothrow =
+            std::is_nothrow_constructible_v<tup_t, Vs...>;
+        if constexpr (nothrow) {
+            VariantT var(
+                std::in_place_type<tup_t>, static_cast<Vs&&>(vs)...);
             std::execution::set_value(std::move(__rcvr), std::move(var));
-        } catch (...) {
-            std::execution::set_error(std::move(__rcvr), std::current_exception());
+        } else {
+            try {
+                VariantT var(
+                    std::in_place_type<tup_t>, static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(__rcvr), std::move(var));
+            } catch (...) {
+                std::execution::set_error(
+                    std::move(__rcvr), std::current_exception());
+            }
         }
     }
 
