@@ -36,13 +36,43 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace std::execution {
 
 namespace __forge_awaitable {
 
 struct __stopped_awaitable_exception {};
+struct __unit {};
+
+template<class Tuple>
+struct __value_from_tuple;
+
+template<>
+struct __value_from_tuple<std::tuple<>> {
+    using type = void;
+};
+
+template<class T>
+struct __value_from_tuple<std::tuple<T>> {
+    using type = T;
+};
+
+template<class T, class U, class... Rest>
+struct __value_from_tuple<std::tuple<T, U, Rest...>> {
+    using type = std::tuple<T, U, Rest...>;
+};
+
+template<class List>
+struct __single_sender_value {};
+
+template<>
+struct __single_sender_value<__forge_meta::type_list<>> {
+    using type = void;
+};
+
+template<class Tuple>
+struct __single_sender_value<__forge_meta::type_list<Tuple>>
+    : __value_from_tuple<Tuple> {};
 
 template<class Promise>
 concept __has_unhandled_stopped = requires(Promise& p) {
@@ -68,6 +98,23 @@ auto __get_promise_env(const Promise&) noexcept -> empty_env {
 }
 
 template<class S, class Promise>
+struct __sender_value
+    : __single_sender_value<__forge_meta::value_tuple_list_t<decltype(
+          std::execution::get_completion_signatures(
+              std::declval<S>(),
+              std::declval<decltype(__get_promise_env(
+                  std::declval<const Promise&>()))>()))>> {
+    using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        std::declval<S>(), std::declval<env_t>()));
+};
+
+template<class S, class Promise>
+concept __single_sender = requires {
+    typename __sender_value<S, Promise>::type;
+};
+
+template<class S, class Promise>
 struct __awaitable {
     S __sndr;
     Promise* __promise;
@@ -75,11 +122,13 @@ struct __awaitable {
     __awaitable(S sndr, Promise* promise)
         : __sndr(std::move(sndr)), __promise(promise) {}
 
-    using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
+    using env_t = typename __sender_value<S, Promise>::env_t;
     using cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<S>(), std::declval<env_t>()));
-    using value_t = __forge_meta::single_value_or_variant_t<cs_t>;
-    using result_t = std::optional<value_t>;
+    using value_t = typename __sender_value<S, Promise>::type;
+    using stored_value_t = std::conditional_t<
+        std::is_void_v<value_t>, __unit, value_t>;
+    using result_t = std::optional<stored_value_t>;
 
     struct __recv {
         using receiver_concept = receiver_t;
@@ -88,10 +137,12 @@ struct __awaitable {
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
             try {
-                using tuple_t = std::tuple<std::decay_t<Vs>...>;
-                auto value = __forge_meta::value_from_tuple<value_t>(
-                    tuple_t{static_cast<Vs&&>(vs)...});
-                __self->__result.emplace(std::move(value));
+                if constexpr (std::is_void_v<value_t>) {
+                    static_assert(sizeof...(Vs) == 0);
+                    __self->__result.emplace();
+                } else {
+                    __self->__result.emplace(static_cast<Vs&&>(vs)...);
+                }
             } catch (...) {
                 __self->__exc = std::current_exception();
             }
@@ -151,10 +202,12 @@ struct __awaitable {
         return std::noop_coroutine();
     }
 
-    auto await_resume() {
+    auto await_resume() -> value_t {
         if (__exc) std::rethrow_exception(__exc);
         if (__stopped) throw __stopped_awaitable_exception{};
-        return std::move(*__result);
+        if constexpr (!std::is_void_v<value_t>) {
+            return std::move(*__result);
+        }
     }
 
 private:
@@ -183,6 +236,7 @@ private:
 // Returns an awaitable that bridges the sender into a coroutine context.
 struct as_awaitable_t {
     template<sender S, class Promise>
+        requires __forge_awaitable::__single_sender<std::decay_t<S>, Promise>
     [[nodiscard]] auto operator()(S&& sndr, Promise& promise) const {
         return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};

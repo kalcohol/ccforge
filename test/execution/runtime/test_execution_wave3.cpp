@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <type_traits>
-#include <variant>
 
 namespace {
 
@@ -86,8 +85,8 @@ struct EnvTask {
 
 static int g_coro_result = -1;
 static int g_env_result = -1;
-static int g_multi_result = -1;
-static int g_empty_alt_result = -1;
+static int g_multi_arg_result = -1;
+static bool g_void_result = false;
 static int g_ordinary_awaitable_result = -1;
 
 struct immediate_int_awaiter {
@@ -97,8 +96,9 @@ struct immediate_int_awaiter {
 };
 
 SimpleTask run_coro() {
-    auto tup = co_await std::execution::just(42);
-    g_coro_result = std::get<0>(tup);
+    auto value = co_await std::execution::just(42);
+    static_assert(std::is_same_v<decltype(value), int>);
+    g_coro_result = value;
 }
 
 SimpleTask run_ordinary_awaitable_coro() {
@@ -106,8 +106,20 @@ SimpleTask run_ordinary_awaitable_coro() {
 }
 
 EnvTask run_env_coro() {
-    auto tup = co_await std::execution::read_env(await_env_query{});
-    g_env_result = std::get<0>(tup);
+    auto value = co_await std::execution::read_env(await_env_query{});
+    static_assert(std::is_same_v<decltype(value), int>);
+    g_env_result = value;
+}
+
+SimpleTask run_void_coro() {
+    co_await std::execution::just();
+    g_void_result = true;
+}
+
+SimpleTask run_multi_arg_coro() {
+    auto value = co_await std::execution::just(3, 4);
+    static_assert(std::is_same_v<decltype(value), std::tuple<int, int>>);
+    g_multi_arg_result = std::get<0>(value) + std::get<1>(value);
 }
 
 template<class R>
@@ -188,29 +200,15 @@ struct empty_or_int_sender {
     }
 };
 
-SimpleTask run_multi_value_coro(bool use_double) {
-    auto value = co_await multi_value_sender{use_double};
-    using expected_t = std::variant<std::tuple<int>, std::tuple<double>>;
-    static_assert(std::is_same_v<decltype(value), expected_t>);
+template<class S>
+concept sender_can_be_awaited = requires(
+    S&& sender,
+    SimpleTask::promise_type& promise) {
+    std::execution::as_awaitable(std::move(sender), promise);
+};
 
-    g_multi_result = std::visit([](auto& tuple) {
-        return static_cast<int>(std::get<0>(tuple));
-    }, value);
-}
-
-SimpleTask run_empty_or_int_coro(bool use_empty) {
-    auto value = co_await empty_or_int_sender{use_empty};
-    using expected_t = std::variant<std::tuple<>, std::tuple<int>>;
-    static_assert(std::is_same_v<decltype(value), expected_t>);
-
-    g_empty_alt_result = std::visit([](auto& tuple) {
-        if constexpr (std::tuple_size_v<std::decay_t<decltype(tuple)>> == 0) {
-            return 1;
-        } else {
-            return std::get<0>(tuple);
-        }
-    }, value);
-}
+static_assert(!sender_can_be_awaited<multi_value_sender>);
+static_assert(!sender_can_be_awaited<empty_or_int_sender>);
 
 TEST(CoroutineBridgeTest, CoAwaitSender) {
     g_coro_result = -1;
@@ -230,24 +228,16 @@ TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {
     EXPECT_EQ(g_env_result, 42);
 }
 
-TEST(CoroutineBridgeTest, CoAwaitMultiValueAlternativesReturnVariant) {
-    g_multi_result = -1;
-    run_multi_value_coro(false);
-    EXPECT_EQ(g_multi_result, 3);
-
-    g_multi_result = -1;
-    run_multi_value_coro(true);
-    EXPECT_EQ(g_multi_result, 4);
+TEST(CoroutineBridgeTest, CoAwaitZeroValueSenderReturnsVoid) {
+    g_void_result = false;
+    run_void_coro();
+    EXPECT_TRUE(g_void_result);
 }
 
-TEST(CoroutineBridgeTest, CoAwaitEmptyValueAlternativeUsesEmptyTuple) {
-    g_empty_alt_result = -1;
-    run_empty_or_int_coro(true);
-    EXPECT_EQ(g_empty_alt_result, 1);
-
-    g_empty_alt_result = -1;
-    run_empty_or_int_coro(false);
-    EXPECT_EQ(g_empty_alt_result, 8);
+TEST(CoroutineBridgeTest, CoAwaitMultiArgumentValueReturnsTuple) {
+    g_multi_arg_result = -1;
+    run_multi_arg_coro();
+    EXPECT_EQ(g_multi_arg_result, 7);
 }
 
 struct StoppedProbeTask {

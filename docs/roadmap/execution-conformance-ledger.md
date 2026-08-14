@@ -69,7 +69,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `spawn_future` | Implemented subset | Eager single-consumer future sender；value/error 结果按 decayed types 存储、声明并以 rvalue 交付；shared state 和 consumer records 尊重 `get_allocator(env)`，`any_stop_token` callback internals 保持 allocator-neutral。 |
 | `inplace_stop_source/token/callback` | Implemented subset | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 current-WD conditional `noexcept`。见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
-| `as_awaitable`, `with_awaitable_senders` | Implemented Forge-compatible subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 保留历史 single-value tuple 行为，multi-value alternatives 使用 `variant<tuple<...>>`。 |
+| `as_awaitable`, `with_awaitable_senders` | Implemented subset | `with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播，并保留普通 awaitable；sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`，并拒绝多 value-alternative sender。 |
 | `affine` | Implemented subset | `affine.hpp`；单参数 CPO / bare-pipe 形式从 receiver env 查询 `get_start_scheduler`，通过 unstoppable schedule sender 复用 `continues_on` transfer subset；因此仍受单一 value completion shape 限制。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
 | `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
@@ -133,9 +133,8 @@ risk triage 的事实来源。
   `any_stop_token` 决策覆盖。当前为保留已验证的 reentrant destruction behavior 暂缓
   allocation-free rewrite；见
   [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。
-- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、`transfer_just` extension、
-  `as_awaitable` 的 Forge-compatible tuple shape，以及 `affine` 的 single-value transfer
-  subset 都是已接受
+- Serial `bulk` / `bulk_chunked` / `bulk_unchunked`、`transfer_just` extension，
+  以及 `affine` 的 single-value transfer subset 都是已接受
   residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。
 - 常规验证矩阵中尚无稳定主流 native `std::execution` 实现，因此 execution 自身的 native
   handoff 仍是未来 integration risk。

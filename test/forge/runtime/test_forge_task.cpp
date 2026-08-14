@@ -178,15 +178,15 @@ forge::task<int> simple_task() {
 }
 
 forge::task<int> await_just_task() {
-    auto tup = co_await std::execution::just(41);
-    co_return std::get<0>(tup) + 1;
+    auto value = co_await std::execution::just(41);
+    co_return value + 1;
 }
 
 forge::task<int> await_move_only_lvalue_sender_task() {
     auto sndr = std::execution::just(std::make_unique<int>(53))
         | std::execution::then(deref_unique{});
-    auto tup = co_await std::move(sndr);
-    co_return std::get<0>(tup);
+    auto value = co_await std::move(sndr);
+    co_return value;
 }
 
 forge::task<void> void_task(int* result) {
