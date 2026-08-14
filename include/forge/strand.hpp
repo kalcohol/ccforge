@@ -84,6 +84,8 @@ struct __record final : __record_base {
 struct __state;
 struct __current_state_guard;
 inline thread_local __current_state_guard* __current_guard = nullptr;
+struct __launch_guard;
+inline thread_local __launch_guard* __current_launch_guard = nullptr;
 
 struct __current_state_guard {
     explicit __current_state_guard(__state* state) noexcept
@@ -98,6 +100,22 @@ struct __current_state_guard {
 
     __state* state;
     __current_state_guard* previous;
+};
+
+struct __launch_guard {
+    explicit __launch_guard(__state* state) noexcept
+        : state(state)
+        , previous(__current_launch_guard) {
+        __current_launch_guard = this;
+    }
+
+    ~__launch_guard() {
+        __current_launch_guard = previous;
+    }
+
+    __state* state;
+    __launch_guard* previous;
+    bool relaunch = false;
 };
 
 struct __runner_base {
@@ -428,6 +446,23 @@ private:
     }
 
     void launch_runner() noexcept {
+        for (auto* guard = __current_launch_guard;
+             guard != nullptr;
+             guard = guard->previous) {
+            if (guard->state == this) {
+                guard->relaunch = true;
+                return;
+            }
+        }
+
+        __launch_guard guard{this};
+        do {
+            guard.relaunch = false;
+            launch_runner_once();
+        } while (guard.relaunch);
+    }
+
+    void launch_runner_once() noexcept {
         try {
             auto sender = std::execution::schedule(scheduler_);
             using sender_t = decltype(sender);

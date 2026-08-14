@@ -184,6 +184,63 @@ struct delayed_scheduler {
     friend bool operator==(const delayed_scheduler&, const delayed_scheduler&) noexcept = default;
 };
 
+struct inline_depth_state {
+    int active = 0;
+    int max_active = 0;
+    int schedules = 0;
+};
+
+struct inline_depth_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::shared_ptr<inline_depth_state> state;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        std::shared_ptr<inline_depth_state> state;
+        R rcvr;
+
+        void start() & noexcept {
+            ++state->active;
+            state->max_active = std::max(state->max_active, state->active);
+            ++state->schedules;
+            std::execution::set_value(std::move(rcvr));
+            --state->active;
+        }
+    };
+
+    template<class R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(state), std::move(rcvr)};
+    }
+};
+
+struct inline_depth_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    std::shared_ptr<inline_depth_state> state;
+
+    auto schedule() const noexcept -> inline_depth_sender {
+        return inline_depth_sender{state};
+    }
+
+    friend bool operator==(
+        const inline_depth_scheduler&,
+        const inline_depth_scheduler&) noexcept = default;
+};
+
 } // namespace
 
 static_assert(std::execution::scheduler<forge::strand::scheduler>);
@@ -248,6 +305,32 @@ TEST(StrandTest, QueueAllocationFailureStopsWorkAndClosesStrand) {
     EXPECT_TRUE(state->stopped);
     EXPECT_TRUE(strand.closed());
     strand.wait();
+}
+
+TEST(StrandTest, InlineSchedulerDrainKeepsStartDepthBounded) {
+    constexpr int pending_count = 4096;
+    auto depth = std::make_shared<inline_depth_state>();
+    forge::strand strand{inline_depth_scheduler{depth}};
+    auto scheduler = strand.get_scheduler();
+    int completed = 0;
+
+    forge::start_detached(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            for (int i = 0; i < pending_count; ++i) {
+                forge::start_detached(
+                    std::execution::schedule(scheduler)
+                    | std::execution::then([&] noexcept {
+                        ++completed;
+                    }));
+            }
+        }));
+
+    strand.wait();
+
+    EXPECT_EQ(completed, pending_count);
+    EXPECT_EQ(depth->schedules, pending_count + 1);
+    EXPECT_EQ(depth->max_active, 1);
 }
 
 TEST(StrandTest, NoOverlapAcrossPoolThreads) {
