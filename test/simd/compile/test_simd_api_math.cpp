@@ -90,6 +90,29 @@ constexpr bool constexpr_libm_free_math() {
 static_assert(constexpr_libm_free_math(),
     "libm-free SIMD math should remain usable during constant evaluation");
 
+constexpr bool constexpr_rounding_preserves_negative_zero() {
+    constexpr float4 values([](auto lane) {
+        constexpr float input[] = {-0.25f, -0.0f, 0.25f, 0.0f};
+        return input[decltype(lane)::value];
+    });
+    constexpr auto truncated = std::trunc(values);
+    constexpr auto ceiled = std::ceil(values);
+    constexpr auto rounded = std::round(values);
+    constexpr auto truncated_signs = std::signbit(truncated);
+    constexpr auto ceiled_signs = std::signbit(ceiled);
+    constexpr auto rounded_signs = std::signbit(rounded);
+
+    return truncated_signs[0] && truncated_signs[1] &&
+        !truncated_signs[2] && !truncated_signs[3] &&
+        ceiled_signs[0] && ceiled_signs[1] &&
+        !ceiled_signs[2] && !ceiled_signs[3] &&
+        rounded_signs[0] && rounded_signs[1] &&
+        !rounded_signs[2] && !rounded_signs[3];
+}
+
+static_assert(constexpr_rounding_preserves_negative_zero(),
+    "constexpr rounding should preserve a negative zero result");
+
 static_assert(std::is_same_v<decltype(std::simd::byteswap(std::declval<const uint4&>())), uint4>,
     "byteswap should preserve the vector type");
 static_assert(std::is_same_v<decltype(std::simd::popcount(std::declval<const uint4&>())), int4>,

@@ -21,7 +21,8 @@ constexpr T constexpr_math_trunc(T value) noexcept {
     if (value >= integral_bound || value <= -integral_bound) {
         return value;
     }
-    return static_cast<T>(static_cast<long long>(value));
+    const T integral = static_cast<T>(static_cast<long long>(value));
+    return integral == T{} && value < T{} ? -T{} : integral;
 }
 
 template<class T>
