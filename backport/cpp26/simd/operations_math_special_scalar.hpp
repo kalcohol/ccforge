@@ -290,12 +290,46 @@ T sph_legendre_fallback(unsigned l, unsigned m, T theta) {
         return quiet_nan<T>();
     }
 
-    const T cos_theta = std::cos(theta);
-    const T assoc = assoc_legendre_fallback<T>(l, m, cos_theta);
-    const T log_ratio = std::lgamma(static_cast<T>(l - m + 1)) - std::lgamma(static_cast<T>(l + m + 1));
-    const T norm = std::exp((std::log((static_cast<T>(2 * l + 1)) / (static_cast<T>(4) * pi_v<T>)) + log_ratio) / 2);
-    const T phase = (m % 2u == 0u) ? T{1} : T{-1};
-    return phase * norm * assoc;
+    using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+    const wide_t x = std::cos(static_cast<wide_t>(theta));
+    const wide_t sine = std::sqrt(std::max(wide_t{}, wide_t{1} - x * x));
+
+    wide_t current = wide_t{1} /
+        std::sqrt(wide_t{4} * pi_v<wide_t>);
+    for (unsigned order = 1u; order <= m; ++order) {
+        const wide_t order_value = static_cast<wide_t>(order);
+        current *= -std::sqrt(
+            (wide_t{2} * order_value + wide_t{1}) /
+            (wide_t{2} * order_value)) * sine;
+    }
+    if (l == m) {
+        return static_cast<T>(current);
+    }
+
+    wide_t previous = current;
+    current = std::sqrt(static_cast<wide_t>(2u * m + 3u)) * x * current;
+    if (l == m + 1u) {
+        return static_cast<T>(current);
+    }
+
+    const wide_t order = static_cast<wide_t>(m);
+    for (unsigned degree = m + 2u; degree <= l; ++degree) {
+        const wide_t degree_value = static_cast<wide_t>(degree);
+        const wide_t denominator =
+            degree_value * degree_value - order * order;
+        const wide_t first = std::sqrt(
+            (wide_t{4} * degree_value * degree_value - wide_t{1}) /
+            denominator);
+        const wide_t second = std::sqrt(
+            ((wide_t{2} * degree_value + wide_t{1}) *
+             ((degree_value - wide_t{1}) * (degree_value - wide_t{1}) -
+              order * order)) /
+            ((wide_t{2} * degree_value - wide_t{3}) * denominator));
+        const wide_t next = first * x * current - second * previous;
+        previous = current;
+        current = next;
+    }
+    return static_cast<T>(current);
 }
 
 template<class T>

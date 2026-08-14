@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <numbers>
 #include <string>
 
@@ -302,6 +303,32 @@ TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) 
                   -1.0, -std::numbers::pi_v<double> / 2.0),
               -std::numeric_limits<double>::infinity());
     EXPECT_TRUE(std::isnan(sm::comp_ellint_1_fallback(1.01)));
+}
+
+TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
+    namespace sm = std::simd::detail::special_math;
+
+    for (const unsigned degree : {30u, 35u, 64u, 100u, 127u}) {
+        const long double degree_value = static_cast<long double>(degree);
+        const long double log_magnitude =
+            0.5L * std::log(
+                (2.0L * degree_value + 1.0L) /
+                (4.0L * std::numbers::pi_v<long double>)) +
+            0.5L * std::lgamma(2.0L * degree_value + 1.0L) -
+            degree_value * std::log(2.0L) -
+            std::lgamma(degree_value + 1.0L);
+        const long double magnitude = std::exp(log_magnitude);
+        const float expected = static_cast<float>(
+            (degree & 1u) == 0u ? magnitude : -magnitude);
+        const float actual = sm::sph_legendre_fallback(
+            degree,
+            degree,
+            std::numbers::pi_v<float> / 2.0f);
+
+        SCOPED_TRACE("degree=" + std::to_string(degree));
+        EXPECT_TRUE(std::isfinite(actual));
+        EXPECT_NEAR(actual, expected, std::abs(expected) * 2e-6f);
+    }
 }
 
 TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
