@@ -1,5 +1,7 @@
 #include <execution>
 
+#include "example_support.hpp"
+
 #include <iostream>
 #include <tuple>
 #include <utility>
@@ -13,8 +15,8 @@ int main() {
     if (!static_cast<bool>(result)) {
         return 1;
     }
+    forge_example::require(std::get<0>(*result) == 11);
 
     std::cout << std::get<0>(*result) << '\n';
     return 0;
 }
-

@@ -23,18 +23,26 @@
 #include <execution>
 #include "example_support.hpp"
 
+#include <atomic>
 #include <iostream>
 
 int main() {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
+    std::atomic<bool> task_ran = false;
 
-    std::execution::spawn(std::execution::just(), token);
-    std::cout << "scope task\n";
+    std::execution::spawn(
+        std::execution::just()
+            | std::execution::then([&] noexcept {
+                  task_ran.store(true, std::memory_order_release);
+              }),
+        token);
 
     scope.close();
-    std::this_thread::sync_wait(scope.join());
+    auto join_result = std::this_thread::sync_wait(scope.join());
 
+    forge_example::require(join_result.has_value());
+    forge_example::require(task_ran.load(std::memory_order_acquire));
     forge_example::require(scope.count() == 0);
     std::cout << "scope_count=" << scope.count() << '\n';
     return 0;

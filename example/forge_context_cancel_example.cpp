@@ -27,14 +27,11 @@
 #include <exception>
 #include <execution>
 #include <iostream>
-#include <optional>
-#include <thread>
-#include <tuple>
+#include <latch>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L \
     && defined(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
-#include <chrono>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -43,7 +40,6 @@
     && defined(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
 
 namespace cio = forge::io;
-using namespace std::chrono_literals;
 
 class unique_fd {
 public:
@@ -85,6 +81,38 @@ auto wait_for_readiness(
     co_return !error;
 }
 
+struct cancellation_state {
+    std::latch done{1};
+    std::exception_ptr error;
+    bool completed_with_value = false;
+    bool completed_stopped = false;
+};
+
+struct cancellation_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    cancellation_state* state;
+
+    void set_value(bool) && noexcept {
+        state->completed_with_value = true;
+        state->done.count_down();
+    }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        state->error = std::move(error);
+        state->done.count_down();
+    }
+
+    void set_stopped() && noexcept {
+        state->completed_stopped = true;
+        state->done.count_down();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 #endif
 
 int main() {
@@ -100,26 +128,24 @@ int main() {
     cio::io_env env;
     env.stop_token = stop.get_token();
 
-    std::optional<std::tuple<bool>> result;
-    std::exception_ptr error;
-    std::thread waiter([&] {
-        try {
-            result = std::this_thread::sync_wait(cio::as_sender(
-                wait_for_readiness(context, read_fd.get()),
-                env));
-        } catch (...) {
-            error = std::current_exception();
-        }
-    });
+    cancellation_state state;
+    auto sender = cio::as_sender(
+        wait_for_readiness(context, read_fd.get()),
+        env);
+    auto operation = std::execution::connect(
+        std::move(sender), cancellation_receiver{&state});
 
-    std::this_thread::sleep_for(20ms);
+    // start() returns only after the coroutine has installed its pending
+    // readiness operation, so this is a pending-operation cancellation proof.
+    std::execution::start(operation);
     stop.request_stop();
-    waiter.join();
+    state.done.wait();
 
-    if (error) {
-        std::rethrow_exception(error);
+    if (state.error) {
+        std::rethrow_exception(state.error);
     }
-    forge_example::require(!result.has_value());
+    forge_example::require(!state.completed_with_value);
+    forge_example::require(state.completed_stopped);
 
     std::cout << "context await cancellation observed\n";
 #else

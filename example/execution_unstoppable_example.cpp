@@ -22,6 +22,8 @@
 
 #include <execution>
 
+#include "example_support.hpp"
+
 #include <iostream>
 #include <tuple>
 
@@ -55,6 +57,10 @@ int main() {
 
     auto outer = std::this_thread::sync_wait(std::move(observes_outer_stop));
     auto inner = std::this_thread::sync_wait(std::move(shielded));
+    forge_example::require(outer.has_value());
+    forge_example::require(inner.has_value());
+    forge_example::require(std::get<0>(*outer));
+    forge_example::require(!std::get<0>(*inner));
 
     std::cout << "outer_stop_requested=" << std::get<0>(*outer)
               << ", inner_stop_possible=" << std::get<0>(*inner) << '\n';

@@ -19,12 +19,13 @@ int main() {
         }),
         token);
 
-    auto result = ex::sync_wait(std::move(future));
+    auto result = std::this_thread::sync_wait(std::move(future));
     forge_example::require(result.has_value());
     forge_example::require(std::get<0>(*result) == 42);
 
     scope.close();
-    ex::sync_wait(scope.join());
+    auto join_result = std::this_thread::sync_wait(scope.join());
+    forge_example::require(join_result.has_value());
 
     std::cout << "spawn_future=" << std::get<0>(*result) << '\n';
     return 0;

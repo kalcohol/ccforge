@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/any_sender.hpp>
+#include "example_support.hpp"
 #include <iostream>
 
 int main() {
@@ -37,6 +38,7 @@ int main() {
     if (!result) {
         return 1;
     }
+    forge_example::require(std::get<0>(*result) == 42);
 
     std::cout << "any_sender value=" << std::get<0>(*result) << '\n';
     return 0;

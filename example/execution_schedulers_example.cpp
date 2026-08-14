@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <execution>
+#include "example_support.hpp"
 #include <iostream>
 #include <thread>
 #include <tuple>
@@ -30,6 +31,8 @@ int main() {
         std::execution::schedule(std::execution::inline_scheduler{}) |
         std::execution::then([] { return 1; })
     );
+    forge_example::require(inline_result.has_value());
+    forge_example::require(std::get<0>(*inline_result) == 1);
     std::execution::run_loop loop;
     auto run_loop_sender =
         std::execution::starts_on(loop.get_scheduler(), std::execution::just()) |
@@ -37,8 +40,10 @@ int main() {
             std::cout << "inline=" << std::get<0>(*inline_result) << ", run_loop=1\n";
         });
     std::thread runner{[&] { loop.run(); }};
-    (void)std::this_thread::sync_wait(std::move(run_loop_sender));
+    auto run_loop_result =
+        std::this_thread::sync_wait(std::move(run_loop_sender));
     loop.finish();
     runner.join();
+    forge_example::require(run_loop_result.has_value());
     return 0;
 }

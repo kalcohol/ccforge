@@ -122,7 +122,10 @@ int main() {
     auto read = std::this_thread::sync_wait(
         io.async_read_some(pipe.server.get(), std::span{buffer}));
 
-    if (!written || !read || buffer != payload) {
+    if (!written || !read ||
+        std::get<0>(*written) != payload.size() ||
+        std::get<0>(*read) != payload.size() ||
+        buffer != payload) {
         return 1;
     }
 

@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/any_receiver.hpp>
+#include "example_support.hpp"
 #include <exception>
 #include <iostream>
 
@@ -44,6 +45,7 @@ int main() {
     int captured = 0;
     forge::any_receiver_of<cs_int> erased = print_receiver{&captured};
     std::execution::set_value(std::move(erased), 7);
+    forge_example::require(captured == 7);
 
     std::cout << "any_receiver value=" << captured << '\n';
     return 0;

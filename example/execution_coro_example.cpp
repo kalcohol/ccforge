@@ -23,6 +23,7 @@
 #if __cpp_impl_coroutine >= 201902L
 #include <coroutine>
 #include <forge/task.hpp>
+#include "example_support.hpp"
 #include <iostream>
 
 using exec_env = std::execution::empty_env;
@@ -41,6 +42,7 @@ demo run() {
     auto v = co_await (
         std::execution::just(20)
         | std::execution::then([](int x) { return x + 22; }));
+    forge_example::require(v == 42);
     std::cout << "execution coro value: " << v << '\n';
 }
 

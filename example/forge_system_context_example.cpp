@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <forge/system_context.hpp>
+#include "example_support.hpp"
 #include <iostream>
 
 int main() {
@@ -32,6 +33,7 @@ int main() {
     if (!result) {
         return 1;
     }
+    forge_example::require(std::get<0>(*result) > 0);
 
     std::cout << "system_context threads=" << std::get<0>(*result) << '\n';
     return 0;
