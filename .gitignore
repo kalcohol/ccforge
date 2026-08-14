@@ -33,6 +33,7 @@ AGENTS.md
 .claude/
 .antigravitycli/
 .grok/
+.qoder/
 
 # OS files
 .DS_Store
