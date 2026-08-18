@@ -162,3 +162,32 @@ backend。
 - 若后续加入 registered buffers、provided-buffer rings、multishot 或复杂 linked SQE，
   必须重新评估 raw maintenance cost；那是新决策，不在 V1 中自动开启 optional/mandatory
   liburing 路径。
+
+### D3：kernel floor 与 operation subset
+
+结论：语义地板是 Linux 5.6，并以 runtime capability probe 为最终判据。
+
+- Linux 5.6 同时提供 V1 所需的 non-vectored `IORING_OP_READ` /
+  `IORING_OP_WRITE` 和 `IORING_REGISTER_PROBE`；`IORING_OP_ASYNC_CANCEL` 自 5.5
+  已存在。Build-time UAPI header 必须声明 setup/enter/register syscalls、四个 opcodes
+  与 probe structs。
+- Configure/runtime probe 不解析 `uname` 来替代 capability detection。Ring setup 后通过
+  `IORING_REGISTER_PROBE` 要求 `NOP`、`READ`、`WRITE`、`ASYNC_CANCEL` 都带
+  `IO_URING_OP_SUPPORTED`；因此带 backport 的旧版本 kernel 只要实际 capability 满足也可
+  通过，缺 opcode 的新版本或受限环境则不可用。
+- Setup feature 要求 `IORING_FEAT_NODROP`，避免 CQ overflow 静默丢失 terminal
+  completion；`IORING_FEAT_SINGLE_MMAP` 只影响 mapping 优化，不是必需条件。
+  `FAST_POLL`、`SUBMIT_STABLE`、`EXT_ARG`、SQPOLL 和 registered resources 都不作为
+  V1 前提。
+- Data operation 仅有 `IORING_OP_READ` / `IORING_OP_WRITE`，`off` 固定为
+  `-1`，表达 stream/current-position one-shot IO。Public API 不接收 file offset，
+  不做 seekable-file random access。
+- `IORING_OP_ASYNC_CANCEL` 只按目标 request 的 unique `user_data` 取消；
+  cancel CQE 与目标 CQE 都必须 drain。`IORING_OP_NOP` 用于 wakeup/teardown
+  submission，不承载用户 operation。
+- 不做 `READV`/`WRITEV`、accept/connect、send/recv、timeout、linked SQE、multishot、
+  provided/registered buffers、registered files 或 SQPOLL。这些能力不能在 V1 中通过
+  detail API 绕过 public lifetime contract。
+
+`scripts/probe-io-uring.sh` 已扩展为同时检查 `IORING_FEAT_NODROP` 和上述四个
+opcode；当前 host 返回 33 个 probe entries，必需集合全部可用。

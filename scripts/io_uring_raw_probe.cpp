@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
@@ -129,6 +130,68 @@ int main() {
         static_cast<char*>(cq_ring) + params.cq_off.cqes);
     auto* const sqes = static_cast<io_uring_sqe*>(sqes_mapping);
 
+    constexpr std::size_t probe_ops = IORING_OP_LAST;
+    alignas(io_uring_probe) std::array<
+        std::byte,
+        sizeof(io_uring_probe) +
+            probe_ops * sizeof(io_uring_probe_op)> probe_storage{};
+    auto* const probe =
+        reinterpret_cast<io_uring_probe*>(probe_storage.data());
+    const int probe_result = static_cast<int>(::syscall(
+        __NR_io_uring_register,
+        ring_fd,
+        IORING_REGISTER_PROBE,
+        probe,
+        static_cast<unsigned>(probe_ops)));
+    if (probe_result < 0) {
+        const int error = errno;
+        std::fprintf(
+            stderr,
+            "io_uring_register(PROBE): %s (%d)\n",
+            std::strerror(error),
+            error);
+        ::munmap(sqes_mapping, sqes_size);
+        if (!single_map) {
+            ::munmap(cq_ring, cq_ring_size);
+        }
+        ::munmap(
+            sq_ring,
+            single_map ? shared_size : sq_ring_size);
+        ::close(ring_fd);
+        return unavailable_error(error) ? unavailable_exit_code : 17;
+    }
+
+    const auto supports = [probe](unsigned opcode) noexcept {
+        for (unsigned index = 0; index < probe->ops_len; ++index) {
+            const auto& operation = probe->ops[index];
+            if (operation.op == opcode) {
+                return (operation.flags & IO_URING_OP_SUPPORTED) != 0U;
+            }
+        }
+        return false;
+    };
+    const bool required_features =
+        (params.features & IORING_FEAT_NODROP) != 0U;
+    const bool required_operations =
+        supports(IORING_OP_NOP) &&
+        supports(IORING_OP_READ) &&
+        supports(IORING_OP_WRITE) &&
+        supports(IORING_OP_ASYNC_CANCEL);
+    if (!required_features || !required_operations) {
+        std::fprintf(
+            stderr,
+            "required io_uring feature/opcode unavailable\n");
+        ::munmap(sqes_mapping, sqes_size);
+        if (!single_map) {
+            ::munmap(cq_ring, cq_ring_size);
+        }
+        ::munmap(
+            sq_ring,
+            single_map ? shared_size : sq_ring_size);
+        ::close(ring_fd);
+        return unavailable_exit_code;
+    }
+
     sqes[0] = {};
     sqes[0].opcode = IORING_OP_NOP;
     sqes[0].user_data = 0x4343464f524745ULL;
@@ -162,10 +225,12 @@ int main() {
             const auto& cqe =
                 cqes[*cq_head & (params.cq_entries - 1U)];
             std::printf(
-                "ok features=0x%x sq=%u cq=%u cqe=%d user_data=0x%llx\n",
+                "ok features=0x%x sq=%u cq=%u ops=%u cqe=%d "
+                "user_data=0x%llx\n",
                 params.features,
                 params.sq_entries,
                 params.cq_entries,
+                static_cast<unsigned>(probe->ops_len),
                 cqe.res,
                 static_cast<unsigned long long>(cqe.user_data));
             result = cqe.res == 0 ? 0 : 16;
