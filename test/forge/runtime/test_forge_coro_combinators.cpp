@@ -25,6 +25,8 @@ using namespace std::chrono_literals;
 using child_result = cio::io_result<std::size_t>;
 using pair_payload = cio::when_all_result<child_result, child_result>;
 using aggregate_result = cio::io_result<pair_payload>;
+using any_pair_payload = cio::when_any_result<child_result, child_result>;
+using any_aggregate_result = cio::io_result<any_pair_payload>;
 
 struct throwing_move_control {
     bool throw_on_move = false;
@@ -412,6 +414,67 @@ struct aggregate_receiver {
     }
 };
 
+struct any_aggregate_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool done = false;
+    int completions = 0;
+    std::optional<any_aggregate_result> value;
+    std::exception_ptr error;
+    bool stopped = false;
+};
+
+struct any_aggregate_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    struct env {
+        std::inplace_stop_source* stop = nullptr;
+
+        friend auto tag_invoke(
+            std::execution::get_stop_token_t,
+            const env& self) noexcept -> std::inplace_stop_token {
+            return self.stop ? self.stop->get_token() : std::inplace_stop_token{};
+        }
+    };
+
+    std::shared_ptr<any_aggregate_state> state;
+    std::inplace_stop_source* stop = nullptr;
+
+    auto set_value(any_aggregate_result result) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->value.emplace(std::move(result));
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto set_error(std::exception_ptr error) && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->error = std::move(error);
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto set_stopped() && noexcept -> void {
+        {
+            std::lock_guard lock{state->mtx};
+            ++state->completions;
+            state->stopped = true;
+            state->done = true;
+        }
+        state->cv.notify_all();
+    }
+
+    [[nodiscard]] auto get_env() const noexcept -> env {
+        return env{stop};
+    }
+};
+
 struct self_destroying_aggregate_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -470,6 +533,11 @@ auto wait_done(const std::shared_ptr<aggregate_state>& state) -> void {
     ASSERT_TRUE(state->cv.wait_for(lock, 1s, [&] { return state->done; }));
 }
 
+auto wait_done(const std::shared_ptr<any_aggregate_state>& state) -> void {
+    std::unique_lock lock{state->mtx};
+    ASSERT_TRUE(state->cv.wait_for(lock, 1s, [&] { return state->done; }));
+}
+
 struct fixture {
     std::shared_ptr<controlled_state> first =
         std::make_shared<controlled_state>();
@@ -493,6 +561,34 @@ struct fixture {
     }
 };
 
+struct any_fixture {
+    std::shared_ptr<controlled_state> first =
+        std::make_shared<controlled_state>();
+    std::shared_ptr<controlled_state> second =
+        std::make_shared<controlled_state>();
+    std::shared_ptr<any_aggregate_state> aggregate =
+        std::make_shared<any_aggregate_state>();
+
+    [[nodiscard]] auto connect() {
+        return std::execution::connect(
+            cio::when_any_results(
+                child_task(first),
+                child_task(second)),
+            any_aggregate_receiver{aggregate});
+    }
+
+    auto start(auto& op) -> void {
+        std::execution::start(op);
+        wait_started(first);
+        wait_started(second);
+    }
+
+    auto wait_children() -> void {
+        wait_returned(first);
+        wait_returned(second);
+    }
+};
+
 using when_all_sender_t = decltype(cio::when_all_results(
     child_task(std::declval<std::shared_ptr<controlled_state>>()),
     child_task(std::declval<std::shared_ptr<controlled_state>>())));
@@ -500,6 +596,14 @@ using when_all_op_t = std::execution::connect_result_t<
     when_all_sender_t,
     aggregate_receiver>;
 static_assert(std::execution::operation_state<when_all_op_t>);
+
+using when_any_sender_t = decltype(cio::when_any_results(
+    child_task(std::declval<std::shared_ptr<controlled_state>>()),
+    child_task(std::declval<std::shared_ptr<controlled_state>>())));
+using when_any_op_t = std::execution::connect_result_t<
+    when_any_sender_t,
+    any_aggregate_receiver>;
+static_assert(std::execution::operation_state<when_any_op_t>);
 
 } // namespace
 
@@ -942,6 +1046,254 @@ TEST(ForgeCoroCombinatorsTest, WhenAllResultsRaceErrorAndValueCompletesOnce) {
         EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
         ASSERT_TRUE(payload.first.has_value());
         ASSERT_TRUE(payload.second.has_value());
+    }
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsKeepsFirstValueWinner) {
+    any_fixture f;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(
+        f.first,
+        controlled_completion::value,
+        child_result::success(3));
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    {
+        std::lock_guard lock{f.aggregate->mtx};
+        ASSERT_EQ(f.aggregate->completions, 1);
+        ASSERT_TRUE(f.aggregate->value.has_value());
+        EXPECT_TRUE(*f.aggregate->value);
+        auto [error, payload] = *f.aggregate->value;
+        EXPECT_FALSE(error);
+        EXPECT_EQ(payload.winner, 0u);
+        ASSERT_TRUE(payload.first.has_value());
+        EXPECT_EQ(cio::get<1>(*payload.first), 3u);
+        EXPECT_FALSE(payload.second.has_value());
+        EXPECT_FALSE(f.aggregate->error);
+        EXPECT_FALSE(f.aggregate->stopped);
+    }
+    {
+        std::lock_guard lock{f.second->mtx};
+        EXPECT_EQ(f.second->stop_attempts, 1);
+    }
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsKeepsSecondValueWinner) {
+    any_fixture f;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(
+        f.second,
+        controlled_completion::value,
+        child_result::success(7));
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    {
+        std::lock_guard lock{f.aggregate->mtx};
+        ASSERT_EQ(f.aggregate->completions, 1);
+        ASSERT_TRUE(f.aggregate->value.has_value());
+        EXPECT_TRUE(*f.aggregate->value);
+        auto [error, payload] = *f.aggregate->value;
+        EXPECT_FALSE(error);
+        EXPECT_EQ(payload.winner, 1u);
+        EXPECT_FALSE(payload.first.has_value());
+        ASSERT_TRUE(payload.second.has_value());
+        EXPECT_EQ(cio::get<1>(*payload.second), 7u);
+    }
+    {
+        std::lock_guard lock{f.first->mtx};
+        EXPECT_EQ(f.first->stop_attempts, 1);
+    }
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsPreservesLateLoserValue) {
+    any_fixture f;
+    f.second->stop_completes = false;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(
+        f.first,
+        controlled_completion::value,
+        child_result::success(11));
+    wait_returned(f.first);
+    wait_stop_entered(f.second);
+    {
+        std::lock_guard lock{f.aggregate->mtx};
+        EXPECT_FALSE(f.aggregate->done);
+        EXPECT_EQ(f.aggregate->completions, 0);
+    }
+
+    release_child(
+        f.second,
+        controlled_completion::value,
+        child_result::success(13));
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    std::lock_guard lock{f.aggregate->mtx};
+    ASSERT_EQ(f.aggregate->completions, 1);
+    ASSERT_TRUE(f.aggregate->value.has_value());
+    auto [error, payload] = *f.aggregate->value;
+    EXPECT_FALSE(error);
+    EXPECT_EQ(payload.winner, 0u);
+    ASSERT_TRUE(payload.first.has_value());
+    ASSERT_TRUE(payload.second.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 11u);
+    EXPECT_EQ(cio::get<1>(*payload.second), 13u);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsKeepsWinnerError) {
+    any_fixture f;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(
+        f.first,
+        controlled_completion::error,
+        child_result::failure(
+            std::make_error_code(std::errc::connection_reset),
+            5));
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    std::lock_guard lock{f.aggregate->mtx};
+    ASSERT_EQ(f.aggregate->completions, 1);
+    ASSERT_TRUE(f.aggregate->value.has_value());
+    auto [error, payload] = *f.aggregate->value;
+    EXPECT_EQ(error, std::make_error_code(std::errc::connection_reset));
+    EXPECT_EQ(payload.winner, 0u);
+    ASSERT_TRUE(payload.first.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 5u);
+    EXPECT_FALSE(payload.second.has_value());
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsKeepsWinnerEof) {
+    any_fixture f;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(
+        f.second,
+        controlled_completion::eof,
+        child_result::end_of_file(9));
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    std::lock_guard lock{f.aggregate->mtx};
+    ASSERT_EQ(f.aggregate->completions, 1);
+    ASSERT_TRUE(f.aggregate->value.has_value());
+    EXPECT_TRUE(f.aggregate->value->eof());
+    auto [error, payload] = *f.aggregate->value;
+    EXPECT_FALSE(error);
+    EXPECT_EQ(payload.winner, 1u);
+    EXPECT_FALSE(payload.first.has_value());
+    ASSERT_TRUE(payload.second.has_value());
+    EXPECT_TRUE(payload.second->eof());
+    EXPECT_EQ(cio::get<1>(*payload.second), 9u);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsStopsAfterFirstStopped) {
+    any_fixture f;
+    auto op = f.connect();
+    f.start(op);
+
+    release_child(f.first, controlled_completion::stopped);
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    std::lock_guard lock{f.aggregate->mtx};
+    EXPECT_EQ(f.aggregate->completions, 1);
+    EXPECT_TRUE(f.aggregate->stopped);
+    EXPECT_FALSE(f.aggregate->value.has_value());
+    EXPECT_FALSE(f.aggregate->error);
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsObservesDownstreamStop) {
+    any_fixture f;
+    std::inplace_stop_source downstream_stop;
+    auto op = std::execution::connect(
+        cio::when_any_results(
+            child_task(f.first),
+            child_task(f.second)),
+        any_aggregate_receiver{f.aggregate, &downstream_stop});
+    f.start(op);
+
+    downstream_stop.request_stop();
+
+    wait_done(f.aggregate);
+    f.wait_children();
+
+    {
+        std::lock_guard lock{f.aggregate->mtx};
+        EXPECT_EQ(f.aggregate->completions, 1);
+        EXPECT_TRUE(f.aggregate->stopped);
+        EXPECT_FALSE(f.aggregate->value.has_value());
+        EXPECT_FALSE(f.aggregate->error);
+    }
+    {
+        std::lock_guard lock{f.first->mtx};
+        EXPECT_EQ(f.first->stop_attempts, 1);
+    }
+    {
+        std::lock_guard lock{f.second->mtx};
+        EXPECT_EQ(f.second->stop_attempts, 1);
+    }
+}
+
+TEST(ForgeCoroCombinatorsTest, WhenAnyResultsRaceSelectsEitherValueOnce) {
+    constexpr int iterations = 64;
+    for (int i = 0; i < iterations; ++i) {
+        any_fixture f;
+        f.first->stop_completes = false;
+        f.second->stop_completes = false;
+        auto op = f.connect();
+        f.start(op);
+        std::atomic<bool> go{false};
+
+        std::thread first_thread([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            release_child(
+                f.first,
+                controlled_completion::value,
+                child_result::success(17));
+        });
+        std::thread second_thread([&] {
+            while (!go.load(std::memory_order_acquire)) {}
+            release_child(
+                f.second,
+                controlled_completion::value,
+                child_result::success(19));
+        });
+
+        go.store(true, std::memory_order_release);
+        first_thread.join();
+        second_thread.join();
+
+        wait_done(f.aggregate);
+        f.wait_children();
+
+        std::lock_guard lock{f.aggregate->mtx};
+        ASSERT_EQ(f.aggregate->completions, 1);
+        ASSERT_TRUE(f.aggregate->value.has_value());
+        EXPECT_TRUE(*f.aggregate->value);
+        auto [error, payload] = *f.aggregate->value;
+        EXPECT_FALSE(error);
+        EXPECT_TRUE(payload.winner == 0u || payload.winner == 1u);
+        ASSERT_TRUE(payload.first.has_value());
+        ASSERT_TRUE(payload.second.has_value());
+        EXPECT_EQ(cio::get<1>(*payload.first), 17u);
+        EXPECT_EQ(cio::get<1>(*payload.second), 19u);
     }
 }
 
