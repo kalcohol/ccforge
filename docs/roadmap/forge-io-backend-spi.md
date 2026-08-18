@@ -217,7 +217,7 @@ podman build -t forge-tsan -f containers/Containerfile.tsan .
 scripts/probe-io-uring-container.sh
 ```
 
-未来 `FORGE_ENABLE_IO_URING` gate 使用以下规则：
+未来 `FORGE_ENABLE_FORGE_IO_URING` gate 使用以下规则：
 
 - `OFF`：不编译 backend，也不运行 capability/runtime tests；
 - `AUTO`：Linux UAPI compile probe 通过即编译 backend；runtime setup/probe 不可用时，
@@ -229,3 +229,57 @@ scripts/probe-io-uring-container.sh
 Phase 1/2 可在默认 sandbox 中完成 compile-only 与 mock queue 测试。Phase 3 的真实
 pipe/socketpair、stop race 和 shutdown CQ drain 测试必须运行在 host lane 或上述 custom
 policy lane；TSAN/ASAN 也必须沿用同一 policy，默认容器的 77 只证明 skip path。
+
+### D5：cancellation、drain 与 typed error
+
+结论：go。每个 accepted data request 只有对应的 READ/WRITE target CQE 能决定用户
+terminal；ASYNC_CANCEL CQE 是必须 drain 的 administrative completion，不能直接恢复
+coroutine。Pending record 使用 unique `user_data`，并以 atomic terminal claim 防御重复
+completion；target record 和 cancel bookkeeping 分别在对应 CQE 从 CQ 摘下后才可释放。
+
+Direct awaitable 的 terminal 映射如下：
+
+| 条件 | target SQE | 用户观察 |
+|---|---|---|
+| `await_suspend` 前 env stop 已请求 | 不提交 | `await_resume()` 抛 `sender_stopped` |
+| context 已 `close()` / `request_stop()` | 不提交 | `sender_stopped` |
+| target CQE `res > 0` | 已 drain | value，byte count 照实交付 |
+| non-empty READ target CQE `res == 0` | 已 drain | EOF |
+| empty buffer | 不提交 | value `0`；READ 不合成 EOF |
+| target CQE `res < 0` 且不是 request-linked `-ECANCELED` | 已 drain | `io_result` error，code 为 `-res` |
+| stop 后 target CQE 为 `-ECANCELED` | 已 drain | `sender_stopped` |
+| stop 后 target CQE 先返回 value/EOF/其它 error | 已 drain | target 实际结果；late cancel 不覆盖 |
+| cancel CQE 为 `0` | 继续等待 target CQE | 无用户 terminal |
+| cancel CQE 为 `-ENOENT` / `-EALREADY` | 继续等待 target CQE | 无用户 terminal |
+
+因此 stop request 是 best-effort cancellation request，不是“请求瞬间即完成”。Cancel
+submission 若遇 SQ backpressure，先保留在 context-owned retry queue，由 poller/wakeup
+继续提交；不能提前释放 borrowed fd/buffer 或伪造 stopped。Unexpected cancel CQE error
+记录为 backend failure，但仍不能代替 target CQE retire request。正常 success/error CQE
+若先于 cancellation 获胜，必须照实交付。
+
+Lifecycle 与现有 epoll/IOCP context 使用同一词汇：
+
+- `close()` 幂等关闭 ingress；新 operation 观察 stopped，已 accepted operation 继续等待
+  自然 CQE，close 本身不取消。
+- `request_stop()` 幂等关闭后续 ingress，并为所有尚未 terminal 的 accepted target 最多
+  排队一个 `IORING_OP_ASYNC_CANCEL`。Pre-submit operation 不进入 ring，直接 stopped。
+- `shutdown()` 等价于 `close()` + `request_stop()`。
+- Poller 只有在 ingress 已关闭、所有 target CQE、cancel CQE、NOP CQE 和 userspace
+  submission bookkeeping 都 drain 后才退出。`wait()` 从外部线程 join；从 poller-thread
+  completion 内调用时避免 self-join，由 poller 持有 state keepalive 完成 terminal tail。
+- 析构执行 `shutdown()` + `wait()`，因而可以阻塞。调用方 submission threads 必须先
+  quiesce；context drain 不会 join 外部 submitter。
+
+`io_result<std::size_t>` 继续承载 value/EOF/`std::error_code` compound result；stopped
+继续通过 `sender_stopped` 跨 coroutine 边界，并由 `as_sender(io_task)` 恢复为 sender
+stopped channel。Raw negative CQE 使用 `std::generic_category()` 的正 errno 值。
+Typed adapter 继续调用既有 `typed_detail::classify`，closed `error_kind` 集合保持
+`unknown`、`system`、`invalid_handle`、`operation_in_progress`、`would_block`，不新增
+io_uring-only kind。无 stop request 的 `-ECANCELED` 是普通
+`std::errc::operation_canceled` error；EOF 也不伪装成 typed error。
+
+fd、buffer、operation awaitable 和 context 是 borrowed dependencies，必须活到 operation
+terminal/`await_resume()`；context-owned cancel record 可以在用户 target terminal 后继续
+由 poller drain。若 completion 内销毁 context，非拥有的 PMR resource 仍须活过 detached
+poller/state 的最终释放尾部。
