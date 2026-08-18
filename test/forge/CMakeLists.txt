@@ -86,6 +86,10 @@ endif()
 
 if(FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_compile_probe(
+        test_forge_async_stream_header
+        test_forge_async_stream_header.cpp
+        forge_async_stream_header)
+    forge_add_forge_compile_probe(
         test_forge_timer_await_header
         test_forge_timer_await_header.cpp
         forge_timer_await_header)
