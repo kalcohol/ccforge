@@ -110,6 +110,39 @@ private:
     std::size_t calls_ = 0;
 };
 
+class tracked_read_stream {
+public:
+    tracked_read_stream(std::string_view input, int& destructions) noexcept
+        : stream_(input)
+        , destructions_(&destructions)
+    {}
+
+    tracked_read_stream(const tracked_read_stream&) = delete;
+    auto operator=(const tracked_read_stream&) -> tracked_read_stream& = delete;
+
+    tracked_read_stream(tracked_read_stream&& other) noexcept
+        : stream_(other.stream_)
+        , destructions_(std::exchange(other.destructions_, nullptr))
+    {}
+
+    auto operator=(tracked_read_stream&&) -> tracked_read_stream& = delete;
+
+    ~tracked_read_stream() {
+        if (destructions_ != nullptr) {
+            ++*destructions_;
+        }
+    }
+
+    [[nodiscard]] auto read_some(forge::io::mutable_buffer output) noexcept
+        -> forge::io::io_result<std::size_t> {
+        return stream_.read_some(output);
+    }
+
+private:
+    forge::io::memory_read_stream stream_;
+    int* destructions_;
+};
+
 auto read_erased_packet(forge::io::any_read_stream& stream)
     -> forge::io::io_result<std::string> {
     std::array<std::byte, 1> length_storage{};
@@ -159,6 +192,12 @@ static_assert(forge::io::read_write_stream<forge::io::memory_stream>);
 static_assert(forge::io::read_stream<forge::io::scripted_read_stream>);
 static_assert(forge::io::read_stream<forge::io::any_read_stream>);
 static_assert(forge::io::write_stream<forge::io::any_write_stream>);
+static_assert(forge::io::read_stream<forge::io::owning_any_read_stream>);
+static_assert(forge::io::write_stream<forge::io::owning_any_write_stream>);
+static_assert(std::is_move_constructible_v<forge::io::owning_any_read_stream>);
+static_assert(!std::is_copy_constructible_v<forge::io::owning_any_read_stream>);
+static_assert(std::is_move_constructible_v<forge::io::owning_any_write_stream>);
+static_assert(!std::is_copy_constructible_v<forge::io::owning_any_write_stream>);
 
 static_assert(!forge::io::read_stream<not_a_stream>);
 static_assert(!forge::io::write_stream<not_a_stream>);
@@ -445,6 +484,64 @@ TEST(ForgeStreamConceptsTest, ErasedStreamCopiesShareBorrowedTarget) {
 TEST(ForgeStreamConceptsTest, EmptyErasedStreamsReportError) {
     forge::io::any_read_stream read;
     forge::io::any_write_stream write;
+    std::array<char, 1> output{};
+
+    auto [read_error, read_count] = read.read_some(
+        forge::io::mutable_buffer{std::span{output}});
+    auto [write_error, write_count] = write.write_some(
+        forge::io::const_buffer{"x", 1});
+
+    EXPECT_EQ(read_error, std::make_error_code(std::errc::bad_address));
+    EXPECT_EQ(read_count, 0u);
+    EXPECT_EQ(write_error, std::make_error_code(std::errc::bad_address));
+    EXPECT_EQ(write_count, 0u);
+}
+
+TEST(ForgeStreamConceptsTest, OwningReadStreamMovesAndDestroysTargetOnce) {
+    int destructions = 0;
+    forge::io::owning_any_read_stream first{
+        tracked_read_stream{"forge", destructions}};
+    forge::io::owning_any_read_stream second{std::move(first)};
+    std::array<char, 5> output{};
+
+    auto [error, count] = forge::io::read_exactly(
+        second,
+        forge::io::mutable_buffer{std::span{output}});
+
+    EXPECT_FALSE(first);
+    EXPECT_TRUE(second);
+    EXPECT_FALSE(error);
+    EXPECT_EQ(count, output.size());
+    EXPECT_EQ(std::string_view(output.data(), output.size()), "forge");
+    EXPECT_EQ(destructions, 0);
+
+    second.reset();
+    EXPECT_FALSE(second);
+    EXPECT_EQ(destructions, 1);
+}
+
+TEST(ForgeStreamConceptsTest, OwningWriteStreamWritesThroughMovedTarget) {
+    std::array<char, 4> output{};
+    forge::io::owning_any_write_stream first{
+        forge::io::memory_write_stream{
+            forge::io::mutable_buffer{std::span{output}}}};
+    forge::io::owning_any_write_stream second;
+
+    second = std::move(first);
+    auto [error, count] = forge::io::write_all(
+        second,
+        forge::io::const_buffer{"forg", 4});
+
+    EXPECT_FALSE(first);
+    EXPECT_TRUE(second);
+    EXPECT_FALSE(error);
+    EXPECT_EQ(count, output.size());
+    EXPECT_EQ(std::string_view(output.data(), output.size()), "forg");
+}
+
+TEST(ForgeStreamConceptsTest, EmptyOwningStreamsReportError) {
+    forge::io::owning_any_read_stream read;
+    forge::io::owning_any_write_stream write;
     std::array<char, 1> output{};
 
     auto [read_error, read_count] = read.read_some(

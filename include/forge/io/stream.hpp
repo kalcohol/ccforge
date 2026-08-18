@@ -24,11 +24,13 @@
 
 #include <forge/io/buffer.hpp>
 #include <forge/io/result.hpp>
+#include <forge/resource_policy.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <memory_resource>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -238,7 +240,229 @@ private:
     io_result<std::size_t> (*write_)(void*, const_buffer) = nullptr;
 };
 
+class owning_any_read_stream {
+public:
+    owning_any_read_stream() noexcept = default;
+
+    template<class Stream>
+        requires read_stream<std::remove_cvref_t<Stream>>
+              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
+              && (!std::same_as<
+                  std::remove_cvref_t<Stream>,
+                  owning_any_read_stream>)
+    explicit owning_any_read_stream(
+        Stream&& stream,
+        std::pmr::memory_resource* memory = forge::default_memory_resource())
+        : memory_(forge::normalize_memory_resource(memory)) {
+        using stream_t = std::remove_cvref_t<Stream>;
+        object_ = memory_->allocate(sizeof(stream_t), alignof(stream_t));
+        try {
+            std::construct_at(
+                static_cast<stream_t*>(object_),
+                std::forward<Stream>(stream));
+        } catch (...) {
+            memory_->deallocate(object_, sizeof(stream_t), alignof(stream_t));
+            object_ = nullptr;
+            throw;
+        }
+        operations_ = std::addressof(operations_for<stream_t>);
+    }
+
+    owning_any_read_stream(const owning_any_read_stream&) = delete;
+    auto operator=(const owning_any_read_stream&)
+        -> owning_any_read_stream& = delete;
+
+    owning_any_read_stream(owning_any_read_stream&& other) noexcept
+        : object_(std::exchange(other.object_, nullptr))
+        , operations_(std::exchange(other.operations_, nullptr))
+        , memory_(other.memory_)
+    {}
+
+    auto operator=(owning_any_read_stream&& other) noexcept
+        -> owning_any_read_stream& {
+        if (this != std::addressof(other)) {
+            reset();
+            object_ = std::exchange(other.object_, nullptr);
+            operations_ = std::exchange(other.operations_, nullptr);
+            memory_ = other.memory_;
+        }
+        return *this;
+    }
+
+    ~owning_any_read_stream() {
+        reset();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return operations_ != nullptr;
+    }
+
+    [[nodiscard]] auto get_memory_resource() const noexcept
+        -> std::pmr::memory_resource* {
+        return memory_;
+    }
+
+    auto reset() noexcept -> void {
+        if (operations_ != nullptr) {
+            operations_->destroy(object_, memory_);
+            object_ = nullptr;
+            operations_ = nullptr;
+        }
+    }
+
+    [[nodiscard]] auto read_some(mutable_buffer output)
+        -> io_result<std::size_t> {
+        if (operations_ == nullptr) {
+            return io_result<std::size_t>::failure(
+                std::make_error_code(std::errc::bad_address),
+                0);
+        }
+        return operations_->read(object_, output);
+    }
+
+private:
+    struct operations {
+        io_result<std::size_t> (*read)(void*, mutable_buffer);
+        void (*destroy)(void*, std::pmr::memory_resource*) noexcept;
+    };
+
+    template<class Stream>
+    [[nodiscard]] static auto read_model(void* object, mutable_buffer output)
+        -> io_result<std::size_t> {
+        return static_cast<Stream*>(object)->read_some(output);
+    }
+
+    template<class Stream>
+    static auto destroy_model(
+        void* object,
+        std::pmr::memory_resource* memory) noexcept -> void {
+        std::destroy_at(static_cast<Stream*>(object));
+        memory->deallocate(object, sizeof(Stream), alignof(Stream));
+    }
+
+    template<class Stream>
+    inline static constexpr operations operations_for{
+        &read_model<Stream>,
+        &destroy_model<Stream>};
+
+    void* object_ = nullptr;
+    const operations* operations_ = nullptr;
+    std::pmr::memory_resource* memory_ = forge::default_memory_resource();
+};
+
+class owning_any_write_stream {
+public:
+    owning_any_write_stream() noexcept = default;
+
+    template<class Stream>
+        requires write_stream<std::remove_cvref_t<Stream>>
+              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
+              && (!std::same_as<
+                  std::remove_cvref_t<Stream>,
+                  owning_any_write_stream>)
+    explicit owning_any_write_stream(
+        Stream&& stream,
+        std::pmr::memory_resource* memory = forge::default_memory_resource())
+        : memory_(forge::normalize_memory_resource(memory)) {
+        using stream_t = std::remove_cvref_t<Stream>;
+        object_ = memory_->allocate(sizeof(stream_t), alignof(stream_t));
+        try {
+            std::construct_at(
+                static_cast<stream_t*>(object_),
+                std::forward<Stream>(stream));
+        } catch (...) {
+            memory_->deallocate(object_, sizeof(stream_t), alignof(stream_t));
+            object_ = nullptr;
+            throw;
+        }
+        operations_ = std::addressof(operations_for<stream_t>);
+    }
+
+    owning_any_write_stream(const owning_any_write_stream&) = delete;
+    auto operator=(const owning_any_write_stream&)
+        -> owning_any_write_stream& = delete;
+
+    owning_any_write_stream(owning_any_write_stream&& other) noexcept
+        : object_(std::exchange(other.object_, nullptr))
+        , operations_(std::exchange(other.operations_, nullptr))
+        , memory_(other.memory_)
+    {}
+
+    auto operator=(owning_any_write_stream&& other) noexcept
+        -> owning_any_write_stream& {
+        if (this != std::addressof(other)) {
+            reset();
+            object_ = std::exchange(other.object_, nullptr);
+            operations_ = std::exchange(other.operations_, nullptr);
+            memory_ = other.memory_;
+        }
+        return *this;
+    }
+
+    ~owning_any_write_stream() {
+        reset();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return operations_ != nullptr;
+    }
+
+    [[nodiscard]] auto get_memory_resource() const noexcept
+        -> std::pmr::memory_resource* {
+        return memory_;
+    }
+
+    auto reset() noexcept -> void {
+        if (operations_ != nullptr) {
+            operations_->destroy(object_, memory_);
+            object_ = nullptr;
+            operations_ = nullptr;
+        }
+    }
+
+    [[nodiscard]] auto write_some(const_buffer input)
+        -> io_result<std::size_t> {
+        if (operations_ == nullptr) {
+            return io_result<std::size_t>::failure(
+                std::make_error_code(std::errc::bad_address),
+                0);
+        }
+        return operations_->write(object_, input);
+    }
+
+private:
+    struct operations {
+        io_result<std::size_t> (*write)(void*, const_buffer);
+        void (*destroy)(void*, std::pmr::memory_resource*) noexcept;
+    };
+
+    template<class Stream>
+    [[nodiscard]] static auto write_model(void* object, const_buffer input)
+        -> io_result<std::size_t> {
+        return static_cast<Stream*>(object)->write_some(input);
+    }
+
+    template<class Stream>
+    static auto destroy_model(
+        void* object,
+        std::pmr::memory_resource* memory) noexcept -> void {
+        std::destroy_at(static_cast<Stream*>(object));
+        memory->deallocate(object, sizeof(Stream), alignof(Stream));
+    }
+
+    template<class Stream>
+    inline static constexpr operations operations_for{
+        &write_model<Stream>,
+        &destroy_model<Stream>};
+
+    void* object_ = nullptr;
+    const operations* operations_ = nullptr;
+    std::pmr::memory_resource* memory_ = forge::default_memory_resource();
+};
+
 static_assert(read_stream<any_read_stream>);
 static_assert(write_stream<any_write_stream>);
+static_assert(read_stream<owning_any_read_stream>);
+static_assert(write_stream<owning_any_write_stream>);
 
 } // namespace forge::io
