@@ -308,6 +308,7 @@ resource、IO 和 erasure subsets 被独立配置。Resource-policy tests 还要
 - `FORGE_ENABLE_FORGE_RUNTIME`
 - `FORGE_ENABLE_FORGE_RESOURCE_POLICY`
 - `FORGE_ENABLE_FORGE_IO`
+- `FORGE_ENABLE_FORGE_IO_URING`
 
 `FORGE_ENABLE_FORGE_IO=AUTO` 在平台支持时启用 Linux epoll/eventfd backend 或 Windows
 IOCP backend，其它平台跳过 OS backend tests/examples。`ON` 要求 supported backend，
@@ -315,6 +316,13 @@ IOCP backend，其它平台跳过 OS backend tests/examples。`ON` 要求 suppor
 backend-specific tests/examples。Backend-free IO/coroutine tests 仍由
 `FORGE_TEST_ENABLE_FORGE_IO` 控制。Erasure facilities 是 header-only 且总是可用；用
 `FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
+
+`FORGE_ENABLE_FORGE_IO_URING` 是与 portable epoll/IOCP selection 独立的 Linux
+completion-backend gate。`AUTO` 在 Linux UAPI header、setup/enter/register syscall
+numbers、`NOP`/`READ`/`WRITE`/`ASYNC_CANCEL` 和 `NODROP` compile probe 通过时启用；
+`ON` 缺任一 build requirement 会 configure 失败；`OFF` 不执行该 probe，也不注册
+io_uring tests/examples。Runtime kernel 或 sandbox capability 由专用 probe/test 处理，
+不在 configure 时执行 target binary。
 
 ## Example smoke tests（示例冒烟）
 
@@ -350,6 +358,11 @@ cmake -S . -B build/gate-io-off -G Ninja \
   -DFORGE_BUILD_EXAMPLES=ON \
   -DFORGE_ENABLE_FORGE_IO=OFF
 ctest --test-dir build/gate-io-off -N -R 'forge_io|example_forge_io'
+
+cmake -S . -B build/gate-io-uring-off -G Ninja \
+  -DFORGE_BUILD_TESTS=ON \
+  -DFORGE_ENABLE_FORGE_IO_URING=OFF
+ctest --test-dir build/gate-io-uring-off -N -R 'io_uring'
 ```
 
 未来 platform/vendor backend proofs 也必须记录 focused tests、sanitizer expectation、

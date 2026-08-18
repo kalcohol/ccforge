@@ -280,9 +280,9 @@ check_feature_gate_docs() {
     documented="${audit_tmp}/documented-feature-options"
 
     sed -n -E \
-        's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_FORGE_[A-Z_]+).*/\2/p' \
+        's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_(FORGE_)?[A-Z_]+).*/\2/p' \
         forge.cmake | sort -u >"${declared}"
-    { rg --no-filename -o 'FORGE_ENABLE_FORGE_[A-Z_]+' docs/testing.md || true; } |
+    { rg --no-filename -o 'FORGE_ENABLE_(FORGE_)?[A-Z_]+' docs/testing.md || true; } |
         sort -u >"${documented}"
 
     if ! cmp -s "${declared}" "${documented}"; then

@@ -45,6 +45,7 @@ endfunction()
 option(FORGE_ENABLE_FORGE_RUNTIME "Enable forge:: runtime utility targets" ON)
 option(FORGE_ENABLE_FORGE_RESOURCE_POLICY "Enable forge:: resource policy facilities" ON)
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO backends when available")
+_forge_define_tristate_option(FORGE_ENABLE_FORGE_IO_URING AUTO "Enable the Linux io_uring backend when available")
 
 include(CheckCXXSourceCompiles)
 include("${FORGE_CMAKE_DIR}/ForgeProbeFingerprint.cmake")
@@ -66,6 +67,7 @@ _forge_compute_probe_fingerprint(
 _forge_refresh_probe_cache(
     FORGE_RUNTIME_PROBE_FINGERPRINT "${_forge_runtime_probe_fingerprint}"
     FORGE_PROBE_LINUX_EPOLL_EVENTFD
+    FORGE_PROBE_LINUX_IO_URING
     FORGE_PROBE_WINDOWS_IOCP)
 
 check_cxx_source_compiles("
@@ -99,6 +101,54 @@ check_cxx_source_compiles("
     }
 " FORGE_PROBE_WINDOWS_IOCP)
 
+if(NOT "${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF")
+    check_cxx_source_compiles("
+        #if !defined(__linux__)
+        #error Linux only
+        #endif
+        #include <linux/io_uring.h>
+        #include <sys/mman.h>
+        #include <sys/syscall.h>
+        #include <unistd.h>
+        #if !defined(__NR_io_uring_setup)
+        #error io_uring_setup syscall number unavailable
+        #endif
+        #if !defined(__NR_io_uring_enter)
+        #error io_uring_enter syscall number unavailable
+        #endif
+        #if !defined(__NR_io_uring_register)
+        #error io_uring_register syscall number unavailable
+        #endif
+        int main() {
+            io_uring_params params{};
+            io_uring_sqe sqe{};
+            io_uring_cqe cqe{};
+            const unsigned required_operations[] = {
+                IORING_OP_NOP,
+                IORING_OP_READ,
+                IORING_OP_WRITE,
+                IORING_OP_ASYNC_CANCEL};
+            const unsigned required_registration = IORING_REGISTER_PROBE;
+            const unsigned required_feature = IORING_FEAT_NODROP;
+            const long required_syscalls[] = {
+                __NR_io_uring_setup,
+                __NR_io_uring_enter,
+                __NR_io_uring_register};
+            (void)params;
+            (void)sqe;
+            (void)cqe;
+            (void)required_operations;
+            (void)required_registration;
+            (void)required_feature;
+            (void)required_syscalls;
+            (void)sizeof(io_uring_probe);
+            return 0;
+        }
+    " FORGE_PROBE_LINUX_IO_URING)
+else()
+    set(FORGE_PROBE_LINUX_IO_URING OFF)
+endif()
+
 set(FORGE_HAS_FORGE_IO_BACKEND OFF)
 set(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND OFF)
 set(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND OFF)
@@ -116,6 +166,19 @@ elseif("${FORGE_ENABLE_FORGE_IO}" STREQUAL "ON")
     message(FATAL_ERROR "FORGE_ENABLE_FORGE_IO=ON requires Linux epoll/eventfd or Windows IOCP support")
 else()
     message(STATUS "CC Forge: forge::io backend unavailable - skipped")
+endif()
+
+set(FORGE_HAS_FORGE_IO_URING_BACKEND OFF)
+if("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF")
+    message(STATUS "CC Forge: forge::io io_uring backend disabled")
+elseif(FORGE_PROBE_LINUX_IO_URING)
+    set(FORGE_HAS_FORGE_IO_URING_BACKEND ON)
+    message(STATUS "CC Forge: forge::io io_uring backend enabled")
+elseif("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "ON")
+    message(FATAL_ERROR
+        "FORGE_ENABLE_FORGE_IO_URING=ON requires Linux io_uring UAPI support")
+else()
+    message(STATUS "CC Forge: forge::io io_uring backend unavailable - skipped")
 endif()
 
 # Create the standard-header target first. It exposes only standard-shaped
@@ -241,6 +304,9 @@ if(NOT _FORGE_FULL_TARGET_CONFIGURED)
     endif()
     if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
         target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
+    endif()
+    if(FORGE_HAS_FORGE_IO_URING_BACKEND)
+        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_URING_BACKEND=1)
     endif()
     message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")
 endif()

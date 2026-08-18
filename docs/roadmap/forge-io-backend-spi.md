@@ -217,7 +217,7 @@ podman build -t forge-tsan -f containers/Containerfile.tsan .
 scripts/probe-io-uring-container.sh
 ```
 
-未来 `FORGE_ENABLE_FORGE_IO_URING` gate 使用以下规则：
+`FORGE_ENABLE_FORGE_IO_URING` gate 使用以下规则：
 
 - `OFF`：不编译 backend，也不运行 capability/runtime tests；
 - `AUTO`：Linux UAPI compile probe 通过即编译 backend；runtime setup/probe 不可用时，

@@ -141,6 +141,13 @@ if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_io_iocp test_forge_io_iocp.cpp forge_io_iocp)
 endif()
 
+if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_compile_probe(
+        test_forge_io_uring_context_header
+        test_forge_io_uring_context_header.cpp
+        forge_io_uring_context_header)
+endif()
+
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
     forge_add_forge_test(test_forge_resource_policy test_forge_resource_policy.cpp forge_resource_policy)
 endif()
