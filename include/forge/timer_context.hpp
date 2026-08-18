@@ -432,7 +432,17 @@ struct __state {
                         break;
                     }
 
-                    cv.wait_until(lk, (*next_it)->deadline);
+                    constexpr auto max_wait_slice = std::chrono::hours{24};
+                    const auto remaining =
+                        __saturating_time_difference<
+                            std::chrono::steady_clock::duration>(
+                            (*next_it)->deadline,
+                            now);
+                    cv.wait_for(lk, std::min(
+                        remaining,
+                        std::chrono::duration_cast<
+                            std::chrono::steady_clock::duration>(
+                            max_wait_slice)));
                 }
             }
 
