@@ -53,6 +53,7 @@ forge_add_example(forge_coro_io forge_coro_io_example.cpp THREADS TBB)
 forge_add_example(forge_coro_interop forge_coro_interop_example.cpp THREADS TBB)
 forge_add_example(forge_coro_combinator forge_coro_combinator_example.cpp THREADS TBB)
 forge_add_example(forge_coro_executor_hop forge_coro_executor_hop_example.cpp THREADS TBB)
+forge_add_example(forge_timer_await forge_timer_await_example.cpp THREADS TBB)
 forge_add_example(forge_coro_line_pipeline forge_coro_line_pipeline_example.cpp THREADS TBB)
 
 if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)

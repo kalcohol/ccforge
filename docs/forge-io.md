@@ -35,6 +35,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
 #include <forge/io/coro.hpp> // coroutine substrate proof
+#include <forge/io/timer_await.hpp> // backend-free timer coroutine facade
 #include <forge/io/context_await.hpp> // coroutine facade over context backend
 #include <forge/io/combinators.hpp> // narrow P4124-style proof helper
 ```
@@ -176,11 +177,12 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
   `as_sender(io_task<T>, env)` 交给 sender operation-state 持有到 terminal completion。
 - `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
 
-当前 coroutine-native IO track 只证明 stop token、resource pointer 和 scheduler handle 可以沿
-coroutine-native 边界传递。父子 `io_task` await 使用 symmetric transfer；当前仍没有实现
-owning frame allocator、timer awaitable、platform IO awaitable，或把 sender cancellation
-规则重新包装成另一套稳定 async model。frame allocator policy 保持 deferred，直到能用测试
-证明 coroutine frame allocation 确实经由指定 resource。
+当前 coroutine-native IO track 证明 stop token、resource pointer 和 scheduler handle 可以沿
+coroutine-native 边界传递，并提供既有 timer/backend sender 的 coroutine facade。父子
+`io_task` await 使用 symmetric transfer；当前仍没有实现 owning frame allocator、原生
+platform IO awaitable，或把 sender cancellation 规则重新包装成另一套稳定 async model。
+frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation 确实经由
+指定 resource。
 
 Sender interop 分两层：
 
@@ -218,6 +220,24 @@ operation-state 不能要求 receiver completion callback 返回后才允许销�
 这与 `forge::task` 对自定义 receiver 的 final-suspend 约束同类。需要 await 不满足该约束的
 sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安全 owner 上。
 
+`<forge/io/timer_await.hpp>` 是对既有 `forge::timer_context` sender 的 backend-free
+coroutine facade：
+
+- `async_sleep_for(context, duration)` 和 `async_sleep_until(context, deadline)` 返回
+  `io_task<io_result<>>`。正常到期返回 value 状态。
+- Timer sender 的 stopped completion 不会被压成 `io_result` error；经
+  `as_sender(io_task<T>)` 消费时仍交付 stopped。Timer sender 只有 value/stopped channel；
+  connect-time exception 中的 `std::system_error` 保留 error code，其它异常映射为
+  `std::errc::io_error`。
+- 正常到期在 timer worker thread 上恢复 coroutine；pre-stopped、shutdown 后启动或
+  start-time allocation failure 可以在启动线程同步恢复。两条路径都不会自动 hop 到
+  `io_env.executor`，需要时应显式 await `env.executor.schedule()`。
+- `timer_context&` 只在 facade 调用期间 borrowed；返回 task 持有 timer sender 的共享
+  state。销毁 context 会 shutdown 该 state，使尚未完成的 sleep 观察 stopped。
+- 使用自定义 receiver 连接 `as_sender(async_sleep_...)` 时，仍必须遵守
+  `as_sender(io_task<T>)` 的 operation-state lifetime 约束。观察 terminal signal 后若要立即
+  销毁 operation-state，应先用 `timer_context::wait()` drain source callback。
+
 `<forge/io/context_await.hpp>` 是 `forge::io` 下对现有
 `forge::io::context` 的 coroutine facade。它不是新的 backend contract，也不是 socket API；
 在 backend 关闭时可以直接 include，但不会暴露需要 `forge::io::context` 的函数。
@@ -245,6 +265,8 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
   让调用方决定 concrete stream。
 - coroutine 与 sender runtime 互通：在 `io_task` 内使用 `await_sender(sender)`，
   或用 `as_sender(io_task<T>)` 把 coroutine operation 暴露给 sender consumer。
+- Coroutine sleep：使用 backend-free `<forge/io/timer_await.hpp>`；需要回到业务 executor
+  时在 sleep 后显式 await `env.executor.schedule()`。
 - 已有 OS backend handoff：只在需要现有 `forge::io::context` 时使用
   `<forge/io/context_await.hpp>`；fd/HANDLE、buffer 和 context lifetime 仍由调用方负责。
 
@@ -261,7 +283,7 @@ sender 时，应先经由一个 owning/queued adapter 把 completion hop 到安�
   configure 报错。
 - `FORGE_ENABLE_FORGE_IO=OFF`：禁用 OS backend、`forge::io::context` 以及
   backend-specific examples/tests。`error.hpp`、`result.hpp`、`buffer.hpp`、
-  `memory_stream.hpp`、`stream.hpp`、`coro.hpp`、`combinators.hpp` 和
+  `memory_stream.hpp`、`stream.hpp`、`coro.hpp`、`timer_await.hpp`、`combinators.hpp` 和
   `context_await.hpp` 等 direct headers 仍可使用；对应的
   backend-free tests/examples 仍由 `FORGE_TEST_ENABLE_FORGE_IO` 和 example build 开关控制。
 
@@ -519,6 +541,8 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
   tiny line request/response。
 - `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine
   parse -> strand state update -> response write 的 runtime composition smoke。
+- `example/forge_timer_await_example.cpp`：timer worker 上恢复 coroutine，再显式 hop 到
+  `io_env.executor`。
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
 - `example/forge_io_pipeline_example.cpp`：IO readiness -> strand continuation ->
   channel message。

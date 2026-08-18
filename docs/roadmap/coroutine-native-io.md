@@ -33,6 +33,8 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
 - `<forge/io/stream.hpp>`：stream concepts、`read_exactly`、`write_all`、`read_until`、
   borrowed `any_read_stream` / `any_write_stream`。
 - `<forge/io/coro.hpp>`：`io_env`、`io_task`、`await_sender`、`as_sender`。
+- `<forge/io/timer_await.hpp>`：backend-free facade over `forge::timer_context` sender，
+  提供 `async_sleep_for` / `async_sleep_until`。
 - `<forge/io/context_await.hpp>`：bridge over existing `forge::io::context`
   operations when a backend exists.
 - `<forge/io/combinators.hpp>`：two-child `when_all_results` proof helper for
@@ -134,6 +136,11 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 必须先写设计审计。当前 `io_env` 明确是 borrowed environment：`executor_ref`、
 `std::inplace_stop_token` 和 memory resource pointer 不拥有底层对象，调用方必须保证它们
 活过父 `io_task` await 链或 `as_sender(io_task<T>, env)` operation。
+
+2026-08 的后续 ergonomics 增量新增 `<forge/io/timer_await.hpp>`：它只把既有
+`timer_context` sender 包成 `io_task<io_result<>>`，不新增 timer runtime。正常到期在 timer
+worker thread 上恢复；同步 stopped 路径可在启动线程恢复；需要回到业务 executor 时显式
+await `io_env.executor.schedule()`。
 
 ### Stage 5：sender interop
 
