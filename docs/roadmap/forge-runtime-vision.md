@@ -18,7 +18,8 @@
 - `strand`
 - `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
 - coroutine-native byte IO helpers (`memory_read_stream`, `memory_write_stream`,
-  `read_exactly`, `write_all`, `read_until`, `io_task`, `await_sender`, `as_sender`,
+  `read_exactly`, `write_all`, `read_until`, borrowed and PMR-owned stream erasure,
+  direct-awaitable async stream concepts, `io_task`, `await_sender`, `as_sender`,
   `when_all_results`, `when_any_results`, `with_timeout`,
   `<forge/io/timer_await.hpp>` timer facade, `<forge/io/context_await.hpp>` backend bridge)
 - `resource_policy` and resource-backed pool callable storage
@@ -190,7 +191,9 @@ V1 使用 `std::pmr::memory_resource*` 作为稳定接口，而不是发明大�
 `static_thread_pool` 已把 queued task callable record 纳入 pool resource，`timer_context`
 已把 state、timer op data、timer item control block、timer queue 和 timer callback callable
 record 纳入 resource；`async_scope` op-state 和 `strand` runner keepalive node 也已纳入
-resource。仍需如实记录其它未纳入路径，例如 OS thread 或 kernel object。
+resource。Owning stream wrappers 也用注入 resource 持有 concrete stream object；async
+wrapper 的固定 operation slot 不做 erasure-layer per-operation allocation。Concrete
+stream/awaitable、coroutine frame、OS thread 或 kernel object 等路径不在该声明内。
 
 ## IO backend（IO 后端）
 
@@ -221,7 +224,9 @@ Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是�
   sender 原生 + coroutine facade；未来 completion-queue backend（如 `io_uring`）
   允许 coroutine-native + sender bridge。生命周期词汇（`close()` / `request_stop()` /
   `shutdown()` / `wait()`）与验证矩阵两侧共享；
-- stream erasure 默认是 borrowed wrapper，owning/ABI-stable erasure 需要独立设计；
+- borrowed stream erasure 保持最小 non-owning boundary；PMR-owned sync 与
+  direct-awaitable async wrappers 已作为 header-only Forge extension 落地，但跨版本
+  ABI-stable/plugin erasure 仍需独立设计；
 - `io_task<T>` 与 sender bridge 必须清楚说明 single-use、stopped 和 frame lifetime；
 - `<forge/io/context_await.hpp>` 中的 `async_read_some` / `async_write_some`
   context overload（Linux 另有 `readable` / `writable`）是现有
@@ -257,6 +262,8 @@ Examples 必须从“能编译”升级为“能教会人怎么组合”：
 - `forge_io_read_write_example.cpp`：borrowed span async read/write；
 - `forge_io_typed_error_example.cpp`：typed IO error 穿过 erased sender；
 - `forge_memory_stream_example.cpp`：backend-free stream protocol；
+- `forge_owned_async_stream_example.cpp`：owning async stream 的 separate-TU protocol
+  boundary；
 - `forge_coro_line_pipeline_example.cpp`：coroutine protocol + strand state update。
 
 这些 examples 应避免营销式代码，重点展示“资源在哪里、取消如何传播、何时 drain、

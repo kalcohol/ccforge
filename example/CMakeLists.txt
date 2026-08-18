@@ -48,6 +48,10 @@ forge_add_example(simd_complete_example simd_complete_example.cpp)
 forge_add_example(forge_byte_vocabulary forge_byte_vocabulary_example.cpp)
 forge_add_example(forge_memory_stream forge_memory_stream_example.cpp)
 forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp)
+forge_add_example(forge_owned_async_stream forge_owned_async_stream_example.cpp THREADS TBB)
+target_sources(
+    forge_owned_async_stream
+    PRIVATE forge_owned_async_stream_protocol.cc)
 forge_add_example(forge_line_protocol forge_line_protocol_example.cpp)
 forge_add_example(forge_coro_io forge_coro_io_example.cpp THREADS TBB)
 forge_add_example(forge_coro_interop forge_coro_interop_example.cpp THREADS TBB)

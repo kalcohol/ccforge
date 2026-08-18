@@ -20,8 +20,8 @@ Windows IOCP 的 backend 语义。
 - 不是 TCP/DNS/UDP/TLS、socket option、endpoint/address-resolution library。
 - 不是 `std::execution` 的替代模型；coroutine bridge 只在 `forge::io`
   下与现有 sender runtime 互通。
-- 不是稳定 ABI 的 stream erasure layer；当前 `any_read_stream` / `any_write_stream` 是
-  borrowed wrapper。
+- 不是稳定 ABI 的 stream erasure layer；borrowed 与 owning wrappers 都是 header-only
+  Forge extension，不承诺跨版本二进制布局。
 - 不是 platform semantics normalizer；Linux readiness 和 Windows IOCP completion
   继续按各自 backend 语义暴露。
 
@@ -34,6 +34,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/buffer.hpp>
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
+#include <forge/io/async_stream.hpp> // direct-awaitable concepts and owning erasure
 #include <forge/io/coro.hpp> // coroutine substrate proof
 #include <forge/io/timer_await.hpp> // backend-free timer coroutine facade
 #include <forge/io/context_await.hpp> // coroutine facade over context backend
@@ -122,11 +123,51 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
   目标 stream 的地址和一个函数指针；copy/move 只复制这条引用，调用方必须保证 concrete
   stream 比 erased wrapper 活得更久。空 wrapper 调用会返回
   `std::errc::bad_address`，不抛异常。
+- `owning_any_read_stream` 和 `owning_any_write_stream` 是 move-only owning wrappers。
+  构造时用可注入的 `std::pmr::memory_resource*` 为 concrete stream object 做一次分配；
+  `read_some` / `write_some` 仍是直接 vtable 调用，不做 operation allocation。Resource
+  是 borrowed，必须比 wrapper 活得更久；concrete stream 自己借用的 buffer 或其它资源仍由
+  调用方保证生命周期。移动后的 source 与 reset 后的 wrapper 都为空，调用返回
+  `std::errc::bad_address`。
 
 这层的设计目标是 separate-compilation friendly 的协议边界：协议函数可以接收
 `any_read_stream&` / `any_write_stream&`，测试时传入 `memory_read_stream` 或
-`scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
-owning erased storage 或 per-operation allocation 策略。
+`scripted_read_stream`；需要跨调用边界转移 concrete object 所有权时可改收对应
+`owning_any_*` 类型。当前实现仍是 header-only proof，没有承诺跨版本稳定 ABI 或固定
+wrapper 对象布局。
+
+`<forge/io/async_stream.hpp>` 在同一 byte-stream vocabulary 上增加 direct-awaitable
+protocol 和 owning async erasure：
+
+- `async_read_stream<T>` 要求 `T&.read_some(mutable_buffer{})` 返回 prvalue object；
+  该对象满足 `io_awaitable`，且 `await_resume()` 精确返回
+  `io_result<std::size_t>`。`async_write_stream<T>` 对
+  `write_some(const_buffer{})` 有同样规则；`async_read_write_stream<T>` 同时满足两侧。
+  返回 `io_task` 的 stream 不属于这个 direct-awaitable concept。
+- `immediate_async_stream<Stream>` 拥有一个同步 `read_stream` / `write_stream`，调用时立即
+  执行同步 operation，再返回 ready awaitable。它是 backend-free 的测试与迁移适配器，
+  不会把同步工作异步调度。
+- `owning_any_async_read_stream` / `owning_any_async_write_stream` 用可注入 PMR resource
+  持有 concrete stream object，并把每次 concrete awaitable 构造到 wrapper 内的
+  128-byte、`alignof(std::max_align_t)` operation slot。超出 size/alignment 的 awaitable
+  在 owning wrapper 构造约束处被 compile-time 拒绝，不会隐式退化成 heap allocation。
+- Erasure layer 自己只在 wrapper 构造/析构时分配/释放 concrete stream object；每次
+  `read_some` / `write_some` 不向该 resource 分配。这个声明不覆盖 concrete
+  stream/awaitable、`io_task` coroutine frame、sender bridge 或标准库内部 allocation。
+- 每个 read wrapper 或 write wrapper 只允许一个 in-flight operation。重叠调用返回 ready
+  awaitable，其 result error 是 `std::errc::operation_in_progress`；空 wrapper 返回
+  `std::errc::bad_address`。未开始 await 就丢弃 operation handle 会释放 slot。
+- `erased_io_awaitable`、buffer、concrete stream 的 borrowed dependencies 和 PMR resource
+  都必须活到 `await_resume()` 完成。Active operation 存在时 move/reset 抛
+  `std::logic_error`；销毁 active wrapper 会 `std::terminate()`。通用 erasure 无法替
+  concrete backend 发明 cancel/drain，因此等待 coroutine 也不得在 suspension 中途销毁。
+
+固定 vtable 和 inline operation slot 让同一构建中的 separate-TU 协议边界不需要知道
+concrete stream 类型，但这不是 plugin ABI 承诺。
+`example/forge_owned_async_stream_example.cpp` 与
+`forge_owned_async_stream_protocol.cc` 分属不同 translation units：main TU 构造
+`immediate_async_stream<memory_read_stream>`，protocol TU 只通过
+`owning_any_async_read_stream&` 执行 coroutine read loop。
 
 P4124 风格的 domain-aware combinator 当前提供 two-child、IO-result-specific proof：
 `when_all_results(first, second, env)`、`when_any_results(first, second, env)` 和基于后者的
@@ -302,8 +343,12 @@ coroutine facade：
 
 - 协议 parser/unit test：优先用 `memory_read_stream`、`memory_write_stream` 和
   `scripted_read_stream`，覆盖 short read、EOF、错误和 partial progress。
-- separate-compilation 或插件边界：接收 `any_read_stream&` / `any_write_stream&`，
-  让调用方决定 concrete stream。
+- non-owning separate-compilation 边界：接收 `any_read_stream&` /
+  `any_write_stream&`，让调用方保持 concrete stream 存活。
+- 需要转移 concrete stream ownership 的边界：同步使用 `owning_any_read_stream` /
+  `owning_any_write_stream`；direct-awaitable coroutine protocol 使用
+  `owning_any_async_read_stream` / `owning_any_async_write_stream`，并遵守 single-flight
+  与 active-operation lifetime 规则。
 - coroutine 与 sender runtime 互通：在 `io_task` 内使用 `await_sender(sender)`，
   或用 `as_sender(io_task<T>)` 把 coroutine operation 暴露给 sender consumer。
 - Coroutine sleep：使用 backend-free `<forge/io/timer_await.hpp>`；需要回到业务 executor
@@ -326,8 +371,8 @@ coroutine facade：
   configure 报错。
 - `FORGE_ENABLE_FORGE_IO=OFF`：禁用 OS backend、`forge::io::context` 以及
   backend-specific examples/tests。`error.hpp`、`result.hpp`、`buffer.hpp`、
-  `memory_stream.hpp`、`stream.hpp`、`coro.hpp`、`timer_await.hpp`、`combinators.hpp` 和
-  `context_await.hpp` 等 direct headers 仍可使用；对应的
+  `memory_stream.hpp`、`stream.hpp`、`async_stream.hpp`、`coro.hpp`、
+  `timer_await.hpp`、`combinators.hpp` 和 `context_await.hpp` 等 direct headers 仍可使用；对应的
   backend-free tests/examples 仍由 `FORGE_TEST_ENABLE_FORGE_IO` 和 example build 开关控制。
 
 `<forge/io.hpp>` 在没有 backend 时可以 include，但不会暴露 `forge::io::context`。
@@ -586,6 +631,8 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
   parse -> strand state update -> response write 的 runtime composition smoke。
 - `example/forge_coro_timeout_example.cpp`：scripted memory read 的 task-first 与
   timer-first timeout 路径。
+- `example/forge_owned_async_stream_example.cpp`：main/protocol 两个 translation units
+  之间的 owning direct-awaitable stream boundary。
 - `example/forge_timer_await_example.cpp`：timer worker 上恢复 coroutine，再显式 hop 到
   `io_env.executor`。
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。

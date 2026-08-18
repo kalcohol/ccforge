@@ -31,7 +31,10 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
 - `<forge/io/buffer.hpp>`：borrowed byte buffers 和 buffer sequence helpers。
 - `<forge/io/memory_stream.hpp>`：memory/scripted streams。
 - `<forge/io/stream.hpp>`：stream concepts、`read_exactly`、`write_all`、`read_until`、
-  borrowed `any_read_stream` / `any_write_stream`。
+  borrowed `any_read_stream` / `any_write_stream`，以及 PMR-owned
+  `owning_any_read_stream` / `owning_any_write_stream`。
+- `<forge/io/async_stream.hpp>`：direct-awaitable stream concepts、
+  `immediate_async_stream` 和 fixed-slot PMR-owned async stream erasure。
 - `<forge/io/coro.hpp>`：`io_env`、`io_task`、`await_sender`、`as_sender`。
 - `<forge/io/timer_await.hpp>`：backend-free facade over `forge::timer_context` sender，
   提供 `async_sleep_for` / `async_sleep_until`。
@@ -126,8 +129,10 @@ partial progress。它是最直接的工程收益：协议层不必等真实 bac
 ### Stage 3：stream concepts 与 type erasure
 
 目标是让 protocol code 写到 `read_some` / `write_some` 概念和 type-erased stream boundary
-上。先做 borrowed/ref wrapper；owning erased stream 和 ABI-stable layout 只有在测试与文档证明
-足够稳定后再考虑。
+上。首轮先做 borrowed/ref wrapper；2026-08 后续实验已增加 move-only PMR-owned sync
+wrapper，以及每方向 single-flight、128-byte inline awaitable slot 的 direct-awaitable async
+wrapper。它们证明同一构建内 owning/separate-TU boundary 与 erasure-layer per-operation
+zero-allocation 可行，但仍不承诺跨版本 ABI-stable layout。
 
 ### Stage 4：coroutine execution substrate
 
@@ -213,8 +218,10 @@ runtime composition smoke。
 - Linux `io_uring` 只有在需要 submission/completion queue 语义时才单独立项；它不是
   `epoll` readiness backend 的替代写法。该重估条件已于 2026-08 触发（byte-stream fabric
   方向确认），启动仍需独立 taskbook，决策记录见 `forge-io-backend-spi.md`。
-- `any_read_stream` / `any_write_stream` 保持 borrowed wrapper；true ABI-stable owning
-  `any_stream` 需要对象布局、allocation 和 lifetime 设计。
+- `any_read_stream` / `any_write_stream` 保持最小 borrowed wrapper；新增的
+  `owning_any_*` 与 `owning_any_async_*` 是 header-only experimental Forge surface，
+  已冻结本轮 PMR ownership、single-flight 和 fixed-slot lifetime 规则，但 true
+  ABI-stable/plugin `any_stream` 仍需独立版本化布局与兼容策略。
 - `io_env::memory` 当前只传播 pointer；coroutine frame allocator propagation 没有实现，
   等能用测试证明 frame allocation timing 后再开。
 - 若 WG21 后续 adopted wording，是否做 `<io>` 或 standard-shaped backport 需要重新审计；

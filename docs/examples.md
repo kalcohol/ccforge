@@ -56,6 +56,7 @@
 - [`forge_byte_vocabulary_example.cpp`](../example/forge_byte_vocabulary_example.cpp)
 - [`forge_memory_stream_example.cpp`](../example/forge_memory_stream_example.cpp)
 - [`forge_stream_erasure_example.cpp`](../example/forge_stream_erasure_example.cpp)
+- [`forge_owned_async_stream_example.cpp`](../example/forge_owned_async_stream_example.cpp)
 - [`forge_line_protocol_example.cpp`](../example/forge_line_protocol_example.cpp)
 - [`forge_coro_io_example.cpp`](../example/forge_coro_io_example.cpp)
 - [`forge_coro_interop_example.cpp`](../example/forge_coro_interop_example.cpp)
