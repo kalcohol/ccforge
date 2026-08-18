@@ -435,12 +435,12 @@ public:
     owning_any_async_read_stream() noexcept = default;
 
     template<class Stream>
-        requires __async_stream_detail::erasable_async_read_stream<
-                     std::remove_cvref_t<Stream>>
-              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
-              && (!std::same_as<
+        requires (!std::same_as<
                   std::remove_cvref_t<Stream>,
                   owning_any_async_read_stream>)
+              && __async_stream_detail::erasable_async_read_stream<
+                     std::remove_cvref_t<Stream>>
+              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
     explicit owning_any_async_read_stream(
         Stream&& stream,
         std::pmr::memory_resource* memory = forge::default_memory_resource())
@@ -581,12 +581,12 @@ public:
     owning_any_async_write_stream() noexcept = default;
 
     template<class Stream>
-        requires __async_stream_detail::erasable_async_write_stream<
-                     std::remove_cvref_t<Stream>>
-              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
-              && (!std::same_as<
+        requires (!std::same_as<
                   std::remove_cvref_t<Stream>,
                   owning_any_async_write_stream>)
+              && __async_stream_detail::erasable_async_write_stream<
+                     std::remove_cvref_t<Stream>>
+              && std::constructible_from<std::remove_cvref_t<Stream>, Stream>
     explicit owning_any_async_write_stream(
         Stream&& stream,
         std::pmr::memory_resource* memory = forge::default_memory_resource())

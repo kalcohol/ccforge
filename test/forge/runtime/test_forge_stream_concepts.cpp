@@ -2,6 +2,7 @@
 
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
+#include "forge_counting_resource.hpp"
 #include "forge_io_test_bytes.hpp"
 
 #include <algorithm>
@@ -553,4 +554,48 @@ TEST(ForgeStreamConceptsTest, EmptyOwningStreamsReportError) {
     EXPECT_EQ(read_count, 0u);
     EXPECT_EQ(write_error, std::make_error_code(std::errc::bad_address));
     EXPECT_EQ(write_count, 0u);
+}
+
+TEST(ForgeStreamConceptsTest, OwningStreamsOnlyAllocateTheirTargets) {
+    forge_test::counting_resource memory;
+    std::string input{"x"};
+    std::array<char, 1> output{};
+
+    {
+        forge::io::owning_any_read_stream reader{
+            forge::io::memory_read_stream{std::string_view{input}},
+            &memory};
+        ASSERT_EQ(memory.allocations(), 1u);
+
+        auto [error, count] = reader.read_some(
+            forge::io::mutable_buffer{std::span{output}});
+
+        EXPECT_FALSE(error);
+        EXPECT_EQ(count, output.size());
+        EXPECT_EQ(memory.allocations(), 1u);
+        EXPECT_EQ(memory.deallocations(), 0u);
+    }
+
+    EXPECT_EQ(memory.allocations(), 1u);
+    EXPECT_EQ(memory.deallocations(), 1u);
+
+    {
+        forge::io::owning_any_write_stream writer{
+            forge::io::memory_write_stream{
+                forge::io::mutable_buffer{std::span{output}}},
+            &memory};
+        ASSERT_EQ(memory.allocations(), 2u);
+
+        auto [error, count] = writer.write_some(
+            forge::io::const_buffer{"y", 1});
+
+        EXPECT_FALSE(error);
+        EXPECT_EQ(count, output.size());
+        EXPECT_EQ(memory.allocations(), 2u);
+        EXPECT_EQ(memory.deallocations(), 1u);
+    }
+
+    EXPECT_EQ(memory.allocations(), 2u);
+    EXPECT_EQ(memory.deallocations(), 2u);
+    EXPECT_EQ(memory.outstanding(), 0u);
 }
