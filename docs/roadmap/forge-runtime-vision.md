@@ -19,6 +19,7 @@
 - `io::context` (Linux epoll/eventfd readiness + Windows IOCP proof)
 - coroutine-native byte IO helpers (`memory_read_stream`, `memory_write_stream`,
   `read_exactly`, `write_all`, `read_until`, `io_task`, `await_sender`, `as_sender`,
+  `when_all_results`, `when_any_results`, `with_timeout`,
   `<forge/io/timer_await.hpp>` timer facade, `<forge/io/context_await.hpp>` backend bridge)
 - `resource_policy` and resource-backed pool callable storage
 - `task`

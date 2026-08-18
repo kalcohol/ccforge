@@ -37,8 +37,8 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
   提供 `async_sleep_for` / `async_sleep_until`。
 - `<forge/io/context_await.hpp>`：bridge over existing `forge::io::context`
   operations when a backend exists.
-- `<forge/io/combinators.hpp>`：two-child `when_all_results` proof helper for
-  `io_task<io_result<...>>` composition.
+- `<forge/io/combinators.hpp>`：two-child `when_all_results` /
+  `when_any_results` proof helpers and `with_timeout`.
 
 Umbrella policy 保持保守：`<forge/io.hpp>` 继续只暴露 OS backend `context`（在 backend
 可用时），不把纯 vocabulary 或 coroutine headers 自动拉入；`<forge/execution.hpp>`
@@ -178,14 +178,18 @@ receiver/env stop token；任一 stop source 请求都会让 coroutine 内的 `a
 
 Stage 7 当前实现选择保持保守：`read_exactly` / `write_all` 已由 Stage 3 提供，
 `read_until` 覆盖小型 line/record 场景；`io_result` 已有 value / EOF / error 三态，
-从而能保留 EOF 与 partial progress。P4124 风格 combinator 只实现
-`when_all_results(io_task<io_result<...>>, io_task<io_result<...>>, io_env)` 这一条
-two-child proof helper。它证明了：一个 child error/EOF/stopped 时 sibling 会收到 stop；
-已完成 child result 不丢失；error > EOF > stopped > value 的 aggregate priority 明确；
-receiver completion 不在 helper mutex 下运行；race cancellation/completion 有 focused
-stress test。variadic combinator、任意 sender combinator、policy-based priority 和
-owning result storage 都继续 deferred。示例覆盖纯 memory line protocol，以及 memory
-stream -> coroutine parse -> strand state update -> response write 的 runtime composition smoke。
+从而能保留 EOF 与 partial progress。P4124 风格 combinator 已实现
+`when_all_results` 与 `when_any_results` 两条 two-child
+`io_task<io_result<...>>` proof helper，以及由 timer await 组合的 `with_timeout`。
+`when_all_results` 保持 error > EOF > stopped > value aggregate priority；
+`when_any_results` 以 shared-state mutex 下第一个 terminal callback 为 winner，请求 sibling
+stop，但等两个 child drain 后交付，并保留 loser 经 value channel 产生的 late partial slot。
+`with_timeout` 把 timer winner 映射为 `std::errc::timed_out`，不把 external stop 伪装成
+timeout。Completion 不在 helper mutex 下运行，race cancellation/completion 有 focused
+stress + TSAN/ASAN tests。Variadic combinator、任意 sender combinator、policy-based priority
+和 owning result storage 都继续 deferred。示例覆盖纯 memory line protocol、scripted read
+timeout，以及 memory stream -> coroutine parse -> strand state update -> response write 的
+runtime composition smoke。
 
 ### Stage 8：收敛与 deferred decisions
 
@@ -195,7 +199,8 @@ stream -> coroutine parse -> strand state update -> response write 的 runtime c
 - Boost.Asio/Capy/Corosio adapter；
 - Linux `io_uring`；
 - true ABI-stable `any_stream`；
-- variadic or policy-based IO-aware combinators beyond `when_all_results`;
+- variadic or policy-based IO-aware combinators beyond two-child
+  `when_all_results` / `when_any_results`;
 - frame allocator propagation；
 - 将来若 WG21 adopted wording 后是否做 standard backport。
 

@@ -60,6 +60,7 @@
 - [`forge_coro_io_example.cpp`](../example/forge_coro_io_example.cpp)
 - [`forge_coro_interop_example.cpp`](../example/forge_coro_interop_example.cpp)
 - [`forge_coro_combinator_example.cpp`](../example/forge_coro_combinator_example.cpp)
+- [`forge_coro_timeout_example.cpp`](../example/forge_coro_timeout_example.cpp)
 - [`forge_coro_executor_hop_example.cpp`](../example/forge_coro_executor_hop_example.cpp)
 - [`forge_timer_await_example.cpp`](../example/forge_timer_await_example.cpp)
 - [`forge_context_await_example.cpp`](../example/forge_context_await_example.cpp)

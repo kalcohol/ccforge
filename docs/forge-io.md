@@ -128,10 +128,11 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
 `scripted_read_stream`。当前实现仍是 header-only proof，没有承诺稳定 ABI、固定对象布局、
 owning erased storage 或 per-operation allocation 策略。
 
-P4124 风格的 domain-aware combinator 目前只实现一个窄 proof helper：
-`forge::io::when_all_results(first, second, env)`。它只接受两个
-`io_task<io_result<...>>` child，并返回 sender；它不是 `std::execution::when_all`
-替代品，也不组合任意 sender。
+P4124 风格的 domain-aware combinator 当前提供 two-child、IO-result-specific proof：
+`when_all_results(first, second, env)`、`when_any_results(first, second, env)` 和基于后者的
+`with_timeout(task, duration, timer_context, env)`。它们只接受
+`io_task<io_result<...>>`，并返回 sender；它们不是 `std::execution::when_all` /
+`when_any` 的替代品，也不组合任意 sender。
 
 `when_all_results` 的 value payload 是
 `when_all_result<First, Second>`，其中 `first` / `second` 是各自 child
@@ -155,6 +156,46 @@ regression test。这个保证不改变 `as_sender` 的 source-sender lifetime �
 source operation-state 仍必须允许在其 receiver completion callback 内销毁。
 `example/forge_coro_combinator_example.cpp` 展示了 value+EOF 和 value+error
 组合时如何检查 aggregate status，并读取保留下来的 child partial result。
+
+`when_any_results` 的 value payload 是
+`when_any_result<First, Second>`：除两个 optional result slot 外，还包含 `winner`
+index。Winner 是 shared-state mutex 下第一个被接受的 terminal callback；不是跨线程不可观测的
+wall-clock 时刻。两个 callback 并发时，`0` 或 `1` 都是合法 winner。实现先启动 first child，
+再启动 second child，因此 first inline-complete 时会在 second 启动前获胜。
+
+选出 winner 后会请求 shared stop，但 aggregate 仍等两个 child 都到达 terminal callback 才
+交付。Loser 若响应 stop，其 slot 为空；若忽略 stop 并经 value channel 交付 late
+`io_result`，该 result（包括 EOF/error 和 partial progress）保留在 slot 中，但不会覆盖
+winner 状态。Downstream stop request 本身不是 terminal；如果 child 忽略 stop 并先交付
+value，它仍可成为 winner。行为表如下：
+
+| # | 首个 terminal | loser | aggregate / payload |
+| --- | --- | --- | --- |
+| 1 | value | stopped | value；仅 winner slot |
+| 2 | value | late value | value；两个 slots |
+| 3 | error `io_result` | stopped | winner error code；仅 winner slot |
+| 4 | error `io_result` | late value/error/EOF result | winner error code；两个 slots，loser 状态保留 |
+| 5 | EOF `io_result` | stopped | EOF；仅 winner slot |
+| 6 | EOF `io_result` | late value/error/EOF result | EOF；两个 slots，loser 状态保留 |
+| 7 | stopped | stopped | `set_stopped()`；无 payload |
+| 8 | stopped | late value | `set_stopped()`；late child 只用于 drain |
+| 9 | downstream stop，两个 child 响应 | first observed stopped | `set_stopped()` |
+| 10 | downstream stop，某 child 忽略并先 value-complete | stopped 或 late result | value；可用 slots |
+| 11 | 两个 terminal 并发 | 任一完成顺序 | winner `0`/`1` 均允许；winner 状态控制 aggregate |
+| 12 | winner sender `set_error` / start throw，或 aggregate move 失败 | drain | `set_error(exception_ptr)` |
+
+Loser 的 sender `set_error` 不覆盖已选 winner；它没有 `io_result` slot。Completion 在 helper
+mutex 外交付且 exactly-once。`when_any_results` 不新增 source lifetime 特权：其 child 经
+`as_sender(io_task)` 连接，所以 consumer receiver 不得在 final-suspend completion callback
+内同步销毁 connected operation-state；应在 terminal callback 返回后再销毁。
+
+`with_timeout` 把用户 task 放在 index `0`，把 `async_sleep_for` 放在 index `1`。Timer
+value 先完成时，aggregate 映射为 `std::errc::timed_out`，仍保留用户 task 在 drain 期间产生的
+late partial slot；用户 task 先完成时，它的原 value/error/EOF 状态保持不变并请求停止 timer。
+对仍 pending 的 task，零或负 duration 会走 timeout；若 task 在 first-child start 中 inline
+完成，则 task 先获胜。External stop 继续交付 stopped，而不是伪装成 timeout。
+`example/forge_coro_timeout_example.cpp` 用 scripted memory read 展示 task-first 与
+timer-first 两条路径。
 
 `forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
 proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
@@ -267,6 +308,8 @@ coroutine facade：
   或用 `as_sender(io_task<T>)` 把 coroutine operation 暴露给 sender consumer。
 - Coroutine sleep：使用 backend-free `<forge/io/timer_await.hpp>`；需要回到业务 executor
   时在 sleep 后显式 await `env.executor.schedule()`。
+- Two-child race/deadline：使用 `when_any_results` 或 `with_timeout`，并保留 connected
+  operation-state 直到两个 child 的 terminal callbacks 均已返回。
 - 已有 OS backend handoff：只在需要现有 `forge::io::context` 时使用
   `<forge/io/context_await.hpp>`；fd/HANDLE、buffer 和 context lifetime 仍由调用方负责。
 
@@ -541,6 +584,8 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
   tiny line request/response。
 - `example/forge_coro_line_pipeline_example.cpp`：memory stream read -> coroutine
   parse -> strand state update -> response write 的 runtime composition smoke。
+- `example/forge_coro_timeout_example.cpp`：scripted memory read 的 task-first 与
+  timer-first timeout 路径。
 - `example/forge_timer_await_example.cpp`：timer worker 上恢复 coroutine，再显式 hop 到
   `io_env.executor`。
 - `example/forge_io_readiness_example.cpp`：nonblocking pipe + `readable(fd)`。
