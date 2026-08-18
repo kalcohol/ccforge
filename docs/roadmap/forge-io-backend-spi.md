@@ -111,3 +111,33 @@ backend 需要拥有 handle 或支持 high-churn handle pool，应新增显式 h
 只有出现具体平台需求且语义匹配时，新的 readiness backend 才能沿用 Linux shape。
 macOS/BSD kqueue 不是当前项目目标。Completion backend 应沿用 IOCP shape，而不是伪装成
 readiness。
+
+## io_uring Phase 0 决策记录（2026-08）
+
+### D1：native protocol
+
+结论：go，选择 coroutine-native + explicit sender bridge。
+
+- Public backend type 使用独立的 `forge::io::io_uring_context`，计划由 direct header
+  `forge/io/io_uring_context.hpp` 暴露。它与现有 `forge::io::context` 的 epoll
+  readiness backend 并存，不参与 `<forge/io.hpp>` 的 portable context 选择，也不替换
+  `readable()` / `writable()`。
+- 原生 one-shot operation 是非 coroutine 的 direct `io_awaitable` object。
+  `await_suspend(handle, io_env const*)` 登记 pending record、填充 SQE 并 submit；
+  poller thread drain CQE 后在 backend lock 外直接 resume handle。后续 coroutine body
+  因而运行在 poller thread；需要业务 executor affinity 时显式 await
+  `env.executor.schedule()`。
+- `io_uring_context` 持有 SQ/CQ mappings、submission lock、pending registry 和 poller
+  thread。Awaitable、fd 和 buffer 都是 borrowed operation state；context 与 awaiting
+  coroutine frame 必须活到 CQE 或 cancellation CQE 被 drain。
+- V1 不提供平行的 native sender implementation。Sender consumer 通过一个显式
+  `io_task<io_result<...>>` coroutine await 原生 operation，再使用既有
+  `as_sender(io_task, env)`。这条桥可能分配 coroutine frame，属于 interop cost，不进入
+  coroutine-native hot-path 的零分配声明。
+- P4123 指出的 sender bridge 成本不足以在本仓冻结第二套 backend operation state。
+  只有后续 benchmark 证明该显式桥是实际瓶颈，才另立任务评估薄 sender；本 proof 不提前
+  增加 native sender surface。
+
+这个选择落实 “per-backend 单一原生 async 协议 + 显式桥”：epoll/IOCP 既有 backend
+继续 sender-native，io_uring proof 则作为第一个 coroutine-native completion-queue
+backend。
