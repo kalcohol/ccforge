@@ -191,3 +191,41 @@ backend。
 
 `scripts/probe-io-uring.sh` 已扩展为同时检查 `IORING_FEAT_NODROP` 和上述四个
 opcode；当前 host 返回 33 个 probe entries，必需集合全部可用。
+
+### D4：verification lane 与 sandbox policy
+
+V1 分开验证 build capability、kernel capability 和 container sandbox policy：
+
+| lane | 预期结果 | 说明 |
+|---|---|---|
+| Host `scripts/probe-io-uring.sh` | pass 或 77 skip | 当前 host pass；直接验证 setup、mmap、register、enter 与 CQ drain |
+| 默认 rootless Podman policy | 77 skip | Fedora/Podman 默认 seccomp 对 setup 返回 `ENOSYS`；这不是 kernel 缺失 |
+| 自定义 seccomp、默认 SELinux container label | 77 skip | 当前 Fedora policy 对 setup 返回 `EACCES` |
+| `scripts/probe-io-uring-container.sh` | pass | 从 Podman 默认 profile 派生并只放行三个 io_uring syscalls；当前返回 58 个 probe entries |
+
+Container lane 需要关闭 SELinux container label 才能在当前 Fedora host 上执行
+`io_uring_setup`。这是 backend verification 专用的安全例外，不是生产容器建议。脚本同时
+使用无网络、drop all capabilities、`no-new-privileges`、只读 source mount 和 ephemeral
+container 来缩小范围；它不会使用 `--privileged` 或 seccomp unconfined。Custom profile
+由 `/usr/share/containers/seccomp.json` 派生，可通过
+`FORGE_IO_URING_SECCOMP_BASE` 指定其他 Podman profile。
+
+可重复的 container lane 为：
+
+```sh
+podman build -t forge-tsan -f containers/Containerfile.tsan .
+scripts/probe-io-uring-container.sh
+```
+
+未来 `FORGE_ENABLE_IO_URING` gate 使用以下规则：
+
+- `OFF`：不编译 backend，也不运行 capability/runtime tests；
+- `AUTO`：Linux UAPI compile probe 通过即编译 backend；runtime setup/probe 不可用时，
+  runtime tests 以 77 明确 skip。Configure 不用 `uname`，也不在 cross compile 时执行
+  target binary；
+- `ON`：UAPI compile probe 失败时 configure hard fail；该 lane 的 runtime
+  setup/probe 不可用属于 test failure，不能以 77 隐藏。
+
+Phase 1/2 可在默认 sandbox 中完成 compile-only 与 mock queue 测试。Phase 3 的真实
+pipe/socketpair、stop race 和 shutdown CQ drain 测试必须运行在 host lane 或上述 custom
+policy lane；TSAN/ASAN 也必须沿用同一 policy，默认容器的 77 只证明 skip path。
