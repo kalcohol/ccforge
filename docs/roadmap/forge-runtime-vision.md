@@ -70,6 +70,12 @@ Resource policy、IO readiness、coroutine-native byte IO 和 typed-error integr
 这个支撑层：抽出生命周期、调度、消息、资源、错误和组合方式这些共性，而不是绑定某个具体
 平台或厂商栈。
 
+“不做网络库”指不做 TCP/DNS/UDP/TLS、socket option、endpoint resolution 这类
+networking framework surface；它不排除 byte-stream transport substrate 本身。
+2026-08 确认：非以太网介质的字节流场景（io_uring SQ/CQ、RoCEv2/RDMA、DMA、
+PCIe/UALink/UCIe 类加速器互连）属于本支撑层要服务的 workload。这类 backend 仍受
+backend proof 政策与独立 taskbook gate 约束。
+
 未来 backend shape 记录在 [`forge::io` backend SPI 草案](forge-io-backend-spi.md)。
 Gate、lifetime、verification 和 typed-error 规则记录在
 [`backend proof` 策略](forge-backend-proof-policy.md)。这些是 design constraints，不是
@@ -100,8 +106,10 @@ policy 内置进通用 helper。
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
-- 新平台 IO backend：Linux `io_uring`，或 Windows IOCP 超出当前 proof 的 production
-  hardening，例如 explicit owned-handle lifetimes 或 high-churn handle-pool policy；
+- 新平台 IO backend：Linux `io_uring`（重估条件已于 2026-08 触发，见
+  `forge-io-backend-spi.md`，启动前仍需独立 taskbook），或 Windows IOCP 超出当前 proof
+  的 production hardening，例如 explicit owned-handle lifetimes 或 high-churn
+  handle-pool policy；
 - 完整 networking 方向：TCP/DNS/UDP/TLS、socket option、endpoint/address resolution、
   certificate/security policy；
 - 外部生态 adapter：Boost.Asio、OpenSSL、WolfSSL 或其它库的 adapter matrix；
@@ -194,10 +202,12 @@ backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
 第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；macOS/BSD
-kqueue 当前不在项目需求内。`io_uring` 当前 defer：现有需求由 epoll readiness + one-shot
-read/write 覆盖，后续只有在需要 kernel SQ/CQ 语义且能稳定验证时才重新立项。IOCP 当前
-proof 已覆盖 completion drain、per-operation cancellation 和 conservative associated-handle
-pruning；更强的 owned-handle lifetime 或 high-churn handle-pool policy 仍需独立 taskbook。
+kqueue 当前不在项目需求内。`io_uring` 的 defer 重估条件已于 2026-08 触发（byte-stream
+fabric 方向确认，见 `forge-io-backend-spi.md`），启动前仍需独立 taskbook。RoCEv2/RDMA
+类 fabric backend 需要独立 taskbook 和可验证硬件（或 soft-RoCE）故事，当前仍 deferred。
+IOCP 当前 proof 已覆盖 completion drain、per-operation cancellation 和 conservative
+associated-handle pruning；更强的 owned-handle lifetime 或 high-churn handle-pool policy
+仍需独立 taskbook。
 
 ## Coroutine-native byte IO
 
@@ -205,6 +215,11 @@ Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是�
 它应继续满足：
 
 - API 放在 `forge::io`，不进入 `namespace std`；
+- 每个 primitive/backend 只选择一个原生 async 协议：sender 或 coroutine awaitable，
+  另一侧经显式 bridge 到达，不做平行双实现。现有 readiness/IOCP backend 保持
+  sender 原生 + coroutine facade；未来 completion-queue backend（如 `io_uring`）
+  允许 coroutine-native + sender bridge。生命周期词汇（`close()` / `request_stop()` /
+  `shutdown()` / `wait()`）与验证矩阵两侧共享；
 - stream erasure 默认是 borrowed wrapper，owning/ABI-stable erasure 需要独立设计；
 - `io_task<T>` 与 sender bridge 必须清楚说明 single-use、stopped 和 frame lifetime；
 - `<forge/io/context_await.hpp>` 中的 `async_read_some` / `async_write_some`

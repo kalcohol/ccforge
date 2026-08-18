@@ -53,9 +53,14 @@ backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设�
 
 | Paper | Facility | Status in index | Useful Forge capability | Planned stage | Why not `std` in Forge |
 | --- | --- | --- | --- | --- | --- |
+| P2583R4 | Symmetric transfer and sender composition | Info, All of WG21 | `io_task` 父子 await 采用 symmetric transfer 的设计依据；解释 sender completion 路径为何不承诺 handle 返回 | Stage 4/5 | 提议修改 sender 完成协议，conformant `<execution>` backport 不能吸收 |
 | P4003R3 | Minimal coroutine execution model: `IoAwaitable`, `io_env`, executor shape | Ask, LEWG | 实验性 coroutine execution substrate、env propagation、executor adaptation | Stage 4 | 尚非 adopted wording；Forge extension 不向 `namespace std` 加名 |
 | P4007R3 | Open issues in `std::execution::task` | Info, All of WG21 | 审计 `io_task`/`as_sender` 的 ownership、completion 和 error/stopped 边界 | Stage 5 | 讨论 `std::execution::task` 的开放问题，不定义 Forge 可注入的标准 surface |
+| P4036R0 | Why span is not enough: dedicated buffer vocabulary | Info, All of WG21 | `buffer.hpp` 使用专用 byte-region descriptor 而非裸 `std::span` 的设计依据 | Stage 1 | rationale paper，不定义可 backport 的标准 surface |
 | P4088R1 | Coroutine mechanics and rationale | Info, All of WG21 | 设计依据：type erasure、frame state、separate compilation 的取舍 | Stage 0/4 | rationale paper，不定义可 backport 的标准 surface |
+| P4089R1 | Diversity of coroutine task types | Info, All of WG21 | `io_task<T>` 保持单模板参数、以协议而非 task 类型作为互操作点的依据 | Stage 4 | survey/rationale，不定义标准 surface |
+| P4090R1 | Sender I/O constructed comparison | Info, All of WG21 | `io_result` 不隐式拆 sender 通道、要求显式 adapter 的论据 | Stage 5 | comparison paper，不是 API wording |
+| P4091R1 | Error models and the abstraction floor | Info, All of WG21 | compound result 跨 sender 边界的 abstraction-floor 分析，支撑 `as_sender` 单 value 传递策略 | Stage 5 | error-model 分析，不定义标准 surface |
 | P4092R1 | Consuming senders from coroutine-native code | Info, All of WG21 | `await_sender` 类 bridge，与现有 `std::execution`/Forge runtime 互通 | Stage 5 | 仍是 bridge sketch；不改变 `<execution>` backport 行为 |
 | P4093R1 | Producing senders from coroutine-native code | Info, All of WG21 | `as_sender` 类 bridge，并明确 compound IO result 的通道边界 | Stage 5 | compound result 映射策略未标准化，不能静默进 `std` |
 | P4100R1 | Network Endeavor overview | Info, All of WG21 | 分阶段路线：先纯 C++ abstractions，后 platform IO | Stage 0/8 | overview paper；明确 Stage Two 才涉及 platform networking |
@@ -67,6 +72,10 @@ backend 能力时继续使用既有 `FORGE_HAS_FORGE_IO_*` 宏，纯 header 设�
 | P4166R0 | Frame-visible coroutines for senders | Info, All of WG21 | 长期方向：compound result preservation、frame visibility 与 sender zero-allocation 取舍 | Deferred | 需要语言能力，不是 header-only library 可以 backport 的设施 |
 | P4172R1 | IoAwaitable design rationale | Info, All of WG21 | env propagation、executor_ref、frame allocator decision record | Stage 4 | companion rationale，不是稳定标准 header |
 | P4178R0 | Async abstraction trade-offs | Info, All of WG21 | 用于 review sender/coroutine 边界是否合理 | Stage 5/8 | trade-off paper，不定义可注入标准名 |
+
+复查 2026-08-19：2026-07 与 2026-08 mailing 没有 Network Endeavor 新论文或修订，上表仍是
+最新基线。P4094R1-P4099R1 历史审计块与 P4041R0/P4046R0/P4047R0/P4048R0/P4207R0 等
+methodology/process 论文刻意不进入本矩阵：它们不定义可实现的 library surface。
 
 官方索引：
 
@@ -190,7 +199,8 @@ stream -> coroutine parse -> strand state update -> response write 的 runtime c
 - Boost.Asio、Capy、Corosio 或其它 adapter 暂不引入，避免把 Forge 的小型 substrate 变成
   adapter matrix。
 - Linux `io_uring` 只有在需要 submission/completion queue 语义时才单独立项；它不是
-  `epoll` readiness backend 的替代写法。
+  `epoll` readiness backend 的替代写法。该重估条件已于 2026-08 触发（byte-stream fabric
+  方向确认），启动仍需独立 taskbook，决策记录见 `forge-io-backend-spi.md`。
 - `any_read_stream` / `any_write_stream` 保持 borrowed wrapper；true ABI-stable owning
   `any_stream` 需要对象布局、allocation 和 lifetime 设计。
 - `io_env::memory` 当前只传播 pointer；coroutine frame allocator propagation 没有实现，

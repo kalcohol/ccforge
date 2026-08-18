@@ -65,6 +65,22 @@ read/write 用例；项目还没有需要 kernel submission/completion queues �
 - backend 能保持 optional AUTO/ON/OFF gates，且除非明确批准，不引入 mandatory `liburing` dependency；
 - typed-error categories 仍保持小而 portable。
 
+2026-08 重估记录：owner 确认支撑层需要服务非以太网介质的 byte-stream fabric 场景
+（RoCEv2/RDMA、DMA、PCIe/UALink/UCIe 类加速器互连），该类 workload 属于
+submission/completion queue 语义，重估条件成立。`io_uring` 是该模型在通用 Linux
+内核上可验证的 commodity 载体，是未来 coroutine-native backend proof 的首选候选。
+启动前仍需独立 taskbook，且 taskbook 必须先解决：
+
+- native protocol 选择：sender-native + coroutine facade，或 coroutine-native +
+  sender bridge（初步倾向后者，作为 per-backend native protocol 原则的首个
+  completion-queue 实例）；
+- `liburing` vs raw syscalls（维持默认不引入 mandatory `liburing`）；
+- kernel 版本地板与 op 子集；
+- 验证通道：容器运行时默认 seccomp profile 普遍禁用 `io_uring_setup` /
+  `io_uring_enter`，需要自定义 seccomp profile 或 host-side lane；
+- cancellation/drain 行为（`IORING_OP_ASYNC_CANCEL`、ring teardown）与
+  typed-error 分类的聚焦测试。
+
 ## Windows IOCP 策略
 
 现有 Windows backend 是 completion-based。Operation 显式提交，并通过 IOCP packet 完成。
