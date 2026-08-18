@@ -353,6 +353,11 @@ auto child_task(std::shared_ptr<controlled_state> state)
     co_return std::move(result);
 }
 
+auto immediate_child_task(child_result result)
+    -> cio::io_task<child_result> {
+    co_return result;
+}
+
 struct aggregate_state {
     std::mutex mtx;
     std::condition_variable cv;
@@ -1295,6 +1300,122 @@ TEST(ForgeCoroCombinatorsTest, WhenAnyResultsRaceSelectsEitherValueOnce) {
         EXPECT_EQ(cio::get<1>(*payload.first), 17u);
         EXPECT_EQ(cio::get<1>(*payload.second), 19u);
     }
+}
+
+TEST(ForgeCoroCombinatorsTest, WithTimeoutPreservesLatePartialResult) {
+    forge::timer_context timers;
+    auto state = std::make_shared<controlled_state>();
+    state->stop_completes = false;
+    std::thread late_completion([state] {
+        wait_started(state);
+        wait_stop_entered(state);
+        release_child(
+            state,
+            controlled_completion::error,
+            child_result::failure(
+                std::make_error_code(std::errc::connection_reset),
+                5));
+        wait_returned(state);
+    });
+
+    auto result = std::execution::sync_wait(
+        cio::with_timeout(
+            child_task(state),
+            1ms,
+            timers));
+
+    late_completion.join();
+    timers.wait();
+    ASSERT_TRUE(result.has_value());
+    auto [aggregate] = std::move(*result);
+    EXPECT_EQ(
+        aggregate.error(),
+        std::make_error_code(std::errc::timed_out));
+    auto& payload = cio::get<1>(aggregate);
+    EXPECT_EQ(payload.winner, 1u);
+    ASSERT_TRUE(payload.first.has_value());
+    EXPECT_EQ(
+        payload.first->error(),
+        std::make_error_code(std::errc::connection_reset));
+    EXPECT_EQ(cio::get<1>(*payload.first), 5u);
+    ASSERT_TRUE(payload.second.has_value());
+    EXPECT_TRUE(payload.second->has_value());
+}
+
+TEST(ForgeCoroCombinatorsTest, WithTimeoutStopsTimerAfterTaskWins) {
+    forge::timer_context timers;
+
+    auto result = std::execution::sync_wait(
+        cio::with_timeout(
+            immediate_child_task(child_result::success(23)),
+            1h,
+            timers));
+
+    timers.wait();
+    ASSERT_TRUE(result.has_value());
+    auto [aggregate] = std::move(*result);
+    EXPECT_TRUE(aggregate.has_value());
+    auto& payload = cio::get<1>(aggregate);
+    EXPECT_EQ(payload.winner, 0u);
+    ASSERT_TRUE(payload.first.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 23u);
+    EXPECT_FALSE(payload.second.has_value());
+}
+
+TEST(ForgeCoroCombinatorsTest, WithTimeoutZeroExpiresPendingTask) {
+    forge::timer_context timers;
+    auto state = std::make_shared<controlled_state>();
+    state->stop_completes = false;
+    std::thread late_completion([state] {
+        wait_started(state);
+        wait_stop_entered(state);
+        release_child(
+            state,
+            controlled_completion::value,
+            child_result::success(29));
+        wait_returned(state);
+    });
+
+    auto result = std::execution::sync_wait(
+        cio::with_timeout(
+            child_task(state),
+            0ms,
+            timers));
+
+    late_completion.join();
+    timers.wait();
+    ASSERT_TRUE(result.has_value());
+    auto [aggregate] = std::move(*result);
+    EXPECT_EQ(
+        aggregate.error(),
+        std::make_error_code(std::errc::timed_out));
+    auto& payload = cio::get<1>(aggregate);
+    EXPECT_EQ(payload.winner, 1u);
+    ASSERT_TRUE(payload.first.has_value());
+    EXPECT_EQ(cio::get<1>(*payload.first), 29u);
+    ASSERT_TRUE(payload.second.has_value());
+}
+
+TEST(ForgeCoroCombinatorsTest, WithTimeoutObservesExternalStopFirst) {
+    forge::timer_context timers;
+    auto state = std::make_shared<controlled_state>();
+    std::inplace_stop_source stop;
+    stop.request_stop();
+    cio::io_env env;
+    env.stop_token = stop.get_token();
+
+    auto result = std::execution::sync_wait(
+        cio::with_timeout(
+            child_task(state),
+            1h,
+            timers,
+            env));
+
+    wait_returned(state);
+    timers.wait();
+    EXPECT_FALSE(result.has_value());
+    std::lock_guard lock{state->mtx};
+    EXPECT_EQ(state->stop_attempts, 1);
 }
 
 #else

@@ -24,7 +24,9 @@
 
 #include <forge/io/coro.hpp>
 #include <forge/io/result.hpp>
+#include <forge/io/timer_await.hpp>
 
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <exception>
@@ -967,6 +969,34 @@ template<class First, class Second>
         std::move(first),
         std::move(second),
         std::move(env)};
+}
+
+template<class Result, class Rep, class Period>
+    requires __io_combinator_detail::is_io_result_v<Result>
+[[nodiscard]] auto with_timeout(
+    io_task<Result> task,
+    std::chrono::duration<Rep, Period> timeout,
+    forge::timer_context& timers,
+    io_env env = {}) {
+    using timer_result_t = io_result<>;
+    using payload_t = when_any_result<Result, timer_result_t>;
+    using aggregate_t = io_result<payload_t>;
+
+    return std::execution::then(
+        when_any_results(
+            std::move(task),
+            async_sleep_for(timers, timeout),
+            std::move(env)),
+        [](aggregate_t result) -> aggregate_t {
+            if (result.status() == io_status::value &&
+                get<1>(result).winner == 1) {
+                auto payload = std::move(get<1>(result));
+                return aggregate_t::failure(
+                    std::make_error_code(std::errc::timed_out),
+                    std::move(payload));
+            }
+            return std::move(result);
+        });
 }
 
 #endif // __cpp_impl_coroutine
