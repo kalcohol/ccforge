@@ -141,3 +141,24 @@ readiness。
 这个选择落实 “per-backend 单一原生 async 协议 + 显式桥”：epoll/IOCP 既有 backend
 继续 sender-native，io_uring proof 则作为第一个 coroutine-native completion-queue
 backend。
+
+### D2：raw syscalls vs liburing
+
+结论：go，V1 使用 raw Linux UAPI，不引入 liburing。
+
+- 可重复探针入口是 `scripts/probe-io-uring.sh`，其 C++ source 直接调用
+  `io_uring_setup`、mmap SQ/CQ/SQEs、提交 `IORING_OP_NOP`，再用
+  `io_uring_enter` 等待并验证 CQE。探针只依赖 `<linux/io_uring.h>`、libc syscall/mmap
+  surface 和 C++23 compiler。
+- 2026-08-19 本机证据：8-entry setup 成功，kernel 返回 8 SQ entries、16 CQ entries、
+  features `0x3ffff`，NOP CQE result 为 `0`。这证明当前 host lane 可运行 raw ring，
+  不只是在 compile-time 看见 UAPI header。
+- `io_uring_setup` / `io_uring_enter` 因 `ENOSYS`、`EPERM` 或 `EACCES` 不可用时，探针以
+  `77` 退出，供 AUTO gate 和 CTest 表达 graceful skip；其它 setup/mmap/CQE 错误保持
+  hard failure。
+- 当前 proof 的 op 子集很小，raw UAPI 所需代码局限在 ring mapping、SQ publication、
+  CQ drain 和四个 opcode preparation。此范围不足以证明 mandatory liburing dependency
+  的维护与 packaging 成本合理。
+- 若后续加入 registered buffers、provided-buffer rings、multishot 或复杂 linked SQE，
+  必须重新评估 raw maintenance cost；那是新决策，不在 V1 中自动开启 optional/mandatory
+  liburing 路径。
