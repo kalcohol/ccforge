@@ -30,8 +30,4 @@
 #error "forge::io::io_uring_context requires Linux"
 #endif
 
-namespace forge::io {
-
-class io_uring_context;
-
-} // namespace forge::io
+#include "detail/linux_io_uring_context.hpp"

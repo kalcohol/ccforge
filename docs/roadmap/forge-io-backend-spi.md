@@ -118,8 +118,8 @@ readiness。
 
 结论：go，选择 coroutine-native + explicit sender bridge。
 
-- Public backend type 使用独立的 `forge::io::io_uring_context`，计划由 direct header
-  `forge/io/io_uring_context.hpp` 暴露。它与现有 `forge::io::context` 的 epoll
+- Public backend type 使用独立的 `forge::io::io_uring_context`，由 direct header
+  `<forge/io/io_uring_context.hpp>` 暴露。它与现有 `forge::io::context` 的 epoll
   readiness backend 并存，不参与 `<forge/io.hpp>` 的 portable context 选择，也不替换
   `readable()` / `writable()`。
 - 原生 one-shot operation 是非 coroutine 的 direct `io_awaitable` object。
