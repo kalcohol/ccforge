@@ -127,6 +127,37 @@ TEST(StaticThreadPoolTest, WaitFromWorkerReturnsWithoutSelfDeadlock) {
     EXPECT_TRUE(reached.load(std::memory_order_acquire));
 }
 
+TEST(StaticThreadPoolTest, DestroyingPoolFromWorkerDetachesInsteadOfTerminating) {
+    forge_test::counting_resource memory;
+    std::atomic<bool> destroyed{false};
+
+    auto pool = std::make_unique<forge::static_thread_pool>(
+        forge::static_thread_pool_options{
+            .thread_count = 1,
+            .queue_capacity = std::nullopt,
+            .memory = &memory});
+    auto sch = pool->get_scheduler();
+
+    forge::start_detached(
+        std::execution::schedule(sch) | std::execution::then([&] {
+            // Runs on the pool's own worker: the destructor must take the
+            // detach path instead of join()ing itself and terminating.
+            pool.reset();
+            destroyed.store(true, std::memory_order_release);
+        }));
+
+    for (int i = 0; i < 500 && !destroyed.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(destroyed.load(std::memory_order_acquire));
+
+    // The detached worker releases the shared pool state once it drains.
+    for (int i = 0; i < 500 && memory.outstanding() != 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(memory.outstanding(), 0u);
+}
+
 TEST(StaticThreadPoolTest, ScheduleAfterShutdownCompletesStopped) {
     forge::static_thread_pool pool(1);
     auto sch = pool.get_scheduler();
