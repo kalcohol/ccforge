@@ -750,18 +750,28 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   从 poller thread 上的 completion 内析构 context 走 detach 路径，非拥有的 memory
   resource 必须活过 detached poller 的最终释放尾部。
 - awaitable、fd、buffer、context 都是 borrowed：必须活到 `await_resume()`；悬挂中
-  的 operation 不得被弃置（例如销毁尚未完成的 `io_task`）。该契约现在由护栏强制：
-  已提交、尚未 resume 的 awaitable 在析构时 `std::terminate()`（与 erased-stream
-  的 in-progress 护栏同型），避免 kernel 向已释放的 frame/buffer 写入这类延迟
-  内存破坏。
+  的 operation 不得被弃置（例如销毁尚未完成的 `io_task`）。该契约由析构护栏强制：
+  已提交、尚未 resume 的 awaitable 在析构时 `std::terminate()`，避免 kernel 向已
+  释放的 frame/buffer 写入这类延迟内存破坏。护栏有意不区分 CQE 是否已 drain：
+  未 resume 的 operation 可能还挂在 poller 的侵入式 ready 链上（链节点与
+  continuation 就在协程帧里），任何"已完成未恢复"窗口的销毁同样不安全。
+  `erased_io_awaitable` 有同型护栏：已启动未 resume 的 erased operation 在析构
+  时 `std::terminate()`（否则 slot 永久 active、后端完成会 resume 已释放的帧）。
 - V1 边界：SQ 满且 flush 后仍无法接纳时，operation 以
   `std::errc::no_buffer_space` error 完成；poller 遇到非 EINTR/EAGAIN/EBUSY 的
   `io_uring_enter` 硬错误会停机，届时仍悬挂的 awaiter 不会被恢复（proof 阶段
   边界，构造期的同步 NOP round-trip 已把"环从未可用"的沙箱排除在外）。停机后
-  新提交一律以 stopped 完成；`context.last_error()` 返回 poller 记录的最后一个
+  新提交一律以 stopped 完成；`context.last_error()` 只返回这类让 poller 停机的
   硬错误（默认零值），用于把后端死亡与 `request_stop()`/`close()` 的优雅排空
-  区分开。硬错后仍悬挂的 operation 的 buffer 保持 borrowed（其 CQE 不再被
-  drain），强行销毁这些 frame 会触发上述 terminate 护栏而不是静默 UAF。
+  区分开。可恢复的观测（flush 重试错误、瞬态唤醒饱和、异常 administrative CQE
+  结果）单独记录，经 `context.last_flush_diagnostic()` 读取，非零只说明环曾经
+  繁忙或受压，不代表后端死亡。硬错后仍悬挂的 operation 的 buffer 保持
+  borrowed（其 CQE 不再被 drain），强行销毁这些 frame 会触发上述 terminate
+  护栏而不是静默 UAF。
+- 生命周期唤醒对 flush 硬失败有自愈路径：`close()`/`request_stop()`/`shutdown()`
+  发布的唤醒 NOP 若 flush 失败（如瞬态 ENOMEM）会留驻 SQ，`wait()`（含析构）
+  在 join 前循环重试该 flush 直至内核接纳，poller 不会因单次 flush 失败而在无
+  超时的 GETEVENTS 里永久沉睡。
 - io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
   `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
   （`async_read_stream` / `async_write_stream`）适配不受影响。

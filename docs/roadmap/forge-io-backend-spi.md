@@ -310,16 +310,24 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
 - Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
   fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
-- 理论边界（已记录未修）：wakeup NOP 的 flush 在连续 64 次 EAGAIN 后放弃；若此时
-  poller 恰以 `to_submit == 0` 阻塞在 GETEVENTS 且无其它 in-flight operation 产生
-  CQE，该唤醒会丢失，析构的 join 可能挂起。触发前提是内核在无 in-flight 压力时
-  连续拒绝 NOP 提交 64 次（极端内存压力），proof 阶段接受此边界；生产化时应换成
-  eventfd 或带超时的 GETEVENTS。
+- 2026-08-20 修复（原理论边界）：wakeup NOP 的 flush 硬失败（持续 EAGAIN 放弃、
+  ENOMEM 等）不再依赖单次成功。失败的 NOP 留驻 SQ，`wait()`（含析构）在 join 前
+  经 `wait_poller_exit()` 以 1ms 周期重试 flush 直至内核接纳并等 poller 退出用
+  condition_variable 通知，无超时 GETEVENTS 因唤醒丢失而永久挂起的窗口被关闭。
+  仅当内核对一个健康 ring 永久拒绝提交时仍会持续重试（无终止），生产化仍可考虑
+  eventfd 或带超时的 GETEVENTS 作为进一步硬化。
 - 2026-08-19 审查补充（可观测性护栏）：`io_uring_context::last_error()` 返回
   poller 记录的最后一个硬错误（默认零值），把"后端死亡后新提交一律 stopped"与
   优雅 stop 排空区分开；已提交未 resume 的 awaitable 在析构时 `std::terminate()`
   （borrowed 契约护栏，与 erased-stream in-progress 护栏同型），fork 死亡测试
   钉住该行为。
+- 2026-08-20 诊断分层：`last_error()` 只记录让 poller 停机的硬错误；可恢复观测
+  （flush 重试错误、瞬态唤醒饱和 `no_buffer_space`、异常 administrative CQE
+  结果）改记 `last_flush_diagnostic()`，繁忙但健康的 ring 不再被误报为后端死亡。
+  弃置护栏说明补强：护栏有意不按 phase 收窄——未 resume 的 operation 可能还挂在
+  poller 的侵入式 ready 链上（链节点与 continuation 位于协程帧内），"CQE 已
+  drain 未 resume"窗口的销毁同样会让 poller 走已释放内存，不存在可安全放行的
+  submitted-未-resumed 状态。
 - 2026-08-19 审查修复：`io_uring_enter` 可能在 enter 线程上内联执行 pipe write，
   对端已关时向该线程发 SIGPIPE。两个 enter 点（flush 与 GETEVENTS wait）现共用
   epoll backend 的 SIGPIPE guard（阻塞-消费-恢复，已有 pending 信号保留），使 D5

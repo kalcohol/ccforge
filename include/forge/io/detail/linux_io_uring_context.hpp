@@ -36,6 +36,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -585,6 +587,7 @@ struct context_state {
         std::lock_guard lock{mutex};
         closed = true;
         submit_wakeup_locked();
+        cv.notify_all();
     }
 
     void request_stop() noexcept {
@@ -592,6 +595,7 @@ struct context_state {
         stopped = true;
         cancel_all_locked();
         submit_wakeup_locked();
+        cv.notify_all();
     }
 
     void shutdown() noexcept {
@@ -600,6 +604,25 @@ struct context_state {
         stopped = true;
         cancel_all_locked();
         submit_wakeup_locked();
+        cv.notify_all();
+    }
+
+    // Blocks until the poller has committed to exiting. A wakeup NOP whose
+    // flush failed hard (e.g. transient ENOMEM) stays parked in the SQ while
+    // the poller blocks in GETEVENTS with nothing else in flight; a blind
+    // join would then hang forever because nothing retries the flush. This
+    // loop re-flushes a parked wakeup until the kernel accepts it.
+    void wait_poller_exit() noexcept {
+        std::unique_lock lock{mutex};
+        while (!poller_done) {
+            if ((closed || stopped) && wakeup_published &&
+                !wakeup_in_flight) {
+                submit_wakeup_locked();
+                cv.wait_for(lock, std::chrono::milliseconds{1});
+            } else {
+                cv.wait(lock);
+            }
+        }
     }
 
     void run() noexcept {
@@ -625,6 +648,7 @@ struct context_state {
                     std::lock_guard lock{mutex};
                     poller_error = wait_error;
                     poller_done = true;
+                    cv.notify_all();
                     break;
                 }
             }
@@ -662,6 +686,7 @@ struct context_state {
                     !wakeup_in_flight;
                 if (should_exit) {
                     poller_done = true;
+                    cv.notify_all();
                 }
             }
             if (should_exit) {
@@ -717,9 +742,15 @@ struct context_state {
         return poller_error;
     }
 
+    [[nodiscard]] auto last_flush_diagnostic() noexcept -> std::error_code {
+        std::lock_guard lock{mutex};
+        return flush_diagnostic;
+    }
+
     std::pmr::memory_resource* memory;
     ring ring_state;
     std::mutex mutex;
+    std::condition_variable cv;
     io_operation* operations_head = nullptr;
     io_operation* ready_head = nullptr;
     io_operation* ready_tail = nullptr;
@@ -730,7 +761,12 @@ struct context_state {
     bool wakeup_in_flight = false;
     bool poller_done = false;
     std::thread::id poller_id{};
+    // poller_error records only hard failures that stop the poller; every
+    // recoverable or transient observation (flush retries, wakeup
+    // saturation, odd administrative CQEs) goes into flush_diagnostic so a
+    // busy-but-healthy ring never reports backend death.
     std::error_code poller_error{};
+    std::error_code flush_diagnostic{};
 
 private:
     static constexpr std::uint64_t cancel_tag = 1;
@@ -777,7 +813,7 @@ private:
     // poller wait itself) retries it, so only the diagnostic is recorded.
     void record_flush_locked(std::error_code flush_error) noexcept {
         if (flush_error && flush_error.value() != EBUSY) {
-            poller_error = flush_error;
+            flush_diagnostic = flush_error;
         }
     }
 
@@ -859,7 +895,7 @@ private:
                     // A saturated SQ implies in-flight operations, so their
                     // CQEs already guarantee a poller wakeup; the next
                     // lifecycle transition retries this publish.
-                    poller_error =
+                    flush_diagnostic =
                         std::make_error_code(std::errc::no_buffer_space);
                     return;
                 }
@@ -879,7 +915,9 @@ private:
             // later flush attempt.
             return;
         }
-        poller_error = flush_error;
+        // The wakeup NOP stays parked; wait_poller_exit() keeps re-flushing
+        // it, so this failure is a retried diagnostic rather than death.
+        flush_diagnostic = flush_error;
     }
 
     void complete(const io_uring_cqe& completion) noexcept {
@@ -891,7 +929,7 @@ private:
             wakeup_in_flight = false;
             wakeup_published = false;
             if (completion.res < 0) {
-                poller_error = {
+                flush_diagnostic = {
                     -completion.res,
                     std::generic_category()};
             }
@@ -908,7 +946,9 @@ private:
             if (completion.res < 0 &&
                 completion.res != -ENOENT &&
                 completion.res != -EALREADY) {
-                poller_error = {-completion.res, std::generic_category()};
+                flush_diagnostic = {
+                    -completion.res,
+                    std::generic_category()};
             }
             retire_if_drained_locked(*operation);
             return;
@@ -986,16 +1026,30 @@ public:
             thread_.detach();
             return;
         }
+        // Pump parked wakeup flush retries until the poller commits to
+        // exiting, then join; see wait_poller_exit() for the hang this
+        // avoids.
+        state_->wait_poller_exit();
         thread_.join();
     }
 
     // Backend-health diagnostic. A default (zero) error code means the
     // poller has not recorded a hard failure. After a non-recoverable
-    // io_uring_enter or wakeup failure the poller exits, later submissions
-    // complete stopped, and this accessor is the way to distinguish that
-    // backend death from a graceful request_stop()/close() drain.
+    // io_uring_enter failure the poller exits, later submissions complete
+    // stopped, and this accessor is the way to distinguish that backend
+    // death from a graceful request_stop()/close() drain. Recoverable
+    // observations never land here; see last_flush_diagnostic().
     [[nodiscard]] auto last_error() const noexcept -> std::error_code {
         return state_->last_error();
+    }
+
+    // Most recent recoverable observation (retried flush errors, transient
+    // wakeup saturation, unexpected administrative CQE results). Non-zero
+    // values here describe a busy or previously-stressed ring, not backend
+    // death; the poller keeps running and operations keep completing.
+    [[nodiscard]] auto last_flush_diagnostic() const noexcept
+        -> std::error_code {
+        return state_->last_flush_diagnostic();
     }
 
     // Internal accessor for the coroutine-native operation surface.
@@ -1065,6 +1119,13 @@ public:
         // frame and the borrowed buffer, so a later completion writes into
         // freed memory. Mirror the erased-stream guard and fail fast
         // instead.
+        //
+        // The guard is deliberately phase-agnostic: even after the target
+        // CQE drained, a not-yet-resumed operation sits on the poller's
+        // intrusive ready list (or in its popped local batch), whose links
+        // and continuation live inside this frame, so destruction in that
+        // window still leaves the poller walking freed memory. There is no
+        // submitted-but-unresumed state in which destruction is safe.
         if (outcome_ == outcome::submitted && !resumed_) {
             std::terminate();
         }
