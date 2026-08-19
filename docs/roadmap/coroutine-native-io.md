@@ -232,6 +232,43 @@ runtime composition smoke。
 - 若 WG21 后续 adopted wording，是否做 `<io>` 或 standard-shaped backport 需要重新审计；
   当前不会添加 `backport/io`、`<io>`、`<networking>` 或 `std::io`。
 
+## io_task 帧分配基准记录（2026-08）
+
+测量环境：Fedora 宿主（kernel 7.1.5-201.fc44，x86-64），GCC 15.2.0（conda
+toolchain），`-O2 -DNDEBUG`，单线程驱动加 io_uring context poller thread。数字为
+3 次运行的范围；allocation 计数由替换的全局 operator new 与 pool 的 counting
+upstream 观察。帧尺寸（含 pointer trailer）：io_uring echo coroutine 928 bytes，
+frame-only coroutine 104 bytes。
+
+| lane | ns/op | 每 op 全局分配 |
+| --- | --- | --- |
+| io_uring echo（64B write+read，100k 次）global 帧 | 3350-4320（抖动大） | 3 |
+| io_uring echo，`unsynchronized_pool_resource` 帧 | 3237-3416 | 2 |
+| frame-only 创建/运行/销毁（2M 次）global 帧 | 33.2-33.9 | 1 |
+| frame-only，pool 帧 | 37.2-38.1 | 0（pool 稳态 upstream 为 0） |
+
+读数：
+
+- 小帧（约 100B）上 glibc malloc 快于 `unsynchronized_pool_resource`（约 33 对 37
+  ns/op）：帧分配默认走全局路径是正确的默认，不应默认改道 pool。
+- 真实 io_uring echo 路径由 syscall 往返主导（3.3-3.9 微秒/op）；pool 帧至多带来中
+  个位数百分比的改善，且与 global lane 的运行间抖动同量级。分配次数的下降
+  （每 op 3 到 2）是确定收益。
+- echo 路径上每个 io_uring operation 另有一笔 152B 分配来自 execution backport 的
+  `inplace_stop_callback` per-registration control block（既有 conformance
+  residual，见 `inplace-stop-callback-design.md`）；native C++26 toolchain 上该笔
+  消失。它与帧分配无关，是该路径当前占主导的残余分配。
+- P4172 报告的 3.1x 是 MSVC 环境数据，本仓以上述自测为准，不转引。
+
+决策：
+
+- no-go：不引入自制 recycling allocator。标准 pool resource 已覆盖 opt-in 场景，
+  测得收益不足以证成自制分配器的维护成本。
+- go：显式 allocator 参数路径保留为 opt-in 工具，定位是分配次数控制与确定性
+  （例如长寿命服务的碎片治理），不作默认性能建议；文档按此口径描述。
+- 若未来 fabric backend 出现高频短寿命 coroutine 且 profiling 指向帧分配本身，再以
+  新数据重开 recycling 讨论。
+
 ## 验收规则
 
 每个 stage 至少满足：

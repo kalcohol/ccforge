@@ -30,6 +30,8 @@
 #include <cstdio>
 #include <cstddef>
 #include <execution>
+#include <memory>
+#include <memory_resource>
 #include <optional>
 #include <span>
 #include <system_error>
@@ -72,8 +74,12 @@ private:
 };
 
 // One coroutine composes both native awaits; the CQE resumes it directly on
-// the context poller thread.
+// the context poller thread. The leading allocator parameters route the
+// coroutine frame through the caller-provided memory resource; dropping them
+// keeps the frame on the global operator new path.
 auto echo(
+    std::allocator_arg_t,
+    std::pmr::memory_resource*,
     cio::io_uring_context& context,
     int write_fd,
     int read_fd,
@@ -109,7 +115,10 @@ int main() {
     std::array<char, 5> text{'h', 'e', 'l', 'l', 'o'};
     std::array<std::byte, 16> inbound{};
 
+    std::pmr::unsynchronized_pool_resource frame_pool;
     auto result = std::this_thread::sync_wait(cio::as_sender(echo(
+        std::allocator_arg,
+        &frame_pool,
         *context,
         write_fd.get(),
         read_fd.get(),

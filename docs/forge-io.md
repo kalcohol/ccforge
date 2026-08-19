@@ -301,6 +301,10 @@ auto task = parse(std::allocator_arg, &pool, 40);
 `io_env::memory` 维持原语义：只作为 awaitable/operation 内部分配的来源提示，不会
 自动接管 coroutine frame allocation。
 
+性能口径（2026-08 基准，见 roadmap `coroutine-native-io.md` 的记录）：小帧上全局
+路径更快；pool 帧在 syscall 主导的 io_uring echo 路径上至多带来中个位数百分比改善。
+显式 allocator 参数的定位是分配次数控制与确定性，不是默认性能建议。
+
 Sender interop 分两层：
 
 - 对现有 `forge::task`，优先使用 `<execution>` backport 已有的
@@ -755,4 +759,5 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
   Linux 下演示 await readiness 后由用户代码执行 nonblocking `read(2)`。
 - `example/forge_io_iocp_example.cpp`：Windows named pipe + IOCP async read/write。
 - `example/forge_io_uring_read_write_example.cpp`：io_uring completion backend 上的
-  coroutine-native write -> read round trip；runtime 受限沙箱下打印 skip 信息退出。
+  coroutine-native write -> read round trip，echo coroutine 经显式 allocator 参数把
+  frame 放进 pool resource；runtime 受限沙箱下打印 skip 信息退出。
