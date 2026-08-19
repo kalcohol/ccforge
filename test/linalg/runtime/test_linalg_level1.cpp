@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <limits>
 #include <type_traits>
 
@@ -195,6 +196,42 @@ TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsComputeExactNorm) {
 
     EXPECT_EQ(std::linalg::matrix_frob_norm(a, 0), 5);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(a, 0.0), 5.0);
+}
+
+// Same truncation family as two_norm: the integral scaled recurrence used to
+// report {4, 1} for {3, 4}, reconstructing a norm of 4 instead of 5.
+TEST(LinalgLevel1Reductions, VectorSumOfSquaresIntegerElementsStayExact) {
+    int x_data[] = {3, 4};
+    std::mdspan x(x_data, std::extents<int, 2>{});
+
+    auto result = std::linalg::vector_sum_of_squares(
+        x, std::linalg::sum_of_squares_result<int>{1, 0});
+    EXPECT_EQ(result.scaling_factor, 1);
+    EXPECT_EQ(result.scaled_sum_of_squares, 25);
+
+    // A non-trivial init folds in as scaling_factor^2 * scaled_sum.
+    auto combined = std::linalg::vector_sum_of_squares(
+        x, std::linalg::sum_of_squares_result<int>{2, 3});
+    EXPECT_EQ(combined.scaling_factor, 1);
+    EXPECT_EQ(combined.scaled_sum_of_squares, 37);
+}
+
+// Casting an out-of-range double back to an integral norm type is UB; the
+// backport saturates to the type's bounds instead.
+TEST(LinalgLevel1Reductions, IntegerNormsOutOfRangeSaturate) {
+    std::int8_t x_data[] = {100, 100, 100};
+    std::mdspan x(x_data, std::extents<int, 3>{});
+
+    EXPECT_EQ(
+        std::linalg::vector_two_norm(x, std::int8_t{0}),
+        std::numeric_limits<std::int8_t>::max());
+
+    auto ssq = std::linalg::vector_sum_of_squares(
+        x, std::linalg::sum_of_squares_result<std::int8_t>{1, 0});
+    EXPECT_EQ(ssq.scaling_factor, 1);
+    EXPECT_EQ(
+        ssq.scaled_sum_of_squares,
+        std::numeric_limits<std::int8_t>::max());
 }
 
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {

@@ -254,7 +254,14 @@ T vector_two_norm(
             scaled_sum);
     }
     using std::sqrt;
-    return static_cast<T>(scale * sqrt(scaled_sum));
+    if constexpr (std::is_integral_v<T>) {
+        // Norms exceeding T's range must saturate: casting an out-of-range
+        // double to an integer is undefined behavior.
+        return __detail::__saturate_cast<T>(
+            static_cast<double>(scale * sqrt(scaled_sum)));
+    } else {
+        return static_cast<T>(scale * sqrt(scaled_sum));
+    }
 }
 
 template<class Extents, class Layout, class Accessor>
@@ -336,20 +343,37 @@ sum_of_squares_result<T> vector_sum_of_squares(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     sum_of_squares_result<T> init)
 {
-    T scale = init.scaling_factor;
-    T ssq   = init.scaled_sum_of_squares;
-    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-        auto absxi = __detail::__abs_if_needed(x[i]);
-        if (absxi != T{}) {
-            if (scale < absxi) {
-                ssq = T{1} + ssq * (scale / absxi) * (scale / absxi);
-                scale = absxi;
-            } else {
-                ssq += (absxi / scale) * (absxi / scale);
+    if constexpr (std::is_integral_v<T>) {
+        // The scaled recurrence divides magnitudes, which truncates to zero
+        // in an integral T ({3, 4} used to produce {4, 1}, reconstructing a
+        // norm of 4 instead of 5). Integral inputs accumulate the raw sum
+        // of squares in double against a unit scaling factor, preserving
+        // the scaling_factor^2 * scaled_sum_of_squares contract exactly.
+        const double init_scale = static_cast<double>(init.scaling_factor);
+        double total = init_scale * init_scale *
+            static_cast<double>(init.scaled_sum_of_squares);
+        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+            const double magnitude =
+                static_cast<double>(__detail::__abs_if_needed(x[i]));
+            total += magnitude * magnitude;
+        }
+        return {T{1}, __detail::__saturate_cast<T>(total)};
+    } else {
+        T scale = init.scaling_factor;
+        T ssq   = init.scaled_sum_of_squares;
+        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+            auto absxi = __detail::__abs_if_needed(x[i]);
+            if (absxi != T{}) {
+                if (scale < absxi) {
+                    ssq = T{1} + ssq * (scale / absxi) * (scale / absxi);
+                    scale = absxi;
+                } else {
+                    ssq += (absxi / scale) * (absxi / scale);
+                }
             }
         }
+        return {scale, ssq};
     }
-    return {scale, ssq};
 }
 
 // setup_givens_rotation — [linalg.algs.blas1.givens]
@@ -466,7 +490,13 @@ T matrix_frob_norm(
         }
     }
     using std::sqrt;
-    return static_cast<T>(scale * sqrt(scaled_sum));
+    if constexpr (std::is_integral_v<T>) {
+        // Same saturation rule as vector_two_norm.
+        return __detail::__saturate_cast<T>(
+            static_cast<double>(scale * sqrt(scaled_sum)));
+    } else {
+        return static_cast<T>(scale * sqrt(scaled_sum));
+    }
 }
 
 template<class Extents, class Layout, class Accessor>

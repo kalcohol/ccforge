@@ -228,6 +228,32 @@ constexpr auto __abs_sum_term(const T& value) {
     }
 }
 
+// Converts an accumulated double back to T. For integral T the value is
+// clamped into T's range first: static_cast of an out-of-range (or NaN)
+// double to an integer is undefined behavior. Floating targets convert
+// directly and keep the usual overflow-to-infinity semantics.
+template<class T>
+constexpr T __saturate_cast(double value) {
+    if constexpr (std::is_integral_v<T>) {
+        if (value != value) {
+            return T{};
+        }
+        constexpr double t_min =
+            static_cast<double>(std::numeric_limits<T>::min());
+        constexpr double t_max =
+            static_cast<double>(std::numeric_limits<T>::max());
+        if (value <= t_min) {
+            return std::numeric_limits<T>::min();
+        }
+        if (value >= t_max) {
+            return std::numeric_limits<T>::max();
+        }
+        return static_cast<T>(value);
+    } else {
+        return static_cast<T>(value);
+    }
+}
+
 template<class Real>
 constexpr void __update_scaled_sum_of_squares(
     Real magnitude, Real& scale, Real& scaled_sum) {

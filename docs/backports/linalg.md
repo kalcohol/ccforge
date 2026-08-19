@@ -31,6 +31,13 @@
 - 未实现 execution policy 重载，不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
+- 有意偏离（整型范数/SSQ）：WD 的参考实现按浮点/复数元素设计，整型元素下
+  scaled 递归的比值除法会截断（`{3, 4}` 的 two-norm 得 4）；原生实现可能拒绝
+  整型实例化或给出错误值。本 backport 接受整型元素：`vector_two_norm`、
+  `matrix_frob_norm`、`vector_sum_of_squares` 对整型在 double 中间精度累加
+  （SSQ 以 `scaling_factor == 1` 报告原始平方和），回转结果超出元素类型表示域
+  时饱和到边界而不是未定义行为。切换到原生 `std::linalg` 的代码不应依赖整型
+  实例化。
 - Triangular matrix-matrix product 使用当前 draft 的
   `triangular_matrix_left_product` / `triangular_matrix_right_product` 拼写；旧的
   `triangular_matrix_product(..., Side, ...)` 非标准 wrapper 不再暴露。
