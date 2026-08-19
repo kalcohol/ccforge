@@ -309,6 +309,39 @@ TEST(TimerContextTest, ScheduleAtSaturatesMaximumDeadline) {
     EXPECT_TRUE(state.stopped);
 }
 
+// A coarse-duration deadline converts through common_type inside a naive
+// comparison; time_point<steady_clock, seconds>::max() used to overflow the
+// tick multiplication and fire immediately instead of never.
+TEST(TimerContextTest, ScheduleAtSaturatesCoarseDurationMaximumDeadline) {
+    forge::timer_context ctx;
+    timer_state state;
+    using coarse_point = std::chrono::time_point<
+        std::chrono::steady_clock,
+        std::chrono::duration<long long>>;
+    auto op = std::execution::connect(
+        ctx.schedule_at(coarse_point::max()),
+        timer_receiver{&state});
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ctx.shutdown();
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_FALSE(state.value);
+    EXPECT_TRUE(state.stopped);
+}
+
+TEST(TimerContextTest, ScheduleAtCoarsePastDeadlineCompletesPromptly) {
+    forge::timer_context ctx;
+
+    const auto past = std::chrono::time_point_cast<
+        std::chrono::duration<long long>>(
+        std::chrono::system_clock::now() - 1h);
+    auto result = std::execution::sync_wait(ctx.schedule_at(past));
+
+    EXPECT_TRUE(result.has_value());
+}
+
 TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
     forge::timer_context ctx;
     std::mutex mtx;

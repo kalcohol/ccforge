@@ -518,13 +518,18 @@ public:
     template<class Clock, class Duration>
     [[nodiscard]] auto schedule_at(std::chrono::time_point<Clock, Duration> time)
         -> __timer_detail::__sender {
-        auto now = Clock::now();
-        auto steady_now = std::chrono::steady_clock::now();
-        if (time <= now) {
-            return schedule_at_steady(steady_now);
-        }
+        const auto now = Clock::now();
+        const auto steady_now = std::chrono::steady_clock::now();
+        // A naive time <= now comparison converts both sides through
+        // common_type, which overflows the tick multiplication for
+        // coarse-duration sentinels such as
+        // time_point<Clock, seconds>::max(). The saturating wide
+        // representation is the only safe ordering test here.
         const auto delay = __timer_detail::__saturating_time_difference<
             std::chrono::steady_clock::duration>(time, now);
+        if (delay <= std::chrono::steady_clock::duration::zero()) {
+            return schedule_at_steady(steady_now);
+        }
         return schedule_at_steady(
             __timer_detail::__saturating_time_add(steady_now, delay));
     }
