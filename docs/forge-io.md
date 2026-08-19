@@ -548,8 +548,10 @@ std::execution::set_error_t(forge::io::error)
 `error::code` 保留底层 `std::error_code`。V1 typed API 只覆盖最稳定的分类；默认
 exception_ptr API 仍是主路径。Typed wrappers currently map `std::system_error`
 to `forge::io::error`; non-`system_error` exceptions become
-`error_kind::unknown` with an empty `std::error_code`. Use the default
-`std::exception_ptr` API when preserving arbitrary exception diagnostics matters.
+`error_kind::unknown` with a generic `std::errc::io_error` code (an empty code
+means no exception at all), keeping the failure diagnosable while the original
+exception detail is dropped. Use the default `std::exception_ptr` API when
+preserving arbitrary exception diagnostics matters.
 
 Typed sender 可以直接跨 `forge::erased_sender` 边界，并用 `forge::wait_result`
 同步消费，不需要为常见边界手写 receiver：

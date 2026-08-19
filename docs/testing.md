@@ -191,6 +191,9 @@ Windows 上 `FORGE_ENABLE_FORGE_IO=AUTO` / `ON` 应启用 IOCP backend 并注册
 backend-specific `forge_io|example_forge_io` tests/examples，`FORGE_ENABLE_FORGE_IO=OFF`
 应在同一 backend regex 下注册 0 个 tests/examples。`forge_coro_*`、memory stream 和
 byte vocabulary 等 backend-free IO tests/examples 不属于这个 OS backend gate。
+因此 `forge_io` / `example_forge_io` 测试名前缀保留给 backend gate 控制的注册；
+backend-free 的 IO/coroutine 设施测试必须取其它前缀（如 `forge_coro_*`），否则
+该审计会在 OFF gate 下误报。
 gate 检查还会实际 build/run 少量稳定 examples，例如 IOCP example。这保证 Windows
 smoke 覆盖 cookbook 的关键路径，而不把所有 examples 都塞进默认主测试。脚本避免使用单个硬编码全局 CTest 数量作为验收标准，
 因为测试总数会随覆盖增长而变化；但 targeted regex lane 会先断言至少选中 1 个测试，

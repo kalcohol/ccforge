@@ -57,8 +57,10 @@ worker 线程共享，resource 本身也必须是线程安全的，例如使用
 仍然是 non-owning，必须继续活过 scope 对象本身。`strand` 的 runner node 则可能在
 terminal completion 尾部释放，因此它的 resource 还必须活到该释放路径结束。
 
-- `static_thread_pool` 使用 resource 控制队列 `pmr::deque` 节点和内部 queued task
-  callable record；这是 pool 的私有实现细节，不是公开的 `move_only_function` API。
+- `static_thread_pool` 使用 resource 控制共享 pool state 块、队列 `pmr::deque` 节点
+  和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的
+  `move_only_function` API。worker 在 detach 路径下持有 state 直到退出，因此
+  resource 必须活过 detached drain 尾部（见下文调度小节）。
 - `bounded_channel` 使用 resource 控制 state、buffer 和 send/recv record control
   block；pending send/recv 使用 record 内嵌链，不另行分配。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次、receiver record 和
@@ -73,7 +75,7 @@ Allocation audit:
 
 | component | resource-controlled paths | intentionally uncontrolled / deferred | evidence |
 | --- | --- | --- | --- |
-| `static_thread_pool` | pool queue `pmr::deque` nodes and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
+| `static_thread_pool` | shared pool state block, pool queue `pmr::deque` nodes, and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
 | `timer_context` | context state, timer op data, timer item control blocks, timer queue, timer callback callable records | OS timer worker thread resources | `forge_timer_context` |
 | `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
 | `resource_context` | forwards the resource to the internal runtime and async scope spawned op-state | no separate allocation policy beyond its members | `forge_resource_context` |
@@ -106,8 +108,12 @@ Failure policy:
   shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以
   `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列
   和正在运行的任务清空；如果从 pool 自己的 worker 线程调用，`wait()` 会立即返回以避免
-  自锁。pool 对象本身不得在自己的 worker 线程上析构；完整 teardown 应由外层 owner
-  调用 `shutdown()` / `wait()`。其 schedule sender env 会通过 Forge backport 的
+  自锁。在 pool 自己的 worker 线程上析构 pool（例如 pool 内任务拥有 pool 或其外层
+  `runtime_context` / `resource_context`）不会 terminate：析构走 detach 路径，worker
+  持有共享 state 在后台排空队列后退出，与 `timer_context` 的同线程析构契约一致。
+  代价是析构返回时不保证 drain 已结束，pool 使用的 memory resource 必须活过该
+  detached drain 尾部；确定性 teardown 仍应由外层 owner 在非 worker 线程上
+  `shutdown()` / `wait()` / 析构。其 schedule sender env 会通过 Forge backport 的
   `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例
