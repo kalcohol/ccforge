@@ -169,7 +169,16 @@ else()
 endif()
 
 set(FORGE_HAS_FORGE_IO_URING_BACKEND OFF)
-if("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF")
+if("${FORGE_ENABLE_FORGE_IO}" STREQUAL "OFF")
+    # The io_uring proof backend is part of forge::io: disabling the parent
+    # gate must disable it too, or the FORGE_ENABLE_FORGE_IO=OFF audit
+    # (zero tests matching forge_io|example_forge_io) breaks.
+    if("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "ON")
+        message(FATAL_ERROR
+            "FORGE_ENABLE_FORGE_IO_URING=ON conflicts with FORGE_ENABLE_FORGE_IO=OFF")
+    endif()
+    message(STATUS "CC Forge: forge::io io_uring backend disabled (forge::io disabled)")
+elseif("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF")
     message(STATUS "CC Forge: forge::io io_uring backend disabled")
 elseif(FORGE_PROBE_LINUX_IO_URING)
     set(FORGE_HAS_FORGE_IO_URING_BACKEND ON)

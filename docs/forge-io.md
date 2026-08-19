@@ -456,10 +456,13 @@ coroutine facade：
   `readable` / `writable` / `*_typed` readiness surface；
 - `FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND`：选中 Windows IOCP backend，提供
   completion-based byte IO surface，不提供 Linux readiness surface。
-- `FORGE_HAS_FORGE_IO_URING_BACKEND`：由独立 gate
+- `FORGE_HAS_FORGE_IO_URING_BACKEND`：由 gate
   `FORGE_ENABLE_FORGE_IO_URING=AUTO/ON/OFF` 控制的 Linux io_uring
   completion backend proof，暴露 `<forge/io/io_uring_context.hpp>`。它不参与
   `<forge/io.hpp>` 的 portable context 选择，与 epoll readiness backend 并存。
+  该 gate 从属于父 gate：`FORGE_ENABLE_FORGE_IO=OFF` 时 io_uring backend 与其
+  测试/示例一并关闭（`FORGE_ENABLE_FORGE_IO_URING=ON` 与父 gate OFF 的组合是
+  configure 错误），保证 `forge_io|example_forge_io` 审计不变量成立。
 
 Portable source 应使用 per-backend macro 守卫 backend-specific API；参考
 `example/forge_context_await_example.cpp`。
