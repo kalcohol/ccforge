@@ -306,11 +306,11 @@ auto task = parse(std::allocator_arg, &pool, 40);
   `runtime_context` 或 `io_uring` 完成路径）必须使用线程安全 resource
   （`synchronized_pool_resource`、`new_delete_resource`）；
   `unsynchronized_pool_resource` 仅适用于单线程 event loop 或外部同步的场景。
-- 对齐边界：promise 的 class-scope `operator new` 集合不提供 `align_val_t` 重载
-  （并因此屏蔽全局 aligned 形式），帧对齐需求超过
-  `__STDCPP_DEFAULT_NEW_ALIGNMENT__` 的 coroutine（例如持有过对齐 local）会在
-  编译期被拒绝，而不是拿到静默错位的帧。需要过对齐状态时请放到间接持有的
-  storage 里。
+- 对齐边界（陷阱警告）：coroutine 帧分配不参与 aligned-new 重载选择，帧对齐
+  需求超过 `__STDCPP_DEFAULT_NEW_ALIGNMENT__` 的 coroutine（例如持有
+  `alignas(64)` local）会静默拿到默认对齐的存储，没有任何编译期或运行期
+  诊断（GCC 16 / Clang 19 实测：local 落在 mod 64 == 16 的地址上）。过对齐
+  状态必须放到间接持有的 storage（堆分配或对齐 buffer）里，不要放帧内。
 
 两条被拒绝的替代路径（除非未来 A/B 数据要求重议）：
 
