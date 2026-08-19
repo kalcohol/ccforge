@@ -6,16 +6,22 @@
 #
 # NOTE: adjust ZIG_VERSION / the tarball name to a release that exists; newer zig
 # releases use the "zig-x86_64-linux-<ver>" naming instead of the older
-# "zig-linux-x86_64-<ver>".
+# "zig-linux-x86_64-<ver>". When overriding ZIG_VERSION, also override
+# ZIG_SHA256 with the official checksum from https://ziglang.org/download/
+# (the build fails on mismatch by design).
 FROM docker.io/library/debian:trixie
 
 ARG ZIG_VERSION=0.14.0
 ARG ZIG_TARBALL=zig-linux-x86_64-${ZIG_VERSION}.tar.xz
+ARG ZIG_SHA256=473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl xz-utils cmake ninja-build ca-certificates binutils \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_TARBALL}" | tar -xJ -C /opt \
+    && curl -fsSLo "/tmp/${ZIG_TARBALL}" "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_TARBALL}" \
+    && echo "${ZIG_SHA256}  /tmp/${ZIG_TARBALL}" | sha256sum -c - \
+    && tar -xJf "/tmp/${ZIG_TARBALL}" -C /opt \
+    && rm "/tmp/${ZIG_TARBALL}" \
     && ln -s "/opt/${ZIG_TARBALL%.tar.xz}/zig" /usr/local/bin/zig
 
 # CMake invokes the compiler as a single executable, so wrap "zig c++".
