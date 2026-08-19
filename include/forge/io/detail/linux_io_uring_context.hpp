@@ -26,6 +26,8 @@
 #include <forge/io/result.hpp>
 #include <forge/resource_policy.hpp>
 
+#include "linux_sigpipe_guard.hpp"
+
 #include <linux/io_uring.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -74,6 +76,30 @@ namespace io_uring_detail {
 
 // Bounded flush retries for transient submission failures such as EAGAIN.
 inline constexpr int flush_attempt_limit = 64;
+
+// io_uring_enter can execute pipe writes inline on the entering thread, so a
+// peer-closed pipe raises SIGPIPE against whichever thread flushed the SQE.
+// Every enter is wrapped in the shared guard; construction failure (which
+// pthread_sigmask cannot produce for valid arguments) degrades to the
+// unguarded pre-fix behavior instead of throwing from noexcept paths.
+class enter_sigpipe_guard {
+public:
+    enter_sigpipe_guard() noexcept {
+        try {
+            guard_.emplace();
+        } catch (...) {
+        }
+    }
+
+    void consume_generated_signal() noexcept {
+        if (guard_.has_value()) {
+            guard_->consume_generated_signal();
+        }
+    }
+
+private:
+    std::optional<__signal_detail::sigpipe_guard> guard_{};
+};
 
 class file_descriptor {
 public:
@@ -256,6 +282,7 @@ public:
                 return {};
             }
 
+            enter_sigpipe_guard guard;
             const long result = ::syscall(
                 __NR_io_uring_enter,
                 descriptor_.get(),
@@ -264,11 +291,12 @@ public:
                 0U,
                 nullptr,
                 0U);
+            const int error = result >= 0 ? 0 : errno;
+            guard.consume_generated_signal();
             if (result >= 0) {
                 ++attempt;
                 continue;
             }
-            const int error = errno;
             if (error == EINTR) {
                 continue;
             }
@@ -287,6 +315,7 @@ public:
     // kernel on the next poller cycle.
     [[nodiscard]] auto wait_for_completion(unsigned to_submit) noexcept
         -> std::error_code {
+        enter_sigpipe_guard guard;
         const long result = ::syscall(
             __NR_io_uring_enter,
             descriptor_.get(),
@@ -295,10 +324,12 @@ public:
             IORING_ENTER_GETEVENTS,
             nullptr,
             0U);
-        if (result >= 0) {
+        const int error = result >= 0 ? 0 : errno;
+        guard.consume_generated_signal();
+        if (error == 0) {
             return {};
         }
-        return {errno, std::generic_category()};
+        return {error, std::generic_category()};
     }
 
     template<class Function>

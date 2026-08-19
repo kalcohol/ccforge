@@ -310,6 +310,11 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
 - Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
   fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
+- 2026-08-19 审查修复：`io_uring_enter` 可能在 enter 线程上内联执行 pipe write，
+  对端已关时向该线程发 SIGPIPE。两个 enter 点（flush 与 GETEVENTS wait）现共用
+  epoll backend 的 SIGPIPE guard（阻塞-消费-恢复，已有 pending 信号保留），使 D5
+  错误映射表对 `-EPIPE` 真实可达；errno 在消费信号前捕获。回归测试为向已关读端
+  pipe 的写：修复前进程死于 SIGPIPE（exit 141），修复后交付 `EPIPE` error。
 - `rw_some_awaitable` 的 operation state 为 168 bytes，大于 03 冻结的 128-byte
   erasure slot；`owning_any_async_*` 在编译期拒绝之为预期行为，direct concept
   适配不受影响。测试中有 static_assert tripwire。

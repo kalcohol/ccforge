@@ -326,6 +326,27 @@ void check_bad_descriptor_maps_to_error(std::pmr::memory_resource* memory) {
     }
 }
 
+// A peer-closed pipe must surface EPIPE through the result channel instead
+// of killing the process: without the enter-side SIGPIPE guard this check
+// dies with SIGPIPE before any assertion runs.
+void check_write_to_closed_reader_maps_to_epipe(
+    std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    pipe_pair pipe;
+    RW_CHECK(pipe.read_end >= 0);
+    pipe.close_read();
+
+    const std::byte payload[4] = {};
+    auto result = std::execution::sync_wait(cio::as_sender(
+        write_task(context, pipe.write_end, payload)));
+    RW_CHECK(result.has_value());
+    if (result.has_value()) {
+        auto [io] = std::move(*result);
+        RW_CHECK(!io.has_value());
+        RW_CHECK(io.error() == std::error_code(EPIPE, std::generic_category()));
+    }
+}
+
 void check_pre_stopped_env_never_submits(std::pmr::memory_resource* memory) {
     cio::io_uring_context context{{.memory = memory, .entries = 8}};
     pipe_pair pipe;
@@ -808,6 +829,7 @@ int main() {
     check_read_eof(&memory);
     check_empty_buffer_completes_inline(&memory);
     check_bad_descriptor_maps_to_error(&memory);
+    check_write_to_closed_reader_maps_to_epipe(&memory);
     check_coroutine_composition(&memory);
     check_async_stream_concept_interop(&memory);
     check_pre_stopped_env_never_submits(&memory);

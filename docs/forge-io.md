@@ -691,6 +691,9 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   是 one-shot stream IO（SQE offset 固定 `-1`），结果为 `io_result<std::size_t>`。
   short IO 照实交付；CQE 负值以 `std::generic_category()` 的正 errno 映射为
   error（含 `-EINTR`，不模拟 readiness backend 的重试）。
+- 对端已关闭的 pipe 写以 `EPIPE` error 交付：每次 `io_uring_enter` 都包在与 epoll
+  backend 相同的 SIGPIPE guard 内（enter 线程可能内联执行 pipe write 并收到该
+  信号），进程的 SIGPIPE 处置不被改动。
 - CQE 由 poller thread drain，并在 backend lock 外直接 resume 等待的 coroutine；
   后续 coroutine body 运行在 poller thread 上，需要业务 executor affinity 时显式
   await `env.executor.schedule()`。

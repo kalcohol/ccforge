@@ -29,6 +29,7 @@
 #include "../error.hpp"
 #include "../../any_stop_token.hpp"
 #include "../../resource_policy.hpp"
+#include "linux_sigpipe_guard.hpp"
 
 #include <execution>
 #include <atomic>
@@ -113,58 +114,7 @@ bool __stop_requested(const R& rcvr) noexcept {
     }
 }
 
-class __sigpipe_guard {
-public:
-    __sigpipe_guard() {
-        ::sigemptyset(&mask_);
-        ::sigaddset(&mask_, SIGPIPE);
-        const int mask_error = ::pthread_sigmask(SIG_BLOCK, &mask_, &old_mask_);
-        if (mask_error != 0) {
-            throw std::system_error{
-                mask_error,
-                std::generic_category(),
-                "forge::io block SIGPIPE"};
-        }
-        active_ = true;
-
-        sigset_t pending{};
-        if (::sigpending(&pending) != 0) {
-            const int error = errno;
-            restore();
-            throw std::system_error{
-                error,
-                std::generic_category(),
-                "forge::io inspect SIGPIPE"};
-        }
-        was_pending_ = ::sigismember(&pending, SIGPIPE) == 1;
-    }
-
-    ~__sigpipe_guard() { restore(); }
-
-    __sigpipe_guard(const __sigpipe_guard&) = delete;
-    auto operator=(const __sigpipe_guard&) -> __sigpipe_guard& = delete;
-
-    void consume_generated_signal() noexcept {
-        if (was_pending_) {
-            return;
-        }
-        const timespec timeout{};
-        while (::sigtimedwait(&mask_, nullptr, &timeout) < 0 && errno == EINTR) {}
-    }
-
-private:
-    void restore() noexcept {
-        if (active_) {
-            (void)::pthread_sigmask(SIG_SETMASK, &old_mask_, nullptr);
-            active_ = false;
-        }
-    }
-
-    sigset_t mask_{};
-    sigset_t old_mask_{};
-    bool active_ = false;
-    bool was_pending_ = false;
-};
+using __sigpipe_guard = ::forge::io::__signal_detail::sigpipe_guard;
 
 [[nodiscard]] inline auto __write_some(int fd, std::span<const std::byte> buffer)
     -> std::size_t {
