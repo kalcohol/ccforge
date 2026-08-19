@@ -14,15 +14,20 @@
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
   `when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
-  value completions 返回 `optional<variant<tuple<...>, ...>>`）、
+  value completions 返回 `optional<variant<tuple<...>, ...>>`，零组返回
+  `optional<tuple<>>`；WD 要求恰好一组 value completion signature，接受零/多组
+  是 Forge 扩展。结果类型按 run_loop 环境 `sync_wait_env` 推导，该 env 暴露
+  `get_scheduler` / `get_start_scheduler` / `get_delegation_scheduler`）、
   `sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
-  单一 value completion 保持返回 `tuple`，多组 value completions 返回
-  `variant<tuple<...>, ...>`）；mixin 会保留普通 awaitable，并按 current WD
-  提供 continuation / stopped 传播接口
+  按 current WD 形状，单一 value completion 的零/一/多值分别产生
+  `void` / `T` / `tuple<...>`，多组 value completion alternatives 不满足
+  awaitable 约束）；mixin 会保留普通 awaitable，并按 current WD
+  提供 continuation / stopped 传播接口。`as_awaitable` 尚不识别本身已是
+  awaitable 的类型（不做 `operator co_await` / member hook 直通）
 - 基础设施：`completion_signatures_of_t`、`value_types_of_t`、`error_types_of_t`、
   `sends_stopped`、`enable_sender`、`std::forwarding_query`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、
@@ -42,7 +47,9 @@
   `FORGE_HAS_NATIVE_EXECUTION_POLICIES` 等配置上形成跨 TU 不一致。
 - Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和
   `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile
-  probe 覆盖。
+  probe 覆盖。`receiver` concept 额外要求 receiver 类型
+  `is_nothrow_move_constructible`（WD 无此要求），throwing-move receiver 会被
+  concept 拒绝。
 - `inplace_stop_callback` 当前为保持 Forge 已验证的 callback/source 重入销毁路径，使用
   allocator-neutral control block。因此 registration 会分配，constructor 尚未满足
   current WD 对 nothrow callback 的条件 `noexcept`。不要在 `noexcept` 路径中假设注册

@@ -268,8 +268,8 @@ model。
 弃置（销毁悬挂中的 `io_task` 链）按迭代方式逐帧执行：每帧在 await 子 task 时记录
 向下链接，销毁时沿链循环拆帧而不是经嵌套 awaitable 析构递归，深链弃置的 native
 stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 awaitable 的弃置语义仍由
-各 backend 约定（timer facade 可安全弃置；io_uring in-flight operation 弃置仍是
-未定义行为，见 io_uring 一节）。
+各 backend 约定（timer facade 可安全弃置；io_uring in-flight operation 弃置违反
+borrowed 契约，析构护栏会 `std::terminate()`，见 io_uring 一节）。
 
 `io_task` 帧分配支持 P4127 的显式参数路径：coroutine 参数列表以
 `(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时，coroutine frame 从该
@@ -725,11 +725,18 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   从 poller thread 上的 completion 内析构 context 走 detach 路径，非拥有的 memory
   resource 必须活过 detached poller 的最终释放尾部。
 - awaitable、fd、buffer、context 都是 borrowed：必须活到 `await_resume()`；悬挂中
-  的 operation 不得被弃置（例如销毁尚未完成的 `io_task`），否则是未定义行为。
+  的 operation 不得被弃置（例如销毁尚未完成的 `io_task`）。该契约现在由护栏强制：
+  已提交、尚未 resume 的 awaitable 在析构时 `std::terminate()`（与 erased-stream
+  的 in-progress 护栏同型），避免 kernel 向已释放的 frame/buffer 写入这类延迟
+  内存破坏。
 - V1 边界：SQ 满且 flush 后仍无法接纳时，operation 以
   `std::errc::no_buffer_space` error 完成；poller 遇到非 EINTR/EAGAIN/EBUSY 的
   `io_uring_enter` 硬错误会停机，届时仍悬挂的 awaiter 不会被恢复（proof 阶段
-  边界，构造期的同步 NOP round-trip 已把"环从未可用"的沙箱排除在外）。
+  边界，构造期的同步 NOP round-trip 已把"环从未可用"的沙箱排除在外）。停机后
+  新提交一律以 stopped 完成；`context.last_error()` 返回 poller 记录的最后一个
+  硬错误（默认零值），用于把后端死亡与 `request_stop()`/`close()` 的优雅排空
+  区分开。硬错后仍悬挂的 operation 的 buffer 保持 borrowed（其 CQE 不再被
+  drain），强行销毁这些 frame 会触发上述 terminate 护栏而不是静默 UAF。
 - io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
   `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
   （`async_read_stream` / `async_write_stream`）适配不受影响。

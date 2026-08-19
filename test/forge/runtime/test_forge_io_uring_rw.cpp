@@ -4,12 +4,15 @@
 
 #include "forge_counting_resource.hpp"
 
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <execution>
 #include <memory>
@@ -803,6 +806,49 @@ void check_destructor_cancels_in_flight(std::pmr::memory_resource* memory) {
     }
 }
 
+void check_last_error_stays_clear_on_graceful_stop(
+    std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    RW_CHECK(!context.last_error());
+
+    context.request_stop();
+    context.wait();
+    RW_CHECK(!context.last_error());
+}
+
+// Runs first: fork needs a single-threaded parent, and later checks leave a
+// detached poller behind.
+void check_abandoning_submitted_read_terminates(
+    std::pmr::memory_resource* memory) {
+    const pid_t child = ::fork();
+    if (child < 0) {
+        std::perror("fork");
+        ++failures;
+        return;
+    }
+    if (child == 0) {
+        // Abandoning a submitted-but-unresumed operation would hand the
+        // kernel a dangling frame and buffer; the awaitable destructor must
+        // fail fast instead of corrupting memory later.
+        cio::io_uring_context context{{.memory = memory, .entries = 8}};
+        pipe_pair pipe;
+        std::byte buffer[8] = {};
+        auto state = std::make_shared<completion_state>();
+        {
+            auto operation = std::execution::connect(
+                cio::as_sender(read_task(context, pipe.read_end, buffer)),
+                completion_receiver{state});
+            std::execution::start(operation);
+        }
+        // Reaching this point means the terminate guard did not fire.
+        std::_Exit(0);
+    }
+
+    int status = 0;
+    RW_CHECK(::waitpid(child, &status, 0) == child);
+    RW_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+}
+
 } // namespace
 
 int main() {
@@ -824,6 +870,8 @@ int main() {
 #endif
     }
 
+    check_abandoning_submitted_read_terminates(&memory);
+    check_last_error_stays_clear_on_graceful_stop(&memory);
     check_write_then_read(&memory);
     check_pending_read_resumes_on_poller(&memory);
     check_read_eof(&memory);

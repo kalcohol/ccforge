@@ -26,7 +26,7 @@
 // It is intentionally correctness-first and leaves large conformance gaps
 // documented below instead of papering over them.
 //
-// IMPLEMENTATION STATUS (Forge C++26 execution backport — Phase 1-4 subset):
+// IMPLEMENTATION STATUS (Forge C++26 execution backport - Phase 1-4 subset):
 //
 // IMPLEMENTED:
 //   Sender factories : just, just_error, just_stopped, read_env
@@ -59,10 +59,22 @@
 //     with tag_invoke fallback retained for existing custom types.
 //     One-argument environment and scheduler queries are also member-query-
 //     first, with tag_invoke fallback.
-//   - sync_wait value_type inference uses empty_env for conservative type computation.
-//   - as_awaitable preserves Forge's historical tuple result for a single
-//     value-completion shape; multiple value alternatives produce
-//     variant<tuple<...>, ...>.
+//   - sync_wait computes result types against its run_loop environment
+//     (sync_wait_env: get_scheduler / get_start_scheduler /
+//     get_delegation_scheduler). As an extension it also accepts senders
+//     with zero or multiple value-completion shapes: zero value alternatives
+//     yield tuple<> and multiple alternatives yield variant<tuple<...>, ...>,
+//     where the working draft mandates exactly one value completion
+//     signature.
+//   - as_awaitable produces the working-draft result shape (void / T /
+//     tuple<...> for zero / one / many values of the single value-completion
+//     signature); senders with multiple value-completion alternatives do not
+//     satisfy the awaitable constraint. It does not yet pass through types
+//     that are already awaitable (no operator co_await / awaitable member
+//     detection before the sender bridge).
+//   - The receiver concept additionally requires
+//     is_nothrow_move_constructible_v of the receiver type, which the
+//     working draft does not require.
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state and consumer record honor get_allocator(env); consumer
 //     cancellation registers the receiver's concrete stop-token type.

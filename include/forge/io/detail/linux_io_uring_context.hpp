@@ -38,6 +38,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <memory_resource>
@@ -711,6 +712,11 @@ struct context_state {
         return poller_id == std::this_thread::get_id();
     }
 
+    [[nodiscard]] auto last_error() noexcept -> std::error_code {
+        std::lock_guard lock{mutex};
+        return poller_error;
+    }
+
     std::pmr::memory_resource* memory;
     ring ring_state;
     std::mutex mutex;
@@ -983,6 +989,15 @@ public:
         thread_.join();
     }
 
+    // Backend-health diagnostic. A default (zero) error code means the
+    // poller has not recorded a hard failure. After a non-recoverable
+    // io_uring_enter or wakeup failure the poller exits, later submissions
+    // complete stopped, and this accessor is the way to distinguish that
+    // backend death from a graceful request_stop()/close() drain.
+    [[nodiscard]] auto last_error() const noexcept -> std::error_code {
+        return state_->last_error();
+    }
+
     // Internal accessor for the coroutine-native operation surface.
     [[nodiscard]] auto __state() noexcept -> io_uring_detail::context_state& {
         return *state_;
@@ -1044,6 +1059,17 @@ public:
     rw_some_awaitable(const rw_some_awaitable&) = delete;
     auto operator=(const rw_some_awaitable&) -> rw_some_awaitable& = delete;
 
+    ~rw_some_awaitable() {
+        // Abandoning a submitted operation before await_resume would leave
+        // the kernel and the context registry holding references into this
+        // frame and the borrowed buffer, so a later completion writes into
+        // freed memory. Mirror the erased-stream guard and fail fast
+        // instead.
+        if (outcome_ == outcome::submitted && !resumed_) {
+            std::terminate();
+        }
+    }
+
     [[nodiscard]] auto await_ready() const noexcept -> bool {
         return false;
     }
@@ -1092,6 +1118,7 @@ public:
     }
 
     [[nodiscard]] auto await_resume() -> io_result<std::size_t> {
+        resumed_ = true;
         stop_callback_.reset();
 
         switch (outcome_) {
@@ -1157,6 +1184,7 @@ private:
     int fd_;
     io_operation operation_{};
     outcome outcome_ = outcome::not_started;
+    bool resumed_ = false;
     std::optional<std::inplace_stop_callback<cancel_requester>> stop_callback_{};
 };
 
