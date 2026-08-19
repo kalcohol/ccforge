@@ -206,7 +206,7 @@ runtime composition smoke。
 - true ABI-stable `any_stream`；
 - variadic or policy-based IO-aware combinators beyond two-child
   `when_all_results` / `when_any_results`;
-- frame allocator propagation；
+- frame allocator propagation（后续已交付显式参数路径，见下）；
 - 将来若 WG21 adopted wording 后是否做 standard backport。
 
 当前 deferred decision：
@@ -224,8 +224,11 @@ runtime composition smoke。
   `owning_any_*` 与 `owning_any_async_*` 是 header-only experimental Forge surface，
   已冻结本轮 PMR ownership、single-flight 和 fixed-slot lifetime 规则，但 true
   ABI-stable/plugin `any_stream` 仍需独立版本化布局与兼容策略。
-- `io_env::memory` 当前只传播 pointer；coroutine frame allocator propagation 没有实现，
-  等能用测试证明 frame allocation timing 后再开。
+- coroutine frame allocation 已交付 P4127 的显式参数路径：`io_task` coroutine 参数
+  列表以 `(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时帧经由该 resource，
+  机制由 counting-resource oracle 测试证明（含 HALO 容忍与异常安全）。`io_env::memory`
+  仍只传播 pointer，不自动接管帧分配；ambient TLS 路径与 env 驱动的自动帧分配保持
+  拒绝（P4127 时序问题），除非 A/B 数据要求重议。
 - 若 WG21 后续 adopted wording，是否做 `<io>` 或 standard-shaped backport 需要重新审计；
   当前不会添加 `backport/io`、`<io>`、`<networking>` 或 `std::io`。
 

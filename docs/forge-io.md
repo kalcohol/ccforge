@@ -260,11 +260,46 @@ proof。它吸收的是提案路线里的 env propagation 价值，不替换现�
 - `this_io_env()` 是 immediate awaitable，用于在 coroutine 内读取当前 `io_env`。
 
 当前 coroutine-native IO track 证明 stop token、resource pointer 和 scheduler handle 可以沿
-coroutine-native 边界传递，并提供既有 timer/backend sender 的 coroutine facade。父子
-`io_task` await 使用 symmetric transfer；当前仍没有实现 owning frame allocator、原生
-platform IO awaitable，或把 sender cancellation 规则重新包装成另一套稳定 async model。
-frame allocator policy 保持 deferred，直到能用测试证明 coroutine frame allocation 确实经由
-指定 resource。
+coroutine-native 边界传递，提供既有 timer/backend sender 的 coroutine facade，以及
+io_uring completion backend 的原生 platform IO awaitable。父子 `io_task` await 使用
+symmetric transfer；本 track 不把 sender cancellation 规则重新包装成另一套稳定 async
+model。
+
+`io_task` 帧分配支持 P4127 的显式参数路径：coroutine 参数列表以
+`(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时，coroutine frame 从该
+resource 分配；其余 coroutine 保持全局 operator new 路径。
+
+```cpp
+auto parse(std::allocator_arg_t, std::pmr::memory_resource*, int seed)
+    -> forge::io::io_task<int> {
+    co_return seed + 1;
+}
+
+std::pmr::unsynchronized_pool_resource pool;
+auto task = parse(std::allocator_arg, &pool, 40);
+```
+
+规则与边界：
+
+- 帧分配在帧尾保留一个 pointer 大小的 trailer 记录 owning resource；deallocate 与
+  allocate 的 size/alignment 严格配对。全局路径同样带 trailer，即每帧一个指针的
+  固定开销。
+- resource 为 null 时回退全局路径。
+- 帧分配失败以异常从 coroutine 调用表达式传播；刻意不提供
+  `get_return_object_on_allocation_failure`，避免把 throwing resource 误判成空 task。
+- 传播是显式的：父 coroutine 以 `co_await child(std::allocator_arg, env.memory, ...)`
+  转传。HALO 可能合法地 elide 被内联的子帧，此时 resource 观察到的分配次数减少。
+- V1 只识别前导参数位置；member coroutine 的 implicit object 参数占据首位时不匹配，
+  此类 coroutine 走全局路径。
+
+两条被拒绝的替代路径（除非未来 A/B 数据要求重议）：
+
+- `io_env` 驱动的自动帧分配：P4127 的时序问题——`await_transform` 触发时子协程帧
+  已经分配完成，环境无法追溯地为自己的帧选择 resource；
+- ambient TLS 分配器：隐藏状态使分配来源不可审计，与本仓显式 lifetime 词汇冲突。
+
+`io_env::memory` 维持原语义：只作为 awaitable/operation 内部分配的来源提示，不会
+自动接管 coroutine frame allocation。
 
 Sender interop 分两层：
 
