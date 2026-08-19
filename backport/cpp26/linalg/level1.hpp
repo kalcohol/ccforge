@@ -236,15 +236,20 @@ T vector_two_norm(
 {
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(init))>;
-    magnitude_type scale{};
-    magnitude_type scaled_sum{1};
+    // The scaled-sum recurrence divides magnitudes; an integral magnitude
+    // type would truncate those ratios to zero, so integral inputs
+    // accumulate in double instead.
+    using accum_type = std::conditional_t<
+        std::is_integral_v<magnitude_type>, double, magnitude_type>;
+    accum_type scale{};
+    accum_type scaled_sum{1};
     __detail::__update_scaled_sum_of_squares(
-        static_cast<magnitude_type>(__detail::__abs_if_needed(init)),
+        static_cast<accum_type>(__detail::__abs_if_needed(init)),
         scale,
         scaled_sum);
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         __detail::__update_scaled_sum_of_squares(
-            static_cast<magnitude_type>(__detail::__abs_if_needed(x[i])),
+            static_cast<accum_type>(__detail::__abs_if_needed(x[i])),
             scale,
             scaled_sum);
     }
@@ -442,16 +447,20 @@ T matrix_frob_norm(
 {
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(init))>;
-    magnitude_type scale{};
-    magnitude_type scaled_sum{1};
+    // Same integral-division hazard as vector_two_norm: accumulate
+    // integral magnitudes in double.
+    using accum_type = std::conditional_t<
+        std::is_integral_v<magnitude_type>, double, magnitude_type>;
+    accum_type scale{};
+    accum_type scaled_sum{1};
     __detail::__update_scaled_sum_of_squares(
-        static_cast<magnitude_type>(__detail::__abs_if_needed(init)),
+        static_cast<accum_type>(__detail::__abs_if_needed(init)),
         scale,
         scaled_sum);
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
             __detail::__update_scaled_sum_of_squares(
-                static_cast<magnitude_type>(__detail::__abs_if_needed(A[i, j])),
+                static_cast<accum_type>(__detail::__abs_if_needed(A[i, j])),
                 scale,
                 scaled_sum);
         }

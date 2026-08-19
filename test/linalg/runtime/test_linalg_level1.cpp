@@ -179,6 +179,24 @@ TEST(LinalgLevel1Reductions, VectorTwoNormAvoidsIntermediateOverflow) {
     EXPECT_NEAR(result, std::sqrt(2.0) * 1.0e200, 1.0e185);
 }
 
+// The scaled-sum recurrence divides magnitudes; integral element types used
+// to truncate those ratios to zero and report two_norm({3,4}) == 4.
+TEST(LinalgLevel1Reductions, VectorTwoNormIntegerElementsComputeExactNorm) {
+    int x_data[] = {3, 4};
+    std::mdspan x(x_data, std::extents<int, 2>{});
+
+    EXPECT_EQ(std::linalg::vector_two_norm(x, 0), 5);
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 0.0), 5.0);
+}
+
+TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsComputeExactNorm) {
+    int a_data[] = {1, 2, 2, 4};
+    std::mdspan a(a_data, std::extents<int, 2, 2>{});
+
+    EXPECT_EQ(std::linalg::matrix_frob_norm(a, 0), 5);
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(a, 0.0), 5.0);
+}
+
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     double x_data[] = {4.0};
