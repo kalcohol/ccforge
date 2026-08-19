@@ -387,6 +387,19 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
     // F(1, phi) = asinh(tan(phi)) for |phi| < pi/2.
     EXPECT_NEAR(sm::ellint_1_fallback(1.0, 1.0),
                 std::asinh(std::tan(1.0)), 1e-9);
+
+    // Pi shares the |k| == 1 divergence: for nu <= 1 the pole factor stays
+    // nonnegative on the way to pi/2, so the integral is +/-infinity there
+    // instead of finite quadrature garbage.
+    EXPECT_EQ(sm::ellint_3_fallback(1.0, 0.5, 2.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::ellint_3_fallback(-1.0, -2.0, -2.0),
+              -std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::comp_ellint_3_fallback(1.0, 0.25),
+              std::numeric_limits<double>::infinity());
+    // Below the pole Pi stays finite; nu = 0 reduces Pi to F.
+    EXPECT_NEAR(sm::ellint_3_fallback(1.0, 0.0, 1.0),
+                std::asinh(std::tan(1.0)), 1e-9);
 }
 
 TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {

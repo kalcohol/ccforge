@@ -688,24 +688,42 @@ consteval bool is_arithmetic_value_representable(From value) {
             return value == source_type{} ||
                 value == static_cast<source_type>(1);
         } else {
-            using wide_source = typename conditional<
-                is_signed<source_type>::value,
-                long long,
-                unsigned long long>::type;
-            const auto wide_value = static_cast<wide_source>(value);
+            // Compare entirely in the source's own domain: when the source
+            // is at least as wide as the target, converting the target's
+            // bounds into the source type is exact; when it is narrower,
+            // representability follows from the signedness relation alone.
+            // No cast ever narrows the value, so extended integers such as
+            // __int128 (which std::in_range rejects outright, and which a
+            // long long detour would silently truncate) stay exact.
             constexpr auto target_min = numeric_limits<target_type>::min();
             constexpr auto target_max = numeric_limits<target_type>::max();
             if constexpr (is_signed<source_type>::value ==
                           is_signed<target_type>::value) {
-                return wide_value >= static_cast<wide_source>(target_min) &&
-                    wide_value <= static_cast<wide_source>(target_max);
+                if constexpr (sizeof(source_type) >= sizeof(target_type)) {
+                    return value >= static_cast<source_type>(target_min) &&
+                        value <= static_cast<source_type>(target_max);
+                } else {
+                    return true;
+                }
             } else if constexpr (is_signed<source_type>::value) {
-                return wide_value >= 0 &&
-                    static_cast<unsigned long long>(wide_value) <=
-                        static_cast<unsigned long long>(target_max);
+                if (value < source_type{}) {
+                    return false;
+                }
+                if constexpr (sizeof(source_type) > sizeof(target_type)) {
+                    return value <= static_cast<source_type>(target_max);
+                } else {
+                    // A non-negative signed value always fits an unsigned
+                    // target of at least the source's width.
+                    return true;
+                }
             } else {
-                return wide_value <=
-                    static_cast<unsigned long long>(target_max);
+                if constexpr (sizeof(source_type) >= sizeof(target_type)) {
+                    return value <= static_cast<source_type>(target_max);
+                } else {
+                    // A narrower unsigned value always fits a wider signed
+                    // target.
+                    return true;
+                }
             }
         }
     } else if constexpr (is_integral<source_type>::value && is_floating_point<target_type>::value) {

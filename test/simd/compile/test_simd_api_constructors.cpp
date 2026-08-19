@@ -62,6 +62,26 @@ static_assert(!std::is_constructible<std::simd::vec<signed char, 4>, std::integr
     "constexpr wrapper broadcasts must still reject out-of-range values for character lane types");
 static_assert(std::is_constructible<std::simd::vec<char8_t, 4>, std::integral_constant<int, 65>>::value,
     "constexpr wrapper broadcasts must accept in-range values for char8_t lanes");
+#if defined(__SIZEOF_INT128__) && defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
+// Backport-only: extended integers are outside std::in_range's domain and
+// used to detour through long long, silently truncating the range check
+// itself. Native std::simd implementations may reject __int128 wrappers as
+// a hard error instead of a constraint failure, so these probes only pin
+// the backport's behavior.
+static_assert(std::is_constructible<int4,
+        std::integral_constant<__int128, (__int128{1} << 100)>>::value == false,
+    "constexpr wrapper broadcasts must reject __int128 values beyond the lane range");
+static_assert(std::is_constructible<int4,
+        std::integral_constant<__int128, 42>>::value,
+    "constexpr wrapper broadcasts must accept in-range __int128 values");
+static_assert(std::is_constructible<int4,
+        std::integral_constant<__int128, -(__int128{1} << 100)>>::value == false,
+    "negative out-of-range __int128 values must be rejected, not truncated");
+static_assert(std::is_constructible<std::simd::vec<unsigned long long, 4>,
+        std::integral_constant<unsigned __int128,
+            (static_cast<unsigned __int128>(1) << 90)>>::value == false,
+    "unsigned __int128 values beyond the lane range must be rejected");
+#endif
 static_assert(std::is_constructible<int4, index_object_generator>::value,
     "generator results that are non-arithmetic but convertible to the lane type should be accepted");
 static_assert(std::is_constructible<int4, std::span<const int, 4>>::value,

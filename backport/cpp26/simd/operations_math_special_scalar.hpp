@@ -712,6 +712,16 @@ T ellint_3_fallback(T k, T nu, T phi) {
         std::abs(k) > T{1}) {
         return quiet_nan<T>();
     }
+    // Same divergence as ellint_1: at |k| == 1 the 1/sqrt(1 - k^2 sin^2)
+    // factor behaves like 1/|cos(theta)|, so the integral diverges once the
+    // path reaches theta == pi/2. For nu <= 1 the pole factor stays
+    // nonnegative on the way there, making the divergence +inf; quadrature
+    // across it would return finite garbage. (For nu > 1 the nu-pole is hit
+    // first and the existing infinite-sample handling applies.)
+    if (std::abs(k) == T{1} && nu <= T{1} &&
+        std::abs(phi) >= pi_v<T> / T{2}) {
+        return std::copysign(infinity<T>(), phi);
+    }
     return elliptic_integral(phi, [&](T theta) {
         const T s = std::sin(theta);
         const T sin2 = s * s;
