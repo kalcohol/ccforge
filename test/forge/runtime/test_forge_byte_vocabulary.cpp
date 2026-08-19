@@ -67,7 +67,11 @@ TEST(ForgeByteVocabularyTest, NonSystemExceptionsMapToUnknownTypedErrors) {
         std::make_exception_ptr(std::runtime_error{"typed IO failure"}));
 
     EXPECT_EQ(error.kind, forge::io::error_kind::unknown);
-    EXPECT_FALSE(error.code);
+    EXPECT_EQ(error.code, std::make_error_code(std::errc::io_error));
+
+    auto null_error = forge::io::typed_detail::from_exception({});
+    EXPECT_EQ(null_error.kind, forge::io::error_kind::unknown);
+    EXPECT_FALSE(null_error.code);
 }
 
 TEST(ForgeByteVocabularyTest, IoResultRetainsPayloadOnError) {

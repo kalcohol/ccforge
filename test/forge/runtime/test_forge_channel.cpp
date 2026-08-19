@@ -536,6 +536,22 @@ TEST(ChannelTest, TrySendTryRecv) {
     EXPECT_FALSE(channel.try_recv().has_value());
 }
 
+TEST(ChannelTest, RejectedTrySendLeavesRvalueArgumentIntact) {
+    forge::bounded_channel<std::unique_ptr<int>> channel{1};
+
+    ASSERT_TRUE(channel.try_send(std::make_unique<int>(1)));
+
+    auto second = std::make_unique<int>(2);
+    EXPECT_FALSE(channel.try_send(std::move(second)));
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(*second, 2);
+
+    channel.close();
+    EXPECT_FALSE(channel.try_send(std::move(second)));
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(*second, 2);
+}
+
 TEST(ChannelTest, ConcurrentProducersConsumers) {
     forge::bounded_channel<int> channel{8};
     std::atomic<int> sum{0};

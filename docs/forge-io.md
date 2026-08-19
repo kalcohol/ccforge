@@ -118,7 +118,9 @@ DNS、TLS、地址解析、listener、连接管理或 buffer policy framework。
   `io_result` 返回并保留已读取文本。提前 EOF 返回 EOF 状态并保留 partial line；
   若同一次 read 同时读到 delimiter 和 EOF，则 delimiter 完成优先并返回成功；
   超过 `max_bytes` 时返回
-  `std::errc::message_size` 和累计 byte count。
+  `std::errc::message_size` 和累计 byte count。注意 `max_bytes` 缺省值为
+  `SIZE_MAX`（不设上限）：面对不可信 peer 时必须传入显式上限，否则一条永不出现
+  delimiter 的流会让 output 无界增长直至内存耗尽。
 - `any_read_stream` 和 `any_write_stream` 是 non-owning borrowed wrappers。构造时只保存
   目标 stream 的地址和一个函数指针；copy/move 只复制这条引用，调用方必须保证 concrete
   stream 比 erased wrapper 活得更久。空 wrapper 调用会返回
@@ -304,6 +306,11 @@ auto task = parse(std::allocator_arg, &pool, 40);
   `runtime_context` 或 `io_uring` 完成路径）必须使用线程安全 resource
   （`synchronized_pool_resource`、`new_delete_resource`）；
   `unsynchronized_pool_resource` 仅适用于单线程 event loop 或外部同步的场景。
+- 对齐边界：promise 的 class-scope `operator new` 集合不提供 `align_val_t` 重载
+  （并因此屏蔽全局 aligned 形式），帧对齐需求超过
+  `__STDCPP_DEFAULT_NEW_ALIGNMENT__` 的 coroutine（例如持有过对齐 local）会在
+  编译期被拒绝，而不是拿到静默错位的帧。需要过对齐状态时请放到间接持有的
+  storage 里。
 
 两条被拒绝的替代路径（除非未来 A/B 数据要求重议）：
 
@@ -492,6 +499,9 @@ std::execution::set_stopped_t()
 
 返回值是该次 syscall 的 byte count。这些 convenience sender 要求 fd 处于
 nonblocking 模式；如果传入 blocking fd，poller thread 可能在后续 syscall 中被阻塞。
+V1 设计边界：epoll backend 的实际 `read(2)` / `write(2)` syscall 在单个 poller
+线程上执行，所有 fd 的数据拷贝互相串行化；高吞吐或大 buffer 场景应换用
+io_uring backend 或自行分片。
 空 span 是特殊情况：Linux backend 不等待 readiness，直接完成 `set_value(0)`。
 `0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
 span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；
@@ -506,7 +516,9 @@ IOCP completion 完成。返回值同样是该次 operation 的 byte count。Rea
 遇到 byte-stream EOF（例如 named pipe peer close）时返回 `0`。V1 要求传入的
 `HANDLE` 支持 overlapped IO，且未绑定到其它 completion port；它面向 named pipe /
 socket-like byte stream，不提供 random-access file offset 参数。对文件 HANDLE 的
-显式 offset IO 需要后续公共 API 扩展。
+显式 offset IO 需要后续公共 API 扩展。V1 设计边界：`start()` 在 context 全局锁下
+发起 `ReadFile` / `WriteFile`，提交与 completion 处理互相串行化；单次传输长度按
+`DWORD` 上限（4GB-1）钳制为 short IO，`*_some` 语义由调用方循环补齐。
 
 ## Typed-error variants（类型化错误变体）
 

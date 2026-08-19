@@ -232,6 +232,12 @@ forge::task<int> await_throwing_connect_task() {
     co_return 1;
 }
 
+// Completion moves the result into the receiver inside a noexcept path, so
+// task<T> statically requires nothrow-move-constructible T; throwing-move
+// result types are rejected by a class-scope static_assert with a clear
+// message instead of a deep set_value CPO failure.
+static_assert(std::is_nothrow_move_constructible_v<std::unique_ptr<int>>);
+
 forge::task<std::thread::id> await_scope_join_task(
     std::execution::simple_counting_scope* scope) {
     co_await scope->join();

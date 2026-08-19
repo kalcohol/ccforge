@@ -82,7 +82,7 @@ Allocation audit:
 | `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, readiness records | deferred completion batches use an allocation-free intrusive record chain; fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
-| type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, `any_scheduler`, and `erased_sender` use SBO/default heap storage and are not allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
+| type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, and `any_scheduler` use 64B SBO with heap fallback; `erased_sender` is heap-first without SBO; none are allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
 
 Failure policy:
 
@@ -156,6 +156,9 @@ Failure policy:
   work body / completion callback 内调用 `wait()` 或析构；该 work 自身仍计入 active
   count，外层 owner 应负责 drain。scope 捕获第一个 error 为
   `std::exception_ptr`，可通过 `first_error()` / `rethrow_if_error()` 读取。
+  `spawn` 返回 `false` 覆盖两种情况：scope 已 close，以及 op-state node 分配 /
+  sender 拷贝失败；后者的异常会记录进 `first_error()`，因此两者可由
+  `closed()` 与 `first_error()` 区分。
 
 `spawn(sender)` 对 non-copyable non-const lvalue sender 采用 Forge runtime convenience：它会 destructively move 该 lvalue 并启动工作。若代码需要在 native C++26 execution 实现下无感迁移，请显式写 `std::move(sender)`。
 
@@ -193,13 +196,16 @@ coroutine-native completion backend proof 落地。详细语义见 [`forge::io`]
 ## 消息通道
 
 - `forge::bounded_channel<T>`：有界 FIFO 消息通道，提供 `async_send(T)`、
-  `async_recv()`、`try_send(T)`、`try_recv()`、`close()`、`request_stop()` 和
+  `async_recv()`、`try_send(T&&)` / `try_send(const T&)`、`try_recv()`、`close()`、
+  `request_stop()` 和
   `shutdown()`。可用 `bounded_channel_options{.capacity = N, .memory = resource}` 控制
   容量和 channel 内部 state/buffer/record 分配。`T` 必须 nothrow move constructible，
   以保证 asynchronous `start()`、close 和 cancellation 路径不因值移动抛异常。send
   在值被缓冲或直接交给等待中的
   receiver 后完成 `set_value()`；recv 在收到值时完成 `set_value(T)`。`close()` 拒绝新
   send 并允许已缓冲值 drain；`request_stop()` 取消 pending send/recv 并丢弃缓冲值。
+  `try_send` 被拒绝（满、closed、stopped）时不消费 rvalue 实参，调用方的对象保持
+  原样可重试。
 
 `bounded_channel` 会观察 receiver stop token：operation `start()` 前如果 token 已请求，
 会直接 `set_stopped()`；如果 send/recv 已经进入 pending 队列且 token 后续请求停止，

@@ -387,6 +387,12 @@ struct promise_base : frame_chain_link {
     // exception; get_return_object_on_allocation_failure is intentionally
     // not provided so a throwing resource cannot be mistaken for an empty
     // task.
+    //
+    // Alignment boundary: no align_val_t overloads are provided, and this
+    // class-scope set suppresses the global aligned forms, so a frame that
+    // needs more than __STDCPP_DEFAULT_NEW_ALIGNMENT__ (e.g. an over-aligned
+    // local or parameter) is rejected at compile time rather than silently
+    // misaligned. Keep over-aligned state behind an indirection if needed.
     static auto operator new(std::size_t size) -> void* {
         void* frame = ::operator new(frame_allocation_size(size));
         stash_frame_resource(frame, size, nullptr);

@@ -149,7 +149,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   query 不会传播。Stopped completion 通过 coroutine bridge 的内部异常返回 task
   frame，可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常
   不会覆盖 stopped completion。Moved-from task 不能再次连接，尝试连接会抛
-  `std::logic_error`。
+  `std::logic_error`。`task<T>` 静态要求 `T` nothrow-move-constructible（class 级
+  `static_assert`）：completion 在 noexcept 路径上把结果 move 进 receiver 的
+  set_value 参数，throwing-move 类型在这里本会被 set_value CPO 的整体 noexcept
+  强制深层拒绝，现在改为更早、更清晰的诊断。
 - `forge::io::io_task` 是 coroutine-native byte IO track 的 Forge extension。
   它不替代 `forge::task`，也不是 owning runtime primitive。`io_task` 没有 public
   fire-and-forget start；只能被父 `io_task` await，或通过 `as_sender(io_task<T>, env)`

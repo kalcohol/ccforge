@@ -763,7 +763,10 @@ struct __op {
     __op(std::shared_ptr<__state> state, int fd, readiness kind, R rcvr)
         : state_(std::move(state))
         , record_(std::allocate_shared<record_t>(
-              std::pmr::polymorphic_allocator<record_t>{state_->memory},
+              // start() completes stopped on a null state; the record
+              // allocation must not dereference it first.
+              std::pmr::polymorphic_allocator<record_t>{
+                  state_ ? state_->memory : std::pmr::get_default_resource()},
               fd,
               kind,
               std::move(rcvr))) {}

@@ -310,6 +310,11 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
 - Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
   fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
+- 理论边界（已记录未修）：wakeup NOP 的 flush 在连续 64 次 EAGAIN 后放弃；若此时
+  poller 恰以 `to_submit == 0` 阻塞在 GETEVENTS 且无其它 in-flight operation 产生
+  CQE，该唤醒会丢失，析构的 join 可能挂起。触发前提是内核在无 in-flight 压力时
+  连续拒绝 NOP 提交 64 次（极端内存压力），proof 阶段接受此边界；生产化时应换成
+  eventfd 或带超时的 GETEVENTS。
 - 2026-08-19 审查补充（可观测性护栏）：`io_uring_context::last_error()` 返回
   poller 记录的最后一个硬错误（默认零值），把"后端死亡后新提交一律 stopped"与
   优雅 stop 排空区分开；已提交未 resume 的 awaitable 在析构时 `std::terminate()`

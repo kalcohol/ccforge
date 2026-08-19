@@ -676,8 +676,11 @@ struct __op {
         R rcvr)
         : state_(std::move(state))
         , record_(std::allocate_shared<record_t>(
+              // start() completes stopped on a null state; the record
+              // allocation must not dereference it first.
               std::pmr::polymorphic_allocator<record_t>{
-                  state_->memory_resource()},
+                  state_ ? state_->memory_resource()
+                         : std::pmr::get_default_resource()},
               handle,
               kind,
               read_buffer,

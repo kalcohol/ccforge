@@ -79,7 +79,12 @@ namespace typed_detail {
     } catch (const std::system_error& e) {
         return error{classify(e.code()), e.code()};
     } catch (...) {
-        return {};
+        // Exception details cannot be represented in the typed error, but a
+        // generic io_error code keeps the failure diagnosable and distinct
+        // from the null-exception case above.
+        return error{
+            error_kind::unknown,
+            std::make_error_code(std::errc::io_error)};
     }
 }
 

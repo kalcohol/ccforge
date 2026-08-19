@@ -393,6 +393,11 @@ inline auto erased_io_awaitable::await_suspend(
     try {
         return slot_->await_suspend(continuation, env);
     } catch (...) {
+        // Structural invariant: wrapped awaitables must not throw once they
+        // have handed the operation to the kernel (their submission tails
+        // are noexcept). reset() destroys the underlying awaitable, which
+        // would otherwise leave an in-flight completion pointing at freed
+        // memory. A throw here therefore means the operation never started.
         auto* slot = std::exchange(slot_, nullptr);
         slot->reset();
         throw;

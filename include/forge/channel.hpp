@@ -247,7 +247,10 @@ struct __state : std::enable_shared_from_this<__state<T>> {
         return false;
     }
 
-    bool try_send(T value) {
+    // Takes the value by rvalue reference and moves from it only on the
+    // acceptance paths, so a rejected send (closed, stopped, or full) leaves
+    // the caller's object intact.
+    bool try_send(T&& value) {
         __actions<T> actions;
         bool accepted = false;
         {
@@ -752,8 +755,15 @@ public:
         return __channel_detail::__recv_sender<T>{state_};
     }
 
-    bool try_send(T value) {
+    // On rejection the rvalue argument is not consumed; the copying overload
+    // copies into a temporary, so the caller's object is never observably
+    // moved-from on rejection either way.
+    bool try_send(T&& value) {
         return state_->try_send(std::move(value));
+    }
+
+    bool try_send(const T& value) {
+        return state_->try_send(T(value));
     }
 
     auto try_recv() -> std::optional<T> {
