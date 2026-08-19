@@ -692,7 +692,21 @@ struct __op {
     __op(const __op&) = delete;
     auto operator=(const __op&) -> __op& = delete;
 
+    // Abandoning a started-but-incomplete operation cannot be made safe on
+    // IOCP: the kernel may still be writing into the borrowed buffer and a
+    // completion packet still routes at this record, so destruction here
+    // would turn that completion into a use of freed caller state.
+    // CancelIoEx is asynchronous and cannot revoke the buffer synchronously
+    // either. Fail fast, mirroring the io_uring abandonment guard.
+    ~__op() {
+        if (started_ && record_ &&
+            !record_->done.load(std::memory_order_acquire)) {
+            std::terminate();
+        }
+    }
+
     void start() & noexcept {
+        started_ = true;
         auto record = record_;
         auto state = state_;
         try {
@@ -739,6 +753,7 @@ struct __op {
 
     std::shared_ptr<__state> state_;
     std::shared_ptr<record_t> record_;
+    bool started_ = false;
 };
 
 struct __byte_sender {

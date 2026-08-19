@@ -183,6 +183,43 @@ struct typed_size_receiver : typed_void_receiver {
     }
 };
 
+// Receiver for the untyped byte senders, whose error channel carries
+// std::exception_ptr instead of forge::io::error.
+struct byte_size_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<typed_io_state> state;
+
+    void set_value(std::size_t bytes) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+            state->bytes = bytes;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->error = true;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 struct self_destroying_typed_io_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -493,6 +530,63 @@ TEST(IoContextTest, PendingReadableCompletesAfterWrite) {
     EXPECT_TRUE(state->value);
     EXPECT_FALSE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, AbandoningPendingReadinessOperationIsSafe) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto state = std::make_shared<io_state>();
+
+    {
+        auto op = std::execution::connect(
+            ctx.readable(pipe.first.get()),
+            io_receiver{state});
+        std::execution::start(op);
+        // No data was written: the waiter is registered and pending.
+        // Leaving the scope destroys the operation state, which claims the
+        // completion and discards the record, so the poller can never fire
+        // into freed state.
+    }
+
+    // Late readiness must not resurrect the abandoned waiter.
+    write_byte(pipe.second.get());
+
+    // Without the discard the abandoned waiter would keep pending != 0 and
+    // shutdown()/wait() would hang; returning at all is part of the check.
+    ctx.shutdown();
+    ctx.wait();
+
+    std::lock_guard lk{state->mtx};
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+}
+
+TEST(IoContextTest, AbandoningPendingByteOperationIsSafe) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    auto state = std::make_shared<typed_io_state>();
+    std::array<std::byte, 8> buffer{};
+
+    {
+        auto op = std::execution::connect(
+            ctx.async_read_some(pipe.first.get(), std::span{buffer}),
+            byte_size_receiver{state});
+        std::execution::start(op);
+    }
+
+    // Readiness after abandonment: the poller must neither read into the
+    // borrowed buffer nor complete the discarded record.
+    write_byte(pipe.second.get());
+
+    ctx.shutdown();
+    ctx.wait();
+
+    std::lock_guard lk{state->mtx};
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->stopped);
+    EXPECT_FALSE(state->error);
+    EXPECT_EQ(buffer[0], std::byte{0});
 }
 
 TEST(IoContextTest, CloseAfterReadinessStillCompletesTakenRecord) {

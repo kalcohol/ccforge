@@ -34,6 +34,7 @@
 #include <execution>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -190,9 +191,25 @@ struct __record_base {
     readiness kind = readiness::read;
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
+    std::atomic<bool> delivered{false};
     std::shared_ptr<__record_base> next_action;
     std::exception_ptr action_error;
     __completion_kind action_kind = __completion_kind::value;
+
+    // An abandoning operation destructor parks here until a completion
+    // attempt that lost the done race has finished its teardown tail (stop
+    // callback deregistration), which must not outlive the receiver
+    // environment. Mirrors the timer_context abandonment protocol.
+    void wait_delivered() const noexcept {
+        int spins = 0;
+        while (!delivered.load(std::memory_order_acquire)) {
+            if (++spins < 64) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::microseconds{100});
+            }
+        }
+    }
 };
 
 struct __state;
@@ -212,28 +229,40 @@ struct __record final : __record_base {
         kind = ready;
     }
 
+    // Losing the done race still tears down the stop registration and then
+    // signals delivered: an abandoning operation destructor waits on that
+    // signal so the callback never outlives the receiver environment.
     void complete_value() noexcept override {
         if (done.exchange(true, std::memory_order_acq_rel)) {
+            stop_callback.reset();
+            delivered.store(true, std::memory_order_release);
             return;
         }
         stop_callback.reset();
         std::execution::set_value(std::move(rcvr));
+        delivered.store(true, std::memory_order_release);
     }
 
     void complete_error(std::exception_ptr error) noexcept override {
         if (done.exchange(true, std::memory_order_acq_rel)) {
+            stop_callback.reset();
+            delivered.store(true, std::memory_order_release);
             return;
         }
         stop_callback.reset();
         std::execution::set_error(std::move(rcvr), std::move(error));
+        delivered.store(true, std::memory_order_release);
     }
 
     void complete_stopped() noexcept override {
         if (done.exchange(true, std::memory_order_acq_rel)) {
+            stop_callback.reset();
+            delivered.store(true, std::memory_order_release);
             return;
         }
         stop_callback.reset();
         std::execution::set_stopped(std::move(rcvr));
+        delivered.store(true, std::memory_order_release);
     }
 
     using callback_t =
@@ -432,6 +461,23 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void cancel_record(const __record_ptr& target) noexcept {
+        __record_ptr record = extract_record(target);
+        if (record) {
+            record->complete_stopped();
+        }
+    }
+
+    // Abandonment support: removes a registered record without completing
+    // it, so a destroyed operation state can never be fired into. Returns
+    // false when the record is not resident (already extracted for
+    // completion or never registered).
+    [[nodiscard]] auto discard_record(const __record_ptr& target) noexcept
+        -> bool {
+        return static_cast<bool>(extract_record(target));
+    }
+
+    [[nodiscard]] auto extract_record(const __record_ptr& target) noexcept
+        -> __record_ptr {
         __record_ptr record;
         bool should_wake = false;
         if (target) {
@@ -456,9 +502,7 @@ struct __state : std::enable_shared_from_this<__state> {
         if (should_wake) {
             wake_polling_thread();
         }
-        if (record) {
-            record->complete_stopped();
-        }
+        return record;
     }
 
     void close() noexcept {
@@ -776,7 +820,31 @@ struct __op {
     __op(const __op&) = delete;
     auto operator=(const __op&) -> __op& = delete;
 
+    // Destroying a started-but-pending operation abandons it safely: the
+    // completion is claimed so the poller can never fire into this state,
+    // the registered record is discarded, and an in-flight completion
+    // attempt is waited out so its stop-callback teardown cannot outlive
+    // the receiver environment. Mirrors the timer_context protocol.
+    ~__op() {
+        if (!started_ || !record_) {
+            return;
+        }
+        if (record_->done.exchange(true, std::memory_order_acq_rel)) {
+            // Completed (or completing on the normal continuation path
+            // that is destroying this state right now).
+            return;
+        }
+        if (state_ && state_->discard_record(record_)) {
+            record_->stop_callback.reset();
+            return;
+        }
+        // Extracted for completion but not yet delivered: the losing
+        // complete_* call tears down the stop registration and signals.
+        record_->wait_delivered();
+    }
+
     void start() & noexcept {
+        started_ = true;
         auto record = record_;
         auto state = state_;
         try {
@@ -803,6 +871,7 @@ struct __op {
 
     std::shared_ptr<__state> state_;
     std::shared_ptr<record_t> record_;
+    bool started_ = false;
 };
 
 struct __sender {

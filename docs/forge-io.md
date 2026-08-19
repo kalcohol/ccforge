@@ -269,9 +269,17 @@ model。
 
 弃置（销毁悬挂中的 `io_task` 链）按迭代方式逐帧执行：每帧在 await 子 task 时记录
 向下链接，销毁时沿链循环拆帧而不是经嵌套 awaitable 析构递归，深链弃置的 native
-stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 awaitable 的弃置语义仍由
-各 backend 约定（timer facade 可安全弃置；io_uring in-flight operation 弃置违反
-borrowed 契约，析构护栏会 `std::terminate()`，见 io_uring 一节）。
+stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 awaitable/operation 的
+弃置语义按 backend 分为两类：
+
+- 可安全弃置（poller 持有，库可同步撤销）：timer facade 与 epoll backend 的
+  readiness/byte operation。弃置析构先原子认领完成权（poller 此后不可能再打进
+  该 operation state），再从注册表摘除记录；若记录已被 poller 提取、正在完成，
+  析构会等待其收尾（stop 注册的拆除不得晚于 receiver 环境销毁）。与完成"同一
+  瞬间"的弃置仍是调用方自身的竞态。
+- 快速失败（kernel 持有 borrowed buffer，无法同步撤销）：io_uring 与 IOCP 的
+  in-flight operation。弃置违反 borrowed 契约，析构护栏 `std::terminate()`，
+  见各 backend 一节。erased async stream 的悬挂 operation 同属此类。
 
 `io_task` 帧分配支持 P4127 的显式参数路径：coroutine 参数列表以
 `(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时，coroutine frame 从该
@@ -502,6 +510,9 @@ nonblocking 模式；如果传入 blocking fd，poller thread 可能在后续 sy
 V1 设计边界：epoll backend 的实际 `read(2)` / `write(2)` syscall 在单个 poller
 线程上执行，所有 fd 的数据拷贝互相串行化；高吞吐或大 buffer 场景应换用
 io_uring backend 或自行分片。
+epoll backend 的 operation state 支持安全弃置：销毁已 start 未完成的 operation
+会认领完成权并从注册表摘除记录，poller 不会再打进已销毁的 state 或向借用
+buffer 写入（见上文弃置语义两分类）。
 空 span 是特殊情况：Linux backend 不等待 readiness，直接完成 `set_value(0)`。
 `0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
 span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；

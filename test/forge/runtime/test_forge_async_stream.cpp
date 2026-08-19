@@ -352,6 +352,41 @@ TEST(ForgeAsyncStreamTest, ErasedReadTrulySuspendsAndResumesCoroutine) {
     EXPECT_EQ(std::string_view(output.data(), output.size()), "async");
 }
 
+namespace {
+
+[[maybe_unused]] void abandon_suspended_erased_read() {
+    auto manual = std::make_shared<manual_read_state>();
+    // Leaked on purpose: the stream must stay alive so only the erased
+    // awaitable's abandonment guard can end the process, not the stream
+    // destructor's active-slot tripwire.
+    auto* reader = new cio::owning_any_async_read_stream{
+        manual_async_read_stream{manual}};
+    static std::array<char, 5> output{};
+    static completion_state completion;
+    {
+        auto operation = std::execution::connect(
+            cio::as_sender(read_once(
+                *reader,
+                cio::mutable_buffer{std::span{output}})),
+            completion_receiver{&completion});
+        std::execution::start(operation);
+        // Suspended on the manual stream: leaving this scope destroys the
+        // coroutine frame while the erased operation is started and
+        // unresumed, which must terminate instead of leaving a dangling
+        // continuation in the slot.
+    }
+}
+
+} // namespace
+
+TEST(ForgeAsyncStreamDeathTest, AbandoningSuspendedErasedReadTerminates) {
+#if GTEST_HAS_DEATH_TEST
+    EXPECT_DEATH(abandon_suspended_erased_read(), "");
+#else
+    GTEST_SKIP() << "death tests are not supported by this gtest build";
+#endif
+}
+
 TEST(ForgeAsyncStreamTest, CompoundErrorAndEofRemainDistinct) {
     cio::owning_any_async_read_stream reader{
         cio::immediate_async_stream{

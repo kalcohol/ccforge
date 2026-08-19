@@ -357,6 +357,16 @@ private:
 } // namespace __async_stream_detail
 
 inline erased_io_awaitable::~erased_io_awaitable() {
+    // Abandoning a started-but-unresumed erased operation would leave the
+    // slot permanently active (every later stream call fails with
+    // operation_in_progress and the stream destructor terminates) while the
+    // wrapped awaitable still holds the destroyed coroutine's continuation,
+    // so a later backend completion would resume freed memory. Fail fast,
+    // same shape as the io_uring abandonment guard. await_resume() clears
+    // slot_, so started_ with a live slot means the operation is pending.
+    if (slot_ != nullptr && started_) {
+        std::terminate();
+    }
     abandon_unstarted();
 }
 
