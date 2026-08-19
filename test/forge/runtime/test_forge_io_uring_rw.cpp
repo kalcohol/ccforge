@@ -1,5 +1,7 @@
 #include <forge/io/io_uring_context.hpp>
 
+#include <forge/io/async_stream.hpp>
+
 #include "forge_counting_resource.hpp"
 
 #include <unistd.h>
@@ -119,6 +121,36 @@ auto observe_read(
     *after = std::this_thread::get_id();
     co_return result;
 }
+
+// Test-local adapter proving the io_uring awaitables satisfy the direct
+// async stream concepts from taskbook 03. The awaitable deliberately does
+// not fit the frozen 128-byte erasure slot, so owning_any_async_* wrappers
+// reject it at compile time; the tripwire below revisits that boundary if
+// the operation state ever shrinks.
+struct uring_pipe_stream {
+    cio::io_uring_context* context = nullptr;
+    int read_fd = -1;
+    int write_fd = -1;
+
+    [[nodiscard]] auto read_some(cio::mutable_buffer output) {
+        return cio::async_read_some(
+            *context,
+            read_fd,
+            std::span<std::byte>{output.data(), output.size()});
+    }
+
+    [[nodiscard]] auto write_some(cio::const_buffer input) {
+        return cio::async_write_some(
+            *context,
+            write_fd,
+            std::span<const std::byte>{input.data(), input.size()});
+    }
+};
+
+static_assert(cio::async_read_write_stream<uring_pipe_stream>);
+static_assert(
+    sizeof(cio::async_read_awaitable_t<uring_pipe_stream>) >
+    cio::erased_io_awaitable_size);
 
 struct completion_state {
     std::mutex mutex;
@@ -311,6 +343,96 @@ void check_pre_stopped_env_never_submits(std::pmr::memory_resource* memory) {
         read_task(context, pipe.read_end, read_buffer),
         env));
     RW_CHECK(!result.has_value());
+}
+
+auto echo_round_trip(
+    cio::io_uring_context& context,
+    int write_fd,
+    int read_fd,
+    std::span<const std::byte> payload,
+    std::span<std::byte> scratch) -> cio::io_task<cio::io_result<std::size_t>> {
+    auto written = co_await cio::async_write_some(context, write_fd, payload);
+    if (!written.has_value()) {
+        co_return written;
+    }
+    co_return co_await cio::async_read_some(context, read_fd, scratch);
+}
+
+// Coroutine-native end-to-end path: several native awaits composed inside
+// one io_task, driven through the explicit sender bridge exactly once.
+void check_coroutine_composition(std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    pipe_pair pipe;
+    RW_CHECK(pipe.read_end >= 0);
+
+    const char payload[] = "compose";
+    std::byte source[7];
+    std::memcpy(source, payload, sizeof(source));
+    std::byte scratch[32] = {};
+
+    auto result = std::execution::sync_wait(cio::as_sender(
+        echo_round_trip(
+            context,
+            pipe.write_end,
+            pipe.read_end,
+            source,
+            scratch)));
+    RW_CHECK(result.has_value());
+    if (result.has_value()) {
+        auto [io] = std::move(*result);
+        RW_CHECK(io.has_value());
+        RW_CHECK(std::get<0>(io.values()) == sizeof(source));
+        RW_CHECK(std::memcmp(scratch, payload, sizeof(source)) == 0);
+    }
+}
+
+auto stream_round_trip(
+    uring_pipe_stream& stream,
+    std::span<const std::byte> payload,
+    std::span<std::byte> scratch) -> cio::io_task<cio::io_result<std::size_t>> {
+    auto written = co_await stream.write_some(cio::const_buffer{payload});
+    if (!written.has_value()) {
+        co_return written;
+    }
+    co_return co_await stream.read_some(cio::mutable_buffer{scratch});
+}
+
+auto stream_round_trip_read_only(
+    uring_pipe_stream& stream,
+    std::span<std::byte> scratch) -> cio::io_task<cio::io_result<std::size_t>> {
+    co_return co_await stream.read_some(cio::mutable_buffer{scratch});
+}
+
+void check_async_stream_concept_interop(std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    pipe_pair pipe;
+    RW_CHECK(pipe.read_end >= 0);
+
+    uring_pipe_stream stream{&context, pipe.read_end, pipe.write_end};
+    const char payload[] = "stream";
+    std::byte source[6];
+    std::memcpy(source, payload, sizeof(source));
+    std::byte scratch[16] = {};
+
+    auto result = std::execution::sync_wait(cio::as_sender(
+        stream_round_trip(stream, source, scratch)));
+    RW_CHECK(result.has_value());
+    if (result.has_value()) {
+        auto [io] = std::move(*result);
+        RW_CHECK(io.has_value());
+        RW_CHECK(std::get<0>(io.values()) == sizeof(source));
+        RW_CHECK(std::memcmp(scratch, payload, sizeof(source)) == 0);
+    }
+
+    // EOF surfaces through the adapter unchanged.
+    pipe.close_write();
+    auto eof_result = std::execution::sync_wait(cio::as_sender(
+        stream_round_trip_read_only(stream, scratch)));
+    RW_CHECK(eof_result.has_value());
+    if (eof_result.has_value()) {
+        auto [io] = std::move(*eof_result);
+        RW_CHECK(io.eof());
+    }
 }
 
 void check_pre_stopped_env_wins_over_empty_buffer(
@@ -602,6 +724,8 @@ int main() {
     check_read_eof(&memory);
     check_empty_buffer_completes_inline(&memory);
     check_bad_descriptor_maps_to_error(&memory);
+    check_coroutine_composition(&memory);
+    check_async_stream_concept_interop(&memory);
     check_pre_stopped_env_never_submits(&memory);
     check_pre_stopped_env_wins_over_empty_buffer(&memory);
     check_stop_races_natural_completion(&memory);
