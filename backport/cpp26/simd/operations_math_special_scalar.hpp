@@ -671,6 +671,12 @@ T ellint_1_fallback(T k, T phi) {
     }
 
     const T half_pi = pi_v<T> / T{2};
+    // At |k| == 1 the integrand is 1/|cos(theta)|, so F diverges as soon
+    // as the integration path reaches theta == pi/2; a numeric quadrature
+    // across that pole would return finite garbage instead.
+    if (std::abs(k) == T{1} && std::abs(phi) >= half_pi) {
+        return std::copysign(infinity<T>(), phi);
+    }
     if (std::abs(phi) == half_pi) {
         return std::copysign(complete_ellint_1_agm(k), phi);
     }
@@ -687,6 +693,9 @@ T ellint_1_fallback(T k, T phi) {
 
 template<class T>
 T ellint_2_fallback(T k, T phi) {
+    if (std::isnan(k) || std::isnan(phi) || std::abs(k) > T{1}) {
+        return quiet_nan<T>();
+    }
     return elliptic_integral(phi, [&](T theta) {
         const T s = std::sin(theta);
         const T radicand = T{1} - k * k * s * s;
@@ -699,6 +708,10 @@ T ellint_2_fallback(T k, T phi) {
 
 template<class T>
 T ellint_3_fallback(T k, T nu, T phi) {
+    if (std::isnan(k) || std::isnan(nu) || std::isnan(phi) ||
+        std::abs(k) > T{1}) {
+        return quiet_nan<T>();
+    }
     return elliptic_integral(phi, [&](T theta) {
         const T s = std::sin(theta);
         const T sin2 = s * s;
@@ -744,8 +757,10 @@ inline auto cyl_bessel_power_series(
             false};
     }
     if (x == 0.0L) {
+        // Exact-zero order discrimination, matching the J fallback: the
+        // order-zero limit is 1 only for nu == 0, not for tiny nonzero nu.
         return {
-            almost_equal(nu, 0.0L) ? 1.0L : 0.0L,
+            nu == 0.0L ? 1.0L : 0.0L,
             0.0L,
             true};
     }

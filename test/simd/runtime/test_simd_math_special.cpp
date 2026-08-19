@@ -296,6 +296,10 @@ TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
     EXPECT_TRUE(std::isinf(y2));
     EXPECT_TRUE(std::signbit(y2));
     EXPECT_EQ(sm::cyl_bessel_j_fallback(5.0e-13, 0.0), 0.0);
+    // The I series applies the same exact-zero order discrimination at
+    // x == 0 as the J fallback: only nu == 0 gives the limit 1.
+    EXPECT_EQ(sm::cyl_bessel_i_series(0.0, 0.0), 1.0);
+    EXPECT_EQ(sm::cyl_bessel_i_series(5.0e-13, 0.0), 0.0);
 
     EXPECT_EQ(sm::cyl_bessel_k_fallback(0.0, 0.0),
               std::numeric_limits<double>::infinity());
@@ -357,6 +361,32 @@ TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) 
                   -1.0, -std::numbers::pi_v<double> / 2.0),
               -std::numeric_limits<double>::infinity());
     EXPECT_TRUE(std::isnan(sm::comp_ellint_1_fallback(1.01)));
+}
+
+TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
+    namespace sm = std::simd::detail::special_math;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+
+    // NaN arguments and out-of-domain moduli follow ellint_1's policy in
+    // ellint_2/ellint_3 instead of integrating garbage to finite values.
+    EXPECT_TRUE(std::isnan(sm::ellint_2_fallback(0.5, nan)));
+    EXPECT_TRUE(std::isnan(sm::ellint_3_fallback(0.5, 0.3, nan)));
+    EXPECT_TRUE(std::isnan(sm::ellint_2_fallback(nan, 0.1)));
+    EXPECT_TRUE(std::isnan(sm::ellint_3_fallback(nan, 0.3, 0.1)));
+    EXPECT_TRUE(std::isnan(sm::ellint_2_fallback(2.0, 0.1)));
+    EXPECT_TRUE(std::isnan(sm::ellint_3_fallback(2.0, 0.3, 0.1)));
+
+    // F diverges at the |k| == 1 singularity once phi reaches pi/2; a
+    // quadrature across the pole used to report finite garbage for
+    // phi = 2.0 while phi = pi/2 hit the exact-infinity special case.
+    EXPECT_EQ(sm::ellint_1_fallback(1.0, 2.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::ellint_1_fallback(-1.0, -2.0),
+              -std::numeric_limits<double>::infinity());
+    // Below the pole the incomplete integral stays finite:
+    // F(1, phi) = asinh(tan(phi)) for |phi| < pi/2.
+    EXPECT_NEAR(sm::ellint_1_fallback(1.0, 1.0),
+                std::asinh(std::tan(1.0)), 1e-9);
 }
 
 TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
