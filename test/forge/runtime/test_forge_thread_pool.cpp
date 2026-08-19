@@ -158,6 +158,64 @@ TEST(StaticThreadPoolTest, DestroyingPoolFromWorkerDetachesInsteadOfTerminating)
     EXPECT_EQ(memory.outstanding(), 0u);
 }
 
+TEST(StaticThreadPoolTest, DestroyingPoolFromWorkerDrainsBacklogAcrossWorkers) {
+    forge_test::counting_resource memory;
+    std::atomic<bool> release{false};
+    std::atomic<bool> destroyed{false};
+    std::atomic<int> backlog_ran{0};
+    constexpr int backlog_count = 8;
+
+    auto pool = std::make_unique<forge::static_thread_pool>(
+        forge::static_thread_pool_options{
+            .thread_count = 2,
+            .queue_capacity = std::nullopt,
+            .memory = &memory});
+    auto sch = pool->get_scheduler();
+
+    // Occupy both workers so the backlog below stays queued, then destroy
+    // the pool from one of them while the other is still mid-task.
+    forge::start_detached(
+        std::execution::schedule(sch) | std::execution::then([&] {
+            while (!release.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            pool.reset();
+            destroyed.store(true, std::memory_order_release);
+        }));
+    forge::start_detached(
+        std::execution::schedule(sch) | std::execution::then([&] {
+            while (!release.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }));
+
+    for (int i = 0; i < backlog_count; ++i) {
+        forge::start_detached(
+            std::execution::schedule(sch) | std::execution::then([&] {
+                backlog_ran.fetch_add(1, std::memory_order_acq_rel);
+            }));
+    }
+
+    release.store(true, std::memory_order_release);
+
+    for (int i = 0; i < 500 && !destroyed.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(destroyed.load(std::memory_order_acquire));
+
+    // shutdown() drains accepted work: every queued task still runs on the
+    // detached workers before the shared state is released.
+    for (int i = 0;
+        i < 500
+        && (backlog_ran.load(std::memory_order_acquire) != backlog_count
+            || memory.outstanding() != 0);
+        ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(backlog_ran.load(std::memory_order_acquire), backlog_count);
+    EXPECT_EQ(memory.outstanding(), 0u);
+}
+
 TEST(StaticThreadPoolTest, ScheduleAfterShutdownCompletesStopped) {
     forge::static_thread_pool pool(1);
     auto sch = pool.get_scheduler();

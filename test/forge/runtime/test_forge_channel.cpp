@@ -552,6 +552,27 @@ TEST(ChannelTest, RejectedTrySendLeavesRvalueArgumentIntact) {
     EXPECT_EQ(*second, 2);
 }
 
+TEST(ChannelTest, RejectedTrySendCopyableLvalueCanRetry) {
+    forge::bounded_channel<std::string> channel{1};
+    const std::string payload(64, 'x');
+
+    ASSERT_TRUE(channel.try_send(std::string(64, 'a')));
+
+    // A full channel rejects the lvalue without consuming it.
+    EXPECT_FALSE(channel.try_send(payload));
+    EXPECT_EQ(payload, std::string(64, 'x'));
+
+    // After space frees up, retrying the same lvalue succeeds by copy.
+    auto first = channel.try_recv();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_TRUE(channel.try_send(payload));
+    EXPECT_EQ(payload, std::string(64, 'x'));
+
+    auto second = channel.try_recv();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*second, payload);
+}
+
 TEST(ChannelTest, ConcurrentProducersConsumers) {
     forge::bounded_channel<int> channel{8};
     std::atomic<int> sum{0};
