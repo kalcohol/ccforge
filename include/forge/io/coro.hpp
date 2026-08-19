@@ -27,9 +27,13 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstddef>
+#include <cstring>
 #include <exception>
 #include <execution>
+#include <memory>
 #include <memory_resource>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
@@ -287,12 +291,95 @@ private:
     const io_env** env_;
 };
 
+// Coroutine frames allocated through promise_base reserve a pointer-sized
+// trailer behind the frame bytes. The trailer records which
+// std::pmr::memory_resource owns the frame (null means global operator new),
+// so the sized operator delete can route the deallocation without any side
+// table. The trailer is written and read with memcpy because the compiler
+// only guarantees raw storage there.
+inline constexpr std::size_t frame_allocation_alignment =
+    __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+
+[[nodiscard]] constexpr auto frame_trailer_offset(std::size_t size) noexcept
+    -> std::size_t {
+    constexpr std::size_t align = alignof(std::pmr::memory_resource*);
+    return ((size + align - 1U) / align) * align;
+}
+
+[[nodiscard]] constexpr auto frame_allocation_size(std::size_t size) noexcept
+    -> std::size_t {
+    return frame_trailer_offset(size) + sizeof(std::pmr::memory_resource*);
+}
+
+inline auto stash_frame_resource(
+    void* frame,
+    std::size_t size,
+    std::pmr::memory_resource* memory) noexcept -> void {
+    std::memcpy(
+        static_cast<unsigned char*>(frame) + frame_trailer_offset(size),
+        &memory,
+        sizeof(memory));
+}
+
+[[nodiscard]] inline auto stashed_frame_resource(
+    void* frame,
+    std::size_t size) noexcept -> std::pmr::memory_resource* {
+    std::pmr::memory_resource* memory = nullptr;
+    std::memcpy(
+        &memory,
+        static_cast<unsigned char*>(frame) + frame_trailer_offset(size),
+        sizeof(memory));
+    return memory;
+}
+
 template<class Promise>
 struct promise_base {
     const io_env* env = nullptr;
     std::coroutine_handle<> continuation{};
     void* completion_object = nullptr;
     void (*complete)(void*) noexcept = nullptr;
+
+    // P4127 explicit-parameter frame allocation: a coroutine whose parameter
+    // list starts with (std::allocator_arg_t, std::pmr::memory_resource*)
+    // allocates its frame from that resource; every other coroutine keeps
+    // the global operator new path. Allocation failure propagates as an
+    // exception; get_return_object_on_allocation_failure is intentionally
+    // not provided so a throwing resource cannot be mistaken for an empty
+    // task.
+    static auto operator new(std::size_t size) -> void* {
+        void* frame = ::operator new(frame_allocation_size(size));
+        stash_frame_resource(frame, size, nullptr);
+        return frame;
+    }
+
+    template<class... Args>
+    static auto operator new(
+        std::size_t size,
+        std::allocator_arg_t,
+        std::pmr::memory_resource* memory,
+        const Args&...) -> void* {
+        if (memory == nullptr) {
+            return operator new(size);
+        }
+        void* frame = memory->allocate(
+            frame_allocation_size(size),
+            frame_allocation_alignment);
+        stash_frame_resource(frame, size, memory);
+        return frame;
+    }
+
+    static auto operator delete(void* frame, std::size_t size) noexcept
+        -> void {
+        std::pmr::memory_resource* memory = stashed_frame_resource(frame, size);
+        if (memory == nullptr) {
+            ::operator delete(frame, frame_allocation_size(size));
+            return;
+        }
+        memory->deallocate(
+            frame,
+            frame_allocation_size(size),
+            frame_allocation_alignment);
+    }
 
     [[nodiscard]] auto initial_suspend() noexcept -> std::suspend_always {
         return {};
