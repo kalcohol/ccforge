@@ -5,6 +5,8 @@
 #include <forge/io/result.hpp>
 #include <forge/static_thread_pool.hpp>
 
+#include "forge_operation_destroy.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <exception>
@@ -578,6 +580,30 @@ auto await_inline_child_chain(int count)
     };
 }
 
+// Never completes: the awaiting chain stays suspended until abandoned.
+struct hang_forever_awaitable {
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return false;
+    }
+
+    auto await_suspend(std::coroutine_handle<>, const cio::io_env*) noexcept
+        -> void {}
+
+    auto await_resume() noexcept -> void {}
+};
+
+auto hang_leaf_task() -> cio::io_task<int> {
+    co_await hang_forever_awaitable{};
+    co_return 0;
+}
+
+auto deep_suspended_chain(int depth) -> cio::io_task<int> {
+    if (depth <= 0) {
+        co_return co_await hang_leaf_task();
+    }
+    co_return co_await deep_suspended_chain(depth - 1);
+}
+
 } // namespace
 
 TEST(ForgeCoroInteropTest, AwaitSenderConsumesJust) {
@@ -856,6 +882,36 @@ TEST(ForgeCoroInteropTest, InlineChildTasksUseBoundedNativeStack) {
     const auto& chain = std::get<0>(*result);
     EXPECT_EQ(chain.value, child_count);
     EXPECT_LT(chain.stack_span, 16u * 1024u);
+}
+
+// Destroying a suspended chain of this depth recursed one native frame set
+// per level through nested task_awaitable destructors before the iterative
+// chain walk; the depth here overflows an 8 MiB stack under the recursive
+// scheme.
+TEST(ForgeCoroInteropTest, AbandoningDeepSuspendedChainUsesBoundedNativeStack) {
+    constexpr int depth = 400'000;
+    auto result = std::make_shared<task_result_state<int>>();
+    auto factory = [&] {
+        return std::execution::connect(
+            cio::as_sender(deep_suspended_chain(depth)),
+            task_result_receiver<int>{result});
+    };
+    using op_t = decltype(factory());
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from(factory);
+    std::execution::start(op);
+
+    // The chain is parked on the never-completing leaf; dropping the
+    // operation abandons every suspended frame at once.
+    context.reset();
+
+    std::lock_guard lock{result->mtx};
+    EXPECT_FALSE(result->done);
+    EXPECT_FALSE(result->value.has_value());
+    EXPECT_FALSE(result->error);
+    EXPECT_FALSE(result->stopped);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderRejectsMoveAfterStart) {

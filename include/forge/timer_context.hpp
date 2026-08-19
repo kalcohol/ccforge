@@ -251,6 +251,7 @@ struct __item {
     __callable complete_stopped;
     std::optional<callback_t> stop_callback;
     std::atomic<bool> stop_requested{false};
+    std::atomic<bool> delivered{false};
 
     void request_stop() noexcept {
         stop_requested.store(true, std::memory_order_release);
@@ -263,11 +264,23 @@ struct __item {
     void deliver_value() noexcept {
         stop_callback.reset();
         complete_value();
+        delivered.store(true, std::memory_order_release);
     }
 
     void deliver_stopped() noexcept {
         stop_callback.reset();
         complete_stopped();
+        delivered.store(true, std::memory_order_release);
+    }
+
+    // An abandoning operation destructor parks here until the worker has
+    // finished deliver_*: the completion itself no-ops (done_ was claimed)
+    // but the stop registration teardown must not race the destruction of
+    // the receiver environment.
+    void wait_delivered() const noexcept {
+        while (!delivered.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
     }
 
     void install_stop_callback(
@@ -319,6 +332,8 @@ struct __op {
         , when_(when)
         , data_(make_data(state_, std::move(rcvr)))
     {}
+
+    ~__op();
 
     void start() & noexcept;
 
@@ -398,6 +413,24 @@ struct __state {
             }
         }
         cv.notify_all();
+    }
+
+    // Removes a still-queued item whose operation state is being destroyed.
+    // Returns false when the worker already popped the item for delivery;
+    // the caller then waits for that delivery to finish instead.
+    [[nodiscard]] bool discard_item(
+        const std::shared_ptr<__item>& item) noexcept {
+        std::lock_guard lk{mtx};
+        const auto it = std::find(items.begin(), items.end(), item);
+        if (it == items.end()) {
+            return false;
+        }
+        items.erase(it);
+        --pending;
+        if (pending == 0) {
+            cv_wait.notify_all();
+        }
+        return true;
     }
 
     void wait() noexcept {
@@ -605,6 +638,26 @@ inline void __stop_callback_fn::operator()() const noexcept {
     } else if (item_ptr) {
         item_ptr->request_stop();
     }
+}
+
+// Destroying a started-but-pending operation abandons the timer: the
+// completion is claimed so the worker can never touch the receiver again,
+// the queued item is discarded (or an in-flight delivery is waited out),
+// and the stop registration is torn down before the receiver environment
+// can go away.
+template<class R>
+inline __op<R>::~__op() {
+    if (!item_ || !data_) {
+        return;
+    }
+    if (data_->done_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    if (state_ && state_->discard_item(item_)) {
+        item_->stop_callback.reset();
+        return;
+    }
+    item_->wait_delivered();
 }
 
 template<class R>

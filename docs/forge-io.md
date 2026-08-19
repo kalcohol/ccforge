@@ -265,6 +265,12 @@ io_uring completion backend 的原生 platform IO awaitable。父子 `io_task` a
 symmetric transfer；本 track 不把 sender cancellation 规则重新包装成另一套稳定 async
 model。
 
+弃置（销毁悬挂中的 `io_task` 链）按迭代方式逐帧执行：每帧在 await 子 task 时记录
+向下链接，销毁时沿链循环拆帧而不是经嵌套 awaitable 析构递归，深链弃置的 native
+stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 awaitable 的弃置语义仍由
+各 backend 约定（timer facade 可安全弃置；io_uring in-flight operation 弃置仍是
+未定义行为，见 io_uring 一节）。
+
 `io_task` 帧分配支持 P4127 的显式参数路径：coroutine 参数列表以
 `(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时，coroutine frame 从该
 resource 分配；其余 coroutine 保持全局 operator new 路径。

@@ -364,6 +364,36 @@ TEST(TimerContextTest, ScheduleAtCoarsePastDeadlineCompletesPromptly) {
     EXPECT_TRUE(result.has_value());
 }
 
+// Destroying a started-but-pending operation used to leave the queued item
+// holding completion callables that would later fire into a destroyed
+// receiver environment; the destructor now claims the completion and
+// deregisters the item.
+TEST(TimerContextTest, DestroyingPendingOperationDeregistersItem) {
+    forge::timer_context ctx;
+    timer_state state;
+    bool destroyed = false;
+    auto factory = [&] {
+        return std::execution::connect(
+            ctx.schedule_after(10s),
+            timer_receiver{&state});
+    };
+    using op_t = decltype(factory());
+
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from(factory);
+    std::execution::start(op);
+    context.reset();
+
+    // The pending count is balanced by the deregistration, so wait()
+    // returns instead of hanging on the abandoned 10s timer.
+    ctx.wait();
+    EXPECT_FALSE(state.done());
+
+    // The context stays fully usable afterwards.
+    auto result = std::execution::sync_wait(ctx.schedule_after(1ms));
+    EXPECT_TRUE(result.has_value());
+}
+
 TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
     forge::timer_context ctx;
     std::mutex mtx;

@@ -332,8 +332,49 @@ inline auto stash_frame_resource(
     return memory;
 }
 
+// Downward links for iterative abandonment. Destroying a suspended
+// co_await io_task chain through nested task_awaitable destructors costs
+// one set of native stack frames per level and overflows for deep chains,
+// so every frame records its awaited child and how to detach the owning
+// awaitable; destroy_frame_chain then walks the chain in a loop.
+struct frame_chain_link {
+    std::coroutine_handle<> child_frame{};
+    frame_chain_link* child_link = nullptr;
+    void* owned_task = nullptr;
+    void (*release_owned)(void*) noexcept = nullptr;
+
+    auto reset_child() noexcept -> void {
+        child_frame = {};
+        child_link = nullptr;
+        owned_task = nullptr;
+        release_owned = nullptr;
+    }
+};
+
+// Destroys a suspended frame chain iteratively from the outermost frame.
+// Before each frame dies, the task_awaitable inside it is detached from
+// the child frame via release_owned, so the awaitable destructor that
+// runs during frame.destroy() does not recurse into the child; the child
+// is destroyed by the next loop iteration instead.
+inline auto destroy_frame_chain(
+    std::coroutine_handle<> frame,
+    frame_chain_link* link) noexcept -> void {
+    while (frame) {
+        std::coroutine_handle<> child{};
+        frame_chain_link* child_link = nullptr;
+        if (link != nullptr && link->child_frame) {
+            child = link->child_frame;
+            child_link = link->child_link;
+            link->release_owned(link->owned_task);
+        }
+        frame.destroy();
+        frame = child;
+        link = child_link;
+    }
+}
+
 template<class Promise>
-struct promise_base {
+struct promise_base : frame_chain_link {
     const io_env* env = nullptr;
     std::coroutine_handle<> continuation{};
     void* completion_object = nullptr;
@@ -413,7 +454,7 @@ struct promise_base {
 
     template<class T>
     [[nodiscard]] auto await_transform(io_task<T>&& task) {
-        return task_awaitable<T>{std::move(task), &env};
+        return task_awaitable<T>{std::move(task), &env, this};
     }
 
     template<class Awaitable>
@@ -675,9 +716,7 @@ public:
 
     auto operator=(io_task&& other) noexcept -> io_task& {
         if (this != &other) {
-            if (coro_) {
-                coro_.destroy();
-            }
+            __destroy_chain();
             coro_ = std::exchange(other.coro_, {});
         }
         return *this;
@@ -687,9 +726,7 @@ public:
     auto operator=(const io_task&) -> io_task& = delete;
 
     ~io_task() {
-        if (coro_) {
-            coro_.destroy();
-        }
+        __destroy_chain();
     }
 
     [[nodiscard]] auto done() const noexcept -> bool {
@@ -726,6 +763,18 @@ private:
     explicit io_task(std::coroutine_handle<promise_type> coro) noexcept
         : coro_(coro)
     {}
+
+    auto __destroy_chain() noexcept -> void {
+        if (coro_) {
+            __coro_detail::destroy_frame_chain(coro_, &coro_.promise());
+            coro_ = {};
+        }
+    }
+
+    // Forgets the frame without destroying it; destroy_frame_chain owns it.
+    auto __abandon() noexcept -> void {
+        coro_ = {};
+    }
 
     auto __start_borrowed(const io_env& env) -> void {
         __borrowed_handle(env).resume();
@@ -786,9 +835,7 @@ public:
 
     auto operator=(io_task&& other) noexcept -> io_task& {
         if (this != &other) {
-            if (coro_) {
-                coro_.destroy();
-            }
+            __destroy_chain();
             coro_ = std::exchange(other.coro_, {});
         }
         return *this;
@@ -798,9 +845,7 @@ public:
     auto operator=(const io_task&) -> io_task& = delete;
 
     ~io_task() {
-        if (coro_) {
-            coro_.destroy();
-        }
+        __destroy_chain();
     }
 
     [[nodiscard]] auto done() const noexcept -> bool {
@@ -835,6 +880,18 @@ private:
     explicit io_task(std::coroutine_handle<promise_type> coro) noexcept
         : coro_(coro)
     {}
+
+    auto __destroy_chain() noexcept -> void {
+        if (coro_) {
+            __coro_detail::destroy_frame_chain(coro_, &coro_.promise());
+            coro_ = {};
+        }
+    }
+
+    // Forgets the frame without destroying it; destroy_frame_chain owns it.
+    auto __abandon() noexcept -> void {
+        coro_ = {};
+    }
 
     auto __start_borrowed(const io_env& env) -> void {
         __borrowed_handle(env).resume();
@@ -873,10 +930,25 @@ namespace __coro_detail {
 template<class T>
 class task_awaitable {
 public:
-    task_awaitable(io_task<T> task, const io_env** env) noexcept
+    task_awaitable(
+        io_task<T> task,
+        const io_env** env,
+        frame_chain_link* parent) noexcept
         : task_(std::move(task))
         , env_(env)
+        , parent_(parent)
     {}
+
+    ~task_awaitable() {
+        if (registered_ && parent_ != nullptr) {
+            parent_->reset_child();
+        }
+    }
+
+    task_awaitable(const task_awaitable&) = delete;
+    auto operator=(const task_awaitable&) -> task_awaitable& = delete;
+    task_awaitable(task_awaitable&&) = delete;
+    auto operator=(task_awaitable&&) -> task_awaitable& = delete;
 
     [[nodiscard]] auto await_ready() const noexcept -> bool {
         return !task_ || task_.done();
@@ -890,6 +962,18 @@ public:
         }
 
         task_.__set_continuation(continuation);
+        // Record the downward link before control enters the child, so an
+        // abandonment while the chain is suspended destroys frames
+        // iteratively instead of recursing through this awaitable.
+        if (parent_ != nullptr && task_.coro_) {
+            parent_->child_frame = task_.coro_;
+            parent_->child_link = &task_.coro_.promise();
+            parent_->owned_task = &task_;
+            parent_->release_owned = [](void* task) noexcept {
+                static_cast<io_task<T>*>(task)->__abandon();
+            };
+            registered_ = true;
+        }
         return task_.__borrowed_handle(**env_);
     }
 
@@ -909,7 +993,9 @@ public:
 private:
     io_task<T> task_;
     const io_env** env_ = nullptr;
+    frame_chain_link* parent_ = nullptr;
     bool missing_env_ = false;
+    bool registered_ = false;
 };
 
 template<class T, class Receiver>
