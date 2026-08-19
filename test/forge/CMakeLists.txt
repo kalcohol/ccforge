@@ -98,10 +98,13 @@ if(FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_test(test_forge_stream_concepts test_forge_stream_concepts.cpp forge_stream_concepts)
     forge_add_forge_test(test_forge_async_stream test_forge_async_stream.cpp forge_async_stream)
     forge_add_forge_test(test_forge_coro_io test_forge_coro_io.cpp forge_coro_io)
+    # Named forge_coro_* (not forge_io_*): the forge_io test-name prefix is
+    # reserved for backend-gated tests, which the FORGE_ENABLE_FORGE_IO=OFF
+    # audit asserts register zero tests.
     forge_add_forge_test(
-        test_forge_io_task_alloc
-        test_forge_io_task_alloc.cpp
-        forge_io_task_alloc)
+        test_forge_coro_task_alloc
+        test_forge_coro_task_alloc.cpp
+        forge_coro_task_alloc)
     forge_add_forge_test(test_forge_coro_interop test_forge_coro_interop.cpp forge_coro_interop)
     forge_add_forge_test(test_forge_coro_combinators test_forge_coro_combinators.cpp forge_coro_combinators)
     forge_add_forge_test(test_forge_timer_await test_forge_timer_await.cpp forge_timer_await)
