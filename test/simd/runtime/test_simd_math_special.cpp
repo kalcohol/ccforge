@@ -310,6 +310,18 @@ TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
     EXPECT_TRUE(std::isfinite(i1755));
     EXPECT_GT(i1755, 0.0);
     EXPECT_EQ(i1800, std::numeric_limits<double>::infinity());
+
+    // Large-argument nonconvergence used to leak NaN between two +inf
+    // regions: the unconverged partial sum is a lower bound that already
+    // overflows double, so +inf is exact across the former NaN band.
+    EXPECT_EQ(sm::cyl_bessel_i_series(0.0, 7000.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::cyl_bessel_i_series(0.0, 7500.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::cyl_bessel_i_series(0.0, 8000.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::cyl_bessel_i_series(0.0, 20000.0),
+              std::numeric_limits<double>::infinity());
 }
 
 TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) {

@@ -846,9 +846,20 @@ T cyl_bessel_i_series(T nu, T x) {
         static_cast<long double>(nu),
         static_cast<long double>(x),
         false);
-    return result.converged
-        ? static_cast<T>(result.value)
-        : quiet_nan<T>();
+    if (result.converged) {
+        return static_cast<T>(result.value);
+    }
+    // For x > 0 the series tail is eventually all positive, so an
+    // unconverged partial sum is a lower bound of the true value. Once
+    // that bound already exceeds T's finite range, +inf is the exact
+    // T-representable answer rather than a guess; only in-range
+    // nonconvergence remains a genuine NaN failure.
+    if (x > T{} &&
+        result.value >
+            static_cast<long double>(std::numeric_limits<T>::max())) {
+        return infinity<T>();
+    }
+    return quiet_nan<T>();
 }
 
 template<class T>
