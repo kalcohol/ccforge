@@ -139,7 +139,10 @@
   但未消费 `join()` 的 scope 不额外终止。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义
   receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task
-  operation-state。当前 coroutine bridge 把 stopped completion 作为内部异常回到 task
+  operation-state。task promise env 除 stop token 外还转发外层 receiver env 的
+  `get_start_scheduler`（type-erased；缺失时回退 inline 完成），因此
+  `co_await scope.join()` 这类需要 start scheduler 的组合在 task 内可用。当前
+  coroutine bridge 把 stopped completion 作为内部异常回到 task
   frame；用户代码里的 `catch(...)` 可以捕获该取消路径。一旦 task promise 进入 stopped
   状态，后续异常不会覆盖 stopped completion；不要在 task body 中吞掉 catch-all 后继续
   假设可以报告普通 error。

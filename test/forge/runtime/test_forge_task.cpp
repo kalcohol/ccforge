@@ -232,6 +232,19 @@ forge::task<int> await_throwing_connect_task() {
     co_return 1;
 }
 
+forge::task<std::thread::id> await_scope_join_task(
+    std::execution::simple_counting_scope* scope) {
+    co_await scope->join();
+    co_return std::this_thread::get_id();
+}
+
+forge::task<void> await_scope_join_record_thread_task(
+    std::execution::simple_counting_scope* scope,
+    std::atomic<std::thread::id>* resumed_on) {
+    co_await scope->join();
+    resumed_on->store(std::this_thread::get_id(), std::memory_order_release);
+}
+
 TEST(TaskTest, IntTask) {
     auto t = simple_task();
     auto result = std::execution::sync_wait(std::move(t));
@@ -360,6 +373,73 @@ TEST(TaskTest, CoAwaitThrowingConnectPropagatesException) {
     EXPECT_THROW(
         (void)std::execution::sync_wait(await_throwing_connect_task()),
         std::runtime_error);
+}
+
+TEST(TaskTest, CoAwaitDrainedScopeJoinCompletesInsideTask) {
+    std::execution::simple_counting_scope scope;
+
+    auto result = std::execution::sync_wait(await_scope_join_task(&scope));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), std::this_thread::get_id());
+}
+
+TEST(TaskTest, CoAwaitPendingScopeJoinResumesOnStartScheduler) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+    auto assoc = std::make_shared<std::optional<association_t>>(
+        token.try_associate());
+    ASSERT_TRUE(assoc->has_value());
+
+    std::thread releaser{[assoc] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        assoc->reset();
+    }};
+
+    // sync_wait's environment advertises its run_loop as the start
+    // scheduler; the task forwards it, so join's completion must hop back
+    // onto the loop drained by this thread instead of resuming the
+    // coroutine on the releasing thread.
+    auto result = std::execution::sync_wait(await_scope_join_task(&scope));
+    releaser.join();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), std::this_thread::get_id());
+}
+
+TEST(TaskTest, ScopeJoinWithoutStartSchedulerFallsBackToInlineCompletion) {
+    std::execution::simple_counting_scope scope;
+    auto token = scope.get_token();
+    using association_t = decltype(token.try_associate());
+    auto assoc = std::make_shared<std::optional<association_t>>(
+        token.try_associate());
+    ASSERT_TRUE(assoc->has_value());
+
+    std::atomic<bool> completed{false};
+    std::atomic<std::thread::id> resumed_on{};
+
+    auto task = await_scope_join_record_thread_task(&scope, &resumed_on);
+    auto op = std::execution::connect(
+        std::move(task), recording_receiver{&completed});
+    std::execution::start(op);
+    EXPECT_FALSE(completed.load(std::memory_order_acquire));
+
+    std::atomic<std::thread::id> releaser_id{};
+    std::thread releaser{[&] {
+        releaser_id.store(
+            std::this_thread::get_id(), std::memory_order_release);
+        assoc->reset();
+    }};
+    releaser.join();
+
+    // recording_receiver has an empty environment, so the task supplies the
+    // inline fallback scheduler and the join completion stays on the thread
+    // that released the last association.
+    EXPECT_TRUE(completed.load(std::memory_order_acquire));
+    EXPECT_EQ(
+        resumed_on.load(std::memory_order_acquire),
+        releaser_id.load(std::memory_order_acquire));
 }
 
 TEST(TaskTest, DestroyingStartedTaskDestroysAwaitedOperation) {

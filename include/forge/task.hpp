@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "any_scheduler.hpp"
 #include "any_stop_token.hpp"
 
 #include <execution>
@@ -45,6 +46,109 @@ struct __op_base {
     virtual void __complete() noexcept = 0;
     virtual ~__op_base() = default;
 };
+
+// Fallback start scheduler used when the receiver connected to the task does
+// not advertise get_start_scheduler. Scheduling on it completes inline on the
+// thread that starts the schedule operation, so awaited algorithms that
+// reschedule onto the start scheduler (such as counting-scope join) complete
+// wherever the awaited work finished, matching the task's pre-scheduler
+// behavior.
+class __inline_fallback_scheduler;
+
+namespace __inline_fallback {
+
+struct __env {
+    friend auto tag_invoke(
+        std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
+        const __env&) noexcept -> __inline_fallback_scheduler;
+};
+
+template<class R>
+struct __schedule_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    __schedule_op(__schedule_op&&) = delete;
+    __schedule_op& operator=(__schedule_op&&) = delete;
+
+    explicit __schedule_op(R rcvr) : __rcvr_(std::move(rcvr)) {}
+
+    void start() & noexcept {
+        std::execution::set_value(std::move(__rcvr_));
+    }
+
+    [[no_unique_address]] R __rcvr_;
+};
+
+struct __schedule_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) const -> __schedule_op<R> {
+        return __schedule_op<R>(std::move(rcvr));
+    }
+
+    auto get_env() const noexcept -> __env { return {}; }
+};
+
+} // namespace __inline_fallback
+
+class __inline_fallback_scheduler {
+public:
+    using scheduler_concept = std::execution::scheduler_t;
+
+    __inline_fallback_scheduler() noexcept = default;
+
+    [[nodiscard]] auto schedule() const noexcept
+        -> __inline_fallback::__schedule_sender {
+        return {};
+    }
+
+    bool operator==(const __inline_fallback_scheduler&) const noexcept = default;
+};
+
+namespace __inline_fallback {
+inline auto tag_invoke(
+    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
+    const __env&) noexcept -> __inline_fallback_scheduler {
+    return {};
+}
+} // namespace __inline_fallback
+
+// Environment exposed to senders awaited inside the task body. The start
+// scheduler is borrowed from the receiver the task itself was connected to
+// (type-erased), so schedule-requiring awaited algorithms observe the same
+// start scheduler the surrounding task operation was started with.
+struct __env {
+    any_stop_token __token;
+    forge::any_scheduler __scheduler;
+
+    [[nodiscard]] auto query(std::execution::get_stop_token_t) const noexcept
+        -> any_stop_token {
+        return __token;
+    }
+
+    [[nodiscard]] auto query(std::execution::get_start_scheduler_t) const noexcept
+        -> forge::any_scheduler {
+        return __scheduler;
+    }
+};
+
+template<class OuterEnv>
+auto __capture_start_scheduler(const OuterEnv& env) -> forge::any_scheduler {
+    if constexpr (requires {
+        forge::any_scheduler{std::execution::get_start_scheduler(env)};
+    }) {
+        return forge::any_scheduler{std::execution::get_start_scheduler(env)};
+    } else {
+        return forge::any_scheduler{__inline_fallback_scheduler{}};
+    }
+}
 
 struct __final_awaiter {
     bool await_ready() noexcept { return false; }
@@ -123,6 +227,7 @@ public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         std::variant<std::monostate, T, std::exception_ptr> result;
         any_stop_token __stop_token_;
+        any_scheduler __start_scheduler_;
         bool stopped_ = false;
         __task_detail::__op_base* __op_ = nullptr;
 
@@ -141,11 +246,8 @@ public:
             stopped_ = true;
             return std::coroutine_handle<promise_type>::from_promise(*this);
         }
-        auto get_env() const noexcept {
-            return std::execution::prop<
-                std::execution::get_stop_token_t,
-                any_stop_token>{
-                    std::execution::get_stop_token_t{}, __stop_token_};
+        auto get_env() const noexcept -> __task_detail::__env {
+            return __task_detail::__env{__stop_token_, __start_scheduler_};
         }
     };
 
@@ -180,12 +282,15 @@ public:
         if (!__coro_) {
             throw std::logic_error{"task: empty"};
         }
-        auto token = std::execution::get_stop_token(std::execution::get_env(r));
+        auto env = std::execution::get_env(r);
+        auto token = std::execution::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
             erased_token = any_stop_token{std::move(token)};
         }
         __coro_.promise().__stop_token_ = std::move(erased_token);
+        __coro_.promise().__start_scheduler_ =
+            __task_detail::__capture_start_scheduler(env);
         return __task_detail::__op<T, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 
@@ -203,6 +308,7 @@ public:
         bool done_ = false;
         std::exception_ptr exc_;
         any_stop_token __stop_token_;
+        any_scheduler __start_scheduler_;
         __task_detail::__op_base* __op_ = nullptr;
 
         task get_return_object() noexcept {
@@ -220,11 +326,8 @@ public:
             stopped_ = true;
             return std::coroutine_handle<promise_type>::from_promise(*this);
         }
-        auto get_env() const noexcept {
-            return std::execution::prop<
-                std::execution::get_stop_token_t,
-                any_stop_token>{
-                    std::execution::get_stop_token_t{}, __stop_token_};
+        auto get_env() const noexcept -> __task_detail::__env {
+            return __task_detail::__env{__stop_token_, __start_scheduler_};
         }
         bool stopped_ = false;
     };
@@ -259,12 +362,15 @@ public:
         if (!__coro_) {
             throw std::logic_error{"task: empty"};
         }
-        auto token = std::execution::get_stop_token(std::execution::get_env(r));
+        auto env = std::execution::get_env(r);
+        auto token = std::execution::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
             erased_token = any_stop_token{std::move(token)};
         }
         __coro_.promise().__stop_token_ = std::move(erased_token);
+        __coro_.promise().__start_scheduler_ =
+            __task_detail::__capture_start_scheduler(env);
         return __task_detail::__op<void, R>{std::exchange(__coro_, {}), std::move(r)};
     }
 
