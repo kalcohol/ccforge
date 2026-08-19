@@ -256,7 +256,13 @@ private:
 
     auto finish_child(completion_action& action) noexcept -> void {
         std::lock_guard lock{mtx_};
-        --pending_;
+        // store_start_error force-zeroes pending_ while children may still
+        // finish afterwards; guard the decrement so pending_ never
+        // underflows (the underflow was masked by completion_sent_, but
+        // keep the "children not yet accounted for" invariant honest).
+        if (pending_ != 0) {
+            --pending_;
+        }
         maybe_complete_locked(action);
     }
 
@@ -560,7 +566,13 @@ private:
 
     auto finish_child(completion_action& action) noexcept -> void {
         std::lock_guard lock{mtx_};
-        --pending_;
+        // store_start_error force-zeroes pending_ while children may still
+        // finish afterwards; guard the decrement so pending_ never
+        // underflows (the underflow was masked by completion_sent_, but
+        // keep the "children not yet accounted for" invariant honest).
+        if (pending_ != 0) {
+            --pending_;
+        }
         maybe_complete_locked(action);
     }
 
