@@ -52,3 +52,4 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [`std::execution` 一致性台账](roadmap/execution-conformance-ledger.md)
 - [`std::execution` 当前 WD 收敛清单](roadmap/execution-wd-convergence-checklist.md)
 - [Execution stop-token allocator 设计记录](roadmap/execution-stop-token-allocator-design.md)
+- [`inplace_stop_callback` 无分配设计记录](roadmap/inplace-stop-callback-design.md)

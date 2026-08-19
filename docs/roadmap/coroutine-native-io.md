@@ -238,7 +238,9 @@ runtime composition smoke。
 toolchain），`-O2 -DNDEBUG`，单线程驱动加 io_uring context poller thread。数字为
 3 次运行的范围；allocation 计数由替换的全局 operator new 与 pool 的 counting
 upstream 观察。帧尺寸（含 pointer trailer）：io_uring echo coroutine 928 bytes，
-frame-only coroutine 104 bytes。
+frame-only coroutine 104 bytes。注意：以下数字是当时一次性 scratch harness 的
+记录性观察，仓库内没有可复现的基准 harness；决策依据的是量级与相对关系，
+不是精确值。
 
 | lane | ns/op | 每 op 全局分配 |
 | --- | --- | --- |

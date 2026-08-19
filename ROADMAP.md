@@ -12,3 +12,4 @@ as a short root index so the repository top level stays compact.
 - [`std::execution` 当前 WD 收敛清单](docs/roadmap/execution-wd-convergence-checklist.md)
 - [`forge::io` backend SPI 草案](docs/roadmap/forge-io-backend-spi.md)
 - [Execution stop-token allocator 设计记录](docs/roadmap/execution-stop-token-allocator-design.md)
+- [`inplace_stop_callback` 无分配设计记录](docs/roadmap/inplace-stop-callback-design.md)
