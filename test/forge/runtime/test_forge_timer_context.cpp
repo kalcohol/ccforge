@@ -309,6 +309,28 @@ TEST(TimerContextTest, ScheduleAtSaturatesMaximumDeadline) {
     EXPECT_TRUE(state.stopped);
 }
 
+// A lazily started sender must wait its full delay from start(), not from
+// composition: the gap between schedule_after() and start() exceeds the
+// delay here, so a composition-anchored deadline would fire immediately.
+TEST(TimerContextTest, ScheduleAfterAnchorsDelayAtStart) {
+    forge::timer_context ctx;
+    timer_state state;
+    auto sender = ctx.schedule_after(60ms);
+    std::this_thread::sleep_for(90ms);
+
+    const auto started = std::chrono::steady_clock::now();
+    auto op = std::execution::connect(
+        std::move(sender),
+        timer_receiver{&state});
+    std::execution::start(op);
+
+    EXPECT_FALSE(wait_done_for(state, 10ms));
+    ASSERT_TRUE(wait_done(state));
+    EXPECT_GE(std::chrono::steady_clock::now() - started, 55ms);
+    EXPECT_TRUE(state.value);
+    EXPECT_FALSE(state.stopped);
+}
+
 // A coarse-duration deadline converts through common_type inside a naive
 // comparison; time_point<steady_clock, seconds>::max() used to overflow the
 // tick multiplication and fire immediately instead of never.

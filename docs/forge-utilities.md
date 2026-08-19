@@ -118,6 +118,9 @@ Failure policy:
 - `forge::timer_context`：单线程定时上下文，提供 `schedule_after(duration)` 与
   `schedule_at(time_point)`。到期完成 `set_value()`；shutdown、已停止 receiver、
   shutdown 后入队或入队后 receiver stop token 请求停止，都会完成 `set_stopped()`。
+  `schedule_after` 的延迟锚定在操作 `start()` 的时刻而非 sender 组合时刻：sender 在
+  队列里滞留多久都不吞噬延迟（`with_timeout`/`async_sleep_for` 因此对延迟启动同样
+  成立）。`schedule_at` 是绝对时限，组合时即换算为 steady deadline。
   `timer_context_options{.memory = resource}` 可控制 state、timer op data、timer item
   control block、timer queue 和 timer callback callable record 分配；`wait()` 会等待已
   接受 timer 操作完成。timer sender 只有 value/stopped completion；item 或 callback

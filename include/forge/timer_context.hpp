@@ -98,6 +98,40 @@ template<class Clock>
     return base + delay;
 }
 
+// Absolute deadlines pass through unchanged; relative delays anchor to the
+// moment the operation starts, so a lazily started sender still waits its
+// full delay instead of a delay measured from composition time.
+struct __when {
+    bool relative = false;
+    std::chrono::steady_clock::duration delay{};
+    std::chrono::steady_clock::time_point deadline{};
+
+    [[nodiscard]] static auto at(
+        std::chrono::steady_clock::time_point deadline) noexcept -> __when {
+        __when when;
+        when.deadline = deadline;
+        return when;
+    }
+
+    [[nodiscard]] static auto after(
+        std::chrono::steady_clock::duration delay) noexcept -> __when {
+        __when when;
+        when.relative = true;
+        when.delay = delay;
+        return when;
+    }
+
+    [[nodiscard]] auto resolve_at_start() const noexcept
+        -> std::chrono::steady_clock::time_point {
+        if (!relative) {
+            return deadline;
+        }
+        return __saturating_time_add(
+            std::chrono::steady_clock::now(),
+            delay);
+    }
+};
+
 class __callable {
 public:
     __callable() noexcept = default;
@@ -280,9 +314,9 @@ struct __op {
     __op(const __op&) = delete;
     __op& operator=(const __op&) = delete;
 
-    __op(std::shared_ptr<__state> state, std::chrono::steady_clock::time_point deadline, R rcvr)
+    __op(std::shared_ptr<__state> state, __when when, R rcvr)
         : state_(std::move(state))
-        , deadline_(deadline)
+        , when_(when)
         , data_(make_data(state_, std::move(rcvr)))
     {}
 
@@ -292,7 +326,7 @@ struct __op {
         -> std::shared_ptr<__op_data<R>>;
 
     std::shared_ptr<__state> state_;
-    std::chrono::steady_clock::time_point deadline_;
+    __when when_;
     std::shared_ptr<__op_data<R>> data_;
     std::shared_ptr<__item> item_;
 };
@@ -301,7 +335,7 @@ struct __sender {
     using sender_concept = std::execution::sender_t;
 
     std::shared_ptr<__state> state;
-    std::chrono::steady_clock::time_point deadline;
+    __when when;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -317,12 +351,12 @@ struct __sender {
 
     template<std::execution::receiver R>
     auto connect(R rcvr) && -> __op<R> {
-        return __op<R>{std::move(state), deadline, std::move(rcvr)};
+        return __op<R>{std::move(state), when, std::move(rcvr)};
     }
 
     template<std::execution::receiver R>
     auto connect(R rcvr) const& -> __op<R> {
-        return __op<R>{state, deadline, std::move(rcvr)};
+        return __op<R>{state, when, std::move(rcvr)};
     }
 };
 
@@ -511,8 +545,11 @@ public:
         const auto steady_delay =
             __timer_detail::__saturating_nonnegative_duration_cast<
                 std::chrono::steady_clock::duration>(delay);
-        return schedule_at_steady(__timer_detail::__saturating_time_add(
-            std::chrono::steady_clock::now(), steady_delay));
+        // The delay is anchored when the operation starts, not here, so a
+        // sender that sits in a queue before start() still waits in full.
+        return __timer_detail::__sender{
+            state_,
+            __timer_detail::__when::after(steady_delay)};
     }
 
     template<class Clock, class Duration>
@@ -549,7 +586,9 @@ private:
     [[nodiscard]] auto schedule_at_steady(
         std::chrono::steady_clock::time_point deadline) noexcept
             -> __timer_detail::__sender {
-        return __timer_detail::__sender{state_, deadline};
+        return __timer_detail::__sender{
+            state_,
+            __timer_detail::__when::at(deadline)};
     }
 
     std::shared_ptr<__timer_detail::__state> state_;
@@ -587,7 +626,7 @@ inline void __op<R>::start() & noexcept {
                   std::pmr::polymorphic_allocator<__item>{
                       default_memory_resource()});
         auto* memory = state_ ? state_->memory : default_memory_resource();
-        item_->deadline = deadline_;
+        item_->deadline = when_.resolve_at_start();
         item_->complete_value = __callable::make(
             memory,
             [data] noexcept { data->complete_value(); });
