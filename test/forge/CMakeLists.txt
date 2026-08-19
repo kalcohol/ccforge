@@ -166,6 +166,26 @@ if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     set_tests_properties(forge_io_uring_context PROPERTIES
         SKIP_RETURN_CODE 77
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    add_executable(
+        test_forge_io_uring_rw
+        "${FORGE_RUNTIME_DIR}/test_forge_io_uring_rw.cpp")
+    target_include_directories(test_forge_io_uring_rw BEFORE PRIVATE
+        "${CMAKE_SOURCE_DIR}/include"
+        "${CMAKE_SOURCE_DIR}/backport")
+    target_link_libraries(
+        test_forge_io_uring_rw
+        PRIVATE forge::forge Threads::Threads)
+    if("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "ON")
+        target_compile_definitions(
+            test_forge_io_uring_rw
+            PRIVATE FORGE_TEST_IO_URING_RUNTIME_REQUIRED=1)
+    endif()
+    add_test(
+        NAME forge_io_uring_rw
+        COMMAND test_forge_io_uring_rw)
+    set_tests_properties(forge_io_uring_rw PROPERTIES
+        SKIP_RETURN_CODE 77
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endif()
 
 if(FORGE_ENABLE_FORGE_RESOURCE_POLICY AND FORGE_TEST_ENABLE_FORGE_RESOURCE)

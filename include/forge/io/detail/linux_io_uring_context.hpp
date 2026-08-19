@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <forge/io/coro.hpp>
+#include <forge/io/result.hpp>
 #include <forge/resource_policy.hpp>
 
 #include <linux/io_uring.h>
@@ -34,15 +36,22 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <stop_token>
 #include <system_error>
 #include <thread>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+#include <coroutine>
+#endif
 
 namespace forge::io {
 
@@ -176,7 +185,8 @@ public:
     ring(ring&&) = delete;
     auto operator=(ring&&) -> ring& = delete;
 
-    [[nodiscard]] auto publish_nop(std::uint64_t user_data) noexcept -> bool {
+    template<class Fill>
+    [[nodiscard]] auto try_publish(Fill&& fill) noexcept -> bool {
         const unsigned head = load_acquire(sq_head_);
         const unsigned tail = load_relaxed(sq_tail_);
         if (tail - head >= *sq_ring_entries_) {
@@ -186,11 +196,51 @@ public:
         const unsigned index = tail & *sq_ring_mask_;
         io_uring_sqe& sqe = sqes_[index];
         sqe = {};
-        sqe.opcode = IORING_OP_NOP;
-        sqe.user_data = user_data;
+        static_cast<Fill&&>(fill)(sqe);
         sq_array_[index] = index;
         store_release(sq_tail_, tail + 1);
         return true;
+    }
+
+    [[nodiscard]] auto publish_nop(std::uint64_t user_data) noexcept -> bool {
+        return try_publish([user_data](io_uring_sqe& sqe) noexcept {
+            sqe.opcode = IORING_OP_NOP;
+            sqe.user_data = user_data;
+        });
+    }
+
+    [[nodiscard]] auto publish_rw(
+        std::uint8_t opcode,
+        int fd,
+        const void* address,
+        unsigned length,
+        std::uint64_t user_data) noexcept -> bool {
+        return try_publish([=](io_uring_sqe& sqe) noexcept {
+            sqe.opcode = opcode;
+            sqe.fd = fd;
+            sqe.addr = reinterpret_cast<std::uintptr_t>(address);
+            sqe.len = length;
+            // Stream/current-position one-shot IO per the frozen D3 subset.
+            sqe.off = static_cast<std::uint64_t>(-1);
+            sqe.user_data = user_data;
+        });
+    }
+
+    [[nodiscard]] auto publish_cancel(
+        std::uint64_t target_user_data,
+        std::uint64_t cancel_user_data) noexcept -> bool {
+        return try_publish([=](io_uring_sqe& sqe) noexcept {
+            sqe.opcode = IORING_OP_ASYNC_CANCEL;
+            sqe.fd = -1;
+            sqe.addr = target_user_data;
+            sqe.user_data = cancel_user_data;
+        });
+    }
+
+    [[nodiscard]] auto unflushed_count() noexcept -> unsigned {
+        const unsigned head = load_acquire(sq_head_);
+        const unsigned tail = load_acquire(sq_tail_);
+        return tail - head;
     }
 
     // Success means the kernel consumed every published SQE: the published
@@ -232,11 +282,15 @@ public:
         return {EAGAIN, std::generic_category()};
     }
 
-    [[nodiscard]] auto wait_for_completion() noexcept -> std::error_code {
+    // Waits for at least one CQE while opportunistically consuming published
+    // SQEs, so submissions whose flush transiently failed still reach the
+    // kernel on the next poller cycle.
+    [[nodiscard]] auto wait_for_completion(unsigned to_submit) noexcept
+        -> std::error_code {
         const long result = ::syscall(
             __NR_io_uring_enter,
             descriptor_.get(),
-            0U,
+            to_submit,
             1U,
             IORING_ENTER_GETEVENTS,
             nullptr,
@@ -406,7 +460,7 @@ private:
 
         std::error_code wait_error;
         do {
-            wait_error = wait_for_completion();
+            wait_error = wait_for_completion(0);
         } while (wait_error.value() == EINTR);
         if (wait_error) {
             throw std::system_error{wait_error, "io_uring_enter getevents"};
@@ -444,29 +498,52 @@ private:
     io_uring_sqe* sqes_ = nullptr;
 };
 
-enum class completion_kind {
-    wakeup
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+using operation_continuation = std::coroutine_handle<>;
+#else
+using operation_continuation = void*;
+#endif
+
+enum class operation_phase {
+    starting,
+    suspended,
+    completed
 };
 
-struct completion_record {
-    completion_kind kind = completion_kind::wakeup;
+enum class submit_status {
+    accepted,
+    stopped,
+    saturated
 };
 
-using completion_record_ptr = std::shared_ptr<completion_record>;
+// Borrowed operation state embedded in the awaiting coroutine frame. The
+// address doubles as the unique CQE user_data, so it must stay valid until
+// every expected CQE is drained; bit 0 tags cancel CQEs and is never set on
+// an aligned operation address.
+//
+// Once a cancel SQE referencing this address has been published, the
+// operation retires only after both the target CQE and the cancel CQE are
+// drained. Delaying the resume until then keeps the address from being
+// reused by a follow-up operation while the kernel still holds a cancel
+// request against the old user_data value.
+struct io_operation {
+    io_operation* prev = nullptr;
+    io_operation* next = nullptr;
+    operation_continuation continuation{};
+    std::atomic<operation_phase> phase{operation_phase::starting};
+    std::int32_t result = 0;
+    std::uint8_t pending_cqes = 1;
+    bool registered = false;
+    bool cancel_requested = false;
+    bool cancel_published = false;
+};
+
+static_assert(alignof(io_operation) >= 2);
 
 struct context_state {
     explicit context_state(io_uring_context_options options)
         : memory(forge::normalize_memory_resource(options.memory))
         , ring_state(options.entries, memory)
-        , pending_records(
-              0,
-              std::hash<std::uint64_t>{},
-              std::equal_to<std::uint64_t>{},
-              std::pmr::polymorphic_allocator<
-                  std::pair<const std::uint64_t, completion_record_ptr>>{
-                  memory})
-        , wakeup_record(std::allocate_shared<completion_record>(
-              std::pmr::polymorphic_allocator<completion_record>{memory}))
     {}
 
     // Lifecycle entry points stay idempotent but always re-attempt the
@@ -481,6 +558,7 @@ struct context_state {
     void request_stop() noexcept {
         std::lock_guard lock{mutex};
         stopped = true;
+        cancel_all_locked();
         submit_wakeup_locked();
     }
 
@@ -488,6 +566,7 @@ struct context_state {
         std::lock_guard lock{mutex};
         closed = true;
         stopped = true;
+        cancel_all_locked();
         submit_wakeup_locked();
     }
 
@@ -497,14 +576,25 @@ struct context_state {
             poller_id = std::this_thread::get_id();
         }
 
+        bool skip_submit = false;
         for (;;) {
+            const unsigned to_submit =
+                skip_submit ? 0U : ring_state.unflushed_count();
             const std::error_code wait_error =
-                ring_state.wait_for_completion();
-            if (wait_error && wait_error.value() != EINTR) {
-                std::lock_guard lock{mutex};
-                poller_error = wait_error;
-                poller_done = true;
-                break;
+                ring_state.wait_for_completion(to_submit);
+            skip_submit = false;
+            if (wait_error) {
+                const int error = wait_error.value();
+                if (error == EAGAIN) {
+                    // Submission-side backpressure: block for completions
+                    // without submitting, then retry the flush next cycle.
+                    skip_submit = true;
+                } else if (error != EINTR && error != EBUSY) {
+                    std::lock_guard lock{mutex};
+                    poller_error = wait_error;
+                    poller_done = true;
+                    break;
+                }
             }
 
             ring_state.drain_completions(
@@ -512,12 +602,31 @@ struct context_state {
                     complete(completion);
                 });
 
+            io_operation* ready = nullptr;
+            {
+                std::lock_guard lock{mutex};
+                ready = ready_head;
+                ready_head = nullptr;
+                ready_tail = nullptr;
+            }
+            // Resumptions run outside the backend lock per the frozen D1
+            // protocol. A resumed coroutine may destroy its operation state
+            // immediately, so successor and continuation are read first.
+            while (ready != nullptr) {
+                io_operation* const next = ready->next;
+                const auto continuation = ready->continuation;
+                ready->next = nullptr;
+                resume_continuation(continuation);
+                ready = next;
+            }
+
             bool should_exit = false;
             {
                 std::lock_guard lock{mutex};
+                retry_parked_cancels_locked();
                 should_exit =
                     (closed || stopped) &&
-                    pending_records.empty() &&
+                    operations_head == nullptr &&
                     !wakeup_in_flight;
                 if (should_exit) {
                     poller_done = true;
@@ -529,6 +638,43 @@ struct context_state {
         }
     }
 
+    [[nodiscard]] auto submit_operation(
+        io_operation& operation,
+        std::uint8_t opcode,
+        int fd,
+        const void* address,
+        unsigned length) noexcept -> submit_status {
+        std::lock_guard lock{mutex};
+        if (closed || stopped || poller_done) {
+            return submit_status::stopped;
+        }
+
+        const std::uint64_t user_data = operation_user_data(operation);
+        if (!ring_state.publish_rw(opcode, fd, address, length, user_data)) {
+            // The SQ frees slots on consumption, so one flush normally
+            // empties it; a second failure means the kernel is refusing
+            // submissions right now.
+            record_flush_locked(ring_state.flush_published());
+            if (!ring_state.publish_rw(
+                    opcode, fd, address, length, user_data)) {
+                return submit_status::saturated;
+            }
+        }
+
+        link_operation_locked(operation);
+        record_flush_locked(ring_state.flush_published());
+        return submit_status::accepted;
+    }
+
+    void request_cancel(io_operation& operation) noexcept {
+        std::lock_guard lock{mutex};
+        if (!operation.registered || operation.cancel_requested) {
+            return;
+        }
+        operation.cancel_requested = true;
+        queue_cancel_locked(operation);
+    }
+
     [[nodiscard]] auto called_from_poller() noexcept -> bool {
         std::lock_guard lock{mutex};
         return poller_id == std::this_thread::get_id();
@@ -537,9 +683,10 @@ struct context_state {
     std::pmr::memory_resource* memory;
     ring ring_state;
     std::mutex mutex;
-    std::pmr::unordered_map<std::uint64_t, completion_record_ptr>
-        pending_records;
-    completion_record_ptr wakeup_record;
+    io_operation* operations_head = nullptr;
+    io_operation* ready_head = nullptr;
+    io_operation* ready_tail = nullptr;
+    std::size_t parked_cancels = 0;
     bool closed = false;
     bool stopped = false;
     bool wakeup_published = false;
@@ -549,10 +696,118 @@ struct context_state {
     std::error_code poller_error{};
 
 private:
+    static constexpr std::uint64_t cancel_tag = 1;
+
+    static_assert(sizeof(std::uintptr_t) <= sizeof(std::uint64_t));
+
     [[nodiscard]] auto wakeup_user_data() const noexcept -> std::uint64_t {
-        static_assert(sizeof(std::uintptr_t) <= sizeof(std::uint64_t));
         return static_cast<std::uint64_t>(
-            reinterpret_cast<std::uintptr_t>(wakeup_record.get()));
+            reinterpret_cast<std::uintptr_t>(this));
+    }
+
+    [[nodiscard]] static auto operation_user_data(
+        const io_operation& operation) noexcept -> std::uint64_t {
+        return static_cast<std::uint64_t>(
+            reinterpret_cast<std::uintptr_t>(&operation));
+    }
+
+    void link_operation_locked(io_operation& operation) noexcept {
+        operation.prev = nullptr;
+        operation.next = operations_head;
+        if (operations_head != nullptr) {
+            operations_head->prev = &operation;
+        }
+        operations_head = &operation;
+        operation.registered = true;
+    }
+
+    void unlink_operation_locked(io_operation& operation) noexcept {
+        if (operation.prev != nullptr) {
+            operation.prev->next = operation.next;
+        } else {
+            operations_head = operation.next;
+        }
+        if (operation.next != nullptr) {
+            operation.next->prev = operation.prev;
+        }
+        operation.prev = nullptr;
+        operation.next = nullptr;
+        operation.registered = false;
+    }
+
+    // Flush failures after a successful publish are recoverable: the SQE
+    // stays published and every later flush (submissions, wakeups, and the
+    // poller wait itself) retries it, so only the diagnostic is recorded.
+    void record_flush_locked(std::error_code flush_error) noexcept {
+        if (flush_error && flush_error.value() != EBUSY) {
+            poller_error = flush_error;
+        }
+    }
+
+    // The parked state is registry-resident bookkeeping per the frozen D5
+    // retry-queue requirement: an unpublishable cancel never blocks and is
+    // implicitly discarded when the target retires before it was published,
+    // so it can never reference a reused operation address.
+    [[nodiscard]] auto publish_cancel_locked(io_operation& operation) noexcept
+        -> bool {
+        const std::uint64_t target = operation_user_data(operation);
+        if (!ring_state.publish_cancel(target, target | cancel_tag)) {
+            return false;
+        }
+        operation.cancel_published = true;
+        ++operation.pending_cqes;
+        return true;
+    }
+
+    void queue_cancel_locked(io_operation& operation) noexcept {
+        if (!publish_cancel_locked(operation)) {
+            ++parked_cancels;
+            return;
+        }
+        record_flush_locked(ring_state.flush_published());
+    }
+
+    void retry_parked_cancels_locked() noexcept {
+        if (parked_cancels == 0) {
+            return;
+        }
+        std::size_t published = 0;
+        for (io_operation* operation = operations_head;
+             operation != nullptr && parked_cancels != 0;
+             operation = operation->next) {
+            if (!operation->cancel_requested ||
+                operation->cancel_published) {
+                continue;
+            }
+            if (!publish_cancel_locked(*operation)) {
+                break;
+            }
+            --parked_cancels;
+            ++published;
+        }
+        if (published != 0) {
+            record_flush_locked(ring_state.flush_published());
+        }
+    }
+
+    void cancel_all_locked() noexcept {
+        for (io_operation* operation = operations_head;
+             operation != nullptr;
+             operation = operation->next) {
+            if (!operation->cancel_requested) {
+                operation->cancel_requested = true;
+                queue_cancel_locked(*operation);
+            }
+        }
+    }
+
+    static void resume_continuation(
+        operation_continuation continuation) noexcept {
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+        continuation.resume();
+#else
+        (void)continuation;
+#endif
     }
 
     void submit_wakeup_locked() noexcept {
@@ -562,12 +817,15 @@ private:
 
         if (!wakeup_published) {
             if (!ring_state.publish_nop(wakeup_user_data())) {
-                // Unreachable while the wakeup NOP is the only submission;
-                // phase 2 must replace this with a context-owned retry
-                // queue before adding data-path submissions.
-                poller_error =
-                    std::make_error_code(std::errc::no_buffer_space);
-                return;
+                record_flush_locked(ring_state.flush_published());
+                if (!ring_state.publish_nop(wakeup_user_data())) {
+                    // A saturated SQ implies in-flight operations, so their
+                    // CQEs already guarantee a poller wakeup; the next
+                    // lifecycle transition retries this publish.
+                    poller_error =
+                        std::make_error_code(std::errc::no_buffer_space);
+                    return;
+                }
             }
             wakeup_published = true;
         }
@@ -590,7 +848,11 @@ private:
     void complete(const io_uring_cqe& completion) noexcept {
         std::lock_guard lock{mutex};
         if (completion.user_data == wakeup_user_data()) {
+            // Clearing both flags also repairs the stale-published state
+            // left behind when the poller consumed a parked wakeup NOP via
+            // its opportunistic to_submit before any flush retry succeeded.
             wakeup_in_flight = false;
+            wakeup_published = false;
             if (completion.res < 0) {
                 poller_error = {
                     -completion.res,
@@ -599,12 +861,52 @@ private:
             return;
         }
 
-        const auto iterator = pending_records.find(completion.user_data);
-        if (iterator != pending_records.end()) {
-            pending_records.erase(iterator);
+        if ((completion.user_data & cancel_tag) != 0) {
+            // Administrative drain per the frozen D5 semantics: a cancel CQE
+            // never produces a user terminal. The target operation is still
+            // registered because retirement waits for this CQE.
+            auto* const operation = reinterpret_cast<io_operation*>(
+                static_cast<std::uintptr_t>(
+                    completion.user_data & ~cancel_tag));
+            if (completion.res < 0 &&
+                completion.res != -ENOENT &&
+                completion.res != -EALREADY) {
+                poller_error = {-completion.res, std::generic_category()};
+            }
+            retire_if_drained_locked(*operation);
             return;
         }
-        poller_error = std::make_error_code(std::errc::io_error);
+
+        auto* const operation = reinterpret_cast<io_operation*>(
+            static_cast<std::uintptr_t>(completion.user_data));
+        operation->result = completion.res;
+        retire_if_drained_locked(*operation);
+    }
+
+    void retire_if_drained_locked(io_operation& operation) noexcept {
+        if (--operation.pending_cqes != 0) {
+            return;
+        }
+        if (operation.cancel_requested && !operation.cancel_published &&
+            parked_cancels != 0) {
+            // The parked cancel dies with the registry entry before it was
+            // ever published, so no kernel-side reference remains.
+            --parked_cancels;
+        }
+        unlink_operation_locked(operation);
+        if (operation.phase.exchange(
+                operation_phase::completed,
+                std::memory_order_acq_rel) == operation_phase::suspended) {
+            // Reuse the unlinked node as an intrusive ready-list entry so
+            // resumption needs no allocation on the completion path.
+            operation.next = nullptr;
+            if (ready_tail == nullptr) {
+                ready_head = &operation;
+            } else {
+                ready_tail->next = &operation;
+            }
+            ready_tail = &operation;
+        }
     }
 };
 
@@ -650,6 +952,11 @@ public:
         thread_.join();
     }
 
+    // Internal accessor for the coroutine-native operation surface.
+    [[nodiscard]] auto __state() noexcept -> io_uring_detail::context_state& {
+        return *state_;
+    }
+
 private:
     static auto make_state(io_uring_context_options options)
         -> std::shared_ptr<io_uring_detail::context_state> {
@@ -663,5 +970,183 @@ private:
     std::shared_ptr<io_uring_detail::context_state> state_;
     std::thread thread_;
 };
+
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+
+namespace io_uring_detail {
+
+struct cancel_requester {
+    context_state* state = nullptr;
+    io_operation* operation = nullptr;
+
+    auto operator()() const noexcept -> void {
+        state->request_cancel(*operation);
+    }
+};
+
+// Direct io_awaitable operation state for one-shot stream reads/writes.
+// The awaitable, the fd and the buffer are borrowed and must stay valid
+// until await_resume(); a suspended operation must not be abandoned before
+// its target CQE is drained.
+template<bool IsRead>
+class rw_some_awaitable {
+public:
+    rw_some_awaitable(
+        context_state& state,
+        int fd,
+        const void* address,
+        std::size_t size) noexcept
+        : state_(&state)
+        , address_(address)
+        , size_(size)
+        , fd_(fd)
+    {}
+
+    rw_some_awaitable(rw_some_awaitable&& other)
+        : state_(other.take_unstarted())
+        , address_(other.address_)
+        , size_(other.size_)
+        , fd_(other.fd_)
+    {}
+
+    auto operator=(rw_some_awaitable&&) -> rw_some_awaitable& = delete;
+    rw_some_awaitable(const rw_some_awaitable&) = delete;
+    auto operator=(const rw_some_awaitable&) -> rw_some_awaitable& = delete;
+
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return false;
+    }
+
+    auto await_suspend(std::coroutine_handle<> continuation, const io_env* env)
+        -> bool {
+        if (env != nullptr && env->stop_token.stop_requested()) {
+            outcome_ = outcome::stopped;
+            return false;
+        }
+
+        // Empty buffers complete inline with value 0 and never reach the
+        // ring; the epoll precedent orders this after the stop check but
+        // before any context consultation, so a closed context still
+        // observes value 0 here.
+        if (size_ == 0) {
+            outcome_ = outcome::inline_value;
+            return false;
+        }
+
+        operation_.continuation = continuation;
+        const submit_status status = state_->submit_operation(
+            operation_,
+            IsRead ? IORING_OP_READ : IORING_OP_WRITE,
+            fd_,
+            address_,
+            clamped_length());
+        if (status == submit_status::stopped) {
+            outcome_ = outcome::stopped;
+            return false;
+        }
+        if (status == submit_status::saturated) {
+            outcome_ = outcome::saturated;
+            return false;
+        }
+
+        outcome_ = outcome::submitted;
+        if (env != nullptr && env->stop_token.stop_possible()) {
+            stop_callback_.emplace(
+                env->stop_token,
+                cancel_requester{state_, &operation_});
+        }
+        return operation_.phase.exchange(
+            operation_phase::suspended,
+            std::memory_order_acq_rel) != operation_phase::completed;
+    }
+
+    [[nodiscard]] auto await_resume() -> io_result<std::size_t> {
+        stop_callback_.reset();
+
+        switch (outcome_) {
+        case outcome::not_started:
+        case outcome::inline_value:
+            return io_result<std::size_t>::success(0);
+        case outcome::stopped:
+            throw sender_stopped{};
+        case outcome::saturated:
+            return io_result<std::size_t>::failure(
+                std::make_error_code(std::errc::no_buffer_space),
+                0);
+        case outcome::submitted:
+            break;
+        }
+
+        const std::int32_t result = operation_.result;
+        if (result >= 0) {
+            if (IsRead && result == 0) {
+                return io_result<std::size_t>::end_of_file(0);
+            }
+            return io_result<std::size_t>::success(
+                static_cast<std::size_t>(result));
+        }
+        if (result == -ECANCELED && operation_.cancel_requested) {
+            throw sender_stopped{};
+        }
+        return io_result<std::size_t>::failure(
+            {-result, std::generic_category()},
+            0);
+    }
+
+private:
+    enum class outcome {
+        not_started,
+        inline_value,
+        stopped,
+        saturated,
+        submitted
+    };
+
+    [[nodiscard]] auto take_unstarted() -> context_state* {
+        if (outcome_ != outcome::not_started ||
+            operation_.phase.load(std::memory_order_acquire) !=
+                operation_phase::starting) {
+            throw std::logic_error{
+                "forge::io io_uring awaitable cannot move after suspension"};
+        }
+        return state_;
+    }
+
+    [[nodiscard]] auto clamped_length() const noexcept -> unsigned {
+        // The SQE length field and the CQE result are 32-bit; oversized
+        // spans submit a legal short IO instead of wrapping.
+        constexpr std::size_t max_length = static_cast<std::size_t>(
+            std::numeric_limits<std::int32_t>::max());
+        return static_cast<unsigned>(std::min(size_, max_length));
+    }
+
+    context_state* state_;
+    const void* address_;
+    std::size_t size_;
+    int fd_;
+    io_operation operation_{};
+    outcome outcome_ = outcome::not_started;
+    std::optional<std::inplace_stop_callback<cancel_requester>> stop_callback_{};
+};
+
+} // namespace io_uring_detail
+
+[[nodiscard]] inline auto async_read_some(
+    io_uring_context& context,
+    int fd,
+    std::span<std::byte> buffer) noexcept
+    -> io_uring_detail::rw_some_awaitable<true> {
+    return {context.__state(), fd, buffer.data(), buffer.size()};
+}
+
+[[nodiscard]] inline auto async_write_some(
+    io_uring_context& context,
+    int fd,
+    std::span<const std::byte> buffer) noexcept
+    -> io_uring_detail::rw_some_awaitable<false> {
+    return {context.__state(), fd, buffer.data(), buffer.size()};
+}
+
+#endif // __cpp_impl_coroutine
 
 } // namespace forge::io
