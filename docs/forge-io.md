@@ -295,8 +295,15 @@ auto task = parse(std::allocator_arg, &pool, 40);
   `get_return_object_on_allocation_failure`，避免把 throwing resource 误判成空 task。
 - 传播是显式的：父 coroutine 以 `co_await child(std::allocator_arg, env.memory, ...)`
   转传。HALO 可能合法地 elide 被内联的子帧，此时 resource 观察到的分配次数减少。
-- V1 只识别前导参数位置；member coroutine 的 implicit object 参数占据首位时不匹配，
-  此类 coroutine 走全局路径。
+- member/lambda coroutine 同样被识别：[dcl.fct.def.coroutine]/9 允许实现把
+  implicit object 参数排在声明参数之前传给 `operator new`（GCC 传，Clang 目前
+  不传），promise 按 `std::generator` 的 allocator 协议提供 This-aware 重载，
+  两类编译器上都命中显式 resource 而不是静默回退全局堆。
+- 线程安全由调用方保证：帧的 deallocate 发生在 coroutine 最终完成或被弃置的
+  线程上，不保证与 allocate 同线程。跨线程 resume 的 task（如经由
+  `runtime_context` 或 `io_uring` 完成路径）必须使用线程安全 resource
+  （`synchronized_pool_resource`、`new_delete_resource`）；
+  `unsynchronized_pool_resource` 仅适用于单线程 event loop 或外部同步的场景。
 
 两条被拒绝的替代路径（除非未来 A/B 数据要求重议）：
 

@@ -160,6 +160,40 @@ FORGE_TEST_NOINLINE auto make_parent_sum(
     return parent_sum(std::allocator_arg, memory, a, b);
 }
 
+// Member and lambda coroutines receive their implicit object parameter in
+// front of the declared parameters on some compilers ([dcl.fct.def.
+// coroutine]/9); the This-aware operator new overload keeps the explicit
+// resource protocol working identically across compilers.
+struct member_coroutine_host {
+    int bias = 1;
+
+    auto counted(
+        std::allocator_arg_t,
+        std::pmr::memory_resource*,
+        int value) -> cio::io_task<int> {
+        co_return value + bias;
+    }
+};
+
+FORGE_TEST_NOINLINE auto make_member_counted(
+    member_coroutine_host& host,
+    std::pmr::memory_resource* memory,
+    int value) -> cio::io_task<int> {
+    return host.counted(std::allocator_arg, memory, value);
+}
+
+FORGE_TEST_NOINLINE auto make_lambda_counted(
+    std::pmr::memory_resource* memory,
+    int value) -> cio::io_task<int> {
+    auto lambda = [](
+        std::allocator_arg_t,
+        std::pmr::memory_resource*,
+        int inner) -> cio::io_task<int> {
+        co_return inner * 2;
+    };
+    return lambda(std::allocator_arg, memory, value);
+}
+
 } // namespace
 
 TEST(ForgeIoTaskAllocTest, ExplicitResourceOwnsTheFrame) {
@@ -238,6 +272,41 @@ TEST(ForgeIoTaskAllocTest, EnvMemoryAloneDoesNotAllocateFrames) {
     EXPECT_EQ(std::get<0>(*result), 17);
     EXPECT_EQ(memory.allocate_calls(), 0U);
     EXPECT_EQ(memory.deallocate_calls(), 0U);
+}
+
+TEST(ForgeIoTaskAllocTest, MemberCoroutineExplicitResourceOwnsTheFrame) {
+    recording_resource memory;
+    member_coroutine_host host;
+
+    {
+        auto task = make_member_counted(host, &memory, 41);
+        EXPECT_EQ(memory.allocate_calls(), 1U);
+
+        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(std::get<0>(*result), 42);
+    }
+
+    EXPECT_EQ(memory.deallocate_calls(), memory.allocate_calls());
+    EXPECT_EQ(memory.live(), 0U);
+    EXPECT_FALSE(memory.mismatched());
+}
+
+TEST(ForgeIoTaskAllocTest, LambdaCoroutineExplicitResourceOwnsTheFrame) {
+    recording_resource memory;
+
+    {
+        auto task = make_lambda_counted(&memory, 21);
+        EXPECT_EQ(memory.allocate_calls(), 1U);
+
+        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(std::get<0>(*result), 42);
+    }
+
+    EXPECT_EQ(memory.deallocate_calls(), memory.allocate_calls());
+    EXPECT_EQ(memory.live(), 0U);
+    EXPECT_FALSE(memory.mismatched());
 }
 
 TEST(ForgeIoTaskAllocTest, NullResourceFallsBackToTheGlobalPath) {

@@ -409,6 +409,24 @@ struct promise_base : frame_chain_link {
         return frame;
     }
 
+    // [dcl.fct.def.coroutine]/9 passes the implicit object parameter of a
+    // member or lambda coroutine ahead of the declared parameters (GCC
+    // does; current Clang does not), so without this overload the same
+    // lambda coroutine silently fell back to the global heap on one
+    // compiler and used the resource on the other. Mirroring
+    // std::generator's allocator protocol, any first argument in front of
+    // the (allocator_arg, resource) pair is treated as the object
+    // parameter.
+    template<class This, class... Args>
+    static auto operator new(
+        std::size_t size,
+        const This&,
+        std::allocator_arg_t,
+        std::pmr::memory_resource* memory,
+        const Args&...) -> void* {
+        return operator new(size, std::allocator_arg, memory);
+    }
+
     static auto operator delete(void* frame, std::size_t size) noexcept
         -> void {
         std::pmr::memory_resource* memory = stashed_frame_resource(frame, size);
