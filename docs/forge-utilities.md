@@ -84,7 +84,7 @@ Allocation audit:
 | `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
 | `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, readiness records | deferred completion batches use an allocation-free intrusive record chain; fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
 | `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
-| type erasure helpers | none in V1 | `any_sender_of`, `any_receiver_of`, and `any_scheduler` use 64B SBO with heap fallback; `erased_sender` is heap-first without SBO; none are allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
+| type erasure helpers | none in V1 | `any_sender_of` and `any_receiver_of` use 64B SBO with heap fallback; `any_scheduler` always heap-allocates its erased state and each connect'd operation via `shared_ptr`; `erased_sender` is heap-first without SBO; none are allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
 
 Failure policy:
 

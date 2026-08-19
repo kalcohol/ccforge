@@ -53,15 +53,17 @@ Owning Forge runtime objects 应该可以安全析构。推荐策略是：
 owning contexts 更偏向 resource/session management 场景里的安全析构。
 
 `wait()` 的 self-deadlock guard 通常不等于 destructor 可以从自己的 worker 或 owned
-completion 中运行。`static_thread_pool` 和 `async_scope` 这类 owning primitive 必须由
-外层 owner 管理 lifetime；不要在它们自己拥有的 work body / completion callback 内销毁。
+completion 中运行。`async_scope` 这类 owning primitive 必须由外层 owner 管理
+lifetime；不要在它自己拥有的 work body / completion callback 内销毁。
 完整 teardown 应由外层 owner 调用 `shutdown()` / `wait()` 后离开作用域。
 
-`forge::io::context` 是一个经过测试的窄例外：从自己的 poller completion 中析构时，
-destructor 会 shutdown 并 detach 当前 worker，context state 由 worker/operation keepalive
-留到 terminal release tail。这个能力不延伸到外部 submitter，也不自动延长自定义
-`memory_resource` 的寿命；使用自定义 resource 时，应优先由外层 owner 正常 drain，或保证
-resource 活到 detached worker 和最后一个 record 全部释放。
+`forge::io::context`、`forge::timer_context` 和 `forge::static_thread_pool` 是经过
+测试的同线程析构例外：从自己的 worker / poller completion 中析构时，destructor 会
+shutdown 并 detach 当前 worker（pool 会 detach 全部 worker），内部 state 由
+worker/operation keepalive 留到 terminal release tail。这个能力不延伸到外部
+submitter，也不自动延长自定义 `memory_resource` 的寿命；使用自定义 resource 时，
+应优先由外层 owner 正常 drain，或保证 resource 活到 detached worker 和最后一个
+record 全部释放。
 
 Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
@@ -74,8 +76,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 - `forge::static_thread_pool::shutdown()` 停止接受新的 schedule operation，并 drain 已
   accepted 的 work。`wait()` 等待 queue 和 active task 清空；如果从 pool 自己的
   worker thread 调用，它会立即返回以避免 self-deadlock。`options` 可携带 non-owning
-  `std::pmr::memory_resource*`，用于 queue node 和 queued task callable-record 分配。
-  Pool 对象本身不得在自己的 worker thread 上析构；外层 owner 负责 teardown。
+  `std::pmr::memory_resource*`，用于共享 pool state、queue node 和 queued task
+  callable-record 分配。在 pool 自己的 worker thread 上析构会走 detach 路径：worker
+  持共享 state 在后台排空后退出，析构返回不保证 drain 结束，resource 必须活过该
+  尾部；确定性 teardown 仍由外层 owner 在非 worker 线程上执行。
 - `forge::timer_context::shutdown()` 停止接受新的 timer，并把 pending timer 完成为
   stopped。`wait()` 等待 accepted timer operation。`options` 可携带 non-owning
   `std::pmr::memory_resource*`，用于 state、timer op data、timer item control block
@@ -149,10 +153,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   query 不会传播。Stopped completion 通过 coroutine bridge 的内部异常返回 task
   frame，可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常
   不会覆盖 stopped completion。Moved-from task 不能再次连接，尝试连接会抛
-  `std::logic_error`。`task<T>` 静态要求 `T` nothrow-move-constructible（class 级
-  `static_assert`）：completion 在 noexcept 路径上把结果 move 进 receiver 的
-  set_value 参数，throwing-move 类型在这里本会被 set_value CPO 的整体 noexcept
-  强制深层拒绝，现在改为更早、更清晰的诊断。
+  `std::logic_error`。`task<T>` 支持 throwing-move 的 `T`：completion 把已存储
+  的结果按引用交给 receiver（调用表达式中不构造 `T`），物化值的 receiver（如
+  `sync_wait`）在自己体内 try/catch 并把抛出路由到 error channel；`co_return`
+  时 move 进 promise result variant 的异常落在 `unhandled_exception`。
 - `forge::io::io_task` 是 coroutine-native byte IO track 的 Forge extension。
   它不替代 `forge::task`，也不是 owning runtime primitive。`io_task` 没有 public
   fire-and-forget start；只能被父 `io_task` await，或通过 `as_sender(io_task<T>, env)`
