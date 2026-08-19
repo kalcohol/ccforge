@@ -69,6 +69,19 @@ TEST(SimdRuntimeTest, EmptyMaskedReduceReturnsTheIdentityElement) {
     EXPECT_EQ(std::simd::reduce(values, no_lanes, std::plus<>{}, identity), identity);
 }
 
+// The identity parameter is a non-deduced type_identity_t<T> per the WD, so
+// an int literal identity for a float vec must convert instead of fighting
+// template argument deduction.
+TEST(SimdRuntimeTest, MaskedReduceIdentityParameterDoesNotParticipateInDeduction) {
+    const std::array<float, 4> data{{1.0f, 2.0f, 3.0f, 4.0f}};
+    const float4 values = load_vec<float4>(data);
+    const float4::mask_type no_lanes(0u);
+    const float4::mask_type all_lanes(0b1111u);
+
+    EXPECT_EQ(std::simd::reduce(values, no_lanes, std::plus<>{}, 0), 0.0f);
+    EXPECT_EQ(std::simd::reduce(values, all_lanes, std::plus<>{}, 0), 10.0f);
+}
+
 TEST(SimdRuntimeTest, ScalarReductionsMirrorVectorGenericCode) {
     EXPECT_EQ(std::simd::reduce(7), 7);
     EXPECT_EQ(std::simd::reduce(7, true), 7);

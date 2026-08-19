@@ -54,6 +54,14 @@ static_assert(!std::is_constructible<int4, std::integral_constant<double, 1.5>>:
     "constexpr wrapper broadcasts should reject non-integral floating values");
 static_assert(!std::is_constructible<int4, std::integral_constant<double, 1.0e100>>::value,
     "out-of-range constexpr wrapper probes should fail by constraints rather than hard errors");
+static_assert(std::is_constructible<int4, std::true_type>::value,
+    "constexpr wrapper broadcasts must accept bool sources instead of tripping in_range mandates");
+static_assert(std::is_constructible<std::simd::vec<char, 4>, std::integral_constant<int, 65>>::value,
+    "constexpr wrapper broadcasts must accept in-range values for character lane types");
+static_assert(!std::is_constructible<std::simd::vec<signed char, 4>, std::integral_constant<int, 300>>::value,
+    "constexpr wrapper broadcasts must still reject out-of-range values for character lane types");
+static_assert(std::is_constructible<std::simd::vec<char8_t, 4>, std::integral_constant<int, 65>>::value,
+    "constexpr wrapper broadcasts must accept in-range values for char8_t lanes");
 static_assert(std::is_constructible<int4, index_object_generator>::value,
     "generator results that are non-arithmetic but convertible to the lane type should be accepted");
 static_assert(std::is_constructible<int4, std::span<const int, 4>>::value,

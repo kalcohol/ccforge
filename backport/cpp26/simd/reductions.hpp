@@ -23,7 +23,8 @@ template<class T,
 constexpr T reduce(const basic_vec<T, Abi>& value,
                    const typename basic_vec<T, Abi>::mask_type& mask_value,
                    BinaryOperation binary_op = {},
-                   T identity_element = detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
+                   typename type_identity<T>::type identity_element =
+                       detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
 	noexcept(std::declval<const BinaryOperation&>()(std::declval<const vec<T, 1>&>(), std::declval<const vec<T, 1>&>()))) {
 	simd_size_type first = 0;
 	while (first < basic_vec<T, Abi>::size && !mask_value[first]) {

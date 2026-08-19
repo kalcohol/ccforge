@@ -678,7 +678,36 @@ consteval bool is_arithmetic_value_representable(From value) {
     if constexpr (is_supported_complex_value<target_type>::value) {
         return is_arithmetic_value_representable<complex_value_t<target_type>>(value);
     } else if constexpr (is_integral<source_type>::value && is_integral<target_type>::value) {
-        return in_range<target_type>(value);
+        // std::in_range mandates away bool and the character types on
+        // either side, and those rejections escape the immediate context
+        // as hard errors; range-check through the widest integers of the
+        // matching signedness instead.
+        if constexpr (is_same<source_type, bool>::value) {
+            return true;
+        } else if constexpr (is_same<target_type, bool>::value) {
+            return value == source_type{} ||
+                value == static_cast<source_type>(1);
+        } else {
+            using wide_source = typename conditional<
+                is_signed<source_type>::value,
+                long long,
+                unsigned long long>::type;
+            const auto wide_value = static_cast<wide_source>(value);
+            constexpr auto target_min = numeric_limits<target_type>::min();
+            constexpr auto target_max = numeric_limits<target_type>::max();
+            if constexpr (is_signed<source_type>::value ==
+                          is_signed<target_type>::value) {
+                return wide_value >= static_cast<wide_source>(target_min) &&
+                    wide_value <= static_cast<wide_source>(target_max);
+            } else if constexpr (is_signed<source_type>::value) {
+                return wide_value >= 0 &&
+                    static_cast<unsigned long long>(wide_value) <=
+                        static_cast<unsigned long long>(target_max);
+            } else {
+                return wide_value <=
+                    static_cast<unsigned long long>(target_max);
+            }
+        }
     } else if constexpr (is_integral<source_type>::value && is_floating_point<target_type>::value) {
         if constexpr (is_same<source_type, bool>::value) {
             return true;
