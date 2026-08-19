@@ -10,11 +10,11 @@ namespace forge_test {
 class counting_resource final : public std::pmr::memory_resource {
 public:
     [[nodiscard]] auto allocations() const noexcept -> std::size_t {
-        return allocations_.load(std::memory_order_relaxed);
+        return allocations_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] auto deallocations() const noexcept -> std::size_t {
-        return deallocations_.load(std::memory_order_relaxed);
+        return deallocations_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] auto outstanding() const noexcept -> std::size_t {
@@ -23,16 +23,21 @@ public:
 
 private:
     auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override {
-        allocations_.fetch_add(1, std::memory_order_relaxed);
+        allocations_.fetch_add(1, std::memory_order_release);
         return std::pmr::new_delete_resource()->allocate(bytes, alignment);
     }
 
+    // The upstream release happens before the release-increment, so a thread
+    // that observes outstanding() == 0 with an acquire load happens-after
+    // every access this resource performed for the freed blocks (including
+    // the virtual dispatch reads). Tests use that to poll for the end of
+    // detached drain tails before tearing the resource down.
     void do_deallocate(
         void* p,
         std::size_t bytes,
         std::size_t alignment) override {
-        deallocations_.fetch_add(1, std::memory_order_relaxed);
         std::pmr::new_delete_resource()->deallocate(p, bytes, alignment);
+        deallocations_.fetch_add(1, std::memory_order_release);
     }
 
     [[nodiscard]] bool do_is_equal(
