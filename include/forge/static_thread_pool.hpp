@@ -339,7 +339,11 @@ public:
         // noexcept destructor. Detach instead; workers keep the shared
         // state alive, drain the queue, and exit. The memory resource must
         // outlive that detached drain tail, matching the timer_context and
-        // io_uring_context poller-thread destruction contracts.
+        // io_uring_context poller-thread destruction contracts. Backlog
+        // tasks drained after detach must not touch the pool object itself
+        // (it no longer exists; only the shared state does). This escape
+        // does not extend to resource_context, whose destructor blocks on
+        // its scope wait before ever reaching this path.
         const bool from_worker = __called_from_worker();
         for (auto& t : __threads_) {
             if (!t.joinable()) {

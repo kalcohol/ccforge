@@ -63,7 +63,14 @@ shutdown 并 detach 当前 worker（pool 会 detach 全部 worker），内部 st
 worker/operation keepalive 留到 terminal release tail。这个能力不延伸到外部
 submitter，也不自动延长自定义 `memory_resource` 的寿命；使用自定义 resource 时，
 应优先由外层 owner 正常 drain，或保证 resource 活到 detached worker 和最后一个
-record 全部释放。
+record 全部释放。detach 后仍在排空的 backlog 任务不得再触碰 pool 对象本身
+（例如捕获了 `&pool` 或再取 `get_scheduler()`）：pool 对象在析构返回后即不存在，
+只有共享 state 仍活着。
+
+`resource_context` 明确排除在该例外之外：它的 `wait()` 会阻塞在
+`scope_.wait()` 直到所有 spawn 的任务完成，从自己 scope 里的任务销毁它会等待
+自身、在到达 pool 的 detach 逃生口之前就死锁。resource_context 必须由外层
+owner 析构，或先在非 worker 线程上 `request_stop()` + `wait()`。
 
 Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 

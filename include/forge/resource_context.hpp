@@ -60,6 +60,12 @@ public:
         , scope_(async_scope_options{.memory = options.memory})
     {}
 
+    // Worker-thread destruction is NOT supported for resource_context,
+    // unlike static_thread_pool/timer_context/io contexts: wait() blocks on
+    // scope_.wait() until every spawned task completes, so a spawned task
+    // that destroys this context waits for itself and deadlocks before the
+    // pool's detach escape is ever reached. Tear down from an outside
+    // owner, or request_stop()+wait() from a non-worker thread first.
     ~resource_context() noexcept {
         shutdown();
         wait();

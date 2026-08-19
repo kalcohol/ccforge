@@ -67,6 +67,17 @@ public:
     sigpipe_guard(const sigpipe_guard&) = delete;
     auto operator=(const sigpipe_guard&) -> sigpipe_guard& = delete;
 
+    // Behavior notes for the guarded window (documented tradeoffs):
+    // - SIGPIPE is thread-directed for write/EPIPE, so blocking it here
+    //   affects only this thread's syscalls. A process-directed SIGPIPE
+    //   (e.g. kill(2)) that happens to be delivered to this thread during
+    //   the window is consumed below as if it were syscall-generated;
+    //   process-wide SIGPIPE senders cannot rely on delivery through a
+    //   thread that is inside a guarded io_uring_enter.
+    // - If SIGPIPE was already pending when the guard engaged, standard
+    //   signals do not queue: a new syscall-generated SIGPIPE merges with
+    //   the pending one, which is then left pending for the process (this
+    //   guard consumes nothing it did not observe generating).
     void consume_generated_signal() noexcept {
         if (was_pending_) {
             return;

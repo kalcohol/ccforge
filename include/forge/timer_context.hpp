@@ -278,8 +278,15 @@ struct __item {
     // but the stop registration teardown must not race the destruction of
     // the receiver environment.
     void wait_delivered() const noexcept {
+        // Bounded yields, then sleep: a pure yield loop can livelock under
+        // priority inversion when the delivering worker is starved.
+        int spins = 0;
         while (!delivered.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            if (++spins < 64) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::microseconds{100});
+            }
         }
     }
 

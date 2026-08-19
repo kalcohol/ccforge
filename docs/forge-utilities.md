@@ -109,11 +109,14 @@ Failure policy:
   `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列
   和正在运行的任务清空；如果从 pool 自己的 worker 线程调用，`wait()` 会立即返回以避免
   自锁。在 pool 自己的 worker 线程上析构 pool（例如 pool 内任务拥有 pool 或其外层
-  `runtime_context` / `resource_context`）不会 terminate：析构走 detach 路径，worker
-  持有共享 state 在后台排空队列后退出，与 `timer_context` 的同线程析构契约一致。
-  代价是析构返回时不保证 drain 已结束，pool 使用的 memory resource 必须活过该
-  detached drain 尾部；确定性 teardown 仍应由外层 owner 在非 worker 线程上
-  `shutdown()` / `wait()` / 析构。其 schedule sender env 会通过 Forge backport 的
+  `runtime_context`）不会 terminate：析构走 detach 路径，worker 持有共享 state 在
+  后台排空队列后退出，与 `timer_context` 的同线程析构契约一致。代价是析构返回时
+  不保证 drain 已结束，pool 使用的 memory resource 必须活过该 detached drain
+  尾部，且 detach 后排空的 backlog 任务不得再触碰 pool 对象本身（pool 对象已不
+  存在，只有共享 state 活着）；确定性 teardown 仍应由外层 owner 在非 worker
+  线程上 `shutdown()` / `wait()` / 析构。注意 `resource_context` 不在此例外内：
+  它的析构先阻塞在 scope wait 上，从自己 scope 的任务里销毁会死锁（见
+  forge-runtime.md）。其 schedule sender env 会通过 Forge backport 的
   `get_completion_scheduler<set_value_t>` CPO 返回原 scheduler。
 - `forge::single_thread_context`：单工作线程上下文，复用 `static_thread_pool{1}`，适合需要串行化执行或测试调度切换的场景。
 - `forge::system_context` / `forge::get_system_scheduler()`：进程内共享线程池单例，适合示例
