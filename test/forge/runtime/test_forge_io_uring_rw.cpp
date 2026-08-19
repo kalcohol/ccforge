@@ -669,6 +669,90 @@ void check_concurrent_reads_on_two_fds(std::pmr::memory_resource* memory) {
     RW_CHECK(std::memcmp(second_buffer, "22", 2) == 0);
 }
 
+// entries=1 gives a one-slot SQ and a two-entry CQ, so six in-flight reads
+// force CQ overflow (EBUSY flush results) and park most of the batch
+// cancels for the poller retry walk during shutdown.
+void check_shutdown_batch_cancels_under_pressure(
+    std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 1}};
+
+    constexpr int lanes = 6;
+    pipe_pair pipes[lanes];
+    std::shared_ptr<completion_state> states[lanes];
+    std::byte buffers[lanes][8] = {};
+
+    for (int i = 0; i < lanes; ++i) {
+        RW_CHECK(pipes[i].read_end >= 0);
+        states[i] = std::make_shared<completion_state>();
+    }
+
+    auto make_operation = [&](int i) {
+        return std::execution::connect(
+            cio::as_sender(read_task(context, pipes[i].read_end, buffers[i])),
+            completion_receiver{states[i]});
+    };
+    auto first = make_operation(0);
+    auto second = make_operation(1);
+    auto third = make_operation(2);
+    auto fourth = make_operation(3);
+    auto fifth = make_operation(4);
+    auto sixth = make_operation(5);
+    std::execution::start(first);
+    std::execution::start(second);
+    std::execution::start(third);
+    std::execution::start(fourth);
+    std::execution::start(fifth);
+    std::execution::start(sixth);
+
+    context.shutdown();
+
+    for (int i = 0; i < lanes; ++i) {
+        RW_CHECK(wait_done(states[i]));
+        std::lock_guard lock{states[i]->mutex};
+        RW_CHECK(states[i]->stopped);
+        RW_CHECK(!states[i]->error);
+    }
+    context.wait();
+}
+
+auto read_then_destroy(
+    std::optional<cio::io_uring_context>& context,
+    int fd,
+    std::span<std::byte> buffer) -> cio::io_task<cio::io_result<std::size_t>> {
+    auto result = co_await cio::async_read_some(*context, fd, buffer);
+    // Runs on the poller thread: the destructor takes the self-join detach
+    // path and the detached poller finishes the terminal tail on its own.
+    context.reset();
+    co_return result;
+}
+
+void check_destroy_context_from_completion(std::pmr::memory_resource* memory) {
+    pipe_pair pipe;
+    RW_CHECK(pipe.read_end >= 0);
+
+    std::optional<cio::io_uring_context> context;
+    context.emplace(
+        cio::io_uring_context_options{.memory = memory, .entries = 8});
+
+    std::byte read_buffer[16] = {};
+    std::thread writer{[&] {
+        std::this_thread::sleep_for(20ms);
+        (void)!::write(pipe.write_end, "bye", 3);
+    }};
+
+    auto result = std::execution::sync_wait(cio::as_sender(
+        read_then_destroy(context, pipe.read_end, read_buffer)));
+    writer.join();
+
+    RW_CHECK(!context.has_value());
+    RW_CHECK(result.has_value());
+    if (result.has_value()) {
+        auto [io] = std::move(*result);
+        RW_CHECK(io.has_value());
+        RW_CHECK(std::get<0>(io.values()) == 3);
+    }
+}
+
 void check_destructor_cancels_in_flight(std::pmr::memory_resource* memory) {
     pipe_pair pipe;
     RW_CHECK(pipe.read_end >= 0);
@@ -734,7 +818,16 @@ int main() {
     check_request_stop_cancels_in_flight(&memory);
     check_close_does_not_cancel(&memory);
     check_concurrent_reads_on_two_fds(&memory);
+    check_shutdown_batch_cancels_under_pressure(&memory);
+    check_destroy_context_from_completion(&memory);
     check_destructor_cancels_in_flight(&memory);
+
+    // The detached poller from the completion-destruction check releases
+    // the context state slightly after the awaiting side observes its
+    // terminal, so give the final release tail a bounded grace window.
+    for (int i = 0; i < 200 && memory.outstanding() != 0; ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
 
     if (memory.allocations() == 0 || memory.outstanding() != 0) {
         std::fprintf(
