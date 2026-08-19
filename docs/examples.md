@@ -72,3 +72,4 @@
 - [`forge_io_read_write_example.cpp`](../example/forge_io_read_write_example.cpp)
 - [`forge_io_typed_error_example.cpp`](../example/forge_io_typed_error_example.cpp)
 - [`forge_io_iocp_example.cpp`](../example/forge_io_iocp_example.cpp)
+- [`forge_io_uring_read_write_example.cpp`](../example/forge_io_uring_read_write_example.cpp)

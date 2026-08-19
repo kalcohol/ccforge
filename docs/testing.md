@@ -324,6 +324,12 @@ numbers、`NOP`/`READ`/`WRITE`/`ASYNC_CANCEL` 和 `NODROP` compile probe 通过�
 io_uring tests/examples。Runtime kernel 或 sandbox capability 由专用 probe/test 处理，
 不在 configure 时执行 target binary。
 
+io_uring runtime tests 在受限沙箱（如容器默认 seccomp 阻断 `io_uring_setup`）下检测
+构造期 `ENOSYS`/`EPERM`/`EACCES` 并以 exit 77 skip；宿主或放行 io_uring 的容器 lane
+才执行完整 runtime 断言。容器内的放行验证通道使用
+`scripts/probe-io-uring-container.sh`（自定义 allow-io_uring seccomp profile），该
+lane 同时覆盖 TSAN 与 ASAN+UBSAN 下的 io_uring context/read-write tests。
+
 ## Example smoke tests（示例冒烟）
 
 当 `FORGE_BUILD_EXAMPLES=ON` 且 `FORGE_BUILD_TESTS=ON` 时，实际构建出来的 examples

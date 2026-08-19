@@ -86,9 +86,13 @@ mapping 决策和测试之后，在 backend-specific detail 中保留 raw status
 刻意分离的 backend model。不要把 IOCP 强塞进 Linux readiness state machine，也不要在没有
 BSD/macOS owner 和验证主机时添加 kqueue。
 
-Linux `io_uring` 延后，直到项目需要 `epoll` readiness 加 one-shot read/write 无法表达的
-kernel submission/completion queue 语义。若将来需要，把它作为新的 backend proof，带独立
-gate、examples 和 sanitizer story。
+Linux `io_uring` 的重估条件已于 2026-08 触发（byte-stream fabric 方向确认），并已按
+本政策以独立 taskbook 落地为 coroutine-native completion backend proof：独立 gate
+`FORGE_ENABLE_FORGE_IO_URING`、focused tests、gated example、sanitizer lanes 与
+sandbox skip 语义齐备（见 `forge-io-backend-spi.md`）。它不参与 portable context
+选择，也不替代 `epoll` readiness backend。超出 proof 的 production hardening（如
+SQPOLL、registered buffers、multishot）与 RoCEv2/RDMA 类 fabric backend 仍需独立
+taskbook。
 
 其它平台或外部生态 adapter 只有在现有 IO/runtime surface 证明需求后，才作为独立 proof
 启动。不要为尚不存在的 backend 先冻结 public ABI。

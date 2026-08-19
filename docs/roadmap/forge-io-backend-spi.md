@@ -283,3 +283,38 @@ fd、buffer、operation awaitable 和 context 是 borrowed dependencies，必须
 terminal/`await_resume()`；context-owned cancel record 可以在用户 target terminal 后继续
 由 poller drain。若 completion 内销毁 context，非拥有的 PMR resource 仍须活过 detached
 poller/state 的最终释放尾部。
+
+## io_uring Phase 1-4 实现记录（2026-08）
+
+Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
+`include/forge/io/detail/linux_io_uring_context.hpp`）。以下是实现期在冻结语义框架内
+做出的细化，均为 refinement 而非偏离：
+
+- Operation state 是 awaitable 内嵌的 intrusive `io_operation` 节点，地址即
+  user_data；context 维护 registry 双向链表与 ready 单链表，submission 与 completion
+  路径均不分配。
+- Retire gating：`pending_cqes` 从 1（target CQE）起，每发布一个 cancel SQE 加 1；
+  operation 只有在计数归零后才从 registry 摘除并进入 ready list。这保证内核仍握有
+  该地址引用（已发布的 cancel SQE）时地址不会被后续 operation 复用，消除 user_data
+  ABA。用户终态仍只由 target CQE 决定，cancel CQE 保持 administrative。
+- Parked cancel：D5 的 context-owned retry queue 实现为 per-operation
+  `cancel_requested && !cancel_published` 标志加 context 级 `parked_cancels` 计数；
+  retry 由 poller 遍历 registry 完成，不捕获裸地址、不分配。若 operation 在 parked
+  期间自然 retire，计数同步回收。
+- Wakeup 是单个 in-flight NOP，`wakeup_published`/`wakeup_in_flight` 两个标志共同
+  管理；poller 的 opportunistic flush 可能替 waker 消费掉已发布未 flush 的 NOP，
+  因此 wakeup CQE 处理必须同时清除两个标志，否则会造成 stale-flag 死锁。
+- Target SQE 在 flush 重试后仍无法进入 SQ 时，operation 以
+  `std::errc::no_buffer_space` error 完成（V1 边界；cancel SQE 走 parked 路径，
+  不适用此边界）。
+- Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
+  fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
+  同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
+- `rw_some_awaitable` 的 operation state 为 168 bytes，大于 03 冻结的 128-byte
+  erasure slot；`owning_any_async_*` 在编译期拒绝之为预期行为，direct concept
+  适配不受影响。测试中有 static_assert tripwire。
+
+验证记录：host 100x 循环、TSAN/ASAN+UBSAN 容器（自定义 allow-io_uring seccomp）
+100x 循环、默认 seccomp 容器 77-skip、`AUTO/ON/OFF` gate 三态、feature-gate audit
+全部通过。覆盖包括 small-ring（entries=1）并发读、shutdown 批量取消压测、stop 与
+自然完成竞态、poller-thread 内析构 context。

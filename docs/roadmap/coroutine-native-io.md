@@ -202,7 +202,7 @@ runtime composition smoke。
 
 - TCP/DNS/UDP/TLS；
 - Boost.Asio/Capy/Corosio adapter；
-- Linux `io_uring`；
+- Linux `io_uring`（后续已于 2026-08 按独立 taskbook 落地 proof，见下）；
 - true ABI-stable `any_stream`；
 - variadic or policy-based IO-aware combinators beyond two-child
   `when_all_results` / `when_any_results`;
@@ -215,9 +215,11 @@ runtime composition smoke。
   security/release policy。
 - Boost.Asio、Capy、Corosio 或其它 adapter 暂不引入，避免把 Forge 的小型 substrate 变成
   adapter matrix。
-- Linux `io_uring` 只有在需要 submission/completion queue 语义时才单独立项；它不是
-  `epoll` readiness backend 的替代写法。该重估条件已于 2026-08 触发（byte-stream fabric
-  方向确认），启动仍需独立 taskbook，决策记录见 `forge-io-backend-spi.md`。
+- Linux `io_uring` 的重估条件已于 2026-08 触发（byte-stream fabric 方向确认），并已按
+  独立 taskbook 落地为 coroutine-native completion backend proof：原生 operation 直接
+  实现本 track 的 `io_awaitable` 协议，sender 侧经 `io_task` + `as_sender` 桥接。它仍
+  不是 `epoll` readiness backend 的替代写法；决策与实现记录见
+  `forge-io-backend-spi.md`。
 - `any_read_stream` / `any_write_stream` 保持最小 borrowed wrapper；新增的
   `owning_any_*` 与 `owning_any_async_*` 是 header-only experimental Forge surface，
   已冻结本轮 PMR ownership、single-flight 和 fixed-slot lifetime 规则，但 true

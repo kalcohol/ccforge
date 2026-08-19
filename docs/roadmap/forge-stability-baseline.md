@@ -133,7 +133,9 @@ Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state
 
 - Windows/MSVC smoke 是 manual/self-hosted optional gate，不替代 Linux container verification。
 - macOS/BSD kqueue 在出现具体 BSD/macOS 需求前不在范围内。
-- Linux `io_uring` 延后，除非 kernel submission/completion queue 语义变成必需且可测试。
+- Linux `io_uring` coroutine-native completion proof 已落地，由独立 gate
+  `FORGE_ENABLE_FORGE_IO_URING` 控制；受限沙箱 runtime 以 77 skip。超出 proof 的
+  hardening（SQPOLL、registered buffers、multishot 等）与 RDMA/fabric backend 仍延后。
 - Additional IOCP hardening 是 requirement-driven。当前 proof 覆盖 completion drain、
   per-operation cancellation 和 conservative associated handle pruning；更强 handle ownership
   或 high-churn pooling 需要新 taskbook。

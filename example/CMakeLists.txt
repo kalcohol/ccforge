@@ -143,6 +143,10 @@ if(FORGE_ENABLE_FORGE_RUNTIME)
         forge_add_example(forge_io_iocp forge_io_iocp_example.cpp THREADS TBB)
     endif()
 
+    if(FORGE_HAS_FORGE_IO_URING_BACKEND)
+        forge_add_example(forge_io_uring_read_write forge_io_uring_read_write_example.cpp THREADS TBB)
+    endif()
+
 endif()
 
 get_property(FORGE_EXAMPLE_SMOKE_TARGETS GLOBAL PROPERTY FORGE_EXAMPLE_SMOKE_TARGETS)

@@ -108,10 +108,10 @@ policy 内置进通用 helper。
 
 以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
 
-- 新平台 IO backend：Linux `io_uring`（重估条件已于 2026-08 触发，见
-  `forge-io-backend-spi.md`，启动前仍需独立 taskbook），或 Windows IOCP 超出当前 proof
-  的 production hardening，例如 explicit owned-handle lifetimes 或 high-churn
-  handle-pool policy；
+- 新平台 IO backend：Linux `io_uring` proof 已于 2026-08 按独立 taskbook 落地（见
+  `forge-io-backend-spi.md`）；超出 proof 的 io_uring hardening（SQPOLL、registered
+  buffers、multishot），或 Windows IOCP 超出当前 proof 的 production hardening，例如
+  explicit owned-handle lifetimes 或 high-churn handle-pool policy；
 - 完整 networking 方向：TCP/DNS/UDP/TLS、socket option、endpoint/address resolution、
   certificate/security policy；
 - 外部生态 adapter：Boost.Asio、OpenSSL、WolfSSL 或其它库的 adapter matrix；
@@ -202,12 +202,14 @@ backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 
 - 通用 API 层：readiness sender、async read/write、close/shutdown；
 - 后端层：Linux `epoll`/`eventfd` 与 Windows IOCP 已有 proof；Linux `io_uring`
-  仅在明确需要 kernel submission/completion queue 语义时再做；
+  已作为 coroutine-native completion proof 落地（独立 gate，不参与 portable
+  context 选择）；
 - 生命周期层：pending IO 挂到 `async_scope` / `resource_context`，析构时取消、关闭、等待。
 
 第一版不承诺全平台。Linux fd readiness backend 与 Windows IOCP proof 已落地；macOS/BSD
 kqueue 当前不在项目需求内。`io_uring` 的 defer 重估条件已于 2026-08 触发（byte-stream
-fabric 方向确认，见 `forge-io-backend-spi.md`），启动前仍需独立 taskbook。RoCEv2/RDMA
+fabric 方向确认），随后按独立 taskbook 落地为 coroutine-native completion proof（见
+`forge-io-backend-spi.md`）。RoCEv2/RDMA
 类 fabric backend 需要独立 taskbook 和可验证硬件（或 soft-RoCE）故事，当前仍 deferred。
 IOCP 当前 proof 已覆盖 completion drain、per-operation cancellation 和 conservative
 associated-handle pruning；更强的 owned-handle lifetime 或 high-churn handle-pool policy
@@ -221,8 +223,8 @@ Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是�
 - API 放在 `forge::io`，不进入 `namespace std`；
 - 每个 primitive/backend 只选择一个原生 async 协议：sender 或 coroutine awaitable，
   另一侧经显式 bridge 到达，不做平行双实现。现有 readiness/IOCP backend 保持
-  sender 原生 + coroutine facade；未来 completion-queue backend（如 `io_uring`）
-  允许 coroutine-native + sender bridge。生命周期词汇（`close()` / `request_stop()` /
+  sender 原生 + coroutine facade；io_uring completion backend 已按此原则落地为
+  coroutine-native + sender bridge。生命周期词汇（`close()` / `request_stop()` /
   `shutdown()` / `wait()`）与验证矩阵两侧共享；
 - borrowed stream erasure 保持最小 non-owning boundary；PMR-owned sync 与
   direct-awaitable async wrappers 已作为 header-only Forge extension 落地，但跨版本

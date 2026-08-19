@@ -357,6 +357,9 @@ coroutine facade：
   operation-state 直到两个 child 的 terminal callbacks 均已返回。
 - 已有 OS backend handoff：只在需要现有 `forge::io::context` 时使用
   `<forge/io/context_await.hpp>`；fd/HANDLE、buffer 和 context lifetime 仍由调用方负责。
+- Linux completion-queue 语义（coroutine-native proof）：使用
+  `<forge/io/io_uring_context.hpp>` 的 `async_read_some` / `async_write_some`；
+  awaitable/fd/buffer 是 borrowed，coroutine 恢复发生在 poller thread 上。
 
 ## 平台与 gate
 
@@ -364,6 +367,7 @@ coroutine facade：
 
 - Linux：`epoll` + `eventfd` readiness。
 - Windows：IOCP completion proof。
+- Linux：io_uring completion proof（独立 gate，不参与 portable context 选择）。
 
 - `FORGE_ENABLE_FORGE_IO=AUTO`：Linux 或 Windows backend 可用时启用 OS
   backend；其它平台跳过 backend context、backend examples 和 backend tests。
@@ -385,13 +389,19 @@ coroutine facade：
   `readable` / `writable` / `*_typed` readiness surface；
 - `FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND`：选中 Windows IOCP backend，提供
   completion-based byte IO surface，不提供 Linux readiness surface。
+- `FORGE_HAS_FORGE_IO_URING_BACKEND`：由独立 gate
+  `FORGE_ENABLE_FORGE_IO_URING=AUTO/ON/OFF` 控制的 Linux io_uring
+  completion backend proof，暴露 `<forge/io/io_uring_context.hpp>`。它不参与
+  `<forge/io.hpp>` 的 portable context 选择，与 epoll readiness backend 并存。
 
 Portable source 应使用 per-backend macro 守卫 backend-specific API；参考
 `example/forge_context_await_example.cpp`。
 
-macOS/BSD kqueue 当前不在项目需求内，不作为本轮目标。Linux `io_uring` 只有在需要
-kernel submission/completion queue 语义时才会单独立项；它不是 `epoll` readiness
-backend 的替代写法。Zig 可以帮助构建或 C ABI 互操作，但不能抹平这些 backend 的语义差异。
+macOS/BSD kqueue 当前不在项目需求内，不作为本轮目标。Linux `io_uring` 的重估条件已于
+2026-08 触发（byte-stream fabric 方向确认），并已作为独立的 coroutine-native
+completion backend proof 落地（见下文"io_uring completion backend"）；它仍不是
+`epoll` readiness backend 的替代写法。Zig 可以帮助构建或 C ABI 互操作，但不能抹平
+这些 backend 的语义差异。
 
 ## API 概览
 
@@ -611,6 +621,73 @@ V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果
 生产级 handle cache：更强的 pruning 需要显式 handle lifetime 模型，当前不把 context
 变成 handle owner。
 
+## io_uring completion backend（coroutine-native proof）
+
+`<forge/io/io_uring_context.hpp>` 提供本仓第一个 coroutine-native completion backend
+proof：`forge::io::io_uring_context` 持有 SQ/CQ mappings 与专职 poller thread，原生
+operation 是直接实现 `io_awaitable` 协议的非协程 operation-state 对象，不是 sender。
+Sender consumer 通过显式 `io_task` + `as_sender(io_task, env)` 桥接；该桥会分配
+coroutine frame，属于 interop cost。设计决策与冻结语义见
+`docs/roadmap/forge-io-backend-spi.md` 的 Phase 0 决策记录。
+
+```cpp
+#include <forge/io/io_uring_context.hpp>
+
+forge::io::io_uring_context ring;
+
+auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
+               std::span<const std::byte> out, std::span<std::byte> in)
+    -> forge::io::io_task<forge::io::io_result<std::size_t>> {
+    auto wrote = co_await forge::io::async_write_some(ring, write_fd, out);
+    if (!wrote.has_value()) {
+        co_return wrote;
+    }
+    co_return co_await forge::io::async_read_some(ring, read_fd, in);
+};
+```
+
+语义要点：
+
+- `async_read_some(context, fd, span)` / `async_write_some(context, fd, span)`
+  是 one-shot stream IO（SQE offset 固定 `-1`），结果为 `io_result<std::size_t>`。
+  short IO 照实交付；CQE 负值以 `std::generic_category()` 的正 errno 映射为
+  error（含 `-EINTR`，不模拟 readiness backend 的重试）。
+- CQE 由 poller thread drain，并在 backend lock 外直接 resume 等待的 coroutine；
+  后续 coroutine body 运行在 poller thread 上，需要业务 executor affinity 时显式
+  await `env.executor.schedule()`。
+- env stop 预检失败、context 已 `close()`/`request_stop()` 时 operation 不进入
+  ring，`await_resume()` 抛 `sender_stopped`；空 buffer 在 stop 预检之后、任何
+  context 咨询之前内联完成 value `0`（对齐 epoll 先例）。
+- 非空 READ 的 CQE `res == 0` 映射 EOF；stop 请求触发的 `-ECANCELED` 映射
+  stopped，无 stop 请求的 `-ECANCELED` 是普通 `operation_canceled` error；正常
+  value/error 先于 cancellation 完成时照实交付，late cancel 不覆盖。
+- receiver/env stop token 对已 accepted operation 触发 `IORING_OP_ASYNC_CANCEL`
+  best-effort 取消；cancel CQE 是 administrative drain，用户终态只由 target CQE
+  决定。一旦为某 operation 发布了 cancel SQE，该 operation 等 target 与 cancel
+  两个 CQE 都 drain 后才 resume，防止 user_data 地址被后续 operation 复用。
+- `close()` 幂等拒新且不取消；`request_stop()` 拒新并为所有在飞 operation 排队
+  cancel；`shutdown()` 等价于两者之和；析构执行 `shutdown()` + `wait()`，可阻塞。
+  从 poller thread 上的 completion 内析构 context 走 detach 路径，非拥有的 memory
+  resource 必须活过 detached poller 的最终释放尾部。
+- awaitable、fd、buffer、context 都是 borrowed：必须活到 `await_resume()`；悬挂中
+  的 operation 不得被弃置（例如销毁尚未完成的 `io_task`），否则是未定义行为。
+- V1 边界：SQ 满且 flush 后仍无法接纳时，operation 以
+  `std::errc::no_buffer_space` error 完成；poller 遇到非 EINTR/EAGAIN/EBUSY 的
+  `io_uring_enter` 硬错误会停机，届时仍悬挂的 awaiter 不会被恢复（proof 阶段
+  边界，构造期的同步 NOP round-trip 已把"环从未可用"的沙箱排除在外）。
+- io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
+  `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
+  （`async_read_stream` / `async_write_stream`）适配不受影响。
+
+构造在 ring setup、`IORING_REGISTER_PROBE` 必需 opcode 集合或同步 NOP round-trip
+失败时抛 `std::system_error`。受限沙箱（容器默认 seccomp 等）通常在构造期以
+`ENOSYS`/`EPERM`/`EACCES` 表现；runtime tests 在 AUTO gate 下以 77 skip，显式 `ON`
+时视为失败。自定义 seccomp 验证通道见 `scripts/probe-io-uring-container.sh`。
+
+不做（另立任务书前不变）：socket 建连/accept/DNS/TLS、SQPOLL、registered buffers、
+multishot、链式 SQE、显式 file offset API、mandatory liburing 依赖，以及对 epoll
+readiness backend 的任何替代或改动。
+
 ## Resource policy（资源策略）
 
 `forge::io::context_options{.memory = resource}` 控制 context state、pending fd map、
@@ -642,3 +719,5 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
 - `example/forge_context_await_example.cpp`：coroutine facade over context sender；
   Linux 下演示 await readiness 后由用户代码执行 nonblocking `read(2)`。
 - `example/forge_io_iocp_example.cpp`：Windows named pipe + IOCP async read/write。
+- `example/forge_io_uring_read_write_example.cpp`：io_uring completion backend 上的
+  coroutine-native write -> read round trip；runtime 受限沙箱下打印 skip 信息退出。
