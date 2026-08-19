@@ -223,15 +223,12 @@ struct __op : __op_base {
 
 template<class T>
 class task {
-    // Completion delivers the result by moving it into the receiver's
-    // set_value parameter inside a noexcept path, and the set_value CPO
-    // statically rejects call expressions that are not noexcept as a whole.
-    // Surface that requirement here so throwing-move result types produce
-    // one clear diagnostic instead of a deep CPO static_assert failure.
-    static_assert(std::is_nothrow_move_constructible_v<T>,
-        "forge::task<T> requires nothrow-move-constructible T: the result is "
-        "moved into the receiver inside a noexcept completion path");
-
+    // Throwing-move T is supported: __complete passes the stored result to
+    // the receiver by reference (no T is constructed in the call
+    // expression), and receivers that materialize the value do so in their
+    // own bodies where they route a throw to set_error. The move into the
+    // promise's result variant happens inside the coroutine body, where a
+    // throw lands in unhandled_exception.
 public:
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         std::variant<std::monostate, T, std::exception_ptr> result;

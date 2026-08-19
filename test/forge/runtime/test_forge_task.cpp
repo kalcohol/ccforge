@@ -232,11 +232,30 @@ forge::task<int> await_throwing_connect_task() {
     co_return 1;
 }
 
-// Completion moves the result into the receiver inside a noexcept path, so
-// task<T> statically requires nothrow-move-constructible T; throwing-move
-// result types are rejected by a class-scope static_assert with a clear
-// message instead of a deep set_value CPO failure.
-static_assert(std::is_nothrow_move_constructible_v<std::unique_ptr<int>>);
+// task<T> supports throwing-move T: __complete hands the stored result to
+// the receiver by reference, and receivers that materialize the value (e.g.
+// sync_wait) do so inside their own try/catch, routing a throw to the error
+// channel. The move allowance below lets the co_return-to-variant move
+// succeed and makes the receiver-side move throw.
+struct throwing_move_result {
+    explicit throwing_move_result(int allowed) noexcept
+        : moves_allowed(allowed) {}
+
+    throwing_move_result(throwing_move_result&& other)
+        : moves_allowed(other.moves_allowed - 1) {
+        if (other.moves_allowed <= 0) {
+            throw task_marker_error{};
+        }
+    }
+
+    throwing_move_result(const throwing_move_result&) = delete;
+    auto operator=(const throwing_move_result&)
+        -> throwing_move_result& = delete;
+    auto operator=(throwing_move_result&&)
+        -> throwing_move_result& = delete;
+
+    int moves_allowed;
+};
 
 forge::task<std::thread::id> await_scope_join_task(
     std::execution::simple_counting_scope* scope) {
@@ -446,6 +465,24 @@ TEST(TaskTest, ScopeJoinWithoutStartSchedulerFallsBackToInlineCompletion) {
     EXPECT_EQ(
         resumed_on.load(std::memory_order_acquire),
         releaser_id.load(std::memory_order_acquire));
+}
+
+TEST(TaskTest, ThrowingMoveResultRoutesToErrorChannel) {
+    auto make = [](int allowed) -> forge::task<throwing_move_result> {
+        co_return throwing_move_result{allowed};
+    };
+
+    // Allowance 1: the move into the promise variant succeeds, the move
+    // inside sync_wait's receiver throws and lands in the error channel.
+    EXPECT_THROW(
+        (void)std::execution::sync_wait(make(1)),
+        task_marker_error);
+
+    // A generous allowance completes normally, proving task<T> accepts and
+    // delivers potentially-throwing-move result types.
+    auto result = std::execution::sync_wait(make(8));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_GE(std::get<0>(*result).moves_allowed, 0);
 }
 
 TEST(TaskTest, DestroyingStartedTaskDestroysAwaitedOperation) {
