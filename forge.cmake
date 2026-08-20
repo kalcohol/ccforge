@@ -101,7 +101,8 @@ check_cxx_source_compiles("
     }
 " FORGE_PROBE_WINDOWS_IOCP)
 
-if(NOT "${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF")
+if(NOT "${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "OFF" AND
+   NOT "${FORGE_ENABLE_FORGE_IO}" STREQUAL "OFF")
     check_cxx_source_compiles("
         #if !defined(__linux__)
         #error Linux only
