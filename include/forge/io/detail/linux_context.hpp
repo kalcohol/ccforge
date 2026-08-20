@@ -201,9 +201,12 @@ struct __record_base {
     // callback deregistration), which must not outlive the receiver
     // environment. Mirrors the timer_context abandonment protocol.
     void wait_delivered() const noexcept {
+        // Bounded yields, then sleep; the counter stops once saturated so
+        // it cannot overflow.
         int spins = 0;
         while (!delivered.load(std::memory_order_acquire)) {
-            if (++spins < 64) {
+            if (spins < 64) {
+                ++spins;
                 std::this_thread::yield();
             } else {
                 std::this_thread::sleep_for(std::chrono::microseconds{100});

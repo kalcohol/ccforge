@@ -279,10 +279,12 @@ struct __item {
     // the receiver environment.
     void wait_delivered() const noexcept {
         // Bounded yields, then sleep: a pure yield loop can livelock under
-        // priority inversion when the delivering worker is starved.
+        // priority inversion when the delivering worker is starved. The
+        // counter stops once saturated so it cannot overflow.
         int spins = 0;
         while (!delivered.load(std::memory_order_acquire)) {
-            if (++spins < 64) {
+            if (spins < 64) {
+                ++spins;
                 std::this_thread::yield();
             } else {
                 std::this_thread::sleep_for(std::chrono::microseconds{100});
