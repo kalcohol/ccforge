@@ -87,10 +87,11 @@ mapping 决策和测试之后，在 backend-specific detail 中保留 raw status
 BSD/macOS owner 和验证主机时添加 kqueue。
 
 Linux `io_uring` 的重估条件已于 2026-08 触发（byte-stream fabric 方向确认），并已按
-本政策以独立 taskbook 落地为 coroutine-native completion backend proof：独立 gate
-`FORGE_ENABLE_FORGE_IO_URING`、focused tests、gated example、sanitizer lanes 与
-sandbox skip 语义齐备（见 `forge-io-backend-spi.md`）。它不参与 portable context
-选择，也不替代 `epoll` readiness backend。超出 proof 的 production hardening（如
+本政策以独立 taskbook 落地为 coroutine-native completion backend proof：gate
+`FORGE_ENABLE_FORGE_IO_URING`（从属于 `FORGE_ENABLE_FORGE_IO`，父 gate OFF 时随之
+关闭且 `ON`+父 OFF 组合是 configure 错误）、focused tests、gated example、sanitizer
+lanes 与 sandbox skip 语义齐备（见 `forge-io-backend-spi.md`）。它不参与 portable
+context 选择，也不替代 `epoll` readiness backend。超出 proof 的 production hardening（如
 SQPOLL、registered buffers、multishot）与 RoCEv2/RDMA 类 fabric backend 仍需独立
 taskbook。
 
