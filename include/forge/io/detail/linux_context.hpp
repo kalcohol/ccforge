@@ -192,14 +192,21 @@ struct __record_base {
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> done{false};
     std::atomic<bool> delivered{false};
+    // Written by every completion attempt before it claims done, so an
+    // abandoning destructor that lost the claim can tell a completion
+    // running on its own call stack (must not wait: that would self-
+    // deadlock) from one racing on another thread (must be waited out so
+    // the receiver completion cannot outlive the operation state).
+    std::atomic<std::thread::id> completing_thread{};
     std::shared_ptr<__record_base> next_action;
     std::exception_ptr action_error;
     __completion_kind action_kind = __completion_kind::value;
 
     // An abandoning operation destructor parks here until a completion
-    // attempt that lost the done race has finished its teardown tail (stop
-    // callback deregistration), which must not outlive the receiver
-    // environment. Mirrors the timer_context abandonment protocol.
+    // attempt that owns the done claim has finished delivering and torn
+    // down its stop registration, neither of which may outlive the
+    // receiver environment. Mirrors the timer_context abandonment
+    // protocol.
     void wait_delivered() const noexcept {
         // Bounded yields, then sleep; the counter stops once saturated so
         // it cannot overflow.
@@ -234,8 +241,12 @@ struct __record final : __record_base {
 
     // Losing the done race still tears down the stop registration and then
     // signals delivered: an abandoning operation destructor waits on that
-    // signal so the callback never outlives the receiver environment.
+    // signal so the callback never outlives the receiver environment. The
+    // completing thread id is published before the claim (the RMW on done
+    // releases it to whoever loses the race).
     void complete_value() noexcept override {
+        completing_thread.store(
+            std::this_thread::get_id(), std::memory_order_relaxed);
         if (done.exchange(true, std::memory_order_acq_rel)) {
             stop_callback.reset();
             delivered.store(true, std::memory_order_release);
@@ -247,6 +258,8 @@ struct __record final : __record_base {
     }
 
     void complete_error(std::exception_ptr error) noexcept override {
+        completing_thread.store(
+            std::this_thread::get_id(), std::memory_order_relaxed);
         if (done.exchange(true, std::memory_order_acq_rel)) {
             stop_callback.reset();
             delivered.store(true, std::memory_order_release);
@@ -258,6 +271,8 @@ struct __record final : __record_base {
     }
 
     void complete_stopped() noexcept override {
+        completing_thread.store(
+            std::this_thread::get_id(), std::memory_order_relaxed);
         if (done.exchange(true, std::memory_order_acq_rel)) {
             stop_callback.reset();
             delivered.store(true, std::memory_order_release);
@@ -494,7 +509,13 @@ struct __state : std::enable_shared_from_this<__state> {
                 if (slot == target) {
                     record = std::move(slot);
                     --pending;
-                    update_interest_locked(it->first, waiters);
+                    // A failed interest update is deliberately ignored: the
+                    // record is already out of the registry, so the worst
+                    // case is a stale epoll registration producing spurious
+                    // wakeups until the next registration for this fd
+                    // repairs it (take_ready finds no waiter and updates
+                    // interest again).
+                    (void)update_interest_locked(it->first, waiters);
                     if (waiters.empty()) {
                         fd_waiters.erase(it);
                     }
@@ -833,8 +854,18 @@ struct __op {
             return;
         }
         if (record_->done.exchange(true, std::memory_order_acq_rel)) {
-            // Completed (or completing on the normal continuation path
-            // that is destroying this state right now).
+            // A completion attempt owns the claim. When it runs on this
+            // very call stack (the normal continuation path destroying
+            // this state right now), waiting would self-deadlock and is
+            // unnecessary. Any other thread's delivery must be waited
+            // out so the receiver completion and stop-callback teardown
+            // finish before this state is gone. The claim's RMW ordering
+            // makes the completing_thread store visible here.
+            if (record_->completing_thread.load(std::memory_order_relaxed) ==
+                std::this_thread::get_id()) {
+                return;
+            }
+            record_->wait_delivered();
             return;
         }
         if (state_ && state_->discard_record(record_)) {

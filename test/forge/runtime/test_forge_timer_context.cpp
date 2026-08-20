@@ -112,6 +112,38 @@ bool wait_done_for(timer_state& state, std::chrono::milliseconds duration) {
 
 } // namespace
 
+TEST(TimerContextTest, AbandonRacesConcurrentDelivery) {
+    forge::timer_context ctx;
+
+    // An immediately-due timer makes the worker delivery race the owning
+    // destructor. Every interleaving must settle before the destructor
+    // returns: either the item was discarded (no completion) or the
+    // in-flight delivery was waited out, so the receiver state read below
+    // can never change afterwards. Sanitizer lanes assert memory safety.
+    for (int round = 0; round < 512; ++round) {
+        timer_state state;
+        {
+            auto op = std::execution::connect(
+                ctx.schedule_after(0ms),
+                timer_receiver{&state});
+            std::execution::start(op);
+            // Sweep the destruction point across the delivery window.
+            for (int spin = 0; spin < round % 37; ++spin) {
+                std::this_thread::yield();
+            }
+        }
+        const bool settled = [&] {
+            std::lock_guard lk{state.mtx};
+            return state.value;
+        }();
+        std::this_thread::yield();
+        std::lock_guard lk{state.mtx};
+        EXPECT_EQ(state.value, settled);
+        EXPECT_FALSE(state.stopped);
+        EXPECT_FALSE(state.error);
+    }
+}
+
 TEST(TimerContextTest, ScheduleAfterZeroCompletes) {
     forge::timer_context ctx;
 

@@ -26,6 +26,7 @@
 #include <forge/resource_policy.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstring>
@@ -37,6 +38,7 @@
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -332,6 +334,17 @@ inline auto stash_frame_resource(
     return memory;
 }
 
+// Completion-slot states shared between the sender bridge awaitable and
+// the abandonment arbitration in abandon_task_chain.
+enum class bridge_state {
+    starting,
+    suspended,
+    completed,
+    // Claimed by an abandoning destruction: a late delivery must not
+    // resume the dying coroutine.
+    abandoned
+};
+
 // Downward links for iterative abandonment. Destroying a suspended
 // co_await io_task chain through nested task_awaitable destructors costs
 // one set of native stack frames per level and overflows for deep chains,
@@ -342,6 +355,29 @@ struct frame_chain_link {
     frame_chain_link* child_link = nullptr;
     void* owned_task = nullptr;
     void (*release_owned)(void*) noexcept = nullptr;
+
+    // Abandonment arbitration state. root_link lets every frame reach the
+    // root in O(1) (propagated when a child is linked), so the leaf's
+    // sender bridge can publish its completion slot where the abandoning
+    // destructor looks without walking mutating links. started/finalized
+    // bracket the window in which a cross-thread resume can exist.
+    // resuming counts resume calls that entered the frames and have not
+    // unwound out yet (an unwinding call and the delivery that re-entered
+    // the chain can overlap briefly, hence a counter); resuming_thread
+    // names the thread of the innermost such call so an abandonment
+    // arriving on that very stack (a receiver completing inline destroyed
+    // the operation state) is told apart from a cross-thread one. The
+    // former sets deferred_destroy and hands the frames (reachable via
+    // self_frame) to the tail of the last unwinding resume; the latter
+    // waits for the counter to drain before destroying anything.
+    frame_chain_link* root_link = this;
+    std::coroutine_handle<> self_frame{};
+    std::atomic<bool> started{false};
+    std::atomic<bool> finalized{false};
+    std::atomic<int> resuming{0};
+    std::atomic<std::thread::id> resuming_thread{};
+    std::atomic<bool> deferred_destroy{false};
+    std::atomic<std::atomic<bridge_state>*> active_bridge{nullptr};
 
     auto reset_child() noexcept -> void {
         child_frame = {};
@@ -371,6 +407,89 @@ inline auto destroy_frame_chain(
         frame = child;
         link = child_link;
     }
+}
+
+// Bounded yields, then sleep; the counter stops once saturated so it
+// cannot overflow.
+inline auto abandon_backoff_step(int& spins) noexcept -> void {
+    if (spins < 64) {
+        ++spins;
+        std::this_thread::yield();
+    } else {
+        std::this_thread::sleep_for(std::chrono::microseconds{100});
+    }
+}
+
+// Arbitrates an abandoning destruction against the chain's only
+// cross-thread resume source before any frame dies. While the chain is
+// parked on a sender bridge, that bridge's completion slot is published on
+// the root link. Claiming it as abandoned first means the delivery will
+// only write result members and never resume. Losing the claim means a
+// resume chain runs through the frames; destruction then waits for the
+// chain's next stable state (finalized, parked on the next bridge, or
+// parked on a non-bridge awaitable) and re-arbitrates. Chains parked on
+// non-bridge awaitables keep their documented backend semantics (for
+// example the io_uring and erased-stream terminate guards).
+//
+// An abandonment arriving on a resume call's own stack (a receiver
+// completing inline destroyed the operation state, which is supported)
+// must neither wait for that resume to unwind (self-deadlock) nor destroy
+// frames it is still unwinding through: it defers the destruction to the
+// tail of the last unwinding resume (sender_awaitable::complete).
+template<class Promise>
+inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
+    -> void {
+    auto& link = static_cast<frame_chain_link&>(root.promise());
+    if (link.started.load(std::memory_order_acquire)) {
+        if (link.resuming.load(std::memory_order_acquire) > 0 &&
+            link.resuming_thread.load(std::memory_order_relaxed) ==
+                std::this_thread::get_id()) {
+            link.deferred_destroy.store(true, std::memory_order_release);
+            return;
+        }
+        int spins = 0;
+        for (;;) {
+            if (link.finalized.load(std::memory_order_acquire)) {
+                break;
+            }
+            auto* gate = link.active_bridge.load(std::memory_order_acquire);
+            if (gate != nullptr) {
+                if (gate->exchange(
+                        bridge_state::abandoned,
+                        std::memory_order_acq_rel) !=
+                    bridge_state::completed) {
+                    // Claimed first: the delivery can never resume the
+                    // chain (the record-level teardown wait happens inside
+                    // the frame destructors).
+                    break;
+                }
+                // Lost to a delivery whose resume is (or will be) running
+                // through the frames: wait until this bridge's frame moves
+                // on, then re-evaluate the new state.
+                while (link.active_bridge.load(std::memory_order_acquire) ==
+                           gate &&
+                       !link.finalized.load(std::memory_order_acquire)) {
+                    abandon_backoff_step(spins);
+                }
+                continue;
+            }
+            if (link.resuming.load(std::memory_order_acquire) == 0) {
+                // Quiescent without a bridge: never suspended on one, or
+                // parked on a non-bridge awaitable whose own abandonment
+                // semantics apply.
+                break;
+            }
+            // A resume is running between bridges; wait for progression.
+            abandon_backoff_step(spins);
+        }
+        // Whatever ended the arbitration, a resume call may still be
+        // unwinding out of the frames (the counter drops only after the
+        // resume() call returns); the frames must outlive that unwind.
+        while (link.resuming.load(std::memory_order_acquire) > 0) {
+            abandon_backoff_step(spins);
+        }
+    }
+    destroy_frame_chain(root, &root.promise());
 }
 
 template<class Promise>
@@ -461,14 +580,25 @@ struct promise_base : frame_chain_link {
         auto await_suspend(std::coroutine_handle<P> continuation) noexcept
             -> std::coroutine_handle<> {
             auto& promise = continuation.promise();
-            if (promise.complete != nullptr) {
-                promise.complete(promise.completion_object);
+            // Copy everything needed out of the frame before publishing
+            // finalized: the completion callback below may synchronously
+            // destroy the whole operation state including this frame (a
+            // receiver completing inline is allowed to drop the op), so no
+            // promise member may be touched after the callback runs. An
+            // abandoning thread that observes finalized still waits for
+            // the resuming counter to drain before destroying frames, so
+            // publishing it here does not expose the frame early.
+            const auto complete_fn = promise.complete;
+            void* const completion_object = promise.completion_object;
+            const std::coroutine_handle<> next = promise.continuation
+                ? promise.continuation
+                : std::noop_coroutine();
+            promise.finalized.store(true, std::memory_order_release);
+            if (complete_fn != nullptr) {
+                complete_fn(completion_object);
                 return std::noop_coroutine();
             }
-            if (promise.continuation) {
-                return promise.continuation;
-            }
-            return std::noop_coroutine();
+            return next;
         }
 
         auto await_resume() noexcept -> void {}
@@ -580,16 +710,32 @@ public:
         -> bool {
         env_ = env;
         continuation_ = continuation;
+        if constexpr (std::derived_from<Promise, frame_chain_link>) {
+            // Publish this completion slot where abandon_task_chain looks
+            // (the chain root), so an abandoning destruction arbitrates
+            // against the delivery before any frame dies.
+            chain_root_ = static_cast<frame_chain_link&>(
+                continuation.promise()).root_link;
+            chain_root_->active_bridge.store(
+                &state_, std::memory_order_release);
+        }
         ::new (op_storage()) op_t{
             std::execution::connect(std::move(sender_), receiver{this})};
         op_constructed_ = true;
         std::execution::start(*op_ptr());
         return state_.exchange(
-            completion_state::suspended,
-            std::memory_order_acq_rel) != completion_state::completed;
+            bridge_state::suspended,
+            std::memory_order_acq_rel) != bridge_state::completed;
     }
 
     auto await_resume() {
+        if (chain_root_ != nullptr) {
+            // The frame is running again; the slot must not be visible to
+            // a later abandonment once this awaitable is gone.
+            chain_root_->active_bridge.store(
+                nullptr, std::memory_order_release);
+            chain_root_ = nullptr;
+        }
         if (exception_) {
             std::rethrow_exception(exception_);
         }
@@ -600,6 +746,15 @@ public:
     }
 
     ~sender_awaitable() noexcept {
+        // Claim the completion slot before tearing down the operation. An
+        // abandoning destruction can lose the backend's done race to an
+        // in-flight delivery; that delivery still writes the result
+        // members (which stay alive until this destructor finishes) and
+        // is waited out by the operation destructor, but it must not
+        // resume the coroutine being destroyed. Normal post-completion
+        // destruction sees completed here and proceeds unchanged.
+        state_.exchange(
+            bridge_state::abandoned, std::memory_order_acq_rel);
         destroy_op();
     }
 
@@ -670,17 +825,11 @@ private:
         }
     }
 
-    enum class completion_state {
-        starting,
-        suspended,
-        completed
-    };
-
     static auto __take_unstarted_sender(sender_awaitable& other) -> Sender {
         if (other.op_constructed_ || other.env_ != nullptr ||
             other.continuation_ ||
             other.state_.load(std::memory_order_acquire) !=
-                completion_state::starting) {
+                bridge_state::starting) {
             throw std::logic_error{
                 "forge::io::await_sender cannot move after suspension starts"};
         }
@@ -688,10 +837,39 @@ private:
     }
 
     auto complete() noexcept -> void {
+        // Resume only when the coroutine is genuinely parked: starting
+        // means the synchronous path picks the result up in await_suspend,
+        // abandoned means the destructor owns the frame and a resume would
+        // race the destruction. Everything the tail needs is copied to
+        // locals first: the resume may run the chain to completion and a
+        // receiver completing inline may destroy the operation state, so
+        // the tail must not touch this awaitable and may touch the root
+        // link only while its resuming count keeps the frames alive.
+        auto* const root = chain_root_;
         if (state_.exchange(
-                completion_state::completed,
-                std::memory_order_acq_rel) == completion_state::suspended) {
+                bridge_state::completed,
+                std::memory_order_acq_rel) == bridge_state::suspended) {
+            if (root == nullptr) {
+                continuation_.resume();
+                return;
+            }
+            root->resuming_thread.store(
+                std::this_thread::get_id(), std::memory_order_relaxed);
+            root->resuming.fetch_add(1, std::memory_order_acq_rel);
             continuation_.resume();
+            // deferred_destroy is only ever set from inside a resume call
+            // on this chain, so reading it before dropping the count sees
+            // every inline abandonment; a cross-thread abandonment instead
+            // waits for the count to reach zero and owns the destruction.
+            // After the drop the root may be gone, so nothing is read past
+            // it on the non-deferred path.
+            const bool deferred =
+                root->deferred_destroy.load(std::memory_order_acquire);
+            const std::coroutine_handle<> frames = root->self_frame;
+            if (root->resuming.fetch_sub(1, std::memory_order_acq_rel) == 1 &&
+                deferred) {
+                destroy_frame_chain(frames, root);
+            }
         }
     }
 
@@ -703,7 +881,8 @@ private:
     bool stopped_ = false;
     alignas(op_t) unsigned char op_buffer_[sizeof(op_t)];
     bool op_constructed_ = false;
-    std::atomic<completion_state> state_{completion_state::starting};
+    frame_chain_link* chain_root_ = nullptr;
+    std::atomic<bridge_state> state_{bridge_state::starting};
 };
 
 } // namespace __coro_detail
@@ -792,7 +971,7 @@ private:
 
     auto __destroy_chain() noexcept -> void {
         if (coro_) {
-            __coro_detail::destroy_frame_chain(coro_, &coro_.promise());
+            __coro_detail::abandon_task_chain(coro_);
             coro_ = {};
         }
     }
@@ -812,6 +991,11 @@ private:
             return std::noop_coroutine();
         }
         coro_.promise().env = &env;
+        // self_frame lets a deferred abandonment (receiver completing
+        // inline destroyed the operation state) hand the frames to the
+        // tail of the unwinding resume for destruction.
+        coro_.promise().self_frame = coro_;
+        coro_.promise().started.store(true, std::memory_order_release);
         return coro_;
     }
 
@@ -909,7 +1093,7 @@ private:
 
     auto __destroy_chain() noexcept -> void {
         if (coro_) {
-            __coro_detail::destroy_frame_chain(coro_, &coro_.promise());
+            __coro_detail::abandon_task_chain(coro_);
             coro_ = {};
         }
     }
@@ -929,6 +1113,11 @@ private:
             return std::noop_coroutine();
         }
         coro_.promise().env = &env;
+        // self_frame lets a deferred abandonment (receiver completing
+        // inline destroyed the operation state) hand the frames to the
+        // tail of the unwinding resume for destruction.
+        coro_.promise().self_frame = coro_;
+        coro_.promise().started.store(true, std::memory_order_release);
         return coro_;
     }
 
@@ -990,10 +1179,14 @@ public:
         task_.__set_continuation(continuation);
         // Record the downward link before control enters the child, so an
         // abandonment while the chain is suspended destroys frames
-        // iteratively instead of recursing through this awaitable.
+        // iteratively instead of recursing through this awaitable. The
+        // root link propagates so the leaf's sender bridge publishes its
+        // completion slot at the root, where abandon_task_chain looks.
         if (parent_ != nullptr && task_.coro_) {
             parent_->child_frame = task_.coro_;
-            parent_->child_link = &task_.coro_.promise();
+            frame_chain_link* child = &task_.coro_.promise();
+            child->root_link = parent_->root_link;
+            parent_->child_link = child;
             parent_->owned_task = &task_;
             parent_->release_owned = [](void* task) noexcept {
                 static_cast<io_task<T>*>(task)->__abandon();

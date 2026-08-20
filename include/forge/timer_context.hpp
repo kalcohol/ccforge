@@ -310,6 +310,8 @@ struct __op_data {
     {}
 
     void complete_value() noexcept {
+        completing_thread_.store(
+            std::this_thread::get_id(), std::memory_order_relaxed);
         if (done_.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
@@ -317,6 +319,8 @@ struct __op_data {
     }
 
     void complete_stopped() noexcept {
+        completing_thread_.store(
+            std::this_thread::get_id(), std::memory_order_relaxed);
         if (done_.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
@@ -325,6 +329,10 @@ struct __op_data {
 
     R rcvr_;
     std::atomic<bool> done_{false};
+    // Published before the done claim (released by its RMW) so an
+    // abandoning destructor that lost the claim can tell a completion on
+    // its own call stack from one still delivering on another thread.
+    std::atomic<std::thread::id> completing_thread_{};
 };
 
 template<class R>
@@ -660,6 +668,15 @@ inline __op<R>::~__op() {
         return;
     }
     if (data_->done_.exchange(true, std::memory_order_acq_rel)) {
+        // A completion owns the claim. On this very call stack (normal
+        // continuation destroying the state) waiting would self-deadlock;
+        // a delivery still running on another thread must be waited out
+        // so it cannot outlive the receiver environment.
+        if (data_->completing_thread_.load(std::memory_order_relaxed) ==
+            std::this_thread::get_id()) {
+            return;
+        }
+        item_->wait_delivered();
         return;
     }
     if (state_ && state_->discard_item(item_)) {

@@ -589,6 +589,76 @@ TEST(IoContextTest, AbandoningPendingByteOperationIsSafe) {
     EXPECT_EQ(buffer[0], std::byte{0});
 }
 
+TEST(IoContextTest, AbandonRacesConcurrentCompletion) {
+    forge::io::context ctx;
+
+    // Adversarial interleaving sweep: readiness fires just before the owner
+    // destroys the operation state, so the poller-side delivery races the
+    // destructor-side abandonment. Every interleaving must settle to one of
+    // two outcomes with no memory traffic after the destructor returns:
+    // either the record was discarded (no completion) or the in-flight
+    // delivery was waited out (completion fully visible). Sanitizer lanes
+    // turn any protocol violation into a hard failure.
+    for (int round = 0; round < 512; ++round) {
+        auto pipe = make_pipe();
+        auto state = std::make_shared<io_state>();
+        {
+            auto op = std::execution::connect(
+                ctx.readable(pipe.first.get()),
+                io_receiver{state});
+            std::execution::start(op);
+            write_byte(pipe.second.get());
+            // Sweep the destruction point across the delivery window.
+            for (int spin = 0; spin < round % 37; ++spin) {
+                std::this_thread::yield();
+            }
+        }
+        const bool settled = [&] {
+            std::lock_guard lk{state->mtx};
+            return state->value;
+        }();
+        std::this_thread::yield();
+        std::lock_guard lk{state->mtx};
+        // The outcome must not change after the destructor returned.
+        EXPECT_EQ(state->value, settled);
+        EXPECT_FALSE(state->stopped);
+        EXPECT_FALSE(state->error);
+    }
+
+    ctx.shutdown();
+    ctx.wait();
+}
+
+TEST(IoContextTest, AbandonRacesConcurrentByteDelivery) {
+    forge::io::context ctx;
+
+    // Same interleaving sweep for the byte path, which additionally writes
+    // into a borrowed buffer during delivery. Reusing the buffer right
+    // after the destructor returns must be safe: any later poller write
+    // into it would be a use-after-abandon that the sanitizer lanes catch.
+    for (int round = 0; round < 512; ++round) {
+        auto pipe = make_pipe();
+        auto state = std::make_shared<typed_io_state>();
+        std::array<std::byte, 8> buffer{};
+        {
+            auto op = std::execution::connect(
+                ctx.async_read_some(pipe.first.get(), std::span{buffer}),
+                byte_size_receiver{state});
+            std::execution::start(op);
+            write_byte(pipe.second.get());
+            for (int spin = 0; spin < round % 37; ++spin) {
+                std::this_thread::yield();
+            }
+        }
+        buffer.fill(std::byte{0xFF});
+        std::lock_guard lk{state->mtx};
+        EXPECT_FALSE(state->error);
+    }
+
+    ctx.shutdown();
+    ctx.wait();
+}
+
 TEST(IoContextTest, CloseAfterReadinessStillCompletesTakenRecord) {
     for (int i = 0; i < 32; ++i) {
         auto pipe = make_pipe();

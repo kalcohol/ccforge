@@ -140,8 +140,10 @@ Failure policy:
     receiver completion 同时触碰同一 op data。
   - 销毁 started 且尚未完成的 timer operation state（弃置）是安全的：析构会先声明
     completion（此后 worker 永不触碰 receiver），再把仍在队列中的 item 注销并平衡
-    pending 计数；若 worker 正在交付，会等 stop registration 拆除完成后才返回。被弃
-    置的 timer 不产生任何 completion。
+    pending 计数。若 worker 先赢得 completion 声明，析构按交付线程区分：completion
+    正发生在本调用栈上（正常 continuation 销毁自身 state）时直接放行以免自锁，另一
+    线程的在途交付则等 receiver completion 与 stop registration 拆除都结束后才返回。
+    被弃置的 timer 不产生任何 completion，析构返回后结果不再变化。
 - `forge::runtime_context`：显式拥有的运行时上下文，组合一个 `static_thread_pool` 和一个
   `timer_context`。`runtime_context_options` 可配置线程数、pool 队列容量和共享
   resource。`get_scheduler()` 返回 CPU scheduler，`schedule_after` / `schedule_at` 转发

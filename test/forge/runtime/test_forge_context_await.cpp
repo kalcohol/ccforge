@@ -6,8 +6,11 @@
 #include <array>
 #include <cstddef>
 #include <execution>
+#include <memory>
+#include <mutex>
 #include <span>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L \
@@ -150,6 +153,85 @@ TEST(ForgeContextAwaitTest, WritableReadinessAwaitableHasNoByteCount) {
     auto [ready_io] = std::move(*ready_result);
     auto [error] = ready_io;
     EXPECT_FALSE(error);
+}
+
+namespace {
+
+struct abandon_state {
+    std::mutex mtx;
+    bool value = false;
+    bool stopped = false;
+    bool error = false;
+};
+
+struct abandon_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::shared_ptr<abandon_state> state;
+
+    void set_value(forge::io::io_result<> result) && noexcept {
+        std::lock_guard lk{state->mtx};
+        if (result.has_value()) {
+            state->value = true;
+        } else {
+            state->error = true;
+        }
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        std::lock_guard lk{state->mtx};
+        state->error = true;
+    }
+
+    void set_stopped() && noexcept {
+        std::lock_guard lk{state->mtx};
+        state->stopped = true;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+} // namespace
+
+TEST(ForgeContextAwaitTest, AbandonRacesReadinessDeliveryThroughCoroutine) {
+    forge::io::context context;
+
+    // Destroying an io_task frame while its awaited readiness operation is
+    // being delivered on the poller thread exercises the bridge abandonment
+    // protocol: the awaitable destructor claims the completion slot, so a
+    // late delivery writes only the result members and never resumes the
+    // dying coroutine, while the operation destructor waits the delivery
+    // out. Sanitizer lanes assert the absence of frame use-after-free.
+    for (int round = 0; round < 512; ++round) {
+        auto pipe = make_pipe();
+        auto state = std::make_shared<abandon_state>();
+        {
+            auto op = std::execution::connect(
+                forge::io::as_sender(
+                    forge::io::readable(context, pipe.first.get())),
+                abandon_receiver{state});
+            std::execution::start(op);
+            const char byte = 'x';
+            ASSERT_EQ(::write(pipe.second.get(), &byte, 1), 1);
+            // Sweep the destruction point across the delivery window.
+            for (int spin = 0; spin < round % 37; ++spin) {
+                std::this_thread::yield();
+            }
+        }
+        const bool settled = [&] {
+            std::lock_guard lk{state->mtx};
+            return state->value;
+        }();
+        std::this_thread::yield();
+        std::lock_guard lk{state->mtx};
+        EXPECT_EQ(state->value, settled);
+        EXPECT_FALSE(state->error);
+    }
+
+    context.shutdown();
+    context.wait();
 }
 
 TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {

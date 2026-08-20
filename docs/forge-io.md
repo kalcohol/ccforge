@@ -274,9 +274,20 @@ stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 a
 
 - 可安全弃置（poller 持有，库可同步撤销）：timer facade 与 epoll backend 的
   readiness/byte operation。弃置析构先原子认领完成权（poller 此后不可能再打进
-  该 operation state），再从注册表摘除记录；若记录已被 poller 提取、正在完成，
-  析构会等待其收尾（stop 注册的拆除不得晚于 receiver 环境销毁）。与完成"同一
-  瞬间"的弃置仍是调用方自身的竞态。
+  该 operation state），再从注册表摘除记录。若完成方先赢得认领，析构按投递
+  线程区分：完成正发生在本调用栈上（正常 continuation 路径销毁自身 state）时
+  直接放行以免自锁；另一线程的在途投递则被等待收尾——receiver 完成与 stop
+  注册的拆除都严格先于析构返回。协程桥（`await_sender`）在析构时同时认领
+  完成槽，迟到的投递只写结果成员、不会 resume 正在销毁的 coroutine。因此与
+  完成"同一瞬间"的弃置也是安全结算的：析构返回后结果不再变化。
+- task 链层面的弃置仲裁：链根 promise 记录 started/finalized 标记、在途 resume
+  计数与当前挂起所在的桥完成槽。跨线程弃置先对完成槽做认领仲裁（认领成功则
+  投递永不 resume；失败则等链推进到下一稳定态后重仲裁），并在任何拆帧前等在途
+  resume 计数归零，保证 resume 调用回卷离开帧之前帧不消失。弃置发生在 resume
+  链自己调用栈上（receiver 在完成回调内同步销毁 operation state，这是受支持
+  用法，`when_all_results`/`when_any_results` 的自毁聚合即依赖它）时既不等待
+  （自锁）也不当场拆帧（resume 仍在帧间回卷），而是把拆帧交给最后一个回卷完毕
+  的 resume 尾部执行。
 - 快速失败（kernel 持有 borrowed buffer，无法同步撤销）：io_uring 与 IOCP 的
   in-flight operation。弃置违反 borrowed 契约，析构护栏 `std::terminate()`，
   见各 backend 一节。erased async stream 的悬挂 operation 同属此类。
@@ -349,8 +360,10 @@ Sender interop 分两层：
   connect 会 move 走 task，并由 operation-state 持有 task 与 `io_env` 副本直到完成。
   operation-state 会把传入的 `io_env.stop_token` 与连接方 receiver/env stop token
   融合；任一 stop source 请求都会让 coroutine 内的 `await_sender` 观察到 stopped。
-  和 `forge::task` 一样，receiver 不应在 final-suspend completion callback 内同步销毁
-  已连接的 operation-state。
+  与 `forge::task`（backport `std::execution` 的 task）不同，`as_sender` 的 receiver
+  可以在 completion callback 内同步销毁已连接的 operation-state：task 链的弃置仲裁
+  会把 frame 销毁推迟到正在回卷的 resume 尾部（见弃置语义一节），
+  `when_all_results` 的自毁聚合测试钉住该行为。
 - `io_result<Ts...>` 不会被 `as_sender` 隐式拆成 sender value/error channels。若 coroutine
   返回 `io_result<std::size_t>`，它作为单个 value 传出，保留 error code 与 partial byte count。
   需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
@@ -515,7 +528,9 @@ V1 设计边界：epoll backend 的实际 `read(2)` / `write(2)` syscall 在单�
 io_uring backend 或自行分片。
 epoll backend 的 operation state 支持安全弃置：销毁已 start 未完成的 operation
 会认领完成权并从注册表摘除记录，poller 不会再打进已销毁的 state 或向借用
-buffer 写入（见上文弃置语义两分类）。
+buffer 写入（见上文弃置语义两分类）。弃置与并发投递的对抗性交错（readiness
+已触发、poller 正在投递、拥有方同时析构）由 512 轮扫窗压力测试在 readiness
+与 byte 两条路径上钉住，sanitizer lane 下任何协议破坏都会硬失败。
 空 span 是特殊情况：Linux backend 不等待 readiness，直接完成 `set_value(0)`。
 `0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
 span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；
