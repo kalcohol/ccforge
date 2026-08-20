@@ -263,6 +263,12 @@ target_tsan() {
                 "execution|forge" \
                 build/tsan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+    if [ -x build/tsan/test/forge/test_forge_io_uring_context ]; then
+        log "tsan: running io_uring runtime tests in the allow-io_uring container"
+        FORGE_IO_URING_PROBE_IMAGE=forge-tsan \
+            FORGE_IO_URING_TEST_BUILD_DIRS=build/tsan \
+            scripts/probe-io-uring-container.sh
+    fi
     ok "tsan verified (execution + forge utility subsets, no data races)"
 }
 
@@ -298,6 +304,12 @@ target_asan() {
                 "execution|forge" \
                 build/asan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+    if [ -x build/asan/test/forge/test_forge_io_uring_context ]; then
+        log "asan: running io_uring runtime tests in the allow-io_uring container"
+        FORGE_IO_URING_PROBE_IMAGE=forge-asan \
+            FORGE_IO_URING_TEST_BUILD_DIRS=build/asan \
+            scripts/probe-io-uring-container.sh
+    fi
     log "asan: building focused SIMD tests with -fsanitize=address,undefined"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '

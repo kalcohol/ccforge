@@ -9,6 +9,11 @@ profile="${build_dir}/io-uring-seccomp.json"
 image="${FORGE_IO_URING_PROBE_IMAGE:-forge-tsan}"
 compiler="${FORGE_IO_URING_CONTAINER_CXX:-clang++}"
 podman="${PODMAN:-podman}"
+# Optional space-separated list of build directories (relative to the repo
+# root) whose io_uring runtime tests run inside the allow-io_uring container
+# after the raw probe. Skips are hard failures here: the probe just proved
+# the environment supports io_uring, so a skipping test would be a bug.
+test_build_dirs="${FORGE_IO_URING_TEST_BUILD_DIRS:-}"
 
 if [[ ! -r "${base_profile}" ]]; then
     printf 'base seccomp profile is not readable: %s\n' "${base_profile}" >&2
@@ -48,6 +53,7 @@ with open(destination, "w", encoding="utf-8", newline="\n") as output_file:
     output_file.write("\n")
 PY
 
+# shellcheck disable=SC2086  # test_build_dirs is intentionally word-split
 "${podman}" run --rm \
     --userns=keep-id \
     --cap-drop=all \
@@ -63,4 +69,17 @@ PY
         CXX="$1" \
             FORGE_IO_URING_PROBE_BUILD_DIR=/tmp/ccforge-io-uring-probe \
             scripts/probe-io-uring.sh
-    ' bash "${compiler}"
+        shift
+        for dir in "$@"; do
+            for name in test_forge_io_uring_context test_forge_io_uring_rw; do
+                binary="${dir}/test/forge/${name}"
+                if [[ ! -x "${binary}" ]]; then
+                    printf "missing io_uring test binary: %s\n" \
+                        "${binary}" >&2
+                    exit 3
+                fi
+                printf "[io-uring-container] running %s\n" "${binary}"
+                "${binary}"
+            done
+        done
+    ' bash "${compiler}" ${test_build_dirs}

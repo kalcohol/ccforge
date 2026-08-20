@@ -320,18 +320,24 @@ backend-specific tests/examples。Backend-free IO/coroutine tests 仍由
 `FORGE_TEST_ENABLE_FORGE_IO` 控制。Erasure facilities 是 header-only 且总是可用；用
 `FORGE_TEST_ENABLE_FORGE_ERASURE` 控制是否运行对应测试。
 
-`FORGE_ENABLE_FORGE_IO_URING` 是与 portable epoll/IOCP selection 独立的 Linux
-completion-backend gate。`AUTO` 在 Linux UAPI header、setup/enter/register syscall
-numbers、`NOP`/`READ`/`WRITE`/`ASYNC_CANCEL` 和 `NODROP` compile probe 通过时启用；
-`ON` 缺任一 build requirement 会 configure 失败；`OFF` 不执行该 probe，也不注册
-io_uring tests/examples。Runtime kernel 或 sandbox capability 由专用 probe/test 处理，
-不在 configure 时执行 target binary。
+`FORGE_ENABLE_FORGE_IO_URING` 是不参与 portable epoll/IOCP selection 的 Linux
+completion-backend gate，但从属于父 gate `FORGE_ENABLE_FORGE_IO`：父 gate `OFF` 时
+io_uring backend 与其 tests/examples 一并关闭，`FORGE_ENABLE_FORGE_IO_URING=ON`
+与父 gate `OFF` 的组合是 configure 错误。`AUTO` 在 Linux UAPI header、
+setup/enter/register syscall numbers、`NOP`/`READ`/`WRITE`/`ASYNC_CANCEL` 和
+`NODROP` compile probe 通过时启用；`ON` 缺任一 build requirement 会 configure 失败；
+`OFF` 不执行该 probe，也不注册 io_uring tests/examples。Runtime kernel 或 sandbox
+capability 由专用 probe/test 处理，不在 configure 时执行 target binary。
 
 io_uring runtime tests 在受限沙箱（如容器默认 seccomp 阻断 `io_uring_setup`）下检测
 构造期 `ENOSYS`/`EPERM`/`EACCES` 并以 exit 77 skip；宿主或放行 io_uring 的容器 lane
 才执行完整 runtime 断言。容器内的放行验证通道使用
-`scripts/probe-io-uring-container.sh`（自定义 allow-io_uring seccomp profile），该
-lane 同时覆盖 TSAN 与 ASAN+UBSAN 下的 io_uring context/read-write tests。
+`scripts/probe-io-uring-container.sh`（自定义 allow-io_uring seccomp profile）：默认
+只跑 raw syscall probe；设置 `FORGE_IO_URING_TEST_BUILD_DIRS=<build-dir...>`（配合
+`FORGE_IO_URING_PROBE_IMAGE` 选择匹配二进制的镜像）时在同一容器内继续运行这些
+build 目录下的 io_uring context/read-write tests，且此处 skip 视为失败——probe 刚证明
+环境可用。`scripts/verify-native.sh` 的 `tsan` 与 `asan` lane 在构建出 io_uring tests 时
+自动走这条通道，因此 sanitizer 覆盖包含 io_uring runtime tests。
 
 ## Example smoke tests（示例冒烟）
 
