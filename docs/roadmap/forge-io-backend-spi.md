@@ -306,16 +306,22 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
   因此 wakeup CQE 处理必须同时清除两个标志，否则会造成 stale-flag 死锁。
 - Target SQE 在 flush 重试后仍无法进入 SQ 时，operation 以
   `std::errc::no_buffer_space` error 完成（V1 边界；cancel SQE 走 parked 路径，
-  不适用此边界）。
+  不适用此边界）。已发布的 target SQE 若 flush 硬失败（非 EBUSY），提交路径回退
+  发布（failing flush 保证尾项未被内核消费）并同样以 `no_buffer_space` 拒绝：
+  parked 数据 SQE 没有唤醒保证（poller 可能已带旧 to_submit 阻塞、且无 in-flight
+  CQE），接受它会让提交协程一直挂到下一次 lifecycle 转换。EBUSY 保持 parked——
+  CQ backlog 保证 poller 醒来并经下轮 enter 的 to_submit 消费。
 - Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
   fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
 - 2026-08-20 修复（原理论边界）：wakeup NOP 的 flush 硬失败（持续 EAGAIN 放弃、
   ENOMEM 等）不再依赖单次成功。失败的 NOP 留驻 SQ，`wait()`（含析构）在 join 前
-  经 `wait_poller_exit()` 以 1ms 周期重试 flush 直至内核接纳并等 poller 退出用
-  condition_variable 通知，无超时 GETEVENTS 因唤醒丢失而永久挂起的窗口被关闭。
-  仅当内核对一个健康 ring 永久拒绝提交时仍会持续重试（无终止），生产化仍可考虑
-  eventfd 或带超时的 GETEVENTS 作为进一步硬化。
+  经 `wait_poller_exit()` 以 1ms 周期重驱动完整唤醒链（NOP 因 SQ 满而从未发布成功
+  时重试发布，已发布未 flush 时重试 flush；flush 本身会顺带消费占满 SQ 的 parked
+  条目）直至内核接纳，并等 poller 退出用 condition_variable 通知。生命周期唤醒
+  不再依赖"单次 flush 成功"或"SQ 饱和必有 in-flight CQE"这两个假设。仅当内核对
+  一个健康 ring 永久拒绝提交时仍会持续重试（无终止），生产化仍可考虑 eventfd 或
+  带超时的 GETEVENTS 作为进一步硬化。
 - 2026-08-19 审查补充（可观测性护栏）：`io_uring_context::last_error()` 返回
   poller 记录的最后一个硬错误（默认零值），把"后端死亡后新提交一律 stopped"与
   优雅 stop 排空区分开；已提交未 resume 的 awaitable 在析构时 `std::terminate()`

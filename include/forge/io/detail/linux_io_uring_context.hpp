@@ -266,6 +266,16 @@ public:
         });
     }
 
+    // Retracts the most recently published, still-unconsumed SQE. Only
+    // valid under the submission lock immediately after a failed flush of
+    // that entry: a failing flush implies the kernel never consumed the
+    // tail entry (a fully drained SQ makes flush_published succeed), so
+    // stepping the tail back simply unpublishes it.
+    void retract_last_published() noexcept {
+        const unsigned tail = load_relaxed(sq_tail_);
+        store_release(sq_tail_, tail - 1U);
+    }
+
     [[nodiscard]] auto unflushed_count() noexcept -> unsigned {
         const unsigned head = load_acquire(sq_head_);
         const unsigned tail = load_acquire(sq_tail_);
@@ -611,14 +621,22 @@ struct context_state {
     // flush failed hard (e.g. transient ENOMEM) stays parked in the SQ while
     // the poller blocks in GETEVENTS with nothing else in flight; a blind
     // join would then hang forever because nothing retries the flush. This
-    // loop re-flushes a parked wakeup until the kernel accepts it.
+    // loop re-drives the whole wakeup chain (publish if the NOP could not
+    // even be published into a saturated SQ, then flush) until the kernel
+    // accepts it; the flush inside also consumes any parked entries that
+    // were keeping the SQ full.
     void wait_poller_exit() noexcept {
         std::unique_lock lock{mutex};
         while (!poller_done) {
-            if ((closed || stopped) && wakeup_published &&
-                !wakeup_in_flight) {
+            if (closed || stopped) {
                 submit_wakeup_locked();
-                cv.wait_for(lock, std::chrono::milliseconds{1});
+                if (wakeup_in_flight) {
+                    // The NOP reached the kernel; its CQE will wake the
+                    // poller, which then exits and notifies.
+                    cv.wait(lock);
+                } else {
+                    cv.wait_for(lock, std::chrono::milliseconds{1});
+                }
             } else {
                 cv.wait(lock);
             }
@@ -718,8 +736,21 @@ struct context_state {
             }
         }
 
+        const std::error_code flush_error = ring_state.flush_published();
+        record_flush_locked(flush_error);
+        if (flush_error && flush_error.value() != EBUSY) {
+            // A hard flush failure would park this SQE with no wakeup
+            // guarantee: nothing else may be in flight to produce a CQE,
+            // and the poller may already be blocked with a stale
+            // to_submit. Retract the published-but-unconsumed entry and
+            // reject, so the operation completes with an error instead of
+            // suspending forever. (EBUSY keeps the entry parked: a CQ
+            // backlog guarantees the poller wakes and its next enter
+            // consumes parked SQEs via to_submit.)
+            ring_state.retract_last_published();
+            return submit_status::saturated;
+        }
         link_operation_locked(operation);
-        record_flush_locked(ring_state.flush_published());
         return submit_status::accepted;
     }
 

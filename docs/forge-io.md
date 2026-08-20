@@ -773,8 +773,10 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   护栏而不是静默 UAF。
 - 生命周期唤醒对 flush 硬失败有自愈路径：`close()`/`request_stop()`/`shutdown()`
   发布的唤醒 NOP 若 flush 失败（如瞬态 ENOMEM）会留驻 SQ，`wait()`（含析构）
-  在 join 前循环重试该 flush 直至内核接纳，poller 不会因单次 flush 失败而在无
-  超时的 GETEVENTS 里永久沉睡。
+  在 join 前循环重驱动完整唤醒链（必要时重试发布，已发布则重试 flush）直至内核
+  接纳，poller 不会因单次 flush 失败而在无超时的 GETEVENTS 里永久沉睡。数据
+  SQE 的 flush 硬失败则在提交时回退发布并以 `no_buffer_space` error 完成，
+  不会留下无唤醒保证的悬挂操作。
 - io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
   `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
   （`async_read_stream` / `async_write_stream`）适配不受影响。
