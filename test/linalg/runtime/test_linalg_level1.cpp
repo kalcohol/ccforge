@@ -181,8 +181,10 @@ TEST(LinalgLevel1Reductions, VectorTwoNormAvoidsIntermediateOverflow) {
 }
 
 // The scaled-sum recurrence divides magnitudes; integral element types used
-// to truncate those ratios to zero and report two_norm({3,4}) == 4.
-TEST(LinalgLevel1Reductions, VectorTwoNormIntegerElementsComputeExactNorm) {
+// to truncate those ratios to zero and report two_norm({3,4}) == 4. The
+// integral paths accumulate in double, so results are exact only up to
+// double's 2^53 integer precision (see the bound test below).
+TEST(LinalgLevel1Reductions, VectorTwoNormIntegerElementsUseDoubleAccumulation) {
     int x_data[] = {3, 4};
     std::mdspan x(x_data, std::extents<int, 2>{});
 
@@ -190,7 +192,7 @@ TEST(LinalgLevel1Reductions, VectorTwoNormIntegerElementsComputeExactNorm) {
     EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 0.0), 5.0);
 }
 
-TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsComputeExactNorm) {
+TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsUseDoubleAccumulation) {
     int a_data[] = {1, 2, 2, 4};
     std::mdspan a(a_data, std::extents<int, 2, 2>{});
 
@@ -198,9 +200,56 @@ TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsComputeExactNorm) {
     EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(a, 0.0), 5.0);
 }
 
+// abs() of the most negative signed value is undefined; the magnitude
+// helpers compute it in the unsigned counterpart instead.
+TEST(LinalgLevel1Reductions, SignedMinimumMagnitudeIsWellDefined) {
+    constexpr int int_min = std::numeric_limits<int>::min();
+    int x_data[] = {int_min};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+
+    // |INT_MIN| = 2^31 saturates an int-typed norm and stays exact in
+    // wider result types.
+    EXPECT_EQ(std::linalg::vector_two_norm(x, 0),
+              std::numeric_limits<int>::max());
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 0.0), 2147483648.0);
+    EXPECT_EQ(std::linalg::vector_abs_sum(x, std::int64_t{0}),
+              std::int64_t{2147483648});
+
+    int y_data[] = {5, int_min, 7};
+    std::mdspan y(y_data, std::extents<int, 3>{});
+    EXPECT_EQ(std::linalg::vector_idx_abs_max(y),
+              decltype(y)::size_type{1});
+}
+
+// Documents the double-precision boundary of the integral accumulation:
+// past 2^53 the accumulator rounds, so results are "double-exact", not
+// arbitrarily exact.
+TEST(LinalgLevel1Reductions, IntegerNormsAreDoublePrecisionBounded) {
+    constexpr std::int64_t big = std::int64_t{1} << 31;
+    std::int64_t x_data[] = {big, 3};
+    std::mdspan x(x_data, std::extents<int, 2>{});
+
+    // big^2 + 9 = 2^62 + 9 rounds to 2^62 in double, so the small element
+    // is absorbed and the norm comes back as exactly 2^31.
+    EXPECT_EQ(std::linalg::vector_two_norm(x, std::int64_t{0}), big);
+
+    // The frob-norm saturation branch mirrors vector_two_norm.
+    std::int8_t a_data[] = {100, 100, 100, 100};
+    std::mdspan a(a_data, std::extents<int, 2, 2>{});
+    EXPECT_EQ(std::linalg::matrix_frob_norm(a, std::int8_t{0}),
+              std::numeric_limits<std::int8_t>::max());
+
+    // Unsigned 64-bit inputs saturate at the type maximum when the norm
+    // exceeds it.
+    constexpr std::uint64_t u_max = std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t u_data[] = {u_max, u_max};
+    std::mdspan u(u_data, std::extents<int, 2>{});
+    EXPECT_EQ(std::linalg::vector_two_norm(u, std::uint64_t{0}), u_max);
+}
+
 // Same truncation family as two_norm: the integral scaled recurrence used to
 // report {4, 1} for {3, 4}, reconstructing a norm of 4 instead of 5.
-TEST(LinalgLevel1Reductions, VectorSumOfSquaresIntegerElementsStayExact) {
+TEST(LinalgLevel1Reductions, VectorSumOfSquaresIntegerElementsAvoidTruncation) {
     int x_data[] = {3, 4};
     std::mdspan x(x_data, std::extents<int, 2>{});
 

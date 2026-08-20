@@ -211,8 +211,17 @@ using __accessor_value_t =
 
 template<class T>
 constexpr auto __abs_if_needed(const T& value) {
-    if constexpr (std::is_unsigned_v<std::remove_cvref_t<T>>) {
+    using value_type = std::remove_cvref_t<T>;
+    if constexpr (std::is_unsigned_v<value_type>) {
         return value;
+    } else if constexpr (std::is_integral_v<value_type>) {
+        // abs() on the most negative value is undefined behavior; compute
+        // the magnitude in the unsigned counterpart, which represents it.
+        using unsigned_type = std::make_unsigned_t<value_type>;
+        const auto widened = static_cast<unsigned_type>(value);
+        return value < value_type{}
+            ? static_cast<unsigned_type>(unsigned_type{} - widened)
+            : widened;
     } else {
         using std::abs;
         return abs(value);

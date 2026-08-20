@@ -292,7 +292,11 @@ auto vector_abs_sum(
     using T = decltype(__detail::__abs_sum_term(x[0]));
     using ElemT = std::remove_const_t<typename Accessor::element_type>;
 #if __LINALG_HAS_SIMD
+    // Signed integral elements stay on the scalar path: the lane-wise
+    // negation below is undefined for the most negative value, while the
+    // scalar path computes magnitudes in the unsigned counterpart.
     if constexpr (!__detail::__is_complex_v<ElemT> &&
+                  !(std::is_integral_v<ElemT> && std::is_signed_v<ElemT>) &&
                   __detail::__can_simd_v<ElemT, Layout, Accessor>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
