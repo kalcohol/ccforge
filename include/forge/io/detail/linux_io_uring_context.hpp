@@ -963,6 +963,11 @@ private:
                 flush_diagnostic = {
                     -completion.res,
                     std::generic_category()};
+            } else {
+                // A successful wakeup round trip proves the submission path
+                // recovered; clear the diagnostic so readers can tell live
+                // stress from stale history.
+                flush_diagnostic = {};
             }
             return;
         }
@@ -1076,8 +1081,10 @@ public:
 
     // Most recent recoverable observation (retried flush errors, transient
     // wakeup saturation, unexpected administrative CQE results). Non-zero
-    // values here describe a busy or previously-stressed ring, not backend
-    // death; the poller keeps running and operations keep completing.
+    // values here describe a busy or stressed ring, not backend death; the
+    // poller keeps running and operations keep completing. A successful
+    // wakeup round trip clears it, so a stale non-zero value does not
+    // outlive the recovery it diagnosed.
     [[nodiscard]] auto last_flush_diagnostic() const noexcept
         -> std::error_code {
         return state_->last_flush_diagnostic();

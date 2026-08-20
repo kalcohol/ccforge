@@ -339,6 +339,13 @@ build 目录下的 io_uring context/read-write tests，且此处 skip 视为失�
 环境可用。`scripts/verify-native.sh` 的 `tsan` 与 `asan` lane 在构建出 io_uring tests 时
 自动走这条通道，因此 sanitizer 覆盖包含 io_uring runtime tests。
 
+`forge_io_uring_fault` 是链接器支持 `--wrap=syscall` 时额外注册的注入式测试：拦截
+submit-only 的 `io_uring_enter`（不带 GETEVENTS flag 且 `to_submit > 0`）注入
+`ENOMEM`/`EBUSY`，钉住数据 SQE flush 硬失败的回退拒绝（`no_buffer_space` error 完成
+且环保持一致）、生命周期唤醒链跨 flush 硬失败的自愈，以及唤醒 NOP 无法发布进饱和
+SQ 后的重驱动。链接器不支持 `--wrap` 时该目标不注册（configure 输出提示），容器
+放行通道对缺失的该二进制打印说明而不失败。
+
 ## Example smoke tests（示例冒烟）
 
 当 `FORGE_BUILD_EXAMPLES=ON` 且 `FORGE_BUILD_TESTS=ON` 时，实际构建出来的 examples

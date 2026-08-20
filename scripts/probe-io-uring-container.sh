@@ -81,5 +81,16 @@ PY
                 printf "[io-uring-container] running %s\n" "${binary}"
                 "${binary}"
             done
+            # The failure-injection binary only exists when the linker
+            # supports --wrap=syscall, so a missing file is a toolchain
+            # capability gap rather than an environment bug.
+            fault_binary="${dir}/test/forge/test_forge_io_uring_fault"
+            if [[ -x "${fault_binary}" ]]; then
+                printf "[io-uring-container] running %s\n" "${fault_binary}"
+                "${fault_binary}"
+            else
+                printf "[io-uring-container] %s not built (linker lacks --wrap); skipping\n" \
+                    "${fault_binary}"
+            fi
         done
     ' bash "${compiler}" ${test_build_dirs}

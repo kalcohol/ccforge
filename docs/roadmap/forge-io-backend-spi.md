@@ -330,6 +330,8 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
 - 2026-08-20 诊断分层：`last_error()` 只记录让 poller 停机的硬错误；可恢复观测
   （flush 重试错误、瞬态唤醒饱和 `no_buffer_space`、异常 administrative CQE
   结果）改记 `last_flush_diagnostic()`，繁忙但健康的 ring 不再被误报为后端死亡。
+  成功的唤醒 NOP 往返会清零该诊断，使其反映"当前受压"而非陈旧历史；
+  `--wrap=syscall` 注入测试（`forge_io_uring_fault`）钉住记录与清零两个方向。
   弃置护栏说明补强：护栏有意不按 phase 收窄——未 resume 的 operation 可能还挂在
   poller 的侵入式 ready 链上（链节点与 continuation 位于协程帧内），"CQE 已
   drain 未 resume"窗口的销毁同样会让 poller 走已释放内存，不存在可安全放行的
