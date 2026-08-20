@@ -712,14 +712,30 @@ T ellint_3_fallback(T k, T nu, T phi) {
         std::abs(k) > T{1}) {
         return quiet_nan<T>();
     }
-    // Same divergence as ellint_1: at |k| == 1 the 1/sqrt(1 - k^2 sin^2)
-    // factor behaves like 1/|cos(theta)|, so the integral diverges once the
-    // path reaches theta == pi/2. For nu <= 1 the pole factor stays
-    // nonnegative on the way there, making the divergence +inf; quadrature
-    // across it would return finite garbage. (For nu > 1 the nu-pole is hit
-    // first and the existing infinite-sample handling applies.)
-    if (std::abs(k) == T{1} && nu <= T{1} &&
-        std::abs(phi) >= pi_v<T> / T{2}) {
+    // Pole classification; quadrature across any of these would return
+    // finite garbage instead of the divergence.
+    // - nu > 1: the pole factor 1 - nu sin^2(theta) has a first-order sign
+    //   change at asin(1/sqrt(nu)) < pi/2. Ending exactly on the pole is a
+    //   same-sign divergence (+inf); crossing it makes the integral
+    //   undefined (domain error -> NaN).
+    // - nu == 1: at pi/2 the pole is second order (cos^2), so both sides
+    //   diverge with the same sign: +inf for any |phi| >= pi/2.
+    // - nu < 1 with |k| == 1: same divergence as ellint_1, the
+    //   1/sqrt(1 - k^2 sin^2) factor behaves like 1/|cos| at pi/2.
+    const T half_pi = pi_v<T> / T{2};
+    if (nu > T{1}) {
+        const T pole_angle = std::asin(T{1} / std::sqrt(nu));
+        if (std::abs(phi) > pole_angle) {
+            return quiet_nan<T>();
+        }
+        if (std::abs(phi) == pole_angle) {
+            return std::copysign(infinity<T>(), phi);
+        }
+    } else if (nu == T{1}) {
+        if (std::abs(phi) >= half_pi) {
+            return std::copysign(infinity<T>(), phi);
+        }
+    } else if (std::abs(k) == T{1} && std::abs(phi) >= half_pi) {
         return std::copysign(infinity<T>(), phi);
     }
     return elliptic_integral(phi, [&](T theta) {

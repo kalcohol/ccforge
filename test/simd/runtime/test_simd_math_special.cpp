@@ -388,7 +388,7 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
     EXPECT_NEAR(sm::ellint_1_fallback(1.0, 1.0),
                 std::asinh(std::tan(1.0)), 1e-9);
 
-    // Pi shares the |k| == 1 divergence: for nu <= 1 the pole factor stays
+    // Pi shares the |k| == 1 divergence: for nu < 1 the pole factor stays
     // nonnegative on the way to pi/2, so the integral is +/-infinity there
     // instead of finite quadrature garbage.
     EXPECT_EQ(sm::ellint_3_fallback(1.0, 0.5, 2.0),
@@ -400,6 +400,22 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
     // Below the pole Pi stays finite; nu = 0 reduces Pi to F.
     EXPECT_NEAR(sm::ellint_3_fallback(1.0, 0.0, 1.0),
                 std::asinh(std::tan(1.0)), 1e-9);
+
+    // General nu-pole handling, independent of k. For nu > 1 the factor
+    // 1 - nu sin^2 changes sign at asin(1/sqrt(nu)) < pi/2: crossing it is
+    // a domain error (NaN), not a finite quadrature artifact.
+    EXPECT_TRUE(std::isnan(sm::ellint_3_fallback(0.0, 2.0, 1.0)));
+    EXPECT_TRUE(std::isnan(sm::comp_ellint_3_fallback(0.0, 4.0)));
+    // nu == 1 diverges at pi/2 through the second-order cos^2 pole even
+    // for |k| < 1.
+    EXPECT_EQ(sm::ellint_3_fallback(0.5, 1.0, 2.0),
+              std::numeric_limits<double>::infinity());
+    EXPECT_EQ(sm::ellint_3_fallback(0.0, 1.0, -2.0),
+              -std::numeric_limits<double>::infinity());
+    // Inside the pole the integral stays finite:
+    // Pi(nu = 2, phi, k = 0) = (1/2) ln(sec 2phi + tan 2phi).
+    EXPECT_NEAR(sm::ellint_3_fallback(0.0, 2.0, 0.5),
+                0.5 * std::log(1.0 / std::cos(1.0) + std::tan(1.0)), 1e-9);
 }
 
 TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
