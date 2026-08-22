@@ -214,6 +214,21 @@ TEST(LinalgLevel1Reductions, SignedMinimumMagnitudeIsWellDefined) {
     EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 0.0), 2147483648.0);
     EXPECT_EQ(std::linalg::vector_abs_sum(x, std::int64_t{0}),
               std::int64_t{2147483648});
+    static_assert(std::is_same_v<
+                  decltype(std::linalg::vector_abs_sum(x)),
+                  int>);
+    EXPECT_EQ(std::linalg::vector_abs_sum(x),
+              std::numeric_limits<int>::max());
+
+    int accumulated_data[] = {int_min, 1};
+    std::mdspan accumulated(
+        accumulated_data, std::extents<int, 2>{});
+    EXPECT_EQ(
+        std::linalg::vector_abs_sum(accumulated, std::int64_t{0}),
+        std::int64_t{2147483649});
+    EXPECT_EQ(
+        std::linalg::vector_abs_sum(accumulated, 0),
+        std::numeric_limits<int>::max());
 
     int y_data[] = {5, int_min, 7};
     std::mdspan y(y_data, std::extents<int, 3>{});
@@ -310,6 +325,24 @@ TEST(LinalgLevel1Reductions, IntegerNormsOutOfRangeSaturate) {
         std::numeric_limits<std::int8_t>::max());
 }
 
+TEST(LinalgLevel1Reductions, IntegralNormResultsTruncateThenSaturate) {
+    int vector_data[] = {1, 1};
+    int matrix_data[] = {1, 1};
+    std::mdspan vector(vector_data, std::extents<int, 2>{});
+    std::mdspan matrix(matrix_data, std::extents<int, 1, 2>{});
+
+    EXPECT_EQ(std::linalg::vector_two_norm(vector, 0), 1);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, 0), 1);
+
+    constexpr unsigned u_max = std::numeric_limits<unsigned>::max();
+    unsigned unsigned_data[] = {u_max, 1u};
+    std::mdspan unsigned_vector(
+        unsigned_data, std::extents<int, 2>{});
+    EXPECT_EQ(
+        std::linalg::vector_abs_sum(unsigned_vector),
+        u_max);
+}
+
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     double x_data[] = {4.0};
@@ -351,8 +384,10 @@ TEST(LinalgLevel1Asum, ComplexUsesOneNorm) {
     complex data[] = {{3.0, 4.0}, {-1.0, 2.0}};
     std::mdspan v(data, std::extents<int, 2>{});
 
-    static_assert(std::is_same_v<decltype(std::linalg::vector_abs_sum(v)), double>);
-    EXPECT_DOUBLE_EQ(std::linalg::vector_abs_sum(v), 10.0);
+    static_assert(std::is_same_v<
+                  decltype(std::linalg::vector_abs_sum(v)),
+                  complex>);
+    EXPECT_EQ(std::linalg::vector_abs_sum(v), complex(10.0, 0.0));
     EXPECT_DOUBLE_EQ(std::linalg::vector_abs_sum(v, 1.0), 11.0);
 }
 

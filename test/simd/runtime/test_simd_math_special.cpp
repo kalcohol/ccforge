@@ -418,6 +418,65 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
                 0.5 * std::log(1.0 / std::cos(1.0) + std::tan(1.0)), 1e-9);
 }
 
+TEST(SimdMathSpecialTest, Ellint3ResolvesTheCharacteristicPoleBoundary) {
+    namespace sm = std::simd::detail::special_math;
+    constexpr double half_pi = std::numbers::pi_v<double> / 2.0;
+
+    const double below_one = std::nextafter(1.0, 0.0);
+    const double complete_expected = static_cast<double>(
+        std::numbers::pi_v<long double> /
+        (2.0L * std::sqrt(
+            1.0L - static_cast<long double>(below_one))));
+    const double complete =
+        sm::comp_ellint_3_fallback(0.0, below_one);
+    EXPECT_TRUE(std::isfinite(complete));
+    EXPECT_NEAR(
+        complete,
+        complete_expected,
+        complete_expected * 2.0e-12);
+    EXPECT_EQ(
+        sm::comp_ellint_3_fallback(0.0, 1.0),
+        std::numeric_limits<double>::infinity());
+    EXPECT_TRUE(std::isnan(sm::comp_ellint_3_fallback(
+        0.0, std::nextafter(1.0, 2.0))));
+
+    constexpr double nu = 2.0;
+    const double pole = std::asin(1.0 / std::sqrt(nu));
+    const double below_pole = std::nextafter(pole, 0.0);
+    const long double scale = std::sqrt(
+        static_cast<long double>(nu) - 1.0L);
+    const double incomplete_expected = static_cast<double>(
+        std::atanh(
+            scale * std::tan(static_cast<long double>(below_pole))) /
+        scale);
+    const double incomplete =
+        sm::ellint_3_fallback(0.0, nu, below_pole);
+    EXPECT_TRUE(std::isfinite(incomplete));
+    EXPECT_NEAR(
+        incomplete,
+        incomplete_expected,
+        incomplete_expected * 2.0e-12);
+    EXPECT_EQ(
+        sm::ellint_3_fallback(0.0, nu, pole),
+        std::numeric_limits<double>::infinity());
+    EXPECT_TRUE(std::isnan(sm::ellint_3_fallback(
+        0.0, nu, std::nextafter(pole, 1.0))));
+
+    struct complete_case {
+        double characteristic;
+        double expected;
+    };
+    const complete_case nonzero_modulus_cases[] = {
+        {1.0 - 1.0e-12, 1813819.1558824056},
+        {std::nextafter(1.0, 0.0), 172140923.98024535},
+    };
+    for (const auto& value : nonzero_modulus_cases) {
+        const double actual =
+            sm::comp_ellint_3_fallback(0.5, value.characteristic);
+        EXPECT_NEAR(actual, value.expected, value.expected * 2.0e-8);
+    }
+}
+
 TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
     namespace sm = std::simd::detail::special_math;
 

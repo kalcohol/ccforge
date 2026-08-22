@@ -39,13 +39,13 @@
   时饱和到边界而不是未定义行为。精度边界即 double 的 53-bit 整数精度：平方项
   或累计和超过 2^53（元素绝对值约 9.5e7 起）后按 double 舍入，结果是
   "double-exact" 而非任意精度精确。切换到原生 `std::linalg` 的代码不应依赖
-  整型实例化。
+  整型实例化。整型 `vector_two_norm` / `matrix_frob_norm` 的平方根结果先按普通
+  浮点到整型转换向零截断，再在超出结果类型表示域时饱和。
 - 有符号整型的 magnitude（`vector_abs_sum`、`vector_idx_abs_max`、范数与 SSQ
   的逐项绝对值）在对应无符号类型中计算，最小负值（如 `INT_MIN`）有良定义的
-  幅值 2^31 而不是 `abs()` 未定义行为；因此无 init 的推导返回类型对有符号
-  整型元素是其无符号对应类型。`matrix_one_norm` / `matrix_inf_norm` 的整型实例
-  也以 double 中间精度累加，并在显式整型结果超出表示域时饱和，遵循上面的实验性
-  整型范数策略。
+  幅值 2^31 而不是 `abs()` 未定义行为。无 init 的 `vector_abs_sum` 按当前 WD
+  返回输入 `value_type`；整型结果以 double 中间精度累加并在回转时饱和。
+  `matrix_one_norm` / `matrix_inf_norm` 的整型实例也采用相同的中间精度与饱和策略。
 - Triangular matrix-matrix product 使用当前 draft 的
   `triangular_matrix_left_product` / `triangular_matrix_right_product` 拼写；旧的
   `triangular_matrix_product(..., Side, ...)` 非标准 wrapper 不再暴露。
