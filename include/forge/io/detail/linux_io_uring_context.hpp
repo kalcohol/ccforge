@@ -543,7 +543,7 @@ private:
 };
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
-using operation_continuation = std::coroutine_handle<>;
+using operation_continuation = __coro_detail::resume_target;
 #else
 using operation_continuation = void*;
 #endif
@@ -1175,6 +1175,13 @@ public:
 
     auto await_suspend(std::coroutine_handle<> continuation, const io_env* env)
         -> bool {
+        return await_suspend(
+            __coro_detail::resume_target{continuation, nullptr}, env);
+    }
+
+    auto await_suspend(
+        __coro_detail::resume_target continuation,
+        const io_env* env) -> bool {
         if (env != nullptr && env->stop_token.stop_requested()) {
             outcome_ = outcome::stopped;
             return false;

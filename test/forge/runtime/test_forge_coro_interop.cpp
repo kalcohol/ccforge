@@ -8,6 +8,9 @@
 #include "forge_operation_destroy.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <concepts>
+#include <coroutine>
 #include <cstdint>
 #include <exception>
 #include <condition_variable>
@@ -40,6 +43,7 @@ using sender_awaitable_probe =
 static_assert(std::move_constructible<sender_awaitable_probe>);
 
 struct interop_marker_error {};
+struct connect_marker_error {};
 
 enum class gated_completion {
     value,
@@ -75,6 +79,208 @@ auto wait_until_returned(const std::shared_ptr<gated_async_state>& state)
     std::unique_lock lock{state->mtx};
     state->cv.wait(lock, [&] { return state->returned; });
 }
+
+struct direct_resume_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    cio::__coro_detail::resume_target continuation{};
+    bool published = false;
+    bool body_entered = false;
+    bool release_body = false;
+    bool resume_returned = false;
+};
+
+struct direct_resume_awaitable {
+    std::shared_ptr<direct_resume_state> state;
+
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return false;
+    }
+
+    auto await_suspend(
+        std::coroutine_handle<> continuation,
+        const cio::io_env*) noexcept -> bool {
+        return publish(cio::__coro_detail::resume_target{continuation, nullptr});
+    }
+
+    auto await_suspend(
+        cio::__coro_detail::resume_target continuation,
+        const cio::io_env*) noexcept -> bool {
+        return publish(continuation);
+    }
+
+    auto publish(cio::__coro_detail::resume_target continuation) noexcept
+        -> bool {
+        {
+            std::lock_guard lock{state->mtx};
+            state->continuation = continuation;
+            state->published = true;
+        }
+        state->cv.notify_all();
+        return true;
+    }
+
+    auto await_resume() const noexcept -> void {}
+};
+
+struct resume_credit_observer {
+    bool* observed = nullptr;
+
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return false;
+    }
+
+    template<class Promise>
+    auto await_suspend(std::coroutine_handle<Promise> continuation) const noexcept
+        -> bool {
+        if constexpr (std::derived_from<
+                          Promise,
+                          cio::__coro_detail::frame_chain_link>) {
+            auto* root = static_cast<cio::__coro_detail::frame_chain_link&>(
+                continuation.promise()).root_link;
+            *observed =
+                (root->resume_state.load(std::memory_order_acquire) &
+                 cio::__coro_detail::frame_chain_link::resume_count_mask) != 0U;
+        }
+        return false;
+    }
+
+    auto await_resume() const noexcept -> void {}
+};
+
+struct bridge_slot_observer {
+    bool* clear = nullptr;
+
+    [[nodiscard]] auto await_ready() const noexcept -> bool {
+        return false;
+    }
+
+    template<class Promise>
+    auto await_suspend(std::coroutine_handle<Promise> continuation) const noexcept
+        -> bool {
+        if constexpr (std::derived_from<
+                          Promise,
+                          cio::__coro_detail::frame_chain_link>) {
+            auto* root = static_cast<cio::__coro_detail::frame_chain_link&>(
+                continuation.promise()).root_link;
+            *clear = root->active_bridge.load(std::memory_order_acquire) == 0;
+        }
+        return false;
+    }
+
+    auto await_resume() const noexcept -> void {}
+};
+
+template<class Receiver>
+struct throwing_connect_op {
+    using operation_state_concept = std::execution::operation_state_t;
+    auto start() & noexcept -> void {}
+};
+
+struct throwing_connect_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t()> {
+        return {};
+    }
+
+    template<class Receiver>
+    auto connect(Receiver) const -> throwing_connect_op<Receiver> {
+        throw connect_marker_error{};
+    }
+};
+
+struct receiver_lifetime_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool receiver_alive = false;
+    bool completed_while_alive = false;
+    bool destroy_started = false;
+    bool destroy_returned = false;
+};
+
+struct lifetime_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    receiver_lifetime_state* state = nullptr;
+    bool owns_lifetime = true;
+
+    explicit lifetime_receiver(receiver_lifetime_state* state) noexcept
+        : state(state) {
+        std::lock_guard lock{state->mtx};
+        state->receiver_alive = true;
+    }
+
+    lifetime_receiver(lifetime_receiver&& other) noexcept
+        : state(other.state)
+        , owns_lifetime(std::exchange(other.owns_lifetime, false))
+    {}
+
+    lifetime_receiver(const lifetime_receiver&) = delete;
+    auto operator=(const lifetime_receiver&) -> lifetime_receiver& = delete;
+    auto operator=(lifetime_receiver&&) -> lifetime_receiver& = delete;
+
+    ~lifetime_receiver() {
+        if (owns_lifetime) {
+            std::lock_guard lock{state->mtx};
+            state->receiver_alive = false;
+            state->cv.notify_all();
+        }
+    }
+
+    auto set_value(int) && noexcept -> void {
+        std::lock_guard lock{state->mtx};
+        state->completed_while_alive = state->receiver_alive;
+        state->cv.notify_all();
+    }
+
+    auto set_error(std::exception_ptr) && noexcept -> void {
+        std::terminate();
+    }
+
+    auto set_stopped() && noexcept -> void {
+        std::terminate();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+struct self_destroying_task_state {
+    int value = 0;
+    int completions = 0;
+    bool done = false;
+};
+
+struct self_destroying_task_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context = nullptr;
+    self_destroying_task_state* state = nullptr;
+
+    auto set_value(int value) && noexcept -> void {
+        state->value = value;
+        ++state->completions;
+        context->destroy();
+        state->done = true;
+    }
+
+    auto set_error(std::exception_ptr) && noexcept -> void {
+        std::terminate();
+    }
+
+    auto set_stopped() && noexcept -> void {
+        std::terminate();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
 
 template<class T>
 struct task_result_state {
@@ -539,6 +745,42 @@ auto await_inline_probe_task(inline_probe_state* state) -> cio::io_task<bool> {
     co_return value == 5;
 }
 
+auto observe_initial_resume_credit_task() -> cio::io_task<bool> {
+    bool observed = false;
+    co_await resume_credit_observer{&observed};
+    co_return observed;
+}
+
+auto observe_direct_resume_credit_task(
+    std::shared_ptr<direct_resume_state> state) -> cio::io_task<bool> {
+    co_await direct_resume_awaitable{state};
+    bool observed = false;
+    co_await resume_credit_observer{&observed};
+    co_return observed;
+}
+
+auto observe_connect_failure_cleanup_task() -> cio::io_task<bool> {
+    try {
+        co_await cio::await_sender(throwing_connect_sender{});
+    } catch (const connect_marker_error&) {
+    }
+    bool clear = false;
+    co_await bridge_slot_observer{&clear};
+    co_return clear;
+}
+
+auto block_after_direct_resume_task(
+    std::shared_ptr<direct_resume_state> state) -> cio::io_task<int> {
+    co_await direct_resume_awaitable{state};
+    {
+        std::unique_lock lock{state->mtx};
+        state->body_entered = true;
+        state->cv.notify_all();
+        state->cv.wait(lock, [&] { return state->release_body; });
+    }
+    co_return 23;
+}
+
 #if defined(_MSC_VER)
 __declspec(noinline)
 #else
@@ -870,6 +1112,152 @@ TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
     EXPECT_TRUE(std::get<0>(*result));
     EXPECT_TRUE(probe.start_returned);
     EXPECT_FALSE(probe.continuation_ran_before_start_returned);
+}
+
+TEST(ForgeCoroInteropTest, InitialTaskResumeCarriesLifetimeCredit) {
+    auto result = std::execution::sync_wait(
+        cio::as_sender(observe_initial_resume_credit_task()));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+}
+
+TEST(ForgeCoroInteropTest, InlineTaskCompletionAllowsReceiverSelfDestruction) {
+    self_destroying_task_state state;
+    using sender_t = decltype(cio::as_sender(await_just_task()));
+    using receiver_t = self_destroying_task_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            cio::as_sender(await_just_task()),
+            self_destroying_task_receiver{&context, &state});
+    });
+
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_TRUE(state.done);
+    EXPECT_EQ(state.completions, 1);
+    EXPECT_EQ(state.value, 42);
+}
+
+TEST(ForgeCoroInteropTest, DirectAwaitableResumeCarriesLifetimeCredit) {
+    auto state = std::make_shared<direct_resume_state>();
+    auto result = std::make_shared<task_result_state<bool>>();
+    auto op = std::execution::connect(
+        cio::as_sender(observe_direct_resume_credit_task(state)),
+        task_result_receiver<bool>{result});
+    std::execution::start(op);
+
+    cio::__coro_detail::resume_target continuation;
+    {
+        std::unique_lock lock{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(
+            lock, 2s, [&] { return state->published; }));
+        continuation = state->continuation;
+    }
+    std::thread resumer([state, continuation] {
+        continuation.resume();
+        {
+            std::lock_guard lock{state->mtx};
+            state->resume_returned = true;
+        }
+        state->cv.notify_all();
+    });
+
+    ASSERT_TRUE(wait_task_done_for(result, 2s));
+    resumer.join();
+    std::lock_guard lock{result->mtx};
+    ASSERT_TRUE(result->value.has_value());
+    EXPECT_TRUE(*result->value);
+}
+
+TEST(ForgeCoroInteropTest, ConnectFailureClearsPublishedBridgeSlot) {
+    auto result = std::execution::sync_wait(
+        cio::as_sender(observe_connect_failure_cleanup_task()));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+}
+
+TEST(ForgeCoroInteropTest, ReceiverOutlivesCrossThreadTaskAbandonment) {
+    auto state = std::make_shared<direct_resume_state>();
+    receiver_lifetime_state lifetime;
+    auto factory = [&] {
+        return std::execution::connect(
+            cio::as_sender(block_after_direct_resume_task(state)),
+            lifetime_receiver{&lifetime});
+    };
+    using op_t = decltype(factory());
+
+    bool unused = false;
+    auto owner = std::make_unique<
+        forge_test::operation_destroy_context<op_t>>(&unused);
+    auto& op = owner->emplace_from(factory);
+    std::execution::start(op);
+
+    cio::__coro_detail::resume_target continuation;
+    {
+        std::unique_lock lock{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(
+            lock, 2s, [&] { return state->published; }));
+        continuation = state->continuation;
+    }
+    std::thread resumer([state, continuation] {
+        continuation.resume();
+        {
+            std::lock_guard lock{state->mtx};
+            state->resume_returned = true;
+        }
+        state->cv.notify_all();
+    });
+    {
+        std::unique_lock lock{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(
+            lock, 2s, [&] { return state->body_entered; }));
+    }
+
+    std::thread destroyer([owner = std::move(owner), &lifetime]() mutable {
+        {
+            std::lock_guard lock{lifetime.mtx};
+            lifetime.destroy_started = true;
+        }
+        lifetime.cv.notify_all();
+        owner->reset();
+        {
+            std::lock_guard lock{lifetime.mtx};
+            lifetime.destroy_returned = true;
+        }
+        lifetime.cv.notify_all();
+    });
+
+    {
+        std::unique_lock lock{lifetime.mtx};
+        ASSERT_TRUE(lifetime.cv.wait_for(
+            lock, 2s, [&] { return lifetime.destroy_started; }));
+        EXPECT_FALSE(lifetime.cv.wait_for(lock, 50ms, [&] {
+            return !lifetime.receiver_alive || lifetime.destroy_returned;
+        }));
+        EXPECT_TRUE(lifetime.receiver_alive);
+    }
+
+    {
+        std::lock_guard lock{state->mtx};
+        state->release_body = true;
+    }
+    state->cv.notify_all();
+    resumer.join();
+    destroyer.join();
+
+    std::lock_guard lock{lifetime.mtx};
+    EXPECT_TRUE(lifetime.completed_while_alive);
+    EXPECT_FALSE(lifetime.receiver_alive);
+    EXPECT_TRUE(lifetime.destroy_returned);
 }
 
 TEST(ForgeCoroInteropTest, InlineChildTasksUseBoundedNativeStack) {

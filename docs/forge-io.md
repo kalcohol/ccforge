@@ -281,13 +281,17 @@ stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 a
   完成槽，迟到的投递只写结果成员、不会 resume 正在销毁的 coroutine。因此与
   完成"同一瞬间"的弃置也是安全结算的：析构返回后结果不再变化。
 - task 链层面的弃置仲裁：链根 promise 记录 started/finalized 标记、在途 resume
-  计数与当前挂起所在的桥完成槽。跨线程弃置先对完成槽做认领仲裁（认领成功则
+  credit 与当前挂起所在的 generation-tagged 桥完成槽。完成槽状态存放在稳定的链根
+  而不是 awaitable 对象内，连接失败会撤销发布，因此仲裁不会读取已结束生命周期的
+  awaitable 成员。跨线程弃置先对完成槽做认领仲裁（认领成功则
   投递永不 resume；失败则等链推进到下一稳定态后重仲裁），并在任何拆帧前等在途
   resume 计数归零，保证 resume 调用回卷离开帧之前帧不消失。弃置发生在 resume
   链自己调用栈上（receiver 在完成回调内同步销毁 operation state，这是受支持
   用法，`when_all_results`/`when_any_results` 的自毁聚合即依赖它）时既不等待
   （自锁）也不当场拆帧（resume 仍在帧间回卷），而是把拆帧交给最后一个回卷完毕
-  的 resume 尾部执行。
+  的 resume 尾部执行。初始 task start、sender bridge completion，以及 Forge 自带的
+  backend-direct/erased-stream continuation 都使用同一 credit；sender operation-state
+  先析构 task、后析构 receiver，使跨线程弃置等待期间 receiver 仍然有效。
 - 快速失败（kernel 持有 borrowed buffer，无法同步撤销）：io_uring 与 IOCP 的
   in-flight operation。弃置违反 borrowed 契约，析构护栏 `std::terminate()`，
   见各 backend 一节。erased async stream 的悬挂 operation 同属此类。

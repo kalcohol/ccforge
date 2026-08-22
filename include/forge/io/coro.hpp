@@ -29,6 +29,7 @@
 #include <chrono>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <execution>
@@ -263,36 +264,6 @@ concept io_awaitable =
 
 namespace __coro_detail {
 
-template<class Awaitable>
-class env_await_adapter {
-public:
-    explicit env_await_adapter(Awaitable awaitable, const io_env** env) noexcept(
-        std::is_nothrow_constructible_v<Awaitable, Awaitable&&>)
-        : awaitable_(static_cast<Awaitable&&>(awaitable))
-        , env_(env)
-    {}
-
-    [[nodiscard]] auto await_ready() noexcept(noexcept(awaitable_.await_ready()))
-        -> bool {
-        return awaitable_.await_ready();
-    }
-
-    template<class Promise>
-    auto await_suspend(std::coroutine_handle<Promise> continuation)
-        noexcept(noexcept(awaitable_.await_suspend(continuation, *env_))) {
-        return awaitable_.await_suspend(continuation, *env_);
-    }
-
-    auto await_resume() noexcept(noexcept(awaitable_.await_resume()))
-        -> decltype(auto) {
-        return awaitable_.await_resume();
-    }
-
-private:
-    Awaitable awaitable_;
-    const io_env** env_;
-};
-
 // Coroutine frames allocated through promise_base reserve a pointer-sized
 // trailer behind the frame bytes. The trailer records which
 // std::pmr::memory_resource owns the frame (null means global operator new),
@@ -337,6 +308,7 @@ inline auto stash_frame_resource(
 // Completion-slot states shared between the sender bridge awaitable and
 // the abandonment arbitration in abandon_task_chain.
 enum class bridge_state {
+    inactive,
     starting,
     suspended,
     completed,
@@ -351,6 +323,12 @@ enum class bridge_state {
 // so every frame records its awaited child and how to detach the owning
 // awaitable; destroy_frame_chain then walks the chain in a loop.
 struct frame_chain_link {
+    using bridge_token = std::uint64_t;
+
+    static constexpr bridge_token bridge_state_mask = 0x7U;
+    static constexpr std::uint32_t deferred_destroy_bit = 0x8000'0000U;
+    static constexpr std::uint32_t resume_count_mask = ~deferred_destroy_bit;
+
     std::coroutine_handle<> child_frame{};
     frame_chain_link* child_link = nullptr;
     void* owned_task = nullptr;
@@ -361,23 +339,76 @@ struct frame_chain_link {
     // sender bridge can publish its completion slot where the abandoning
     // destructor looks without walking mutating links. started/finalized
     // bracket the window in which a cross-thread resume can exist.
-    // resuming counts resume calls that entered the frames and have not
-    // unwound out yet (an unwinding call and the delivery that re-entered
-    // the chain can overlap briefly, hence a counter); resuming_thread
-    // names the thread of the innermost such call so an abandonment
-    // arriving on that very stack (a receiver completing inline destroyed
-    // the operation state) is told apart from a cross-thread one. The
-    // former sets deferred_destroy and hands the frames (reachable via
-    // self_frame) to the tail of the last unwinding resume; the latter
-    // waits for the counter to drain before destroying anything.
+    // resume_state combines the in-flight resume count with the deferred
+    // destruction bit, so the last resume tail cannot miss a concurrent
+    // same-stack abandonment. active_bridge is a generation-tagged slot
+    // stored in the root itself; no arbitration thread ever dereferences an
+    // awaitable-owned atomic after that awaitable's lifetime ends.
     frame_chain_link* root_link = this;
     std::coroutine_handle<> self_frame{};
     std::atomic<bool> started{false};
     std::atomic<bool> finalized{false};
-    std::atomic<int> resuming{0};
-    std::atomic<std::thread::id> resuming_thread{};
-    std::atomic<bool> deferred_destroy{false};
-    std::atomic<std::atomic<bridge_state>*> active_bridge{nullptr};
+    std::atomic<std::uint32_t> resume_state{0};
+    std::atomic<bridge_token> active_bridge{0};
+    std::atomic<bridge_token> next_bridge_generation{0};
+
+    [[nodiscard]] static constexpr auto bridge_state_of(
+        bridge_token token) noexcept -> bridge_state {
+        return static_cast<bridge_state>(token & bridge_state_mask);
+    }
+
+    [[nodiscard]] static constexpr auto same_bridge(
+        bridge_token left,
+        bridge_token right) noexcept -> bool {
+        return left != 0 && right != 0 &&
+            (left & ~bridge_state_mask) == (right & ~bridge_state_mask);
+    }
+
+    [[nodiscard]] static constexpr auto with_bridge_state(
+        bridge_token token,
+        bridge_state state) noexcept -> bridge_token {
+        return (token & ~bridge_state_mask) |
+            static_cast<bridge_token>(state);
+    }
+
+    [[nodiscard]] auto publish_bridge() noexcept -> bridge_token {
+        const bridge_token generation =
+            next_bridge_generation.fetch_add(1, std::memory_order_relaxed) + 1;
+        const bridge_token token =
+            (generation << 3U) |
+            static_cast<bridge_token>(bridge_state::starting);
+        if (active_bridge.exchange(token, std::memory_order_acq_rel) != 0) {
+            std::terminate();
+        }
+        return token;
+    }
+
+    [[nodiscard]] auto transition_bridge(
+        bridge_token token,
+        bridge_state desired) noexcept -> bridge_state {
+        bridge_token current = active_bridge.load(std::memory_order_acquire);
+        while (same_bridge(current, token)) {
+            const bridge_token next = with_bridge_state(current, desired);
+            if (active_bridge.compare_exchange_weak(
+                    current,
+                    next,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                return bridge_state_of(current);
+            }
+        }
+        return bridge_state::inactive;
+    }
+
+    auto clear_bridge(bridge_token token) noexcept -> void {
+        bridge_token current = active_bridge.load(std::memory_order_acquire);
+        while (same_bridge(current, token) &&
+               !active_bridge.compare_exchange_weak(
+                   current,
+                   0,
+                   std::memory_order_acq_rel,
+                   std::memory_order_acquire)) {}
+    }
 
     auto reset_child() noexcept -> void {
         child_frame = {};
@@ -420,6 +451,106 @@ inline auto abandon_backoff_step(int& spins) noexcept -> void {
     }
 }
 
+struct resume_scope {
+    explicit resume_scope(frame_chain_link* root) noexcept
+        : root(root)
+        , previous(current) {
+        if (root != nullptr) {
+            root->resume_state.fetch_add(1, std::memory_order_acq_rel);
+            current = this;
+        }
+    }
+
+    ~resume_scope() {
+        if (root == nullptr) {
+            return;
+        }
+        current = previous;
+        const std::uint32_t prior =
+            root->resume_state.fetch_sub(1, std::memory_order_acq_rel);
+        if ((prior & frame_chain_link::resume_count_mask) == 1U &&
+            (prior & frame_chain_link::deferred_destroy_bit) != 0U) {
+            const std::coroutine_handle<> frames = root->self_frame;
+            destroy_frame_chain(frames, root);
+        }
+    }
+
+    [[nodiscard]] static auto contains(frame_chain_link* root) noexcept -> bool {
+        for (auto* scope = current; scope != nullptr; scope = scope->previous) {
+            if (scope->root == root) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    frame_chain_link* root = nullptr;
+    resume_scope* previous = nullptr;
+    inline static thread_local resume_scope* current = nullptr;
+};
+
+inline auto resume_with_credit(
+    std::coroutine_handle<> continuation,
+    frame_chain_link* root) noexcept -> void {
+    if (!continuation || continuation == std::noop_coroutine()) {
+        return;
+    }
+    resume_scope scope{root};
+    continuation.resume();
+}
+
+// Forge's backend-direct awaitables accept this extended continuation shape.
+// It keeps the public io_awaitable coroutine_handle form intact while letting
+// library backends bracket a cross-thread resume without another allocation.
+struct resume_target {
+    std::coroutine_handle<> continuation{};
+    frame_chain_link* root = nullptr;
+
+    auto resume() const noexcept -> void {
+        resume_with_credit(continuation, root);
+    }
+};
+
+template<class Awaitable>
+class env_await_adapter {
+public:
+    explicit env_await_adapter(Awaitable awaitable, const io_env** env) noexcept(
+        std::is_nothrow_constructible_v<Awaitable, Awaitable&&>)
+        : awaitable_(static_cast<Awaitable&&>(awaitable))
+        , env_(env)
+    {}
+
+    [[nodiscard]] auto await_ready() noexcept(noexcept(awaitable_.await_ready()))
+        -> bool {
+        return awaitable_.await_ready();
+    }
+
+    template<class Promise>
+    auto await_suspend(std::coroutine_handle<Promise> continuation) {
+        if constexpr (
+            std::derived_from<Promise, frame_chain_link> &&
+            requires(Awaitable& awaitable, resume_target target, const io_env* env) {
+                awaitable.await_suspend(target, env);
+            }) {
+            auto* root = static_cast<frame_chain_link&>(
+                continuation.promise()).root_link;
+            return awaitable_.await_suspend(
+                resume_target{continuation, root}, *env_);
+        } else {
+            return awaitable_.await_suspend(continuation, *env_);
+        }
+    }
+
+    auto await_resume() noexcept(noexcept(awaitable_.await_resume()))
+        -> decltype(auto) {
+        return awaitable_.await_resume();
+    }
+
+private:
+    Awaitable awaitable_;
+    const io_env** env_;
+};
+
 // Arbitrates an abandoning destruction against the chain's only
 // cross-thread resume source before any frame dies. While the chain is
 // parked on a sender bridge, that bridge's completion slot is published on
@@ -441,10 +572,10 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
     -> void {
     auto& link = static_cast<frame_chain_link&>(root.promise());
     if (link.started.load(std::memory_order_acquire)) {
-        if (link.resuming.load(std::memory_order_acquire) > 0 &&
-            link.resuming_thread.load(std::memory_order_relaxed) ==
-                std::this_thread::get_id()) {
-            link.deferred_destroy.store(true, std::memory_order_release);
+        if (resume_scope::contains(&link)) {
+            link.resume_state.fetch_or(
+                frame_chain_link::deferred_destroy_bit,
+                std::memory_order_acq_rel);
             return;
         }
         int spins = 0;
@@ -452,11 +583,19 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
             if (link.finalized.load(std::memory_order_acquire)) {
                 break;
             }
-            auto* gate = link.active_bridge.load(std::memory_order_acquire);
-            if (gate != nullptr) {
-                if (gate->exchange(
-                        bridge_state::abandoned,
-                        std::memory_order_acq_rel) !=
+            const auto gate =
+                link.active_bridge.load(std::memory_order_acquire);
+            if (gate != 0) {
+                auto expected = gate;
+                if (!link.active_bridge.compare_exchange_weak(
+                        expected,
+                        frame_chain_link::with_bridge_state(
+                            gate, bridge_state::abandoned),
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire)) {
+                    continue;
+                }
+                if (frame_chain_link::bridge_state_of(gate) !=
                     bridge_state::completed) {
                     // Claimed first: the delivery can never resume the
                     // chain (the record-level teardown wait happens inside
@@ -466,14 +605,16 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
                 // Lost to a delivery whose resume is (or will be) running
                 // through the frames: wait until this bridge's frame moves
                 // on, then re-evaluate the new state.
-                while (link.active_bridge.load(std::memory_order_acquire) ==
-                           gate &&
+                while (frame_chain_link::same_bridge(
+                           link.active_bridge.load(std::memory_order_acquire),
+                           gate) &&
                        !link.finalized.load(std::memory_order_acquire)) {
                     abandon_backoff_step(spins);
                 }
                 continue;
             }
-            if (link.resuming.load(std::memory_order_acquire) == 0) {
+            if ((link.resume_state.load(std::memory_order_acquire) &
+                 frame_chain_link::resume_count_mask) == 0U) {
                 // Quiescent without a bridge: never suspended on one, or
                 // parked on a non-bridge awaitable whose own abandonment
                 // semantics apply.
@@ -485,7 +626,8 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
         // Whatever ended the arbitration, a resume call may still be
         // unwinding out of the frames (the counter drops only after the
         // resume() call returns); the frames must outlive that unwind.
-        while (link.resuming.load(std::memory_order_acquire) > 0) {
+        while ((link.resume_state.load(std::memory_order_acquire) &
+                frame_chain_link::resume_count_mask) != 0U) {
             abandon_backoff_step(spins);
         }
     }
@@ -711,30 +853,26 @@ public:
         env_ = env;
         continuation_ = continuation;
         if constexpr (std::derived_from<Promise, frame_chain_link>) {
-            // Publish this completion slot where abandon_task_chain looks
-            // (the chain root), so an abandoning destruction arbitrates
-            // against the delivery before any frame dies.
             chain_root_ = static_cast<frame_chain_link&>(
                 continuation.promise()).root_link;
-            chain_root_->active_bridge.store(
-                &state_, std::memory_order_release);
+            bridge_token_ = chain_root_->publish_bridge();
         }
-        ::new (op_storage()) op_t{
-            std::execution::connect(std::move(sender_), receiver{this})};
-        op_constructed_ = true;
-        std::execution::start(*op_ptr());
-        return state_.exchange(
-            bridge_state::suspended,
-            std::memory_order_acq_rel) != bridge_state::completed;
+        try {
+            ::new (op_storage()) op_t{
+                std::execution::connect(std::move(sender_), receiver{this})};
+            op_constructed_ = true;
+            std::execution::start(*op_ptr());
+        } catch (...) {
+            clear_published_bridge();
+            throw;
+        }
+        return exchange_bridge_state(bridge_state::suspended) !=
+            bridge_state::completed;
     }
 
     auto await_resume() {
         if (chain_root_ != nullptr) {
-            // The frame is running again; the slot must not be visible to
-            // a later abandonment once this awaitable is gone.
-            chain_root_->active_bridge.store(
-                nullptr, std::memory_order_release);
-            chain_root_ = nullptr;
+            clear_published_bridge();
         }
         if (exception_) {
             std::rethrow_exception(exception_);
@@ -753,8 +891,7 @@ public:
         // is waited out by the operation destructor, but it must not
         // resume the coroutine being destroyed. Normal post-completion
         // destruction sees completed here and proceeds unchanged.
-        state_.exchange(
-            bridge_state::abandoned, std::memory_order_acq_rel);
+        (void)exchange_bridge_state(bridge_state::abandoned);
         destroy_op();
     }
 
@@ -825,6 +962,22 @@ private:
         }
     }
 
+    [[nodiscard]] auto exchange_bridge_state(bridge_state desired) noexcept
+        -> bridge_state {
+        if (chain_root_ != nullptr) {
+            return chain_root_->transition_bridge(bridge_token_, desired);
+        }
+        return state_.exchange(desired, std::memory_order_acq_rel);
+    }
+
+    auto clear_published_bridge() noexcept -> void {
+        if (chain_root_ != nullptr) {
+            chain_root_->clear_bridge(bridge_token_);
+            chain_root_ = nullptr;
+            bridge_token_ = 0;
+        }
+    }
+
     static auto __take_unstarted_sender(sender_awaitable& other) -> Sender {
         if (other.op_constructed_ || other.env_ != nullptr ||
             other.continuation_ ||
@@ -846,30 +999,13 @@ private:
         // the tail must not touch this awaitable and may touch the root
         // link only while its resuming count keeps the frames alive.
         auto* const root = chain_root_;
-        if (state_.exchange(
-                bridge_state::completed,
-                std::memory_order_acq_rel) == bridge_state::suspended) {
+        if (exchange_bridge_state(bridge_state::completed) ==
+            bridge_state::suspended) {
             if (root == nullptr) {
                 continuation_.resume();
                 return;
             }
-            root->resuming_thread.store(
-                std::this_thread::get_id(), std::memory_order_relaxed);
-            root->resuming.fetch_add(1, std::memory_order_acq_rel);
-            continuation_.resume();
-            // deferred_destroy is only ever set from inside a resume call
-            // on this chain, so reading it before dropping the count sees
-            // every inline abandonment; a cross-thread abandonment instead
-            // waits for the count to reach zero and owns the destruction.
-            // After the drop the root may be gone, so nothing is read past
-            // it on the non-deferred path.
-            const bool deferred =
-                root->deferred_destroy.load(std::memory_order_acquire);
-            const std::coroutine_handle<> frames = root->self_frame;
-            if (root->resuming.fetch_sub(1, std::memory_order_acq_rel) == 1 &&
-                deferred) {
-                destroy_frame_chain(frames, root);
-            }
+            resume_with_credit(continuation_, root);
         }
     }
 
@@ -882,6 +1018,7 @@ private:
     alignas(op_t) unsigned char op_buffer_[sizeof(op_t)];
     bool op_constructed_ = false;
     frame_chain_link* chain_root_ = nullptr;
+    frame_chain_link::bridge_token bridge_token_ = 0;
     std::atomic<bridge_state> state_{bridge_state::starting};
 };
 
@@ -982,7 +1119,12 @@ private:
     }
 
     auto __start_borrowed(const io_env& env) -> void {
-        __borrowed_handle(env).resume();
+        const auto continuation = __borrowed_handle(env);
+        auto* const root = coro_
+            ? static_cast<__coro_detail::frame_chain_link*>(
+                  coro_.promise().root_link)
+            : nullptr;
+        __coro_detail::resume_with_credit(continuation, root);
     }
 
     [[nodiscard]] auto __borrowed_handle(const io_env& env) noexcept
@@ -1104,7 +1246,12 @@ private:
     }
 
     auto __start_borrowed(const io_env& env) -> void {
-        __borrowed_handle(env).resume();
+        const auto continuation = __borrowed_handle(env);
+        auto* const root = coro_
+            ? static_cast<__coro_detail::frame_chain_link*>(
+                  coro_.promise().root_link)
+            : nullptr;
+        __coro_detail::resume_with_credit(continuation, root);
     }
 
     [[nodiscard]] auto __borrowed_handle(const io_env& env) noexcept
@@ -1228,8 +1375,8 @@ public:
     io_task_sender_op(io_task<T> task, io_env env, Receiver receiver)
         : env_(std::move(env))
         , effective_env_(env_)
-        , task_(std::move(task))
         , receiver_(std::move(receiver))
+        , task_(std::move(task))
     {}
 
     io_task_sender_op(io_task_sender_op&&) = delete;
@@ -1278,8 +1425,10 @@ private:
     std::inplace_stop_source fused_stop_{};
     optional_stop_callback<std::inplace_stop_token> env_stop_;
     optional_stop_callback<receiver_stop_token_t> receiver_stop_;
-    io_task<T> task_;
     Receiver receiver_;
+    // Destroy the task first: its abandonment arbitration may wait for an
+    // in-flight resume that still completes through receiver_.
+    io_task<T> task_;
 };
 
 template<class T>

@@ -99,10 +99,11 @@ struct mutable_buffer_async_write_stream {
 };
 
 struct manual_read_state {
-    std::coroutine_handle<> continuation{};
+    cio::__coro_detail::resume_target continuation{};
     cio::mutable_buffer output{};
     std::optional<cio::io_result<std::size_t>> result;
     bool waiting = false;
+    bool has_resume_credit = false;
 
     auto complete_value(std::string_view input) -> void {
         const auto count = cio::buffer_copy(
@@ -131,7 +132,19 @@ public:
     auto await_suspend(
         std::coroutine_handle<> continuation,
         const cio::io_env*) noexcept -> bool {
+        return publish(cio::__coro_detail::resume_target{continuation, nullptr});
+    }
+
+    auto await_suspend(
+        cio::__coro_detail::resume_target continuation,
+        const cio::io_env*) noexcept -> bool {
+        return publish(continuation);
+    }
+
+    auto publish(cio::__coro_detail::resume_target continuation) noexcept
+        -> bool {
         state_->continuation = continuation;
+        state_->has_resume_credit = continuation.root != nullptr;
         state_->output = output_;
         state_->waiting = true;
         return true;
@@ -341,6 +354,7 @@ TEST(ForgeAsyncStreamTest, ErasedReadTrulySuspendsAndResumesCoroutine) {
     std::execution::start(operation);
 
     EXPECT_TRUE(manual->waiting);
+    EXPECT_TRUE(manual->has_resume_credit);
     EXPECT_FALSE(completion.result.has_value());
     manual->complete_value("async");
 

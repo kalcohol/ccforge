@@ -203,6 +203,10 @@ public:
         std::coroutine_handle<> continuation,
         const io_env* env) -> std::coroutine_handle<>;
 
+    auto await_suspend(
+        __coro_detail::resume_target continuation,
+        const io_env* env) -> std::coroutine_handle<>;
+
     [[nodiscard]] auto await_resume() -> io_result<std::size_t>;
 
 private:
@@ -277,6 +281,13 @@ public:
     auto await_suspend(
         std::coroutine_handle<> continuation,
         const io_env* env) -> std::coroutine_handle<> {
+        return await_suspend(
+            __coro_detail::resume_target{continuation, nullptr}, env);
+    }
+
+    auto await_suspend(
+        __coro_detail::resume_target continuation,
+        const io_env* env) -> std::coroutine_handle<> {
         return operations_->await_suspend(storage(), continuation, env);
     }
 
@@ -295,7 +306,7 @@ private:
         bool (*await_ready)(void*);
         std::coroutine_handle<> (*await_suspend)(
             void*,
-            std::coroutine_handle<>,
+            __coro_detail::resume_target,
             const io_env*);
         io_result<std::size_t> (*await_resume)(void*);
         void (*destroy)(void*) noexcept;
@@ -310,20 +321,28 @@ private:
     template<class Awaitable>
     static auto await_suspend_model(
         void* object,
-        std::coroutine_handle<> continuation,
+        __coro_detail::resume_target continuation,
         const io_env* env) -> std::coroutine_handle<> {
         auto& awaitable = *static_cast<Awaitable*>(object);
-        using result_t = decltype(
-            awaitable.await_suspend(continuation, env));
+        auto invoke = [&]() -> decltype(auto) {
+            if constexpr (requires {
+                              awaitable.await_suspend(continuation, env);
+                          }) {
+                return awaitable.await_suspend(continuation, env);
+            } else {
+                return awaitable.await_suspend(continuation.continuation, env);
+            }
+        };
+        using result_t = decltype(invoke());
         if constexpr (std::same_as<result_t, void>) {
-            awaitable.await_suspend(continuation, env);
+            invoke();
             return std::noop_coroutine();
         } else if constexpr (std::same_as<result_t, bool>) {
-            return awaitable.await_suspend(continuation, env)
+            return invoke()
                 ? std::noop_coroutine()
-                : continuation;
+                : continuation.continuation;
         } else {
-            return awaitable.await_suspend(continuation, env);
+            return invoke();
         }
     }
 
@@ -395,8 +414,15 @@ inline auto erased_io_awaitable::await_ready() -> bool {
 inline auto erased_io_awaitable::await_suspend(
     std::coroutine_handle<> continuation,
     const io_env* env) -> std::coroutine_handle<> {
+    return await_suspend(
+        __coro_detail::resume_target{continuation, nullptr}, env);
+}
+
+inline auto erased_io_awaitable::await_suspend(
+    __coro_detail::resume_target continuation,
+    const io_env* env) -> std::coroutine_handle<> {
     if (slot_ == nullptr) {
-        return continuation;
+        return continuation.continuation;
     }
 
     started_ = true;

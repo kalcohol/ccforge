@@ -160,6 +160,9 @@ await `io_env.executor.schedule()`。
 `as_sender(io_task<T>, env)` 让 sender operation-state 持有 task。裸 fire-and-forget
 start 不作为 public API。`await_sender` 当前 inline/source-thread resume；它不自动 hop 回
 `io_env.executor`，但 inline completion 会在 `await_suspend` 返回后继续，避免递归 resume。
+Task 链的初始、sender-completion 与 Forge backend-direct resume 共享同一链根 lifetime
+credit；当前 bridge completion slot 使用链根内 generation-tagged 状态，不借用 awaitable
+成员地址。连接失败必须撤销该 slot，operation-state 析构时 task 必须先于 receiver。
 需要 hop 时由 coroutine body 显式 await `env.executor.schedule()`。Stage-5 proof bridge
 会在 `as_sender(io_task<T>, env)` 的 operation-state 内融合 `io_env.stop_token` 与
 receiver/env stop token；任一 stop source 请求都会让 coroutine 内的 `await_sender`
