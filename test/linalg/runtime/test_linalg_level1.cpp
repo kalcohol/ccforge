@@ -263,9 +263,9 @@ TEST(LinalgLevel1Reductions, SignedMinimumMagnitudeIsWellDefined) {
         std::numeric_limits<int>::max());
 }
 
-// Documents the double-precision boundary of the integral accumulation:
-// past 2^53 the accumulator rounds, so results are "double-exact", not
-// arbitrarily exact.
+// Documents the double-precision boundary of integral squared-norm
+// accumulation: past 2^53 the accumulator rounds, so results are
+// "double-exact", not arbitrarily exact.
 TEST(LinalgLevel1Reductions, IntegerNormsAreDoublePrecisionBounded) {
     constexpr std::int64_t big = std::int64_t{1} << 31;
     std::int64_t x_data[] = {big, 3};
@@ -341,6 +341,38 @@ TEST(LinalgLevel1Reductions, IntegralNormResultsTruncateThenSaturate) {
     EXPECT_EQ(
         std::linalg::vector_abs_sum(unsigned_vector),
         u_max);
+}
+
+TEST(LinalgLevel1Reductions, IntegralSumsRemainExactAboveDoubleRange) {
+    constexpr std::uint64_t exact = (std::uint64_t{1} << 53) + 1;
+    std::uint64_t vector_data[] = {exact};
+    std::uint64_t matrix_data[] = {exact};
+    std::mdspan vector(vector_data, std::extents<int, 1>{});
+    std::mdspan matrix(matrix_data, std::extents<int, 1, 1>{});
+
+    EXPECT_EQ(std::linalg::vector_abs_sum(vector), exact);
+    EXPECT_EQ(std::linalg::vector_abs_sum(vector, std::uint64_t{0}), exact);
+    EXPECT_EQ(std::linalg::matrix_one_norm(matrix), exact);
+    EXPECT_EQ(std::linalg::matrix_inf_norm(matrix), exact);
+}
+
+TEST(LinalgLevel1Reductions, WiderScalarControlsComplexMagnitudePrecision) {
+    using complex = std::complex<float>;
+    const float largest = std::numeric_limits<float>::max();
+    complex vector_data[] = {{largest, largest}};
+    complex matrix_data[] = {{largest, largest}};
+    std::mdspan vector(vector_data, std::extents<int, 1>{});
+    std::mdspan matrix(matrix_data, std::extents<int, 1, 1>{});
+
+    const double magnitude = std::hypot(
+        static_cast<double>(largest), static_cast<double>(largest));
+    EXPECT_DOUBLE_EQ(
+        std::linalg::vector_abs_sum(vector, 0.0),
+        2.0 * static_cast<double>(largest));
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(vector, 0.0), magnitude);
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(matrix, 0.0), magnitude);
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_one_norm(matrix, 0.0), magnitude);
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_inf_norm(matrix, 0.0), magnitude);
 }
 
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
@@ -560,4 +592,18 @@ TEST(LinalgLevel1Givens, ComplexRotationUsesRealCAndConjugateS) {
     EXPECT_NEAR(x[0].imag(), 0.0, 1e-12);
     EXPECT_NEAR(y[0].real(), 0.0, 1e-12);
     EXPECT_NEAR(y[0].imag(), 0.0, 1e-12);
+}
+
+TEST(LinalgLevel1Givens, ComplexRotationAvoidsFiniteScaleOverflow) {
+    using complex = std::complex<double>;
+    const double component = 0.6 * std::numeric_limits<double>::max();
+    const auto rotation = std::linalg::setup_givens_rotation(
+        complex{component, 0.0}, complex{component, 0.0});
+
+    EXPECT_TRUE(std::isfinite(rotation.c));
+    EXPECT_TRUE(std::isfinite(rotation.s.real()));
+    EXPECT_TRUE(std::isfinite(rotation.r.real()));
+    EXPECT_NEAR(rotation.c, 1.0 / std::sqrt(2.0), 1e-12);
+    EXPECT_NEAR(rotation.s.real(), 1.0 / std::sqrt(2.0), 1e-12);
+    EXPECT_NEAR(rotation.r.real() / component, std::sqrt(2.0), 1e-12);
 }

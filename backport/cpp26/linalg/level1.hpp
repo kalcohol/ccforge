@@ -244,12 +244,12 @@ T vector_two_norm(
     accum_type scale{};
     accum_type scaled_sum{1};
     __detail::__update_scaled_sum_of_squares(
-        static_cast<accum_type>(__detail::__abs_if_needed(init)),
+        __detail::__abs_if_needed_as<accum_type>(init),
         scale,
         scaled_sum);
     for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
         __detail::__update_scaled_sum_of_squares(
-            static_cast<accum_type>(__detail::__abs_if_needed(x[i])),
+            __detail::__abs_if_needed_as<accum_type>(x[i]),
             scale,
             scaled_sum);
     }
@@ -280,15 +280,27 @@ T vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
-    if constexpr (std::is_integral_v<T>) {
-        double result = static_cast<double>(init);
+    using sum_type = std::remove_cvref_t<
+        decltype(__detail::__real_if_needed(init))>;
+    using term_type = std::remove_cvref_t<
+        decltype(__detail::__abs_sum_term(x[0]))>;
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<term_type>) {
+        std::uintmax_t magnitude{};
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            result += static_cast<double>(__detail::__abs_sum_term(x[i]));
+            __detail::__saturating_accumulate_magnitude(
+                magnitude, __detail::__abs_sum_term(x[i]));
         }
-        return __detail::__saturate_cast<T>(result);
+        return __detail::__saturating_add_magnitude(init, magnitude);
+    } else if constexpr (std::is_integral_v<T>) {
+        long double result = static_cast<long double>(init);
+        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+            result += __detail::__abs_sum_term_as<long double>(x[i]);
+        }
+        return __detail::__saturate_cast<T>(static_cast<double>(result));
     } else {
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            init += static_cast<T>(__detail::__abs_sum_term(x[i]));
+            init += static_cast<T>(
+                __detail::__abs_sum_term_as<sum_type>(x[i]));
         }
         return init;
     }
@@ -373,7 +385,7 @@ sum_of_squares_result<T> vector_sum_of_squares(
         T scale = init.scaling_factor;
         T ssq   = init.scaled_sum_of_squares;
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            auto absxi = __detail::__abs_if_needed(x[i]);
+            auto absxi = __detail::__abs_if_needed_as<T>(x[i]);
             if (absxi != T{}) {
                 if (scale < absxi) {
                     ssq = T{1} + ssq * (scale / absxi) * (scale / absxi);
@@ -429,12 +441,14 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
     if (b == complex{}) return {Real{1}, complex{}, a};
     if (a == complex{}) return {Real{0}, complex{1}, b};
 
-    const Real scale = abs(a) + abs(b);
+    const Real abs_a = abs(a);
+    const Real abs_b = abs(b);
+    const Real scale = std::max(abs_a, abs_b);
     const complex scaled_a = a / scale;
     const complex scaled_b = b / scale;
     const Real rho = scale * sqrt(norm(scaled_a) + norm(scaled_b));
-    const complex alpha = a / abs(a);
-    const Real c = abs(a) / rho;
+    const complex alpha = a / abs_a;
+    const Real c = abs_a / rho;
     const complex s = alpha * conj(b) / rho;
     const complex r = alpha * rho;
     return {c, s, r};
@@ -489,13 +503,13 @@ T matrix_frob_norm(
     accum_type scale{};
     accum_type scaled_sum{1};
     __detail::__update_scaled_sum_of_squares(
-        static_cast<accum_type>(__detail::__abs_if_needed(init)),
+        __detail::__abs_if_needed_as<accum_type>(init),
         scale,
         scaled_sum);
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
             __detail::__update_scaled_sum_of_squares(
-                static_cast<accum_type>(__detail::__abs_if_needed(A[i, j])),
+                __detail::__abs_if_needed_as<accum_type>(A[i, j]),
                 scale,
                 scaled_sum);
         }
@@ -533,6 +547,19 @@ T matrix_one_norm(
         decltype(__detail::__real_if_needed(init))>;
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(A[0, 0]))>;
+    if constexpr (std::is_integral_v<T> &&
+                  std::is_integral_v<magnitude_type>) {
+        std::uintmax_t max_col_sum{};
+        for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
+            std::uintmax_t col_sum{};
+            for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
+                __detail::__saturating_accumulate_magnitude(
+                    col_sum, __detail::__abs_if_needed(A[i, j]));
+            }
+            if (col_sum > max_col_sum) max_col_sum = col_sum;
+        }
+        return __detail::__saturating_add_magnitude(init, max_col_sum);
+    }
     using accum_type = std::conditional_t<
         std::is_integral_v<sum_type> || std::is_integral_v<magnitude_type>,
         double,
@@ -541,8 +568,7 @@ T matrix_one_norm(
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
         accum_type col_sum{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            col_sum += static_cast<accum_type>(
-                __detail::__abs_if_needed(A[i, j]));
+            col_sum += __detail::__abs_if_needed_as<accum_type>(A[i, j]);
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
@@ -575,6 +601,19 @@ T matrix_inf_norm(
         decltype(__detail::__real_if_needed(init))>;
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(A[0, 0]))>;
+    if constexpr (std::is_integral_v<T> &&
+                  std::is_integral_v<magnitude_type>) {
+        std::uintmax_t max_row_sum{};
+        for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
+            std::uintmax_t row_sum{};
+            for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
+                __detail::__saturating_accumulate_magnitude(
+                    row_sum, __detail::__abs_if_needed(A[i, j]));
+            }
+            if (row_sum > max_row_sum) max_row_sum = row_sum;
+        }
+        return __detail::__saturating_add_magnitude(init, max_row_sum);
+    }
     using accum_type = std::conditional_t<
         std::is_integral_v<sum_type> || std::is_integral_v<magnitude_type>,
         double,
@@ -583,8 +622,7 @@ T matrix_inf_norm(
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
         accum_type row_sum{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            row_sum += static_cast<accum_type>(
-                __detail::__abs_if_needed(A[i, j]));
+            row_sum += __detail::__abs_if_needed_as<accum_type>(A[i, j]);
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }

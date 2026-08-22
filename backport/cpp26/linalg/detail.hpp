@@ -28,6 +28,7 @@
 
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #if __has_include(<mdspan>)
 #include <mdspan>
 #endif
@@ -234,6 +235,84 @@ constexpr auto __abs_sum_term(const T& value) {
         return __abs_if_needed(value.real()) + __abs_if_needed(value.imag());
     } else {
         return __abs_if_needed(value);
+    }
+}
+
+template<class Accum, class T>
+constexpr Accum __abs_if_needed_as(const T& value) {
+    using value_type = std::remove_cvref_t<T>;
+    if constexpr (__is_complex_v<value_type>) {
+        using std::hypot;
+        return static_cast<Accum>(hypot(
+            static_cast<Accum>(value.real()),
+            static_cast<Accum>(value.imag())));
+    } else if constexpr (
+        std::is_arithmetic_v<value_type> && std::is_arithmetic_v<Accum>) {
+        if constexpr (std::is_integral_v<Accum>) {
+            return static_cast<Accum>(__abs_if_needed(value));
+        } else {
+            using std::abs;
+            return abs(static_cast<Accum>(value));
+        }
+    } else {
+        return static_cast<Accum>(__abs_if_needed(value));
+    }
+}
+
+template<class Accum, class T>
+constexpr Accum __abs_sum_term_as(const T& value) {
+    if constexpr (__is_complex_v<T>) {
+        return __abs_if_needed_as<Accum>(value.real()) +
+            __abs_if_needed_as<Accum>(value.imag());
+    } else {
+        return __abs_if_needed_as<Accum>(value);
+    }
+}
+
+template<class Magnitude>
+    requires std::is_integral_v<std::remove_cvref_t<Magnitude>>
+constexpr void __saturating_accumulate_magnitude(
+    std::uintmax_t& total, Magnitude magnitude) noexcept {
+    const auto term = static_cast<std::uintmax_t>(magnitude);
+    constexpr auto maximum = std::numeric_limits<std::uintmax_t>::max();
+    total = term > maximum - total ? maximum : total + term;
+}
+
+template<class T>
+    requires std::is_integral_v<T>
+constexpr T __saturating_add_magnitude(
+    T init, std::uintmax_t magnitude) noexcept {
+    if (magnitude == 0) {
+        return init;
+    }
+    if constexpr (std::is_unsigned_v<T>) {
+        const auto room = static_cast<std::uintmax_t>(
+            std::numeric_limits<T>::max() - init);
+        return magnitude > room
+            ? std::numeric_limits<T>::max()
+            : static_cast<T>(init + static_cast<T>(magnitude));
+    } else {
+        if (init < T{}) {
+            using unsigned_type = std::make_unsigned_t<T>;
+            const auto distance = static_cast<std::uintmax_t>(
+                unsigned_type{} - static_cast<unsigned_type>(init));
+            if (magnitude < distance) {
+                const auto remaining = distance - magnitude;
+                return static_cast<T>(-static_cast<T>(remaining));
+            }
+            magnitude -= distance;
+            if (magnitude > static_cast<std::uintmax_t>(
+                    std::numeric_limits<T>::max())) {
+                return std::numeric_limits<T>::max();
+            }
+            return static_cast<T>(magnitude);
+        }
+
+        const auto room = static_cast<std::uintmax_t>(
+            std::numeric_limits<T>::max() - init);
+        return magnitude > room
+            ? std::numeric_limits<T>::max()
+            : static_cast<T>(init + static_cast<T>(magnitude));
     }
 }
 
