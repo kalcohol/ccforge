@@ -266,20 +266,18 @@ public:
         });
     }
 
-    // Retracts the most recently published, still-unconsumed SQE. Only
-    // valid under the submission lock immediately after a failed flush of
-    // that entry: a failing flush implies the kernel never consumed the
-    // tail entry (a fully drained SQ makes flush_published succeed), so
-    // stepping the tail back simply unpublishes it.
-    void retract_last_published() noexcept {
-        const unsigned tail = load_relaxed(sq_tail_);
-        store_release(sq_tail_, tail - 1U);
-    }
-
-    [[nodiscard]] auto unflushed_count() noexcept -> unsigned {
+    // Retracts the most recently published SQE only while the kernel head
+    // proves that entry is still unconsumed. Every enter that can submit an
+    // SQE is serialized by context_state::mutex, and SQPOLL is not enabled,
+    // so the head cannot advance between this check and the tail update.
+    [[nodiscard]] auto try_retract_last_unconsumed() noexcept -> bool {
         const unsigned head = load_acquire(sq_head_);
-        const unsigned tail = load_acquire(sq_tail_);
-        return tail - head;
+        const unsigned tail = load_relaxed(sq_tail_);
+        if (head == tail) {
+            return false;
+        }
+        store_release(sq_tail_, tail - 1U);
+        return true;
     }
 
     // Success means the kernel consumed every published SQE: the published
@@ -310,12 +308,8 @@ public:
                 ++attempt;
                 continue;
             }
-            if (error == EINTR) {
-                continue;
-            }
-            if (error == EAGAIN) {
+            if (error == EINTR || error == EAGAIN) {
                 ++attempt;
-                std::this_thread::yield();
                 continue;
             }
             return {error, std::generic_category()};
@@ -323,16 +317,15 @@ public:
         return {EAGAIN, std::generic_category()};
     }
 
-    // Waits for at least one CQE while opportunistically consuming published
-    // SQEs, so submissions whose flush transiently failed still reach the
-    // kernel on the next poller cycle.
-    [[nodiscard]] auto wait_for_completion(unsigned to_submit) noexcept
-        -> std::error_code {
+    // Waits for at least one CQE without consuming SQ entries. Submission is
+    // serialized separately so a producer can prove whether its tail entry
+    // was consumed before deciding whether rejection is still possible.
+    [[nodiscard]] auto wait_for_completion() noexcept -> std::error_code {
         enter_sigpipe_guard guard;
         const long result = ::syscall(
             __NR_io_uring_enter,
             descriptor_.get(),
-            to_submit,
+            0U,
             1U,
             IORING_ENTER_GETEVENTS,
             nullptr,
@@ -504,7 +497,7 @@ private:
 
         std::error_code wait_error;
         do {
-            wait_error = wait_for_completion(0);
+            wait_error = wait_for_completion();
         } while (wait_error.value() == EINTR);
         if (wait_error) {
             throw std::system_error{wait_error, "io_uring_enter getevents"};
@@ -649,20 +642,28 @@ struct context_state {
             poller_id = std::this_thread::get_id();
         }
 
-        bool skip_submit = false;
         for (;;) {
-            const unsigned to_submit =
-                skip_submit ? 0U : ring_state.unflushed_count();
+            std::error_code flush_error;
+            {
+                std::lock_guard lock{mutex};
+                flush_error = ring_state.flush_published();
+                record_flush_locked(flush_error);
+            }
+            if (flush_error && flush_error.value() != EBUSY) {
+                // A producer or lifecycle pump remains responsible for
+                // waking a poller already blocked in GETEVENTS. Once awake,
+                // retry parked entries without holding the lock across a
+                // bounded backoff.
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds{100});
+                continue;
+            }
+
             const std::error_code wait_error =
-                ring_state.wait_for_completion(to_submit);
-            skip_submit = false;
+                ring_state.wait_for_completion();
             if (wait_error) {
                 const int error = wait_error.value();
-                if (error == EAGAIN) {
-                    // Submission-side backpressure: block for completions
-                    // without submitting, then retry the flush next cycle.
-                    skip_submit = true;
-                } else if (error != EINTR && error != EBUSY) {
+                if (error != EINTR && error != EAGAIN && error != EBUSY) {
                     std::lock_guard lock{mutex};
                     poller_error = wait_error;
                     poller_done = true;
@@ -739,16 +740,13 @@ struct context_state {
         const std::error_code flush_error = ring_state.flush_published();
         record_flush_locked(flush_error);
         if (flush_error && flush_error.value() != EBUSY) {
-            // A hard flush failure would park this SQE with no wakeup
-            // guarantee: nothing else may be in flight to produce a CQE,
-            // and the poller may already be blocked with a stale
-            // to_submit. Retract the published-but-unconsumed entry and
-            // reject, so the operation completes with an error instead of
-            // suspending forever. (EBUSY keeps the entry parked: a CQ
-            // backlog guarantees the poller wakes and its next enter
-            // consumes parked SQEs via to_submit.)
-            ring_state.retract_last_published();
-            return submit_status::saturated;
+            // Reject only while the shared head proves this tail entry was
+            // not consumed. If the syscall consumed it before reporting an
+            // error, ownership has transferred to the kernel and the
+            // operation must remain registered for its CQE.
+            if (ring_state.try_retract_last_unconsumed()) {
+                return submit_status::saturated;
+            }
         }
         link_operation_locked(operation);
         return submit_status::accepted;
@@ -954,9 +952,9 @@ private:
     void complete(const io_uring_cqe& completion) noexcept {
         std::lock_guard lock{mutex};
         if (completion.user_data == wakeup_user_data()) {
-            // Clearing both flags also repairs the stale-published state
-            // left behind when the poller consumed a parked wakeup NOP via
-            // its opportunistic to_submit before any flush retry succeeded.
+            // A serialized poller flush may consume a parked wakeup before
+            // the lifecycle thread observes that its own retry succeeded,
+            // so the CQE clears both ownership flags.
             wakeup_in_flight = false;
             wakeup_published = false;
             if (completion.res < 0) {

@@ -2,9 +2,10 @@
 // The binary links with -Wl,--wrap=syscall so the test can make
 // io_uring_enter fail for submit-only calls (flush attempts) while leaving
 // GETEVENTS waits and every other syscall untouched. This pins:
-// - hard flush failures on data SQEs retract the published entry and
-//   complete the operation with no_buffer_space instead of hanging;
-// - the ring stays consistent after a retraction;
+// - hard flush failures reject only an entry still proven unconsumed;
+// - a consumed entry keeps kernel ownership even if the submit call reports
+//   an error, so its operation remains registered through the CQE;
+// - the poller never submits SQEs outside the context submission lock;
 // - the lifecycle wakeup chain self-heals across hard flush failures and
 //   across a wakeup NOP that could never be published into a saturated SQ.
 
@@ -45,6 +46,11 @@ constexpr int skip_exit_code = 77;
 // Errno injected into io_uring_enter calls that only submit (no GETEVENTS
 // flag, to_submit > 0). Zero disables injection.
 std::atomic<int> inject_submit_errno{0};
+// Runs the real submit first, then reports this errno when the kernel call
+// returned nonnegative. This emulates a conservative partial-consumption
+// outcome and pins the shared-head ownership check.
+std::atomic<int> inject_submit_errno_after_success{0};
+std::atomic<unsigned> combined_submit_calls{0};
 
 } // namespace
 
@@ -65,6 +71,21 @@ extern "C" long __wrap_syscall(
     if (number == __NR_io_uring_enter) {
         const long to_submit = arg2;
         const auto flags = static_cast<unsigned>(arg4);
+        if (to_submit > 0 && (flags & IORING_ENTER_GETEVENTS) != 0) {
+            combined_submit_calls.fetch_add(1, std::memory_order_relaxed);
+        }
+        const int injected_after_success =
+            inject_submit_errno_after_success.load(std::memory_order_acquire);
+        if (injected_after_success != 0 && to_submit > 0 &&
+            (flags & IORING_ENTER_GETEVENTS) == 0) {
+            const long result =
+                __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
+            if (result >= 0) {
+                errno = injected_after_success;
+                return -1;
+            }
+            return result;
+        }
         const int injected =
             inject_submit_errno.load(std::memory_order_acquire);
         if (injected != 0 && to_submit > 0 &&
@@ -178,9 +199,8 @@ struct completion_receiver {
 }
 
 // A hard flush failure on a data SQE must reject the submission with
-// no_buffer_space instead of accepting a parked entry that nothing is
-// guaranteed to ever flush, and the retraction must leave the ring fully
-// usable for the next submission.
+// no_buffer_space only while the shared head proves the tail entry was not
+// consumed. The rollback must leave the ring fully usable.
 void check_hard_flush_failure_rejects_submission() {
     cio::io_uring_context context{{.entries = 8}};
     pipe_pair pipe;
@@ -215,6 +235,33 @@ void check_hard_flush_failure_rejects_submission() {
         FAULT_CHECK(io.has_value());
         FAULT_CHECK(std::get<0>(io.values()) == 1);
         FAULT_CHECK(buffer[0] == std::byte{'x'});
+    }
+    FAULT_CHECK(!context.last_error());
+}
+
+// Once the kernel head consumed the SQE, a reported submit error cannot hand
+// ownership back to the caller. The operation remains registered and its CQE
+// supplies the sole terminal completion.
+void check_consumed_submission_retains_kernel_ownership() {
+    cio::io_uring_context context{{.entries = 8}};
+    pipe_pair pipe;
+    FAULT_CHECK(pipe.read_end >= 0);
+
+    const char payload = 'z';
+    FAULT_CHECK(::write(pipe.write_end, &payload, 1) == 1);
+    std::byte buffer[4] = {};
+
+    inject_submit_errno_after_success.store(ENOMEM);
+    auto completed = std::execution::sync_wait(cio::as_sender(
+        read_task(context, pipe.read_end, buffer)));
+    inject_submit_errno_after_success.store(0);
+
+    FAULT_CHECK(completed.has_value());
+    if (completed.has_value()) {
+        auto [io] = std::move(*completed);
+        FAULT_CHECK(io.has_value());
+        FAULT_CHECK(std::get<0>(io.values()) == 1);
+        FAULT_CHECK(buffer[0] == std::byte{'z'});
     }
     FAULT_CHECK(!context.last_error());
 }
@@ -309,8 +356,10 @@ int main() {
     }
 
     check_hard_flush_failure_rejects_submission();
+    check_consumed_submission_retains_kernel_ownership();
     check_wakeup_flush_hard_failure_self_heals();
     check_saturated_wakeup_publish_self_heals();
+    FAULT_CHECK(combined_submit_calls.load(std::memory_order_acquire) == 0);
 
     if (failures != 0) {
         std::fprintf(stderr, "%d checks failed\n", failures);

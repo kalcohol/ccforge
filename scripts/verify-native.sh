@@ -265,7 +265,9 @@ target_tsan() {
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
     if [ -x build/tsan/test/forge/test_forge_io_uring_context ]; then
         log "tsan: running io_uring runtime tests in the allow-io_uring container"
-        FORGE_IO_URING_PROBE_IMAGE=forge-tsan \
+        TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1" \
+            FORGE_IO_URING_ALLOW_PTRACE=1 \
+            FORGE_IO_URING_PROBE_IMAGE=forge-tsan \
             FORGE_IO_URING_TEST_BUILD_DIRS=build/tsan \
             scripts/probe-io-uring-container.sh
     fi
@@ -306,7 +308,10 @@ target_asan() {
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
     if [ -x build/asan/test/forge/test_forge_io_uring_context ]; then
         log "asan: running io_uring runtime tests in the allow-io_uring container"
-        FORGE_IO_URING_PROBE_IMAGE=forge-asan \
+        ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1" \
+            UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
+            FORGE_IO_URING_ALLOW_PTRACE=1 \
+            FORGE_IO_URING_PROBE_IMAGE=forge-asan \
             FORGE_IO_URING_TEST_BUILD_DIRS=build/asan \
             scripts/probe-io-uring-container.sh
     fi

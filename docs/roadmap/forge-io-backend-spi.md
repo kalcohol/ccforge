@@ -302,17 +302,19 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
   retry 由 poller 遍历 registry 完成，不捕获裸地址、不分配。若 operation 在 parked
   期间自然 retire，计数同步回收。
 - Wakeup 是单个 in-flight NOP，`wakeup_published`/`wakeup_in_flight` 两个标志共同
-  管理；poller 的 opportunistic flush 可能替 waker 消费掉已发布未 flush 的 NOP，
+  管理；waker 或 poller 的 serialized flush 都可能消费已发布未 flush 的 NOP，
   因此 wakeup CQE 处理必须同时清除两个标志，否则会造成 stale-flag 死锁。
 - Target SQE 在 flush 重试后仍无法进入 SQ 时，operation 以
   `std::errc::no_buffer_space` error 完成（V1 边界；cancel SQE 走 parked 路径，
-  不适用此边界）。已发布的 target SQE 若 flush 硬失败（非 EBUSY），提交路径回退
-  发布（failing flush 保证尾项未被内核消费）并同样以 `no_buffer_space` 拒绝：
-  parked 数据 SQE 没有唤醒保证（poller 可能已带旧 to_submit 阻塞、且无 in-flight
-  CQE），接受它会让提交协程一直挂到下一次 lifecycle 转换。EBUSY 保持 parked——
-  CQ backlog 保证 poller 醒来并经下轮 enter 的 to_submit 消费。
-- Poller 对 `io_uring_enter` 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
-  fatal 并停机；此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
+  不适用此边界）。所有带 `to_submit > 0` 的 enter 都在 submission mutex 下串行，
+  poller 的 GETEVENTS 不再 opportunistically submit。已发布的 target SQE 若 flush
+  硬失败（非 EBUSY），只有 shared SQ head 证明尾项尚未消费时才安全回退并以
+  `no_buffer_space` 拒绝；若 head 已前进，kernel ownership 已成立，operation 必须
+  保持注册直至 CQE drain。EBUSY 保持 parked，CQ backlog 保证 poller 醒来并在下轮
+  serialized flush 消费。
+- Poller 对阻塞 GETEVENTS 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
+  fatal 并停机；serialized submit-only flush 的错误则保留诊断并在锁外有界退避后
+  重试。此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
 - 2026-08-20 修复（原理论边界）：wakeup NOP 的 flush 硬失败（持续 EAGAIN 放弃、
   ENOMEM 等）不再依赖单次成功。失败的 NOP 留驻 SQ，`wait()`（含析构）在 join 前
@@ -332,6 +334,8 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
   结果）改记 `last_flush_diagnostic()`，繁忙但健康的 ring 不再被误报为后端死亡。
   成功的唤醒 NOP 往返会清零该诊断，使其反映"当前受压"而非陈旧历史；
   `--wrap=syscall` 注入测试（`forge_io_uring_fault`）钉住记录与清零两个方向。
+  同一测试还模拟“SQE 已消费但 submit 报错”，钉住 head-based ownership 判定，并
+  断言 poller 从不以 GETEVENTS + `to_submit > 0` 绕过 submission mutex。
   弃置护栏说明补强：护栏有意不按 phase 收窄——未 resume 的 operation 可能还挂在
   poller 的侵入式 ready 链上（链节点与 continuation 位于协程帧内），"CQE 已
   drain 未 resume"窗口的销毁同样会让 poller 走已释放内存，不存在可安全放行的

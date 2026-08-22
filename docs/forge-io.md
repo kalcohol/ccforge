@@ -792,12 +792,15 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   历史。硬错后仍悬挂的 operation 的 buffer 保持
   borrowed（其 CQE 不再被 drain），强行销毁这些 frame 会触发上述 terminate
   护栏而不是静默 UAF。
+- 所有带 `to_submit > 0` 的 enter 都在 context submission mutex 下串行；poller
+  的阻塞 GETEVENTS 只等待 CQE，不再顺带消费 SQ。数据 SQE 的 flush 硬失败后，
+  只有 shared SQ head 证明尾项尚未被消费时才回退并交付 `no_buffer_space`；若 head
+  已前进，kernel ownership 已成立，operation 留在 registry 直到 CQE drain。这避免
+  并发 poller 消费与 tail 回退造成 ring 失配或悬空 user_data。
 - 生命周期唤醒对 flush 硬失败有自愈路径：`close()`/`request_stop()`/`shutdown()`
   发布的唤醒 NOP 若 flush 失败（如瞬态 ENOMEM）会留驻 SQ，`wait()`（含析构）
   在 join 前循环重驱动完整唤醒链（必要时重试发布，已发布则重试 flush）直至内核
-  接纳，poller 不会因单次 flush 失败而在无超时的 GETEVENTS 里永久沉睡。数据
-  SQE 的 flush 硬失败则在提交时回退发布并以 `no_buffer_space` error 完成，
-  不会留下无唤醒保证的悬挂操作。
+  接纳，poller 不会因单次 flush 失败而在无超时的 GETEVENTS 里永久沉睡。
 - io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
   `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
   （`async_read_stream` / `async_write_stream`）适配不受影响。
