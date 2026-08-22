@@ -10,6 +10,7 @@
 #include <mutex>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -59,6 +60,27 @@ TEST(ExecutionStopTokenTest, PostStopCallbackImmediateInvocation) {
     bool called = false;
     std::inplace_stop_callback cb(src.get_token(), [&] { called = true; });
     EXPECT_TRUE(called);
+}
+
+TEST(ExecutionStopTokenTest, PostStopCallbackCanDestroyItself) {
+    std::inplace_stop_source src;
+    ASSERT_TRUE(src.request_stop());
+
+    using callback_t = std::inplace_stop_callback<std::function<void()>>;
+    auto* callback = static_cast<callback_t*>(::operator new(sizeof(callback_t)));
+    bool called = false;
+    auto destroy_self = [&] {
+        called = true;
+        auto* current = std::exchange(callback, nullptr);
+        current->~callback_t();
+        ::operator delete(current);
+    };
+
+    ::new(static_cast<void*>(callback)) callback_t(
+        src.get_token(), std::function<void()>{destroy_self});
+
+    EXPECT_TRUE(called);
+    EXPECT_EQ(callback, nullptr);
 }
 
 TEST(ExecutionStopTokenTest, CallbackAutoDeregisterOnDestruction) {

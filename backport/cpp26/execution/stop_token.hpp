@@ -271,9 +271,10 @@ public:
         }
 
         if (source_ && !source_->try_add_callback(this)) {
-            // Already stopped: invoke immediately.
-            callback_();
+            // Already stopped: detach before invoking because the callback
+            // may destroy this callback object synchronously.
             source_ = nullptr;
+            callback_();
         }
     }
 
