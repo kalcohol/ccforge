@@ -115,7 +115,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `wait()` 或析构；该 work 本身计入 active count，等待自身完成会形成循环依赖。
 - `forge::resource_context` 把 runtime context 和 async scope 组合成 resource session
   根对象。它的 `options` 会把 resource policy 传给内部 runtime 和 scope op-state
-  allocation path。Destructor 执行 owning-context shutdown 和 wait。
+  allocation path。`request_stop()` 会同时请求 scope stop，并把 runtime 中 pending
+  timer 完成为 stopped；direct pool work 没有 runtime-owned stop token，仍按 drain
+  语义完成。Destructor 执行 owning-context shutdown 和 wait。
 - `forge::strand` 串行化 accepted scheduler work。Shutdown 会把 pending 和 future
   strand work 完成为 stopped。`options` 可为 pending queue、receiver record 和 runner
   keepalive node 提供 memory resource。若 `wait()` 从该 strand 正在运行的 completion

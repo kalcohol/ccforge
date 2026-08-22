@@ -106,6 +106,7 @@ public:
 
     void request_stop() noexcept {
         scope_.request_stop();
+        runtime_.request_stop();
     }
 
     void close() noexcept {

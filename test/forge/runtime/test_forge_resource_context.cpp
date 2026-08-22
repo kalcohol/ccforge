@@ -62,6 +62,43 @@ struct stop_probe_sender {
     }
 };
 
+struct resource_timer_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool value = false;
+    bool stopped = false;
+};
+
+struct resource_timer_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    resource_timer_state* state;
+
+    void set_value() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->value = true;
+        }
+        state->cv.notify_all();
+    }
+
+    void set_error(std::exception_ptr) && noexcept {
+        std::terminate();
+    }
+
+    void set_stopped() && noexcept {
+        {
+            std::lock_guard lk{state->mtx};
+            state->stopped = true;
+        }
+        state->cv.notify_all();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 } // namespace
 
 static_assert(std::execution::scheduler<forge::resource_context::scheduler>);
@@ -198,6 +235,23 @@ TEST(ResourceContextTest, RequestStopIsVisibleToSpawnedWork) {
     EXPECT_FALSE(first->requested);
     EXPECT_TRUE(second->possible);
     EXPECT_TRUE(second->requested);
+}
+
+TEST(ResourceContextTest, RequestStopCancelsPendingRuntimeTimer) {
+    forge::resource_context ctx{1};
+    resource_timer_state state;
+    auto op = std::execution::connect(
+        ctx.schedule_after(1h),
+        resource_timer_receiver{&state});
+    std::execution::start(op);
+
+    ctx.request_stop();
+
+    std::unique_lock lk{state.mtx};
+    ASSERT_TRUE(state.cv.wait_for(
+        lk, 2s, [&] { return state.value || state.stopped; }));
+    EXPECT_FALSE(state.value);
+    EXPECT_TRUE(state.stopped);
 }
 
 TEST(ResourceContextTest, TimerCallbackCanSpawnCpuWork) {

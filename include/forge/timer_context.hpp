@@ -621,8 +621,12 @@ public:
             __timer_detail::__saturating_time_add(steady_now, delay));
     }
 
-    void shutdown() noexcept {
+    void request_stop() noexcept {
         state_->shutdown();
+    }
+
+    void shutdown() noexcept {
+        request_stop();
     }
 
     void wait() noexcept {
@@ -698,6 +702,20 @@ inline auto __op<R>::make_data(std::shared_ptr<__state> state, R rcvr)
 template<class R>
 inline void __op<R>::start() & noexcept {
     auto data = data_;
+    auto complete_inline_stopped = [&]() noexcept {
+        // Keep both objects alive if the receiver destroys this operation
+        // from inside the completion callback. Inline terminal paths do not
+        // pass through __item::deliver_stopped(), so publish the same tail
+        // marker explicitly after callback delivery has returned.
+        auto item = item_;
+        if (item) {
+            item->stop_callback.reset();
+        }
+        data->complete_stopped();
+        if (item) {
+            item->delivered.store(true, std::memory_order_release);
+        }
+    };
     try {
         item_ = state_
             ? state_->make_item()
@@ -716,7 +734,7 @@ inline void __op<R>::start() & noexcept {
         auto env = std::execution::get_env(data->rcvr_);
         auto token = std::execution::get_stop_token(env);
         if (token.stop_requested()) {
-            data->complete_stopped();
+            complete_inline_stopped();
             return;
         }
         if (token.stop_possible()) {
@@ -725,10 +743,10 @@ inline void __op<R>::start() & noexcept {
         }
 
         if (!state_ || !state_->enqueue(item_)) {
-            data->complete_stopped();
+            complete_inline_stopped();
         }
     } catch (...) {
-        data->complete_stopped();
+        complete_inline_stopped();
     }
 }
 

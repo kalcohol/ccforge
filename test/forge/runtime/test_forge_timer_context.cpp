@@ -3,6 +3,7 @@
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <execution>
 #include <chrono>
@@ -538,6 +539,59 @@ TEST(TimerContextTest, PreStoppedReceiverMayDestroyOperationInCallback) {
 
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
+}
+
+TEST(TimerContextTest, PreStoppedCompletionAllowsCrossThreadDestruction) {
+    forge::timer_context ctx;
+    timer_state state;
+    std::inplace_stop_source source;
+    source.request_stop();
+
+    using sender_t = decltype(ctx.schedule_after(1h));
+    using receiver_t = pre_stopped_timer_receiver;
+    using op_t = decltype(std::execution::connect(
+        std::declval<sender_t>(),
+        std::declval<receiver_t>()));
+
+    bool unused = false;
+    auto owner = std::make_unique<
+        forge_test::operation_destroy_context<op_t>>(&unused);
+    auto& op = owner->emplace_from([&] {
+        return std::execution::connect(
+            ctx.schedule_after(1h),
+            pre_stopped_timer_receiver{{&state}, &source});
+    });
+    std::execution::start(op);
+    ASSERT_TRUE(wait_done(state));
+
+    struct destruction_state {
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool returned = false;
+    };
+    auto destruction = std::make_shared<destruction_state>();
+    std::thread destroyer(
+        [owner = std::move(owner), destruction]() mutable {
+            owner->reset();
+            {
+                std::lock_guard lk{destruction->mtx};
+                destruction->returned = true;
+            }
+            destruction->cv.notify_all();
+        });
+
+    bool returned = false;
+    {
+        std::unique_lock lk{destruction->mtx};
+        returned = destruction->cv.wait_for(
+            lk, 2s, [&] { return destruction->returned; });
+    }
+    if (!returned) {
+        destroyer.detach();
+        FAIL() << "cross-thread timer operation destruction did not return";
+        return;
+    }
+    destroyer.join();
 }
 
 TEST(TimerContextTest, StopAfterEnqueueCompletesStoppedBeforeDeadline) {

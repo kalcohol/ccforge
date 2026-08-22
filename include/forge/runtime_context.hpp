@@ -85,6 +85,13 @@ public:
         return timers_.schedule_at(time);
     }
 
+    void request_stop() noexcept {
+        // Direct pool work has no runtime-owned stop token and continues to
+        // drain. Timer operations are runtime-owned pending work and can be
+        // completed stopped immediately.
+        timers_.request_stop();
+    }
+
     void shutdown() noexcept {
         timers_.shutdown();
         pool_.shutdown();

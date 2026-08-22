@@ -184,8 +184,10 @@ source `start()` 调用栈内销毁 source operation-state，异步完成时由 
   `async_scope`。`resource_context_options` 可配置内部 runtime 的线程数、pool 队列容量
   和共享 resource；同一 resource 会传给 runtime 和 scope op-state。它不是硬件驱动框架，
   也不强制拥有 channel；用户可把设备句柄、`bounded_channel<Command>` 和
-  `bounded_channel<Event>` 与它并排存放。`shutdown()` 先 close/request_stop scope，再
-  关闭 runtime；析构会 shutdown + wait，因此适合资源会话的安全收尾。
+  `bounded_channel<Event>` 与它并排存放。`request_stop()` 会请求 scope stop，并把
+  pending runtime timer 完成为 stopped；direct pool work 仍按 drain 语义完成。
+  `shutdown()` 先 close/request_stop scope，再关闭 runtime；析构会 shutdown + wait，
+  因此适合资源会话的安全收尾。
 
 ## IO backend（IO 后端）
 

@@ -224,6 +224,21 @@ struct __record_base {
 
 struct __state;
 
+inline thread_local const __state* __delivering_state = nullptr;
+
+struct __delivery_scope {
+    explicit __delivery_scope(const __state* state) noexcept
+        : previous(__delivering_state) {
+        __delivering_state = state;
+    }
+
+    ~__delivery_scope() {
+        __delivering_state = previous;
+    }
+
+    const __state* previous;
+};
+
 struct __stop_callback_fn {
     std::weak_ptr<__state> state;
     std::weak_ptr<__record_base> record;
@@ -337,6 +352,10 @@ struct __actions {
         }
     }
 
+    [[nodiscard]] auto size() const noexcept -> std::size_t {
+        return size_;
+    }
+
 private:
     void push(
         __record_ptr record,
@@ -345,6 +364,7 @@ private:
         record->action_kind = kind;
         record->action_error = std::move(error);
         record->next_action.reset();
+        ++size_;
         auto* next_tail = record.get();
         if (tail) {
             tail->next_action = std::move(record);
@@ -356,6 +376,7 @@ private:
 
     __record_ptr head;
     __record_base* tail = nullptr;
+    std::size_t size_ = 0;
 };
 
 struct __fd_waiters {
@@ -412,6 +433,40 @@ struct __state : std::enable_shared_from_this<__state> {
         }
     }
 
+    void reserve_deliveries_locked(const __actions& actions) noexcept {
+        active_deliveries += actions.size();
+    }
+
+    void finish_deliveries(std::size_t count) noexcept {
+        if (count == 0) {
+            return;
+        }
+        std::lock_guard lk{mtx};
+        active_deliveries -= count;
+        if (active_deliveries == 0) {
+            delivery_cv.notify_all();
+        }
+    }
+
+    void run_reserved_actions(__actions& actions) noexcept {
+        const auto count = actions.size();
+        if (count == 0) {
+            return;
+        }
+        auto keepalive = weak_from_this().lock();
+        __delivery_scope delivery{this};
+        actions.run();
+        finish_deliveries(count);
+    }
+
+    void wait_for_deliveries() noexcept {
+        if (__delivering_state == this) {
+            return;
+        }
+        std::unique_lock lk{mtx};
+        delivery_cv.wait(lk, [this] { return active_deliveries == 0; });
+    }
+
     [[nodiscard]] auto start(__record_ptr record) -> bool {
         __actions actions;
         bool should_wake = false;
@@ -457,11 +512,12 @@ struct __state : std::enable_shared_from_this<__state> {
                     }
                 }
             }
+            reserve_deliveries_locked(actions);
         }
         if (should_wake) {
             wake_polling_thread();
         }
-        actions.run();
+        run_reserved_actions(actions);
         return became_pending;
     }
 
@@ -473,15 +529,19 @@ struct __state : std::enable_shared_from_this<__state> {
             if (it != fd_waiters.end()) {
                 take_all_locked(it, actions, __completion_kind::stopped);
             }
+            reserve_deliveries_locked(actions);
         }
         wake_polling_thread();
-        actions.run();
+        run_reserved_actions(actions);
     }
 
     void cancel_record(const __record_ptr& target) noexcept {
-        __record_ptr record = extract_record(target);
+        auto keepalive = weak_from_this().lock();
+        __record_ptr record = extract_record(target, true);
         if (record) {
+            __delivery_scope delivery{this};
             record->complete_stopped();
+            finish_deliveries(1);
         }
     }
 
@@ -491,10 +551,12 @@ struct __state : std::enable_shared_from_this<__state> {
     // completion or never registered).
     [[nodiscard]] auto discard_record(const __record_ptr& target) noexcept
         -> bool {
-        return static_cast<bool>(extract_record(target));
+        return static_cast<bool>(extract_record(target, false));
     }
 
-    [[nodiscard]] auto extract_record(const __record_ptr& target) noexcept
+    [[nodiscard]] auto extract_record(
+        const __record_ptr& target,
+        bool reserve_delivery) noexcept
         -> __record_ptr {
         __record_ptr record;
         bool should_wake = false;
@@ -520,6 +582,9 @@ struct __state : std::enable_shared_from_this<__state> {
                         fd_waiters.erase(it);
                     }
                     should_wake = true;
+                    if (reserve_delivery) {
+                        ++active_deliveries;
+                    }
                 }
             }
         }
@@ -545,9 +610,10 @@ struct __state : std::enable_shared_from_this<__state> {
             for (auto it = fd_waiters.begin(); it != fd_waiters.end();) {
                 it = take_all_locked(it, actions, __completion_kind::stopped);
             }
+            reserve_deliveries_locked(actions);
         }
         wake_polling_thread();
-        actions.run();
+        run_reserved_actions(actions);
     }
 
     void shutdown() noexcept {
@@ -593,8 +659,9 @@ struct __state : std::enable_shared_from_this<__state> {
                 if ((closed || stopped) && pending == 0) {
                     should_exit = true;
                 }
+                reserve_deliveries_locked(actions);
             }
-            actions.run();
+            run_reserved_actions(actions);
             if (should_exit) {
                 break;
             }
@@ -761,20 +828,23 @@ struct __state : std::enable_shared_from_this<__state> {
                 update_interest_locked(it->first, waiters);
                 it = fd_waiters.erase(it);
             }
+            reserve_deliveries_locked(actions);
         }
-        actions.run();
+        run_reserved_actions(actions);
     }
 
     std::pmr::memory_resource* memory;
     __fd epoll;
     __fd wake;
     std::mutex mtx;
+    std::condition_variable delivery_cv;
     std::pmr::unordered_map<int, __fd_waiters> fd_waiters;
     std::pmr::vector<epoll_event> events;
     bool closed = false;
     bool stopped = false;
     bool poller_done = false;
     std::size_t pending = 0;
+    std::size_t active_deliveries = 0;
     std::thread::id poller_id{};
 };
 
@@ -1156,7 +1226,11 @@ public:
 
     ~context() noexcept {
         shutdown();
-        wait();
+        if (thread_.joinable() && state_->called_from_poller()) {
+            thread_.detach();
+        } else {
+            wait();
+        }
     }
 
     context(const context&) = delete;
@@ -1228,13 +1302,14 @@ public:
 
     void wait() noexcept {
         if (!thread_.joinable()) {
+            state_->wait_for_deliveries();
             return;
         }
         if (state_->called_from_poller()) {
-            thread_.detach();
             return;
         }
         thread_.join();
+        state_->wait_for_deliveries();
     }
 
 private:

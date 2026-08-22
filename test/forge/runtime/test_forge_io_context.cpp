@@ -1171,6 +1171,186 @@ TEST(IoContextTest, RequestStopCancelsPendingWaiter) {
     EXPECT_FALSE(state->error);
 }
 
+TEST(IoContextTest, WaitBlocksUntilRequestStopCallbackReturns) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool callback_started = false;
+    bool release_callback = false;
+    bool callback_finished = false;
+    bool wait_returned = false;
+
+    struct blocking_stopped_receiver {
+        using receiver_concept = std::execution::receiver_t;
+
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* callback_started;
+        bool* release_callback;
+        bool* callback_finished;
+
+        void set_value() && noexcept {}
+        void set_error(std::exception_ptr) && noexcept {}
+        void set_stopped() && noexcept {
+            {
+                std::lock_guard lk{*mtx};
+                *callback_started = true;
+            }
+            cv->notify_all();
+            std::unique_lock lk{*mtx};
+            cv->wait(lk, [&] { return *release_callback; });
+            *callback_finished = true;
+            lk.unlock();
+            cv->notify_all();
+        }
+
+        auto get_env() const noexcept -> std::execution::empty_env {
+            return {};
+        }
+    };
+
+    auto op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        blocking_stopped_receiver{
+            &mtx,
+            &cv,
+            &callback_started,
+            &release_callback,
+            &callback_finished});
+    std::execution::start(op);
+
+    std::thread stopper([&] { ctx.request_stop(); });
+    bool started = false;
+    {
+        std::unique_lock lk{mtx};
+        started = cv.wait_for(lk, 2s, [&] { return callback_started; });
+        if (!started) {
+            release_callback = true;
+        }
+    }
+    if (!started) {
+        cv.notify_all();
+        stopper.join();
+        FAIL() << "stop callback did not start";
+        return;
+    }
+
+    std::thread waiter([&] {
+        ctx.wait();
+        {
+            std::lock_guard lk{mtx};
+            wait_returned = true;
+        }
+        cv.notify_all();
+    });
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(lk, 20ms, [&] { return wait_returned; }));
+        release_callback = true;
+    }
+    cv.notify_all();
+
+    stopper.join();
+    waiter.join();
+    EXPECT_TRUE(callback_finished);
+    EXPECT_TRUE(wait_returned);
+}
+
+TEST(IoContextTest, PollerWaitDoesNotConsumeExternalJoinBarrier) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool poller_wait_returned = false;
+    bool release_callback = false;
+    bool callback_finished = false;
+    bool external_wait_returned = false;
+
+    struct poller_wait_receiver {
+        using receiver_concept = std::execution::receiver_t;
+
+        forge::io::context* context;
+        std::mutex* mtx;
+        std::condition_variable* cv;
+        bool* poller_wait_returned;
+        bool* release_callback;
+        bool* callback_finished;
+
+        void set_value() && noexcept {
+            context->wait();
+            {
+                std::lock_guard lk{*mtx};
+                *poller_wait_returned = true;
+            }
+            cv->notify_all();
+            std::unique_lock lk{*mtx};
+            cv->wait(lk, [&] { return *release_callback; });
+            *callback_finished = true;
+            lk.unlock();
+            cv->notify_all();
+        }
+
+        void set_error(std::exception_ptr) && noexcept {}
+        void set_stopped() && noexcept {}
+        auto get_env() const noexcept -> std::execution::empty_env {
+            return {};
+        }
+    };
+
+    auto op = std::execution::connect(
+        ctx.readable(pipe.first.get()),
+        poller_wait_receiver{
+            &ctx,
+            &mtx,
+            &cv,
+            &poller_wait_returned,
+            &release_callback,
+            &callback_finished});
+    std::execution::start(op);
+    write_byte(pipe.second.get());
+
+    bool poller_returned = false;
+    {
+        std::unique_lock lk{mtx};
+        poller_returned = cv.wait_for(
+            lk, 2s, [&] { return poller_wait_returned; });
+        if (!poller_returned) {
+            release_callback = true;
+        }
+    }
+    if (!poller_returned) {
+        cv.notify_all();
+        ctx.shutdown();
+        ctx.wait();
+        FAIL() << "poller callback did not reach wait";
+        return;
+    }
+
+    ctx.shutdown();
+    std::thread waiter([&] {
+        ctx.wait();
+        {
+            std::lock_guard lk{mtx};
+            external_wait_returned = true;
+        }
+        cv.notify_all();
+    });
+
+    {
+        std::unique_lock lk{mtx};
+        EXPECT_FALSE(cv.wait_for(
+            lk, 20ms, [&] { return external_wait_returned; }));
+        release_callback = true;
+    }
+    cv.notify_all();
+
+    waiter.join();
+    EXPECT_TRUE(callback_finished);
+    EXPECT_TRUE(external_wait_returned);
+}
+
 TEST(IoContextTest, CancelFdStopsPendingWaiter) {
     auto pipe = make_pipe();
     forge::io::context ctx;
