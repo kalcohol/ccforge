@@ -91,7 +91,9 @@
   `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 与
   `continues_on` 必须在收到上游 completion 后选择并构造动态 child/schedule
   operation，因此当前实现会为这些真实的 late-connect 失败保留
-  `set_error(std::exception_ptr)` 通道。
+  `set_error(std::exception_ptr)` 通道。`starts_on` 的 source child environment 以
+  目标 scheduler 覆盖 `get_scheduler`、`get_start_scheduler` 和 `get_domain`，其余
+  forwarding query 继续来自 outer receiver environment。
 - `schedule_from`、`apply_sender` 和 `transform_env` 尚未实现。它们需要与 domain
   customization 一起设计，不能用只转发到 `continues_on` 的同名空壳代替。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`

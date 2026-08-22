@@ -125,6 +125,29 @@ struct start_scheduler_env {
     }
 };
 
+struct starts_on_domain {
+    int identity = 0;
+
+    bool operator==(const starts_on_domain&) const noexcept = default;
+};
+
+struct domain_scheduler {
+    using scheduler_concept = std::execution::scheduler_t;
+
+    int identity = 0;
+
+    auto schedule() const noexcept {
+        return std::execution::schedule(std::execution::inline_scheduler{});
+    }
+
+    auto query(std::execution::get_domain_t) const noexcept
+        -> starts_on_domain {
+        return {identity};
+    }
+
+    bool operator==(const domain_scheduler&) const noexcept = default;
+};
+
 struct int_start_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -430,6 +453,21 @@ TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
     ASSERT_TRUE(start_scheduler_result.has_value());
     EXPECT_EQ(std::get<0>(*scheduler_result), target);
     EXPECT_EQ(std::get<0>(*start_scheduler_result), target);
+}
+
+TEST(StartsOnTest, ChildEnvironmentReportsTheTargetDomain) {
+    const domain_scheduler target{47};
+
+    auto result = std::execution::sync_wait(
+        std::execution::starts_on(
+            target,
+            std::execution::read_env(std::execution::get_domain)));
+
+    static_assert(std::is_same_v<
+        decltype(result),
+        std::optional<std::tuple<starts_on_domain>>>);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), starts_on_domain{47});
 }
 
 TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {

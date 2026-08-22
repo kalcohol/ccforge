@@ -41,6 +41,9 @@ auto __make_starts_on_env(Scheduler& scheduler, OuterEnv&& outer) {
         std::execution::make_prop(
             std::execution::get_start_scheduler,
             std::cref(scheduler)),
+        std::execution::make_prop(
+            std::execution::get_domain,
+            std::execution::get_domain(scheduler)),
         static_cast<OuterEnv&&>(outer));
 }
 
