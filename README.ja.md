@@ -101,6 +101,9 @@ submodule の初期化も不要です。
 インストールされた package config は consumer project 側で native-vs-backport probes
 を再実行します。そのため、一つの install prefix を異なる compiler、standard library、
 `CMAKE_CXX_STANDARD` に適応させられます。
+一つの configure 済み build tree では、標準形 wrapper を利用する target はその
+グローバル言語モードを使う必要があります。target 単位で `CXX_STANDARD` を変える場合は、
+別の build tree を使用してください。
 
 標準形の入口は `<execution>` や `<simd>` のように拡張子なしです。一方、非標準の
 `forge::` utilities は `<forge/io.hpp>` のような `.hpp` ヘッダーを使い続けます。

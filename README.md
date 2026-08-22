@@ -101,6 +101,9 @@ consumption neither configure nor install GoogleTest, and do not require the
 The installed package config reruns native-vs-backport probes in the consumer
 project, so one install prefix can adapt to different compilers, standard
 libraries, and `CMAKE_CXX_STANDARD` values.
+Within one configured build tree, targets consuming the standard-shaped
+wrappers must use that configured language mode; target-only `CXX_STANDARD`
+overrides require a separate build tree.
 
 Standard-shaped entries intentionally use extensionless headers such as
 `<execution>` and `<simd>`. Non-standard `forge::` utilities keep `.hpp`

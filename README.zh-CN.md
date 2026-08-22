@@ -98,6 +98,8 @@ GoogleTest，也不要求初始化 `3rdparty/googletest` submodule。
 安装后的 package config 会在 consumer 项目里重新运行 native-vs-backport probes，
 不会固化打包机器的探测结果；同一个 install prefix 可以适配不同 compiler、standard
 library 和 `CMAKE_CXX_STANDARD`。
+同一个已配置 build tree 内，消费标准形态 wrapper 的 target 必须使用该全局语言模式；
+若要只为某个 target 改写 `CXX_STANDARD`，应使用独立 build tree。
 
 标准形态入口刻意保持无后缀，例如 `<execution>` 与 `<simd>`；非标准 `forge::`
 扩展继续使用 `.hpp` 入口，例如 `<forge/io.hpp>`。这样可以清楚区分项目扩展与标准

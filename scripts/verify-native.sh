@@ -179,6 +179,19 @@ target_gcc16() {
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
 
+    log "gcc16: building examples against partial-native standard surfaces"
+    "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
+        bash -lc '
+            set -euo pipefail
+            rm -rf build/gcc16-examples
+            cmake -S . -B build/gcc16-examples -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DCMAKE_CXX_STANDARD=26 \
+                  -DFORGE_BUILD_TESTS=OFF \
+                  -DFORGE_BUILD_EXAMPLES=ON
+            cmake --build build/gcc16-examples
+        '
+
     local floor_logfile="${LOG_DIR}/gcc16-cxx23-configure.log"
     log "gcc16: verifying the C++23 std::simd backport floor"
     "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \

@@ -59,6 +59,13 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
 标准声明探针使用 CMake 为当前 `CMAKE_CXX_STANDARD` 与 extensions 模式选择的
 compile option，不自行拼接编译器特定的 `-std=` 方言名字。
+探针结论属于当前 configure 的全局语言模式；同一 build tree 中消费标准同名 wrapper
+的 target 必须使用该模式。只对单个 target 提高或降低 `CXX_STANDARD` 会让探针结论与
+实际包含的标准库声明不一致，不属于支持配置；需要不同语言模式时使用独立 build tree。
+
+partial-native 工具链上，Forge 仍严格让位。依赖该标准 surface 完整实现的 examples
+会跳过注册，而不是强行混入 backport；完整原生和无原生声明的 inject path 仍构建这些
+examples。
 
 ## Force flags（诊断开关）
 
