@@ -407,6 +407,31 @@ TEST(StartsOnTest, RunsOnScheduler) {
     EXPECT_EQ(result, 42);
 }
 
+TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
+    const std::execution::inline_scheduler target;
+
+    auto scheduler_result = std::execution::sync_wait(
+        std::execution::starts_on(
+            target,
+            std::execution::read_env(std::execution::get_scheduler)));
+    auto start_scheduler_result = std::execution::sync_wait(
+        std::execution::starts_on(
+            target,
+            std::execution::read_env(
+                std::execution::get_start_scheduler)));
+
+    static_assert(std::is_same_v<
+        decltype(scheduler_result),
+        std::optional<std::tuple<std::execution::inline_scheduler>>>);
+    static_assert(std::is_same_v<
+        decltype(start_scheduler_result),
+        std::optional<std::tuple<std::execution::inline_scheduler>>>);
+    ASSERT_TRUE(scheduler_result.has_value());
+    ASSERT_TRUE(start_scheduler_result.has_value());
+    EXPECT_EQ(std::get<0>(*scheduler_result), target);
+    EXPECT_EQ(std::get<0>(*start_scheduler_result), target);
+}
+
 TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {
     auto sndr = std::execution::on(
         std::execution::inline_scheduler{}, std::execution::just(42));

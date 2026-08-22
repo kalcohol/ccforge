@@ -143,10 +143,15 @@ class any_receiver_of {
     struct __env {
         any_stop_token token;
 
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> any_stop_token {
+            return token;
+        }
+
         friend auto tag_invoke(
             std::execution::get_stop_token_t,
             const __env& self) noexcept -> any_stop_token {
-            return self.token;
+            return self.query(std::execution::get_stop_token);
         }
     };
 

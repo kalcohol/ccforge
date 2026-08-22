@@ -15,6 +15,15 @@ auto completion_scheduler_of(const Scheduler& scheduler) {
         std::execution::get_env(sender));
 }
 
+template<class Scheduler>
+auto member_completion_scheduler_of(const Scheduler& scheduler) {
+    auto sender = std::execution::schedule(scheduler);
+    auto env = std::execution::get_env(sender);
+    return env.query(
+        std::execution::get_completion_scheduler_t<
+            std::execution::set_value_t>{});
+}
+
 } // namespace
 
 TEST(ForgeSchedulerRoundtripTest, StaticThreadPoolSchedulerRoundtrips) {
@@ -52,6 +61,12 @@ TEST(ForgeSchedulerRoundtripTest, AnySchedulerRoundtripsWithSharedIdentity) {
     static_assert(std::is_same_v<decltype(roundtrip), forge::any_scheduler>);
     EXPECT_TRUE(roundtrip == scheduler);
     EXPECT_TRUE(bool(roundtrip));
+
+    auto member_roundtrip = member_completion_scheduler_of(scheduler);
+    static_assert(std::is_same_v<
+                  decltype(member_roundtrip),
+                  forge::any_scheduler>);
+    EXPECT_TRUE(member_roundtrip == scheduler);
 }
 
 TEST(ForgeSchedulerRoundtripTest, EmptyAnySchedulerRoundtripsAsEmpty) {

@@ -72,27 +72,25 @@ _forge_refresh_probe_cache(
     FORGE_LINALG_PARTIAL_MATRIX_PRODUCT)
 
 set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
-if(MSVC)
-    set(_forge_msvc_standard_option_var
-        "CMAKE_CXX${_forge_std}_STANDARD_COMPILE_OPTION")
-    if(DEFINED ${_forge_msvc_standard_option_var}
-            AND NOT "${${_forge_msvc_standard_option_var}}" STREQUAL "")
-        set(_forge_msvc_standard_option
-            "${${_forge_msvc_standard_option_var}}")
-    elseif(_forge_std GREATER_EQUAL 23)
+_forge_select_cxx_standard_compile_option(
+    _forge_standard_option "${_forge_std}")
+if("${_forge_standard_option}" STREQUAL "" AND MSVC)
+    if(_forge_std GREATER_EQUAL 23)
         # MSVC versions that provide C++23 through CMake may expose it only
         # through /std:c++latest; /std:c++23 is not a portable MSVC option.
-        set(_forge_msvc_standard_option "/std:c++latest")
+        set(_forge_standard_option "/std:c++latest")
     else()
-        set(_forge_msvc_standard_option "/std:c++${_forge_std}")
+        set(_forge_standard_option "/std:c++${_forge_std}")
     endif()
-    set(CMAKE_REQUIRED_FLAGS
-        "${CMAKE_REQUIRED_FLAGS} ${_forge_msvc_standard_option} /Zc:__cplusplus")
-    unset(_forge_msvc_standard_option)
-    unset(_forge_msvc_standard_option_var)
-else()
-    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++${_forge_std}")
 endif()
+if(NOT "${_forge_standard_option}" STREQUAL "")
+    set(CMAKE_REQUIRED_FLAGS
+        "${CMAKE_REQUIRED_FLAGS} ${_forge_standard_option}")
+endif()
+if(MSVC)
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
+endif()
+unset(_forge_standard_option)
 
 # Three-state decision helper for each backportable feature.
 #
@@ -120,7 +118,7 @@ macro(_forge_decide _disp _suffix _full _partial)
     elseif(${_partial})
         target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_HAS_NATIVE_${_suffix}=1)
         message(STATUS "CC Forge probe: ${_suffix}=PARTIAL")
-        message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE at -std=c++${_forge_std}; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it or select a language mode where these declarations are absent. FORGE_FORCE_${_suffix}_BACKPORT remains a diagnostic-only switch and may fail to compile or violate the ODR on this toolchain.")
+        message(WARNING "CC Forge: ${_disp} native support is present but INCOMPLETE in C++${_forge_std} mode; Forge stands aside to avoid ODR conflicts. Wait for the toolchain to finish it or select a language mode where these declarations are absent. FORGE_FORCE_${_suffix}_BACKPORT remains a diagnostic-only switch and may fail to compile or violate the ODR on this toolchain.")
     else()
         set(FORGE_NEEDS_BACKPORT TRUE)
         message(STATUS "CC Forge probe: ${_suffix}=BACKPORT")

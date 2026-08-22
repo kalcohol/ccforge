@@ -21,6 +21,27 @@ function(_forge_append_probe_fingerprint_variable out_var payload variable_name)
     set(${out_var} "${_forge_payload}" PARENT_SCOPE)
 endfunction()
 
+function(_forge_select_cxx_standard_compile_option out_var language_standard)
+    set(_forge_strict_var
+        "CMAKE_CXX${language_standard}_STANDARD_COMPILE_OPTION")
+    set(_forge_extension_var
+        "CMAKE_CXX${language_standard}_EXTENSION_COMPILE_OPTION")
+    if(DEFINED CMAKE_CXX_EXTENSIONS AND NOT CMAKE_CXX_EXTENSIONS)
+        set(_forge_candidates "${_forge_strict_var}" "${_forge_extension_var}")
+    else()
+        set(_forge_candidates "${_forge_extension_var}" "${_forge_strict_var}")
+    endif()
+
+    foreach(_forge_candidate IN LISTS _forge_candidates)
+        if(DEFINED ${_forge_candidate}
+                AND NOT "${${_forge_candidate}}" STREQUAL "")
+            set(${out_var} "${${_forge_candidate}}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out_var} "" PARENT_SCOPE)
+endfunction()
+
 function(_forge_append_probe_file_digest out_var payload key path)
     if(EXISTS "${path}" AND NOT IS_DIRECTORY "${path}")
         file(SHA256 "${path}" _forge_digest)

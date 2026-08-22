@@ -748,6 +748,12 @@ static_assert(std::constructible_from<
                       std::execution::set_value_t(int),
                       std::execution::set_stopped_t()>>,
               env_pruned_sender>);
+using erased_receiver_env_t = std::execution::env_of_t<
+    forge::__erased_sender_detail::__receiver<stop_probe_cs>>;
+static_assert(requires(const erased_receiver_env_t& env) {
+    { env.query(std::execution::get_stop_token) }
+        -> std::same_as<forge::any_stop_token>;
+});
 
 } // namespace
 

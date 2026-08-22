@@ -149,6 +149,11 @@ struct __sender {
 
     struct __env {
         std::shared_ptr<__state_base> state;
+
+        auto query(
+            std::execution::get_completion_scheduler_t<
+                std::execution::set_value_t>) const noexcept
+            -> forge::any_scheduler;
     };
 
     auto get_env() const noexcept -> __env {
@@ -222,10 +227,19 @@ struct __scheduler_access {
     }
 };
 
+inline auto __sender::__env::query(
+    std::execution::get_completion_scheduler_t<
+        std::execution::set_value_t>) const noexcept
+    -> forge::any_scheduler {
+    return __scheduler_access::make(state);
+}
+
 inline auto tag_invoke(
     std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
     const __sender::__env& env) noexcept -> forge::any_scheduler {
-    return __scheduler_access::make(env.state);
+    return env.query(
+        std::execution::get_completion_scheduler_t<
+            std::execution::set_value_t>{});
 }
 
 } // namespace __any_scheduler_detail

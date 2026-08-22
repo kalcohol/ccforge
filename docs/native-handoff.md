@@ -57,6 +57,8 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 - `scripts/probe-stdexec-feasibility.sh` 只是可选 reference probe。它可以帮助比较 sender/receiver 语义，但 stdexec 使用 `stdexec::` surface，不能证明 Forge `<execution>` 已经完成 native handoff。
 
 改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
+标准声明探针使用 CMake 为当前 `CMAKE_CXX_STANDARD` 与 extensions 模式选择的
+compile option，不自行拼接编译器特定的 `-std=` 方言名字。
 
 ## Force flags（诊断开关）
 

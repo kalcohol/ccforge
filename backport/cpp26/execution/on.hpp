@@ -32,9 +32,26 @@ namespace std::execution {
 
 namespace __forge_on {
 
+template<class Scheduler, class OuterEnv>
+auto __make_starts_on_env(Scheduler& scheduler, OuterEnv&& outer) {
+    return std::execution::make_env(
+        std::execution::make_prop(
+            std::execution::get_scheduler,
+            std::cref(scheduler)),
+        std::execution::make_prop(
+            std::execution::get_start_scheduler,
+            std::cref(scheduler)),
+        static_cast<OuterEnv&&>(outer));
+}
+
+template<class Scheduler, class OuterEnv>
+using __starts_on_env_t = decltype(__make_starts_on_env(
+    std::declval<Scheduler&>(), std::declval<OuterEnv>()));
+
 template<class Scheduler, class S, class R>
 struct __starts_on_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
+    using __source_env_t = __starts_on_env_t<Scheduler, env_of_t<R>>;
 
     R __outer_recv;
     Scheduler __sch;
@@ -56,8 +73,10 @@ struct __starts_on_op : __forge_detail::__immovable {
         void set_stopped() && noexcept {
             std::execution::set_stopped(std::move(__self->__outer_recv));
         }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer_recv);
+        auto get_env() const noexcept -> __source_env_t {
+            return __make_starts_on_env(
+                __self->__sch,
+                std::execution::get_env(__self->__outer_recv));
         }
     };
 
@@ -107,6 +126,7 @@ struct __starts_on_op : __forge_detail::__immovable {
 template<class Scheduler, class S>
 struct __starts_on_sender {
     using sender_concept = sender_t;
+    using scheduler_t = Scheduler;
     using source_t = S;
 
     Scheduler __sch;
@@ -115,9 +135,12 @@ struct __starts_on_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
+        using child_env_t = __starts_on_env_t<
+            typename self_t::scheduler_t,
+            Env>;
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
+            std::declval<child_env_t>()));
         using sched_sndr_t = decltype(std::execution::schedule(
             std::declval<Scheduler&>()));
         using sched_cs_t = decltype(std::execution::get_completion_signatures(

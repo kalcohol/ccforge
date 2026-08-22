@@ -70,6 +70,26 @@ struct error_stopped_recv {
     }
 };
 
+struct stop_token_recv {
+    using receiver_concept = std::execution::receiver_t;
+
+    struct env {
+        std::inplace_stop_token token;
+
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> std::inplace_stop_token {
+            return token;
+        }
+    };
+
+    std::inplace_stop_token token;
+
+    void set_value(int) && noexcept {}
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> env { return {token}; }
+};
+
 struct counted_payload {
     int* copies = nullptr;
     std::string value;
@@ -223,10 +243,29 @@ static_assert(std::constructible_from<
 static_assert(std::constructible_from<
               forge::any_receiver_of<cs_mutable_reference>,
               mutable_reference_recv>);
+using any_receiver_env_t = std::execution::env_of_t<
+    forge::any_receiver_of<cs_int>>;
+static_assert(requires(const any_receiver_env_t& env) {
+    { env.query(std::execution::get_stop_token) }
+        -> std::same_as<forge::any_stop_token>;
+});
 
 TEST(AnyReceiverTest, DefaultEmpty) {
     forge::any_receiver_of<cs_int> r;
     EXPECT_FALSE(bool(r));
+}
+
+TEST(AnyReceiverTest, MemberQueryPreservesStopToken) {
+    std::inplace_stop_source source;
+    forge::any_receiver_of<cs_int> receiver =
+        stop_token_recv{source.get_token()};
+    source.request_stop();
+
+    auto token = std::execution::get_env(receiver).query(
+        std::execution::get_stop_token);
+
+    EXPECT_TRUE(token.stop_possible());
+    EXPECT_TRUE(token.stop_requested());
 }
 
 TEST(AnyReceiverTest, HoldsConcreteReceiver) {
