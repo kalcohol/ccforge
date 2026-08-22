@@ -219,6 +219,33 @@ TEST(LinalgLevel1Reductions, SignedMinimumMagnitudeIsWellDefined) {
     std::mdspan y(y_data, std::extents<int, 3>{});
     EXPECT_EQ(std::linalg::vector_idx_abs_max(y),
               decltype(y)::size_type{1});
+
+    int matrix_data[] = {int_min, int_min, 1, 2};
+    std::mdspan matrix(matrix_data, std::extents<int, 2, 2>{});
+    static_assert(std::is_same_v<
+                  decltype(std::linalg::matrix_one_norm(matrix)),
+                  unsigned>);
+    static_assert(std::is_same_v<
+                  decltype(std::linalg::matrix_inf_norm(matrix)),
+                  unsigned>);
+    EXPECT_EQ(
+        std::linalg::matrix_one_norm(matrix, std::int64_t{0}),
+        std::int64_t{2147483650});
+    EXPECT_EQ(
+        std::linalg::matrix_inf_norm(matrix, std::int64_t{0}),
+        std::int64_t{4294967296});
+    EXPECT_EQ(
+        std::linalg::matrix_one_norm(matrix),
+        2147483650u);
+    EXPECT_EQ(
+        std::linalg::matrix_inf_norm(matrix),
+        std::numeric_limits<unsigned>::max());
+    EXPECT_EQ(
+        std::linalg::matrix_one_norm(matrix, 0),
+        std::numeric_limits<int>::max());
+    EXPECT_EQ(
+        std::linalg::matrix_inf_norm(matrix, 0),
+        std::numeric_limits<int>::max());
 }
 
 // Documents the double-precision boundary of the integral accumulation:

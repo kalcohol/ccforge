@@ -524,15 +524,27 @@ T matrix_one_norm(
     }
     using sum_type = std::remove_cvref_t<
         decltype(__detail::__real_if_needed(init))>;
-    sum_type max_col_sum{};
+    using magnitude_type = std::remove_cvref_t<
+        decltype(__detail::__abs_if_needed(A[0, 0]))>;
+    using accum_type = std::conditional_t<
+        std::is_integral_v<sum_type> || std::is_integral_v<magnitude_type>,
+        double,
+        sum_type>;
+    accum_type max_col_sum{};
     for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-        sum_type col_sum{};
+        accum_type col_sum{};
         for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            col_sum += static_cast<sum_type>(__detail::__abs_if_needed(A[i, j]));
+            col_sum += static_cast<accum_type>(
+                __detail::__abs_if_needed(A[i, j]));
         }
         if (col_sum > max_col_sum) max_col_sum = col_sum;
     }
-    return init + static_cast<T>(max_col_sum);
+    if constexpr (std::is_integral_v<T>) {
+        return __detail::__saturate_cast<T>(
+            static_cast<double>(init) + static_cast<double>(max_col_sum));
+    } else {
+        return init + static_cast<T>(max_col_sum);
+    }
 }
 
 template<class Extents, class Layout, class Accessor>
@@ -554,15 +566,27 @@ T matrix_inf_norm(
     }
     using sum_type = std::remove_cvref_t<
         decltype(__detail::__real_if_needed(init))>;
-    sum_type max_row_sum{};
+    using magnitude_type = std::remove_cvref_t<
+        decltype(__detail::__abs_if_needed(A[0, 0]))>;
+    using accum_type = std::conditional_t<
+        std::is_integral_v<sum_type> || std::is_integral_v<magnitude_type>,
+        double,
+        sum_type>;
+    accum_type max_row_sum{};
     for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-        sum_type row_sum{};
+        accum_type row_sum{};
         for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-            row_sum += static_cast<sum_type>(__detail::__abs_if_needed(A[i, j]));
+            row_sum += static_cast<accum_type>(
+                __detail::__abs_if_needed(A[i, j]));
         }
         if (row_sum > max_row_sum) max_row_sum = row_sum;
     }
-    return init + static_cast<T>(max_row_sum);
+    if constexpr (std::is_integral_v<T>) {
+        return __detail::__saturate_cast<T>(
+            static_cast<double>(init) + static_cast<double>(max_row_sum));
+    } else {
+        return init + static_cast<T>(max_row_sum);
+    }
 }
 
 template<class Extents, class Layout, class Accessor>

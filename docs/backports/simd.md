@@ -23,6 +23,8 @@ implementation-defined；Forge 在该范围之外保留有界失败策略，不�
 计入 portable conformance 承诺。定义范围内的 fallback 会在 LLVM/libc++ lane 通过
 直接调用与 public `std::simd` 调用共同验证；不能用会转发原生标量 special math 的
 libstdc++ lane 充当 fallback oracle。
+`riemann_zeta` 的极点邻域使用 Laurent 局部展开，并在其余 Hasse 路径用
+`expm1` 计算解析延拓分母，避免 `s` 接近 1 时由相近数相减造成无穷或错号。
 
 ## 验证
 

@@ -43,7 +43,9 @@
 - 有符号整型的 magnitude（`vector_abs_sum`、`vector_idx_abs_max`、范数与 SSQ
   的逐项绝对值）在对应无符号类型中计算，最小负值（如 `INT_MIN`）有良定义的
   幅值 2^31 而不是 `abs()` 未定义行为；因此无 init 的推导返回类型对有符号
-  整型元素是其无符号对应类型。
+  整型元素是其无符号对应类型。`matrix_one_norm` / `matrix_inf_norm` 的整型实例
+  也以 double 中间精度累加，并在显式整型结果超出表示域时饱和，遵循上面的实验性
+  整型范数策略。
 - Triangular matrix-matrix product 使用当前 draft 的
   `triangular_matrix_left_product` / `triangular_matrix_right_product` 拼写；旧的
   `triangular_matrix_product(..., Side, ...)` 非标准 wrapper 不再暴露。

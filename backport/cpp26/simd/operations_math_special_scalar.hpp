@@ -547,7 +547,7 @@ T riemann_zeta_hasse(T s) {
         }
     }
 
-    return sum / (T{1} - std::pow(T{2}, T{1} - s));
+    return sum / -std::expm1((T{1} - s) * std::log(T{2}));
 }
 
 template<class T>
@@ -560,6 +560,24 @@ T riemann_zeta_fallback(T s) {
     }
     if (s == T{1}) {
         return infinity<T>();
+    }
+    const T pole_delta = s - T{1};
+    if (std::abs(pole_delta) <=
+        std::sqrt(std::numeric_limits<T>::epsilon())) {
+        using wide_t = conditional_t<
+            (sizeof(T) < sizeof(long double)), long double, T>;
+        constexpr wide_t euler_gamma =
+            0.577215664901532860606512090082402431L;
+        constexpr wide_t minus_stieltjes_one =
+            0.072815845483676724860586375874901319L;
+        constexpr wide_t stieltjes_two_over_two =
+            -0.004845181596436159242775526986987055L;
+        const wide_t delta = static_cast<wide_t>(pole_delta);
+        return static_cast<T>(
+            wide_t{1} / delta +
+            euler_gamma +
+            minus_stieltjes_one * delta +
+            stieltjes_two_over_two * delta * delta);
     }
     if (s == T{0}) {
         return static_cast<T>(-0.5L);

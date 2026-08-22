@@ -474,6 +474,33 @@ TEST(SimdMathSpecialTest, RiemannZetaPreservesNearPoleAndLargeNegativeInputs) {
     EXPECT_EQ(zeta[3], 0.0);
 }
 
+TEST(SimdMathSpecialTest, RiemannZetaNearPoleUsesStableLocalExpansion) {
+    namespace sm = std::simd::detail::special_math;
+
+    constexpr long double euler_gamma =
+        0.577215664901532860606512090082402431L;
+    constexpr long double minus_stieltjes_one =
+        0.072815845483676724860586375874901319L;
+    for (const double requested_delta : {1.0e-8, -1.0e-8}) {
+        const double argument = 1.0 + requested_delta;
+        const long double delta =
+            static_cast<long double>(argument) - 1.0L;
+        const long double expected =
+            1.0L / delta + euler_gamma + minus_stieltjes_one * delta;
+        const double actual = sm::riemann_zeta_fallback(argument);
+        EXPECT_TRUE(std::isfinite(actual));
+        EXPECT_NEAR(
+            actual,
+            static_cast<double>(expected),
+            std::abs(static_cast<double>(expected)) * 5.0e-15);
+    }
+
+    EXPECT_TRUE(std::isfinite(sm::riemann_zeta_fallback(
+        std::nextafter(1.0, 2.0))));
+    EXPECT_TRUE(std::isfinite(sm::riemann_zeta_fallback(
+        std::nextafter(1.0, 0.0))));
+}
+
 TEST(SimdMathSpecialTest, PublicBesselApiExercisesForgeFallback) {
     const double4 double_orders = load_vec<double4>(
         std::array<double, 4>{{140.0, 100.0, 0.3137, 0.49}});
