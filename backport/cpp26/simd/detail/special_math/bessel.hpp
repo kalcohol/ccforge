@@ -585,7 +585,7 @@ auto cyl_bessel_jy_fallback(T nu, T x)
         }
 
         const auto positive = cyl_bessel_jy_fallback(
-            order, static_cast<long double>(x));
+            static_cast<T>(order), x);
         const long double j =
             trig.cosine * positive.j - trig.sine * positive.y;
         const long double y =
