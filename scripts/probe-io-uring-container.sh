@@ -9,6 +9,7 @@ profile="${build_dir}/io-uring-seccomp.json"
 image="${FORGE_IO_URING_PROBE_IMAGE:-forge-tsan}"
 compiler="${FORGE_IO_URING_CONTAINER_CXX:-clang++}"
 podman="${PODMAN:-podman}"
+python="${FORGE_IO_URING_PYTHON:-python3}"
 # Optional space-separated list of build directories (relative to the repo
 # root) whose io_uring runtime tests run inside the allow-io_uring container
 # after the raw probe. A raw-probe 77 is a bounded skip for kernels that
@@ -25,7 +26,7 @@ if [[ ! -r "${base_profile}" ]]; then
 fi
 
 cmake -E make_directory "${build_dir}"
-python3 - "${base_profile}" "${profile}" <<'PY'
+"${python}" - "${base_profile}" "${profile}" <<'PY'
 import json
 import sys
 

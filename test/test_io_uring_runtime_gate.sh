@@ -25,10 +25,16 @@ printf '%s\n' \
     '#!/usr/bin/env bash' \
     'printf "%s\n" "$@" > "${FAKE_PODMAN_ARGS}"' \
     > "${work}/podman"
-chmod +x "${work}/podman"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'shift' \
+    'cp "$1" "$2"' \
+    > "${work}/python"
+chmod +x "${work}/podman" "${work}/python"
 
 FAKE_PODMAN_ARGS="${work}/podman.args" \
 PODMAN="${work}/podman" \
+FORGE_IO_URING_PYTHON="${work}/python" \
 FORGE_IO_URING_SECCOMP_BASE="${work}/seccomp.json" \
 FORGE_IO_URING_PROBE_BUILD_DIR="${work}/container-probe" \
 FORGE_IO_URING_PROBE_IMAGE=fake-image \
