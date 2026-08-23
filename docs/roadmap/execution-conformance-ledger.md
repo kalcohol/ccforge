@@ -90,7 +90,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 
 | Surface | 处置 | 原因 / 后续条件 |
 | --- | --- | --- |
-| `task`, `task_scheduler`, `with_error` | Not implemented | P3552 coroutine task family 尚未 backport。`forge::task` / `forge::io::io_task` 是不同命名空间下的 Forge extensions，不能当作该标准 surface。只有形成独立 taskbook、生命周期模型和 native-handoff 测试后才考虑。 |
+| `task`, `task_scheduler`, `with_error` | Deferred after current-WD audit | [P3552R3](https://wg21.link/P3552R3) 已进入 working paper，且 2026-08-22 draft snapshot (`2f5924ff8ee5`) 含完整 task family；但 2026-05 [P4007R3](https://wg21.link/P4007R3) 仍列出开放问题，并明确区分可在发布后修正与发布后无法兼容修正的项目。稳定性 gate 因此未通过。`forge::task` / `forge::io::io_task` 是不同契约的 Forge extensions，不能当作该标准 surface。只有独立 taskbook 同时固定 wording revision、frame/operation ownership、allocator、stop/error、self-destroy 和 COMPLETE/PARTIAL native handoff 后才重开。 |
 | `parallel_scheduler`, `get_parallel_scheduler` | Out of scope | 当前 `bulk` family 是明确的 serial subset；本仓库没有可承诺标准 parallel scheduler 语义的 execution resource。 |
 | `dependent_sender_error`, dependent-sender concept surface | Not implemented | 当前 completion-signature diagnostics 不建模这组 dependent sender contract。需要先有可移植编译器/参考实现证据。 |
 | `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |

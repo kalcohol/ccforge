@@ -104,6 +104,12 @@
 - `schedule_from` 是 current-WD 的单参数 departure marker sender，`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
+- Live draft 已包含 `std::execution::task`、`task_scheduler` 和 `with_error`，但 Forge
+  不 backport 这组 coroutine task。[P3552R3](https://wg21.link/P3552R3) 已进入 working
+  paper，随后 [P4007R3](https://wg21.link/P4007R3) 仍记录
+  task family 的开放问题，并区分其中不能在发布后兼容修正的项目；在 wording、ownership、
+  allocator、stop/error 和 native-handoff 模型形成独立任务书前，`forge::task` 与
+  `forge::io::io_task` 都只是不同契约的 Forge extensions，不能冒充这组标准类型。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
   `set_error(std::exception_ptr)` 完成。它没有实现完整
