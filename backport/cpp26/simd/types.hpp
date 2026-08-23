@@ -25,7 +25,9 @@ public:
     template<size_t OtherBytes,
              class OtherAbi,
              typename enable_if<
-                 static_cast<simd_size_type>(basic_mask<OtherBytes, OtherAbi>::size) == static_cast<simd_size_type>(size),
+                 static_cast<simd_size_type>(
+                     basic_mask<OtherBytes, OtherAbi>::size) ==
+                     static_cast<simd_size_type>(size),
                  int>::type = 0>
     constexpr explicit basic_mask(const basic_mask<OtherBytes, OtherAbi>& other) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
@@ -94,7 +96,9 @@ public:
     }
 
     constexpr bitset<abi_lane_count<Abi>::value> to_bitset() const noexcept {
-        if constexpr (abi_lane_count<Abi>::value <= static_cast<simd_size_type>(numeric_limits<unsigned long long>::digits)) {
+        if constexpr (
+            abi_lane_count<Abi>::value <=
+            static_cast<simd_size_type>(numeric_limits<unsigned long long>::digits)) {
             return bitset<abi_lane_count<Abi>::value>(to_ullong());
         } else {
             bitset<abi_lane_count<Abi>::value> result;
@@ -200,12 +204,19 @@ public:
         return left;
     }
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator+(const basic_mask& value) noexcept
+    friend constexpr basic_vec<
+        typename detail::integer_from_size<Bytes>::type,
+        Abi>
+    operator+(const basic_mask& value) noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
-            detail::set_lane(result, i, value[i] ? typename result_type::value_type{1} : typename result_type::value_type{0});
+            detail::set_lane(
+                result,
+                i,
+                value[i] ? typename result_type::value_type{1}
+                         : typename result_type::value_type{0});
         }
         return result;
     }
@@ -213,12 +224,19 @@ public:
     friend void operator+(const basic_mask& value) noexcept
         requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator-(const basic_mask& value) noexcept
+    friend constexpr basic_vec<
+        typename detail::integer_from_size<Bytes>::type,
+        Abi>
+    operator-(const basic_mask& value) noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
-            detail::set_lane(result, i, value[i] ? typename result_type::value_type{-1} : typename result_type::value_type{0});
+            detail::set_lane(
+                result,
+                i,
+                value[i] ? typename result_type::value_type{-1}
+                         : typename result_type::value_type{0});
         }
         return result;
     }
@@ -226,13 +244,20 @@ public:
     friend void operator-(const basic_mask& value) noexcept
         requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
-    friend constexpr basic_vec<typename detail::integer_from_size<Bytes>::type, Abi> operator~(const basic_mask& value) noexcept
+    friend constexpr basic_vec<
+        typename detail::integer_from_size<Bytes>::type,
+        Abi>
+    operator~(const basic_mask& value) noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
         for (simd_size_type i = 0; i < size; ++i) {
             using lane_type = typename result_type::value_type;
-            detail::set_lane(result, i, value[i] ? static_cast<lane_type>(~lane_type{1}) : static_cast<lane_type>(~lane_type{0}));
+            detail::set_lane(
+                result,
+                i,
+                value[i] ? static_cast<lane_type>(~lane_type{1})
+                         : static_cast<lane_type>(~lane_type{0}));
         }
         return result;
     }
@@ -350,9 +375,9 @@ public:
     using abi_type = Abi;
     using iterator = simd_iterator<basic_vec>;
     using const_iterator = simd_iterator<const basic_vec>;
-	    inline static constexpr integral_constant<simd_size_type, simd_size<T, Abi>::value> size{};
+    inline static constexpr integral_constant<simd_size_type, simd_size<T, Abi>::value> size{};
 
-	    constexpr basic_vec() noexcept : data_{} {}
+    constexpr basic_vec() noexcept : data_{} {}
 
     constexpr basic_vec(const real_type& reals, const real_type& imags = {}) noexcept
         requires(detail::is_complex_value<T>::value)
@@ -425,7 +450,10 @@ public:
              typename enable_if<
                  simd_size<U, OtherAbi>::value == simd_size<T, Abi>::value &&
                  detail::is_explicitly_simd_convertible<U, T>::value, int>::type = 0>
-    constexpr explicit basic_vec(const basic_vec<U, OtherAbi>& other, flags<convert_flag>) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
+    constexpr explicit basic_vec(
+        const basic_vec<U, OtherAbi>& other,
+        flags<convert_flag>) noexcept(noexcept(static_cast<T>(other[0])))
+        : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = static_cast<T>(other[i]);
         }
@@ -499,56 +527,56 @@ public:
         return *this;
     }
 
-	    constexpr basic_vec operator-() const noexcept
-            requires requires(const T& value) { -value; } {
-	        basic_vec result;
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            detail::set_lane(result, i, -data_[i]);
-	        }
-	        return result;
-	    }
+    constexpr basic_vec operator-() const noexcept
+        requires requires(const T& value) { -value; } {
+        basic_vec result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, -data_[i]);
+        }
+        return result;
+    }
 
-	    friend constexpr mask_type operator!(const basic_vec& value) noexcept
-            requires requires(const T& lane) { static_cast<bool>(!lane); } {
-	        mask_type result;
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            detail::set_lane(result, i, !value[i]);
-	        }
-	        return result;
-	    }
+    friend constexpr mask_type operator!(const basic_vec& value) noexcept
+        requires requires(const T& lane) { static_cast<bool>(!lane); } {
+        mask_type result;
+        for (simd_size_type i = 0; i < size; ++i) {
+            detail::set_lane(result, i, !value[i]);
+        }
+        return result;
+    }
 
-	    constexpr basic_vec& operator++() noexcept
-            requires requires(T& lane) { ++lane; } {
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            ++data_[i];
-	        }
-	        return *this;
-	    }
+    constexpr basic_vec& operator++() noexcept
+        requires requires(T& lane) { ++lane; } {
+        for (simd_size_type i = 0; i < size; ++i) {
+            ++data_[i];
+        }
+        return *this;
+    }
 
-	    constexpr basic_vec operator++(int) noexcept
-            requires requires(T& lane) { ++lane; } {
-	        basic_vec previous = *this;
-	        ++(*this);
-	        return previous;
-	    }
+    constexpr basic_vec operator++(int) noexcept
+        requires requires(T& lane) { ++lane; } {
+        basic_vec previous = *this;
+        ++(*this);
+        return previous;
+    }
 
-	    constexpr basic_vec& operator--() noexcept
-            requires requires(T& lane) { --lane; } {
-	        for (simd_size_type i = 0; i < size; ++i) {
-	            --data_[i];
-	        }
-	        return *this;
-	    }
+    constexpr basic_vec& operator--() noexcept
+        requires requires(T& lane) { --lane; } {
+        for (simd_size_type i = 0; i < size; ++i) {
+            --data_[i];
+        }
+        return *this;
+    }
 
-	    constexpr basic_vec operator--(int) noexcept
-            requires requires(T& lane) { --lane; } {
-	        basic_vec previous = *this;
-	        --(*this);
-	        return previous;
-	    }
+    constexpr basic_vec operator--(int) noexcept
+        requires requires(T& lane) { --lane; } {
+        basic_vec previous = *this;
+        --(*this);
+        return previous;
+    }
 
-	    constexpr basic_vec& operator+=(const basic_vec& other) noexcept
-            requires requires(T& left, const T& right) { left += right; } {
+    constexpr basic_vec& operator+=(const basic_vec& other) noexcept
+        requires requires(T& left, const T& right) { left += right; } {
         if consteval {
             for (simd_size_type i = 0; i < size; ++i) data_[i] += other[i];
         } else {
@@ -788,7 +816,10 @@ public:
         return result;
     }
 
-    friend constexpr basic_vec simd_select_impl(const mask_type& cond, const basic_vec& when_true, const basic_vec& when_false) noexcept {
+    friend constexpr basic_vec simd_select_impl(
+        const mask_type& cond,
+        const basic_vec& when_true,
+        const basic_vec& when_false) noexcept {
         basic_vec result;
         for (simd_size_type i = 0; i < size; ++i) {
             detail::set_lane(result, i, cond[i] ? when_true[i] : when_false[i]);
