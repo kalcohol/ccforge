@@ -35,7 +35,9 @@ networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Coros
   `owning_any_read_stream` / `owning_any_write_stream`。
 - `<forge/io/async_stream.hpp>`：direct-awaitable stream concepts、
   `immediate_async_stream` 和 fixed-slot PMR-owned async stream erasure。
-- `<forge/io/coro.hpp>`：`io_env`、`io_task`、`await_sender`、`as_sender`。
+- `<forge/io/env.hpp>`：`executor_ref` 和 `io_env`，不引入 coroutine machinery。
+- `<forge/io/coro.hpp>`：兼容性聚合 `io_env`，并提供 `io_task`、`await_sender`、
+  `as_sender`。
 - `<forge/io/timer_await.hpp>`：backend-free facade over `forge::timer_context` sender，
   提供 `async_sleep_for` / `async_sleep_until`。
 - `<forge/io/context_await.hpp>`：bridge over existing `forge::io::context`

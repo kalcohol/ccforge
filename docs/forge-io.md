@@ -35,6 +35,7 @@ Coroutine-native byte IO track 的 backend-free 设施当前通过 direct header
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>
 #include <forge/io/async_stream.hpp> // direct-awaitable concepts and owning erasure
+#include <forge/io/env.hpp> // executor_ref and io_env without coroutine machinery
 #include <forge/io/coro.hpp> // coroutine substrate proof
 #include <forge/io/timer_await.hpp> // backend-free timer coroutine facade
 #include <forge/io/context_await.hpp> // coroutine facade over context backend
@@ -240,9 +241,9 @@ late partial slot；用户 task 先完成时，它的原 value/error/EOF 状态�
 `example/forge_coro_timeout_example.cpp` 用 scripted memory read 展示 task-first 与
 timer-first 两条路径。
 
-`forge::io::coro.hpp` 是 `forge::io` 下的 coroutine-native substrate
-proof。它吸收的是提案路线里的 env propagation 价值，不替换现有 sender runtime，也不改变
-`forge::task`：
+`forge::io::env.hpp` 独立提供 `executor_ref` 和 `io_env`；`forge::io::coro.hpp`
+继续兼容性聚合这两个名字，并提供其余 coroutine-native substrate proof。它吸收的是提案路线里的
+env propagation 价值，不替换现有 sender runtime，也不改变 `forge::task`：
 
 - `executor_ref` 是对现有 Forge scheduler 的窄适配，内部使用 `forge::any_scheduler`，
   当前只承诺能产生 schedule sender。
