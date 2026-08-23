@@ -503,6 +503,25 @@ TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
     }
 }
 
+TEST(SimdMathSpecialTest, PolynomialFallbacksPreserveNaNAndSmallAngles) {
+    namespace sm = std::simd::detail::special_math;
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_TRUE(std::isnan(sm::hermite_fallback(0u, nan)));
+    EXPECT_TRUE(std::isnan(sm::laguerre_fallback(0u, nan)));
+    EXPECT_TRUE(std::isnan(sm::legendre_fallback(0u, nan)));
+    EXPECT_TRUE(std::isnan(sm::assoc_laguerre_fallback(0u, 0u, nan)));
+    EXPECT_TRUE(std::isnan(sm::assoc_legendre_fallback(0u, 0u, nan)));
+    EXPECT_TRUE(std::isnan(sm::sph_legendre_fallback(0u, 0u, nan)));
+
+    constexpr double theta = 1.0e-12;
+    const double expected =
+        -std::sqrt(3.0 / (8.0 * std::numbers::pi)) * std::sin(theta);
+    EXPECT_NEAR(sm::sph_legendre_fallback(1u, 1u, theta),
+                expected,
+                std::abs(expected) * 2e-15);
+}
+
 TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
     namespace sm = std::simd::detail::special_math;
 

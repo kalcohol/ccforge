@@ -4,6 +4,9 @@ namespace detail::special_math {
 
 template<class T>
 T hermite_fallback(unsigned n, T x) {
+    if (std::isnan(x)) {
+        return x;
+    }
     if (n == 0u) {
         return T{1};
     }
@@ -23,6 +26,9 @@ T hermite_fallback(unsigned n, T x) {
 
 template<class T>
 T laguerre_fallback(unsigned n, T x) {
+    if (std::isnan(x)) {
+        return x;
+    }
     if (n == 0u) {
         return T{1};
     }
@@ -42,6 +48,9 @@ T laguerre_fallback(unsigned n, T x) {
 
 template<class T>
 T legendre_fallback(unsigned n, T x) {
+    if (std::isnan(x)) {
+        return x;
+    }
     if (std::abs(x) > T{1}) {
         return quiet_nan<T>();
     }
@@ -64,6 +73,9 @@ T legendre_fallback(unsigned n, T x) {
 
 template<class T>
 T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
+    if (std::isnan(x)) {
+        return x;
+    }
     if (n == 0u) {
         return T{1};
     }
@@ -84,6 +96,9 @@ T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
 
 template<class T>
 T assoc_legendre_fallback(unsigned l, unsigned m, T x) {
+    if (std::isnan(x)) {
+        return x;
+    }
     if (std::abs(x) > T{1}) {
         return quiet_nan<T>();
     }
@@ -123,13 +138,17 @@ T assoc_legendre_fallback(unsigned l, unsigned m, T x) {
 
 template<class T>
 T sph_legendre_fallback(unsigned l, unsigned m, T theta) {
+    if (std::isnan(theta)) {
+        return theta;
+    }
     if (m > l) {
         return quiet_nan<T>();
     }
 
     using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
-    const wide_t x = std::cos(static_cast<wide_t>(theta));
-    const wide_t sine = std::sqrt(std::max(wide_t{}, wide_t{1} - x * x));
+    const wide_t angle = static_cast<wide_t>(theta);
+    const wide_t x = std::cos(angle);
+    const wide_t sine = std::abs(std::sin(angle));
 
     wide_t current = wide_t{1} /
         std::sqrt(wide_t{4} * pi_v<wide_t>);
