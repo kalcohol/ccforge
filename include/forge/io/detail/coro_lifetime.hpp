@@ -289,8 +289,32 @@ struct resume_scope {
         return false;
     }
 
+    [[nodiscard]] static auto enqueue(
+        frame_chain_link* root,
+        std::coroutine_handle<> continuation) noexcept -> bool {
+        if (!continuation || continuation == std::noop_coroutine()) {
+            return true;
+        }
+        for (auto* scope = current; scope != nullptr; scope = scope->previous) {
+            if (scope->root != root) {
+                continue;
+            }
+            if (scope->pending) {
+                std::terminate();
+            }
+            scope->pending = continuation;
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto take_pending() noexcept -> std::coroutine_handle<> {
+        return std::exchange(pending, {});
+    }
+
     frame_chain_link* root = nullptr;
     resume_scope* previous = nullptr;
+    std::coroutine_handle<> pending{};
     inline static thread_local resume_scope* current = nullptr;
 };
 
@@ -300,8 +324,16 @@ inline auto resume_with_credit(
     if (!continuation || continuation == std::noop_coroutine()) {
         return;
     }
+    if (resume_scope::enqueue(root, continuation)) {
+        return;
+    }
+    // Drive same-root coroutine transfers iteratively. Some compilers lower
+    // handle-returning await_suspend as a nested resume in debug builds.
     resume_scope scope{root};
-    continuation.resume();
+    do {
+        continuation.resume();
+        continuation = scope.take_pending();
+    } while (continuation && continuation != std::noop_coroutine());
 }
 
 // Forge's backend-direct awaitables accept this extended continuation shape.
@@ -543,6 +575,9 @@ struct promise_base : frame_chain_link {
             promise.finalized.store(true, std::memory_order_release);
             if (complete_fn != nullptr) {
                 complete_fn(completion_object);
+                return std::noop_coroutine();
+            }
+            if (resume_scope::enqueue(promise.root_link, next)) {
                 return std::noop_coroutine();
             }
             return next;

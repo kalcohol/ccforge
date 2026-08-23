@@ -646,7 +646,11 @@ public:
             };
             registered_ = true;
         }
-        return task_.__borrowed_handle(**env_);
+        const auto child = task_.__borrowed_handle(**env_);
+        if (resume_scope::enqueue(parent_->root_link, child)) {
+            return std::noop_coroutine();
+        }
+        return child;
     }
 
     decltype(auto) await_resume() {
