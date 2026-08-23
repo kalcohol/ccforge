@@ -235,6 +235,8 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
         CMAKE_SYSROOT_COMPILE
         CMAKE_SYSROOT_LINK
         CMAKE_OSX_ARCHITECTURES
+        CMAKE_OSX_DEPLOYMENT_TARGET
+        CMAKE_OSX_SYSROOT
         CMAKE_SYSTEM_NAME
         CMAKE_SYSTEM_PROCESSOR
         CMAKE_TOOLCHAIN_FILE

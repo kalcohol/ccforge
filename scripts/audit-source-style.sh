@@ -27,7 +27,7 @@ is_source_file() {
         *.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.cmake|*.cmake.in|*.sh|*.bash|*.ps1|\
         CMakeLists.txt|*/CMakeLists.txt|\
         backport/execution|backport/linalg|backport/mdspan|backport/memory|\
-        backport/simd|backport/utility)
+        backport/simd|backport/utility|backport/experimental/memory)
             return 0
             ;;
         *)

@@ -32,6 +32,13 @@ scripts/verify-selfhosted-floor.sh llvm gcc16 gcc-exec tsan asan
 FORGE_VERIFY_FLOOR_NATIVE_LANES='llvm zig gcc-exec tsan asan' scripts/verify-selfhosted-floor.sh
 ```
 
+install-package smoke 是 floor 的默认组成部分。只有在诊断 floor wrapper 本身，或同一
+变更已经由独立、可追溯的安装包验证覆盖时，才可临时跳过：
+
+```bash
+FORGE_VERIFY_FLOOR_SKIP_INSTALL=1 scripts/verify-selfhosted-floor.sh
+```
+
 Windows/MSVC smoke 默认不跑，因为它需要一台 Windows 主机。需要把 Windows 纳入同一
 floor 时，设置 `FORGE_VERIFY_FLOOR_WINDOWS=1`，并通过 `FORGE_WINDOWS_*` 环境变量把
 主机、MSVC、source/ref 等信息传给 Windows wrapper：
@@ -77,7 +84,7 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
 - `example/CMakeLists.txt` 中注册的 example source 是否存在；
 - 每个 `example/*.cpp` 是否被 `example/CMakeLists.txt` 注册；
 - docs / README 中的本地 Markdown link 是否仍能解析到文件；
-- committed docs/scripts 是否泄漏私有主机名或本地路径；
+- committed docs/scripts/tests 是否泄漏私有主机名或本地路径；
 - 非 WD 的 `std::execution::ensure_started` / `std::execution::start_detached`
   是否只出现在“已移除”说明中。
 

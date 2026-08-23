@@ -15,6 +15,28 @@ require_runtime="$3"
 probe="$4"
 shift 4
 
+timeout_command="${FORGE_IO_URING_TIMEOUT_COMMAND:-}"
+if [[ -z "${timeout_command}" ]]; then
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_command=timeout
+    elif command -v gtimeout >/dev/null 2>&1; then
+        timeout_command=gtimeout
+    else
+        printf '%s\n' \
+            'io_uring runtime gate requires GNU timeout or gtimeout' >&2
+        exit 2
+    fi
+elif ! command -v "${timeout_command}" >/dev/null 2>&1; then
+    printf 'io_uring timeout command is unavailable: %s\n' \
+        "${timeout_command}" >&2
+    exit 2
+fi
+
+run_bounded() {
+    "${timeout_command}" --signal=TERM --kill-after=5s \
+        "${timeout_seconds}s" "$@"
+}
+
 case "${require_runtime}" in
     0|1) ;;
     *)
@@ -24,7 +46,7 @@ case "${require_runtime}" in
 esac
 
 set +e
-timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
+run_bounded \
     env CXX="${compiler}" \
     FORGE_IO_URING_PROBE_BUILD_DIR=/tmp/ccforge-io-uring-probe \
     "${probe}"
@@ -53,8 +75,7 @@ for dir in "$@"; do
             exit 3
         fi
         printf '[io-uring-container] running %s\n' "${binary}"
-        timeout --signal=TERM --kill-after=5s \
-            "${timeout_seconds}s" "${binary}"
+        run_bounded "${binary}"
     done
 
     # The failure-injection binary only exists when the linker supports
@@ -62,8 +83,7 @@ for dir in "$@"; do
     fault_binary="${dir}/test/forge/test_forge_io_uring_fault"
     if [[ -x "${fault_binary}" ]]; then
         printf '[io-uring-container] running %s\n' "${fault_binary}"
-        timeout --signal=TERM --kill-after=5s \
-            "${timeout_seconds}s" "${fault_binary}"
+        run_bounded "${fault_binary}"
     else
         printf '[io-uring-container] %s not built (linker lacks --wrap); skipping\n' \
             "${fault_binary}"

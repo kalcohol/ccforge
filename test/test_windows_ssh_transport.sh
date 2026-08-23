@@ -10,8 +10,8 @@ if [[ "$(forge_ps_literal "a'b")" != "'a''b'" ]]; then
     exit 1
 fi
 
-forge_validate_ssh_host 'user@px13'
-for invalid_host in '-oProxyCommand=unexpected' $'px13\nnext'; do
+forge_validate_ssh_host 'user@example-host'
+for invalid_host in '-oProxyCommand=unexpected' $'example-host\nnext'; do
     if forge_validate_ssh_host "${invalid_host}" >/dev/null 2>&1; then
         printf 'unsafe SSH host was accepted: %q\n' "${invalid_host}" >&2
         exit 1

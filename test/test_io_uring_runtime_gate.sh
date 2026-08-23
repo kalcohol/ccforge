@@ -32,6 +32,17 @@ printf '%s\n' \
     > "${work}/python"
 chmod +x "${work}/podman" "${work}/python"
 
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'printf "%s\n" "$*" >> "${FORGE_TIMEOUT_MARKER}"' \
+    'shift 3' \
+    'exec "$@"' \
+    > "${work}/forge-timeout"
+chmod +x "${work}/forge-timeout"
+export FORGE_IO_URING_TIMEOUT_COMMAND="${work}/forge-timeout"
+export FORGE_TIMEOUT_MARKER="${work}/timeout.calls"
+
 FAKE_PODMAN_ARGS="${work}/podman.args" \
 PODMAN="${work}/podman" \
 FORGE_IO_URING_PYTHON="${work}/python" \
@@ -91,3 +102,5 @@ for name in \
         test_forge_io_uring_fault; do
     [[ -e "${marker_dir}/${name}" ]]
 done
+
+[[ -s "${FORGE_TIMEOUT_MARKER}" ]]

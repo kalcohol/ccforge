@@ -39,6 +39,22 @@ _forge_compute_probe_fingerprint(_forge_include_b 23)
 _forge_require_fingerprint_change(
     "standard include directories" "${_forge_include_a}" "${_forge_include_b}")
 
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
+_forge_compute_probe_fingerprint(_forge_osx_target_a 23)
+set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
+_forge_compute_probe_fingerprint(_forge_osx_target_b 23)
+_forge_require_fingerprint_change(
+    "macOS deployment target"
+    "${_forge_osx_target_a}" "${_forge_osx_target_b}")
+
+set(CMAKE_OSX_SYSROOT "/forge/macos-sdk/one")
+_forge_compute_probe_fingerprint(_forge_osx_sysroot_a 23)
+set(CMAKE_OSX_SYSROOT "/forge/macos-sdk/two")
+_forge_compute_probe_fingerprint(_forge_osx_sysroot_b 23)
+_forge_require_fingerprint_change(
+    "macOS SDK root"
+    "${_forge_osx_sysroot_a}" "${_forge_osx_sysroot_b}")
+
 set(CMAKE_CXX_COMPILER_LAUNCHER "launcher-a;--flag")
 _forge_compute_probe_fingerprint(_forge_launcher_a 23)
 set(CMAKE_CXX_COMPILER_LAUNCHER "launcher-b;--flag")

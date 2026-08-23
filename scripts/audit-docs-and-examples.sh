@@ -28,10 +28,11 @@ fail() {
 check_no_private_paths() {
     log "check private host/path leaks"
     if rg -n 'px13|D:\\Program|/data/projects|/home/|C:\\Users' \
-        docs README* scripts --glob '!scripts/audit-docs-and-examples.sh' \
+        docs README* scripts test \
+        --glob '!scripts/audit-docs-and-examples.sh' \
         >"${audit_tmp}/private-paths"; then
         cat "${audit_tmp}/private-paths" >&2
-        fail "private host/path pattern found in committed docs/scripts"
+        fail "private host/path pattern found in committed docs/scripts/tests"
     fi
 }
 
