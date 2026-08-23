@@ -237,6 +237,7 @@ void check_hard_flush_failure_rejects_submission() {
         FAULT_CHECK(buffer[0] == std::byte{'x'});
     }
     FAULT_CHECK(!context.last_error());
+    FAULT_CHECK(!context.last_flush_diagnostic());
 }
 
 // Once the kernel head consumed the SQE, a reported submit error cannot hand

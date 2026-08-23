@@ -841,7 +841,9 @@ private:
     // stays published and every later flush (submissions, wakeups, and the
     // poller wait itself) retries it, so only the diagnostic is recorded.
     void record_flush_locked(std::error_code flush_error) noexcept {
-        if (flush_error && flush_error.value() != EBUSY) {
+        if (!flush_error) {
+            flush_diagnostic = {};
+        } else if (flush_error.value() != EBUSY) {
             flush_diagnostic = flush_error;
         }
     }
@@ -1080,8 +1082,8 @@ public:
     // Most recent recoverable observation (retried flush errors, transient
     // wakeup saturation, unexpected administrative CQE results). Non-zero
     // values here describe a busy or stressed ring, not backend death; the
-    // poller keeps running and operations keep completing. A successful
-    // wakeup round trip clears it, so a stale non-zero value does not
+    // poller keeps running and operations keep completing. A later successful
+    // flush or wakeup round trip clears it, so a stale non-zero value does not
     // outlive the recovery it diagnosed.
     [[nodiscard]] auto last_flush_diagnostic() const noexcept
         -> std::error_code {

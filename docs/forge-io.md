@@ -788,9 +788,9 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   硬错误（默认零值），用于把后端死亡与 `request_stop()`/`close()` 的优雅排空
   区分开。可恢复的观测（flush 重试错误、瞬态唤醒饱和、异常 administrative CQE
   结果）单独记录，经 `context.last_flush_diagnostic()` 读取，非零只说明环
-  繁忙或受压，不代表后端死亡；一次成功的唤醒往返（唤醒 NOP 的 CQE 以非负
-  结果返回）证明提交通路已恢复，会把该诊断清零，因此读到的非零值不是陈旧
-  历史。硬错后仍悬挂的 operation 的 buffer 保持
+  繁忙或受压，不代表后端死亡；后续成功的 flush 或一次成功的唤醒往返（唤醒
+  NOP 的 CQE 以非负结果返回）证明提交通路已恢复，会把该诊断清零，因此读到
+  的非零值不是陈旧历史。硬错后仍悬挂的 operation 的 buffer 保持
   borrowed（其 CQE 不再被 drain），强行销毁这些 frame 会触发上述 terminate
   护栏而不是静默 UAF。
 - 所有带 `to_submit > 0` 的 enter 都在 context submission mutex 下串行；poller
