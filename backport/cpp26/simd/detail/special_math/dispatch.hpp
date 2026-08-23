@@ -59,6 +59,9 @@ T comp_ellint_3(T k, T nu) {
 template<class T>
 T cyl_bessel_i(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
+    if (nu < T{}) {
+        return cyl_bessel_i_fallback(nu, x);
+    }
     return std::cyl_bessel_i(nu, x);
 #else
     return cyl_bessel_i_fallback(nu, x);
@@ -68,6 +71,9 @@ T cyl_bessel_i(T nu, T x) {
 template<class T>
 T cyl_bessel_j(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
+    if (nu < T{}) {
+        return cyl_bessel_j_fallback(nu, x);
+    }
     return std::cyl_bessel_j(nu, x);
 #else
     return cyl_bessel_j_fallback(nu, x);
@@ -77,6 +83,9 @@ T cyl_bessel_j(T nu, T x) {
 template<class T>
 T cyl_bessel_k(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
+    if (nu < T{}) {
+        return cyl_bessel_k_fallback(nu, x);
+    }
     return std::cyl_bessel_k(nu, x);
 #else
     return cyl_bessel_k_fallback(nu, x);
@@ -86,6 +95,9 @@ T cyl_bessel_k(T nu, T x) {
 template<class T>
 T cyl_neumann(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
+    if (nu < T{}) {
+        return cyl_bessel_y_fallback(nu, x);
+    }
     return std::cyl_neumann(nu, x);
 #else
     return cyl_bessel_y_fallback(nu, x);

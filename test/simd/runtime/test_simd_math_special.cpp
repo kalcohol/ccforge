@@ -351,7 +351,15 @@ TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
         std::array<double, 4>{{-1.0, -0.5, -1.0, -0.5}});
     const double4 arguments = load_vec<double4>(
         std::array<double, 4>{{1.0, 1.0, 0.0, 0.0}});
+    const double4 unit_arguments = load_vec<double4>(
+        std::array<double, 4>{{1.0, 1.0, 1.0, 1.0}});
     const auto modified = std::simd::cyl_bessel_i(orders, arguments);
+    const auto first_kind =
+        std::simd::cyl_bessel_j(orders, unit_arguments);
+    const auto second_kind =
+        std::simd::cyl_neumann(orders, unit_arguments);
+    const auto irregular =
+        std::simd::cyl_bessel_k(orders, unit_arguments);
     EXPECT_NEAR(modified[0], sm::cyl_bessel_i_series(1.0, 1.0), 2e-12);
     EXPECT_NEAR(modified[1],
                 half_order_scale * std::cosh(argument),
@@ -359,6 +367,24 @@ TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
     EXPECT_EQ(modified[2], 0.0);
     EXPECT_TRUE(std::isinf(modified[3]));
     EXPECT_FALSE(std::signbit(modified[3]));
+    EXPECT_NEAR(first_kind[0],
+                sm::cyl_bessel_j_fallback(-1.0, 1.0),
+                2e-12);
+    EXPECT_NEAR(first_kind[1],
+                sm::cyl_bessel_j_fallback(-0.5, 1.0),
+                2e-12);
+    EXPECT_NEAR(second_kind[0],
+                sm::cyl_bessel_y_fallback(-1.0, 1.0),
+                2e-12);
+    EXPECT_NEAR(second_kind[1],
+                sm::cyl_bessel_y_fallback(-0.5, 1.0),
+                2e-12);
+    EXPECT_NEAR(irregular[0],
+                sm::cyl_bessel_k_fallback(1.0, 1.0),
+                2e-12);
+    EXPECT_NEAR(irregular[1],
+                sm::cyl_bessel_k_fallback(0.5, 1.0),
+                2e-12);
     const double negative_zero_limit =
         sm::cyl_bessel_i_fallback(-1.5, 0.0);
     EXPECT_TRUE(std::isinf(negative_zero_limit));
