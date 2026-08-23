@@ -68,10 +68,11 @@
 //     signature.
 //   - as_awaitable produces the working-draft result shape (void / T /
 //     tuple<...> for zero / one / many values of the single value-completion
-//     signature); senders with multiple value-completion alternatives do not
-//     satisfy the awaitable constraint. It does not yet pass through types
-//     that are already awaitable (no operator co_await / awaitable member
-//     detection before the sender bridge).
+//     signature). Its dispatch honors direct/transformed as_awaitable members,
+//     ordinary awaiters (including member/free operator co_await), and the
+//     await-completion adaptor before constructing the sender bridge. Senders
+//     with multiple value-completion alternatives fall back to the original
+//     expression and therefore do not become awaitable through this bridge.
 //   - The receiver concept additionally requires
 //     is_nothrow_move_constructible_v of the receiver type, which the
 //     working draft does not require.

@@ -43,11 +43,129 @@ static int g_env_result = -1;
 static int g_multi_arg_result = -1;
 static bool g_void_result = false;
 static int g_ordinary_awaitable_result = -1;
+static int g_sender_awaiter_result = -1;
+static int g_member_co_await_result = -1;
+static int g_free_co_await_result = -1;
+static int g_member_as_awaitable_result = -1;
+static int g_adapted_as_awaitable_result = -1;
 
 struct immediate_int_awaiter {
     bool await_ready() const noexcept { return true; }
     void await_suspend(std::coroutine_handle<>) const noexcept {}
     int await_resume() const noexcept { return 17; }
+};
+
+template<int Value>
+struct immediate_value_awaiter {
+    bool await_ready() const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+    int await_resume() const noexcept { return Value; }
+};
+
+struct sender_awaiter {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    bool await_ready() const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+    int await_resume() const noexcept { return 23; }
+};
+
+struct member_co_await_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto operator co_await() && noexcept -> immediate_value_awaiter<29> {
+        return {};
+    }
+};
+
+struct free_co_await_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+auto operator co_await(free_co_await_sender&&) noexcept
+    -> immediate_value_awaiter<31> {
+    return {};
+}
+
+struct member_as_awaitable_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class Promise>
+    auto as_awaitable(Promise&) && noexcept -> immediate_value_awaiter<37> {
+        return {};
+    }
+
+    auto operator co_await() && noexcept -> immediate_value_awaiter<-1> {
+        return {};
+    }
+};
+
+struct completion_await_adaptor {
+    struct adapted {
+        template<class Promise>
+        auto as_awaitable(Promise&) && noexcept -> immediate_value_awaiter<41> {
+            return {};
+        }
+    };
+
+    template<class Sender>
+    auto operator()(Sender&&) const noexcept -> adapted {
+        return {};
+    }
+};
+
+struct completion_await_env {
+    auto query(std::execution::get_await_completion_adaptor_t) const noexcept
+        -> completion_await_adaptor {
+        return {};
+    }
+};
+
+struct completion_adapted_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> completion_await_env { return {}; }
 };
 
 SimpleTask run_coro() {
@@ -58,6 +176,26 @@ SimpleTask run_coro() {
 
 SimpleTask run_ordinary_awaitable_coro() {
     g_ordinary_awaitable_result = co_await immediate_int_awaiter{};
+}
+
+SimpleTask run_sender_awaiter_coro() {
+    g_sender_awaiter_result = co_await sender_awaiter{};
+}
+
+SimpleTask run_member_co_await_coro() {
+    g_member_co_await_result = co_await member_co_await_sender{};
+}
+
+SimpleTask run_free_co_await_coro() {
+    g_free_co_await_result = co_await free_co_await_sender{};
+}
+
+SimpleTask run_member_as_awaitable_coro() {
+    g_member_as_awaitable_result = co_await member_as_awaitable_sender{};
+}
+
+SimpleTask run_adapted_as_awaitable_coro() {
+    g_adapted_as_awaitable_result = co_await completion_adapted_sender{};
 }
 
 EnvTask run_env_coro() {
@@ -155,15 +293,21 @@ struct empty_or_int_sender {
     }
 };
 
-template<class S>
-concept sender_can_be_awaited = requires(
-    S&& sender,
-    SimpleTask::promise_type& promise) {
-    std::execution::as_awaitable(std::move(sender), promise);
-};
+using multi_value_as_awaitable_t = decltype(std::execution::as_awaitable(
+    std::declval<multi_value_sender>(),
+    std::declval<SimpleTask::promise_type&>()));
+using empty_or_int_as_awaitable_t = decltype(std::execution::as_awaitable(
+    std::declval<empty_or_int_sender>(),
+    std::declval<SimpleTask::promise_type&>()));
 
-static_assert(!sender_can_be_awaited<multi_value_sender>);
-static_assert(!sender_can_be_awaited<empty_or_int_sender>);
+static_assert(std::same_as<multi_value_as_awaitable_t, multi_value_sender&&>);
+static_assert(std::same_as<empty_or_int_as_awaitable_t, empty_or_int_sender&&>);
+static_assert(noexcept(std::execution::as_awaitable(
+    std::declval<immediate_int_awaiter>(),
+    std::declval<SimpleTask::promise_type&>())));
+static_assert(noexcept(std::execution::as_awaitable(
+    std::declval<member_as_awaitable_sender>(),
+    std::declval<SimpleTask::promise_type&>())));
 
 TEST(CoroutineBridgeTest, CoAwaitSender) {
     g_coro_result = -1;
@@ -175,6 +319,36 @@ TEST(CoroutineBridgeTest, CoAwaitOrdinaryAwaitable) {
     g_ordinary_awaitable_result = -1;
     run_ordinary_awaitable_coro();
     EXPECT_EQ(g_ordinary_awaitable_result, 17);
+}
+
+TEST(CoroutineBridgeTest, SenderAwaiterPassesThroughBeforeSenderBridge) {
+    g_sender_awaiter_result = -1;
+    run_sender_awaiter_coro();
+    EXPECT_EQ(g_sender_awaiter_result, 23);
+}
+
+TEST(CoroutineBridgeTest, SenderMemberCoAwaitPassesThroughBeforeSenderBridge) {
+    g_member_co_await_result = -1;
+    run_member_co_await_coro();
+    EXPECT_EQ(g_member_co_await_result, 29);
+}
+
+TEST(CoroutineBridgeTest, SenderFreeCoAwaitPassesThroughBeforeSenderBridge) {
+    g_free_co_await_result = -1;
+    run_free_co_await_coro();
+    EXPECT_EQ(g_free_co_await_result, 31);
+}
+
+TEST(CoroutineBridgeTest, MemberAsAwaitablePrecedesOrdinaryCoAwait) {
+    g_member_as_awaitable_result = -1;
+    run_member_as_awaitable_coro();
+    EXPECT_EQ(g_member_as_awaitable_result, 37);
+}
+
+TEST(CoroutineBridgeTest, CompletionAdaptorCanProvideAsAwaitable) {
+    g_adapted_as_awaitable_result = -1;
+    run_adapted_as_awaitable_coro();
+    EXPECT_EQ(g_adapted_as_awaitable_result, 41);
 }
 
 TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {

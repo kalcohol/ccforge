@@ -44,6 +44,54 @@ namespace __forge_awaitable {
 struct __stopped_awaitable_exception {};
 struct __unit {};
 
+template<class T>
+struct __is_coroutine_handle : std::false_type {};
+
+template<class Promise>
+struct __is_coroutine_handle<std::coroutine_handle<Promise>> : std::true_type {};
+
+template<class T>
+concept __await_suspend_result =
+    std::same_as<T, void> ||
+    std::same_as<T, bool> ||
+    __is_coroutine_handle<std::remove_cvref_t<T>>::value;
+
+template<class Awaiter, class Promise>
+concept __awaiter_for = requires(
+    std::remove_reference_t<Awaiter>& awaiter,
+    std::coroutine_handle<Promise> continuation) {
+    awaiter.await_ready() ? 1 : 0;
+    requires __await_suspend_result<
+        decltype(awaiter.await_suspend(continuation))>;
+    awaiter.await_resume();
+};
+
+template<class T>
+decltype(auto) __get_awaiter(T&& value) {
+    if constexpr (requires {
+                      static_cast<T&&>(value).operator co_await();
+                  }) {
+        return static_cast<T&&>(value).operator co_await();
+    } else if constexpr (requires {
+                             operator co_await(static_cast<T&&>(value));
+                         }) {
+        return operator co_await(static_cast<T&&>(value));
+    } else {
+        return static_cast<T&&>(value);
+    }
+}
+
+template<class T, class Promise>
+concept __ordinary_awaitable = requires(T&& value) {
+    requires __awaiter_for<
+        decltype(__get_awaiter(static_cast<T&&>(value))), Promise>;
+};
+
+template<class T, class Promise>
+concept __has_as_awaitable_member = requires(T&& value, Promise& promise) {
+    static_cast<T&&>(value).as_awaitable(promise);
+};
+
 template<class Tuple>
 struct __value_from_tuple;
 
@@ -113,6 +161,72 @@ template<class S, class Promise>
 concept __single_sender = requires {
     typename __sender_value<S, Promise>::type;
 };
+
+template<class S, class Promise>
+auto __transform_for_await(S&& sndr, Promise& promise) {
+    auto env = __get_promise_env(promise);
+    return __forge_domain::__transform_sender_for_connect(
+        static_cast<S&&>(sndr), env);
+}
+
+template<class S>
+decltype(auto) __adapt_for_await_completion(S&& sndr) {
+    if constexpr (requires {
+                      std::execution::get_await_completion_adaptor(
+                          std::execution::get_env(sndr))(
+                              static_cast<S&&>(sndr));
+                  }) {
+        decltype(auto) adaptor = std::execution::get_await_completion_adaptor(
+            std::execution::get_env(sndr));
+        return std::forward<decltype(adaptor)>(adaptor)(
+            static_cast<S&&>(sndr));
+    } else {
+        return static_cast<S&&>(sndr);
+    }
+}
+
+template<class S, class Promise>
+auto __prepare_sender_for_await(S&& sndr, Promise& promise) {
+    auto transformed = __transform_for_await(
+        static_cast<S&&>(sndr), promise);
+    return __adapt_for_await_completion(std::move(transformed));
+}
+
+template<class S, class Promise>
+concept __transformed_sender_has_as_awaitable =
+    sender_in<S, decltype(__get_promise_env(std::declval<const Promise&>()))> &&
+    __single_sender<std::decay_t<S>, Promise> &&
+    requires(S&& sndr, Promise& promise) {
+        __prepare_sender_for_await(
+            static_cast<S&&>(sndr), promise).as_awaitable(promise);
+    };
+
+template<class S, class Promise>
+using __prepared_sender_t = std::decay_t<decltype(
+    __prepare_sender_for_await(
+        std::declval<S>(), std::declval<Promise&>()))>;
+
+template<class S, class Promise>
+concept __bridgeable_sender =
+    sender_in<S, decltype(__get_promise_env(std::declval<const Promise&>()))> &&
+    __single_sender<std::decay_t<S>, Promise> &&
+    __single_sender<__prepared_sender_t<S, Promise>, Promise>;
+
+template<class Value, class Promise>
+consteval bool __as_awaitable_nothrow() {
+    if constexpr (__has_as_awaitable_member<Value, Promise>) {
+        return noexcept(std::declval<Value>().as_awaitable(
+            std::declval<Promise&>()));
+    } else if constexpr (__transformed_sender_has_as_awaitable<Value, Promise>) {
+        return false;
+    } else if constexpr (__ordinary_awaitable<Value, Promise>) {
+        return true;
+    } else if constexpr (__bridgeable_sender<Value, Promise>) {
+        return false;
+    } else {
+        return true;
+    }
+}
 
 template<class S, class Promise>
 struct __awaitable {
@@ -232,20 +346,30 @@ private:
 
 } // namespace __forge_awaitable
 
-// as_awaitable(sndr) — [exec.as.awaitable]
-// Returns an awaitable that bridges the sender into a coroutine context.
+// as_awaitable(expr, promise) — [exec.as.awaitable]
 struct as_awaitable_t {
-    template<sender S, class Promise>
-        requires __forge_awaitable::__single_sender<std::decay_t<S>, Promise>
-    [[nodiscard]] auto operator()(S&& sndr, Promise& promise) const {
-        return __forge_awaitable::__awaitable<std::decay_t<S>, Promise>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)), &promise};
-    }
-
     template<class Value, class Promise>
-        requires (!sender<Value>)
-    [[nodiscard]] decltype(auto) operator()(Value&& value, Promise&) const noexcept {
-        return std::forward<Value>(value);
+    [[nodiscard]] decltype(auto) operator()(Value&& value, Promise& promise) const
+        noexcept(__forge_awaitable::__as_awaitable_nothrow<Value, Promise>()) {
+        using namespace __forge_awaitable;
+
+        if constexpr (__has_as_awaitable_member<Value, Promise>) {
+            return static_cast<Value&&>(value).as_awaitable(promise);
+        } else if constexpr (__transformed_sender_has_as_awaitable<Value, Promise>) {
+            auto prepared = __prepare_sender_for_await(
+                static_cast<Value&&>(value), promise);
+            return std::move(prepared).as_awaitable(promise);
+        } else if constexpr (__ordinary_awaitable<Value, Promise>) {
+            return static_cast<Value&&>(value);
+        } else if constexpr (__bridgeable_sender<Value, Promise>) {
+            using sender_t = __prepared_sender_t<Value, Promise>;
+            return __awaitable<sender_t, Promise>{
+                __prepare_sender_for_await(
+                    static_cast<Value&&>(value), promise),
+                &promise};
+        } else {
+            return static_cast<Value&&>(value);
+        }
     }
 };
 
