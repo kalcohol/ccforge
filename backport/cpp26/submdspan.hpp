@@ -43,6 +43,7 @@
 #include <array>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -271,10 +272,76 @@ template <class S, class IndexType>
 inline constexpr bool is_canonical_slice_v =
     is_canonical_slice_s<remove_cvref_t<S>, IndexType>::value;
 
+template <class T>
+consteval uintmax_t static_index_or(uintmax_t fallback) {
+    if constexpr (is_constant_wrapper_v<T>) {
+        return static_cast<uintmax_t>(T::value);
+    } else {
+        return fallback;
+    }
+}
+
+template <class Extents, size_t K, class Slice>
+consteval bool is_valid_static_slice_type() {
+    constexpr size_t source_extent = Extents::static_extent(K);
+    if constexpr (source_extent == dynamic_extent) {
+        return true;
+    } else {
+        using slice_t = remove_cvref_t<Slice>;
+        constexpr uintmax_t x = source_extent;
+        if constexpr (is_same_v<slice_t, full_extent_t>) {
+            return true;
+        } else if constexpr (is_extent_slice_v<slice_t>) {
+            constexpr uintmax_t offset =
+                static_index_or<typename slice_t::offset_type>(0);
+            constexpr uintmax_t extent =
+                static_index_or<typename slice_t::extent_type>(0);
+            constexpr uintmax_t stride =
+                static_index_or<typename slice_t::stride_type>(1);
+
+            if constexpr (offset > x || extent > x) {
+                return false;
+            } else if constexpr (extent == 0) {
+                return true;
+            } else if constexpr (offset >= x) {
+                return false;
+            } else if constexpr (extent == 1) {
+                return true;
+            } else if constexpr (stride == 0) {
+                return false;
+            } else {
+                return extent - 1 <= (x - offset - 1) / stride;
+            }
+        } else if constexpr (is_constant_wrapper_v<slice_t>) {
+            return static_cast<uintmax_t>(slice_t::value) < x;
+        } else {
+            return true;
+        }
+    }
+}
+
+template <class Extents, class SliceTuple, size_t... Is>
+consteval bool has_valid_static_slice_types(index_sequence<Is...>) {
+    return (is_valid_static_slice_type<
+                Extents, Is, tuple_element_t<Is, SliceTuple>>() && ...);
+}
+
+template <class Extents, class... SliceSpecifiers>
+consteval bool has_canonical_mapping_slices() {
+    if constexpr (sizeof...(SliceSpecifiers) != Extents::rank()) {
+        return false;
+    } else {
+        using slices_t = tuple<remove_cvref_t<SliceSpecifiers>...>;
+        return (is_canonical_slice_v<
+                    SliceSpecifiers, typename Extents::index_type> && ...) &&
+            has_valid_static_slice_types<Extents, slices_t>(
+                make_index_sequence<Extents::rank()>{});
+    }
+}
+
 template <class Extents, class... SliceSpecifiers>
 inline constexpr bool has_canonical_mapping_slices_v =
-    sizeof...(SliceSpecifiers) == Extents::rank() &&
-    (is_canonical_slice_v<SliceSpecifiers, typename Extents::index_type> && ...);
+    has_canonical_mapping_slices<Extents, SliceSpecifiers...>();
 
 template <class Mapping, class... SliceSpecifiers>
 consteval bool mapping_has_canonical_slices() {
@@ -863,6 +930,31 @@ constexpr auto canonical_slice(S s) {
     }
 }
 
+template <class Extents, class... RawSlices>
+consteval bool has_valid_raw_slice_types() {
+    if constexpr (sizeof...(RawSlices) != Extents::rank()) {
+        return false;
+    } else if constexpr (requires {
+                             typename tuple<remove_cvref_t<decltype(
+                                 canonical_slice<typename Extents::index_type>(
+                                     declval<RawSlices>()))>...>;
+                         }) {
+        using slices_t = tuple<remove_cvref_t<decltype(
+            canonical_slice<typename Extents::index_type>(
+                declval<RawSlices>()))>...>;
+        return []<size_t... Is>(index_sequence<Is...>) {
+            return has_canonical_mapping_slices_v<
+                Extents, tuple_element_t<Is, slices_t>...>;
+        }(make_index_sequence<Extents::rank()>{});
+    } else {
+        return false;
+    }
+}
+
+template <class Extents, class... RawSlices>
+inline constexpr bool has_valid_raw_slice_types_v =
+    has_valid_raw_slice_types<Extents, RawSlices...>();
+
 template <class SrcExt, class Tuple, size_t... Is>
 constexpr auto subextents_from_tuple(const SrcExt& src, Tuple&& slices, index_sequence<Is...>) {
     return EB<SrcExt::rank(), SrcExt>::apply(
@@ -876,6 +968,8 @@ constexpr auto subextents_from_tuple(const SrcExt& src, Tuple&& slices, index_se
 // ---------------------------------------------------------------------------
 
 template <class IndexType, size_t... Exts, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_valid_raw_slice_types_v<
+        extents<IndexType, Exts...>, SliceSpecifiers...>
 constexpr auto canonical_slices(const extents<IndexType, Exts...>& src,
                                   SliceSpecifiers... slices) {
     static_assert(sizeof...(SliceSpecifiers) == sizeof...(Exts),
@@ -889,6 +983,8 @@ constexpr auto canonical_slices(const extents<IndexType, Exts...>& src,
 // ---------------------------------------------------------------------------
 
 template <class IndexType, size_t... Exts, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_valid_raw_slice_types_v<
+        extents<IndexType, Exts...>, SliceSpecifiers...>
 constexpr auto subextents(const extents<IndexType, Exts...>& src,
                             SliceSpecifiers... raw_slices) {
     static_assert(sizeof...(SliceSpecifiers) == sizeof...(Exts),
@@ -1159,6 +1255,8 @@ constexpr auto submdspan_mapping(const Mapping& src, SliceSpecifiers... slices) 
 
 template <class ElementType, class Extents, class LayoutPolicy,
           class AccessorPolicy, class... SliceSpecifiers>
+    requires __forge_submdspan_detail::has_valid_raw_slice_types_v<
+        Extents, SliceSpecifiers...>
 constexpr auto submdspan(
     const mdspan<ElementType, Extents, LayoutPolicy, AccessorPolicy>& src,
     SliceSpecifiers... raw_slices)

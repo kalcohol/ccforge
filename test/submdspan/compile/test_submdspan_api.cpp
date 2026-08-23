@@ -21,6 +21,37 @@ concept directly_sliceable_mapping = requires(
     std::submdspan_mapping(mapping, slice);
 };
 
+using static_extent_4 = std::extents<std::size_t, 4>;
+using static_row_major_mapping = std::layout_right::mapping<static_extent_4>;
+using static_mdspan = std::mdspan<int, static_extent_4>;
+
+template<class Slice>
+concept statically_sliceable_mapping = requires(
+    static_row_major_mapping mapping, Slice slice) {
+    std::submdspan_mapping(mapping, slice);
+};
+
+template<class Slice>
+concept statically_subspanable = requires(static_mdspan source, Slice slice) {
+    std::submdspan(source, slice);
+};
+
+using last_valid_index = decltype(std::cw<3zu>);
+using first_invalid_index = decltype(std::cw<4zu>);
+using valid_static_extent_slice = decltype(
+    std::extent_slice{std::cw<1zu>, std::cw<2zu>, std::cw<1zu>});
+using invalid_static_extent_slice = decltype(
+    std::extent_slice{std::cw<3zu>, std::cw<2zu>, std::cw<1zu>});
+
+static_assert(statically_sliceable_mapping<last_valid_index>);
+static_assert(!statically_sliceable_mapping<first_invalid_index>);
+static_assert(statically_sliceable_mapping<valid_static_extent_slice>);
+static_assert(!statically_sliceable_mapping<invalid_static_extent_slice>);
+static_assert(statically_subspanable<last_valid_index>);
+static_assert(!statically_subspanable<first_invalid_index>);
+static_assert(statically_subspanable<valid_static_extent_slice>);
+static_assert(!statically_subspanable<invalid_static_extent_slice>);
+
 static_assert(!directly_sliceable_mapping<std::pair<int, int>>);
 
 // full_extent_t and full_extent must exist
