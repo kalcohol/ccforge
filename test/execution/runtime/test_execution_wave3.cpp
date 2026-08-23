@@ -48,6 +48,8 @@ static int g_member_co_await_result = -1;
 static int g_free_co_await_result = -1;
 static int g_member_as_awaitable_result = -1;
 static int g_adapted_as_awaitable_result = -1;
+static int g_borrowed_adaptor_result = -1;
+static bool g_borrowed_adaptor_env_alive = false;
 
 struct immediate_int_awaiter {
     bool await_ready() const noexcept { return true; }
@@ -60,6 +62,14 @@ struct immediate_value_awaiter {
     bool await_ready() const noexcept { return true; }
     void await_suspend(std::coroutine_handle<>) const noexcept {}
     int await_resume() const noexcept { return Value; }
+};
+
+struct immediate_runtime_value_awaiter {
+    int value;
+
+    bool await_ready() const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+    int await_resume() const noexcept { return value; }
 };
 
 struct sender_awaiter {
@@ -168,6 +178,55 @@ struct completion_adapted_sender {
     auto get_env() const noexcept -> completion_await_env { return {}; }
 };
 
+struct borrowed_completion_await_adaptor {
+    struct adapted {
+        int value;
+
+        template<class Promise>
+        auto as_awaitable(Promise&) && noexcept
+            -> immediate_runtime_value_awaiter {
+            return {value};
+        }
+    };
+
+    template<class Sender>
+    auto operator()(Sender&&) const noexcept -> adapted {
+        return {g_borrowed_adaptor_env_alive ? 43 : -43};
+    }
+};
+
+struct borrowed_completion_await_env {
+    borrowed_completion_await_env() noexcept {
+        g_borrowed_adaptor_env_alive = true;
+    }
+
+    ~borrowed_completion_await_env() {
+        g_borrowed_adaptor_env_alive = false;
+    }
+
+    auto query(std::execution::get_await_completion_adaptor_t) const noexcept
+        -> const borrowed_completion_await_adaptor& {
+        return adaptor;
+    }
+
+    borrowed_completion_await_adaptor adaptor;
+};
+
+struct borrowed_completion_adapted_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> borrowed_completion_await_env {
+        return {};
+    }
+};
+
 SimpleTask run_coro() {
     auto value = co_await std::execution::just(42);
     static_assert(std::is_same_v<decltype(value), int>);
@@ -196,6 +255,11 @@ SimpleTask run_member_as_awaitable_coro() {
 
 SimpleTask run_adapted_as_awaitable_coro() {
     g_adapted_as_awaitable_result = co_await completion_adapted_sender{};
+}
+
+SimpleTask run_borrowed_adaptor_coro() {
+    g_borrowed_adaptor_result =
+        co_await borrowed_completion_adapted_sender{};
 }
 
 EnvTask run_env_coro() {
@@ -349,6 +413,14 @@ TEST(CoroutineBridgeTest, CompletionAdaptorCanProvideAsAwaitable) {
     g_adapted_as_awaitable_result = -1;
     run_adapted_as_awaitable_coro();
     EXPECT_EQ(g_adapted_as_awaitable_result, 41);
+}
+
+TEST(CoroutineBridgeTest, CompletionAdaptorReferenceDoesNotOutliveTemporaryEnv) {
+    g_borrowed_adaptor_result = -1;
+    g_borrowed_adaptor_env_alive = false;
+    run_borrowed_adaptor_coro();
+    EXPECT_EQ(g_borrowed_adaptor_result, 43);
+    EXPECT_FALSE(g_borrowed_adaptor_env_alive);
 }
 
 TEST(CoroutineBridgeTest, CoAwaitSenderSeesPromiseEnv) {

@@ -776,18 +776,49 @@ struct default_domain {
 
 struct get_domain_t;
 
+namespace __forge_domain {
+
+template<class Query, class Env, class... Args>
+struct __queried_domain;
+
+template<class Query, class Env, class... Args>
+    requires __forge_env_detail::__member_query<Query, Env, Args...>
+struct __queried_domain<Query, Env, Args...> {
+    using type = std::remove_cvref_t<decltype(
+        std::declval<const std::remove_reference_t<Env>&>().query(
+            std::declval<const Query&>(), std::declval<Args>()...))>;
+};
+
+template<class Query, class Env, class... Args>
+    requires (!__forge_env_detail::__member_query<Query, Env, Args...>) &&
+             __forge_detail::tag_invocable<Query, Env, Args...>
+struct __queried_domain<Query, Env, Args...> {
+    using type = std::remove_cvref_t<
+        __forge_detail::tag_invoke_result_t<Query, Env, Args...>>;
+};
+
+template<class Query, class Env, class... Args>
+using __queried_domain_t =
+    typename __queried_domain<Query, Env, Args...>::type;
+
+template<class Query, class Env, class... Args>
+concept __nothrow_default_domain_query =
+    __forge_env_detail::__queryable<Query, Env, Args...> &&
+    requires { typename __queried_domain<Query, Env, Args...>::type; } &&
+    std::is_nothrow_default_constructible_v<
+        __queried_domain_t<Query, Env, Args...>>;
+
+} // namespace __forge_domain
+
 template<class CPO = void>
 struct get_completion_domain_t {
     template<class Scheduler, class Env>
-        requires __forge_env_detail::__queryable<
+        requires __forge_domain::__nothrow_default_domain_query<
             get_completion_domain_t<CPO>, Scheduler, Env>
-    decltype(auto) operator()(Scheduler&& sched, Env&& env) const
-        noexcept(__forge_env_detail::__nothrow_query<
-            get_completion_domain_t<CPO>, Scheduler, Env>) {
-        return __forge_env_detail::__query(
-            *this,
-            static_cast<Scheduler&&>(sched),
-            static_cast<Env&&>(env));
+    auto operator()(Scheduler&&, Env&&) const noexcept
+        -> __forge_domain::__queried_domain_t<
+            get_completion_domain_t<CPO>, Scheduler, Env> {
+        return {};
     }
 
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_domain_t) noexcept {
@@ -805,6 +836,10 @@ concept __env_domain =
     __forge_env_detail::__queryable<get_domain_t, const Env&>;
 
 template<class Env>
+concept __valid_env_domain =
+    __nothrow_default_domain_query<get_domain_t, const Env&>;
+
+template<class Env>
 concept __scheduler_completion_domain = requires(const Env& env) {
     std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), env);
 };
@@ -813,22 +848,25 @@ concept __scheduler_completion_domain = requires(const Env& env) {
 
 struct get_domain_t {
     template<class Env>
-        requires __forge_domain::__env_domain<Env>
-    decltype(auto) operator()(const Env& env) const
-        noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Env&>) {
-        return __forge_env_detail::__query(*this, env);
+        requires __forge_domain::__env_domain<Env> &&
+                 __forge_domain::__valid_env_domain<Env>
+    auto operator()(const Env&) const noexcept
+        -> __forge_domain::__queried_domain_t<get_domain_t, const Env&> {
+        return {};
     }
 
     template<class Env>
         requires (!__forge_domain::__env_domain<Env> &&
                   __forge_domain::__scheduler_completion_domain<Env>)
-    auto operator()(const Env& env) const
-        noexcept(noexcept(std::execution::get_completion_domain<set_value_t>(
-            std::execution::get_scheduler(env), env)))
+    auto operator()(const Env&) const noexcept
             -> decltype(std::execution::get_completion_domain<set_value_t>(
-                std::execution::get_scheduler(env), env)) {
-        return std::execution::get_completion_domain<set_value_t>(
-            std::execution::get_scheduler(env), env);
+                std::execution::get_scheduler(std::declval<const Env&>()),
+                std::declval<const Env&>())) {
+        using domain_t = std::remove_cvref_t<decltype(
+            std::execution::get_completion_domain<set_value_t>(
+                std::execution::get_scheduler(std::declval<const Env&>()),
+                std::declval<const Env&>()))>;
+        return domain_t{};
     }
 
     template<class Env>

@@ -681,7 +681,7 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
         attrs,
         std::execution::empty_env{});
 
-    EXPECT_EQ(domain.identity, 37);
+    EXPECT_EQ(domain.identity, 0);
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
         const decltype(attrs)&,
@@ -721,13 +721,13 @@ TEST(CompletionDomainTest, SupportsMemberQueryProtocol) {
         member_completion_domain_env{43},
         std::execution::empty_env{});
 
-    EXPECT_EQ(domain.identity, 43);
+    EXPECT_EQ(domain.identity, 0);
 }
 
 TEST(CompletionDomainTest, GetDomainSupportsMemberQueryProtocol) {
     auto domain = std::execution::get_domain(member_domain_env{47});
 
-    EXPECT_EQ(domain.identity, 47);
+    EXPECT_EQ(domain.identity, 0);
 }
 
 TEST(ContinuesOnTest, UsesMemberQueriedDestinationDomain) {
@@ -740,7 +740,7 @@ TEST(ContinuesOnTest, UsesMemberQueriedDestinationDomain) {
         attrs,
         std::execution::empty_env{});
 
-    EXPECT_EQ(domain.identity, 53);
+    EXPECT_EQ(domain.identity, 0);
 }
 
 TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
@@ -794,7 +794,7 @@ TEST(LetValueTest, InnerSenderSeesChildCompletionScheduler) {
     EXPECT_EQ(std::get<0>(*legacy_result), child_scheduler);
 }
 
-TEST(LetValueTest, InnerSenderSeesChildCompletionDomain) {
+TEST(LetValueTest, InnerSenderSeesDefaultConstructedChildCompletionDomain) {
     auto sender = std::execution::let_value(
         child_domain_sender{41},
         []() noexcept {
@@ -803,7 +803,7 @@ TEST(LetValueTest, InnerSenderSeesChildCompletionDomain) {
     auto result = std::execution::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result).identity, 41);
+    EXPECT_EQ(std::get<0>(*result).identity, 0);
 }
 
 TEST(LetValueTest, InvokesStoredFunctionAsRvalue) {

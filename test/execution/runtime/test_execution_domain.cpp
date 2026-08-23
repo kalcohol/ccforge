@@ -102,6 +102,65 @@ struct tracking_domain {
     }
 };
 
+struct queried_domain {
+    int identity = 17;
+};
+
+struct runtime_domain_query_env {
+    static inline int calls = 0;
+
+    auto query(std::execution::get_domain_t) const -> queried_domain {
+        ++calls;
+        throw 42;
+    }
+};
+
+struct runtime_completion_domain_attrs {
+    static inline int calls = 0;
+
+    template<class Env>
+    auto query(
+        std::execution::get_completion_domain_t<>,
+        const Env&) const -> queried_domain {
+        ++calls;
+        throw 42;
+    }
+};
+
+struct non_default_domain {
+    explicit non_default_domain(int) noexcept {}
+};
+
+struct non_default_domain_env {
+    auto query(std::execution::get_domain_t) const noexcept
+        -> non_default_domain;
+};
+
+struct throwing_default_domain {
+    throwing_default_domain() noexcept(false) {}
+};
+
+struct throwing_default_completion_attrs {
+    template<class Env>
+    auto query(
+        std::execution::get_completion_domain_t<>,
+        const Env&) const noexcept -> throwing_default_domain;
+};
+
+template<class Env>
+concept has_domain_query = requires(const Env& env) {
+    std::execution::get_domain(env);
+};
+
+template<class Attrs>
+concept has_completion_domain_query = requires(const Attrs& attrs) {
+    std::execution::get_completion_domain<>(
+        attrs, std::execution::empty_env{});
+};
+
+static_assert(!has_domain_query<non_default_domain_env>);
+static_assert(!has_completion_domain_query<throwing_default_completion_attrs>);
+
 struct receiver_domain_env {
     friend auto tag_invoke(std::execution::get_domain_t, const receiver_domain_env&) noexcept
         -> tracking_domain {
@@ -590,6 +649,30 @@ TEST(DefaultDomainTest, GetDomainFromEmptyEnv) {
     auto domain = std::execution::get_domain(env);
     static_assert(std::is_same_v<decltype(domain), std::execution::default_domain>);
     SUCCEED();
+}
+
+TEST(DefaultDomainTest, QuerySelectsTypeWithoutEvaluatingQueryValue) {
+    runtime_domain_query_env::calls = 0;
+
+    auto domain = std::execution::get_domain(runtime_domain_query_env{});
+
+    static_assert(noexcept(std::execution::get_domain(
+        std::declval<const runtime_domain_query_env&>())));
+    EXPECT_EQ(runtime_domain_query_env::calls, 0);
+    EXPECT_EQ(domain.identity, 17);
+}
+
+TEST(DefaultDomainTest, CompletionQuerySelectsTypeWithoutEvaluatingQueryValue) {
+    runtime_completion_domain_attrs::calls = 0;
+
+    auto domain = std::execution::get_completion_domain<>(
+        runtime_completion_domain_attrs{}, std::execution::empty_env{});
+
+    static_assert(noexcept(std::execution::get_completion_domain<>(
+        std::declval<const runtime_completion_domain_attrs&>(),
+        std::execution::empty_env{})));
+    EXPECT_EQ(runtime_completion_domain_attrs::calls, 0);
+    EXPECT_EQ(domain.identity, 17);
 }
 
 TEST(DefaultDomainTest, TransformSenderIsIdentity) {

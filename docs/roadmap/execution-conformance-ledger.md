@@ -81,7 +81,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_completion_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；scheduler envs 暴露 roundtrip。 |
 | `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。 |
 | `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 member-first、tag-invoke fallback query object；没有提供 default adaptor。 |
-| `get_domain`, `get_completion_domain` | Implemented subset | 一参数/双参数查询均采用 member-query-first、tag-invoke fallback。Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
+| `get_domain`, `get_completion_domain` | Implemented subset | 一参数/双参数查询均采用 member-query-first、tag-invoke fallback；query 只选择 domain 类型，公开 CPO 按 current WD `MANDATE-NOTHROW(D())` 默认构造结果，不保留查询值的运行时状态。Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
 | `get_allocator` | Implemented subset | Member `.query` 优先、tag-invoke fallback；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
 | `get_stop_token` | Implemented subset | Current-WD member `.query(get_stop_token)` 优先，保留 tag-invoke fallback；两者都缺失时返回 `never_stop_token`。 |
 | `get_forward_progress_guarantee` | Implemented subset | Member `.query` 优先、tag-invoke fallback；对 local scheduler-shaped types 提供 `weakly_parallel` fallback，内置 backport schedulers 和 `forge::static_thread_pool` 报告保守值。 |

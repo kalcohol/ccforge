@@ -176,10 +176,8 @@ decltype(auto) __adapt_for_await_completion(S&& sndr) {
                           std::execution::get_env(sndr))(
                               static_cast<S&&>(sndr));
                   }) {
-        decltype(auto) adaptor = std::execution::get_await_completion_adaptor(
-            std::execution::get_env(sndr));
-        return std::forward<decltype(adaptor)>(adaptor)(
-            static_cast<S&&>(sndr));
+        return std::execution::get_await_completion_adaptor(
+            std::execution::get_env(sndr))(static_cast<S&&>(sndr));
     } else {
         return static_cast<S&&>(sndr);
     }

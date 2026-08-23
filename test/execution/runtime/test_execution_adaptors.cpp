@@ -455,7 +455,7 @@ TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
     EXPECT_EQ(std::get<0>(*start_scheduler_result), target);
 }
 
-TEST(StartsOnTest, ChildEnvironmentReportsTheTargetDomain) {
+TEST(StartsOnTest, ChildEnvironmentReportsDefaultConstructedTargetDomain) {
     const domain_scheduler target{47};
 
     auto result = std::execution::sync_wait(
@@ -467,7 +467,7 @@ TEST(StartsOnTest, ChildEnvironmentReportsTheTargetDomain) {
         decltype(result),
         std::optional<std::tuple<starts_on_domain>>>);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), starts_on_domain{47});
+    EXPECT_EQ(std::get<0>(*result), starts_on_domain{});
 }
 
 TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {

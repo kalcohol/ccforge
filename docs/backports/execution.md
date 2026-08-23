@@ -70,7 +70,8 @@
   domain 仅在 scheduler 显式定制
   `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。
   `get_domain` 与双参数 `get_completion_domain` 查询均采用 member-query-first、
-  tag-invoke fallback；sender attributes 只跨 adaptor 边界转发声明为
+  tag-invoke fallback；查询只选择 domain 类型，并按 current WD 默认构造该类型，
+  不保留 query 返回对象携带的运行时状态。sender attributes 只跨 adaptor 边界转发声明为
   `forwarding_query` 的 child query。
   `get_completion_signatures(sender, env)` 会先按同一 transform 模型得到最终 sender 类型，
   再读取 completion signatures；非 default-domain 路径允许原 sender 没有 raw
