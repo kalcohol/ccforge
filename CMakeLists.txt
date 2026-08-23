@@ -60,6 +60,8 @@ if(FORGE_ENABLE_INSTALL)
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
         DESTINATION "${FORGE_INSTALL_CMAKEDIR}")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/probes/"
+        DESTINATION "${FORGE_INSTALL_CMAKEDIR}/probes")
 endif()
 
 # If top-level project, build examples and tests
