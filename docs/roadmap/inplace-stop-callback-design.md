@@ -4,6 +4,21 @@
 per-registration control-block allocation，以及未来移除该分配必须同时证明哪些不变量。
 它记录的是一个明确的 conformance residual，不把当前实现描述成 current-WD complete。
 
+## 2026-08-23 决策复核
+
+本轮对照 2026-08-22 working-draft snapshot (`2f5924ff8ee5`) 的
+`[stopcallback.inplace.cons]`，constructor 仍要求
+`noexcept(is_nothrow_constructible_v<CallbackFn, Initializer>)`。同时复核 NVIDIA stdexec
+snapshot `f91f63636f24`：其实现仍把 callback node 内联在 callback object 中，并提供该条件
+`noexcept`。
+
+Forge 当前实现仍有下述两项偏差：registration 分配独立 control block，且 nothrow callback
+不能使 constructor 成为 `noexcept`。本轮没有发现新的 correctness bug，也没有测得 consumer
+要求 registration 零分配；相反，现有 self-destroy / sibling destroy / concurrent deregistration
+proof surface 继续依赖 detached control-block lifetime。因此维持方向 C，不启动 intrusive rewrite。
+重新开启条件仍以本文“后续实现门槛”为准，不能只为匹配 exception specification 而删除已证明的
+重入行为。
+
 ## 当前偏差
 
 Current WD `[stopcallback.inplace.cons]` 要求 callback constructor 的异常规格等于
@@ -43,13 +58,12 @@ backport 的 proof surface。共享 control block 让 `request_stop()` 在用户
 
 ## 参考实现对照
 
-截至 2026-07-30，检查的 LLVM libc++ main
-(`8a1ff7feefc5825cc10349b8946fe555f435d53b`) 和 Microsoft STL main
-(`adf25f70db25f0db934d13811fcc1e4d40c44fd8`) 尚未提供可用于对照的
-`inplace_stop_source` implementation。以下两个成熟 sender library implementation
-采用相同的 allocation-free 方案：
+本轮以 2026-08-22 NVIDIA stdexec snapshot
+(`f91f63636f24a85b594dfb19b79d191ccdccd5ec`) 作为当前 reference implementation；它仍采用
+allocation-free intrusive 方案。历史审计同时保留 libunifex 的 out-of-line state machine
+作为第二份成熟实现经验：
 
-- [NVIDIA stdexec `stop_token.hpp`](https://github.com/NVIDIA/stdexec/blob/f0e8ae6fdc6c188389b146bb854b80d399724b04/include/stdexec/stop_token.hpp)
+- [NVIDIA stdexec `stop_token.hpp`](https://github.com/NVIDIA/stdexec/blob/f91f63636f24a85b594dfb19b79d191ccdccd5ec/include/stdexec/stop_token.hpp)
 - [libunifex `inplace_stop_token.hpp`](https://github.com/facebookexperimental/libunifex/blob/effb7527401b32b5a2d82fdf6d1a8e8810cbdb07/include/unifex/inplace_stop_token.hpp)
   与
   [out-of-line state machine](https://github.com/facebookexperimental/libunifex/blob/effb7527401b32b5a2d82fdf6d1a8e8810cbdb07/source/inplace_stop_token.cpp)
