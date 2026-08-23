@@ -86,9 +86,9 @@ endif()
 
 if(FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_compile_probe(
-        test_forge_io_env_header
+        test_forge_coro_env_header
         test_forge_io_env_header.cpp
-        forge_io_env_header)
+        forge_coro_env_header)
     forge_add_forge_compile_probe(
         test_forge_async_stream_header
         test_forge_async_stream_header.cpp
