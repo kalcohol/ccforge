@@ -23,8 +23,8 @@ scripts/verify-selfhosted-floor.sh
 ```
 
 该脚本按顺序调用现有验证入口，默认 native lanes 为 `llvm gcc-exec tsan asan`，
-先运行 docs/examples audit，随后运行 install-package smoke。它不会并发运行 podman
-`:Z` bind mount lane。
+先运行 source-style 与 docs/examples audits，随后运行 install-package smoke。它不会
+并发运行 podman `:Z` bind mount lane。
 如需增加或替换 native lane，直接传参或设置环境变量：
 
 ```bash
@@ -45,6 +45,19 @@ scripts/verify-selfhosted-floor.sh
 
 公开文档和脚本不得写入私有主机名、用户名或本地安装路径。运行日志可以打印本机实际
 选择的路径以便调试，但这些值只属于调用环境。
+
+## Source-style audit（源码风格审计）
+
+`scripts/audit-source-style.sh` 对 tracked 的 C++、CMake、Shell 和 PowerShell
+源文件执行低噪声检查：禁止 tab、尾随空白与 CRLF，并要求非空文件以换行结束。
+`.editorconfig` 为支持它的编辑器固定同一组基础规则和四空格缩进。
+
+该审计刻意不强制 formatter、命名风格或全仓行宽，避免机械重排标准措辞和模板代码。
+`verify-selfhosted-floor.sh` 默认运行它；只在诊断验证脚本本身时才应跳过：
+
+```bash
+FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
+```
 
 ## Docs/example audit（文档与示例审计）
 
