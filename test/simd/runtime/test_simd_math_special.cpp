@@ -328,6 +328,55 @@ TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
               std::numeric_limits<double>::infinity());
 }
 
+TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
+    namespace sm = std::simd::detail::special_math;
+
+    constexpr double argument = 1.0;
+    const double half_order_scale =
+        std::sqrt(2.0 / (std::numbers::pi * argument));
+    EXPECT_NEAR(sm::cyl_bessel_j_fallback(-0.5, argument),
+                half_order_scale * std::cos(argument),
+                2e-12);
+    EXPECT_NEAR(sm::cyl_bessel_y_fallback(-0.5, argument),
+                half_order_scale * std::sin(argument),
+                2e-12);
+    EXPECT_NEAR(sm::cyl_bessel_j_fallback(-1.0, argument),
+                -sm::cyl_bessel_j_fallback(1.0, argument),
+                2e-12);
+    EXPECT_NEAR(sm::cyl_bessel_y_fallback(-1.0, argument),
+                -sm::cyl_bessel_y_fallback(1.0, argument),
+                2e-12);
+
+    const double4 orders = load_vec<double4>(
+        std::array<double, 4>{{-1.0, -0.5, -1.0, -0.5}});
+    const double4 arguments = load_vec<double4>(
+        std::array<double, 4>{{1.0, 1.0, 0.0, 0.0}});
+    const auto modified = std::simd::cyl_bessel_i(orders, arguments);
+    EXPECT_NEAR(modified[0], sm::cyl_bessel_i_series(1.0, 1.0), 2e-12);
+    EXPECT_NEAR(modified[1],
+                half_order_scale * std::cosh(argument),
+                2e-12);
+    EXPECT_EQ(modified[2], 0.0);
+    EXPECT_TRUE(std::isinf(modified[3]));
+    EXPECT_FALSE(std::signbit(modified[3]));
+    const double negative_zero_limit =
+        sm::cyl_bessel_i_fallback(-1.5, 0.0);
+    EXPECT_TRUE(std::isinf(negative_zero_limit));
+    EXPECT_TRUE(std::signbit(negative_zero_limit));
+
+    const float float_scale = std::sqrt(
+        2.0f / (std::numbers::pi_v<float> * 1.0f));
+    EXPECT_NEAR(sm::cyl_bessel_j_fallback(-0.5f, 1.0f),
+                float_scale * std::cos(1.0f),
+                2e-6f);
+    EXPECT_NEAR(sm::cyl_bessel_i_fallback(-1.0f, 1.0f),
+                sm::cyl_bessel_i_series(1.0f, 1.0f),
+                2e-6f);
+
+    EXPECT_TRUE(std::isnan(sm::sph_bessel_fallback(1u, -1.0)));
+    EXPECT_TRUE(std::isnan(sm::sph_neumann_fallback(1u, -1.0)));
+}
+
 TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) {
     namespace sm = std::simd::detail::special_math;
 
@@ -805,6 +854,10 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
         {1.0 + 1.0e-12, 2.0},
         {2.0 + 1.0e-8, 3.0},
         {20.0 + 1.0e-5, 10.0},
+        {-0.5, 1.0},
+        {-1.25, 2.0},
+        {-1.0 + 1.0e-12, 2.0},
+        {-10.5, 20.0},
     };
 
     for (const auto [order, argument] : cases) {

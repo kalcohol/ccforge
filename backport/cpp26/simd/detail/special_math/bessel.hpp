@@ -4,6 +4,9 @@ namespace detail::special_math {
 
 template<class T>
 T sph_bessel_fallback(unsigned n, T x) {
+    if (std::isnan(x) || x < T{}) {
+        return quiet_nan<T>();
+    }
     if (x == T{}) {
         return n == 0u ? T{1} : T{};
     }
@@ -24,6 +27,9 @@ T sph_bessel_fallback(unsigned n, T x) {
 
 template<class T>
 T sph_neumann_fallback(unsigned n, T x) {
+    if (std::isnan(x) || x < T{}) {
+        return quiet_nan<T>();
+    }
     if (x == T{}) {
         return -infinity<T>();
     }
@@ -192,6 +198,28 @@ struct cyl_bessel_hankel_result {
     T error;
     bool converged;
 };
+
+struct cyl_bessel_order_trig_result {
+    long double cosine;
+    long double sine;
+};
+
+inline auto cyl_bessel_order_trig(long double order)
+    -> cyl_bessel_order_trig_result {
+    const long double nearest = std::round(order);
+    const long double delta = order - nearest;
+    const long double parity =
+        std::fmod(std::abs(nearest), 2.0L) == 1.0L ? -1.0L : 1.0L;
+    if (delta == 0.0L) {
+        return {parity, 0.0L};
+    }
+    if (std::abs(delta) == 0.5L) {
+        return {0.0L, std::copysign(1.0L, parity * delta)};
+    }
+    return {
+        parity * std::cos(pi_v<long double> * delta),
+        parity * std::sin(pi_v<long double> * delta)};
+}
 
 template<class T>
 auto cyl_bessel_hankel_asymptotic(
@@ -531,9 +559,44 @@ inline long double cyl_bessel_j_miller(
 template<class T>
 auto cyl_bessel_jy_fallback(T nu, T x)
     -> cyl_bessel_hankel_result<T> {
-    if (std::isnan(nu) || std::isnan(x) || nu < T{} || x < T{}) {
+    if (std::isnan(nu) || std::isnan(x) || x < T{}) {
         const T nan = quiet_nan<T>();
         return {nan, nan, nan, false};
+    }
+    if (nu < T{}) {
+        const long double order = -static_cast<long double>(nu);
+        if (!std::isfinite(order)) {
+            const T nan = quiet_nan<T>();
+            return {nan, nan, nan, false};
+        }
+        const auto trig = cyl_bessel_order_trig(order);
+        if (x == T{}) {
+            const long double j = trig.sine == 0.0L
+                ? std::copysign(0.0L, trig.cosine)
+                : std::copysign(infinity<long double>(), trig.sine);
+            const long double y = trig.cosine == 0.0L
+                ? std::copysign(0.0L, trig.sine)
+                : std::copysign(infinity<long double>(), -trig.cosine);
+            return {
+                static_cast<T>(j),
+                static_cast<T>(y),
+                T{},
+                true};
+        }
+
+        const auto positive = cyl_bessel_jy_fallback(
+            order, static_cast<long double>(x));
+        const long double j =
+            trig.cosine * positive.j - trig.sine * positive.y;
+        const long double y =
+            trig.sine * positive.j + trig.cosine * positive.y;
+        return {
+            static_cast<T>(j),
+            static_cast<T>(y),
+            static_cast<T>(
+                (std::abs(trig.cosine) + std::abs(trig.sine)) *
+                positive.error),
+            positive.converged};
     }
     if (std::isinf(x)) {
         return {T{}, T{}, T{}, true};
@@ -695,6 +758,37 @@ T cyl_bessel_k_fallback(T nu, T x) {
         return T{};
     }
     return cyl_bessel_k_integral(nu, x);
+}
+
+template<class T>
+T cyl_bessel_i_fallback(T nu, T x) {
+    if (std::isnan(nu) || std::isnan(x) || x < T{} ||
+        !std::isfinite(nu)) {
+        return quiet_nan<T>();
+    }
+    if (nu >= T{}) {
+        return cyl_bessel_i_series(nu, x);
+    }
+
+    const long double order = -static_cast<long double>(nu);
+    const auto trig = cyl_bessel_order_trig(order);
+    if (x == T{}) {
+        if (trig.sine == 0.0L) {
+            return T{};
+        }
+        return static_cast<T>(
+            std::copysign(infinity<long double>(), trig.sine));
+    }
+
+    const long double argument = static_cast<long double>(x);
+    const long double positive = cyl_bessel_i_series(order, argument);
+    if (trig.sine == 0.0L) {
+        return static_cast<T>(positive);
+    }
+    const long double irregular = cyl_bessel_k_fallback(order, argument);
+    return static_cast<T>(
+        positive +
+        2.0L / pi_v<long double> * trig.sine * irregular);
 }
 
 } // namespace detail::special_math

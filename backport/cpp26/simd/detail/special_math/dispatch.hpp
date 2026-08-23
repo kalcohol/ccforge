@@ -61,7 +61,7 @@ T cyl_bessel_i(T nu, T x) {
 #ifdef __cpp_lib_math_special_functions
     return std::cyl_bessel_i(nu, x);
 #else
-    return cyl_bessel_i_series(nu, x);
+    return cyl_bessel_i_fallback(nu, x);
 #endif
 }
 
