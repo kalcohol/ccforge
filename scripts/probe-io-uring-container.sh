@@ -12,10 +12,12 @@ podman="${PODMAN:-podman}"
 # Optional space-separated list of build directories (relative to the repo
 # root) whose io_uring runtime tests run inside the allow-io_uring container
 # after the raw probe. A raw-probe 77 is a bounded skip for kernels that
-# disable io_uring; once the probe succeeds, a runtime-test skip is a bug.
+# disable io_uring unless FORGE_IO_URING_REQUIRE_RUNTIME=1; once the probe
+# succeeds, a runtime-test skip is a bug.
 test_build_dirs="${FORGE_IO_URING_TEST_BUILD_DIRS:-}"
 test_timeout_seconds="${FORGE_IO_URING_TEST_TIMEOUT_SECONDS:-120}"
 allow_ptrace="${FORGE_IO_URING_ALLOW_PTRACE:-0}"
+require_runtime="${FORGE_IO_URING_REQUIRE_RUNTIME:-0}"
 
 if [[ ! -r "${base_profile}" ]]; then
     printf 'base seccomp profile is not readable: %s\n' "${base_profile}" >&2
@@ -76,51 +78,16 @@ for variable in ASAN_OPTIONS UBSAN_OPTIONS TSAN_OPTIONS; do
 done
 container_args+=("${image}")
 
-# shellcheck disable=SC2086  # test_build_dirs is intentionally word-split
+test_build_dir_args=()
+if [[ -n "${test_build_dirs}" ]]; then
+    # Build directories are a space-separated list by contract.
+    read -r -a test_build_dir_args <<< "${test_build_dirs}"
+fi
+
 "${podman}" "${container_args[@]}" \
-    bash -lc '
-        set -euo pipefail
-        compiler="$1"
-        timeout_seconds="$2"
-        shift 2
-        set +e
-        timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
-            env CXX="${compiler}" \
-            FORGE_IO_URING_PROBE_BUILD_DIR=/tmp/ccforge-io-uring-probe \
-            scripts/probe-io-uring.sh
-        probe_status=$?
-        set -e
-        if [[ ${probe_status} -eq 77 ]]; then
-            printf "%s\n" \
-                "[io-uring-container] runtime unavailable; bounded skip"
-            exit 0
-        fi
-        if [[ ${probe_status} -ne 0 ]]; then
-            exit "${probe_status}"
-        fi
-        for dir in "$@"; do
-            for name in test_forge_io_uring_context test_forge_io_uring_rw; do
-                binary="${dir}/test/forge/${name}"
-                if [[ ! -x "${binary}" ]]; then
-                    printf "missing io_uring test binary: %s\n" \
-                        "${binary}" >&2
-                    exit 3
-                fi
-                printf "[io-uring-container] running %s\n" "${binary}"
-                timeout --signal=TERM --kill-after=5s \
-                    "${timeout_seconds}s" "${binary}"
-            done
-            # The failure-injection binary only exists when the linker
-            # supports --wrap=syscall, so a missing file is a toolchain
-            # capability gap rather than an environment bug.
-            fault_binary="${dir}/test/forge/test_forge_io_uring_fault"
-            if [[ -x "${fault_binary}" ]]; then
-                printf "[io-uring-container] running %s\n" "${fault_binary}"
-                timeout --signal=TERM --kill-after=5s \
-                    "${timeout_seconds}s" "${fault_binary}"
-            else
-                printf "[io-uring-container] %s not built (linker lacks --wrap); skipping\n" \
-                    "${fault_binary}"
-            fi
-        done
-    ' bash "${compiler}" "${test_timeout_seconds}" ${test_build_dirs}
+    bash scripts/run-io-uring-runtime-gate.sh \
+        "${compiler}" \
+        "${test_timeout_seconds}" \
+        "${require_runtime}" \
+        scripts/probe-io-uring.sh \
+        "${test_build_dir_args[@]}"

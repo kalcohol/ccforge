@@ -84,6 +84,13 @@ if(UNIX)
     set_tests_properties(
         sanitizer_retry_policy PROPERTIES
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+    add_test(
+        NAME io_uring_runtime_gate_policy
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_io_uring_runtime_gate.sh")
+    set_tests_properties(
+        io_uring_runtime_gate_policy PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endif()
 
 if(WIN32)

@@ -810,6 +810,9 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
 失败时抛 `std::system_error`。受限沙箱（容器默认 seccomp 等）通常在构造期以
 `ENOSYS`/`EPERM`/`EACCES` 表现；runtime tests 在 AUTO gate 下以 77 skip，显式 `ON`
 时视为失败。自定义 seccomp 验证通道见 `scripts/probe-io-uring-container.sh`。
+Portable 验证允许该通道对 runtime-unavailable 返回有界 skip；release evidence 可设置
+`FORGE_IO_URING_REQUIRE_RUNTIME=1`，把同一情况升级为失败。该 gate 只验证 Linux，和
+Windows/MSVC matrix 无关。
 
 不做（另立任务书前不变）：socket 建连/accept/DNS/TLS、SQPOLL、registered buffers、
 multishot、链式 SQE、显式 file offset API、mandatory liburing 依赖，以及对 epoll

@@ -27,6 +27,8 @@
 #   FORGE_VERIFY_FLOOR_WINDOWS=1
 #       Also run the Windows/MSVC smoke through scripts/verify-windows-msvc-matrix.sh.
 #       The Windows wrapper consumes FORGE_WINDOWS_* environment variables.
+#   FORGE_VERIFY_FLOOR_REQUIRE_IO_URING_RUNTIME=1
+#       Require the Linux io_uring raw runtime probe to run successfully.
 
 set -euo pipefail
 
@@ -71,6 +73,15 @@ for lane in "${native_lanes[@]}"; do
     scripts/verify-native.sh "${lane}"
     log "ok native lane: ${lane}"
 done
+
+if [[ "${FORGE_VERIFY_FLOOR_REQUIRE_IO_URING_RUNTIME:-0}" == "1" ]]; then
+    log "start required io_uring runtime probe"
+    FORGE_IO_URING_REQUIRE_RUNTIME=1 \
+        scripts/probe-io-uring-container.sh
+    log "ok required io_uring runtime probe"
+else
+    log "skip required io_uring runtime probe"
+fi
 
 if [[ "${FORGE_VERIFY_FLOOR_SKIP_INSTALL:-0}" != "1" ]]; then
     log "start install package smoke"

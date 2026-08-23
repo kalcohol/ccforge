@@ -46,6 +46,16 @@ scripts/verify-selfhosted-floor.sh
 公开文档和脚本不得写入私有主机名、用户名或本地安装路径。运行日志可以打印本机实际
 选择的路径以便调试，但这些值只属于调用环境。
 
+Release evidence 需要证明 Linux `io_uring` runtime 实际可用时，显式启用严格 gate：
+
+```bash
+FORGE_VERIFY_FLOOR_REQUIRE_IO_URING_RUNTIME=1 \
+scripts/verify-selfhosted-floor.sh
+```
+
+严格 gate 会把 raw probe 的 exit 77 从有界 skip 升级为失败。它只适用于 Linux；Windows
+主机和 `FORGE_VERIFY_FLOOR_WINDOWS` 不参与这项判断。普通 portable floor 保持可跳过行为。
+
 ## Source-style audit（源码风格审计）
 
 `scripts/audit-source-style.sh` 对 tracked 的 C++、CMake、Shell 和 PowerShell
@@ -350,10 +360,12 @@ io_uring runtime tests 在受限沙箱（如容器默认 seccomp 阻断 `io_urin
 `FORGE_IO_URING_PROBE_IMAGE` 选择匹配二进制的镜像）时在同一容器内继续运行这些
 build 目录下的 io_uring context/read-write tests，且此处 skip 视为失败——probe 刚证明
 环境可用。raw probe 本身若以 77 报告 kernel/policy 不可用，则整段 runtime 扩展作为
-有界 skip 返回成功；所有 probe/test 都有 120 秒默认上限，可用
+有界 skip 返回成功；设置 `FORGE_IO_URING_REQUIRE_RUNTIME=1` 时，同一个 77 会成为失败，
+用于 release gate 明确区分 runtime unavailable。所有 probe/test 都有 120 秒默认上限，可用
 `FORGE_IO_URING_TEST_TIMEOUT_SECONDS` 调整。`scripts/verify-native.sh` 的 `tsan` 与
 `asan` lane 在构建出 io_uring tests 时自动走这条通道，并转发各自 sanitizer options
 与 ptrace capability，因此 io_uring runtime 使用和主 lane 相同的诊断/停止策略。
+严格模式仍是 Linux-only；它与任何 Windows/MSVC 验证无关。
 
 `forge_io_uring_fault` 是链接器支持 `--wrap=syscall` 时额外注册的注入式测试：拦截
 submit-only 的 `io_uring_enter`（不带 GETEVENTS flag 且 `to_submit > 0`）注入
