@@ -185,6 +185,10 @@ forge_add_execution_runtime_test(test_execution_wave1 test_execution_wave1.cpp e
 forge_add_execution_runtime_test(test_execution_wave2 test_execution_wave2.cpp execution_wave2)
 forge_add_execution_runtime_test(test_execution_when_all test_execution_when_all.cpp execution_when_all)
 forge_add_execution_runtime_test(test_execution_wave3 test_execution_wave3.cpp execution_wave3)
+forge_add_execution_runtime_test(
+    test_execution_schedule_from
+    test_execution_schedule_from.cpp
+    execution_schedule_from)
 forge_add_execution_runtime_test(test_execution_domain test_execution_domain.cpp execution_domain)
 forge_add_execution_runtime_test(
     test_execution_counting_scope

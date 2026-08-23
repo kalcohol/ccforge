@@ -32,7 +32,7 @@
 //   Sender factories : just, just_error, just_stopped, read_env
 //   Value adaptors   : then, upon_error, upon_stopped
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
-//   Scheduler ops    : starts_on, continues_on, on, affine,
+//   Scheduler ops    : starts_on, schedule_from, continues_on, on, affine,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
 //   Forge extensions : transfer_just, split
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
@@ -94,7 +94,9 @@
 //     noexcept as required by the current working draft.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
-//   - schedule_from, apply_sender, and transform_env are not implemented.
+//   - apply_sender is not implemented. The older transform_env spelling is no
+//     longer present in the current working draft; the existing recursive
+//     transform_sender machinery is not yet exposed as its public CPO.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - standard type-erased sender surface.
@@ -139,6 +141,7 @@
 
 #include "execution/on.hpp"
 #include "execution/into_variant.hpp"
+#include "execution/schedule_from.hpp"
 #include "execution/continues_on.hpp"
 #include "execution/affine.hpp"
 #include "execution/bulk.hpp"

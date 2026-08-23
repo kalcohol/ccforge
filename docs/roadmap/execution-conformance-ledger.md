@@ -69,6 +69,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `inplace_stop_source/token/callback` | Implemented subset | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 current-WD conditional `noexcept`。见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；多 value-alternative sender 退回原表达式，因而不会经该 bridge 变成 awaitable。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 |
+| `schedule_from` | Implemented current-WD-shaped subset | 实现 current-WD 单参数 departure marker sender；default domain 逐字转发 child attributes、completion signatures 与 operation，product access 暴露 `schedule_from_t` tag 供 completion domain 识别。`continues_on` 通过该 marker 连接 source sender，source completion domain 可定制离开其 execution resource 的方式。 |
 | `affine` | Implemented subset | `affine.hpp`；单参数 CPO / bare-pipe 形式从 receiver env 查询 `get_start_scheduler`，通过 unstoppable schedule sender 复用 `continues_on` transfer subset；因此仍受单一 value completion shape 限制。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
 | `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
@@ -93,8 +94,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |
 | `inlinable_receiver` | Not implemented | 当前 operation-state ownership 不对外承诺该优化查询；不能由现有 inline completion 行为推导。 |
 | `sender_adaptor_closure` | Out of scope as public type | Adaptors 使用内部 closure machinery 并提供 pipe syntax，但不暴露 current-draft public closure base/type。 |
-| `schedule_from` | Not implemented | 当前 `continues_on` 是直接实现；尚无可诚实表达 scheduler/domain customization 的 `schedule_from` CPO。 |
-| `apply_sender`, `transform_env` | Not implemented | 当前 domain subset 有 `transform_sender`，但没有这两个 current-draft customization surfaces；只有形成配套 domain tests 后才实现。 |
+| `apply_sender`, public `transform_sender` | Not implemented | 当前 domain subset 有内部 recursive `transform_sender` machinery，但尚未暴露这两个 current-draft customization surfaces；只有形成配套 domain tests 后才实现。旧 `transform_env` spelling 已不在 live draft surface。 |
 
 ## 兼容性分类
 

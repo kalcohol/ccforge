@@ -27,6 +27,7 @@
 #include "env.hpp"
 #include "just.hpp"
 #include "run_loop.hpp"
+#include "schedule_from.hpp"
 
 #include <cstddef>
 #include <exception>
@@ -452,10 +453,12 @@ struct continues_on_t {
     template<sender S, class Scheduler>
         requires scheduler<std::remove_cvref_t<Scheduler>>
     [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch) const {
+        auto departure = std::execution::schedule_from(
+            std::forward<S>(sndr));
         return __forge_continues_on::__sender<
-            std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
+            std::remove_cvref_t<Scheduler>, decltype(departure)>{
             __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
-            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+            std::move(departure)};
     }
 
     template<class Scheduler>
