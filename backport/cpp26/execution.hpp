@@ -50,6 +50,7 @@
 //                      forwarding_query, get_forward_progress_guarantee,
 //                      get_completion_scheduler/get_completion_domain CPOs,
 //                      get_await_completion_adaptor CPO,
+//                      transform_sender/apply_sender domain dispatch,
 //                      CPO member-function-first dispatch
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
 //                      and ASan+UBSan container configurations.
@@ -83,20 +84,20 @@
 //     sender-returning simple/counting scope join() are implemented.
 //   - on(sender, scheduler, closure) requires the child sender attributes to
 //     expose get_completion_scheduler<set_value_t> in this subset.
-//   - Execution domains are still a focused draft subset: connect applies
-//     receiver-env start-domain and sender-env completion-domain recursive
-//     transform_sender; get_completion_signatures(sender, env) uses the
-//     transformed sender type before reading signatures on non-default-domain
-//     paths.
+//   - Execution domains are still a focused draft subset: public
+//     transform_sender, connect, and get_completion_signatures(sender, env)
+//     share completion-domain-then-start-domain recursive transformation.
+//     default_domain honors sender-tag transformation, and apply_sender uses
+//     explicit-domain-first then sender-tag fallback dispatch. Legacy
+//     two-argument domain transforms remain a source-compatibility extension.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - inplace_stop_callback registration currently allocates an internal
 //     rendezvous control block, so its constructor is not conditionally
 //     noexcept as required by the current working draft.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
-//   - apply_sender is not implemented. The older transform_env spelling is no
-//     longer present in the current working draft; the existing recursive
-//     transform_sender machinery is not yet exposed as its public CPO.
+//   - The older transform_env spelling is not present in the current working
+//     draft and is intentionally not exposed.
 //
 // NOT IMPLEMENTED (Phase 4+):
 //   - standard type-erased sender surface.

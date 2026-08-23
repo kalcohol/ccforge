@@ -113,6 +113,69 @@ concept sender = requires {
 template<class Sender, class... Envs>
 concept sender_in = sender<Sender>;
 
+struct default_domain {
+    template<class Tag, sender Sender, class... Args>
+        requires requires(Sender&& sender, Args&&... args) {
+            Tag{}.apply_sender(
+                std::forward<Sender>(sender),
+                std::forward<Args>(args)...);
+        }
+    static constexpr decltype(auto) apply_sender(
+        Tag,
+        Sender&& sender,
+        Args&&... args) noexcept(noexcept(Tag{}.apply_sender(
+            std::forward<Sender>(sender),
+            std::forward<Args>(args)...))) {
+        return Tag{}.apply_sender(
+            std::forward<Sender>(sender),
+            std::forward<Args>(args)...);
+    }
+};
+
+template<sender Sender, std::queryable Env>
+constexpr auto transform_sender(Sender&& sender, const Env&)
+    noexcept(noexcept(static_cast<Sender>(std::forward<Sender>(sender))))
+        -> Sender {
+    return static_cast<Sender>(std::forward<Sender>(sender));
+}
+
+template<class Domain, class Tag, sender Sender, class... Args>
+    requires (
+        requires(Domain& domain, Sender&& sender, Args&&... args) {
+            domain.apply_sender(
+                Tag{},
+                std::forward<Sender>(sender),
+                std::forward<Args>(args)...);
+        } ||
+        requires(Sender&& sender, Args&&... args) {
+            default_domain{}.apply_sender(
+                Tag{},
+                std::forward<Sender>(sender),
+                std::forward<Args>(args)...);
+        })
+constexpr decltype(auto) apply_sender(
+    Domain domain,
+    Tag,
+    Sender&& sender,
+    Args&&... args) {
+    if constexpr (requires {
+                      domain.apply_sender(
+                          Tag{},
+                          std::forward<Sender>(sender),
+                          std::forward<Args>(args)...);
+                  }) {
+        return domain.apply_sender(
+            Tag{},
+            std::forward<Sender>(sender),
+            std::forward<Args>(args)...);
+    } else {
+        return default_domain{}.apply_sender(
+            Tag{},
+            std::forward<Sender>(sender),
+            std::forward<Args>(args)...);
+    }
+}
+
 template<class Sender, class... Envs>
     requires sender_in<Sender, Envs...>
 using completion_signatures_of_t =

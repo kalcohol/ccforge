@@ -26,8 +26,9 @@
   按 current WD 形状，单一 value completion 的零/一/多值分别产生
   `void` / `T` / `tuple<...>`，多组 value completion alternatives 不满足
   awaitable 约束）；mixin 会保留普通 awaitable，并按 current WD
-  提供 continuation / stopped 传播接口。`as_awaitable` 尚不识别本身已是
-  awaitable 的类型（不做 `operator co_await` / member hook 直通）
+  提供 continuation / stopped 传播接口。`as_awaitable` 按 direct/transformed
+  `as_awaitable` member、普通 awaiter（含 member/free `operator co_await`）、
+  sender bridge 和 identity fallback 的顺序分派
 - 基础设施：`completion_signatures_of_t`、`value_types_of_t`、`error_types_of_t`、
   `sends_stopped`、`enable_sender`、`std::forwarding_query`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee`、
@@ -35,7 +36,8 @@
   CPO 分发基础设施。各 adaptor 内部有私有 completion-signature transform helper，
   但当前不暴露 public `transform_completion_signatures` 名字
 - 域调度：`default_domain`、`get_domain` CPO、receiver-env start-domain 选取、
-  sender-env completion-domain 选取、`connect_t` recursive `transform_sender`
+  sender-env completion-domain 选取、public recursive `transform_sender`、
+  domain-first/tag-fallback `apply_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
 ## 当前限制
@@ -60,7 +62,12 @@
   handoff 时的源码形态一致。const non-copyable lvalue 仍不可连接。
 - Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start
   domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段
-  recursive `transform_sender`；scheduler-derived start domain 仅在 scheduler 显式定制
+  recursive `transform_sender`；public `transform_sender(sender, env)`、`connect_t` 与
+  completion-signature computation 共用这套顺序。`default_domain` 优先调用 sender tag
+  的 tagged transform，`apply_sender` 优先调用显式 domain customization，再回退到
+  algorithm tag customization。旧的两参数 domain transform 仍作为 Forge source-
+  compatibility extension 保留，不代表 current-WD spelling。Scheduler-derived start
+  domain 仅在 scheduler 显式定制
   `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。
   `get_domain` 与双参数 `get_completion_domain` 查询均采用 member-query-first、
   tag-invoke fallback；sender attributes 只跨 adaptor 边界转发声明为
@@ -94,8 +101,9 @@
   `set_error(std::exception_ptr)` 通道。`starts_on` 的 source child environment 以
   目标 scheduler 覆盖 `get_scheduler`、`get_start_scheduler` 和 `get_domain`，其余
   forwarding query 继续来自 outer receiver environment。
-- `schedule_from`、`apply_sender` 和 `transform_env` 尚未实现。它们需要与 domain
-  customization 一起设计，不能用只转发到 `continues_on` 的同名空壳代替。
+- `schedule_from` 是 current-WD 的单参数 departure marker sender，`continues_on`
+  通过它让 source completion domain 定制离开当前 execution resource 的方式。
+  `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
   `set_error(std::exception_ptr)` 完成。它没有实现完整

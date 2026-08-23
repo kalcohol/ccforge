@@ -1,0 +1,25 @@
+#pragma once
+
+namespace std::execution {
+
+struct sender_tag {};
+
+struct sampled_sender {
+    using sender_concept = sender_tag;
+};
+
+inline sampled_sender just(int) { return {}; }
+
+template<class Domain, class Tag, class Sender, class... Args>
+decltype(auto) apply_sender(
+    Domain domain,
+    Tag,
+    Sender&& sender,
+    Args&&... args) {
+    return domain.apply_sender(
+        Tag{},
+        static_cast<Sender&&>(sender),
+        static_cast<Args&&>(args)...);
+}
+
+} // namespace std::execution

@@ -42,6 +42,8 @@ if(NOT MSVC)
         "independent_roots|start"
         "independent_roots|get_env"
         "independent_roots|await_adaptor"
+        "independent_roots|transform_sender"
+        "independent_roots|apply_sender"
         "independent_roots|sender_marker"
         "independent_roots|scheduler_marker"
         "independent_roots|receiver_marker"

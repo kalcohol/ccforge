@@ -11,7 +11,7 @@ Owner 已接受为了贴近当前 working draft 而做 breaking API change，因
 
 ## 当前实现状态
 
-本快照在 2026-07-31 对照 live working draft `[exec]`
+本快照在 2026-08-23 对照 2026-08-22 live working draft `[exec]`
 <https://eel.is/c++draft/exec> 审计。下面的分类以 working draft 为准；论文和参考实现只作为
 解释上下文。
 
@@ -30,7 +30,8 @@ Execution backport 当前包含：
 - coroutine bridge：`as_awaitable`、`with_awaitable_senders`；
 - scopes：`simple_counting_scope`、stop-aware `counting_scope`；
 - domain dispatch：receiver-env start-domain selection，以及 `connect` 和
-  completion-signature computation 中的 sender-env completion-domain 递归 `transform_sender`。
+  completion-signature computation 中的 sender-env completion-domain 递归
+  `transform_sender`，并公开 current-shaped `transform_sender` / `apply_sender` entry points。
 
 因此，不应再把若干早期审计记录当成 open work：identity-only domain dispatch、
 single-shape `sync_wait`、non-stop-aware `counting_scope`、以及不完整的 `when_all`
@@ -70,6 +71,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；多 value-alternative sender 退回原表达式，因而不会经该 bridge 变成 awaitable。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 |
 | `schedule_from` | Implemented current-WD-shaped subset | 实现 current-WD 单参数 departure marker sender；default domain 逐字转发 child attributes、completion signatures 与 operation，product access 暴露 `schedule_from_t` tag 供 completion domain 识别。`continues_on` 通过该 marker 连接 source sender，source completion domain 可定制离开其 execution resource 的方式。 |
+| `transform_sender`, `apply_sender` | Implemented current-WD-shaped subset | Public `transform_sender(sender, env)` 先递归应用 sender completion domain，再递归应用 receiver start domain；`default_domain` 支持 sender-tag transform。`apply_sender(domain, tag, sender, args...)` 采用 explicit-domain-first、algorithm-tag fallback，保持 forwarding 与条件 `noexcept`。旧两参数 domain transform 仅作为 Forge source-compatibility extension。 |
 | `affine` | Implemented subset | `affine.hpp`；单参数 CPO / bare-pipe 形式从 receiver env 查询 `get_start_scheduler`，通过 unstoppable schedule sender 复用 `continues_on` transfer subset；因此仍受单一 value completion shape 限制。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
 | `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
@@ -94,7 +96,6 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |
 | `inlinable_receiver` | Not implemented | 当前 operation-state ownership 不对外承诺该优化查询；不能由现有 inline completion 行为推导。 |
 | `sender_adaptor_closure` | Out of scope as public type | Adaptors 使用内部 closure machinery 并提供 pipe syntax，但不暴露 current-draft public closure base/type。 |
-| `apply_sender`, public `transform_sender` | Not implemented | 当前 domain subset 有内部 recursive `transform_sender` machinery，但尚未暴露这两个 current-draft customization surfaces；只有形成配套 domain tests 后才实现。旧 `transform_env` spelling 已不在 live draft surface。 |
 
 ## 兼容性分类
 
@@ -111,7 +112,7 @@ risk triage 的事实来源。
 | `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` 和 `counting_scope::join()` 返回 async senders；空 scope 在 `start()` 调用线程内联完成，非空 scope 的 count drain 在 mutex 外启动 receiver env 的 start-scheduler operation，并在完成前建立 terminal `joined` state。 | Destructor 只诊断 outstanding count，未强制 current-WD 对 naturally-drained-but-unjoined state 的 terminate；保持 zero-count inline / real-drain 后拒绝 association、start-scheduler handoff、last-decrement vs join-register races 压力测试。 |
 | Scope-token `wrap` / `associate` / member `spawn` | 已收敛 surface，语义实现当前目标 | Token-member `associate` / `spawn` 已移除。`simple_counting_scope::token::wrap` 是 identity forwarding；`counting_scope::token::wrap` 给 child env 暴露 fused stop token，scope stop 与下游 receiver/env stop 任一请求都会让 child 观察到 stop。Top-level `associate` / `spawn` / `spawn_future` 拥有 association。 | 继续测试 allocator/env、fused stop-token lifetime 和 async join details；不要在 `std::execution` 恢复 token-member helpers。 |
 | Throwing receiver completion callbacks | 刻意 unsupported boundary | `set_value`、`set_error`、`set_stopped` 必须 `noexcept`；negative compile probe 强制该边界。 | 除非有聚焦任务重写 completion dispatch，否则保持拒绝。 |
-| Execution domain dispatch | Tested current-WD subset | `connect` 应用 sender completion-domain recursion，再应用 receiver start-domain recursion；非 default-domain 的 `get_completion_signatures(sender, env)` 使用同一 transformed sender type。 | 保持 recursive transforms 和 transformed-signature computation 覆盖，包括 rawless source senders。 |
+| Execution domain dispatch | Tested current-WD subset | Public `transform_sender`、`connect` 和 completion-signature computation 应用 sender completion-domain recursion，再应用 receiver start-domain recursion；`apply_sender` 采用 explicit-domain-first、sender-tag fallback；非 default-domain 的 `get_completion_signatures(sender, env)` 使用同一 transformed sender type。 | 保持 recursive transforms、customization order、forwarding/noexcept 和 transformed-signature computation 覆盖，包括 rawless source senders。 |
 | `forge::any_scheduler` | Forge local utility | 建模 Forge local scheduler concept，使用 shared-state identity equality；schedule env 同时提供 current member-query 与 Forge tag-invoke fallback 的 completion-scheduler roundtrip。 | 保持在 `forge::`，不声称标准 type-erasure API。 |
 | `forge::wait_result` | Forge local utility | 同步保留 value、stopped 和 closed-set typed error，不通过 throw 表达。 | typed error 需要跨同步边界时使用；它不是 `std::this_thread::sync_wait`。 |
 | `forge::erased_sender` | Forge local utility | Connectable erased sender，支持保留引用类别的 multiple value shapes、closed-set typed errors 和 bounded env/stop-token forwarding。 | 保持在 `forge::`；reference payload 只在同步 completion stack 内借用；不要当作标准 execution surface。 |

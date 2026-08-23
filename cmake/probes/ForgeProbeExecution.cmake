@@ -26,6 +26,15 @@ check_cxx_source_compiles("
         void set_stopped() && noexcept {}
     };
 
+    struct probe_apply_tag {};
+
+    struct probe_apply_domain {
+        template<class Sender>
+        int apply_sender(probe_apply_tag, Sender&&, int offset) const noexcept {
+            return offset;
+        }
+    };
+
     int main(int argc, char**) {
         std::inplace_stop_source stop_source;
         auto stop_token = stop_source.get_token();
@@ -71,6 +80,13 @@ check_cxx_source_compiles("
         (void)await_adaptor_probe;
 
         auto initial = std::execution::just(1);
+        auto&& transformed = std::execution::transform_sender(
+            initial, std::execution::env<>{});
+        auto applied = std::execution::apply_sender(
+            probe_apply_domain{}, probe_apply_tag{}, transformed, 3);
+        if (applied != 3) {
+            return 2;
+        }
         static_assert(std::same_as<
             std::execution::completion_signatures_of_t<
                 decltype(initial), std::execution::env<>>,
@@ -183,6 +199,29 @@ check_cxx_source_compiles("
 " FORGE_SENDERS_PARTIAL_AWAIT_ADAPTOR)
 check_cxx_source_compiles("
     #include <execution>
+    int main() {
+        auto sender = std::execution::just(1);
+        auto&& transformed = std::execution::transform_sender(
+            sender, std::execution::env<>{});
+        (void)transformed;
+        return 0;
+    }
+" FORGE_SENDERS_PARTIAL_TRANSFORM_SENDER)
+check_cxx_source_compiles("
+    #include <execution>
+    struct probe_tag {};
+    struct probe_domain {
+        template<class Sender>
+        int apply_sender(probe_tag, Sender&&) const noexcept { return 0; }
+    };
+    int main() {
+        auto sender = std::execution::just(1);
+        return std::execution::apply_sender(
+            probe_domain{}, probe_tag{}, sender);
+    }
+" FORGE_SENDERS_PARTIAL_APPLY_SENDER)
+check_cxx_source_compiles("
+    #include <execution>
     using probe = std::execution::sender_tag;
     int main() {
         probe* p = nullptr;
@@ -227,6 +266,8 @@ if(FORGE_SENDERS_PARTIAL_MACRO
         OR FORGE_SENDERS_PARTIAL_START
         OR FORGE_SENDERS_PARTIAL_GET_ENV
         OR FORGE_SENDERS_PARTIAL_AWAIT_ADAPTOR
+        OR FORGE_SENDERS_PARTIAL_TRANSFORM_SENDER
+        OR FORGE_SENDERS_PARTIAL_APPLY_SENDER
         OR FORGE_SENDERS_PARTIAL_SENDER_MARKER
         OR FORGE_SENDERS_PARTIAL_SCHEDULER_MARKER
         OR FORGE_SENDERS_PARTIAL_RECEIVER_MARKER

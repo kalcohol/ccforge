@@ -1,0 +1,24 @@
+#pragma once
+
+namespace std::execution {
+
+struct sender_tag {};
+struct empty_env {};
+
+struct sampled_sender {
+    using sender_concept = sender_tag;
+
+    empty_env get_env() const noexcept { return {}; }
+};
+
+inline sampled_sender just(int) { return {}; }
+
+template<class Sender, class Env>
+decltype(auto) transform_sender(Sender&& sender, const Env&) {
+    return static_cast<Sender&&>(sender);
+}
+
+template<class... Envs>
+struct env {};
+
+} // namespace std::execution

@@ -165,7 +165,7 @@ concept __single_sender = requires {
 template<class S, class Promise>
 auto __transform_for_await(S&& sndr, Promise& promise) {
     auto env = __get_promise_env(promise);
-    return __forge_domain::__transform_sender_for_connect(
+    return std::execution::transform_sender(
         static_cast<S&&>(sndr), env);
 }
 

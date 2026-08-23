@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include <cstddef>
 #include <concepts>
 #include <type_traits>
 #include <utility>
@@ -514,6 +515,72 @@ struct exact_receiver_sender : direct_value_sender {
     }
 };
 
+struct public_transform_tag {
+    static inline bool transformed = false;
+
+    template<class Sender, class Env>
+    auto transform_sender(
+        std::execution::set_value_t,
+        Sender&&,
+        const Env&) const noexcept -> transformed_sender {
+        transformed = true;
+        return transformed_sender{121};
+    }
+};
+
+struct sender_tag_transform_source : direct_value_sender {
+    template<std::size_t I>
+    auto get() const noexcept -> public_transform_tag {
+        static_assert(I == 0);
+        return {};
+    }
+};
+
+struct apply_probe_tag {
+    static inline int tag_calls = 0;
+
+    template<class Sender>
+    int apply_sender(Sender&& sndr, int offset) const noexcept {
+        ++tag_calls;
+        return sndr.value + offset;
+    }
+};
+
+struct apply_probe_domain {
+    static inline int domain_calls = 0;
+
+    template<class Sender>
+    long apply_sender(apply_probe_tag, Sender&& sndr, int offset) const noexcept {
+        ++domain_calls;
+        return static_cast<long>(sndr.value + offset + 1000);
+    }
+};
+
+struct unavailable_apply_tag {};
+
+struct throwing_apply_tag {
+    template<class Sender>
+    int apply_sender(Sender&&, int) const noexcept(false) {
+        return 0;
+    }
+};
+
+struct apply_category_tag {
+    int apply_sender(direct_value_sender&, int) const noexcept {
+        return 1;
+    }
+
+    int apply_sender(direct_value_sender&&, int) const noexcept {
+        return 2;
+    }
+};
+
+template<class Domain, class Tag, class Sender>
+concept can_apply_sender = requires(Domain domain, Tag tag, Sender&& sndr) {
+    std::execution::apply_sender(
+        domain, tag, static_cast<Sender&&>(sndr), 3);
+};
+
 } // namespace
 
 // Domain dispatch tests
@@ -530,8 +597,104 @@ TEST(DefaultDomainTest, TransformSenderIsIdentity) {
     std::execution::empty_env env{};
     std::execution::default_domain domain{};
     auto& result = domain.transform_sender(sndr, env);
+    static_assert(std::same_as<
+        decltype(std::execution::transform_sender(sndr, env)),
+        decltype(sndr)&>);
+    static_assert(noexcept(std::execution::transform_sender(sndr, env)));
     (void)result;
     SUCCEED();
+}
+
+TEST(DefaultDomainTest, PublicTransformUsesSenderTagCustomization) {
+    public_transform_tag::transformed = false;
+
+    auto transformed = std::execution::transform_sender(
+        sender_tag_transform_source{}, std::execution::empty_env{});
+
+    static_assert(std::same_as<decltype(transformed), transformed_sender>);
+    EXPECT_TRUE(public_transform_tag::transformed);
+    EXPECT_EQ(transformed.value, 121);
+}
+
+TEST(DefaultDomainTest, PublicTransformRunsCompletionThenStartRecursion) {
+    first_completion_domain::transformed = false;
+    second_completion_domain::transformed = false;
+    recursive_start_domain::first = false;
+    recursive_start_domain::second = false;
+
+    auto completion_transformed = std::execution::transform_sender(
+        completion_domain_source{}, std::execution::empty_env{});
+    auto start_transformed = std::execution::transform_sender(
+        start_seed_sender{}, recursive_start_domain_env{});
+
+    static_assert(std::same_as<
+        decltype(completion_transformed), transformed_sender>);
+    static_assert(std::same_as<
+        decltype(start_transformed), transformed_sender>);
+    EXPECT_TRUE(first_completion_domain::transformed);
+    EXPECT_TRUE(second_completion_domain::transformed);
+    EXPECT_EQ(completion_transformed.value, 88);
+    EXPECT_TRUE(recursive_start_domain::first);
+    EXPECT_TRUE(recursive_start_domain::second);
+    EXPECT_EQ(start_transformed.value, 99);
+}
+
+TEST(DefaultDomainTest, PublicTransformCanRescueRawSourceSender) {
+    auto transformed = std::execution::transform_sender(
+        rawless_signature_source_sender{}, rawless_signature_domain_env{});
+
+    static_assert(std::same_as<
+        decltype(transformed), rawless_signature_transformed_sender>);
+}
+
+TEST(DefaultDomainTest, ApplySenderPrefersExplicitDomain) {
+    apply_probe_tag::tag_calls = 0;
+    apply_probe_domain::domain_calls = 0;
+
+    auto result = std::execution::apply_sender(
+        apply_probe_domain{}, apply_probe_tag{}, direct_value_sender{7}, 5);
+
+    static_assert(std::same_as<decltype(result), long>);
+    static_assert(noexcept(std::execution::apply_sender(
+        apply_probe_domain{}, apply_probe_tag{}, direct_value_sender{}, 1)));
+    EXPECT_EQ(result, 1012);
+    EXPECT_EQ(apply_probe_domain::domain_calls, 1);
+    EXPECT_EQ(apply_probe_tag::tag_calls, 0);
+}
+
+TEST(DefaultDomainTest, ApplySenderFallsBackToTagCustomization) {
+    apply_probe_tag::tag_calls = 0;
+
+    auto result = std::execution::apply_sender(
+        std::execution::default_domain{},
+        apply_probe_tag{},
+        direct_value_sender{9},
+        4);
+
+    static_assert(std::same_as<decltype(result), int>);
+    static_assert(!noexcept(std::execution::apply_sender(
+        std::execution::default_domain{},
+        throwing_apply_tag{},
+        direct_value_sender{},
+        1)));
+    static_assert(!can_apply_sender<
+        std::execution::default_domain,
+        unavailable_apply_tag,
+        direct_value_sender>);
+    EXPECT_EQ(result, 13);
+    EXPECT_EQ(apply_probe_tag::tag_calls, 1);
+}
+
+TEST(DefaultDomainTest, ApplySenderPreservesSenderValueCategory) {
+    direct_value_sender sndr{};
+
+    EXPECT_EQ(std::execution::apply_sender(
+        std::execution::default_domain{}, apply_category_tag{}, sndr, 0), 1);
+    EXPECT_EQ(std::execution::apply_sender(
+        std::execution::default_domain{},
+        apply_category_tag{},
+        direct_value_sender{},
+        0), 2);
 }
 
 TEST(DefaultDomainTest, DefaultDomainFastPathKeepsReceiverType) {
