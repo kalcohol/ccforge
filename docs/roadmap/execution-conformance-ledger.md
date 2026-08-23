@@ -138,7 +138,10 @@ risk triage 的事实来源。
   以及 `affine` 的 single-value transfer subset 都是已接受
   residuals。只有出现具体 user-visible problem 或 native-handoff blocker 时再回看。
 - 常规验证矩阵中尚无稳定主流 native `std::execution` 实现，因此 execution 自身的 native
-  handoff 仍是未来 integration risk。
+  handoff 仍是未来 integration risk。Synthetic COMPLETE fixture 会检查当前 probe surface；
+  `as_awaitable`、`schedule_from`、`transform_sender` 和 `apply_sender` 等独立 PARTIAL roots 会
+  分别验证任一已出现的 native surface 都让 Forge 整体 stand aside。这些 fixture 不能替代
+  未来真实 native implementation lane。
 
 ## stdexec 可行性状态
 

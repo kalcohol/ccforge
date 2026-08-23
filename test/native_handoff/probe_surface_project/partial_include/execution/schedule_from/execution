@@ -1,0 +1,8 @@
+#pragma once
+
+namespace std::execution {
+
+struct schedule_from_t {};
+inline constexpr schedule_from_t schedule_from{};
+
+} // namespace std::execution

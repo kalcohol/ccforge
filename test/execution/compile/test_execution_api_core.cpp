@@ -8,6 +8,10 @@ static_assert(std::is_empty_v<std::execution::get_start_scheduler_t>);
 static_assert(std::is_empty_v<std::execution::get_delegation_scheduler_t>);
 static_assert(std::is_empty_v<std::execution::get_forward_progress_guarantee_t>);
 static_assert(std::is_empty_v<std::execution::get_completion_scheduler_t<std::execution::set_value_t>>);
+static_assert(std::is_empty_v<std::execution::as_awaitable_t>);
+static_assert(std::is_empty_v<std::execution::schedule_from_t>);
+static_assert(std::is_empty_v<std::execution::transform_sender_t>);
+static_assert(std::is_empty_v<std::execution::apply_sender_t>);
 static_assert(std::same_as<decltype(std::execution::forward_progress_guarantee::concurrent),
                            std::execution::forward_progress_guarantee>);
 

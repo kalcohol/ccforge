@@ -233,6 +233,9 @@ struct get_await_completion_adaptor_t {};
 inline constexpr get_await_completion_adaptor_t
     get_await_completion_adaptor{};
 
+struct as_awaitable_t {};
+inline constexpr as_awaitable_t as_awaitable{};
+
 enum class forward_progress_guarantee {
     concurrent,
     parallel,
@@ -321,6 +324,13 @@ struct continues_on_t {
     }
 };
 
+struct schedule_from_t {
+    template<sender Sender>
+    [[nodiscard]] remove_cvref_t<Sender> operator()(Sender&& sender) const {
+        return std::forward<Sender>(sender);
+    }
+};
+
 struct when_all_t {
     template<sender First, sender Second>
     [[nodiscard]] synthetic_sender<2> operator()(First&&, Second&&) const {
@@ -332,6 +342,7 @@ inline constexpr just_t just{};
 inline constexpr starts_on_t starts_on{};
 inline constexpr then_t then{};
 inline constexpr continues_on_t continues_on{};
+inline constexpr schedule_from_t schedule_from{};
 inline constexpr when_all_t when_all{};
 
 } // namespace std::execution

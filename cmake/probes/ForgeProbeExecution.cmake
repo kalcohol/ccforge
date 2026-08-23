@@ -78,8 +78,14 @@ check_cxx_source_compiles("
         const await_adaptor_cpo* await_adaptor_probe =
             &std::execution::get_await_completion_adaptor;
         (void)await_adaptor_probe;
+        using as_awaitable_cpo = std::execution::as_awaitable_t;
+        const as_awaitable_cpo* as_awaitable_probe =
+            &std::execution::as_awaitable;
+        (void)as_awaitable_probe;
 
         auto initial = std::execution::just(1);
+        auto departure = std::execution::schedule_from(initial);
+        static_assert(std::execution::sender<decltype(departure)>);
         auto&& transformed = std::execution::transform_sender(
             initial, std::execution::env<>{});
         auto applied = std::execution::apply_sender(
@@ -199,6 +205,24 @@ check_cxx_source_compiles("
 " FORGE_SENDERS_PARTIAL_AWAIT_ADAPTOR)
 check_cxx_source_compiles("
     #include <execution>
+    using probe = std::execution::as_awaitable_t;
+    int main() {
+        const probe* p = &std::execution::as_awaitable;
+        (void)p;
+        return 0;
+    }
+" FORGE_SENDERS_PARTIAL_AS_AWAITABLE)
+check_cxx_source_compiles("
+    #include <execution>
+    using probe = std::execution::schedule_from_t;
+    int main() {
+        const probe* p = &std::execution::schedule_from;
+        (void)p;
+        return 0;
+    }
+" FORGE_SENDERS_PARTIAL_SCHEDULE_FROM)
+check_cxx_source_compiles("
+    #include <execution>
     int main() {
         auto sender = std::execution::just(1);
         auto&& transformed = std::execution::transform_sender(
@@ -266,6 +290,8 @@ if(FORGE_SENDERS_PARTIAL_MACRO
         OR FORGE_SENDERS_PARTIAL_START
         OR FORGE_SENDERS_PARTIAL_GET_ENV
         OR FORGE_SENDERS_PARTIAL_AWAIT_ADAPTOR
+        OR FORGE_SENDERS_PARTIAL_AS_AWAITABLE
+        OR FORGE_SENDERS_PARTIAL_SCHEDULE_FROM
         OR FORGE_SENDERS_PARTIAL_TRANSFORM_SENDER
         OR FORGE_SENDERS_PARTIAL_APPLY_SENDER
         OR FORGE_SENDERS_PARTIAL_SENDER_MARKER

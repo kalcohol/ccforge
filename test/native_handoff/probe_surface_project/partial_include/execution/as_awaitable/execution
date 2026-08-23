@@ -1,0 +1,8 @@
+#pragma once
+
+namespace std::execution {
+
+struct as_awaitable_t {};
+inline constexpr as_awaitable_t as_awaitable{};
+
+} // namespace std::execution
