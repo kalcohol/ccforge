@@ -572,6 +572,21 @@ TEST(LinalgLevel1Givens, SetupAndApplyRotation) {
     EXPECT_NEAR(y[1], 1.2, 1e-12);
 }
 
+TEST(LinalgLevel1Givens, DegenerateRealRotationsKeepNormNonnegative) {
+    const auto check = [](double a, double b, double expected_r) {
+        const auto rotation = std::linalg::setup_givens_rotation(a, b);
+        EXPECT_DOUBLE_EQ(rotation.r, expected_r);
+        EXPECT_DOUBLE_EQ(rotation.c * a + rotation.s * b, rotation.r);
+        EXPECT_DOUBLE_EQ(-rotation.s * a + rotation.c * b, 0.0);
+    };
+
+    check(3.0, 0.0, 3.0);
+    check(-3.0, 0.0, 3.0);
+    check(0.0, 4.0, 4.0);
+    check(0.0, -4.0, 4.0);
+    check(0.0, 0.0, 0.0);
+}
+
 TEST(LinalgLevel1Givens, ComplexRotationUsesRealCAndConjugateS) {
     using complex = std::complex<double>;
     const auto rotation = std::linalg::setup_givens_rotation(complex{1.0, 0.0}, complex{0.0, 1.0});

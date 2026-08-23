@@ -116,6 +116,7 @@ template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
               __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0>)
@@ -156,6 +157,7 @@ template<class Triangle, class DiagonalStorage,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
@@ -195,6 +197,7 @@ template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
               __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0>)
@@ -228,6 +231,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
@@ -265,6 +269,7 @@ template<class Triangle,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               ZExtents::rank() == 1 &&
@@ -308,6 +313,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
@@ -346,6 +352,7 @@ template<class Triangle,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
     requires (__detail::__square_static_extents_v<AExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               ZExtents::rank() == 1 &&
@@ -484,7 +491,8 @@ template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
+    requires (__detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -513,7 +521,9 @@ template<class ScalingFactor,
          class Triangle>
     requires (__detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, AExtents>)
+              __detail::__compatible_static_extents_v<EExtents, AExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -538,7 +548,8 @@ void symmetric_matrix_rank_1_update(
 template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
+    requires (__detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha, Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -552,7 +563,8 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
+    requires (__detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -581,7 +593,9 @@ template<class XExtents, class XLayout, class XAccessor,
          class Triangle>
     requires (__detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, AExtents>)
+              __detail::__compatible_static_extents_v<EExtents, AExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -607,7 +621,8 @@ template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
+    requires (__detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_2_update(
     ScalingFactor alpha, Triangle,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -633,7 +648,8 @@ template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
+    requires (__detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -667,7 +683,9 @@ template<class ScalingFactor,
          class Triangle>
     requires (__detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, AExtents>)
+              __detail::__compatible_static_extents_v<EExtents, AExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_1_update(
     ScalingFactor alpha,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -697,7 +715,8 @@ void hermitian_matrix_rank_1_update(
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents>
+    requires (__detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_1_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -711,7 +730,8 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
+    requires (__detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -746,7 +766,9 @@ template<class XExtents, class XLayout, class XAccessor,
          class Triangle>
     requires (__detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, AExtents>)
+              __detail::__compatible_static_extents_v<EExtents, AExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_2_update(
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
     std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
@@ -778,7 +800,8 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents>
+    requires (__detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_2_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,

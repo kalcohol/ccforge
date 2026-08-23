@@ -27,6 +27,39 @@
 
 namespace std::linalg {
 
+namespace __detail {
+
+template<class T>
+struct __is_extents_specialization : std::false_type {};
+
+template<class IndexType, std::size_t... Extents>
+struct __is_extents_specialization<std::extents<IndexType, Extents...>>
+    : std::true_type {};
+
+template<class T>
+inline constexpr bool __is_extents_specialization_v =
+    __is_extents_specialization<T>::value;
+
+template<class Extents>
+consteval bool __packed_static_product_representable() {
+    if constexpr (!__is_extents_specialization_v<Extents> ||
+                  Extents::rank() != 2) {
+        return false;
+    } else if constexpr (Extents::rank_dynamic() != 0) {
+        return true;
+    } else {
+        using index_type = typename Extents::index_type;
+        constexpr auto n = static_cast<std::uintmax_t>(
+            Extents::static_extent(0));
+        constexpr auto maximum = static_cast<std::uintmax_t>(
+            std::numeric_limits<index_type>::max());
+        return n != std::numeric_limits<std::uintmax_t>::max() &&
+            n <= maximum / (n + 1);
+    }
+}
+
+} // namespace __detail
+
 // ──────────────────────────────────────────────────────────────────────────
 // Tag types — [linalg.tags]
 // ──────────────────────────────────────────────────────────────────────────
@@ -56,6 +89,16 @@ inline constexpr explicit_diagonal_t      explicit_diagonal{};
 
 template<class Triangle, class StorageOrder>
 struct layout_blas_packed {
+    using triangle_type = Triangle;
+    using storage_order_type = StorageOrder;
+
+    static_assert(
+        std::is_same_v<Triangle, upper_triangle_t> ||
+        std::is_same_v<Triangle, lower_triangle_t>);
+    static_assert(
+        std::is_same_v<StorageOrder, column_major_t> ||
+        std::is_same_v<StorageOrder, row_major_t>);
+
     template<class Extents>
     struct mapping {
         using extents_type = Extents;
@@ -64,8 +107,11 @@ struct layout_blas_packed {
         using rank_type    = typename Extents::rank_type;
         using layout_type  = layout_blas_packed;
 
-        static_assert(Extents::rank() == 2,
-            "layout_blas_packed requires 2D extents");
+        static_assert(__detail::__is_extents_specialization_v<Extents>);
+        static_assert(Extents::rank() == 2);
+        static_assert(__detail::__square_static_extents_v<Extents>);
+        static_assert(
+            __detail::__packed_static_product_representable<Extents>());
 
         constexpr mapping() noexcept = default;
 
@@ -111,7 +157,7 @@ struct layout_blas_packed {
         }
 
         [[nodiscard]] constexpr bool is_unique()            const noexcept {
-            return extents_.extent(0) <= 1 || extents_.extent(1) <= 1;
+            return extents_.extent(0) < 2;
         }
         [[nodiscard]] static constexpr bool is_always_unique()            noexcept {
             constexpr auto n0 = Extents::static_extent(0);
@@ -141,6 +187,22 @@ struct layout_blas_packed {
         [[no_unique_address]] Extents extents_{};
     };
 };
+
+namespace __detail {
+
+template<class Layout, class Triangle>
+struct __packed_triangle_matches : std::true_type {};
+
+template<class PackedTriangle, class StorageOrder, class Triangle>
+struct __packed_triangle_matches<
+    layout_blas_packed<PackedTriangle, StorageOrder>, Triangle>
+    : std::is_same<PackedTriangle, Triangle> {};
+
+template<class Layout, class Triangle>
+inline constexpr bool __packed_triangle_matches_v =
+    __packed_triangle_matches<Layout, Triangle>::value;
+
+} // namespace __detail
 
 } // namespace std::linalg
 

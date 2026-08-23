@@ -412,8 +412,14 @@ template<class T>
 setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) {
     using std::abs;
     using std::sqrt;
-    if (b == T{}) return {T{1}, T{0}, a};
-    if (a == T{}) return {T{0}, T{1}, b};
+    if (b == T{}) {
+        const T r = abs(a);
+        return {a < T{} ? T{-1} : T{1}, T{0}, r};
+    }
+    if (a == T{}) {
+        const T r = abs(b);
+        return {T{0}, b < T{} ? T{-1} : T{1}, r};
+    }
     T r = (abs(a) > abs(b))
         ? abs(a) * sqrt(T{1} + (b/a)*(b/a))
         : abs(b) * sqrt(T{1} + (a/b)*(a/b));

@@ -82,7 +82,8 @@ void matrix_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__square_matrix_left_operand_static_extents_v<AExtents, CExtents>
+    requires (__detail::__square_matrix_left_operand_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_left_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle, DiagonalStorage,
@@ -133,7 +134,8 @@ void triangular_matrix_left_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__square_matrix_right_operand_static_extents_v<AExtents, CExtents>
+    requires (__detail::__square_matrix_right_operand_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_right_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle, DiagonalStorage,
@@ -184,7 +186,8 @@ void triangular_matrix_right_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor>
-    requires __detail::__square_matrix_left_operand_static_extents_v<AExtents, BExtents>
+    requires (__detail::__square_matrix_left_operand_static_extents_v<AExtents, BExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_matrix_left_solve(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle t, DiagonalStorage d,
@@ -217,7 +220,8 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents>
+    requires (__detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -250,7 +254,8 @@ template<class ScalingFactor,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor,
          class Triangle>
-    requires __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents>
+    requires (__detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_k_update(
     ScalingFactor alpha,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -287,7 +292,9 @@ template<class ScalingFactor,
          class Triangle>
     requires (__detail::__matrix_rank_k_static_extents_v<AExtents, EExtents> &&
               __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, CExtents>)
+              __detail::__compatible_static_extents_v<EExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_k_update(
     ScalingFactor alpha,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -320,7 +327,8 @@ void symmetric_matrix_rank_k_update(
 template<class Triangle, class ScalingFactor,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents>
+    requires (__detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_k_update(
     ScalingFactor alpha, Triangle t,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -334,7 +342,8 @@ template<class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
          class CExtents, class CLayout, class CAccessor,
          class Triangle>
-    requires __detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents>
+    requires (__detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_2k_update(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
@@ -371,7 +380,9 @@ template<class AExtents, class ALayout, class AAccessor,
          class Triangle>
     requires (__detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, EExtents> &&
               __detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, CExtents>)
+              __detail::__compatible_static_extents_v<EExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_2k_update(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
@@ -405,7 +416,8 @@ template<class Triangle, class ScalingFactor,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents>
+    requires (__detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void symmetric_matrix_rank_2k_update(
     ScalingFactor alpha, Triangle,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -439,7 +451,8 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents>
+    requires (__detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
     Triangle,
@@ -471,7 +484,8 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents>
+    requires (__detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_product(
     Triangle t,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -486,7 +500,8 @@ template<class ScalingFactor,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor,
          class Triangle>
-    requires __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents>
+    requires (__detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void hermitian_matrix_rank_k_update(
     ScalingFactor alpha,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -527,7 +542,9 @@ template<class ScalingFactor,
          class Triangle>
     requires (__detail::__matrix_rank_k_static_extents_v<AExtents, EExtents> &&
               __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
-              __detail::__compatible_static_extents_v<EExtents, CExtents>)
+              __detail::__compatible_static_extents_v<EExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void hermitian_matrix_rank_k_update(
     ScalingFactor alpha,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -564,7 +581,8 @@ void hermitian_matrix_rank_k_update(
 template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents>
+    requires (__detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
+              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
 void hermitian_matrix_rank_k_update(
     Triangle t,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
