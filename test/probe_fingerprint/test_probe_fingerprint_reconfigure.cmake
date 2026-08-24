@@ -98,6 +98,20 @@ if("${_forge_log}" MATCHES "Performing Test FORGE_B03_PROBE")
     message(FATAL_ERROR "Stable successful probe was rerun")
 endif()
 
+# Modular probe sources supplied separately from the callsite must invalidate
+# a cached success when their contents change.
+file(APPEND "${_forge_source_dir}/probe-fragment.cmake"
+    "\n# supplemental probe revision\n")
+_forge_configure_fixture(_forge_log)
+_forge_require_probe_ran("supplemental probe mutation" "${_forge_log}")
+_forge_read_fixture_result(_forge_result _forge_fingerprint_fragment)
+if(NOT _forge_result STREQUAL "TRUE")
+    message(FATAL_ERROR "Supplemental probe mutation changed a valid result")
+endif()
+if(_forge_fingerprint_b STREQUAL _forge_fingerprint_fragment)
+    message(FATAL_ERROR "Supplemental probe content did not change the fingerprint")
+endif()
+
 # Direct headers reached only through a stable compiler -I or /I flag still
 # participate by content, not just by the unchanged flag spelling.
 file(APPEND
@@ -109,7 +123,7 @@ _forge_read_fixture_result(_forge_result _forge_fingerprint_c)
 if(NOT _forge_result STREQUAL "TRUE")
     message(FATAL_ERROR "Flag include mutation changed a valid probe result")
 endif()
-if(_forge_fingerprint_b STREQUAL _forge_fingerprint_c)
+if(_forge_fingerprint_fragment STREQUAL _forge_fingerprint_c)
     message(FATAL_ERROR "Flag include content did not change the fingerprint")
 endif()
 

@@ -29,7 +29,15 @@ else()
     set(_forge_std 23)
 endif()
 
-_forge_compute_probe_fingerprint(_forge_probe_fingerprint "${_forge_std}")
+set(_forge_modular_probe_sources
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSimd.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeExecution.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeConstantWrapper.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeMdspanPadded.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSubmdspan.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeLinalg.cmake")
+_forge_compute_probe_fingerprint(
+    _forge_probe_fingerprint "${_forge_std}" ${_forge_modular_probe_sources})
 _forge_refresh_probe_cache(
     FORGE_BACKPORT_PROBE_FINGERPRINT "${_forge_probe_fingerprint}"
     HAS_STD_UNIQUE_RESOURCE

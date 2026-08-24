@@ -1,4 +1,6 @@
-_forge_compute_probe_fingerprint(_forge_fingerprint 23)
+_forge_compute_probe_fingerprint(
+    _forge_fingerprint 23
+    "${CMAKE_CURRENT_LIST_DIR}/probe-fragment.cmake")
 _forge_refresh_probe_cache(
     FORGE_B03_FINGERPRINT "${_forge_fingerprint}" FORGE_B03_PROBE)
 

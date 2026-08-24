@@ -187,10 +187,12 @@ endfunction()
 function(_forge_compute_probe_fingerprint out_var language_standard)
     set(_forge_probe_callsite "${CMAKE_CURRENT_LIST_FILE}")
     set(_forge_fingerprint_module "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
+    get_filename_component(
+        _forge_probe_callsite_dir "${_forge_probe_callsite}" DIRECTORY)
     set(_forge_payload)
 
     _forge_append_probe_fingerprint_field(
-        _forge_payload "${_forge_payload}" "fingerprint-version" "2")
+        _forge_payload "${_forge_payload}" "fingerprint-version" "3")
     _forge_append_probe_fingerprint_field(
         _forge_payload "${_forge_payload}" "language-standard" "${language_standard}")
 
@@ -308,11 +310,26 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
     _forge_append_probe_file_digest(
         _forge_payload "${_forge_payload}" "fingerprint-module"
         "${_forge_fingerprint_module}")
+    set(_forge_probe_source_index 0)
+    foreach(_forge_probe_source IN LISTS ARGN)
+        if(IS_ABSOLUTE "${_forge_probe_source}")
+            set(_forge_probe_source_path "${_forge_probe_source}")
+        else()
+            set(_forge_probe_source_path
+                "${_forge_probe_callsite_dir}/${_forge_probe_source}")
+        endif()
+        _forge_append_probe_file_digest(
+            _forge_payload "${_forge_payload}"
+            "probe-source:${_forge_probe_source_index}"
+            "${_forge_probe_source_path}")
+        math(EXPR _forge_probe_source_index
+            "${_forge_probe_source_index} + 1")
+    endforeach()
     _forge_append_probe_header_digests(
         _forge_payload "${_forge_payload}" "${_forge_probe_callsite}")
 
     string(SHA256 _forge_fingerprint "${_forge_payload}")
-    set(${out_var} "v2:${_forge_fingerprint}" PARENT_SCOPE)
+    set(${out_var} "v3:${_forge_fingerprint}" PARENT_SCOPE)
 endfunction()
 
 # Positive checks remain cached while their full fingerprint is stable. A
