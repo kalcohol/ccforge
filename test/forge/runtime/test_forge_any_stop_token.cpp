@@ -39,6 +39,23 @@ TEST(ForgeAnyStopTokenTest, ErasesAndSharesAnInplaceToken) {
     EXPECT_TRUE(copy.stop_requested());
 }
 
+TEST(ForgeAnyStopTokenTest, EqualityTracksTheLogicalStopState) {
+    std::inplace_stop_source first_source;
+    std::inplace_stop_source second_source;
+    forge::any_stop_token first{first_source.get_token()};
+    forge::any_stop_token same_state{first_source.get_token()};
+    forge::any_stop_token other_state{second_source.get_token()};
+    forge::any_stop_token disengaged;
+
+    EXPECT_EQ(first, same_state);
+    EXPECT_NE(first, other_state);
+    EXPECT_NE(first, disengaged);
+    EXPECT_EQ(disengaged, forge::any_stop_token{});
+
+    EXPECT_TRUE(first_source.request_stop());
+    EXPECT_EQ(first, same_state);
+}
+
 TEST(ForgeAnyStopTokenTest, CallbackRunsExactlyOnce) {
     std::inplace_stop_source source;
     forge::any_stop_token token{source.get_token()};

@@ -320,10 +320,16 @@ struct __op : __forge_detail::__immovable {
     static constexpr bool __can_value_complete = (__sender_has_value<Senders> && ...);
     static constexpr bool __sends_stopped = (__sender_sends_stopped<Senders> || ...);
 
+    enum class __disposition {
+        started,
+        error,
+        stopped
+    };
+
     OuterRecv __outer_recv;
     inplace_stop_source __stop_src;
     std::atomic<std::size_t> __pending{N};
-    std::atomic<bool> __failed{false};
+    std::atomic<__disposition> __disp{__disposition::started};
     std::mutex __mtx;
     std::variant<std::monostate, error_variant_t, __stopped_tag> __result;
     std::tuple<std::optional<__sender_value_variant_t<Senders, child_env_t>>...> __partial;
@@ -386,37 +392,32 @@ struct __op : __forge_detail::__immovable {
 
     template<class E>
     void child_fail(E&& e) noexcept {
-        bool expected = false;
-        __failed.compare_exchange_strong(expected, true);
-        if constexpr (std::is_nothrow_constructible_v<std::decay_t<E>, E>) {
-            std::lock_guard lk{__mtx};
-            if (__result.index() != 1) {
+        if (__disp.exchange(__disposition::error) != __disposition::error) {
+            __stop_src.request_stop();
+            if constexpr (std::is_nothrow_constructible_v<std::decay_t<E>, E>) {
+                std::lock_guard lk{__mtx};
                 __result.template emplace<1>(
                     std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
-            }
-        } else {
-            try {
-                std::lock_guard lk{__mtx};
-                if (__result.index() != 1) {
+            } else {
+                try {
+                    std::lock_guard lk{__mtx};
                     __result.template emplace<1>(
                         std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));
-                }
-            } catch (...) {
-                std::lock_guard lk{__mtx};
-                if (__result.index() != 1) {
+                } catch (...) {
+                    std::lock_guard lk{__mtx};
                     __result.template emplace<1>(
                         std::in_place_type<std::exception_ptr>,
                         std::current_exception());
                 }
             }
         }
-        __stop_src.request_stop();
         child_done();
     }
 
     void child_stop() noexcept {
-        bool expected = false;
-        if (__failed.compare_exchange_strong(expected, true)) {
+        auto expected = __disposition::started;
+        if (__disp.compare_exchange_strong(
+                expected, __disposition::stopped)) {
             std::lock_guard lk{__mtx};
             if (__result.index() == 0) {
                 __result.template emplace<2>(__stopped_tag{});

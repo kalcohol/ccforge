@@ -53,8 +53,14 @@ public:
     any_stop_token& operator=(any_stop_token&&) noexcept = default;
 
     friend bool operator==(
-        const any_stop_token&,
-        const any_stop_token&) noexcept = default;
+        const any_stop_token& left,
+        const any_stop_token& right) {
+        if (left.impl_ == right.impl_) {
+            return true;
+        }
+        return left.impl_ && right.impl_ &&
+            left.impl_->equals(*right.impl_);
+    }
 
     [[nodiscard]] bool stop_requested() const noexcept {
         return impl_ && impl_->stop_requested();
@@ -102,9 +108,14 @@ private:
         virtual ~__base() = default;
         virtual bool stop_requested() const noexcept = 0;
         virtual bool stop_possible() const noexcept = 0;
+        virtual const void* type_key() const noexcept = 0;
+        virtual bool equals(const __base& other) const = 0;
         virtual std::unique_ptr<__callback_base> make_callback(
             std::shared_ptr<__callback_state_base> state) const = 0;
     };
+
+    template<class Token>
+    inline static unsigned char __type_key = 0;
 
     template<class Token>
     struct __callback_impl : __callback_base {
@@ -134,6 +145,15 @@ private:
 
         bool stop_possible() const noexcept override {
             return token.stop_possible();
+        }
+
+        const void* type_key() const noexcept override {
+            return &__type_key<Token>;
+        }
+
+        bool equals(const __base& other) const override {
+            return type_key() == other.type_key() &&
+                token == static_cast<const __impl_t&>(other).token;
         }
 
         std::unique_ptr<__callback_base> make_callback(

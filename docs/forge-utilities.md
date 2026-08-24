@@ -26,7 +26,8 @@
 
 `forge::any_stop_token` 是 Forge extension 的 copyable stop-token type erasure，直接入口是
 `<forge/any_stop_token.hpp>`。当前标准 execution vocabulary 不定义
-`std::any_stop_token`；Forge 不向 `namespace std` 注入这个非标准名字。
+`std::any_stop_token`；Forge 不向 `namespace std` 注入这个非标准名字。分别擦除但引用
+同一个逻辑 stop state 的 token 比较相等，disengaged token 之间也比较相等。
 
 IO backend umbrella 使用独立头：
 
