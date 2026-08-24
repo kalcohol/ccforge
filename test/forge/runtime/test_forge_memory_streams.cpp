@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -213,6 +214,23 @@ TEST(ForgeMemoryStreamsTest, MemoryWriteStreamCanAppendItsOwnedBytes) {
             bytes.begin() + static_cast<std::ptrdiff_t>(count),
             bytes.begin() + static_cast<std::ptrdiff_t>(count)));
     }
+}
+
+TEST(ForgeMemoryStreamsTest, MemoryWriteStreamRejectsUnrepresentableGrowth) {
+    forge::io::memory_write_stream stream;
+    const std::byte value{0x2a};
+    auto initial = stream.write_some(forge::io::const_buffer{&value, 1});
+    ASSERT_TRUE(initial);
+
+    auto result = stream.write_some(forge::io::const_buffer{
+        &value,
+        std::numeric_limits<std::size_t>::max()});
+    auto [error, count] = result;
+
+    EXPECT_EQ(error, std::make_error_code(std::errc::value_too_large));
+    EXPECT_EQ(count, 0u);
+    ASSERT_EQ(stream.bytes().size(), 1u);
+    EXPECT_EQ(stream.bytes().front(), value);
 }
 
 TEST(ForgeMemoryStreamsTest, MemoryStreamCombinesReadAndWriteSides) {

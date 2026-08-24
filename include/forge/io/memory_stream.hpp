@@ -208,6 +208,11 @@ public:
             position_ += count;
         } else {
             const auto old_size = storage_.size();
+            if (count > storage_.max_size() - old_size) {
+                return io_result<std::size_t>::failure(
+                    std::make_error_code(std::errc::value_too_large),
+                    0);
+            }
             std::vector<std::byte> staged_input;
             if (old_size != 0) {
                 const auto less = std::less<const std::byte*>{};

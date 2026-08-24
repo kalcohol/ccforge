@@ -87,7 +87,8 @@ backend-free 测试设施。它们提供与真实 byte stream 相同的 `read_so
   等价于默认的 `dynamic_extent_limit`。
 - `memory_write_stream` 写入 owned storage，或写入 borrowed output buffer；只有容量
   限制会造成 short write。`bytes()` 返回的是 view；owned storage 后续写入可能 reallocate，
-  因而会使之前取得的 span 失效。
+  因而会使之前取得的 span 失效。若一次 owned-storage 写入会使总长度超出 container
+  可表示范围，则返回 `std::errc::value_too_large` 和 `0` byte progress。
 - `memory_stream` 把一个 read side 和一个 write side 合在一起，适合 request/response
   风格的小型协议测试；`written_bytes()` 与 `memory_write_stream::bytes()` 有相同的 span
   invalidation 规则。
