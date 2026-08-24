@@ -1185,6 +1185,30 @@ TEST(ForgeCoroInteropTest, ConnectFailureClearsPublishedBridgeSlot) {
     EXPECT_TRUE(std::get<0>(*result));
 }
 
+TEST(ForgeCoroInteropTest, AbandonedBridgeStateIsTerminal) {
+    cio::__coro_detail::frame_chain_link link;
+    const auto token = link.publish_bridge();
+
+    EXPECT_EQ(
+        link.transition_bridge(
+            token, cio::__coro_detail::bridge_state::abandoned),
+        cio::__coro_detail::bridge_state::starting);
+    EXPECT_EQ(
+        link.transition_bridge(
+            token, cio::__coro_detail::bridge_state::suspended),
+        cio::__coro_detail::bridge_state::abandoned);
+    EXPECT_EQ(
+        link.transition_bridge(
+            token, cio::__coro_detail::bridge_state::completed),
+        cio::__coro_detail::bridge_state::abandoned);
+    EXPECT_EQ(
+        cio::__coro_detail::frame_chain_link::bridge_state_of(
+            link.active_bridge.load(std::memory_order_acquire)),
+        cio::__coro_detail::bridge_state::abandoned);
+
+    link.clear_bridge(token);
+}
+
 TEST(ForgeCoroInteropTest, ReceiverOutlivesCrossThreadTaskAbandonment) {
     auto state = std::make_shared<direct_resume_state>();
     receiver_lifetime_state lifetime;

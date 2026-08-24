@@ -176,6 +176,21 @@ struct frame_chain_link {
             static_cast<bridge_token>(state);
     }
 
+    [[nodiscard]] static constexpr auto bridge_transition_allowed(
+        bridge_state current,
+        bridge_state desired) noexcept -> bool {
+        switch (desired) {
+        case bridge_state::suspended:
+            return current == bridge_state::starting;
+        case bridge_state::completed:
+        case bridge_state::abandoned:
+            return current == bridge_state::starting ||
+                current == bridge_state::suspended;
+        default:
+            return false;
+        }
+    }
+
     [[nodiscard]] auto publish_bridge() noexcept -> bridge_token {
         const bridge_token generation =
             next_bridge_generation.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -193,6 +208,10 @@ struct frame_chain_link {
         bridge_state desired) noexcept -> bridge_state {
         bridge_token current = active_bridge.load(std::memory_order_acquire);
         while (same_bridge(current, token)) {
+            const auto state = bridge_state_of(current);
+            if (!bridge_transition_allowed(state, desired)) {
+                return state;
+            }
             const bridge_token next = with_bridge_state(current, desired);
             if (active_bridge.compare_exchange_weak(
                     current,
@@ -423,17 +442,12 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
             const auto gate =
                 link.active_bridge.load(std::memory_order_acquire);
             if (gate != 0) {
-                auto expected = gate;
-                if (!link.active_bridge.compare_exchange_weak(
-                        expected,
-                        frame_chain_link::with_bridge_state(
-                            gate, bridge_state::abandoned),
-                        std::memory_order_acq_rel,
-                        std::memory_order_acquire)) {
+                const auto prior = link.transition_bridge(
+                    gate, bridge_state::abandoned);
+                if (prior == bridge_state::inactive) {
                     continue;
                 }
-                if (frame_chain_link::bridge_state_of(gate) !=
-                    bridge_state::completed) {
+                if (prior != bridge_state::completed) {
                     // Claimed first: the delivery can never resume the
                     // chain (the record-level teardown wait happens inside
                     // the frame destructors).

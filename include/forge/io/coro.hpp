@@ -273,7 +273,17 @@ private:
         if (chain_root_ != nullptr) {
             return chain_root_->transition_bridge(bridge_token_, desired);
         }
-        return state_.exchange(desired, std::memory_order_acq_rel);
+        auto current = state_.load(std::memory_order_acquire);
+        while (frame_chain_link::bridge_transition_allowed(current, desired)) {
+            if (state_.compare_exchange_weak(
+                    current,
+                    desired,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                return current;
+            }
+        }
+        return current;
     }
 
     auto clear_published_bridge() noexcept -> void {

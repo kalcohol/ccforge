@@ -868,7 +868,15 @@ private:
             ++parked_cancels;
             return;
         }
-        record_flush_locked(ring_state.flush_published());
+        const std::error_code flush_error = ring_state.flush_published();
+        record_flush_locked(flush_error);
+        if (flush_error && flush_error.value() != EBUSY) {
+            // The poller may already be blocked in GETEVENTS with no CQE that
+            // can expose this parked cancel. Publish a NOP and re-drive the
+            // shared SQ immediately; transient hard failures then cannot turn
+            // an accepted stop request into a permanent sleep.
+            submit_wakeup_locked();
+        }
     }
 
     void retry_parked_cancels_locked() noexcept {

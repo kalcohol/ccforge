@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <execution>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -46,6 +47,11 @@ constexpr int skip_exit_code = 77;
 // Errno injected into io_uring_enter calls that only submit (no GETEVENTS
 // flag, to_submit > 0). Zero disables injection.
 std::atomic<int> inject_submit_errno{0};
+// The max value means every matching call fails. A finite value consumes that
+// many failures and then lets later retries reach the kernel.
+constexpr unsigned unlimited_submit_failures =
+    std::numeric_limits<unsigned>::max();
+std::atomic<unsigned> inject_submit_failures{unlimited_submit_failures};
 // Runs the real submit first, then reports this errno when the kernel call
 // returned nonnegative. This emulates a conservative partial-consumption
 // outcome and pins the shared-head ownership check.
@@ -90,8 +96,17 @@ extern "C" long __wrap_syscall(
             inject_submit_errno.load(std::memory_order_acquire);
         if (injected != 0 && to_submit > 0 &&
             (flags & IORING_ENTER_GETEVENTS) == 0) {
-            errno = injected;
-            return -1;
+            unsigned remaining =
+                inject_submit_failures.load(std::memory_order_acquire);
+            if (remaining == unlimited_submit_failures ||
+                (remaining != 0 &&
+                 inject_submit_failures.compare_exchange_strong(
+                     remaining,
+                     remaining - 1U,
+                     std::memory_order_acq_rel))) {
+                errno = injected;
+                return -1;
+            }
         }
     }
     return __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
@@ -189,6 +204,22 @@ struct completion_receiver {
 
     [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
         return {};
+    }
+};
+
+struct stoppable_completion_env {
+    std::inplace_stop_token token;
+
+    auto query(std::execution::get_stop_token_t) const noexcept {
+        return token;
+    }
+};
+
+struct stoppable_completion_receiver : completion_receiver {
+    std::inplace_stop_token token;
+
+    [[nodiscard]] auto get_env() const noexcept -> stoppable_completion_env {
+        return {token};
     }
 };
 
@@ -336,6 +367,38 @@ void check_saturated_wakeup_publish_self_heals() {
     FAULT_CHECK(!context.last_flush_diagnostic());
 }
 
+// A one-shot hard failure while publishing a cancel must not leave the poller
+// asleep behind an otherwise empty completion queue. The wakeup retry submits
+// the parked cancel and produces the terminal stopped completion.
+void check_cancel_flush_failure_wakes_poller() {
+    cio::io_uring_context context{{.entries = 8}};
+    pipe_pair pipe;
+    FAULT_CHECK(pipe.read_end >= 0);
+
+    std::byte buffer[4] = {};
+    auto state = std::make_shared<completion_state>();
+    std::inplace_stop_source stop_source;
+    auto operation = std::execution::connect(
+        cio::as_sender(read_task(context, pipe.read_end, buffer)),
+        stoppable_completion_receiver{
+            completion_receiver{state}, stop_source.get_token()});
+    std::execution::start(operation);
+
+    inject_submit_failures.store(1, std::memory_order_release);
+    inject_submit_errno.store(ENOMEM, std::memory_order_release);
+    FAULT_CHECK(stop_source.request_stop());
+    inject_submit_errno.store(0, std::memory_order_release);
+    inject_submit_failures.store(
+        unlimited_submit_failures, std::memory_order_release);
+
+    FAULT_CHECK(wait_done(state));
+    FAULT_CHECK(state->stopped);
+    context.close();
+    context.wait();
+    FAULT_CHECK(!context.last_error());
+    FAULT_CHECK(!context.last_flush_diagnostic());
+}
+
 } // namespace
 
 int main() {
@@ -360,6 +423,7 @@ int main() {
     check_consumed_submission_retains_kernel_ownership();
     check_wakeup_flush_hard_failure_self_heals();
     check_saturated_wakeup_publish_self_heals();
+    check_cancel_flush_failure_wakes_poller();
     FAULT_CHECK(combined_submit_calls.load(std::memory_order_acquire) == 0);
 
     if (failures != 0) {
