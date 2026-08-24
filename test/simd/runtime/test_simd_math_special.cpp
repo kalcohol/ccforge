@@ -399,6 +399,13 @@ TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
                 sm::cyl_bessel_i_series(1.0f, 1.0f),
                 2e-6f);
 
+    const auto positive_wide = sm::cyl_bessel_jy_fallback(20.0f, 0.01f);
+    const auto negative_wide = sm::cyl_bessel_jy_fallback(-20.0f, 0.01f);
+    EXPECT_FALSE(std::isnan(negative_wide.j));
+    EXPECT_FALSE(std::isnan(negative_wide.y));
+    EXPECT_EQ(negative_wide.j, positive_wide.j);
+    EXPECT_EQ(negative_wide.y, positive_wide.y);
+
     EXPECT_TRUE(std::isnan(sm::sph_bessel_fallback(1u, -1.0)));
     EXPECT_TRUE(std::isnan(sm::sph_neumann_fallback(1u, -1.0)));
 }
@@ -462,6 +469,25 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
     // F(1, phi) = asinh(tan(phi)) for |phi| < pi/2.
     EXPECT_NEAR(sm::ellint_1_fallback(1.0, 1.0),
                 std::asinh(std::tan(1.0)), 1e-9);
+
+    const double below_half_pi = std::nextafter(
+        std::numbers::pi_v<double> / 2.0, 0.0);
+    const double singular_edge = std::asinh(std::tan(below_half_pi));
+    EXPECT_NEAR(
+        sm::ellint_1_fallback(1.0, below_half_pi),
+        singular_edge,
+        singular_edge * 2e-15);
+
+    constexpr double edge_nu = 0.5;
+    const double edge_sine = std::sin(below_half_pi);
+    const double edge_root = std::sqrt(edge_nu);
+    const double edge_second = std::atanh(edge_root * edge_sine) / edge_root;
+    const double edge_third =
+        (singular_edge - edge_nu * edge_second) / (1.0 - edge_nu);
+    EXPECT_NEAR(
+        sm::ellint_3_fallback(1.0, edge_nu, below_half_pi),
+        edge_third,
+        edge_third * 2e-15);
 
     // Pi shares the |k| == 1 divergence: for nu < 1 the pole factor stays
     // nonnegative on the way to pi/2, so the integral is +/-infinity there

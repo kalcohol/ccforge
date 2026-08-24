@@ -586,10 +586,15 @@ auto cyl_bessel_jy_fallback(T nu, T x)
 
         const auto positive = cyl_bessel_jy_fallback(
             static_cast<T>(order), x);
+        const auto scaled = [](long double coefficient, long double value) {
+            return coefficient == 0.0L ? 0.0L : coefficient * value;
+        };
         const long double j =
-            trig.cosine * positive.j - trig.sine * positive.y;
+            scaled(trig.cosine, positive.j) -
+            scaled(trig.sine, positive.y);
         const long double y =
-            trig.sine * positive.j + trig.cosine * positive.y;
+            scaled(trig.sine, positive.j) +
+            scaled(trig.cosine, positive.y);
         return {
             static_cast<T>(j),
             static_cast<T>(y),

@@ -77,6 +77,10 @@ T ellint_1_fallback(T k, T phi) {
     if (std::abs(k) == T{1} && std::abs(phi) >= half_pi) {
         return std::copysign(infinity<T>(), phi);
     }
+    if (std::abs(k) == T{1}) {
+        return static_cast<T>(std::asinh(std::tan(
+            static_cast<long double>(phi))));
+    }
     if (std::abs(phi) == half_pi) {
         return std::copysign(complete_ellint_1_agm(k), phi);
     }
@@ -150,6 +154,36 @@ T ellint_3_zero_modulus(T nu, T phi) {
 }
 
 template<class T>
+T ellint_3_unit_modulus(T nu, T phi) {
+    // For |k| == 1, t = sin(phi) reduces the integrand to
+    // 1 / ((1 - t^2) (1 - nu t^2)); partial fractions avoid the endpoint pole.
+    const long double order = static_cast<long double>(nu);
+    const long double angle = static_cast<long double>(phi);
+    const long double sine = std::sin(angle);
+    const long double tangent = std::tan(angle);
+    const long double first = std::asinh(tangent);
+
+    if (order == 0.0L) {
+        return static_cast<T>(first);
+    }
+    if (order == 1.0L) {
+        const long double cosine = std::cos(angle);
+        return static_cast<T>(
+            (sine / (cosine * cosine) + first) / 2.0L);
+    }
+
+    long double second;
+    if (order > 0.0L) {
+        const long double root = std::sqrt(order);
+        second = std::atanh(root * sine) / root;
+    } else {
+        const long double root = std::sqrt(-order);
+        second = std::atan(root * sine) / root;
+    }
+    return static_cast<T>((first - order * second) / (1.0L - order));
+}
+
+template<class T>
 T ellint_3_fallback(T k, T nu, T phi) {
     if (std::isnan(k) || std::isnan(nu) || std::isnan(phi) ||
         std::abs(k) > T{1}) {
@@ -186,6 +220,9 @@ T ellint_3_fallback(T k, T nu, T phi) {
     }
     if (k == T{}) {
         return ellint_3_zero_modulus(nu, phi);
+    }
+    if (std::abs(k) == T{1}) {
+        return ellint_3_unit_modulus(nu, phi);
     }
     return elliptic_integral(phi, [&](T theta) {
         const T s = std::sin(theta);
