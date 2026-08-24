@@ -553,7 +553,9 @@ IOCP completion 完成。返回值同样是该次 operation 的 byte count。Rea
 socket-like byte stream，不提供 random-access file offset 参数。对文件 HANDLE 的
 显式 offset IO 需要后续公共 API 扩展。V1 设计边界：`start()` 在 context 全局锁下
 发起 `ReadFile` / `WriteFile`，提交与 completion 处理互相串行化；单次传输长度按
-`DWORD` 上限（4GB-1）钳制为 short IO，`*_some` 语义由调用方循环补齐。
+`DWORD` 上限（4GB-1）钳制为 short IO，`*_some` 语义由调用方循环补齐。生命周期
+状态通常通过 completion-port packet 唤醒 worker；若该 packet 发布失败，worker 的
+有界等待仍会重新观察 `close()` / `request_stop()`，不会永久停在 GQCS。
 
 ## Typed-error variants（类型化错误变体）
 

@@ -81,6 +81,8 @@ class context;
 
 namespace __detail {
 
+inline constexpr DWORD __worker_wait_timeout_ms = 100;
+
 template<class R>
 bool __stop_requested(const R& rcvr) noexcept {
     if constexpr (requires {
@@ -452,7 +454,11 @@ struct __state : std::enable_shared_from_this<__state> {
             ULONG_PTR key = 0;
             OVERLAPPED* overlapped = nullptr;
             BOOL ok = ::GetQueuedCompletionStatus(
-                port.get(), &bytes, &key, &overlapped, INFINITE);
+                port.get(),
+                &bytes,
+                &key,
+                &overlapped,
+                __worker_wait_timeout_ms);
             const DWORD error = ok ? ERROR_SUCCESS : ::GetLastError();
 
             if (!overlapped) {
@@ -482,8 +488,12 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
     void wake_worker() noexcept {
-        if (port) {
-            ::PostQueuedCompletionStatus(port.get(), 0, 0, nullptr);
+        if (port &&
+            ::PostQueuedCompletionStatus(port.get(), 0, 0, nullptr) == FALSE) {
+            // run() uses a bounded wait, so lifecycle state is still observed
+            // if the synthetic completion packet cannot be allocated.
+            std::this_thread::yield();
+            (void)::PostQueuedCompletionStatus(port.get(), 0, 0, nullptr);
         }
     }
 
