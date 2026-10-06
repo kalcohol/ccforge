@@ -494,6 +494,36 @@ struct StoppedProbeTask {
     std::coroutine_handle<promise_type> handle;
 };
 
+struct RetiringStoppedTask {
+    struct promise_type : std::execution::with_awaitable_senders<promise_type> {
+        explicit promise_type(bool* retired) noexcept : retired(retired) {}
+        RetiringStoppedTask get_return_object() noexcept { return {}; }
+        std::suspend_never initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() noexcept { std::terminate(); }
+        void unhandled_exception() noexcept { std::terminate(); }
+
+        auto unhandled_stopped() noexcept -> std::coroutine_handle<> {
+            auto* result = retired;
+            std::coroutine_handle<promise_type>::from_promise(*this).destroy();
+            *result = true;
+            return std::noop_coroutine();
+        }
+
+        bool* retired;
+    };
+};
+
+RetiringStoppedTask retire_from_stopped_hook(bool* retired) {
+    co_await std::execution::just_stopped();
+}
+
+TEST(CoroutineBridgeTest, StoppedHookCanRetireAwaitingFrame) {
+    bool retired = false;
+    retire_from_stopped_hook(&retired);
+    EXPECT_TRUE(retired);
+}
+
 struct DefaultStoppedTask {
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
         DefaultStoppedTask get_return_object() noexcept {

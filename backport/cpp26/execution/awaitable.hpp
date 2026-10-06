@@ -283,7 +283,7 @@ struct __awaitable {
             } catch (...) {
                 __self->__exc = std::current_exception();
             }
-            __self->__complete(__self->__coro);
+            __complete(__self, __self->__coro);
         }
         template<class E>
         void set_error(E&& e) && noexcept {
@@ -291,15 +291,18 @@ struct __awaitable {
                 __self->__exc = static_cast<E&&>(e);
             else
                 __self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
-            __self->__complete(__self->__coro);
+            __complete(__self, __self->__coro);
         }
         void set_stopped() && noexcept {
             __self->__stopped = true;
             if constexpr (__has_unhandled_stopped<Promise>) {
-                __self->__complete(static_cast<std::coroutine_handle<>>(
-                    __self->__promise->unhandled_stopped()));
+                auto* const key = __self;
+                auto* const promise = __self->__promise;
+                const auto next = static_cast<std::coroutine_handle<>>(
+                    promise->unhandled_stopped());
+                __complete(key, next);
             } else {
-                __self->__complete(__self->__coro);
+                __complete(__self, __self->__coro);
             }
         }
         auto get_env() const noexcept -> env_t {
@@ -344,8 +347,8 @@ struct __awaitable {
     }
 
 private:
-    void __complete(std::coroutine_handle<> next) noexcept {
-        if (!__start_scope::__defer(this, next)) {
+    static void __complete(const void* key, std::coroutine_handle<> next) noexcept {
+        if (!__start_scope::__defer(key, next)) {
             next.resume();
         }
     }
