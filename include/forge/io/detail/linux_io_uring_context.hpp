@@ -770,9 +770,10 @@ struct context_state {
         std::uint8_t opcode,
         int fd,
         const void* address,
-        unsigned length) noexcept -> submit_status {
+        unsigned length,
+        std::inplace_stop_token token = {}) noexcept -> submit_status {
         std::lock_guard lock{mutex};
-        if (closed || stopped || poller_done) {
+        if (closed || stopped || poller_done || token.stop_requested()) {
             return submit_status::stopped;
         }
         // Frame-owned queue nodes keep submission nonblocking, including
@@ -781,6 +782,7 @@ struct context_state {
         operation.fd = fd;
         operation.address = address;
         operation.length = length;
+        operation.phase.store(operation_phase::suspended, std::memory_order_release);
         link_operation_locked(operation);
         if (submissions_tail != nullptr) {
             submissions_tail->submission_next = &operation;
@@ -1281,13 +1283,25 @@ public:
             return false;
         }
 
+        const auto token = env ? env->stop_token : std::inplace_stop_token{};
+        if (token.stop_possible()) {
+            stop_callback_.emplace(token, cancel_requester{state_, &operation_});
+        }
         operation_.continuation = continuation;
+        outcome_ = outcome::submitted;
         const submit_status status = state_->submit_operation(
             operation_,
             IsRead ? IORING_OP_READ : IORING_OP_WRITE,
             fd_,
             address_,
-            clamped_length());
+            clamped_length(),
+            token);
+        // Publication may already have resumed and destroyed this frame.
+        // Only the unexposed rejection paths may touch its members here.
+        if (status == submit_status::accepted) {
+            return true;
+        }
+        stop_callback_.reset();
         if (status == submit_status::stopped) {
             outcome_ = outcome::stopped;
             return false;
@@ -1296,16 +1310,7 @@ public:
             outcome_ = outcome::saturated;
             return false;
         }
-
-        outcome_ = outcome::submitted;
-        if (env != nullptr && env->stop_token.stop_possible()) {
-            stop_callback_.emplace(
-                env->stop_token,
-                cancel_requester{state_, &operation_});
-        }
-        return operation_.phase.exchange(
-            operation_phase::suspended,
-            std::memory_order_acq_rel) != operation_phase::completed;
+        return false;
     }
 
     [[nodiscard]] auto await_resume() -> io_result<std::size_t> {

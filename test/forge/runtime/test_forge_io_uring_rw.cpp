@@ -223,6 +223,71 @@ struct completion_receiver {
     return state->cv.wait_for(lock, 5s, [&] { return state->done(); });
 }
 
+struct owner_probe {
+    struct promise_type {
+        auto get_return_object() noexcept -> owner_probe {
+            return owner_probe{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        auto initial_suspend() noexcept -> std::suspend_always { return {}; }
+        auto final_suspend() noexcept -> std::suspend_always { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept { std::terminate(); }
+    };
+
+    explicit owner_probe(std::coroutine_handle<promise_type> handle) noexcept
+        : handle(handle) {}
+    ~owner_probe() { handle.destroy(); }
+    owner_probe(const owner_probe&) = delete;
+    auto operator=(const owner_probe&) -> owner_probe& = delete;
+
+    std::coroutine_handle<promise_type> handle;
+};
+
+auto observe_owned_completion(
+    const cio::io_uring_detail::io_operation& operation,
+    const std::shared_ptr<completion_state>& state,
+    std::thread::id& resumed_on,
+    int& completions) -> owner_probe {
+    std::lock_guard lock{state->mutex};
+    resumed_on = std::this_thread::get_id();
+    ++completions;
+    state->result.emplace(cio::io_result<std::size_t>::success(operation.result));
+    state->cv.notify_all();
+    co_return;
+}
+
+// The owner must arm a prepared continuation before making its node visible;
+// an already-ready read can finish before submit_operation() returns.
+void check_submission_arms_completion_before_publication() {
+    cio::io_uring_context context;
+    pipe_pair pipe;
+    const char payload = 'a';
+    RW_CHECK(::write(pipe.write_end, &payload, 1) == 1);
+    std::byte buffer[1] = {};
+    auto state = std::make_shared<completion_state>();
+    cio::io_uring_detail::io_operation operation;
+    std::thread::id resumed_on{};
+    int completions = 0;
+    auto probe = observe_owned_completion(operation, state, resumed_on, completions);
+    operation.continuation = cio::__coro_detail::resume_target{probe.handle, nullptr};
+    const auto status = context.__state().submit_operation(
+        operation, IORING_OP_READ, pipe.read_end, buffer, 1);
+    RW_CHECK(status == cio::io_uring_detail::submit_status::accepted);
+    const bool completed = wait_done(state);
+    context.close();
+    context.wait();
+    RW_CHECK(completed);
+    RW_CHECK(completions == 1);
+    if (completed) {
+        RW_CHECK(state->result->has_value());
+        RW_CHECK(std::get<0>(state->result->values()) == 1);
+        RW_CHECK(buffer[0] == std::byte{'a'});
+        RW_CHECK(resumed_on != std::this_thread::get_id());
+        RW_CHECK(resumed_on == context.__state().poller_id);
+    }
+}
+
 void check_write_then_read(std::pmr::memory_resource* memory) {
     cio::io_uring_context context{{.memory = memory, .entries = 8}};
     pipe_pair pipe;
@@ -1108,6 +1173,7 @@ int main() {
     }
 
     check_parked_write_peer_close_maps_to_epipe();
+    check_submission_arms_completion_before_publication();
     check_cross_context_submission_does_not_block_pollers();
     check_abandoning_submitted_read_terminates(&memory);
     check_last_error_stays_clear_on_graceful_stop(&memory);

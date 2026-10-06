@@ -763,7 +763,8 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   `io_uring_enter` 仍包在与 epoll backend 相同的线程局部 SIGPIPE guard 内。
   进程的 SIGPIPE 处置不被改动；写请求承担强制异步执行的调度开销。
 - CQE 由 poller thread drain，并在 backend lock 外直接 resume 等待的 coroutine；
-  后续 coroutine body 运行在 poller thread 上，需要业务 executor affinity 时显式
+  已接受请求的 continuation 在发布前准备完毕，即使完成早于启动函数返回，
+  后续 coroutine body 也运行在 poller thread 上；需要业务 executor affinity 时显式
   await `env.executor.schedule()`。
 - env stop 预检失败、context 已 `close()`/`request_stop()` 时 operation 不进入
   ring，`await_resume()` 抛 `sender_stopped`；空 buffer 在 stop 预检之后、任何
