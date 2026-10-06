@@ -144,14 +144,16 @@ struct icl_impl : false_type {};
 template <class T>
 struct icl_impl<T, void_t<
     decltype(T::value),
-    decltype(static_cast<remove_cvref_t<decltype(T::value)>>(declval<T>()))>>
-    : bool_constant<
+    decltype(static_cast<remove_cvref_t<decltype(T::value)>>(declval<T>())),
+    // Keep constant-expression checks in the immediate substitution context.
+    enable_if_t<
         is_integral_v<remove_cvref_t<decltype(T::value)>> &&
         !is_same_v<bool, remove_cvref_t<decltype(T::value)>> &&
         is_convertible_v<T, remove_cvref_t<decltype(T::value)>> &&
         bool_constant<T{} == T::value>::value &&
         bool_constant<
-            static_cast<remove_cvref_t<decltype(T::value)>>(T{}) == T::value>::value> {};
+            static_cast<remove_cvref_t<decltype(T::value)>>(T{}) == T::value>::value>>>
+    : true_type {};
 
 template <class T>
 inline constexpr bool is_icl_v = icl_impl<T>::value;

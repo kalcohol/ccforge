@@ -32,6 +32,151 @@ struct aggregate_bounds {
     int last;
 };
 
+namespace {
+
+struct member_value_index {
+    int value;
+    constexpr operator int() const noexcept { return value; }
+};
+
+struct mutable_static_value_index {
+    inline static int value = 1;
+    int index;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct nonconstexpr_conversion_index {
+    static constexpr int value = 0;
+    int index;
+    operator int() const noexcept { return index; }
+    friend constexpr bool operator==(nonconstexpr_conversion_index i, int v) {
+        return i.index == v;
+    }
+};
+
+struct nonconstexpr_equality_index {
+    static constexpr int value = 0;
+    int index;
+    constexpr operator int() const noexcept { return index; }
+    friend bool operator==(nonconstexpr_equality_index i, int v) {
+        return i.index == v;
+    }
+};
+
+struct mismatched_constant_index {
+    static constexpr int value = 1;
+    int index = 2;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct misleading_equality_index {
+    static constexpr int value = 1;
+    int index = 2;
+    constexpr operator int() const noexcept { return index; }
+    friend constexpr bool operator==(misleading_equality_index, int) {
+        return true;
+    }
+};
+
+struct boolean_value_index {
+    static constexpr bool value = false;
+    int index;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct floating_value_index {
+    static constexpr double value = 0.0;
+    int index;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct function_value_index {
+    static constexpr int value() noexcept { return 0; }
+    int index;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct ordinary_index {
+    int index;
+    constexpr operator int() const noexcept { return index; }
+};
+
+struct valid_constant_index {
+    static constexpr int value = 2;
+    constexpr operator int() const noexcept { return value; }
+};
+
+template<class Index>
+void check_runtime_index(Index index, int expected) {
+    using extents_t = std::extents<int, 3, 4>;
+    auto slices = std::canonical_slices(extents_t{}, index, std::full_extent);
+    static_assert(std::is_same_v<std::tuple_element_t<0, decltype(slices)>, int>);
+    EXPECT_EQ(std::get<0>(slices), expected);
+
+    auto extents = std::subextents(extents_t{}, index, std::full_extent);
+    static_assert(decltype(extents)::rank() == 1);
+    static_assert(decltype(extents)::static_extent(0) == 4);
+    EXPECT_EQ(extents.extent(0), 4);
+
+    auto data = make_data<12>();
+    std::mdspan<int, extents_t> source(data.data());
+    auto row = std::submdspan(source, index, std::full_extent);
+    static_assert(std::is_same_v<typename decltype(row)::layout_type,
+                                 std::layout_right>);
+    EXPECT_EQ(row.data_handle(), data.data() + expected * 4);
+    EXPECT_EQ(row[3], expected * 4 + 3);
+}
+
+template<class Constant, int Expected>
+void check_constant_index() {
+    using extents_t = std::extents<int, 3, 4>;
+    constexpr auto slices = std::canonical_slices(
+        extents_t{}, Constant{}, std::full_extent);
+    using slices_t = std::remove_cvref_t<decltype(slices)>;
+    static_assert(std::is_same_v<std::tuple_element_t<0, slices_t>,
+                                 std::constant_wrapper<Expected>>);
+    static_assert(std::get<0>(slices) == Expected);
+
+    auto data = make_data<12>();
+    std::mdspan<int, extents_t> source(data.data());
+    auto row = std::submdspan(source, Constant{}, std::full_extent);
+    static_assert(decltype(row)::rank() == 1);
+    static_assert(decltype(row)::static_extent(0) == 4);
+    EXPECT_EQ(row.data_handle(), data.data() + Expected * 4);
+    EXPECT_EQ(row[3], Expected * 4 + 3);
+}
+
+} // namespace
+
+TEST(SubmdspanIntegralConstantLike, NonStaticValueUsesRuntimeIndex) {
+    check_runtime_index(member_value_index{1}, 1);
+    check_runtime_index(member_value_index{2}, 2);
+}
+
+TEST(SubmdspanIntegralConstantLike, MalformedConstantsUseRuntimeIndex) {
+    check_runtime_index(mutable_static_value_index{2}, 2);
+    check_runtime_index(nonconstexpr_conversion_index{2}, 2);
+    check_runtime_index(nonconstexpr_equality_index{2}, 2);
+    check_runtime_index(mismatched_constant_index{}, 2);
+    check_runtime_index(misleading_equality_index{}, 2);
+    check_runtime_index(boolean_value_index{2}, 2);
+    check_runtime_index(floating_value_index{2}, 2);
+    check_runtime_index(function_value_index{2}, 2);
+}
+
+TEST(SubmdspanIntegralConstantLike, ValidConstantsStayStatic) {
+    check_constant_index<std::integral_constant<int, 1>, 1>();
+    check_constant_index<std::integral_constant<unsigned, 2>, 2>();
+    check_constant_index<std::constant_wrapper<2zu>, 2>();
+    check_constant_index<valid_constant_index, 2>();
+}
+
+TEST(SubmdspanIntegralConstantLike, OrdinaryIndicesRemainCompatible) {
+    check_runtime_index(1, 1);
+    check_runtime_index(2u, 2);
+    check_runtime_index(ordinary_index{2}, 2);
+}
+
 // ---------------------------------------------------------------------------
 // layout_right (default, row-major) tests
 // ---------------------------------------------------------------------------
