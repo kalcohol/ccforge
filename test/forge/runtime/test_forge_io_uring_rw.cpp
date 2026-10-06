@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <barrier>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -125,6 +126,22 @@ auto observe_read(
     auto result = co_await cio::async_read_some(context, fd, buffer);
     *after = std::this_thread::get_id();
     co_return result;
+}
+
+auto cross_context_read(
+    cio::io_uring_context& first,
+    cio::io_uring_context& second,
+    int first_fd,
+    int second_fd,
+    std::barrier<>& gate) -> cio::io_task<cio::io_result<std::size_t>> {
+    std::byte initial[1] = {};
+    auto ready = co_await cio::async_read_some(first, first_fd, initial);
+    if (!ready.has_value()) {
+        co_return ready;
+    }
+    gate.arrive_and_wait();
+    std::byte final[4] = {};
+    co_return co_await cio::async_read_some(second, second_fd, final);
 }
 
 // Test-local adapter proving the io_uring awaitables satisfy the direct
@@ -265,6 +282,94 @@ void check_pending_read_resumes_on_poller(std::pmr::memory_resource* memory) {
     }
     RW_CHECK(before == caller);
     RW_CHECK(after != caller);
+}
+
+void check_pending_read_outlives_starting_thread(
+    std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    for (int i = 0; i < 8; ++i) {
+        pipe_pair pipe;
+        std::byte buffer[1] = {};
+        auto state = std::make_shared<completion_state>();
+        auto operation = std::execution::connect(
+            cio::as_sender(read_task(context, pipe.read_end, buffer)),
+            completion_receiver{state});
+        std::thread producer{[&] { std::execution::start(operation); }};
+        producer.join();
+        {
+            std::lock_guard lock{state->mutex};
+            RW_CHECK(!state->done());
+        }
+        const char payload = 'p';
+        RW_CHECK(::write(pipe.write_end, &payload, 1) == 1);
+        const bool completed = wait_done(state);
+        if (!completed) {
+            context.shutdown();
+            context.wait();
+        }
+        RW_CHECK(completed);
+        RW_CHECK(state->result.has_value());
+        if (state->result.has_value()) {
+            RW_CHECK(state->result->has_value());
+            RW_CHECK(std::get<0>(state->result->values()) == 1);
+            RW_CHECK(buffer[0] == std::byte{'p'});
+        }
+    }
+    context.close();
+    context.wait();
+}
+
+void check_cross_context_submission_does_not_block_pollers() {
+    const pid_t child = ::fork();
+    RW_CHECK(child >= 0);
+    if (child < 0) {
+        return;
+    }
+    if (child == 0) {
+        ::alarm(10);
+        const int result = [] {
+            cio::io_uring_context first;
+            cio::io_uring_context second;
+            pipe_pair first_ready;
+            pipe_pair second_ready;
+            pipe_pair first_next;
+            pipe_pair second_next;
+            std::barrier gate{2};
+            auto first_state = std::make_shared<completion_state>();
+            auto second_state = std::make_shared<completion_state>();
+            auto first_op = std::execution::connect(
+                cio::as_sender(cross_context_read(
+                    first, second, first_ready.read_end,
+                    first_next.read_end, gate)), completion_receiver{first_state});
+            auto second_op = std::execution::connect(
+                cio::as_sender(cross_context_read(
+                    second, first, second_ready.read_end,
+                    second_next.read_end, gate)), completion_receiver{second_state});
+            std::execution::start(first_op);
+            std::execution::start(second_op);
+            if (::write(first_next.write_end, "ab", 2) != 2 ||
+                ::write(second_next.write_end, "xyz", 3) != 3 ||
+                ::write(first_ready.write_end, "r", 1) != 1 ||
+                ::write(second_ready.write_end, "s", 1) != 1) {
+                return 1;
+            }
+            if (!wait_done(first_state) || !wait_done(second_state)) {
+                return 1;
+            }
+            first.close();
+            second.close();
+            first.wait();
+            second.wait();
+            return first_state->result && first_state->result->has_value() &&
+                   std::get<0>(first_state->result->values()) == 2 &&
+                   second_state->result && second_state->result->has_value() &&
+                   std::get<0>(second_state->result->values()) == 3 ? 0 : 1;
+        }();
+        std::_Exit(result);
+    }
+    int status = 0;
+    RW_CHECK(::waitpid(child, &status, 0) == child);
+    RW_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 void check_read_eof(std::pmr::memory_resource* memory) {
@@ -1003,10 +1108,12 @@ int main() {
     }
 
     check_parked_write_peer_close_maps_to_epipe();
+    check_cross_context_submission_does_not_block_pollers();
     check_abandoning_submitted_read_terminates(&memory);
     check_last_error_stays_clear_on_graceful_stop(&memory);
     check_write_then_read(&memory);
     check_pending_read_resumes_on_poller(&memory);
+    check_pending_read_outlives_starting_thread(&memory);
     check_read_eof(&memory);
     check_empty_buffer_completes_inline(&memory);
     check_bad_descriptor_maps_to_error(&memory);

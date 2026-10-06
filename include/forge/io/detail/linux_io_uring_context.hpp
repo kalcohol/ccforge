@@ -622,6 +622,13 @@ struct io_operation {
     bool registered = false;
     bool cancel_requested = false;
     bool cancel_published = false;
+    bool cancel_parked = false;
+    io_operation* submission_next = nullptr;
+    const void* address = nullptr;
+    unsigned length = 0;
+    int fd = -1;
+    std::uint8_t opcode = 0;
+    bool submission_pending = true;
 };
 
 static_assert(alignof(io_operation) >= 2);
@@ -665,30 +672,10 @@ struct context_state {
         cv.notify_all();
     }
 
-    // Blocks until the poller has committed to exiting. A wakeup NOP whose
-    // flush failed hard (e.g. transient ENOMEM) stays parked in the SQ while
-    // the poller blocks in GETEVENTS with nothing else in flight; a blind
-    // join would then hang forever because nothing retries the flush. This
-    // loop re-drives the whole wakeup chain (publish if the NOP could not
-    // even be published into a saturated SQ, then flush) until the kernel
-    // accepts it; the flush inside also consumes any parked entries that
-    // were keeping the SQ full.
+    // Only the resident poller submits SQEs, including lifecycle retries.
     void wait_poller_exit() noexcept {
         std::unique_lock lock{mutex};
-        while (!poller_done) {
-            if (closed || stopped) {
-                submit_wakeup_locked();
-                if (wakeup_in_flight) {
-                    // The NOP reached the kernel; its CQE will wake the
-                    // poller, which then exits and notifies.
-                    cv.wait(lock);
-                } else {
-                    cv.wait_for(lock, std::chrono::milliseconds{1});
-                }
-            } else {
-                cv.wait(lock);
-            }
-        }
+        cv.wait(lock, [this] { return poller_done; });
     }
 
     void run() noexcept {
@@ -699,14 +686,17 @@ struct context_state {
 
         for (;;) {
             std::error_code flush_error;
+            bool has_ready = false;
             {
                 std::lock_guard lock{mutex};
+                process_submissions_locked();
                 flush_error = ring_state.flush_published();
                 record_flush_locked(flush_error);
+                has_ready = ready_head != nullptr;
             }
             const bool retry_flush =
                 flush_error && flush_error.value() != EBUSY;
-            if (!retry_flush) {
+            if (!retry_flush && !has_ready) {
                 const std::error_code wait_error =
                     ring_state.wait_for_activity(wake_fd.get());
                 if (wait_error) {
@@ -750,9 +740,14 @@ struct context_state {
             {
                 std::lock_guard lock{mutex};
                 retry_parked_cancels_locked();
+                if (wakeup_needed) {
+                    submit_wakeup_locked();
+                }
                 should_exit =
                     (closed || stopped) &&
                     operations_head == nullptr &&
+                    submissions_head == nullptr &&
+                    !wakeup_needed &&
                     !wakeup_published &&
                     !wakeup_in_flight;
                 if (should_exit) {
@@ -780,31 +775,20 @@ struct context_state {
         if (closed || stopped || poller_done) {
             return submit_status::stopped;
         }
-
-        const std::uint64_t user_data = operation_user_data(operation);
-        if (!ring_state.publish_rw(opcode, fd, address, length, user_data)) {
-            // The SQ frees slots on consumption, so one flush normally
-            // empties it; a second failure means the kernel is refusing
-            // submissions right now.
-            record_flush_locked(ring_state.flush_published());
-            if (!ring_state.publish_rw(
-                    opcode, fd, address, length, user_data)) {
-                return submit_status::saturated;
-            }
-        }
-
-        const std::error_code flush_error = ring_state.flush_published();
-        record_flush_locked(flush_error);
-        if (flush_error && flush_error.value() != EBUSY) {
-            // Reject only while the shared head proves this tail entry was
-            // not consumed. If the syscall consumed it before reporting an
-            // error, ownership has transferred to the kernel and the
-            // operation must remain registered for its CQE.
-            if (ring_state.try_retract_last_unconsumed()) {
-                return submit_status::saturated;
-            }
-        }
+        // Frame-owned queue nodes keep submission nonblocking, including
+        // when one context's continuation initiates work on another context.
+        operation.opcode = opcode;
+        operation.fd = fd;
+        operation.address = address;
+        operation.length = length;
         link_operation_locked(operation);
+        if (submissions_tail != nullptr) {
+            submissions_tail->submission_next = &operation;
+        } else {
+            submissions_head = &operation;
+        }
+        submissions_tail = &operation;
+        signal_poller_locked();
         return submit_status::accepted;
     }
 
@@ -814,7 +798,9 @@ struct context_state {
             return;
         }
         operation.cancel_requested = true;
-        queue_cancel_locked(operation);
+        if (!operation.submission_pending) {
+            queue_cancel_locked(operation);
+        }
     }
 
     [[nodiscard]] auto called_from_poller() noexcept -> bool {
@@ -840,11 +826,14 @@ struct context_state {
     io_operation* operations_head = nullptr;
     io_operation* ready_head = nullptr;
     io_operation* ready_tail = nullptr;
+    io_operation* submissions_head = nullptr;
+    io_operation* submissions_tail = nullptr;
     std::size_t parked_cancels = 0;
     bool closed = false;
     bool stopped = false;
     bool wakeup_published = false;
     bool wakeup_in_flight = false;
+    bool wakeup_needed = false;
     bool poller_done = false;
     std::thread::id poller_id{};
     // poller_error records only hard failures that stop the poller; every
@@ -868,6 +857,49 @@ private:
         const io_operation& operation) noexcept -> std::uint64_t {
         return static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(&operation));
+    }
+
+    [[nodiscard]] auto submit_operation_locked(
+        io_operation& operation,
+        std::uint8_t opcode,
+        int fd,
+        const void* address,
+        unsigned length) noexcept -> submit_status {
+        const std::uint64_t user_data = operation_user_data(operation);
+        if (!ring_state.publish_rw(opcode, fd, address, length, user_data)) {
+            record_flush_locked(ring_state.flush_published());
+            if (!ring_state.publish_rw(opcode, fd, address, length, user_data)) {
+                return submit_status::saturated;
+            }
+        }
+        const std::error_code flush_error = ring_state.flush_published();
+        record_flush_locked(flush_error);
+        if (flush_error && flush_error.value() != EBUSY &&
+            ring_state.try_retract_last_unconsumed()) {
+            return submit_status::saturated;
+        }
+        return submit_status::accepted;
+    }
+
+    void process_submissions_locked() noexcept {
+        while (submissions_head != nullptr) {
+            auto* const operation = submissions_head;
+            submissions_head = operation->submission_next;
+            operation->submission_next = nullptr;
+            operation->submission_pending = false;
+            if (stopped || operation->cancel_requested) {
+                operation->cancel_requested = true;
+                operation->result = -ECANCELED;
+                retire_if_drained_locked(*operation);
+            } else if (submit_operation_locked(
+                           *operation, operation->opcode, operation->fd,
+                           operation->address, operation->length) !=
+                       submit_status::accepted) {
+                operation->result = -ENOBUFS;
+                retire_if_drained_locked(*operation);
+            }
+        }
+        submissions_tail = nullptr;
     }
 
     void link_operation_locked(io_operation& operation) noexcept {
@@ -900,6 +932,10 @@ private:
     void record_flush_locked(std::error_code flush_error) noexcept {
         if (!flush_error) {
             flush_diagnostic = {};
+            if (wakeup_published) {
+                wakeup_published = false;
+                wakeup_in_flight = true;
+            }
         } else if (flush_error.value() != EBUSY) {
             flush_diagnostic = flush_error;
         }
@@ -923,17 +959,9 @@ private:
     void queue_cancel_locked(io_operation& operation) noexcept {
         signal_poller_locked();
         if (!publish_cancel_locked(operation)) {
+            operation.cancel_parked = true;
             ++parked_cancels;
             return;
-        }
-        const std::error_code flush_error = ring_state.flush_published();
-        record_flush_locked(flush_error);
-        if (flush_error && flush_error.value() != EBUSY) {
-            // The poller may have no CQE exposing this parked cancel.
-            // Publish a NOP and re-drive the
-            // shared SQ immediately; transient hard failures then cannot turn
-            // an accepted stop request into a permanent sleep.
-            submit_wakeup_locked();
         }
     }
 
@@ -945,13 +973,13 @@ private:
         for (io_operation* operation = operations_head;
              operation != nullptr && parked_cancels != 0;
              operation = operation->next) {
-            if (!operation->cancel_requested ||
-                operation->cancel_published) {
+            if (!operation->cancel_parked) {
                 continue;
             }
             if (!publish_cancel_locked(*operation)) {
                 break;
             }
+            operation->cancel_parked = false;
             --parked_cancels;
             ++published;
         }
@@ -966,7 +994,9 @@ private:
              operation = operation->next) {
             if (!operation->cancel_requested) {
                 operation->cancel_requested = true;
-                queue_cancel_locked(*operation);
+                if (!operation->submission_pending) {
+                    queue_cancel_locked(*operation);
+                }
             }
         }
     }
@@ -982,40 +1012,16 @@ private:
 
     void submit_wakeup_locked() noexcept {
         signal_poller_locked();
-        if (poller_done || wakeup_in_flight) {
+        if (poller_done || wakeup_in_flight || wakeup_published) {
             return;
         }
-
-        if (!wakeup_published) {
-            if (!ring_state.publish_nop(wakeup_user_data())) {
-                record_flush_locked(ring_state.flush_published());
-                if (!ring_state.publish_nop(wakeup_user_data())) {
-                    // A saturated SQ implies in-flight operations, so their
-                    // CQEs already guarantee a poller wakeup; the next
-                    // lifecycle transition retries this publish.
-                    flush_diagnostic =
-                        std::make_error_code(std::errc::no_buffer_space);
-                    return;
-                }
-            }
-            wakeup_published = true;
-        }
-
-        const std::error_code flush_error = ring_state.flush_published();
-        if (!flush_error) {
-            wakeup_published = false;
-            wakeup_in_flight = true;
+        wakeup_needed = true;
+        if (!ring_state.publish_nop(wakeup_user_data())) {
+            flush_diagnostic = std::make_error_code(std::errc::no_buffer_space);
             return;
         }
-        if (flush_error.value() == EBUSY) {
-            // A completion backlog is pending, so the poller is already
-            // guaranteed to wake up; the published SQE stays queued for a
-            // later flush attempt.
-            return;
-        }
-        // The wakeup NOP stays parked; wait_poller_exit() keeps re-flushing
-        // it, so this failure is a retried diagnostic rather than death.
-        flush_diagnostic = flush_error;
+        wakeup_needed = false;
+        wakeup_published = true;
     }
 
     void signal_poller_locked() noexcept {
@@ -1077,11 +1083,11 @@ private:
         if (--operation.pending_cqes != 0) {
             return;
         }
-        if (operation.cancel_requested && !operation.cancel_published &&
-            parked_cancels != 0) {
+        if (operation.cancel_parked) {
             // The parked cancel dies with the registry entry before it was
             // ever published, so no kernel-side reference remains.
             --parked_cancels;
+            operation.cancel_parked = false;
         }
         unlink_operation_locked(operation);
         if (operation.phase.exchange(
@@ -1142,9 +1148,8 @@ public:
         if (!thread_.joinable()) {
             return;
         }
-        // Pump parked wakeup flush retries until the poller commits to
-        // exiting, then join; see wait_poller_exit() for the hang this
-        // avoids.
+        // Wait until the poller has drained operations and lifecycle work,
+        // then join without taking over its submission ownership.
         state_->wait_poller_exit();
         thread_.join();
     }

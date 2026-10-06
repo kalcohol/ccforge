@@ -59,6 +59,7 @@ std::atomic<unsigned> inject_submit_failures{unlimited_submit_failures};
 std::atomic<int> inject_submit_errno_after_success{0};
 std::atomic<unsigned> combined_submit_calls{0};
 std::atomic<unsigned> injected_submit_calls{0};
+std::atomic<unsigned> successful_submit_calls{0};
 int observed_ring_fd = -1;
 io_uring_params observed_ring_params{};
 
@@ -100,6 +101,9 @@ extern "C" long __wrap_syscall(
             const long result =
                 __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
             if (result >= 0) {
+                if (result > 0) {
+                    successful_submit_calls.fetch_add(1, std::memory_order_release);
+                }
                 errno = injected_after_success;
                 return -1;
             }
@@ -123,7 +127,12 @@ extern "C" long __wrap_syscall(
             }
         }
     }
-    return __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
+    const long result =
+        __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
+    if (number == __NR_io_uring_enter && arg2 > 0 && result > 0) {
+        successful_submit_calls.fetch_add(1, std::memory_order_release);
+    }
+    return result;
 }
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -243,6 +252,18 @@ struct stoppable_completion_receiver : completion_receiver {
     return state->cv.wait_for(lock, 5s, [&] { return state->done(); });
 }
 
+[[nodiscard]] auto wait_for_calls(
+    const std::atomic<unsigned>& counter, unsigned expected) -> bool {
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (counter.load(std::memory_order_acquire) < expected &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    const bool observed = counter.load(std::memory_order_acquire) >= expected;
+    FAULT_CHECK(observed);
+    return observed;
+}
+
 // A hard flush failure on a data SQE must reject the submission with
 // no_buffer_space only while the shared head proves the tail entry was not
 // consumed. The rollback must leave the ring fully usable.
@@ -326,7 +347,17 @@ void check_wakeup_flush_hard_failure_self_heals() {
     std::this_thread::sleep_for(10ms);
 
     inject_submit_errno.store(ENOMEM);
+    const unsigned injected_before =
+        injected_submit_calls.load(std::memory_order_acquire);
     context.close();
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (injected_submit_calls.load(std::memory_order_acquire) ==
+               injected_before &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    FAULT_CHECK(injected_submit_calls.load(std::memory_order_acquire) >
+                injected_before);
     FAULT_CHECK(
         context.last_flush_diagnostic() ==
         std::error_code(ENOMEM, std::generic_category()));
@@ -358,11 +389,19 @@ void check_saturated_wakeup_publish_self_heals() {
 
     std::byte buffer[4] = {};
     auto state = std::make_shared<completion_state>();
+    const unsigned injected_before =
+        injected_submit_calls.load(std::memory_order_acquire);
     inject_submit_errno.store(EBUSY);
     auto operation = std::execution::connect(
         cio::as_sender(read_task(context, pipe.read_end, buffer)),
         completion_receiver{state});
     std::execution::start(operation);
+    if (!wait_for_calls(injected_submit_calls, injected_before + 1)) {
+        inject_submit_errno.store(0);
+        context.shutdown();
+        context.wait();
+        return;
+    }
 
     // The single SQ slot now holds the parked read, so the wakeup NOP
     // publish inside close() fails and records the saturation.
@@ -399,14 +438,23 @@ void check_cancel_flush_failure_wakes_poller(unsigned failure_count) {
         cio::as_sender(read_task(context, pipe.read_end, buffer)),
         stoppable_completion_receiver{
             completion_receiver{state}, stop_source.get_token()});
+    const unsigned submitted_before =
+        successful_submit_calls.load(std::memory_order_acquire);
     std::execution::start(operation);
-
-    std::this_thread::sleep_for(10ms);
+    if (!wait_for_calls(successful_submit_calls, submitted_before + 1)) {
+        context.shutdown();
+        context.wait();
+        return;
+    }
+    const unsigned injected_before =
+        injected_submit_calls.load(std::memory_order_acquire);
     inject_submit_failures.store(failure_count, std::memory_order_release);
     inject_submit_errno.store(ENOMEM, std::memory_order_release);
     FAULT_CHECK(stop_source.request_stop());
 
     const bool completed_without_lifecycle_wakeup = wait_done(state);
+    FAULT_CHECK(injected_submit_calls.load(std::memory_order_acquire) >=
+                injected_before + failure_count);
     inject_submit_errno.store(0, std::memory_order_release);
     inject_submit_failures.store(
         unlimited_submit_failures, std::memory_order_release);
@@ -468,8 +516,15 @@ void check_completions_progress_during_persistent_flush_failure() {
     auto second_op = std::execution::connect(
         cio::as_sender(read_task(context, second_pipe.read_end, second_buffer)),
         completion_receiver{second_state});
+    const unsigned submitted_before =
+        successful_submit_calls.load(std::memory_order_acquire);
     std::execution::start(first_op);
     std::execution::start(second_op);
+    if (!wait_for_calls(successful_submit_calls, submitted_before + 2)) {
+        context.shutdown();
+        context.wait();
+        return;
+    }
 
     inject_submit_errno.store(ENOMEM, std::memory_order_release);
     context.close();

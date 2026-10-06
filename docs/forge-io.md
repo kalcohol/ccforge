@@ -753,6 +753,9 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
 
 - `async_read_some(context, fd, span)` / `async_write_some(context, fd, span)`
   是 one-shot stream IO（SQE offset 固定 `-1`），结果为 `io_result<std::size_t>`。
+  提交先进入由 awaitable 自身承载的队列，不等待 poller 确认，也不分配额外的请求节点；
+  数据 SQE 与取消/生命周期 SQE 统一由常驻 poller 提交。启动线程退出不会取消已接受的
+  I/O，两个 context 的 coroutine 可以互相 await 而不阻塞对方的提交进展。
   short IO 照实交付；CQE 负值以 `std::generic_category()` 的正 errno 映射为
   error（含 `-EINTR`，不模拟 readiness backend 的重试）。
 - 对端关闭的 pipe/socket 写以 `EPIPE` error 交付，包括写请求因背压挂起后才关闭的情况。
@@ -785,7 +788,7 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   `erased_io_awaitable` 有同型护栏：已启动未 resume 的 erased operation 在析构
   时 `std::terminate()`（否则 slot 永久 active、后端完成会 resume 已释放的帧）。
 - V1 边界：SQ 满且 flush 后仍无法接纳时，operation 以
-  `std::errc::no_buffer_space` error 完成；poller 遇到非 EINTR/EAGAIN/EBUSY 的
+  `std::errc::no_buffer_space` error 完成（由 poller 处理排队请求时决定）；poller 遇到非 EINTR/EAGAIN/EBUSY 的
   `io_uring_enter` 硬错误会停机，届时仍悬挂的 awaiter 不会被恢复（proof 阶段
   边界，构造期的同步 NOP round-trip 已把"环从未可用"的沙箱排除在外）。停机后
   新提交一律以 stopped 完成；`context.last_error()` 只返回这类让 poller 停机的
@@ -799,7 +802,7 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   护栏而不是静默 UAF。
 - 所有带 `to_submit > 0` 的 enter 都在 context submission mutex 下串行；poller
   的 GETEVENTS 不顺带消费 SQ。数据 SQE 的 flush 硬失败后，
-  只有 shared SQ head 证明尾项尚未被消费时才回退并交付 `no_buffer_space`；若 head
+  只有 shared SQ head 证明尾项尚未被消费时才由 poller 回退并交付 `no_buffer_space`；若 head
   已前进，kernel ownership 已成立，operation 留在 registry 直到 CQE drain。这避免
   并发 poller 消费与 tail 回退造成 ring 失配或悬空 user_data。
 - poller 同时等待 CQ readiness 与独立的 control eventfd；operation 取消和生命周期
@@ -807,9 +810,8 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   后仍由 poller 重试，不需要额外的 `close()` 或新的 I/O 才能恢复取消进展。
   空闲等待每秒检查一次 CQ 丢失计数；该计数非零时按后端硬错误停机，不会静默等待。
 - 生命周期唤醒对 flush 硬失败有自愈路径：`close()`/`request_stop()`/`shutdown()`
-  发布的唤醒 NOP 若 flush 失败（如瞬态 ENOMEM）会留驻 SQ，`wait()`（含析构）
-  在 join 前循环重驱动完整唤醒链（必要时重试发布，已发布则重试 flush）直至内核
-  接纳，poller 不会因单次 flush 失败而在无超时的 GETEVENTS 里永久沉睡。
+  请求的唤醒 NOP 若暂时无法发布或 flush 失败（如瞬态 ENOMEM），由 poller 重试
+  发布与提交，直至内核接纳；`wait()`（含析构）只等待排空并 join，不接管 SQ 提交。
 - io_uring awaitable 的 operation state 大于 03 冻结的 128-byte erasure slot，
   `owning_any_async_*` 按设计在编译期拒绝它；direct async stream concept
   （`async_read_stream` / `async_write_stream`）适配不受影响。
