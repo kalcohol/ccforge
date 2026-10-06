@@ -176,7 +176,7 @@ T elliptic_integral(T upper, Fun&& integrand) {
     const long double full_periods = std::floor(bound / period);
     const long double remainder = std::fmod(bound, period);
     const auto wide_integrand = [&](long double theta) {
-            return static_cast<long double>(integrand(static_cast<T>(theta)));
+            return integrand(theta);
         };
 
     long double integral = 0.0L;
@@ -283,11 +283,12 @@ T ellint_2_fallback(T k, T phi) {
     if (std::isnan(k) || std::isnan(phi) || std::abs(k) > T{1}) {
         return quiet_nan<T>();
     }
-    return elliptic_integral(phi, [&](T theta) {
-        const T s = std::sin(theta);
-        const T radicand = T{1} - k * k * s * s;
-        if (radicand < T{}) {
-            return quiet_nan<T>();
+    const long double modulus = static_cast<long double>(k);
+    return elliptic_integral(phi, [&](long double theta) {
+        const long double s = std::sin(theta);
+        const long double radicand = 1.0L - modulus * modulus * s * s;
+        if (radicand < 0.0L) {
+            return quiet_nan<long double>();
         }
         return std::sqrt(radicand);
     });
@@ -407,15 +408,17 @@ T ellint_3_fallback(T k, T nu, T phi) {
     if (std::abs(k) == T{1}) {
         return ellint_3_unit_modulus(nu, phi);
     }
-    return elliptic_integral(phi, [&](T theta) {
-        const T s = std::sin(theta);
-        const T sin2 = s * s;
-        const T radicand = T{1} - k * k * sin2;
-        const T pole = T{1} - nu * sin2;
-        if (radicand <= T{} || pole == T{}) {
-            return infinity<T>();
+    const long double modulus = static_cast<long double>(k);
+    const long double order = static_cast<long double>(nu);
+    return elliptic_integral(phi, [&](long double theta) {
+        const long double s = std::sin(theta);
+        const long double sin2 = s * s;
+        const long double radicand = 1.0L - modulus * modulus * sin2;
+        const long double pole = 1.0L - order * sin2;
+        if (radicand <= 0.0L || pole == 0.0L) {
+            return infinity<long double>();
         }
-        return T{1} / (pole * std::sqrt(radicand));
+        return 1.0L / (pole * std::sqrt(radicand));
     });
 }
 

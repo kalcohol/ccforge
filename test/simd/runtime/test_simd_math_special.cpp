@@ -108,6 +108,55 @@ TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
     EXPECT_EQ(sm::beta_fallback(2.5e305, 2.5e305), 0.0);
 }
 
+TEST(SimdMathSpecialTest, EllipticQuadratureKeepsWorkingPrecisionAtEveryNode) {
+    namespace sm = std::simd::detail::special_math;
+    unsigned evaluations = 0;
+    const auto integrand = [&](long double theta) {
+        ++evaluations;
+        const long double sine = std::sin(theta);
+        return std::sqrt(1.0L - 0.36L * sine * sine);
+    };
+    const float actual = sm::elliptic_integral(0.7f, integrand);
+    // Independent high-precision E(0.7f, 0.6^2), using the exact float angle.
+    EXPECT_FLOAT_EQ(actual, static_cast<float>(0.68088891912542322600L));
+    EXPECT_LT(evaluations, 3000u);
+}
+
+TEST(SimdMathSpecialTest, FloatEllipticQuadraturePreservesIndependentReferences) {
+    namespace sm = std::simd::detail::special_math;
+    struct sample {
+        float modulus;
+        float order;
+        float amplitude;
+        long double second;
+        long double third;
+    };
+    // References use the exact binary float inputs, not decimal approximations.
+    const sample samples[]{
+        {0.6f, 0.3f, 0.7f, 0.68088891756817366905L, 0.75552973363324815838L},
+        {0.9f, 0.5f, 1.2f, 0.99580330253529232071L, 1.94962017222484254355L},
+        {0.25f, -0.5f, 4.0f, 3.94460616172860643747L, 3.38837659249246461268L}};
+    for (const auto& value : samples) {
+        SCOPED_TRACE(value.amplitude);
+        EXPECT_FLOAT_EQ(sm::ellint_2_fallback(value.modulus, value.amplitude),
+            static_cast<float>(value.second));
+        EXPECT_FLOAT_EQ(sm::ellint_3_fallback(value.modulus, value.order, value.amplitude),
+            static_cast<float>(value.third));
+        EXPECT_FLOAT_EQ(sm::ellint_2_fallback(-value.modulus, -value.amplitude),
+            -static_cast<float>(value.second));
+        EXPECT_FLOAT_EQ(sm::ellint_3_fallback(-value.modulus, value.order, -value.amplitude),
+            -static_cast<float>(value.third));
+#if !defined(__cpp_lib_math_special_functions)
+        const auto second = std::simd::ellint_2(float4(value.modulus), value.amplitude);
+        const auto third = std::simd::ellint_3(float4(value.modulus), value.order, value.amplitude);
+        for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+            EXPECT_FLOAT_EQ(second[i], static_cast<float>(value.second));
+            EXPECT_FLOAT_EQ(third[i], static_cast<float>(value.third));
+        }
+#endif
+    }
+}
+
 TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersMatchIndependentConstants) {
     namespace sm = std::simd::detail::special_math;
     struct rc_sample { long double x; long double y; long double expected; };
