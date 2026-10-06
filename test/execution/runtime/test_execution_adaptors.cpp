@@ -1488,8 +1488,42 @@ TEST(ContinuesOnTest, StoppedHopUsesTheRealAddressOfTheOuterReceiver) {
     EXPECT_EQ(state.abandoned_hops, 0);
 }
 
+struct optional_stopped_sender {
+    using sender_concept = std::execution::sender_t;
+    bool stopped = true;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int), std::execution::set_stopped_t()> {
+        return {};
+    }
+
+    template<std::execution::receiver R>
+    struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R rcvr;
+        bool stopped;
+
+        op(R r, bool stop) : rcvr(std::move(r)), stopped(stop) {}
+
+        void start() & noexcept {
+            if (stopped) {
+                std::execution::set_stopped(std::move(rcvr));
+            } else {
+                std::execution::set_value(std::move(rcvr), 42);
+            }
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> op<R> { return op<R>{std::move(r), stopped}; }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 TEST(StoppedAsOptionalTest, SenderExists) {
-    auto sndr1 = std::execution::stopped_as_optional(std::execution::just_stopped());
+    auto sndr1 = std::execution::stopped_as_optional(optional_stopped_sender{});
     static_assert(std::execution::sender<decltype(sndr1)>);
     auto sndr2 = std::execution::stopped_as_error(std::execution::just_stopped(), 42);
     static_assert(std::execution::sender<decltype(sndr2)>);
@@ -1498,7 +1532,7 @@ TEST(StoppedAsOptionalTest, SenderExists) {
 
 TEST(StoppedAsOptionalTest, SupportsPipeForm) {
     auto result = std::execution::sync_wait(
-        std::execution::just_stopped() | std::execution::stopped_as_optional);
+        optional_stopped_sender{} | std::execution::stopped_as_optional);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(std::get<0>(*result).has_value());
@@ -1536,12 +1570,12 @@ TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
 }
 
 TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
-    auto sndr = std::execution::stopped_as_optional(std::execution::just_stopped());
+    auto sndr = std::execution::stopped_as_optional(optional_stopped_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
         sndr, std::execution::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(std::optional<std::tuple<>>)>>);
+            std::execution::set_value_t(std::optional<int>)>>);
 
     auto result = std::execution::sync_wait(std::move(sndr));
 

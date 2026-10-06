@@ -36,6 +36,32 @@ namespace std::execution {
 
 namespace __forge_stopped {
 
+template<class Sig>
+struct __optional_value_shape {
+    static constexpr int count = 0;
+    static constexpr bool nonempty = false;
+};
+
+template<class... Vs>
+struct __optional_value_shape<set_value_t(Vs...)> {
+    static constexpr int count = 1;
+    static constexpr bool nonempty = sizeof...(Vs) != 0;
+};
+
+template<class CS>
+struct __valid_optional_cs : std::false_type {};
+
+template<class... Sigs>
+struct __valid_optional_cs<completion_signatures<Sigs...>>
+    : std::bool_constant<
+          (0 + ... + __optional_value_shape<Sigs>::count) == 1 &&
+          (__optional_value_shape<Sigs>::nonempty || ...)> {};
+
+template<class S, class Env>
+concept __optional_source_in = requires {
+    requires __valid_optional_cs<completion_signatures_of_t<S, Env>>::value;
+};
+
 template<class... Vs>
 struct __optional_value_type {
     using type = std::optional<std::tuple<std::decay_t<Vs>...>>;
@@ -117,9 +143,10 @@ struct __optional_stopped_sig<OptionalT, true> {
 };
 
 template<class CS>
-struct __optional_cs;
+struct __optional_cs {};
 
 template<class... Sigs>
+    requires __valid_optional_cs<completion_signatures<Sigs...>>::value
 struct __optional_cs<completion_signatures<Sigs...>> {
     using optional_t = typename __first_optional_type<completion_signatures<Sigs...>>::type;
     static constexpr bool may_throw = (__optional_sig<Sigs>::may_throw || ...);
@@ -223,38 +250,34 @@ struct __optional_sender {
     S __sndr;
 
     template<receiver R>
+        requires __optional_source_in<S, env_of_t<R>>
     auto connect(R r) &&
         -> __optional_op<S, R,
-            typename __first_optional_type<decltype(std::execution::get_completion_signatures(
-                std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
+            typename __optional_cs<completion_signatures_of_t<S, env_of_t<R>>>::optional_t>
     {
-        using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), std::declval<env_of_t<R>>()));
-        using optional_t = typename __first_optional_type<cs_t>::type;
+        using cs_t = completion_signatures_of_t<S, env_of_t<R>>;
+        using optional_t = typename __optional_cs<cs_t>::optional_t;
         return __optional_op<S, R, optional_t>(std::move(__sndr), std::move(r));
     }
 
 
     template<receiver R>
-        requires std::copy_constructible<S>
+        requires std::copy_constructible<S> && __optional_source_in<S, env_of_t<R>>
     auto connect(R r) const&
         -> __optional_op<S, R,
-            typename __first_optional_type<decltype(std::execution::get_completion_signatures(
-                std::declval<S>(), std::declval<env_of_t<R>>()))>::type>
+            typename __optional_cs<completion_signatures_of_t<S, env_of_t<R>>>::optional_t>
     {
-        using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), std::declval<env_of_t<R>>()));
-        using optional_t = typename __first_optional_type<cs_t>::type;
+        using cs_t = completion_signatures_of_t<S, env_of_t<R>>;
+        using optional_t = typename __optional_cs<cs_t>::optional_t;
         return __optional_op<S, R, optional_t>(__sndr, std::move(r));
     }
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        return typename __optional_cs<up_cs_t>::type{};
+        requires __optional_source_in<typename std::remove_cvref_t<Self>::source_t, Env>
+    static auto get_completion_signatures() noexcept
+        -> typename __optional_cs<completion_signatures_of_t<
+            typename std::remove_cvref_t<Self>::source_t, Env>>::type {
+        return {};
     }
 
     auto get_env() const noexcept {
@@ -348,6 +371,7 @@ struct __error_sender {
 
 namespace __forge_stopped {
 
+// Do not infer receiver-environment completion shapes while forming the adaptor.
 struct __optional_closure {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {

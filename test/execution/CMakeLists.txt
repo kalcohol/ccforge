@@ -28,7 +28,8 @@ function(forge_expect_execution_cxx_source_compiles result_var source_name shoul
     set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
     set(CMAKE_REQUIRED_INCLUDES
         "${CMAKE_SOURCE_DIR}/backport"
-        "${CMAKE_SOURCE_DIR}/include")
+        "${CMAKE_SOURCE_DIR}/include"
+        "${FORGE_EXECUTION_TEST_ROOT}/compile")
     foreach(_forge_required_target IN ITEMS forge_std forge)
         if(TARGET ${_forge_required_target})
             get_target_property(
@@ -60,6 +61,10 @@ forge_add_execution_compile_probe(
     test_execution_just_constraints
     test_execution_just_constraints.cpp
     execution_just_constraints_compile)
+forge_add_execution_compile_probe(
+    test_execution_stopped_optional_constraints
+    test_execution_stopped_optional_constraints.cpp
+    execution_stopped_optional_constraints_compile)
 forge_add_execution_compile_probe(
     test_execution_include_continues_on
     test_execution_include_continues_on.cpp
@@ -170,12 +175,51 @@ forge_expect_execution_cxx_source_compiles(
     test_execution_reject_mismatched_upon_error.cpp
     OFF
     "std::execution::upon_error must reject handlers that cannot accept every error shape")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_ACCEPTS_STOPPED_OPTIONAL_CONSTRAINTS
+    test_execution_stopped_optional_constraints.cpp
+    ON
+    "std::execution::stopped_as_optional positive and constraint probes must compile")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_NO_VALUE
+    test_execution_reject_stopped_optional_no_value.cpp
+    OFF
+    "std::execution::stopped_as_optional signature queries must reject senders without value signatures")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_EMPTY_VALUE
+    test_execution_reject_stopped_optional_empty_value.cpp
+    OFF
+    "std::execution::stopped_as_optional signature queries must reject void value signatures")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_MULTI_VALUE
+    test_execution_reject_stopped_optional_multi_value.cpp
+    OFF
+    "std::execution::stopped_as_optional signature queries must reject multiple value signatures even with the same decay")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_DEPENDENT_SIGNATURES
+    test_execution_reject_stopped_optional_dependent_signatures.cpp
+    OFF
+    "std::execution::stopped_as_optional must check dependent completion signatures in their environment")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_DEPENDENT_CONNECT
+    test_execution_reject_stopped_optional_dependent_connect.cpp
+    OFF
+    "std::execution::stopped_as_optional rvalue connect must reject a dependent sender without values")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_REJECTS_STOPPED_OPTIONAL_DEPENDENT_CONST_CONNECT
+    test_execution_reject_stopped_optional_dependent_const_connect.cpp
+    OFF
+    "std::execution::stopped_as_optional const connect must reject multiple dependent value signatures")
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
 forge_add_execution_runtime_test(
     test_execution_just
     test_execution_just.cpp
     execution_just)
+forge_add_execution_runtime_test(
+    test_execution_stopped_optional
+    test_execution_stopped_optional.cpp
+    execution_stopped_optional)
 forge_add_execution_runtime_test(
     test_execution_member_customization
     test_execution_member_customization.cpp

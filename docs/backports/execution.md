@@ -20,6 +20,11 @@
   `get_scheduler` / `get_start_scheduler` / `get_delegation_scheduler`）、
   `sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
+  `stopped_as_optional` 要求恰好一个非 `void` value completion signature；单一签名
+  的多个参数形成 `optional<tuple<...>>`。无 value、零参数 value 或多个 value 候选
+  不满足该约束。当前实现将 shape 验证延迟到实际环境下的 completion-signature
+  查询或 `connect`；创建 adaptor 时不猜测 `empty_env`。这是一项已接受的 creation
+  Mandate 延迟偏差，尚未实现 WD `make-sender` 的无环境 / 环境依赖分类。
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
