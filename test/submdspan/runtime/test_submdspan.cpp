@@ -146,6 +146,76 @@ void check_constant_index() {
     EXPECT_EQ(row[3], Expected * 4 + 3);
 }
 
+template<class Slice>
+void check_static_empty_range(Slice slice) {
+    using source_extents_t = std::extents<int, 8>;
+    auto slices = std::canonical_slices(source_extents_t{}, slice);
+    using canonical_t = std::tuple_element_t<0, decltype(slices)>;
+    static_assert(std::is_same_v<canonical_t, std::extent_slice<
+        std::constant_wrapper<2>, std::constant_wrapper<0>, std::constant_wrapper<1>>>);
+    EXPECT_EQ(std::get<0>(slices).offset, 2);
+    EXPECT_EQ(std::get<0>(slices).extent, 0);
+    EXPECT_EQ(std::get<0>(slices).stride, 1);
+
+    auto extents = std::subextents(source_extents_t{}, slice);
+    static_assert(std::is_same_v<decltype(extents), std::extents<int, 0>>);
+    EXPECT_EQ(extents.extent(0), 0);
+
+    auto data = make_data<8>();
+    std::mdspan<int, source_extents_t, std::layout_left> left(data.data());
+    std::mdspan<int, source_extents_t, std::layout_right> right(data.data());
+    auto left_sub = std::submdspan(left, slice);
+    auto right_sub = std::submdspan(right, slice);
+    static_assert(std::is_same_v<typename decltype(left_sub)::layout_type, std::layout_left>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::layout_type, std::layout_right>);
+    static_assert(std::is_same_v<typename decltype(left_sub)::extents_type, std::extents<int, 0>>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::extents_type, std::extents<int, 0>>);
+    EXPECT_EQ(left_sub.extent(0), 0);
+    EXPECT_EQ(right_sub.extent(0), 0);
+    EXPECT_EQ(left_sub.mapping().stride(0), 1);
+    EXPECT_EQ(right_sub.mapping().stride(0), 1);
+    EXPECT_EQ(left_sub.mapping().required_span_size(), 0);
+    EXPECT_EQ(right_sub.mapping().required_span_size(), 0);
+    EXPECT_EQ(left_sub.data_handle(), data.data() + 2);
+    EXPECT_EQ(right_sub.data_handle(), data.data() + 2);
+}
+
+template<class ExpectedStride, class Slice>
+void check_dynamic_empty_range(Slice slice, int expected_stride) {
+    using source_extents_t = std::extents<int, 8>;
+    auto slices = std::canonical_slices(source_extents_t{}, slice);
+    using canonical_t = std::tuple_element_t<0, decltype(slices)>;
+    static_assert(std::is_same_v<canonical_t, std::extent_slice<int, int, ExpectedStride>>);
+    EXPECT_EQ(std::get<0>(slices).offset, 2);
+    EXPECT_EQ(std::get<0>(slices).extent, 0);
+    EXPECT_EQ(std::get<0>(slices).stride, expected_stride);
+
+    auto extents = std::subextents(source_extents_t{}, slice);
+    static_assert(std::is_same_v<decltype(extents), std::dextents<int, 1>>);
+    EXPECT_EQ(extents.extent(0), 0);
+
+    auto data = make_data<8>();
+    std::mdspan<int, source_extents_t, std::layout_left> left(data.data());
+    std::mdspan<int, source_extents_t, std::layout_right> right(data.data());
+    auto left_sub = std::submdspan(left, slice);
+    auto right_sub = std::submdspan(right, slice);
+    constexpr bool unit_stride = std::is_same_v<ExpectedStride, std::constant_wrapper<1>>;
+    static_assert(std::is_same_v<typename decltype(left_sub)::layout_type,
+        std::conditional_t<unit_stride, std::layout_left, std::layout_stride>>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::layout_type,
+        std::conditional_t<unit_stride, std::layout_right, std::layout_stride>>);
+    static_assert(std::is_same_v<typename decltype(left_sub)::extents_type, std::dextents<int, 1>>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::extents_type, std::dextents<int, 1>>);
+    EXPECT_EQ(left_sub.extent(0), 0);
+    EXPECT_EQ(right_sub.extent(0), 0);
+    EXPECT_EQ(left_sub.mapping().stride(0), 1);
+    EXPECT_EQ(right_sub.mapping().stride(0), 1);
+    EXPECT_EQ(left_sub.mapping().required_span_size(), 0);
+    EXPECT_EQ(right_sub.mapping().required_span_size(), 0);
+    EXPECT_EQ(left_sub.data_handle(), data.data() + 2);
+    EXPECT_EQ(right_sub.data_handle(), data.data() + 2);
+}
+
 } // namespace
 
 TEST(SubmdspanIntegralConstantLike, NonStaticValueUsesRuntimeIndex) {
@@ -175,6 +245,82 @@ TEST(SubmdspanIntegralConstantLike, OrdinaryIndicesRemainCompatible) {
     check_runtime_index(1, 1);
     check_runtime_index(2u, 2);
     check_runtime_index(ordinary_index{2}, 2);
+}
+
+TEST(SubmdspanRangeCanonicalization, StaticEmptyRangesUseConstantUnitStride) {
+    check_static_empty_range(std::range_slice{std::cw<2>, std::cw<2>, std::cw<3>});
+    check_static_empty_range(std::range_slice{std::cw<2>, std::cw<2>, std::cw<0>});
+    check_static_empty_range(std::range_slice{std::cw<2>, std::cw<2>, 3});
+    check_static_empty_range(std::range_slice{std::cw<2>, std::cw<2>, 0});
+    check_static_empty_range(std::range_slice{std::cw<2>, std::cw<2>, -1});
+    check_static_empty_range(std::range_slice{
+        std::integral_constant<int, 2>{}, std::integral_constant<unsigned, 2>{},
+        std::integral_constant<int, 0>{}});
+}
+
+TEST(SubmdspanRangeCanonicalization, StaticEmptyPairRangesKeepStaticExtents) {
+    check_static_empty_range(std::pair{std::cw<2>, std::cw<2>});
+    check_static_empty_range(std::pair{
+        std::integral_constant<int, 2>{}, std::integral_constant<unsigned, 2>{}});
+}
+
+TEST(SubmdspanRangeCanonicalization, DynamicEmptyRangesNormalizeDynamicStride) {
+    check_dynamic_empty_range<int>(std::range_slice{2, 2, 5}, 1);
+    check_dynamic_empty_range<int>(std::range_slice{2, 2, 0}, 1);
+    check_dynamic_empty_range<int>(std::range_slice{2, 2, -1}, 1);
+}
+
+TEST(SubmdspanRangeCanonicalization, DynamicEmptyRangesRetainConstantStride) {
+    check_dynamic_empty_range<std::constant_wrapper<3>>(
+        std::range_slice{2, 2, std::cw<3>}, 3);
+    check_dynamic_empty_range<std::constant_wrapper<3>>(
+        std::range_slice{2, 2, std::integral_constant<int, 3>{}}, 3);
+    check_dynamic_empty_range<std::constant_wrapper<1>>(
+        std::range_slice{2, 2}, 1);
+}
+
+TEST(SubmdspanRangeCanonicalization, NonemptyRangesPreserveCountAndStrideCategories) {
+    using source_extents_t = std::extents<int, 8>;
+    constexpr auto static_slice = std::range_slice{std::cw<1>, std::cw<8>, std::cw<3>};
+    constexpr auto static_slices = std::canonical_slices(source_extents_t{}, static_slice);
+    using static_canonical_t = std::tuple_element_t<0, std::remove_cvref_t<decltype(static_slices)>>;
+    static_assert(std::is_same_v<static_canonical_t, std::extent_slice<
+        std::constant_wrapper<1>, std::constant_wrapper<3>, std::constant_wrapper<3>>>);
+    static_assert(std::get<0>(static_slices).extent == 3);
+    constexpr auto static_extents = std::subextents(source_extents_t{}, static_slice);
+    static_assert(std::remove_cvref_t<decltype(static_extents)>::static_extent(0) == 3);
+
+    auto dynamic_slices = std::canonical_slices(
+        source_extents_t{}, std::range_slice{1, 8, std::cw<3>});
+    using dynamic_canonical_t = std::tuple_element_t<0, decltype(dynamic_slices)>;
+    static_assert(std::is_same_v<dynamic_canonical_t,
+        std::extent_slice<int, int, std::constant_wrapper<3>>>);
+    EXPECT_EQ(std::get<0>(dynamic_slices).extent, 3);
+    EXPECT_EQ(std::get<0>(dynamic_slices).stride, 3);
+
+    auto dynamic_stride_slices = std::canonical_slices(
+        source_extents_t{}, std::range_slice{std::cw<1>, std::cw<8>, 3});
+    using dynamic_stride_canonical_t = std::tuple_element_t<0, decltype(dynamic_stride_slices)>;
+    static_assert(std::is_same_v<dynamic_stride_canonical_t,
+        std::extent_slice<std::constant_wrapper<1>, int, int>>);
+    EXPECT_EQ(std::get<0>(dynamic_stride_slices).extent, 3);
+    EXPECT_EQ(std::get<0>(dynamic_stride_slices).stride, 3);
+
+    auto data = make_data<8>();
+    std::mdspan<int, source_extents_t, std::layout_left> left(data.data());
+    std::mdspan<int, source_extents_t, std::layout_right> right(data.data());
+    auto left_sub = std::submdspan(left, static_slice);
+    auto right_sub = std::submdspan(right, static_slice);
+    static_assert(std::is_same_v<typename decltype(left_sub)::layout_type, std::layout_stride>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::layout_type, std::layout_stride>);
+    static_assert(std::is_same_v<typename decltype(left_sub)::extents_type, std::extents<int, 3>>);
+    static_assert(std::is_same_v<typename decltype(right_sub)::extents_type, std::extents<int, 3>>);
+    EXPECT_EQ(left_sub.mapping().stride(0), 3);
+    EXPECT_EQ(right_sub.mapping().stride(0), 3);
+    EXPECT_EQ(left_sub[0], 1);
+    EXPECT_EQ(left_sub[2], 7);
+    EXPECT_EQ(right_sub[0], 1);
+    EXPECT_EQ(right_sub[2], 7);
 }
 
 // ---------------------------------------------------------------------------

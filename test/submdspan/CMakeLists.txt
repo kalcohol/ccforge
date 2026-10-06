@@ -197,6 +197,19 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
             TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
         unset(_forge_native_padded_handoff_root)
     endif()
+    if(_forge_submdspan_backport_tests
+            AND _forge_padded_backport_tests
+            AND _forge_constant_wrapper_backport_tests)
+        foreach(_forge_zero_stride_case IN ITEMS
+                dynamic_range dynamic_empty_range)
+            forge_expect_submdspan_cxx_source_compiles(
+                FORGE_SUBMDSPAN_REJECTS_${_forge_zero_stride_case}_ZERO_CONSTANT_STRIDE
+                "test_submdspan_reject_${_forge_zero_stride_case}_zero_constant_stride.cpp"
+                OFF
+                "submdspan canonical range must reject a zero constant stride for dynamic spans")
+        endforeach()
+        unset(_forge_zero_stride_case)
+    endif()
     unset(_forge_submdspan_backport_tests)
     unset(_forge_padded_backport_tests)
     unset(_forge_constant_wrapper_backport_tests)

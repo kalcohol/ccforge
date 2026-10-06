@@ -871,30 +871,39 @@ constexpr auto canonical_range_slice(OffsetType offset, SpanType span, StrideTyp
     static_assert(sizeof...(StrideTypes) <= 1);
     auto c_offset = canonical_index<IndexType>(offset);
     auto c_span = canonical_index<IndexType>(span);
+    using span_t = remove_cvref_t<decltype(c_span)>;
     auto c_stride = [&] {
-        if constexpr (sizeof...(StrideTypes) == 0) {
+        if constexpr (sizeof...(StrideTypes) == 0 ||
+                      is_same_v<span_t, constant_wrapper<IndexType(0)>>) {
             return constant_wrapper<IndexType(1)>{};
         } else {
-            return canonical_index<IndexType>((strides, ...));
+            auto stride = canonical_index<IndexType>((strides, ...));
+            if constexpr (is_constant_wrapper_v<decltype(stride)>) {
+                return stride;
+            } else {
+                return static_cast<IndexType>(c_span) == IndexType(0)
+                    ? IndexType(1)
+                    : stride;
+            }
         }
     }();
 
-    using span_t = remove_cvref_t<decltype(c_span)>;
     using stride_t = remove_cvref_t<decltype(c_stride)>;
+    if constexpr (is_constant_wrapper_v<stride_t>) {
+        static_assert(stride_t::value > IndexType(0),
+                      "canonical_range_slice: constant stride must be positive");
+    }
 
     if constexpr (is_icl_v<span_t> && is_icl_v<stride_t>) {
         constexpr IndexType span_v = static_cast<IndexType>(span_t::value);
         constexpr IndexType stride_v = static_cast<IndexType>(stride_t::value);
-        static_assert(stride_v > IndexType(0));
         constexpr IndexType extent_v =
             span_v == IndexType(0) ? IndexType(0)
                                    : static_cast<IndexType>(IndexType(1) + (span_v - IndexType(1)) / stride_v);
         return extent_slice{c_offset, constant_wrapper<extent_v>{}, c_stride};
     } else {
         const IndexType span_v = static_cast<IndexType>(c_span);
-        const IndexType stride_v = span_v == IndexType(0)
-            ? IndexType(1)
-            : static_cast<IndexType>(c_stride);
+        const IndexType stride_v = static_cast<IndexType>(c_stride);
         const IndexType extent_v = span_v == IndexType(0)
             ? IndexType(0)
             : static_cast<IndexType>(IndexType(1) + (span_v - IndexType(1)) / stride_v);
