@@ -127,6 +127,88 @@ struct runtime_completion_domain_attrs {
     }
 };
 
+struct value_completion_attrs {
+    static inline int calls = 0;
+
+    template<class Env>
+    auto query(std::execution::get_completion_domain_t<std::execution::set_value_t>,
+               const Env&) const -> queried_domain {
+        ++calls;
+        throw 42;
+    }
+};
+
+struct envless_completion_attrs {
+    static inline int calls = 0;
+
+    auto query(std::execution::get_completion_domain_t<std::execution::set_value_t>)
+        const -> queried_domain {
+        ++calls;
+        throw 42;
+    }
+};
+
+struct explicit_void_completion_attrs : value_completion_attrs {
+    using value_completion_attrs::query;
+    auto query(std::execution::get_completion_domain_t<>,
+               const std::execution::empty_env&) const
+        -> std::execution::default_domain { throw 42; }
+};
+
+struct invalid_void_completion_attrs : value_completion_attrs {
+    using value_completion_attrs::query;
+    void query(std::execution::get_completion_domain_t<>,
+               const std::execution::empty_env&) const noexcept {}
+};
+
+struct completion_domain_scheduler;
+
+struct completion_domain_schedule_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    struct attributes {
+        auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept
+            -> completion_domain_scheduler;
+    };
+
+    auto get_env() const noexcept -> attributes { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        void start() & noexcept { std::execution::set_value(std::move(receiver)); }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) const -> operation<R> {
+        return {std::move(receiver)};
+    }
+};
+
+struct completion_domain_scheduler : value_completion_attrs {
+    using scheduler_concept = std::execution::scheduler_t;
+    auto schedule() const noexcept -> completion_domain_schedule_sender { return {}; }
+    bool operator==(const completion_domain_scheduler&) const noexcept { return true; }
+};
+
+inline auto completion_domain_schedule_sender::attributes::query(
+    std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+    const noexcept -> completion_domain_scheduler { return {}; }
+
+template<class Completion, class Domain, class... Args>
+concept completion_domain_is = requires(Args&&... args) {
+    { std::execution::get_completion_domain<Completion>(
+        static_cast<Args&&>(args)...) } -> std::same_as<Domain>;
+};
+
 struct non_default_domain {
     explicit non_default_domain(int) noexcept {}
 };
@@ -734,6 +816,56 @@ TEST(DefaultDomainTest, CompletionQuerySelectsTypeWithoutEvaluatingQueryValue) {
         std::execution::empty_env{})));
     EXPECT_EQ(runtime_completion_domain_attrs::calls, 0);
     EXPECT_EQ(domain.identity, 17);
+}
+
+TEST(CompletionDomainTest, VoidTagFallsBackToValueTag) {
+    EXPECT_TRUE((completion_domain_is<void, queried_domain,
+        value_completion_attrs, std::execution::empty_env>));
+}
+
+TEST(CompletionDomainTest, SupportsEnvlessQueriesAndTheirFallback) {
+    EXPECT_TRUE((completion_domain_is<std::execution::set_value_t,
+        queried_domain, envless_completion_attrs>));
+    EXPECT_TRUE((completion_domain_is<void, queried_domain,
+        envless_completion_attrs>));
+    EXPECT_TRUE((completion_domain_is<void, queried_domain,
+        envless_completion_attrs, std::execution::empty_env>));
+}
+
+TEST(CompletionDomainTest, FallsBackThroughCompletionScheduler) {
+    EXPECT_TRUE((completion_domain_is<void, queried_domain,
+        completion_domain_schedule_sender::attributes,
+        std::execution::empty_env>));
+}
+
+TEST(CompletionDomainTest, DefaultDomainRequiresSchedulerAndEnvironment) {
+    EXPECT_TRUE((completion_domain_is<void, std::execution::default_domain,
+        std::execution::inline_scheduler, std::execution::empty_env>));
+    EXPECT_FALSE((completion_domain_is<void, std::execution::default_domain,
+        std::execution::inline_scheduler>));
+    EXPECT_FALSE((completion_domain_is<void, std::execution::default_domain,
+        std::execution::empty_env, std::execution::empty_env>));
+    EXPECT_FALSE((completion_domain_is<int, queried_domain,
+        value_completion_attrs, std::execution::empty_env>));
+}
+
+TEST(CompletionDomainTest, FallbackDoesNotEvaluateQueriesOrOverrideDirectVoidTag) {
+    value_completion_attrs::calls = 0;
+    envless_completion_attrs::calls = 0;
+    auto value_domain = std::execution::get_completion_domain<>(
+        value_completion_attrs{}, std::execution::empty_env{});
+    auto envless_domain = std::execution::get_completion_domain<>(
+        envless_completion_attrs{});
+    auto explicit_domain = std::execution::get_completion_domain<>(
+        explicit_void_completion_attrs{}, std::execution::empty_env{});
+    static_assert(std::same_as<decltype(explicit_domain),
+        std::execution::default_domain>);
+    EXPECT_EQ(value_domain.identity, queried_domain{}.identity);
+    EXPECT_EQ(envless_domain.identity, queried_domain{}.identity);
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+    EXPECT_EQ(envless_completion_attrs::calls, 0);
+    EXPECT_FALSE((completion_domain_is<void, queried_domain,
+        invalid_void_completion_attrs, std::execution::empty_env>));
 }
 
 TEST(DefaultDomainTest, TransformSenderIsIdentity) {

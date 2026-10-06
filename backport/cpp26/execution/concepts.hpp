@@ -811,13 +811,71 @@ concept __nothrow_default_domain_query =
 } // namespace __forge_domain
 
 template<class CPO = void>
+struct get_completion_domain_t;
+
+namespace __forge_domain {
+
+struct __no_completion_query {};
+
+template<class Query, class Attrs, class... Envs>
+consteval auto __completion_query_type() {
+    // Domain selection uses only query types, never the queried values.
+    if constexpr (__forge_env_detail::__queryable<Query, Attrs, Envs...>) {
+        return std::type_identity<__queried_domain_t<Query, Attrs, Envs...>>{};
+    } else if constexpr (sizeof...(Envs) != 0 &&
+                         __forge_env_detail::__queryable<Query, Attrs>) {
+        return std::type_identity<__queried_domain_t<Query, Attrs>>{};
+    } else {
+        return std::type_identity<__no_completion_query>{};
+    }
+}
+
+template<class Attrs>
+consteval bool __scheduler_attributes();
+
+} // namespace __forge_domain
+
+template<class CPO>
 struct get_completion_domain_t {
-    template<class Scheduler, class Env>
-        requires __forge_domain::__nothrow_default_domain_query<
-            get_completion_domain_t<CPO>, Scheduler, Env>
-    auto operator()(Scheduler&&, Env&&) const noexcept
-        -> __forge_domain::__queried_domain_t<
-            get_completion_domain_t<CPO>, Scheduler, Env> {
+private:
+    template<class>
+    friend struct get_completion_domain_t;
+
+    template<class Attrs, class... Envs>
+    static consteval auto __domain_type() {
+        using namespace __forge_domain;
+        using direct_t = typename decltype(__completion_query_type<
+            get_completion_domain_t, Attrs, Envs...>())::type;
+        if constexpr (!std::same_as<direct_t, __no_completion_query>) {
+            return std::type_identity<direct_t>{};
+        } else if constexpr (std::same_as<CPO, void>) {
+            return get_completion_domain_t<set_value_t>
+                ::template __domain_type<Attrs, Envs...>();
+        } else {
+            using scheduler_t = typename decltype(__completion_query_type<
+                get_completion_scheduler_t<CPO>, Attrs, Envs...>())::type;
+            using scheduler_domain_t = typename decltype(__completion_query_type<
+                get_completion_domain_t<set_value_t>, scheduler_t, Envs...>())::type;
+            if constexpr (!std::same_as<scheduler_t, __no_completion_query> &&
+                          !std::same_as<scheduler_domain_t, __no_completion_query>) {
+                return std::type_identity<scheduler_domain_t>{};
+            } else if constexpr (sizeof...(Envs) != 0 &&
+                                 __scheduler_attributes<Attrs>()) {
+                return std::type_identity<default_domain>{};
+            } else {
+                return std::type_identity<void>{};
+            }
+        }
+    }
+
+public:
+    template<class Attrs, class... Envs>
+        requires (std::same_as<CPO, void> || std::same_as<CPO, set_value_t> ||
+                  std::same_as<CPO, set_error_t> || std::same_as<CPO, set_stopped_t>) &&
+                 std::is_nothrow_default_constructible_v<
+                     typename decltype(__domain_type<Attrs, Envs...>())::type>
+    constexpr auto operator()(Attrs&&, Envs&&...) const noexcept
+        -> typename decltype(__domain_type<Attrs, Envs...>())::type {
         return {};
     }
 
@@ -1524,5 +1582,14 @@ concept scheduler =
     requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
     std::derived_from<typename std::remove_cvref_t<S>::scheduler_concept, scheduler_t> &&
     requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender; };
+
+namespace __forge_domain {
+
+template<class Attrs>
+consteval bool __scheduler_attributes() {
+    return scheduler<Attrs>;
+}
+
+} // namespace __forge_domain
 
 } // namespace std::execution
