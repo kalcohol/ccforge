@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "../../forge/runtime/forge_operation_destroy.hpp"
+
 #include <execution>
 #include <exception>
 #include <functional>
@@ -91,6 +93,39 @@ struct optional_receiver {
     auto get_env() const noexcept -> optional_env { return {}; }
 };
 
+struct guarded_optional_receiver : optional_receiver {
+    auto operator&() & = delete;
+    auto operator&() const& = delete;
+};
+
+struct self_destroying_optional_receiver {
+    using receiver_concept = ex::receiver_t;
+    forge_test::destroy_context_base* context;
+    observed_result* result;
+
+    auto operator&() & = delete;
+    auto operator&() const& = delete;
+
+    void set_value(std::optional<int>&& value) && noexcept {
+        auto* destroy_context = context;
+        ++result->values;
+        result->engaged = value.has_value();
+        if (value) {
+            result->value = *value;
+        }
+        destroy_context->destroy();
+    }
+
+    void set_error(int value) && noexcept {
+        auto* destroy_context = context;
+        ++result->errors;
+        result->value = value;
+        destroy_context->destroy();
+    }
+
+    auto get_env() const noexcept -> optional_env { return {}; }
+};
+
 using scalar_optional = decltype(ex::stopped_as_optional(typed_sender<>{}));
 static_assert(std::is_same_v<ex::completion_signatures_of_t<scalar_optional>,
     ex::completion_signatures<ex::set_value_t(std::optional<int>), ex::set_error_t(int)>>);
@@ -158,6 +193,52 @@ TEST(ExecutionStoppedOptional, ValueCompletesWithAnRvalueOptional) {
     EXPECT_EQ(result.errors, 0);
     EXPECT_TRUE(result.engaged);
     EXPECT_EQ(result.value, 42);
+}
+
+TEST(ExecutionStoppedOptional, UsesTheRealAddressOfTheOuterReceiver) {
+    static_assert(ex::receiver<guarded_optional_receiver>);
+    for (auto outcome : {completion::value, completion::error, completion::stopped}) {
+        for (bool copy_sender : {false, true}) {
+            observed_result result;
+            auto source = ex::stopped_as_optional(typed_sender<>{outcome});
+            const auto run = [&](auto&& sender) {
+                auto operation = ex::connect(static_cast<decltype(sender)&&>(sender),
+                    guarded_optional_receiver{{&result}});
+                ex::start(operation);
+            };
+            if (copy_sender) {
+                run(std::as_const(source));
+            } else {
+                run(std::move(source));
+            }
+            EXPECT_EQ(result.values, outcome == completion::error ? 0 : 1);
+            EXPECT_EQ(result.errors, outcome == completion::error ? 1 : 0);
+            EXPECT_EQ(result.engaged, outcome == completion::value);
+            EXPECT_EQ(result.value, outcome == completion::value ? 42 :
+                outcome == completion::error ? 7 : 0);
+        }
+    }
+}
+
+TEST(ExecutionStoppedOptional, GuardedReceiverMayDestroyItsOperationAtCompletion) {
+    static_assert(ex::receiver<self_destroying_optional_receiver>);
+    using source_t = decltype(ex::stopped_as_optional(typed_sender<>{}));
+    using operation_t = ex::connect_result_t<source_t, self_destroying_optional_receiver>;
+    for (auto outcome : {completion::value, completion::error, completion::stopped}) {
+        observed_result result;
+        bool destroyed = false;
+        forge_test::operation_destroy_context<operation_t> context(&destroyed);
+        auto& operation = context.emplace_from([&] {
+            return ex::connect(ex::stopped_as_optional(typed_sender<>{outcome}),
+                self_destroying_optional_receiver{&context, &result});
+        });
+        ex::start(operation);
+        EXPECT_TRUE(destroyed);
+        EXPECT_FALSE(context.has_value);
+        EXPECT_EQ(result.values, outcome == completion::error ? 0 : 1);
+        EXPECT_EQ(result.errors, outcome == completion::error ? 1 : 0);
+        EXPECT_EQ(result.engaged, outcome == completion::value);
+    }
 }
 
 TEST(ExecutionStoppedOptional, SingleMultiParameterSignatureUsesOptionalTuple) {

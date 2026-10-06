@@ -234,7 +234,7 @@ struct __optional_op : __forge_detail::__immovable {
 
     __optional_op(S sndr, R r)
         : __rcvr(std::move(r))
-        , __op(std::execution::connect(std::move(sndr), __recv{&__rcvr}))
+        , __op(std::execution::connect(std::move(sndr), __recv{std::addressof(__rcvr)}))
     {}
 
     void start() & noexcept {
