@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <memory>
@@ -46,6 +49,51 @@ struct static_counting_deleter {
 };
 
 int static_counting_deleter::calls = 0;
+
+template<bool NothrowSwap>
+struct swap_tracked_handle {
+    int value = 0;
+    int* swaps = nullptr;
+
+    friend void swap(swap_tracked_handle& lhs, swap_tracked_handle& rhs) noexcept(NothrowSwap) {
+        if constexpr (!NothrowSwap) {
+            throw std::runtime_error("resource swap must not be called");
+        } else {
+            if (auto* count = lhs.swaps ? lhs.swaps : rhs.swaps) {
+                ++*count;
+            }
+            std::swap(lhs.value, rhs.value);
+            std::swap(lhs.swaps, rhs.swaps);
+        }
+    }
+};
+
+template<bool NothrowSwap>
+struct swap_tracked_deleter {
+    int owner = 0;
+    std::vector<std::pair<int, int>>* cleaned = nullptr;
+    int* swaps = nullptr;
+
+    template<bool ResourceNothrowSwap>
+    void operator()(const swap_tracked_handle<ResourceNothrowSwap>& resource) const noexcept {
+        if (cleaned) {
+            cleaned->emplace_back(owner, resource.value);
+        }
+    }
+
+    friend void swap(swap_tracked_deleter& lhs, swap_tracked_deleter& rhs) noexcept(NothrowSwap) {
+        if constexpr (!NothrowSwap) {
+            throw std::runtime_error("deleter swap must not be called");
+        } else {
+            if (auto* count = lhs.swaps ? lhs.swaps : rhs.swaps) {
+                ++*count;
+            }
+            std::swap(lhs.owner, rhs.owner);
+            std::swap(lhs.cleaned, rhs.cleaned);
+            std::swap(lhs.swaps, rhs.swaps);
+        }
+    }
+};
 
 } // namespace
 
@@ -222,4 +270,129 @@ TEST(UniqueResourceRuntimeTest, AdlSwapWorks) {
 
     EXPECT_EQ(cleanup_count1, 1);
     EXPECT_EQ(cleanup_count2, 1);
+}
+
+TEST(UniqueResourceRuntimeTest, NothrowAdlSwapPreservesOwnershipStates) {
+    using handle_t = swap_tracked_handle<true>;
+    using deleter_t = swap_tracked_deleter<true>;
+    for (bool left_owns : {false, true}) {
+        for (bool right_owns : {false, true}) {
+            SCOPED_TRACE(left_owns);
+            SCOPED_TRACE(right_owns);
+            int resource_swaps = 0;
+            int deleter_swaps = 0;
+            std::vector<std::pair<int, int>> cleaned;
+            {
+                std::unique_resource left(
+                    handle_t{1, &resource_swaps}, deleter_t{1, &cleaned, &deleter_swaps});
+                std::unique_resource right(
+                    handle_t{2, &resource_swaps}, deleter_t{2, &cleaned, &deleter_swaps});
+                if (!left_owns) left.release();
+                if (!right_owns) right.release();
+
+                if (left_owns) {
+                    left.swap(right);
+                } else {
+                    using std::swap;
+                    swap(left, right);
+                }
+
+                EXPECT_EQ(resource_swaps, 1);
+                EXPECT_EQ(deleter_swaps, 1);
+                EXPECT_EQ(left.get().value, 2);
+                EXPECT_EQ(right.get().value, 1);
+                EXPECT_EQ(left.get_deleter().owner, 2);
+                EXPECT_EQ(right.get_deleter().owner, 1);
+                EXPECT_TRUE(cleaned.empty());
+            }
+            std::vector<std::pair<int, int>> expected;
+            if (left_owns) expected.emplace_back(1, 1);
+            if (right_owns) expected.emplace_back(2, 2);
+            EXPECT_EQ(cleaned, expected);
+        }
+    }
+}
+
+TEST(UniqueResourceRuntimeTest, NothrowAdlSwapWithDefaultEmptyResource) {
+    using handle_t = swap_tracked_handle<true>;
+    using deleter_t = swap_tracked_deleter<true>;
+    int resource_swaps = 0;
+    int deleter_swaps = 0;
+    std::vector<std::pair<int, int>> cleaned;
+    {
+        std::unique_resource active(
+            handle_t{42, &resource_swaps}, deleter_t{42, &cleaned, &deleter_swaps});
+        std::unique_resource<handle_t, deleter_t> empty;
+        using std::swap;
+        swap(active, empty);
+
+        EXPECT_EQ(resource_swaps, 1);
+        EXPECT_EQ(deleter_swaps, 1);
+        EXPECT_EQ(active.get().value, 0);
+        EXPECT_EQ(empty.get().value, 42);
+        active.reset();
+        EXPECT_TRUE(cleaned.empty());
+        empty.reset();
+    }
+    const std::vector<std::pair<int, int>> expected{{42, 42}};
+    EXPECT_EQ(cleaned, expected);
+}
+
+TEST(UniqueResourceRuntimeTest, ReferenceSwapRebindsWithoutSwappingThrowingReferents) {
+    using handle_t = swap_tracked_handle<false>;
+    using deleter_t = swap_tracked_deleter<true>;
+    static_assert(!std::is_nothrow_swappable_v<handle_t>);
+    int resource_swaps = 0;
+    int deleter_swaps = 0;
+    handle_t first{1, &resource_swaps};
+    handle_t second{2, &resource_swaps};
+    std::vector<std::pair<int, int>> cleaned;
+    {
+        std::unique_resource<handle_t&, deleter_t> left(
+            first, deleter_t{1, &cleaned, &deleter_swaps});
+        std::unique_resource<handle_t&, deleter_t> right(
+            second, deleter_t{2, &cleaned, &deleter_swaps});
+        using std::swap;
+        swap(left, right);
+
+        EXPECT_EQ(&left.get(), &second);
+        EXPECT_EQ(&right.get(), &first);
+        EXPECT_EQ(first.value, 1);
+        EXPECT_EQ(second.value, 2);
+        EXPECT_EQ(resource_swaps, 0);
+        EXPECT_EQ(deleter_swaps, 1);
+    }
+    const std::vector<std::pair<int, int>> expected{{1, 1}, {2, 2}};
+    EXPECT_EQ(cleaned, expected);
+}
+
+TEST(UniqueResourceRuntimeTest, ThrowingComponentSwapsDoNotDisableOtherOperations) {
+    const auto check = []<bool ResourceNothrowSwap, bool DeleterNothrowSwap>() {
+        using handle_t = swap_tracked_handle<ResourceNothrowSwap>;
+        using deleter_t = swap_tracked_deleter<DeleterNothrowSwap>;
+        int resource_swaps = 0;
+        int deleter_swaps = 0;
+        std::vector<std::pair<int, int>> cleaned;
+        {
+            std::unique_resource original(
+                handle_t{1, &resource_swaps}, deleter_t{1, &cleaned, &deleter_swaps});
+            auto moved = std::move(original);
+            moved.reset(handle_t{3, &resource_swaps});
+            moved.release();
+
+            std::unique_resource target(
+                handle_t{2, &resource_swaps}, deleter_t{2, &cleaned, &deleter_swaps});
+            target = std::move(moved);
+            using std::swap;
+            swap(original, target);
+            target.reset(handle_t{4, &resource_swaps});
+        }
+        const std::vector<std::pair<int, int>> expected{{1, 1}, {2, 2}, {1, 4}};
+        EXPECT_EQ(cleaned, expected);
+        EXPECT_EQ(resource_swaps, 0);
+        EXPECT_EQ(deleter_swaps, 0);
+    };
+    check.template operator()<false, true>();
+    check.template operator()<true, false>();
+    check.template operator()<false, false>();
 }

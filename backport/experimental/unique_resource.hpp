@@ -161,9 +161,10 @@ public:
         return get();
     }
 
+    // Forge extension: neither swap may throw and split resource/deleter ownership.
     constexpr void swap(unique_resource& other)
         noexcept(is_nothrow_swappable_v<resource_storage> && is_nothrow_swappable_v<D>)
-        requires (is_swappable_v<resource_storage> && is_swappable_v<D>) {
+        requires (is_nothrow_swappable_v<resource_storage> && is_nothrow_swappable_v<D>) {
         using std::swap;
         swap(resource_, other.resource_);
         swap(deleter_, other.deleter_);
@@ -277,8 +278,8 @@ template<class R, class D>
 constexpr void swap(unique_resource<R, D>& lhs, unique_resource<R, D>& rhs)
     noexcept(is_nothrow_swappable_v<conditional_t<is_reference_v<R>, reference_wrapper<remove_reference_t<R>>, R>> &&
              is_nothrow_swappable_v<D>)
-    requires (is_swappable_v<conditional_t<is_reference_v<R>, reference_wrapper<remove_reference_t<R>>, R>> &&
-              is_swappable_v<D>) {
+    requires (is_nothrow_swappable_v<conditional_t<is_reference_v<R>, reference_wrapper<remove_reference_t<R>>, R>> &&
+              is_nothrow_swappable_v<D>) {
     lhs.swap(rhs);
 }
 

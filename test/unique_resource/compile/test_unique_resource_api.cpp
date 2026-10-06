@@ -1,6 +1,7 @@
 // Compile probe: unique_resource API surface and type traits
 // T-13: verified through forge::forge target (see CMakeLists.txt)
 #include <type_traits>
+#include <utility>
 
 #include <memory>
 
@@ -79,6 +80,35 @@ struct non_default_deleter {
     constexpr void operator()(int) const noexcept {}
 };
 
+template<bool NothrowSwap>
+struct swap_probe_handle {
+    int value = 0;
+
+    friend void swap(swap_probe_handle& lhs, swap_probe_handle& rhs) noexcept(NothrowSwap) {
+        std::swap(lhs.value, rhs.value);
+    }
+};
+
+template<bool NothrowSwap>
+struct swap_probe_deleter {
+    template<bool ResourceNothrowSwap>
+    void operator()(const swap_probe_handle<ResourceNothrowSwap>&) const noexcept {}
+
+    friend void swap(swap_probe_deleter&, swap_probe_deleter&) noexcept(NothrowSwap) {}
+};
+
+template<class T>
+concept member_swappable = requires(T& lhs, T& rhs) {
+    lhs.swap(rhs);
+};
+
+// Explicit arguments distinguish the extension from the generic std::swap fallback.
+template<class R, class D>
+concept resource_swap_available = requires(
+    std::unique_resource<R, D>& lhs, std::unique_resource<R, D>& rhs) {
+    std::swap<R, D>(lhs, rhs);
+};
+
 using non_assignable_value_resource =
     std::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
 using reference_move_assignment_resource =
@@ -95,6 +125,24 @@ template<class T, class RR>
 concept resettable_from = requires(T& resource, RR&& value) {
     resource.reset(std::forward<RR>(value));
 };
+
+template<bool ResourceNothrowSwap, bool DeleterNothrowSwap>
+constexpr bool swap_constraints_match() {
+    using R = swap_probe_handle<ResourceNothrowSwap>;
+    using D = swap_probe_deleter<DeleterNothrowSwap>;
+    using resource_t = std::unique_resource<R, D>;
+    constexpr bool enabled = ResourceNothrowSwap && DeleterNothrowSwap;
+    return std::is_swappable_v<R> && std::is_swappable_v<D> &&
+           std::is_nothrow_swappable_v<R> == ResourceNothrowSwap &&
+           std::is_nothrow_swappable_v<D> == DeleterNothrowSwap &&
+           member_swappable<resource_t> == enabled &&
+           resource_swap_available<R, D> == enabled &&
+           std::is_constructible_v<resource_t, R, D> &&
+           std::is_move_constructible_v<resource_t> &&
+           std::is_move_assignable_v<resource_t> &&
+           resettable_from<resource_t, R> &&
+           std::is_swappable_v<resource_t>;
+}
 
 constexpr bool constexpr_construction_and_observers() {
     constexpr_value_resource resource(42, constexpr_noop_deleter{});
@@ -205,6 +253,33 @@ static_assert(noexcept(std::declval<const pointer_resource&>().operator->()),
 static_assert(noexcept(std::declval<reference_move_assignment_resource&>() =
                        std::declval<reference_move_assignment_resource&&>()),
     "move assignment noexcept should follow the stored reference_wrapper type");
+static_assert(swap_constraints_match<true, true>(),
+    "both nothrow-swappable components should enable the swap extension");
+static_assert(swap_constraints_match<false, true>(),
+    "a potentially throwing resource swap should disable only the swap extension");
+static_assert(swap_constraints_match<true, false>(),
+    "a potentially throwing deleter swap should disable only the swap extension");
+static_assert(swap_constraints_match<false, false>(),
+    "two potentially throwing component swaps should disable only the swap extension");
+
+using nothrow_swap_resource =
+    std::unique_resource<swap_probe_handle<true>, swap_probe_deleter<true>>;
+static_assert(noexcept(std::declval<nothrow_swap_resource&>().swap(
+                          std::declval<nothrow_swap_resource&>())),
+    "the enabled member swap extension should be noexcept");
+static_assert(noexcept(std::swap<swap_probe_handle<true>, swap_probe_deleter<true>>(
+                          std::declval<nothrow_swap_resource&>(),
+                          std::declval<nothrow_swap_resource&>())),
+    "the enabled non-member swap extension should be noexcept");
+
+using throwing_referent_swap_resource =
+    std::unique_resource<swap_probe_handle<false>&, swap_probe_deleter<true>>;
+static_assert(member_swappable<throwing_referent_swap_resource> &&
+              resource_swap_available<swap_probe_handle<false>&, swap_probe_deleter<true>>,
+    "reference resources should swap their stored reference_wrapper, not their referents");
+static_assert(noexcept(std::declval<throwing_referent_swap_resource&>().swap(
+                          std::declval<throwing_referent_swap_resource&>())),
+    "reference resource swap should remain noexcept with a throwing referent swap");
 static_assert(constexpr_default_construction(),
     "default construction should be constexpr-capable");
 static_assert(constexpr_construction_and_observers(),
