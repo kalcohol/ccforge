@@ -261,14 +261,14 @@ public:
         this->control = control_;
         this->invoke_fn = [](std::__forge_stop_detail::callback_base* base) noexcept {
             auto* self = static_cast<inplace_stop_callback*>(base);
-            self->callback_();
+            std::forward<Callback>(self->callback_)();
         };
         {
             std::lock_guard lk{control_->mtx};
             control_->object = this;
             control_->invoke_fn = [](void* ptr) noexcept {
                 auto* self = static_cast<inplace_stop_callback*>(ptr);
-                self->callback_();
+                std::forward<Callback>(self->callback_)();
             };
         }
 
@@ -276,7 +276,7 @@ public:
             // Already stopped: detach before invoking because the callback
             // may destroy this callback object synchronously.
             source_ = nullptr;
-            callback_();
+            std::forward<Callback>(callback_)();
         }
     }
 

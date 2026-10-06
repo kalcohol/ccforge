@@ -17,6 +17,19 @@ struct stop_callback_probe {
     void operator()() noexcept {}
 };
 
+struct qualified_stop_callback {
+    int* lvalue_calls;
+    int* rvalue_calls;
+
+    void operator()() & noexcept { ++*lvalue_calls; }
+    void operator()() && noexcept { ++*rvalue_calls; }
+};
+
+struct rvalue_stop_callback {
+    int* calls;
+    void operator()() && noexcept { ++*calls; }
+};
+
 struct non_stopping_state_token {
     const void* identity = nullptr;
 
@@ -113,6 +126,31 @@ TEST(ForgeAnyStopTokenTest, CallbackRunsExactlyOnce) {
     EXPECT_TRUE(source.request_stop());
     EXPECT_FALSE(source.request_stop());
     EXPECT_EQ(calls, 1);
+}
+
+TEST(ForgeAnyStopTokenTest, CallbackInvocationPreservesCallbackTypeCategory) {
+    for (bool already_stopped : {false, true}) {
+        std::inplace_stop_source source;
+        if (already_stopped) {
+            source.request_stop();
+        }
+        forge::any_stop_token token{source.get_token()};
+        int lvalue_calls = 0;
+        int rvalue_calls = 0;
+        int rvalue_only_calls = 0;
+        qualified_stop_callback function{&lvalue_calls, &rvalue_calls};
+        forge::any_stop_token::callback_type<qualified_stop_callback> owned(
+            token, function);
+        forge::any_stop_token::callback_type<qualified_stop_callback&> borrowed(
+            token, function);
+        forge::any_stop_token::callback_type<rvalue_stop_callback> rvalue_only(
+            token, rvalue_stop_callback{&rvalue_only_calls});
+
+        EXPECT_EQ(source.request_stop(), !already_stopped);
+        EXPECT_EQ(lvalue_calls, 1);
+        EXPECT_EQ(rvalue_calls, 1);
+        EXPECT_EQ(rvalue_only_calls, 1);
+    }
 }
 
 TEST(ForgeAnyStopTokenTest, CallbackDestructionWaitsForInvocation) {

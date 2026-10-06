@@ -31,6 +31,19 @@ struct member_stop_env {
     }
 };
 
+struct qualified_stop_callback {
+    int* lvalue_calls;
+    int* rvalue_calls;
+
+    void operator()() & noexcept { ++*lvalue_calls; }
+    void operator()() && noexcept { ++*rvalue_calls; }
+};
+
+struct rvalue_stop_callback {
+    int* calls;
+    void operator()() && noexcept { ++*calls; }
+};
+
 } // namespace
 
 TEST(ExecutionStopTokenTest, InplaceStopCallbackIsInvoked) {
@@ -75,6 +88,29 @@ TEST(ExecutionStopTokenTest, TokenFromConstSourceViewObservesStop) {
     EXPECT_TRUE(source.request_stop());
     EXPECT_TRUE(called);
     EXPECT_TRUE(view.get_token().stop_requested());
+}
+
+TEST(ExecutionStopTokenTest, CallbackInvocationPreservesCallbackTypeCategory) {
+    for (bool already_stopped : {false, true}) {
+        std::inplace_stop_source source;
+        if (already_stopped) {
+            source.request_stop();
+        }
+        int lvalue_calls = 0;
+        int rvalue_calls = 0;
+        int rvalue_only_calls = 0;
+        qualified_stop_callback function{&lvalue_calls, &rvalue_calls};
+        std::inplace_stop_callback owned(source.get_token(), function);
+        std::inplace_stop_callback<qualified_stop_callback&> borrowed(
+            source.get_token(), function);
+        std::inplace_stop_callback rvalue_only(
+            source.get_token(), rvalue_stop_callback{&rvalue_only_calls});
+
+        EXPECT_EQ(source.request_stop(), !already_stopped);
+        EXPECT_EQ(lvalue_calls, 1);
+        EXPECT_EQ(rvalue_calls, 1);
+        EXPECT_EQ(rvalue_only_calls, 1);
+    }
 }
 
 // ── T-4: Expanded stop-token coverage ───────────────────────────────────

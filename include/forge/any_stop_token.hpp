@@ -103,7 +103,7 @@ private:
         {}
 
         void invoke() noexcept override {
-            stored_fn();
+            std::forward<Callback>(stored_fn)();
         }
     };
 
