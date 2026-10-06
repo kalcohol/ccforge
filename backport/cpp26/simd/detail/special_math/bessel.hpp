@@ -265,10 +265,19 @@ auto cyl_bessel_hankel_asymptotic(
         previous = magnitude;
     }
 
-    const T phase = x - nu * pi_v<T> / T{2} - pi_v<T> / T{4};
     const T scale = std::sqrt(T{2} / (pi_v<T> * x));
-    const T cos_phase = std::cos(phase);
-    const T sin_phase = std::sin(phase);
+    // Reduce x through libm before combining the bounded order phase.
+    const auto order_trig = cyl_bessel_order_trig(
+        static_cast<long double>(nu) / 2.0L);
+    const long double inverse_sqrt_two = std::sqrt(0.5L);
+    const T cos_offset = static_cast<T>(
+        (order_trig.cosine - order_trig.sine) * inverse_sqrt_two);
+    const T sin_offset = static_cast<T>(
+        (order_trig.cosine + order_trig.sine) * inverse_sqrt_two);
+    const T cos_x = std::cos(x);
+    const T sin_x = std::sin(x);
+    const T cos_phase = cos_x * cos_offset + sin_x * sin_offset;
+    const T sin_phase = sin_x * cos_offset - cos_x * sin_offset;
     return {
         scale * (cos_phase * p - sin_phase * q),
         scale * (sin_phase * p + cos_phase * q),
