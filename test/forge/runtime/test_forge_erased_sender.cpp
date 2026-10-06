@@ -173,6 +173,63 @@ struct self_destroying_zero_receiver {
     auto get_env() const noexcept -> std::execution::empty_env { return {}; }
 };
 
+struct borrowed_operation_sender {
+    using sender_concept = std::execution::sender_t;
+
+    bool* sender_destroyed;
+    bool* operation_destroyed;
+    bool* operation_outlived_sender;
+
+    borrowed_operation_sender(bool* sender, bool* operation, bool* outlived)
+        : sender_destroyed(sender)
+        , operation_destroyed(operation)
+        , operation_outlived_sender(outlived) {}
+
+    borrowed_operation_sender(borrowed_operation_sender&& other) noexcept
+        : sender_destroyed(std::exchange(other.sender_destroyed, nullptr))
+        , operation_destroyed(other.operation_destroyed)
+        , operation_outlived_sender(other.operation_outlived_sender) {}
+
+    ~borrowed_operation_sender() {
+        if (sender_destroyed) {
+            *sender_destroyed = true;
+        }
+    }
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_t;
+
+        bool* sender_destroyed;
+        bool* operation_destroyed;
+        bool* operation_outlived_sender;
+        R receiver;
+
+        ~operation() {
+            *operation_destroyed = true;
+            *operation_outlived_sender = *sender_destroyed;
+        }
+
+        void start() & noexcept {
+            std::execution::set_value(std::move(receiver));
+        }
+    };
+
+    template<class R>
+    auto connect(R receiver) & -> operation<R> {
+        return {sender_destroyed, operation_destroyed,
+                operation_outlived_sender, std::move(receiver)};
+    }
+};
+
 struct stop_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -997,6 +1054,32 @@ TEST(ErasedSenderTest, SynchronousSourceAllowsReceiverToDestroyOperation) {
     EXPECT_TRUE(completed);
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
+}
+
+TEST(ErasedSenderTest, SelfDestroyingCompletionRetainsBorrowedSourceThroughCleanup) {
+    bool sender_destroyed = false;
+    bool operation_destroyed = false;
+    bool operation_outlived_sender = false;
+    forge::erased_sender<zero_cs> sender{borrowed_operation_sender{
+        &sender_destroyed, &operation_destroyed, &operation_outlived_sender}};
+    using op_t = decltype(std::execution::connect(
+        std::move(sender), self_destroying_zero_receiver{}));
+    bool completed = false;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            std::move(sender),
+            self_destroying_zero_receiver{&context, &completed});
+    });
+
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(destroyed);
+    EXPECT_TRUE(operation_destroyed);
+    EXPECT_TRUE(sender_destroyed);
+    EXPECT_FALSE(operation_outlived_sender);
 }
 
 TEST(ErasedSenderTest, DeliversFromSchedulerThread) {

@@ -518,6 +518,7 @@ public:
         __op& operator=(const __op&) = delete;
 
         void start() & noexcept {
+            auto state = state_;
             auto op = op_;
             op->start();
         }
