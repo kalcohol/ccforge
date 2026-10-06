@@ -113,6 +113,12 @@
   task family 的开放问题，并区分其中不能在发布后兼容修正的项目；在 wording、ownership、
   allocator、stop/error 和 native-handoff 模型形成独立任务书前，`forge::task` 与
   `forge::io::io_task` 都只是不同契约的 Forge extensions，不能冒充这组标准类型。
+- `as_awaitable` 是 sender-to-awaitable 方向的桥接，不代表反方向也已实现。普通 awaitable
+  当前不会自动满足 backport 的 `sender`，`get_completion_signatures` 不会从其
+  `await_resume` 合成 signatures，`connect` 也没有 current-WD 的
+  `connect-awaitable` fallback。不要直接将普通 awaitable 传给 `sync_wait` 等 sender
+  consumer；需要此能力时应单独验证 coroutine operation 的 ownership、异常、stopped
+  和 completion 内自毁契约，再实现这条独立路径。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
   `set_error(std::exception_ptr)` 完成。它没有实现完整

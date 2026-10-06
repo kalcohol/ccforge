@@ -100,6 +100,8 @@
 //     draft and is intentionally not exposed.
 //
 // NOT IMPLEMENTED (Phase 4+):
+//   - Ordinary awaitables as senders: await-result completion signatures and
+//     the connect-awaitable fallback (distinct from sender-to-awaitable).
 //   - standard task/task_scheduler/with_error coroutine family; Forge task
 //     types are separate extensions and do not substitute for this surface.
 //   - standard type-erased sender surface.
