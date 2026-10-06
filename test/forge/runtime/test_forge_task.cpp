@@ -105,6 +105,52 @@ struct recording_receiver {
     }
 };
 
+struct error_category_state {
+    bool completed = false;
+    bool rvalue_error = false;
+    std::exception_ptr error;
+};
+
+struct error_category_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    error_category_state* state;
+
+    template<class... Vs>
+    void set_value(Vs&&...) && noexcept {
+        state->completed = true;
+    }
+
+    void set_error(std::exception_ptr&& error) && noexcept {
+        state->error = std::move(error);
+        state->rvalue_error = true;
+        state->completed = true;
+    }
+
+    void set_error(const std::exception_ptr& error) && noexcept {
+        state->error = error;
+        state->completed = true;
+    }
+
+    void set_stopped() && noexcept {
+        state->completed = true;
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
+template<class T>
+forge::task<T> throwing_task() {
+    throw task_marker_error{};
+    if constexpr (std::is_void_v<T>) {
+        co_return;
+    } else {
+        co_return 0;
+    }
+}
+
 template<class R>
 struct never_started_op {
     using operation_state_concept = std::execution::operation_state_t;
@@ -386,6 +432,32 @@ TEST(TaskTest, ConnectingMovedFromTaskThrows) {
 
 TEST(TaskTest, CoAwaitErrorPropagates) {
     EXPECT_THROW((void)std::execution::sync_wait(await_error_task()), task_marker_error);
+}
+
+TEST(TaskTest, ValueTaskDeliversStoredErrorAsRvalue) {
+    error_category_state state;
+    auto op = std::execution::connect(
+        throwing_task<int>(), error_category_receiver{&state});
+
+    std::execution::start(op);
+
+    ASSERT_TRUE(state.completed);
+    EXPECT_TRUE(state.rvalue_error);
+    ASSERT_TRUE(state.error);
+    EXPECT_THROW(std::rethrow_exception(state.error), task_marker_error);
+}
+
+TEST(TaskTest, VoidTaskDeliversStoredErrorAsRvalue) {
+    error_category_state state;
+    auto op = std::execution::connect(
+        throwing_task<void>(), error_category_receiver{&state});
+
+    std::execution::start(op);
+
+    ASSERT_TRUE(state.completed);
+    EXPECT_TRUE(state.rvalue_error);
+    ASSERT_TRUE(state.error);
+    EXPECT_THROW(std::rethrow_exception(state.error), task_marker_error);
 }
 
 TEST(TaskTest, CoAwaitStoppedPropagates) {

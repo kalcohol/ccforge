@@ -199,7 +199,8 @@ struct __op : __op_base {
         }
         if constexpr (!std::is_void_v<T>) {
             if (p.result.index() == 2) {
-                std::execution::set_error(std::move(__rcvr), std::get<2>(p.result));
+                std::execution::set_error(std::move(__rcvr),
+                    std::move(std::get<2>(p.result)));
             } else if (p.result.index() == 1) {
                 std::execution::set_value(std::move(__rcvr),
                     std::move(std::get<1>(p.result)));
@@ -209,7 +210,7 @@ struct __op : __op_base {
             }
         } else {
             if (p.exc_) {
-                std::execution::set_error(std::move(__rcvr), p.exc_);
+                std::execution::set_error(std::move(__rcvr), std::move(p.exc_));
             } else {
                 std::execution::set_value(std::move(__rcvr));
             }
