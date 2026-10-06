@@ -29,7 +29,6 @@
 
 // Coroutine bridge — only compiled when coroutines are available
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
-#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <optional>
@@ -43,6 +42,32 @@ namespace __forge_awaitable {
 
 struct __stopped_awaitable_exception {};
 struct __unit {};
+
+// Only completion on the starting thread needs deferral. The stack-owned
+// scope survives even if another completion agent destroys the awaitable.
+struct __start_scope {
+    explicit __start_scope(const void* key) noexcept
+        : __key(key), __previous(__current) {
+        __current = this;
+    }
+
+    ~__start_scope() { __current = __previous; }
+
+    static bool __defer(const void* key, std::coroutine_handle<> next) noexcept {
+        for (auto* scope = __current; scope; scope = scope->__previous) {
+            if (scope->__key == key) {
+                scope->__resume = next;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const void* __key;
+    __start_scope* __previous;
+    std::coroutine_handle<> __resume = std::noop_coroutine();
+    inline static thread_local __start_scope* __current = nullptr;
+};
 
 template<class T>
 struct __is_coroutine_handle : std::false_type {};
@@ -305,13 +330,9 @@ struct __awaitable {
         ::new(__op_buf) op_t(std::execution::connect(std::move(__sndr), __recv{this}));
         __op_constructed = true;
         __op_dtor = [](void* p) noexcept { static_cast<op_t*>(p)->~op_t(); };
+        __start_scope scope{this};
         std::execution::start(*static_cast<op_t*>(static_cast<void*>(__op_buf)));
-        if (__state.exchange(
-                __completion_state::suspended,
-                std::memory_order_acq_rel) == __completion_state::completed) {
-            return __resume;
-        }
-        return std::noop_coroutine();
+        return scope.__resume;
     }
 
     auto await_resume() -> value_t {
@@ -323,23 +344,11 @@ struct __awaitable {
     }
 
 private:
-    enum class __completion_state : unsigned char {
-        starting,
-        suspended,
-        completed
-    };
-
     void __complete(std::coroutine_handle<> next) noexcept {
-        __resume = next;
-        if (__state.exchange(
-                __completion_state::completed,
-                std::memory_order_acq_rel) == __completion_state::suspended) {
+        if (!__start_scope::__defer(this, next)) {
             next.resume();
         }
     }
-
-    std::coroutine_handle<> __resume{};
-    std::atomic<__completion_state> __state{__completion_state::starting};
 };
 
 } // namespace __forge_awaitable

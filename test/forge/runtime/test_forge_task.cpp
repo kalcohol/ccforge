@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "forge_completion_agent.hpp"
 #include <forge/task.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <execution>
@@ -223,6 +224,18 @@ forge::task<int> simple_task() {
     co_return 42;
 }
 
+forge::task<int> await_early_completion_task(
+    forge_test::completion_agent_state* state,
+    forge_test::completion_kind kind) {
+    try {
+        co_await forge_test::early_completion_sender{state, kind};
+    } catch (...) {
+    }
+    state->resumed_on = std::this_thread::get_id();
+    ++state->resumptions;
+    co_return 7;
+}
+
 forge::task<int> await_just_task() {
     auto value = co_await std::execution::just(41);
     co_return value + 1;
@@ -337,6 +350,20 @@ TEST(TaskTest, InlineSenderResumesAfterStartReturns) {
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(state.start_returned);
     EXPECT_FALSE(state.resumed_before_start_returned);
+}
+
+TEST(TaskTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
+    for (auto kind : {forge_test::completion_kind::value,
+                      forge_test::completion_kind::error,
+                      forge_test::completion_kind::stopped}) {
+        forge_test::completion_agent_state state;
+        auto result = std::execution::sync_wait(
+            await_early_completion_task(&state, kind));
+        EXPECT_EQ(state.resumed_on, state.completed_on);
+        EXPECT_NE(state.resumed_on, std::this_thread::get_id());
+        EXPECT_EQ(state.resumptions, 1);
+        EXPECT_EQ(result.has_value(), kind != forge_test::completion_kind::stopped);
+    }
 }
 
 TEST(TaskTest, CoAwaitNonCopyableLvalueSenderRequiresMove) {

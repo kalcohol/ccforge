@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <type_traits>
+#include "../../forge/runtime/forge_completion_agent.hpp"
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
@@ -16,6 +17,28 @@ struct SimpleTask {
         void unhandled_exception() {}
     };
 };
+
+SimpleTask finish_during_sender_start(
+    forge_test::completion_agent_state* state,
+    forge_test::completion_kind kind) {
+    try {
+        co_await forge_test::early_completion_sender{state, kind};
+    } catch (...) {
+    }
+    state->resumed_on = std::this_thread::get_id();
+    ++state->resumptions;
+}
+
+TEST(CoroutineBridgeTest, CompletionCanFinishFrameBeforeStartReturns) {
+    for (auto kind : {forge_test::completion_kind::value,
+                      forge_test::completion_kind::error}) {
+        forge_test::completion_agent_state state;
+        finish_during_sender_start(&state, kind);
+        EXPECT_EQ(state.resumed_on, state.completed_on);
+        EXPECT_NE(state.resumed_on, std::this_thread::get_id());
+        EXPECT_EQ(state.resumptions, 1);
+    }
+}
 
 struct await_env {};
 
