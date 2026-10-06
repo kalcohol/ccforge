@@ -429,7 +429,42 @@ struct member_domain_scheduler {
 
 static_assert(std::execution::scheduler<member_domain_scheduler>);
 
+struct run_loop_value_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    std::execution::run_loop* loop;
+    bool* completed;
+
+    void set_value() && noexcept {
+        *completed = true;
+        loop->finish();
+    }
+
+    auto get_env() const noexcept -> std::execution::empty_env {
+        return {};
+    }
+};
+
 } // namespace
+
+TEST(RunLoopTest, UnstoppableEnvironmentOnlyRequiresValueCompletion) {
+    std::execution::run_loop loop;
+    bool completed = false;
+    auto sender = std::execution::schedule(loop.get_scheduler());
+    using signatures_t = std::execution::completion_signatures_of_t<
+        decltype(sender), std::execution::empty_env>;
+    static_assert(std::same_as<signatures_t,
+        std::execution::completion_signatures<std::execution::set_value_t()>>);
+    static_assert(std::execution::sender_to<
+        decltype(sender), run_loop_value_only_receiver>);
+    auto op = std::execution::connect(
+        std::move(sender), run_loop_value_only_receiver{&loop, &completed});
+
+    std::execution::start(op);
+    loop.run();
+
+    EXPECT_TRUE(completed);
+}
 
 TEST(IntoVariantTest, WrapsValue) {
     auto sndr = std::execution::into_variant(std::execution::just(42));

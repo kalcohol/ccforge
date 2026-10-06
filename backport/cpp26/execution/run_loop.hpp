@@ -135,11 +135,14 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
             auto* self = static_cast<__op*>(t);
             auto token = std::execution::get_stop_token(
                 std::execution::get_env(self->__rcvr));
-            if (token.stop_requested()) {
-                set_stopped(std::move(self->__rcvr));
-            } else {
-                set_value(std::move(self->__rcvr));
+            using token_t = std::remove_cvref_t<decltype(token)>;
+            if constexpr (!std::unstoppable_token<token_t>) {
+                if (token.stop_requested()) {
+                    set_stopped(std::move(self->__rcvr));
+                    return;
+                }
             }
+            set_value(std::move(self->__rcvr));
         };
     }
 
