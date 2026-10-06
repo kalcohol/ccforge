@@ -106,7 +106,7 @@ struct __starts_on_op : __forge_detail::__immovable {
     };
 
     using __sched_op_t = connect_result_t<
-        decltype(std::execution::schedule(std::declval<Scheduler>())), __sched_recv>;
+        decltype(std::execution::schedule(std::declval<Scheduler&>())), __sched_recv>;
 
     __starts_on_op(Scheduler sch, S sndr, R recv)
         : __outer_recv(std::move(recv))

@@ -198,25 +198,88 @@ struct throwing_scheduler {
 
 static_assert(std::execution::scheduler<throwing_scheduler>);
 
+struct mutable_schedule_sender;
+
 struct mutable_schedule_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
 
-    auto schedule() & noexcept {
-        return std::execution::just();
-    }
+    int* started = nullptr;
+
+    auto schedule() & noexcept -> mutable_schedule_sender;
 
     friend bool operator==(
         const mutable_schedule_scheduler&,
         const mutable_schedule_scheduler&) noexcept = default;
 };
 
+template<class R>
+struct mutable_schedule_op {
+    using operation_state_concept = std::execution::operation_state_t;
+
+    mutable_schedule_op(R r, int* count) : rcvr(std::move(r)), started(count) {}
+    mutable_schedule_op(const mutable_schedule_op&) = delete;
+    mutable_schedule_op& operator=(const mutable_schedule_op&) = delete;
+
+    R rcvr;
+    int* started;
+
+    void start() & noexcept {
+        if (started) {
+            ++*started;
+        }
+        std::execution::set_value(std::move(rcvr));
+    }
+};
+
+struct mutable_schedule_sender {
+    using sender_concept = std::execution::sender_t;
+
+    mutable_schedule_scheduler scheduler;
+
+    struct attrs {
+        mutable_schedule_scheduler scheduler;
+
+        auto query(std::execution::get_completion_scheduler_t<
+                       std::execution::set_value_t>) const noexcept
+            -> mutable_schedule_scheduler {
+            return scheduler;
+        }
+    };
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> attrs { return {scheduler}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> mutable_schedule_op<R> {
+        return mutable_schedule_op<R>{std::move(r), scheduler.started};
+    }
+};
+
+auto mutable_schedule_scheduler::schedule() & noexcept -> mutable_schedule_sender {
+    return {*this};
+}
+
 static_assert(std::execution::scheduler<mutable_schedule_scheduler>);
+static_assert(std::same_as<
+    decltype(std::execution::get_completion_scheduler<std::execution::set_value_t>(
+        std::execution::get_env(std::declval<const mutable_schedule_sender&>()))),
+    mutable_schedule_scheduler>);
 
 template<class Scheduler>
 concept const_schedule_callable =
     requires(const Scheduler& scheduler) { scheduler.schedule(); };
 
+template<class Scheduler>
+concept rvalue_schedule_callable =
+    requires(Scheduler&& scheduler) { std::execution::schedule(std::move(scheduler)); };
+
 static_assert(!const_schedule_callable<mutable_schedule_scheduler>);
+static_assert(!rvalue_schedule_callable<mutable_schedule_scheduler>);
 
 template<class R>
 struct error_stopped_schedule_op {
@@ -596,6 +659,51 @@ TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
             std::execution::just()
             | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); })));
     EXPECT_EQ(counter.load(), 1);
+}
+
+TEST(StartsOnTest, SupportsMutableLvalueSchedule) {
+    int started = 0;
+    int observed_starts = 0;
+    mutable_schedule_scheduler scheduler{&started};
+    auto schedule_sender = std::execution::schedule(scheduler);
+    EXPECT_EQ(
+        std::execution::get_completion_scheduler<std::execution::set_value_t>(
+            std::execution::get_env(schedule_sender)),
+        scheduler);
+
+    auto sender = std::execution::starts_on(
+        scheduler,
+        std::execution::just(42) | std::execution::then([&](int value) {
+            observed_starts = started;
+            return value;
+        }));
+    EXPECT_EQ(started, 0);
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_EQ(started, 1);
+    EXPECT_EQ(observed_starts, 1);
+}
+
+TEST(OnTest, SupportsMutableLvalueSchedule) {
+    int started = 0;
+    int observed_starts = 0;
+    auto sender = std::execution::on(
+        mutable_schedule_scheduler{&started},
+        std::execution::just(42) | std::execution::then([&](int value) {
+            observed_starts = started;
+            return value;
+        }));
+    EXPECT_EQ(started, 0);
+
+    auto result = std::execution::sync_wait(std::move(sender));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_EQ(started, 1);
+    EXPECT_EQ(observed_starts, 1);
 }
 
 TEST(StartsOnTest, SourceConnectFailurePropagatesFromConnect) {
