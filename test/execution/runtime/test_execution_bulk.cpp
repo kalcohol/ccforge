@@ -17,7 +17,186 @@ using signatures_t = decltype(std::execution::get_completion_signatures(
     std::declval<Sender>(),
     std::execution::empty_env{}));
 
+template<bool Nothrow>
+struct unchunked_category_callback {
+    int* rvalue_calls;
+    int* lvalue_calls;
+
+    void operator()(int&& index, int& value) & noexcept(Nothrow) {
+        ++*rvalue_calls;
+        if constexpr (Nothrow) {
+            value += index;
+        } else {
+            throw std::runtime_error("bulk unchunked rvalue");
+        }
+    }
+
+    void operator()(int&, int& value) & noexcept(!Nothrow) {
+        ++*lvalue_calls;
+        value += 100;
+    }
+};
+
+template<bool Nothrow>
+struct chunked_category_callback {
+    int* rvalue_calls;
+    int* lvalue_calls;
+
+    void operator()(int&& begin, int&& end, int& value) & noexcept(Nothrow) {
+        ++*rvalue_calls;
+        if constexpr (Nothrow) {
+            value += end - begin;
+        } else {
+            throw std::runtime_error("bulk chunked rvalue");
+        }
+    }
+
+    void operator()(int&&, int&, int& value) & noexcept(!Nothrow) {
+        ++*lvalue_calls;
+        value += 100;
+    }
+};
+
 } // namespace
+
+TEST(BulkTest, UnchunkedRvalueOnlyIndexIsACopy) {
+    auto check = [](auto bulk_algo) {
+        for (auto shape : {std::int8_t{4}, std::int8_t{0}, std::int8_t{-1}}) {
+            SCOPED_TRACE(static_cast<int>(shape));
+            int calls = 0;
+            auto sndr = bulk_algo(
+                std::execution::just(10),
+                shape,
+                [&calls](std::int8_t&& index, int& value) noexcept {
+                    ++calls;
+                    value += index;
+                    index = 100;
+                });
+
+            using cs_t = signatures_t<decltype(sndr)>;
+            static_assert(std::is_same_v<cs_t,
+                std::execution::completion_signatures<
+                    std::execution::set_value_t(int)>>);
+
+            auto result = std::execution::sync_wait(std::move(sndr));
+            ASSERT_TRUE(result.has_value());
+            EXPECT_EQ(calls, shape > 0 ? 4 : 0);
+            EXPECT_EQ(std::get<0>(*result), shape > 0 ? 16 : 10);
+        }
+    };
+
+    check(std::execution::bulk);
+    check(std::execution::bulk_unchunked);
+}
+
+TEST(BulkTest, ChunkedAcceptsRvalueOnlyBounds) {
+    for (auto shape : {std::int8_t{4}, std::int8_t{0}, std::int8_t{-1}}) {
+        SCOPED_TRACE(static_cast<int>(shape));
+        int calls = 0;
+        int begin_seen = -1;
+        int end_seen = -1;
+        auto sndr = std::execution::just(10)
+                  | std::execution::bulk_chunked(
+                        shape,
+                        [&calls, &begin_seen, &end_seen](
+                            std::int8_t&& begin, std::int8_t&& end, int& value) noexcept {
+                            ++calls;
+                            begin_seen = begin;
+                            end_seen = end;
+                            value += end - begin;
+                        });
+
+        using cs_t = signatures_t<decltype(sndr)>;
+        static_assert(std::is_same_v<cs_t,
+            std::execution::completion_signatures<
+                std::execution::set_value_t(int)>>);
+
+        auto result = std::execution::sync_wait(std::move(sndr));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(calls, shape > 0 ? 1 : 0);
+        EXPECT_EQ(begin_seen, shape > 0 ? 0 : -1);
+        EXPECT_EQ(end_seen, shape > 0 ? 4 : -1);
+        EXPECT_EQ(std::get<0>(*result), shape > 0 ? 14 : 10);
+    }
+}
+
+TEST(BulkTest, UnchunkedSelectsNothrowRvalueOverload) {
+    int rvalue_calls = 0;
+    int lvalue_calls = 0;
+    auto sndr = std::execution::bulk_unchunked(
+        std::execution::just(10),
+        4,
+        unchunked_category_callback<true>{&rvalue_calls, &lvalue_calls});
+
+    using cs_t = signatures_t<decltype(sndr)>;
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int)>>);
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(rvalue_calls, 4);
+    EXPECT_EQ(lvalue_calls, 0);
+    EXPECT_EQ(std::get<0>(*result), 16);
+}
+
+TEST(BulkTest, UnchunkedSelectsThrowingRvalueOverload) {
+    int rvalue_calls = 0;
+    int lvalue_calls = 0;
+    auto sndr = std::execution::bulk_unchunked(
+        std::execution::just(10),
+        4,
+        unchunked_category_callback<false>{&rvalue_calls, &lvalue_calls});
+
+    using cs_t = signatures_t<decltype(sndr)>;
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_EQ(rvalue_calls, 1);
+    EXPECT_EQ(lvalue_calls, 0);
+}
+
+TEST(BulkTest, ChunkedSelectsNothrowRvalueOverload) {
+    int rvalue_calls = 0;
+    int lvalue_calls = 0;
+    auto sndr = std::execution::bulk_chunked(
+        std::execution::just(10),
+        4,
+        chunked_category_callback<true>{&rvalue_calls, &lvalue_calls});
+
+    using cs_t = signatures_t<decltype(sndr)>;
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int)>>);
+
+    auto result = std::execution::sync_wait(std::move(sndr));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(rvalue_calls, 1);
+    EXPECT_EQ(lvalue_calls, 0);
+    EXPECT_EQ(std::get<0>(*result), 14);
+}
+
+TEST(BulkTest, ChunkedSelectsThrowingRvalueOverload) {
+    int rvalue_calls = 0;
+    int lvalue_calls = 0;
+    auto sndr = std::execution::bulk_chunked(
+        std::execution::just(10),
+        4,
+        chunked_category_callback<false>{&rvalue_calls, &lvalue_calls});
+
+    using cs_t = signatures_t<decltype(sndr)>;
+    static_assert(std::is_same_v<cs_t,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(std::exception_ptr)>>);
+
+    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_EQ(rvalue_calls, 1);
+    EXPECT_EQ(lvalue_calls, 0);
+}
 
 TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
     std::vector<int> indexes;

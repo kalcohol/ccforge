@@ -80,11 +80,11 @@ struct __op : __forge_detail::__immovable {
             auto run = [&]() noexcept(nothrow) {
                 if constexpr (Chunked) {
                     if (Shape{} < __shape) {
-                        __fn(Shape{}, __shape, vs...);
+                        __fn(Shape{}, Shape(__shape), vs...);
                     }
                 } else {
                     for (Shape i = Shape{}; i < __shape; ++i) {
-                        __fn(i, vs...);
+                        __fn(Shape(i), vs...);
                     }
                 }
                 std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
