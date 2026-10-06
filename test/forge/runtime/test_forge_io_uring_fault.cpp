@@ -240,6 +240,8 @@ void check_hard_flush_failure_rejects_submission() {
     FAULT_CHECK(pipe.read_end >= 0);
 
     std::byte buffer[8] = {};
+    const unsigned injected_before =
+        injected_submit_calls.load(std::memory_order_acquire);
     inject_submit_errno.store(ENOMEM);
     auto rejected = std::execution::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, buffer)));
@@ -252,9 +254,11 @@ void check_hard_flush_failure_rejects_submission() {
         FAULT_CHECK(
             io.error() == std::make_error_code(std::errc::no_buffer_space));
     }
+    // The idle poller can already have cleared the transient diagnostic by
+    // completing a successful empty flush. Pin the injected failure itself.
     FAULT_CHECK(
-        context.last_flush_diagnostic() ==
-        std::error_code(ENOMEM, std::generic_category()));
+        injected_submit_calls.load(std::memory_order_acquire) >
+        injected_before);
 
     // The retracted tail entry must not desynchronize the SQ: a normal
     // operation afterwards completes end to end.
