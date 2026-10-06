@@ -111,6 +111,38 @@ private:
     std::size_t calls_ = 0;
 };
 
+struct empty_code_error_stream {
+    bool with_progress;
+    int calls = 0;
+
+    auto read_some(forge::io::mutable_buffer output)
+        -> forge::io::io_result<std::size_t> {
+        ++calls;
+        if (!with_progress) {
+            return forge::io::io_result<std::size_t>::failure({}, 0);
+        }
+        if (calls > 2) {
+            return forge::io::io_result<std::size_t>::end_of_file(0);
+        }
+        output.data()[0] = calls == 1 ? std::byte{'a'} : std::byte{'\n'};
+        return calls == 1
+            ? forge::io::io_result<std::size_t>::success(1)
+            : forge::io::io_result<std::size_t>::failure({}, 1);
+    }
+
+    auto write_some(forge::io::const_buffer input)
+        -> forge::io::io_result<std::size_t> {
+        ++calls;
+        if (!with_progress) {
+            return forge::io::io_result<std::size_t>::failure({}, 0);
+        }
+        const auto count = std::min<std::size_t>(1, input.size());
+        return calls == 1
+            ? forge::io::io_result<std::size_t>::success(count)
+            : forge::io::io_result<std::size_t>::failure({}, count);
+    }
+};
+
 class tracked_read_stream {
 public:
     tracked_read_stream(std::string_view input, int& destructions) noexcept
@@ -222,6 +254,58 @@ TEST(ForgeStreamConceptsTest, ReadExactlyConsumesShortReads) {
     EXPECT_FALSE(error);
     EXPECT_EQ(count, output.size());
     EXPECT_EQ(std::string_view(output.data(), output.size()), "hello");
+}
+
+TEST(ForgeStreamConceptsTest, ReadExactlyPreservesErrorStatusWithoutErrorCode) {
+    for (bool progress : {false, true}) {
+        for (std::size_t size : {2u, 4u}) {
+            empty_code_error_stream stream{progress};
+            std::array<std::byte, 4> storage{};
+            auto result = forge::io::read_exactly(
+                stream, forge::io::mutable_buffer{storage.data(), size});
+            EXPECT_EQ(result.status(), forge::io::io_status::error);
+            EXPECT_FALSE(result.has_value());
+            EXPECT_FALSE(result.eof());
+            EXPECT_EQ(result.error(), std::error_code{});
+            EXPECT_EQ(std::get<0>(result.values()), progress ? 2u : 0u);
+            EXPECT_EQ(stream.calls, progress ? 2 : 1);
+            if (progress) {
+                EXPECT_EQ(storage[0], std::byte{'a'});
+                EXPECT_EQ(storage[1], std::byte{'\n'});
+            }
+        }
+    }
+}
+
+TEST(ForgeStreamConceptsTest, WriteAllPreservesErrorStatusWithoutErrorCode) {
+    for (bool progress : {false, true}) {
+        for (std::size_t size : {2u, 4u}) {
+            empty_code_error_stream stream{progress};
+            std::array<std::byte, 4> storage{};
+            auto result = forge::io::write_all(
+                stream, forge::io::const_buffer{storage.data(), size});
+            EXPECT_EQ(result.status(), forge::io::io_status::error);
+            EXPECT_FALSE(result.has_value());
+            EXPECT_EQ(result.error(), std::error_code{});
+            EXPECT_EQ(std::get<0>(result.values()), progress ? 2u : 0u);
+            EXPECT_EQ(stream.calls, progress ? 2 : 1);
+        }
+    }
+}
+
+TEST(ForgeStreamConceptsTest, ReadUntilPreservesErrorStatusWithoutErrorCode) {
+    for (bool progress : {false, true}) {
+        empty_code_error_stream stream{progress};
+        std::string output;
+        auto result = forge::io::read_until(stream, output);
+        EXPECT_EQ(result.status(), forge::io::io_status::error);
+        EXPECT_FALSE(result.has_value());
+        EXPECT_FALSE(result.eof());
+        EXPECT_EQ(result.error(), std::error_code{});
+        EXPECT_EQ(std::get<0>(result.values()), progress ? 2u : 0u);
+        EXPECT_EQ(stream.calls, progress ? 2 : 1);
+        EXPECT_EQ(output, progress ? "a\n" : "");
+    }
 }
 
 TEST(ForgeStreamConceptsTest, ReadExactlyReturnsPartialCountOnEof) {

@@ -81,7 +81,7 @@ template<read_stream Stream>
         auto [error, count] = result;
         total += count;
 
-        if (error) {
+        if (result.status() == io_status::error) {
             return io_result<std::size_t>::failure(error, total);
         }
         if (total == output.size()) {
@@ -100,11 +100,12 @@ template<write_stream Stream>
     -> io_result<std::size_t> {
     std::size_t total = 0;
     while (total < input.size()) {
-        auto [error, count] = stream.write_some(
+        auto result = stream.write_some(
             const_buffer{input.data() + total, input.size() - total});
+        auto [error, count] = result;
         total += count;
 
-        if (error) {
+        if (result.status() == io_status::error) {
             return io_result<std::size_t>::failure(error, total);
         }
         if (count == 0) {
@@ -140,7 +141,7 @@ template<read_stream Stream>
             output.push_back(ch);
         }
 
-        if (error) {
+        if (result.status() == io_status::error) {
             return io_result<std::size_t>::failure(error, total);
         }
         if (count > 0 && output.back() == delimiter) {
