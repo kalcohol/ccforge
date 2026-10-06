@@ -85,6 +85,63 @@ constexpr auto __conj_if_needed(T&& value) {
     }
 }
 
+template<class T>
+struct __dot_component_type {
+    using type = T;
+};
+
+template<class T>
+struct __dot_component_type<std::complex<T>> {
+    using type = T;
+};
+
+template<class T>
+using __dot_component_t =
+    typename __dot_component_type<std::remove_cvref_t<T>>::type;
+
+template<class Work, class Value, class Factor>
+constexpr Work __dot_widen_factor(Factor&& factor) {
+    if constexpr (std::is_floating_point_v<__dot_component_t<Factor>>) {
+        return static_cast<Work>(std::forward<Factor>(factor));
+    } else {
+        return static_cast<Work>(
+            static_cast<std::remove_cvref_t<Value>>(std::forward<Factor>(factor)));
+    }
+}
+
+template<class Scalar, class LeftValue, class RightValue, class Left, class Right>
+constexpr decltype(auto) __dot_product(Left&& left, Right&& right) {
+    using scalar_component = __dot_component_t<Scalar>;
+    using left_component = __dot_component_t<LeftValue>;
+    using right_component = __dot_component_t<RightValue>;
+    if constexpr (std::is_floating_point_v<scalar_component> &&
+                  std::is_floating_point_v<left_component> &&
+                  std::is_floating_point_v<right_component> &&
+                  (std::numeric_limits<scalar_component>::digits >
+                       std::numeric_limits<left_component>::digits ||
+                   std::numeric_limits<scalar_component>::digits >
+                       std::numeric_limits<right_component>::digits)) {
+        // The widening rule uses mdspan value_type, including proxy accessors.
+        using left_factor_component = std::conditional_t<
+            std::is_floating_point_v<__dot_component_t<Left>>,
+            __dot_component_t<Left>, left_component>;
+        using right_factor_component = std::conditional_t<
+            std::is_floating_point_v<__dot_component_t<Right>>,
+            __dot_component_t<Right>, right_component>;
+        using real_work_type = std::common_type_t<
+            scalar_component, left_component, right_component,
+            left_factor_component, right_factor_component>;
+        using work_type = std::conditional_t<
+            __is_complex_v<LeftValue> || __is_complex_v<RightValue> ||
+                __is_complex_v<Left> || __is_complex_v<Right>,
+            std::complex<real_work_type>, real_work_type>;
+        return __dot_widen_factor<work_type, LeftValue>(std::forward<Left>(left)) *
+               __dot_widen_factor<work_type, RightValue>(std::forward<Right>(right));
+    } else {
+        return std::forward<Left>(left) * std::forward<Right>(right);
+    }
+}
+
 template<class Extents1, class Extents2>
 consteval bool __compatible_static_extents() {
     if constexpr (Extents1::rank() != Extents2::rank()) {

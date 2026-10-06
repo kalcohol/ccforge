@@ -4,9 +4,76 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+
+namespace {
+
+struct adl_dot_number {
+    std::complex<double> value{};
+    int* products{};
+    int* conjugations{};
+    int* conversions{};
+
+    operator std::complex<double>() const {
+        ++*conversions;
+        return value;
+    }
+};
+
+std::complex<double> operator*(const adl_dot_number& left,
+                               const adl_dot_number& right) {
+    ++*left.products;
+    return left.value * right.value;
+}
+
+adl_dot_number conj(const adl_dot_number& value) {
+    ++*value.conjugations;
+    return {std::conj(value.value), value.products,
+            value.conjugations, value.conversions};
+}
+
+template<class T>
+struct dot_proxy {
+    const T* value;
+    int* products;
+    int* conversions;
+
+    operator T() const {
+        ++*conversions;
+        return *value;
+    }
+
+    friend T operator*(dot_proxy left, dot_proxy right) {
+        ++*left.products;
+        return *left.value * *right.value;
+    }
+};
+
+template<class T>
+struct dot_proxy_accessor {
+    using offset_policy = dot_proxy_accessor;
+    using element_type = const T;
+    using reference = dot_proxy<T>;
+    using data_handle_type = const T*;
+
+    int* products{};
+    int* conversions{};
+
+    constexpr reference access(data_handle_type pointer,
+                               std::size_t index) const noexcept {
+        return {pointer + index, products, conversions};
+    }
+
+    constexpr data_handle_type offset(data_handle_type pointer,
+                                      std::size_t index) const noexcept {
+        return pointer + index;
+    }
+};
+
+} // namespace
 
 TEST(LinalgLevel1CopyScaleSwapAdd, DenseVectors) {
     double x_data[] = {1.0, 2.0, 3.0};
@@ -145,6 +212,230 @@ TEST(LinalgLevel1Dotc, WiderInitAccumulatesProductsInInitType) {
     const double result = std::linalg::dotc(x, y, 0.0);
     EXPECT_TRUE(std::isfinite(result));
     EXPECT_NEAR(result, 1.0e40, 1.0e34);
+}
+
+TEST(LinalgLevel1DotProducts, IntegralInitMultipliesBeforeConversion) {
+    double x_data[] = {0.5, 0.5};
+    double y_data[] = {4.0, 4.0};
+    std::mdspan x(x_data, std::extents<int, 2>{});
+    std::mdspan y(y_data, std::extents<int, 2>{});
+
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y, 0)), int>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y, 0)), int>);
+    for (int init : {0, 7, -7}) {
+        SCOPED_TRACE(init);
+        EXPECT_EQ(std::linalg::dot(x, y, init), init + 4);
+        EXPECT_EQ(std::linalg::dotc(x, y, init), init + 4);
+    }
+}
+
+TEST(LinalgLevel1DotProducts, NarrowInitDoesNotNarrowFactors) {
+    double x_data[] = {1.0 + 0x1p-23};
+    double y_data[] = {1.0 - 0x1p-23};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+
+    EXPECT_EQ(std::linalg::dot(x, y, -1.0f), -0x1p-46f);
+    EXPECT_EQ(std::linalg::dotc(x, y, -1.0f), -0x1p-46f);
+}
+
+TEST(LinalgLevel1DotProducts, WorkTypeIncludesFactorWiderThanInit) {
+    if constexpr (std::numeric_limits<long double>::digits >
+                  std::numeric_limits<double>::digits) {
+        const long double delta =
+            std::ldexp(1.0L, -std::numeric_limits<double>::digits);
+        long double x_data[] = {1.0L + delta};
+        float y_data[] = {1.0f};
+        std::mdspan x(x_data, std::extents<int, 1>{});
+        std::mdspan y(y_data, std::extents<int, 1>{});
+
+        EXPECT_EQ(std::linalg::dot(x, y, -1.0), static_cast<double>(delta));
+        EXPECT_EQ(std::linalg::dotc(x, y, -1.0), static_cast<double>(delta));
+    }
+}
+
+TEST(LinalgLevel1DotProducts, WideComplexInitPreservesProductPrecision) {
+    using complex_float = std::complex<float>;
+    using complex_double = std::complex<double>;
+    const float high = 1.0f + 0x1p-23f;
+    const float low = 1.0f - 0x1p-23f;
+    complex_float x_data[] = {{high, high}};
+    complex_float y_data[] = {{low, low}};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+    const complex_double init{0.5, -0.25};
+    const double product_component = 2.0 - 0x1p-45;
+
+    EXPECT_EQ(std::linalg::dot(x, y, init),
+              init + complex_double(0.0, product_component));
+    EXPECT_EQ(std::linalg::dotc(x, y, init),
+              init + complex_double(product_component, 0.0));
+}
+
+TEST(LinalgLevel1DotProducts, NarrowComplexInitDoesNotNarrowFactors) {
+    using complex_float = std::complex<float>;
+    using complex_double = std::complex<double>;
+    complex_double x_data[] = {{1.0 + 0x1p-23, 0.0}};
+    complex_double y_data[] = {{1.0 - 0x1p-23, 0.0}};
+    std::mdspan x(x_data, std::extents<int, 1>{});
+    std::mdspan y(y_data, std::extents<int, 1>{});
+    const complex_float init{-1.0f, 0.0f};
+    const complex_float expected{-0x1p-46f, 0.0f};
+
+    EXPECT_EQ(std::linalg::dot(x, y, init), expected);
+    EXPECT_EQ(std::linalg::dotc(x, y, init), expected);
+}
+
+TEST(LinalgLevel1DotProducts, GenericFactorsUseTheirMultiplyAndAdlConj) {
+    using complex = std::complex<double>;
+    int products = 0;
+    int conjugations = 0;
+    int conversions = 0;
+    adl_dot_number x_data[] = {
+        {{1.0, 1.0}, &products, &conjugations, &conversions},
+        {{2.0, -1.0}, &products, &conjugations, &conversions},
+    };
+    adl_dot_number y_data[] = {
+        {{3.0, 2.0}, &products, &conjugations, &conversions},
+        {{4.0, -1.0}, &products, &conjugations, &conversions},
+    };
+    std::mdspan x(x_data, std::extents<int, 2>{});
+    std::mdspan y(y_data, std::extents<int, 2>{});
+
+    EXPECT_EQ(std::linalg::dot(x, y, complex{}), complex(8.0, -1.0));
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conjugations, 0);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dot(x, y), complex(8.0, -1.0));
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conjugations, 0);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, complex{}), complex(14.0, 1.0));
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conjugations, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    conjugations = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y), complex(14.0, 1.0));
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conjugations, 2);
+    EXPECT_EQ(conversions, 0);
+}
+
+TEST(LinalgLevel1DotProducts, ProxyReferencesKeepTheirMultiply) {
+    double x_data[] = {0.5, 0.5};
+    double y_data[] = {4.0, 4.0};
+    int products = 0;
+    int conversions = 0;
+    using proxy_span = std::mdspan<const double, std::extents<int, 2>,
+                                   std::layout_right, dot_proxy_accessor<double>>;
+    const dot_proxy_accessor<double> accessor{&products, &conversions};
+    proxy_span x(x_data, proxy_span::mapping_type{}, accessor);
+    proxy_span y(y_data, proxy_span::mapping_type{}, accessor);
+
+    EXPECT_EQ(std::linalg::dot(x, y, 0), 4);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, 0), 4);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dot(x, y, 7.0), 11.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, 7.0), 11.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dot(x, y), 4.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y), 4.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+}
+
+TEST(LinalgLevel1DotProducts, ProxyValueTypeUsesWiderInitBeforeMultiplication) {
+    float x_data[] = {1.0e20f};
+    float y_data[] = {1.0e20f};
+    int products = 0;
+    int conversions = 0;
+    using proxy_span = std::mdspan<const float, std::extents<int, 1>,
+                                   std::layout_right, dot_proxy_accessor<float>>;
+    const dot_proxy_accessor<float> accessor{&products, &conversions};
+    proxy_span x(x_data, proxy_span::mapping_type{}, accessor);
+    proxy_span y(y_data, proxy_span::mapping_type{}, accessor);
+    const double expected = static_cast<double>(x_data[0]) *
+                            static_cast<double>(y_data[0]);
+
+    const double dot = std::linalg::dot(x, y, 0.0);
+    EXPECT_TRUE(std::isfinite(dot));
+    EXPECT_EQ(dot, expected);
+    EXPECT_NEAR(dot, 1.0e40, 1.0e34);
+    EXPECT_EQ(products, 0);
+    EXPECT_EQ(conversions, 2);
+
+    conversions = 0;
+    const double dotc = std::linalg::dotc(x, y, 0.0);
+    EXPECT_TRUE(std::isfinite(dotc));
+    EXPECT_EQ(dotc, expected);
+    EXPECT_NEAR(dotc, 1.0e40, 1.0e34);
+    EXPECT_EQ(products, 0);
+    EXPECT_EQ(conversions, 2);
+}
+
+TEST(LinalgLevel1DotProducts, ProxyWideningKeepsBinaryTermsAndSamePrecisionMultiply) {
+    float x_data[] = {1.0f + 0x1p-23f};
+    float y_data[] = {1.0f - 0x1p-23f};
+    int products = 0;
+    int conversions = 0;
+    using proxy_span = std::mdspan<const float, std::extents<int, 1>,
+                                   std::layout_right, dot_proxy_accessor<float>>;
+    const dot_proxy_accessor<float> accessor{&products, &conversions};
+    proxy_span x(x_data, proxy_span::mapping_type{}, accessor);
+    proxy_span y(y_data, proxy_span::mapping_type{}, accessor);
+
+    EXPECT_EQ(std::linalg::dot(x, y, 0.0), 1.0 - 0x1p-46);
+    EXPECT_EQ(products, 0);
+    EXPECT_EQ(conversions, 2);
+
+    conversions = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, 0.0), 1.0 - 0x1p-46);
+    EXPECT_EQ(products, 0);
+    EXPECT_EQ(conversions, 2);
+
+    conversions = 0;
+    EXPECT_EQ(std::linalg::dot(x, y, 0.0f), 1.0f);
+    EXPECT_EQ(products, 1);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, 0.0f), 1.0f);
+    EXPECT_EQ(products, 1);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dot(x, y), 1.0f);
+    EXPECT_EQ(products, 1);
+    EXPECT_EQ(conversions, 0);
+
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y), 1.0f);
+    EXPECT_EQ(products, 1);
+    EXPECT_EQ(conversions, 0);
 }
 
 TEST(LinalgLevel1Reductions, ExplicitInitControlsReturnType) {

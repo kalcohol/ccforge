@@ -184,7 +184,8 @@ T dot(
     }
 #endif
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
-        init += static_cast<T>(x[i]) * static_cast<T>(y[i]);
+        init += __detail::__dot_product<T,
+            typename decltype(x)::value_type, typename decltype(y)::value_type>(x[i], y[i]);
     return init;
 }
 
@@ -211,8 +212,9 @@ T dotc(
 {
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         auto xi = x[i];
-        init += static_cast<T>(__detail::__conj_if_needed(xi)) *
-                static_cast<T>(y[i]);
+        init += __detail::__dot_product<T,
+            typename decltype(x)::value_type, typename decltype(y)::value_type>(
+                __detail::__conj_if_needed(xi), y[i]);
     }
     return init;
 }
