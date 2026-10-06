@@ -121,14 +121,12 @@ template<class List>
 using __single_error_or_variant_t =
     typename __single_error_or_variant<List>::type;
 
-template<class T>
-struct __is_variant : std::false_type {};
+template<class T, class E>
+struct __variant_contains : std::false_type {};
 
-template<class... Ts>
-struct __is_variant<std::variant<Ts...>> : std::true_type {};
-
-template<class T>
-inline constexpr bool __is_variant_v = __is_variant<T>::value;
+template<class... Ts, class E>
+struct __variant_contains<std::variant<Ts...>, E>
+    : meta::list_contains<meta::type_list<Ts...>, E> {};
 
 template<class Error, class E>
 auto __make_error(E&& e) -> Error {
@@ -144,7 +142,7 @@ template<class E, class Error>
 auto __error_if(Error& error) noexcept -> E* {
     if constexpr (std::is_same_v<std::remove_cv_t<Error>, E>) {
         return &error;
-    } else if constexpr (__is_variant_v<std::remove_cv_t<Error>>) {
+    } else if constexpr (__variant_contains<std::remove_cv_t<Error>, E>::value) {
         return std::get_if<E>(&error);
     } else {
         return nullptr;
@@ -155,7 +153,7 @@ template<class E, class Error>
 auto __error_if(const Error& error) noexcept -> const E* {
     if constexpr (std::is_same_v<std::remove_cv_t<Error>, E>) {
         return &error;
-    } else if constexpr (__is_variant_v<std::remove_cv_t<Error>>) {
+    } else if constexpr (__variant_contains<std::remove_cv_t<Error>, E>::value) {
         return std::get_if<E>(&error);
     } else {
         return nullptr;

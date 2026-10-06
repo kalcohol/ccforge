@@ -163,6 +163,25 @@ TEST(ForgeWaitResultTest, CapturesTypedError) {
     EXPECT_EQ(result.error_if<std::exception_ptr>(), nullptr);
 }
 
+TEST(ForgeWaitResultTest, UnknownErrorTypeReturnsNullForSingleAndVariantStorage) {
+    auto single = forge::wait_result(std::execution::just_error(
+        std::make_exception_ptr(std::runtime_error{"single"})));
+    auto variant = forge::wait_result(error_code_sender{});
+    const auto& const_single = single;
+    const auto& const_variant = variant;
+
+    ASSERT_TRUE(single.has_error());
+    ASSERT_TRUE(variant.has_error());
+    EXPECT_EQ(single.error_if<int>(), nullptr);
+    EXPECT_EQ(const_single.error_if<int>(), nullptr);
+    EXPECT_EQ(variant.error_if<int>(), nullptr);
+    EXPECT_EQ(const_variant.error_if<int>(), nullptr);
+    EXPECT_EQ(single.error_if<std::error_code>(), nullptr);
+    EXPECT_EQ(const_single.error_if<std::error_code>(), nullptr);
+    EXPECT_NE(variant.error_if<std::error_code>(), nullptr);
+    EXPECT_NE(const_variant.error_if<std::error_code>(), nullptr);
+}
+
 TEST(ForgeWaitResultTest, ConvertsTypedErrorMaterializationFailure) {
     auto result = forge::wait_result(throwing_error_sender{});
 
