@@ -1042,7 +1042,11 @@ public:
 
     ~io_uring_context() noexcept {
         shutdown();
-        wait();
+        if (state_->called_from_poller() && thread_.joinable()) {
+            thread_.detach();
+        } else {
+            wait();
+        }
     }
 
     io_uring_context(const io_uring_context&) = delete;
@@ -1063,11 +1067,10 @@ public:
     }
 
     void wait() noexcept {
-        if (!thread_.joinable()) {
+        if (state_->called_from_poller()) {
             return;
         }
-        if (state_->called_from_poller()) {
-            thread_.detach();
+        if (!thread_.joinable()) {
             return;
         }
         // Pump parked wakeup flush retries until the poller commits to

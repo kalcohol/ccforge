@@ -777,6 +777,71 @@ void check_destroy_context_from_completion(std::pmr::memory_resource* memory) {
     }
 }
 
+struct poller_wait_gate {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool in_callback = false;
+    bool release = false;
+    bool waiter_started = false;
+    bool waiter_returned = false;
+};
+
+auto wait_from_read_completion(
+    cio::io_uring_context& context, int fd, std::span<std::byte> buffer,
+    poller_wait_gate* gate) -> cio::io_task<cio::io_result<std::size_t>> {
+    auto result = co_await cio::async_read_some(context, fd, buffer);
+    context.wait();
+    std::unique_lock lock{gate->mutex};
+    gate->in_callback = true;
+    gate->cv.notify_all();
+    gate->cv.wait(lock, [&] { return gate->release; });
+    co_return result;
+}
+
+void check_poller_wait_preserves_external_barrier(
+    std::pmr::memory_resource* memory) {
+    cio::io_uring_context context{{.memory = memory, .entries = 8}};
+    pipe_pair pipe;
+    std::byte buffer[1]{};
+    poller_wait_gate gate;
+    auto state = std::make_shared<completion_state>();
+    auto op = std::execution::connect(cio::as_sender(wait_from_read_completion(
+        context, pipe.read_end, buffer, &gate)), completion_receiver{state});
+    std::execution::start(op);
+    RW_CHECK(::write(pipe.write_end, "x", 1) == 1);
+
+    std::unique_lock lock{gate.mutex};
+    const bool entered = gate.cv.wait_for(lock, 2s, [&] { return gate.in_callback; });
+    RW_CHECK(entered);
+    if (!entered) {
+        gate.release = true;
+        lock.unlock();
+        gate.cv.notify_all();
+        context.shutdown();
+        context.wait();
+        return;
+    }
+    context.shutdown();
+    std::thread waiter{[&] {
+        {
+            std::lock_guard guard{gate.mutex};
+            gate.waiter_started = true;
+            gate.cv.notify_all();
+        }
+        context.wait();
+        std::lock_guard guard{gate.mutex};
+        gate.waiter_returned = true;
+        gate.cv.notify_all();
+    }};
+    RW_CHECK(gate.cv.wait_for(lock, 2s, [&] { return gate.waiter_started; }));
+    RW_CHECK(!gate.cv.wait_for(lock, 100ms, [&] { return gate.waiter_returned; }));
+    gate.release = true;
+    lock.unlock();
+    gate.cv.notify_all();
+    waiter.join();
+    RW_CHECK(wait_done(state));
+}
+
 void check_destructor_cancels_in_flight(std::pmr::memory_resource* memory) {
     pipe_pair pipe;
     RW_CHECK(pipe.read_end >= 0);
@@ -890,6 +955,7 @@ int main() {
     check_concurrent_reads_on_two_fds(&memory);
     check_shutdown_batch_cancels_under_pressure(&memory);
     check_destroy_context_from_completion(&memory);
+    check_poller_wait_preserves_external_barrier(&memory);
     check_destructor_cancels_in_flight(&memory);
 
     // The detached poller from the completion-destruction check releases
