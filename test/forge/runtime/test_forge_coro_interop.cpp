@@ -6,6 +6,7 @@
 #include <forge/static_thread_pool.hpp>
 
 #include "forge_operation_destroy.hpp"
+#include "forge_completion_agent.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -264,10 +265,12 @@ struct self_destroying_task_receiver {
     self_destroying_task_state* state = nullptr;
 
     auto set_value(int value) && noexcept -> void {
-        state->value = value;
-        ++state->completions;
-        context->destroy();
-        state->done = true;
+        auto* result = state;
+        auto* owner = context;
+        result->value = value;
+        ++result->completions;
+        owner->destroy();
+        result->done = true;
     }
 
     auto set_error(std::exception_ptr) && noexcept -> void {
@@ -746,6 +749,21 @@ auto await_inline_probe_task(inline_probe_state* state) -> cio::io_task<bool> {
     co_return value == 5;
 }
 
+auto await_early_completion_io_task(
+    forge_test::completion_agent_state* state,
+    forge_test::completion_kind kind) -> cio::io_task<int> {
+    try {
+        co_await cio::await_sender(forge_test::early_completion_sender{state, kind});
+    } catch (...) {
+        state->resumed_on = std::this_thread::get_id();
+        ++state->resumptions;
+        throw;
+    }
+    state->resumed_on = std::this_thread::get_id();
+    ++state->resumptions;
+    co_return 7;
+}
+
 auto observe_initial_resume_credit_task() -> cio::io_task<bool> {
     bool observed = false;
     co_await resume_credit_observer{&observed};
@@ -1134,6 +1152,25 @@ TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
     EXPECT_FALSE(probe.continuation_ran_before_start_returned);
 }
 
+TEST(ForgeCoroInteropTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
+    for (auto kind : {forge_test::completion_kind::value,
+                      forge_test::completion_kind::error,
+                      forge_test::completion_kind::stopped}) {
+        forge_test::completion_agent_state state;
+        auto sender = cio::as_sender(await_early_completion_io_task(&state, kind));
+        if (kind == forge_test::completion_kind::error) {
+            EXPECT_THROW(std::execution::sync_wait(std::move(sender)),
+                         forge_test::early_completion_error);
+        } else {
+            auto result = std::execution::sync_wait(std::move(sender));
+            EXPECT_EQ(result.has_value(), kind == forge_test::completion_kind::value);
+        }
+        EXPECT_EQ(state.resumed_on, state.completed_on);
+        EXPECT_NE(state.resumed_on, std::this_thread::get_id());
+        EXPECT_EQ(state.resumptions, 1);
+    }
+}
+
 TEST(ForgeCoroInteropTest, InitialTaskResumeCarriesLifetimeCredit) {
     auto result = std::execution::sync_wait(
         cio::as_sender(observe_initial_resume_credit_task()));
@@ -1164,6 +1201,32 @@ TEST(ForgeCoroInteropTest, InlineTaskCompletionAllowsReceiverSelfDestruction) {
     EXPECT_TRUE(state.done);
     EXPECT_EQ(state.completions, 1);
     EXPECT_EQ(state.value, 42);
+}
+
+TEST(ForgeCoroInteropTest, EarlyCrossThreadCompletionAllowsReceiverSelfDestruction) {
+    forge_test::completion_agent_state agent;
+    self_destroying_task_state state;
+    using sender_t = decltype(cio::as_sender(await_early_completion_io_task(
+        &agent, forge_test::completion_kind::value)));
+    using op_t = std::execution::connect_result_t<
+        sender_t, self_destroying_task_receiver>;
+
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(
+            cio::as_sender(await_early_completion_io_task(
+                &agent, forge_test::completion_kind::value)),
+            self_destroying_task_receiver{&context, &state});
+    });
+    std::execution::start(op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_TRUE(state.done);
+    EXPECT_EQ(state.completions, 1);
+    EXPECT_EQ(state.value, 7);
+    EXPECT_EQ(agent.resumed_on, agent.completed_on);
+    EXPECT_EQ(agent.resumptions, 1);
 }
 
 TEST(ForgeCoroInteropTest, DirectAwaitableResumeCarriesLifetimeCredit) {

@@ -142,6 +142,32 @@ struct await_sender_receiver_env {
     }
 };
 
+// A starting-stack scope defers only same-thread inline completions. It does
+// not borrow frame storage after start(), which may finish on another agent.
+struct sender_start_scope {
+    explicit sender_start_scope(const void* key) noexcept
+        : key(key), previous(current) {
+        current = this;
+    }
+
+    ~sender_start_scope() { current = previous; }
+
+    static auto defer(const void* key) noexcept -> bool {
+        for (auto* scope = current; scope; scope = scope->previous) {
+            if (scope->key == key) {
+                scope->completed_inline = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const void* key;
+    sender_start_scope* previous;
+    bool completed_inline = false;
+    inline static thread_local sender_start_scope* current = nullptr;
+};
+
 template<class Sender>
 class sender_awaitable {
 public:
@@ -167,13 +193,14 @@ public:
             ::new (op_storage()) op_t{
                 std::execution::connect(std::move(sender_), receiver{this})};
             op_constructed_ = true;
+            (void)exchange_bridge_state(bridge_state::suspended);
+            sender_start_scope scope{this};
             std::execution::start(*op_ptr());
+            return !scope.completed_inline;
         } catch (...) {
             clear_published_bridge();
             throw;
         }
-        return exchange_bridge_state(bridge_state::suspended) !=
-            bridge_state::completed;
     }
 
     auto await_resume() {
@@ -306,22 +333,21 @@ private:
     }
 
     auto complete() noexcept -> void {
-        // Resume only when the coroutine is genuinely parked: starting
-        // means the synchronous path picks the result up in await_suspend,
-        // abandoned means the destructor owns the frame and a resume would
-        // race the destruction. Everything the tail needs is copied to
-        // locals first: the resume may run the chain to completion and a
-        // receiver completing inline may destroy the operation state, so
-        // the tail must not touch this awaitable and may touch the root
-        // link only while its resuming count keeps the frames alive.
+        // The bridge is parked before start publishes its receiver. A local
+        // starting scope handles same-thread inline completion; other agents
+        // resume directly. Copy the tail's inputs before it can destroy frames.
         auto* const root = chain_root_;
+        const auto continuation = continuation_;
         if (exchange_bridge_state(bridge_state::completed) ==
             bridge_state::suspended) {
-            if (root == nullptr) {
-                continuation_.resume();
+            if (sender_start_scope::defer(this)) {
                 return;
             }
-            resume_with_credit(continuation_, root);
+            if (root == nullptr) {
+                continuation.resume();
+                return;
+            }
+            resume_with_credit(continuation, root);
         }
     }
 
