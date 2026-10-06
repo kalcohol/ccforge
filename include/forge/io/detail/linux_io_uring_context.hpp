@@ -649,29 +649,25 @@ struct context_state {
                 flush_error = ring_state.flush_published();
                 record_flush_locked(flush_error);
             }
-            if (flush_error && flush_error.value() != EBUSY) {
-                // A producer or lifecycle pump remains responsible for
-                // waking a poller already blocked in GETEVENTS. Once awake,
-                // retry parked entries without holding the lock across a
-                // bounded backoff.
-                std::this_thread::sleep_for(
-                    std::chrono::microseconds{100});
-                continue;
-            }
-
-            const std::error_code wait_error =
-                ring_state.wait_for_completion();
-            if (wait_error) {
-                const int error = wait_error.value();
-                if (error != EINTR && error != EAGAIN && error != EBUSY) {
-                    std::lock_guard lock{mutex};
-                    poller_error = wait_error;
-                    poller_done = true;
-                    cv.notify_all();
-                    break;
+            const bool retry_flush =
+                flush_error && flush_error.value() != EBUSY;
+            if (!retry_flush) {
+                const std::error_code wait_error =
+                    ring_state.wait_for_completion();
+                if (wait_error) {
+                    const int error = wait_error.value();
+                    if (error != EINTR && error != EAGAIN && error != EBUSY) {
+                        std::lock_guard lock{mutex};
+                        poller_error = wait_error;
+                        poller_done = true;
+                        cv.notify_all();
+                        break;
+                    }
                 }
             }
 
+            // Submission retries cannot prevent already-owned operations
+            // from retiring or the lifecycle exit condition from advancing.
             ring_state.drain_completions(
                 [this](const io_uring_cqe& completion) noexcept {
                     complete(completion);
@@ -710,6 +706,10 @@ struct context_state {
             }
             if (should_exit) {
                 break;
+            }
+            if (retry_flush) {
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds{100});
             }
         }
     }

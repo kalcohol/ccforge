@@ -57,6 +57,7 @@ std::atomic<unsigned> inject_submit_failures{unlimited_submit_failures};
 // outcome and pins the shared-head ownership check.
 std::atomic<int> inject_submit_errno_after_success{0};
 std::atomic<unsigned> combined_submit_calls{0};
+std::atomic<unsigned> injected_submit_calls{0};
 
 } // namespace
 
@@ -104,6 +105,7 @@ extern "C" long __wrap_syscall(
                      remaining,
                      remaining - 1U,
                      std::memory_order_acq_rel))) {
+                injected_submit_calls.fetch_add(1, std::memory_order_release);
                 errno = injected;
                 return -1;
             }
@@ -399,6 +401,64 @@ void check_cancel_flush_failure_wakes_poller() {
     FAULT_CHECK(!context.last_flush_diagnostic());
 }
 
+// An unsuccessful submission retry must not hide completions from operations
+// the kernel already owns. The first read wakes the poller; a subsequent
+// failed retry is observed before making the second read ready.
+void check_completions_progress_during_persistent_flush_failure() {
+    cio::io_uring_context context{{.entries = 8}};
+    pipe_pair first_pipe;
+    pipe_pair second_pipe;
+    FAULT_CHECK(first_pipe.read_end >= 0);
+    FAULT_CHECK(second_pipe.read_end >= 0);
+
+    std::byte first_buffer[1] = {};
+    std::byte second_buffer[1] = {};
+    auto first_state = std::make_shared<completion_state>();
+    auto second_state = std::make_shared<completion_state>();
+    auto first_op = std::execution::connect(
+        cio::as_sender(read_task(context, first_pipe.read_end, first_buffer)),
+        completion_receiver{first_state});
+    auto second_op = std::execution::connect(
+        cio::as_sender(read_task(context, second_pipe.read_end, second_buffer)),
+        completion_receiver{second_state});
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+
+    inject_submit_errno.store(ENOMEM, std::memory_order_release);
+    context.close();
+    const char first_payload = 'a';
+    FAULT_CHECK(::write(first_pipe.write_end, &first_payload, 1) == 1);
+    FAULT_CHECK(wait_done(first_state));
+
+    const unsigned retries =
+        injected_submit_calls.load(std::memory_order_acquire);
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (injected_submit_calls.load(std::memory_order_acquire) == retries &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    FAULT_CHECK(
+        injected_submit_calls.load(std::memory_order_acquire) != retries);
+
+    const char second_payload = 'b';
+    FAULT_CHECK(::write(second_pipe.write_end, &second_payload, 1) == 1);
+    const bool completed_during_failure = wait_done(second_state);
+
+    // Always restore the submission path before cleanup, including failures.
+    inject_submit_errno.store(0, std::memory_order_release);
+    context.wait();
+
+    FAULT_CHECK(completed_during_failure);
+    FAULT_CHECK(wait_done(second_state));
+    FAULT_CHECK(second_state->result.has_value());
+    if (second_state->result.has_value()) {
+        FAULT_CHECK(second_state->result->has_value());
+        FAULT_CHECK(std::get<0>(second_state->result->values()) == 1);
+        FAULT_CHECK(second_buffer[0] == std::byte{'b'});
+    }
+    FAULT_CHECK(!context.last_error());
+}
+
 } // namespace
 
 int main() {
@@ -424,6 +484,7 @@ int main() {
     check_wakeup_flush_hard_failure_self_heals();
     check_saturated_wakeup_publish_self_heals();
     check_cancel_flush_failure_wakes_poller();
+    check_completions_progress_during_persistent_flush_failure();
     FAULT_CHECK(combined_submit_calls.load(std::memory_order_acquire) == 0);
 
     if (failures != 0) {
