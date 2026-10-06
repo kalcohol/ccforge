@@ -595,6 +595,67 @@ struct sender_tag_transform_source : direct_value_sender {
     }
 };
 
+struct sender_tag_signature_source : sender_tag_transform_source {
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(std::exception_ptr)> {
+        return {};
+    }
+};
+
+struct start_transform_tag {
+    template<class Sender, class Env>
+    auto transform_sender(
+        std::execution::start_t, Sender&&, const Env&) const noexcept {
+        return transformed_sender{131};
+    }
+};
+
+struct start_tag_transform_source : direct_value_sender {
+    template<std::size_t I>
+    auto get() const noexcept -> start_transform_tag {
+        static_assert(I == 0);
+        return {};
+    }
+};
+
+struct identity_transform_tag {
+    static inline int calls = 0;
+
+    template<class Tag, class Sender, class Env>
+    auto transform_sender(Tag, Sender&& sender, const Env&) const noexcept
+        -> Sender&& {
+        ++calls;
+        return static_cast<Sender&&>(sender);
+    }
+};
+
+struct noncopyable_tagged_sender : direct_value_sender {
+    noncopyable_tagged_sender() = default;
+    noncopyable_tagged_sender(const noncopyable_tagged_sender&) = delete;
+
+    template<std::size_t I>
+    auto get() const noexcept -> identity_transform_tag {
+        static_assert(I == 0);
+        return {};
+    }
+};
+
+struct noncopyable_env {
+    noncopyable_env() = default;
+    noncopyable_env(const noncopyable_env&) = delete;
+};
+
+struct borrowed_env_receiver : int_receiver<> {
+    const noncopyable_env* environment;
+
+    auto get_env() const noexcept -> const noncopyable_env& {
+        return *environment;
+    }
+};
+
 struct apply_probe_tag {
     static inline int tag_calls = 0;
 
@@ -697,6 +758,57 @@ TEST(DefaultDomainTest, PublicTransformUsesSenderTagCustomization) {
     static_assert(std::same_as<decltype(transformed), transformed_sender>);
     EXPECT_TRUE(public_transform_tag::transformed);
     EXPECT_EQ(transformed.value, 121);
+}
+
+TEST(DefaultDomainTest, ConnectUsesSenderTagCustomization) {
+    public_transform_tag::transformed = false;
+    int value = 0;
+    bool completed = false;
+    auto operation = std::execution::connect(
+        sender_tag_transform_source{}, int_receiver<>{&value, &completed});
+    std::execution::start(operation);
+
+    EXPECT_TRUE(public_transform_tag::transformed);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 121);
+}
+
+TEST(DefaultDomainTest, ExplicitEnvSignaturesUseSenderTagCustomization) {
+    using raw_cs = std::execution::completion_signatures_of_t<
+        sender_tag_signature_source>;
+    using transformed_cs = std::execution::completion_signatures_of_t<
+        sender_tag_signature_source, std::execution::empty_env>;
+    static_assert(std::same_as<raw_cs, std::execution::completion_signatures<
+        std::execution::set_value_t(int),
+        std::execution::set_error_t(std::exception_ptr)>>);
+    EXPECT_TRUE((std::same_as<transformed_cs,
+        std::execution::completion_signatures<std::execution::set_value_t(int)>>));
+}
+
+TEST(DefaultDomainTest, ConnectUsesStartTagCustomization) {
+    int value = 0;
+    bool completed = false;
+    auto operation = std::execution::connect(
+        start_tag_transform_source{}, int_receiver<>{&value, &completed});
+    std::execution::start(operation);
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 131);
+}
+
+TEST(DefaultDomainTest, IdentityTagTransformPreservesBorrowedObjects) {
+    noncopyable_env environment;
+    noncopyable_tagged_sender sender;
+    identity_transform_tag::calls = 0;
+    int value = 0;
+    bool completed = false;
+    auto operation = std::execution::connect(
+        sender, borrowed_env_receiver{{&value, &completed}, &environment});
+    std::execution::start(operation);
+
+    EXPECT_EQ(identity_transform_tag::calls, 2);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 42);
 }
 
 TEST(DefaultDomainTest, PublicTransformRunsCompletionThenStartRecursion) {

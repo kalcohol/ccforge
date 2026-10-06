@@ -1302,7 +1302,9 @@ consteval bool __completion_signatures_use_default_transform() {
     using start_domain_t = decltype(__start_domain_for(
         std::declval<const env_t&>()));
     return std::same_as<std::remove_cvref_t<completion_domain_t>, default_domain> &&
-           std::same_as<std::remove_cvref_t<start_domain_t>, default_domain>;
+           std::same_as<std::remove_cvref_t<start_domain_t>, default_domain> &&
+           !__sender_tag_transformable<set_value_t, S, env_t> &&
+           !__sender_tag_transformable<start_t, S, env_t>;
 }
 
 template<class S, class R>
@@ -1390,8 +1392,8 @@ namespace __forge_domain {
 
 template<class S, class R>
 concept __default_connect_domains =
-    __default_receiver_domain<R> &&
-    std::same_as<std::remove_cvref_t<__sender_completion_domain_for_t<S, R>>, default_domain>;
+    receiver<R> &&
+    __completion_signatures_use_default_transform<S, __receiver_env_t<R>>();
 
 template<class S, class R>
 using __transformed_sender_for_t =
@@ -1436,11 +1438,11 @@ decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
 
 template<class S, class R>
 decltype(auto) __domain_connect(const connect_t& tag, S&& s, R&& r) {
-    auto env = std::execution::get_env(r);
-    auto ts = __transform_sender_for_connect(static_cast<S&&>(s), env);
+    decltype(auto) env = std::execution::get_env(r);
+    decltype(auto) ts = __transform_sender_for_connect(static_cast<S&&>(s), env);
     return __direct_connect(
         tag,
-        std::move(ts),
+        static_cast<decltype(ts)&&>(ts),
         static_cast<R&&>(r));
 }
 
