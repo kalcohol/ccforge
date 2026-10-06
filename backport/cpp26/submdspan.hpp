@@ -44,6 +44,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -860,6 +861,19 @@ template <class IndexType, class T>
 constexpr auto canonical_index(T value) {
     using V = remove_cvref_t<T>;
     if constexpr (is_icl_v<V>) {
+        static_assert([] {
+            using value_type = remove_cvref_t<decltype(V::value)>;
+            constexpr auto max = numeric_limits<IndexType>::max();
+            if constexpr (is_signed_v<value_type> == is_signed_v<IndexType>) {
+                return V::value >= numeric_limits<IndexType>::min() &&
+                       V::value <= max;
+            } else if constexpr (is_signed_v<value_type>) {
+                return V::value >= 0 &&
+                       static_cast<make_unsigned_t<value_type>>(V::value) <= max;
+            } else {
+                return V::value <= static_cast<make_unsigned_t<IndexType>>(max);
+            }
+        }(), "canonical_index: constant value must be representable in IndexType");
         return constant_wrapper<static_cast<IndexType>(V::value)>{};
     } else {
         return static_cast<IndexType>(value);

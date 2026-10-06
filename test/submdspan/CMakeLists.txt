@@ -209,6 +209,19 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
                 "submdspan canonical range must reject a zero constant stride for dynamic spans")
         endforeach()
         unset(_forge_zero_stride_case)
+        foreach(_forge_constant_index_case IN ITEMS
+                negative_constant_index_unsigned negative_integral_constant_index_unsigned
+                overflow_constant_index_signed underflow_constant_index_signed
+                overflow_character_constant_index overflow_custom_constant_index)
+            string(TOUPPER "${_forge_constant_index_case}" _forge_constant_index_case_upper)
+            forge_expect_submdspan_cxx_source_compiles(
+                FORGE_SUBMDSPAN_REJECTS_${_forge_constant_index_case_upper}
+                "test_submdspan_reject_${_forge_constant_index_case}.cpp"
+                OFF
+                "submdspan canonical index must reject unrepresentable constants: ${_forge_constant_index_case}")
+        endforeach()
+        unset(_forge_constant_index_case)
+        unset(_forge_constant_index_case_upper)
     endif()
     unset(_forge_submdspan_backport_tests)
     unset(_forge_padded_backport_tests)

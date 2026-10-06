@@ -5,6 +5,8 @@
 #include <mdspan>
 #include <array>
 #include <concepts>
+#include <cstdint>
+#include <limits>
 #include <tuple>
 #include <type_traits>
 #include <gtest/gtest.h>
@@ -104,6 +106,19 @@ struct ordinary_index {
 struct valid_constant_index {
     static constexpr int value = 2;
     constexpr operator int() const noexcept { return value; }
+};
+
+template<auto Value>
+struct typed_constant_index {
+    using value_type = decltype(Value);
+    static constexpr value_type value = Value;
+    constexpr operator value_type() const noexcept { return value; }
+};
+
+struct out_of_range_nonconstant_index {
+    static constexpr unsigned value = 256;
+    int index = 2;
+    constexpr operator int() const noexcept { return index; }
 };
 
 template<class Index>
@@ -239,6 +254,79 @@ TEST(SubmdspanIntegralConstantLike, ValidConstantsStayStatic) {
     check_constant_index<std::integral_constant<unsigned, 2>, 2>();
     check_constant_index<std::constant_wrapper<2zu>, 2>();
     check_constant_index<valid_constant_index, 2>();
+}
+
+TEST(SubmdspanIntegralConstantLike, CharacterConstantsStayStatic) {
+    check_constant_index<std::constant_wrapper<char{2}>, 2>();
+    check_constant_index<std::constant_wrapper<wchar_t{2}>, 2>();
+    check_constant_index<std::constant_wrapper<char8_t{2}>, 2>();
+    check_constant_index<std::constant_wrapper<char16_t{2}>, 2>();
+    check_constant_index<std::constant_wrapper<char32_t{2}>, 2>();
+    check_constant_index<std::integral_constant<signed char, 2>, 2>();
+    check_constant_index<std::integral_constant<unsigned char, 2>, 2>();
+    check_constant_index<std::integral_constant<char16_t, 2>, 2>();
+    check_constant_index<typed_constant_index<char32_t{2}>, 2>();
+}
+
+TEST(SubmdspanIntegralConstantLike, RepresentableBoundariesPreserveCanonicalTypes) {
+    auto check = []<class Index, class Constant, Index Expected>() {
+        constexpr std::dextents<Index, 1> source(Expected);
+        constexpr auto range = std::range_slice{std::cw<0>, Constant{}, std::cw<1>};
+        constexpr auto slices = std::canonical_slices(source, range);
+        using canonical_t = std::tuple_element_t<0, std::remove_cvref_t<decltype(slices)>>;
+        static_assert(std::is_same_v<canonical_t, std::extent_slice<
+            std::constant_wrapper<Index(0)>, std::constant_wrapper<Expected>,
+            std::constant_wrapper<Index(1)>>>);
+        EXPECT_EQ(std::get<0>(slices).offset, 0);
+        EXPECT_EQ(std::get<0>(slices).extent, Expected);
+        EXPECT_EQ(std::get<0>(slices).stride, 1);
+
+        constexpr auto extents = std::subextents(source, range);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(extents)>,
+            std::extents<Index, static_cast<std::size_t>(Expected)>>);
+        EXPECT_EQ(extents.extent(0), Expected);
+    };
+    check.template operator()<std::int8_t, std::constant_wrapper<0u>, 0>();
+    check.template operator()<std::uint8_t, std::integral_constant<int, 0>, 0>();
+    check.template operator()<std::int8_t, std::constant_wrapper<127u>, 127>();
+    check.template operator()<std::uint8_t, std::integral_constant<int, 255>, 255>();
+    check.template operator()<std::int16_t, typed_constant_index<32767u>, 32767>();
+    check.template operator()<std::uint16_t,
+        std::constant_wrapper<char16_t{65535}>, 65535>();
+    check.template operator()<std::int32_t,
+        typed_constant_index<std::numeric_limits<std::uint16_t>::max()>, 65535>();
+    check.template operator()<std::uint32_t,
+        std::constant_wrapper<std::numeric_limits<std::int16_t>::max()>, 32767>();
+}
+
+TEST(SubmdspanIntegralConstantLike, NonconstantIndicesKeepRuntimePreconditions) {
+    auto check = [](auto index) {
+        const std::dextents<std::uint8_t, 1> source(4);
+        const auto slices = std::canonical_slices(source, index);
+        static_assert(std::is_same_v<
+            std::tuple_element_t<0, std::remove_cvref_t<decltype(slices)>>, std::uint8_t>);
+        EXPECT_EQ(std::get<0>(slices), 2);
+    };
+    check(ordinary_index{2});
+    check(member_value_index{2});
+    check(out_of_range_nonconstant_index{});
+}
+
+TEST(SubmdspanIntegralConstantLike, SignedMinimumStrideIsRepresentableForStaticEmptyRanges) {
+    constexpr std::dextents<std::int8_t, 1> source(4);
+    constexpr auto range = std::range_slice{std::cw<2>, std::cw<2>, std::cw<-128>};
+    constexpr auto slices = std::canonical_slices(source, range);
+    using canonical_t = std::tuple_element_t<0, std::remove_cvref_t<decltype(slices)>>;
+    static_assert(std::is_same_v<canonical_t, std::extent_slice<
+        std::constant_wrapper<std::int8_t(2)>, std::constant_wrapper<std::int8_t(0)>,
+        std::constant_wrapper<std::int8_t(1)>>>);
+    EXPECT_EQ(std::get<0>(slices).offset, 2);
+    EXPECT_EQ(std::get<0>(slices).extent, 0);
+    EXPECT_EQ(std::get<0>(slices).stride, 1);
+    constexpr auto extents = std::subextents(source, range);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(extents)>,
+        std::extents<std::int8_t, 0>>);
+    EXPECT_EQ(extents.extent(0), 0);
 }
 
 TEST(SubmdspanIntegralConstantLike, OrdinaryIndicesRemainCompatible) {
