@@ -886,6 +886,29 @@ TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
     EXPECT_EQ(scope.count(), 0u);
 }
 
+TEST(SimpleCountingScopeTest, AssociatedSenderCleanupPrecedesDisassociation) {
+    std::execution::simple_counting_scope scope;
+    std::atomic<bool> sender_destroyed{false};
+    std::atomic<bool> observed_destroyed{false};
+    std::atomic<bool> join_completed{false};
+    auto owned = std::shared_ptr<void>{nullptr, [&](void*) noexcept {
+        sender_destroyed.store(true, std::memory_order_release);
+    }};
+    std::optional associated{std::execution::associate(
+        std::execution::just(std::move(owned)), scope.get_token())};
+    auto join_op = std::execution::connect(scope.join(),
+        destruction_order_join_receiver{
+            &sender_destroyed, &observed_destroyed, &join_completed});
+    std::execution::start(join_op);
+    EXPECT_FALSE(join_completed.load(std::memory_order_acquire));
+
+    associated.reset();
+
+    EXPECT_TRUE(sender_destroyed.load(std::memory_order_acquire));
+    EXPECT_TRUE(join_completed.load(std::memory_order_acquire));
+    EXPECT_TRUE(observed_destroyed.load(std::memory_order_acquire));
+}
+
 TEST(SimpleCountingScopeTest, WrapCompletesAndDisassociates) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();

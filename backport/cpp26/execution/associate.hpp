@@ -142,9 +142,7 @@ struct __sender {
     __sender& operator=(const __sender&) = delete;
     __sender& operator=(__sender&&) = delete;
 
-    ~__sender() noexcept {
-        __association = {};
-    }
+    ~__sender() noexcept = default;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
