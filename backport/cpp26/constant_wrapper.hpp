@@ -202,52 +202,36 @@ concept __forge_constexpr_param = requires {
 });
 
 struct __forge_cw_operators {
+    // LWG4383/4500: substitute the expression on the const value, not a copy.
     template <__forge_constexpr_param T>
-        requires requires(remove_cvref_t<typename T::value_type> value) { ++value; }
-    constexpr auto operator++(this T) noexcept {
-        return FORGE_CW_RESULT([] {
-            auto value = T::value;
-            return ++value;
-        }()){};
+    constexpr auto operator++(this T) noexcept
+        -> FORGE_CW_RESULT(++T::value) {
+        return {};
     }
 
     template <__forge_constexpr_param T>
-        requires requires(remove_cvref_t<typename T::value_type> value) { value++; }
-    constexpr auto operator++(this T, int) noexcept {
-        return FORGE_CW_RESULT([] {
-            auto value = T::value;
-            return value++;
-        }()){};
+    constexpr auto operator++(this T, int) noexcept
+        -> FORGE_CW_RESULT(T::value++) {
+        return {};
     }
 
     template <__forge_constexpr_param T>
-        requires requires(remove_cvref_t<typename T::value_type> value) { --value; }
-    constexpr auto operator--(this T) noexcept {
-        return FORGE_CW_RESULT([] {
-            auto value = T::value;
-            return --value;
-        }()){};
+    constexpr auto operator--(this T) noexcept
+        -> FORGE_CW_RESULT(--T::value) {
+        return {};
     }
 
     template <__forge_constexpr_param T>
-        requires requires(remove_cvref_t<typename T::value_type> value) { value--; }
-    constexpr auto operator--(this T, int) noexcept {
-        return FORGE_CW_RESULT([] {
-            auto value = T::value;
-            return value--;
-        }()){};
+    constexpr auto operator--(this T, int) noexcept
+        -> FORGE_CW_RESULT(T::value--) {
+        return {};
     }
 
-#define FORGE_CW_COMPOUND_OPERATOR(op)                                             \
-    template <__forge_constexpr_param T, __forge_constexpr_param R>                \
-        requires requires(remove_cvref_t<typename T::value_type> value) {           \
-            value op R::value;                                                      \
-        }                                                                           \
-    constexpr auto operator op(this T, R) noexcept {                               \
-        return FORGE_CW_RESULT([] {                                                \
-            auto value = T::value;                                                  \
-            return value op R::value;                                               \
-        }()){};                                                                      \
+#define FORGE_CW_COMPOUND_OPERATOR(op)                                          \
+    template <__forge_constexpr_param T, __forge_constexpr_param R>              \
+    constexpr auto operator op(this T, R) noexcept                              \
+        -> FORGE_CW_RESULT(T::value op R::value) {                              \
+        return {};                                                             \
     }
 
     FORGE_CW_COMPOUND_OPERATOR(+=)
@@ -276,12 +260,9 @@ struct constant_wrapper : __forge_cw_operators {
                   "constant_wrapper requires a structural value type");
 
     template <__forge_constexpr_param R>
-        requires requires(remove_cvref_t<value_type> result) { result = R::value; }
-    constexpr auto operator=(R) const noexcept {
-        return FORGE_CW_RESULT([] {
-            auto result = value;
-            return result = R::value;
-        }()){};
+    constexpr auto operator=(R) const noexcept
+        -> FORGE_CW_RESULT(value = R::value) {
+        return {};
     }
 
     constexpr operator decltype(value)() const noexcept {
