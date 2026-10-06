@@ -8,6 +8,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <stop_token>
 #include <thread>
@@ -1098,6 +1099,191 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     auto stopped = std::execution::sync_wait(token.wrap(std::execution::just_stopped()));
     EXPECT_FALSE(stopped.has_value());
     EXPECT_EQ(scope.count(), 0u);
+}
+
+namespace {
+
+struct registration_probe_token {
+    int* live;
+    bool fail_registration = false;
+
+    template<class Callback>
+    struct callback_type {
+        int* live;
+        Callback callback;
+
+        callback_type(registration_probe_token token, Callback fn)
+            : live(token.live), callback(std::move(fn)) {
+            if (token.fail_registration) {
+                throw std::bad_alloc{};
+            }
+            ++*live;
+        }
+
+        ~callback_type() { --*live; }
+    };
+
+    bool stop_requested() const noexcept { return false; }
+    bool stop_possible() const noexcept { return true; }
+    bool operator==(const registration_probe_token&) const noexcept = default;
+};
+
+struct registration_probe_sender {
+    using sender_concept = std::execution::sender_t;
+
+    int* live;
+    bool* registered_during_work;
+    int channel;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_error_t(int),
+            std::execution::set_stopped_t()> { return {}; }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_t;
+        int* live;
+        bool* registered_during_work;
+        int channel;
+        R receiver;
+
+        void start() & noexcept {
+            *registered_during_work = *live == 1;
+            if (channel == 0) {
+                std::execution::set_value(std::move(receiver), 42);
+            } else if (channel == 1) {
+                std::execution::set_error(std::move(receiver), 7);
+            } else {
+                std::execution::set_stopped(std::move(receiver));
+            }
+        }
+    };
+
+    template<class R>
+    auto connect(R receiver) && -> operation<R> {
+        return {live, registered_during_work, channel, std::move(receiver)};
+    }
+};
+
+struct registration_probe_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* live;
+    int* live_at_completion;
+    int* completions;
+    bool fail_registration = false;
+    bool* stopped = nullptr;
+    forge_test::destroy_context_base* destroy_context = nullptr;
+
+    void observe() noexcept {
+        *live_at_completion = *live;
+        ++*completions;
+        if (destroy_context) {
+            destroy_context->destroy();
+        }
+    }
+    void set_value(int) && noexcept { observe(); }
+    template<class E>
+    void set_error(E&&) && noexcept { observe(); }
+    void set_stopped() && noexcept {
+        if (stopped) {
+            *stopped = true;
+        }
+        observe();
+    }
+    auto get_env() const noexcept {
+        return std::execution::make_env(std::execution::make_prop(
+            std::execution::get_stop_token_t{},
+            registration_probe_token{live, fail_registration}));
+    }
+};
+
+} // namespace
+
+TEST(CountingScopeTest, WrapRegistersStopOnlyBetweenStartAndCompletion) {
+    for (int channel : {0, 1, 2}) {
+        SCOPED_TRACE(channel);
+        std::execution::counting_scope scope;
+        int live = 0;
+        int live_at_completion = -1;
+        int completions = 0;
+        bool registered_during_work = false;
+        auto op = std::execution::connect(scope.get_token().wrap(
+            registration_probe_sender{&live, &registered_during_work, channel}),
+            registration_probe_receiver{&live, &live_at_completion, &completions});
+        EXPECT_EQ(live, 0);
+
+        std::execution::start(op);
+
+        EXPECT_TRUE(registered_during_work);
+        EXPECT_EQ(live_at_completion, 0);
+        EXPECT_EQ(live, 0);
+        EXPECT_EQ(completions, 1);
+    }
+}
+
+TEST(CountingScopeTest, WrapStopRegistrationFailureDeliversDeclaredStopped) {
+    std::execution::counting_scope scope;
+    int live = 0;
+    int live_at_completion = -1;
+    int completions = 0;
+    bool registered_during_work = false;
+    bool stopped = false;
+    auto sender = scope.get_token().wrap(
+        registration_probe_sender{&live, &registered_during_work, 0});
+    using env_t = decltype(registration_probe_receiver{}.get_env());
+    using signatures_t = std::execution::completion_signatures_of_t<
+        decltype(sender), env_t>;
+    static_assert(completion_contains<
+        std::execution::set_stopped_t(), signatures_t>::value);
+    auto op = std::execution::connect(std::move(sender),
+        registration_probe_receiver{
+            &live, &live_at_completion, &completions, true, &stopped});
+    EXPECT_EQ(live, 0);
+
+    std::execution::start(op);
+
+    EXPECT_FALSE(registered_during_work);
+    EXPECT_TRUE(stopped);
+    EXPECT_EQ(live_at_completion, 0);
+    EXPECT_EQ(live, 0);
+    EXPECT_EQ(completions, 1);
+    EXPECT_TRUE(scope.request_stop());
+}
+
+TEST(CountingScopeTest, WrapCompletionCanDestroyOperationAfterDeregistration) {
+    for (int channel : {0, 1, 2}) {
+        SCOPED_TRACE(channel);
+        std::execution::counting_scope scope;
+        int live = 0;
+        int live_at_completion = -1;
+        int completions = 0;
+        bool registered_during_work = false;
+        bool destroyed = false;
+        auto sender = scope.get_token().wrap(
+            registration_probe_sender{&live, &registered_during_work, channel});
+        using op_t = decltype(std::execution::connect(
+            std::move(sender), registration_probe_receiver{}));
+        forge_test::operation_destroy_context<op_t> context{&destroyed};
+        auto& op = context.emplace_from([&] {
+            return std::execution::connect(std::move(sender),
+                registration_probe_receiver{
+                    &live, &live_at_completion, &completions,
+                    false, nullptr, &context});
+        });
+
+        std::execution::start(op);
+
+        EXPECT_TRUE(destroyed);
+        EXPECT_FALSE(context.has_value);
+        EXPECT_EQ(live_at_completion, 0);
+        EXPECT_EQ(live, 0);
+        EXPECT_EQ(completions, 1);
+    }
 }
 
 TEST(CountingScopeTest, CloseRejectsNewAssociatedWork) {

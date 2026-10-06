@@ -545,6 +545,8 @@ struct __optional_stop_callback {
             source.request_stop();
         }
     }
+
+    void reset() noexcept {}
 };
 
 template<class Token>
@@ -560,6 +562,8 @@ struct __optional_stop_callback<Token, true> {
             __cb.emplace(std::move(token), __request_fused_stop{&source});
         }
     }
+
+    void reset() noexcept { __cb.reset(); }
 
     std::optional<callback_t> __cb;
 };
@@ -792,26 +796,32 @@ struct __stop_op : __forge_detail::__immovable {
     struct __recv {
         using receiver_concept = receiver_t;
 
-        R* __rcvr;
+        __stop_op* __owner;
         __fused_stop_token __token;
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
-            std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
+            auto* rcvr = &__owner->__rcvr;
+            __owner->__release_stop_callbacks();
+            std::execution::set_value(std::move(*rcvr), static_cast<Vs&&>(vs)...);
         }
 
         template<class E>
         void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
+            auto* rcvr = &__owner->__rcvr;
+            __owner->__release_stop_callbacks();
+            std::execution::set_error(std::move(*rcvr), static_cast<E&&>(e));
         }
 
         void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(*__rcvr));
+            auto* rcvr = &__owner->__rcvr;
+            __owner->__release_stop_callbacks();
+            std::execution::set_stopped(std::move(*rcvr));
         }
 
-        auto get_env() const noexcept {
+        auto get_env() const noexcept -> __stop_env_t<env_of_t<R>> {
             return __stop_env_t<env_of_t<R>>{
-                std::execution::get_env(*__rcvr),
+                std::execution::get_env(__owner->__rcvr),
                 __token};
         }
     };
@@ -832,15 +842,11 @@ struct __stop_op : __forge_detail::__immovable {
         , __rcvr(std::move(rcvr))
         , __fused_state(std::make_shared<__fused_stop_state>())
     {
-        __scope_stop.install(__token.__stop_token(), __fused_state->__source);
-        __downstream_stop.install(
-            std::execution::get_stop_token(std::execution::get_env(__rcvr)),
-            __fused_state->__source);
         auto stop_token = __fused_stop_token{__fused_state};
         __inner_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
             return std::execution::connect(
                 std::move(__sndr),
-                __recv{&__rcvr, stop_token});
+                __recv{this, stop_token});
         });
     }
 
@@ -849,7 +855,22 @@ struct __stop_op : __forge_detail::__immovable {
     }
 
     void start() & noexcept {
+        try {
+            __scope_stop.install(__token.__stop_token(), __fused_state->__source);
+            __downstream_stop.install(
+                std::execution::get_stop_token(std::execution::get_env(__rcvr)),
+                __fused_state->__source);
+        } catch (...) {
+            __release_stop_callbacks();
+            std::execution::set_stopped(std::move(__rcvr));
+            return;
+        }
         std::execution::start(__inner_storage.template get<inner_op_t>());
+    }
+
+    void __release_stop_callbacks() noexcept {
+        __scope_stop.reset();
+        __downstream_stop.reset();
     }
 };
 

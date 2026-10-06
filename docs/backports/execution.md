@@ -152,6 +152,8 @@
   sender 需要先转换成无 error、无 value 的形态。fused token 使用共享 control block，
   因此 `read_env(get_stop_token)` 把 token 作为 value 返回时不会悬垂；父级 scope /
   downstream callback 只在 operation active 期间保持注册。
+  stop callback 在 `start()` 内注册，并在转交 terminal completion 前注销；注册分配失败
+  会清理已注册的 callback 并交付已声明的 `set_stopped()`，不启动 child。
 - `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用
   `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join
   operation。若 scope 已空，join 在 `start()` 调用线程内联完成；否则最后一个
