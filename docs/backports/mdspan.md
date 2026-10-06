@@ -2,7 +2,7 @@
 
 当前对齐 2026-05 C++26 working draft 的 `submdspan` surface；
 `constant_wrapper` 采用 P2781 operator algebra、P3978 call/subscript 语义与
-P4206 DR 后的直接 `template<auto>` 形状。
+P4206 DR 后的直接 `template<auto>` 形状；伪变更运算符跟进 LWG4383/4500。
 
 ## 覆盖范围
 
@@ -71,6 +71,9 @@ native surface 时运行。
 - 已实现：P4206 的 `constant_wrapper<auto X, class T = decltype(X)>` / `cw<X>`
   类型形状、显式第二类型一致性要求、P2781 运算符与伪变异运算、P3978
   constant/runtime call 和 subscript 分支。
+- 伪变更与赋值作用于 wrapped const value 的表达式，并在返回类型处检查
+  常量表达式与结果类型；普通整数的 `++`、复合赋值和不同值间赋值不可用，
+  不再对临时副本模拟修改。同类型 wrapper 的普通复制/移动赋值仍然可用。
 - 已验证：C++23 injected path、Clang/libc++ injected path、MSVC injected path，
   以及 GCC 16 `202603L` partial-native stand-aside。
 - MSVC 当前不能形成以数组左值表达式为模板实参的 `constant_wrapper`；这类
