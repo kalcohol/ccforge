@@ -3,16 +3,31 @@
 #include <forge/any_stop_token.hpp>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 
 namespace {
 
 struct stop_callback_probe {
     void operator()() noexcept {}
+};
+
+struct non_stopping_state_token {
+    const void* identity = nullptr;
+
+    template<class Callback>
+    struct callback_type {
+        callback_type(non_stopping_state_token, Callback) noexcept {}
+    };
+
+    bool stop_requested() const noexcept { return false; }
+    bool stop_possible() const noexcept { return false; }
+    bool operator==(const non_stopping_state_token&) const noexcept = default;
 };
 
 static_assert(std::stoppable_token<forge::any_stop_token>);
@@ -26,6 +41,36 @@ TEST(ForgeAnyStopTokenTest, DefaultTokenCannotStop) {
 
     EXPECT_FALSE(token.stop_requested());
     EXPECT_FALSE(token.stop_possible());
+}
+
+TEST(ForgeAnyStopTokenTest, AllUnassociatedRepresentationsCompareEqual) {
+    const std::array tokens{
+        forge::any_stop_token{},
+        forge::any_stop_token{std::inplace_stop_token{}},
+        forge::any_stop_token{std::never_stop_token{}},
+    };
+    for (const auto& left : tokens) {
+        EXPECT_FALSE(left.stop_possible());
+        for (const auto& right : tokens) {
+            EXPECT_EQ(left, right);
+        }
+    }
+}
+
+TEST(ForgeAnyStopTokenTest, NonStoppingStatesRetainTheirDistinctIdentity) {
+    int first_state = 0;
+    int second_state = 0;
+    non_stopping_state_token first{&first_state};
+    non_stopping_state_token second{&second_state};
+    forge::any_stop_token erased_first{first};
+    forge::any_stop_token erased_same{first};
+    forge::any_stop_token erased_second{second};
+
+    EXPECT_FALSE(erased_first.stop_possible());
+    EXPECT_FALSE(erased_second.stop_possible());
+    EXPECT_EQ(erased_first, erased_same);
+    EXPECT_NE(erased_first, erased_second);
+    EXPECT_NE(erased_first, forge::any_stop_token{});
 }
 
 TEST(ForgeAnyStopTokenTest, ErasesAndSharesAnInplaceToken) {

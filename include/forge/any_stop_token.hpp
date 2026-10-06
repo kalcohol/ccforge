@@ -25,6 +25,7 @@
 #include <execution>
 #include <concepts>
 #include <memory>
+#include <stop_token>
 #include <type_traits>
 #include <utility>
 
@@ -40,9 +41,21 @@ public:
         requires (!std::is_same_v<std::remove_cvref_t<Token>, any_stop_token> &&
                   std::stoppable_token<std::remove_cvref_t<Token>>)
     explicit any_stop_token(Token&& token)
-        : impl_(std::make_shared<__impl_t<std::remove_cvref_t<Token>>>(
-              std::forward<Token>(token)))
-    {}
+    {
+        using token_t = std::remove_cvref_t<Token>;
+        if constexpr (std::same_as<token_t, std::inplace_stop_token> ||
+                      std::same_as<token_t, std::never_stop_token>
+#if defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
+                      || std::same_as<token_t, std::stop_token>
+#endif
+        ) {
+            // An orphaned state is not disengaged merely because it cannot stop.
+            if (token == token_t{}) {
+                return;
+            }
+        }
+        impl_ = std::make_shared<__impl_t<token_t>>(std::forward<Token>(token));
+    }
 
     any_stop_token() = default;
 
