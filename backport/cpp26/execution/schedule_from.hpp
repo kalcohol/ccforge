@@ -26,6 +26,7 @@
 #include "detail.hpp"
 
 #include <cstddef>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -80,7 +81,7 @@ struct __sender {
     }
 
     template<std::size_t I>
-    decltype(auto) get() & noexcept {
+    constexpr decltype(auto) get() & noexcept {
         static_assert(I < 3);
         if constexpr (I == 0) {
             return schedule_from_t{};
@@ -92,7 +93,7 @@ struct __sender {
     }
 
     template<std::size_t I>
-    decltype(auto) get() const& noexcept {
+    constexpr decltype(auto) get() const& noexcept {
         static_assert(I < 3);
         if constexpr (I == 0) {
             return schedule_from_t{};
@@ -104,7 +105,7 @@ struct __sender {
     }
 
     template<std::size_t I>
-    decltype(auto) get() && noexcept {
+    constexpr decltype(auto) get() && noexcept {
         static_assert(I < 3);
         if constexpr (I == 0) {
             return schedule_from_t{};
@@ -116,7 +117,7 @@ struct __sender {
     }
 
     template<std::size_t I>
-    decltype(auto) get() const&& noexcept {
+    constexpr decltype(auto) get() const&& noexcept {
         static_assert(I < 3);
         if constexpr (I == 0) {
             return schedule_from_t{};
@@ -138,3 +139,18 @@ template<sender S>
 }
 
 } // namespace std::execution
+
+namespace std {
+
+template<class S>
+struct tuple_size<execution::__forge_schedule_from::__sender<S>>
+    : integral_constant<size_t, 3> {};
+
+template<size_t I, class S>
+struct tuple_element<I, execution::__forge_schedule_from::__sender<S>>
+    : tuple_element<I, tuple<
+          execution::schedule_from_t,
+          execution::__forge_schedule_from::__data,
+          S>> {};
+
+} // namespace std
