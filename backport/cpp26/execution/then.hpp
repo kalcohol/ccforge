@@ -256,27 +256,46 @@ struct then_closure {
     [[no_unique_address]] Fn fn_;
 
     template<std::execution::sender S>
-        requires std::copy_constructible<Fn>
+        requires std::constructible_from<Fn, Fn&>
+    [[nodiscard]] auto operator()(S&& s) & {
+        return then_sender<std::decay_t<S>, Fn>{
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(fn_)};
+    }
+
+    template<std::execution::sender S>
+        requires std::constructible_from<Fn, const Fn&>
     [[nodiscard]] auto operator()(S&& s) const & {
         return then_sender<std::decay_t<S>, Fn>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)), fn_};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(fn_)};
     }
 
     template<std::execution::sender S>
+        requires std::constructible_from<Fn, Fn&&>
     [[nodiscard]] auto operator()(S&& s) && {
         return then_sender<std::decay_t<S>, Fn>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)), std::move(fn_)};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(fn_))};
     }
 
     template<std::execution::sender S>
-        requires std::copy_constructible<Fn>
-    friend constexpr auto operator|(S&& s, const then_closure& self) {
-        return self(std::forward<S>(s));
+        requires std::constructible_from<Fn, const Fn&&>
+    [[nodiscard]] auto operator()(S&& s) const && {
+        return then_sender<std::decay_t<S>, Fn>{
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(fn_))};
     }
 
-    template<std::execution::sender S>
-    friend constexpr auto operator|(S&& s, then_closure&& self) {
-        return std::move(self)(std::forward<S>(s));
+    // An invalid cvref must not fall back to a different capture category.
+    template<class S> void operator()(S&&) & = delete;
+    template<class S> void operator()(S&&) const & = delete;
+    template<class S> void operator()(S&&) && = delete;
+    template<class S> void operator()(S&&) const && = delete;
+
+    template<std::execution::sender S, class Self>
+        requires std::same_as<std::remove_cvref_t<Self>, then_closure> &&
+                 requires(Self&& self, S&& s) {
+                     static_cast<Self&&>(self)(std::forward<S>(s));
+                 }
+    friend constexpr auto operator|(S&& s, Self&& self) {
+        return static_cast<Self&&>(self)(std::forward<S>(s));
     }
 };
 

@@ -403,22 +403,43 @@ template<class Fn, class Which>
 struct __let_closure {
     Fn __fn;
     template<sender S>
+        requires std::constructible_from<Fn, Fn&>
+    [[nodiscard]] auto operator()(S&& s) & {
+        return __sender<std::decay_t<S>, Fn, Which>{
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(__fn)};
+    }
+    template<sender S>
+        requires std::constructible_from<Fn, const Fn&>
     [[nodiscard]] auto operator()(S&& s) const & {
         return __sender<std::decay_t<S>, Fn, Which>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)), __fn};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(__fn)};
     }
     template<sender S>
+        requires std::constructible_from<Fn, Fn&&>
     [[nodiscard]] auto operator()(S&& s) && {
         return __sender<std::decay_t<S>, Fn, Which>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)), std::move(__fn)};
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(__fn))};
     }
     template<sender S>
-    friend constexpr auto operator|(S&& s, const __let_closure& self) {
-        return self(std::forward<S>(s));
+        requires std::constructible_from<Fn, const Fn&&>
+    [[nodiscard]] auto operator()(S&& s) const && {
+        return __sender<std::decay_t<S>, Fn, Which>{
+            __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(__fn))};
     }
-    template<sender S>
-    friend constexpr auto operator|(S&& s, __let_closure&& self) {
-        return std::move(self)(std::forward<S>(s));
+
+    // An invalid cvref must not fall back to a different capture category.
+    template<class S> void operator()(S&&) & = delete;
+    template<class S> void operator()(S&&) const & = delete;
+    template<class S> void operator()(S&&) && = delete;
+    template<class S> void operator()(S&&) const && = delete;
+
+    template<sender S, class Self>
+        requires std::same_as<std::remove_cvref_t<Self>, __let_closure> &&
+                 requires(Self&& self, S&& s) {
+                     static_cast<Self&&>(self)(std::forward<S>(s));
+                 }
+    friend constexpr auto operator|(S&& s, Self&& self) {
+        return static_cast<Self&&>(self)(std::forward<S>(s));
     }
 };
 

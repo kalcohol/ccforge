@@ -180,21 +180,68 @@ struct __bulk_closure {
 
     template<class Policy, class Shape>
     struct __with_shape {
-        std::decay_t<Policy> __policy_;
+        using policy_t = std::decay_t<Policy>;
+        using fn_t = std::decay_t<Fn>;
+
+        policy_t __policy_;
         Shape __shape_;
-        std::decay_t<Fn> __fn_;
+        fn_t __fn_;
 
         template<std::execution::sender S>
-        [[nodiscard]] auto operator()(S&& s) && {
-            return __sender<Chunked, std::decay_t<S>, std::decay_t<Policy>, Shape, std::decay_t<Fn>>{
+            requires std::constructible_from<policy_t, policy_t&> &&
+                     std::constructible_from<Shape, Shape&> &&
+                     std::constructible_from<fn_t, fn_t&>
+        [[nodiscard]] auto operator()(S&& s) & {
+            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
-                std::move(__policy_),
-                std::move(__shape_), std::move(__fn_)};
+                policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
         }
 
         template<std::execution::sender S>
-        friend constexpr auto operator|(S&& s, __with_shape&& self) {
-            return std::move(self)(std::forward<S>(s));
+            requires std::constructible_from<policy_t, const policy_t&> &&
+                     std::constructible_from<Shape, const Shape&> &&
+                     std::constructible_from<fn_t, const fn_t&>
+        [[nodiscard]] auto operator()(S&& s) const & {
+            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+                __forge_detail::__forward_as_given(std::forward<S>(s)),
+                policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
+        }
+
+        template<std::execution::sender S>
+            requires std::constructible_from<policy_t, policy_t&&> &&
+                     std::constructible_from<Shape, Shape&&> &&
+                     std::constructible_from<fn_t, fn_t&&>
+        [[nodiscard]] auto operator()(S&& s) && {
+            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+                __forge_detail::__forward_as_given(std::forward<S>(s)),
+                policy_t(std::move(__policy_)),
+                Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
+        }
+
+        template<std::execution::sender S>
+            requires std::constructible_from<policy_t, const policy_t&&> &&
+                     std::constructible_from<Shape, const Shape&&> &&
+                     std::constructible_from<fn_t, const fn_t&&>
+        [[nodiscard]] auto operator()(S&& s) const && {
+            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+                __forge_detail::__forward_as_given(std::forward<S>(s)),
+                policy_t(std::move(__policy_)),
+                Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
+        }
+
+        // An invalid cvref must not fall back to a different capture category.
+        template<class S> void operator()(S&&) & = delete;
+        template<class S> void operator()(S&&) const & = delete;
+        template<class S> void operator()(S&&) && = delete;
+        template<class S> void operator()(S&&) const && = delete;
+
+        template<std::execution::sender S, class Self>
+            requires std::same_as<std::remove_cvref_t<Self>, __with_shape> &&
+                     requires(Self&& self, S&& s) {
+                         static_cast<Self&&>(self)(std::forward<S>(s));
+                     }
+        friend constexpr auto operator|(S&& s, Self&& self) {
+            return static_cast<Self&&>(self)(std::forward<S>(s));
         }
     };
 };
