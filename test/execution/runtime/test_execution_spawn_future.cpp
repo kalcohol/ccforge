@@ -163,6 +163,35 @@ struct member_allocator_env {
     }
 };
 
+struct observed_stop_token {
+    std::inplace_stop_token token;
+    std::atomic<int>* registrations;
+
+    struct registration_credit {
+        std::atomic<int>* count;
+        explicit registration_credit(std::atomic<int>* value) : count(value) {
+            count->fetch_add(1, std::memory_order_relaxed);
+        }
+        ~registration_credit() { count->fetch_sub(1, std::memory_order_relaxed); }
+    };
+
+    template<class Callback>
+    struct callback_type {
+        registration_credit credit;
+        std::inplace_stop_callback<Callback> registration;
+
+        callback_type(observed_stop_token token, Callback fn)
+            : credit(token.registrations)
+            , registration(token.token, std::move(fn)) {}
+    };
+
+    bool stop_possible() const noexcept { return token.stop_possible(); }
+    bool stop_requested() const noexcept { return token.stop_requested(); }
+    bool operator==(const observed_stop_token& other) const noexcept {
+        return token == other.token;
+    }
+};
+
 struct spawn_future_stop_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -450,6 +479,52 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     auto result = std::execution::sync_wait(std::move(future));
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
+    std::execution::simple_counting_scope scope;
+    std::inplace_stop_source source;
+    std::atomic<int> registrations{0};
+    auto env = std::execution::make_env(std::execution::make_prop(
+        std::execution::get_stop_token,
+        observed_stop_token{source.get_token(), &registrations}));
+    auto check = [&](auto sender) {
+        auto future = std::execution::spawn_future(
+            std::move(sender), scope.get_token(), env);
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+    };
+
+    check(std::execution::just(42));
+    check(std::execution::just_error(spawn_future_marker_error{}));
+    check(std::execution::just_stopped());
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
+    for (bool stop : {false, true}) {
+        std::execution::simple_counting_scope scope;
+        std::inplace_stop_source source;
+        std::atomic<int> registrations{0};
+        auto env = std::execution::make_env(std::execution::make_prop(
+            std::execution::get_stop_token,
+            observed_stop_token{source.get_token(), &registrations}));
+        auto state = std::make_shared<manual_state>();
+        auto future = std::execution::spawn_future(
+            manual_sender{state}, scope.get_token(), env);
+        ASSERT_TRUE(wait_until_started(state));
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 1);
+
+        if (stop) {
+            EXPECT_TRUE(source.request_stop());
+        } else {
+            complete_manual_value(state, 42);
+        }
+        EXPECT_TRUE(wait_until_completed(state));
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+        auto result = std::execution::sync_wait(std::move(future));
+        EXPECT_EQ(result.has_value(), !stop);
+        EXPECT_EQ(scope.count(), 0u);
+    }
 }
 
 TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {

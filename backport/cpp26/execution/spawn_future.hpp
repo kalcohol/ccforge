@@ -241,6 +241,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
+        __env_stop.reset();
         std::shared_ptr<consumer_base_t> consumer_cb;
         {
             std::lock_guard lk{__mtx};
