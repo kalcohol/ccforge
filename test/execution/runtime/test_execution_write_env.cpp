@@ -191,6 +191,25 @@ struct move_only_property_value {
     move_only_property_value(const move_only_property_value&) = delete;
 };
 
+struct member_reference_env_holder {
+    throwing_copy_env env{42};
+
+    auto get_env() const noexcept -> const throwing_copy_env& {
+        return env;
+    }
+};
+
+struct tag_reference_env_holder {
+    throwing_copy_env env{53};
+
+    friend auto tag_invoke(
+        std::execution::get_env_t,
+        const tag_reference_env_holder& self) noexcept
+        -> const throwing_copy_env& {
+        return self.env;
+    }
+};
+
 } // namespace
 
 static_assert(std::forwarding_query(std::execution::get_scheduler));
@@ -216,6 +235,28 @@ TEST(WriteEnvTest, PropQueriesBorrowMoveOnlyValuesWithoutCopying) {
         const move_only_property_value&>);
     static_assert(noexcept(std::execution::get_allocator(property)));
     EXPECT_EQ(std::execution::get_allocator(property).value, 42);
+}
+
+TEST(WriteEnvTest, GetEnvPreservesMemberReferenceWithoutCopying) {
+    member_reference_env_holder holder;
+    static_assert(std::same_as<
+        std::execution::env_of_t<member_reference_env_holder>,
+        const throwing_copy_env&>);
+    static_assert(noexcept(std::execution::get_env(holder)));
+    const auto& env = std::execution::get_env(holder);
+    EXPECT_EQ(&env, &holder.env);
+    EXPECT_EQ(overlay_value_query(env), 42);
+}
+
+TEST(WriteEnvTest, GetEnvPreservesTagReferenceWithoutCopying) {
+    tag_reference_env_holder holder;
+    static_assert(std::same_as<
+        std::execution::env_of_t<tag_reference_env_holder>,
+        const throwing_copy_env&>);
+    static_assert(noexcept(std::execution::get_env(holder)));
+    const auto& env = std::execution::get_env(holder);
+    EXPECT_EQ(&env, &holder.env);
+    EXPECT_EQ(overlay_value_query(env), 53);
 }
 
 TEST(WriteEnvTest, PropUnwrapsReferenceWrappers) {

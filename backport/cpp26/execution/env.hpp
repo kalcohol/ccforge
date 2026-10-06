@@ -120,7 +120,7 @@ constexpr decltype(auto) __query(Query query, Env&& env, Args&&... args)
 
 struct get_env_t {
     template<class T>
-    auto operator()(const T& obj) const
+    decltype(auto) operator()(const T& obj) const
         noexcept(__forge_env_detail::__nothrow_member_get_env<T> ||
                  (!__forge_env_detail::__member_get_env<T> &&
                   __forge_detail::nothrow_tag_invocable<get_env_t, const T&>) ||
