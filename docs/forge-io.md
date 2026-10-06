@@ -670,6 +670,11 @@ fd/readiness kind 会让新的 operation 以 `set_error(std::exception_ptr)` 完
 read/write readiness 使用 level-triggered epoll。`EPOLLERR` / `EPOLLHUP` 也会唤醒
 readiness sender，让用户后续 syscall 读取真实错误或 EOF。
 
+Readiness completion 只交付 advisory hint，不保证随后非阻塞 `read(2)` / `write(2)` 成功。
+同一 fd 的 waiter 取消后重新注册，新 waiter 可能消费 `epoll_wait` 已取回的旧批次
+readiness hint；取消不保证新旧通知的代次隔离。调用方必须处理 `EAGAIN` /
+`EWOULDBLOCK`，需要继续等待时应重新注册 readiness waiter。
+
 Completion 不会在 context mutex 下运行。callback 默认在 IO poller thread 上执行；重 CPU
 工作应显式切到 `static_thread_pool`、`runtime_context` 或 `strand`：
 
