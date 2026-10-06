@@ -217,7 +217,56 @@ struct tag_reference_env_holder {
     }
 };
 
+struct borrowed_sender_attrs {
+    std::execution::inline_scheduler scheduler;
+
+    borrowed_sender_attrs() = default;
+    borrowed_sender_attrs(const borrowed_sender_attrs&) = delete;
+    auto operator=(const borrowed_sender_attrs&) -> borrowed_sender_attrs& = delete;
+
+    auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept {
+        return scheduler;
+    }
+};
+
+struct borrowed_attrs_sender {
+    using sender_concept = std::execution::sender_t;
+    const borrowed_sender_attrs* attributes;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept -> const borrowed_sender_attrs& {
+        return *attributes;
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) const {
+        return std::execution::connect(std::execution::just(42), std::move(receiver));
+    }
+};
+
 } // namespace
+
+TEST(WriteEnvTest, PreservesBorrowedNoncopyableSenderAttributes) {
+    borrowed_sender_attrs attributes;
+    auto sender = std::execution::write_env(
+        borrowed_attrs_sender{&attributes}, std::execution::empty_env{});
+    static_assert(std::same_as<std::execution::env_of_t<decltype(sender)>,
+                               const borrowed_sender_attrs&>);
+    static_assert(noexcept(std::execution::get_env(sender)));
+    const auto& observed = std::execution::get_env(sender);
+    EXPECT_EQ(&observed, &attributes);
+    EXPECT_EQ(std::execution::get_completion_scheduler<std::execution::set_value_t>(
+                  observed), attributes.scheduler);
+    auto result = std::execution::sync_wait(std::move(sender));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
 
 TEST(ExecutionWriteEnvTest, EmptyEnvSupportsCopyListInitialization) {
     std::execution::env<> environment = {};

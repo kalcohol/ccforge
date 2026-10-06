@@ -146,7 +146,7 @@ struct __sender {
         return __op<S, OverrideEnv, R>{__sndr, __env, std::move(r)};
     }
 
-    auto get_env() const noexcept {
+    decltype(auto) get_env() const noexcept {
         return std::execution::get_env(__sndr);
     }
 };
