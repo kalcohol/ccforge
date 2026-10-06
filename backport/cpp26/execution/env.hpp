@@ -268,7 +268,7 @@ template<class Tag, class Value>
 
 template<class... Envs>
 struct env {
-    constexpr explicit env(Envs... envs)
+    constexpr explicit(sizeof...(Envs) != 0) env(Envs... envs)
         noexcept((std::is_nothrow_move_constructible_v<Envs> && ...))
         : __envs(std::forward<Envs>(envs)...)
     {}

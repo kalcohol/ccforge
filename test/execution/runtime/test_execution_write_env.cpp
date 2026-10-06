@@ -9,6 +9,12 @@
 
 namespace {
 
+constexpr auto empty_composed_environment() -> std::execution::env<> {
+    return {};
+}
+
+static_assert(std::is_empty_v<decltype(empty_composed_environment())>);
+
 struct scheduler_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -211,6 +217,14 @@ struct tag_reference_env_holder {
 };
 
 } // namespace
+
+TEST(ExecutionWriteEnvTest, EmptyEnvSupportsCopyListInitialization) {
+    std::execution::env<> environment = {};
+    auto returned = empty_composed_environment();
+    static_assert(std::same_as<decltype(environment), decltype(returned)>);
+    EXPECT_FALSE(std::execution::get_stop_token(environment).stop_possible());
+    EXPECT_FALSE(std::execution::get_stop_token(returned).stop_possible());
+}
 
 static_assert(std::forwarding_query(std::execution::get_scheduler));
 static_assert(std::forwarding_query(std::execution::get_start_scheduler));
