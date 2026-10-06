@@ -12,6 +12,7 @@
 #include <forge/io/io_uring_context.hpp>
 
 #include <linux/io_uring.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -58,6 +59,8 @@ std::atomic<unsigned> inject_submit_failures{unlimited_submit_failures};
 std::atomic<int> inject_submit_errno_after_success{0};
 std::atomic<unsigned> combined_submit_calls{0};
 std::atomic<unsigned> injected_submit_calls{0};
+int observed_ring_fd = -1;
+io_uring_params observed_ring_params{};
 
 } // namespace
 
@@ -75,6 +78,15 @@ extern "C" long __wrap_syscall(
     long arg4,
     long arg5,
     long arg6) {
+    if (number == __NR_io_uring_setup) {
+        const long result =
+            __real_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6);
+        if (result >= 0) {
+            observed_ring_fd = static_cast<int>(result);
+            observed_ring_params = *reinterpret_cast<io_uring_params*>(arg2);
+        }
+        return result;
+    }
     if (number == __NR_io_uring_enter) {
         const long to_submit = arg2;
         const auto flags = static_cast<unsigned>(arg4);
@@ -373,10 +385,9 @@ void check_saturated_wakeup_publish_self_heals() {
     FAULT_CHECK(!context.last_flush_diagnostic());
 }
 
-// A one-shot hard failure while publishing a cancel must not leave the poller
-// asleep behind an otherwise empty completion queue. The wakeup retry submits
-// the parked cancel and produces the terminal stopped completion.
-void check_cancel_flush_failure_wakes_poller() {
+// Repeated hard failures while publishing a cancel must not leave the poller
+// asleep behind an otherwise empty completion queue.
+void check_cancel_flush_failure_wakes_poller(unsigned failure_count) {
     cio::io_uring_context context{{.entries = 8}};
     pipe_pair pipe;
     FAULT_CHECK(pipe.read_end >= 0);
@@ -390,19 +401,51 @@ void check_cancel_flush_failure_wakes_poller() {
             completion_receiver{state}, stop_source.get_token()});
     std::execution::start(operation);
 
-    inject_submit_failures.store(1, std::memory_order_release);
+    std::this_thread::sleep_for(10ms);
+    inject_submit_failures.store(failure_count, std::memory_order_release);
     inject_submit_errno.store(ENOMEM, std::memory_order_release);
     FAULT_CHECK(stop_source.request_stop());
+
+    const bool completed_without_lifecycle_wakeup = wait_done(state);
     inject_submit_errno.store(0, std::memory_order_release);
     inject_submit_failures.store(
         unlimited_submit_failures, std::memory_order_release);
 
-    FAULT_CHECK(wait_done(state));
-    FAULT_CHECK(state->stopped);
     context.close();
     context.wait();
+    FAULT_CHECK(completed_without_lifecycle_wakeup);
+    FAULT_CHECK(wait_done(state));
+    FAULT_CHECK(state->stopped);
     FAULT_CHECK(!context.last_error());
     FAULT_CHECK(!context.last_flush_diagnostic());
+}
+
+// The shared overflow counter is the userspace-visible lost-CQE signal.
+// Model that kernel status on an otherwise idle ring, without user buffers.
+void check_dropped_completion_reports_backend_error() {
+    cio::io_uring_context context{{.entries = 8}};
+    const std::size_t mapping_size = observed_ring_params.cq_off.cqes +
+        observed_ring_params.cq_entries * sizeof(io_uring_cqe);
+    void* mapping = ::mmap(nullptr, mapping_size, PROT_READ | PROT_WRITE,
+                          MAP_SHARED, observed_ring_fd, IORING_OFF_CQ_RING);
+    FAULT_CHECK(mapping != MAP_FAILED);
+    if (mapping == MAP_FAILED) {
+        return;
+    }
+    auto* counter = reinterpret_cast<unsigned*>(
+        static_cast<std::byte*>(mapping) +
+        observed_ring_params.cq_off.overflow);
+    std::atomic_ref<unsigned>{*counter}.store(1, std::memory_order_release);
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (!context.last_error() &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    FAULT_CHECK(context.last_error() ==
+                std::error_code(EBADR, std::generic_category()));
+    context.close();
+    context.wait();
+    FAULT_CHECK(::munmap(mapping, mapping_size) == 0);
 }
 
 // An unsuccessful submission retry must not hide completions from operations
@@ -487,7 +530,10 @@ int main() {
     check_consumed_submission_retains_kernel_ownership();
     check_wakeup_flush_hard_failure_self_heals();
     check_saturated_wakeup_publish_self_heals();
-    check_cancel_flush_failure_wakes_poller();
+    check_cancel_flush_failure_wakes_poller(1);
+    check_cancel_flush_failure_wakes_poller(2);
+    check_cancel_flush_failure_wakes_poller(8);
+    check_dropped_completion_reports_backend_error();
     check_completions_progress_during_persistent_flush_failure();
     FAULT_CHECK(combined_submit_calls.load(std::memory_order_acquire) == 0);
 

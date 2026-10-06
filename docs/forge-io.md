@@ -798,10 +798,14 @@ auto echo = [](forge::io::io_uring_context& ring, int write_fd, int read_fd,
   borrowed（其 CQE 不再被 drain），强行销毁这些 frame 会触发上述 terminate
   护栏而不是静默 UAF。
 - 所有带 `to_submit > 0` 的 enter 都在 context submission mutex 下串行；poller
-  的阻塞 GETEVENTS 只等待 CQE，不再顺带消费 SQ。数据 SQE 的 flush 硬失败后，
+  的 GETEVENTS 不顺带消费 SQ。数据 SQE 的 flush 硬失败后，
   只有 shared SQ head 证明尾项尚未被消费时才回退并交付 `no_buffer_space`；若 head
   已前进，kernel ownership 已成立，operation 留在 registry 直到 CQE drain。这避免
   并发 poller 消费与 tail 回退造成 ring 失配或悬空 user_data。
+- poller 同时等待 CQ readiness 与独立的 control eventfd；operation 取消和生命周期
+  转换会唤醒该 eventfd，不依赖 cancel SQE 或唤醒 NOP 的 flush 成功。连续提交失败
+  后仍由 poller 重试，不需要额外的 `close()` 或新的 I/O 才能恢复取消进展。
+  空闲等待每秒检查一次 CQ 丢失计数；该计数非零时按后端硬错误停机，不会静默等待。
 - 生命周期唤醒对 flush 硬失败有自愈路径：`close()`/`request_stop()`/`shutdown()`
   发布的唤醒 NOP 若 flush 失败（如瞬态 ENOMEM）会留驻 SQ，`wait()`（含析构）
   在 join 前循环重驱动完整唤醒链（必要时重试发布，已发布则重试 flush）直至内核

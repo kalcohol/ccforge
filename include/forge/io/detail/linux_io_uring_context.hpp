@@ -29,6 +29,8 @@
 #include "linux_sigpipe_guard.hpp"
 
 #include <linux/io_uring.h>
+#include <poll.h>
+#include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -79,6 +81,7 @@ namespace io_uring_detail {
 
 // Bounded flush retries for transient submission failures such as EAGAIN.
 inline constexpr int flush_attempt_limit = 64;
+inline constexpr int activity_health_interval_ms = 1000;
 
 // io_uring_enter can execute pipe writes inline on the entering thread, so a
 // peer-closed pipe raises SIGPIPE against whichever thread flushed the SQE.
@@ -321,16 +324,16 @@ public:
         return {EAGAIN, std::generic_category()};
     }
 
-    // Waits for at least one CQE without consuming SQ entries. Submission is
-    // serialized separately so a producer can prove whether its tail entry
-    // was consumed before deciding whether rejection is still possible.
-    [[nodiscard]] auto wait_for_completion() noexcept -> std::error_code {
+    // GETEVENTS never consumes SQ entries. A zero minimum also drains pending
+    // task-work without blocking; construction uses the default one-CQE wait.
+    [[nodiscard]] auto wait_for_completion(unsigned min_complete = 1) noexcept
+        -> std::error_code {
         enter_sigpipe_guard guard;
         const long result = ::syscall(
             __NR_io_uring_enter,
             descriptor_.get(),
             0U,
-            1U,
+            min_complete,
             IORING_ENTER_GETEVENTS,
             nullptr,
             0U);
@@ -340,6 +343,45 @@ public:
             return {};
         }
         return {error, std::generic_category()};
+    }
+
+    [[nodiscard]] auto wait_for_activity(int wake_fd) noexcept
+        -> std::error_code {
+        // NODROP can still lose a CQE if allocating overflow storage fails.
+        // A zero-minimum GETEVENTS does not necessarily report this condition.
+        if (load_acquire(cq_overflow_) != 0) {
+            return {EBADR, std::generic_category()};
+        }
+        pollfd events[] = {
+            {descriptor_.get(), POLLIN, 0},
+            {wake_fd, POLLIN, 0}};
+        if (::poll(events, 2, activity_health_interval_ms) < 0) {
+            return {errno, std::generic_category()};
+        }
+        // A lost-CQE indication need not generate a distinct readiness event.
+        // Recheck after the bounded wait, even when no event was reported.
+        if (load_acquire(cq_overflow_) != 0) {
+            return {EBADR, std::generic_category()};
+        }
+        for (const auto& event : events) {
+            if ((event.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+                return {EIO, std::generic_category()};
+            }
+        }
+        if ((events[1].revents & POLLIN) != 0) {
+            std::uint64_t count;
+            while (::read(wake_fd, &count, sizeof(count)) < 0) {
+                if (errno != EINTR) {
+                    break;
+                }
+            }
+        }
+        // Ring readability can also mean task-work or CQ overflow needs
+        // draining. GETEVENTS with a zero minimum processes it without
+        // losing an independent control wakeup to another blocking wait.
+        return (events[0].revents & POLLIN) != 0
+            ? wait_for_completion(0)
+            : std::error_code{};
     }
 
     template<class Function>
@@ -481,6 +523,8 @@ private:
             cq_bytes + params.cq_off.tail);
         cq_ring_mask_ = reinterpret_cast<unsigned*>(
             cq_bytes + params.cq_off.ring_mask);
+        cq_overflow_ = reinterpret_cast<unsigned*>(
+            cq_bytes + params.cq_off.overflow);
         cqes_ = reinterpret_cast<io_uring_cqe*>(
             cq_bytes + params.cq_off.cqes);
         sqes_ = static_cast<io_uring_sqe*>(sqes_mapping_.get());
@@ -535,6 +579,7 @@ private:
     unsigned* cq_head_ = nullptr;
     unsigned* cq_tail_ = nullptr;
     unsigned* cq_ring_mask_ = nullptr;
+    unsigned* cq_overflow_ = nullptr;
     io_uring_cqe* cqes_ = nullptr;
     io_uring_sqe* sqes_ = nullptr;
 };
@@ -585,7 +630,13 @@ struct context_state {
     explicit context_state(io_uring_context_options options)
         : memory(forge::normalize_memory_resource(options.memory))
         , ring_state(options.entries, memory)
-    {}
+    {
+        const int descriptor = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        if (descriptor < 0) {
+            throw_system_error(errno, "io_uring control eventfd");
+        }
+        wake_fd.reset(descriptor);
+    }
 
     // Lifecycle entry points stay idempotent but always re-attempt the
     // wakeup so that a previously failed flush gets retried by any later
@@ -657,7 +708,7 @@ struct context_state {
                 flush_error && flush_error.value() != EBUSY;
             if (!retry_flush) {
                 const std::error_code wait_error =
-                    ring_state.wait_for_completion();
+                    ring_state.wait_for_activity(wake_fd.get());
                 if (wait_error) {
                     const int error = wait_error.value();
                     if (error != EINTR && error != EAGAIN && error != EBUSY) {
@@ -702,6 +753,7 @@ struct context_state {
                 should_exit =
                     (closed || stopped) &&
                     operations_head == nullptr &&
+                    !wakeup_published &&
                     !wakeup_in_flight;
                 if (should_exit) {
                     poller_done = true;
@@ -782,6 +834,7 @@ struct context_state {
 
     std::pmr::memory_resource* memory;
     ring ring_state;
+    file_descriptor wake_fd;
     std::mutex mutex;
     std::condition_variable cv;
     io_operation* operations_head = nullptr;
@@ -868,6 +921,7 @@ private:
     }
 
     void queue_cancel_locked(io_operation& operation) noexcept {
+        signal_poller_locked();
         if (!publish_cancel_locked(operation)) {
             ++parked_cancels;
             return;
@@ -875,8 +929,8 @@ private:
         const std::error_code flush_error = ring_state.flush_published();
         record_flush_locked(flush_error);
         if (flush_error && flush_error.value() != EBUSY) {
-            // The poller may already be blocked in GETEVENTS with no CQE that
-            // can expose this parked cancel. Publish a NOP and re-drive the
+            // The poller may have no CQE exposing this parked cancel.
+            // Publish a NOP and re-drive the
             // shared SQ immediately; transient hard failures then cannot turn
             // an accepted stop request into a permanent sleep.
             submit_wakeup_locked();
@@ -927,6 +981,7 @@ private:
     }
 
     void submit_wakeup_locked() noexcept {
+        signal_poller_locked();
         if (poller_done || wakeup_in_flight) {
             return;
         }
@@ -961,6 +1016,16 @@ private:
         // The wakeup NOP stays parked; wait_poller_exit() keeps re-flushing
         // it, so this failure is a retried diagnostic rather than death.
         flush_diagnostic = flush_error;
+    }
+
+    void signal_poller_locked() noexcept {
+        const std::uint64_t value = 1;
+        while (::write(wake_fd.get(), &value, sizeof(value)) < 0) {
+            if (errno != EINTR) {
+                // EAGAIN means the coalesced wakeup is already readable.
+                break;
+            }
+        }
     }
 
     void complete(const io_uring_cqe& completion) noexcept {
