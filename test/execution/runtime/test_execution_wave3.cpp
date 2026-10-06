@@ -6,6 +6,7 @@
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
 #include <forge/task.hpp>
+#include <system_error>
 #include <utility>
 
 struct SimpleTask {
@@ -37,6 +38,23 @@ TEST(CoroutineBridgeTest, CompletionCanFinishFrameBeforeStartReturns) {
         EXPECT_EQ(state.resumed_on, state.completed_on);
         EXPECT_NE(state.resumed_on, std::this_thread::get_id());
         EXPECT_EQ(state.resumptions, 1);
+    }
+}
+
+forge::task<int> await_error_code_sender() {
+    co_await std::execution::just_error(
+        std::make_error_code(std::errc::invalid_argument));
+    co_return 1;
+}
+
+TEST(CoroutineBridgeTest, ErrorCodeCompletionBecomesSystemError) {
+    try {
+        (void)std::execution::sync_wait(await_error_code_sender());
+        FAIL() << "Expected a system_error completion";
+    } catch (const std::system_error& error) {
+        EXPECT_EQ(error.code(), std::make_error_code(std::errc::invalid_argument));
+    } catch (...) {
+        FAIL() << "Unexpected exception type";
     }
 }
 

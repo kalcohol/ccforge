@@ -32,6 +32,7 @@
 #include <coroutine>
 #include <exception>
 #include <optional>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -287,10 +288,18 @@ struct __awaitable {
         }
         template<class E>
         void set_error(E&& e) && noexcept {
-            if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
-                __self->__exc = static_cast<E&&>(e);
-            else
-                __self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
+            try {
+                if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+                    __self->__exc = static_cast<E&&>(e);
+                } else if constexpr (std::is_same_v<std::decay_t<E>, std::error_code>) {
+                    __self->__exc = std::make_exception_ptr(
+                        std::system_error(static_cast<E&&>(e)));
+                } else {
+                    __self->__exc = std::make_exception_ptr(static_cast<E&&>(e));
+                }
+            } catch (...) {
+                __self->__exc = std::current_exception();
+            }
             __complete(__self, __self->__coro);
         }
         void set_stopped() && noexcept {
