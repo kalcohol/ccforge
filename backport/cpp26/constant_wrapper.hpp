@@ -227,11 +227,15 @@ struct __forge_cw_operators {
         return {};
     }
 
+    // MSVC can ICE substituting an invalid compound assignment in a return type.
 #define FORGE_CW_COMPOUND_OPERATOR(op)                                          \
     template <__forge_constexpr_param T, __forge_constexpr_param R>              \
-    constexpr auto operator op(this T, R) noexcept                              \
-        -> FORGE_CW_RESULT(T::value op R::value) {                              \
-        return {};                                                             \
+        requires requires {                                                    \
+            T::value op R::value;                                               \
+            typename FORGE_CW_RESULT(T::value op R::value);                     \
+        }                                                                      \
+    constexpr auto operator op(this T, R) noexcept {                            \
+        return FORGE_CW_RESULT(T::value op R::value){};                         \
     }
 
     FORGE_CW_COMPOUND_OPERATOR(+=)
