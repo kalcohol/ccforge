@@ -294,8 +294,10 @@ constexpr T __saturating_add_magnitude(
     } else {
         if (init < T{}) {
             using unsigned_type = std::make_unsigned_t<T>;
+            // Narrow unsigned subtraction can promote to int; restore its width.
             const auto distance = static_cast<std::uintmax_t>(
-                unsigned_type{} - static_cast<unsigned_type>(init));
+                static_cast<unsigned_type>(
+                    unsigned_type{} - static_cast<unsigned_type>(init)));
             if (magnitude < distance) {
                 const auto remaining = distance - magnitude;
                 return static_cast<T>(-static_cast<T>(remaining));

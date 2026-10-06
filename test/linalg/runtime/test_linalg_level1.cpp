@@ -356,6 +356,108 @@ TEST(LinalgLevel1Reductions, IntegralSumsRemainExactAboveDoubleRange) {
     EXPECT_EQ(std::linalg::matrix_inf_norm(matrix), exact);
 }
 
+TEST(LinalgLevel1Reductions, Int8NegativeInitMagnitudeBoundaries) {
+    struct test_case {
+        std::int8_t init;
+        std::uintmax_t magnitude;
+        int expected;
+    };
+    constexpr auto minimum = std::numeric_limits<std::int8_t>::min();
+    constexpr auto largest_magnitude = std::numeric_limits<std::uintmax_t>::max();
+    constexpr test_case cases[] = {
+        {-1, 0, -1},
+        {-1, 1, 0},
+        {-1, 2, 1},
+        {-1, 127, 126},
+        {-1, 128, 127},
+        {-1, 129, 127},
+        {-1, 200, 127},
+        {-1, largest_magnitude, 127},
+        {minimum, 0, -128},
+        {minimum, 1, -127},
+        {minimum, 127, -1},
+        {minimum, 128, 0},
+        {minimum, 129, 1},
+        {minimum, 254, 126},
+        {minimum, 255, 127},
+        {minimum, 256, 127},
+        {minimum, largest_magnitude, 127},
+    };
+
+    for (const auto& entry : cases) {
+        SCOPED_TRACE(testing::Message()
+                     << "init=" << static_cast<int>(entry.init)
+                     << ", magnitude=" << entry.magnitude);
+        std::uintmax_t data[] = {entry.magnitude};
+        std::mdspan vector(data, std::extents<int, 1>{});
+        std::mdspan matrix(data, std::extents<int, 1, 1>{});
+
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::vector_abs_sum(vector, entry.init)),
+                      std::int8_t>);
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::matrix_one_norm(matrix, entry.init)),
+                      std::int8_t>);
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::matrix_inf_norm(matrix, entry.init)),
+                      std::int8_t>);
+        EXPECT_EQ(std::linalg::vector_abs_sum(vector, entry.init), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_one_norm(matrix, entry.init), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_inf_norm(matrix, entry.init), entry.expected);
+    }
+}
+
+TEST(LinalgLevel1Reductions, Int16NegativeInitMagnitudeBoundaries) {
+    struct test_case {
+        std::int16_t init;
+        std::uintmax_t magnitude;
+        int expected;
+    };
+    constexpr auto minimum = std::numeric_limits<std::int16_t>::min();
+    constexpr auto largest_magnitude = std::numeric_limits<std::uintmax_t>::max();
+    constexpr test_case cases[] = {
+        {-1, 0, -1},
+        {-1, 1, 0},
+        {-1, 2, 1},
+        {-1, 32767, 32766},
+        {-1, 32768, 32767},
+        {-1, 32769, 32767},
+        {-1, 40000, 32767},
+        {-1, largest_magnitude, 32767},
+        {minimum, 0, -32768},
+        {minimum, 1, -32767},
+        {minimum, 32767, -1},
+        {minimum, 32768, 0},
+        {minimum, 32769, 1},
+        {minimum, 65534, 32766},
+        {minimum, 65535, 32767},
+        {minimum, 65536, 32767},
+        {minimum, largest_magnitude, 32767},
+    };
+
+    for (const auto& entry : cases) {
+        SCOPED_TRACE(testing::Message()
+                     << "init=" << static_cast<int>(entry.init)
+                     << ", magnitude=" << entry.magnitude);
+        std::uintmax_t data[] = {entry.magnitude};
+        std::mdspan vector(data, std::extents<int, 1>{});
+        std::mdspan matrix(data, std::extents<int, 1, 1>{});
+
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::vector_abs_sum(vector, entry.init)),
+                      std::int16_t>);
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::matrix_one_norm(matrix, entry.init)),
+                      std::int16_t>);
+        static_assert(std::is_same_v<
+                      decltype(std::linalg::matrix_inf_norm(matrix, entry.init)),
+                      std::int16_t>);
+        EXPECT_EQ(std::linalg::vector_abs_sum(vector, entry.init), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_one_norm(matrix, entry.init), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_inf_norm(matrix, entry.init), entry.expected);
+    }
+}
+
 TEST(LinalgLevel1Reductions, WiderScalarControlsComplexMagnitudePrecision) {
     using complex = std::complex<float>;
     const float largest = std::numeric_limits<float>::max();
