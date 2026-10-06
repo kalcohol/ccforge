@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cstddef>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -100,6 +101,20 @@ constexpr bool __scope_rejects_association(__scope_state state) noexcept {
         && state != __scope_state::open_and_joining;
 }
 
+struct __association_result {
+    __scope_state __state;
+    std::size_t __count;
+    bool __engaged;
+};
+
+constexpr __association_result __scope_try_associate(
+    __scope_state state, std::size_t count, std::size_t limit) noexcept {
+    if (count >= limit || __scope_rejects_association(state)) {
+        return {state, count, false};
+    }
+    return {__scope_after_association(state), count + 1, true};
+}
+
 inline void __complete_joiners(__join_state_base* head) noexcept {
     while (head) {
         auto* current = head;
@@ -166,6 +181,9 @@ public:
     class scope_token;
     class scope_association;
     using token = scope_token;
+
+    static constexpr std::size_t max_associations =
+        std::numeric_limits<std::size_t>::max();
 
     simple_counting_scope() noexcept = default;
     ~simple_counting_scope() noexcept {
@@ -276,12 +294,12 @@ static_assert(std::execution::scope_association<simple_counting_scope::scope_ass
 
 inline auto simple_counting_scope::__try_associate() noexcept -> scope_association {
     std::lock_guard lk{__mtx_};
-    auto state = __state_.load(std::memory_order_relaxed);
-    if (__forge_counting_scope::__scope_rejects_association(state)) return {};
+    const auto next = __forge_counting_scope::__scope_try_associate(
+        __state_.load(std::memory_order_relaxed),
+        __count_.load(std::memory_order_relaxed), max_associations);
+    if (!next.__engaged) return {};
 
-    __state_.store(
-        __forge_counting_scope::__scope_after_association(state),
-        std::memory_order_release);
+    __state_.store(next.__state, std::memory_order_release);
     __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
 }
@@ -597,6 +615,9 @@ public:
     class scope_association;
     using token = scope_token;
 
+    static constexpr std::size_t max_associations =
+        std::numeric_limits<std::size_t>::max();
+
     counting_scope() noexcept = default;
     ~counting_scope() noexcept {
         if (__count_.load(std::memory_order_acquire) != 0) {
@@ -707,12 +728,12 @@ static_assert(std::execution::scope_association<counting_scope::scope_associatio
 
 inline auto counting_scope::__try_associate() noexcept -> scope_association {
     std::lock_guard lk{__mtx_};
-    auto state = __state_.load(std::memory_order_relaxed);
-    if (__forge_counting_scope::__scope_rejects_association(state)) return {};
+    const auto next = __forge_counting_scope::__scope_try_associate(
+        __state_.load(std::memory_order_relaxed),
+        __count_.load(std::memory_order_relaxed), max_associations);
+    if (!next.__engaged) return {};
 
-    __state_.store(
-        __forge_counting_scope::__scope_after_association(state),
-        std::memory_order_release);
+    __state_.store(next.__state, std::memory_order_release);
     __count_.fetch_add(1, std::memory_order_relaxed);
     return scope_association{this};
 }

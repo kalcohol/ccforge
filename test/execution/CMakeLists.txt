@@ -58,6 +58,10 @@ forge_add_execution_compile_probe(
     test_execution_api_core.cpp
     execution_api_core_compile)
 forge_add_execution_compile_probe(
+    test_execution_counting_scope_limits
+    test_execution_counting_scope_limits.cpp
+    execution_counting_scope_limits_compile)
+forge_add_execution_compile_probe(
     test_execution_just_constraints
     test_execution_just_constraints.cpp
     execution_just_constraints_compile)
@@ -258,6 +262,10 @@ forge_add_execution_runtime_test(
     test_execution_counting_scope
     test_execution_counting_scope.cpp
     execution_counting_scope)
+forge_add_execution_runtime_test(
+    test_execution_counting_scope_limits_runtime
+    test_execution_counting_scope_limits.cpp
+    execution_counting_scope_limits)
 forge_add_execution_runtime_test(
     test_execution_counting_scope_stress
     test_execution_counting_scope_stress.cpp
