@@ -467,6 +467,7 @@ public:
               && __erased_sender_detail::__acceptable_source_sender<
                      std::remove_cvref_t<S>,
                      CompletionSignatures>
+              && std::constructible_from<std::remove_cvref_t<S>, S>
     erased_sender(S&& sender)
         : state_(std::make_shared<
               __erased_sender_detail::__sender_state_model<

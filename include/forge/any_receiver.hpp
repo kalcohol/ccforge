@@ -175,6 +175,7 @@ public:
     template<class R>
         requires (!std::is_same_v<std::remove_cvref_t<R>, any_receiver_of>)
               && std::execution::receiver_of<std::remove_cvref_t<R>, cs_t>
+              && std::constructible_from<std::remove_cvref_t<R>, R>
     any_receiver_of(R&& r) {
         using D = std::remove_cvref_t<R>;
         if constexpr (sizeof(D) <= kSBOSize && alignof(D) <= alignof(std::max_align_t)) {

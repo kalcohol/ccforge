@@ -217,6 +217,10 @@ static_assert(std::execution::receiver<forge::any_receiver_of<cs_int>>);
 static_assert(std::constructible_from<
               forge::any_receiver_of<cs_int>,
               test_recv>);
+static_assert(std::constructible_from<forge::any_receiver_of<cs_int>, test_recv&>);
+static_assert(std::constructible_from<forge::any_receiver_of<cs_int>, tracking_recv>);
+static_assert(!std::constructible_from<forge::any_receiver_of<cs_int>, tracking_recv&>);
+static_assert(!std::constructible_from<forge::any_receiver_of<cs_int>, const tracking_recv&>);
 static_assert(!std::constructible_from<
               forge::any_receiver_of<cs_int>,
               value_only_recv>);

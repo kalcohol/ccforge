@@ -711,6 +711,8 @@ struct reentrant_connect_sender {
 static_assert(std::execution::sender<forge::erased_sender<int_cs>>);
 static_assert(!std::copy_constructible<forge::erased_sender<int_cs>>);
 static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_sender>);
+static_assert(!std::constructible_from<forge::erased_sender<int_cs>, move_only_sender&>);
+static_assert(!std::constructible_from<forge::erased_sender<int_cs>, const move_only_sender&>);
 static_assert(std::execution::receiver_of<int_only_receiver, int_cs>);
 static_assert(std::execution::sender_to<
               forge::erased_sender<int_cs>,
