@@ -264,12 +264,18 @@ struct __item {
     void deliver_value() noexcept {
         stop_callback.reset();
         complete_value();
-        delivered.store(true, std::memory_order_release);
+        finish_delivery();
     }
 
     void deliver_stopped() noexcept {
         stop_callback.reset();
         complete_stopped();
+        finish_delivery();
+    }
+
+    void finish_delivery() noexcept {
+        complete_value.reset();
+        complete_stopped.reset();
         delivered.store(true, std::memory_order_release);
     }
 
@@ -713,7 +719,7 @@ inline void __op<R>::start() & noexcept {
         }
         data->complete_stopped();
         if (item) {
-            item->delivered.store(true, std::memory_order_release);
+            item->finish_delivery();
         }
     };
     try {

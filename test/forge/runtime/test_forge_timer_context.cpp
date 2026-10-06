@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <forge/async_scope.hpp>
 #include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
@@ -739,6 +740,57 @@ TEST(TimerContextTest, WaitObservesActiveCallbackCompletion) {
 
     EXPECT_TRUE(callback_finished);
     EXPECT_TRUE(wait_returned);
+}
+
+TEST(TimerContextTest, WaitIncludesReceiverCleanupAfterValueOrStopped) {
+    for (bool stopped : {false, true}) {
+        SCOPED_TRACE(stopped);
+        forge::timer_context ctx;
+        forge::async_scope scope;
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool cleanup_entered = false;
+        bool release_cleanup = false;
+        bool waiter_started = false;
+        bool waiter_returned = false;
+        auto owned = std::shared_ptr<void>{nullptr, [&](void*) noexcept {
+            std::unique_lock lock{mutex};
+            cleanup_entered = true;
+            cv.notify_all();
+            cv.wait(lock, [&] { return release_cleanup; });
+            lock.unlock();
+            ctx.wait();
+        }};
+        scope.spawn(
+            ctx.schedule_after(stopped ? 1h : 0h)
+            | std::execution::then([owned = std::move(owned)] noexcept {}));
+        if (stopped) {
+            ctx.request_stop();
+        }
+        std::thread waiter{[&] {
+            {
+                std::lock_guard lock{mutex};
+                waiter_started = true;
+                cv.notify_all();
+            }
+            scope.wait();
+            ctx.wait();
+            std::lock_guard lock{mutex};
+            waiter_returned = true;
+            cv.notify_all();
+        }};
+        {
+            std::unique_lock lock{mutex};
+            EXPECT_TRUE(cv.wait_for(lock, 2s, [&] {
+                return cleanup_entered && waiter_started;
+            }));
+            EXPECT_FALSE(cv.wait_for(lock, 100ms, [&] { return waiter_returned; }));
+            release_cleanup = true;
+            cv.notify_all();
+        }
+        waiter.join();
+        EXPECT_TRUE(waiter_returned);
+    }
 }
 
 TEST(TimerContextTest, DestroyingContextInsideTimerCallbackIsSafe) {
