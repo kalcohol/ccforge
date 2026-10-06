@@ -195,6 +195,55 @@ struct throwing_connect_sender {
     }
 };
 
+struct connect_abandon_state {
+    std::mutex mtx;
+    std::condition_variable cv;
+    cio::__coro_detail::frame_chain_link* root = nullptr;
+    bool entered = false;
+    bool release = false;
+    bool continued = false;
+};
+
+struct chain_link_observer {
+    std::shared_ptr<connect_abandon_state> state;
+
+    bool await_ready() const noexcept { return false; }
+    template<class Promise>
+    bool await_suspend(std::coroutine_handle<Promise> continuation) const noexcept {
+        std::lock_guard lock{state->mtx};
+        state->root = continuation.promise().root_link;
+        return false;
+    }
+    void await_resume() const noexcept {}
+};
+
+struct gated_throwing_connect_sender : throwing_connect_sender {
+    std::shared_ptr<connect_abandon_state> state;
+
+    template<class Receiver>
+    auto connect(Receiver) const -> throwing_connect_op<Receiver> {
+        std::unique_lock lock{state->mtx};
+        state->entered = true;
+        state->cv.notify_all();
+        state->cv.wait(lock, [&] { return state->release; });
+        throw connect_marker_error{};
+    }
+};
+
+auto continues_after_failed_connect(
+    std::shared_ptr<connect_abandon_state> state) -> cio::io_task<int> {
+    co_await chain_link_observer{state};
+    try {
+        co_await cio::await_sender(gated_throwing_connect_sender{{}, state});
+    } catch (const connect_marker_error&) {}
+    co_await cio::await_sender(std::execution::just());
+    {
+        std::lock_guard lock{state->mtx};
+        state->continued = true;
+    }
+    co_return 7;
+}
+
 struct receiver_lifetime_state {
     std::mutex mtx;
     std::condition_variable cv;
@@ -1290,6 +1339,70 @@ TEST(ForgeCoroInteropTest, AbandonedBridgeStateIsTerminal) {
         cio::__coro_detail::bridge_state::abandoned);
 
     link.clear_bridge(token);
+}
+
+TEST(ForgeCoroInteropTest, AbandonClaimSurvivesFailedConnectAndNextBridge) {
+    auto state = std::make_shared<connect_abandon_state>();
+    auto result = std::make_shared<task_result_state<int>>();
+    auto factory = [&] {
+        return std::execution::connect(
+            cio::as_sender(continues_after_failed_connect(state)),
+            task_result_receiver<int>{result});
+    };
+    using op_t = decltype(factory());
+    bool unused = false;
+    auto owner = std::make_unique<forge_test::operation_destroy_context<op_t>>(&unused);
+    auto& operation = owner->emplace_from(factory);
+    std::thread starter{[&] { std::execution::start(operation); }};
+    cio::__coro_detail::frame_chain_link* root = nullptr;
+    bool entered = false;
+    {
+        std::unique_lock lock{state->mtx};
+        entered = state->cv.wait_for(lock, 5s, [&] { return state->entered; });
+        root = state->root;
+    }
+    EXPECT_TRUE(entered);
+    EXPECT_NE(root, nullptr);
+    if (!entered || root == nullptr) {
+        {
+            std::lock_guard lock{state->mtx};
+            state->release = true;
+            state->cv.notify_all();
+        }
+        starter.join();
+        owner->reset();
+        return;
+    }
+    std::thread destroyer{[owner = std::move(owner)]() mutable { owner->reset(); }};
+    bool claimed = false;
+    if (root != nullptr) {
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            claimed = cio::__coro_detail::frame_chain_link::bridge_state_of(
+                root->active_bridge.load(std::memory_order_acquire)) ==
+                cio::__coro_detail::bridge_state::abandoned;
+            if (claimed) {
+                break;
+            }
+            std::this_thread::yield();
+        }
+    }
+    EXPECT_TRUE(claimed);
+    {
+        std::lock_guard lock{state->mtx};
+        state->release = true;
+        state->cv.notify_all();
+    }
+    starter.join();
+    destroyer.join();
+    {
+        std::lock_guard lock{state->mtx};
+        EXPECT_FALSE(state->continued);
+    }
+    {
+        std::lock_guard lock{result->mtx};
+        EXPECT_FALSE(result->done);
+    }
 }
 
 TEST(ForgeCoroInteropTest, ReceiverOutlivesCrossThreadTaskAbandonment) {

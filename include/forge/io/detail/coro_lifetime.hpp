@@ -153,6 +153,7 @@ struct frame_chain_link {
     std::coroutine_handle<> self_frame{};
     std::atomic<bool> started{false};
     std::atomic<bool> finalized{false};
+    std::atomic<bool> abandoning{false};
     std::atomic<std::uint32_t> resume_state{0};
     std::atomic<bridge_token> active_bridge{0};
     std::atomic<bridge_token> next_bridge_generation{0};
@@ -199,6 +200,12 @@ struct frame_chain_link {
             static_cast<bridge_token>(bridge_state::starting);
         if (active_bridge.exchange(token, std::memory_order_acq_rel) != 0) {
             std::terminate();
+        }
+        // A failed connect may clear its old slot while the abandoning
+        // thread waits for the current resume to unwind. Keep that claim
+        // across any new bridge published by the exception handler.
+        if (abandoning.load(std::memory_order_acquire)) {
+            (void)transition_bridge(token, bridge_state::abandoned);
         }
         return token;
     }
@@ -441,6 +448,7 @@ inline auto abandon_task_chain(std::coroutine_handle<Promise> root) noexcept
     -> void {
     auto& link = static_cast<frame_chain_link&>(root.promise());
     if (link.started.load(std::memory_order_acquire)) {
+        link.abandoning.store(true, std::memory_order_release);
         if (resume_scope::contains(&link)) {
             link.resume_state.fetch_or(
                 frame_chain_link::deferred_destroy_bit,
