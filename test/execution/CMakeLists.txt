@@ -57,6 +57,10 @@ forge_add_execution_compile_probe(
     test_execution_api_core.cpp
     execution_api_core_compile)
 forge_add_execution_compile_probe(
+    test_execution_just_constraints
+    test_execution_just_constraints.cpp
+    execution_just_constraints_compile)
+forge_add_execution_compile_probe(
     test_execution_include_continues_on
     test_execution_include_continues_on.cpp
     execution_include_continues_on_compile)
@@ -168,6 +172,10 @@ forge_expect_execution_cxx_source_compiles(
     "std::execution::upon_error must reject handlers that cannot accept every error shape")
 
 forge_add_execution_runtime_test(test_execution_mvp test_execution_mvp.cpp execution_mvp)
+forge_add_execution_runtime_test(
+    test_execution_just
+    test_execution_just.cpp
+    execution_just)
 forge_add_execution_runtime_test(
     test_execution_member_customization
     test_execution_member_customization.cpp

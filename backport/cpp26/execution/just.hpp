@@ -28,6 +28,12 @@ namespace std::execution {
 
 namespace __forge_just {
 
+template<class T>
+concept __movable_value =
+    std::move_constructible<std::decay_t<T>> &&
+    std::constructible_from<std::decay_t<T>, T> &&
+    !std::is_array_v<std::remove_reference_t<T>>;
+
 template<class R, class... Vs>
 struct operation : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
@@ -76,7 +82,7 @@ struct sender {
 
 struct just_t {
     template<class... Vs>
-        requires (std::move_constructible<std::decay_t<Vs>> && ...)
+        requires (__forge_just::__movable_value<Vs> && ...)
     [[nodiscard]] auto operator()(Vs&&... vs) const {
         return __forge_just::sender<std::decay_t<Vs>...>{
             std::tuple<std::decay_t<Vs>...>{std::forward<Vs>(vs)...}};
@@ -131,9 +137,10 @@ struct sender {
 
 struct just_error_t {
     template<class E>
-        requires std::move_constructible<std::decay_t<E>>
+        requires __forge_just::__movable_value<E>
     [[nodiscard]] auto operator()(E&& e) const {
-        return __forge_just_error::sender<std::decay_t<E>>{std::forward<E>(e)};
+        return __forge_just_error::sender<std::decay_t<E>>{
+            std::decay_t<E>(std::forward<E>(e))};
     }
 };
 
