@@ -418,6 +418,9 @@ coroutine facade：
   error path 没有 partial byte count，因此 failure payload 是 `0`。
 - `async_read_some(context, handle, non_empty_buffer)` 看到 byte count `0` 时会映射成
   EOF 状态；零长度 read 仍是成功 `0`。`async_write_some` 不合成 EOF。
+  Windows pipe 上对端的合法零字节写也可能让非空 read 成功返回 `0`；facade 同样将其
+  映射为 EOF，因此适用协议不能用零字节写作为非 EOF 信号。这是 facade 的语义限制；
+  raw byte sender 仍交付 `set_value(0)`，不会自动重试。
 - backend 的 `set_stopped()` 不会被压成 error code；`as_sender(io_task<T>)` 仍把它交付为
   stopped channel。
 - Linux `readable(context, fd)` / `writable(context, fd)` 返回 `io_task<io_result<>>`，
