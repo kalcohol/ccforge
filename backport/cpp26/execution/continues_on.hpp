@@ -31,6 +31,7 @@
 
 #include <cstddef>
 #include <exception>
+#include <memory>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -96,12 +97,12 @@ template<class R, class... StoredVs>
 struct __sched_value_recv {
     using receiver_concept = receiver_t;
     R* __outer;
-    std::tuple<StoredVs...> __vals;
+    std::tuple<StoredVs...>* __vals;
 
     void set_value() && noexcept {
         std::apply([this](auto&&... vs) {
             std::execution::set_value(std::move(*__outer), static_cast<StoredVs&&>(vs)...);
-        }, std::move(__vals));
+        }, std::move(*__vals));
     }
     template<class E>
     void set_error(E&& e) && noexcept {
@@ -119,10 +120,10 @@ template<class R, class E>
 struct __sched_error_recv {
     using receiver_concept = receiver_t;
     R* __outer;
-    E __error;
+    E* __error;
 
     void set_value() && noexcept {
-        std::execution::set_error(std::move(*__outer), std::move(__error));
+        std::execution::set_error(std::move(*__outer), std::move(*__error));
     }
     template<class Other>
     void set_error(Other&& e) && noexcept {
@@ -201,9 +202,10 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
             requires std::constructible_from<std::tuple<Vs...>, Us...>
         void set_value(Us&&... vs) && noexcept {
             try {
+                auto* vals = __self->__payload_storage.template emplace<std::tuple<Vs...>>(
+                    static_cast<Us&&>(vs)...);
                 __self->__start_scheduled(__sched_value_recv_t{
-                    &__self->__outer,
-                    std::tuple<Vs...>(static_cast<Us&&>(vs)...)});
+                    std::addressof(__self->__outer), vals});
             } catch (...) {
                 __self->__deliver_schedule_failure();
             }
@@ -212,15 +214,17 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         void set_error(E&& e) && noexcept {
             using error_t = std::decay_t<E>;
             try {
+                auto* error = __self->__payload_storage.template emplace<error_t>(
+                    static_cast<E&&>(e));
                 __self->__start_scheduled(
-                    __sched_error_recv<R, error_t>{&__self->__outer, static_cast<E&&>(e)});
+                    __sched_error_recv<R, error_t>{std::addressof(__self->__outer), error});
             } catch (...) {
                 __self->__deliver_schedule_failure();
             }
         }
         void set_stopped() && noexcept {
             __self->__start_scheduled(
-                __sched_stopped_recv<R>{&__self->__outer});
+                __sched_stopped_recv<R>{std::addressof(__self->__outer)});
         }
         auto get_env() const noexcept -> env_of_t<R> {
             return std::execution::get_env(__self->__outer);
@@ -231,8 +235,10 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
 
     R __outer;
     Scheduler __sch;
-    __up_op_t __up_op;
+    // Both inner operations must be destroyed before their borrowed state.
+    __forge_detail::__op_storage<64> __payload_storage;
     __forge_detail::__op_storage<1024> __sched_storage;
+    __up_op_t __up_op;
 
     __op_impl(Scheduler sch, S sndr, R recv)
         : __outer(std::move(recv))
