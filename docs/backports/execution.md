@@ -100,8 +100,10 @@
   `continues_on` 必须在收到上游 completion 后选择并构造动态 child/schedule
   operation，因此当前实现会为这些真实的 late-connect 失败保留
   `set_error(std::exception_ptr)` 通道。`starts_on` 的 source child environment 以
-  目标 scheduler 覆盖 `get_scheduler`、`get_start_scheduler` 和 `get_domain`，其余
-  forwarding query 继续来自 outer receiver environment。
+  目标 scheduler 覆盖 `get_scheduler` 和 `get_start_scheduler`；目标 scheduler 有
+  直接 `get_domain` 定制时优先使用它，否则保留 outer environment 的 domain 查询及
+  现有 scheduler-derived domain 选取，不额外插入会遮蔽这些路径的 `default_domain`。
+  其余 forwarding query 继续来自 outer receiver environment。
 - `schedule_from` 是 current-WD 的单参数 departure marker sender，`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
