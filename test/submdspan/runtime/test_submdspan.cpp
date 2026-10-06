@@ -639,6 +639,149 @@ TEST(SubmdspanPaddedLayouts, ConvertsToCompatibleUnpaddedMappings) {
     EXPECT_EQ(right_stride.stride(1), 1);
 }
 
+TEST(SubmdspanPaddedLayouts, StaticConversionChecksUseTheRoundedStride) {
+    using left_extents_t = std::extents<int, 8, 3>;
+    using right_extents_t = std::extents<int, 3, 8>;
+    using left_t = std::layout_left::mapping<left_extents_t>;
+    using right_t = std::layout_right::mapping<right_extents_t>;
+    using left_padded_t = std::layout_left_padded<4>::mapping<left_extents_t>;
+    using right_padded_t = std::layout_right_padded<4>::mapping<right_extents_t>;
+
+    constexpr left_t left(left_extents_t{});
+    constexpr right_t right(right_extents_t{});
+    constexpr left_padded_t left_padded(left);
+    constexpr right_padded_t right_padded(right);
+    constexpr left_t left_roundtrip = left_padded;
+    constexpr right_t right_roundtrip = right_padded;
+    constexpr std::layout_left_padded<4>::mapping<std::extents<long, 8, 3>>
+        left_widened(left_padded);
+    constexpr std::layout_right_padded<4>::mapping<std::extents<long, 3, 8>>
+        right_widened(right_padded);
+
+    static_assert(left_padded.stride(1) == 8);
+    static_assert(right_padded.stride(0) == 8);
+    static_assert(left_roundtrip(7, 2) == 23);
+    static_assert(right_roundtrip(2, 7) == 23);
+    EXPECT_EQ(left_widened(7, 2), left(7, 2));
+    EXPECT_EQ(right_widened(2, 7), right(2, 7));
+    EXPECT_EQ(left_widened.required_span_size(), left.required_span_size());
+    EXPECT_EQ(right_widened.required_span_size(), right.required_span_size());
+}
+
+TEST(SubmdspanPaddedLayouts, DynamicConversionGuardsRetainCompatibleMappings) {
+    using left_extents_t = std::extents<int, 8, 3>;
+    using right_extents_t = std::extents<int, 3, 8>;
+    using left_dynamic_extents_t = std::extents<int, std::dynamic_extent, 3>;
+    using right_dynamic_extents_t = std::extents<int, 3, std::dynamic_extent>;
+    using left_t = std::layout_left::mapping<left_extents_t>;
+    using right_t = std::layout_right::mapping<right_extents_t>;
+    using left_dynamic_t = std::layout_left::mapping<left_dynamic_extents_t>;
+    using right_dynamic_t = std::layout_right::mapping<right_dynamic_extents_t>;
+    using left_padded_t = std::layout_left_padded<4>::mapping<left_extents_t>;
+    using right_padded_t = std::layout_right_padded<4>::mapping<right_extents_t>;
+    using left_dynamic_extents_padded_t =
+        std::layout_left_padded<4>::mapping<left_dynamic_extents_t>;
+    using right_dynamic_extents_padded_t =
+        std::layout_right_padded<4>::mapping<right_dynamic_extents_t>;
+    using left_dynamic_padding_t = std::layout_left_padded<>::mapping<left_extents_t>;
+    using right_dynamic_padding_t = std::layout_right_padded<>::mapping<right_extents_t>;
+
+    const left_t left(left_extents_t{});
+    const right_t right(right_extents_t{});
+    const left_dynamic_t left_dynamic(left_dynamic_extents_t(8));
+    const right_dynamic_t right_dynamic(right_dynamic_extents_t(8));
+    const left_dynamic_extents_padded_t left_dynamic_extents_padded(left);
+    const right_dynamic_extents_padded_t right_dynamic_extents_padded(right);
+    const left_padded_t left_static_from_dynamic(left_dynamic);
+    const right_padded_t right_static_from_dynamic(right_dynamic);
+    const left_t left_static_roundtrip = static_cast<left_t>(left_dynamic_extents_padded);
+    const right_t right_static_roundtrip = static_cast<right_t>(right_dynamic_extents_padded);
+    const left_dynamic_t left_dynamic_roundtrip = left_static_from_dynamic;
+    const right_dynamic_t right_dynamic_roundtrip = right_static_from_dynamic;
+
+    EXPECT_EQ(left_dynamic_extents_padded.stride(1), 8);
+    EXPECT_EQ(right_dynamic_extents_padded.stride(0), 8);
+    EXPECT_EQ(left_static_roundtrip(7, 2), 23);
+    EXPECT_EQ(right_static_roundtrip(2, 7), 23);
+    EXPECT_EQ(left_dynamic_roundtrip(7, 2), 23);
+    EXPECT_EQ(right_dynamic_roundtrip(2, 7), 23);
+    EXPECT_EQ(left_static_roundtrip.required_span_size(), 24);
+    EXPECT_EQ(right_static_roundtrip.required_span_size(), 24);
+    EXPECT_EQ(left_dynamic_roundtrip.required_span_size(), 24);
+    EXPECT_EQ(right_dynamic_roundtrip.required_span_size(), 24);
+
+    // Runtime padding 8 and static padding 4 both produce stride 8 here.
+    const left_dynamic_padding_t left_dynamic_padding(left_extents_t{}, 8);
+    const right_dynamic_padding_t right_dynamic_padding(right_extents_t{}, 8);
+    const left_padded_t left_static_padding(left_dynamic_padding);
+    const right_padded_t right_static_padding(right_dynamic_padding);
+    const left_dynamic_padding_t left_padding_roundtrip = left_static_padding;
+    const right_dynamic_padding_t right_padding_roundtrip = right_static_padding;
+    const left_t left_from_dynamic_padding = left_dynamic_padding;
+    const right_t right_from_dynamic_padding = right_dynamic_padding;
+    const left_dynamic_padding_t left_padding_from_plain(left);
+    const right_dynamic_padding_t right_padding_from_plain(right);
+
+    EXPECT_EQ(left_static_padding.stride(1), 8);
+    EXPECT_EQ(right_static_padding.stride(0), 8);
+    EXPECT_EQ(left_padding_roundtrip(7, 2), 23);
+    EXPECT_EQ(right_padding_roundtrip(2, 7), 23);
+    EXPECT_EQ(left_from_dynamic_padding(7, 2), 23);
+    EXPECT_EQ(right_from_dynamic_padding(2, 7), 23);
+    EXPECT_EQ(left_padding_from_plain(7, 2), 23);
+    EXPECT_EQ(right_padding_from_plain(2, 7), 23);
+}
+
+TEST(SubmdspanPaddedLayouts, RankZeroAndOneConversionsIgnoreStaticPadding) {
+    using scalar_extents_t = std::extents<int>;
+    using vector_extents_t = std::extents<int, 3>;
+    constexpr std::layout_left::mapping<scalar_extents_t> left_scalar(scalar_extents_t{});
+    constexpr std::layout_right::mapping<scalar_extents_t> right_scalar(scalar_extents_t{});
+    constexpr std::layout_left::mapping<vector_extents_t> left_vector(vector_extents_t{});
+    constexpr std::layout_right::mapping<vector_extents_t> right_vector(vector_extents_t{});
+    constexpr std::layout_left_padded<4>::mapping<scalar_extents_t> left_scalar4(left_scalar);
+    constexpr std::layout_right_padded<4>::mapping<scalar_extents_t> right_scalar4(right_scalar);
+    constexpr std::layout_left_padded<4>::mapping<vector_extents_t> left_vector4(left_vector);
+    constexpr std::layout_right_padded<4>::mapping<vector_extents_t> right_vector4(right_vector);
+    constexpr std::layout_left_padded<8>::mapping<scalar_extents_t> left_scalar8 = left_scalar4;
+    constexpr std::layout_right_padded<8>::mapping<scalar_extents_t> right_scalar8 = right_scalar4;
+    constexpr std::layout_left_padded<8>::mapping<vector_extents_t> left_vector8 = left_vector4;
+    constexpr std::layout_right_padded<8>::mapping<vector_extents_t> right_vector8 = right_vector4;
+    constexpr std::layout_left::mapping<scalar_extents_t> left_scalar_roundtrip = left_scalar8;
+    constexpr std::layout_right::mapping<scalar_extents_t> right_scalar_roundtrip = right_scalar8;
+    constexpr std::layout_left::mapping<vector_extents_t> left_vector_roundtrip = left_vector8;
+    constexpr std::layout_right::mapping<vector_extents_t> right_vector_roundtrip = right_vector8;
+
+    static_assert(left_scalar_roundtrip() == 0);
+    static_assert(right_scalar_roundtrip() == 0);
+    static_assert(left_vector_roundtrip(2) == 2);
+    static_assert(right_vector_roundtrip(2) == 2);
+    EXPECT_EQ(left_scalar8.required_span_size(), 1);
+    EXPECT_EQ(right_scalar8.required_span_size(), 1);
+    EXPECT_EQ(left_vector8.required_span_size(), 3);
+    EXPECT_EQ(right_vector8.required_span_size(), 3);
+}
+
+TEST(SubmdspanPaddedLayouts, ZeroBoundaryExtentsAllowUnpaddedConversions) {
+    using left_extents_t = std::extents<int, 0, 3>;
+    using right_extents_t = std::extents<int, 3, 0>;
+    using left_t = std::layout_left::mapping<left_extents_t>;
+    using right_t = std::layout_right::mapping<right_extents_t>;
+    constexpr left_t left(left_extents_t{});
+    constexpr right_t right(right_extents_t{});
+    constexpr std::layout_left_padded<8>::mapping<left_extents_t> left_padded(left);
+    constexpr std::layout_right_padded<8>::mapping<right_extents_t> right_padded(right);
+    constexpr left_t left_roundtrip = left_padded;
+    constexpr right_t right_roundtrip = right_padded;
+
+    static_assert(left_padded.stride(1) == 0);
+    static_assert(right_padded.stride(0) == 0);
+    static_assert(left_roundtrip.required_span_size() == 0);
+    static_assert(right_roundtrip.required_span_size() == 0);
+    EXPECT_EQ(left_padded.required_span_size(), 0);
+    EXPECT_EQ(right_padded.required_span_size(), 0);
+}
+
 TEST(SubmdspanPaddedLayouts, RankOneStridedSliceUsesLayoutStride) {
     auto data = make_data<8>();
     using extents_t = std::extents<int, 8>;

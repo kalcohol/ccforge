@@ -137,7 +137,15 @@ struct layout_left_padded {
             requires is_constructible_v<extents_type, OtherExtents>
         constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
         mapping(const layout_left::mapping<OtherExtents>& other)
-            : mapping(extents_type(other.extents())) {}
+            : mapping(extents_type(other.extents())) {
+            if constexpr (OtherExtents::rank() > 1) {
+                static_assert(
+                    static_padding_stride == dynamic_extent ||
+                    OtherExtents::static_extent(0) == dynamic_extent ||
+                    static_padding_stride == OtherExtents::static_extent(0),
+                    "layout_left_padded conversion requires a compatible static stride");
+            }
+        }
 
         template <class OtherExtents>
             requires is_constructible_v<extents_type, OtherExtents>
@@ -166,7 +174,13 @@ struct layout_left_padded {
               OtherMapping::padding_value == dynamic_extent)))
         mapping(const OtherMapping& other)
             : stride_1_(rank_ > 1 ? static_cast<index_type>(other.stride(1)) : index_type(1)),
-              extents_(other.extents()) {}
+              extents_(other.extents()) {
+            static_assert(
+                rank_ <= 1 || PaddingValue == dynamic_extent ||
+                OtherMapping::padding_value == dynamic_extent ||
+                PaddingValue == OtherMapping::padding_value,
+                "layout_left_padded conversion requires compatible static padding values");
+        }
 
         template <class OtherMapping>
             requires requires(const OtherMapping& other) {
@@ -199,6 +213,13 @@ struct layout_left_padded {
             requires is_constructible_v<OtherExtents, extents_type>
         constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
         operator layout_left::mapping<OtherExtents>() const noexcept {
+            if constexpr (OtherExtents::rank() > 1) {
+                static_assert(
+                    OtherExtents::static_extent(0) == dynamic_extent ||
+                    static_padding_stride == dynamic_extent ||
+                    OtherExtents::static_extent(0) == static_padding_stride,
+                    "layout_left conversion requires a compatible static padded stride");
+            }
             return layout_left::mapping<OtherExtents>(OtherExtents(extents_));
         }
 
@@ -390,7 +411,15 @@ struct layout_right_padded {
             requires is_constructible_v<extents_type, OtherExtents>
         constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
         mapping(const layout_right::mapping<OtherExtents>& other)
-            : mapping(extents_type(other.extents())) {}
+            : mapping(extents_type(other.extents())) {
+            if constexpr (OtherExtents::rank() > 1) {
+                static_assert(
+                    static_padding_stride == dynamic_extent ||
+                    OtherExtents::static_extent(rank_ - 1) == dynamic_extent ||
+                    static_padding_stride == OtherExtents::static_extent(rank_ - 1),
+                    "layout_right_padded conversion requires a compatible static stride");
+            }
+        }
 
         template <class OtherExtents>
             requires is_constructible_v<extents_type, OtherExtents>
@@ -419,7 +448,13 @@ struct layout_right_padded {
               OtherMapping::padding_value == dynamic_extent)))
         mapping(const OtherMapping& other)
             : stride_rm2_(rank_ > 1 ? static_cast<index_type>(other.stride(rank_ - 2)) : index_type(1)),
-              extents_(other.extents()) {}
+              extents_(other.extents()) {
+            static_assert(
+                rank_ <= 1 || PaddingValue == dynamic_extent ||
+                OtherMapping::padding_value == dynamic_extent ||
+                PaddingValue == OtherMapping::padding_value,
+                "layout_right_padded conversion requires compatible static padding values");
+        }
 
         template <class OtherMapping>
             requires requires(const OtherMapping& other) {
@@ -452,6 +487,13 @@ struct layout_right_padded {
             requires is_constructible_v<OtherExtents, extents_type>
         constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
         operator layout_right::mapping<OtherExtents>() const noexcept {
+            if constexpr (OtherExtents::rank() > 1) {
+                static_assert(
+                    OtherExtents::static_extent(OtherExtents::rank() - 1) == dynamic_extent ||
+                    static_padding_stride == dynamic_extent ||
+                    OtherExtents::static_extent(OtherExtents::rank() - 1) == static_padding_stride,
+                    "layout_right conversion requires a compatible static padded stride");
+            }
             return layout_right::mapping<OtherExtents>(OtherExtents(extents_));
         }
 
