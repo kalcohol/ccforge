@@ -194,6 +194,16 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
         }
     }
 
+    void __schedule_payload_failure() noexcept {
+        if constexpr (__can_set_exception_ptr<R>) {
+            __payload_error = std::current_exception();
+            __start_scheduled(__sched_error_recv<R, std::exception_ptr>{
+                std::addressof(__outer), std::addressof(__payload_error)});
+        } else {
+            std::terminate();
+        }
+    }
+
     struct __up_recv {
         using receiver_concept = receiver_t;
         __op_impl* __self;
@@ -207,7 +217,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
                 __self->__start_scheduled(__sched_value_recv_t{
                     std::addressof(__self->__outer), vals});
             } catch (...) {
-                __self->__deliver_schedule_failure();
+                __self->__schedule_payload_failure();
             }
         }
         template<class E>
@@ -219,7 +229,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
                 __self->__start_scheduled(
                     __sched_error_recv<R, error_t>{std::addressof(__self->__outer), error});
             } catch (...) {
-                __self->__deliver_schedule_failure();
+                __self->__schedule_payload_failure();
             }
         }
         void set_stopped() && noexcept {
@@ -235,6 +245,7 @@ struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovab
 
     R __outer;
     Scheduler __sch;
+    std::exception_ptr __payload_error;
     // Both inner operations must be destroyed before their borrowed state.
     __forge_detail::__op_storage<64> __payload_storage;
     __forge_detail::__op_storage<1024> __sched_storage;
