@@ -5,6 +5,8 @@
 #include "forge_counting_resource.hpp"
 
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -914,6 +916,71 @@ void check_abandoning_submitted_read_terminates(
     RW_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
 }
 
+void check_parked_write_peer_close_maps_to_epipe() {
+    for (bool socket : {false, true}) {
+        const pid_t child = ::fork();
+        RW_CHECK(child >= 0);
+        if (child < 0) {
+            continue;
+        }
+        if (child == 0) {
+            ::alarm(10);
+            std::signal(SIGPIPE, SIG_DFL);
+            const int result = [socket] {
+                cio::io_uring_context context{{.entries = 8}};
+                pipe_pair pipe;
+                if (socket) {
+                    pipe.close_read();
+                    pipe.close_write();
+                    int descriptors[2]{};
+                    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+                        return 1;
+                    }
+                    pipe.read_end = descriptors[0];
+                    pipe.write_end = descriptors[1];
+                }
+                const int flags = ::fcntl(pipe.write_end, F_GETFL);
+                if (flags < 0 ||
+                    ::fcntl(pipe.write_end, F_SETFL, flags | O_NONBLOCK) != 0) {
+                    return 2;
+                }
+                char padding[4096]{};
+                while (::write(pipe.write_end, padding, sizeof(padding)) > 0) {}
+                while (::write(pipe.write_end, padding, 1) > 0) {}
+                if (errno != EAGAIN ||
+                    ::fcntl(pipe.write_end, F_SETFL, flags) != 0) {
+                    return 3;
+                }
+                std::byte byte{};
+                auto state = std::make_shared<completion_state>();
+                auto op = std::execution::connect(cio::as_sender(write_task(
+                    context, pipe.write_end, std::span{&byte, 1})),
+                    completion_receiver{state});
+                std::execution::start(op);
+                {
+                    std::unique_lock lock{state->mutex};
+                    if (state->cv.wait_for(lock, 20ms, [&] { return state->done(); })) {
+                        return 4;
+                    }
+                }
+                pipe.close_read();
+                if (!wait_done(state)) {
+                    return 5;
+                }
+                context.shutdown();
+                context.wait();
+                return state->result &&
+                    state->result->error() ==
+                        std::make_error_code(std::errc::broken_pipe) ? 0 : 6;
+            }();
+            std::_Exit(result);
+        }
+        int status = 0;
+        RW_CHECK(::waitpid(child, &status, 0) == child);
+        RW_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -935,6 +1002,7 @@ int main() {
 #endif
     }
 
+    check_parked_write_peer_close_maps_to_epipe();
     check_abandoning_submitted_read_terminates(&memory);
     check_last_error_stays_clear_on_graceful_stop(&memory);
     check_write_then_read(&memory);

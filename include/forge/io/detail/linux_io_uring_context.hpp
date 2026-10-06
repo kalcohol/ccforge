@@ -246,6 +246,10 @@ public:
         std::uint64_t user_data) noexcept -> bool {
         return try_publish([=](io_uring_sqe& sqe) noexcept {
             sqe.opcode = opcode;
+            if (opcode == IORING_OP_WRITE) {
+                // Keep deferred stream writes off the submitter's task-work path.
+                sqe.flags = IOSQE_ASYNC;
+            }
             sqe.fd = fd;
             sqe.addr = reinterpret_cast<std::uintptr_t>(address);
             sqe.len = length;
