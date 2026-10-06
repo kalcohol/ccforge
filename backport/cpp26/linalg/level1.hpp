@@ -234,6 +234,17 @@ T vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
+    if constexpr (
+        std::is_integral_v<__detail::__accessor_value_t<Accessor>> &&
+        std::is_integral_v<std::remove_cvref_t<typename Accessor::reference>> &&
+        std::is_integral_v<T>) {
+        __detail::__integral_norm_accumulator accumulator;
+        accumulator.__add(init);
+        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+            accumulator.__add(x[i]);
+        }
+        return __detail::__saturate_cast<T>(accumulator.__norm());
+    }
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(init))>;
     // The scaled-sum recurrence divides magnitudes; an integral magnitude
@@ -507,6 +518,19 @@ T matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
 {
+    if constexpr (
+        std::is_integral_v<__detail::__accessor_value_t<Accessor>> &&
+        std::is_integral_v<std::remove_cvref_t<typename Accessor::reference>> &&
+        std::is_integral_v<T>) {
+        __detail::__integral_norm_accumulator accumulator;
+        accumulator.__add(init);
+        for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
+            for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
+                accumulator.__add(A[i, j]);
+            }
+        }
+        return __detail::__saturate_cast<T>(accumulator.__norm());
+    }
     using magnitude_type = std::remove_cvref_t<
         decltype(__detail::__abs_if_needed(init))>;
     // Same integral-division hazard as vector_two_norm: accumulate

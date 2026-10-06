@@ -27,6 +27,7 @@
 #endif
 
 #include <complex>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #if __has_include(<mdspan>)
@@ -361,6 +362,47 @@ constexpr void __update_scaled_sum_of_squares(
         scaled_sum += ratio * ratio;
     }
 }
+
+// Only the bounded square sum is exact; the square root stays in double.
+class __integral_norm_accumulator {
+public:
+    template<class T>
+        requires std::is_integral_v<T>
+    void __add(T value) {
+        // Keep the original recurrence available without rereading elements.
+        __update_scaled_sum_of_squares(
+            __abs_if_needed_as<double>(value), __scale, __scaled_sum);
+        if (!__within_budget) {
+            return;
+        }
+
+        const auto magnitude = __abs_if_needed(value);
+        if (magnitude > __budget) {
+            __within_budget = false;
+            return;
+        }
+        const auto term = static_cast<std::uintmax_t>(magnitude);
+        // Check before multiplication, including for wider integral inputs.
+        if (term != 0 && term > (__budget - __sum) / term) {
+            __within_budget = false;
+            return;
+        }
+        __sum += term * term;
+    }
+
+    double __norm() const {
+        return __within_budget
+            ? std::sqrt(static_cast<double>(__sum))
+            : __scale * std::sqrt(__scaled_sum);
+    }
+
+private:
+    static constexpr std::uintmax_t __budget = std::uintmax_t{1} << 53;
+    std::uintmax_t __sum{};
+    bool __within_budget{true};
+    double __scale{};
+    double __scaled_sum{1};
+};
 
 template<class T>
 inline constexpr bool __is_simd_accelerable_v =

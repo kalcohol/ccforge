@@ -31,16 +31,16 @@
 - 未实现 execution policy 重载，不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
-- 有意偏离（整型范数/SSQ）：WD 的参考实现按浮点/复数元素设计，整型元素下
-  scaled 递归的比值除法会截断（`{3, 4}` 的 two-norm 得 4）；原生实现可能拒绝
-  整型实例化或给出错误值。本 backport 接受整型元素：`vector_two_norm`、
-  `matrix_frob_norm`、`vector_sum_of_squares` 对整型在 double 中间精度累加
-  （SSQ 以 `scaling_factor == 1` 报告原始平方和），回转结果超出元素类型表示域
-  时饱和到边界而不是未定义行为。它们的精度边界即 double 的 53-bit 整数精度：
-  平方项或累计和超过 2^53（元素绝对值约 9.5e7 起）后按 double 舍入，结果是
-  "double-exact" 而非任意精度精确。切换到原生 `std::linalg` 的代码不应依赖
-  整型实例化。整型 `vector_two_norm` / `matrix_frob_norm` 的平方根结果先按普通
-  浮点到整型转换向零截断，再在超出结果类型表示域时饱和。
+- 有意偏离（整型范数/SSQ）：当前 WD 的 `vector_two_norm` / `matrix_frob_norm`
+  要求浮点或复数元素与 `Scalar`；本 backport 额外接受整型实例化，切换到原生
+  `std::linalg` 的代码不应依赖这一扩展。对实数整型元素及整型访问值、整型 init，
+  两个范数入口在平方和（包含 `|init|²`）不超过 2^53 时精确累计整数平方和，
+  然后在 double 中开方；超出预算时保留原 double scaled sum-of-squares 递推。
+  该预算只保证平方和精确，不承诺任意非平方数的数学精确整数平方根；最终仍对
+  浮点平方根结果向零截断，并在超出结果类型表示域时饱和，不做四舍五入或误差补偿。
+  浮点/复数访问值或非整型 init 不使用此精确路径。`vector_sum_of_squares` 的
+  整型结果仍在 double 中累计原始平方和，以 `scaling_factor == 1` 报告，并在
+  回转超范围时饱和；平方项或累计和超过 2^53 后允许 double 舍入，并非任意精度精确。
 - 有符号整型的 magnitude（`vector_abs_sum`、`vector_idx_abs_max`、范数与 SSQ
   的逐项绝对值）在对应无符号类型中计算，最小负值（如 `INT_MIN`）有良定义的
   幅值 2^31 而不是 `abs()` 未定义行为。无 init 的 `vector_abs_sum` 按当前 WD

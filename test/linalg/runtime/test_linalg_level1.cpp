@@ -182,8 +182,8 @@ TEST(LinalgLevel1Reductions, VectorTwoNormAvoidsIntermediateOverflow) {
 
 // The scaled-sum recurrence divides magnitudes; integral element types used
 // to truncate those ratios to zero and report two_norm({3,4}) == 4. The
-// integral paths accumulate in double, so results are exact only up to
-// double's 2^53 integer precision (see the bound test below).
+// integral-init paths now accumulate the integer square sum exactly up to
+// 2^53, then take a double square root (see the budget tests below).
 TEST(LinalgLevel1Reductions, VectorTwoNormIntegerElementsUseDoubleAccumulation) {
     int x_data[] = {3, 4};
     std::mdspan x(x_data, std::extents<int, 2>{});
@@ -198,6 +198,121 @@ TEST(LinalgLevel1Reductions, MatrixFrobNormIntegerElementsUseDoubleAccumulation)
 
     EXPECT_EQ(std::linalg::matrix_frob_norm(a, 0), 5);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(a, 0.0), 5.0);
+}
+
+TEST(LinalgLevel1Reductions, IntegralNormsPreserveExactPythagoreanResults) {
+    struct test_case {
+        std::array<int, 2> values;
+        int expected;
+    };
+    constexpr test_case cases[] = {
+        {{20, 99}, 101},
+        {{99, 20}, 101},
+        {{-20, 99}, 101},
+        {{99, -20}, 101},
+        {{20 * (1 << 19), 99 * (1 << 19)}, 101 * (1 << 19)},
+    };
+    for (auto entry : cases) {
+        SCOPED_TRACE(testing::Message()
+                     << "first=" << entry.values[0]
+                     << ", second=" << entry.values[1]);
+        std::mdspan vector(entry.values.data(), std::extents<int, 2>{});
+        std::mdspan matrix(entry.values.data(), std::extents<int, 1, 2>{});
+        EXPECT_EQ(std::linalg::vector_two_norm(vector, 0), entry.expected);
+        EXPECT_EQ(std::linalg::vector_two_norm(vector), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, 0), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(matrix), entry.expected);
+    }
+
+    std::uint8_t unsigned_data[] = {20, 99};
+    std::mdspan unsigned_vector(unsigned_data, std::extents<int, 2>{});
+    std::mdspan unsigned_matrix(unsigned_data, std::extents<int, 1, 2>{});
+    EXPECT_EQ(std::linalg::vector_two_norm(unsigned_vector, std::uint8_t{0}), 101);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(unsigned_matrix, std::uint8_t{0}), 101);
+}
+
+TEST(LinalgLevel1Reductions, IntegralNormsIncludeSignedInitInExactSquareSum) {
+    int data[] = {20};
+    std::mdspan vector(data, std::extents<int, 1>{});
+    std::mdspan matrix(data, std::extents<int, 1, 1>{});
+    for (int init : {99, -99}) {
+        SCOPED_TRACE(init);
+        EXPECT_EQ(std::linalg::vector_two_norm(vector, init), 101);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, init), 101);
+    }
+
+    std::mdspan<int, std::dextents<int, 1>> empty_vector(data, 0);
+    std::mdspan<int, std::dextents<int, 2>> empty_matrix(data, 0, 1);
+    EXPECT_EQ(std::linalg::vector_two_norm(empty_vector, -99), 99);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(empty_matrix, -99), 99);
+    EXPECT_EQ(std::linalg::vector_two_norm(empty_vector, 0), 0);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(empty_matrix, 0), 0);
+}
+
+TEST(LinalgLevel1Reductions, IntegralNormsHandleExactSquareSumBudgetBoundary) {
+    constexpr std::int64_t first = std::int64_t{1} << 26;
+    struct test_case {
+        std::int64_t second;
+        std::int64_t expected;
+    };
+    // The cumulative square sum is respectively below, at, and above 2^53.
+    constexpr test_case cases[] = {
+        {first - 1, 94906264},
+        {first, 94906265},
+        {first + 1, 94906266},
+    };
+    for (const auto& entry : cases) {
+        SCOPED_TRACE(entry.second);
+        std::int64_t data[] = {first, entry.second, 0, 0};
+        std::mdspan vector(data, std::extents<int, 4>{});
+        std::mdspan matrix(data, std::extents<int, 2, 2>{});
+        EXPECT_EQ(std::linalg::vector_two_norm(vector, std::int64_t{0}), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, std::int64_t{0}), entry.expected);
+
+        std::mdspan tail_vector(data + 1, std::extents<int, 1>{});
+        std::mdspan tail_matrix(data + 1, std::extents<int, 1, 1>{});
+        EXPECT_EQ(std::linalg::vector_two_norm(tail_vector, first), entry.expected);
+        EXPECT_EQ(std::linalg::vector_two_norm(tail_vector, -first), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(tail_matrix, first), entry.expected);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(tail_matrix, -first), entry.expected);
+    }
+}
+
+TEST(LinalgLevel1Reductions, IntegralNormsConvertRoundedDoubleSquareRoot) {
+    constexpr std::int64_t first = std::int64_t{1} << 26;
+    std::int64_t data[] = {first, 8192, 8192};
+    std::mdspan vector(data, std::extents<int, 3>{});
+    std::mdspan matrix(data, std::extents<int, 1, 3>{});
+    // This sum is (first + 1)^2 - 1, below the exact budget. Its double
+    // square root rounds to first + 1, not the mathematical integer floor.
+    EXPECT_EQ(std::linalg::vector_two_norm(vector, std::int64_t{0}), first + 1);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, std::int64_t{0}), first + 1);
+}
+
+TEST(LinalgLevel1Reductions, IntegralNormsRetainScaledFallbackAboveBudget) {
+    constexpr std::int64_t factor = std::int64_t{1} << 20;
+    std::int64_t data[] = {20 * factor, 99 * factor, 0, 0};
+    std::mdspan vector(data, std::extents<int, 4>{});
+    std::mdspan matrix(data, std::extents<int, 2, 2>{});
+    const double ratio = static_cast<double>(data[0]) / static_cast<double>(data[1]);
+    const auto expected = static_cast<std::int64_t>(
+        static_cast<double>(data[1]) * std::sqrt(1.0 + ratio * ratio));
+    EXPECT_EQ(std::linalg::vector_two_norm(vector, std::int64_t{0}), expected);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, std::int64_t{0}), expected);
+
+    // The first two magnitudes straddle sqrt(2^53); the last two also
+    // exercise rejection before a potentially overflowing integer square.
+    constexpr std::uint64_t magnitudes[] = {
+        94906265, 94906266, std::uint64_t{1} << 53,
+        std::numeric_limits<std::uint64_t>::max(),
+    };
+    for (auto magnitude : magnitudes) {
+        SCOPED_TRACE(magnitude);
+        std::mdspan single_vector(&magnitude, std::extents<int, 1>{});
+        std::mdspan single_matrix(&magnitude, std::extents<int, 1, 1>{});
+        EXPECT_EQ(std::linalg::vector_two_norm(single_vector, std::uint64_t{0}), magnitude);
+        EXPECT_EQ(std::linalg::matrix_frob_norm(single_matrix, std::uint64_t{0}), magnitude);
+    }
 }
 
 // abs() of the most negative signed value is undefined; the magnitude
@@ -333,6 +448,11 @@ TEST(LinalgLevel1Reductions, IntegralNormResultsTruncateThenSaturate) {
 
     EXPECT_EQ(std::linalg::vector_two_norm(vector, 0), 1);
     EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, 0), 1);
+
+    vector_data[0] = vector_data[1] = 2;
+    matrix_data[0] = matrix_data[1] = 2;
+    EXPECT_EQ(std::linalg::vector_two_norm(vector, 0), 2);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, 0), 2);
 
     constexpr unsigned u_max = std::numeric_limits<unsigned>::max();
     unsigned unsigned_data[] = {u_max, 1u};
