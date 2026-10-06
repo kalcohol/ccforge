@@ -31,3 +31,7 @@ forge_add_compile_probe(
     test_unique_resource_include
     "${FORGE_UNIQUE_RESOURCE_COMPILE_DIR}/test_unique_resource_include.cpp"
     unique_resource_include_compile)
+forge_add_compile_probe(
+    test_unique_resource_experimental_memory
+    "${FORGE_UNIQUE_RESOURCE_COMPILE_DIR}/test_unique_resource_experimental_memory.cpp"
+    unique_resource_experimental_memory_compile)
