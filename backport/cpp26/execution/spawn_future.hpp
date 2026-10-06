@@ -660,19 +660,29 @@ struct spawn_future_t {
     template<sender S, scope_token Token, queryable Env>
     [[nodiscard]] auto operator()(S&& sndr, Token token, Env env) const {
         auto wrapped = token.wrap(static_cast<S&&>(sndr));
-        return __forge_spawn_future::__spawn_future(
-            std::move(wrapped),
-            std::move(token),
-            std::move(env));
+        if constexpr (!requires(Env& e) { std::execution::get_allocator(e); } &&
+                      requires(const decltype(wrapped)& w) {
+                          std::execution::get_allocator(std::execution::get_env(w));
+                      }) {
+            auto alloc = std::execution::get_allocator(std::execution::get_env(wrapped));
+            auto joined_env = std::execution::make_env(
+                std::execution::make_prop(std::execution::get_allocator_t{}, std::move(alloc)),
+                std::move(env));
+            return __forge_spawn_future::__spawn_future(
+                std::move(wrapped),
+                std::move(token),
+                std::move(joined_env));
+        } else {
+            return __forge_spawn_future::__spawn_future(
+                std::move(wrapped),
+                std::move(token),
+                std::move(env));
+        }
     }
 
     template<sender S, scope_token Token>
     [[nodiscard]] auto operator()(S&& sndr, Token token) const {
-        auto wrapped = token.wrap(static_cast<S&&>(sndr));
-        return __forge_spawn_future::__spawn_future(
-            std::move(wrapped),
-            std::move(token),
-            empty_env{});
+        return (*this)(static_cast<S&&>(sndr), std::move(token), empty_env{});
     }
 };
 
