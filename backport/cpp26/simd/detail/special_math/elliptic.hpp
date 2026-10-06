@@ -46,6 +46,124 @@ inline long double carlson_rf(long double x, long double y, long double z) {
     return quiet_nan<long double>();
 }
 
+inline long double carlson_rc_sqrt(long double sqrt_x, long double sqrt_y) {
+    if (!std::isfinite(sqrt_x) || !std::isfinite(sqrt_y) ||
+        sqrt_x < 0.0L || sqrt_y <= 0.0L) {
+        return quiet_nan<long double>();
+    }
+    const long double scale = std::max(sqrt_x, sqrt_y);
+    sqrt_x /= scale;
+    sqrt_y /= scale;
+    if (sqrt_y == 0.0L) {
+        return quiet_nan<long double>();
+    }
+    const long double tolerance = std::pow(
+        std::numeric_limits<long double>::epsilon() / 100.0L, 0.125L);
+    for (unsigned iteration = 0; iteration < 128u; ++iteration) {
+        if (std::abs(sqrt_x - sqrt_y) <
+            tolerance * std::max(sqrt_x, sqrt_y)) {
+            return carlson_rf(sqrt_x * sqrt_x, sqrt_y * sqrt_y,
+                sqrt_y * sqrt_y) / scale;
+        }
+        // RF(x,y,y) duplication in square roots avoids squaring a tiny y.
+        const long double next_x = (sqrt_x + sqrt_y) / 2.0L;
+        sqrt_y = std::sqrt(sqrt_y) * std::sqrt(next_x);
+        sqrt_x = next_x;
+    }
+    return quiet_nan<long double>();
+}
+
+inline long double carlson_rc(long double x, long double y) {
+    if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0L || y <= 0.0L) {
+        return quiet_nan<long double>();
+    }
+    return carlson_rc_sqrt(std::sqrt(x), std::sqrt(y));
+}
+
+inline long double carlson_rj(
+    long double x, long double y, long double z, long double p) {
+    // Positive-real core only: at most one of x,y,z is zero, and p > 0.
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+        !std::isfinite(p) || x < 0.0L || y < 0.0L || z < 0.0L || p <= 0.0L ||
+        (x == 0.0L && y == 0.0L) || (y == 0.0L && z == 0.0L) ||
+        (z == 0.0L && x == 0.0L)) {
+        return quiet_nan<long double>();
+    }
+    const long double scale = std::max({x, y, z, p});
+    const long double scaled_x = x / scale;
+    const long double scaled_y = y / scale;
+    const long double scaled_z = z / scale;
+    const long double scaled_p = p / scale;
+    if ((x > 0.0L && scaled_x == 0.0L) ||
+        (y > 0.0L && scaled_y == 0.0L) ||
+        (z > 0.0L && scaled_z == 0.0L) || scaled_p == 0.0L) {
+        return quiet_nan<long double>();
+    }
+    x = scaled_x;
+    y = scaled_y;
+    z = scaled_z;
+    p = scaled_p;
+    const long double tolerance = std::pow(
+        std::numeric_limits<long double>::epsilon() / 100.0L, 0.125L);
+    long double sum = 0.0L;
+    long double correction = 0.0L;
+    long double factor = 1.0L;
+    for (unsigned iteration = 0; iteration < 128u; ++iteration) {
+        const long double mean = (x + y + z + 2.0L * p) / 5.0L;
+        const long double dx = (mean - x) / mean;
+        const long double dy = (mean - y) / mean;
+        const long double dz = (mean - z) / mean;
+        const long double dp = (mean - p) / mean;
+        if (std::max({std::abs(dx), std::abs(dy), std::abs(dz),
+                std::abs(dp)}) < tolerance) {
+            // DLMF 19.36.2 uses the five deviations dx,dy,dz,dp,dp.
+            const long double pairs = dx * dy + dx * dz + dy * dz;
+            const long double triple = dx * dy * dz;
+            const long double dp2 = dp * dp;
+            const long double e2 = pairs - 3.0L * dp2;
+            const long double e3 = triple + 2.0L * dp * (pairs - dp2);
+            const long double e4 = dp * (2.0L * triple + dp * pairs);
+            const long double e5 = triple * dp2;
+            const long double polynomial = 1.0L - 3.0L * e2 / 14.0L + e3 / 6.0L +
+                9.0L * e2 * e2 / 88.0L - 3.0L * e4 / 22.0L -
+                9.0L * e2 * e3 / 52.0L + 3.0L * e5 / 26.0L -
+                e2 * e2 * e2 / 16.0L + 3.0L * e3 * e3 / 40.0L +
+                3.0L * e2 * e4 / 20.0L + 45.0L * e2 * e2 * e3 / 272.0L -
+                9.0L * (e3 * e4 + e2 * e5) / 68.0L;
+            const long double value = sum +
+                factor * polynomial / mean / std::sqrt(mean);
+            if (!std::isfinite(value)) {
+                return quiet_nan<long double>();
+            }
+            return value / scale / std::sqrt(scale);
+        }
+        const long double sx = std::sqrt(x);
+        const long double sy = std::sqrt(y);
+        const long double sz = std::sqrt(z);
+        const long double lambda = sx * sy + sy * sz + sz * sx;
+        // DLMF 19.26.22-23: keep alpha,beta unsquared for the RC call.
+        const long double alpha = p * (sx + sy + sz) + sx * sy * sz;
+        const long double beta = std::sqrt(p) * (p + lambda);
+        const long double rc = carlson_rc_sqrt(alpha, beta);
+        if (!std::isfinite(rc)) {
+            return quiet_nan<long double>();
+        }
+        const long double term = 3.0L * factor * rc - correction;
+        const long double next_sum = sum + term;
+        correction = (next_sum - sum) - term;
+        sum = next_sum;
+        if (!std::isfinite(sum)) {
+            return quiet_nan<long double>();
+        }
+        factor /= 4.0L;
+        x = (x + lambda) / 4.0L;
+        y = (y + lambda) / 4.0L;
+        z = (z + lambda) / 4.0L;
+        p = (p + lambda) / 4.0L;
+    }
+    return quiet_nan<long double>();
+}
+
 template<class T, class Fun>
 T elliptic_integral(T upper, Fun&& integrand) {
     if (upper == T{}) {
@@ -314,33 +432,16 @@ T comp_ellint_2_fallback(T k) {
 template<class T>
 T comp_ellint_3_fallback(T k, T nu) {
     if (!std::isnan(k) && !std::isnan(nu) &&
-        std::abs(k) < T{1} && nu < T{1} && k != T{}) {
-        using wide_t = conditional_t<
-            (sizeof(T) < sizeof(double)), double, long double>;
-        const wide_t delta = wide_t{1} - static_cast<wide_t>(nu);
-        if (delta < static_cast<wide_t>(1e-6L)) {
-            const wide_t modulus = static_cast<wide_t>(k);
-            const wide_t complementary =
-                wide_t{1} - modulus * modulus;
-            const auto integrand = [=](long double angle) {
-                const long double sine = std::sin(angle);
-                const long double cosine = std::cos(angle);
-                const long double sine2 = sine * sine;
-                const long double scaled_cosine2 =
-                    delta * cosine * cosine;
-                return std::sqrt(scaled_cosine2 + sine2) /
-                    std::sqrt(
-                        scaled_cosine2 + complementary * sine2);
-            };
-            const auto transformed = checked_simpson_integral(
-                integrand,
-                0.0L,
-                pi_v<long double> / 2.0L,
-                1e-14L,
-                28u);
-            return static_cast<T>(
-                transformed.value / std::sqrt(delta));
+        std::abs(k) < T{1} && nu >= T{} && nu < T{1} && k != T{}) {
+        if (nu == T{}) {
+            return complete_ellint_1_agm(k);
         }
+        const long double modulus = std::abs(static_cast<long double>(k));
+        const long double order = static_cast<long double>(nu);
+        const long double complementary = (1.0L - modulus) * (1.0L + modulus);
+        // DLMF 19.25.2; both terms are nonnegative in this branch.
+        return static_cast<T>(carlson_rf(0.0L, complementary, 1.0L) +
+            order * carlson_rj(0.0L, complementary, 1.0L, 1.0L - order) / 3.0L);
     }
     return ellint_3_fallback(k, nu, pi_v<T> / T{2});
 }

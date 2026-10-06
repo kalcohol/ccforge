@@ -108,6 +108,227 @@ TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
     EXPECT_EQ(sm::beta_fallback(2.5e305, 2.5e305), 0.0);
 }
 
+TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersMatchIndependentConstants) {
+    namespace sm = std::simd::detail::special_math;
+    struct rc_sample { long double x; long double y; long double expected; };
+    // Independent mpmath values at 100 decimal digits; inputs are exact binary values.
+    const std::array<rc_sample, 5> rc_samples{{
+        {0.0L, 4.0L, 0.78539816339744830961566084581987572104929234984377646L},
+        {1.0L, 4.0L, 0.60459978807807261686469275254738524409468874936424686L},
+        {4.0L, 1.0L, 0.76034599630094634753109425488040582420162773094717643L},
+        {2.0L, 3.0L, 0.61547970867038734106746458912399368785517000467754742L},
+        {1.0L, 0x1p-80L, 28.419034402957757686106528526827228954921152240722267L}
+    }};
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    for (const auto& value : rc_samples) {
+        SCOPED_TRACE(value.x);
+        SCOPED_TRACE(value.y);
+        const long double actual = sm::carlson_rc(value.x, value.y);
+        EXPECT_LE(std::abs(actual - value.expected), 128.0L * epsilon * value.expected);
+    }
+    struct rj_sample {
+        long double x; long double y; long double z; long double p;
+        long double expected;
+    };
+    const std::array<rj_sample, 6> rj_samples{{
+        {0.0L, 1.0L, 1.0L, 1.0L,
+            2.3561944901923449288469825374596271631478770495313294L},
+        {1.0L, 2.0L, 3.0L, 4.0L,
+            0.23984809974956776217586167104163918463893640226324781L},
+        {0.0L, 0.25L, 1.0L, 0.5L,
+            6.4695469424989297063160249964009660865923306494784761L},
+        {1.0L, 1.0L, 1.0L, 0.25L,
+            2.0827679704075707802487540390432465936130218475774114L},
+        {1.0L, 2.0L, 3.0L, 0x1p-80L,
+            33.908933843746459881446281280224392279858152320214935L},
+        {0.0L, 0x1p-40L, 1.0L, 0x1p-80L,
+            5433011295025429428.6581394448504783511787236883108402L}
+    }};
+    for (const auto& value : rj_samples) {
+        SCOPED_TRACE(value.x);
+        SCOPED_TRACE(value.y);
+        SCOPED_TRACE(value.z);
+        SCOPED_TRACE(value.p);
+        const long double actual = sm::carlson_rj(value.x, value.y, value.z, value.p);
+        EXPECT_LE(std::abs(actual - value.expected), 256.0L * epsilon * value.expected);
+    }
+}
+
+TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveDegeneracyAndSymmetry) {
+    namespace sm = std::simd::detail::special_math;
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    for (const long double value : {0.25L, 1.0L, 4.0L}) {
+        EXPECT_EQ(sm::carlson_rc(value, value), 1.0L / std::sqrt(value));
+        EXPECT_EQ(sm::carlson_rj(value, value, value, value),
+            1.0L / value / std::sqrt(value));
+    }
+    for (const auto& value : std::array<std::array<long double, 2>, 3>{{
+        {{0.0L, 0.25L}}, {{0.25L, 4.0L}}, {{4.0L, 0.25L}}
+    }}) {
+        const long double expected = sm::carlson_rf(value[0], value[1], value[1]);
+        EXPECT_LE(std::abs(sm::carlson_rc(value[0], value[1]) - expected),
+            128.0L * epsilon * expected);
+    }
+    for (const long double p : {0.25L, 4.0L}) {
+        const long double expected = 3.0L * (1.0L - sm::carlson_rc(1.0L, p)) /
+            (p - 1.0L);
+        EXPECT_LE(std::abs(sm::carlson_rj(1.0L, 1.0L, 1.0L, p) - expected),
+            128.0L * epsilon * expected);
+    }
+    std::array<long double, 3> arguments{{0.0L, 0.25L, 1.0L}};
+    const long double expected = sm::carlson_rj(
+        arguments[0], arguments[1], arguments[2], 0.5L);
+    do {
+        EXPECT_LE(std::abs(sm::carlson_rj(
+            arguments[0], arguments[1], arguments[2], 0.5L) - expected),
+            128.0L * epsilon * expected);
+    } while (std::next_permutation(arguments.begin(), arguments.end()));
+}
+
+TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveHomogeneity) {
+    namespace sm = std::simd::detail::special_math;
+    constexpr long double rc_reference =
+        0.61547970867038734106746458912399368785517000467754742L;
+    constexpr long double rj_reference =
+        0.23984809974956776217586167104163918463893640226324781L;
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    for (const int exponent : {-600, -120, 0, 120, 600}) {
+        SCOPED_TRACE(exponent);
+        const long double scale = std::ldexp(1.0L, exponent);
+        const long double rc_expected = std::ldexp(rc_reference, -exponent / 2);
+        const long double rj_expected = std::ldexp(rj_reference, -3 * exponent / 2);
+        EXPECT_LE(std::abs(sm::carlson_rc(2.0L * scale, 3.0L * scale) - rc_expected),
+            128.0L * epsilon * rc_expected);
+        EXPECT_LE(std::abs(sm::carlson_rc_sqrt(
+            std::sqrt(2.0L) * std::sqrt(scale),
+            std::sqrt(3.0L) * std::sqrt(scale)) - rc_expected),
+            128.0L * epsilon * rc_expected);
+        EXPECT_LE(std::abs(sm::carlson_rj(
+            scale, 2.0L * scale, 3.0L * scale, 4.0L * scale) - rj_expected),
+            256.0L * epsilon * rj_expected);
+    }
+}
+
+TEST(SimdMathSpecialTest, CarlsonSquareRootRcKeepsTinyPositiveParameters) {
+    namespace sm = std::simd::detail::special_math;
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    const long double root = std::numeric_limits<long double>::min();
+    // RC(1,root^2) = log(2/root) to well beyond the working precision here.
+    const long double rc_expected = std::log(2.0L) - std::log(root);
+    const long double rc_actual = sm::carlson_rc_sqrt(1.0L, root);
+    ASSERT_TRUE(std::isfinite(rc_actual));
+    EXPECT_LE(std::abs(rc_actual - rc_expected), 512.0L * epsilon * rc_expected);
+
+    const long double p = std::numeric_limits<long double>::denorm_min();
+    ASSERT_GT(p, 0.0L);
+    constexpr long double pi = 3.1415926535897932384626433832795028841971693993751058L;
+    // At x=0, RJ(0,y,1,p) ~ 3*pi/(2*sqrt(y*p)); beta^2 underflows at this p.
+    const long double rj_expected = 3.0L * pi / std::sqrt(p);
+    const long double rj_actual = sm::carlson_rj(0.0L, 0.25L, 1.0L, p);
+    ASSERT_TRUE(std::isfinite(rj_actual));
+    EXPECT_LE(std::abs(rj_actual - rj_expected), 256.0L * epsilon * rj_expected);
+}
+
+TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersRejectOutsideDomainAndBoundWork) {
+    namespace sm = std::simd::detail::special_math;
+    const long double nan = std::numeric_limits<long double>::quiet_NaN();
+    const long double inf = std::numeric_limits<long double>::infinity();
+    for (const auto& value : std::array<std::array<long double, 2>, 7>{{
+        {{-1.0L, 1.0L}}, {{1.0L, 0.0L}}, {{1.0L, -1.0L}},
+        {{nan, 1.0L}}, {{1.0L, nan}}, {{inf, 1.0L}}, {{1.0L, inf}}
+    }}) {
+        EXPECT_TRUE(std::isnan(sm::carlson_rc(value[0], value[1])));
+        EXPECT_TRUE(std::isnan(sm::carlson_rc_sqrt(value[0], value[1])));
+    }
+    for (const auto& value : std::array<std::array<long double, 4>, 12>{{
+        {{-1.0L, 1.0L, 1.0L, 1.0L}}, {{1.0L, -1.0L, 1.0L, 1.0L}},
+        {{1.0L, 1.0L, -1.0L, 1.0L}}, {{1.0L, 1.0L, 1.0L, 0.0L}},
+        {{1.0L, 1.0L, 1.0L, -1.0L}}, {{0.0L, 0.0L, 1.0L, 1.0L}},
+        {{nan, 1.0L, 1.0L, 1.0L}}, {{1.0L, nan, 1.0L, 1.0L}},
+        {{1.0L, 1.0L, nan, 1.0L}}, {{1.0L, 1.0L, 1.0L, nan}},
+        {{inf, 1.0L, 1.0L, 1.0L}}, {{1.0L, 1.0L, 1.0L, inf}}
+    }}) {
+        EXPECT_TRUE(std::isnan(sm::carlson_rj(value[0], value[1], value[2], value[3])));
+    }
+    // This p-to-argument ratio needs more than 128 duplications, not a partial sum.
+    constexpr long double tiny = 0x1p-1022L;
+    EXPECT_TRUE(std::isnan(sm::carlson_rj(tiny, tiny, tiny, 1.0L)));
+}
+
+TEST(SimdMathSpecialTest, CompleteThirdKindEllipticResolvesJointSingularities) {
+    namespace sm = std::simd::detail::special_math;
+    struct sample { double modulus; double order; long double expected; };
+    // Independent 100-digit values at the exact binary inputs.
+    const std::array<sample, 5> samples{{
+        {0x1.fffffffffffffp-1, 0x1.fffffffffdcd1p-1,
+            4900049181638.88892279462095142171673199846005682359878L},
+        {0x1.fffffffffffffp-1, 0x1.fffffff768fa1p-1,
+            8353342056.42655063927884378034936980293284158605134L},
+        {0x1.fffffffffdcd1p-1, 0x1.fffffff768fa1p-1,
+            3803767612.77743341503349641093509640285197214012508L},
+        {0x1.fffffffffffffp-1, 0x1.fffffffffffffp-1,
+            7074237752028449.97982647125425937802150707026447543L},
+        {0x1.ccccccccccccdp-1, 0.75,
+            5.23868957169793101481806910344697601119008981687822345L}
+    }};
+    const auto check = [&]<class T>() {
+        for (const auto& value : samples) {
+            const T expected = static_cast<T>(value.expected);
+            const T actual = sm::comp_ellint_3_fallback(
+                static_cast<T>(value.modulus), static_cast<T>(value.order));
+            ASSERT_TRUE(std::isfinite(actual));
+            EXPECT_LE(std::abs(actual - expected),
+                T{256} * std::numeric_limits<T>::epsilon() * expected);
+            EXPECT_EQ(sm::comp_ellint_3_fallback(-static_cast<T>(value.modulus),
+                static_cast<T>(value.order)), actual);
+        }
+    };
+    check.template operator()<double>();
+    check.template operator()<long double>();
+    const auto own_neighbors = []<class T>() {
+        constexpr int digits = std::numeric_limits<T>::digits;
+        if constexpr (digits == 24 || digits == 53 || digits == 64 || digits == 113) {
+            constexpr long double reference = [] {
+                if constexpr (digits == 24) {
+                    return 13176799.3120658849057330924008326896292577223644725274L;
+                } else if constexpr (digits == 53) {
+                    return 7074237752028449.97982647125425937802150707026447543L;
+                } else if constexpr (digits == 64) {
+                    return 14488038916154245696.3788673883493037079686119445486943L;
+                } else {
+                    return 8156040833015188200833743081374156.32640129872067498817L;
+                }
+            }();
+            const T neighbor = std::nextafter(T{1}, T{});
+            const T actual = sm::comp_ellint_3_fallback(neighbor, neighbor);
+            const T expected = static_cast<T>(reference);
+            ASSERT_TRUE(std::isfinite(actual));
+            EXPECT_LE(std::abs(actual - expected),
+                T{256} * std::numeric_limits<T>::epsilon() * expected);
+        }
+    };
+    own_neighbors.template operator()<float>();
+    own_neighbors.template operator()<double>();
+    own_neighbors.template operator()<long double>();
+    const double modulus = std::nextafter(1.0, 0.0);
+    EXPECT_EQ(sm::comp_ellint_3_fallback(modulus, 0.0),
+        sm::comp_ellint_1_fallback(modulus));
+    EXPECT_EQ(sm::comp_ellint_3_fallback(0.5, -0.5),
+        sm::ellint_3_fallback(0.5, -0.5, sm::pi_v<double> / 2));
+    EXPECT_TRUE(std::isinf(sm::comp_ellint_3_fallback(0.5, 1.0)));
+    EXPECT_TRUE(std::isnan(sm::comp_ellint_3_fallback(0.5,
+        std::nextafter(1.0, std::numeric_limits<double>::infinity()))));
+    EXPECT_TRUE(std::isinf(sm::comp_ellint_3_fallback(1.0, 0.5)));
+#if !defined(__cpp_lib_math_special_functions)
+    const std::simd::vec<double, 4> moduli(samples[0].modulus);
+    const auto result = std::simd::comp_ellint_3(moduli, samples[0].order);
+    for (int lane = 0; lane < 4; ++lane) {
+        EXPECT_NEAR(result[lane], static_cast<double>(samples[0].expected),
+            static_cast<double>(samples[0].expected) * 5e-14);
+    }
+#endif
+}
+
 TEST(SimdMathSpecialTest, IncompleteFirstKindEllipticResolvesNearSingularEndpoints) {
     namespace sm = std::simd::detail::special_math;
     struct sample {
