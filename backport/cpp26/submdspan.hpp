@@ -571,7 +571,7 @@ constexpr auto build_sub_strides(const Src& src,
                                    const array<size_t,N>& sf) {
     using idx_t = typename Src::index_type;
     return array<idx_t, sizeof...(Ms)>{
-        {static_cast<idx_t>(src.stride(Ms)) * static_cast<idx_t>(sf[Ms])...}};
+        {static_cast<idx_t>(src.stride(Ms) * sf[Ms])...}};
 }
 
 // ---------------------------------------------------------------------------

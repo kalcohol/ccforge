@@ -225,6 +225,25 @@ TEST(SubmdspanLayoutStride, FromStridedMapping) {
     EXPECT_EQ((sub[2,3]), 17);  // 2 + 3*5 = 17
 }
 
+TEST(SubmdspanLayoutStride, SupportsNarrowIndexTypes) {
+    std::array<int, 20> data{};
+    for (int i = 0; i < 20; ++i) {
+        data[static_cast<std::size_t>(i)] = i;
+    }
+    using extents_t = std::dextents<short, 2>;
+    std::mdspan<int, extents_t> source(data.data(), extents_t{4, 5});
+    auto sub = std::submdspan(
+        source, std::extent_slice{short{0}, short{2}, short{2}}, std::full_extent);
+
+    static_assert(std::is_same_v<typename decltype(sub)::index_type, short>);
+    static_assert(std::is_same_v<typename decltype(sub)::layout_type,
+                                 std::layout_stride>);
+    EXPECT_EQ(sub.extent(0), 2);
+    EXPECT_EQ(sub.stride(0), 10);
+    EXPECT_EQ(sub.stride(1), 1);
+    EXPECT_EQ((sub[1, 4]), 14);
+}
+
 TEST(SubmdspanLayoutStride, SingletonExtentSliceKeepsSourceStride) {
     auto data = make_data<20>();
     using extents_t = std::extents<int, 8>;
