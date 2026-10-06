@@ -273,6 +273,81 @@ struct observed_stop_token {
     }
 };
 
+struct callback_registration_error {
+    int marker;
+};
+
+// Inject a registration failure even when the callback itself is nothrow-movable.
+struct throwing_registration_stop_token {
+    std::inplace_stop_token token;
+    int* attempts;
+    std::atomic<int>* registrations;
+
+    template<class Callback>
+    struct callback_type {
+        observed_stop_token::registration_credit credit;
+
+        callback_type(throwing_registration_stop_token token, Callback)
+            : credit(token.registrations) {
+            ++*token.attempts;
+            throw callback_registration_error{73};
+        }
+
+        callback_type(const callback_type&) = delete;
+        callback_type& operator=(const callback_type&) = delete;
+    };
+
+    bool stop_possible() const noexcept { return token.stop_possible(); }
+    bool stop_requested() const noexcept { return token.stop_requested(); }
+    bool operator==(const throwing_registration_stop_token& other) const noexcept {
+        return token == other.token;
+    }
+};
+
+struct consumer_completion_observation {
+    int values = 0;
+    int errors = 0;
+    int stopped = 0;
+    std::exception_ptr error;
+};
+
+template<class StopToken>
+struct observed_consumer_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    StopToken token;
+    consumer_completion_observation* observation;
+
+    void set_value(int) && noexcept { ++observation->values; }
+
+    void set_error(std::exception_ptr error) && noexcept {
+        ++observation->errors;
+        observation->error = std::move(error);
+    }
+
+    void set_stopped() && noexcept { ++observation->stopped; }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(std::execution::make_prop(
+            std::execution::get_stop_token_t{}, token));
+    }
+};
+
+void expect_registration_error(const consumer_completion_observation& observation) {
+    EXPECT_EQ(observation.values, 0);
+    EXPECT_EQ(observation.errors, 1);
+    EXPECT_EQ(observation.stopped, 0);
+    ASSERT_TRUE(observation.error);
+    try {
+        std::rethrow_exception(observation.error);
+        FAIL() << "expected the callback registration exception";
+    } catch (const callback_registration_error& error) {
+        EXPECT_EQ(error.marker, 73);
+    } catch (...) {
+        FAIL() << "unexpected callback registration exception type";
+    }
+}
+
 struct spawn_future_stop_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -805,6 +880,146 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     EXPECT_EQ(
         counts->allocations.load(std::memory_order_relaxed),
         counts->deallocations.load(std::memory_order_relaxed));
+}
+
+TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandonsWork) {
+    for (bool prerequested : {false, true}) {
+        for (bool completes_on_stop : {false, true}) {
+            std::execution::simple_counting_scope scope;
+            auto source = std::make_shared<manual_state>();
+            source->stop_completes = completes_on_stop;
+            auto counts = std::make_shared<allocation_counts>();
+            std::inplace_stop_source downstream_stop;
+            int attempts = 0;
+            std::atomic<int> registrations{0};
+            consumer_completion_observation observation;
+            if (prerequested) {
+                downstream_stop.request_stop();
+            }
+
+            {
+                auto future = std::execution::spawn_future(
+                    manual_sender{source}, scope.get_token(),
+                    member_allocator_env{counting_allocator<std::byte>{counts}});
+                ASSERT_TRUE(wait_until_started(source));
+                EXPECT_EQ(scope.count(), 1u);
+                auto op = std::execution::connect(
+                    std::move(future),
+                    observed_consumer_receiver{
+                        throwing_registration_stop_token{
+                            downstream_stop.get_token(), &attempts, &registrations},
+                        &observation});
+
+                std::execution::start(op);
+
+                expect_registration_error(observation);
+                EXPECT_EQ(attempts, 1);
+                EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+                const bool stop_requested = wait_until_stop_requested(source);
+                EXPECT_TRUE(stop_requested);
+                if (!completes_on_stop) {
+                    std::lock_guard lk{source->mtx};
+                    EXPECT_FALSE(source->completed);
+                    EXPECT_EQ(scope.count(), 1u);
+                }
+                if (!completes_on_stop || !stop_requested) {
+                    complete_manual_value(source, 42);
+                }
+                EXPECT_TRUE(wait_until_completed(source));
+                expect_registration_error(observation);
+                EXPECT_EQ(scope.count(), 0u);
+            }
+
+            expect_registration_error(observation);
+            EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
+            EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
+                      counts->deallocations.load(std::memory_order_relaxed));
+            EXPECT_EQ(scope.count(), 0u);
+        }
+    }
+}
+
+TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureOverridesCachedValue) {
+    std::execution::simple_counting_scope scope;
+    std::inplace_stop_source downstream_stop;
+    int attempts = 0;
+    std::atomic<int> registrations{0};
+    consumer_completion_observation observation;
+
+    {
+        auto future = std::execution::spawn_future(std::execution::just(42), scope.get_token());
+        using receiver_t = observed_consumer_receiver<throwing_registration_stop_token>;
+        using consumer_t = std::execution::__forge_spawn_future::__consumer<
+            typename decltype(future)::state_t, receiver_t>;
+        static_assert(std::stoppable_token_for<
+            typename consumer_t::stop_token_t, typename consumer_t::__stop_callback_fn>);
+        static_assert(!std::is_nothrow_constructible_v<
+            typename consumer_t::callback_t,
+            typename consumer_t::stop_token_t,
+            typename consumer_t::__stop_callback_fn>);
+        using never_receiver_t = observed_consumer_receiver<std::never_stop_token>;
+        using never_consumer_t = std::execution::__forge_spawn_future::__consumer<
+            typename decltype(future)::state_t, never_receiver_t>;
+        static_assert(std::is_nothrow_constructible_v<
+            typename never_consumer_t::callback_t,
+            typename never_consumer_t::stop_token_t,
+            typename never_consumer_t::__stop_callback_fn>);
+        using cs_t = std::execution::completion_signatures_of_t<
+            decltype(future), std::execution::env_of_t<receiver_t>>;
+        static_assert(contains_completion_signature<
+            cs_t, std::execution::set_error_t(std::exception_ptr)>::value);
+        static_assert(std::same_as<cs_t, std::execution::completion_signatures_of_t<
+            decltype(future), std::execution::env_of_t<never_receiver_t>>>);
+
+        EXPECT_EQ(scope.count(), 1u);
+        auto op = std::execution::connect(
+            std::move(future),
+            receiver_t{
+                throwing_registration_stop_token{
+                    downstream_stop.get_token(), &attempts, &registrations},
+                &observation});
+        std::execution::start(op);
+
+        expect_registration_error(observation);
+        EXPECT_EQ(attempts, 1);
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+        EXPECT_EQ(scope.count(), 0u);
+    }
+
+    expect_registration_error(observation);
+}
+
+TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
+    std::execution::simple_counting_scope scope;
+    auto source = std::make_shared<manual_state>();
+    std::inplace_stop_source downstream_stop;
+    downstream_stop.request_stop();
+    std::atomic<int> registrations{0};
+    consumer_completion_observation observation;
+
+    {
+        auto future = std::execution::spawn_future(manual_sender{source}, scope.get_token());
+        ASSERT_TRUE(wait_until_started(source));
+        auto op = std::execution::connect(
+            std::move(future),
+            observed_consumer_receiver{
+                observed_stop_token{downstream_stop.get_token(), &registrations},
+                &observation});
+        std::execution::start(op);
+
+        EXPECT_EQ(observation.values, 0);
+        EXPECT_EQ(observation.errors, 0);
+        EXPECT_EQ(observation.stopped, 1);
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+        EXPECT_TRUE(wait_until_stop_requested(source));
+        EXPECT_TRUE(wait_until_completed(source));
+        EXPECT_EQ(scope.count(), 0u);
+    }
+
+    EXPECT_EQ(observation.values, 0);
+    EXPECT_EQ(observation.errors, 0);
+    EXPECT_EQ(observation.stopped, 1);
+    EXPECT_EQ(scope.count(), 0u);
 }
 
 TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {

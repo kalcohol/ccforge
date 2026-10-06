@@ -436,7 +436,7 @@ struct __consumer : __consumer_base<State> {
         : __rcvr(std::move(rcvr))
     {}
 
-    void __install_stop_callback(const std::shared_ptr<State>& state) noexcept {
+    [[nodiscard]] bool __install_stop_callback(const std::shared_ptr<State>& state) noexcept {
         __state = state;
         try {
             auto token = std::execution::get_stop_token(
@@ -449,8 +449,11 @@ struct __consumer : __consumer_base<State> {
                     std::move(token),
                     __stop_callback_fn{state});
             }
+            return true;
         } catch (...) {
-            state->__try_cancel();
+            __deliver_error(std::current_exception());
+            state->__abandon_unconsumed();
+            return false;
         }
     }
 
@@ -527,7 +530,9 @@ struct __op : __forge_detail::__immovable {
     void start() & noexcept {
         auto state = std::move(__state);
         auto consumer = __consumer_state;
-        consumer->__install_stop_callback(state);
+        if (!consumer->__install_stop_callback(state)) {
+            return;
+        }
         typename State::__consume_result consume_result;
         try {
             consume_result = state->__consume(consumer);
