@@ -182,6 +182,18 @@ T riemann_zeta_hasse(T s) {
 }
 
 template<class T>
+T riemann_zeta_pole_regular_part(T delta) {
+    constexpr T euler_gamma =
+        0.577215664901532860606512090082402431L;
+    constexpr T minus_stieltjes_one =
+        0.072815845483676724860586375874901319L;
+    constexpr T stieltjes_two_over_two =
+        -0.004845181596436159242775526986987055L;
+    return euler_gamma +
+        delta * (minus_stieltjes_one + delta * stieltjes_two_over_two);
+}
+
+template<class T>
 T riemann_zeta_fallback(T s) {
     if (std::isnan(s)) {
         return quiet_nan<T>();
@@ -197,21 +209,30 @@ T riemann_zeta_fallback(T s) {
         std::sqrt(std::numeric_limits<T>::epsilon())) {
         using wide_t = conditional_t<
             (sizeof(T) < sizeof(long double)), long double, T>;
-        constexpr wide_t euler_gamma =
-            0.577215664901532860606512090082402431L;
-        constexpr wide_t minus_stieltjes_one =
-            0.072815845483676724860586375874901319L;
-        constexpr wide_t stieltjes_two_over_two =
-            -0.004845181596436159242775526986987055L;
         const wide_t delta = static_cast<wide_t>(pole_delta);
         return static_cast<T>(
-            wide_t{1} / delta +
-            euler_gamma +
-            minus_stieltjes_one * delta +
-            stieltjes_two_over_two * delta * delta);
+            wide_t{1} / delta + riemann_zeta_pole_regular_part(delta));
     }
     if (s == T{0}) {
         return static_cast<T>(-0.5L);
+    }
+    if (std::abs(s) <= static_cast<T>(1.0e-5L)) {
+        using wide_t = conditional_t<
+            (sizeof(T) < sizeof(long double)), long double, T>;
+        const wide_t wide_s = static_cast<wide_t>(s);
+        const wide_t angle = pi_v<wide_t> * wide_s / wide_t{2};
+        const wide_t angle2 = angle * angle;
+        const wide_t sinc =
+            wide_t{1} - angle2 / wide_t{6} + angle2 * angle2 / wide_t{120};
+        // Cancel the reflected pole analytically before rounding 1 - s.
+        const wide_t reflected_product =
+            -pi_v<wide_t> / wide_t{2} * sinc +
+            std::sin(angle) * riemann_zeta_pole_regular_part(-wide_s);
+        const wide_t factor = std::exp(
+            wide_s * std::log(wide_t{2}) +
+            (wide_s - wide_t{1}) * std::log(pi_v<wide_t>) +
+            std::lgamma(wide_t{1} - wide_s));
+        return static_cast<T>(factor * reflected_product);
     }
     if (s < T{}) {
         const T rounded = std::round(s);

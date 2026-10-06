@@ -776,6 +776,95 @@ TEST(SimdMathSpecialTest, ZetaReflectionAvoidsIntermediateOverflow) {
                 std::abs(expected_float) * 2e-6f);
 }
 
+TEST(SimdMathSpecialTest, ZetaNearZeroMatchesIndependentReferences) {
+    namespace sm = std::simd::detail::special_math;
+    struct reference {
+        long double argument;
+        long double value;
+    };
+    // Independently evaluated with 90 decimal digits, not the local expansion.
+    constexpr reference cases[] = {
+        {-1.0e-5L, -0.499990810714984775292815655216544598302L},
+        {-1.0e-8L, -0.499999990810614768271094376840760718199L},
+        {-1.0e-12L, -0.499999999999081061466796330436447623555L},
+        {-1.0e-17L, -0.499999999999999990810614667953272682515L},
+        {-1.0e-30L, -0.499999999999999999999999999999081061467L},
+        {1.0e-5L, -0.500009189485650870318040415896476830273L},
+        {1.0e-8L, -0.500000009189385432364551214017744400397L},
+        {1.0e-12L, -0.500000000000918938533205675920008285030L},
+    };
+    const auto check = [&]<class T>() {
+        for (const auto& test_case : cases) {
+            SCOPED_TRACE(test_case.argument);
+            const T actual = sm::riemann_zeta_fallback(
+                static_cast<T>(test_case.argument));
+            const T expected = static_cast<T>(test_case.value);
+            const long double magnitude = std::abs(test_case.argument);
+            const T truncation_budget = static_cast<T>(
+                2e-4L * magnitude * magnitude * magnitude * magnitude);
+            EXPECT_TRUE(std::isfinite(actual));
+            EXPECT_NEAR(actual, expected,
+                        std::numeric_limits<T>::epsilon() * T{16} + truncation_budget);
+        }
+        EXPECT_EQ(sm::riemann_zeta_fallback(T{}), T{-0.5});
+        EXPECT_EQ(sm::riemann_zeta_fallback(-T{}), T{-0.5});
+        for (const T magnitude : {
+                 std::numeric_limits<T>::denorm_min(),
+                 std::numeric_limits<T>::min(),
+                 std::numeric_limits<T>::epsilon() / T{16}}) {
+            for (const T sign : {T{-1}, T{1}}) {
+                const T actual = sm::riemann_zeta_fallback(sign * magnitude);
+                EXPECT_TRUE(std::isfinite(actual));
+                EXPECT_NEAR(actual, T{-0.5},
+                            std::numeric_limits<T>::epsilon() * T{16});
+            }
+        }
+    };
+    check.template operator()<float>();
+    check.template operator()<double>();
+    check.template operator()<long double>();
+}
+
+TEST(SimdMathSpecialTest, ZetaNearZeroBranchBoundaryIsContinuous) {
+    namespace sm = std::simd::detail::special_math;
+    const auto check = []<class T>() {
+        const T boundary = static_cast<T>(1e-5L);
+        using wide_t = std::conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
+        const T tolerance = std::max({
+            std::numeric_limits<T>::epsilon() * T{16},
+            static_cast<T>(5e-14L),
+            static_cast<T>(4 * std::numeric_limits<wide_t>::epsilon()) / boundary});
+        for (const T sign : {T{-1}, T{1}}) {
+            const T expected = static_cast<T>(sign < T{}
+                ? -0.499990810714984775292815655216544598302L
+                : -0.500009189485650870318040415896476830273L);
+            const T endpoint = sign * boundary;
+            for (const T argument : {
+                     std::nextafter(endpoint, T{}), endpoint,
+                     std::nextafter(endpoint, sign * std::numeric_limits<T>::infinity())}) {
+                const T actual = sm::riemann_zeta_fallback(argument);
+                EXPECT_TRUE(std::isfinite(actual));
+                EXPECT_NEAR(actual, expected, tolerance);
+            }
+        }
+    };
+    check.template operator()<float>();
+    check.template operator()<double>();
+    check.template operator()<long double>();
+}
+
+#if !defined(__cpp_lib_math_special_functions)
+TEST(SimdMathSpecialTest, PublicZetaFallbackStaysFiniteNearZero) {
+    const double4 arguments = load_vec<double4>(std::array<double, 4>{{
+        -1.0e-14, -1.0e-17, -1.0e-30, -std::numeric_limits<double>::denorm_min()}});
+    const auto values = std::simd::riemann_zeta(arguments);
+    for (std::size_t i = 0; i < 4; ++i) {
+        EXPECT_TRUE(std::isfinite(values[i]));
+        EXPECT_NEAR(values[i], -0.5, 2e-14);
+    }
+}
+#endif
+
 TEST(SimdMathSpecialTest, ExpintFloatFallbackAvoidsNegativeSeriesCancellation) {
     const float actual =
         std::simd::detail::special_math::expint_fallback(-6.0f);
