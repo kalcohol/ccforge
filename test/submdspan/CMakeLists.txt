@@ -2,7 +2,7 @@ set(FORGE_SUBMDSPAN_TEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(FORGE_SUBMDSPAN_RUNTIME_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/runtime")
 set(FORGE_SUBMDSPAN_COMPILE_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/compile")
 
-function(forge_expect_submdspan_cxx_source_compiles result_var source_name should_compile failure_message)
+function(forge_check_submdspan_cxx_source_compiles result_var source_file)
     set(CMAKE_REQUIRED_INCLUDES
         "${CMAKE_SOURCE_DIR}/backport"
         "${CMAKE_SOURCE_DIR}/include")
@@ -19,11 +19,27 @@ function(forge_expect_submdspan_cxx_source_compiles result_var source_name shoul
             endif()
         endif()
     endforeach()
-    forge_expect_cxx_source_compiles(
+    if(ARGC GREATER 2)
+        forge_expect_cxx_source_compiles(
+            ${result_var} "${source_file}" ${ARGV2} "${ARGV3}")
+        get_property(_forge_probe_result CACHE ${result_var} PROPERTY VALUE)
+    else()
+        if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
+            set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
+        endif()
+        forge_detect_cxx_source_compiles(${result_var} "${source_file}")
+        set(_forge_probe_result "${${result_var}}")
+    endif()
+    set(${result_var} "${_forge_probe_result}" PARENT_SCOPE)
+endfunction()
+
+function(forge_expect_submdspan_cxx_source_compiles result_var source_name should_compile failure_message)
+    forge_check_submdspan_cxx_source_compiles(
         ${result_var}
         "${FORGE_SUBMDSPAN_COMPILE_DIR}/${source_name}"
         ${should_compile}
         "${failure_message}")
+    set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
 # Runtime tests require <mdspan> to be available.
@@ -38,25 +54,97 @@ check_cxx_source_compiles("
 " FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
 
 if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
-    forge_add_runtime_test(
-        test_submdspan
-        "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan.cpp"
-        submdspan_runtime)
+    set(_forge_submdspan_backport_tests OFF)
+    if(FORGE_FORCE_SUBMDSPAN_BACKPORT
+            OR (NOT FORGE_SUBMDSPAN_FULL AND NOT FORGE_SUBMDSPAN_PARTIAL))
+        set(_forge_submdspan_backport_tests ON)
+    endif()
+    set(_forge_padded_backport_tests OFF)
+    if(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT
+            OR (NOT FORGE_MDSPAN_PADDED_LAYOUTS_FULL
+                AND NOT FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL))
+        set(_forge_padded_backport_tests ON)
+    endif()
+    set(_forge_constant_wrapper_backport_tests OFF)
+    if(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT
+            OR (NOT FORGE_CONSTANT_WRAPPER_FULL AND NOT FORGE_CONSTANT_WRAPPER_PARTIAL))
+        set(_forge_constant_wrapper_backport_tests ON)
+    endif()
+
+    # These sources assert Forge-specific overloads and depend on all three backports.
+    if(_forge_submdspan_backport_tests
+            AND _forge_padded_backport_tests
+            AND _forge_constant_wrapper_backport_tests)
+        forge_add_runtime_test(
+            test_submdspan
+            "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan.cpp"
+            submdspan_runtime)
+
+        forge_add_compile_probe(
+            test_submdspan_api
+            "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_api.cpp"
+            submdspan_api_compile)
+
+        forge_add_compile_probe(
+            test_submdspan_include
+            "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_include.cpp"
+            submdspan_include_compile)
+    else()
+        message(STATUS
+            "Forge: submdspan implementation tests skipped because a native dependency stands aside")
+    endif()
 
     forge_add_compile_probe(
-        test_submdspan_api
-        "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_api.cpp"
-        submdspan_api_compile)
+        test_submdspan_portable_include
+        "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_portable_include.cpp"
+        submdspan_portable_include_compile)
 
-    forge_add_compile_probe(
-        test_submdspan_include
-        "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_include.cpp"
-        submdspan_include_compile)
+    set(_forge_submdspan_portable_tests ON)
+    if(FORGE_SUBMDSPAN_PARTIAL
+            AND NOT FORGE_SUBMDSPAN_FULL
+            AND NOT _forge_submdspan_backport_tests)
+        forge_check_submdspan_cxx_source_compiles(
+            FORGE_SUBMDSPAN_PARTIAL_HAS_PORTABLE_OPERATIONS
+            "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan_portable.cpp")
+        if(NOT FORGE_SUBMDSPAN_PARTIAL_HAS_PORTABLE_OPERATIONS)
+            set(_forge_submdspan_portable_tests OFF)
+            message(STATUS
+                "Forge: PARTIAL native submdspan lacks portable operations; wrapper include validation remains enabled")
+        endif()
+    endif()
+    if(_forge_submdspan_portable_tests)
+        set(_forge_submdspan_portable_cases portable)
+        if((_forge_padded_backport_tests OR FORGE_MDSPAN_PADDED_LAYOUTS_FULL)
+                AND (_forge_submdspan_backport_tests OR FORGE_SUBMDSPAN_FULL))
+            list(APPEND _forge_submdspan_portable_cases portable_padded)
+        endif()
+        foreach(_forge_portable_case IN LISTS _forge_submdspan_portable_cases)
+            add_executable(
+                test_submdspan_${_forge_portable_case}
+                "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan_portable.cpp")
+            target_link_libraries(test_submdspan_${_forge_portable_case} PRIVATE forge::forge)
+            if(_forge_portable_case STREQUAL "portable_padded")
+                target_compile_definitions(test_submdspan_${_forge_portable_case} PRIVATE
+                    FORGE_TEST_SUBMDSPAN_PADDED=1)
+            endif()
+            add_test(NAME submdspan_${_forge_portable_case}_runtime
+                COMMAND test_submdspan_${_forge_portable_case})
+            set_tests_properties(submdspan_${_forge_portable_case}_runtime PROPERTIES
+                TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+        endforeach()
+        unset(_forge_portable_case)
+        unset(_forge_submdspan_portable_cases)
+    endif()
 
-    forge_add_compile_probe(
-        test_submdspan_accept_padded_conversions
-        "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_accept_padded_conversions.cpp"
-        submdspan_accept_padded_conversions_compile)
+    if(_forge_padded_backport_tests OR FORGE_MDSPAN_PADDED_LAYOUTS_FULL)
+        forge_add_compile_probe(
+            test_submdspan_accept_padded_conversions
+            "${FORGE_SUBMDSPAN_COMPILE_DIR}/test_submdspan_accept_padded_conversions.cpp"
+            submdspan_accept_padded_conversions_compile)
+    else()
+        message(STATUS
+            "Forge: padded conversion compile test skipped for PARTIAL native padded layouts")
+    endif()
 
     if(NOT FORGE_MDSPAN_PADDED_LAYOUTS_FULL
             AND NOT FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL)
@@ -109,6 +197,10 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
             TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
         unset(_forge_native_padded_handoff_root)
     endif()
+    unset(_forge_submdspan_backport_tests)
+    unset(_forge_padded_backport_tests)
+    unset(_forge_constant_wrapper_backport_tests)
+    unset(_forge_submdspan_portable_tests)
 else()
     message(STATUS "Forge: submdspan tests skipped (toolchain has no <mdspan>)")
 endif()

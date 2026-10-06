@@ -211,6 +211,18 @@ if(FORGE_TEST_ENABLE_UNIQUE_RESOURCE)
     add_subdirectory(unique_resource)
 endif()
 if(FORGE_TEST_ENABLE_SUBMDSPAN)
+    # Keep portable native tests enabled; gate implementation probes separately.
+    add_test(
+        NAME submdspan_test_gate_matrix
+        COMMAND ${CMAKE_COMMAND}
+            -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+            -DBINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}/submdspan-gates
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/submdspan/verify_test_gates.cmake)
+    set_tests_properties(submdspan_test_gate_matrix PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
     add_subdirectory(submdspan)
 endif()
 if(FORGE_TEST_ENABLE_LINALG)
