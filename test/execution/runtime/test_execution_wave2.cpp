@@ -31,6 +31,29 @@ struct counting_receiver {
     }
 };
 
+struct cached_value_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* result;
+
+    void set_value(const int& value) && noexcept { *result = value; }
+    void set_error(std::exception_ptr) && noexcept { *result = -1; }
+};
+
+struct cached_error_only_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    bool* completed;
+
+    void set_error(std::exception_ptr) && noexcept { *completed = true; }
+};
+
+struct cached_stopped_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    bool* completed;
+
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept { *completed = true; }
+};
+
 struct oversized_value_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -125,6 +148,35 @@ TEST(SplitTest, HappyPath) {
     EXPECT_EQ(std::get<0>(*r1), 42);
     EXPECT_EQ(std::get<0>(*r2), 42);
     EXPECT_EQ(std::get<0>(*r3), 42);
+}
+
+TEST(SplitTest, InstantiatesOnlyDeclaredCompletionChannels) {
+    int value = 0;
+    auto values = std::execution::split(std::execution::just(42));
+    static_assert(std::execution::sender_to<
+        decltype(values), cached_value_only_receiver>);
+    auto value_op = std::execution::connect(
+        values, cached_value_only_receiver{&value});
+    std::execution::start(value_op);
+    EXPECT_EQ(value, 42);
+
+    bool error = false;
+    auto errors = std::execution::split(std::execution::just_error(7));
+    static_assert(std::execution::sender_to<
+        decltype(errors), cached_error_only_receiver>);
+    auto error_op = std::execution::connect(
+        errors, cached_error_only_receiver{&error});
+    std::execution::start(error_op);
+    EXPECT_TRUE(error);
+
+    bool stopped = false;
+    auto stops = std::execution::split(std::execution::just_stopped());
+    static_assert(std::execution::sender_to<
+        decltype(stops), cached_stopped_receiver>);
+    auto stop_op = std::execution::connect(
+        stops, cached_stopped_receiver{&stopped});
+    std::execution::start(stop_op);
+    EXPECT_TRUE(stopped);
 }
 
 TEST(SplitTest, CachesMoveOnlyValueForMultipleSubscribers) {

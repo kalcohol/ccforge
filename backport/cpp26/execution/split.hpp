@@ -24,6 +24,7 @@
 
 #include "concepts.hpp"
 #include "detail/op_storage.hpp"
+#include "detail/value_result.hpp"
 #include "env.hpp"
 
 #include <atomic>
@@ -112,13 +113,24 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
             // source operation stored value/error/stopped and marked done.
             std::terminate();
         } else if constexpr (std::is_same_v<V, typename __shared_state<S>::value_tuple_t>) {
-            std::apply([&](const auto&... vs) {
-                std::execution::set_value(std::move(rcvr), vs...);
-            }, v);
+            if constexpr (!__forge_meta::type_list_empty_v<
+                              __forge_meta::value_tuple_list_t<
+                                  typename __shared_state<S>::cs_t>>) {
+                std::apply([&](const auto&... vs) {
+                    std::execution::set_value(std::move(rcvr), vs...);
+                }, v);
+            } else {
+                std::terminate();
+            }
         } else if constexpr (std::is_same_v<V, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), std::exception_ptr{v});
         } else {
-            std::execution::set_stopped(std::move(rcvr));
+            if constexpr (__forge_meta::sends_stopped_from<
+                              typename __shared_state<S>::cs_t>::value) {
+                std::execution::set_stopped(std::move(rcvr));
+            } else {
+                std::terminate();
+            }
         }
     }, st.result);
 }
