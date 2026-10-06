@@ -26,6 +26,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -846,6 +847,25 @@ auto deep_suspended_chain(int depth) -> cio::io_task<int> {
     co_return co_await deep_suspended_chain(depth - 1);
 }
 
+struct chain_destruction_probe {
+    std::vector<int>* order;
+    int depth;
+
+    ~chain_destruction_probe() {
+        order->push_back(depth);
+    }
+};
+
+auto ordered_suspended_chain(std::vector<int>* order, int depth)
+    -> cio::io_task<int> {
+    chain_destruction_probe probe{order, depth};
+    if (depth == 0) {
+        co_await hang_forever_awaitable{};
+        co_return 0;
+    }
+    co_return co_await ordered_suspended_chain(order, depth - 1);
+}
+
 } // namespace
 
 TEST(ForgeCoroInteropTest, AwaitSenderConsumesJust) {
@@ -1324,6 +1344,20 @@ TEST(ForgeCoroInteropTest, AbandoningDeepSuspendedChainUsesBoundedNativeStack) {
     EXPECT_FALSE(result->value.has_value());
     EXPECT_FALSE(result->error);
     EXPECT_FALSE(result->stopped);
+}
+
+TEST(ForgeCoroInteropTest, AbandonedChainDestroysChildrenBeforeParents) {
+    std::vector<int> order;
+    auto result = std::make_shared<task_result_state<int>>();
+    {
+        auto op = std::execution::connect(
+            cio::as_sender(ordered_suspended_chain(&order, 3)),
+            task_result_receiver<int>{result});
+        std::execution::start(op);
+        EXPECT_TRUE(order.empty());
+    }
+    EXPECT_EQ(order, (std::vector<int>{0, 1, 2, 3}));
+    EXPECT_FALSE(result->done);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderRejectsMoveAfterStart) {

@@ -242,14 +242,14 @@ struct frame_chain_link {
     }
 };
 
-// Destroys a suspended frame chain iteratively from the outermost frame.
-// Before each frame dies, the task_awaitable inside it is detached from
-// the child frame via release_owned, so the awaitable destructor that
-// runs during frame.destroy() does not recurse into the child; the child
-// is destroyed by the next loop iteration instead.
+// Detach and reverse the links before destroying the chain leaf-first.
+// Ancestors own the environment and arbitration state borrowed by their
+// children, so they must remain alive through each child's teardown.
 inline auto destroy_frame_chain(
     std::coroutine_handle<> frame,
     frame_chain_link* link) noexcept -> void {
+    std::coroutine_handle<> previous{};
+    frame_chain_link* previous_link = nullptr;
     while (frame) {
         std::coroutine_handle<> child{};
         frame_chain_link* child_link = nullptr;
@@ -258,9 +258,22 @@ inline auto destroy_frame_chain(
             child_link = link->child_link;
             link->release_owned(link->owned_task);
         }
-        frame.destroy();
+        if (link != nullptr) {
+            link->child_frame = previous;
+            link->child_link = previous_link;
+        }
+        previous = frame;
+        previous_link = link;
         frame = child;
         link = child_link;
+    }
+    while (previous) {
+        frame = previous_link ? previous_link->child_frame
+                              : std::coroutine_handle<>{};
+        link = previous_link ? previous_link->child_link : nullptr;
+        previous.destroy();
+        previous = frame;
+        previous_link = link;
     }
 }
 

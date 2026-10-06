@@ -193,6 +193,11 @@ struct abandon_receiver {
     }
 };
 
+auto nested_readiness(forge::io::context& context, int fd)
+    -> forge::io::io_task<forge::io::io_result<>> {
+    co_return co_await forge::io::readable(context, fd);
+}
+
 } // namespace
 
 TEST(ForgeContextAwaitTest, AbandonRacesReadinessDeliveryThroughCoroutine) {
@@ -249,6 +254,23 @@ TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {
             env));
 
     EXPECT_FALSE(ready_result.has_value());
+}
+
+TEST(ForgeContextAwaitTest, AbandonNestedReadinessBeforeDelivery) {
+    forge::io::context context;
+    auto pipe = make_pipe();
+    auto state = std::make_shared<abandon_state>();
+    {
+        auto op = std::execution::connect(
+            forge::io::as_sender(nested_readiness(context, pipe.first.get())),
+            abandon_receiver{state});
+        std::execution::start(op);
+    }
+    context.shutdown();
+    context.wait();
+    EXPECT_FALSE(state->value);
+    EXPECT_FALSE(state->error);
+    EXPECT_FALSE(state->stopped);
 }
 
 #else
