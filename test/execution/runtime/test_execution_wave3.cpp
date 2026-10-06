@@ -474,7 +474,7 @@ struct StoppedProbeTask {
         std::suspend_always final_suspend() noexcept { return {}; }
         void return_void() noexcept { returned = true; }
         void unhandled_exception() noexcept { errored = true; }
-        std::coroutine_handle<> unhandled_stopped() noexcept {
+        std::coroutine_handle<> unhandled_stopped() {
             stopped = true;
             return std::noop_coroutine();
         }

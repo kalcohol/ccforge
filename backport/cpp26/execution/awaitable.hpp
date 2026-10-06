@@ -149,7 +149,7 @@ struct __single_sender_value<__forge_meta::type_list<Tuple>>
 
 template<class Promise>
 concept __has_unhandled_stopped = requires(Promise& p) {
-    { p.unhandled_stopped() } noexcept -> std::convertible_to<std::coroutine_handle<>>;
+    { p.unhandled_stopped() } -> std::convertible_to<std::coroutine_handle<>>;
 };
 
 template<class Promise>
