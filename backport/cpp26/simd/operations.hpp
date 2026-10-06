@@ -14,7 +14,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> compress(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value,
-    T fill_value) noexcept {
+    const type_identity_t<T>& fill_value) noexcept {
     basic_vec<T, Abi> result;
     simd_size_type out = 0;
     for (simd_size_type i = 0;
@@ -41,7 +41,7 @@ constexpr basic_vec<T, Abi> compress(
 template<size_t Bytes, class Abi>
 constexpr basic_mask<Bytes, Abi> compress(
     const basic_mask<Bytes, Abi>& value,
-    const basic_mask<Bytes, Abi>& mask_value,
+    const type_identity_t<basic_mask<Bytes, Abi>>& mask_value,
     bool fill_value = false) noexcept {
     basic_mask<Bytes, Abi> result(fill_value);
     simd_size_type out = 0;
@@ -87,7 +87,7 @@ constexpr basic_vec<T, Abi> expand(
 template<size_t Bytes, class Abi>
 constexpr basic_mask<Bytes, Abi> expand(
     const basic_mask<Bytes, Abi>& value,
-    const basic_mask<Bytes, Abi>& mask_value,
+    const type_identity_t<basic_mask<Bytes, Abi>>& mask_value,
     const basic_mask<Bytes, Abi>& original = basic_mask<Bytes, Abi>{}) noexcept {
     basic_mask<Bytes, Abi> result = original;
     simd_size_type in = 0;
