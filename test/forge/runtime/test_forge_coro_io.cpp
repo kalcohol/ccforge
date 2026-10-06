@@ -121,6 +121,22 @@ auto throws_from_task() -> cio::io_task<int> {
     co_return 0;
 }
 
+enum class caught_stop_completion { value, error, stopped };
+
+auto catches_stopped(caught_stop_completion completion) -> cio::io_task<int> {
+    try {
+        co_await cio::await_sender(std::execution::just_stopped());
+    } catch (const cio::sender_stopped&) {
+        if (completion == caught_stop_completion::error) {
+            throw std::runtime_error{"error after stopped"};
+        }
+        if (completion == caught_stop_completion::stopped) {
+            throw;
+        }
+    }
+    co_return 42;
+}
+
 auto completes_void(bool* observed) -> cio::io_task<void> {
     const auto& env = co_await cio::this_io_env();
     *observed = env.memory != nullptr;
@@ -238,6 +254,25 @@ TEST(ForgeCoroIoTest, IoTaskRethrowsStoredException) {
     EXPECT_THROW((void)std::execution::sync_wait(
                      cio::as_sender(throws_from_task())),
                  std::runtime_error);
+}
+
+TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithValue) {
+    auto result = std::execution::sync_wait(
+        cio::as_sender(catches_stopped(caught_stop_completion::value)));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithError) {
+    EXPECT_THROW(
+        std::execution::sync_wait(
+            cio::as_sender(catches_stopped(caught_stop_completion::error))),
+        std::runtime_error);
+}
+
+TEST(ForgeCoroIoTest, RethrownStoppedPreservesStoppedCompletion) {
+    EXPECT_FALSE(std::execution::sync_wait(
+        cio::as_sender(catches_stopped(caught_stop_completion::stopped))).has_value());
 }
 
 TEST(ForgeCoroIoTest, VoidIoTaskUsesEnv) {

@@ -105,11 +105,16 @@ stand-aside，并且 native implementation 不容忍 source 在自身 `request_s
   `forge::io::sender_stopped`；
 - `as_sender(io_task<T>, env)` 捕获 `sender_stopped` 并交付 `set_stopped()`。
 
-这个模型的 sharp edge 是用户 `catch(...)` 可以捕获 stopped 异常。如果 coroutine body 吞掉该
-异常并继续执行，promise 的 stopped 状态仍是 sticky 的：后续普通 error 不应覆盖已经决定的
-stopped completion。这个行为已经在 `forge-runtime.md` / `forge-io.md` 中写明；不要在设计
-note 中把它改写成非抛 channel。非抛 stopped channel 可以作为未来 task redesign 的独立
-taskbook，而不是本轮小修。
+这两个 bridge 的异常都能被用户 `catch(...)` 捕获，但捕获后的 completion 不同：
+
+- `forge::task` 的 stopped 状态是 sticky 的；body 即使继续执行，后续普通 error 也不会
+  覆盖已经决定的 stopped completion。
+- `forge::io::io_task` 不保存 sticky stopped 状态。body 捕获 `sender_stopped` 后正常返回会
+  交付 value，随后抛出其他异常会交付 error；只有 `sender_stopped` 继续传播到 `as_sender`
+  才会交付 stopped。
+
+不要把两者描述成同一个状态机，也不要把现有异常投递改写成非抛 channel。非抛 stopped
+channel 可以作为未来 task redesign 的独立 taskbook，而不是本轮小修。
 
 ## Known accepted limitations
 

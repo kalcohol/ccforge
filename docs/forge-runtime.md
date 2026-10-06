@@ -177,7 +177,9 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   `env.executor.schedule()`。`as_sender(io_task<T>, env)` 会把 `io_env.stop_token`
   与连接方 receiver/env stop token 融合；任一 stop source 请求都会让 coroutine 内的
   `await_sender` 观察 stopped。Stopped sender 目前通过
-  `sender_stopped` 在 task 内传播，再由 `as_sender` 映射回 stopped channel。被
+  `sender_stopped` 在 task 内传播，再由 `as_sender` 映射回 stopped channel。
+  body 捕获 `sender_stopped` 不会留下 sticky stopped 状态：随后正常返回仍交付 value，
+  抛出其他异常则交付 error。被
   `await_sender` await 的 source sender 必须允许其 operation-state 在 receiver completion
   callback 内被销毁；否则需要先用 owning adapter 或 executor hop 包装。
 
