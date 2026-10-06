@@ -108,6 +108,150 @@ TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
     EXPECT_EQ(sm::beta_fallback(2.5e305, 2.5e305), 0.0);
 }
 
+TEST(SimdMathSpecialTest, IncompleteFirstKindEllipticResolvesNearSingularEndpoints) {
+    namespace sm = std::simd::detail::special_math;
+    struct sample {
+        double modulus;
+        double amplitude;
+        long double expected;
+    };
+    // Independent 90-decimal-digit values at the exact binary input values.
+    const std::array<sample, 9> samples{{
+        {0.5, 0.3, 0.30111597966406601602586722807201428460L},
+        {0.99, 1.55, 3.20969763197262775059865317253388514919L},
+        {0.9999999999999999, 1.5707963267948963,
+            19.4081210366680757448456591724046652132L},
+        {0.9999999999999999, 1.5707963267948968,
+            19.4081210664703981325409711450598561439L},
+        {0.9999999999999999, 3.141592653589793,
+            38.8162421113569393041234537283184538679L},
+        {1.0 - 1e-12, 1.570796326795,
+            14.8552424629175943009463361997492532769L},
+        {1.0 - 1e-10, 2.0, 23.5818399467088761007084300485245757961L},
+        {0.999999, 1.56, 5.21742719973809218481407616103783022711L},
+        {0.5, 1000.0, 1073.14546387479448636901573956383799650L}
+    }};
+    const auto check = [&]<class T>() {
+        for (const auto& value : samples) {
+            SCOPED_TRACE(value.modulus);
+            SCOPED_TRACE(value.amplitude);
+            const T expected = static_cast<T>(value.expected);
+            const T actual = sm::ellint_1_fallback(
+                static_cast<T>(value.modulus), static_cast<T>(value.amplitude));
+            const T tolerance = std::max(
+                T{128} * std::numeric_limits<T>::epsilon(), T{2e-12L}) * expected;
+            EXPECT_LE(std::abs(actual - expected), tolerance);
+            EXPECT_EQ(sm::ellint_1_fallback(
+                static_cast<T>(-value.modulus), static_cast<T>(value.amplitude)), actual);
+            EXPECT_EQ(sm::ellint_1_fallback(
+                static_cast<T>(value.modulus), static_cast<T>(-value.amplitude)), -actual);
+        }
+    };
+    check.template operator()<double>();
+    check.template operator()<long double>();
+
+#if !defined(__cpp_lib_math_special_functions)
+    const auto k = load_vec<double4>(std::array<double, 4>{{
+        samples[2].modulus, samples[3].modulus, samples[4].modulus, samples[6].modulus}});
+    const auto phi = load_vec<double4>(std::array<double, 4>{{
+        samples[2].amplitude, samples[3].amplitude, samples[4].amplitude, samples[6].amplitude}});
+    const auto actual = std::simd::ellint_1(k, phi);
+    const std::array<std::size_t, 4> indices{{2, 3, 4, 6}};
+    for (std::simd::simd_size_type lane = 0; lane < double4::size; ++lane) {
+        const double expected = static_cast<double>(samples[indices[lane]].expected);
+        EXPECT_NEAR(actual[lane], expected, expected * 2e-12);
+    }
+#endif
+}
+
+TEST(SimdMathSpecialTest, FirstKindEllipticFloatAndPeriodIdentitiesStayStable) {
+    namespace sm = std::simd::detail::special_math;
+    struct sample { float modulus; float amplitude; double expected; };
+    const std::array<sample, 3> samples{{
+        {0.9999999403953552f, 1.5700000524520874f, 7.78471665892119619999},
+        {0.9900000095367432f, 1.5499999523162842f, 3.20969769381920588635},
+        {0.9999999403953552f, 2.0f, 17.1915220705822363471}
+    }};
+    for (const auto& value : samples) {
+        EXPECT_NEAR(sm::ellint_1_fallback(value.modulus, value.amplitude),
+            static_cast<float>(value.expected), static_cast<float>(value.expected) * 5e-7f);
+    }
+    for (const double modulus : {0.0, 0.25, 0.9, 1.0 - 1e-14}) {
+        const double complete = sm::comp_ellint_1_fallback(modulus);
+        for (const double angle : {0.125, 0.75, 1.5}) {
+            const double first = sm::ellint_1_fallback(modulus, angle);
+            EXPECT_NEAR(sm::ellint_1_fallback(modulus, std::numbers::pi - angle) + first,
+                2.0 * complete, complete * 3e-12);
+            EXPECT_NEAR(sm::ellint_1_fallback(modulus, std::numbers::pi + angle) - first,
+                2.0 * complete, complete * 3e-12);
+        }
+    }
+    EXPECT_TRUE(std::signbit(sm::ellint_1_fallback(0.5, -0.0)));
+    EXPECT_EQ(sm::ellint_1_fallback(0.0, 1e300), 1e300);
+}
+
+TEST(SimdMathSpecialTest, FirstKindEllipticUsesEachTypesOwnEndpointNeighbors) {
+    namespace sm = std::simd::detail::special_math;
+    const auto check = []<class T>() {
+        constexpr int digits = std::numeric_limits<T>::digits;
+        // Keep the oracle inputs independent of a library's numbers constants.
+        constexpr T rounded_pi = static_cast<T>(
+            3.141592653589793238462643383279502884L);
+        if constexpr (digits == 24 || digits == 53 || digits == 64 || digits == 113) {
+            constexpr std::array<long double, 3> reference = [] {
+                if constexpr (digits == 24) {
+                    return std::array<long double, 3>{{
+                        9.35726853625712452419961169912096170L,
+                        9.35795907021416315949714006438448718L,
+                        93.5748726908620045883935610423762318L}};
+                } else if constexpr (digits == 53) {
+                    return std::array<long double, 3>{{
+                        19.4081210366680757448456591724046652L,
+                        19.4081210664703981325409711450598561L,
+                        194.081210556784696520617268641592269L}};
+                } else if constexpr (digits == 64) {
+                    return std::array<long double, 3>{{
+                        23.2204305485050720519909168624919871L,
+                        23.2204305491636165599736361091584915L,
+                        232.204305487581678660965133174817873L}};
+                } else {
+                    return std::array<long double, 3>{{
+                        40.2025364724768279291973263671075339L,
+                        40.2025364724768279569529019827364474L,
+                        402.025364724768279461994630445742428L}};
+                }
+            }();
+            const T modulus = std::nextafter(T{1}, T{});
+            const T half_pi = rounded_pi / T{2};
+            const std::array<T, 3> angles{{
+                std::nextafter(half_pi, T{}),
+                std::nextafter(half_pi, std::numeric_limits<T>::infinity()),
+                T{5} * rounded_pi}};
+            for (std::size_t i = 0; i < angles.size(); ++i) {
+                const T expected = static_cast<T>(reference[i]);
+                EXPECT_LE(std::abs(sm::ellint_1_fallback(modulus, angles[i]) - expected),
+                    T{128} * std::numeric_limits<T>::epsilon() * expected);
+            }
+        }
+        const T modulus = std::nextafter(T{1}, T{});
+        const T complete = sm::comp_ellint_1_fallback(modulus);
+        for (const T multiplier : {T{1}, T{2}, T{3}, T{5}, T{8}}) {
+            const T angle = multiplier * rounded_pi;
+            const T before = sm::ellint_1_fallback(modulus, std::nextafter(angle, T{}));
+            const T actual = sm::ellint_1_fallback(modulus, angle);
+            const T after = sm::ellint_1_fallback(
+                modulus, std::nextafter(angle, std::numeric_limits<T>::infinity()));
+            EXPECT_LE(before, actual);
+            EXPECT_LE(actual, after);
+            EXPECT_LE(std::abs(actual - T{2} * multiplier * complete),
+                T{64} * std::sqrt(std::numeric_limits<T>::epsilon()) * complete);
+        }
+    };
+    check.template operator()<float>();
+    check.template operator()<double>();
+    check.template operator()<long double>();
+}
+
 #if !defined(__cpp_lib_math_special_functions)
 TEST(SimdMathSpecialTest, EllipticFallbackBoundsLargeAmplitudeWork) {
     std::size_t evaluations = 0;

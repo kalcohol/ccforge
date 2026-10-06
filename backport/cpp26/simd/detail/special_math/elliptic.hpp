@@ -2,6 +2,50 @@
 
 namespace detail::special_math {
 
+inline long double carlson_rf(long double x, long double y, long double z) {
+    if (std::isnan(x) || std::isnan(y) || std::isnan(z) ||
+        x < 0.0L || y < 0.0L || z < 0.0L) {
+        return quiet_nan<long double>();
+    }
+    if ((x == 0.0L && y == 0.0L) ||
+        (y == 0.0L && z == 0.0L) || (z == 0.0L && x == 0.0L)) {
+        return infinity<long double>();
+    }
+    const long double scale = std::max({x, y, z});
+    if (std::isinf(scale)) {
+        return 0.0L;
+    }
+    x /= scale;
+    y /= scale;
+    z /= scale;
+    const long double tolerance = std::pow(
+        std::numeric_limits<long double>::epsilon() / 100.0L, 0.125L);
+    for (unsigned iteration = 0; iteration < 128u; ++iteration) {
+        const long double mean = (x + y + z) / 3.0L;
+        const long double dx = (mean - x) / mean;
+        const long double dy = (mean - y) / mean;
+        const long double dz = (mean - z) / mean;
+        if (std::max({std::abs(dx), std::abs(dy), std::abs(dz)}) < tolerance) {
+            // Carlson duplication and the degree-seven expansion, DLMF 19.36.1.
+            const long double e2 = dx * dy + dy * dz + dz * dx;
+            const long double e3 = dx * dy * dz;
+            const long double polynomial = 1.0L - e2 / 10.0L + e3 / 14.0L +
+                e2 * e2 / 24.0L - 3.0L * e2 * e3 / 44.0L -
+                5.0L * e2 * e2 * e2 / 208.0L + 3.0L * e3 * e3 / 104.0L +
+                e2 * e2 * e3 / 16.0L;
+            return polynomial / std::sqrt(mean) / std::sqrt(scale);
+        }
+        const long double sx = std::sqrt(x);
+        const long double sy = std::sqrt(y);
+        const long double sz = std::sqrt(z);
+        const long double lambda = sx * sy + sy * sz + sz * sx;
+        x = (x + lambda) / 4.0L;
+        y = (y + lambda) / 4.0L;
+        z = (z + lambda) / 4.0L;
+    }
+    return quiet_nan<long double>();
+}
+
 template<class T, class Fun>
 T elliptic_integral(T upper, Fun&& integrand) {
     if (upper == T{}) {
@@ -85,14 +129,35 @@ T ellint_1_fallback(T k, T phi) {
         return std::copysign(complete_ellint_1_agm(k), phi);
     }
 
-    return elliptic_integral(phi, [&](T theta) {
-        const T s = std::sin(theta);
-        const T radicand = T{1} - k * k * s * s;
-        if (radicand <= T{}) {
-            return infinity<T>();
-        }
-        return T{1} / std::sqrt(radicand);
-    });
+    if (k == T{} || std::isinf(phi)) {
+        return phi;
+    }
+    const long double modulus = std::abs(static_cast<long double>(k));
+    const long double complementary = (1.0L - modulus) * (1.0L + modulus);
+    const long double bound = std::abs(static_cast<long double>(phi));
+    const long double period = pi_v<long double>;
+    int quotient_bits;
+    const long double remainder = std::remquo(bound, period, &quotient_bits);
+    long double periods = std::round((bound - remainder) / period);
+    long double sine = std::sin(bound);
+    long double cosine = std::cos(bound);
+    if ((quotient_bits & 1) != 0) {
+        sine = -sine;
+        cosine = -cosine;
+    }
+    // Use libm's original-angle reduction near the pole, not pi - phi.
+    // Correct the nearest-period choice if rounded pi selected the other side.
+    if (cosine < 0.0L) {
+        periods += std::copysign(1.0L, sine);
+        sine = -sine;
+    }
+    const long double cosine2 = cosine * cosine;
+    long double value = sine * carlson_rf(
+        cosine2, cosine2 + complementary * sine * sine, 1.0L);
+    if (periods != 0.0L) {
+        value += periods * 2.0L * complete_ellint_1_agm(modulus);
+    }
+    return std::copysign(static_cast<T>(value), phi);
 }
 
 template<class T>
