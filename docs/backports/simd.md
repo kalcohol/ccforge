@@ -28,6 +28,27 @@ libstdc++ lane 充当 fallback oracle。
 `comp_ellint_3` 在 characteristic 从下方接近 1 时使用缩放变量变换，避免窄峰
 超过自适应求积的细分深度；零模数路径使用闭式表达式并显式区分极点两侧。
 
+## Mask 变换的 ABI
+
+mask 的 `permute`、`chunk`、`cat` 和 SIMD 下标操作不保证保留输入的 ABI
+类型，也不保证结果与同宽向量的 `mask_type` 是同一类型。
+[simd.traits](https://eel.is/c++draft/simd.traits) 和
+[simd.creation](https://eel.is/c++draft/simd.creation) 要求结果满足对应的 lane 数
+与元素字节大小约束，但允许实现选择具体 ABI。Forge 使用代表类型推导 mask
+变换结果的 ABI；这是符合草案的选择。保留原 ABI identity 属于 QoI，不是可移植保证。
+
+需要把变换后的 mask 传给 `select` 等操作时，在 lane 数匹配的前提下先显式构造
+`V::mask_type`；[mask 转换构造](https://eel.is/c++draft/simd.mask.ctor) 逐 lane 保留布尔值：
+
+```cpp
+using V = std::simd::vec<float, 4>;
+const V values([](auto i) { return static_cast<float>(i) - 1.0f; });
+const auto parts = std::simd::chunk<2>(values > V(0.0f));
+const auto transformed = std::simd::cat(parts[1], parts[0]);
+const V::mask_type selector(transformed);
+const V result = std::simd::select(selector, values, V(0.0f));
+```
+
 ## 验证
 
 已在 x86_64、aarch64、riscv64、loongarch64 四架构验证。
