@@ -173,6 +173,60 @@ struct int_start_receiver {
     }
 };
 
+template<class Completion, class Attrs>
+concept has_on_completion_scheduler = requires(const Attrs& attrs) {
+    std::execution::get_completion_scheduler<Completion>(attrs);
+};
+
+struct on_child_domain {};
+
+struct inline_error_sender {
+    using sender_concept = std::execution::sender_t;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_error_t(int)> {
+        return {};
+    }
+
+    auto get_env() const noexcept {
+        return std::execution::make_env(
+            std::execution::make_prop(
+                std::execution::get_completion_scheduler<std::execution::set_error_t>,
+                std::execution::inline_scheduler{}),
+            std::execution::make_prop(
+                std::execution::get_completion_domain<std::execution::set_error_t>,
+                on_child_domain{}));
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const {
+        return std::execution::connect(std::execution::just_error(42), std::move(r));
+    }
+};
+
+struct borrowed_on_attributes {
+    borrowed_on_attributes() = default;
+    borrowed_on_attributes(const borrowed_on_attributes&) = delete;
+
+    auto query(std::execution::get_completion_scheduler_t<
+               std::execution::set_value_t>) const noexcept
+        -> std::execution::inline_scheduler { return {}; }
+};
+
+struct borrowed_on_sender : stack_value_sender {
+    const borrowed_on_attributes* attrs;
+    int* reads;
+
+    borrowed_on_sender(const borrowed_on_attributes& env, int* count) noexcept
+        : attrs(&env), reads(count) {}
+
+    auto get_env() const noexcept -> const borrowed_on_attributes& {
+        ++*reads;
+        return *attrs;
+    }
+};
+
 template<class CS>
 struct has_exception_ptr_error : std::false_type {};
 
@@ -488,6 +542,102 @@ TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {
 
     EXPECT_TRUE(completed);
     EXPECT_EQ(value, 42);
+}
+
+TEST(OnTest, FirstFormDoesNotAdvertiseChildValueOrStoppedScheduler) {
+    std::execution::run_loop child_loop;
+    auto child = std::execution::schedule(child_loop.get_scheduler());
+    auto child_attrs = std::execution::get_env(child);
+    static_assert(has_on_completion_scheduler<std::execution::set_value_t,
+        decltype(child_attrs)>);
+    static_assert(has_on_completion_scheduler<std::execution::set_stopped_t,
+        decltype(child_attrs)>);
+
+    auto sndr = std::execution::on(std::execution::inline_scheduler{}, std::move(child));
+    auto attrs = std::execution::get_env(sndr);
+    static_assert(!has_on_completion_scheduler<std::execution::set_value_t,
+        decltype(attrs)>);
+    static_assert(!has_on_completion_scheduler<std::execution::set_error_t,
+        decltype(attrs)>);
+    static_assert(!has_on_completion_scheduler<std::execution::set_stopped_t,
+        decltype(attrs)>);
+    SUCCEED();
+}
+
+TEST(OnTest, FirstFormDoesNotAdvertiseChildErrorSchedulerOrDomain) {
+    auto child = inline_error_sender{};
+    using child_attrs = decltype(std::execution::get_env(child));
+    static_assert(has_on_completion_scheduler<std::execution::set_error_t, child_attrs>);
+    static_assert(std::is_invocable_v<
+        std::execution::get_completion_domain_t<std::execution::set_error_t>,
+        child_attrs, std::execution::empty_env>);
+
+    auto sndr = std::execution::on(std::execution::inline_scheduler{}, std::move(child));
+    using attrs = decltype(std::execution::get_env(sndr));
+    static_assert(!has_on_completion_scheduler<std::execution::set_error_t, attrs>);
+    static_assert(!std::is_invocable_v<
+        std::execution::get_completion_domain_t<std::execution::set_error_t>,
+        attrs, std::execution::empty_env>);
+    SUCCEED();
+}
+
+TEST(OnTest, FirstFormDoesNotReadOrCopyBorrowedChildAttributes) {
+    borrowed_on_attributes child_attrs;
+    int reads = 0;
+    auto sndr = std::execution::on(
+        std::execution::inline_scheduler{}, borrowed_on_sender{child_attrs, &reads});
+    auto attrs = std::execution::get_env(sndr);
+    static_assert(!has_on_completion_scheduler<std::execution::set_value_t,
+        decltype(attrs)>);
+    EXPECT_EQ(reads, 0);
+}
+
+TEST(OnTest, FirstFormLetInnerEnvironmentMatchesActualReturnScheduler) {
+    std::execution::run_loop child_loop;
+    std::execution::run_loop target_loop;
+    std::execution::run_loop receiver_loop;
+    auto child_scheduler = child_loop.get_scheduler();
+    auto target_scheduler = target_loop.get_scheduler();
+    auto receiver_scheduler = receiver_loop.get_scheduler();
+
+    std::thread child_worker([&] { child_loop.run(); });
+    std::thread target_worker([&] { target_loop.run(); });
+    std::thread receiver_worker([&] { receiver_loop.run(); });
+    run_loop_workers_guard workers{
+        child_loop, target_loop, receiver_loop,
+        child_worker, target_worker, receiver_worker};
+    const auto expected_thread = receiver_worker.get_id();
+    std::thread::id observed_thread;
+
+    auto sndr = std::execution::starts_on(
+        receiver_scheduler,
+        std::execution::let_value(
+            std::execution::on(
+                target_scheduler, std::execution::schedule(child_scheduler)),
+            [&observed_thread]() noexcept {
+                observed_thread = std::this_thread::get_id();
+                return std::execution::read_env(std::execution::get_start_scheduler);
+            }));
+    auto result = std::execution::sync_wait(std::move(sndr));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), receiver_scheduler);
+    EXPECT_NE(std::get<0>(*result), child_scheduler);
+    EXPECT_NE(std::get<0>(*result), target_scheduler);
+    EXPECT_EQ(observed_thread, expected_thread);
+}
+
+TEST(OnTest, ClosureFormKeepsChildCompletionSchedulerAttribute) {
+    std::execution::run_loop child_loop;
+    auto child_scheduler = child_loop.get_scheduler();
+    auto sndr = std::execution::on(
+        std::execution::schedule(child_scheduler),
+        std::execution::inline_scheduler{},
+        std::execution::then([] {}));
+    auto attrs = std::execution::get_env(sndr);
+
+    EXPECT_EQ(std::execution::get_completion_scheduler<std::execution::set_value_t>(attrs),
+        child_scheduler);
 }
 
 TEST(OnTest, ClosureFormReturnsToChildCompletionScheduler) {

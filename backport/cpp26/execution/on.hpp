@@ -286,8 +286,9 @@ struct __sender {
         return __op<Scheduler, S, R>{__sch, __sndr, std::move(r)};
     }
 
-    auto get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+    auto get_env() const noexcept -> empty_env {
+        // Completion returns to the receiver's start scheduler, not the child's.
+        return {};
     }
 };
 
