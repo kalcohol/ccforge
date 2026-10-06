@@ -160,7 +160,7 @@ struct __inner_recv {
             {
                 std::lock_guard lk{st->mtx};
                 st->result.template emplace<1>(
-                    std::make_tuple(std::decay_t<Vs>(vs)...));
+                    static_cast<Vs&&>(vs)...);
                 st->phase = __shared_state<S>::Phase::done;
             }
             st->notify_all();

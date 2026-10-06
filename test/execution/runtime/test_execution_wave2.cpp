@@ -3,6 +3,7 @@
 #include <forge/static_thread_pool.hpp>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -124,6 +125,24 @@ TEST(SplitTest, HappyPath) {
     EXPECT_EQ(std::get<0>(*r1), 42);
     EXPECT_EQ(std::get<0>(*r2), 42);
     EXPECT_EQ(std::get<0>(*r3), 42);
+}
+
+TEST(SplitTest, CachesMoveOnlyValueForMultipleSubscribers) {
+    auto sender = std::execution::split(
+        std::execution::just(std::make_unique<int>(42)));
+    auto read_cached = std::execution::then(
+        [](const std::unique_ptr<int>& value) noexcept {
+            return value.get();
+        });
+
+    auto first = std::execution::sync_wait(sender | read_cached);
+    auto second = std::execution::sync_wait(sender | read_cached);
+
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    ASSERT_NE(std::get<0>(*first), nullptr);
+    EXPECT_EQ(std::get<0>(*first), std::get<0>(*second));
+    EXPECT_EQ(*std::get<0>(*first), 42);
 }
 
 TEST(SplitTest, ContinuesOnCopiesCachedReferenceValuesAcrossHop) {
