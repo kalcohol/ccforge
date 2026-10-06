@@ -270,7 +270,7 @@ template<class... Envs>
 struct env {
     constexpr explicit env(Envs... envs)
         noexcept((std::is_nothrow_move_constructible_v<Envs> && ...))
-        : __envs(std::move(envs)...)
+        : __envs(std::forward<Envs>(envs)...)
     {}
 
 private:
@@ -315,11 +315,11 @@ private:
 };
 
 template<class... Envs>
-env(Envs...) -> env<Envs...>;
+env(Envs...) -> env<std::unwrap_reference_t<Envs>...>;
 
 template<class... Envs>
 [[nodiscard]] auto make_env(Envs&&... envs) {
-    return env<std::decay_t<Envs>...>{std::forward<Envs>(envs)...};
+    return env{std::forward<Envs>(envs)...};
 }
 
 // get_completion_scheduler CPO — [exec.getcomplsched]

@@ -237,6 +237,24 @@ TEST(WriteEnvTest, PropQueriesBorrowMoveOnlyValuesWithoutCopying) {
     EXPECT_EQ(std::execution::get_allocator(property).value, 42);
 }
 
+TEST(EnvTest, ReferenceWrapperBorrowsMemberQueryEnvironment) {
+    std::inplace_stop_source source;
+    member_stop_query_env parent{source.get_token()};
+    auto env = std::execution::env{std::ref(parent)};
+    static_assert(std::same_as<decltype(env),
+                              std::execution::env<member_stop_query_env&>>);
+    EXPECT_EQ(std::execution::get_stop_token(env), source.get_token());
+
+    parent.token = {};
+    EXPECT_FALSE(std::execution::get_stop_token(env).stop_possible());
+
+    const member_stop_query_env const_parent{source.get_token()};
+    auto const_env = std::execution::make_env(std::cref(const_parent));
+    static_assert(std::same_as<decltype(const_env),
+        std::execution::env<const member_stop_query_env&>>);
+    EXPECT_EQ(std::execution::get_stop_token(const_env), source.get_token());
+}
+
 TEST(WriteEnvTest, GetEnvPreservesMemberReferenceWithoutCopying) {
     member_reference_env_holder holder;
     static_assert(std::same_as<
