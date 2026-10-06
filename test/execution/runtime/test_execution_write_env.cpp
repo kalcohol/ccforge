@@ -13,7 +13,8 @@ constexpr auto empty_composed_environment() -> std::execution::env<> {
     return {};
 }
 
-static_assert(std::is_empty_v<decltype(empty_composed_environment())>);
+static_assert(std::same_as<decltype(empty_composed_environment()),
+                           std::execution::env<>>);
 
 struct scheduler_receiver {
     using receiver_concept = std::execution::receiver_t;
