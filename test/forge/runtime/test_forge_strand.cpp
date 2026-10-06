@@ -432,6 +432,72 @@ TEST(StrandTest, WaitFromOwnCompletionDoesNotSelfDeadlock) {
     delete pool;
 }
 
+TEST(StrandTest, CallableCleanupRemainsInsideTheStrandTurnAndWaitBarrier) {
+    forge::static_thread_pool pool{2};
+    forge::strand strand{pool.get_scheduler()};
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool release_first = false;
+    bool cleanup_entered = false;
+    bool release_cleanup = false;
+    bool second_started = false;
+    bool waiter_started = false;
+    bool waiter_returned = false;
+    auto owned = std::shared_ptr<void>{nullptr, [&](void*) noexcept {
+        std::unique_lock lock{mutex};
+        cleanup_entered = true;
+        cv.notify_all();
+        cv.wait(lock, [&] { return release_cleanup; });
+        lock.unlock();
+        strand.wait();
+    }};
+
+    forge::start_detached(
+        std::execution::schedule(strand.get_scheduler())
+        | std::execution::then([&, owned = std::move(owned)] noexcept {
+            std::unique_lock lock{mutex};
+            cv.wait(lock, [&] { return release_first; });
+        }));
+    forge::start_detached(
+        std::execution::schedule(strand.get_scheduler())
+        | std::execution::then([&] noexcept {
+            std::unique_lock lock{mutex};
+            cv.wait(lock, [&] { return cleanup_entered; });
+            second_started = true;
+            cv.notify_all();
+        }));
+
+    std::thread waiter{[&] {
+        {
+            std::lock_guard lock{mutex};
+            waiter_started = true;
+            cv.notify_all();
+        }
+        strand.wait();
+        std::lock_guard lock{mutex};
+        waiter_returned = true;
+        cv.notify_all();
+    }};
+
+    {
+        std::unique_lock lock{mutex};
+        release_first = true;
+        cv.notify_all();
+        EXPECT_TRUE(cv.wait_for(lock, 2s, [&] {
+            return cleanup_entered && waiter_started;
+        }));
+        EXPECT_FALSE(cv.wait_for(lock, 100ms, [&] {
+            return second_started || waiter_returned;
+        }));
+        release_cleanup = true;
+        cv.notify_all();
+    }
+    waiter.join();
+    pool.wait();
+    EXPECT_TRUE(second_started);
+    EXPECT_TRUE(waiter_returned);
+}
+
 TEST(StrandTest, WaitRecognizesOuterNestedStrandCompletion) {
     auto* pool = new forge::static_thread_pool{1};
     auto* outer = new forge::strand{pool->get_scheduler()};

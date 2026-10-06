@@ -330,6 +330,8 @@ struct __state : std::enable_shared_from_this<__state> {
             } else {
                 record->complete_value();
             }
+            // Receiver cleanup remains part of this turn, including reentrant wait().
+            record.reset();
         }
 
         bool launch = false;
