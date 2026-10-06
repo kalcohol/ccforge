@@ -128,6 +128,24 @@ _forge_compute_probe_fingerprint(_forge_toolchain_b 23)
 _forge_require_fingerprint_change(
     "same-path toolchain content" "${_forge_toolchain_a}" "${_forge_toolchain_b}")
 
+set(_forge_fragment_header_name "forge-fragment-only.hpp")
+set(_forge_fragment "${FORGE_FINGERPRINT_WORK_DIR}/probe-fragment.cmake")
+set(_forge_fragment_header
+    "${FORGE_FINGERPRINT_WORK_DIR}/${_forge_fragment_header_name}")
+file(WRITE "${_forge_fragment}" "#include <${_forge_fragment_header_name}>\n")
+set(CMAKE_REQUIRED_INCLUDES "${FORGE_FINGERPRINT_WORK_DIR}")
+file(WRITE "${_forge_fragment_header}" "#define FORGE_FRAGMENT_REVISION 1\n")
+_forge_compute_probe_fingerprint(_forge_fragment_a 23 "${_forge_fragment}")
+file(WRITE "${_forge_fragment_header}" "#define FORGE_FRAGMENT_REVISION 2\n")
+_forge_compute_probe_fingerprint(_forge_fragment_b 23 "${_forge_fragment}")
+_forge_require_fingerprint_change(
+    "same-path header included only by a probe fragment"
+    "${_forge_fragment_a}" "${_forge_fragment_b}")
+_forge_compute_probe_fingerprint(_forge_fragment_stable 23 "${_forge_fragment}")
+if(NOT _forge_fragment_stable STREQUAL _forge_fragment_b)
+    message(FATAL_ERROR "Unchanged fragment dependencies invalidated the fingerprint")
+endif()
+
 set(FORGE_B03_FAILED "" CACHE INTERNAL "failed fixture" FORCE)
 set(FORGE_B03_PASSED 1 CACHE INTERNAL "passed fixture" FORCE)
 set(FORGE_B03_FINGERPRINT stable CACHE INTERNAL "fixture fingerprint" FORCE)

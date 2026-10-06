@@ -322,6 +322,8 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
             _forge_payload "${_forge_payload}"
             "probe-source:${_forge_probe_source_index}"
             "${_forge_probe_source_path}")
+        _forge_append_probe_header_digests(
+            _forge_payload "${_forge_payload}" "${_forge_probe_source_path}")
         math(EXPR _forge_probe_source_index
             "${_forge_probe_source_index} + 1")
     endforeach()
