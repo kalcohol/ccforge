@@ -216,6 +216,14 @@ struct is_simd_floating_value : false_type {};
 template<class T, class Abi>
 struct is_simd_floating_value<basic_vec<T, Abi>> : is_floating_point<T> {};
 
+template<class V>
+using deduced_math_vector_t = decltype(declval<const V&>() + declval<const V&>());
+
+template<class V>
+concept math_floating_point =
+    is_simd_floating_value<deduced_math_vector_t<V>>::value &&
+    is_default_constructible<deduced_math_vector_t<V>>::value;
+
 template<class T>
 struct is_simd_signed_integral_value : false_type {};
 
