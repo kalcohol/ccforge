@@ -393,8 +393,9 @@ public:
                  !detail::is_simd_generator<U, T, simd_size<T, Abi>::value>::value,
                  int>::type = 0>
     constexpr basic_vec(U&& value) noexcept : data_{} {
+        const T converted = static_cast<T>(static_cast<U&&>(value));
         for (simd_size_type i = 0; i < size; ++i) {
-            data_[i] = static_cast<T>(static_cast<U&&>(value));
+            data_[i] = converted;
         }
     }
     template<class G,
