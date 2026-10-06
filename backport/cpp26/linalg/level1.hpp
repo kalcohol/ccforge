@@ -445,7 +445,14 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
     using std::sqrt;
 
     if (b == complex{}) return {Real{1}, complex{}, a};
-    if (a == complex{}) return {Real{0}, complex{1}, b};
+    if (a == complex{}) {
+        const Real scale = std::max(abs(b.real()), abs(b.imag()));
+        const complex scaled_b{b.real() / scale, b.imag() / scale};
+        const Real scaled_norm = sqrt(norm(scaled_b));
+        // Normalize the phase independently of the rounded norm for subnormal b.
+        const complex s = conj(scaled_b) / scaled_norm;
+        return {Real{0}, s, complex{std::hypot(b.real(), b.imag()), Real{0}}};
+    }
 
     const Real abs_a = abs(a);
     const Real abs_b = abs(b);

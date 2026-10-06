@@ -711,6 +711,103 @@ TEST(LinalgLevel1Givens, ComplexRotationUsesRealCAndConjugateS) {
     EXPECT_NEAR(y[0].imag(), 0.0, 1e-12);
 }
 
+TEST(LinalgLevel1Givens, ComplexZeroFirstInputUsesRealNormAndConjugatePhase) {
+    using complex = std::complex<double>;
+    const auto check = [](complex b, complex expected_s, double expected_r) {
+        SCOPED_TRACE(b);
+        const auto rotation = std::linalg::setup_givens_rotation(complex{}, b);
+        EXPECT_DOUBLE_EQ(rotation.c, 0.0);
+        EXPECT_NEAR(rotation.s.real(), expected_s.real(), 1e-12);
+        EXPECT_NEAR(rotation.s.imag(), expected_s.imag(), 1e-12);
+        EXPECT_DOUBLE_EQ(rotation.r.real(), expected_r);
+        EXPECT_DOUBLE_EQ(rotation.r.imag(), 0.0);
+        EXPECT_NEAR(std::norm(rotation.s), 1.0, 1e-12);
+
+        complex x_data[] = {complex{}};
+        complex y_data[] = {b};
+        std::mdspan x(x_data, std::extents<int, 1>{});
+        std::mdspan y(y_data, std::extents<int, 1>{});
+        std::linalg::apply_givens_rotation(x, y, rotation.c, rotation.s);
+        EXPECT_NEAR(x[0].real(), expected_r, 1e-12);
+        EXPECT_NEAR(x[0].imag(), 0.0, 1e-12);
+        EXPECT_EQ(y[0], complex{});
+    };
+
+    check(complex{3.0, 4.0}, complex{0.6, -0.8}, 5.0);
+    check(complex{0.0, -4.0}, complex{0.0, 1.0}, 4.0);
+    check(complex{-5.0, 0.0}, complex{-1.0, 0.0}, 5.0);
+}
+
+TEST(LinalgLevel1Givens, ComplexZeroInputsKeepIdentity) {
+    using complex = std::complex<double>;
+    const auto rotation = std::linalg::setup_givens_rotation(complex{}, complex{});
+    EXPECT_DOUBLE_EQ(rotation.c, 1.0);
+    EXPECT_EQ(rotation.s, complex{});
+    EXPECT_EQ(rotation.r, complex{});
+}
+
+TEST(LinalgLevel1Givens, ComplexRotationPreservesNonzeroInputPhase) {
+    using complex = std::complex<double>;
+    const complex a{0.0, 3.0};
+    const complex b{4.0, 0.0};
+    const auto rotation = std::linalg::setup_givens_rotation(a, b);
+    EXPECT_NEAR(rotation.c, 0.6, 1e-12);
+    EXPECT_NEAR(rotation.s.real(), 0.0, 1e-12);
+    EXPECT_NEAR(rotation.s.imag(), 0.8, 1e-12);
+    EXPECT_NEAR(rotation.r.real(), 0.0, 1e-12);
+    EXPECT_NEAR(rotation.r.imag(), 5.0, 1e-12);
+    EXPECT_NEAR(std::abs(rotation.c * a + rotation.s * b - rotation.r), 0.0, 1e-12);
+    EXPECT_NEAR(std::abs(-std::conj(rotation.s) * a + rotation.c * b), 0.0, 1e-12);
+
+    const auto identity = std::linalg::setup_givens_rotation(a, complex{});
+    EXPECT_DOUBLE_EQ(identity.c, 1.0);
+    EXPECT_EQ(identity.s, complex{});
+    EXPECT_EQ(identity.r, a);
+}
+
+TEST(LinalgLevel1Givens, ComplexZeroFirstInputNormalizesExtremeFinitePhase) {
+    using complex = std::complex<double>;
+    struct case_t {
+        complex b;
+        complex s;
+        double r;
+        double scale;
+    };
+    const double sqrt2 = std::sqrt(2.0);
+    const double inv_sqrt2 = 1.0 / sqrt2;
+    const double huge = 0.6 * std::numeric_limits<double>::max();
+    const double tiny = std::numeric_limits<double>::min();
+    const double subnormal = std::numeric_limits<double>::denorm_min();
+    const std::array cases{
+        case_t{{huge, huge}, {inv_sqrt2, -inv_sqrt2}, huge * sqrt2, huge},
+        case_t{{1.7976931146382683e308, 2.696539671957402e304},
+               {0.99999998875, -0.0001499999983125},
+               std::numeric_limits<double>::max(), 1.7976931146382683e308},
+        case_t{{tiny, -tiny}, {inv_sqrt2, inv_sqrt2}, tiny * sqrt2, tiny},
+        case_t{{subnormal, subnormal}, {inv_sqrt2, -inv_sqrt2}, subnormal, subnormal},
+        case_t{{3.0 * subnormal, -4.0 * subnormal}, {0.6, 0.8},
+               5.0 * subnormal, subnormal},
+    };
+    for (const auto& test_case : cases) {
+        SCOPED_TRACE(test_case.b);
+        const auto rotation = std::linalg::setup_givens_rotation(complex{}, test_case.b);
+        EXPECT_DOUBLE_EQ(rotation.c, 0.0);
+        EXPECT_NEAR(rotation.s.real(), test_case.s.real(), 1e-12);
+        EXPECT_NEAR(rotation.s.imag(), test_case.s.imag(), 1e-12);
+        EXPECT_NEAR(std::norm(rotation.s), 1.0, 1e-12);
+        EXPECT_TRUE(std::isfinite(rotation.r.real()));
+        EXPECT_DOUBLE_EQ(rotation.r.real(), test_case.r);
+        EXPECT_NEAR(rotation.r.real() / test_case.r, 1.0, 1e-12);
+        EXPECT_DOUBLE_EQ(rotation.r.imag(), 0.0);
+
+        const complex scaled_b{test_case.b.real() / test_case.scale,
+                               test_case.b.imag() / test_case.scale};
+        const complex rotated = rotation.s * scaled_b;
+        EXPECT_NEAR(rotated.real(), std::abs(scaled_b), 1e-12);
+        EXPECT_NEAR(rotated.imag(), 0.0, 1e-12);
+    }
+}
+
 TEST(LinalgLevel1Givens, ComplexRotationAvoidsFiniteScaleOverflow) {
     using complex = std::complex<double>;
     const double component = 0.6 * std::numeric_limits<double>::max();
