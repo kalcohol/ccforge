@@ -233,6 +233,38 @@ struct borrowed_on_sender : stack_value_sender {
     }
 };
 
+template<class Completion>
+struct borrowed_let_sender {
+    using sender_concept = std::execution::sender_t;
+    const borrowed_on_attributes* attrs;
+    int* reads;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        if constexpr (std::same_as<Completion, std::execution::set_stopped_t>) {
+            return std::execution::completion_signatures<Completion()>{};
+        } else {
+            return std::execution::completion_signatures<Completion(int)>{};
+        }
+    }
+
+    auto get_env() const noexcept -> const borrowed_on_attributes& {
+        ++*reads;
+        return *attrs;
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const {
+        if constexpr (std::same_as<Completion, std::execution::set_value_t>) {
+            return std::execution::connect(std::execution::just(41), std::move(r));
+        } else if constexpr (std::same_as<Completion, std::execution::set_error_t>) {
+            return std::execution::connect(std::execution::just_error(41), std::move(r));
+        } else {
+            return std::execution::connect(std::execution::just_stopped(), std::move(r));
+        }
+    }
+};
+
 template<class CS>
 struct has_exception_ptr_error : std::false_type {};
 
@@ -710,6 +742,31 @@ TEST(LetValueTest, ChainNewSender) {
     auto result = std::execution::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 43);
+}
+
+TEST(LetEnvironmentTest, BorrowedNoncopyableChildAttributesRemainBorrowed) {
+    namespace ex = std::execution;
+    borrowed_on_attributes attrs;
+    int reads = 0;
+    const auto check = [](auto sender, int expected) {
+        int value = 0;
+        bool completed = false;
+        // Isolate inner environment construction from adaptor attributes.
+        auto op = std::move(sender).connect(int_start_receiver{&value, &completed});
+        ex::start(op);
+        EXPECT_TRUE(completed);
+        EXPECT_EQ(value, expected);
+    };
+    check(ex::let_value(
+        borrowed_let_sender<ex::set_value_t>{&attrs, &reads},
+        [](int& v) { return ex::just(v + 1); }), 42);
+    check(ex::let_error(
+        borrowed_let_sender<ex::set_error_t>{&attrs, &reads},
+        [](int& e) { return ex::just(e + 2); }), 43);
+    check(ex::let_stopped(
+        borrowed_let_sender<ex::set_stopped_t>{&attrs, &reads},
+        [] { return ex::just(44); }), 44);
+    EXPECT_GT(reads, 0);
 }
 
 TEST(LetValueTest, StoresCompletionValuesForAsyncInnerSender) {

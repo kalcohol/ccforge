@@ -144,7 +144,7 @@ struct __inner_env {
 template<class Which, class S, class OuterEnv>
 auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
     using cpo_t = __set_cpo_t<Which>;
-    auto child_env = std::execution::get_env(sndr);
+    decltype(auto) child_env = std::execution::get_env(sndr);
     if constexpr (requires {
         std::execution::get_completion_scheduler<cpo_t>(child_env);
     }) {
