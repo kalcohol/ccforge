@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 
 #include <exception>
+#include <memory>
 
 namespace std::execution {
 
@@ -145,49 +146,71 @@ template<class R, class Fn>
 struct then_receiver {
     using receiver_concept = receiver_t;
 
-    [[no_unique_address]] R rcvr_;
-    [[no_unique_address]] Fn fn_;
+    R* rcvr_;
+    Fn* fn_;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
         if constexpr (std::is_nothrow_invocable_v<Fn, Vs...>) {
             if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
-                std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...);
-                std::execution::set_value(std::move(rcvr_));
+                std::invoke(std::move(*fn_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(*rcvr_));
             } else {
                 std::execution::set_value(
-                    std::move(rcvr_),
-                    std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...));
+                    std::move(*rcvr_),
+                    std::invoke(std::move(*fn_), static_cast<Vs&&>(vs)...));
             }
         } else if constexpr (std::is_void_v<std::invoke_result_t<Fn, Vs...>>) {
             try {
-                std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...);
-                std::execution::set_value(std::move(rcvr_));
+                std::invoke(std::move(*fn_), static_cast<Vs&&>(vs)...);
+                std::execution::set_value(std::move(*rcvr_));
             } catch (...) {
-                std::execution::set_error(std::move(rcvr_), std::current_exception());
+                std::execution::set_error(std::move(*rcvr_), std::current_exception());
             }
         } else {
             try {
                 std::execution::set_value(
-                    std::move(rcvr_),
-                    std::invoke(std::move(fn_), static_cast<Vs&&>(vs)...));
+                    std::move(*rcvr_),
+                    std::invoke(std::move(*fn_), static_cast<Vs&&>(vs)...));
             } catch (...) {
-                std::execution::set_error(std::move(rcvr_), std::current_exception());
+                std::execution::set_error(std::move(*rcvr_), std::current_exception());
             }
         }
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(rcvr_), static_cast<E&&>(e));
+        std::execution::set_error(std::move(*rcvr_), static_cast<E&&>(e));
     }
 
     void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(rcvr_));
+        std::execution::set_stopped(std::move(*rcvr_));
     }
 
     auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(rcvr_);
+        return std::execution::get_env(*rcvr_);
+    }
+};
+
+template<class S, class Fn, class R>
+struct then_op : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
+    using inner_op_t = connect_result_t<S, then_receiver<R, Fn>>;
+
+    [[no_unique_address]] R rcvr_;
+    [[no_unique_address]] Fn fn_;
+    // Destroy the inner operation before the state borrowed by its receiver.
+    inner_op_t inner_;
+
+    then_op(S sndr, Fn fn, R rcvr)
+        : rcvr_(std::move(rcvr))
+        , fn_(std::move(fn))
+        , inner_(std::execution::connect(
+            std::move(sndr), then_receiver<R, Fn>{std::addressof(rcvr_), std::addressof(fn_)}))
+    {}
+
+    void start() & noexcept {
+        std::execution::start(inner_);
     }
 };
 
@@ -212,15 +235,13 @@ struct then_sender {
 
     template<std::execution::receiver R>
     auto connect(R rcvr) && {
-        return std::execution::connect(std::move(sndr_),
-                                       then_receiver<R, Fn>{std::move(rcvr), std::move(fn_)});
+        return then_op<S, Fn, R>(std::move(sndr_), std::move(fn_), std::move(rcvr));
     }
 
     template<std::execution::receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
     auto connect(R rcvr) const& {
-        return std::execution::connect(S(sndr_),
-                                       then_receiver<R, Fn>{std::move(rcvr), Fn(fn_)});
+        return then_op<S, Fn, R>(sndr_, fn_, std::move(rcvr));
     }
 
     auto get_env() const noexcept -> env_of_t<S> {

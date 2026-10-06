@@ -27,6 +27,7 @@
 
 #include <exception>
 #include <functional>
+#include <memory>
 #include <type_traits>
 
 namespace std::execution {
@@ -119,96 +120,119 @@ struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
 template<class R, class Fn>
 struct __recv_error {
     using receiver_concept = receiver_t;
-    R __rcvr;
-    Fn __fn;
+    R* __rcvr;
+    Fn* __fn;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        std::execution::set_value(std::move(__rcvr), static_cast<Vs&&>(vs)...);
+        std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         if constexpr (!std::invocable<Fn, E>) {
-            std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
+            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
         } else if constexpr (std::is_nothrow_invocable_v<Fn, E>) {
             if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
-                std::invoke(std::move(__fn), static_cast<E&&>(e));
-                std::execution::set_value(std::move(__rcvr));
+                std::invoke(std::move(*__fn), static_cast<E&&>(e));
+                std::execution::set_value(std::move(*__rcvr));
             } else {
                 std::execution::set_value(
-                    std::move(__rcvr),
-                    std::invoke(std::move(__fn), static_cast<E&&>(e)));
+                    std::move(*__rcvr),
+                    std::invoke(std::move(*__fn), static_cast<E&&>(e)));
             }
         } else if constexpr (std::is_void_v<std::invoke_result_t<Fn, E>>) {
             try {
-                std::invoke(std::move(__fn), static_cast<E&&>(e));
-                std::execution::set_value(std::move(__rcvr));
+                std::invoke(std::move(*__fn), static_cast<E&&>(e));
+                std::execution::set_value(std::move(*__rcvr));
             } catch (...) {
-                std::execution::set_error(std::move(__rcvr), std::current_exception());
+                std::execution::set_error(std::move(*__rcvr), std::current_exception());
             }
         } else {
             try {
-                std::execution::set_value(std::move(__rcvr),
-                                          std::invoke(std::move(__fn), static_cast<E&&>(e)));
+                std::execution::set_value(std::move(*__rcvr),
+                                          std::invoke(std::move(*__fn), static_cast<E&&>(e)));
             } catch (...) {
-                std::execution::set_error(std::move(__rcvr), std::current_exception());
+                std::execution::set_error(std::move(*__rcvr), std::current_exception());
             }
         }
     }
 
     void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(__rcvr));
+        std::execution::set_stopped(std::move(*__rcvr));
     }
 
     auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(__rcvr);
+        return std::execution::get_env(*__rcvr);
     }
 };
 
 template<class R, class Fn>
 struct __recv_stopped {
     using receiver_concept = receiver_t;
-    R __rcvr;
-    Fn __fn;
+    R* __rcvr;
+    Fn* __fn;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        std::execution::set_value(std::move(__rcvr), static_cast<Vs&&>(vs)...);
+        std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
+        std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
     }
 
     void set_stopped() && noexcept {
         if constexpr (std::is_nothrow_invocable_v<Fn>) {
             if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
-                std::invoke(std::move(__fn));
-                std::execution::set_value(std::move(__rcvr));
+                std::invoke(std::move(*__fn));
+                std::execution::set_value(std::move(*__rcvr));
             } else {
                 std::execution::set_value(
-                    std::move(__rcvr), std::invoke(std::move(__fn)));
+                    std::move(*__rcvr), std::invoke(std::move(*__fn)));
             }
         } else if constexpr (std::is_void_v<std::invoke_result_t<Fn>>) {
             try {
-                std::invoke(std::move(__fn));
-                std::execution::set_value(std::move(__rcvr));
+                std::invoke(std::move(*__fn));
+                std::execution::set_value(std::move(*__rcvr));
             } catch (...) {
-                std::execution::set_error(std::move(__rcvr), std::current_exception());
+                std::execution::set_error(std::move(*__rcvr), std::current_exception());
             }
         } else {
             try {
-                std::execution::set_value(std::move(__rcvr), std::invoke(std::move(__fn)));
+                std::execution::set_value(std::move(*__rcvr), std::invoke(std::move(*__fn)));
             } catch (...) {
-                std::execution::set_error(std::move(__rcvr), std::current_exception());
+                std::execution::set_error(std::move(*__rcvr), std::current_exception());
             }
         }
     }
 
     auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(__rcvr);
+        return std::execution::get_env(*__rcvr);
+    }
+};
+
+template<class S, class Fn, class R, bool IsError>
+struct __op : __forge_detail::__immovable {
+    using operation_state_concept = operation_state_t;
+    using __recv = std::conditional_t<IsError, __recv_error<R, Fn>, __recv_stopped<R, Fn>>;
+    using __inner_op_t = connect_result_t<S, __recv>;
+
+    R __rcvr;
+    Fn __fn;
+    // Destroy the inner operation before the state borrowed by its receiver.
+    __inner_op_t __inner;
+
+    __op(S sndr, Fn fn, R r)
+        : __rcvr(std::move(r))
+        , __fn(std::move(fn))
+        , __inner(std::execution::connect(
+            std::move(sndr), __recv{std::addressof(__rcvr), std::addressof(__fn)}))
+    {}
+
+    void start() & noexcept {
+        std::execution::start(__inner);
     }
 };
 
@@ -233,25 +257,13 @@ struct __sender {
 
     template<receiver R>
     auto connect(R r) && {
-        if constexpr (IsError) {
-            return std::execution::connect(std::move(__sndr),
-                __recv_error<R, Fn>{std::move(r), std::move(__fn)});
-        } else {
-            return std::execution::connect(std::move(__sndr),
-                __recv_stopped<R, Fn>{std::move(r), std::move(__fn)});
-        }
+        return __op<S, Fn, R, IsError>(std::move(__sndr), std::move(__fn), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<Fn>
     auto connect(R r) const& {
-        if constexpr (IsError) {
-            return std::execution::connect(S(__sndr),
-                __recv_error<R, Fn>{std::move(r), Fn(__fn)});
-        } else {
-            return std::execution::connect(S(__sndr),
-                __recv_stopped<R, Fn>{std::move(r), Fn(__fn)});
-        }
+        return __op<S, Fn, R, IsError>(__sndr, __fn, std::move(r));
     }
 
     auto get_env() const noexcept {

@@ -26,6 +26,7 @@
 #include "env.hpp"
 
 #include <exception>
+#include <memory>
 
 namespace std::execution {
 
@@ -70,7 +71,7 @@ struct __op : __forge_detail::__immovable {
         using receiver_concept = receiver_t;
         R* __outer;
         Shape __shape;
-        Fn __fn;
+        Fn* __fn;
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
@@ -80,11 +81,11 @@ struct __op : __forge_detail::__immovable {
             auto run = [&]() noexcept(nothrow) {
                 if constexpr (Chunked) {
                     if (Shape{} < __shape) {
-                        __fn(Shape{}, Shape(__shape), vs...);
+                        (*__fn)(Shape{}, Shape(__shape), vs...);
                     }
                 } else {
                     for (Shape i = Shape{}; i < __shape; ++i) {
-                        __fn(Shape(i), vs...);
+                        (*__fn)(Shape(i), vs...);
                     }
                 }
                 std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
@@ -115,12 +116,15 @@ struct __op : __forge_detail::__immovable {
     using __inner_op_t = connect_result_t<S, __recv>;
 
     R __outer;
+    Fn __fn;
+    // Destroy the inner operation before the state borrowed by its receiver.
     __inner_op_t __inner;
 
     __op(S sndr, Shape shape, Fn fn, R recv)
         : __outer(std::move(recv))
+        , __fn(std::move(fn))
         , __inner(std::execution::connect(
-            std::move(sndr), __recv{&__outer, std::move(shape), std::move(fn)}))
+            std::move(sndr), __recv{std::addressof(__outer), std::move(shape), std::addressof(__fn)}))
     {}
 
     void start() & noexcept {

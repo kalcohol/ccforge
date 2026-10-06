@@ -25,6 +25,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 
+#include <memory>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -268,7 +269,7 @@ struct __error_op : __forge_detail::__immovable {
     struct __recv {
         using receiver_concept = receiver_t;
         R* __rcvr;
-        Err __err;
+        Err* __err;
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
@@ -279,7 +280,7 @@ struct __error_op : __forge_detail::__immovable {
             std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
         }
         void set_stopped() && noexcept {
-            std::execution::set_error(std::move(*__rcvr), std::move(__err));
+            std::execution::set_error(std::move(*__rcvr), std::move(*__err));
         }
         auto get_env() const noexcept -> env_of_t<R> {
             return std::execution::get_env(*__rcvr);
@@ -289,12 +290,15 @@ struct __error_op : __forge_detail::__immovable {
     using inner_op_t = connect_result_t<S, __recv>;
 
     R __rcvr;
+    Err __err;
+    // Destroy the inner operation before the state borrowed by its receiver.
     inner_op_t __op;
 
     __error_op(S sndr, Err err, R r)
         : __rcvr(std::move(r))
+        , __err(std::move(err))
         , __op(std::execution::connect(
-            std::move(sndr), __recv{&__rcvr, std::move(err)}))
+            std::move(sndr), __recv{std::addressof(__rcvr), std::addressof(__err)}))
     {}
 
     void start() & noexcept {
