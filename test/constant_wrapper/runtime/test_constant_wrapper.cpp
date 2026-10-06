@@ -83,6 +83,34 @@ struct member_owner {
     }
 };
 
+union union_member_owner {
+    int value;
+    double other;
+
+    constexpr int add(int rhs) const noexcept {
+        return value + rhs;
+    }
+
+    // INVOKE must use .* for this union even though it is dereferenceable.
+    constexpr union_member_owner& operator*() noexcept {
+        ++value;
+        return *this;
+    }
+};
+
+struct derived_member_owner : member_owner {};
+struct other_member_owner : member_owner {};
+
+struct private_member_owner : private member_owner {
+    member_owner& operator*() noexcept { return *this; }
+};
+
+struct ambiguous_member_owner : derived_member_owner, other_member_owner {
+    member_owner& operator*() noexcept {
+        return static_cast<derived_member_owner&>(*this);
+    }
+};
+
 struct array_member_owner {
     int values[3];
 };
@@ -134,6 +162,7 @@ struct nonstructural_static_value {
 
 inline constexpr int pointed_value = 9;
 inline constexpr member_owner member_value{11};
+inline constexpr union_member_owner union_member_value{17};
 inline constexpr array_member_owner array_member_value{{2, 4, 8}};
 
 constexpr int plus_one(int value) noexcept {
@@ -291,6 +320,35 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
               decltype(std::cw<&member_owner::value>(std::cw<member_value>)),
               std::constant_wrapper<11>>);
+static_assert(std::is_same_v<
+              decltype(std::cw<&union_member_owner::value>(
+                  std::cw<union_member_value>)),
+              std::constant_wrapper<17>>);
+static_assert(std::is_same_v<
+              decltype(std::cw<&union_member_owner::value>(
+                  std::cw<&union_member_value>)),
+              std::constant_wrapper<17>>);
+static_assert(std::cw<&union_member_owner::value>(union_member_value) == 17);
+static_assert(std::cw<&union_member_owner::value>(&union_member_value) == 17);
+static_assert(
+    std::cw<&union_member_owner::value>(std::cref(union_member_value)) == 17);
+static_assert(std::cw<&union_member_owner::add>(union_member_value, 2) == 19);
+
+using union_member_wrapper = decltype(std::cw<&union_member_owner::value>);
+static_assert(!std::is_invocable_v<union_member_wrapper, member_owner&>);
+static_assert(!std::is_invocable_v<union_member_wrapper, member_owner*>);
+static_assert(!std::is_invocable_v<
+              union_member_wrapper, std::reference_wrapper<member_owner>>);
+static_assert(!std::is_invocable_v<union_member_wrapper, union_member_owner&, int>);
+
+using member_wrapper = decltype(std::cw<&member_owner::value>);
+using member_function_wrapper = decltype(std::cw<&member_owner::add>);
+static_assert(!std::is_invocable_v<member_wrapper, private_member_owner&>);
+static_assert(!std::is_invocable_v<member_wrapper, ambiguous_member_owner&>);
+static_assert(!std::is_invocable_v<
+              member_function_wrapper, private_member_owner&, int>);
+static_assert(!std::is_invocable_v<
+              member_function_wrapper, ambiguous_member_owner&, int>);
 #if defined(_MSC_VER)
 using array_member_result_t = decltype(
     std::cw<&array_member_owner::values>(std::cw<array_member_value>));
@@ -332,15 +390,65 @@ TEST(ConstantWrapper, RuntimeCallAndSubscriptPreserveReferencesAndNoexcept) {
 
 TEST(ConstantWrapper, RuntimeCallUsesInvokeMemberPointerRules) {
     member_owner value{11};
+    const member_owner constant{17};
+    derived_member_owner derived{{19}};
     auto add = std::cw<&member_owner::add>;
     auto member = std::cw<&member_owner::value>;
 
+    static_assert(std::is_same_v<decltype(member(value)), int&>);
+    static_assert(std::is_same_v<decltype(member(constant)), const int&>);
+    static_assert(std::is_same_v<decltype(member(std::move(value))), int&&>);
+    static_assert(noexcept(add(value, 2)));
     EXPECT_EQ(add(value, 2), 13);
     EXPECT_EQ(add(&value, 3), 14);
     EXPECT_EQ(add(std::ref(value), 4), 15);
     EXPECT_EQ(member(value), 11);
     EXPECT_EQ(member(&value), 11);
     EXPECT_EQ(member(std::ref(value)), 11);
+    EXPECT_EQ(add(constant, 2), 19);
+    EXPECT_EQ(&member(constant), &constant.value);
+    EXPECT_EQ(add(derived, 2), 21);
+    EXPECT_EQ(add(&derived, 3), 22);
+    EXPECT_EQ(add(std::ref(derived), 4), 23);
+    EXPECT_EQ(&member(derived), &derived.value);
+    EXPECT_EQ(&member(&derived), &derived.value);
+    EXPECT_EQ(&member(std::ref(derived)), &derived.value);
+}
+
+TEST(ConstantWrapper, RuntimeCallUsesInvokeUnionMemberPointerRules) {
+    union_member_owner value{11};
+    const union_member_owner constant{17};
+    auto add = std::cw<&union_member_owner::add>;
+    auto member = std::cw<&union_member_owner::value>;
+
+    static_assert(std::is_same_v<decltype(member(value)), int&>);
+    static_assert(std::is_same_v<decltype(member(&value)), int&>);
+    static_assert(std::is_same_v<decltype(member(std::ref(value))), int&>);
+    static_assert(std::is_same_v<decltype(member(constant)), const int&>);
+    static_assert(std::is_same_v<decltype(member(&constant)), const int&>);
+    static_assert(std::is_same_v<decltype(member(std::cref(value))), const int&>);
+    static_assert(std::is_same_v<decltype(member(std::move(value))), int&&>);
+    static_assert(std::is_same_v<
+                  decltype(member(std::move(constant))), const int&&>);
+    static_assert(noexcept(member(value)));
+    static_assert(noexcept(member(&value)));
+    static_assert(noexcept(member(std::ref(value))));
+    static_assert(noexcept(add(value, 2)));
+    EXPECT_EQ(add(value, 2), 13);
+    EXPECT_EQ(add(&value, 3), 14);
+    EXPECT_EQ(add(std::ref(value), 4), 15);
+    EXPECT_EQ(&member(value), &value.value);
+    EXPECT_EQ(&member(&value), &value.value);
+    EXPECT_EQ(&member(std::ref(value)), &value.value);
+    member(value) = 19;
+    EXPECT_EQ(value.value, 19);
+    member(&value) = 23;
+    EXPECT_EQ(value.value, 23);
+    member(std::ref(value)) = 29;
+    EXPECT_EQ(value.value, 29);
+    EXPECT_EQ(&member(constant), &constant.value);
+    EXPECT_EQ(&member(&constant), &constant.value);
+    EXPECT_EQ(&member(std::cref(constant)), &constant.value);
 }
 
 } // namespace

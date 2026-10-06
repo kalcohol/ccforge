@@ -92,8 +92,10 @@ constexpr decltype(auto) __forge_cw_invoke(F&& fn, Args&&... args)
 
 template <class F, class T, class... Args>
     requires (is_member_function_pointer_v<remove_cvref_t<F>> &&
-              is_base_of_v<__forge_cw_member_pointer_class_t<F>,
-                           remove_cvref_t<T>> &&
+              (is_same_v<__forge_cw_member_pointer_class_t<F>,
+                         remove_cvref_t<T>> ||
+               is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                            remove_cvref_t<T>>) &&
               requires(F&& fn, T&& target, Args&&... args) {
                   (static_cast<T&&>(target).*static_cast<F&&>(fn))(
                       static_cast<Args&&>(args)...);
@@ -125,6 +127,8 @@ constexpr decltype(auto) __forge_cw_invoke(F&& fn,
 
 template <class F, class T, class... Args>
     requires (is_member_function_pointer_v<remove_cvref_t<F>> &&
+              !is_same_v<__forge_cw_member_pointer_class_t<F>,
+                         remove_cvref_t<T>> &&
               !is_base_of_v<__forge_cw_member_pointer_class_t<F>,
                             remove_cvref_t<T>> &&
               !__forge_cw_is_reference_wrapper<T> &&
@@ -143,8 +147,10 @@ constexpr decltype(auto) __forge_cw_invoke(F&& fn,
 
 template <class F, class T>
     requires (is_member_object_pointer_v<remove_cvref_t<F>> &&
-              is_base_of_v<__forge_cw_member_pointer_class_t<F>,
-                           remove_cvref_t<T>> &&
+              (is_same_v<__forge_cw_member_pointer_class_t<F>,
+                         remove_cvref_t<T>> ||
+               is_base_of_v<__forge_cw_member_pointer_class_t<F>,
+                            remove_cvref_t<T>>) &&
               requires(F&& fn, T&& target) {
                   static_cast<T&&>(target).*static_cast<F&&>(fn);
               })
@@ -166,6 +172,8 @@ constexpr decltype(auto) __forge_cw_invoke(F&& fn, T&& target)
 
 template <class F, class T>
     requires (is_member_object_pointer_v<remove_cvref_t<F>> &&
+              !is_same_v<__forge_cw_member_pointer_class_t<F>,
+                         remove_cvref_t<T>> &&
               !is_base_of_v<__forge_cw_member_pointer_class_t<F>,
                             remove_cvref_t<T>> &&
               !__forge_cw_is_reference_wrapper<T> &&
