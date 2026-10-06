@@ -203,6 +203,45 @@ inline auto completion_domain_schedule_sender::attributes::query(
     std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
     const noexcept -> completion_domain_scheduler { return {}; }
 
+struct explicit_scheduler_domain {};
+struct explicit_domain_scheduler;
+
+struct explicit_domain_schedule_sender : completion_domain_schedule_sender {
+    struct attributes {
+        auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept
+            -> explicit_domain_scheduler;
+    };
+
+    auto get_env() const noexcept -> attributes { return {}; }
+};
+
+struct explicit_domain_scheduler : completion_domain_scheduler {
+    using completion_domain_scheduler::query;
+    static inline int domain_queries = 0;
+
+    auto query(std::execution::get_domain_t) const -> explicit_scheduler_domain {
+        ++domain_queries;
+        throw 42;
+    }
+
+    auto schedule() const noexcept -> explicit_domain_schedule_sender { return {}; }
+    bool operator==(const explicit_domain_scheduler&) const noexcept = default;
+};
+
+inline auto explicit_domain_schedule_sender::attributes::query(
+    std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+    const noexcept -> explicit_domain_scheduler { return {}; }
+
+template<class ExpectedDomain>
+struct domain_type_query {
+    template<class Env>
+    int operator()(const Env& env) const noexcept {
+        return std::same_as<
+            decltype(std::execution::get_domain(env)), ExpectedDomain> ? 1 : 0;
+    }
+};
+
 template<class Completion, class Domain, class... Args>
 concept completion_domain_is = requires(Args&&... args) {
     { std::execution::get_completion_domain<Completion>(
@@ -866,6 +905,146 @@ TEST(CompletionDomainTest, FallbackDoesNotEvaluateQueriesOrOverrideDirectVoidTag
     EXPECT_EQ(envless_completion_attrs::calls, 0);
     EXPECT_FALSE((completion_domain_is<void, queried_domain,
         invalid_void_completion_attrs, std::execution::empty_env>));
+}
+
+TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
+    value_completion_attrs::calls = 0;
+    static_assert(std::same_as<decltype(std::execution::get_domain(
+        completion_domain_scheduler{})), std::execution::default_domain>);
+
+    auto sndr = std::execution::starts_on(
+        completion_domain_scheduler{},
+        std::execution::read_env(std::execution::get_domain));
+    using signatures = std::execution::completion_signatures_of_t<
+        decltype(sndr), std::execution::empty_env>;
+    static_assert(std::same_as<signatures,
+        std::execution::completion_signatures<
+            std::execution::set_value_t(queried_domain)>>);
+
+    int value = 0;
+    bool completed = false;
+    auto op = std::execution::connect(
+        std::execution::starts_on(
+            completion_domain_scheduler{},
+            std::execution::read_env(domain_type_query<queried_domain>{})),
+        int_receiver<>{&value, &completed});
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 1);
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+}
+
+TEST(CompletionDomainTest, FirstFormOnChildUsesSchedulerCompletionDomain) {
+    value_completion_attrs::calls = 0;
+    auto env = std::execution::make_prop(
+        std::execution::get_start_scheduler, std::execution::inline_scheduler{});
+    int value = 0;
+    bool completed = false;
+    auto op = std::execution::connect(
+        std::execution::on(
+            completion_domain_scheduler{},
+            std::execution::read_env(domain_type_query<queried_domain>{})),
+        int_receiver<decltype(env)>{&value, &completed, env});
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 1);
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+}
+
+TEST(CompletionDomainTest, NestedLetInheritsStartsOnCompletionDomain) {
+    value_completion_attrs::calls = 0;
+    auto check = [](auto child) {
+        int value = 0;
+        bool completed = false;
+        auto op = std::execution::connect(
+            std::execution::starts_on(completion_domain_scheduler{}, std::move(child)),
+            int_receiver<>{&value, &completed});
+        std::execution::start(op);
+        EXPECT_TRUE(completed);
+        EXPECT_EQ(value, 1);
+    };
+    auto inner = [] {
+        return std::execution::read_env(domain_type_query<queried_domain>{});
+    };
+
+    check(std::execution::let_value(std::execution::just(), inner));
+    check(std::execution::let_error(std::execution::just_error(42),
+        [inner](int&) { return inner(); }));
+    check(std::execution::let_stopped(std::execution::just_stopped(), inner));
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+}
+
+TEST(CompletionDomainTest, NestedLetUsesItsOwnCompletionSchedulerDomain) {
+    value_completion_attrs::calls = 0;
+    int value = 0;
+    bool completed = false;
+    auto op = std::execution::connect(
+        std::execution::starts_on(
+            std::execution::inline_scheduler{},
+            std::execution::let_value(
+                std::execution::schedule(completion_domain_scheduler{}), [] {
+                    return std::execution::read_env(domain_type_query<queried_domain>{});
+                })),
+        int_receiver<>{&value, &completed});
+    std::execution::start(op);
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 1);
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+}
+
+TEST(CompletionDomainTest, StartsOnAndLetPreserveDirectSchedulerDomainPriority) {
+    explicit_domain_scheduler::domain_queries = 0;
+    value_completion_attrs::calls = 0;
+    auto env = std::execution::make_prop(std::execution::get_domain, queried_domain{});
+    auto check = [&env](auto child) {
+        int value = 0;
+        bool completed = false;
+        auto op = std::execution::connect(
+            std::move(child), int_receiver<decltype(env)>{&value, &completed, env});
+        std::execution::start(op);
+        EXPECT_TRUE(completed);
+        EXPECT_EQ(value, 1);
+    };
+
+    check(std::execution::starts_on(
+        explicit_domain_scheduler{},
+        std::execution::read_env(domain_type_query<explicit_scheduler_domain>{})));
+    check(std::execution::starts_on(
+        std::execution::inline_scheduler{},
+        std::execution::let_value(
+            std::execution::schedule(explicit_domain_scheduler{}), [] {
+                return std::execution::read_env(domain_type_query<explicit_scheduler_domain>{});
+            })));
+    EXPECT_EQ(explicit_domain_scheduler::domain_queries, 0);
+    EXPECT_EQ(value_completion_attrs::calls, 0);
+}
+
+TEST(CompletionDomainTest, DefaultSchedulerDoesNotSynthesizeDomainOverride) {
+    int value = 0;
+    bool completed = false;
+    auto op = std::execution::connect(
+        std::execution::starts_on(
+            std::execution::inline_scheduler{},
+            std::execution::read_env(domain_type_query<std::execution::default_domain>{})),
+        int_receiver<>{&value, &completed});
+    std::execution::start(op);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 1);
+
+    auto env = std::execution::make_prop(std::execution::get_domain, queried_domain{});
+    value = 0;
+    completed = false;
+    auto inherited_op = std::execution::connect(
+        std::execution::starts_on(
+            std::execution::inline_scheduler{},
+            std::execution::read_env(domain_type_query<queried_domain>{})),
+        int_receiver<decltype(env)>{&value, &completed, env});
+    std::execution::start(inherited_op);
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(value, 1);
 }
 
 TEST(DefaultDomainTest, TransformSenderIsIdentity) {

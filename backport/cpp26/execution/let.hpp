@@ -105,6 +105,14 @@ struct __scheduler_env {
             std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
         return self.__scheduler;
     }
+
+    friend decltype(auto) tag_invoke(
+        get_domain_t query,
+        const __scheduler_env& self)
+        noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Scheduler&>)
+        requires __forge_env_detail::__queryable<get_domain_t, const Scheduler&> {
+        return __forge_env_detail::__query(query, self.__scheduler);
+    }
 };
 
 template<class PrimaryEnv, class OuterEnv>
