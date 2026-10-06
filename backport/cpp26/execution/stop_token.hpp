@@ -77,7 +77,8 @@ public:
     inplace_stop_source(const inplace_stop_source&) = delete;
     inplace_stop_source& operator=(const inplace_stop_source&) = delete;
 
-    [[nodiscard]] inplace_stop_token get_token() noexcept;
+    [[nodiscard]] constexpr inplace_stop_token get_token() const noexcept;
+    [[nodiscard]] static constexpr bool stop_possible() noexcept { return true; }
 
     bool request_stop() noexcept {
         std::shared_ptr<__forge_stop_detail::callback_control> head;
@@ -176,7 +177,7 @@ private:
     template<class Cb>
     friend class inplace_stop_callback;
 
-    bool try_add_callback(__forge_stop_detail::callback_base* cb) noexcept {
+    bool try_add_callback(__forge_stop_detail::callback_base* cb) const noexcept {
         std::lock_guard lk{mtx_};
         if (stop_requested()) {
             return false;
@@ -191,7 +192,7 @@ private:
         return true;
     }
 
-    void remove_callback(__forge_stop_detail::callback_base* cb) noexcept {
+    void remove_callback(__forge_stop_detail::callback_base* cb) const noexcept {
         std::lock_guard lk{mtx_};
         if (!cb->prev) {
             return; // already removed/detached
@@ -208,13 +209,13 @@ private:
     static constexpr std::uint8_t kStopRequested = 1;
 
     std::atomic<std::uint8_t> state_{0};
-    std::mutex mtx_{};
-    __forge_stop_detail::callback_base* callbacks_ = nullptr;
+    mutable std::mutex mtx_{};
+    mutable __forge_stop_detail::callback_base* callbacks_ = nullptr;
 };
 
 class inplace_stop_token {
 public:
-    inplace_stop_token() noexcept : source_(nullptr) {}
+    constexpr inplace_stop_token() noexcept : source_(nullptr) {}
 
     [[nodiscard]] bool stop_requested() const noexcept {
         return source_ && source_->stop_requested();
@@ -236,12 +237,13 @@ private:
     template<class Cb>
     friend class inplace_stop_callback;
 
-    explicit inplace_stop_token(inplace_stop_source* src) noexcept : source_(src) {}
+    explicit constexpr inplace_stop_token(const inplace_stop_source* src) noexcept
+        : source_(src) {}
 
-    inplace_stop_source* source_;
+    const inplace_stop_source* source_;
 };
 
-inline inplace_stop_token inplace_stop_source::get_token() noexcept {
+inline constexpr inplace_stop_token inplace_stop_source::get_token() const noexcept {
     return inplace_stop_token{this};
 }
 
@@ -306,7 +308,7 @@ public:
 
 private:
     [[no_unique_address]] Callback callback_;
-    inplace_stop_source* source_;
+    const inplace_stop_source* source_;
     std::shared_ptr<std::__forge_stop_detail::callback_control> control_;
 };
 

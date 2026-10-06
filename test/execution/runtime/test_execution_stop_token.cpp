@@ -51,6 +51,32 @@ TEST(ExecutionStopTokenTest, InplaceStopRequestIsIdempotent) {
     EXPECT_FALSE(src.request_stop());
 }
 
+TEST(ExecutionStopTokenTest, ConstSourceCanRegisterAndRemoveCallbacks) {
+    const std::inplace_stop_source source;
+    auto token = source.get_token();
+    EXPECT_TRUE(std::inplace_stop_source::stop_possible());
+    EXPECT_TRUE(source.stop_possible());
+    EXPECT_TRUE(token.stop_possible());
+    EXPECT_FALSE(token.stop_requested());
+
+    bool called = false;
+    {
+        std::inplace_stop_callback callback(token, [&] { called = true; });
+    }
+    EXPECT_FALSE(called);
+}
+
+TEST(ExecutionStopTokenTest, TokenFromConstSourceViewObservesStop) {
+    std::inplace_stop_source source;
+    const auto& view = source;
+    bool called = false;
+    std::inplace_stop_callback callback(view.get_token(), [&] { called = true; });
+
+    EXPECT_TRUE(source.request_stop());
+    EXPECT_TRUE(called);
+    EXPECT_TRUE(view.get_token().stop_requested());
+}
+
 // ── T-4: Expanded stop-token coverage ───────────────────────────────────
 
 TEST(ExecutionStopTokenTest, PostStopCallbackImmediateInvocation) {
