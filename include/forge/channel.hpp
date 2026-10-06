@@ -197,7 +197,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 recv->prepare_value(send->take_value());
                 actions.recv_value = std::move(recv);
                 actions.send_value = std::move(send);
-            } else if (buffer.size() < capacity) {
+            } else if (pending_sends.empty() && buffer.size() < capacity) {
                 try {
                     buffer.push_back(send->take_value());
                     actions.send_value = std::move(send);
@@ -263,7 +263,7 @@ struct __state : std::enable_shared_from_this<__state<T>> {
                 recv->prepare_value(std::move(value));
                 actions.recv_value = std::move(recv);
                 accepted = true;
-            } else if (buffer.size() < capacity) {
+            } else if (pending_sends.empty() && buffer.size() < capacity) {
                 buffer.push_back(std::move(value));
                 accepted = true;
             }

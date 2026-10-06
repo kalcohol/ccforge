@@ -257,6 +257,98 @@ TEST(ChannelTest, BufferAllocationFailureCompletesErrorAndPreservesChannel) {
     EXPECT_EQ(std::get<0>(*received), 2);
 }
 
+TEST(ChannelTest, FailedBufferPromotionDoesNotLetTrySendOvertakePendingSend) {
+    forge_test::fail_next_resource resource;
+    forge::bounded_channel<int> channel{forge::bounded_channel_options{
+        .capacity = 1,
+        .memory = &resource,
+    }};
+    ASSERT_TRUE(channel.try_send(1));
+    auto first_state = std::make_shared<send_state>();
+    auto second_state = std::make_shared<send_state>();
+    auto first_op = std::execution::connect(channel.async_send(2), send_receiver{first_state});
+    auto second_op = std::execution::connect(channel.async_send(3), send_receiver{second_state});
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+
+    resource.fail_next_allocation();
+    EXPECT_EQ(channel.try_recv(), std::optional{1});
+    EXPECT_TRUE(first_state->error);
+    EXPECT_FALSE(first_state->value);
+    EXPECT_FALSE(second_state->value);
+    EXPECT_FALSE(channel.try_send(4));
+    EXPECT_EQ(channel.try_recv(), std::optional{3});
+    EXPECT_TRUE(second_state->value);
+    EXPECT_FALSE(second_state->error);
+    EXPECT_FALSE(channel.try_recv());
+    EXPECT_TRUE(channel.try_send(4));
+    EXPECT_EQ(channel.try_recv(), std::optional{4});
+    channel.request_stop();
+}
+
+TEST(ChannelTest, FailedBufferPromotionKeepsNewAsyncSendBehindPendingSend) {
+    forge_test::fail_next_resource resource;
+    forge::bounded_channel<int> channel{forge::bounded_channel_options{
+        .capacity = 1,
+        .memory = &resource,
+    }};
+    ASSERT_TRUE(channel.try_send(1));
+    auto first_state = std::make_shared<send_state>();
+    auto second_state = std::make_shared<send_state>();
+    auto late_state = std::make_shared<send_state>();
+    auto first_op = std::execution::connect(channel.async_send(2), send_receiver{first_state});
+    auto second_op = std::execution::connect(channel.async_send(3), send_receiver{second_state});
+    auto late_op = std::execution::connect(channel.async_send(4), send_receiver{late_state});
+    std::execution::start(first_op);
+    std::execution::start(second_op);
+
+    resource.fail_next_allocation();
+    EXPECT_EQ(channel.try_recv(), std::optional{1});
+    EXPECT_TRUE(first_state->error);
+    std::execution::start(late_op);
+    EXPECT_FALSE(late_state->value);
+    EXPECT_EQ(channel.try_recv(), std::optional{3});
+    EXPECT_TRUE(second_state->value);
+    EXPECT_FALSE(late_state->value);
+    EXPECT_EQ(channel.try_recv(), std::optional{4});
+    EXPECT_TRUE(late_state->value);
+    EXPECT_FALSE(second_state->error);
+    EXPECT_FALSE(late_state->error);
+    EXPECT_FALSE(channel.try_recv());
+    channel.request_stop();
+}
+
+TEST(ChannelTest, FailedPromotionWithBufferedValuesKeepsCloseOrdering) {
+    forge_test::fail_next_resource resource;
+    forge::bounded_channel<int> channel{forge::bounded_channel_options{
+        .capacity = 2,
+        .memory = &resource,
+    }};
+    ASSERT_TRUE(channel.try_send(1));
+    ASSERT_TRUE(channel.try_send(2));
+    auto failed_state = std::make_shared<send_state>();
+    auto pending_state = std::make_shared<send_state>();
+    auto late_state = std::make_shared<send_state>();
+    auto failed_op = std::execution::connect(channel.async_send(3), send_receiver{failed_state});
+    auto pending_op = std::execution::connect(channel.async_send(4), send_receiver{pending_state});
+    auto late_op = std::execution::connect(channel.async_send(5), send_receiver{late_state});
+    std::execution::start(failed_op);
+    std::execution::start(pending_op);
+    resource.fail_next_allocation();
+    EXPECT_EQ(channel.try_recv(), std::optional{1});
+    EXPECT_TRUE(failed_state->error);
+    std::execution::start(late_op);
+    EXPECT_FALSE(late_state->value);
+
+    channel.close();
+    EXPECT_TRUE(pending_state->stopped);
+    EXPECT_TRUE(late_state->stopped);
+    EXPECT_FALSE(late_state->value);
+    EXPECT_EQ(channel.try_recv(), std::optional{2});
+    EXPECT_FALSE(channel.try_recv());
+    channel.request_stop();
+}
+
 TEST(ChannelTest, RecvThenSendDirectlyHandsOffValue) {
     forge::bounded_channel<int> channel{1};
     auto state = std::make_shared<recv_state<int>>();
