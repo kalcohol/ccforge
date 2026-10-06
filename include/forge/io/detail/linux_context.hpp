@@ -330,6 +330,8 @@ struct __actions {
     }
 
     void run() noexcept {
+        __run_scope scope{this};
+        previous_ = scope.previous;
         while (head) {
             auto record = std::move(head);
             head = std::move(record->next_action);
@@ -352,11 +354,33 @@ struct __actions {
         }
     }
 
+    [[nodiscard]] static bool is_pending_on_this_thread(
+        const __record_base* target) noexcept {
+        for (auto* batch = current_; batch; batch = batch->previous_) {
+            for (auto* record = batch->head.get(); record;
+                 record = record->next_action.get()) {
+                if (record == target) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     [[nodiscard]] auto size() const noexcept -> std::size_t {
         return size_;
     }
 
 private:
+    struct __run_scope {
+        explicit __run_scope(const __actions* batch) noexcept
+            : previous(std::exchange(current_, batch)) {}
+
+        ~__run_scope() { current_ = previous; }
+
+        const __actions* previous;
+    };
+
     void push(
         __record_ptr record,
         __completion_kind kind,
@@ -377,6 +401,8 @@ private:
     __record_ptr head;
     __record_base* tail = nullptr;
     std::size_t size_ = 0;
+    const __actions* previous_ = nullptr;
+    inline static thread_local const __actions* current_ = nullptr;
 };
 
 struct __fd_waiters {
@@ -939,6 +965,13 @@ struct __op {
             return;
         }
         if (state_ && state_->discard_record(record_)) {
+            record_->stop_callback.reset();
+            return;
+        }
+        // The current delivery batch retains this abandoned record and
+        // will finish it after this callback returns. Unregister now so
+        // its borrowed receiver environment need not survive that tail.
+        if (__actions::is_pending_on_this_thread(record_.get())) {
             record_->stop_callback.reset();
             return;
         }

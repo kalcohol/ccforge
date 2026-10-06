@@ -1523,6 +1523,38 @@ TEST(IoContextTest, InvalidFdAllowsReceiverToDestroyOperation) {
     EXPECT_FALSE(context.has_value);
 }
 
+TEST(IoContextTest, CompletionCanAbandonSiblingInSameBatch) {
+    auto sockets = make_socketpair();
+    fill_socket_send_buffer(sockets.first.get());
+    forge::io::context ctx;
+    std::inplace_stop_source source;
+    auto state = std::make_shared<io_state>();
+    using sender_t = decltype(ctx.writable(sockets.first.get()));
+    using op_t = std::execution::connect_result_t<sender_t, stopped_receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> sibling{&destroyed};
+    auto& write_op = sibling.emplace_from([&] {
+        return std::execution::connect(
+            ctx.writable(sockets.first.get()),
+            stopped_receiver{{state}, &source});
+    });
+    auto read_op = std::execution::connect(
+        ctx.readable(sockets.first.get()),
+        self_destroying_io_receiver{&sibling});
+    std::execution::start(read_op);
+    std::execution::start(write_op);
+
+    ctx.cancel(sockets.first.get());
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(sibling.has_value);
+    EXPECT_FALSE(state->done());
+    source.request_stop();
+    EXPECT_FALSE(state->done());
+    ctx.shutdown();
+    ctx.wait();
+}
+
 TEST(IoContextTest, AsyncReadCompletionAllowsReceiverToDestroyOperation) {
     auto pipe = make_pipe();
     const char payload[] = {'z'};
