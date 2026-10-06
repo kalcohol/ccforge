@@ -122,7 +122,74 @@ struct self_destroying_recv_receiver {
     auto get_env() const noexcept -> stop_env { return stop_env{source}; }
 };
 
+struct retiring_recv_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge_test::destroy_context_base* context;
+    std::shared_ptr<void> owned;
+    int* completions;
+
+    void set_value(int) && noexcept {
+        ++*completions;
+        context->destroy();
+    }
+    void set_stopped() && noexcept { context->destroy(); }
+    void set_error(std::exception_ptr) && noexcept { context->destroy(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+struct retirement_observing_send_receiver {
+    using receiver_concept = std::execution::receiver_t;
+
+    forge::bounded_channel<int>* channel;
+    const bool* retired;
+    bool* observed;
+    int* completions;
+
+    void set_value() && noexcept {
+        ++*completions;
+        *observed = *retired;
+        channel->close();
+    }
+    void set_stopped() && noexcept { ADD_FAILURE(); }
+    void set_error(std::exception_ptr) && noexcept { ADD_FAILURE(); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
 } // namespace
+
+TEST(ChannelTest, RetiresCompletedReceiverBeforeCounterpartCompletion) {
+    forge::bounded_channel<int> channel{0};
+    bool destroyed = false;
+    bool retired = false;
+    bool observed = false;
+    int recv_completions = 0;
+    int send_completions = 0;
+    using recv_sender_t = decltype(channel.async_recv());
+    using recv_op_t = std::execution::connect_result_t<recv_sender_t, retiring_recv_receiver>;
+    forge_test::operation_destroy_context<recv_op_t> context{&destroyed};
+    std::shared_ptr<void> marker(nullptr, [&](void*) { retired = true; });
+    auto& recv_op = context.emplace_from([&] {
+        return std::execution::connect(channel.async_recv(),
+            retiring_recv_receiver{&context, std::move(marker), &recv_completions});
+    });
+    std::execution::start(recv_op);
+    EXPECT_FALSE(destroyed);
+    EXPECT_FALSE(retired);
+
+    auto send_op = std::execution::connect(channel.async_send(7),
+        retirement_observing_send_receiver{
+            &channel, &retired, &observed, &send_completions});
+    std::execution::start(send_op);
+
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+    EXPECT_TRUE(retired);
+    EXPECT_TRUE(observed);
+    EXPECT_EQ(recv_completions, 1);
+    EXPECT_EQ(send_completions, 1);
+    EXPECT_TRUE(channel.closed());
+}
 
 TEST(ChannelTest, SendThenRecvDeliversValue) {
     forge::bounded_channel<int> channel{1};

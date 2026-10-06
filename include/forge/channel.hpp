@@ -152,20 +152,20 @@ struct __actions {
     std::exception_ptr send_exception;
 
     void run() noexcept {
-        if (recv_value) {
-            recv_value->complete_value();
+        if (auto record = std::move(recv_value)) {
+            record->complete_value();
         }
-        if (send_value) {
-            send_value->complete_value();
+        if (auto record = std::move(send_value)) {
+            record->complete_value();
         }
-        if (send_error) {
-            send_error->complete_error(std::move(send_exception));
+        if (auto record = std::move(send_error)) {
+            record->complete_error(std::move(send_exception));
         }
-        if (recv_stopped) {
-            recv_stopped->complete_stopped();
+        if (auto record = std::move(recv_stopped)) {
+            record->complete_stopped();
         }
-        if (send_stopped) {
-            send_stopped->complete_stopped();
+        if (auto record = std::move(send_stopped)) {
+            record->complete_stopped();
         }
     }
 };
