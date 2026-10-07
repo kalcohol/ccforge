@@ -3,6 +3,20 @@
 namespace detail {
 
 template<class T>
+struct is_bit_integer
+    : bool_constant<
+        is_vectorizable_integral<T>::value &&
+        !is_same<remove_cvref_t<T>, char>::value &&
+        !is_same<remove_cvref_t<T>, wchar_t>::value &&
+        !is_same<remove_cvref_t<T>, char8_t>::value &&
+        !is_same<remove_cvref_t<T>, char16_t>::value &&
+        !is_same<remove_cvref_t<T>, char32_t>::value> {};
+
+template<class T>
+struct is_unsigned_bit_integer
+    : bool_constant<is_bit_integer<T>::value && is_unsigned<remove_cvref_t<T>>::value> {};
+
+template<class T>
 using bit_unsigned_t = make_unsigned_t<remove_cvref_t<T>>;
 
 template<class V>
@@ -233,7 +247,7 @@ constexpr basic_vec<T, Abi> byteswap(const basic_vec<T, Abi>& value) noexcept
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_reverse(
     const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -246,7 +260,7 @@ constexpr basic_vec<T, Abi> bit_reverse(
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> popcount(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_popcount<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_popcount<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -257,7 +271,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> popcount(const basic_ve
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countl_zero(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_countl_zero<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_countl_zero<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -268,7 +282,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countl_zero(const basic
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countl_one(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_countl_one<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_countl_one<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -279,7 +293,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countl_one(const basic_
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countr_zero(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_countr_zero<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_countr_zero<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -290,7 +304,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countr_zero(const basic
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countr_one(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_countr_one<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_countr_one<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -301,7 +315,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> countr_one(const basic_
 
 template<class T, class Abi>
 constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> bit_width(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_bit_width<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_bit_width<T>::value) {
     using result_type = detail::bit_signed_rebind_t<basic_vec<T, Abi>>;
     result_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
@@ -312,7 +326,7 @@ constexpr detail::bit_signed_rebind_t<basic_vec<T, Abi>> bit_width(const basic_v
 
 template<class T, class Abi>
 constexpr typename basic_vec<T, Abi>::mask_type has_single_bit(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_has_single_bit<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_has_single_bit<T>::value) {
     typename basic_vec<T, Abi>::mask_type result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, std::has_single_bit(detail::to_unsigned_bits(value[i])));
@@ -325,8 +339,8 @@ constexpr basic_vec<T, Abi> shl(
     const basic_vec<T, Abi>& value,
     const basic_vec<Shift, ShiftAbi>& shift) noexcept
     requires(
-        detail::is_vectorizable_integral<T>::value &&
-        detail::is_vectorizable_integral<Shift>::value &&
+        detail::is_bit_integer<T>::value &&
+        detail::is_bit_integer<Shift>::value &&
         sizeof(T) == sizeof(Shift) &&
         basic_vec<T, Abi>::size == basic_vec<Shift, ShiftAbi>::size) {
     basic_vec<T, Abi> result;
@@ -344,8 +358,8 @@ constexpr basic_vec<T, Abi> shl(
     const basic_vec<T, Abi>& value,
     Shift shift) noexcept
     requires(
-        detail::is_vectorizable_integral<T>::value &&
-        detail::is_vectorizable_integral<Shift>::value) {
+        detail::is_bit_integer<T>::value &&
+        detail::is_bit_integer<Shift>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -361,8 +375,8 @@ constexpr basic_vec<T, Abi> shr(
     const basic_vec<T, Abi>& value,
     const basic_vec<Shift, ShiftAbi>& shift) noexcept
     requires(
-        detail::is_vectorizable_integral<T>::value &&
-        detail::is_vectorizable_integral<Shift>::value &&
+        detail::is_bit_integer<T>::value &&
+        detail::is_bit_integer<Shift>::value &&
         sizeof(T) == sizeof(Shift) &&
         basic_vec<T, Abi>::size == basic_vec<Shift, ShiftAbi>::size) {
     basic_vec<T, Abi> result;
@@ -380,8 +394,8 @@ constexpr basic_vec<T, Abi> shr(
     const basic_vec<T, Abi>& value,
     Shift shift) noexcept
     requires(
-        detail::is_vectorizable_integral<T>::value &&
-        detail::is_vectorizable_integral<Shift>::value) {
+        detail::is_bit_integer<T>::value &&
+        detail::is_bit_integer<Shift>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -394,7 +408,7 @@ constexpr basic_vec<T, Abi> shr(
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_floor(const basic_vec<T, Abi>& value) noexcept
-    requires(is_unsigned<T>::value && detail::has_bit_floor<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_bit_floor<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, static_cast<T>(std::bit_floor(detail::to_unsigned_bits(value[i]))));
@@ -404,7 +418,7 @@ constexpr basic_vec<T, Abi> bit_floor(const basic_vec<T, Abi>& value) noexcept
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_ceil(const basic_vec<T, Abi>& value)
-    requires(is_unsigned<T>::value && detail::has_bit_ceil<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_bit_ceil<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, static_cast<T>(std::bit_ceil(detail::to_unsigned_bits(value[i]))));
@@ -414,7 +428,7 @@ constexpr basic_vec<T, Abi> bit_ceil(const basic_vec<T, Abi>& value)
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> rotl(const basic_vec<T, Abi>& value, int shift) noexcept
-    requires(is_unsigned<T>::value && detail::has_rotl<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_rotl<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, static_cast<T>(std::rotl(detail::to_unsigned_bits(value[i]), shift)));
@@ -425,7 +439,7 @@ constexpr basic_vec<T, Abi> rotl(const basic_vec<T, Abi>& value, int shift) noex
 template<class T, class Abi, class Shift, class ShiftAbi>
 constexpr basic_vec<T, Abi> rotl(const basic_vec<T, Abi>& value, const basic_vec<Shift, ShiftAbi>& shift) noexcept
     requires(
-        is_unsigned<T>::value &&
+        detail::is_unsigned_bit_integer<T>::value &&
         is_integral<Shift>::value &&
         sizeof(T) == sizeof(Shift) &&
         basic_vec<T, Abi>::size == basic_vec<Shift, ShiftAbi>::size &&
@@ -439,7 +453,7 @@ constexpr basic_vec<T, Abi> rotl(const basic_vec<T, Abi>& value, const basic_vec
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> rotr(const basic_vec<T, Abi>& value, int shift) noexcept
-    requires(is_unsigned<T>::value && detail::has_rotr<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value && detail::has_rotr<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(result, i, static_cast<T>(std::rotr(detail::to_unsigned_bits(value[i]), shift)));
@@ -450,7 +464,7 @@ constexpr basic_vec<T, Abi> rotr(const basic_vec<T, Abi>& value, int shift) noex
 template<class T, class Abi, class Shift, class ShiftAbi>
 constexpr basic_vec<T, Abi> rotr(const basic_vec<T, Abi>& value, const basic_vec<Shift, ShiftAbi>& shift) noexcept
     requires(
-        is_unsigned<T>::value &&
+        detail::is_unsigned_bit_integer<T>::value &&
         is_integral<Shift>::value &&
         sizeof(T) == sizeof(Shift) &&
         basic_vec<T, Abi>::size == basic_vec<Shift, ShiftAbi>::size &&
@@ -467,7 +481,7 @@ constexpr basic_vec<T, Abi> bit_repeat(
     const basic_vec<T, Abi>& value,
     const basic_vec<Length, LengthAbi>& length)
     requires(
-        is_unsigned<T>::value &&
+        detail::is_unsigned_bit_integer<T>::value &&
         detail::is_vectorizable_integral<Length>::value &&
         sizeof(T) == sizeof(Length) &&
         basic_vec<T, Abi>::size == basic_vec<Length, LengthAbi>::size) {
@@ -487,7 +501,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_repeat(
     const basic_vec<T, Abi>& value,
     int length)
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -502,7 +516,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_compress(
     const basic_vec<T, Abi>& value,
     const basic_vec<T, Abi>& mask) noexcept
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -517,7 +531,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_compress(
     const basic_vec<T, Abi>& value,
     type_identity_t<T> mask) noexcept
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -532,7 +546,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_expand(
     const basic_vec<T, Abi>& value,
     const basic_vec<T, Abi>& mask) noexcept
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
@@ -547,7 +561,7 @@ template<class T, class Abi>
 constexpr basic_vec<T, Abi> bit_expand(
     const basic_vec<T, Abi>& value,
     type_identity_t<T> mask) noexcept
-    requires(is_unsigned<T>::value) {
+    requires(detail::is_unsigned_bit_integer<T>::value) {
     basic_vec<T, Abi> result;
     for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         detail::set_lane(
