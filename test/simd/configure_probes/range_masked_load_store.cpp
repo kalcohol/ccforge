@@ -6,19 +6,20 @@
 int main() {
     using default_int = std::simd::basic_vec<int>;
     using default_mask = typename default_int::mask_type;
+    constexpr auto width = static_cast<std::size_t>(default_int::size);
 
-    static_assert(std::is_same_v<decltype(std::simd::partial_load(std::declval<std::span<const int, 4>>(), default_mask{})),
+    static_assert(std::is_same_v<decltype(std::simd::partial_load(std::declval<std::span<const int, width>>(), default_mask{})),
                                  default_int>);
-    static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std::span<const int, 4>>(),
+    static_assert(std::is_same_v<decltype(std::simd::unchecked_load(std::declval<std::span<const int, width>>(),
                                                                     default_mask{},
                                                                     std::simd::flag_default)),
                                  default_int>);
     static_assert(std::is_same_v<decltype(std::simd::partial_store(std::declval<const default_int&>(),
-                                                                   std::declval<std::span<int, 4>>(),
+                                                                   std::declval<std::span<int, width>>(),
                                                                    default_mask{})),
                                  void>);
     static_assert(std::is_same_v<decltype(std::simd::unchecked_store(std::declval<const default_int&>(),
-                                                                     std::declval<std::span<int, 4>>(),
+                                                                     std::declval<std::span<int, width>>(),
                                                                      default_mask{},
                                                                      std::simd::flag_default)),
                                  void>);

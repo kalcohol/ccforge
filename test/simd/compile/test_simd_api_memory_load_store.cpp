@@ -125,9 +125,9 @@ static_assert(std::is_same<decltype(std::simd::unchecked_load(static_cast<const 
     "unchecked_load(pointer, sentinel) should provide the standard default vector type");
 static_assert(std::is_same<decltype(std::simd::unchecked_load<int4>(std::declval<const_int_iter>(), std::declval<const_int_iter>(), std::simd::flag_default)), int4>::value,
     "unchecked_load(iterator, sentinel) should be a public entry point");
-static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, 4>>(), std::simd::flag_default)), std::simd::basic_vec<int>>::value,
+static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, std::simd::basic_vec<int>::size>>(), std::simd::flag_default)), std::simd::basic_vec<int>>::value,
     "unchecked_load(range) should provide the standard default vector type");
-static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, 4>>(),
+static_assert(std::is_same<decltype(std::simd::unchecked_load(std::declval<std::span<const int, std::simd::basic_vec<int>::size>>(),
                                                               typename std::simd::basic_vec<int>::mask_type{},
                                                               std::simd::flag_default)),
                            std::simd::basic_vec<int>>::value,
