@@ -65,3 +65,9 @@ unset(_forge_target_definitions)
 
 add_subdirectory(runtime)
 add_subdirectory(compile)
+
+if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"
+        AND NOT FORGE_SIMD_FULL AND NOT FORGE_SIMD_PARTIAL)
+    add_subdirectory(native_abi_mixed_tu)
+endif()

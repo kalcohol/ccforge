@@ -28,6 +28,13 @@ libstdc++ lane 充当 fallback oracle。
 `comp_ellint_3` 在 characteristic 从下方接近 1 时使用缩放变量变换，避免窄峰
 超过自适应求积的细分深度；零模数路径使用闭式表达式并显式区分极点两侧。
 
+## Native ABI 的类型标识
+
+默认 native ABI 的 lane 数由当前 translation unit 的 ISA 选项决定，且宽度是 ABI
+tag 类型标识的一部分。同一宽度的显式 native tag 在不同 translation unit 中保持
+一致的 lane 数和布局。通常仍应使用一致的 ISA 编译选项；这个类型标识保证不等于
+整个 header-only 实现对任意混合 ISA 编译都提供 ODR 保证。
+
 ## Mask 变换的 ABI
 
 mask 的 `permute`、`chunk`、`cat` 和 SIMD 下标操作不保证保留输入的 ABI

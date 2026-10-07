@@ -193,19 +193,10 @@ struct has_vectorizable_signed_integer_of_size
 
 inline constexpr simd_size_type max_supported_fixed_size = 64;
 
-template<class T>
+template<class T, size_t NativeBytes>
 struct native_lane_count
     : integral_constant<simd_size_type,
-#if defined(__AVX512F__)
-        ((64 / sizeof(T)) > 0 ? (64 / sizeof(T)) : 1)
-#elif defined(__AVX2__) || defined(__AVX__)
-        ((32 / sizeof(T)) > 0 ? (32 / sizeof(T)) : 1)
-#elif defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
-        ((16 / sizeof(T)) > 0 ? (16 / sizeof(T)) : 1)
-#else
-        1
-#endif
-    > {};
+        ((NativeBytes / sizeof(T)) > 0 ? (NativeBytes / sizeof(T)) : 1)> {};
 
 template<class Flag, class FlagsPack>
 struct has_flag : false_type {};
@@ -373,8 +364,29 @@ struct fixed_size_abi {
     static_assert(N > 0, "std::simd lane count must be positive");
 };
 
+namespace detail {
+
+// Width is part of the tag identity, including across differently targeted TUs.
+template<class T, simd_size_type N>
+struct native_abi_tag {
+    static constexpr simd_size_type width = N;
+};
+
+} // namespace detail
+
+#if defined(__AVX512F__)
 template<class T>
-struct native_abi {};
+using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 64>::value>;
+#elif defined(__AVX2__) || defined(__AVX__)
+template<class T>
+using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 32>::value>;
+#elif defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
+template<class T>
+using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 16>::value>;
+#else
+template<class T>
+using native_abi = detail::native_abi_tag<T, 1>;
+#endif
 
 namespace detail {
 
@@ -391,10 +403,10 @@ struct is_enabled_basic_vec : false_type {};
 template<class T, simd_size_type N>
 struct is_enabled_basic_vec<T, fixed_size_abi<N>> : is_deduce_abi_available<T, N> {};
 
-template<class T, class U>
-struct is_enabled_basic_vec<T, native_abi<U>>
+template<class T, class U, simd_size_type N>
+struct is_enabled_basic_vec<T, native_abi_tag<U, N>>
     : integral_constant<bool,
-        is_supported_value<T>::value &&
+        is_deduce_abi_available<T, N>::value &&
         is_supported_value<U>::value &&
         sizeof(remove_cvref_t<T>) == sizeof(remove_cvref_t<U>)> {};
 
@@ -408,11 +420,11 @@ struct is_enabled_basic_mask<Bytes, fixed_size_abi<N>>
         (N > 0) &&
         (N <= max_supported_fixed_size)> {};
 
-template<size_t Bytes, class U>
-struct is_enabled_basic_mask<Bytes, native_abi<U>>
+template<size_t Bytes, class U, simd_size_type N>
+struct is_enabled_basic_mask<Bytes, native_abi_tag<U, N>>
     : integral_constant<bool,
         has_mask_representative_value<Bytes>::value &&
-        is_supported_value<U>::value &&
+        is_deduce_abi_available<U, N>::value &&
         sizeof(remove_cvref_t<U>) == Bytes> {};
 
 template<class Flag>
@@ -433,7 +445,7 @@ struct deduce_abi {};
 template<class T, simd_size_type N>
 struct deduce_abi<T, N, enable_if_t<is_deduce_abi_available<T, N>::value>> {
     using type = typename conditional<
-        N == native_lane_count<remove_cvref_t<T>>::value,
+        N == native_abi<remove_cvref_t<T>>::width,
         native_abi<remove_cvref_t<T>>,
         fixed_size_abi<N>>::type;
 };
@@ -450,10 +462,10 @@ template<class T, simd_size_type N>
 struct simd_size<T, fixed_size_abi<N>>
     : integral_constant<simd_size_type, detail::is_enabled_basic_vec<T, fixed_size_abi<N>>::value ? N : 0> {};
 
-template<class T, class U>
-struct simd_size<T, native_abi<U>>
+template<class T, class U, simd_size_type N>
+struct simd_size<T, detail::native_abi_tag<U, N>>
     : integral_constant<simd_size_type,
-        detail::is_enabled_basic_vec<T, native_abi<U>>::value ? detail::native_lane_count<detail::remove_cvref_t<U>>::value : 0> {};
+        detail::is_enabled_basic_vec<T, detail::native_abi_tag<U, N>>::value ? N : 0> {};
 
 template<class Abi>
 struct abi_lane_count;
@@ -461,8 +473,8 @@ struct abi_lane_count;
 template<simd_size_type N>
 struct abi_lane_count<fixed_size_abi<N>> : integral_constant<simd_size_type, N> {};
 
-template<class T>
-struct abi_lane_count<native_abi<T>> : detail::native_lane_count<T> {};
+template<class T, simd_size_type N>
+struct abi_lane_count<detail::native_abi_tag<T, N>> : integral_constant<simd_size_type, N> {};
 
 template<class T, simd_size_type N = simd_size<T, native_abi<T>>::value>
 using deduce_abi_t = typename detail::deduce_abi<T, N>::type;
