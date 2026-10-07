@@ -190,6 +190,31 @@ TEST(SimdMathReflection, IntegerZeroCoefficientsDoNotMultiplyInfinity) {
     EXPECT_TRUE(std::signbit(large_ratio.y));
 }
 
+TEST(SimdMathReflection, PositiveTinyArgumentsOverflowToNegativeInfinity) {
+    const auto check = []<class T>(T tiny) {
+        SCOPED_TRACE(std::numeric_limits<T>::digits);
+        for (const T order : {T{20}, T{21}}) {
+            SCOPED_TRACE(order);
+            const T value = math::cyl_bessel_y_fallback(order, tiny);
+            EXPECT_FALSE(std::isnan(value));
+            EXPECT_TRUE(std::isinf(value));
+            EXPECT_TRUE(std::signbit(value));
+        }
+        constexpr std::array<long double, 2> finite_references{
+            -0.78121282130028871654715000004796482055L,
+            -1.65068260681625439107722676611944480393L};
+        for (std::size_t i = 0; i != finite_references.size(); ++i) {
+            const T value = math::cyl_bessel_y_fallback(static_cast<T>(i + 1u), T{1});
+            ASSERT_TRUE(std::isfinite(value));
+            EXPECT_NEAR(static_cast<long double>(value), finite_references[i],
+                        relative_tolerance<T>() * std::abs(finite_references[i]));
+        }
+    };
+    check(1e-30f);
+    check(1e-300);
+    check(1e-300L);
+}
+
 TEST(SimdMathReflection, GenuinelyOverflowingReflectionsRemainSignedInfinities) {
     const auto float_result = math::cyl_bessel_jy_fallback(-30.25f, 1.0f);
     ASSERT_TRUE(float_result.converged);
