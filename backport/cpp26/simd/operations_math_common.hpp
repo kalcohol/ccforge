@@ -84,6 +84,9 @@ template<class T>
 constexpr T math_round(T value) {
     if consteval {
         const T integral = constexpr_math_trunc(value);
+        if (value != value || value == integral) {
+            return value;
+        }
         const T fraction = value - integral;
         if (fraction >= T{0.5}) {
             return integral + T{1};
