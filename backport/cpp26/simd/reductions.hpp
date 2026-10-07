@@ -53,6 +53,7 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
 }
 
 template<class T, class Abi>
+    requires totally_ordered<T>
 constexpr T reduce_min(const basic_vec<T, Abi>& value) noexcept {
     T result = value[0];
     for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
@@ -64,6 +65,7 @@ constexpr T reduce_min(const basic_vec<T, Abi>& value) noexcept {
 }
 
 template<class T, class Abi>
+    requires totally_ordered<T>
 constexpr T reduce_min(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
@@ -86,6 +88,7 @@ constexpr T reduce_min(
 }
 
 template<class T, class Abi>
+    requires totally_ordered<T>
 constexpr T reduce_max(const basic_vec<T, Abi>& value) noexcept {
     T result = value[0];
     for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
@@ -97,6 +100,7 @@ constexpr T reduce_max(const basic_vec<T, Abi>& value) noexcept {
 }
 
 template<class T, class Abi>
+    requires totally_ordered<T>
 constexpr T reduce_max(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
