@@ -3,16 +3,33 @@
 namespace detail {
 
 // Inspect an object-independent size without constructing or copying the range.
+#if defined(__GNUC__) && !defined(__clang__)
+template<class R>
+concept has_unchecked_range_size_constant = requires(R& r) {
+    typename integral_constant<decltype(ranges::size(r)), ranges::size(r)>;
+};
+
+template<class R>
+    requires has_unchecked_range_size_constant<R>
+auto unchecked_range_size_constant(R& r) {
+    constexpr auto value = ranges::size(r);
+    return integral_constant<decltype(ranges::size(r)), value>{};
+}
+
+template<class Result, class R>
+auto unchecked_range_size_result(Result (*)(R&)) -> type_identity<Result>;
+#else
 template<class R>
 auto unchecked_range_size_constant(R r)
     -> integral_constant<decltype(ranges::size(r)), ranges::size(r)>;
 
 template<class Result, class R>
 auto unchecked_range_size_result(Result (*)(R)) -> type_identity<Result>;
+#endif
 
 template<class R>
 using unchecked_range_size_t = typename decltype(detail::unchecked_range_size_result(
-    &detail::unchecked_range_size_constant<R>))::type;
+    &detail::unchecked_range_size_constant<remove_reference_t<R>>))::type;
 
 template<class V, class R>
 constexpr void require_unchecked_static_extent() noexcept {

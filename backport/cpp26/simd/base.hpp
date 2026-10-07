@@ -1088,22 +1088,41 @@ struct is_contiguous_mask_range<R,
         ranges::sized_range<remove_cvref_t<R>> &&
         is_constructible<bool, typename ranges::range_reference_t<remove_cvref_t<R>>>::value> {};
 
-// The prototype is never called: querying its return type does not construct
-// or copy the range, and a state-dependent size fails substitution.
+// GNU needs body-based extraction; the other path uses only a declared
+// return type. Neither path constructs, copies, or calls the range.
+#if defined(__GNUC__) && !defined(__clang__)
+template<class R>
+concept has_constant_range_size = requires(R& range) {
+    typename integral_constant<simd_size_type, ranges::size(range)>;
+};
+
+template<class R>
+    requires has_constant_range_size<R>
+auto constant_range_size(R& range) {
+    constexpr simd_size_type value = ranges::size(range);
+    return integral_constant<simd_size_type, value>{};
+}
+
+template<class Result, class R>
+auto constant_range_size_result(Result (*)(R&)) -> type_identity<Result>;
+#else
 template<class R>
 auto constant_range_size(R range)
     -> integral_constant<simd_size_type, ranges::size(range)>;
 
 template<class Result, class R>
 auto constant_range_size_result(Result (*)(R)) -> type_identity<Result>;
+#endif
 
 template<class R, class = void>
 struct constant_range_size_type : integral_constant<simd_size_type, -1> {};
 
 template<class R>
 struct constant_range_size_type<R, void_t<typename decltype(
-    detail::constant_range_size_result(&detail::constant_range_size<R>))::type>>
-    : decltype(detail::constant_range_size_result(&detail::constant_range_size<R>))::type {};
+    detail::constant_range_size_result(
+        &detail::constant_range_size<remove_reference_t<R>>))::type>>
+    : decltype(detail::constant_range_size_result(
+        &detail::constant_range_size<remove_reference_t<R>>))::type {};
 
 template<class R, class = void>
 struct fixed_range_size : constant_range_size_type<R> {};
