@@ -173,12 +173,76 @@ struct __sender {
     }
 };
 
+template<class Token>
+struct __closure;
+
 struct __associate_t {
     template<sender S, scope_token Token>
     [[nodiscard]] auto operator()(S&& sndr, Token token) const
         -> __sender<std::decay_t<S>, std::decay_t<Token>> {
         return __sender<std::decay_t<S>, std::decay_t<Token>>{
             static_cast<S&&>(sndr), std::move(token)};
+    }
+
+    template<class Token>
+        requires scope_token<std::decay_t<Token>> &&
+                 std::constructible_from<std::decay_t<Token>, Token>
+    [[nodiscard]] constexpr auto operator()(Token&& token) const
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<Token>, Token>)
+        -> __closure<std::decay_t<Token>> {
+        return {std::decay_t<Token>(static_cast<Token&&>(token))};
+    }
+};
+
+template<class Token>
+struct __closure {
+    Token __token;
+
+    template<sender S>
+        requires requires(Token& token, S&& sndr) {
+            __associate_t{}(static_cast<S&&>(sndr), token);
+        }
+    [[nodiscard]] auto operator()(S&& sndr) & {
+        return __associate_t{}(static_cast<S&&>(sndr), __token);
+    }
+
+    template<sender S>
+        requires requires(const Token& token, S&& sndr) {
+            __associate_t{}(static_cast<S&&>(sndr), token);
+        }
+    [[nodiscard]] auto operator()(S&& sndr) const& {
+        return __associate_t{}(static_cast<S&&>(sndr), __token);
+    }
+
+    template<sender S>
+        requires requires(Token&& token, S&& sndr) {
+            __associate_t{}(static_cast<S&&>(sndr), static_cast<Token&&>(token));
+        }
+    [[nodiscard]] auto operator()(S&& sndr) && {
+        return __associate_t{}(static_cast<S&&>(sndr), std::move(__token));
+    }
+
+    template<sender S>
+        requires requires(const Token&& token, S&& sndr) {
+            __associate_t{}(static_cast<S&&>(sndr), static_cast<const Token&&>(token));
+        }
+    [[nodiscard]] auto operator()(S&& sndr) const&& {
+        return __associate_t{}(static_cast<S&&>(sndr), std::move(__token));
+    }
+
+    template<class S> void operator()(S&&) & = delete;
+    template<class S> void operator()(S&&) const& = delete;
+    template<class S> void operator()(S&&) && = delete;
+    template<class S> void operator()(S&&) const&& = delete;
+
+    template<sender S, class Self>
+        requires std::same_as<std::remove_cvref_t<Self>, __closure> &&
+                 requires(Self&& self, S&& sndr) {
+                     static_cast<Self&&>(self)(static_cast<S&&>(sndr));
+                 }
+    friend auto operator|(S&& sndr, Self&& self)
+        noexcept(noexcept(static_cast<Self&&>(self)(static_cast<S&&>(sndr)))) {
+        return static_cast<Self&&>(self)(static_cast<S&&>(sndr));
     }
 };
 
