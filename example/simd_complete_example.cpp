@@ -35,7 +35,7 @@ int main() {
         static_cast<std::simd::simd_size_type>(threshold_raw.size()));
     const auto selected = sum > threshold;
     const auto reversed = std::simd::permute(sum, [](auto index, auto size) {
-        return std::simd::simd_size_type(decltype(size)::value - 1 - decltype(index)::value);
+        return std::simd::simd_size_type(size - 1 - index);
     });
     const int8 eight = std::simd::iota<int8> + int8(1);
     const auto pieces = std::simd::chunk<int4>(eight);

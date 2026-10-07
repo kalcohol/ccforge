@@ -3,6 +3,7 @@ forge_add_simd_runtime_test(test_simd_broadcast_conversion test_simd_broadcast_c
 
 forge_add_simd_runtime_test(test_simd_expansion test_simd_expansion.cpp)
 target_compile_definitions(test_simd_expansion PRIVATE FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_TESTS)
+forge_add_simd_runtime_test(test_simd_permute_protocol test_simd_permute_protocol.cpp)
 
 forge_add_simd_runtime_test(test_simd_reductions test_simd_reductions.cpp)
 

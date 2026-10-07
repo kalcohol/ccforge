@@ -927,47 +927,54 @@ constexpr lane_mapped_value_t<V> dynamic_permute_lane(const V& value, simd_size_
     return value[index];
 }
 
-template<simd_size_type Size, class IndexMap, class Lane>
-constexpr decltype(auto) invoke_index_map(IndexMap&& index_map, Lane lane) {
-    if constexpr (is_invocable<IndexMap, Lane, integral_constant<simd_size_type, Size>>::value) {
-        return std::forward<IndexMap>(index_map)(lane, integral_constant<simd_size_type, Size>{});
+template<simd_size_type Size, class IndexMap>
+constexpr decltype(auto) invoke_index_map(IndexMap& index_map, simd_size_type lane) {
+    if constexpr (is_invocable<IndexMap&, simd_size_type, simd_size_type>::value) {
+        return index_map(static_cast<simd_size_type>(lane), static_cast<simd_size_type>(Size));
     } else {
-        return std::forward<IndexMap>(index_map)(lane);
+        return index_map(static_cast<simd_size_type>(lane));
     }
 }
 
-template<simd_size_type Size, class IndexMap, class Lane,
-         bool = is_invocable<IndexMap&, Lane, integral_constant<simd_size_type, Size>>::value,
-         class = void>
-struct is_static_permute_index_map_lane : false_type {};
+template<simd_size_type Size, class Index>
+constexpr bool is_valid_static_permute_index(const Index& index) {
+    return index == zero_element || index == uninit_element ||
+        (index >= 0 && index < Size);
+}
 
-template<simd_size_type Size, class IndexMap, class Lane>
-struct is_static_permute_index_map_lane<Size, IndexMap, Lane, true, void>
-    : is_integral<remove_cvref_t<invoke_result_t<
-        IndexMap&, Lane, integral_constant<simd_size_type, Size>>>> {};
+template<simd_size_type Index, bool Valid>
+struct checked_static_permute_index : integral_constant<simd_size_type, Index> {
+    static_assert(Valid,
+        "std::simd static permute index maps must produce a sentinel or a valid source index");
+};
 
-template<simd_size_type Size, class IndexMap, class Lane>
-struct is_static_permute_index_map_lane<
-    Size,
-    IndexMap,
-    Lane,
-    false,
-    void_t<invoke_result_t<IndexMap&, Lane>>>
-    : is_integral<remove_cvref_t<invoke_result_t<IndexMap&, Lane>>> {};
+// Only the return type is used: this declaration is never called or defined,
+// so its by-value parameter imposes no construction or copying of the map.
+template<simd_size_type Size, simd_size_type Lane, class IndexMap>
+auto static_permute_index_constant(IndexMap index_map)
+    -> checked_static_permute_index<
+        detail::is_valid_static_permute_index<Size>(detail::invoke_index_map<Size>(index_map, Lane))
+            ? static_cast<simd_size_type>(detail::invoke_index_map<Size>(index_map, Lane)) : 0,
+        detail::is_valid_static_permute_index<Size>(detail::invoke_index_map<Size>(index_map, Lane))>;
 
-template<simd_size_type Size, class IndexMap, class Seq>
-struct is_static_permute_index_map_sequence;
+template<class Result, class IndexMap>
+auto static_permute_index_result(Result (*)(IndexMap)) -> type_identity<Result>;
 
-template<simd_size_type Size, class IndexMap, size_t... I>
-struct is_static_permute_index_map_sequence<Size, IndexMap, index_sequence<I...>>
-    : conjunction<is_static_permute_index_map_lane<
-        Size,
-        IndexMap,
-        integral_constant<simd_size_type, static_cast<simd_size_type>(I)>>...> {};
+template<simd_size_type Size, simd_size_type Lane, class IndexMap>
+using static_permute_index_t = typename decltype(detail::static_permute_index_result(
+    &detail::static_permute_index_constant<Size, Lane, IndexMap>))::type;
 
-template<simd_size_type Size, class IndexMap>
+template<class IndexMap, class... Args>
+concept integral_index_map_result = requires {
+    typename invoke_result_t<IndexMap&, Args...>;
+    requires is_integral<invoke_result_t<IndexMap&, Args...>>::value;
+};
+
+template<class IndexMap>
 struct is_static_permute_index_map
-    : is_static_permute_index_map_sequence<Size, remove_cvref_t<IndexMap>, make_index_sequence<static_cast<size_t>(Size)>> {};
+    : bool_constant<
+        integral_index_map_result<IndexMap, simd_size_type> ||
+        integral_index_map_result<IndexMap, simd_size_type, simd_size_type>> {};
 
 template<class V, class Indices>
 constexpr permute_result_t<V, Indices> permute_from_indices(const V& value, const Indices& indices) noexcept {
@@ -979,15 +986,11 @@ constexpr permute_result_t<V, Indices> permute_from_indices(const V& value, cons
 }
 
 template<class V, class IndexMap, simd_size_type... I>
-constexpr resize_t<sizeof...(I), V> permute_from_map_impl(const V& value, IndexMap index_map, integer_sequence<simd_size_type, I...>) {
-    return resize_t<sizeof...(I), V>([&](auto lane) {
-        constexpr auto source_index = invoke_index_map<static_cast<simd_size_type>(V::size)>(index_map, lane);
-        static_assert(
-            source_index == zero_element ||
-            source_index == uninit_element ||
-            (source_index >= 0 && source_index < static_cast<simd_size_type>(V::size)),
-            "std::simd static permute index maps must produce a sentinel or a valid source index");
-        return permute_lane(value, static_cast<simd_size_type>(source_index));
+constexpr resize_t<sizeof...(I), V> permute_from_map_impl(const V& value, IndexMap&, integer_sequence<simd_size_type, I...>) {
+    return resize_t<sizeof...(I), V>([&value](auto lane) {
+        using source_index = static_permute_index_t<static_cast<simd_size_type>(V::size),
+            static_cast<simd_size_type>(decltype(lane)::value), IndexMap>;
+        return permute_lane(value, source_index::value);
     });
 }
 
@@ -1190,7 +1193,7 @@ constexpr detail::permute_result_t<V, Indices> permute(const V& value, const Ind
 
 template<simd_size_type N = 0, class V, class IndexMap,
          typename enable_if<!detail::is_simd_index_vector<detail::remove_cvref_t<IndexMap>>::value &&
-             detail::is_static_permute_index_map<(N == 0 ? static_cast<simd_size_type>(V::size) : N), IndexMap>::value, int>::type = 0>
+             detail::is_static_permute_index_map<IndexMap>::value, int>::type = 0>
 constexpr resize_t<(N == 0 ? static_cast<simd_size_type>(V::size) : N), V> permute(const V& value, IndexMap&& index_map);
 
 template<class Chunk,

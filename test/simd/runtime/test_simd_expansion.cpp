@@ -217,10 +217,10 @@ TEST(SimdRuntimeExpansionTest, PermuteReordersLanes) {
     const std::array<int, 4> data{{1, 2, 3, 4}};
     const int4 values = load_vec<int4>(data);
     const auto reversed = std::simd::permute(values, [](auto index) {
-        return std::simd::simd_size_type(3 - decltype(index)::value);
+        return std::simd::simd_size_type(3 - index);
     });
     const auto reversed_with_size = std::simd::permute(values, [](auto index, auto size) {
-        return std::simd::simd_size_type(decltype(size)::value - 1 - decltype(index)::value);
+        return std::simd::simd_size_type(size - 1 - index);
     });
     const std::array<int, 4> indices_data{{2, 0, 3, 1}};
     const int4 indices = load_vec<int4>(indices_data);
@@ -240,11 +240,11 @@ TEST(SimdRuntimeExpansionTest, PermuteSupportsZeroAndUninitSentinels) {
     const std::array<int, 4> data{{1, 2, 3, 4}};
     const int4 values = load_vec<int4>(data);
     const auto permuted = std::simd::permute(values, [](auto index) {
-        if constexpr (decltype(index)::value == 0) {
+        if (index == 0) {
             return std::simd::simd_size_type(1);
-        } else if constexpr (decltype(index)::value == 1) {
+        } else if (index == 1) {
             return std::simd::zero_element;
-        } else if constexpr (decltype(index)::value == 2) {
+        } else if (index == 2) {
             return std::simd::simd_size_type(3);
         } else {
             return std::simd::uninit_element;

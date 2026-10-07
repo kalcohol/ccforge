@@ -156,6 +156,11 @@ forge_add_simd_configure_probe(
     FALSE
     "Forge simd backport must diagnose static permute maps that produce invalid source indices")
 forge_add_simd_configure_probe(
+    FORGE_SIMD_REJECTS_NEGATIVE_FRACTIONAL_STATIC_PERMUTE
+    "reject_negative_fractional_static_permute.cpp"
+    FALSE
+    "Forge simd backport must validate static permute indices before conversion")
+forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_BIT_SURFACE
     "bit_surface.cpp"
     TRUE

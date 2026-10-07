@@ -108,9 +108,7 @@ template<
     class IndexMap,
     typename enable_if<
         !detail::is_simd_index_vector<detail::remove_cvref_t<IndexMap>>::value &&
-            detail::is_static_permute_index_map<
-                (N == 0 ? static_cast<simd_size_type>(V::size) : N),
-                IndexMap>::value,
+            detail::is_static_permute_index_map<IndexMap>::value,
         int>::type>
 constexpr resize_t<(N == 0 ? static_cast<simd_size_type>(V::size) : N), V>
 permute(const V& value, IndexMap&& index_map) {
@@ -119,7 +117,7 @@ permute(const V& value, IndexMap&& index_map) {
 
     return detail::permute_from_map_impl(
         value,
-        std::forward<IndexMap>(index_map),
+        index_map,
         make_integer_sequence<simd_size_type, lane_count>{});
 }
 

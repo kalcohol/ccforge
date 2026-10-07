@@ -7,16 +7,15 @@ using namespace simd_test;
 #if defined(FORGE_SIMD_ENABLE_CHUNK_CAT_PERMUTE_PROBES)
 
 struct identity_index_map {
-    template<class Index>
-    constexpr std::simd::simd_size_type operator()(Index) const noexcept {
-        return Index::value;
+    constexpr std::simd::simd_size_type operator()(std::simd::simd_size_type index) const noexcept {
+        return index;
     }
 };
 
 struct reverse_with_size_map {
-    template<class Index, class Size>
-    constexpr std::simd::simd_size_type operator()(Index, Size) const noexcept {
-        return static_cast<std::simd::simd_size_type>(Size::value - 1 - Index::value);
+    constexpr std::simd::simd_size_type operator()(std::simd::simd_size_type index,
+                                                  std::simd::simd_size_type size) const noexcept {
+        return size - 1 - index;
     }
 };
 
