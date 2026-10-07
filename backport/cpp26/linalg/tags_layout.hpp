@@ -214,6 +214,25 @@ template<class Layout, class Triangle>
 inline constexpr bool __packed_triangle_matches_v =
     __packed_triangle_matches<Layout, Triangle>::value;
 
+template<class Layout>
+inline constexpr bool __is_blas_packed_layout_v = false;
+
+template<class Triangle, class StorageOrder>
+inline constexpr bool __is_blas_packed_layout_v<
+    layout_blas_packed<Triangle, StorageOrder>> = true;
+
+template<class Extents, class Layout>
+using __output_mapping_t = typename Layout::template mapping<Extents>;
+
+template<class Extents, class Layout>
+inline constexpr bool __always_unique_mapping_v =
+    __output_mapping_t<Extents, Layout>::is_always_unique();
+
+template<class Extents, class Layout>
+inline constexpr bool __possibly_packed_output_mapping_v =
+    __always_unique_mapping_v<Extents, Layout> ||
+    __is_blas_packed_layout_v<Layout>;
+
 } // namespace __detail
 
 } // namespace std::linalg

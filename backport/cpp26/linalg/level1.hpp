@@ -36,7 +36,8 @@ namespace std::linalg {
 // copy — [linalg.algs.blas1.copy]
 template<class InExtents, class InLayout, class InAccessor,
          class OutExtents, class OutLayout, class OutAccessor>
-    requires __detail::__compatible_static_extents_v<InExtents, OutExtents>
+    requires (__detail::__always_unique_mapping_v<OutExtents, OutLayout> &&
+              __detail::__compatible_static_extents_v<InExtents, OutExtents>)
 void copy(
     std::mdspan<typename InAccessor::element_type, InExtents, InLayout, InAccessor> from,
     std::mdspan<typename OutAccessor::element_type, OutExtents, OutLayout, OutAccessor> to)
@@ -75,6 +76,7 @@ void copy(
 // scale — [linalg.algs.blas1.scale]
 template<class ScalingFactor,
          class Extents, class Layout, class Accessor>
+    requires (__detail::__always_unique_mapping_v<Extents, Layout>)
 void scale(
     ScalingFactor alpha,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
@@ -117,7 +119,9 @@ void scale(
 // swap_elements — [linalg.algs.blas1.swap]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
+              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void swap_elements(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
@@ -137,9 +141,10 @@ void swap_elements(
 template<class InExtents1, class InLayout1, class InAccessor1,
          class InExtents2, class InLayout2, class InAccessor2,
          class OutExtents, class OutLayout, class OutAccessor>
-    requires __detail::__compatible_static_extents_v<InExtents1, InExtents2> &&
+    requires (__detail::__always_unique_mapping_v<OutExtents, OutLayout> &&
+              __detail::__compatible_static_extents_v<InExtents1, InExtents2> &&
              __detail::__compatible_static_extents_v<InExtents1, OutExtents> &&
-             __detail::__compatible_static_extents_v<InExtents2, OutExtents>
+             __detail::__compatible_static_extents_v<InExtents2, OutExtents>)
 void add(
     std::mdspan<typename InAccessor1::element_type, InExtents1, InLayout1, InAccessor1> x,
     std::mdspan<typename InAccessor2::element_type, InExtents2, InLayout2, InAccessor2> y,
@@ -523,7 +528,9 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
 // apply_givens_rotation — [linalg.algs.blas1.givens]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
+              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void apply_givens_rotation(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -539,7 +546,9 @@ void apply_givens_rotation(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class Real>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
+              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void apply_givens_rotation(
     std::mdspan<std::complex<Real>, Extents1, Layout1, Accessor1> x,
     std::mdspan<std::complex<Real>, Extents2, Layout2, Accessor2> y,

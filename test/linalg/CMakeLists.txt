@@ -60,6 +60,7 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
     forge_add_linalg_runtime_test(test_linalg_level1 test_linalg_level1.cpp linalg_level1)
     forge_add_linalg_runtime_test(test_linalg_adl_helpers test_linalg_adl_helpers.cpp linalg_adl_helpers)
     forge_add_linalg_runtime_test(test_linalg_scale_ordering test_linalg_scale_ordering.cpp linalg_scale_ordering)
+    forge_add_linalg_runtime_test(test_linalg_unique_outputs test_linalg_unique_outputs.cpp linalg_unique_outputs)
     forge_add_linalg_runtime_test(test_linalg_dot_mixed_sum test_linalg_dot_mixed_sum.cpp linalg_dot_mixed_sum)
     forge_add_linalg_runtime_test(test_linalg_level2 test_linalg_level2.cpp linalg_level2)
     forge_add_linalg_runtime_test(test_linalg_level3 test_linalg_level3.cpp linalg_level3)
@@ -91,6 +92,10 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
         test_linalg_algorithm_tags
         test_linalg_algorithm_tags.cpp
         linalg_algorithm_tags_compile)
+    forge_add_linalg_compile_probe(
+        test_linalg_output_uniqueness
+        test_linalg_output_uniqueness.cpp
+        linalg_output_uniqueness_compile)
     forge_expect_linalg_cxx_source_compiles(
         FORGE_LINALG_REJECTS_INVALID_PACKED_TAGS
         test_linalg_reject_invalid_packed_tags.cpp
