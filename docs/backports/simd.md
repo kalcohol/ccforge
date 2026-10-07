@@ -17,7 +17,11 @@
   `__cpp_lib_simd_bitops = 202607L`、`__cpp_lib_simd_complex = 202502L` 和
   `__cpp_lib_simd_permutations = 202506L`
 
-special-math 向量重载逐 lane 遵循对应的标量特殊函数语义。标准把 Bessel 的
+special-math 向量重载在有效域内逐 lane 遵循对应的标量特殊函数语义。
+[simd.math] 对标量域错误所对应的 lane 不规定结果，也不保证通过 `errno` 报告。
+因此非法实参不承诺跨标准库统一的返回值或错误报告方式：Forge fallback 返回 NaN，
+转发原生标量库的路径保留其可能抛出的异常，不额外捕获或归一化。
+标准把 Bessel 的
 `nu >= 128`，以及球 Bessel / 球 Neumann / 球谐的阶数 `>= 128` 明确定为
 implementation-defined。Forge 的多项式 fallback（Hermite、Laguerre、Legendre、
 associated Laguerre / Legendre 和 spherical Legendre）在 degree `>= 1024` 时
