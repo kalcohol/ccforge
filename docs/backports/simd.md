@@ -26,8 +26,10 @@ special-math 向量重载在有效域内逐 lane 遵循对应的标量特殊函�
 implementation-defined。Forge 的多项式 fallback（Hermite、Laguerre、Legendre、
 associated Laguerre / Legendre 和 spherical Legendre）在 degree `>= 1024` 时
 直接返回 NaN；associated Laguerre 的 order `>= 1024` 同样返回 NaN，不进入递推。
-associated Legendre 的 `m > l` 零值规则仍优先保留。该预算只描述 Forge fallback，
-不覆盖转发给原生标量库的实现；超高阶数值质量不计入 portable conformance 承诺。
+associated Legendre 的 `m > l` 零值规则仍优先保留。
+球 Bessel / Neumann fallback 同样在 degree `>= 1024` 时返回 NaN，不进入递推。
+这些预算只描述 Forge fallback，不覆盖转发给原生标量库的实现；
+超高阶数值质量不计入 portable conformance 承诺。
 定义范围内的 fallback 会在 LLVM/libc++ lane 通过
 直接调用与 public `std::simd` 调用共同验证；不能用会转发原生标量 special math 的
 libstdc++ lane 充当 fallback oracle。

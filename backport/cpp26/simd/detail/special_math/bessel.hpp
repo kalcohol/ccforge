@@ -7,6 +7,9 @@ T sph_bessel_fallback(unsigned n, T x) {
     if (std::isnan(x) || x < T{}) {
         return quiet_nan<T>();
     }
+    if (n >= recurrence_order_limit) {
+        return quiet_nan<T>();
+    }
     if (x == T{}) {
         return n == 0u ? T{1} : T{};
     }
@@ -28,6 +31,9 @@ T sph_bessel_fallback(unsigned n, T x) {
 template<class T>
 T sph_neumann_fallback(unsigned n, T x) {
     if (std::isnan(x) || x < T{}) {
+        return quiet_nan<T>();
+    }
+    if (n >= recurrence_order_limit) {
         return quiet_nan<T>();
     }
     if (x == T{}) {
