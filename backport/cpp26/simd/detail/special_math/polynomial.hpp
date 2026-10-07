@@ -2,6 +2,85 @@
 
 namespace detail::special_math {
 
+struct polynomial_scaled_value {
+    long double fraction;
+    int exponent;
+};
+
+inline auto polynomial_scaled(long double value, int exponent = 0)
+    -> polynomial_scaled_value {
+    if (value == 0.0L || !std::isfinite(value)) {
+        return {value, 0};
+    }
+    int shift = 0;
+    const long double fraction = std::frexp(value, &shift);
+    return {fraction, exponent + shift};
+}
+
+inline auto polynomial_scaled_product(
+    polynomial_scaled_value left, polynomial_scaled_value right)
+    -> polynomial_scaled_value {
+    return polynomial_scaled(
+        left.fraction * right.fraction, left.exponent + right.exponent);
+}
+
+inline auto polynomial_scaled_difference(
+    polynomial_scaled_value left, polynomial_scaled_value right)
+    -> polynomial_scaled_value {
+    if (left.fraction == 0.0L) {
+        return polynomial_scaled(-right.fraction, right.exponent);
+    }
+    if (right.fraction == 0.0L) {
+        return left;
+    }
+    const int exponent = std::max(left.exponent, right.exponent);
+    const long double a = std::ldexp(left.fraction, left.exponent - exponent);
+    const long double b = std::ldexp(right.fraction, right.exponent - exponent);
+    return polynomial_scaled(a - b, exponent);
+}
+
+// Keep each recurrence term scaled, including coefficients and seeds. This
+// does not depend on long double having a wider exponent range than double.
+inline auto polynomial_scaled_next(
+    polynomial_scaled_value previous, polynomial_scaled_value current,
+    polynomial_scaled_value first, long double second, long double divisor = 1.0L)
+    -> polynomial_scaled_value {
+    const auto difference = polynomial_scaled_difference(
+        polynomial_scaled_product(first, current),
+        polynomial_scaled_product(polynomial_scaled(second), previous));
+    return polynomial_scaled(difference.fraction / divisor, difference.exponent);
+}
+
+template<class T>
+T polynomial_unscale(polynomial_scaled_value value) {
+    if (!std::isfinite(value.fraction)) {
+        return static_cast<T>(value.fraction);
+    }
+    int max_exponent = 0;
+    const long double max_fraction = std::frexp(
+        static_cast<long double>(std::numeric_limits<T>::max()), &max_exponent);
+    if (value.exponent > max_exponent ||
+        (value.exponent == max_exponent && std::abs(value.fraction) > max_fraction)) {
+        return std::copysign(infinity<T>(), static_cast<T>(value.fraction));
+    }
+    return static_cast<T>(std::ldexp(value.fraction, value.exponent));
+}
+
+inline auto polynomial_laguerre_scaled(unsigned n, unsigned m, long double x)
+    -> polynomial_scaled_value {
+    auto previous = polynomial_scaled(1.0L);
+    auto current = polynomial_scaled(static_cast<long double>(m + 1u) - x);
+    for (unsigned i = 1; i < n; ++i) {
+        const auto next = polynomial_scaled_next(
+            previous, current,
+            polynomial_scaled(static_cast<long double>(2u * i + m + 1u) - x),
+            static_cast<long double>(i + m), static_cast<long double>(i + 1u));
+        previous = current;
+        current = next;
+    }
+    return current;
+}
+
 template<class T>
 T hermite_fallback(unsigned n, T x) {
     if (std::isnan(x)) {
@@ -20,14 +99,17 @@ T hermite_fallback(unsigned n, T x) {
         return static_cast<T>(2) * x;
     }
 
-    T hm2 = T{1};
-    T hm1 = static_cast<T>(2) * x;
+    const auto twice_x = polynomial_scaled_product(
+        polynomial_scaled(2.0L), polynomial_scaled(static_cast<long double>(x)));
+    auto hm2 = polynomial_scaled(1.0L);
+    auto hm1 = twice_x;
     for (unsigned i = 1; i < n; ++i) {
-        const T next = static_cast<T>(2) * x * hm1 - static_cast<T>(2 * i) * hm2;
+        const auto next = polynomial_scaled_next(
+            hm2, hm1, twice_x, static_cast<long double>(2u * i));
         hm2 = hm1;
         hm1 = next;
     }
-    return hm1;
+    return polynomial_unscale<T>(hm1);
 }
 
 template<class T>
@@ -48,14 +130,7 @@ T laguerre_fallback(unsigned n, T x) {
         return T{1} - x;
     }
 
-    T lm2 = T{1};
-    T lm1 = T{1} - x;
-    for (unsigned i = 1; i < n; ++i) {
-        const T next = ((static_cast<T>(2 * i + 1) - x) * lm1 - static_cast<T>(i) * lm2) / static_cast<T>(i + 1);
-        lm2 = lm1;
-        lm1 = next;
-    }
-    return lm1;
+    return polynomial_unscale<T>(polynomial_laguerre_scaled(n, 0u, static_cast<long double>(x)));
 }
 
 template<class T>
@@ -104,15 +179,7 @@ T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
         return static_cast<T>(m + 1) - x;
     }
 
-    T lm2 = T{1};
-    T lm1 = static_cast<T>(m + 1) - x;
-    for (unsigned i = 1; i < n; ++i) {
-        const T next =
-            ((static_cast<T>(2 * i + m + 1) - x) * lm1 - static_cast<T>(i + m) * lm2) / static_cast<T>(i + 1);
-        lm2 = lm1;
-        lm1 = next;
-    }
-    return lm1;
+    return polynomial_unscale<T>(polynomial_laguerre_scaled(n, m, static_cast<long double>(x)));
 }
 
 template<class T>
@@ -130,34 +197,37 @@ T assoc_legendre_fallback(unsigned l, unsigned m, T x) {
         return quiet_nan<T>();
     }
 
-    T pmm = T{1};
+    auto pmm = polynomial_scaled(1.0L);
     if (m > 0u) {
-        const T one_minus_x2 = std::max(T{}, T{1} - x * x);
-        const T root = std::sqrt(one_minus_x2);
-        T factor = T{1};
+        const long double argument = static_cast<long double>(x);
+        const long double root = std::sqrt(std::max(0.0L, 1.0L - argument * argument));
+        const auto scaled_root = polynomial_scaled(root);
         for (unsigned i = 1; i <= m; ++i) {
-            pmm *= factor * root;
-            factor += T{2};
+            pmm = polynomial_scaled_product(pmm, polynomial_scaled_product(
+                polynomial_scaled(static_cast<long double>(2u * i - 1u)), scaled_root));
         }
     }
 
     if (l == m) {
-        return pmm;
+        return polynomial_unscale<T>(pmm);
     }
 
-    T pmmp1 = static_cast<T>(2 * m + 1) * x * pmm;
+    const auto scaled_x = polynomial_scaled(static_cast<long double>(x));
+    auto pmmp1 = polynomial_scaled_product(pmm, polynomial_scaled_product(
+        polynomial_scaled(static_cast<long double>(2u * m + 1u)), scaled_x));
     if (l == m + 1u) {
-        return pmmp1;
+        return polynomial_unscale<T>(pmmp1);
     }
 
-    T pll = T{};
     for (unsigned ll = m + 2u; ll <= l; ++ll) {
-        pll = (static_cast<T>(2 * ll - 1) * x * pmmp1 - static_cast<T>(ll + m - 1) * pmm) /
-            static_cast<T>(ll - m);
+        const auto pll = polynomial_scaled_next(
+            pmm, pmmp1,
+            polynomial_scaled_product(polynomial_scaled(static_cast<long double>(2u * ll - 1u)), scaled_x),
+            static_cast<long double>(ll + m - 1u), static_cast<long double>(ll - m));
         pmm = pmmp1;
         pmmp1 = pll;
     }
-    return pll;
+    return polynomial_unscale<T>(pmmp1);
 }
 
 template<class T>
