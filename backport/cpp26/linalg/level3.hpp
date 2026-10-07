@@ -82,7 +82,8 @@ void matrix_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__square_matrix_left_operand_static_extents_v<AExtents, CExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_matrix_left_operand_static_extents_v<AExtents, CExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_left_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -134,7 +135,8 @@ void triangular_matrix_left_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__square_matrix_right_operand_static_extents_v<AExtents, CExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_matrix_right_operand_static_extents_v<AExtents, CExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_right_product(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -186,7 +188,8 @@ void triangular_matrix_right_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor>
-    requires (__detail::__square_matrix_left_operand_static_extents_v<AExtents, BExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_matrix_left_operand_static_extents_v<AExtents, BExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void triangular_matrix_matrix_left_solve(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,

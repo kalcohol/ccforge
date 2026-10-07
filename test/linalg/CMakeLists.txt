@@ -87,6 +87,10 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
         test_linalg_packed_contracts
         test_linalg_packed_contracts.cpp
         linalg_packed_contracts_compile)
+    forge_add_linalg_compile_probe(
+        test_linalg_algorithm_tags
+        test_linalg_algorithm_tags.cpp
+        linalg_algorithm_tags_compile)
     forge_expect_linalg_cxx_source_compiles(
         FORGE_LINALG_REJECTS_INVALID_PACKED_TAGS
         test_linalg_reject_invalid_packed_tags.cpp

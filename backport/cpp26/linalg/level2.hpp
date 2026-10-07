@@ -115,7 +115,8 @@ void matrix_vector_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
-    requires (__detail::__square_static_extents_v<AExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
@@ -156,7 +157,8 @@ template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
-    requires (__detail::__square_static_extents_v<AExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
@@ -196,7 +198,8 @@ void triangular_matrix_vector_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
-    requires (__detail::__square_static_extents_v<AExtents> &&
+    requires (__detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
               __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&

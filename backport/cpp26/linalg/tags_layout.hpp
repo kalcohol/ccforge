@@ -190,13 +190,25 @@ struct layout_blas_packed {
 
 namespace __detail {
 
+template<class T>
+inline constexpr bool __is_triangle_v =
+    std::is_same_v<T, upper_triangle_t> ||
+    std::is_same_v<T, lower_triangle_t>;
+
+template<class T>
+inline constexpr bool __is_diagonal_storage_v =
+    std::is_same_v<T, implicit_unit_diagonal_t> ||
+    std::is_same_v<T, explicit_diagonal_t>;
+
 template<class Layout, class Triangle>
-struct __packed_triangle_matches : std::true_type {};
+struct __packed_triangle_matches
+    : std::bool_constant<__is_triangle_v<Triangle>> {};
 
 template<class PackedTriangle, class StorageOrder, class Triangle>
 struct __packed_triangle_matches<
     layout_blas_packed<PackedTriangle, StorageOrder>, Triangle>
-    : std::is_same<PackedTriangle, Triangle> {};
+    : std::bool_constant<__is_triangle_v<Triangle> &&
+                         std::is_same_v<PackedTriangle, Triangle>> {};
 
 template<class Layout, class Triangle>
 inline constexpr bool __packed_triangle_matches_v =
