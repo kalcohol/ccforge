@@ -92,19 +92,25 @@ void scale(
             ElemT* px = x.data_handle();
             for (; i + static_cast<decltype(i)>(kN) <= n; i += kN) {
                 simd_t v{std::span<const ElemT, kN>{px + i, kN}};
-                v *= simd_t{alpha};
+                v = simd_t{alpha} * v;
                 for (std::ptrdiff_t j = 0; j < kN; ++j) px[i+j] = v[j];
             }
-            for (; i < n; ++i) px[i] *= alpha;
+            for (; i < n; ++i) px[i] = alpha * px[i];
             return;
         }
 #endif
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
-            x[i] *= alpha;
+        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+            auto&& element = x[i];
+            std::forward<decltype(element)>(element) =
+                alpha * std::forward<decltype(element)>(element);
+        }
     } else {
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i)
-            for (typename Extents::index_type j = 0; j < x.extent(1); ++j)
-                x[i, j] *= alpha;
+            for (typename Extents::index_type j = 0; j < x.extent(1); ++j) {
+                auto&& element = x[i, j];
+                std::forward<decltype(element)>(element) =
+                    alpha * std::forward<decltype(element)>(element);
+            }
     }
 }
 
