@@ -34,6 +34,11 @@ namespace __forge_bulk {
 
 struct __serial_policy {};
 
+template<class Policy>
+using __policy_t = std::conditional_t<
+    std::copy_constructible<std::remove_cvref_t<Policy>>,
+    std::remove_cvref_t<Policy>, const std::remove_cvref_t<Policy>&>;
+
 template<bool Chunked, class Shape, class Fn, class Sig>
 struct __value_may_throw : std::false_type {};
 
@@ -182,6 +187,7 @@ struct __bulk_closure {
     template<class Policy, class Shape>
     struct __with_shape {
         using policy_t = std::decay_t<Policy>;
+        using sender_policy_t = __policy_t<policy_t>;
         using fn_t = std::decay_t<Fn>;
 
         policy_t __policy_;
@@ -189,44 +195,44 @@ struct __bulk_closure {
         fn_t __fn_;
 
         template<std::execution::sender S>
-            requires std::constructible_from<policy_t, policy_t&> &&
+            requires std::constructible_from<sender_policy_t, policy_t&> &&
                      std::constructible_from<Shape, Shape&> &&
                      std::constructible_from<fn_t, fn_t&>
         [[nodiscard]] auto operator()(S&& s) & {
-            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
-                policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
+                sender_policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
         }
 
         template<std::execution::sender S>
-            requires std::constructible_from<policy_t, const policy_t&> &&
+            requires std::constructible_from<sender_policy_t, const policy_t&> &&
                      std::constructible_from<Shape, const Shape&> &&
                      std::constructible_from<fn_t, const fn_t&>
         [[nodiscard]] auto operator()(S&& s) const & {
-            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
-                policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
+                sender_policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
         }
 
         template<std::execution::sender S>
-            requires std::constructible_from<policy_t, policy_t&&> &&
+            requires std::constructible_from<sender_policy_t, policy_t&&> &&
                      std::constructible_from<Shape, Shape&&> &&
                      std::constructible_from<fn_t, fn_t&&>
         [[nodiscard]] auto operator()(S&& s) && {
-            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
-                policy_t(std::move(__policy_)),
+                sender_policy_t(std::move(__policy_)),
                 Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
         }
 
         template<std::execution::sender S>
-            requires std::constructible_from<policy_t, const policy_t&&> &&
+            requires std::constructible_from<sender_policy_t, const policy_t&&> &&
                      std::constructible_from<Shape, const Shape&&> &&
                      std::constructible_from<fn_t, const fn_t&&>
         [[nodiscard]] auto operator()(S&& s) const && {
-            return __sender<Chunked, std::decay_t<S>, policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
-                policy_t(std::move(__policy_)),
+                sender_policy_t(std::move(__policy_)),
                 Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
         }
 
@@ -252,11 +258,12 @@ struct __bulk_t {
 #if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
     template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
-                 std::copy_constructible<std::decay_t<Fn>>
+                 std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<__policy_t<Policy>, Policy>
     [[nodiscard]] auto operator()(S&& s, Policy&& policy, Shape shape, Fn&& fn) const {
-        return __sender<Chunked, std::decay_t<S>, std::decay_t<Policy>, Shape, std::decay_t<Fn>>{
+        return __sender<Chunked, std::decay_t<S>, __policy_t<Policy>, Shape, std::decay_t<Fn>>{
             __forge_detail::__forward_as_given(std::forward<S>(s)),
-            std::forward<Policy>(policy),
+            __policy_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape), std::forward<Fn>(fn)};
     }
 #endif
@@ -274,12 +281,13 @@ struct __bulk_t {
     template<class Policy, class Shape, class Fn>
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
                  std::integral<Shape> &&
-                 std::copy_constructible<std::decay_t<Fn>>
+                 std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Policy>, Policy>
     [[nodiscard]] auto operator()(Policy&& policy, Shape shape, Fn&& fn) const {
         using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
             ::template __with_shape<std::decay_t<Policy>, Shape>;
         return closure_t{
-            std::forward<Policy>(policy),
+            std::decay_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape),
             std::forward<Fn>(fn)};
     }
