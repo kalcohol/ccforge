@@ -506,6 +506,7 @@ inline constexpr flags<convert_flag> flag_convert{};
 inline constexpr flags<aligned_flag> flag_aligned{};
 
 template<size_t N>
+    requires(detail::is_power_of_two<N>::value)
 inline constexpr flags<overaligned_flag<N>> flag_overaligned{};
 
 template<class... Left, class... Right>
