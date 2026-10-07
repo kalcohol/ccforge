@@ -116,6 +116,38 @@ constexpr decltype(auto) __query(Query query, Env&& env, Args&&... args)
     }
 }
 
+template<class Query>
+concept __forwarding_query = requires {
+    // Keep non-constant classification in the type-substitution failure path.
+    typename std::enable_if_t<
+        std::forwarding_query(std::remove_cvref_t<Query>{})>;
+};
+
+// Env is the exact get_env result: own values, but retain borrowed references.
+template<class Env>
+struct __forwarding_attrs {
+    using __env_t = std::remove_reference_t<Env>;
+    [[no_unique_address]] Env __env;
+
+    template<class Query, class... Args>
+        requires __forwarding_query<Query> &&
+                 __queryable<Query, const __env_t&, Args...>
+    constexpr decltype(auto) query(Query q, Args&&... args) const
+        noexcept(__nothrow_query<Query, const __env_t&, Args...>) {
+        return __query(std::move(q), static_cast<const __env_t&>(__env),
+                       static_cast<Args&&>(args)...);
+    }
+
+    template<class Query, class... Args>
+        requires __forwarding_query<Query> &&
+                 __queryable<Query, const __env_t&, Args...>
+    friend constexpr decltype(auto) tag_invoke(
+        Query q, const __forwarding_attrs& self, Args&&... args)
+        noexcept(__nothrow_query<Query, const __env_t&, Args...>) {
+        return self.query(std::move(q), static_cast<Args&&>(args)...);
+    }
+};
+
 } // namespace __forge_env_detail
 
 struct get_env_t {

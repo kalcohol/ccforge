@@ -74,6 +74,10 @@ forge_add_execution_compile_probe(
     test_execution_closure_cvref_constraints.cpp
     execution_closure_cvref_constraints_compile)
 forge_add_execution_compile_probe(
+    test_execution_forwarding_attrs_constraints
+    test_execution_forwarding_attrs_constraints.cpp
+    execution_forwarding_attrs_constraints_compile)
+forge_add_execution_compile_probe(
     test_execution_include_continues_on
     test_execution_include_continues_on.cpp
     execution_include_continues_on_compile)
@@ -232,6 +236,10 @@ forge_add_execution_runtime_test(
     test_execution_closure_cvref
     test_execution_closure_cvref.cpp
     execution_closure_cvref)
+forge_add_execution_runtime_test(
+    test_execution_forwarding_attrs
+    test_execution_forwarding_attrs.cpp
+    execution_forwarding_attrs)
 forge_add_execution_runtime_test(
     test_execution_member_customization
     test_execution_member_customization.cpp

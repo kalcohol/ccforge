@@ -79,7 +79,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_start_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` / `affine` forwarding tests 覆盖。 |
 | `get_delegation_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` forwarding tests 覆盖。 |
 | `get_completion_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；scheduler envs 暴露 roundtrip。 |
-| `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。 |
+| `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。EX27 sender-attribute 过滤只保留 default-instance 常量 gate，采用 type-SFINAE；false 或不能常量求值时不转发。实际 query object 与 type concept 的剩余差异见下方 accepted subset tracking。 |
 | `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 member-first、tag-invoke fallback query object；没有提供 default adaptor。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | 一参数/双参数查询均采用 member-query-first、tag-invoke fallback；query 只选择 domain 类型，公开 CPO 按 current WD `MANDATE-NOTHROW(D())` 默认构造结果，不保留查询值的运行时状态。Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
 | `get_allocator` | Implemented subset | Member `.query` 优先、tag-invoke fallback；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
@@ -120,6 +120,29 @@ risk triage 的事实来源。
 | Receiver env stop-token propagation | Forge utilities 的 required behavior | `wait_result`、`any_receiver_of`、`erased_sender`、runtime senders 和 IO wrappers 在支持的 env model 中保留 receiver stop-token visibility；擦除 env 同时支持 current member-query 与 Forge tag-invoke fallback。 | 修改 type erasure 或 wrapper receivers 时保持回归测试。 |
 
 ## 已接受 residuals 与未来风险
+
+### EX27 Actual Query Classification
+
+EX27 的 sender-attribute 过滤采用保守、已接受的子集：
+只有 `forwarding_query(remove_cvref_t<Q>{})` 可常量求值为 true 才允许转发。
+使用 `enable_if_t` type requirement 将 false 和非恒定表达式留在替换失败路径，
+而非产生 nested constraint 的硬错误。member=false 保持拒绝，不以 marker、兼容
+tag 定制或无法判断为理由放行。分类不在运行时构造 query 或调用其属性值查询。
+
+WD [`FWD-ENV`](https://eel.is/c++draft/exec.snd.expos#4) 判断实际
+`forwarding_query(q)`，而 [`forwarding-query`](https://eel.is/c++draft/execution.syn)
+type concept 使用 `forwarding_query(Q{})`。非 constexpr 默认构造但有 constexpr
+显式构造的无状态 structural query 可以是合法 CPO；该控制已覆盖。
+该合法控制的 raw CPO 调用保持正向验证，但其跨 adaptor 转发尚不支持；不能将拒绝
+归因于 CPO 非法。unknown-reference member 扩展已撤回：Clang19 实编未支持该检查，
+且 [LLVM 状态表](https://clang.llvm.org/cxx_status.html) 将 P2280 unknown-reference
+支持列为 Clang20 起。当前不宣称该扩展可用，也不添加未经验证的构造、静态 flag
+或对象表示替代方案。对 default gate 无法确定为 true 的 stateless / stateful flag，
+均保守不转发。这是 EX27 附带的独立 residual tracking，
+不能将未分类 query 重新解释成非法 CPO，也不能作为放宽 nonforwarding 查询的依据。
+重新扩大支持前，需要合法 CPO 的独立证据及可移植的 C++23 / C++26 分类方案。
+
+### Other Residuals
 
 - `spawn_future` 会为 shared state 和 consumer record 使用 `get_allocator`，并直接按
   receiver env 的具体 stop-token 类型注册 callback。Forge runtime 使用独立的

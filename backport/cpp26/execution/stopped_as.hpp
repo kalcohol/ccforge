@@ -281,7 +281,8 @@ struct __optional_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
+            std::execution::get_env(__sndr)};
     }
 };
 
@@ -363,7 +364,8 @@ struct __error_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
+            std::execution::get_env(__sndr)};
     }
 };
 

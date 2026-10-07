@@ -297,8 +297,9 @@ struct __into_variant_sender {
             __into_variant_recv<R, var_t>{std::move(r)});
     }
 
-    auto get_env() const noexcept -> env_of_t<S> {
-        return std::execution::get_env(__sndr);
+    auto get_env() const noexcept {
+        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
+            std::execution::get_env(__sndr)};
     }
 };
 

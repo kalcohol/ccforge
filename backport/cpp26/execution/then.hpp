@@ -244,8 +244,9 @@ struct then_sender {
         return then_op<S, Fn, R>(sndr_, fn_, std::move(rcvr));
     }
 
-    auto get_env() const noexcept -> env_of_t<S> {
-        return std::execution::get_env(sndr_);
+    auto get_env() const noexcept {
+        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
+            std::execution::get_env(sndr_)};
     }
 };
 

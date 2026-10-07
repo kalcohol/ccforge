@@ -77,7 +77,14 @@
   `get_domain` 与双参数 `get_completion_domain` 查询均采用 member-query-first、
   tag-invoke fallback；查询只选择 domain 类型，并按 current WD 默认构造该类型，
   不保留 query 返回对象携带的运行时状态。sender attributes 只跨 adaptor 边界转发声明为
-  `forwarding_query` 的 child query。
+  `forwarding_query` 的 child query。EX27 接受的过滤子集要求
+  `forwarding_query(Q{})` 可常量求值为 true；检查采用 type-SFINAE，false 或
+  非常量表达式均不转发，不作为硬约束错误。member=false 不会因 marker 或兼容
+  tag 定制而放行。非 constexpr 默认构造但有 constexpr 显式构造的无状态 query
+  可以是合法 CPO，但当前也不跨 adaptor 转发。unknown-reference member 扩展未保留，
+  不承诺支持任意 stateless 或 stateful actual-query 分类。WD 的 FWD-ENV 判断实际
+  `forwarding_query(q)`，因此这仍是明确的实现边界，独立跟踪于
+  [`execution-conformance-ledger.md`](../roadmap/execution-conformance-ledger.md#ex27-actual-query-classification)。
   `get_completion_signatures(sender, env)` 会先按同一 transform 模型得到最终 sender 类型，
   再读取 completion signatures；非 default-domain 路径允许原 sender 没有 raw
   completion signatures，只要 transformed sender 提供可用 signatures。
