@@ -135,7 +135,8 @@ template<class T,
          class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_writable_load_store_iterator<I>::value, int>::type = 0>
-constexpr void partial_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::store_n_impl(value, first, count, f);
 }
@@ -145,13 +146,15 @@ template<class T,
          class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_writable_load_store_iterator<I>::value, int>::type = 0>
-constexpr void partial_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::store_n_impl(value, first, count, mask_value, f);
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void partial_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f = {})
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::store_impl(value, first, count, f);
 }
 
@@ -160,7 +163,8 @@ constexpr void partial_store(const basic_vec<T, Abi>& value,
                              U* first,
                              simd_size_type count,
                              const typename basic_vec<T, Abi>::mask_type& mask_value,
-                             flags<Flags...> f = {}) {
+                             flags<Flags...> f = {})
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::store_impl(value, first, count, mask_value, f);
 }
 
@@ -171,7 +175,8 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
-constexpr void partial_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::store_impl(value, first, last, f);
 }
@@ -187,20 +192,23 @@ constexpr void partial_store(const basic_vec<T, Abi>& value,
                              I first,
                              S last,
                              const typename basic_vec<T, Abi>::mask_type& mask_value,
-                             flags<Flags...> f = {}) {
+                             flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::store_impl(value, first, last, mask_value, f);
 }
 
 template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
-constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {})
+    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
     simd::partial_store(value, ranges::data(r), detail::range_size(r), f);
 }
 
 template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
-constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+constexpr void partial_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
     simd::partial_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
 }
 
@@ -227,10 +235,12 @@ template<class V,
 constexpr V unchecked_load(I first, S last, const typename V::mask_type& mask_value, flags<Flags...> f = {});
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f);
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f)
+    requires indirectly_writable<U*, iter_value_t<U*>>;
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f)
+    requires indirectly_writable<U*, iter_value_t<U*>>;
 
 template<class T,
          class Abi,
@@ -239,7 +249,8 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f = {});
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>>;
 
 template<class T,
          class Abi,
@@ -248,7 +259,8 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {});
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>>;
 
 template<class I,
          class... Flags,
@@ -435,7 +447,8 @@ template<class T,
          class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_writable_load_store_iterator<I>::value, int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_n_impl(value, first, count, f);
@@ -446,25 +459,29 @@ template<class T,
          class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_writable_load_store_iterator<I>::value, int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_n_impl(value, first, count, mask_value, f);
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, flags<Flags...> f = {})
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::store_impl(value, first, f);
 }
 
 template<class T, class Abi, class U>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count)
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_impl(value, first, count);
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::store_impl(value, first, mask_value, f);
 }
 
@@ -472,13 +489,15 @@ template<class T, class Abi, class U>
 constexpr void unchecked_store(const basic_vec<T, Abi>& value,
                                U* first,
                                simd_size_type count,
-                               const typename basic_vec<T, Abi>::mask_type& mask_value) {
+                               const typename basic_vec<T, Abi>::mask_type& mask_value)
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_impl(value, first, count, mask_value);
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f)
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_impl(value, first, count, f);
 }
@@ -488,7 +507,8 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value,
                                U* first,
                                simd_size_type count,
                                const typename basic_vec<T, Abi>::mask_type& mask_value,
-                               flags<Flags...> f) {
+                               flags<Flags...> f)
+    requires indirectly_writable<U*, iter_value_t<U*>> {
     detail::require_unchecked_extent<basic_vec<T, Abi>>(count);
     detail::store_impl(value, first, count, mask_value, f);
 }
@@ -500,7 +520,8 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, flags<Flags...> f)
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::require_unchecked_extent<basic_vec<T, Abi>>(detail::iterator_distance(first, last));
     detail::store_impl(value, first, last, f);
@@ -513,7 +534,8 @@ template<class T,
          class... Flags,
          typename enable_if<detail::is_sized_sentinel_for<I, S>::value &&
              (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value), int>::type>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f)
+    requires indirectly_writable<I, iter_value_t<I>> {
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     detail::require_unchecked_extent<basic_vec<T, Abi>>(detail::iterator_distance(first, last));
     detail::store_impl(value, first, last, mask_value, f);
@@ -521,12 +543,14 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, S last, 
 
 template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {})
+    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
     simd::unchecked_store(value, ranges::data(r), detail::range_size(r), f);
 }
 
 template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {}) {
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
     simd::unchecked_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
 }
