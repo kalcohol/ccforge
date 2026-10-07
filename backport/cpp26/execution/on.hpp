@@ -398,6 +398,86 @@ struct __closure_sender {
     }
 };
 
+template<class Scheduler, class Closure>
+struct __bound_closure {
+    Scheduler __sch;
+    Closure __closure;
+
+    template<class Sch, class C>
+        requires std::constructible_from<Scheduler, Sch> &&
+                 std::constructible_from<Closure, C>
+    constexpr __bound_closure(Sch&& sch, C&& closure)
+        noexcept(std::is_nothrow_constructible_v<Scheduler, Sch> &&
+                 std::is_nothrow_constructible_v<Closure, C>)
+        : __sch(static_cast<Sch&&>(sch))
+        , __closure(static_cast<C&&>(closure))
+    {}
+
+    template<sender S>
+        requires std::constructible_from<Scheduler, Scheduler&> &&
+                 std::constructible_from<Closure, Closure&>
+    [[nodiscard]] constexpr auto operator()(S&& sndr) &
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<S>, S> &&
+                 std::is_nothrow_constructible_v<Scheduler, Scheduler&> &&
+                 std::is_nothrow_constructible_v<Closure, Closure&>)
+        -> __closure_sender<std::decay_t<S>, Scheduler, Closure> {
+        return {std::decay_t<S>(static_cast<S&&>(sndr)),
+                Scheduler(__sch), Closure(__closure)};
+    }
+
+    template<sender S>
+        requires std::constructible_from<Scheduler, const Scheduler&> &&
+                 std::constructible_from<Closure, const Closure&>
+    [[nodiscard]] constexpr auto operator()(S&& sndr) const&
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<S>, S> &&
+                 std::is_nothrow_constructible_v<Scheduler, const Scheduler&> &&
+                 std::is_nothrow_constructible_v<Closure, const Closure&>)
+        -> __closure_sender<std::decay_t<S>, Scheduler, Closure> {
+        return {std::decay_t<S>(static_cast<S&&>(sndr)),
+                Scheduler(__sch), Closure(__closure)};
+    }
+
+    template<sender S>
+        requires std::constructible_from<Scheduler, Scheduler&&> &&
+                 std::constructible_from<Closure, Closure&&>
+    [[nodiscard]] constexpr auto operator()(S&& sndr) &&
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<S>, S> &&
+                 std::is_nothrow_constructible_v<Scheduler, Scheduler&&> &&
+                 std::is_nothrow_constructible_v<Closure, Closure&&>)
+        -> __closure_sender<std::decay_t<S>, Scheduler, Closure> {
+        return {std::decay_t<S>(static_cast<S&&>(sndr)),
+                Scheduler(std::move(__sch)), Closure(std::move(__closure))};
+    }
+
+    template<sender S>
+        requires std::constructible_from<Scheduler, const Scheduler&&> &&
+                 std::constructible_from<Closure, const Closure&&>
+    [[nodiscard]] constexpr auto operator()(S&& sndr) const&&
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<S>, S> &&
+                 std::is_nothrow_constructible_v<Scheduler, const Scheduler&&> &&
+                 std::is_nothrow_constructible_v<Closure, const Closure&&>)
+        -> __closure_sender<std::decay_t<S>, Scheduler, Closure> {
+        return {std::decay_t<S>(static_cast<S&&>(sndr)),
+                Scheduler(std::move(__sch)), Closure(std::move(__closure))};
+    }
+
+    // Invalid capture categories must not fall back to another cvref overload.
+    template<class S> void operator()(S&&) & = delete;
+    template<class S> void operator()(S&&) const& = delete;
+    template<class S> void operator()(S&&) && = delete;
+    template<class S> void operator()(S&&) const&& = delete;
+
+    template<sender S, class Self>
+        requires std::same_as<std::remove_cvref_t<Self>, __bound_closure> &&
+                 requires(Self&& self, S&& sndr) {
+                     static_cast<Self&&>(self)(static_cast<S&&>(sndr));
+                 }
+    friend constexpr auto operator|(S&& sndr, Self&& self)
+        noexcept(noexcept(static_cast<Self&&>(self)(static_cast<S&&>(sndr)))) {
+        return static_cast<Self&&>(self)(static_cast<S&&>(sndr));
+    }
+};
+
 struct on_t {
     template<class Scheduler, sender S>
         requires scheduler<std::remove_cvref_t<Scheduler>>
@@ -405,6 +485,20 @@ struct on_t {
         return __sender<std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
+    }
+
+    template<class Scheduler, class Closure>
+        requires scheduler<std::remove_cvref_t<Scheduler>> &&
+                 (!sender<std::decay_t<Closure>>) &&
+                 std::constructible_from<std::remove_cvref_t<Scheduler>, Scheduler> &&
+                 std::constructible_from<std::decay_t<Closure>, Closure>
+    [[nodiscard]] constexpr auto operator()(Scheduler&& sch, Closure&& closure) const
+        noexcept(std::is_nothrow_constructible_v<
+                     std::remove_cvref_t<Scheduler>, Scheduler> &&
+                 std::is_nothrow_constructible_v<std::decay_t<Closure>, Closure>) {
+        return __bound_closure<
+            std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>{
+            static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
     }
 
     template<sender S, class Scheduler, class Closure>
