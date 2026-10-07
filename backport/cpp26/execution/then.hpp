@@ -302,15 +302,17 @@ struct then_closure {
 
 struct then_t {
     template<std::execution::sender S, class Fn>
+        requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return then_sender<std::decay_t<S>, std::decay_t<Fn>>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)),
-            std::forward<Fn>(fn)};
+            std::decay_t<S>(std::forward<S>(s)),
+            std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 
     template<class Fn>
+        requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return then_closure<std::decay_t<Fn>>{std::forward<Fn>(fn)};
+        return then_closure<std::decay_t<Fn>>{std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 

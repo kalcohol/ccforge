@@ -86,6 +86,10 @@ forge_add_execution_compile_probe(
     test_execution_bulk_policy_constraints.cpp
     execution_bulk_policy_constraints_compile)
 forge_add_execution_compile_probe(
+    test_execution_initial_capture_constraints
+    test_execution_initial_capture_constraints.cpp
+    execution_initial_capture_constraints_compile)
+forge_add_execution_compile_probe(
     test_execution_include_continues_on
     test_execution_include_continues_on.cpp
     execution_include_continues_on_compile)
@@ -269,6 +273,7 @@ forge_add_execution_runtime_test(
     execution_throwing_move_adaptors)
 forge_add_execution_runtime_test(test_execution_bulk test_execution_bulk.cpp execution_bulk)
 forge_add_execution_runtime_test(test_execution_bulk_policy test_execution_bulk_policy.cpp execution_bulk_policy)
+forge_add_execution_runtime_test(test_execution_initial_capture test_execution_initial_capture.cpp execution_initial_capture)
 forge_add_execution_runtime_test(test_execution_write_env test_execution_write_env.cpp execution_write_env)
 forge_add_execution_runtime_test(test_execution_wave1 test_execution_wave1.cpp execution_wave1)
 forge_add_execution_runtime_test(test_execution_wave2 test_execution_wave2.cpp execution_wave2)

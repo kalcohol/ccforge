@@ -447,14 +447,16 @@ struct __let_closure {
 template<class Which>
 struct __let_t {
     template<sender S, class Fn>
+        requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return __sender<std::decay_t<S>, std::decay_t<Fn>, Which>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)),
-            std::forward<Fn>(fn)};
+            std::decay_t<S>(std::forward<S>(s)),
+            std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
     template<class Fn>
+        requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return __let_closure<std::decay_t<Fn>, Which>{std::forward<Fn>(fn)};
+        return __let_closure<std::decay_t<Fn>, Which>{std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 

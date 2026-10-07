@@ -259,22 +259,24 @@ struct __bulk_t {
     template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
                  std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn> &&
                  std::constructible_from<__policy_t<Policy>, Policy>
     [[nodiscard]] auto operator()(S&& s, Policy&& policy, Shape shape, Fn&& fn) const {
         return __sender<Chunked, std::decay_t<S>, __policy_t<Policy>, Shape, std::decay_t<Fn>>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)),
+            std::decay_t<S>(std::forward<S>(s)),
             __policy_t<Policy>(std::forward<Policy>(policy)),
-            std::move(shape), std::forward<Fn>(fn)};
+            std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 #endif
 
     template<std::execution::sender S, class Shape, class Fn>
-        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>>
+        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
         return __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>>{
-            __forge_detail::__forward_as_given(std::forward<S>(s)),
+            std::decay_t<S>(std::forward<S>(s)),
             __serial_policy{},
-            std::move(shape), std::forward<Fn>(fn)};
+            std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 
 #if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
@@ -282,6 +284,7 @@ struct __bulk_t {
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
                  std::integral<Shape> &&
                  std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn> &&
                  std::constructible_from<std::decay_t<Policy>, Policy>
     [[nodiscard]] auto operator()(Policy&& policy, Shape shape, Fn&& fn) const {
         using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
@@ -289,19 +292,20 @@ struct __bulk_t {
         return closure_t{
             std::decay_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape),
-            std::forward<Fn>(fn)};
+            std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 #endif
 
     template<class Shape, class Fn>
-        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>>
+        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const {
         using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
             ::template __with_shape<__serial_policy, Shape>;
         return closure_t{
             __serial_policy{},
             std::move(shape),
-            std::forward<Fn>(fn)};
+            std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 
