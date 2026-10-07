@@ -7,6 +7,9 @@ T hermite_fallback(unsigned n, T x) {
     if (std::isnan(x)) {
         return x;
     }
+    if (n >= recurrence_order_limit) {
+        return quiet_nan<T>();
+    }
     if (n == 0u) {
         return T{1};
     }
@@ -29,6 +32,9 @@ T laguerre_fallback(unsigned n, T x) {
     if (std::isnan(x)) {
         return x;
     }
+    if (n >= recurrence_order_limit) {
+        return quiet_nan<T>();
+    }
     if (n == 0u) {
         return T{1};
     }
@@ -50,6 +56,9 @@ template<class T>
 T legendre_fallback(unsigned n, T x) {
     if (std::isnan(x)) {
         return x;
+    }
+    if (n >= recurrence_order_limit) {
+        return quiet_nan<T>();
     }
     if (std::abs(x) > T{1}) {
         return quiet_nan<T>();
@@ -75,6 +84,9 @@ template<class T>
 T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
     if (std::isnan(x)) {
         return x;
+    }
+    if (n >= recurrence_order_limit || m >= recurrence_order_limit) {
+        return quiet_nan<T>();
     }
     if (n == 0u) {
         return T{1};
@@ -104,6 +116,9 @@ T assoc_legendre_fallback(unsigned l, unsigned m, T x) {
     }
     if (m > l) {
         return T{};
+    }
+    if (l >= recurrence_order_limit) {
+        return quiet_nan<T>();
     }
 
     T pmm = T{1};
@@ -142,6 +157,9 @@ T sph_legendre_fallback(unsigned l, unsigned m, T theta) {
         return theta;
     }
     if (m > l) {
+        return quiet_nan<T>();
+    }
+    if (l >= recurrence_order_limit) {
         return quiet_nan<T>();
     }
 

@@ -19,8 +19,12 @@
 
 special-math 向量重载逐 lane 遵循对应的标量特殊函数语义。标准把 Bessel 的
 `nu >= 128`，以及球 Bessel / 球 Neumann / 球谐的阶数 `>= 128` 明确定为
-implementation-defined；Forge 在该范围之外保留有界失败策略，不把超高阶数值质量
-计入 portable conformance 承诺。定义范围内的 fallback 会在 LLVM/libc++ lane 通过
+implementation-defined。Forge 的多项式 fallback（Hermite、Laguerre、Legendre、
+associated Laguerre / Legendre 和 spherical Legendre）在 degree `>= 1024` 时
+直接返回 NaN；associated Laguerre 的 order `>= 1024` 同样返回 NaN，不进入递推。
+associated Legendre 的 `m > l` 零值规则仍优先保留。该预算只描述 Forge fallback，
+不覆盖转发给原生标量库的实现；超高阶数值质量不计入 portable conformance 承诺。
+定义范围内的 fallback 会在 LLVM/libc++ lane 通过
 直接调用与 public `std::simd` 调用共同验证；不能用会转发原生标量 special math 的
 libstdc++ lane 充当 fallback oracle。
 `riemann_zeta` 的极点邻域使用 Laurent 局部展开，并在其余 Hasse 路径用

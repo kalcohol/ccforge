@@ -2,6 +2,8 @@
 
 namespace detail::special_math {
 
+inline constexpr unsigned recurrence_order_limit = 1024u;
+
 template<class T>
 constexpr T euler_gamma_v = static_cast<T>(0.57721566490153286060651209008240243104L);
 
