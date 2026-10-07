@@ -13,6 +13,9 @@ T hermite_fallback(unsigned n, T x) {
     if (n == 0u) {
         return T{1};
     }
+    if (std::isinf(x)) {
+        return (n & 1u) != 0u ? x : infinity<T>();
+    }
     if (n == 1u) {
         return static_cast<T>(2) * x;
     }
@@ -37,6 +40,9 @@ T laguerre_fallback(unsigned n, T x) {
     }
     if (n == 0u) {
         return T{1};
+    }
+    if (std::isinf(x) && x > T{}) {
+        return (n & 1u) != 0u ? -x : x;
     }
     if (n == 1u) {
         return T{1} - x;
@@ -90,6 +96,9 @@ T assoc_laguerre_fallback(unsigned n, unsigned m, T x) {
     }
     if (n == 0u) {
         return T{1};
+    }
+    if (std::isinf(x) && x > T{}) {
+        return (n & 1u) != 0u ? -x : x;
     }
     if (n == 1u) {
         return static_cast<T>(m + 1) - x;
