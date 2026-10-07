@@ -628,6 +628,84 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
     return {j0.value, y0, error, false};
 }
 
+template<class Fun>
+auto cyl_bessel_cached_simpson_step(
+    Fun& fun, long double a, long double b, long double tolerance,
+    long double whole, long double first, long double middle, long double last,
+    unsigned depth) -> checked_integral_result {
+    const long double mid = (a + b) / 2.0L;
+    // Only the quarter points are new after bisecting this interval.
+    const long double quarter = fun((a + mid) / 2.0L);
+    const long double three_quarters = fun((mid + b) / 2.0L);
+    const long double left =
+        (mid - a) * (first + 4.0L * quarter + middle) / 6.0L;
+    const long double right =
+        (b - mid) * (middle + 4.0L * three_quarters + last) / 6.0L;
+    const long double delta = left + right - whole;
+    const long double error = std::abs(delta) / 15.0L;
+    const long double corrected = left + right + delta / 15.0L;
+    if (error <= tolerance) {
+        return {corrected, error, true};
+    }
+    if (depth == 0u) {
+        return {corrected, error, false};
+    }
+    const auto left_result = cyl_bessel_cached_simpson_step(
+        fun, a, mid, tolerance / 2.0L, left, first, quarter, middle, depth - 1u);
+    const auto right_result = cyl_bessel_cached_simpson_step(
+        fun, mid, b, tolerance / 2.0L, right, middle, three_quarters, last, depth - 1u);
+    return {
+        left_result.value + right_result.value,
+        left_result.error + right_result.error,
+        left_result.converged && right_result.converged};
+}
+
+template<class Fun>
+auto cyl_bessel_cached_simpson_integral(
+    Fun&& fun, long double a, long double b, long double tolerance,
+    unsigned depth = 18u) -> checked_integral_result {
+    if (a == b) {
+        return {0.0L, 0.0L, true};
+    }
+    const long double first = fun(a);
+    const long double middle = fun((a + b) / 2.0L);
+    const long double last = fun(b);
+    const long double whole = (b - a) * (first + 4.0L * middle + last) / 6.0L;
+    return cyl_bessel_cached_simpson_step(
+        fun, a, b, tolerance, whole, first, middle, last, depth);
+}
+
+template<class Fun>
+auto cyl_bessel_segmented_cached_simpson_integral(
+    Fun&& fun, long double a, long double b, unsigned segments, long double tolerance)
+    -> checked_integral_result {
+    checked_integral_result result{0.0L, 0.0L, true};
+    if (a == b || segments == 0u) {
+        return result;
+    }
+    long double first = fun(a);
+    for (unsigned i = 0u; i < segments; ++i) {
+        const long double left =
+            a + (b - a) * static_cast<long double>(i) /
+                static_cast<long double>(segments);
+        const long double right =
+            a + (b - a) * static_cast<long double>(i + 1u) /
+                static_cast<long double>(segments);
+        const long double middle = fun((left + right) / 2.0L);
+        const long double last = fun(right);
+        const long double whole =
+            (right - left) * (first + 4.0L * middle + last) / 6.0L;
+        const auto part = cyl_bessel_cached_simpson_step(
+            fun, left, right, tolerance / static_cast<long double>(segments),
+            whole, first, middle, last, 18u);
+        result.value += part.value;
+        result.error += part.error;
+        result.converged = result.converged && part.converged;
+        first = last;
+    }
+    return result;
+}
+
 template<class T>
 auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
@@ -638,7 +716,7 @@ auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
     const unsigned segments = static_cast<unsigned>(std::max(
         8.0L,
         std::ceil(2.0L * (x + std::abs(nu)))));
-    const auto finite_j = segmented_checked_simpson_integral(
+    const auto finite_j = cyl_bessel_segmented_cached_simpson_integral(
         [=](long double theta) {
             return std::cos(x * std::sin(theta) - nu * theta);
         },
@@ -646,7 +724,7 @@ auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
         pi_v<long double>,
         segments,
         tolerance);
-    const auto finite_y = segmented_checked_simpson_integral(
+    const auto finite_y = cyl_bessel_segmented_cached_simpson_integral(
         [=](long double theta) {
             return std::sin(x * std::sin(theta) - nu * theta);
         },
@@ -658,7 +736,7 @@ auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
     const long double upper = std::max(
         4.0L,
         std::asinh((std::abs(nu) + 64.0L) / x) + 1.0L);
-    const auto tail_j = checked_simpson_integral(
+    const auto tail_j = cyl_bessel_cached_simpson_integral(
         [=](long double t) {
             return std::exp(-x * std::sinh(t) - nu * t);
         },
@@ -667,7 +745,7 @@ auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
         tolerance);
     const long double cos_order =
         std::cos(pi_v<long double> * nu);
-    const auto tail_y = checked_simpson_integral(
+    const auto tail_y = cyl_bessel_cached_simpson_integral(
         [=](long double t) {
             const long double decay = -x * std::sinh(t);
             return std::exp(decay + nu * t) +
