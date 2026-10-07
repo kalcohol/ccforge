@@ -127,7 +127,8 @@ concept __forwarding_query = requires {
 template<class Env>
 struct __forwarding_attrs {
     using __env_t = std::remove_reference_t<Env>;
-    [[no_unique_address]] Env __env;
+    // Keep prvalue ownership portable when attributes cannot be moved.
+    Env __env;
 
     template<class Query, class... Args>
         requires __forwarding_query<Query> &&
