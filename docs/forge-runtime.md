@@ -95,9 +95,10 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
   的 timer 无法从该 resource 分配 item/callback storage，它也会通过
   `set_stopped()` 失败；这个 value/stopped-only sender 不保留 allocation exception，
   因而调用方不能仅凭 stopped 区分取消、shutdown 与分配失败。Timer operation state
-  必须保持存活直到 value / stopped completion；提前销毁
-  operation state 不是取消协议，调用方应通过 receiver stop token 或
-  `timer_context::shutdown()` 取消。Teardown 前还必须停止并 join 外部 timer
+  可以安全弃置：析构会撤销尚未交付的 timer，或等待其他线程的在途交付结束；
+  被弃置的 timer 不产生 completion。若调用方需要 stopped completion，应通过
+  receiver stop token 或 `timer_context::shutdown()` 取消，而不是弃置。
+  Teardown 前还必须停止并 join 外部 timer
   submitter；shutdown 后才调用 `start()` 的 timer 可以在 submitter 线程内同步完成
   stopped，不属于 `wait()` 可 join 的 worker work。
 - `forge::runtime_context::wait()` 是 practical single-hop drain：`pool -> timers ->
