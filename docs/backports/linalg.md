@@ -4,9 +4,16 @@
 
 ## 覆盖范围
 
+以下列出已实现的函数族，不表示包含当前 WD 的每个重载；具体缺口见下方限制。
+
 **BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、
-`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、`vector_sum_of_squares`、
+`vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、
 `setup_givens_rotation`、`apply_givens_rotation`
+
+**历史草案兼容接口：** `sum_of_squares_result` / `vector_sum_of_squares`。
+它们已由 [LWG 4302](https://cplusplus.github.io/LWG/issue4302) 从标准草案移除。
+本 backport 仍提供旧接口，但它们不属于当前 WD 的标准接口；不能依赖它们切换到原生
+`<linalg>`。此处仅标明遗留状态，不移除或迁移现有接口。
 
 **BLAS Level 2：** `matrix_vector_product`、`triangular_matrix_vector_product`、
 `triangular_matrix_vector_solve`、`symmetric_matrix_vector_product`、
@@ -48,11 +55,17 @@
   `matrix_inf_norm` 在 `uintmax_t` 中精确累计 magnitude，并在超出结果类型表示域时
   饱和。显式 wider floating `Scalar` 的复数 magnitude 在该 `Scalar` 精度中计算，
   不先在较窄元素类型中溢出。
-- Triangular matrix-matrix product 使用当前 draft 的
-  `triangular_matrix_left_product` / `triangular_matrix_right_product` 拼写；旧的
-  `triangular_matrix_product(..., Side, ...)` 非标准 wrapper 不再暴露。
-- Level 3 目前覆盖左右两侧 triangular product；triangular solve 仍只覆盖左侧矩阵版本，
-  Hermitian rank-2k 仍未实现。
+- Level 2 的 `triangular_matrix_vector_product` 仅实现 in-place 和 out-of-place
+  版本，未实现带输入向量 `y` 的 updating 版本；`triangular_matrix_vector_solve`
+  仅实现 in-place 版本，未实现 out-of-place 或自定义 `BinaryDivideOp` 重载。
+- Level 3 的 in-place triangular product 使用
+  `triangular_matrix_left_product` / `triangular_matrix_right_product`；当前 WD
+  的 out-of-place `triangular_matrix_product` 左、右两侧版本及其 updating 重载均未实现。
+  旧的带 `Side` 参数的非标准 wrapper 不等同于这些标准重载，也不再暴露。
+- Level 3 的 symmetric / Hermitian matrix product 仅实现左侧 overwrite 版本；
+  右侧版本及带输入矩阵 `E` 的 updating 版本未实现。
+- Level 3 triangular solve 仅实现左侧 in-place 矩阵版本，未实现右侧、out-of-place
+  或自定义 `BinaryDivideOp` 重载；Hermitian rank-2k 仍未实现。
 
 ## SIMD 加速
 
