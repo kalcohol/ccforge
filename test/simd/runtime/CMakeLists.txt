@@ -7,6 +7,7 @@ target_compile_definitions(test_simd_expansion PRIVATE FORGE_SIMD_ENABLE_CHUNK_C
 forge_add_simd_runtime_test(test_simd_permute_protocol test_simd_permute_protocol.cpp)
 
 forge_add_simd_runtime_test(test_simd_reductions test_simd_reductions.cpp)
+forge_add_simd_runtime_test(test_simd_reduce_scalar_complex test_simd_reduce_scalar_complex.cpp)
 
 add_executable(test_simd_abi "${FORGE_SIMD_RUNTIME_DIR}/test_simd_abi.cpp")
 target_link_libraries(test_simd_abi PRIVATE gtest_main forge::forge)

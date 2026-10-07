@@ -121,7 +121,7 @@ constexpr T reduce_max(
 template<class T,
          class BinaryOperation = plus<>,
          typename enable_if<
-             detail::is_supported_scalar_value<T>::value &&
+             detail::is_supported_value<T>::value &&
                  detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(const T& value, BinaryOperation = {}) {
@@ -132,7 +132,7 @@ template<class T,
          class Mask,
          class BinaryOperation = plus<>,
          typename enable_if<
-             detail::is_supported_scalar_value<T>::value &&
+             detail::is_supported_value<T>::value &&
                  is_same<detail::remove_cvref_t<Mask>, bool>::value &&
                  detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
