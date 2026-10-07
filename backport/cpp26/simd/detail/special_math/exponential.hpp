@@ -7,6 +7,9 @@ T beta_fallback(T x, T y) {
     if (!(x > T{}) || !(y > T{})) {
         return quiet_nan<T>();
     }
+    if (std::isinf(x) || std::isinf(y)) {
+        return T{};
+    }
     if (x == T{1}) {
         return T{1} / y;
     }
