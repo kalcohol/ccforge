@@ -106,7 +106,14 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 目标含义：
 
 - `llvm`：LLVM/libc++ 容器，`-std=c++26`，覆盖 libc++ inject-path 全量测试
-- `zig`：Zig 容器，C++23 backport inject path
+- `zig`：Zig 容器，C++23 backport inject path；Debug/O0 下保留 UB checks，
+  使用 `-fsanitize=undefined -fsanitize-trap=undefined`。Zig 0.14 的 reporting
+  runtime 会连带引入精度不足的 `long double` 数学实现并覆盖系统 libm，
+  trap 模式避免这条 reporting 依赖，不放宽数值测试；违规仍立即失败，
+  但没有详细 UBSan 报告。这只是该验证 lane 的 workaround，其他依赖仍
+  可能引入 compiler-rt；详细 sanitizer 诊断由独立的 `asan` / `tsan` lanes
+  提供。`test_simd_math_primitives` 检查实际链接后的
+  `long double` 精度与范围
 - `gcc16`：GCC 16 容器，在 C++26 验证 `std::simd`、pre-P4206
   `std::constant_wrapper` 与 padded mdspan layouts 的 partial-native stand-aside，
   以及 `std::submdspan` 的 complete-native stand-aside；另在 C++23 运行

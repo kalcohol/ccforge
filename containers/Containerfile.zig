@@ -30,5 +30,9 @@ RUN printf '#!/bin/sh\nexec zig cc "$@"\n'  > /usr/local/bin/zig-cc  && chmod +x
 
 ENV CC=zig-cc
 ENV CXX=zig-c++
+# Keep Debug UB checks without pulling Zig 0.14's reporting runtime, whose
+# compiler-rt math exports narrow long double and can override system libm.
+ENV CFLAGS="-fsanitize=undefined -fsanitize-trap=undefined"
+ENV CXXFLAGS="-fsanitize=undefined -fsanitize-trap=undefined"
 
 WORKDIR /src
