@@ -499,14 +499,15 @@ T ellint_3_fallback(T k, T nu, T phi) {
     } else if (std::abs(k) == T{1} && std::abs(phi) >= half_pi) {
         return std::copysign(infinity<T>(), phi);
     }
+    // Classify infinite amplitudes before zero-modulus periodic reduction.
+    if (std::isfinite(nu) && nu < T{1} && std::isinf(phi)) {
+        return phi;
+    }
     if (k == T{}) {
         return ellint_3_zero_modulus(nu, phi);
     }
     if (std::abs(k) == T{1}) {
         return ellint_3_unit_modulus(nu, phi);
-    }
-    if (std::isfinite(nu) && nu < T{1} && std::isinf(phi)) {
-        return phi;
     }
     const long double modulus = std::abs(static_cast<long double>(k));
     const long double order = static_cast<long double>(nu);
