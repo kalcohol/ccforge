@@ -35,12 +35,31 @@ TEST(SimdMathPolynomialInfinity, FloatAndDoubleLimitsPreserveParity) {
     check_limits<double>();
 }
 
-TEST(SimdMathPolynomialInfinity, PublicFallbackOverloadsPreserveLimits) {
+TEST(SimdMathPolynomialInfinity, PublicOverloadsFollowSelectedScalarBackend) {
     using vector = std::simd::vec<double, 2>;
     const vector input(std::numeric_limits<double>::infinity());
     const auto hermite = std::simd::hermite(3u, input);
     const auto laguerre = std::simd::laguerre(3u, input);
-    EXPECT_EQ(hermite[0], std::numeric_limits<double>::infinity());
-    EXPECT_EQ(laguerre[0], -std::numeric_limits<double>::infinity());
+#ifdef __cpp_lib_math_special_functions
+    const double expected_hermite = std::hermite(3u, input[0]);
+    const double expected_laguerre = std::laguerre(3u, input[0]);
+#else
+    const double expected_hermite = std::numeric_limits<double>::infinity();
+    const double expected_laguerre = -std::numeric_limits<double>::infinity();
+#endif
+    for (std::simd::simd_size_type i = 0; i != vector::size; ++i) {
+        if (std::isnan(expected_hermite)) {
+            EXPECT_TRUE(std::isnan(hermite[i]));
+        } else {
+            EXPECT_EQ(hermite[i], expected_hermite);
+            EXPECT_EQ(std::signbit(hermite[i]), std::signbit(expected_hermite));
+        }
+        if (std::isnan(expected_laguerre)) {
+            EXPECT_TRUE(std::isnan(laguerre[i]));
+        } else {
+            EXPECT_EQ(laguerre[i], expected_laguerre);
+            EXPECT_EQ(std::signbit(laguerre[i]), std::signbit(expected_laguerre));
+        }
+    }
 }
 }
