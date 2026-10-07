@@ -537,7 +537,7 @@ template<class T, class U = typename T::value_type>
 inline constexpr size_t alignment_v = alignment<T, U>::value;
 
 template<class T, class V>
-struct rebind;
+struct rebind {};
 
 template<class T, class V>
 using rebind_t = typename rebind<T, V>::type;
@@ -556,7 +556,7 @@ template<class T, class V>
 using real_simd_t = typename real_simd_type<T, V>::type;
 
 template<simd_size_type N, class V>
-struct resize;
+struct resize {};
 
 template<simd_size_type N, class V>
 using resize_t = typename resize<N, V>::type;

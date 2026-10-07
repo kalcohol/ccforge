@@ -879,25 +879,29 @@ struct alignment<basic_vec<T, Abi>, U>
             : bit_ceil(alignof(U) * static_cast<size_t>(simd_size<T, Abi>::value))> {};
 
 template<class T, class U, class Abi>
-    requires(detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
+    requires(detail::is_enabled_basic_vec<U, Abi>::value &&
+             detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
 struct rebind<T, basic_vec<U, Abi>> {
     using type = basic_vec<T, deduce_abi_t<T, abi_lane_count<Abi>::value>>;
 };
 
 template<class T, size_t Bytes, class Abi>
-    requires(detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
+    requires(detail::is_enabled_basic_mask<Bytes, Abi>::value &&
+             detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
 struct rebind<T, basic_mask<Bytes, Abi>> {
     using type = basic_mask<sizeof(T), deduce_abi_t<T, abi_lane_count<Abi>::value>>;
 };
 
 template<simd_size_type N, class T, class Abi>
-    requires(detail::is_deduce_abi_available<T, N>::value)
+    requires(detail::is_enabled_basic_vec<T, Abi>::value &&
+             detail::is_deduce_abi_available<T, N>::value)
 struct resize<N, basic_vec<T, Abi>> {
     using type = basic_vec<T, deduce_abi_t<T, N>>;
 };
 
 template<simd_size_type N, size_t Bytes, class Abi>
-    requires(detail::has_mask_representative_value<Bytes>::value &&
+    requires(detail::is_enabled_basic_mask<Bytes, Abi>::value &&
+             detail::has_mask_representative_value<Bytes>::value &&
              detail::is_deduce_abi_available<detail::mask_representative_value_t<Bytes>, N>::value)
 struct resize<N, basic_mask<Bytes, Abi>> {
     using type = basic_mask<Bytes, deduce_abi_t<detail::mask_representative_value_t<Bytes>, N>>;
