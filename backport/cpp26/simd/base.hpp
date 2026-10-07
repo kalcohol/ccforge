@@ -439,8 +439,13 @@ struct is_valid_flag<simd::aligned_flag> : true_type {};
 template<size_t N>
 struct is_valid_flag<simd::overaligned_flag<N>> : true_type {};
 
+// Invalid deductions still name a type, but not an enabled ABI tag.
+struct unavailable_abi {};
+
 template<class T, simd_size_type N, class = void>
-struct deduce_abi {};
+struct deduce_abi {
+    using type = unavailable_abi;
+};
 
 template<class T, simd_size_type N>
 struct deduce_abi<T, N, enable_if_t<is_deduce_abi_available<T, N>::value>> {
@@ -457,6 +462,9 @@ class simd_iterator;
 
 template<class T, class Abi>
 struct simd_size;
+
+template<class T>
+struct simd_size<T, detail::unavailable_abi> : integral_constant<simd_size_type, 0> {};
 
 template<class T, simd_size_type N>
 struct simd_size<T, fixed_size_abi<N>>
@@ -519,6 +527,11 @@ using mask = basic_mask<sizeof(T), deduce_abi_t<T, N>>;
 
 template<class T, class U = typename T::value_type>
 struct alignment;
+
+template<class T, class U>
+    requires(detail::is_supported_value<U>::value)
+struct alignment<basic_vec<T, detail::unavailable_abi>, U>
+    : integral_constant<size_t, alignof(U)> {};
 
 template<class T, class U = typename T::value_type>
 inline constexpr size_t alignment_v = alignment<T, U>::value;
