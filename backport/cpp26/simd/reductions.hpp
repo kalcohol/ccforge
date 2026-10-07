@@ -235,26 +235,26 @@ constexpr simd_size_type reduce_max_index(const basic_mask<Bytes, Abi>& value) n
     return 0;
 }
 
-constexpr bool all_of(bool value) noexcept {
+constexpr bool all_of(same_as<bool> auto value) noexcept {
     return value;
 }
 
-constexpr bool any_of(bool value) noexcept {
+constexpr bool any_of(same_as<bool> auto value) noexcept {
     return value;
 }
 
-constexpr bool none_of(bool value) noexcept {
+constexpr bool none_of(same_as<bool> auto value) noexcept {
     return !value;
 }
 
-constexpr simd_size_type reduce_count(bool value) noexcept {
+constexpr simd_size_type reduce_count(same_as<bool> auto value) noexcept {
     return value ? 1 : 0;
 }
 
-constexpr simd_size_type reduce_min_index(bool) noexcept {
+constexpr simd_size_type reduce_min_index(same_as<bool> auto) noexcept {
     return 0;
 }
 
-constexpr simd_size_type reduce_max_index(bool) noexcept {
+constexpr simd_size_type reduce_max_index(same_as<bool> auto) noexcept {
     return 0;
 }
