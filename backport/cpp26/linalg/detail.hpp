@@ -142,6 +142,51 @@ constexpr decltype(auto) __dot_product(Left&& left, Right&& right) {
     }
 }
 
+template<class T>
+inline constexpr bool __is_dot_numeric_v =
+    std::is_arithmetic_v<std::remove_cvref_t<T>> ||
+    (__is_complex_v<T> && std::is_floating_point_v<__dot_component_t<T>>);
+
+template<class Scalar, class Product>
+inline constexpr bool __use_numeric_dot_sum_v =
+    __is_dot_numeric_v<Scalar> && __is_dot_numeric_v<Product> &&
+    (!__is_complex_v<Product> || __is_complex_v<Scalar>);
+
+struct __dot_product_type {
+    template<class Product>
+    constexpr auto operator()(Product&&) const noexcept {
+        return std::type_identity<Product>{};
+    }
+};
+
+template<class Left, class Right>
+constexpr auto __dot_sum_add(Left&& left, Right&& right) {
+    if constexpr (__is_complex_v<Left> || __is_complex_v<Right>) {
+        // Mixed complex component types have no heterogeneous operator+.
+        using component = decltype(std::declval<__dot_component_t<Left>>() +
+                                   std::declval<__dot_component_t<Right>>());
+        using sum_type = std::complex<component>;
+        return static_cast<sum_type>(std::forward<Left>(left)) +
+               static_cast<sum_type>(std::forward<Right>(right));
+    } else {
+        return std::forward<Left>(left) + std::forward<Right>(right);
+    }
+}
+
+template<class Scalar, class Index, class WithProduct>
+constexpr Scalar __dot_numeric_sum(Scalar init, Index count, WithProduct&& with_product) {
+    // The caller handles empty input; seed with the first actual addition.
+    auto sum = with_product(Index{0}, [&](auto&& product) {
+        return __dot_sum_add(init, std::forward<decltype(product)>(product));
+    });
+    for (Index i = 1; i < count; ++i) {
+        with_product(i, [&](auto&& product) {
+            sum = __dot_sum_add(sum, std::forward<decltype(product)>(product));
+        });
+    }
+    return static_cast<Scalar>(sum);
+}
+
 template<class Extents1, class Extents2>
 consteval bool __compatible_static_extents() {
     if constexpr (Extents1::rank() != Extents2::rank()) {

@@ -161,15 +161,20 @@ T dot(
 {
     using ElemT = std::remove_const_t<typename Accessor1::element_type>;
     using ElemT2 = std::remove_const_t<typename Accessor2::element_type>;
+    const auto n = x.extent(0);
+    if (n == 0) return init;
 #if __LINALG_HAS_SIMD
     if constexpr (std::is_same_v<ElemT, ElemT2> &&
                   std::is_same_v<T, ElemT> &&
+                  requires {
+                      requires std::is_same_v<T, decltype(
+                          std::declval<ElemT>() + std::declval<ElemT2>())>;
+                  } &&
                   __detail::__can_simd_v<ElemT, Layout1, Accessor1> &&
                   __detail::__can_simd_v<ElemT, Layout2, Accessor2>) {
         using abi_t  = std::simd::native_abi<ElemT>;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
         static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
-        const auto n = x.extent(0);
         typename Extents1::index_type i = 0;
         const ElemT* px = x.data_handle();
         const ElemT* py = y.data_handle();
@@ -183,10 +188,23 @@ T dot(
         return init + acc;
     }
 #endif
-    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
-        init += __detail::__dot_product<T,
-            typename decltype(x)::value_type, typename decltype(y)::value_type>(x[i], y[i]);
-    return init;
+    using index_type = typename Extents1::index_type;
+    auto with_product = [&](index_type i, auto&& consume) -> decltype(auto) {
+        return consume(__detail::__dot_product<T,
+            typename decltype(x)::value_type, typename decltype(y)::value_type>(x[i], y[i]));
+    };
+    using product_type = typename decltype(with_product(
+        std::declval<index_type>(), __detail::__dot_product_type{}))::type;
+    if constexpr (__detail::__use_numeric_dot_sum_v<T, product_type>) {
+        return __detail::__dot_numeric_sum(init, n, with_product);
+    } else {
+        for (index_type i = 0; i < n; ++i) {
+            with_product(i, [&](auto&& product) {
+                init += std::forward<decltype(product)>(product);
+            });
+        }
+        return init;
+    }
 }
 
 template<class Extents1, class Layout1, class Accessor1,
@@ -210,13 +228,27 @@ T dotc(
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     T init)
 {
-    for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
+    const auto n = x.extent(0);
+    if (n == 0) return init;
+    using index_type = typename Extents1::index_type;
+    auto with_product = [&](index_type i, auto&& consume) -> decltype(auto) {
         auto xi = x[i];
-        init += __detail::__dot_product<T,
+        return consume(__detail::__dot_product<T,
             typename decltype(x)::value_type, typename decltype(y)::value_type>(
-                __detail::__conj_if_needed(xi), y[i]);
+                __detail::__conj_if_needed(xi), y[i]));
+    };
+    using product_type = typename decltype(with_product(
+        std::declval<index_type>(), __detail::__dot_product_type{}))::type;
+    if constexpr (__detail::__use_numeric_dot_sum_v<T, product_type>) {
+        return __detail::__dot_numeric_sum(init, n, with_product);
+    } else {
+        for (index_type i = 0; i < n; ++i) {
+            with_product(i, [&](auto&& product) {
+                init += std::forward<decltype(product)>(product);
+            });
+        }
+        return init;
     }
-    return init;
 }
 
 template<class Extents1, class Layout1, class Accessor1,
