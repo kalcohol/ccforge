@@ -333,6 +333,173 @@ inline auto cyl_bessel_integer_base_series(long double x)
 }
 
 template<class T>
+auto cyl_bessel_near_integer_y_series(long double delta, long double x)
+    -> std::array<cyl_bessel_series_result, 2> {
+    const cyl_bessel_series_result failure{
+        quiet_nan<long double>(), infinity<long double>(), false};
+    if (!(x > 0.0L && x <= 2.0L && std::abs(delta) <= 0.5L)) {
+        return {failure, failure};
+    }
+
+    // Temme's small-x Y_delta/Y_(delta+1) series (1976), with the odd
+    // reciprocal-Gamma combination evaluated without subtracting near 1.
+    // zeta(k)/k: log(1/Gamma(1+delta)) = even + delta*odd (DLMF 5.7).
+    constexpr std::array even_coefficients{
+        0.82246703342411321823620758332301259461L,
+        0.27058080842778454787900092413529197569L,
+        0.16955717699740818995241965496515342132L,
+        0.12550966952474304242233565481358155816L,
+        0.10009945751278180853371459589003190170L,
+        0.08335384054610900402488649983731163925L,
+        0.07143294629536133605923275322179538098L,
+        0.06250095514121304074198328571797729513L};
+    constexpr std::array odd_coefficients{
+        0.40068563438653142846657938717048333025L,
+        0.20738555102867398526627309729140683361L,
+        0.14404989676884611811997107854997096566L,
+        0.11133426586956469049087252991471245117L,
+        0.09095401714582904223260929841149726695L,
+        0.07693251641135219147282706434818133813L,
+        0.06666870588242046803290344856737633751L};
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    const long double tiny = std::numeric_limits<long double>::denorm_min();
+    const long double target = cyl_bessel_target_tolerance<T>();
+    const long double squared = delta * delta;
+    const long double gamma_tail =
+        (pi_v<long double> * pi_v<long double> / 6.0L) *
+        std::pow(squared, 8) / (17.0L * (1.0L - squared));
+    if (16.0L * gamma_tail > target / 8.0L) {
+        return {failure, failure};
+    }
+    long double even = even_coefficients.back();
+    for (std::size_t k = even_coefficients.size() - 1u; k > 0u; --k) {
+        even = even * squared + even_coefficients[k - 1u];
+    }
+    even *= -squared;
+    long double odd = odd_coefficients.back();
+    for (std::size_t k = odd_coefficients.size() - 1u; k > 0u; --k) {
+        odd = odd * squared + odd_coefficients[k - 1u];
+    }
+    odd = euler_gamma_v<long double> + squared * odd;
+    const auto sinhc = [](long double value) {
+        return value == 0.0L ? 1.0L : std::sinh(value) / value;
+    };
+    const auto sinc = [](long double value) {
+        return value == 0.0L ? 1.0L : std::sin(value) / value;
+    };
+    const long double odd_log = delta * odd;
+    const long double gamma1 = -std::exp(even) * odd * sinhc(odd_log);
+    const long double gamma2 = std::exp(even) * std::cosh(odd_log);
+    const long double logarithm = std::log(x) - std::log(2.0L);
+    const long double sigma = -delta * logarithm;
+    const long double factor =
+        1.0L / (pi_v<long double> * sinc(pi_v<long double> * delta));
+    const long double half_sinc = sinc(pi_v<long double> * delta / 2.0L);
+    const long double e =
+        pi_v<long double> * pi_v<long double> * delta * half_sinc * half_sinc / 2.0L;
+    const long double first = gamma1 * std::cosh(sigma);
+    const long double second = gamma2 * logarithm * sinhc(sigma);
+    long double f = 2.0L * factor * (first - second);
+    long double p = factor * std::exp(sigma + even - odd_log);
+    long double q = factor * std::exp(-sigma + even + odd_log);
+    const long double seed_error =
+        64.0L * epsilon * (1.0L + std::abs(sigma)) + 16.0L * gamma_tail;
+    long double f_error =
+        seed_error * 2.0L * factor * (std::abs(first) + std::abs(second));
+    long double p_error = seed_error * std::abs(p);
+    long double q_error = seed_error * std::abs(q);
+    const long double e_error = 16.0L * epsilon * std::abs(e);
+    const long double z = (x / 2.0L) * (x / 2.0L);
+    const long double magnitude = std::max(1.0L, std::abs(e));
+    long double sum0 = f + e * q;
+    long double sum1 = p;
+    long double compensation0 = 0.0L;
+    long double compensation1 = 0.0L;
+    long double error0 = f_error + std::abs(e) * q_error +
+        e_error * (std::abs(q) + q_error);
+    long double error1 = p_error;
+    long double absolute0 = std::abs(f) + std::abs(e * q);
+    long double absolute1 = std::abs(p);
+    std::array<cyl_bessel_series_result, 2> result{failure, failure};
+    const auto add = [](long double term, long double& sum, long double& compensation) {
+        const long double adjusted = term - compensation;
+        const long double updated = sum + adjusted;
+        compensation = (updated - sum) - adjusted;
+        sum = updated;
+    };
+    for (unsigned k = 1u; k <= 64u; ++k) {
+        const long double order = static_cast<long double>(k);
+        const long double a = -z / (order * order - squared);
+        const long double b = a / order;
+        const long double c = -z / (order * (order - delta));
+        const long double d = -z / (order * (order + delta));
+        f_error = std::abs(a) * f_error + std::abs(b) * (p_error + q_error) +
+            16.0L * epsilon * (std::abs(a * f) +
+                std::abs(b) * (std::abs(p) + std::abs(q))) +
+            tiny * (1.0L + std::abs(f) + std::abs(p) + std::abs(q));
+        const long double old_p = p;
+        const long double old_q = q;
+        f = a * f + b * (p + q);
+        p *= c;
+        q *= d;
+        p_error = std::abs(c) * p_error + 8.0L * epsilon * std::abs(p) +
+            tiny * (1.0L + std::abs(old_p));
+        q_error = std::abs(d) * q_error + 8.0L * epsilon * std::abs(q) +
+            tiny * (1.0L + std::abs(old_q));
+        const long double term0 = f + e * q;
+        const long double term1 = p - order * term0;
+        const long double term_error0 = f_error + std::abs(e) * q_error +
+            e_error * (std::abs(q) + q_error) +
+            4.0L * epsilon * (std::abs(f) + std::abs(e * q)) + tiny;
+        error0 += term_error0;
+        error1 += p_error + order * term_error0 +
+            4.0L * epsilon * (std::abs(p) + order * std::abs(term0)) + tiny;
+        absolute0 += std::abs(term0);
+        absolute1 += std::abs(term1);
+        add(term0, sum0, compensation0);
+        add(term1, sum1, compensation1);
+
+        // A positive recurrence majorant bounds all remaining terms, not
+        // merely the last observed term (which may vanish by cancellation).
+        const long double next = order + 1.0L;
+        const long double denominator = next * next - squared;
+        const long double upper_f = std::abs(f) + f_error;
+        const long double upper_p = std::abs(p) + p_error;
+        const long double upper_q = std::abs(q) + q_error;
+        const long double upper_z = z * (1.0L + 4.0L * epsilon) + tiny;
+        const long double rho = std::max(
+            upper_z / denominator,
+            upper_z / (next * denominator) +
+                upper_z / (next * (next - std::abs(delta))));
+        const long double tail =
+            upper_z / denominator * upper_f +
+            upper_z / (next * denominator) * (upper_p + upper_q) +
+            upper_z / (next * (next - std::abs(delta))) * (upper_p + upper_q);
+        const long double tail0 = magnitude * tail / (1.0L - rho);
+        const long double tail1 = tail * (
+            (1.0L + next * magnitude) / (1.0L - rho) +
+            magnitude * rho / ((1.0L - rho) * (1.0L - rho)));
+        const long double y0 = -sum0;
+        const long double y1 = -(2.0L * sum1) / x;
+        const long double y0_error = error0 + 8.0L * epsilon * absolute0 + tail0;
+        const long double y1_error =
+            (2.0L * (error1 + 8.0L * epsilon * absolute1 + tail1)) / x +
+            4.0L * epsilon * std::abs(y1);
+        result = {{{y0, y0_error, std::isfinite(y0) &&
+                        y0_error <= target * std::max(1.0L, std::abs(y0))},
+                   {y1, y1_error, std::isfinite(y1) &&
+                        y1_error <= target * std::max(1.0L, std::abs(y1))}}};
+        if (result[0].converged && result[1].converged) {
+            return result;
+        }
+        if (!std::isfinite(y0_error) || !std::isfinite(y1_error)) {
+            break;
+        }
+    }
+    return {failure, failure};
+}
+
+template<class T>
 auto cyl_bessel_reduced_series_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
     const long double target = cyl_bessel_target_tolerance<T>();
@@ -365,10 +532,9 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
             target,
             true};
     }
-    const long double integer_distance =
-        std::abs(nu - std::round(nu));
-    if (integer_distance <=
-        64.0L * std::numeric_limits<long double>::epsilon()) {
+    const long double nearest = std::round(nu);
+    const long double delta = nu - nearest;
+    if (delta == 0.0L) {
         const auto values = cyl_bessel_integer_base_series(x);
         const bool first_order = std::round(nu) == 1.0L;
         return {
@@ -383,39 +549,55 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
     const auto j0_negative = cyl_bessel_power_series(-nu, x, true);
     const auto j1_negative =
         cyl_bessel_power_series(-(nu + 1.0L), x, true);
-    const long double sin0 = std::sin(pi_v<long double> * nu);
-    const long double sin1 =
-        std::sin(pi_v<long double> * (nu + 1.0L));
-    const long double cos0 = std::cos(pi_v<long double> * nu);
-    const long double cos1 =
-        std::cos(pi_v<long double> * (nu + 1.0L));
-    if (sin0 == 0.0L || sin1 == 0.0L) {
-        return {
-            quiet_nan<long double>(),
-            quiet_nan<long double>(),
-            infinity<long double>(),
-            false};
-    }
-
+    const auto trig = cyl_bessel_order_trig(nu);
+    const long double sin0 = trig.sine;
+    const long double sin1 = -sin0;
+    const long double cos0 = trig.cosine;
+    const long double cos1 = -cos0;
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    const long double phase_error =
+        4.0L * epsilon * pi_v<long double> * std::abs(delta);
+    const long double sine_error = phase_error + 8.0L * epsilon * std::abs(sin0) +
+        std::numeric_limits<long double>::denorm_min();
+    const long double cosine_error = phase_error + 8.0L * epsilon * std::abs(cos0);
+    const long double denominator = std::nextafter(
+        std::abs(sin0) - sine_error, 0.0L);
     const long double y0 =
         (cos0 * j0.value - j0_negative.value) / sin0;
     const long double y1 =
         (cos1 * j1.value - j1_negative.value) / sin1;
     const long double j_error = std::max(j0.error, j1.error);
-    const long double y0_error =
-        (std::abs(cos0) * j0.error + j0_negative.error) /
-        std::abs(sin0);
-    const long double y1_error =
-        (std::abs(cos1) * j1.error + j1_negative.error) /
-        std::abs(sin1);
+    const auto reflection_error = [&](const auto& positive, const auto& negative,
+                                      long double cosine, long double value) {
+        if (!(denominator > 0.0L) || !std::isfinite(value)) {
+            return infinity<long double>();
+        }
+        const long double numerator_error =
+            std::abs(cosine) * positive.error + negative.error +
+            cosine_error * (std::abs(positive.value) + positive.error) +
+            4.0L * epsilon *
+                (std::abs(cosine * positive.value) + std::abs(negative.value));
+        return (numerator_error + std::abs(value) * sine_error +
+                std::abs(sin0) * 4.0L * epsilon * std::abs(value)) / denominator;
+    };
+    const long double y0_error = reflection_error(j0, j0_negative, cos0, y0);
+    long double y1_error = reflection_error(j1, j1_negative, cos1, y1);
+    const long double adjacent_delta = (nu + 1.0L) - (nearest + 1.0L);
+    const long double order_error = std::abs(adjacent_delta - delta);
+    if (order_error != 0.0L) {
+        if (!(std::abs(delta) > 2.0L * order_error && denominator > 0.0L)) {
+            y1_error = infinity<long double>();
+        } else {
+            // Bound order sensitivity of the Gamma seed and the at most
+            // 4096 series denominators; the interval stays away from poles.
+            const long double sensitivity = order_error * (
+                std::abs(std::log(x / 2.0L)) + 32.0L + 8.0L / std::abs(delta));
+            y1_error += std::expm1(sensitivity) *
+                ((j1.error + j1_negative.error) / (8.0L * epsilon)) / denominator;
+        }
+    }
     const long double error =
         std::max({j_error, y0_error, y1_error});
-    const long double scale = std::max({
-        std::abs(j0.value),
-        std::abs(j1.value),
-        std::abs(y0),
-        std::abs(y1),
-        std::numeric_limits<long double>::min()});
     const bool converged =
         j0.converged &&
         j1.converged &&
@@ -423,8 +605,21 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
         j1_negative.converged &&
         std::isfinite(y0) &&
         std::isfinite(y1) &&
-        error <= target * scale;
-    return {j0.value, y0, error, converged};
+        j0.error <= target * std::max(1.0L, std::abs(j0.value)) &&
+        j1.error <= target * std::max(1.0L, std::abs(j1.value)) &&
+        y0_error <= target * std::max(1.0L, std::abs(y0)) &&
+        y1_error <= target * std::max(1.0L, std::abs(y1));
+    if (converged) {
+        return {j0.value, y0, std::max(j0.error, y0_error), true};
+    }
+    if (nearest == 0.0L || nearest == 1.0L) {
+        const auto near_integer = cyl_bessel_near_integer_y_series<T>(delta, x);
+        const auto& selected = near_integer[nearest == 1.0L ? 1u : 0u];
+        if (j0.converged && selected.converged) {
+            return {j0.value, selected.value, std::max(j0.error, selected.error), true};
+        }
+    }
+    return {j0.value, y0, error, false};
 }
 
 template<class T>
