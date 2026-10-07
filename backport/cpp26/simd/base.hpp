@@ -222,9 +222,9 @@ struct has_alignment_flag<simd::flags<Flags...>> : disjunction<is_alignment_flag
 
 template<class I, class FlagsPack>
 constexpr void require_iterator_compatible_flags() noexcept {
-    if constexpr (!is_pointer<remove_cvref_t<I>>::value) {
+    if constexpr (!contiguous_iterator<remove_cvref_t<I>>) {
         static_assert(!has_alignment_flag<FlagsPack>::value,
-            "alignment flags require pointer-based load/store in this backport");
+            "alignment flags require contiguous iterators");
     }
 }
 
