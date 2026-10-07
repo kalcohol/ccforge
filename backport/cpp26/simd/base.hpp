@@ -663,6 +663,13 @@ struct is_constexpr_wrapper_like : false_type {};
 template<class T>
 struct is_constexpr_wrapper_like<T, void_t<
     decltype(T::value),
+    // Reject object-dependent glvalues without reading or copying static values.
+    typename enable_if<
+        !is_reference<decltype((T::value))>::value ||
+        requires { typename bool_constant<(std::addressof(T::value), true)>; }
+    >::type,
+    // Check the value type alone before mixed comparisons or conversions.
+    typename enable_if<equality_comparable<decltype(T::value)>>::type,
     typename enable_if<is_convertible<T, decltype(T::value)>::value>::type,
     typename enable_if<equality_comparable_with<T, decltype(T::value)>>::type,
     typename enable_if<bool_constant<(T{} == T::value)>::value>::type,
@@ -826,11 +833,12 @@ struct is_implicit_simd_broadcast_condition<From, To, false, true>
         is_arithmetic<remove_cvref_t<decltype(remove_cvref_t<From>::value)>>::value &&
         is_constexpr_wrapper_value_representable<remove_cvref_t<From>, To>::value> {};
 
+template<class From, class To, bool = is_convertible<From, To>::value>
+struct is_implicit_simd_broadcast : false_type {};
+
 template<class From, class To>
-struct is_implicit_simd_broadcast
-    : integral_constant<bool,
-        is_convertible<From, To>::value &&
-        is_implicit_simd_broadcast_condition<From, To>::value> {};
+struct is_implicit_simd_broadcast<From, To, true>
+    : is_implicit_simd_broadcast_condition<From, To> {};
 
 template<class I, class = void>
 struct is_simd_index_vector : false_type {};

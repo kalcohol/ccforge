@@ -85,13 +85,142 @@ struct explicit_math_vector {
 };
 
 struct counted_math_vector {
-    double4 lanes;
+    double4 value;
     int* conversions;
 
     operator double4() const& noexcept {
         ++*conversions;
-        return lanes;
+        return value;
     }
+};
+
+struct static_value_math_vector {
+    inline static double4 value{3};
+    int* conversions;
+
+    operator double4() const& noexcept {
+        ++*conversions;
+        return value;
+    }
+};
+
+struct dual_conversion_math_vector {
+    inline static double4 value{3};
+    int* scalar_conversions;
+    int* vector_conversions;
+
+    operator double() const& noexcept {
+        ++*scalar_conversions;
+        return 7.0;
+    }
+    operator double4() const& noexcept {
+        ++*vector_conversions;
+        return value;
+    }
+};
+
+class nonstructural_math_value {
+    int stored_;
+
+public:
+    constexpr nonstructural_math_value(std::in_place_t, int stored) noexcept : stored_(stored) {}
+    constexpr operator int() const noexcept { return stored_; }
+    friend constexpr bool operator==(const nonstructural_math_value&, const nonstructural_math_value&) = default;
+};
+
+struct class_value_math_wrapper {
+    inline static constexpr nonstructural_math_value value{std::in_place, 7};
+
+    constexpr operator nonstructural_math_value() const noexcept { return value; }
+    constexpr operator int() const noexcept { return 7; }
+    friend constexpr bool operator==(class_value_math_wrapper, class_value_math_wrapper) = default;
+};
+
+} // namespace
+
+namespace simd_wrapper_fixture {
+
+struct noncopyable_math_value {
+    constexpr noncopyable_math_value() = default;
+    noncopyable_math_value(const noncopyable_math_value&) = delete;
+    noncopyable_math_value(const volatile noncopyable_math_value&) = delete;
+    const volatile noncopyable_math_value* operator&() const volatile = delete;
+
+    friend constexpr bool operator==(const volatile noncopyable_math_value&,
+                                     const volatile noncopyable_math_value&) noexcept {
+        return true;
+    }
+};
+
+struct volatile_reference_math_wrapper {
+    inline static volatile noncopyable_math_value storage{};
+    inline static constexpr const volatile noncopyable_math_value& value = storage;
+
+    constexpr volatile_reference_math_wrapper() = default;
+    volatile_reference_math_wrapper(const volatile_reference_math_wrapper&) = delete;
+    constexpr operator const volatile noncopyable_math_value&() const noexcept { return value; }
+    constexpr operator int() const noexcept { return 7; }
+    friend constexpr bool operator==(const volatile_reference_math_wrapper&,
+                                     const volatile_reference_math_wrapper&) noexcept = default;
+};
+
+} // namespace simd_wrapper_fixture
+
+namespace std {
+
+template<template<class> class TQual, template<class> class UQual>
+    requires (
+        is_convertible_v<TQual<simd_wrapper_fixture::volatile_reference_math_wrapper>,
+            const volatile simd_wrapper_fixture::noncopyable_math_value&> &&
+        is_convertible_v<UQual<simd_wrapper_fixture::noncopyable_math_value>,
+            const volatile simd_wrapper_fixture::noncopyable_math_value&>)
+struct basic_common_reference<simd_wrapper_fixture::volatile_reference_math_wrapper,
+                              simd_wrapper_fixture::noncopyable_math_value, TQual, UQual> {
+    using type = const volatile simd_wrapper_fixture::noncopyable_math_value&;
+};
+
+template<template<class> class TQual, template<class> class UQual>
+    requires (
+        is_convertible_v<TQual<simd_wrapper_fixture::noncopyable_math_value>,
+            const volatile simd_wrapper_fixture::noncopyable_math_value&> &&
+        is_convertible_v<UQual<simd_wrapper_fixture::volatile_reference_math_wrapper>,
+            const volatile simd_wrapper_fixture::noncopyable_math_value&>)
+struct basic_common_reference<simd_wrapper_fixture::noncopyable_math_value,
+                              simd_wrapper_fixture::volatile_reference_math_wrapper, TQual, UQual> {
+    using type = const volatile simd_wrapper_fixture::noncopyable_math_value&;
+};
+
+} // namespace std
+
+namespace {
+
+using simd_wrapper_fixture::noncopyable_math_value;
+using simd_wrapper_fixture::volatile_reference_math_wrapper;
+
+struct enum_value_math_wrapper {
+    enum { value = 7 };
+
+    constexpr operator decltype(value)() const noexcept { return value; }
+    friend constexpr bool operator==(enum_value_math_wrapper, enum_value_math_wrapper) = default;
+    friend constexpr bool operator==(enum_value_math_wrapper, decltype(value) other) noexcept {
+        return other == value;
+    }
+};
+
+struct counted_math_scalar {
+    double value;
+    int* conversions;
+
+    operator double() const& noexcept {
+        ++*conversions;
+        return value;
+    }
+};
+
+struct nonconstexpr_math_wrapper {
+    static constexpr int value = 16'777'217;
+
+    operator int() const noexcept { return value; }
 };
 
 struct const_lvalue_math_vector {
@@ -133,6 +262,132 @@ struct invalid_math_operand {};
 struct invalid_math_abi {};
 using invalid_math_vector = std::simd::basic_vec<double, invalid_math_abi>;
 using bool_math_vector = std::simd::basic_vec<bool, typename int4::abi_type>;
+using exact_math_wrapper = std::integral_constant<int, 16'777'216>;
+using inexact_math_wrapper = std::integral_constant<int, 16'777'217>;
+
+// Check the WD conditions independently of the implementation's detection gate.
+static_assert(!std::is_copy_constructible_v<noncopyable_math_value>);
+static_assert(!std::is_copy_constructible_v<volatile_reference_math_wrapper>);
+static_assert(!std::is_constructible_v<noncopyable_math_value,
+    const volatile noncopyable_math_value&>);
+static_assert(std::is_volatile_v<std::remove_reference_t<decltype(volatile_reference_math_wrapper::value)>>);
+static_assert(std::convertible_to<volatile_reference_math_wrapper,
+    decltype(volatile_reference_math_wrapper::value)>);
+
+// comparison-common-type-with strips cvref before forming its common reference.
+using volatile_comparison_wrapper = std::remove_cvref_t<volatile_reference_math_wrapper>;
+using volatile_comparison_value = std::remove_cvref_t<decltype(volatile_reference_math_wrapper::value)>;
+using volatile_comparison_common_reference = std::common_reference_t<
+    const volatile_comparison_wrapper&, const volatile_comparison_value&>;
+static_assert(std::same_as<volatile_comparison_common_reference, const volatile noncopyable_math_value&>);
+static_assert(std::same_as<volatile_comparison_common_reference,
+    std::common_reference_t<const volatile_comparison_value&, const volatile_comparison_wrapper&>>);
+static_assert(std::convertible_to<const volatile_comparison_wrapper&,
+    const volatile_comparison_common_reference&> ||
+    std::convertible_to<volatile_comparison_wrapper, const volatile_comparison_common_reference&>);
+static_assert(std::convertible_to<const volatile_comparison_value&,
+    const volatile_comparison_common_reference&> ||
+    std::convertible_to<volatile_comparison_value, const volatile_comparison_common_reference&>);
+
+using volatile_equality_common_reference = std::common_reference_t<
+    const volatile_reference_math_wrapper&,
+    const std::remove_reference_t<decltype(volatile_reference_math_wrapper::value)>&>;
+static_assert(std::same_as<volatile_equality_common_reference, const volatile noncopyable_math_value&>);
+static_assert(std::same_as<volatile_equality_common_reference,
+    std::common_reference_t<const std::remove_reference_t<decltype(volatile_reference_math_wrapper::value)>&,
+        const volatile_reference_math_wrapper&>>);
+static_assert(std::equality_comparable<volatile_reference_math_wrapper>);
+static_assert(std::equality_comparable<decltype(volatile_reference_math_wrapper::value)>);
+static_assert(std::equality_comparable<volatile_equality_common_reference>);
+static_assert(requires(const volatile_reference_math_wrapper& t,
+                      const volatile noncopyable_math_value& u) {
+    { t == u } -> std::same_as<bool>;
+    { t != u } -> std::same_as<bool>;
+    { u == t } -> std::same_as<bool>;
+    { u != t } -> std::same_as<bool>;
+});
+static_assert(std::equality_comparable_with<volatile_reference_math_wrapper,
+    decltype(volatile_reference_math_wrapper::value)>);
+static_assert(std::bool_constant<(volatile_reference_math_wrapper() ==
+    volatile_reference_math_wrapper::value)>::value);
+static_assert(std::bool_constant<(static_cast<decltype(volatile_reference_math_wrapper::value)>(
+    volatile_reference_math_wrapper()) == volatile_reference_math_wrapper::value)>::value);
+static_assert(std::convertible_to<enum_value_math_wrapper, decltype(enum_value_math_wrapper::value)>);
+static_assert(std::equality_comparable_with<enum_value_math_wrapper, decltype(enum_value_math_wrapper::value)>);
+static_assert(std::bool_constant<(enum_value_math_wrapper() == enum_value_math_wrapper::value)>::value);
+static_assert(std::bool_constant<(static_cast<decltype(enum_value_math_wrapper::value)>(
+    enum_value_math_wrapper()) == enum_value_math_wrapper::value)>::value);
+
+#if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<counted_math_vector>::value);
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<static_value_math_vector>::value);
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<dual_conversion_math_vector>::value);
+static_assert(std::simd::detail::is_constexpr_wrapper_like<class_value_math_wrapper>::value);
+static_assert(std::simd::detail::is_constexpr_wrapper_like<volatile_reference_math_wrapper>::value);
+static_assert(std::simd::detail::is_constexpr_wrapper_like<enum_value_math_wrapper>::value);
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<counted_math_scalar>::value);
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<nonconstexpr_math_wrapper>::value);
+static_assert(!std::simd::detail::is_constexpr_wrapper_like<wrapper_bad_value>::value);
+static_assert(std::simd::detail::is_constexpr_wrapper_like<exact_math_wrapper>::value);
+static_assert(std::simd::detail::is_constexpr_wrapper_like<inexact_math_wrapper>::value);
+#endif
+
+static_assert(std::is_constructible_v<double4, const counted_math_vector&>);
+static_assert(std::is_convertible_v<const counted_math_vector&, double4>);
+static_assert(std::is_convertible_v<counted_math_vector&, double4>);
+static_assert(std::is_convertible_v<counted_math_vector&&, double4>);
+static_assert(!std::is_convertible_v<volatile counted_math_vector&, double4>);
+static_assert(binary_math_returns_vector<double4, const counted_math_vector&, double4>());
+static_assert(binary_math_returns_vector<counted_math_vector&, double4, double4>());
+static_assert(binary_math_returns_vector<double4, counted_math_vector&&, double4>());
+static_assert(binary_math_rejects_operands<double4, volatile counted_math_vector&>());
+static_assert(ternary_math_returns_vector<const counted_math_vector&, double4, int, double4>());
+static_assert(ternary_math_returns_vector<double4, const counted_math_vector&, int, double4>());
+static_assert(ternary_math_returns_vector<double4, int, const counted_math_vector&, double4>());
+
+static_assert(!std::is_convertible_v<const static_value_math_vector&, double>);
+static_assert(std::is_convertible_v<const static_value_math_vector&, double4>);
+static_assert(std::is_constructible_v<double4, const static_value_math_vector&>);
+static_assert(binary_math_returns_vector<double4, const static_value_math_vector&, double4>());
+static_assert(binary_math_returns_vector<const static_value_math_vector&, double4, double4>());
+static_assert(ternary_math_returns_vector<double4, const static_value_math_vector&, int, double4>());
+static_assert(std::is_convertible_v<const dual_conversion_math_vector&, double>);
+static_assert(std::is_convertible_v<const dual_conversion_math_vector&, double4>);
+static_assert(std::is_constructible_v<double4, const dual_conversion_math_vector&>);
+static_assert(binary_math_returns_vector<double4, const dual_conversion_math_vector&, double4>());
+static_assert(binary_math_returns_vector<const dual_conversion_math_vector&, double4, double4>());
+static_assert(ternary_math_returns_vector<const dual_conversion_math_vector&, double4,
+    const dual_conversion_math_vector&, double4>());
+static_assert(std::convertible_to<class_value_math_wrapper, decltype(class_value_math_wrapper::value)>);
+static_assert(std::equality_comparable_with<class_value_math_wrapper, decltype(class_value_math_wrapper::value)>);
+static_assert(std::is_convertible_v<class_value_math_wrapper, float>);
+static_assert(!std::is_convertible_v<class_value_math_wrapper, float4>);
+static_assert(!std::is_constructible_v<float4, class_value_math_wrapper>);
+static_assert(std::is_convertible_v<volatile_reference_math_wrapper, float>);
+static_assert(!std::is_convertible_v<volatile_reference_math_wrapper, float4>);
+static_assert(!std::is_constructible_v<float4, volatile_reference_math_wrapper>);
+static_assert(binary_math_rejects_operands<float4, volatile_reference_math_wrapper>());
+static_assert(std::is_convertible_v<enum_value_math_wrapper, float>);
+static_assert(!std::is_convertible_v<enum_value_math_wrapper, float4>);
+static_assert(!std::is_constructible_v<float4, enum_value_math_wrapper>);
+
+static_assert(std::is_constructible_v<float4, const counted_math_scalar&>);
+static_assert(std::is_convertible_v<const counted_math_scalar&, float4>);
+static_assert(binary_math_returns_vector<float4, const counted_math_scalar&, float4>());
+static_assert(std::is_convertible_v<nonconstexpr_math_wrapper, float4>);
+static_assert(std::is_convertible_v<wrapper_bad_value, float4>);
+static_assert(std::is_constructible_v<float4, exact_math_wrapper>);
+static_assert(std::is_convertible_v<exact_math_wrapper, float4>);
+static_assert(binary_math_returns_vector<float4, exact_math_wrapper, float4>());
+static_assert(!std::is_constructible_v<float4, inexact_math_wrapper>);
+static_assert(!std::is_convertible_v<inexact_math_wrapper, float4>);
+static_assert(!std::is_constructible_v<uint4, std::integral_constant<int, -1>>);
+static_assert(!std::is_convertible_v<std::integral_constant<int, -1>, uint4>);
+static_assert(binary_math_rejects_operands<float4, inexact_math_wrapper>());
+static_assert(binary_math_rejects_operands<inexact_math_wrapper, float4>());
+static_assert(ternary_math_rejects_operands<float4, inexact_math_wrapper, float>());
+static_assert(ternary_math_rejects_operands<inexact_math_wrapper, float4, float>());
+static_assert(ternary_math_rejects_operands<float4, float, inexact_math_wrapper>());
 
 static_assert(std::is_convertible_v<const int4&, double4>);
 static_assert(std::is_convertible_v<int, double4>);
@@ -337,10 +592,15 @@ TEST(SimdMathExt, ThrowingImplicitOperandConversionPropagates) {
     EXPECT_THROW(std::simd::lerp(values, operand, 0.5), std::runtime_error);
 }
 
-TEST(SimdMathExt, SuccessfulImplicitOperandConversionOccursOnce) {
+TEST(SimdMathExt, NonstaticValueMemberConversionOccursOnce) {
     const double4 values(2);
     int conversions = 0;
     const counted_math_vector operand{double4(3), &conversions};
+    const double4 converted(operand);
+    EXPECT_EQ(conversions, 1);
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_DOUBLE_EQ(converted[i], 3.0);
+    }
     const auto check_once = [&conversions](auto call, auto expected) {
         conversions = 0;
         const auto result = call();
@@ -373,6 +633,101 @@ TEST(SimdMathExt, SuccessfulImplicitOperandConversionOccursOnce) {
     other_conversions = 0;
     check_once([&] { return std::simd::lerp(values, operand, other); }, 2.5);
     EXPECT_EQ(other_conversions, 1);
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_DOUBLE_EQ(operand.value[i], 3.0);
+        EXPECT_DOUBLE_EQ(other.value[i], 0.5);
+    }
+}
+
+TEST(SimdMathExt, StaticVectorValueMemberConversionOccursOnce) {
+    const double4 values(2);
+    int conversions = 0;
+    const static_value_math_vector operand{&conversions};
+    const double4 converted = operand;
+    EXPECT_EQ(conversions, 1);
+    conversions = 0;
+    const auto maxima = std::simd::fmax(values, operand);
+    EXPECT_EQ(conversions, 1);
+    conversions = 0;
+    const auto fused = std::simd::fma(operand, values, operand);
+    EXPECT_EQ(conversions, 2);
+    conversions = 0;
+    const auto compared = std::simd::isgreater(operand, values);
+    EXPECT_EQ(conversions, 1);
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_DOUBLE_EQ(converted[i], 3.0);
+        EXPECT_DOUBLE_EQ(maxima[i], 3.0);
+        EXPECT_DOUBLE_EQ(fused[i], 9.0);
+        EXPECT_TRUE(compared[i]);
+        EXPECT_DOUBLE_EQ(static_value_math_vector::value[i], 3.0);
+    }
+}
+
+TEST(SimdMathExt, StaticVectorValueWithDualConversionsPreservesTheSelectedPath) {
+    const double4 values(2);
+    int scalar_conversions = 0;
+    int vector_conversions = 0;
+    const dual_conversion_math_vector operand{&scalar_conversions, &vector_conversions};
+    const double4 converted = operand;
+    EXPECT_EQ(vector_conversions, 1);
+    EXPECT_EQ(scalar_conversions, 0);
+    vector_conversions = 0;
+    const auto maxima = std::simd::fmax(values, operand);
+    EXPECT_EQ(vector_conversions, 1);
+    EXPECT_EQ(scalar_conversions, 0);
+    vector_conversions = 0;
+    const auto minima = std::simd::fmin(operand, values);
+    EXPECT_EQ(vector_conversions, 1);
+    EXPECT_EQ(scalar_conversions, 0);
+    vector_conversions = 0;
+    const auto fused = std::simd::fma(operand, values, operand);
+    EXPECT_EQ(vector_conversions, 2);
+    EXPECT_EQ(scalar_conversions, 0);
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_DOUBLE_EQ(converted[i], 3.0);
+        EXPECT_DOUBLE_EQ(maxima[i], 3.0);
+        EXPECT_DOUBLE_EQ(minima[i], 2.0);
+        EXPECT_DOUBLE_EQ(fused[i], 9.0);
+        EXPECT_DOUBLE_EQ(dual_conversion_math_vector::value[i], 3.0);
+    }
+
+    vector_conversions = 0;
+    const std::simd::vec<double, 1> broadcast(operand);
+    EXPECT_EQ(scalar_conversions, 1);
+    EXPECT_EQ(vector_conversions, 0);
+    EXPECT_DOUBLE_EQ(broadcast[0], 7.0);
+}
+
+TEST(SimdMathExt, NonstaticValueMemberKeepsOrdinaryScalarFallback) {
+    using float1 = std::simd::vec<float, 1>;
+    int conversions = 0;
+    const counted_math_scalar operand{3.5, &conversions};
+    const float1 converted(operand);
+    EXPECT_EQ(conversions, 1);
+    EXPECT_FLOAT_EQ(converted[0], 3.5f);
+
+    const float1 values(2.0f);
+    const auto check_once = [&conversions](auto call, float expected) {
+        conversions = 0;
+        const auto result = call();
+        EXPECT_EQ(conversions, 1);
+        EXPECT_FLOAT_EQ(result[0], expected);
+    };
+    check_once([&] { return std::simd::fmax(values, operand); }, 3.5f);
+    check_once([&] { return std::simd::pow(operand, values); }, 12.25f);
+    check_once([&] { return std::simd::fma(values, operand, 1.0f); }, 8.0f);
+    EXPECT_DOUBLE_EQ(operand.value, 3.5);
+}
+
+TEST(SimdMathExt, StaticValueStillRequiresConstexprEquality) {
+    const float4 nonconstexpr(nonconstexpr_math_wrapper{});
+    const float4 unequal(wrapper_bad_value{});
+    const float4 representable(exact_math_wrapper{});
+    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+        EXPECT_FLOAT_EQ(nonconstexpr[i], static_cast<float>(nonconstexpr_math_wrapper::value));
+        EXPECT_FLOAT_EQ(unequal[i], 6.0f);
+        EXPECT_FLOAT_EQ(representable[i], 16'777'216.0f);
+    }
 }
 
 TEST(SimdMathExt, CustomPrimaryVectorIsDeducedFromConstLvalueAddition) {
