@@ -86,6 +86,10 @@ forge_add_execution_compile_probe(
     test_execution_associate_closure_constraints.cpp
     execution_associate_closure_constraints_compile)
 forge_add_execution_compile_probe(
+    test_execution_composition_constraints
+    test_execution_composition_constraints.cpp
+    execution_composition_constraints_compile)
+forge_add_execution_compile_probe(
     test_execution_bulk_policy_constraints
     test_execution_bulk_policy_constraints.cpp
     execution_bulk_policy_constraints_compile)
@@ -264,6 +268,10 @@ forge_add_execution_runtime_test(
     test_execution_associate_closure
     test_execution_associate_closure.cpp
     execution_associate_closure)
+forge_add_execution_runtime_test(
+    test_execution_composition
+    test_execution_composition.cpp
+    execution_composition)
 forge_add_execution_runtime_test(
     test_execution_member_customization
     test_execution_member_customization.cpp
