@@ -288,11 +288,15 @@ constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first
     return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, f);
 }
 
-template<class U, class... Flags>
-constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first,
-                                                                  const typename detail::default_pointer_load_vector_t<U>::mask_type& mask_value,
-                                                                  flags<Flags...> f = {}) {
-    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, mask_value, f);
+template<class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr detail::default_pointer_load_vector_t<remove_pointer_t<decay_t<I>>>
+unchecked_load(I&& input,
+               const typename detail::default_pointer_load_vector_t<remove_pointer_t<decay_t<I>>>::mask_type& mask_value,
+               flags<Flags...> f = {}) {
+    decay_t<I> first(std::forward<I>(input));
+    return detail::load_impl<detail::default_pointer_load_vector_t<remove_pointer_t<decay_t<I>>>>(first, mask_value, f);
 }
 
 template<class U, class... Flags>
@@ -383,8 +387,11 @@ constexpr V unchecked_load(const U* first, simd_size_type count) {
     return detail::load_impl<V>(first, count);
 }
 
-template<class V, class U, class... Flags>
-constexpr V unchecked_load(const U* first, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+template<class V, class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr V unchecked_load(I&& input, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+    decay_t<I> first(std::forward<I>(input));
     return detail::load_impl<V>(first, mask_value, f);
 }
 
