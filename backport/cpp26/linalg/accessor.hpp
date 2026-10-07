@@ -250,7 +250,7 @@ public:
             return extents_;
         }
 
-        [[nodiscard]] constexpr size_type required_span_size() const noexcept {
+        [[nodiscard]] constexpr index_type required_span_size() const noexcept {
             return nested_.required_span_size();
         }
 
