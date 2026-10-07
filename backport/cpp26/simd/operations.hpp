@@ -121,16 +121,33 @@ permute(const V& value, IndexMap&& index_map) {
         make_integer_sequence<simd_size_type, lane_count>{});
 }
 
-template<class Chunk,
-         class V,
-         typename enable_if<
-             detail::is_data_parallel_type<detail::remove_cvref_t<Chunk>>::value &&
-                 is_same<
-                     detail::lane_mapped_value_t<detail::remove_cvref_t<Chunk>>,
-                     detail::lane_mapped_value_t<V>>::value,
-             int>::type>
-constexpr auto chunk(const V& value) {
-    using chunk_type = detail::remove_cvref_t<Chunk>;
+namespace detail {
+
+template<class Chunk>
+struct chunk_type_traits {
+    static constexpr bool enabled = false;
+};
+
+template<class T, class Abi>
+struct chunk_type_traits<basic_vec<T, Abi>> {
+    using value_type = T;
+    static constexpr bool enabled = is_enabled_basic_vec<T, Abi>::value;
+};
+
+template<size_t Bytes, class Abi>
+struct chunk_type_traits<basic_mask<Bytes, Abi>> {
+    static constexpr size_t mask_bytes = Bytes;
+    static constexpr bool enabled = is_enabled_basic_mask<Bytes, Abi>::value;
+};
+
+template<class Chunk, class V>
+concept chunk_has_valid_tail = V::size % Chunk::size == 0 || requires {
+    typename resize_t<V::size % Chunk::size, Chunk>;
+};
+
+template<class Chunk, class V>
+constexpr auto chunk_impl(const V& value) noexcept {
+    using chunk_type = Chunk;
     constexpr simd_size_type chunk_size = static_cast<simd_size_type>(chunk_type::size);
     constexpr simd_size_type full_chunk_count = static_cast<simd_size_type>(V::size) / chunk_size;
     constexpr simd_size_type tail_size = static_cast<simd_size_type>(V::size) % chunk_size;
@@ -152,27 +169,15 @@ constexpr auto chunk(const V& value) {
     }
 }
 
-template<simd_size_type N, class V>
-constexpr auto chunk(const V& value) {
-    static_assert(N > 0, "std::simd::chunk requires a positive chunk width");
-    return simd::chunk<resize_t<N, V>>(value);
-}
-
 template<class First, class... Rest>
-constexpr auto cat(const First& first, const Rest&... rest) {
-    static_assert(
-        conjunction<
-            is_same<
-                detail::lane_mapped_value_t<First>,
-                detail::lane_mapped_value_t<Rest>>...>::value,
-        "std::simd::cat requires matching lane value types");
+using cat_result_t = resize_t<
+    static_cast<simd_size_type>(First::size) +
+        (static_cast<simd_size_type>(Rest::size) + ... + 0),
+    First>;
 
-    constexpr simd_size_type total_size =
-        static_cast<simd_size_type>(First::size) +
-        (static_cast<simd_size_type>(Rest::size) + ... + 0);
-    using result_type = resize_t<total_size, First>;
-
-    result_type result;
+template<class Result, class First, class... Rest>
+constexpr Result cat_impl(const First& first, const Rest&... rest) noexcept {
+    Result result;
     simd_size_type offset = 0;
     const auto append = [&](const auto& current) {
         using current_type = decay_t<decltype(current)>;
@@ -185,6 +190,56 @@ constexpr auto cat(const First& first, const Rest&... rest) {
     append(first);
     (append(rest), ...);
     return result;
+}
+
+} // namespace detail
+
+template<class Chunk, class Abi>
+    requires detail::chunk_type_traits<Chunk>::enabled &&
+             detail::chunk_has_valid_tail<Chunk,
+                 basic_vec<typename detail::chunk_type_traits<Chunk>::value_type, Abi>>
+constexpr auto chunk(
+    const basic_vec<typename detail::chunk_type_traits<Chunk>::value_type, Abi>& value) noexcept {
+    return detail::chunk_impl<Chunk>(value);
+}
+
+template<class Chunk, class Abi>
+    requires detail::chunk_type_traits<Chunk>::enabled &&
+             detail::chunk_has_valid_tail<Chunk,
+                 basic_mask<detail::chunk_type_traits<Chunk>::mask_bytes, Abi>>
+constexpr auto chunk(
+    const basic_mask<detail::chunk_type_traits<Chunk>::mask_bytes, Abi>& value) noexcept {
+    return detail::chunk_impl<Chunk>(value);
+}
+
+template<simd_size_type N, class T, class Abi>
+    requires requires(const basic_vec<T, Abi>& value) {
+        simd::chunk<resize_t<N, basic_vec<T, Abi>>>(value);
+    }
+constexpr auto chunk(const basic_vec<T, Abi>& value) noexcept {
+    return simd::chunk<resize_t<N, basic_vec<T, Abi>>>(value);
+}
+
+template<simd_size_type N, size_t Bytes, class Abi>
+    requires requires(const basic_mask<Bytes, Abi>& value) {
+        simd::chunk<resize_t<N, basic_mask<Bytes, Abi>>>(value);
+    }
+constexpr auto chunk(const basic_mask<Bytes, Abi>& value) noexcept {
+    return simd::chunk<resize_t<N, basic_mask<Bytes, Abi>>>(value);
+}
+
+template<class T, class FirstAbi, class... Abis>
+constexpr detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>
+cat(const basic_vec<T, FirstAbi>& first, const basic_vec<T, Abis>&... rest) noexcept {
+    using result_type = detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>;
+    return detail::cat_impl<result_type>(first, rest...);
+}
+
+template<size_t Bytes, class FirstAbi, class... Abis>
+constexpr detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>
+cat(const basic_mask<Bytes, FirstAbi>& first, const basic_mask<Bytes, Abis>&... rest) noexcept {
+    using result_type = detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>;
+    return detail::cat_impl<result_type>(first, rest...);
 }
 
 namespace detail {

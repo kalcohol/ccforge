@@ -1213,16 +1213,3 @@ template<simd_size_type N = 0, class V, class IndexMap,
          typename enable_if<!detail::is_simd_index_vector<detail::remove_cvref_t<IndexMap>>::value &&
              detail::is_static_permute_index_map<IndexMap>::value, int>::type = 0>
 constexpr resize_t<(N == 0 ? static_cast<simd_size_type>(V::size) : N), V> permute(const V& value, IndexMap&& index_map);
-
-template<class Chunk,
-         class V,
-         typename enable_if<detail::is_data_parallel_type<detail::remove_cvref_t<Chunk>>::value &&
-             is_same<detail::lane_mapped_value_t<detail::remove_cvref_t<Chunk>>, detail::lane_mapped_value_t<V>>::value,
-             int>::type = 0>
-constexpr auto chunk(const V& value);
-
-template<simd_size_type N, class V>
-constexpr auto chunk(const V& value);
-
-template<class First, class... Rest>
-constexpr auto cat(const First& first, const Rest&... rest);
