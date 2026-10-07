@@ -69,8 +69,9 @@ Forge 支持若干 receiver completion 中同步销毁 operation-state 的测试
 - completion 必须在 internal lock 外执行；
 - self-destroy 测试只证明对应 sender 的 implementation，不把该能力扩展到任意 third-party
   sender；
-- `forge::task` 和 `io_task` 的 final-suspend completion 仍要求 custom receiver 不要在
-  completion callback 内同步销毁 connected task operation-state。
+- `forge::task` 的 final-suspend completion 仍要求 custom receiver 不要在 completion
+  callback 内同步销毁 connected task operation-state；`as_sender(io_task)` 支持该路径，
+  但不把这一能力外推到它 await 的任意 third-party sender。
 
 更深的 cross-cutting case 是 stop-source reentrancy：
 
