@@ -39,6 +39,9 @@ T sph_neumann_fallback(unsigned n, T x) {
     if (x == T{}) {
         return -infinity<T>();
     }
+    if (std::isinf(x)) {
+        return T{};
+    }
 
     const T y0 = -std::cos(x) / x;
     if (n == 0u) {
