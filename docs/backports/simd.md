@@ -30,6 +30,7 @@ associated Legendre 的 `m > l` 零值规则仍优先保留。
 Hermite、普通/associated Laguerre 和 associated Legendre 的 fallback 使用
 缩放递推，保留超出中间标量范围但最终可表示的项；不依赖 `long double` 的扩展指数范围。
 球 Bessel / Neumann fallback 同样在 degree `>= 1024` 时返回 NaN，不进入递推。
+球 Neumann fallback 的种子与递推项使用缩放表示，避免中间溢出污染可表示的最终值。
 这些预算只描述 Forge fallback，不覆盖转发给原生标量库的实现；
 超高阶数值质量不计入 portable conformance 承诺。
 定义范围内的 fallback 会在 LLVM/libc++ lane 通过

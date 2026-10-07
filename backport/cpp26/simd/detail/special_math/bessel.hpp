@@ -28,6 +28,8 @@ T sph_bessel_fallback(unsigned n, T x) {
     return static_cast<T>(result);
 }
 
+inline long double sph_neumann_scaled(unsigned n, long double x);
+
 template<class T>
 T sph_neumann_fallback(unsigned n, T x) {
     if (std::isnan(x) || x < T{}) {
@@ -43,23 +45,18 @@ T sph_neumann_fallback(unsigned n, T x) {
         return T{};
     }
 
-    const T y0 = -std::cos(x) / x;
     if (n == 0u) {
-        return y0;
+        return -std::cos(x) / x;
     }
 
-    T ym2 = y0;
-    T ym1 = -std::cos(x) / (x * x) - std::sin(x) / x;
-    if (n == 1u) {
-        return ym1;
+    // Preserve the low-order rounding when x*x stays safely normal.
+    if (n == 1u &&
+        x >= T{2} * std::sqrt(std::numeric_limits<T>::min()) &&
+        x <= std::sqrt(std::numeric_limits<T>::max()) / T{2}) {
+        return -std::cos(x) / (x * x) - std::sin(x) / x;
     }
 
-    for (unsigned i = 1; i < n; ++i) {
-        const T next = (static_cast<T>(2 * i + 1) / x) * ym1 - ym2;
-        ym2 = ym1;
-        ym1 = next;
-    }
-    return ym1;
+    return static_cast<T>(sph_neumann_scaled(n, static_cast<long double>(x)));
 }
 
 struct cyl_bessel_series_result {
@@ -904,6 +901,24 @@ inline auto cyl_bessel_scaled_sum(
 
 inline long double cyl_bessel_unscale(cyl_bessel_scaled_value value) {
     return std::ldexp(value.fraction, value.exponent);
+}
+
+inline long double sph_neumann_scaled(unsigned n, long double x) {
+    // Neither seed nor recurrence forms 1/x, x*x, or an unscaled large value.
+    auto previous = cyl_bessel_scaled_ratio(cyl_bessel_scaled(-std::cos(x)), 1.0L, x);
+    if (n == 0u) {
+        return cyl_bessel_unscale(previous);
+    }
+    auto current = cyl_bessel_scaled_sum(
+        cyl_bessel_scaled_ratio(previous, 1.0L, x),
+        cyl_bessel_scaled_ratio(cyl_bessel_scaled(std::sin(x)), 1.0L, x), true);
+    for (unsigned i = 1u; i < n; ++i) {
+        const auto next = cyl_bessel_scaled_sum(
+            cyl_bessel_scaled_ratio(current, 2.0L * i + 1.0L, x), previous, true);
+        previous = current;
+        current = next;
+    }
+    return cyl_bessel_unscale(current);
 }
 
 inline bool cyl_bessel_scaled_finite_in_work(cyl_bessel_scaled_value value) {
