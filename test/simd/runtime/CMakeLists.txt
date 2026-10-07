@@ -10,6 +10,7 @@ add_executable(test_simd_abi "${FORGE_SIMD_RUNTIME_DIR}/test_simd_abi.cpp")
 target_link_libraries(test_simd_abi PRIVATE gtest_main forge::forge)
 target_include_directories(test_simd_abi PRIVATE "${FORGE_SIMD_SUPPORT_DIR}")
 add_test(NAME simd_traits COMMAND test_simd_abi)
+forge_add_simd_runtime_test(test_simd_alignment_power2 test_simd_alignment_power2.cpp)
 
 forge_add_simd_runtime_test(test_simd_mask test_simd_mask.cpp)
 

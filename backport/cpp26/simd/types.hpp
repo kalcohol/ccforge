@@ -869,9 +869,14 @@ basic_vec(basic_mask<Bytes, Abi>)
 
 // This metadata models the ABI-aligned memory contract used by load/store APIs.
 // It does not require alignof(basic_vec<T, Abi>) to equal alignment_v.
+// Disabled specializations have zero lanes and use the scalar alignment.
 template<class T, class Abi, class U>
     requires(detail::is_supported_value<U>::value)
-struct alignment<basic_vec<T, Abi>, U> : integral_constant<size_t, alignof(U) * abi_lane_count<Abi>::value> {};
+struct alignment<basic_vec<T, Abi>, U>
+    : integral_constant<size_t,
+        simd_size<T, Abi>::value == 0
+            ? alignof(U)
+            : bit_ceil(alignof(U) * static_cast<size_t>(simd_size<T, Abi>::value))> {};
 
 template<class T, class U, class Abi>
     requires(detail::is_deduce_abi_available<T, abi_lane_count<Abi>::value>::value)
