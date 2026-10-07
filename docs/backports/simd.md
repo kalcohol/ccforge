@@ -35,8 +35,9 @@ associated Legendre 的 `m > l` 零值规则仍优先保留。
 libstdc++ lane 充当 fallback oracle。
 `riemann_zeta` 的极点邻域使用 Laurent 局部展开，并在其余 Hasse 路径用
 `expm1` 计算解析延拓分母，避免 `s` 接近 1 时由相近数相减造成无穷或错号。
-`comp_ellint_3` 在 characteristic 从下方接近 1 时使用缩放变量变换，避免窄峰
-超过自适应求积的细分深度；零模数路径使用闭式表达式并显式区分极点两侧。
+`ellint_3` / `comp_ellint_3` 在一般模数路径使用 Carlson `RF` / `RJ`，
+负 characteristic 通过保留 complement 的解析变换处理；极端完整端点的
+退避由相对误差界控制。零模数路径使用闭式表达式并显式区分极点两侧。
 
 ## Native ABI 的类型标识
 

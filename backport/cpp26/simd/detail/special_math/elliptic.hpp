@@ -365,6 +365,105 @@ T ellint_3_unit_modulus(T nu, T phi) {
     return static_cast<T>((first - order * second) / (1.0L - order));
 }
 
+struct elliptic_expansion {
+    long double high;
+    long double low;
+};
+
+inline elliptic_expansion elliptic_add(
+    elliptic_expansion a, elliptic_expansion b) {
+    const long double sum = a.high + b.high;
+    const long double part = sum - a.high;
+    const long double error = (a.high - (sum - part)) + (b.high - part) +
+        a.low + b.low;
+    const long double high = sum + error;
+    return {high, error - (high - sum)};
+}
+
+inline elliptic_expansion elliptic_multiply(
+    elliptic_expansion a, elliptic_expansion b) {
+    const long double product = a.high * b.high;
+    const long double error = std::fma(a.high, b.high, -product) +
+        a.high * b.low + a.low * b.high + a.low * b.low;
+    const long double high = product + error;
+    return {high, error - (high - product)};
+}
+
+inline long double elliptic_pole_factor(long double order, long double angle) {
+    // The near-pole subtraction needs the sine residual even on 53-bit hosts.
+    const elliptic_expansion x{angle, 0.0L};
+    const auto square = elliptic_multiply(x, x);
+    auto term = x;
+    auto sine = x;
+    for (unsigned index = 1; index < 21u; ++index) {
+        auto numerator = elliptic_multiply(term, square);
+        numerator.high = -numerator.high;
+        numerator.low = -numerator.low;
+        const long double denominator = 2u * index * (2u * index + 1u);
+        const long double quotient = numerator.high / denominator;
+        const long double residual = std::fma(
+            -quotient, denominator, numerator.high) + numerator.low;
+        term = elliptic_add({quotient, 0.0L}, {residual / denominator, 0.0L});
+        sine = elliptic_add(sine, term);
+    }
+    const long double root = std::sqrt(order);
+    const elliptic_expansion root_pair{
+        root, std::fma(-root, root, order) / (2.0L * root)};
+    const auto factor = elliptic_multiply(sine, root_pair);
+    const auto lower = elliptic_add({1.0L, 0.0L}, {-factor.high, -factor.low});
+    const auto upper = elliptic_add({1.0L, 0.0L}, factor);
+    const auto pole = elliptic_multiply(lower, upper);
+    return pole.high + pole.low;
+}
+
+inline long double ellint_3_principal(
+    long double sine, long double cosine, long double modulus,
+    long double order, long double pole = -1.0L) {
+    const long double sine2 = sine * sine;
+    const long double cosine2 = cosine * cosine;
+    const long double complementary = (1.0L - modulus) * (1.0L + modulus);
+    const long double radicand = cosine2 + complementary * sine2;
+    const long double first = sine * carlson_rf(cosine2, radicand, 1.0L);
+    if (order == 0.0L || sine == 0.0L) {
+        return first;
+    }
+    if (order > 0.0L) {
+        if (pole < 0.0L) {
+            pole = cosine2 + (1.0L - order) * sine2;
+        }
+        return first + order * sine * sine2 *
+            carlson_rj(cosine2, radicand, 1.0L, pole) / 3.0L;
+    }
+
+    // DLMF 19.7.9 changes a negative characteristic to a positive one.
+    // Keep its complement explicitly rather than rounding the new order to 1.
+    const long double a = -order;
+    const long double denominator = 1.0L + a;
+    const long double total = modulus * modulus + a;
+    const long double transformed = total / denominator;
+    const long double transformed_complement = complementary / denominator;
+    if (cosine == 0.0L && a >= 1.0L &&
+        transformed_complement < std::numeric_limits<long double>::min()) {
+        // 0 <= Pi(-a,k) - Pi(-a,0) <= k^2 K(k)/a at the complete endpoint.
+        // K(k) <= pi/(2 sqrt(1-k^2)) gives this conservative relative bound.
+        const long double relative_bound =
+            2.0L / (std::sqrt(a) * std::sqrt(complementary));
+        if (relative_bound <= std::numeric_limits<long double>::epsilon()) {
+            return std::copysign(
+                pi_v<long double> / (2.0L * std::sqrt(denominator)), sine);
+        }
+    }
+    const long double positive = first + transformed * sine * sine2 *
+        carlson_rj(cosine2, radicand, 1.0L,
+            cosine2 + transformed_complement * sine2) / 3.0L;
+    const long double ratio = a / denominator;
+    const long double circular = std::atan(
+        std::sqrt(a * transformed) * sine * cosine / std::sqrt(radicand));
+    return modulus * modulus / total * first +
+        (ratio / total) * complementary * positive +
+        std::sqrt(ratio / total) * circular;
+}
+
 template<class T>
 T ellint_3_fallback(T k, T nu, T phi) {
     if (std::isnan(k) || std::isnan(nu) || std::isnan(phi) ||
@@ -406,18 +505,41 @@ T ellint_3_fallback(T k, T nu, T phi) {
     if (std::abs(k) == T{1}) {
         return ellint_3_unit_modulus(nu, phi);
     }
-    const long double modulus = static_cast<long double>(k);
+    if (std::isfinite(nu) && nu < T{1} && std::isinf(phi)) {
+        return phi;
+    }
+    const long double modulus = std::abs(static_cast<long double>(k));
     const long double order = static_cast<long double>(nu);
-    return elliptic_integral(phi, [&](long double theta) {
-        const long double s = std::sin(theta);
-        const long double sin2 = s * s;
-        const long double radicand = 1.0L - modulus * modulus * sin2;
-        const long double pole = 1.0L - order * sin2;
-        if (radicand <= 0.0L || pole == 0.0L) {
-            return infinity<long double>();
+    const long double bound = std::abs(static_cast<long double>(phi));
+    long double periods = 0.0L;
+    long double sine = std::sin(bound);
+    long double cosine = std::cos(bound);
+    if (order < 1.0L) {
+        int quotient_bits;
+        const long double remainder = std::remquo(
+            bound, pi_v<long double>, &quotient_bits);
+        periods = std::round((bound - remainder) / pi_v<long double>);
+        if ((quotient_bits & 1) != 0) {
+            sine = -sine;
+            cosine = -cosine;
         }
-        return 1.0L / (pole * std::sqrt(radicand));
-    });
+        if (cosine < 0.0L) {
+            periods += std::copysign(1.0L, sine);
+            sine = -sine;
+        }
+    }
+    if (std::abs(phi) == half_pi) {
+        periods = 0.0L;
+        sine = 1.0L;
+        cosine = 0.0L;
+    }
+    const long double pole = order > 1.0L
+        ? elliptic_pole_factor(order, bound) : -1.0L;
+    long double value = ellint_3_principal(sine, cosine, modulus, order, pole);
+    if (periods != 0.0L) {
+        value += periods * 2.0L * ellint_3_principal(1.0L, 0.0L, modulus, order);
+    }
+    return std::copysign(static_cast<T>(value), phi);
 }
 
 template<class T>
