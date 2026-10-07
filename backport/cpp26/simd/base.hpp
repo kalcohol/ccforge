@@ -949,14 +949,29 @@ struct checked_static_permute_index : integral_constant<simd_size_type, Index> {
         "std::simd static permute index maps must produce a sentinel or a valid source index");
 };
 
-// Only the return type is used: this declaration is never called or defined,
-// so its by-value parameter imposes no construction or copying of the map.
+// Only return types are queried; neither form constructs or copies the map.
+// GNU needs body deduction here for portability; other compilers retain the prototype.
+#if defined(__GNUC__) && !defined(__clang__)
+template<simd_size_type Size, simd_size_type Lane, class IndexMap>
+    requires requires(IndexMap& index_map) {
+        typename bool_constant<detail::is_valid_static_permute_index<Size>(
+            detail::invoke_index_map<Size>(index_map, Lane))>;
+    }
+auto static_permute_index_constant(IndexMap& index_map) {
+    constexpr bool valid_index = detail::is_valid_static_permute_index<Size>(
+        detail::invoke_index_map<Size>(index_map, Lane));
+    constexpr simd_size_type index = valid_index
+        ? static_cast<simd_size_type>(detail::invoke_index_map<Size>(index_map, Lane)) : 0;
+    return checked_static_permute_index<index, valid_index>{};
+}
+#else
 template<simd_size_type Size, simd_size_type Lane, class IndexMap>
 auto static_permute_index_constant(IndexMap index_map)
     -> checked_static_permute_index<
         detail::is_valid_static_permute_index<Size>(detail::invoke_index_map<Size>(index_map, Lane))
             ? static_cast<simd_size_type>(detail::invoke_index_map<Size>(index_map, Lane)) : 0,
         detail::is_valid_static_permute_index<Size>(detail::invoke_index_map<Size>(index_map, Lane))>;
+#endif
 
 template<class Result, class IndexMap>
 auto static_permute_index_result(Result (*)(IndexMap)) -> type_identity<Result>;

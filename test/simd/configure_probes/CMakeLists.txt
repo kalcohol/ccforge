@@ -172,6 +172,19 @@ forge_add_simd_configure_probe(
     "reject_stateful_static_permute.cpp"
     FALSE
     "Forge simd backport must diagnose static permute maps whose results are not constant expressions")
+set(_forge_permute_meta_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+foreach(_forge_permute_meta_reject RANGE 1 8)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_permute_meta_definitions}
+        -DFORGE_SIMD_STATIC_PERMUTE_META_REJECT=${_forge_permute_meta_reject})
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_STATIC_PERMUTE_META_${_forge_permute_meta_reject}
+        "../compile/test_simd_static_permute_meta_gcc.cpp"
+        FALSE
+        "Static SIMD permutation metadata must reject nonconstant or invalid maps")
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_permute_meta_definitions}")
+unset(_forge_permute_meta_definitions)
+unset(_forge_permute_meta_reject)
 forge_add_simd_configure_probe(
     FORGE_SIMD_ACCEPTS_OUT_OF_RANGE_STATIC_PERMUTE
     "reject_out_of_range_static_permute.cpp"
