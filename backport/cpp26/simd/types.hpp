@@ -441,7 +441,7 @@ public:
                  simd_size<U, OtherAbi>::value == simd_size<T, Abi>::value &&
                  detail::is_explicitly_simd_convertible<U, T>::value, int>::type = 0>
     constexpr explicit(detail::is_explicit_simd_vector_conversion<U, T>::value)
-        basic_vec(const basic_vec<U, OtherAbi>& other) noexcept(noexcept(static_cast<T>(other[0]))) : data_{} {
+        basic_vec(const basic_vec<U, OtherAbi>& other) noexcept : data_{} {
         for (simd_size_type i = 0; i < size; ++i) {
             data_[i] = static_cast<T>(other[i]);
         }
