@@ -301,11 +301,33 @@ constexpr std::size_t __checked_matrix_storage_size(
 }
 
 template<class T>
-constexpr auto __real_if_needed(const T& value) {
-    if constexpr (requires { value.real(); value.imag(); }) {
-        return value.real();
+T abs(T) = delete;
+
+template<class T>
+T real(const T&) = delete;
+
+template<class T>
+T imag(const T&) = delete;
+
+template<class T>
+constexpr decltype(auto) __real_if_needed(T&& value) {
+    if constexpr (
+        !std::is_arithmetic_v<std::remove_cvref_t<T>> &&
+        requires { real(std::forward<T>(value)); }) {
+        return real(std::forward<T>(value));
     } else {
-        return value;
+        return std::forward<T>(value);
+    }
+}
+
+template<class T>
+constexpr decltype(auto) __imag_if_needed(T&& value) {
+    if constexpr (
+        !std::is_arithmetic_v<std::remove_cvref_t<T>> &&
+        requires { imag(std::forward<T>(value)); }) {
+        return imag(std::forward<T>(value));
+    } else {
+        return std::remove_reference_t<T>{};
     }
 }
 
@@ -314,7 +336,9 @@ using __accessor_value_t =
     std::remove_cv_t<typename Accessor::element_type>;
 
 template<class T>
-constexpr auto __abs_if_needed(const T& value) {
+    requires (std::is_arithmetic_v<std::remove_cvref_t<T>> ||
+              requires(T&& value) { abs(std::forward<T>(value)); })
+constexpr auto __abs_if_needed(T&& value) {
     using value_type = std::remove_cvref_t<T>;
     if constexpr (std::is_unsigned_v<value_type>) {
         return value;
@@ -326,23 +350,28 @@ constexpr auto __abs_if_needed(const T& value) {
         return value < value_type{}
             ? static_cast<unsigned_type>(unsigned_type{} - widened)
             : widened;
+    } else if constexpr (std::is_arithmetic_v<value_type>) {
+        return std::abs(std::forward<T>(value));
     } else {
-        using std::abs;
-        return abs(value);
+        return abs(std::forward<T>(value));
     }
 }
 
-template<class T>
-constexpr auto __abs_sum_term(const T& value) {
-    if constexpr (__is_complex_v<T>) {
-        return __abs_if_needed(value.real()) + __abs_if_needed(value.imag());
+// Arithmetic dispatch follows mdspan value_type, not its proxy reference type.
+template<class Value = void, class T>
+constexpr auto __abs_sum_term(T&& value) {
+    if constexpr (std::is_arithmetic_v<Value> ||
+                  (std::is_void_v<Value> &&
+                   std::is_arithmetic_v<std::remove_cvref_t<T>>)) {
+        return __abs_if_needed(std::forward<T>(value));
     } else {
-        return __abs_if_needed(value);
+        return __abs_if_needed(__real_if_needed(std::forward<T>(value))) +
+               __abs_if_needed(__imag_if_needed(std::forward<T>(value)));
     }
 }
 
 template<class Accum, class T>
-constexpr Accum __abs_if_needed_as(const T& value) {
+constexpr Accum __abs_if_needed_as(T&& value) {
     using value_type = std::remove_cvref_t<T>;
     if constexpr (__is_complex_v<value_type>) {
         using std::hypot;
@@ -352,23 +381,30 @@ constexpr Accum __abs_if_needed_as(const T& value) {
     } else if constexpr (
         std::is_arithmetic_v<value_type> && std::is_arithmetic_v<Accum>) {
         if constexpr (std::is_integral_v<Accum>) {
-            return static_cast<Accum>(__abs_if_needed(value));
+            return static_cast<Accum>(__abs_if_needed(std::forward<T>(value)));
         } else {
             using std::abs;
             return abs(static_cast<Accum>(value));
         }
     } else {
-        return static_cast<Accum>(__abs_if_needed(value));
+        return static_cast<Accum>(__abs_if_needed(std::forward<T>(value)));
     }
 }
 
-template<class Accum, class T>
-constexpr Accum __abs_sum_term_as(const T& value) {
-    if constexpr (__is_complex_v<T>) {
-        return __abs_if_needed_as<Accum>(value.real()) +
-            __abs_if_needed_as<Accum>(value.imag());
+template<class Accum, class Value = void, class T>
+constexpr Accum __abs_sum_term_as(T&& value) {
+    if constexpr (!std::is_arithmetic_v<Accum> && !__is_complex_v<Accum>) {
+        return static_cast<Accum>(
+            __abs_sum_term<Value>(std::forward<T>(value)));
+    } else if constexpr (std::is_arithmetic_v<Value> ||
+                         (std::is_void_v<Value> &&
+                          std::is_arithmetic_v<std::remove_cvref_t<T>>)) {
+        return __abs_if_needed_as<Accum>(std::forward<T>(value));
     } else {
-        return __abs_if_needed_as<Accum>(value);
+        return __abs_if_needed_as<Accum>(
+                   __real_if_needed(std::forward<T>(value))) +
+               __abs_if_needed_as<Accum>(
+                   __imag_if_needed(std::forward<T>(value)));
     }
 }
 

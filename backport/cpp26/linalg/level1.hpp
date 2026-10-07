@@ -325,27 +325,28 @@ T vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
 {
+    using value_type = typename decltype(x)::value_type;
     using sum_type = std::remove_cvref_t<
         decltype(__detail::__real_if_needed(init))>;
     using term_type = std::remove_cvref_t<
-        decltype(__detail::__abs_sum_term(x[0]))>;
+        decltype(__detail::__abs_sum_term<value_type>(x[0]))>;
     if constexpr (std::is_integral_v<T> && std::is_integral_v<term_type>) {
         std::uintmax_t magnitude{};
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
             __detail::__saturating_accumulate_magnitude(
-                magnitude, __detail::__abs_sum_term(x[i]));
+                magnitude, __detail::__abs_sum_term<value_type>(x[i]));
         }
         return __detail::__saturating_add_magnitude(init, magnitude);
     } else if constexpr (std::is_integral_v<T>) {
         long double result = static_cast<long double>(init);
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            result += __detail::__abs_sum_term_as<long double>(x[i]);
+            result += __detail::__abs_sum_term_as<long double, value_type>(x[i]);
         }
         return __detail::__saturate_cast<T>(static_cast<double>(result));
     } else {
         for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
             init += static_cast<T>(
-                __detail::__abs_sum_term_as<sum_type>(x[i]));
+                __detail::__abs_sum_term_as<sum_type, value_type>(x[i]));
         }
         return init;
     }
@@ -389,11 +390,12 @@ typename Extents::size_type vector_idx_abs_max(
 {
     using idx_t = typename Extents::index_type;
     using size_type = typename Extents::size_type;
+    using value_type = typename decltype(x)::value_type;
     if (x.extent(0) == 0) return std::numeric_limits<size_type>::max();
     idx_t best = 0;
-    auto best_v = __detail::__abs_sum_term(x[0]);
+    auto best_v = __detail::__abs_sum_term<value_type>(x[0]);
     for (idx_t i = 1; i < x.extent(0); ++i) {
-        auto v = __detail::__abs_sum_term(x[i]);
+        auto v = __detail::__abs_sum_term<value_type>(x[i]);
         if (v > best_v) { best_v = v; best = i; }
     }
     return static_cast<size_type>(best);
