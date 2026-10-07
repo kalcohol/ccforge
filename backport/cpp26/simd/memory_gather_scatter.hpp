@@ -1,5 +1,24 @@
 #pragma once
 
+namespace detail {
+
+template<class Index, class Count>
+constexpr bool is_gather_scatter_index_in_range(Index index, Count count) noexcept {
+    if (count <= 0) {
+        return false;
+    }
+    if constexpr (is_signed<Index>::value) {
+        if (index < 0) {
+            return false;
+        }
+    }
+    // Neither nonnegative operand loses width or changes sign here.
+    using unsigned_type = make_unsigned_t<common_type_t<Index, Count>>;
+    return static_cast<unsigned_type>(index) < static_cast<unsigned_type>(count);
+}
+
+} // namespace detail
+
 template<class V,
          class I,
          class Indices,
@@ -15,8 +34,9 @@ constexpr V partial_gather_from(I first, simd_size_type count, const Indices& in
 
     V result;
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
-        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        if (offset >= 0 && offset < count) {
+        const auto index = indices[i];
+        if (detail::is_gather_scatter_index_in_range(index, count)) {
+            const simd_size_type offset = static_cast<simd_size_type>(index);
             detail::set_lane(result, i, detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
         } else {
             detail::set_lane(result, i, typename V::value_type{});
@@ -44,8 +64,9 @@ constexpr V partial_gather_from(I first,
 
     V result;
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(V::size); ++i) {
-        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        if (mask_value[i] && offset >= 0 && offset < count) {
+        const auto index = indices[i];
+        if (mask_value[i] && detail::is_gather_scatter_index_in_range(index, count)) {
+            const simd_size_type offset = static_cast<simd_size_type>(index);
             detail::set_lane(result, i, detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
         } else {
             detail::set_lane(result, i, typename V::value_type{});
@@ -193,8 +214,9 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, I first, simd_
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
-        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        if (offset >= 0 && offset < count) {
+        const auto index = indices[i];
+        if (detail::is_gather_scatter_index_in_range(index, count)) {
+            const simd_size_type offset = static_cast<simd_size_type>(index);
             *(first + offset) = detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
         }
     }
@@ -221,8 +243,9 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
     for (simd_size_type i = 0; i < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++i) {
-        const simd_size_type offset = static_cast<simd_size_type>(indices[i]);
-        if (mask_value[i] && offset >= 0 && offset < count) {
+        const auto index = indices[i];
+        if (mask_value[i] && detail::is_gather_scatter_index_in_range(index, count)) {
+            const simd_size_type offset = static_cast<simd_size_type>(index);
             *(first + offset) = detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
         }
     }
