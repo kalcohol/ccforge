@@ -849,16 +849,16 @@ public:
 template<class R, class... Ts>
     requires(
         detail::is_contiguous_load_store_range<R>::value &&
-        detail::fixed_range_size<detail::remove_cvref_t<R>>::value > 0 &&
+        detail::fixed_range_size<remove_reference_t<R>>::value > 0 &&
         detail::is_deduce_abi_available<
             typename ranges::range_value_t<detail::remove_cvref_t<R>>,
-            detail::fixed_range_size<detail::remove_cvref_t<R>>::value>::value)
+            detail::fixed_range_size<remove_reference_t<R>>::value>::value)
 basic_vec(R&&, Ts...)
     -> basic_vec<
         typename ranges::range_value_t<detail::remove_cvref_t<R>>,
         deduce_abi_t<
             typename ranges::range_value_t<detail::remove_cvref_t<R>>,
-            detail::fixed_range_size<detail::remove_cvref_t<R>>::value>>;
+            detail::fixed_range_size<remove_reference_t<R>>::value>>;
 
 template<size_t Bytes, class Abi>
     requires(

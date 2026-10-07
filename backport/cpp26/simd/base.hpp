@@ -1088,8 +1088,25 @@ struct is_contiguous_mask_range<R,
         ranges::sized_range<remove_cvref_t<R>> &&
         is_constructible<bool, typename ranges::range_reference_t<remove_cvref_t<R>>>::value> {};
 
+// The prototype is never called: querying its return type does not construct
+// or copy the range, and a state-dependent size fails substitution.
+template<class R>
+auto constant_range_size(R range)
+    -> integral_constant<simd_size_type, ranges::size(range)>;
+
+template<class Result, class R>
+auto constant_range_size_result(Result (*)(R)) -> type_identity<Result>;
+
 template<class R, class = void>
-struct fixed_range_size : integral_constant<simd_size_type, -1> {};
+struct constant_range_size_type : integral_constant<simd_size_type, -1> {};
+
+template<class R>
+struct constant_range_size_type<R, void_t<typename decltype(
+    detail::constant_range_size_result(&detail::constant_range_size<R>))::type>>
+    : decltype(detail::constant_range_size_result(&detail::constant_range_size<R>))::type {};
+
+template<class R, class = void>
+struct fixed_range_size : constant_range_size_type<R> {};
 
 template<class T, size_t N>
 struct fixed_range_size<T[N], void> : integral_constant<simd_size_type, static_cast<simd_size_type>(N)> {};
@@ -1103,7 +1120,7 @@ struct fixed_range_size<span<T, N>, typename enable_if<N != dynamic_extent>::typ
 
 template<class R, simd_size_type N>
 struct has_matching_fixed_range_size
-    : integral_constant<bool, fixed_range_size<remove_cvref_t<R>>::value == N> {};
+    : integral_constant<bool, fixed_range_size<remove_reference_t<R>>::value == N> {};
 
 template<class I, class S>
 constexpr simd_size_type iterator_distance(I first, S last) noexcept {
