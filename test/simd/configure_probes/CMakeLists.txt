@@ -80,6 +80,28 @@ forge_add_simd_configure_probe(
     "range_masked_load_store.cpp"
     TRUE
     "Forge simd backport must support masked contiguous range load/store overloads")
+set(_forge_static_extent_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+foreach(_forge_range RANGE 0 5)
+    foreach(_forge_operation RANGE 0 2)
+        foreach(_forge_accept RANGE 0 1)
+            set(CMAKE_REQUIRED_DEFINITIONS ${_forge_static_extent_definitions}
+                -DSIMD14_RANGE=${_forge_range}
+                -DSIMD14_OPERATION=${_forge_operation}
+                -DSIMD14_MASKED=1
+                -DSIMD14_ACCEPT=${_forge_accept})
+            forge_add_simd_configure_probe(
+                FORGE_SIMD_STATIC_EXTENT_${_forge_range}_${_forge_operation}_${_forge_accept}
+                "reject_short_unchecked_range.cpp"
+                ${_forge_accept}
+                "Unchecked SIMD range loads/stores must enforce static extent Mandates")
+        endforeach()
+    endforeach()
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_static_extent_definitions}")
+unset(_forge_static_extent_definitions)
+unset(_forge_range)
+unset(_forge_operation)
+unset(_forge_accept)
 forge_add_simd_configure_probe(
     FORGE_SIMD_HAS_DEFAULT_SUPPORTED_LOAD_STORE
     "default_supported_load_store.cpp"

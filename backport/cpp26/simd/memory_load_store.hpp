@@ -1,5 +1,33 @@
 #pragma once
 
+namespace detail {
+
+// Inspect an object-independent size without constructing or copying the range.
+template<class R>
+auto unchecked_range_size_constant(R r)
+    -> integral_constant<decltype(ranges::size(r)), ranges::size(r)>;
+
+template<class Result, class R>
+auto unchecked_range_size_result(Result (*)(R)) -> type_identity<Result>;
+
+template<class R>
+using unchecked_range_size_t = typename decltype(detail::unchecked_range_size_result(
+    &detail::unchecked_range_size_constant<R>))::type;
+
+template<class V, class R>
+constexpr void require_unchecked_static_extent() noexcept {
+    constexpr auto fixed = fixed_range_size<remove_reference_t<R>>::value;
+    if constexpr (fixed >= 0) {
+        static_assert(fixed >= static_cast<simd_size_type>(V::size),
+            "simd unchecked load/store requires a range at least as large as the vector");
+    } else if constexpr (requires { typename detail::unchecked_range_size_t<remove_reference_t<R>>; }) {
+        static_assert(detail::unchecked_range_size_t<remove_reference_t<R>>::value >= V::size,
+            "simd unchecked load/store requires a range at least as large as the vector");
+    }
+}
+
+} // namespace detail
+
 template<class I,
          class... Flags,
          typename enable_if<!is_pointer<typename detail::remove_cvref_t<I>>::value && detail::is_random_access_load_store_iterator<I>::value, int>::type = 0>
@@ -283,9 +311,13 @@ unchecked_load(I first, simd_size_type count, const typename detail::default_loa
     return detail::load_n_impl<V>(first, count, mask_value, f);
 }
 
-template<class U, class... Flags>
-constexpr detail::default_pointer_load_vector_t<U> unchecked_load(const U* first, flags<Flags...> f = {}) {
-    return detail::load_impl<detail::default_pointer_load_vector_t<U>>(first, f);
+template<class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr detail::default_pointer_load_vector_t<remove_pointer_t<decay_t<I>>>
+unchecked_load(I&& input, flags<Flags...> f = {}) {
+    decay_t<I> first(std::forward<I>(input));
+    return detail::load_impl<detail::default_pointer_load_vector_t<remove_pointer_t<decay_t<I>>>>(first, f);
 }
 
 template<class I, class... Flags,
@@ -343,6 +375,7 @@ template<class R, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
 constexpr detail::default_range_load_vector_t<R> unchecked_load(R&& r, flags<Flags...> f = {}) {
     using V = detail::default_range_load_vector_t<R>;
+    detail::require_unchecked_static_extent<V, R>();
     detail::require_unchecked_extent<V>(detail::range_size(r));
     return detail::load_impl<V>(ranges::data(r), detail::range_size(r), f);
 }
@@ -352,6 +385,7 @@ template<class R, class... Flags,
 constexpr detail::default_range_load_vector_t<R>
 unchecked_load(R&& r, const typename detail::default_range_load_vector_t<R>::mask_type& mask_value, flags<Flags...> f = {}) {
     using V = detail::default_range_load_vector_t<R>;
+    detail::require_unchecked_static_extent<V, R>();
     detail::require_unchecked_extent<V>(detail::range_size(r));
     return detail::load_impl<V>(ranges::data(r), detail::range_size(r), mask_value, f);
 }
@@ -376,8 +410,11 @@ constexpr V unchecked_load(I first, simd_size_type count, const typename V::mask
     return detail::load_n_impl<V>(first, count, mask_value, f);
 }
 
-template<class V, class U, class... Flags>
-constexpr V unchecked_load(const U* first, flags<Flags...> f = {}) {
+template<class V, class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr V unchecked_load(I&& input, flags<Flags...> f = {}) {
+    decay_t<I> first(std::forward<I>(input));
     return detail::load_impl<V>(first, f);
 }
 
@@ -440,12 +477,14 @@ constexpr V unchecked_load(I first, S last, const typename V::mask_type& mask_va
 template<class V, class R, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
 constexpr V unchecked_load(R&& r, flags<Flags...> f = {}) {
+    detail::require_unchecked_static_extent<V, R>();
     return simd::unchecked_load<V>(ranges::data(r), detail::range_size(r), f);
 }
 
 template<class V, class R, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value, int>::type = 0>
 constexpr V unchecked_load(R&& r, const typename V::mask_type& mask_value, flags<Flags...> f = {}) {
+    detail::require_unchecked_static_extent<V, R>();
     return simd::unchecked_load<V>(ranges::data(r), detail::range_size(r), mask_value, f);
 }
 
@@ -473,9 +512,12 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, I first, simd_siz
     detail::store_n_impl(value, first, count, mask_value, f);
 }
 
-template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, flags<Flags...> f = {})
-    requires indirectly_writable<U*, iter_value_t<U*>> {
+template<class T, class Abi, class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I&& input, flags<Flags...> f = {})
+    requires indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>> {
+    decay_t<I> first(std::forward<I>(input));
     detail::store_impl(value, first, f);
 }
 
@@ -486,9 +528,12 @@ constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, simd_si
     detail::store_impl(value, first, count);
 }
 
-template<class T, class Abi, class U, class... Flags>
-constexpr void unchecked_store(const basic_vec<T, Abi>& value, U* first, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
-    requires indirectly_writable<U*, iter_value_t<U*>> {
+template<class T, class Abi, class I, class... Flags,
+         typename enable_if<!detail::is_contiguous_load_store_range<I>::value &&
+             is_pointer<decay_t<I>>::value, int>::type = 0>
+constexpr void unchecked_store(const basic_vec<T, Abi>& value, I&& input, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
+    requires indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>> {
+    decay_t<I> first(std::forward<I>(input));
     detail::store_impl(value, first, mask_value, f);
 }
 
@@ -552,6 +597,7 @@ template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
 constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, flags<Flags...> f = {})
     requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    detail::require_unchecked_static_extent<basic_vec<T, Abi>, R>();
     simd::unchecked_store(value, ranges::data(r), detail::range_size(r), f);
 }
 
@@ -559,5 +605,6 @@ template<class T, class Abi, class R, class... Flags,
          typename enable_if<detail::is_writable_load_store_range<R>::value, int>::type = 0>
 constexpr void unchecked_store(const basic_vec<T, Abi>& value, R&& r, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f = {})
     requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    detail::require_unchecked_static_extent<basic_vec<T, Abi>, R>();
     simd::unchecked_store(value, ranges::data(r), detail::range_size(r), mask_value, f);
 }
