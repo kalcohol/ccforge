@@ -1,12 +1,38 @@
 #include "probe.hpp"
 
+#include <cpuid.h>
+#include <immintrin.h>
 #include <iostream>
+
+namespace {
+
+// Query XCR0 only after CPU and OS support for XSAVE has been checked.
+[[gnu::target("xsave"), gnu::noinline]]
+unsigned long long enabled_extended_state() noexcept {
+    return _xgetbv(0);
+}
+
+bool supports_avx2() noexcept {
+    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+    constexpr unsigned int required = bit_XSAVE | bit_AVX | bit_OSXSAVE;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx) ||
+        (ecx & required) != required) {
+        return false;
+    }
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) ||
+        (ebx & bit_AVX2) == 0) {
+        return false;
+    }
+    return (enabled_extended_state() & 0x6u) == 0x6u;
+}
+
+} // namespace
 
 int main() {
     using namespace native_abi_fixture;
 
     if constexpr (FORGE_ABI_FIRST_LANES == 8 || FORGE_ABI_SECOND_LANES == 8) {
-        if (!__builtin_cpu_supports("avx2")) {
+        if (!supports_avx2()) {
             return 77;
         }
     }
