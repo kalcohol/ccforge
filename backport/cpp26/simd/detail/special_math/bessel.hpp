@@ -760,6 +760,142 @@ inline long double cyl_bessel_j_miller(
         denominator;
 }
 
+struct cyl_bessel_scaled_value {
+    long double fraction;
+    int exponent;
+};
+
+inline auto cyl_bessel_scaled(long double value, int exponent = 0)
+    -> cyl_bessel_scaled_value {
+    if (value == 0.0L || !std::isfinite(value)) {
+        return {value, 0};
+    }
+    int shift = 0;
+    const long double fraction = std::frexp(value, &shift);
+    return {fraction, exponent + shift};
+}
+
+inline auto cyl_bessel_scaled_multiply(
+    cyl_bessel_scaled_value value, long double coefficient)
+    -> cyl_bessel_scaled_value {
+    if (coefficient == 0.0L) {
+        return {0.0L, 0};
+    }
+    const auto factor = cyl_bessel_scaled(coefficient);
+    return cyl_bessel_scaled(value.fraction * factor.fraction,
+                             value.exponent + factor.exponent);
+}
+
+inline auto cyl_bessel_scaled_ratio(
+    cyl_bessel_scaled_value value, long double numerator, long double denominator)
+    -> cyl_bessel_scaled_value {
+    const auto top = cyl_bessel_scaled(numerator);
+    const auto bottom = cyl_bessel_scaled(denominator);
+    return cyl_bessel_scaled((value.fraction * top.fraction) / bottom.fraction,
+                             value.exponent + top.exponent - bottom.exponent);
+}
+
+inline auto cyl_bessel_scaled_sum(
+    cyl_bessel_scaled_value left, cyl_bessel_scaled_value right, bool subtract = false)
+    -> cyl_bessel_scaled_value {
+    if (!std::isfinite(left.fraction) || !std::isfinite(right.fraction) ||
+        (left.fraction == 0.0L && right.fraction == 0.0L)) {
+        return cyl_bessel_scaled(subtract
+            ? left.fraction - right.fraction : left.fraction + right.fraction);
+    }
+    if (left.fraction == 0.0L) {
+        return {subtract ? -right.fraction : right.fraction, right.exponent};
+    }
+    if (right.fraction == 0.0L) {
+        return left;
+    }
+    const int exponent = std::max(left.exponent, right.exponent);
+    const long double a = std::ldexp(left.fraction, left.exponent - exponent);
+    const long double b = std::ldexp(right.fraction, right.exponent - exponent);
+    return cyl_bessel_scaled(subtract ? a - b : a + b, exponent);
+}
+
+inline long double cyl_bessel_unscale(cyl_bessel_scaled_value value) {
+    return std::ldexp(value.fraction, value.exponent);
+}
+
+inline bool cyl_bessel_scaled_finite_in_work(cyl_bessel_scaled_value value) {
+    return std::isfinite(value.fraction) &&
+        value.exponent <= std::numeric_limits<long double>::max_exponent;
+}
+
+struct cyl_bessel_scaled_hankel_result {
+    long double j;
+    cyl_bessel_scaled_value y;
+    long double error;
+    bool converged;
+};
+
+template<class T>
+auto cyl_bessel_positive_scaled_pair(long double order, long double argument)
+    -> cyl_bessel_scaled_hankel_result {
+    if (!std::isfinite(order) || order >= 1024.0L) {
+        const long double nan = quiet_nan<long double>();
+        return {nan, cyl_bessel_scaled(nan), nan, false};
+    }
+    const auto n = static_cast<unsigned>(
+        std::floor(order + 0.5L));
+    const long double reduced =
+        order - static_cast<long double>(n);
+    const auto first =
+        cyl_bessel_reduced_pair<T>(reduced, argument);
+    const auto second =
+        cyl_bessel_reduced_pair<T>(reduced + 1.0L, argument);
+
+    if (n == 0u) {
+        return {
+            first.j,
+            cyl_bessel_scaled(first.y),
+            std::max(first.error, second.error),
+            first.converged && second.converged};
+    }
+
+    long double j_previous = first.j;
+    long double j_current = second.j;
+    // Keep the exponent separate even when long double has only 53 bits.
+    auto y_previous = cyl_bessel_scaled(first.y);
+    auto y_current = cyl_bessel_scaled(second.y);
+    for (unsigned k = 1u; k < n; ++k) {
+        const long double recurrence_order =
+            reduced + static_cast<long double>(k);
+        const long double next_j =
+            2.0L * recurrence_order / argument * j_current -
+            j_previous;
+        const auto next_y = cyl_bessel_scaled_sum(
+            cyl_bessel_scaled_ratio(y_current, 2.0L * recurrence_order, argument),
+            y_previous, true);
+        j_previous = j_current;
+        j_current = next_j;
+        y_previous = y_current;
+        y_current = next_y;
+    }
+
+    if (argument < order) {
+        if (argument < 1.0L ||
+            !cyl_bessel_scaled_finite_in_work(y_previous) ||
+            !cyl_bessel_scaled_finite_in_work(y_current)) {
+            j_current = cyl_bessel_j_series(order, argument);
+        } else {
+            j_current = cyl_bessel_j_miller(
+                order,
+                argument,
+                first.y,
+                second.y);
+        }
+    }
+
+    return {
+        j_current,
+        y_current,
+        std::max(first.error, second.error),
+        first.converged && second.converged};
+}
+
 template<class T>
 auto cyl_bessel_jy_fallback(T nu, T x)
     -> cyl_bessel_hankel_result<T> {
@@ -781,104 +917,41 @@ auto cyl_bessel_jy_fallback(T nu, T x)
             const long double y = trig.cosine == 0.0L
                 ? std::copysign(0.0L, trig.sine)
                 : std::copysign(infinity<long double>(), -trig.cosine);
-            return {
-                static_cast<T>(j),
-                static_cast<T>(y),
-                T{},
-                true};
+            return {static_cast<T>(j), static_cast<T>(y), T{}, true};
         }
 
-        const auto positive = cyl_bessel_jy_fallback(
-            static_cast<T>(order), x);
-        const auto scaled = [](long double coefficient, long double value) {
-            return coefficient == 0.0L ? 0.0L : coefficient * value;
-        };
-        const long double j =
-            scaled(trig.cosine, positive.j) -
-            scaled(trig.sine, positive.y);
-        const long double y =
-            scaled(trig.sine, positive.j) +
-            scaled(trig.cosine, positive.y);
+        const auto positive = std::isinf(x)
+            ? cyl_bessel_scaled_hankel_result{0.0L, {0.0L, 0}, 0.0L, true}
+            : cyl_bessel_positive_scaled_pair<T>(order, static_cast<long double>(x));
+        const auto positive_j = cyl_bessel_scaled(positive.j);
+        // Apply reflection coefficients before restoring Y's exponent.
+        const auto j = cyl_bessel_scaled_sum(
+            cyl_bessel_scaled_multiply(positive_j, trig.cosine),
+            cyl_bessel_scaled_multiply(positive.y, trig.sine), true);
+        const auto y = cyl_bessel_scaled_sum(
+            cyl_bessel_scaled_multiply(positive_j, trig.sine),
+            cyl_bessel_scaled_multiply(positive.y, trig.cosine));
         return {
-            static_cast<T>(j),
-            static_cast<T>(y),
-            static_cast<T>(
-                (std::abs(trig.cosine) + std::abs(trig.sine)) *
-                positive.error),
+            static_cast<T>(cyl_bessel_unscale(j)),
+            static_cast<T>(cyl_bessel_unscale(y)),
+            static_cast<T>((std::abs(trig.cosine) + std::abs(trig.sine)) *
+                          positive.error),
             positive.converged};
     }
     if (std::isinf(x)) {
         return {T{}, T{}, T{}, true};
     }
     if (x == T{}) {
-        return {
-            nu == T{} ? T{1} : T{},
-            -infinity<T>(),
-            T{},
-            true};
+        return {nu == T{} ? T{1} : T{}, -infinity<T>(), T{}, true};
     }
 
-    const long double order = static_cast<long double>(nu);
-    const long double argument = static_cast<long double>(x);
-    if (!std::isfinite(order) || order >= 1024.0L) {
-        const T nan = quiet_nan<T>();
-        return {nan, nan, nan, false};
-    }
-    const auto n = static_cast<unsigned>(
-        std::floor(order + 0.5L));
-    const long double reduced =
-        order - static_cast<long double>(n);
-    const auto first =
-        cyl_bessel_reduced_pair<T>(reduced, argument);
-    const auto second =
-        cyl_bessel_reduced_pair<T>(reduced + 1.0L, argument);
-
-    if (n == 0u) {
-        return {
-            static_cast<T>(first.j),
-            static_cast<T>(first.y),
-            static_cast<T>(std::max(first.error, second.error)),
-            first.converged && second.converged};
-    }
-
-    long double j_previous = first.j;
-    long double j_current = second.j;
-    long double y_previous = first.y;
-    long double y_current = second.y;
-    for (unsigned k = 1u; k < n; ++k) {
-        const long double recurrence_order =
-            reduced + static_cast<long double>(k);
-        const long double next_j =
-            2.0L * recurrence_order / argument * j_current -
-            j_previous;
-        const long double next_y =
-            2.0L * recurrence_order / argument * y_current -
-            y_previous;
-        j_previous = j_current;
-        j_current = next_j;
-        y_previous = y_current;
-        y_current = next_y;
-    }
-
-    if (argument < order) {
-        if (argument < 1.0L ||
-            !std::isfinite(y_previous) ||
-            !std::isfinite(y_current)) {
-            j_current = cyl_bessel_j_series(order, argument);
-        } else {
-            j_current = cyl_bessel_j_miller(
-                order,
-                argument,
-                first.y,
-                second.y);
-        }
-    }
-
+    const auto positive = cyl_bessel_positive_scaled_pair<T>(
+        static_cast<long double>(nu), static_cast<long double>(x));
     return {
-        static_cast<T>(j_current),
-        static_cast<T>(y_current),
-        static_cast<T>(std::max(first.error, second.error)),
-        first.converged && second.converged};
+        static_cast<T>(positive.j),
+        static_cast<T>(cyl_bessel_unscale(positive.y)),
+        static_cast<T>(positive.error),
+        positive.converged};
 }
 
 template<class T>
