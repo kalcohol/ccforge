@@ -350,20 +350,18 @@ T ellint_3_unit_modulus(T nu, T phi) {
     if (order == 0.0L) {
         return static_cast<T>(first);
     }
-    if (order == 1.0L) {
-        const long double cosine = std::cos(angle);
-        return static_cast<T>(
-            (sine / (cosine * cosine) + first) / 2.0L);
-    }
-
-    long double second;
     if (order > 0.0L) {
-        const long double root = std::sqrt(order);
-        second = std::atanh(root * sine) / root;
-    } else {
-        const long double root = std::sqrt(-order);
-        second = std::atan(root * sine) / root;
+        const long double cosine = std::cos(angle);
+        const long double cosine2 = cosine * cosine;
+        const long double sine2 = sine * sine;
+        const long double pole = cosine2 + (1.0L - order) * sine2;
+        // DLMF 19.25.14: nonnegative terms avoid the nu == 1 cancellation.
+        return static_cast<T>(sine * carlson_rf(cosine2, cosine2, 1.0L) +
+            order * sine * sine2 * carlson_rj(
+                cosine2, cosine2, 1.0L, pole) / 3.0L);
     }
+    const long double root = std::sqrt(-order);
+    const long double second = std::atan(root * sine) / root;
     return static_cast<T>((first - order * second) / (1.0L - order));
 }
 
