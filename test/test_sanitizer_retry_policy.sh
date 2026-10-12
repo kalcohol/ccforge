@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+if ! command -v python3 >/dev/null ||
+        ! ctest --help 2>/dev/null | grep -F -- '--output-junit' >/dev/null; then
+    echo 'Sanitizer retry policy tests require Python 3 and CTest 3.21+'
+    exit 77
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${repo_root}/scripts/run-sanitizer-ctest.sh"
 work="$(mktemp -d "${TMPDIR:-/tmp}/ccforge-sanitizer-retry.XXXXXX")"
