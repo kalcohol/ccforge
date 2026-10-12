@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <complex>
 #include <limits>
 #include <stdexcept>
@@ -68,6 +69,27 @@ TEST(LinalgLevel3Gemm, RectangularAndUpdateForms) {
     std::linalg::matrix_product(A, B, E, C);
     EXPECT_DOUBLE_EQ((C[0, 0]), 68.0);
     EXPECT_DOUBLE_EQ((C[1, 1]), 164.0);
+}
+
+TEST(LinalgLevel3Gemm, InnerExtentDoesNotNarrowToOutputIndex) {
+    std::array<double, 256> a_data;
+    std::array<double, 256> b_data;
+    a_data.fill(1.0);
+    b_data.fill(1.0);
+    double output = -1.0;
+    double control = -1.0;
+    double input = 5.0;
+    std::mdspan a(a_data.data(), std::extents<int, 1, 256>{});
+    std::mdspan b(b_data.data(), std::extents<int, 256, 1>{});
+    std::mdspan c(&output, std::extents<std::uint8_t, 1, 1>{});
+    std::mdspan wide(&control, std::extents<int, 1, 1>{});
+    std::mdspan e(&input, std::extents<int, 1, 1>{});
+    std::linalg::matrix_product(a, b, wide);
+    EXPECT_DOUBLE_EQ(control, 256.0);
+    std::linalg::matrix_product(a, b, c);
+    EXPECT_DOUBLE_EQ(output, control);
+    std::linalg::matrix_product(a, b, e, c);
+    EXPECT_DOUBLE_EQ(output, 261.0);
 }
 
 TEST(LinalgLevel3Gemm, WritableConstElementAccessorsUseMutableAccumulators) {

@@ -44,11 +44,12 @@ void matrix_product(
     std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(1);
+    const idx_t m = C.extent(0), n = C.extent(1);
+    const auto k = A.extent(1);
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
             __detail::__accessor_value_t<CAccessor> sum{};
-            for (idx_t l = 0; l < k; ++l)
+            for (typename AExtents::index_type l = 0; l < k; ++l)
                 sum += A[i, l] * B[l, j];
             C[i, j] = sum;
         }
@@ -70,11 +71,12 @@ void matrix_product(
     std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(1);
+    const idx_t m = C.extent(0), n = C.extent(1);
+    const auto k = A.extent(1);
     for (idx_t i = 0; i < m; ++i)
         for (idx_t j = 0; j < n; ++j) {
             __detail::__accessor_value_t<CAccessor> sum{};
-            for (idx_t l = 0; l < k; ++l)
+            for (typename AExtents::index_type l = 0; l < k; ++l)
                 sum += A[i, l] * B[l, j];
             C[i, j] = E[i, j] + sum;
         }
