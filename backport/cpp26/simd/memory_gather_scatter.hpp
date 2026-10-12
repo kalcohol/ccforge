@@ -27,7 +27,8 @@ template<class V,
              detail::is_simd_index_vector<Indices>::value &&
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_random_access_load_store_iterator<I>::value),
              int>::type = 0>
-constexpr V partial_gather_from(I first, simd_size_type count, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V partial_gather_from(I first, simd_size_type count, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     detail::require_matching_index_width<V, Indices>();
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
@@ -57,7 +58,8 @@ constexpr V partial_gather_from(I first,
                                 simd_size_type count,
                                 const typename Indices::mask_type& mask_value,
                                 const Indices& indices,
-                                flags<Flags...> f = {}) {
+                                flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     detail::require_matching_index_width<V, Indices>();
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
@@ -116,7 +118,8 @@ template<class V, class I, class Indices, class... Flags,
                  !detail::is_contiguous_load_store_range<I>::value &&
                  is_pointer<decay_t<I>>::value,
              int>::type = 0>
-constexpr V unchecked_gather_from(I&& input, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(I&& input, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     decay_t<I> first(std::forward<I>(input));
     return detail::unchecked_gather_from_impl<V>(first, indices, f);
 }
@@ -126,7 +129,8 @@ template<class V, class I, class Indices, class... Flags,
              detail::is_simd_index_vector<Indices>::value &&
                  !is_pointer<I>::value && detail::is_random_access_load_store_iterator<I>::value,
              int>::type = 0>
-constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(I first, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     return detail::unchecked_gather_from_impl<V>(first, indices, f);
 }
 
@@ -150,14 +154,16 @@ partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const 
 template<class V, class R, class Indices, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
              detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-constexpr V partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V partial_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<ranges::range_value_t<R>, typename V::value_type>::value {
     return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), indices, f);
 }
 
 template<class V, class R, class Indices, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
              detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-constexpr V partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V partial_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<ranges::range_value_t<R>, typename V::value_type>::value {
     return simd::partial_gather_from<V>(ranges::data(r), detail::range_size(r), mask_value, indices, f);
 }
 
@@ -167,7 +173,8 @@ template<class V, class I, class Indices, class... Flags,
                  !detail::is_contiguous_load_store_range<I>::value &&
                  is_pointer<decay_t<I>>::value,
              int>::type = 0>
-constexpr V unchecked_gather_from(I&& input, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(I&& input, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     decay_t<I> first(std::forward<I>(input));
     return detail::unchecked_gather_from_impl<V>(first, mask_value, indices, f);
 }
@@ -177,7 +184,8 @@ template<class V, class I, class Indices, class... Flags,
              detail::is_simd_index_vector<Indices>::value &&
                  !is_pointer<I>::value && detail::is_random_access_load_store_iterator<I>::value,
              int>::type = 0>
-constexpr V unchecked_gather_from(I first, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(I first, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<iter_value_t<detail::remove_cvref_t<I>>, typename V::value_type>::value {
     return detail::unchecked_gather_from_impl<V>(first, mask_value, indices, f);
 }
 
@@ -209,7 +217,8 @@ template<class T,
                  (is_pointer<typename detail::remove_cvref_t<I>>::value || detail::is_writable_load_store_iterator<I>::value),
              int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, I first, simd_size_type count, const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<I, iter_value_t<I>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<I, iter_value_t<I>>){
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
@@ -238,7 +247,8 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
                                   const typename Indices::mask_type& mask_value,
                                   const Indices& indices,
                                   flags<Flags...> f = {})
-    requires indirectly_writable<I, iter_value_t<I>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<I, iter_value_t<I>>){
     detail::require_nonnegative_extent(count);
     detail::require_iterator_compatible_flags<I, flags<Flags...>>();
 
@@ -289,7 +299,8 @@ template<class T, class Abi, class I, class Indices, class... Flags,
              int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I&& output,
                                     const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>>){
     decay_t<I> first(std::forward<I>(output));
     detail::unchecked_scatter_to_impl(value, first, indices, f);
 }
@@ -302,7 +313,8 @@ template<class T, class Abi, class I, class Indices, class... Flags,
              int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I first,
                                     const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<I, iter_value_t<I>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<I, iter_value_t<I>>){
     detail::unchecked_scatter_to_impl(value, first, indices, f);
 }
 
@@ -316,7 +328,8 @@ template<class T, class Abi, class I, class Indices, class... Flags,
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I&& output,
                                     const typename Indices::mask_type& mask_value,
                                     const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<decay_t<I>, iter_value_t<decay_t<I>>>){
     decay_t<I> first(std::forward<I>(output));
     detail::unchecked_scatter_to_impl(value, first, mask_value, indices, f);
 }
@@ -330,21 +343,24 @@ template<class T, class Abi, class I, class Indices, class... Flags,
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, I first,
                                     const typename Indices::mask_type& mask_value,
                                     const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<I, iter_value_t<I>> {
+    requires detail::is_explicitly_simd_convertible<T, iter_value_t<detail::remove_cvref_t<I>>>::value &&
+             (indirectly_writable<I, iter_value_t<I>>){
     detail::unchecked_scatter_to_impl(value, first, mask_value, indices, f);
 }
 
 template<class V, class R, class Indices, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
              detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-constexpr V unchecked_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(R&& r, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<ranges::range_value_t<R>, typename V::value_type>::value {
     return simd::unchecked_gather_from<V>(ranges::data(r), indices, f);
 }
 
 template<class V, class R, class Indices, class... Flags,
          typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
              detail::is_simd_index_vector<Indices>::value, int>::type = 0>
-constexpr V unchecked_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {}) {
+constexpr V unchecked_gather_from(R&& r, const typename Indices::mask_type& mask_value, const Indices& indices, flags<Flags...> f = {})
+    requires detail::is_explicitly_simd_convertible<ranges::range_value_t<R>, typename V::value_type>::value {
     return simd::unchecked_gather_from<V>(ranges::data(r), mask_value, indices, f);
 }
 
@@ -353,7 +369,8 @@ template<class T, class Abi, class R, class Indices, class... Flags,
              detail::is_simd_index_vector<Indices>::value &&
              detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void partial_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    requires detail::is_explicitly_simd_convertible<T, ranges::range_value_t<R>>::value &&
+             (indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>>){
     simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), indices, f);
 }
 
@@ -366,7 +383,8 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
                                   const typename Indices::mask_type& mask_value,
                                   const Indices& indices,
                                   flags<Flags...> f = {})
-    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    requires detail::is_explicitly_simd_convertible<T, ranges::range_value_t<R>>::value &&
+             (indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>>){
     simd::partial_scatter_to(value, ranges::data(r), detail::range_size(r), mask_value, indices, f);
 }
 
@@ -375,7 +393,8 @@ template<class T, class Abi, class R, class Indices, class... Flags,
              detail::is_simd_index_vector<Indices>::value &&
              detail::has_matching_index_width<basic_vec<T, Abi>, Indices>::value, int>::type = 0>
 constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value, R&& r, const Indices& indices, flags<Flags...> f = {})
-    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    requires detail::is_explicitly_simd_convertible<T, ranges::range_value_t<R>>::value &&
+             (indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>>){
     simd::unchecked_scatter_to(value, ranges::data(r), indices, f);
 }
 
@@ -388,6 +407,7 @@ constexpr void unchecked_scatter_to(const basic_vec<T, Abi>& value,
                                     const typename Indices::mask_type& mask_value,
                                     const Indices& indices,
                                     flags<Flags...> f = {})
-    requires indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>> {
+    requires detail::is_explicitly_simd_convertible<T, ranges::range_value_t<R>>::value &&
+             (indirectly_writable<ranges::iterator_t<R>, ranges::range_value_t<R>>){
     simd::unchecked_scatter_to(value, ranges::data(r), mask_value, indices, f);
 }

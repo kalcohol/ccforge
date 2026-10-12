@@ -6,6 +6,7 @@
 #include <array>
 #include <bitset>
 #include <concepts>
+#include <complex>
 #include <cstddef>
 #include <iterator>
 #include <ranges>
@@ -17,6 +18,43 @@ namespace {
 
 using simd_test::int4;
 using mask4 = int4::mask_type;
+
+template<class V, class R, bool Expected = true>
+constexpr bool accepts_memory_conversion() {
+    return (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::partial_store(values, range, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::partial_store(values, range, mask, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::unchecked_store(values, range, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::unchecked_store(values, range, mask, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::partial_scatter_to(values, range, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::partial_scatter_to(values, range, index_mask, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::unchecked_scatter_to(values, range, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(const V& values, R& range, const typename V::mask_type& mask,
+        const int4& indices, const mask4& index_mask) { std::simd::unchecked_scatter_to(values, range, index_mask, indices, std::simd::flag_convert); } == Expected);
+}
+
+template<class V, class R, bool Expected = true>
+constexpr bool accepts_gather_conversion() {
+    return (requires(R& range, const int4& indices, const mask4& mask) { std::simd::partial_gather_from<V>(range, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(R& range, const int4& indices, const mask4& mask) { std::simd::partial_gather_from<V>(range, mask, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(R& range, const int4& indices, const mask4& mask) { std::simd::unchecked_gather_from<V>(range, indices, std::simd::flag_convert); } == Expected) &&
+        (requires(R& range, const int4& indices, const mask4& mask) { std::simd::unchecked_gather_from<V>(range, mask, indices, std::simd::flag_convert); } == Expected);
+}
+
+using float4 = std::simd::vec<float, 4>;
+using complex4 = std::simd::vec<std::complex<float>, 4>;
+static_assert(accepts_memory_conversion<float4, std::array<float, 4>>());
+static_assert(accepts_memory_conversion<float4, std::array<std::complex<float>, 4>>());
+static_assert(accepts_memory_conversion<complex4, std::array<float, 4>, false>());
+static_assert(accepts_gather_conversion<float4, std::array<float, 4>>());
+static_assert(accepts_gather_conversion<complex4, std::array<float, 4>>());
+static_assert(accepts_gather_conversion<float4, std::array<std::complex<float>, 4>, false>());
 
 // Constness of a view handle does not make its referenced elements const.
 struct mutable_proxy_view {
