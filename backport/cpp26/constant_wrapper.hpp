@@ -416,21 +416,21 @@ constexpr auto operator&(constant_wrapper<X, T>) noexcept
     template <auto X, class XT, auto Y, class YT>                              \
     constexpr auto operator op(constant_wrapper<X, XT>,                        \
                                constant_wrapper<Y, YT>) noexcept                \
-        -> FORGE_CW_RESULT(X op Y) {                                           \
+        -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value op constant_wrapper<Y, YT>::value) {                                           \
         return {};                                                              \
     }                                                                           \
                                                                                 \
     template <auto X, class XT, __forge_constexpr_param R>                      \
         requires (!__forge_constant_wrapper<R>)                                 \
     constexpr auto operator op(constant_wrapper<X, XT>, R) noexcept             \
-        -> FORGE_CW_RESULT(X op remove_cvref_t<R>::value) {                     \
+        -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value op remove_cvref_t<R>::value) {                     \
         return {};                                                              \
     }                                                                           \
                                                                                 \
     template <__forge_constexpr_param L, auto Y, class YT>                      \
         requires (!__forge_constant_wrapper<L>)                                 \
     constexpr auto operator op(L, constant_wrapper<Y, YT>) noexcept             \
-        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op Y) {                     \
+        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op constant_wrapper<Y, YT>::value) {                     \
         return {};                                                              \
     }
 
@@ -502,37 +502,37 @@ constexpr auto operator->*(L, constant_wrapper<Y, YT>) noexcept
 // remains available and relational rewritten candidates do not shadow the
 // constant-preserving overloads above.
 template <auto X, class XT, auto Y, class YT>
-    requires (!__forge_cw_comparison_category<decltype(X <=> Y)> &&
-              requires { typename FORGE_CW_RESULT(X <=> Y); })
+    requires (!__forge_cw_comparison_category<decltype(constant_wrapper<X, XT>::value <=> constant_wrapper<Y, YT>::value)> &&
+              requires { typename FORGE_CW_RESULT(constant_wrapper<X, XT>::value <=> constant_wrapper<Y, YT>::value); })
 constexpr auto operator<=>(constant_wrapper<X, XT>,
                            constant_wrapper<Y, YT>) noexcept
-    -> FORGE_CW_RESULT(X <=> Y) {
+    -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value <=> constant_wrapper<Y, YT>::value) {
     return {};
 }
 
 template <auto X, class XT, __forge_constexpr_param R>
     requires (!__forge_constant_wrapper<R> &&
               !__forge_cw_comparison_category<
-                  decltype(X <=> remove_cvref_t<R>::value)> &&
+                  decltype(constant_wrapper<X, XT>::value <=> remove_cvref_t<R>::value)> &&
               requires {
                   typename FORGE_CW_RESULT(
-                      X <=> remove_cvref_t<R>::value);
+                      constant_wrapper<X, XT>::value <=> remove_cvref_t<R>::value);
               })
 constexpr auto operator<=>(constant_wrapper<X, XT>, R) noexcept
-    -> FORGE_CW_RESULT(X <=> remove_cvref_t<R>::value) {
+    -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value <=> remove_cvref_t<R>::value) {
     return {};
 }
 
 template <__forge_constexpr_param L, auto Y, class YT>
     requires (!__forge_constant_wrapper<L> &&
               !__forge_cw_comparison_category<
-                  decltype(remove_cvref_t<L>::value <=> Y)> &&
+                  decltype(remove_cvref_t<L>::value <=> constant_wrapper<Y, YT>::value)> &&
               requires {
                   typename FORGE_CW_RESULT(
-                      remove_cvref_t<L>::value <=> Y);
+                      remove_cvref_t<L>::value <=> constant_wrapper<Y, YT>::value);
               })
 constexpr auto operator<=>(L, constant_wrapper<Y, YT>) noexcept
-    -> FORGE_CW_RESULT(remove_cvref_t<L>::value <=> Y) {
+    -> FORGE_CW_RESULT(remove_cvref_t<L>::value <=> constant_wrapper<Y, YT>::value) {
     return {};
 }
 
@@ -542,7 +542,7 @@ constexpr auto operator<=>(L, constant_wrapper<Y, YT>) noexcept
                   !is_constructible_v<bool, decltype(Y)>)                     \
     constexpr auto operator op(constant_wrapper<X, XT>,                       \
                                constant_wrapper<Y, YT>) noexcept               \
-        -> FORGE_CW_RESULT(X op Y) {                                          \
+        -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value op constant_wrapper<Y, YT>::value) {                                          \
         return {};                                                             \
     }                                                                          \
                                                                                \
@@ -552,7 +552,7 @@ constexpr auto operator<=>(L, constant_wrapper<Y, YT>) noexcept
                    !is_constructible_v<                                        \
                        bool, decltype(remove_cvref_t<R>::value)>))              \
     constexpr auto operator op(constant_wrapper<X, XT>, R) noexcept            \
-        -> FORGE_CW_RESULT(X op remove_cvref_t<R>::value) {                    \
+        -> FORGE_CW_RESULT(constant_wrapper<X, XT>::value op remove_cvref_t<R>::value) {                    \
         return {};                                                             \
     }                                                                          \
                                                                                \
@@ -562,7 +562,7 @@ constexpr auto operator<=>(L, constant_wrapper<Y, YT>) noexcept
                        bool, decltype(remove_cvref_t<L>::value)> ||             \
                    !is_constructible_v<bool, decltype(Y)>))                     \
     constexpr auto operator op(L, constant_wrapper<Y, YT>) noexcept            \
-        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op Y) {                    \
+        -> FORGE_CW_RESULT(remove_cvref_t<L>::value op constant_wrapper<Y, YT>::value) {                    \
         return {};                                                             \
     }
 

@@ -14,6 +14,26 @@ struct external_constant {
     static constexpr auto value = V;
 };
 
+struct category_tag {
+    friend constexpr int operator+(const int&, category_tag) noexcept { return 1; }
+    friend constexpr int operator+(int&&, category_tag) noexcept { return 2; }
+    friend constexpr int operator+(category_tag, const int&) noexcept { return 3; }
+    friend constexpr int operator+(category_tag, int&&) noexcept { return 4; }
+};
+
+static_assert(std::is_same_v<decltype(std::cw<7> + std::cw<category_tag{}>),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(std::cw<7> + external_constant<category_tag{}>{}),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(external_constant<7>{} + std::cw<category_tag{}>),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(std::cw<category_tag{}> + std::cw<7>),
+    std::constant_wrapper<3>>);
+static_assert(std::is_same_v<decltype(std::cw<category_tag{}> + external_constant<7>{}),
+    std::constant_wrapper<3>>);
+static_assert(std::is_same_v<decltype(external_constant<category_tag{}>{} + std::cw<7>),
+    std::constant_wrapper<3>>);
+
 struct flag {
     bool value;
 
