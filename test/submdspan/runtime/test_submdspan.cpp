@@ -40,6 +40,30 @@ struct convertible_full_slice {
     constexpr operator int() const noexcept requires AlsoIndex { return 1; }
 };
 
+struct counted_full_slice {
+    int* full_conversions;
+    int* index_conversions;
+    operator std::full_extent_t() && noexcept {
+        ++*full_conversions;
+        return std::full_extent;
+    }
+    operator int() && noexcept {
+        ++*index_conversions;
+        return 1;
+    }
+};
+
+TEST(SubmdspanTest, FullExtentConversionIsEvaluatedExactlyOnce) {
+    int full_conversions = 0;
+    int index_conversions = 0;
+    std::array<int, 3> data{1, 2, 3};
+    std::mdspan source(data.data(), std::extents<int, 3>{});
+    auto full = std::submdspan(source, counted_full_slice{&full_conversions, &index_conversions});
+    EXPECT_EQ(full.extent(0), 3);
+    EXPECT_EQ(full_conversions, 1);
+    EXPECT_EQ(index_conversions, 0);
+}
+
 TEST(SubmdspanTest, ConvertibleFullExtentPrecedesIndexConversion) {
     using extents = std::extents<int, 3>;
     static_assert(std::is_same_v<decltype(std::canonical_slices(extents{},

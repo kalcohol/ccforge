@@ -928,7 +928,7 @@ constexpr auto canonical_range_slice(OffsetType offset, SpanType span, StrideTyp
 template <class IndexType, class S>
 constexpr auto canonical_slice(S s) {
     if constexpr (is_convertible_v<S, full_extent_t>) {
-        return full_extent;
+        return static_cast<full_extent_t>(std::move(s));
     } else if constexpr (is_index_slice_v<S, IndexType>) {
         return canonical_index<IndexType>(s);
     } else if constexpr (is_extent_slice_v<S>) {
