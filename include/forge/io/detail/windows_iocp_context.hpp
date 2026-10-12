@@ -821,7 +821,11 @@ public:
 
     ~context() noexcept {
         shutdown();
-        wait();
+        if (thread_.joinable() && state_->called_from_worker()) {
+            thread_.detach();
+        } else {
+            wait();
+        }
     }
 
     context(const context&) = delete;
@@ -883,7 +887,6 @@ public:
             return;
         }
         if (state_->called_from_worker()) {
-            thread_.detach();
             return;
         }
         thread_.join();

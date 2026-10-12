@@ -379,6 +379,14 @@ private:
     }
 };
 
+struct worker_wait_receiver : blocking_io_receiver {
+    forge::io::context* context;
+    void set_value(std::size_t bytes) && noexcept {
+        context->wait();
+        std::move(static_cast<blocking_io_receiver&>(*this)).set_value(bytes);
+    }
+};
+
 void write_overlapped(HANDLE handle, std::span<const std::byte> bytes) {
     unique_handle event{::CreateEventW(nullptr, TRUE, FALSE, nullptr)};
     if (!event) {
@@ -508,6 +516,49 @@ private:
 TEST(IoIocpTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
     ctx.shutdown();
+    ctx.wait();
+}
+
+TEST(IoIocpTest, WorkerWaitPreservesExternalDrainBarrier) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    auto state = std::make_shared<blocking_completion_state>();
+    blocking_completion_release_guard release{state};
+    std::array<std::byte, 1> buffer{};
+    auto op = std::execution::connect(
+        ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+        worker_wait_receiver{{state}, &ctx});
+    std::execution::start(op);
+    const std::array payload{byte('w')};
+    write_overlapped(pipe.client.get(), std::span<const std::byte>{payload});
+    {
+        std::unique_lock lock{state->mtx};
+        ASSERT_TRUE(state->cv.wait_for(lock, 5s, [&] { return state->entered; }));
+    }
+    ctx.shutdown();
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool started = false;
+    bool returned = false;
+    std::thread waiter{[&] {
+        {
+            std::lock_guard lock{mutex};
+            started = true;
+            cv.notify_all();
+        }
+        ctx.wait();
+        std::lock_guard lock{mutex};
+        returned = true;
+        cv.notify_all();
+    }};
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [&] { return started; });
+        EXPECT_FALSE(cv.wait_for(lock, 100ms, [&] { return returned; }));
+    }
+    release.release();
+    waiter.join();
+    EXPECT_TRUE(returned);
     ctx.wait();
 }
 
