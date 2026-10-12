@@ -11,6 +11,48 @@ using cs_int = std::execution::completion_signatures<
     std::execution::set_value_t(int),
     std::execution::set_error_t(std::exception_ptr),
     std::execution::set_stopped_t()>;
+
+struct conversion_failure {};
+
+struct converting_error {
+    bool fail;
+    converting_error(bool should_fail) : fail(should_fail) {}
+    converting_error(const converting_error& other) : fail(other.fail) {
+        if (fail) throw conversion_failure{};
+    }
+    converting_error(converting_error&& other) : fail(other.fail) {
+        if (fail) throw conversion_failure{};
+    }
+};
+
+struct exception_capture_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    std::exception_ptr* error;
+    void set_error(std::exception_ptr ep) && noexcept { *error = std::move(ep); }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+};
+
+TEST(AnyReceiverTest, CapturesTypedErrorConversionFailureAndSuccess) {
+    using signatures = std::execution::completion_signatures<
+        std::execution::set_error_t(std::exception_ptr)>;
+    for (bool fail : {false, true}) {
+        for (bool move : {false, true}) {
+            std::exception_ptr captured;
+            forge::any_receiver_of<signatures> receiver{exception_capture_receiver{&captured}};
+            converting_error error{fail};
+            if (move) std::move(receiver).set_error(std::move(error));
+            else std::move(receiver).set_error(std::as_const(error));
+            ASSERT_TRUE(captured);
+            if (fail) EXPECT_THROW(std::rethrow_exception(captured), conversion_failure);
+            else EXPECT_THROW(std::rethrow_exception(captured), converting_error);
+        }
+    }
+    std::exception_ptr captured;
+    auto original = std::make_exception_ptr(conversion_failure{});
+    forge::any_receiver_of<signatures> receiver{exception_capture_receiver{&captured}};
+    std::move(receiver).set_error(original);
+    EXPECT_EQ(captured, original);
+}
 using cs_value_only = std::execution::completion_signatures<
     std::execution::set_value_t(int)>;
 using cs_zero_value = std::execution::completion_signatures<

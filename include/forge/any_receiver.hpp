@@ -255,8 +255,13 @@ public:
             std::exception_ptr ep;
             if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
                 ep = static_cast<E&&>(e);
-            else
-                ep = std::make_exception_ptr(static_cast<E&&>(e));
+            else {
+                try {
+                    ep = std::make_exception_ptr(static_cast<E&&>(e));
+                } catch (...) {
+                    ep = std::current_exception();
+                }
+            }
             __vt->complete_error(__ptr, std::move(ep));
         }
     }
