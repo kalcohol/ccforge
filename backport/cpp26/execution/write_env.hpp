@@ -91,8 +91,8 @@ struct __recv {
 template<class S, class OverrideEnv, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
-    using base_env_t = std::decay_t<env_of_t<R>>;
-    using recv_t = __recv<OverrideEnv, base_env_t, R>;
+    using base_env_t = env_of_t<R>;
+    using recv_t = __recv<OverrideEnv, std::remove_reference_t<base_env_t>, R>;
     using inner_op_t = connect_result_t<S, recv_t>;
 
     R __rcvr;

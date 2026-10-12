@@ -78,3 +78,16 @@ TEST(ExecutionBorrowedEnvTest, StartsOnBorrowsReferencesAndOwnsValues) {
     check_environment(ex::starts_on(ex::inline_scheduler{},
         inspect_environment(source.get_token())), owned);
 }
+
+TEST(ExecutionBorrowedEnvTest, WriteEnvBorrowsReferencesAndOwnsValues) {
+    std::inplace_stop_source source;
+    borrowed_env borrowed{source.get_token()};
+    owned_env owned{source.get_token()};
+    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::empty_env{}), borrowed);
+    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::empty_env{}), owned);
+    std::inplace_stop_source overlay;
+    check_environment(ex::write_env(inspect_environment(overlay.get_token()),
+        owned_env{overlay.get_token()}), borrowed);
+    check_environment(ex::write_env(inspect_environment(overlay.get_token()),
+        owned_env{overlay.get_token()}), owned);
+}
