@@ -21,6 +21,26 @@ struct category_tag {
     friend constexpr int operator+(category_tag, int&&) noexcept { return 4; }
 };
 
+struct member_category_tag {
+    friend constexpr int operator->*(member_category_tag, const int&) { return 1; }
+    friend constexpr int operator->*(member_category_tag, int&&) { return 2; }
+    friend constexpr int operator->*(int* const&, member_category_tag) { return 3; }
+    friend constexpr int operator->*(int*&&, member_category_tag) { return 4; }
+};
+inline int member_category_target;
+static_assert(std::is_same_v<decltype(std::cw<member_category_tag{}> ->* std::cw<7>),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(std::cw<member_category_tag{}> ->* external_constant<7>{}),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(external_constant<member_category_tag{}>{} ->* std::cw<7>),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(std::cw<&member_category_target> ->* std::cw<member_category_tag{}>),
+    std::constant_wrapper<3>>);
+static_assert(std::is_same_v<decltype(std::cw<&member_category_target> ->* external_constant<member_category_tag{}>{}),
+    std::constant_wrapper<3>>);
+static_assert(std::is_same_v<decltype(external_constant<&member_category_target>{} ->* std::cw<member_category_tag{}>),
+    std::constant_wrapper<3>>);
+
 static_assert(std::is_same_v<decltype(std::cw<7> + std::cw<category_tag{}>),
     std::constant_wrapper<1>>);
 static_assert(std::is_same_v<decltype(std::cw<7> + external_constant<category_tag{}>{}),
