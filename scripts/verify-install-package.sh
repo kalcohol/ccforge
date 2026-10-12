@@ -148,6 +148,10 @@ build_project "${FORGE_BUILD}"
 log "installing to ${PREFIX}"
 install_project "${FORGE_BUILD}"
 
+log "checking installed header-only version compatibility"
+cmake -DFORGE_INSTALL_PREFIX="${PREFIX}" \
+    -P "${REPO_ROOT}/test/check_installed_package_version.cmake"
+
 if find "${PREFIX}" \( -iname '*gtest*' -o -iname '*googletest*' \) \
         -print -quit | grep -q .; then
     log "ERROR: GoogleTest artifacts leaked into the CC Forge install prefix"

@@ -46,6 +46,7 @@ if(FORGE_ENABLE_INSTALL)
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
         VERSION "${PROJECT_VERSION}"
         COMPATIBILITY SameMajorVersion
+        ARCH_INDEPENDENT
     )
 
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"

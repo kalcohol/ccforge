@@ -10,7 +10,7 @@ if(CMAKE_CXX_STANDARD LESS 23)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(CCForge CONFIG REQUIRED)
+find_package(CCForge 1.0 CONFIG REQUIRED)
 
 foreach(_ccforge_gtest_target IN ITEMS
         gtest
