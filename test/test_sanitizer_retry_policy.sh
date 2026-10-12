@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
-retry_prerequisites=true
-if ! command -v python3 >/dev/null ||
-        ! ctest --help 2>/dev/null | grep -F -- '--output-junit' >/dev/null; then
-    retry_prerequisites=false
+fake_retry_prerequisites=false
+real_retry_prerequisites=false
+real_ctest="${CTEST:-ctest}"
+if command -v python3 >/dev/null; then
+    fake_retry_prerequisites=true
+    if "${real_ctest}" --help 2>/dev/null | grep -F -- '--output-junit' >/dev/null; then
+        real_retry_prerequisites=true
+    fi
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -155,7 +159,7 @@ run_rejected_case tsan success 0
 printf '<testsuite tests="1" failures="1"><testcase status="fail"><failure message="Failed"/><system-out>FATAL: ThreadSanitizer: unexpected memory mapping 0x1-0x2</system-out></testcase></testsuite>' \
     > "${work}/missing-report.log.xml"
 run_rejected_case tsan missing-report 8
-if [[ "$retry_prerequisites" == true ]]; then
+if [[ "$fake_retry_prerequisites" == true ]]; then
     run_mapping_case tsan tsan-mapping
     run_mapping_case asan asan-mapping
 else
@@ -169,7 +173,7 @@ FAKE_CTEST_MODE=retry-failure FAKE_RETRY_MARKER="${work}/retry-failure.retried" 
     CTEST="${work}/ctest" SETARCH="${work}/setarch" \
     "${runner}" tsan unused '.*' "${work}/retry-failure.log" \
     >/dev/null 2>&1 || status=$?
-if [[ "$retry_prerequisites" == true ]]; then
+if [[ "$fake_retry_prerequisites" == true ]]; then
     [[ "$status" == 11 && -e "${work}/retry-failure.retried" ]]
 else
     [[ "$status" == 8 && ! -e "${work}/retry-failure.retried" ]]
@@ -198,12 +202,27 @@ for mixed in OFF ON; do
     cmake -S "${work}" -B "${work}/real-${mixed}" "${generator_args[@]}" -DREPLAY_MIXED="${mixed}" >/dev/null
     marker="${work}/real-${mixed}.retried"
     status=0
-    FAKE_RETRY_MARKER="${marker}" CTEST="$(command -v ctest)" SETARCH="${work}/setarch" \
+    FAKE_RETRY_MARKER="${marker}" CTEST="${real_ctest}" SETARCH="${work}/setarch" \
         "${runner}" tsan "${work}/real-${mixed}" '.*' "${work}/real-${mixed}.log" \
         >/dev/null 2>&1 || status=$?
-    if [[ "$mixed" == OFF && "$retry_prerequisites" == true ]]; then
+    if [[ "$mixed" == OFF && "$real_retry_prerequisites" == true ]]; then
         [[ "$status" == 0 && -e "$marker" ]]
     else
         [[ "$status" == 8 && ! -e "$marker" ]]
     fi
 done
+
+if [[ "$fake_retry_prerequisites" == true && "${FORGE_POLICY_OLD_CTEST_CONTROL:-0}" != 1 ]]; then
+    cat > "${work}/old-ctest" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --help ]]; then
+    echo 'CTest without JUnit output support'
+    exit 0
+fi
+exec "${FORGE_REAL_CTEST}" "$@"
+EOF
+    chmod +x "${work}/old-ctest"
+    FORGE_POLICY_OLD_CTEST_CONTROL=1 FORGE_REAL_CTEST="$(command -v "$real_ctest")" \
+        CTEST="${work}/old-ctest" bash "${BASH_SOURCE[0]}" \
+        >"${work}/old-ctest-with-python.log" 2>&1
+fi
