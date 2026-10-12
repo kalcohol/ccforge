@@ -225,7 +225,7 @@ struct __error_index<Error, meta::type_list<>> {
 
 template<class R>
 auto __make_stop_token(const R& rcvr) {
-    auto env = std::execution::get_env(rcvr);
+    decltype(auto) env = std::execution::get_env(rcvr);
     if constexpr (requires { std::execution::get_stop_token(env); }) {
         auto token = std::execution::get_stop_token(env);
         if (token.stop_possible()) {

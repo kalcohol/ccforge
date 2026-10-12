@@ -251,6 +251,18 @@ struct stop_receiver {
     }
 };
 
+struct noncopyable_stop_env {
+    std::inplace_stop_token token;
+    explicit noncopyable_stop_env(std::inplace_stop_token t) : token(t) {}
+    noncopyable_stop_env(const noncopyable_stop_env&) = delete;
+    auto query(std::execution::get_stop_token_t) const noexcept { return token; }
+};
+
+struct borrowed_stop_receiver : stop_receiver {
+    const noncopyable_stop_env* env;
+    auto get_env() const noexcept -> const noncopyable_stop_env& { return *env; }
+};
+
 struct multi_sender {
     using sender_concept = std::execution::sender_t;
 
@@ -995,6 +1007,23 @@ TEST(ErasedSenderTest, PropagatesReceiverStopToken) {
 
     EXPECT_TRUE(state->stop_possible);
     EXPECT_TRUE(state->stop_requested);
+}
+
+TEST(ErasedSenderTest, PropagatesNoncopyableBorrowedStopEnvironment) {
+    for (bool stop_before_connect : {false, true}) {
+        forge::erased_sender<stop_probe_cs> sender{stop_probe_sender{}};
+        auto state = std::make_shared<observed_state>();
+        std::inplace_stop_source source;
+        noncopyable_stop_env env{source.get_token()};
+        if (stop_before_connect) source.request_stop();
+        auto receiver = borrowed_stop_receiver{{state, &source}, &env};
+        auto op = std::execution::connect(std::move(sender), std::move(receiver));
+        if (!stop_before_connect) source.request_stop();
+        std::execution::start(op);
+        EXPECT_TRUE(state->stop_possible);
+        EXPECT_TRUE(state->stop_requested);
+        EXPECT_FALSE(state->errored);
+    }
 }
 
 TEST(ErasedSenderTest, AcceptsMoveOnlySourceSender) {
