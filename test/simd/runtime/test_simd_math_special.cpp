@@ -2,6 +2,28 @@
 
 #include <gtest/gtest.h>
 
+TEST(SimdMathSpecial, ZetaReflectionNearEvenRootsRetainsPhasePrecision) {
+    struct reference { double input; double expected; };
+    // mpmath 1.3.0 at 100 and 160 decimal digits from exact binary inputs.
+    constexpr reference cases[] = {
+        {-0x1.8ffffffffffffp+7, 2.59140425705963400652e201},
+        {-0x1.8bfffffffffffp+7, -2.57046581512336388974e198},
+        {-0x1.8c00000000001p+7, 2.57046581512386840891e198},
+        {-0x1.87fffffffffffp+7, 2.60159777693598986626e195},
+        {-0x1.8800000000001p+7, -2.60159777693649899830e195},
+        {-197.5, -7.24786217232740422533e210},
+        {-195.5, 7.37292825916749476430e207}
+    };
+    for (auto sample : cases) {
+        const auto actual = std::simd::detail::special_math::riemann_zeta_fallback(sample.input);
+        EXPECT_TRUE(std::isfinite(actual));
+        EXPECT_NEAR(actual / sample.expected, 1.0, 1e-10);
+    }
+    for (double root : {-200.0, -198.0, -196.0}) {
+        EXPECT_EQ(std::simd::detail::special_math::riemann_zeta_fallback(root), 0.0);
+    }
+}
+
 #include <algorithm>
 #include <array>
 #include <cmath>

@@ -246,8 +246,14 @@ T riemann_zeta_fallback(T s) {
 
         using wide_t = conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
         const wide_t wide_s = static_cast<wide_t>(s);
-        const wide_t sine =
-            std::sin(pi_v<wide_t> * wide_s / wide_t{2});
+        // Reduce before multiplying by pi, retaining offsets near even roots.
+        wide_t phase = std::remainder(wide_s, wide_t{4});
+        if (phase > wide_t{1}) {
+            phase = wide_t{2} - phase;
+        } else if (phase < -wide_t{1}) {
+            phase = -wide_t{2} - phase;
+        }
+        const wide_t sine = std::sin(pi_v<wide_t> * phase / wide_t{2});
         if (sine == wide_t{}) {
             return T{};
         }
