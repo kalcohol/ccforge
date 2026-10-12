@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
+retry_prerequisites=true
 if ! command -v python3 >/dev/null ||
         ! ctest --help 2>/dev/null | grep -F -- '--output-junit' >/dev/null; then
-    echo 'Sanitizer retry policy tests require Python 3 and CTest 3.21+'
-    exit 77
+    retry_prerequisites=false
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,6 +26,7 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ "${FAKE_RETRIED:-0}" == 1 ]]; then
     [[ "${FAKE_CTEST_MODE}" != retry-failure ]] || exit 11
+    echo 'retry-output-preserved'
     exit 0
 fi
 status=8
@@ -38,7 +39,7 @@ case "${FAKE_CTEST_MODE}" in
     asan-error)
         output="ERROR: AddressSanitizer: heap-use-after-free"
         ;;
-    tsan-mapping|retry-failure|missing-report|malformed|old-ctest)
+    tsan-mapping|retry-failure|missing-report|malformed|old-ctest|timeout|bad-status|duplicate-output|bad-structure|stale)
         output="FATAL: ThreadSanitizer: unexpected memory mapping 0x1-0x2"
         ;;
     asan-mapping)
@@ -68,12 +69,22 @@ if [[ -n "$report" && "${FAKE_CTEST_MODE}" != missing-report ]]; then
     if [[ "${FAKE_CTEST_MODE}" == malformed ]]; then
         echo '<bad' > "$report"
     else
+        reason=Failed
+        test_status=fail
+        [[ "${FAKE_CTEST_MODE}" != timeout ]] || reason=Timeout
+        [[ "${FAKE_CTEST_MODE}" != bad-status ]] || test_status=run
         count=1
         [[ -z "$second" ]] || count=2
         printf '<testsuite tests="%s" failures="%s">\n' "$count" "$count" > "$report"
-        printf '<testcase name="mapping"><failure/><system-out>%s</system-out></testcase>\n' "$output" >> "$report"
+        printf '<testcase name="mapping" status="%s"><failure message="%s"/><system-out>%s</system-out>' "$test_status" "$reason" "$output" >> "$report"
+        if [[ "${FAKE_CTEST_MODE}" == duplicate-output ]]; then
+            echo '<system-out>unrelated failure</system-out>' >> "$report"
+        elif [[ "${FAKE_CTEST_MODE}" == bad-structure ]]; then
+            echo '<unknown/>' >> "$report"
+        fi
+        echo '</testcase>' >> "$report"
         if [[ -n "$second" ]]; then
-            printf '<testcase name="other"><failure/><system-out>%s</system-out></testcase>\n' "$second" >> "$report"
+            printf '<testcase name="other" status="fail"><failure message="Failed"/><system-out>%s</system-out></testcase>\n' "$second" >> "$report"
         fi
         echo '</testsuite>' >> "$report"
     fi
@@ -119,9 +130,10 @@ run_mapping_case() {
     CTEST="${work}/ctest" \
     SETARCH="${work}/setarch" \
         "${runner}" "${kind}" unused '.*' "${work}/${mode}.log" \
-        >/dev/null
+        >"${work}/${mode}.retry-output.log"
 
     [[ -e "${marker}" ]]
+    grep -Fx 'retry-output-preserved' "${work}/${mode}.retry-output.log" >/dev/null
 }
 
 run_rejected_case tsan ordinary 7
@@ -132,19 +144,40 @@ run_rejected_case tsan tsan-two-tests 8
 run_rejected_case asan asan-mixed 8
 run_rejected_case tsan missing-report 8
 run_rejected_case tsan malformed 8
+run_rejected_case tsan timeout 8
+run_rejected_case tsan bad-status 8
+run_rejected_case tsan duplicate-output 8
+run_rejected_case tsan bad-structure 8
 run_rejected_case tsan old-ctest 8
 run_rejected_case tsan success 0
-run_mapping_case tsan tsan-mapping
-run_mapping_case asan asan-mapping
+
+# The runner must remove old evidence before invoking a command without a report.
+printf '<testsuite tests="1" failures="1"><testcase status="fail"><failure message="Failed"/><system-out>FATAL: ThreadSanitizer: unexpected memory mapping 0x1-0x2</system-out></testcase></testsuite>' \
+    > "${work}/missing-report.log.xml"
+run_rejected_case tsan missing-report 8
+if [[ "$retry_prerequisites" == true ]]; then
+    run_mapping_case tsan tsan-mapping
+    run_mapping_case asan asan-mapping
+else
+    run_rejected_case tsan tsan-mapping 8
+    run_rejected_case asan asan-mapping 8
+    echo 'Optional positive retries unavailable; fail-closed prerequisite controls passed'
+fi
 
 status=0
 FAKE_CTEST_MODE=retry-failure FAKE_RETRY_MARKER="${work}/retry-failure.retried" \
     CTEST="${work}/ctest" SETARCH="${work}/setarch" \
     "${runner}" tsan unused '.*' "${work}/retry-failure.log" \
     >/dev/null 2>&1 || status=$?
-[[ "$status" == 11 && -e "${work}/retry-failure.retried" ]]
+if [[ "$retry_prerequisites" == true ]]; then
+    [[ "$status" == 11 && -e "${work}/retry-failure.retried" ]]
+else
+    [[ "$status" == 8 && ! -e "${work}/retry-failure.retried" ]]
+fi
 
 # Exercise actual CTest report structure, including unrelated failed tests.
+generator_args=()
+if command -v ninja >/dev/null; then generator_args=(-G Ninja); fi
 cat > "${work}/mapping-test" <<'EOF'
 #!/usr/bin/env bash
 [[ "${FAKE_RETRIED:-0}" != 1 ]] || exit 0
@@ -162,13 +195,13 @@ if(REPLAY_MIXED)
 endif()
 EOF
 for mixed in OFF ON; do
-    cmake -S "${work}" -B "${work}/real-${mixed}" -DREPLAY_MIXED="${mixed}" >/dev/null
+    cmake -S "${work}" -B "${work}/real-${mixed}" "${generator_args[@]}" -DREPLAY_MIXED="${mixed}" >/dev/null
     marker="${work}/real-${mixed}.retried"
     status=0
     FAKE_RETRY_MARKER="${marker}" CTEST="$(command -v ctest)" SETARCH="${work}/setarch" \
         "${runner}" tsan "${work}/real-${mixed}" '.*' "${work}/real-${mixed}.log" \
         >/dev/null 2>&1 || status=$?
-    if [[ "$mixed" == OFF ]]; then
+    if [[ "$mixed" == OFF && "$retry_prerequisites" == true ]]; then
         [[ "$status" == 0 && -e "$marker" ]]
     else
         [[ "$status" == 8 && ! -e "$marker" ]]

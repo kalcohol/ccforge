@@ -48,7 +48,30 @@ def eligible(kind, path):
         return False
     if any(test.find("error") is not None for test in tests):
         return False
-    return all(isolated_mapping_output(kind, test.findtext("system-out", "")) for test in failures)
+    if any(child.tag != "testcase" for child in root):
+        return False
+    for test in tests:
+        if any(child.tag not in ("failure", "system-out", "properties", "skipped") for child in test):
+            return False
+        if any(len(test.findall(tag)) > 1 for tag in ("failure", "system-out", "properties", "skipped")):
+            return False
+        failure = test.find("failure")
+        if failure is not None:
+            # CTest startup exits have reason Failed, never Timeout/Not Run/etc.
+            if test.get("status") != "fail" or failure.attrib != {"message": "Failed"}:
+                return False
+            if (failure.text or "").strip() or len(failure) or test.find("skipped") is not None:
+                return False
+            if len(test.findall("system-out")) != 1 or len(test.find("system-out")):
+                return False
+            if not isolated_mapping_output(kind, test.findtext("system-out", "")):
+                return False
+        elif test.get("status") == "notrun":
+            if test.find("skipped") is None:
+                return False
+        elif test.get("status") != "run" or test.find("skipped") is not None:
+            return False
+    return True
 
 
 try:

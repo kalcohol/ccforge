@@ -83,7 +83,6 @@ if(UNIX)
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_sanitizer_retry_policy.sh")
     set_tests_properties(
         sanitizer_retry_policy PROPERTIES
-        SKIP_RETURN_CODE 77
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
     add_test(
