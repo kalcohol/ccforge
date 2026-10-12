@@ -8,6 +8,33 @@
 
 namespace {
 
+struct reduction_failure {};
+
+struct overloaded_sum {
+    bool fail;
+    template<class T, class Abi>
+    constexpr std::simd::basic_vec<T, Abi> operator()(const std::simd::basic_vec<T, Abi>& left,
+        const std::simd::basic_vec<T, Abi>& right) const noexcept { return left + right; }
+    template<class T, class Abi>
+    constexpr std::simd::basic_vec<T, Abi> operator()(const std::simd::basic_vec<T, Abi>& left,
+        const std::simd::basic_vec<T, Abi>& right) {
+        if (fail) throw reduction_failure{};
+        return left + right;
+    }
+};
+
+static_assert(!noexcept(std::simd::reduce(std::simd::vec<int, 4>(1), overloaded_sum{true})));
+
+TEST(SimdReductions, PropagatesSelectedMutableOverloadExceptions) {
+    const std::simd::vec<int, 4> values(1);
+    using mask = decltype(values)::mask_type;
+    EXPECT_EQ(std::simd::reduce(values, overloaded_sum{false}), 4);
+    EXPECT_THROW(std::simd::reduce(values, overloaded_sum{true}), reduction_failure);
+    EXPECT_EQ(std::simd::reduce(values, mask(true), overloaded_sum{false}, 0), 4);
+    EXPECT_THROW(std::simd::reduce(values, mask(true), overloaded_sum{true}, 0), reduction_failure);
+    EXPECT_EQ(std::simd::reduce(values, mask(false), overloaded_sum{true}, 7), 7);
+}
+
 using namespace simd_test;
 
 struct simd_plus {

@@ -10,9 +10,9 @@ template<class T,
              detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(const basic_vec<T, Abi>& value, BinaryOperation binary_op = {}) noexcept(
-    noexcept(std::declval<const BinaryOperation&>()(
-        std::declval<const vec<T, 1>&>(),
-        std::declval<const vec<T, 1>&>()))) {
+    noexcept(std::declval<BinaryOperation&>()(
+        std::declval<vec<T, 1>&>(),
+        std::declval<vec<T, 1>>()))) {
     vec<T, 1> result(value[0]);
     for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
         result = binary_op(result, vec<T, 1>(value[i]));
@@ -31,9 +31,9 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
                    BinaryOperation binary_op = {},
                    typename type_identity<T>::type identity_element =
                        detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
-    noexcept(std::declval<const BinaryOperation&>()(
-        std::declval<const vec<T, 1>&>(),
-        std::declval<const vec<T, 1>&>()))) {
+    noexcept(std::declval<BinaryOperation&>()(
+        std::declval<vec<T, 1>&>(),
+        std::declval<vec<T, 1>>()))) {
     simd_size_type first = 0;
     while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
         ++first;
