@@ -34,6 +34,38 @@ struct member_range {
     constexpr std::size_t size() const { return 4; }
 };
 
+struct const_only_range {
+    int* first;
+    int* begin() = delete;
+    int* end() = delete;
+    constexpr int* begin() const noexcept { return first; }
+    constexpr int* end() const noexcept { return first + 4; }
+    static constexpr std::size_t size() noexcept { return 4; }
+};
+
+static_assert(!std::ranges::range<const_only_range&>);
+static_assert(std::ranges::contiguous_range<const const_only_range&>);
+static_assert(std::is_constructible_v<vector4, const const_only_range&>);
+
+TEST(SimdRuntimeTest, ConstOnlyRangeSupportsConstructionDeductionAndMemory) {
+    int data[]{1, 2, 3, 4};
+    const const_only_range input{data};
+    const vector4 constructed(input);
+    const std::simd::basic_vec deduced(input);
+    static_assert(std::is_same_v<typename decltype(deduced)::value_type, int>);
+    EXPECT_EQ(constructed[3], 4);
+    EXPECT_EQ(deduced[0], 1);
+    EXPECT_EQ(std::simd::partial_load<vector4>(input)[2], 3);
+    const vector4::mask_type all(true);
+    EXPECT_EQ(std::simd::unchecked_load<vector4>(input, all)[1], 2);
+    const vector4 indices([](auto i) { return int(i); });
+    EXPECT_EQ(std::simd::partial_gather_from<vector4>(input, indices)[3], 4);
+    std::simd::partial_store(vector4(7), input);
+    EXPECT_EQ(data[3], 7);
+    std::simd::partial_scatter_to(vector4(8), input, indices);
+    EXPECT_EQ(data[0], 8);
+}
+
 struct adl_range {
     std::array<int, 4> values{11, 22, 33, 44};
     constexpr int* begin() { return values.data(); }

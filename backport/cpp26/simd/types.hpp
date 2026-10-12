@@ -409,7 +409,7 @@ public:
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
                  detail::is_explicitly_simd_convertible<
-                     typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+                     typename ranges::range_value_t<R>,
                      T>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
     constexpr basic_vec(R&& r, flags<Flags...> f = {}) noexcept : data_{} {
@@ -423,7 +423,7 @@ public:
              typename enable_if<detail::is_contiguous_load_store_range<R>::value &&
                  detail::has_matching_fixed_range_size<R, static_cast<simd_size_type>(size)>::value &&
                  detail::is_explicitly_simd_convertible<
-                     typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+                     typename ranges::range_value_t<R>,
                      T>::value &&
                  !is_same<detail::remove_cvref_t<R>, basic_vec>::value, int>::type = 0>
     constexpr basic_vec(R&& r, const mask_type& mask_value, flags<Flags...> f = {}) noexcept : data_{} {
@@ -851,13 +851,13 @@ template<class R, class... Ts>
         detail::is_contiguous_load_store_range<R>::value &&
         detail::fixed_range_size<remove_reference_t<R>>::value > 0 &&
         detail::is_deduce_abi_available<
-            typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+            typename ranges::range_value_t<R>,
             detail::fixed_range_size<remove_reference_t<R>>::value>::value)
 basic_vec(R&&, Ts...)
     -> basic_vec<
-        typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+        typename ranges::range_value_t<R>,
         deduce_abi_t<
-            typename ranges::range_value_t<detail::remove_cvref_t<R>>,
+            typename ranges::range_value_t<R>,
             detail::fixed_range_size<remove_reference_t<R>>::value>>;
 
 template<size_t Bytes, class Abi>

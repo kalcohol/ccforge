@@ -1072,11 +1072,11 @@ template<class R>
 struct is_contiguous_load_store_range<R,
     void_t<decltype(ranges::data(declval<R&>())),
            decltype(ranges::size(declval<R&>())),
-           typename ranges::range_value_t<remove_cvref_t<R>>>>
+           typename ranges::range_value_t<R>>>
     : integral_constant<bool,
-        ranges::contiguous_range<remove_cvref_t<R>> &&
-        ranges::sized_range<remove_cvref_t<R>> &&
-        is_supported_value<typename ranges::range_value_t<remove_cvref_t<R>>>::value> {};
+        ranges::contiguous_range<R> &&
+        ranges::sized_range<R> &&
+        is_supported_value<typename ranges::range_value_t<R>>::value> {};
 
 template<class R, class = void>
 struct is_writable_load_store_range : false_type {};
@@ -1085,10 +1085,10 @@ template<class R>
 struct is_writable_load_store_range<R,
     void_t<decltype(ranges::data(declval<R&>())),
            decltype(ranges::size(declval<R&>())),
-           typename ranges::range_reference_t<remove_cvref_t<R>>>>
+           typename ranges::range_reference_t<R>>>
     : integral_constant<bool,
         is_contiguous_load_store_range<R>::value &&
-        !is_const<typename remove_reference<typename ranges::range_reference_t<remove_cvref_t<R>>>::type>::value> {};
+        !is_const<typename remove_reference<typename ranges::range_reference_t<R>>::type>::value> {};
 
 template<class R, class = void>
 struct is_contiguous_mask_range : false_type {};
@@ -1097,11 +1097,11 @@ template<class R>
 struct is_contiguous_mask_range<R,
     void_t<decltype(ranges::data(declval<R&>())),
            decltype(ranges::size(declval<R&>())),
-           typename ranges::range_reference_t<remove_cvref_t<R>>>>
+           typename ranges::range_reference_t<R>>>
     : integral_constant<bool,
-        ranges::contiguous_range<remove_cvref_t<R>> &&
-        ranges::sized_range<remove_cvref_t<R>> &&
-        is_constructible<bool, typename ranges::range_reference_t<remove_cvref_t<R>>>::value> {};
+        ranges::contiguous_range<R> &&
+        ranges::sized_range<R> &&
+        is_constructible<bool, typename ranges::range_reference_t<R>>::value> {};
 
 // GNU needs body-based extraction; the other path uses only a declared
 // return type. Neither path constructs, copies, or calls the range.
