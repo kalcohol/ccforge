@@ -47,6 +47,49 @@ static_assert(std::move_constructible<sender_awaitable_probe>);
 struct interop_marker_error {};
 struct connect_marker_error {};
 
+struct error_copy_failure {};
+
+struct throwing_copy_error {
+    throwing_copy_error() = default;
+    throwing_copy_error(const throwing_copy_error&) { throw error_copy_failure{}; }
+};
+
+struct borrowed_error_sender {
+    using sender_concept = std::execution::sender_t;
+    const throwing_copy_error* error;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_error_t(const throwing_copy_error&)> { return {}; }
+
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        const throwing_copy_error* error;
+        void start() & noexcept {
+            std::execution::set_error(std::move(receiver), *error);
+        }
+    };
+
+    template<class R>
+    auto connect(R receiver) const -> operation<R> {
+        return {std::move(receiver), error};
+    }
+};
+
+auto catch_error_copy_failure(const throwing_copy_error& error) -> cio::io_task<bool> {
+    try {
+        co_await cio::await_sender(borrowed_error_sender{&error});
+    } catch (const error_copy_failure&) {
+        co_return true;
+    }
+    co_return false;
+}
+
 enum class gated_completion {
     value,
     error,
@@ -1594,6 +1637,13 @@ TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncStopped) {
     EXPECT_TRUE(result->stopped);
     EXPECT_FALSE(result->value.has_value());
     EXPECT_FALSE(result->error);
+}
+
+TEST(ForgeCoroInteropTest, AwaitSenderCapturesTypedErrorCopyFailure) {
+    const throwing_copy_error error;
+    auto result = std::execution::sync_wait(cio::as_sender(catch_error_copy_failure(error)));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
 }
 
 #else

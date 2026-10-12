@@ -258,7 +258,11 @@ private:
             if constexpr (std::is_same_v<std::decay_t<Error>, std::exception_ptr>) {
                 self->exception_ = static_cast<Error&&>(error);
             } else {
-                self->exception_ = std::make_exception_ptr(static_cast<Error&&>(error));
+                try {
+                    self->exception_ = std::make_exception_ptr(static_cast<Error&&>(error));
+                } catch (...) {
+                    self->exception_ = std::current_exception();
+                }
             }
             self->complete();
         }
