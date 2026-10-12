@@ -18,7 +18,7 @@ struct overloaded_sum {
     template<class T, class Abi>
     constexpr std::simd::basic_vec<T, Abi> operator()(const std::simd::basic_vec<T, Abi>& left,
         const std::simd::basic_vec<T, Abi>& right) {
-        if (fail) throw reduction_failure{};
+        if (fail && left[0] != T{} && right[0] != T{}) throw reduction_failure{};
         return left + right;
     }
 };
@@ -32,7 +32,11 @@ TEST(SimdReductions, PropagatesSelectedMutableOverloadExceptions) {
     EXPECT_THROW(std::simd::reduce(values, overloaded_sum{true}), reduction_failure);
     EXPECT_EQ(std::simd::reduce(values, mask(true), overloaded_sum{false}, 0), 4);
     EXPECT_THROW(std::simd::reduce(values, mask(true), overloaded_sum{true}, 0), reduction_failure);
-    EXPECT_EQ(std::simd::reduce(values, mask(false), overloaded_sum{true}, 7), 7);
+    EXPECT_EQ(std::simd::reduce(values, mask(false), overloaded_sum{true}, 0), 0);
+    const std::simd::vec<int, 1> identity(0);
+    const std::simd::vec<int, 1> nonzero(1);
+    EXPECT_EQ(overloaded_sum{true}(identity, nonzero)[0], 1);
+    EXPECT_EQ(overloaded_sum{true}(nonzero, identity)[0], 1);
 }
 
 using namespace simd_test;
