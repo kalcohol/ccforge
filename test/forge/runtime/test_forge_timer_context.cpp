@@ -85,6 +85,36 @@ struct stopped_timer_receiver : timer_receiver {
     }
 };
 
+struct noncopyable_timer_env {
+    std::inplace_stop_token token;
+    explicit noncopyable_timer_env(std::inplace_stop_token t) : token(t) {}
+    noncopyable_timer_env(const noncopyable_timer_env&) = delete;
+    auto query(std::execution::get_stop_token_t) const noexcept { return token; }
+};
+
+struct borrowed_timer_receiver : timer_receiver {
+    const noncopyable_timer_env* env;
+    auto get_env() const noexcept -> const noncopyable_timer_env& { return *env; }
+};
+
+TEST(TimerContextTest, NoncopyableBorrowedEnvironmentPreservesCancellation) {
+    for (bool stop_before_start : {false, true}) {
+        forge::timer_context timer;
+        std::inplace_stop_source source;
+        noncopyable_timer_env env{source.get_token()};
+        timer_state state;
+        auto receiver = borrowed_timer_receiver{{&state}, &env};
+        auto op = std::execution::connect(timer.schedule_after(1h), std::move(receiver));
+        if (stop_before_start) source.request_stop();
+        std::execution::start(op);
+        if (!stop_before_start) source.request_stop();
+        timer.wait();
+        EXPECT_TRUE(state.stopped);
+        EXPECT_FALSE(state.value);
+        EXPECT_FALSE(state.error);
+    }
+}
+
 struct self_destroying_timer_receiver {
     using receiver_concept = std::execution::receiver_t;
 
