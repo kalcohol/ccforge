@@ -34,14 +34,15 @@ namespace __forge_on {
 
 template<class Scheduler, class OuterEnv>
 auto __make_starts_on_env(Scheduler& scheduler, OuterEnv&& outer) {
-    auto child_env = std::execution::make_env(
-        std::execution::make_prop(
-            std::execution::get_scheduler,
-            std::cref(scheduler)),
-        std::execution::make_prop(
-            std::execution::get_start_scheduler,
-            std::cref(scheduler)),
-        static_cast<OuterEnv&&>(outer));
+    auto scheduler_prop = std::execution::make_prop(
+        std::execution::get_scheduler, std::cref(scheduler));
+    auto start_prop = std::execution::make_prop(
+        std::execution::get_start_scheduler, std::cref(scheduler));
+    // Own prvalues and borrow lvalues; CTAD would decay the latter.
+    auto child_env = std::execution::env<
+        decltype(scheduler_prop), decltype(start_prop), OuterEnv>{
+        std::move(scheduler_prop), std::move(start_prop),
+        static_cast<OuterEnv&&>(outer)};
     // SCHED-ENV exposes only a direct domain query, not a synthesized fallback.
     if constexpr (__forge_env_detail::__queryable<get_domain_t, const Scheduler&>) {
         return std::execution::make_env(

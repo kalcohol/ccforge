@@ -68,3 +68,13 @@ TEST(ExecutionBorrowedEnvTest, LetAdaptorsPreserveNoncopyableEnvironment) {
     check_environment(ex::let_error(ex::just_error(1), [&](int&) { return inner(); }), owned);
     check_environment(ex::let_stopped(ex::just_stopped(), inner), owned);
 }
+
+TEST(ExecutionBorrowedEnvTest, StartsOnBorrowsReferencesAndOwnsValues) {
+    std::inplace_stop_source source;
+    borrowed_env borrowed{source.get_token()};
+    owned_env owned{source.get_token()};
+    check_environment(ex::starts_on(ex::inline_scheduler{},
+        inspect_environment(source.get_token())), borrowed);
+    check_environment(ex::starts_on(ex::inline_scheduler{},
+        inspect_environment(source.get_token())), owned);
+}
