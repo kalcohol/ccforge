@@ -1192,7 +1192,7 @@ template<class G, class R, size_t I>
 struct is_simd_generator_lane<G, R, I, void_t<decltype(declval<G&>()(generator_index_constant<I>{}))>>
     : integral_constant<bool,
         is_convertible<decltype(declval<G&>()(generator_index_constant<I>{})), R>::value &&
-        (!is_arithmetic<remove_cvref_t<decltype(declval<G&>()(generator_index_constant<I>{}))>>::value ||
+        (!is_arithmetic<decltype(declval<G&>()(generator_index_constant<I>{}))>::value ||
          is_value_preserving_conversion<
              decltype(declval<G&>()(generator_index_constant<I>{})), R>::value)> {};
 

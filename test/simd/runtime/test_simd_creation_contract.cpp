@@ -15,6 +15,32 @@ using mask2 = typename int2::mask_type;
 using mask4 = typename int4::mask_type;
 using mask5 = typename int5::mask_type;
 
+struct reference_generator {
+    const double* data;
+    template<class Index>
+    constexpr const double& operator()(Index i) const noexcept { return data[int(i)]; }
+};
+
+struct value_generator {
+    template<class Index>
+    constexpr double operator()(Index) const noexcept { return 1.0; }
+};
+
+static_assert(std::is_constructible_v<int4, reference_generator>);
+static_assert(!std::is_constructible_v<int4, value_generator>);
+constexpr bool reference_generator_values() {
+    constexpr double data[]{1.0, 2.0, 3.0, 4.0};
+    const int4 values(reference_generator{data});
+    return values[0] == 1 && values[3] == 4;
+}
+static_assert(reference_generator_values());
+
+TEST(SimdCreationContract, ReferenceGeneratorAcceptsRepresentableValues) {
+    const double data[]{1.0, 2.0, 3.0, 4.0};
+    const int4 values(reference_generator{data});
+    for (int i = 0; i < 4; ++i) EXPECT_EQ(values[i], i + 1);
+}
+
 template<class V>
 constexpr V sequence(int first) {
     return V([first](auto i) { return first + static_cast<int>(i); });
