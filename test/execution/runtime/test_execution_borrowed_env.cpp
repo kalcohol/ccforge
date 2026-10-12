@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <exception>
+#include <coroutine>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -54,6 +56,28 @@ auto inspect_environment(std::inplace_stop_token expected) {
         return token == expected ? 42 : -3;
     });
 }
+
+template<bool Borrow>
+struct env_task {
+    struct promise_type : ex::with_awaitable_senders<promise_type> {
+        std::conditional_t<Borrow, borrowed_env, owned_env> env;
+        promise_type(std::inplace_stop_token token, int*) : env(token) {}
+        env_task get_return_object() noexcept { return {}; }
+        std::suspend_never initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept { std::terminate(); }
+        decltype(auto) get_env() const noexcept {
+            if constexpr (Borrow) return (env);
+            else return owned_env{env};
+        }
+    };
+};
+
+template<bool Borrow>
+env_task<Borrow> await_environment(std::inplace_stop_token token, int* result) {
+    *result = co_await inspect_environment(token);
+}
 }
 
 TEST(ExecutionBorrowedEnvTest, LetAdaptorsPreserveNoncopyableEnvironment) {
@@ -90,4 +114,14 @@ TEST(ExecutionBorrowedEnvTest, WriteEnvBorrowsReferencesAndOwnsValues) {
         owned_env{overlay.get_token()}), borrowed);
     check_environment(ex::write_env(inspect_environment(overlay.get_token()),
         owned_env{overlay.get_token()}), owned);
+}
+
+TEST(ExecutionBorrowedEnvTest, PromiseBorrowsReferencesAndOwnsValues) {
+    std::inplace_stop_source source;
+    int result = 0;
+    await_environment<true>(source.get_token(), &result);
+    EXPECT_EQ(result, 42);
+    result = 0;
+    await_environment<false>(source.get_token(), &result);
+    EXPECT_EQ(result, 42);
 }

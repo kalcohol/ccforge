@@ -159,7 +159,7 @@ concept __has_promise_env = requires(const Promise& p) {
 };
 
 template<class Promise>
-auto __get_promise_env(const Promise& p)
+decltype(auto) __get_promise_env(const Promise& p)
     noexcept(noexcept(std::execution::get_env(p)))
     requires __has_promise_env<Promise> {
     return std::execution::get_env(p);
@@ -190,7 +190,7 @@ concept __single_sender = requires {
 
 template<class S, class Promise>
 auto __transform_for_await(S&& sndr, Promise& promise) {
-    auto env = __get_promise_env(promise);
+    decltype(auto) env = __get_promise_env(promise);
     return std::execution::transform_sender(
         static_cast<S&&>(sndr), env);
 }
