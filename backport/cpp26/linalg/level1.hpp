@@ -537,8 +537,8 @@ void apply_givens_rotation(
     T c, T s)
 {
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
-        auto xi = x[i];
-        auto yi = y[i];
+        __detail::__accessor_value_t<Accessor1> xi = x[i];
+        __detail::__accessor_value_t<Accessor2> yi = y[i];
         x[i] = c * xi + s * yi;
         y[i] = -s * xi + c * yi;
     }
@@ -556,8 +556,8 @@ void apply_givens_rotation(
 {
     using std::conj;
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
-        auto xi = x[i];
-        auto yi = y[i];
+        __detail::__accessor_value_t<Accessor1> xi = x[i];
+        __detail::__accessor_value_t<Accessor2> yi = y[i];
         x[i] = c * xi + s * yi;
         y[i] = -conj(s) * xi + c * yi;
     }

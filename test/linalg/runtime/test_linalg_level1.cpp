@@ -11,6 +11,50 @@
 
 namespace {
 
+template<class T>
+struct rotation_reference {
+    T* pointer;
+    operator T() const noexcept { return *pointer; }
+    rotation_reference& operator=(T value) noexcept {
+        *pointer = value;
+        return *this;
+    }
+};
+
+template<class T>
+struct rotation_accessor {
+    using element_type = T;
+    using reference = rotation_reference<T>;
+    using data_handle_type = T*;
+    using offset_policy = rotation_accessor;
+    reference access(T* pointer, std::size_t index) const noexcept { return {pointer + index}; }
+    T* offset(T* pointer, std::size_t index) const noexcept { return pointer + index; }
+};
+
+TEST(LinalgLevel1Givens, ProxyAccessorsSnapshotBothInputs) {
+    using extents = std::extents<int, 1>;
+    using proxy_span = std::mdspan<double, extents, std::layout_right, rotation_accessor<double>>;
+    double x_data = 3.0;
+    double y_data = 4.0;
+    proxy_span x(&x_data, extents{}, rotation_accessor<double>{});
+    proxy_span y(&y_data, extents{}, rotation_accessor<double>{});
+    std::linalg::apply_givens_rotation(x, y, 0.0, 1.0);
+    EXPECT_DOUBLE_EQ(x_data, 4.0);
+    EXPECT_DOUBLE_EQ(y_data, -3.0);
+
+    using complex = std::complex<double>;
+    using complex_span = std::mdspan<complex, extents, std::layout_right, rotation_accessor<complex>>;
+    complex cx_data{3.0, 2.0};
+    complex cy_data{4.0, 1.0};
+    const auto expected_x = complex{0.0, 1.0} * cy_data;
+    const auto expected_y = complex{0.0, 1.0} * cx_data;
+    complex_span cx(&cx_data, extents{}, rotation_accessor<complex>{});
+    complex_span cy(&cy_data, extents{}, rotation_accessor<complex>{});
+    std::linalg::apply_givens_rotation(cx, cy, 0.0, complex{0.0, 1.0});
+    EXPECT_EQ(cx_data, expected_x);
+    EXPECT_EQ(cy_data, expected_y);
+}
+
 struct adl_dot_number {
     std::complex<double> value{};
     int* products{};
