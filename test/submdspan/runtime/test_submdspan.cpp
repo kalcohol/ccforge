@@ -34,6 +34,27 @@ struct aggregate_bounds {
     int last;
 };
 
+template<bool AlsoIndex>
+struct convertible_full_slice {
+    constexpr operator std::full_extent_t() const noexcept { return std::full_extent; }
+    constexpr operator int() const noexcept requires AlsoIndex { return 1; }
+};
+
+TEST(SubmdspanTest, ConvertibleFullExtentPrecedesIndexConversion) {
+    using extents = std::extents<int, 3>;
+    static_assert(std::is_same_v<decltype(std::canonical_slices(extents{},
+        convertible_full_slice<true>{})), std::tuple<std::full_extent_t>>);
+    static_assert(std::is_same_v<decltype(std::canonical_slices(extents{},
+        convertible_full_slice<false>{})), std::tuple<std::full_extent_t>>);
+    std::array<int, 3> data{1, 2, 3};
+    std::mdspan source(data.data(), extents{});
+    auto full = std::submdspan(source, convertible_full_slice<true>{});
+    EXPECT_EQ(full.extent(0), 3);
+    EXPECT_EQ(full.data_handle(), source.data_handle());
+    auto scalar = std::submdspan(source, 1);
+    EXPECT_EQ(scalar[], 2);
+}
+
 namespace {
 
 struct member_value_index {
