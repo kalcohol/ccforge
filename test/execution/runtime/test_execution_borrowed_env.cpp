@@ -156,6 +156,10 @@ TEST(ExecutionBorrowedEnvTest, StartsOnBorrowsReferencesAndOwnsValues) {
         inspect_environment(source.get_token())), owned);
 }
 
+TEST(ExecutionBorrowedEnvTest, StartsOnAdvertisesRuntimeEnvironmentShape) {
+    check_advertised_shape(ex::starts_on(ex::inline_scheduler{}, shape_sender{}));
+}
+
 TEST(ExecutionBorrowedEnvTest, WriteEnvBorrowsReferencesAndOwnsValues) {
     std::inplace_stop_source source;
     borrowed_env borrowed{source.get_token()};

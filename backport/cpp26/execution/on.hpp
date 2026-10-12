@@ -33,16 +33,16 @@ namespace std::execution {
 namespace __forge_on {
 
 template<class Scheduler, class OuterEnv>
-auto __make_starts_on_env(Scheduler& scheduler, OuterEnv&& outer) {
+auto __make_starts_on_env(Scheduler& scheduler, const OuterEnv& outer) {
     auto scheduler_prop = std::execution::make_prop(
         std::execution::get_scheduler, std::cref(scheduler));
     auto start_prop = std::execution::make_prop(
         std::execution::get_start_scheduler, std::cref(scheduler));
-    // Own prvalues and borrow lvalues; CTAD would decay the latter.
+    // The operation owns value environments; this view has a stable shape.
     auto child_env = std::execution::env<
-        decltype(scheduler_prop), decltype(start_prop), OuterEnv>{
+        decltype(scheduler_prop), decltype(start_prop), const OuterEnv&>{
         std::move(scheduler_prop), std::move(start_prop),
-        static_cast<OuterEnv&&>(outer)};
+        outer};
     // SCHED-ENV exposes only a direct domain query, not a synthesized fallback.
     if constexpr (__forge_env_detail::__queryable<get_domain_t, const Scheduler&>) {
         return std::execution::make_env(
@@ -66,6 +66,7 @@ struct __starts_on_op : __forge_detail::__immovable {
 
     R __outer_recv;
     Scheduler __sch;
+    env_of_t<R> __outer_env;
 
     __forge_detail::__op_storage<1024> __sched_storage;
     __forge_detail::__op_storage<1024> __sndr_storage;
@@ -87,7 +88,7 @@ struct __starts_on_op : __forge_detail::__immovable {
         auto get_env() const noexcept -> __source_env_t {
             return __make_starts_on_env(
                 __self->__sch,
-                std::execution::get_env(__self->__outer_recv));
+                __self->__outer_env);
         }
     };
 
@@ -119,6 +120,7 @@ struct __starts_on_op : __forge_detail::__immovable {
     __starts_on_op(Scheduler sch, S sndr, R recv)
         : __outer_recv(std::move(recv))
         , __sch(std::move(sch))
+        , __outer_env(std::execution::get_env(__outer_recv))
     {
         __sched_storage.template emplace_from<__sched_op_t>([&]() -> __sched_op_t {
             return std::execution::connect(std::execution::schedule(__sch), __sched_recv{this});
