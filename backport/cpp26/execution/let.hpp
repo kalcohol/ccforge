@@ -256,7 +256,7 @@ struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     using outer_env_t = env_of_t<R>;
     using let_env_t = __let_env_t<Which, S, outer_env_t>;
-    using inner_env_t = __inner_env<let_env_t, std::remove_reference_t<outer_env_t>>;
+    using inner_env_t = __inner_env<let_env_t, std::remove_cvref_t<outer_env_t>>;
 
     R __outer_recv_;
     outer_env_t __outer_env_;

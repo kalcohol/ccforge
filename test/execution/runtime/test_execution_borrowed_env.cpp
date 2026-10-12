@@ -3,6 +3,8 @@
 #include <exception>
 #include <coroutine>
 #include <type_traits>
+#include <variant>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -19,6 +21,51 @@ struct owned_env {
     std::inplace_stop_token token;
     auto query(ex::get_stop_token_t) const noexcept { return token; }
 };
+
+template<class Env>
+struct environment_shape {};
+
+struct shape_sender {
+    using sender_concept = ex::sender_t;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(environment_shape<Env>)> { return {}; }
+    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    template<class R>
+    struct operation {
+        using operation_state_concept = ex::operation_state_t;
+        R receiver;
+        void start() & noexcept {
+            using env = std::remove_cvref_t<ex::env_of_t<R>>;
+            ex::set_value(std::move(receiver), environment_shape<env>{});
+        }
+    };
+    template<class R>
+    auto connect(R receiver) const -> operation<R> { return {std::move(receiver)}; }
+};
+
+template<class Value>
+struct exact_shape_receiver {
+    using receiver_concept = ex::receiver_t;
+    const borrowed_env* env;
+    bool* completed;
+    auto get_env() const noexcept -> const borrowed_env& { return *env; }
+    void set_value(Value) && noexcept { *completed = true; }
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+};
+
+template<class S>
+void check_advertised_shape(S sender) {
+    std::inplace_stop_source source;
+    borrowed_env env{source.get_token()};
+    using value = std::tuple_element_t<0, std::variant_alternative_t<0,
+        ex::value_types_of_t<S, const borrowed_env&, std::tuple, std::variant>>>;
+    bool completed = false;
+    auto op = ex::connect(std::move(sender), exact_shape_receiver<value>{&env, &completed});
+    ex::start(op);
+    EXPECT_TRUE(completed);
+}
 
 template<class Env, bool Borrow>
 struct env_receiver {
@@ -91,6 +138,12 @@ TEST(ExecutionBorrowedEnvTest, LetAdaptorsPreserveNoncopyableEnvironment) {
     check_environment(ex::let_value(ex::just(), inner), owned);
     check_environment(ex::let_error(ex::just_error(1), [&](int&) { return inner(); }), owned);
     check_environment(ex::let_stopped(ex::just_stopped(), inner), owned);
+}
+
+TEST(ExecutionBorrowedEnvTest, LetAdvertisesRuntimeEnvironmentShape) {
+    check_advertised_shape(ex::let_value(ex::just(), [] { return shape_sender{}; }));
+    check_advertised_shape(ex::let_error(ex::just_error(1), [](int&) { return shape_sender{}; }));
+    check_advertised_shape(ex::let_stopped(ex::just_stopped(), [] { return shape_sender{}; }));
 }
 
 TEST(ExecutionBorrowedEnvTest, StartsOnBorrowsReferencesAndOwnsValues) {
