@@ -453,19 +453,25 @@ FORGE_CW_BINARY_OPERATOR(>=)
 
 #undef FORGE_CW_BINARY_OPERATOR
 
-template <class L, class R>
+template <auto X, auto Y, class L, class R>
     requires requires { L::value ->* R::value; }
 consteval auto __forge_cw_member_access() {
-    return L::value ->* R::value;
+    // Built-in pointer/member-pointer operands cannot select user overloads.
+    // Evaluate their original NTTPs to avoid an MSVC constexpr evaluator ICE.
+    if constexpr (is_pointer_v<decltype(X)> && is_member_pointer_v<decltype(Y)>) {
+        return X ->* Y;
+    } else {
+        return L::value ->* R::value;
+    }
 }
 
 template <auto X, class XT, auto Y, class YT>
     requires requires {
-        typename FORGE_CW_RESULT(__forge_cw_member_access<constant_wrapper<X, XT>, constant_wrapper<Y, YT>>());
+        typename FORGE_CW_RESULT(__forge_cw_member_access<X, Y, constant_wrapper<X, XT>, constant_wrapper<Y, YT>>());
     }
 constexpr auto operator->*(constant_wrapper<X, XT>,
                            constant_wrapper<Y, YT>) noexcept
-    -> FORGE_CW_RESULT(__forge_cw_member_access<constant_wrapper<X, XT>, constant_wrapper<Y, YT>>()) {
+    -> FORGE_CW_RESULT(__forge_cw_member_access<X, Y, constant_wrapper<X, XT>, constant_wrapper<Y, YT>>()) {
     return {};
 }
 
@@ -473,11 +479,13 @@ template <auto X, class XT, __forge_constexpr_param R>
     requires (!__forge_constant_wrapper<R> &&
               requires {
                   typename FORGE_CW_RESULT(__forge_cw_member_access<
+                                           X, remove_cvref_t<R>::value,
                                            constant_wrapper<X, XT>,
                                            remove_cvref_t<R>>());
               })
 constexpr auto operator->*(constant_wrapper<X, XT>, R) noexcept
     -> FORGE_CW_RESULT(__forge_cw_member_access<
+                       X, remove_cvref_t<R>::value,
                        constant_wrapper<X, XT>,
                        remove_cvref_t<R>>()) {
     return {};
@@ -487,11 +495,13 @@ template <__forge_constexpr_param L, auto Y, class YT>
     requires (!__forge_constant_wrapper<L> &&
               requires {
                   typename FORGE_CW_RESULT(__forge_cw_member_access<
+                                           remove_cvref_t<L>::value, Y,
                                            remove_cvref_t<L>,
                                            constant_wrapper<Y, YT>>());
               })
 constexpr auto operator->*(L, constant_wrapper<Y, YT>) noexcept
     -> FORGE_CW_RESULT(__forge_cw_member_access<
+                       remove_cvref_t<L>::value, Y,
                        remove_cvref_t<L>,
                        constant_wrapper<Y, YT>>()) {
     return {};

@@ -28,6 +28,18 @@ struct member_category_tag {
     friend constexpr int operator->*(int*&&, member_category_tag) { return 4; }
 };
 inline int member_category_target;
+
+struct member_identity_tag {};
+constexpr int operator->*(const member_identity_tag& value, int) noexcept {
+    return &value == &external_constant<member_identity_tag{}>::value ? 1 : 2;
+}
+constexpr int operator->*(int, const member_identity_tag& value) noexcept {
+    return &value == &external_constant<member_identity_tag{}>::value ? 1 : 2;
+}
+static_assert(std::is_same_v<decltype(external_constant<member_identity_tag{}>{} ->* std::cw<7>),
+    std::constant_wrapper<1>>);
+static_assert(std::is_same_v<decltype(std::cw<7> ->* external_constant<member_identity_tag{}>{}),
+    std::constant_wrapper<1>>);
 static_assert(std::is_same_v<decltype(std::cw<member_category_tag{}> ->* std::cw<7>),
     std::constant_wrapper<1>>);
 static_assert(std::is_same_v<decltype(std::cw<member_category_tag{}> ->* external_constant<7>{}),
