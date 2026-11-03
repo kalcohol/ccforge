@@ -75,8 +75,9 @@ BLAS Level 1 归约操作（`dot`、`vector_abs_sum`）以及 `copy`、`scale` �
 `matrix_vector_product`（GEMV）内层循环也已 SIMD 化。
 
 支持非复数标准算术类型中的 SIMD-friendly 子集；实际启用路径要求 contiguous
-layout/default accessor。已在 x86_64（原生）、aarch64、riscv64、loongarch64 四个架构上
-通过 zig 交叉编译 + qemu 验证。
+layout/default accessor。历史文档曾报告 x86_64 原生及 aarch64、riscv64、loongarch64
+经 zig 交叉编译与 qemu 验证；目前未找到对应运行的版本、工具链、测试范围和结果记录，
+因此该历史报告不能作为当前版本的验证证明。
 
 ## OpenMP 并行
 
