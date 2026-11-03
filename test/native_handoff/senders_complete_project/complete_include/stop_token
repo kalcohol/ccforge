@@ -1,5 +1,8 @@
 #pragma once
 
+// Preserve the platform's C++20 declarations beneath the synthetic additions.
+#include_next <stop_token>
+
 #include <concepts>
 #include <type_traits>
 #include <utility>
