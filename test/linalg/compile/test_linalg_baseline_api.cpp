@@ -6,6 +6,7 @@
 #include <linalg>
 #include <mdspan>
 #include <type_traits>
+#include <utility>
 
 static_assert(std::is_same_v<decltype(std::linalg::upper_triangle),
                              const std::linalg::upper_triangle_t>);
@@ -49,6 +50,23 @@ static void check_level1_and_helpers()
     (void)std::linalg::conjugated(x);
     (void)std::linalg::conjugate_transposed(matrix);
 }
+
+template<class T>
+consteval bool givens_setup_has_nothrow_signature()
+{
+    using result_type = std::linalg::setup_givens_rotation_result<T>;
+    static_assert(std::is_same_v<
+        decltype(std::linalg::setup_givens_rotation(std::declval<T>(), std::declval<T>())),
+        result_type>);
+    return noexcept(std::linalg::setup_givens_rotation(std::declval<T>(), std::declval<T>()));
+}
+
+static_assert(givens_setup_has_nothrow_signature<float>());
+static_assert(givens_setup_has_nothrow_signature<double>());
+static_assert(givens_setup_has_nothrow_signature<long double>());
+static_assert(givens_setup_has_nothrow_signature<std::complex<float>>());
+static_assert(givens_setup_has_nothrow_signature<std::complex<double>>());
+static_assert(givens_setup_has_nothrow_signature<std::complex<long double>>());
 
 static void check_givens_names()
 {

@@ -474,7 +474,7 @@ struct setup_givens_rotation_result {
 
 template<class T>
     requires (!__detail::__is_complex_v<T>)
-setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) {
+setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) noexcept {
     using std::abs;
     using std::sqrt;
     if (b == T{}) {
@@ -502,7 +502,7 @@ struct setup_givens_rotation_result<std::complex<Real>> {
 
 template<class Real>
 setup_givens_rotation_result<std::complex<Real>>
-setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) {
+setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) noexcept {
     using complex = std::complex<Real>;
     using std::abs;
     using std::conj;
