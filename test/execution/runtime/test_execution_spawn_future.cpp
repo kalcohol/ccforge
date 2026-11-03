@@ -219,6 +219,37 @@ struct allocator_attrs_sender {
     }
 };
 
+template<class S, class Alloc>
+struct prvalue_allocator_attrs_sender : allocator_attrs_sender<S, Alloc> {
+    struct attrs {
+        Alloc allocator;
+        int* queries;
+        int* alive;
+
+        attrs(Alloc alloc, int* calls, int* count)
+            : allocator(std::move(alloc)), queries(calls), alive(count) { ++*alive; }
+        attrs(const attrs&) = delete;
+        attrs(attrs&&) = delete;
+        ~attrs() { --*alive; }
+
+        auto query(std::execution::get_allocator_t) const noexcept -> Alloc {
+            EXPECT_GT(*alive, 0);
+            ++*queries;
+            return allocator;
+        }
+    };
+
+    int* alive;
+
+    prvalue_allocator_attrs_sender(S source, Alloc alloc, int* queries, int* count)
+        : allocator_attrs_sender<S, Alloc>(std::move(source), std::move(alloc), queries)
+        , alive(count) {}
+
+    auto get_env() const noexcept -> attrs {
+        return attrs{this->attributes.allocator, this->attributes.queries, alive};
+    }
+};
+
 struct allocator_scope_token {
     std::execution::simple_counting_scope::scope_token inner;
     counting_allocator<std::byte> allocator;
@@ -544,6 +575,104 @@ TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
 
     auto joined = std::execution::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
+}
+
+TEST(SpawnTest, BorrowsNoncopyableSourceAllocatorAttributes) {
+    for (bool explicit_env : {false, true}) {
+        SCOPED_TRACE(explicit_env);
+        std::execution::simple_counting_scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        int queries = 0;
+        int completions = 0;
+        auto source = std::execution::read_env(std::execution::get_allocator)
+            | std::execution::then([&](const auto& allocator) noexcept {
+                  EXPECT_EQ(allocator.counts, counts);
+                  ++completions;
+              });
+        auto sender = allocator_attrs_sender{
+            std::move(source), counting_allocator<std::byte>{counts}, &queries};
+        using attrs_t = typename decltype(sender)::attrs;
+        static_assert(!std::is_copy_constructible_v<attrs_t>);
+        static_assert(std::is_same_v<std::execution::env_of_t<decltype(sender)>,
+                                   const attrs_t&>);
+        EXPECT_EQ(std::execution::get_allocator(std::execution::get_env(sender)).counts,
+                  counts);
+        EXPECT_EQ(queries, 1);
+        queries = 0;
+
+        if (explicit_env)
+            std::execution::spawn(
+                std::move(sender), scope.get_token(), std::execution::empty_env{});
+        else
+            std::execution::spawn(std::move(sender), scope.get_token());
+
+        EXPECT_EQ(completions, 1);
+        EXPECT_EQ(queries, 1);
+        EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
+        EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
+        EXPECT_EQ(scope.count(), 0u);
+    }
+}
+
+TEST(SpawnTest, OwnsImmovablePrvalueSourceAllocatorAttributes) {
+    std::execution::simple_counting_scope scope;
+    auto counts = std::make_shared<allocation_counts>();
+    int queries = 0;
+    int alive = 0;
+    int completions = 0;
+    auto source = std::execution::read_env(std::execution::get_allocator)
+        | std::execution::then([&](const auto& allocator) noexcept {
+              EXPECT_EQ(allocator.counts, counts);
+              ++completions;
+          });
+    auto sender = prvalue_allocator_attrs_sender{
+        std::move(source), counting_allocator<std::byte>{counts}, &queries, &alive};
+    using attrs_t = typename decltype(sender)::attrs;
+    static_assert(!std::is_copy_constructible_v<attrs_t>);
+    static_assert(!std::is_move_constructible_v<attrs_t>);
+    static_assert(std::is_same_v<std::execution::env_of_t<decltype(sender)>, attrs_t>);
+    EXPECT_EQ(std::execution::get_allocator(std::execution::get_env(sender)).counts,
+              counts);
+    EXPECT_EQ(alive, 0);
+    EXPECT_EQ(queries, 1);
+    queries = 0;
+
+    std::execution::spawn(
+        std::move(sender), scope.get_token(), std::execution::empty_env{});
+
+    EXPECT_EQ(completions, 1);
+    EXPECT_EQ(queries, 1);
+    EXPECT_EQ(alive, 0);
+    EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(scope.count(), 0u);
+}
+
+TEST(SpawnTest, ExplicitAllocatorStillOverridesBorrowedSourceAttributes) {
+    std::execution::simple_counting_scope scope;
+    auto sender_counts = std::make_shared<allocation_counts>();
+    auto explicit_counts = std::make_shared<allocation_counts>();
+    sender_counts->fail_on_attempt.store(1, std::memory_order_relaxed);
+    int queries = 0;
+    bool completed = false;
+    auto source = std::execution::read_env(std::execution::get_allocator)
+        | std::execution::then([&](const auto& allocator) noexcept {
+              EXPECT_EQ(allocator.counts, explicit_counts);
+              completed = true;
+          });
+    auto sender = allocator_attrs_sender{
+        std::move(source), counting_allocator<std::byte>{sender_counts}, &queries};
+
+    std::execution::spawn(
+        std::move(sender), scope.get_token(),
+        member_allocator_env{counting_allocator<std::byte>{explicit_counts}});
+
+    EXPECT_TRUE(completed);
+    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(sender_counts->attempts.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(explicit_counts->allocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(explicit_counts->deallocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(scope.count(), 0u);
 }
 
 TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {

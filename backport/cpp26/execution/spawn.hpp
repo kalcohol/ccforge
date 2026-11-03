@@ -172,7 +172,7 @@ void __spawn_wrapped(Wrapped wrapped, Token token, Env env) {
     } else if constexpr (requires(const Wrapped& w) {
         std::execution::get_allocator(std::execution::get_env(w));
     }) {
-        auto source_env = std::execution::get_env(wrapped);
+        decltype(auto) source_env = std::execution::get_env(wrapped);
         auto alloc = std::execution::get_allocator(source_env);
         auto joined_env = std::execution::make_env(
             std::execution::make_prop(std::execution::get_allocator_t{}, alloc),
