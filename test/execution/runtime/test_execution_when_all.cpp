@@ -291,6 +291,104 @@ struct value_error_receiver {
     }
 };
 
+template<bool Forwarding>
+struct child_query {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
+        return Forwarding;
+    }
+
+    template<class Env>
+        requires (requires(const Env& env) { env.query(std::declval<child_query>()); } ||
+                  requires(const Env& env) { tag_invoke(std::declval<child_query>(), env); })
+    int operator()(const Env& env) const noexcept {
+        if constexpr (requires { env.query(*this); }) {
+            return env.query(*this);
+        } else {
+            return tag_invoke(*this, env);
+        }
+    }
+};
+
+struct member_child_query_env {
+    template<bool Forwarding>
+    int query(child_query<Forwarding>) const noexcept {
+        return 7;
+    }
+
+    template<bool Forwarding>
+    friend int tag_invoke(child_query<Forwarding>,
+                          const member_child_query_env&) noexcept {
+        return -7;
+    }
+};
+
+struct tag_child_query_env {
+    template<bool Forwarding>
+    friend int tag_invoke(child_query<Forwarding>,
+                          const tag_child_query_env&) noexcept {
+        return 7;
+    }
+};
+
+template<bool Forwarding>
+struct observe_child_query {
+    template<class Env>
+    auto operator()(const Env& env) const noexcept {
+        if constexpr (requires { child_query<Forwarding>{}(env); }) {
+            return child_query<Forwarding>{}(env);
+        } else {
+            return false;
+        }
+    }
+};
+
+template<class Env>
+struct query_env_receiver : value_error_receiver {
+    Env env;
+
+    auto get_env() const noexcept -> Env {
+        return env;
+    }
+};
+
+static_assert(std::is_empty_v<child_query<true>>);
+static_assert(std::is_empty_v<child_query<false>>);
+static_assert(std::forwarding_query(child_query<true>{}));
+static_assert(!std::forwarding_query(child_query<false>{}));
+
+template<bool Forwarding, class Env>
+void check_child_query_filter() {
+    int value = -1;
+    bool errored = false;
+    using receiver_t = query_env_receiver<Env>;
+    static_assert(std::execution::receiver<receiver_t>);
+
+    auto direct_sender = std::execution::read_env(observe_child_query<Forwarding>{});
+    using direct_cs_t = decltype(std::execution::get_completion_signatures(
+        direct_sender, std::declval<Env>()));
+    static_assert(std::is_same_v<direct_cs_t, std::execution::completion_signatures<
+        std::execution::set_value_t(int)>>);
+    auto direct = std::execution::connect(
+        std::move(direct_sender), receiver_t{{&value, &errored}, {}});
+    std::execution::start(direct);
+    EXPECT_EQ(value, 7);
+    EXPECT_FALSE(errored);
+
+    value = -1;
+    auto sndr = std::execution::when_all(
+        std::execution::read_env(observe_child_query<Forwarding>{}));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::declval<Env>()));
+    using result_t = std::conditional_t<Forwarding, int, bool>;
+    static_assert(std::is_same_v<cs_t, std::execution::completion_signatures<
+        std::execution::set_value_t(result_t)>>);
+    auto op = std::execution::connect(
+        std::move(sndr), receiver_t{{&value, &errored}, {}});
+    std::execution::start(op);
+    EXPECT_EQ(value, Forwarding ? 7 : 0);
+    EXPECT_FALSE(errored);
+}
+
 } // namespace
 
 TEST(WhenAllTest, AggregatesMultipleValues) {
@@ -482,6 +580,44 @@ TEST(WhenAllTest, ChildEnvOwnsImmovablePrvalueOuterEnv) {
     EXPECT_TRUE(completed);
     EXPECT_TRUE(got_scheduler);
     EXPECT_EQ(alive, 0);
+}
+
+TEST(WhenAllTest, ChildEnvFiltersNonforwardingMemberQueries) {
+    check_child_query_filter<true, member_child_query_env>();
+    check_child_query_filter<false, member_child_query_env>();
+}
+
+TEST(WhenAllTest, ChildEnvFiltersNonforwardingTagQueries) {
+    check_child_query_filter<true, tag_child_query_env>();
+    check_child_query_filter<false, tag_child_query_env>();
+}
+
+TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {
+    std::inplace_stop_source source;
+    int value = -1;
+    bool errored = false;
+    auto observes_child_token = [outer = source.get_token()](const auto& env) noexcept {
+        auto token = std::execution::get_stop_token(env);
+        static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
+        return int(token != outer);
+    };
+    using receiver_t = query_env_receiver<member_stop_env>;
+
+    auto direct = std::execution::connect(
+        std::execution::read_env(observes_child_token),
+        receiver_t{{&value, &errored}, {source.get_token()}});
+    std::execution::start(direct);
+    EXPECT_EQ(value, 0);
+    EXPECT_FALSE(errored);
+
+    value = -1;
+    auto op = std::execution::connect(
+        std::execution::when_all(std::execution::read_env(observes_child_token)),
+        receiver_t{{&value, &errored}, {source.get_token()}});
+    std::execution::start(op);
+    EXPECT_EQ(value, 1);
+    EXPECT_FALSE(errored);
+    EXPECT_FALSE(source.stop_requested());
 }
 
 TEST(WhenAllTest, ForwardsOriginalErrorType) {

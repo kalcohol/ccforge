@@ -60,6 +60,7 @@ struct __child_env {
 
     template<class Query>
         requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
+                  __forge_env_detail::__forwarding_query<Query> &&
                   __forge_env_detail::__queryable<Query, const base_t&>)
     friend decltype(auto) tag_invoke(Query query, const __child_env& self)
         noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
