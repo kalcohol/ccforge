@@ -47,13 +47,11 @@ struct __no_error {};
 
 template<class Env>
 struct __child_env {
-    using base_t = std::decay_t<Env>;
+    using base_t = std::remove_reference_t<Env>;
 
-    [[no_unique_address]] base_t __base;
+    // Own prvalues without moving them, and retain borrowed references.
+    Env __base;
     inplace_stop_token __token;
-
-    __child_env(base_t env, inplace_stop_token token)
-        : __base(std::move(env)), __token(token) {}
 
     friend auto tag_invoke(get_stop_token_t, const __child_env& self) noexcept
         -> inplace_stop_token {
@@ -65,12 +63,13 @@ struct __child_env {
                   __forge_env_detail::__queryable<Query, const base_t&>)
     friend decltype(auto) tag_invoke(Query query, const __child_env& self)
         noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
-        return __forge_env_detail::__query(std::move(query), self.__base);
+        return __forge_env_detail::__query(
+            std::move(query), static_cast<const base_t&>(self.__base));
     }
 };
 
 template<class Env>
-using __child_env_t = __child_env<std::decay_t<Env>>;
+using __child_env_t = __child_env<Env>;
 
 template<class CS>
 using __value_tuple_list_t = __forge_meta::value_tuple_list_t<CS>;

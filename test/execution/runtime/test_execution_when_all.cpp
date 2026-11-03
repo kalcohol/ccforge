@@ -72,6 +72,51 @@ struct scheduler_receiver {
     }
 };
 
+struct immovable_scheduler_env {
+    std::execution::inline_scheduler scheduler;
+    int* alive;
+
+    immovable_scheduler_env(std::execution::inline_scheduler sch, int* count) noexcept
+        : scheduler(sch), alive(count) {
+        ++*alive;
+    }
+
+    immovable_scheduler_env(const immovable_scheduler_env&) = delete;
+    immovable_scheduler_env(immovable_scheduler_env&&) = delete;
+
+    ~immovable_scheduler_env() {
+        --*alive;
+    }
+
+    auto query(std::execution::get_scheduler_t) const noexcept {
+        EXPECT_GT(*alive, 0);
+        return scheduler;
+    }
+};
+
+template<class Env>
+struct borrowed_scheduler_receiver : scheduler_receiver {
+    Env* env;
+
+    auto get_env() const noexcept -> Env& {
+        return *env;
+    }
+};
+
+struct owned_scheduler_receiver : scheduler_receiver {
+    int* alive;
+
+    auto get_env() const noexcept -> immovable_scheduler_env {
+        return immovable_scheduler_env{expected, alive};
+    }
+};
+
+static_assert(!std::is_copy_constructible_v<immovable_scheduler_env>);
+static_assert(!std::is_move_constructible_v<immovable_scheduler_env>);
+static_assert(std::execution::receiver<owned_scheduler_receiver>);
+static_assert(std::is_same_v<std::execution::env_of_t<owned_scheduler_receiver>,
+                           immovable_scheduler_env>);
+
 struct int_error_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -360,6 +405,83 @@ TEST(WhenAllTest, ChildEnvPreservesOuterQueries) {
 
     EXPECT_TRUE(completed);
     EXPECT_TRUE(got_scheduler);
+}
+
+TEST(WhenAllTest, ChildEnvBorrowsStableNoncopyableOuterEnv) {
+    std::execution::inline_scheduler sch;
+    int alive = 0;
+
+    auto check = [&]<class Env>(Env& env) {
+        using receiver_t = borrowed_scheduler_receiver<Env>;
+        static_assert(std::execution::receiver<receiver_t>);
+        static_assert(std::is_same_v<std::execution::env_of_t<receiver_t>, Env&>);
+        bool got_scheduler = false;
+        bool completed = false;
+
+        auto direct = std::execution::connect(
+            std::execution::read_env(std::execution::get_scheduler),
+            receiver_t{{sch, &got_scheduler, &completed}, &env});
+        std::execution::start(direct);
+        EXPECT_TRUE(completed);
+        EXPECT_TRUE(got_scheduler);
+
+        got_scheduler = false;
+        completed = false;
+        auto sndr = std::execution::when_all(
+            std::execution::read_env(std::execution::get_scheduler));
+        using cs_t = decltype(std::execution::get_completion_signatures(
+            sndr, std::declval<Env&>()));
+        static_assert(std::is_same_v<cs_t, std::execution::completion_signatures<
+            std::execution::set_value_t(std::execution::inline_scheduler)>>);
+        auto op = std::execution::connect(
+            std::move(sndr), receiver_t{{sch, &got_scheduler, &completed}, &env});
+        std::execution::start(op);
+        EXPECT_TRUE(completed);
+        EXPECT_TRUE(got_scheduler);
+        EXPECT_EQ(alive, 1);
+    };
+
+    {
+        immovable_scheduler_env env{sch, &alive};
+        check(env);
+    }
+    EXPECT_EQ(alive, 0);
+    {
+        const immovable_scheduler_env env{sch, &alive};
+        check(env);
+    }
+    EXPECT_EQ(alive, 0);
+}
+
+TEST(WhenAllTest, ChildEnvOwnsImmovablePrvalueOuterEnv) {
+    std::execution::inline_scheduler sch;
+    int alive = 0;
+    bool got_scheduler = false;
+    bool completed = false;
+
+    auto direct = std::execution::connect(
+        std::execution::read_env(std::execution::get_scheduler),
+        owned_scheduler_receiver{{sch, &got_scheduler, &completed}, &alive});
+    std::execution::start(direct);
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(got_scheduler);
+    EXPECT_EQ(alive, 0);
+
+    got_scheduler = false;
+    completed = false;
+    auto sndr = std::execution::when_all(
+        std::execution::read_env(std::execution::get_scheduler));
+    using cs_t = decltype(std::execution::get_completion_signatures(
+        sndr, std::declval<immovable_scheduler_env>()));
+    static_assert(std::is_same_v<cs_t, std::execution::completion_signatures<
+        std::execution::set_value_t(std::execution::inline_scheduler)>>);
+    auto op = std::execution::connect(
+        std::move(sndr),
+        owned_scheduler_receiver{{sch, &got_scheduler, &completed}, &alive});
+    std::execution::start(op);
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(got_scheduler);
+    EXPECT_EQ(alive, 0);
 }
 
 TEST(WhenAllTest, ForwardsOriginalErrorType) {
