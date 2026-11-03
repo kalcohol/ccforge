@@ -50,13 +50,17 @@ working-draft-shaped subset 的执行口径。它与更完整的
 
 ## 聚焦验证映射
 
+表中具体 execution/forge 名称为 CTest 注册名；`forge_` 表示测试族前缀。
+`gcc-exec`、`tsan`、`asan` 是 `scripts/verify-native.sh` 的验证 lane。
+COMPLETE/PARTIAL handoff roots 指 synthetic fixture 检查，不是单个 CTest 名称。
+
 | 改动 | 聚焦检查 |
 | --- | --- |
-| `as_awaitable` dispatch | `execution_awaitable`, fragment includes, `execution_api_core`, COMPLETE/PARTIAL handoff roots, `gcc-exec`, `asan` |
-| `schedule_from` marker | `execution_schedule_from`, `execution_continues_on`, fragment includes, COMPLETE/PARTIAL handoff roots |
+| `as_awaitable` dispatch | `execution_wave3`, `execution_fragment_includes_compile`, `execution_api_core_compile`, COMPLETE/PARTIAL handoff roots, `gcc-exec`, `asan` |
+| `schedule_from` marker | `execution_schedule_from`, `execution_wave1`, `execution_adaptors`, `execution_fragment_includes_compile`, COMPLETE/PARTIAL handoff roots |
 | `transform_sender` / `apply_sender` | `execution_domain`, `execution_adaptors`, `execution_wave1`, COMPLETE/PARTIAL handoff roots, `gcc-exec`, `asan` |
-| `spawn` / scope / join | `execution_counting_scope`, `execution_spawn_future`, `execution_api_core`, `gcc-exec`, `tsan`, `asan` |
-| Non-WD surface 移除或迁移 | `execution_wave1`, `execution_wave2`, `execution_api_core`, 受影响的 `forge_` 测试 |
+| `spawn` / scope / join | `execution_counting_scope`, `execution_spawn_future`, `execution_api_core_compile`, `gcc-exec`, `tsan`, `asan` |
+| Non-WD surface 移除或迁移 | `execution_wave1`, `execution_wave2`, `execution_api_core_compile`, 受影响的 `forge_` 测试 |
 | Lvalue move 清理 | `execution_adaptors`, `execution_wave1`, `execution_spawn_future`, `forge_async_scope`, `forge_task` |
 | Domain recursion | `execution_domain`, `execution_adaptors`, `execution_wave1`, `gcc-exec` |
 | `spawn_future` allocator audit | `execution_spawn_future`, `gcc-exec`, `tsan`, `asan` |
