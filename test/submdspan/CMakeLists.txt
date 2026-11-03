@@ -248,6 +248,52 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
     if(_forge_submdspan_backport_tests
             AND _forge_padded_backport_tests
             AND _forge_constant_wrapper_backport_tests)
+        forge_expect_submdspan_cxx_source_compiles(
+            FORGE_SUBMDSPAN_ACCEPTS_SLICE_MEMBER_TYPES
+            test_submdspan_accept_slice_member_types.cpp
+            ON
+            "slice member Mandates must accept integer and integral-constant-like controls")
+        set(_forge_slice_member_saved_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+        foreach(_forge_slice_member_case RANGE 0 18)
+            if(_forge_slice_member_case EQUAL 0)
+                set(_forge_slice_member_fields 0 1 2 3 4 5)
+            else()
+                set(_forge_slice_member_fields 0)
+            endif()
+            foreach(_forge_slice_member_field IN LISTS _forge_slice_member_fields)
+                foreach(_forge_slice_member_reject IN ITEMS 0 1)
+                    if(_forge_slice_member_reject)
+                        set(_forge_slice_member_expect OFF)
+                        set(_forge_slice_member_result REJECTS)
+                        set(_forge_slice_member_positive 0)
+                    else()
+                        set(_forge_slice_member_expect ON)
+                        set(_forge_slice_member_result ACCEPTS)
+                        set(_forge_slice_member_positive 1)
+                    endif()
+                    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_slice_member_saved_definitions}")
+                    list(APPEND CMAKE_REQUIRED_DEFINITIONS
+                        "-DFORGE_TEST_SLICE_CASE=${_forge_slice_member_case}"
+                        "-DFORGE_TEST_SLICE_FIELD=${_forge_slice_member_field}"
+                        "-DFORGE_TEST_SLICE_POSITIVE=${_forge_slice_member_positive}")
+                    forge_expect_submdspan_cxx_source_compiles(
+                        FORGE_SUBMDSPAN_${_forge_slice_member_result}_SLICE_MEMBER_${_forge_slice_member_case}_${_forge_slice_member_field}
+                        test_submdspan_slice_member_mandates.cpp
+                        ${_forge_slice_member_expect}
+                        "slice member field ${_forge_slice_member_field}, case ${_forge_slice_member_case}: expected compile=${_forge_slice_member_expect}")
+                endforeach()
+            endforeach()
+        endforeach()
+        set(CMAKE_REQUIRED_DEFINITIONS "${_forge_slice_member_saved_definitions}")
+        unset(_forge_slice_member_saved_definitions)
+        unset(_forge_slice_member_case)
+        unset(_forge_slice_member_field)
+        unset(_forge_slice_member_fields)
+        unset(_forge_slice_member_reject)
+        unset(_forge_slice_member_expect)
+        unset(_forge_slice_member_result)
+        unset(_forge_slice_member_positive)
+
         foreach(_forge_zero_stride_case IN ITEMS
                 dynamic_range dynamic_empty_range)
             forge_expect_submdspan_cxx_source_compiles(

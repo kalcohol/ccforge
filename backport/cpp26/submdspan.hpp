@@ -42,6 +42,7 @@
 
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -72,6 +73,41 @@ inline constexpr full_extent_t full_extent{};
 // [mdspan.sub.range.slices] extent_slice / range_slice
 // ---------------------------------------------------------------------------
 
+namespace __forge_submdspan_detail {
+
+// [span.syn] integral-constant-like and [expos.only.entity] constexpr-wrapper-like.
+template <class T, class = void>
+struct icl_impl : false_type {};
+
+template <class T>
+struct icl_impl<T, void_t<
+    decltype(T::value),
+    enable_if_t<
+        is_integral_v<remove_cvref_t<decltype(T::value)>> &&
+        !is_same_v<bool, remove_cvref_t<decltype(T::value)>> &&
+        convertible_to<T, decltype(T::value)> &&
+        equality_comparable_with<T, decltype(T::value)>>,
+    // Keep constant-expression checks in the immediate substitution context.
+    enable_if_t<
+        bool_constant<T() == T::value>::value &&
+        bool_constant<static_cast<decltype(T::value)>(T()) == T::value>::value>>>
+    : true_type {};
+
+template <class T>
+inline constexpr bool is_icl_v = icl_impl<T>::value;
+
+template <class T>
+inline constexpr bool is_slice_member_v =
+    (is_integral_v<T> &&
+     !is_same_v<remove_cv_t<T>, bool> &&
+     !is_same_v<remove_cv_t<T>, char> &&
+     !is_same_v<remove_cv_t<T>, wchar_t> &&
+     !is_same_v<remove_cv_t<T>, char8_t> &&
+     !is_same_v<remove_cv_t<T>, char16_t> &&
+     !is_same_v<remove_cv_t<T>, char32_t>) || is_icl_v<T>;
+
+} // namespace __forge_submdspan_detail
+
 template <class OffsetType, class ExtentType, class StrideType>
 struct extent_slice {
     using offset_type = OffsetType;
@@ -82,16 +118,13 @@ struct extent_slice {
     [[no_unique_address]] extent_type extent{};
     [[no_unique_address]] stride_type stride{};
 
-    // Mandates: each type is integral or integral-constant-like [mdspan.sub.strided.slice p3]
-    static_assert(is_integral_v<remove_cvref_t<OffsetType>> ||
-                  requires { OffsetType::value; },
-                  "extent_slice: OffsetType must be integral or integral-constant-like");
-    static_assert(is_integral_v<remove_cvref_t<ExtentType>> ||
-                  requires { ExtentType::value; },
-                  "extent_slice: ExtentType must be integral or integral-constant-like");
-    static_assert(is_integral_v<remove_cvref_t<StrideType>> ||
-                  requires { StrideType::value; },
-                  "extent_slice: StrideType must be integral or integral-constant-like");
+    // [mdspan.sub.range.slices p3] requires integer or integral-constant-like types.
+    static_assert(__forge_submdspan_detail::is_slice_member_v<OffsetType>,
+                  "extent_slice: OffsetType must be a signed/unsigned integer or integral-constant-like");
+    static_assert(__forge_submdspan_detail::is_slice_member_v<ExtentType>,
+                  "extent_slice: ExtentType must be a signed/unsigned integer or integral-constant-like");
+    static_assert(__forge_submdspan_detail::is_slice_member_v<StrideType>,
+                  "extent_slice: StrideType must be a signed/unsigned integer or integral-constant-like");
 };
 
 template <class O, class E, class S>
@@ -103,15 +136,12 @@ struct range_slice {
     [[no_unique_address]] LastType last{};
     [[no_unique_address]] StrideType stride{};
 
-    static_assert(is_integral_v<remove_cvref_t<FirstType>> ||
-                  requires { FirstType::value; },
-                  "range_slice: FirstType must be integral or integral-constant-like");
-    static_assert(is_integral_v<remove_cvref_t<LastType>> ||
-                  requires { LastType::value; },
-                  "range_slice: LastType must be integral or integral-constant-like");
-    static_assert(is_integral_v<remove_cvref_t<StrideType>> ||
-                  requires { StrideType::value; },
-                  "range_slice: StrideType must be integral or integral-constant-like");
+    static_assert(__forge_submdspan_detail::is_slice_member_v<FirstType>,
+                  "range_slice: FirstType must be a signed/unsigned integer or integral-constant-like");
+    static_assert(__forge_submdspan_detail::is_slice_member_v<LastType>,
+                  "range_slice: LastType must be a signed/unsigned integer or integral-constant-like");
+    static_assert(__forge_submdspan_detail::is_slice_member_v<StrideType>,
+                  "range_slice: StrideType must be a signed/unsigned integer or integral-constant-like");
 };
 
 template <class F, class L>
@@ -134,30 +164,6 @@ struct submdspan_mapping_result {
 // ---------------------------------------------------------------------------
 
 namespace __forge_submdspan_detail {
-
-// --- integral_constant_like (exposition-only) ---------------------------
-// [span.syn] concept integral-constant-like
-// We implement as a type trait (concepts not required here).
-
-template <class T, class = void>
-struct icl_impl : false_type {};
-
-template <class T>
-struct icl_impl<T, void_t<
-    decltype(T::value),
-    decltype(static_cast<remove_cvref_t<decltype(T::value)>>(declval<T>())),
-    // Keep constant-expression checks in the immediate substitution context.
-    enable_if_t<
-        is_integral_v<remove_cvref_t<decltype(T::value)>> &&
-        !is_same_v<bool, remove_cvref_t<decltype(T::value)>> &&
-        is_convertible_v<T, remove_cvref_t<decltype(T::value)>> &&
-        bool_constant<T{} == T::value>::value &&
-        bool_constant<
-            static_cast<remove_cvref_t<decltype(T::value)>>(T{}) == T::value>::value>>>
-    : true_type {};
-
-template <class T>
-inline constexpr bool is_icl_v = icl_impl<T>::value;
 
 // --- slice type recognition --------------------------------------------
 
