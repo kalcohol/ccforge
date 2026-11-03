@@ -230,9 +230,9 @@ value，它仍可成为 winner。行为表如下：
 | 12 | winner sender `set_error` / start throw，或 aggregate move 失败 | drain | `set_error(exception_ptr)` |
 
 Loser 的 sender `set_error` 不覆盖已选 winner；它没有 `io_result` slot。Completion 在 helper
-mutex 外交付且 exactly-once。`when_any_results` 不新增 source lifetime 特权：其 child 经
-`as_sender(io_task)` 连接，所以 consumer receiver 不得在 final-suspend completion callback
-内同步销毁 connected operation-state；应在 terminal callback 返回后再销毁。
+mutex 外交付且 exactly-once。`when_any_results` 的 consumer receiver 不得在 aggregate
+terminal completion callback 内同步销毁 connected operation-state；应在 callback 返回后再
+销毁。该限制是当前支持的 aggregate contract，不推断其他 `as_sender` 用法的保证。
 
 `with_timeout` 把用户 task 放在 index `0`，把 `async_sleep_for` 放在 index `1`。Timer
 value 先完成时，aggregate 映射为 `std::errc::timed_out`，仍保留用户 task 在 drain 期间产生的
@@ -289,7 +289,7 @@ stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 a
   投递永不 resume；失败则等链推进到下一稳定态后重仲裁），并在任何拆帧前等在途
   resume 计数归零，保证 resume 调用回卷离开帧之前帧不消失。弃置发生在 resume
   链自己调用栈上（receiver 在完成回调内同步销毁 operation state，这是受支持
-  用法，`when_all_results`/`when_any_results` 的自毁聚合即依赖它）时既不等待
+  用法，`when_all_results` 的自毁聚合即依赖它）时既不等待
   （自锁）也不当场拆帧（resume 仍在帧间回卷），而是把拆帧交给最后一个回卷完毕
   的 resume 尾部执行。初始 task start、sender bridge completion，以及 Forge 自带的
   backend-direct/erased-stream continuation 都使用同一 credit；sender operation-state
