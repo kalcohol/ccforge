@@ -1103,6 +1103,179 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
 
 namespace {
 
+struct immovable_wrap_env {
+    std::inplace_stop_token token;
+    int* alive;
+
+    immovable_wrap_env(std::inplace_stop_token stop, int* count) noexcept
+        : token(stop), alive(count) {
+        ++*alive;
+    }
+    immovable_wrap_env(const immovable_wrap_env&) = delete;
+    immovable_wrap_env(immovable_wrap_env&&) = delete;
+    ~immovable_wrap_env() { --*alive; }
+
+    auto query(std::execution::get_scheduler_t) const noexcept {
+        EXPECT_GT(*alive, 0);
+        return std::execution::inline_scheduler{};
+    }
+    auto query(std::execution::get_stop_token_t) const noexcept {
+        EXPECT_GT(*alive, 0);
+        return token;
+    }
+};
+
+struct wrap_env_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* result;
+
+    template<class... Vs>
+    void set_value(Vs&&...) && noexcept { *result = 1; }
+    template<class E>
+    void set_error(E&&) && noexcept { *result = -1; }
+    void set_stopped() && noexcept { *result = 2; }
+};
+
+template<class Env>
+struct borrowed_wrap_receiver : wrap_env_receiver {
+    Env* env;
+    auto get_env() const noexcept -> Env& { return *env; }
+};
+
+struct owned_wrap_receiver : wrap_env_receiver {
+    std::inplace_stop_token token;
+    int* alive;
+    auto get_env() const noexcept -> immovable_wrap_env {
+        return immovable_wrap_env{token, alive};
+    }
+};
+
+static_assert(!std::is_copy_constructible_v<immovable_wrap_env>);
+static_assert(!std::is_move_constructible_v<immovable_wrap_env>);
+static_assert(std::execution::receiver<owned_wrap_receiver>);
+static_assert(std::is_same_v<std::execution::env_of_t<owned_wrap_receiver>,
+                           immovable_wrap_env>);
+
+} // namespace
+
+TEST(CountingScopeTest, WrapBorrowsStableNoncopyableEnvAndFusesStop) {
+    for (bool stop_scope : {false, true}) {
+        SCOPED_TRACE(stop_scope ? "scope stop" : "downstream stop");
+        auto check = [&]<class Env>(Env& env, std::inplace_stop_source& downstream) {
+            using receiver_t = borrowed_wrap_receiver<Env>;
+            static_assert(std::execution::receiver<receiver_t>);
+            static_assert(std::is_same_v<std::execution::env_of_t<receiver_t>, Env&>);
+            std::execution::counting_scope scope;
+            int result = 0;
+            auto direct = std::execution::connect(
+                std::execution::read_env(std::execution::get_scheduler),
+                receiver_t{{&result}, &env});
+            std::execution::start(direct);
+            EXPECT_EQ(result, 1);
+
+            result = 0;
+            auto sender = scope.get_token().wrap(
+                std::execution::read_env(std::execution::get_scheduler));
+            using signatures_t = std::execution::completion_signatures_of_t<
+                decltype(sender), Env&>;
+            static_assert(std::is_same_v<signatures_t,
+                std::execution::completion_signatures<
+                    std::execution::set_value_t(std::execution::inline_scheduler),
+                    std::execution::set_stopped_t()>>);
+            auto value_op = std::execution::connect(
+                std::move(sender), receiver_t{{&result}, &env});
+            std::execution::start(value_op);
+            EXPECT_EQ(result, 1);
+
+            result = 0;
+            auto state = std::make_shared<manual_state>();
+            auto stop_op = std::execution::connect(
+                scope.get_token().wrap(manual_sender{state}),
+                receiver_t{{&result}, &env});
+            std::execution::start(stop_op);
+            EXPECT_EQ(result, 0);
+            if (stop_scope) scope.request_stop();
+            else downstream.request_stop();
+            EXPECT_EQ(result, 2);
+            {
+                std::lock_guard lk{state->mtx};
+                EXPECT_TRUE(state->started);
+                EXPECT_TRUE(state->completed);
+                EXPECT_TRUE(state->stop_requested);
+                EXPECT_EQ(state->stop_completion_attempts, 1);
+            }
+            EXPECT_EQ(*env.alive, 1);
+            EXPECT_EQ(scope.count(), 0u);
+        };
+
+        int alive = 0;
+        {
+            std::inplace_stop_source downstream;
+            immovable_wrap_env env{downstream.get_token(), &alive};
+            check(env, downstream);
+        }
+        EXPECT_EQ(alive, 0);
+        {
+            std::inplace_stop_source downstream;
+            const immovable_wrap_env env{downstream.get_token(), &alive};
+            check(env, downstream);
+        }
+        EXPECT_EQ(alive, 0);
+    }
+}
+
+TEST(CountingScopeTest, WrapOwnsImmovablePrvalueEnvAndFusesStop) {
+    for (bool stop_scope : {false, true}) {
+        SCOPED_TRACE(stop_scope ? "scope stop" : "downstream stop");
+        std::execution::counting_scope scope;
+        std::inplace_stop_source downstream;
+        int alive = 0;
+        int result = 0;
+        owned_wrap_receiver receiver{{&result}, downstream.get_token(), &alive};
+        auto direct = std::execution::connect(
+            std::execution::read_env(std::execution::get_scheduler), receiver);
+        std::execution::start(direct);
+        EXPECT_EQ(result, 1);
+        EXPECT_EQ(alive, 0);
+
+        result = 0;
+        auto sender = scope.get_token().wrap(
+            std::execution::read_env(std::execution::get_scheduler));
+        using signatures_t = std::execution::completion_signatures_of_t<
+            decltype(sender), immovable_wrap_env>;
+        static_assert(std::is_same_v<signatures_t,
+            std::execution::completion_signatures<
+                std::execution::set_value_t(std::execution::inline_scheduler),
+                std::execution::set_stopped_t()>>);
+        auto value_op = std::execution::connect(std::move(sender), receiver);
+        std::execution::start(value_op);
+        EXPECT_EQ(result, 1);
+        EXPECT_EQ(alive, 0);
+
+        result = 0;
+        auto state = std::make_shared<manual_state>();
+        auto stop_op = std::execution::connect(
+            scope.get_token().wrap(manual_sender{state}), receiver);
+        std::execution::start(stop_op);
+        EXPECT_EQ(result, 0);
+        EXPECT_EQ(alive, 0);
+        if (stop_scope) scope.request_stop();
+        else downstream.request_stop();
+        EXPECT_EQ(result, 2);
+        {
+            std::lock_guard lk{state->mtx};
+            EXPECT_TRUE(state->started);
+            EXPECT_TRUE(state->completed);
+            EXPECT_TRUE(state->stop_requested);
+            EXPECT_EQ(state->stop_completion_attempts, 1);
+        }
+        EXPECT_EQ(alive, 0);
+        EXPECT_EQ(scope.count(), 0u);
+    }
+}
+
+namespace {
+
 struct registration_probe_token {
     int* live;
     bool fail_registration = false;

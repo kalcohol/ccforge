@@ -526,7 +526,10 @@ private:
 
 template<class BaseEnv>
 struct __stop_env {
-    [[no_unique_address]] BaseEnv __base;
+    using base_t = std::remove_reference_t<BaseEnv>;
+
+    // Own prvalues without moving them, and retain borrowed references.
+    BaseEnv __base;
     __fused_stop_token __token;
 
     friend auto tag_invoke(get_stop_token_t, const __stop_env& self) noexcept
@@ -536,15 +539,16 @@ struct __stop_env {
 
     template<class Tag>
         requires (!std::same_as<std::remove_cvref_t<Tag>, get_stop_token_t> &&
-                  __forge_env_detail::__queryable<Tag, const BaseEnv&>)
+                  __forge_env_detail::__queryable<Tag, const base_t&>)
     friend decltype(auto) tag_invoke(Tag tag, const __stop_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Tag, const BaseEnv&>) {
-        return __forge_env_detail::__query(std::move(tag), self.__base);
+        noexcept(__forge_env_detail::__nothrow_query<Tag, const base_t&>) {
+        return __forge_env_detail::__query(
+            std::move(tag), static_cast<const base_t&>(self.__base));
     }
 };
 
 template<class Env>
-using __stop_env_t = __stop_env<std::decay_t<Env>>;
+using __stop_env_t = __stop_env<Env>;
 
 struct __request_fused_stop {
     std::inplace_stop_source* __source = nullptr;
