@@ -10,6 +10,39 @@ constexpr T euler_gamma_v = static_cast<T>(0.57721566490153286060651209008240243
 template<class T>
 constexpr T pi_v = static_cast<T>(3.141592653589793238462643383279502884L);
 
+struct twofold_expansion {
+    long double high;
+    long double low;
+};
+
+// Finite normalized expansions, round-to-nearest arithmetic, and no
+// reassociation are required. Callers account for residual underflow.
+inline twofold_expansion twofold_add(
+    twofold_expansion a, twofold_expansion b) {
+    const long double sum = a.high + b.high;
+    const long double part = sum - a.high;
+    const long double error = (a.high - (sum - part)) + (b.high - part) +
+        a.low + b.low;
+    const long double high = sum + error;
+    return {high, error - (high - sum)};
+}
+
+inline twofold_expansion twofold_multiply(
+    twofold_expansion a, twofold_expansion b) {
+    const long double product = a.high * b.high;
+    const long double error = std::fma(a.high, b.high, -product) +
+        a.high * b.low + a.low * b.high + a.low * b.low;
+    const long double high = product + error;
+    return {high, error - (high - product)};
+}
+
+inline twofold_expansion twofold_divide(twofold_expansion numerator, long double denominator) {
+    const long double quotient = numerator.high / denominator;
+    const long double residual = std::fma(
+        -quotient, denominator, numerator.high) + numerator.low;
+    return twofold_add({quotient, 0.0L}, {residual / denominator, 0.0L});
+}
+
 template<class T>
 T quiet_nan() noexcept {
     if constexpr (numeric_limits<T>::has_quiet_NaN) {

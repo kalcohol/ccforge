@@ -365,54 +365,30 @@ T ellint_3_unit_modulus(T nu, T phi) {
     return static_cast<T>((first - order * second) / (1.0L - order));
 }
 
-struct elliptic_expansion {
-    long double high;
-    long double low;
-};
-
-inline elliptic_expansion elliptic_add(
-    elliptic_expansion a, elliptic_expansion b) {
-    const long double sum = a.high + b.high;
-    const long double part = sum - a.high;
-    const long double error = (a.high - (sum - part)) + (b.high - part) +
-        a.low + b.low;
-    const long double high = sum + error;
-    return {high, error - (high - sum)};
-}
-
-inline elliptic_expansion elliptic_multiply(
-    elliptic_expansion a, elliptic_expansion b) {
-    const long double product = a.high * b.high;
-    const long double error = std::fma(a.high, b.high, -product) +
-        a.high * b.low + a.low * b.high + a.low * b.low;
-    const long double high = product + error;
-    return {high, error - (high - product)};
-}
-
 inline long double elliptic_pole_factor(long double order, long double angle) {
     // The near-pole subtraction needs the sine residual even on 53-bit hosts.
-    const elliptic_expansion x{angle, 0.0L};
-    const auto square = elliptic_multiply(x, x);
+    const twofold_expansion x{angle, 0.0L};
+    const auto square = twofold_multiply(x, x);
     auto term = x;
     auto sine = x;
     for (unsigned index = 1; index < 21u; ++index) {
-        auto numerator = elliptic_multiply(term, square);
+        auto numerator = twofold_multiply(term, square);
         numerator.high = -numerator.high;
         numerator.low = -numerator.low;
         const long double denominator = 2u * index * (2u * index + 1u);
         const long double quotient = numerator.high / denominator;
         const long double residual = std::fma(
             -quotient, denominator, numerator.high) + numerator.low;
-        term = elliptic_add({quotient, 0.0L}, {residual / denominator, 0.0L});
-        sine = elliptic_add(sine, term);
+        term = twofold_add({quotient, 0.0L}, {residual / denominator, 0.0L});
+        sine = twofold_add(sine, term);
     }
     const long double root = std::sqrt(order);
-    const elliptic_expansion root_pair{
+    const twofold_expansion root_pair{
         root, std::fma(-root, root, order) / (2.0L * root)};
-    const auto factor = elliptic_multiply(sine, root_pair);
-    const auto lower = elliptic_add({1.0L, 0.0L}, {-factor.high, -factor.low});
-    const auto upper = elliptic_add({1.0L, 0.0L}, factor);
-    const auto pole = elliptic_multiply(lower, upper);
+    const auto factor = twofold_multiply(sine, root_pair);
+    const auto lower = twofold_add({1.0L, 0.0L}, {-factor.high, -factor.low});
+    const auto upper = twofold_add({1.0L, 0.0L}, factor);
+    const auto pole = twofold_multiply(lower, upper);
     return pole.high + pole.low;
 }
 
