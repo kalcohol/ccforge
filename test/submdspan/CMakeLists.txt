@@ -166,6 +166,54 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
         endforeach()
         unset(_forge_padded_conversion)
         unset(_forge_padded_conversion_upper)
+
+        forge_expect_submdspan_cxx_source_compiles(
+            FORGE_SUBMDSPAN_ACCEPTS_PADDED_STATIC_CONTROLS
+            test_mdspan_padded_static_controls.cpp
+            ON
+            "padded static Mandates must retain rank-zero, rank-one, zero and dynamic controls")
+        set(_forge_padded_static_saved_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+        foreach(_forge_padded_static_layout IN ITEMS left right)
+            if(_forge_padded_static_layout STREQUAL "right")
+                set(_forge_padded_static_right 1)
+            else()
+                set(_forge_padded_static_right 0)
+            endif()
+            string(TOUPPER "${_forge_padded_static_layout}" _forge_padded_static_layout_upper)
+            foreach(_forge_padded_static_case IN ITEMS
+                    stride partial_stride product size_round size_product index_product padding)
+                string(TOUPPER "${_forge_padded_static_case}" _forge_padded_static_case_upper)
+                foreach(_forge_padded_static_reject IN ITEMS 0 1)
+                    if(_forge_padded_static_reject)
+                        set(_forge_padded_static_expect OFF)
+                        set(_forge_padded_static_result REJECTS)
+                    else()
+                        set(_forge_padded_static_expect ON)
+                        set(_forge_padded_static_result ACCEPTS)
+                    endif()
+                    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_padded_static_saved_definitions}")
+                    list(APPEND CMAKE_REQUIRED_DEFINITIONS
+                        "-DFORGE_TEST_PADDED_RIGHT=${_forge_padded_static_right}"
+                        "-DFORGE_TEST_PADDED_REJECT=${_forge_padded_static_reject}"
+                        "-DFORGE_TEST_PADDED_${_forge_padded_static_case_upper}=1")
+                    forge_expect_submdspan_cxx_source_compiles(
+                        FORGE_SUBMDSPAN_${_forge_padded_static_result}_PADDED_${_forge_padded_static_layout_upper}_${_forge_padded_static_case_upper}
+                        test_mdspan_padded_static_representability.cpp
+                        ${_forge_padded_static_expect}
+                        "padded ${_forge_padded_static_layout} static ${_forge_padded_static_case}: expected compile=${_forge_padded_static_expect}")
+                endforeach()
+            endforeach()
+        endforeach()
+        set(CMAKE_REQUIRED_DEFINITIONS "${_forge_padded_static_saved_definitions}")
+        unset(_forge_padded_static_saved_definitions)
+        unset(_forge_padded_static_layout)
+        unset(_forge_padded_static_layout_upper)
+        unset(_forge_padded_static_right)
+        unset(_forge_padded_static_case)
+        unset(_forge_padded_static_case_upper)
+        unset(_forge_padded_static_reject)
+        unset(_forge_padded_static_expect)
+        unset(_forge_padded_static_result)
     endif()
 
     if(NOT MSVC

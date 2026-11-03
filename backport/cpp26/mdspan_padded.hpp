@@ -24,6 +24,7 @@
 
 #include <array>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -58,6 +59,49 @@ constexpr I least_multiple_at_least(I alignment, I value) noexcept {
     return remainder == I(0) ? value : static_cast<I>(value + (alignment - remainder));
 }
 
+template <class IndexType>
+consteval size_t static_size_limit() {
+    if constexpr (numeric_limits<IndexType>::digits < numeric_limits<size_t>::digits) {
+        return static_cast<size_t>((numeric_limits<IndexType>::max)());
+    } else {
+        return (numeric_limits<size_t>::max)();
+    }
+}
+
+template <class IndexType>
+consteval bool static_stride_representable(size_t padding, size_t extent) {
+    const size_t limit = static_size_limit<IndexType>();
+    if (extent > limit) {
+        return false;
+    }
+    if (padding == 0) {
+        return true;
+    }
+    const size_t remainder = extent % padding;
+    return remainder == 0 || padding - remainder <= limit - extent;
+}
+
+template <class Extents, class Limit>
+consteval bool static_product_representable(
+    Limit limit, size_t padded_dim = dynamic_extent, size_t padded_stride = 0) {
+    // A zero factor makes the mathematical product zero, even after large factors.
+    for (size_t r = 0; r < Extents::rank(); ++r) {
+        if ((r == padded_dim ? padded_stride : Extents::static_extent(r)) == 0) {
+            return true;
+        }
+    }
+    Limit product = 1;
+    for (size_t r = 0; r < Extents::rank(); ++r) {
+        const size_t factor =
+            r == padded_dim ? padded_stride : Extents::static_extent(r);
+        if (cmp_greater(factor, limit / product)) {
+            return false;
+        }
+        product = static_cast<Limit>(product * static_cast<Limit>(factor));
+    }
+    return true;
+}
+
 } // namespace __forge_mdspan_padded_detail
 
 template <size_t PaddingValue = dynamic_extent>
@@ -82,6 +126,15 @@ struct layout_left_padded {
     private:
         static constexpr size_t rank_ = extents_type::rank();
 
+        static_assert(
+            extents_type::rank_dynamic() != 0 ||
+            __forge_mdspan_padded_detail::static_product_representable<extents_type>(
+                (numeric_limits<index_type>::max)()),
+            "layout_left_padded static index space must be representable in index_type");
+        static_assert(
+            PaddingValue == dynamic_extent || in_range<index_type>(PaddingValue),
+            "layout_left_padded static padding must be representable in index_type");
+
         static consteval size_t first_static_extent_() {
             if constexpr (rank_ == 0) {
                 return dynamic_extent;
@@ -91,21 +144,41 @@ struct layout_left_padded {
         }
 
         static constexpr size_t first_static_extent = first_static_extent_();
+        static_assert(
+            rank_ <= 1 || PaddingValue == dynamic_extent ||
+            first_static_extent == dynamic_extent ||
+            __forge_mdspan_padded_detail::static_stride_representable<index_type>(
+                PaddingValue, first_static_extent),
+            "layout_left_padded static stride must be representable in size_t and index_type");
+
         static consteval size_t static_padding_stride_() {
             if constexpr (rank_ <= 1) {
                 return size_t(1);
             } else if constexpr (PaddingValue == dynamic_extent ||
                                  first_static_extent == dynamic_extent) {
                 return dynamic_extent;
-            } else {
+            } else if constexpr (
+                __forge_mdspan_padded_detail::static_stride_representable<index_type>(
+                    PaddingValue, first_static_extent)) {
                 return __forge_mdspan_padded_detail::least_multiple_at_least(
                     PaddingValue,
                     first_static_extent);
+            } else {
+                // The class Mandate rejects this case before any overflowing round-up.
+                return size_t(0);
             }
         }
 
         static constexpr size_t static_padding_stride =
             static_padding_stride_();
+
+        static_assert(
+            rank_ <= 1 || PaddingValue == dynamic_extent ||
+            extents_type::rank_dynamic() != 0 ||
+            __forge_mdspan_padded_detail::static_product_representable<extents_type>(
+                __forge_mdspan_padded_detail::static_size_limit<index_type>(),
+                0, static_padding_stride),
+            "layout_left_padded static padded product must be representable in size_t and index_type");
 
         static constexpr index_type make_stride(index_type extent, index_type padding) noexcept {
             return __forge_mdspan_padded_detail::least_multiple_at_least(padding, extent);
@@ -356,6 +429,15 @@ struct layout_right_padded {
     private:
         static constexpr size_t rank_ = extents_type::rank();
 
+        static_assert(
+            extents_type::rank_dynamic() != 0 ||
+            __forge_mdspan_padded_detail::static_product_representable<extents_type>(
+                (numeric_limits<index_type>::max)()),
+            "layout_right_padded static index space must be representable in index_type");
+        static_assert(
+            PaddingValue == dynamic_extent || in_range<index_type>(PaddingValue),
+            "layout_right_padded static padding must be representable in index_type");
+
         static consteval size_t last_static_extent_() {
             if constexpr (rank_ == 0) {
                 return dynamic_extent;
@@ -365,21 +447,41 @@ struct layout_right_padded {
         }
 
         static constexpr size_t last_static_extent = last_static_extent_();
+        static_assert(
+            rank_ <= 1 || PaddingValue == dynamic_extent ||
+            last_static_extent == dynamic_extent ||
+            __forge_mdspan_padded_detail::static_stride_representable<index_type>(
+                PaddingValue, last_static_extent),
+            "layout_right_padded static stride must be representable in size_t and index_type");
+
         static consteval size_t static_padding_stride_() {
             if constexpr (rank_ <= 1) {
                 return size_t(1);
             } else if constexpr (PaddingValue == dynamic_extent ||
                                  last_static_extent == dynamic_extent) {
                 return dynamic_extent;
-            } else {
+            } else if constexpr (
+                __forge_mdspan_padded_detail::static_stride_representable<index_type>(
+                    PaddingValue, last_static_extent)) {
                 return __forge_mdspan_padded_detail::least_multiple_at_least(
                     PaddingValue,
                     last_static_extent);
+            } else {
+                // The class Mandate rejects this case before any overflowing round-up.
+                return size_t(0);
             }
         }
 
         static constexpr size_t static_padding_stride =
             static_padding_stride_();
+
+        static_assert(
+            rank_ <= 1 || PaddingValue == dynamic_extent ||
+            extents_type::rank_dynamic() != 0 ||
+            __forge_mdspan_padded_detail::static_product_representable<extents_type>(
+                __forge_mdspan_padded_detail::static_size_limit<index_type>(),
+                rank_ - 1, static_padding_stride),
+            "layout_right_padded static padded product must be representable in size_t and index_type");
 
         static constexpr index_type make_stride(index_type extent, index_type padding) noexcept {
             return __forge_mdspan_padded_detail::least_multiple_at_least(padding, extent);
