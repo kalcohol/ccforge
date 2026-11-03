@@ -164,7 +164,8 @@ void add(
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 T dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -220,7 +221,8 @@ T dot(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 auto dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
@@ -234,7 +236,8 @@ auto dot(
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 T dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
@@ -265,7 +268,8 @@ T dotc(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
-    requires __detail::__compatible_static_extents_v<Extents1, Extents2>
+    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
 auto dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)

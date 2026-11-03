@@ -3,6 +3,7 @@
 
 #include <linalg>
 #include <mdspan>
+#include <array>
 
 template<class X, class Y>
 concept copyable_shapes = requires(X x, Y y) {
@@ -26,6 +27,20 @@ concept dot_shapes = requires(X x, Y y) {
 };
 
 template<class X, class Y>
+consteval bool dot_overloads_match(bool expected) {
+    const std::array calls{
+        requires(X x, Y y) { std::linalg::dot(x, y); },
+        requires(X x, Y y) { std::linalg::dot(x, y, 0.0); },
+        requires(X x, Y y) { std::linalg::dotc(x, y); },
+        requires(X x, Y y) { std::linalg::dotc(x, y, 0.0); },
+    };
+    for (bool participates : calls) {
+        if (participates != expected) return false;
+    }
+    return true;
+}
+
+template<class X, class Y>
 concept givens_shapes = requires(X x, Y y) {
     std::linalg::apply_givens_rotation(x, y, 0.6, 0.8);
 };
@@ -46,5 +61,29 @@ static_assert(!addable_shapes<static3, static4, static3>);
 static_assert(!addable_shapes<static3, static3, static4>);
 static_assert(!dot_shapes<static3, static4>);
 static_assert(!givens_shapes<static3, static4>);
+
+using rank0 = std::mdspan<double, std::extents<int>>;
+using rank2 = std::mdspan<double, std::extents<int, 3, 1>>;
+using dynamic2 = std::mdspan<double, std::dextents<int, 2>>;
+
+static_assert(dot_overloads_match<static3, static3>(true));
+static_assert(dot_overloads_match<static3, dynamic1>(true));
+static_assert(dot_overloads_match<dynamic1, static3>(true));
+static_assert(dot_overloads_match<dynamic1, dynamic1>(true));
+
+static_assert(dot_overloads_match<rank0, static3>(false));
+static_assert(dot_overloads_match<static3, rank0>(false));
+static_assert(dot_overloads_match<rank0, dynamic1>(false));
+static_assert(dot_overloads_match<dynamic1, rank0>(false));
+static_assert(dot_overloads_match<rank0, rank0>(false));
+
+static_assert(dot_overloads_match<rank2, static3>(false));
+static_assert(dot_overloads_match<static3, rank2>(false));
+static_assert(dot_overloads_match<rank2, dynamic1>(false));
+static_assert(dot_overloads_match<dynamic1, rank2>(false));
+static_assert(dot_overloads_match<rank2, rank2>(false));
+static_assert(dot_overloads_match<dynamic2, dynamic2>(false));
+static_assert(dot_overloads_match<rank2, dynamic2>(false));
+static_assert(dot_overloads_match<dynamic2, rank2>(false));
 
 int main() {}
