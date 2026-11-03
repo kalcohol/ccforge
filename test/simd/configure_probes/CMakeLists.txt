@@ -255,3 +255,105 @@ forge_add_simd_configure_probe(
     "stdfloat_value_types.cpp"
     TRUE
     "Forge simd backport must support current-draft stdfloat vectorizable types when the implementation defines them")
+
+# Same-source controls for rejection fixtures.
+set(_forge_pair_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_SIMD_POSITIVE_CONTROL=1)
+foreach(_forge_pair IN ITEMS
+        long_double_value
+        invalid_flags
+        implicit_scalar_narrowing_broadcast
+        implicit_vec_converter
+        narrowing_generator
+        deque_iterator
+        oversized_fixed_size
+        out_of_range_static_permute
+        stateful_static_permute
+        negative_fractional_static_permute
+        mask_alignment
+        mismatched_partial_gather
+        mismatched_masked_partial_gather
+        mismatched_unchecked_gather
+        mismatched_masked_unchecked_gather)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_POSITIVE_CONTROL_${_forge_pair}
+        "reject_${_forge_pair}.cpp"
+        TRUE
+        "SIMD negative probe ${_forge_pair} must have a compiling same-source control")
+endforeach()
+# Removed APIs are controlled by supported alternatives, not the same overload.
+foreach(_forge_pair IN ITEMS nonstandard_where legacy_split legacy_simd_cast)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_POSITIVE_CONTROL_${_forge_pair}
+        "reject_${_forge_pair}.cpp" TRUE
+        "Removed SIMD API ${_forge_pair} must have a compiling supported-API control")
+endforeach()
+forge_add_simd_configure_probe(
+    FORGE_SIMD_POSITIVE_CONTROL_flags_rejects_address
+    "flags_rejects_address.cpp" TRUE
+    "Immediate flags operator must accept evaluation; this is not an address-taking twin")
+if(FORGE_SIMD_HAS_EXTENDED_INTEGER_TYPE)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_POSITIVE_CONTROL_extended_integer
+        "reject_extended_integer.cpp" TRUE
+        "Extended integer rejection must have a compiling standard integer control")
+endif()
+foreach(_forge_pair IN ITEMS bit_rejects_signed bit_rejects_constexpr_nonpositive_repeat math_rejects_integral)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_POSITIVE_CONTROL_${_forge_pair}
+        "${_forge_pair}.cpp" TRUE
+        "SIMD negative probe ${_forge_pair} must have a compiling boundary control")
+endforeach()
+foreach(_forge_permute_meta_reject RANGE 1 8)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_pair_definitions}
+        -DFORGE_SIMD_POSITIVE_CONTROL=1
+        -DFORGE_SIMD_STATIC_PERMUTE_META_REJECT=${_forge_permute_meta_reject})
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_STATIC_PERMUTE_META_CONTROL_${_forge_permute_meta_reject}
+        "../compile/test_simd_static_permute_meta_gcc.cpp" TRUE
+        "Static permutation negative map ${_forge_permute_meta_reject} must have a valid map control")
+endforeach()
+# Isolate operations so an earlier rejection cannot hide a later one.
+foreach(_forge_pair IN ITEMS
+        reject_non_value_preserving_load_store
+        reject_legacy_masked_gather_scatter_order
+        math_rejects_pair_decompose
+        math_rejects_constexpr_int_round)
+    set(_forge_last_operation 1)
+    if(_forge_pair STREQUAL "reject_legacy_masked_gather_scatter_order")
+        set(_forge_last_operation 3)
+    elseif(_forge_pair STREQUAL "math_rejects_pair_decompose")
+        set(_forge_last_operation 2)
+    endif()
+    foreach(_forge_operation RANGE 0 ${_forge_last_operation})
+        foreach(_forge_accept RANGE 0 1)
+            set(CMAKE_REQUIRED_DEFINITIONS ${_forge_pair_definitions}
+                -DFORGE_SIMD_PROBE_OPERATION=${_forge_operation})
+            if(_forge_accept)
+                list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_SIMD_POSITIVE_CONTROL=1)
+            endif()
+            forge_add_simd_configure_probe(
+                FORGE_SIMD_OPERATION_CONTROL_${_forge_pair}_${_forge_operation}_${_forge_accept}
+                "${_forge_pair}.cpp" ${_forge_accept}
+                "SIMD ${_forge_pair} operation ${_forge_operation} must have an isolated rejection/control pair")
+        endforeach()
+    endforeach()
+endforeach()
+# The original mask/bool rejection has two invalid template arguments.
+# Both isolated negatives share the vector/int positive control above.
+foreach(_forge_alignment_case RANGE 0 1)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_pair_definitions}
+        -DFORGE_SIMD_MASK_ALIGNMENT_CASE=${_forge_alignment_case})
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_ALIGNMENT_CONDITION_${_forge_alignment_case}
+        "reject_mask_alignment.cpp" FALSE
+        "SIMD alignment must independently reject masks and unsupported bool scalar types")
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_pair_definitions}")
+unset(_forge_pair_definitions)
+unset(_forge_pair)
+unset(_forge_permute_meta_reject)
+unset(_forge_last_operation)
+unset(_forge_operation)
+unset(_forge_accept)
+unset(_forge_alignment_case)

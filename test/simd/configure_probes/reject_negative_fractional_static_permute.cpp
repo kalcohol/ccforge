@@ -7,7 +7,11 @@ struct negative_fractional_index_map {
         return 0;
     }
     constexpr double operator()(std::simd::simd_size_type, std::simd::simd_size_type) const noexcept {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+        return 0.0;
+#else
         return -0.5;
+#endif
     }
 };
 

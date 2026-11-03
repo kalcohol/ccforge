@@ -6,7 +6,11 @@ struct stateful_index_map {
     std::simd::simd_size_type offset;
 
     constexpr std::simd::simd_size_type operator()(std::simd::simd_size_type index) const noexcept {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+        return index;
+#else
         return index + offset;
+#endif
     }
 };
 

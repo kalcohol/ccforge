@@ -125,36 +125,64 @@ int abstract_control(const vector4& values) {
 #if FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 1
 struct rejected_map {
     size_type offset;
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr size_type operator()(size_type lane) const noexcept { return lane; }
+#else
     constexpr size_type operator()(size_type lane) const noexcept { return lane + offset; }
+#endif
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 2
 struct rejected_map {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr size_type operator()(size_type lane) const noexcept { return lane; }
+#else
     size_type operator()(size_type lane) const noexcept { return lane; }
+#endif
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 3
 struct rejected_map {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr size_type operator()(size_type, size_type width) const noexcept { return width - 1; }
+#else
     constexpr size_type operator()(size_type, size_type width) const noexcept { return width; }
+#endif
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 4
 struct rejected_map {
     constexpr size_type operator()(size_type) const noexcept { return 0; }
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr double operator()(size_type, size_type) const noexcept { return 0.0; }
+#else
     constexpr double operator()(size_type, size_type) const noexcept { return -0.5; }
+#endif
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 5
 struct rejected_map {
     size_type offset;
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr size_type operator()(size_type lane) const noexcept { return lane; }
+#else
     consteval size_type operator()(size_type lane) const noexcept { return lane + offset; }
+#endif
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 7
 struct rejected_map {
     constexpr size_type operator()(size_type) const noexcept { return 0; }
     constexpr double operator()(size_type, size_type) const noexcept {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+        return 0.0;
+#else
         return std::numeric_limits<double>::max();
+#endif
     }
 };
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 8
 struct rejected_map {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    constexpr size_type operator()(size_type) const noexcept { return std::simd::zero_element; }
+#else
     constexpr size_type operator()(size_type) const noexcept { return -3; }
+#endif
 };
 #endif
 
@@ -167,7 +195,11 @@ int main(int argc, char**) {
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 1 || FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 5
     return std::simd::permute(values, rejected_map{argc})[0];
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT == 6
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+    return std::simd::permute<1>(values, preferred_map{})[0];
+#else
     return std::simd::permute<-1>(values, preferred_map{})[0];
+#endif
 #elif FORGE_SIMD_STATIC_PERMUTE_META_REJECT >= 2 && FORGE_SIMD_STATIC_PERMUTE_META_REJECT <= 8
     return std::simd::permute(values, rejected_map{})[0];
 #else

@@ -4,7 +4,11 @@
 
 struct out_of_range_index_map {
     constexpr std::simd::simd_size_type operator()(std::simd::simd_size_type) const noexcept {
+#if defined(FORGE_SIMD_POSITIVE_CONTROL)
+        return 3;
+#else
         return 7;
+#endif
     }
 };
 
