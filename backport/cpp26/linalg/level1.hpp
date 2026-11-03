@@ -225,7 +225,8 @@ auto dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
-    using T = decltype(x[0] * y[0]);
+    using T = decltype(std::declval<typename decltype(x)::value_type>() *
+                       std::declval<typename decltype(y)::value_type>());
     return dot(x, y, T{});
 }
 
@@ -269,7 +270,9 @@ auto dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
-    using T = decltype(x[0] * y[0]);
+    using T = decltype(__detail::__conj_if_needed(
+                           std::declval<typename decltype(x)::value_type>()) *
+                       std::declval<typename decltype(y)::value_type>());
     return dotc(x, y, T{});
 }
 

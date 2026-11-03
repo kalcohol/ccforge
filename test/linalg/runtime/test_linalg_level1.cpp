@@ -4,10 +4,12 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -79,7 +81,7 @@ adl_dot_number conj(const adl_dot_number& value) {
             value.conjugations, value.conversions};
 }
 
-template<class T>
+template<class T, class Product = T>
 struct dot_proxy {
     const T* value;
     int* products;
@@ -90,17 +92,17 @@ struct dot_proxy {
         return *value;
     }
 
-    friend T operator*(dot_proxy left, dot_proxy right) {
+    friend Product operator*(dot_proxy left, dot_proxy right) {
         ++*left.products;
-        return *left.value * *right.value;
+        return static_cast<Product>(*left.value * *right.value);
     }
 };
 
-template<class T>
+template<class T, class Product = T>
 struct dot_proxy_accessor {
     using offset_policy = dot_proxy_accessor;
     using element_type = const T;
-    using reference = dot_proxy<T>;
+    using reference = dot_proxy<T, Product>;
     using data_handle_type = const T*;
 
     int* products{};
@@ -116,6 +118,38 @@ struct dot_proxy_accessor {
         return pointer + index;
     }
 };
+
+struct conjugating_dot_value {
+    double value{};
+
+    constexpr conjugating_dot_value() = default;
+    constexpr conjugating_dot_value(double input) : value(input) {}
+    constexpr operator double() const noexcept { return value; }
+    constexpr conjugating_dot_value& operator+=(double right) noexcept {
+        value += right;
+        return *this;
+    }
+    constexpr conjugating_dot_value& operator*=(double right) noexcept {
+        value *= right;
+        return *this;
+    }
+};
+
+long double conj(conjugating_dot_value value) {
+    return static_cast<long double>(value.value);
+}
+
+using conjugating_dot_proxy =
+    dot_proxy<conjugating_dot_value, long double>;
+
+long double conj(conjugating_dot_proxy value) {
+    return conj(*value.value);
+}
+
+long double operator*(long double left, conjugating_dot_proxy right) {
+    ++*right.products;
+    return left * right.value->value;
+}
 
 } // namespace
 
@@ -409,6 +443,119 @@ TEST(LinalgLevel1DotProducts, ProxyReferencesKeepTheirMultiply) {
     products = 0;
     EXPECT_EQ(std::linalg::dotc(x, y), 4.0);
     EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+}
+
+TEST(LinalgLevel1DotProducts, DefaultProxyResultsUseValueTypes) {
+    float x_data[] = {1.0f, 1.0f};
+    float y_data[] = {1.0f, 0x1p-24f};
+    int products = 0;
+    int conversions = 0;
+    using accessor = dot_proxy_accessor<float, double>;
+    using proxy_span = std::mdspan<const float, std::extents<int, 2>,
+                                   std::layout_right, accessor>;
+    proxy_span x(x_data, proxy_span::mapping_type{}, accessor{&products, &conversions});
+    proxy_span y(y_data, proxy_span::mapping_type{}, accessor{&products, &conversions});
+
+    static_assert(std::semiregular<accessor> && std::is_nothrow_swappable_v<accessor>);
+    static_assert(std::common_reference_with<accessor::reference&&, const float&>);
+    static_assert(std::is_same_v<proxy_span::value_type, float>);
+    static_assert(std::is_same_v<decltype(x[0] * y[0]), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y)), float>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y)), float>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y, 0.0f)), float>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y, 0.0f)), float>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y, 7.0)), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y, 7.0)), double>);
+
+    for (bool conjugate : {false, true}) {
+        SCOPED_TRACE(conjugate);
+        products = conversions = 0;
+        EXPECT_EQ(conjugate ? std::linalg::dotc(x, y) : std::linalg::dot(x, y), 1.0f);
+        EXPECT_EQ(products, 2);
+        EXPECT_EQ(conversions, 0);
+
+        products = conversions = 0;
+        EXPECT_EQ(conjugate ? std::linalg::dotc(x, y, 0.0f)
+                            : std::linalg::dot(x, y, 0.0f), 1.0f);
+        EXPECT_EQ(products, 2);
+        EXPECT_EQ(conversions, 0);
+
+        products = conversions = 0;
+        EXPECT_EQ(conjugate ? std::linalg::dotc(x, y, 7.0)
+                            : std::linalg::dot(x, y, 7.0), 8.0 + 0x1p-24);
+        EXPECT_EQ(products, 0);
+        EXPECT_EQ(conversions, 4);
+    }
+}
+
+TEST(LinalgLevel1DotProducts, DefaultDotcUsesConjugatedValueType) {
+    conjugating_dot_value x_data[] = {2.0, 3.0};
+    conjugating_dot_value y_data[] = {4.0, 5.0};
+    int products = 0;
+    int conversions = 0;
+    using accessor = dot_proxy_accessor<conjugating_dot_value, long double>;
+    using proxy_span = std::mdspan<const conjugating_dot_value, std::extents<int, 2>,
+                                   std::layout_right, accessor>;
+    proxy_span x(x_data, proxy_span::mapping_type{}, accessor{&products, &conversions});
+    proxy_span y(y_data, proxy_span::mapping_type{}, accessor{&products, &conversions});
+    std::mdspan dense_x(x_data, std::extents<int, 2>{});
+    std::mdspan dense_y(y_data, std::extents<int, 2>{});
+
+    static_assert(std::semiregular<conjugating_dot_value>);
+    static_assert(std::semiregular<double> && std::semiregular<long double>);
+    static_assert(conjugating_dot_value{}.value == 0.0);
+    static_assert(proxy_span::rank() == 1 && decltype(dense_x)::rank() == 1);
+    static_assert(std::semiregular<accessor> && std::is_nothrow_swappable_v<accessor>);
+    static_assert(std::is_nothrow_move_constructible_v<accessor> &&
+                  std::is_nothrow_move_assignable_v<accessor>);
+    static_assert(std::common_reference_with<accessor::reference&&,
+                                             const conjugating_dot_value&>);
+    static_assert(std::is_same_v<decltype(conj(std::declval<proxy_span::value_type>())),
+                                 long double>);
+    static_assert(std::is_same_v<decltype(x[0] * y[0]), long double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y)), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y)), long double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(dense_x, dense_y)), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(dense_x, dense_y)), long double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, y, 7.0L)), long double>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y, 7.0)), double>);
+
+    EXPECT_EQ(std::linalg::dot(x, y), 23.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y), 23.0L);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+    products = 0;
+    EXPECT_EQ(std::linalg::dot(x, y, 7.0L), 30.0L);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+    products = 0;
+    EXPECT_EQ(std::linalg::dotc(x, y, 7.0), 30.0);
+    EXPECT_EQ(products, 2);
+    EXPECT_EQ(conversions, 0);
+    EXPECT_EQ(std::linalg::dot(dense_x, dense_y), 23.0);
+    EXPECT_EQ(std::linalg::dotc(dense_x, dense_y), 23.0L);
+}
+
+TEST(LinalgLevel1DotProducts, DefaultProxyEmptyInputUsesValueTypeZero) {
+    float data[] = {1.0f};
+    int products = 0;
+    int conversions = 0;
+    using accessor = dot_proxy_accessor<float, double>;
+    using proxy_span = std::mdspan<const float, std::extents<int, 0>,
+                                   std::layout_right, accessor>;
+    proxy_span x(data, proxy_span::mapping_type{}, accessor{&products, &conversions});
+
+    static_assert(std::is_same_v<decltype(std::linalg::dot(x, x)), float>);
+    static_assert(std::is_same_v<decltype(std::linalg::dotc(x, x)), float>);
+    EXPECT_EQ(std::linalg::dot(x, x), 0.0f);
+    EXPECT_EQ(std::linalg::dotc(x, x), 0.0f);
+    EXPECT_EQ(std::linalg::dot(x, x, 7.0), 7.0);
+    EXPECT_EQ(std::linalg::dotc(x, x, 7.0), 7.0);
+    EXPECT_EQ(products, 0);
     EXPECT_EQ(conversions, 0);
 }
 
