@@ -5,6 +5,7 @@
 #include <mdspan>
 #include <array>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <tuple>
@@ -378,6 +379,77 @@ TEST(SubmdspanIntegralConstantLike, OrdinaryIndicesRemainCompatible) {
     check_runtime_index(1, 1);
     check_runtime_index(2u, 2);
     check_runtime_index(ordinary_index{2}, 2);
+}
+
+TEST(SubmdspanRangeCanonicalization, StaticExtentWrappersKeepIndexType) {
+    auto check = []<class Index>() {
+        using source_extents_t = std::extents<Index, 8>;
+        constexpr Index direct_extent = Index(3);
+        using direct_wrapper = std::constant_wrapper<direct_extent, Index>;
+        static_assert(std::is_same_v<typename direct_wrapper::value_type, Index>);
+        static_assert(direct_wrapper::value == Index(3));
+
+        constexpr auto empty_slice = std::range_slice{std::cw<2>, std::cw<2>, std::cw<3>};
+        constexpr auto empty = std::canonical_slices(source_extents_t{}, empty_slice);
+        using empty_t = std::tuple_element_t<0, std::remove_cvref_t<decltype(empty)>>;
+        static_assert(std::is_same_v<empty_t, std::extent_slice<
+            std::constant_wrapper<Index(2)>, std::constant_wrapper<Index(0)>,
+            std::constant_wrapper<Index(1)>>>);
+        static_assert(std::get<0>(empty).extent == Index(0));
+        EXPECT_EQ(std::get<0>(empty).offset, Index(2));
+        EXPECT_EQ(std::get<0>(empty).extent, Index(0));
+        EXPECT_EQ(std::get<0>(empty).stride, Index(1));
+        constexpr auto empty_extents = std::subextents(source_extents_t{}, empty_slice);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(empty_extents)>,
+                                     std::extents<Index, 0>>);
+        EXPECT_EQ(empty_extents.extent(0), Index(0));
+
+        constexpr auto nonempty_slice = std::range_slice{std::cw<1>, std::cw<8>, std::cw<3>};
+        constexpr auto nonempty = std::canonical_slices(source_extents_t{}, nonempty_slice);
+        using nonempty_t = std::tuple_element_t<0, std::remove_cvref_t<decltype(nonempty)>>;
+        static_assert(std::is_same_v<nonempty_t, std::extent_slice<
+            std::constant_wrapper<Index(1)>, std::constant_wrapper<Index(3)>,
+            std::constant_wrapper<Index(3)>>>);
+        static_assert(std::get<0>(nonempty).extent == Index(3));
+        EXPECT_EQ(std::get<0>(nonempty).offset, Index(1));
+        EXPECT_EQ(std::get<0>(nonempty).extent, Index(3));
+        EXPECT_EQ(std::get<0>(nonempty).stride, Index(3));
+        constexpr auto nonempty_extents = std::subextents(source_extents_t{}, nonempty_slice);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(nonempty_extents)>,
+                                     std::extents<Index, 3>>);
+        EXPECT_EQ(nonempty_extents.extent(0), Index(3));
+    };
+    check.template operator()<int>();
+    check.template operator()<std::size_t>();
+    check.template operator()<std::int8_t>();
+    check.template operator()<std::uint8_t>();
+}
+
+TEST(SubmdspanRangeCanonicalization, DynamicExtentControlsKeepIndexType) {
+    auto check = []<class Index>() {
+        using source_extents_t = std::extents<Index, 8>;
+        auto check_bounds = [](Index first, Index last, Index expected_extent,
+                               Index expected_stride) {
+            const auto slice = std::range_slice{first, last, Index(3)};
+            const auto slices = std::canonical_slices(source_extents_t{}, slice);
+            using canonical_t = std::tuple_element_t<0,
+                std::remove_cvref_t<decltype(slices)>>;
+            static_assert(std::is_same_v<canonical_t, std::extent_slice<Index, Index, Index>>);
+            EXPECT_EQ(std::get<0>(slices).offset, first);
+            EXPECT_EQ(std::get<0>(slices).extent, expected_extent);
+            EXPECT_EQ(std::get<0>(slices).stride, expected_stride);
+            const auto extents = std::subextents(source_extents_t{}, slice);
+            static_assert(std::is_same_v<std::remove_cvref_t<decltype(extents)>,
+                                         std::dextents<Index, 1>>);
+            EXPECT_EQ(extents.extent(0), expected_extent);
+        };
+        check_bounds(Index(2), Index(2), Index(0), Index(1));
+        check_bounds(Index(1), Index(8), Index(3), Index(3));
+    };
+    check.template operator()<int>();
+    check.template operator()<std::size_t>();
+    check.template operator()<std::int8_t>();
+    check.template operator()<std::uint8_t>();
 }
 
 TEST(SubmdspanRangeCanonicalization, StaticEmptyRangesUseConstantUnitStride) {

@@ -920,7 +920,8 @@ constexpr auto canonical_range_slice(OffsetType offset, SpanType span, StrideTyp
         constexpr IndexType extent_v =
             span_v == IndexType(0) ? IndexType(0)
                                    : static_cast<IndexType>(IndexType(1) + (span_v - IndexType(1)) / stride_v);
-        return extent_slice{c_offset, constant_wrapper<extent_v>{}, c_stride};
+        // GCC may retain const when defaulting the wrapper's second argument.
+        return extent_slice{c_offset, constant_wrapper<extent_v, IndexType>{}, c_stride};
     } else {
         const IndexType span_v = static_cast<IndexType>(c_span);
         const IndexType stride_v = static_cast<IndexType>(c_stride);
