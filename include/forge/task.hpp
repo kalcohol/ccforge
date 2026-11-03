@@ -289,7 +289,7 @@ public:
         if (!__coro_) {
             throw std::logic_error{"task: empty"};
         }
-        auto env = std::execution::get_env(r);
+        decltype(auto) env = std::execution::get_env(r);
         auto token = std::execution::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
@@ -369,7 +369,7 @@ public:
         if (!__coro_) {
             throw std::logic_error{"task: empty"};
         }
-        auto env = std::execution::get_env(r);
+        decltype(auto) env = std::execution::get_env(r);
         auto token = std::execution::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {

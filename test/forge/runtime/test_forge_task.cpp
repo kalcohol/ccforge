@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 
@@ -141,6 +142,108 @@ struct error_category_receiver {
         return {};
     }
 };
+
+struct task_receiver_env {
+    std::inplace_stop_token token;
+    std::execution::run_loop::scheduler scheduler;
+    int* live;
+
+    task_receiver_env(std::inplace_stop_token token,
+                      std::execution::run_loop::scheduler scheduler,
+                      int* live) noexcept
+        : token(token), scheduler(scheduler), live(live) {
+        ++*live;
+    }
+
+    task_receiver_env(const task_receiver_env&) = delete;
+    task_receiver_env(task_receiver_env&&) = delete;
+
+    ~task_receiver_env() { --*live; }
+
+    auto query(std::execution::get_stop_token_t) const noexcept {
+        return token;
+    }
+
+    auto query(std::execution::get_start_scheduler_t) const noexcept {
+        return scheduler;
+    }
+};
+
+template<bool Borrowed>
+struct task_env_receiver : error_category_receiver {
+    const task_receiver_env* env;
+
+    decltype(auto) get_env() const noexcept {
+        if constexpr (Borrowed) {
+            return (*env);
+        } else {
+            return task_receiver_env{env->token, env->scheduler, env->live};
+        }
+    }
+};
+
+static_assert(!std::is_copy_constructible_v<task_receiver_env>);
+static_assert(!std::is_move_constructible_v<task_receiver_env>);
+static_assert(std::execution::receiver<task_env_receiver<true>>);
+static_assert(std::execution::receiver<task_env_receiver<false>>);
+static_assert(std::is_same_v<
+    std::execution::env_of_t<task_env_receiver<true>>, const task_receiver_env&>);
+static_assert(std::is_same_v<
+    std::execution::env_of_t<task_env_receiver<false>>, task_receiver_env>);
+
+template<class T>
+forge::task<T> observe_receiver_environment(
+    bool* stop_requested, forge::any_scheduler* scheduler) {
+    auto token = co_await std::execution::read_env(std::execution::get_stop_token);
+    *stop_requested = token.stop_requested();
+    *scheduler = co_await std::execution::read_env(
+        std::execution::get_start_scheduler);
+    if constexpr (std::is_void_v<T>) {
+        co_return;
+    } else {
+        co_return 42;
+    }
+}
+
+template<class T, bool Borrowed>
+void check_receiver_environment_capture() {
+    std::execution::run_loop loop;
+    std::inplace_stop_source source;
+    error_category_state state;
+    bool stop_requested = false;
+    forge::any_scheduler scheduler;
+    int live = 0;
+
+    {
+        // External storage remains stable across every receiver move.
+        const task_receiver_env env{source.get_token(), loop.get_scheduler(), &live};
+        auto op = std::execution::connect(
+            observe_receiver_environment<T>(&stop_requested, &scheduler),
+            task_env_receiver<Borrowed>{{&state}, &env});
+        EXPECT_EQ(live, 1);
+        EXPECT_FALSE(state.completed);
+
+        source.request_stop();
+        std::execution::start(op);
+
+        EXPECT_TRUE(state.completed);
+        EXPECT_FALSE(state.error);
+        EXPECT_TRUE(stop_requested);
+        EXPECT_EQ(live, 1);
+    }
+    EXPECT_EQ(live, 0);
+
+    // Query results remain usable after the receiver environment is destroyed.
+    error_category_state scheduled;
+    auto op = std::execution::connect(
+        std::execution::schedule(scheduler), error_category_receiver{&scheduled});
+    std::execution::start(op);
+    EXPECT_FALSE(scheduled.completed);
+    loop.finish();
+    loop.run();
+    EXPECT_TRUE(scheduled.completed);
+    EXPECT_FALSE(scheduled.error);
+}
 
 template<class T>
 forge::task<T> throwing_task() {
@@ -442,6 +545,22 @@ TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
     pool.wait();
 
     EXPECT_FALSE(result.has_value());
+}
+
+TEST(TaskTest, ValueTaskCapturesBorrowedNoncopyableEnvironment) {
+    check_receiver_environment_capture<int, true>();
+}
+
+TEST(TaskTest, VoidTaskCapturesBorrowedNoncopyableEnvironment) {
+    check_receiver_environment_capture<void, true>();
+}
+
+TEST(TaskTest, ValueTaskCapturesOwnedImmovableEnvironment) {
+    check_receiver_environment_capture<int, false>();
+}
+
+TEST(TaskTest, VoidTaskCapturesOwnedImmovableEnvironment) {
+    check_receiver_environment_capture<void, false>();
 }
 
 TEST(TaskTest, ConnectingMovedFromTaskThrows) {
