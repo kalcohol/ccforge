@@ -10,6 +10,9 @@ ctest --test-dir build/local --output-on-failure
 
 如果 host 没有可用 C++ 编译器，使用 podman 验证镜像和 `scripts/verify-native.sh`，不要猜测工具链配置。
 
+Unix 验证辅助脚本需要 GNU `realpath -m` 或 Python 3.6+ 来解析临时工作目录；
+macOS 自带的 `realpath` 不支持该选项时会使用 Python。此要求不影响 header-only 消费者。
+
 ## Self-hosted verification floor（自托管验证基线）
 
 Forge 不把验证流程绑定到 GitHub hosted CI。当前标准是本地或 self-hosted
