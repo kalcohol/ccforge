@@ -1378,6 +1378,148 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchIndependentLargeArgumentReferences
     }
 }
 
+TEST(SimdMathSpecialTest, BesselBoundaryMatchesIndependentIntegerOrderReferences) {
+    namespace sm = std::simd::detail::special_math;
+    struct reference {
+        int input_digits; // Zero denotes inputs exact in both float and double.
+        double argument;
+        std::array<double, 4> j;
+        std::array<double, 4> y;
+    };
+    // mpmath 1.4.1, 100/160 decimal digits, exact binary inputs; orders 0, 1, 2, 5.
+    // The distinct binary32/binary64 neighbors must not share rounded-input oracles.
+    constexpr reference cases[] = {
+        {0, 0x1.f8p+3,
+            {{-0.146892077079711158995, 0.132606274657639010365, 0.163730969099728811105, -0.00975420249211792936141}},
+            {{0.137196167807952288761, 0.151316740419478150209, -0.117981343627701095084, 0.20612962686981496349}}},
+        {0, 0x1p+4,
+            {{-0.174899073983629184828, 0.0903971756613041862387, 0.186198720941292208108, -0.0574732704370364325072}},
+            {{0.0958109970807124031421, 0.177975168939416859631, -0.0735641009632852956882, 0.196329583253086171981}}},
+        {0, 0x1.04p+4,
+            {{-0.191681540649035694879, 0.0432872373405320814014, 0.197009200629408874128, -0.101249915935205032596}},
+            {{0.0491564795203010652122, 0.19328284327848577848, -0.0253678218860258924761, 0.175746912269613879584}}},
+        {53, 0x1.fffffffffffffp+3,
+            {{-0.174899073983629024251, 0.090397175661304506958, 0.186198720941292088875, -0.0574732704370361044476}},
+            {{0.0958109970807127192895, 0.177975168939416709195, -0.0735641009632856281702, 0.196329583253086281096}}},
+        {53, 0x1.0000000000001p+4,
+            {{-0.174899073983629505984, 0.0903971756613035448001, 0.186198720941292446575, -0.0574732704370370886264}},
+            {{0.0958109970807117708473, 0.177975168939417160501, -0.0735641009632846307244, 0.196329583253085953751}}},
+        {24, 0x1.fffffep+3,
+            {{-0.174898987774082376857, 0.0903973478461147358362, 0.186198656928359484857, -0.0574730943113526981412}},
+            {{0.0958111668110214672623, 0.177975088174993413411, -0.0735642794631294728567, 0.196329641833612501589}}},
+        {24, 0x1.000002p+4,
+            {{-0.174899246402230175906, 0.090396831291468192462, 0.186198848966646106053, -0.0574736226882309064274}},
+            {{0.0958106576198632064285, 0.177975330467765604681, -0.0735637439634312775241, 0.196329466091560618409}}},
+    };
+    const auto check = [&]<class T, class V>() {
+        constexpr int digits = std::numeric_limits<T>::digits;
+        SCOPED_TRACE(digits);
+        constexpr std::array<T, 4> orders{{T{0}, T{1}, T{2}, T{5}}};
+        const V lane_orders = load_vec<V>(orders);
+        const auto tolerance = [](double expected) {
+            if constexpr (digits == 24) {
+                return 5e-7;
+            } else {
+                return std::max(1e-300, std::abs(expected) * 5e-12);
+            }
+        };
+        for (std::size_t index = 0; index < std::size(cases); ++index) {
+            const auto& value = cases[index];
+            if (value.input_digits != 0 && value.input_digits != digits) {
+                continue;
+            }
+            SCOPED_TRACE(index);
+            const T argument = static_cast<T>(value.argument);
+            const auto lane_j = std::simd::cyl_bessel_j(lane_orders, V(argument));
+            const auto lane_y = std::simd::cyl_neumann(lane_orders, V(argument));
+            std::array<T, 4> j{};
+            std::array<T, 4> y{};
+            for (std::simd::simd_size_type lane = 0; lane < V::size; ++lane) {
+                SCOPED_TRACE(lane);
+                const auto i = static_cast<std::size_t>(lane);
+                j[i] = sm::cyl_bessel_j_fallback(orders[i], argument);
+                y[i] = sm::cyl_bessel_y_fallback(orders[i], argument);
+                const T expected_j = static_cast<T>(value.j[i]);
+                const T expected_y = static_cast<T>(value.y[i]);
+                EXPECT_NEAR(j[i], expected_j, tolerance(value.j[i]));
+                EXPECT_NEAR(y[i], expected_y, tolerance(value.y[i]));
+                EXPECT_NEAR(lane_j[lane], expected_j, tolerance(value.j[i]));
+                EXPECT_NEAR(lane_y[lane], expected_y, tolerance(value.y[i]));
+            }
+            // DLMF 10.6.1 at order 1 supports, but cannot replace, the value oracles.
+            // Propagate value budgets with rounding headroom, without choosing a route.
+            const double multiplier = 2.0 / static_cast<double>(argument);
+            EXPECT_NEAR(static_cast<double>(j[0]) + j[2], multiplier * j[1],
+                2.0 * (tolerance(value.j[0]) + tolerance(value.j[2]) +
+                    multiplier * tolerance(value.j[1])));
+            EXPECT_NEAR(static_cast<double>(y[0]) + y[2], multiplier * y[1],
+                2.0 * (tolerance(value.y[0]) + tolerance(value.y[2]) +
+                    multiplier * tolerance(value.y[1])));
+        }
+    };
+    check.template operator()<float, float4>();
+    check.template operator()<double, double4>();
+}
+
+TEST(SimdMathSpecialTest, BesselIntegerSeedBudgetAvoidsBoundaryQuadrature) {
+    namespace sm = std::simd::detail::special_math;
+    // This is a work-path contract for the integer seed engine, not a timing
+    // threshold: accurate moderate-argument seeds must not require quadrature.
+    for (const long double x : {4.0L, 8.0L, 12.0L, 15.75L, 16.0L, 16.25L}) {
+        SCOPED_TRACE(x);
+        const auto seeds = sm::cyl_bessel_integer_base_series<double>(x);
+        EXPECT_TRUE(seeds[0].converged);
+        EXPECT_TRUE(seeds[1].converged);
+    }
+}
+
+TEST(SimdMathSpecialTest, BesselIntegerSeedsPreserveWorkingSubnormalLimits) {
+    namespace sm = std::simd::detail::special_math;
+    using limits = std::numeric_limits<long double>;
+    // Keep the oracle wider than double even on libraries whose numbers
+    // constants are initialized through unsuffixed double literals.
+    constexpr long double factor = 0.636619772367581343075535053490057448L;
+    for (const long double x : {limits::denorm_min(), limits::min()}) {
+        if (x == 0.0L) {
+            continue;
+        }
+        SCOPED_TRACE(x);
+        const auto seeds = sm::cyl_bessel_integer_base_series<long double>(x);
+        ASSERT_TRUE(seeds[0].converged);
+        ASSERT_TRUE(seeds[1].converged);
+        EXPECT_EQ(seeds[0].j, 1.0L);
+        EXPECT_EQ(seeds[1].j, x / 2.0L);
+        // At these inputs the next small-x terms are below representability.
+        const long double expected_y0 = factor *
+            (std::log(x) - std::log(2.0L) + sm::euler_gamma_v<long double>);
+        EXPECT_LE(std::abs(seeds[0].y - expected_y0),
+                  16.0L * limits::epsilon() * std::abs(expected_y0));
+        const long double expected_y1 = -factor / x;
+        if (std::isinf(expected_y1)) {
+            EXPECT_TRUE(std::isinf(seeds[1].y));
+            EXPECT_TRUE(std::signbit(seeds[1].y));
+        } else {
+            // EXPECT_NEAR converts its operands to double, which cannot
+            // represent this finite long-double value on extended hosts.
+            EXPECT_LE(std::abs(seeds[1].y - expected_y1),
+                      16.0L * limits::epsilon() * std::abs(expected_y1));
+        }
+        EXPECT_EQ(sm::cyl_bessel_j_fallback(0.0L, x), 1.0L);
+    }
+}
+
+TEST(SimdMathSpecialTest, BesselQuadratureRejectsUnrepresentableBounds) {
+    namespace sm = std::simd::detail::special_math;
+    using limits = std::numeric_limits<long double>;
+    for (const long double x : {0.0L, limits::denorm_min(), limits::max(), limits::infinity()}) {
+        SCOPED_TRACE(x);
+        const auto result = sm::cyl_bessel_reduced_integral_pair<long double>(0.0L, x);
+        EXPECT_FALSE(result.converged);
+        EXPECT_TRUE(std::isnan(result.j));
+        EXPECT_TRUE(std::isnan(result.y));
+    }
+}
+
 TEST(SimdMathSpecialTest, BesselFallbacksMatchHighOrderReferences) {
     struct reference {
         double order;

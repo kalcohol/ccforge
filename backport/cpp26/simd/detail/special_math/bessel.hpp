@@ -302,40 +302,178 @@ constexpr long double cyl_bessel_target_tolerance() noexcept {
     }
 }
 
-inline auto cyl_bessel_integer_base_series(long double x)
-    -> std::array<long double, 4> {
-    const auto j0 = cyl_bessel_power_series(0.0L, x, true);
-    const auto j1 = cyl_bessel_power_series(1.0L, x, true);
-    const long double z = x * x / 4.0L;
-    long double j0_term = 1.0L;
-    long double harmonic = 0.0L;
-    long double correction = 0.0L;
-    long double derivative = 0.0L;
+template<class T>
+auto cyl_bessel_integer_base_series(long double x)
+    -> std::array<cyl_bessel_hankel_result<long double>, 2> {
+    const cyl_bessel_hankel_result<long double> failure{
+        quiet_nan<long double>(), quiet_nan<long double>(),
+        infinity<long double>(), false};
+    if (!(x > 0.0L) || !std::isfinite(x)) {
+        return {failure, failure};
+    }
+    const long double epsilon = std::numeric_limits<long double>::epsilon();
+    const long double tiny = std::numeric_limits<long double>::denorm_min();
+    const long double target = cyl_bessel_target_tolerance<T>();
+    const long double log_x = std::log(x);
+    const long double logarithm = log_x - std::log(2.0L) + euler_gamma_v<long double>;
+    const long double factor = 2.0L / pi_v<long double>;
+
+    // The leading terms have O(x*x) remainders. Avoid x/2 in the logarithm,
+    // and avoid both subnormal expansion arithmetic and an intermediate 1/x.
+    if (x <= std::sqrt(epsilon)) {
+        const long double half_x = x / 2.0L;
+        const long double z = half_x * half_x;
+        const long double j0_error = 2.0L * z + tiny;
+        const long double j1_error = half_x * z + tiny;
+        const long double y0 = factor * logarithm;
+        const long double y0_error = factor * (
+            2.0L * z * (1.0L + std::abs(logarithm)) +
+            8.0L * epsilon * (1.0L + std::abs(log_x))) + tiny;
+        const long double scaled_y1_error = factor * (
+            4.0L * z * (1.0L + std::abs(logarithm)) + 8.0L * epsilon) + tiny;
+        return {{{1.0L, y0, std::max(j0_error, y0_error),
+                  std::isfinite(y0) && j0_error <= target &&
+                      y0_error <= target * std::max(1.0L, std::abs(y0))},
+                 {half_x, -factor / x, std::max(j1_error, scaled_y1_error / x),
+                  j1_error <= target && scaled_y1_error <= target * std::max(x, factor)}}};
+    }
+
+    const auto magnitude = [](twofold_expansion value) {
+        return std::abs(value.high) + std::abs(value.low);
+    };
+    const auto square = twofold_multiply({x / 2.0L, 0.0L}, {x / 2.0L, 0.0L});
+    const twofold_expansion minus_z{-square.high, -square.low};
+    const long double z = magnitude(square);
+    // Per-operation residual allowances for normalized twofold add/multiply
+    // and FMA-corrected division, including gradual-underflow losses.
+    const long double roundoff = 128.0L * epsilon * epsilon;
+    const long double underflow = 32.0L * tiny;
+    const long double z_error = roundoff * z + underflow;
+    if (!std::isfinite(z) || !std::isfinite(z_error)) {
+        return {failure, failure};
+    }
+    twofold_expansion term0{1.0L, 0.0L};
+    twofold_expansion term1{x / 2.0L, 0.0L};
+    auto j0 = term0;
+    auto j1 = term1;
+    twofold_expansion harmonic{0.0L, 0.0L};
+    twofold_expansion correction{0.0L, 0.0L};
+    twofold_expansion derivative{0.0L, 0.0L};
+    long double term0_error = 0.0L;
+    long double term1_error = 0.0L;
+    long double harmonic_error = 0.0L;
+    long double j0_error = 0.0L;
+    long double j1_error = 0.0L;
+    long double correction_error = 0.0L;
+    long double derivative_error = 0.0L;
+    long double tail0 = infinity<long double>();
+    long double tail1 = infinity<long double>();
+    long double correction_tail = infinity<long double>();
+    long double derivative_tail = infinity<long double>();
+    bool converged = false;
 
     for (unsigned k = 1u; k <= 4096u; ++k) {
         const long double order = static_cast<long double>(k);
-        j0_term *= -z / (order * order);
-        harmonic += 1.0L / order;
-        const long double component = -harmonic * j0_term;
-        correction += component;
-        derivative += component * 2.0L * order / x;
-        if (component == 0.0L ||
-            (correction != 0.0L &&
-             std::abs(component) <=
-                 8.0L * std::numeric_limits<long double>::epsilon() *
-                     std::abs(correction))) {
+        const long double denominator0 = order * order;
+        const long double denominator1 = order * (order + 1.0L);
+        const long double old0 = magnitude(term0);
+        const long double old1 = magnitude(term1);
+        term0 = twofold_divide(twofold_multiply(term0, minus_z), denominator0);
+        term1 = twofold_divide(twofold_multiply(term1, minus_z), denominator1);
+        // Multiplication and division each contribute a local residual.
+        term0_error = (z * term0_error + z_error * (old0 + term0_error)) /
+            denominator0 + 2.0L * roundoff * magnitude(term0) + underflow;
+        term1_error = (z * term1_error + z_error * (old1 + term1_error)) /
+            denominator1 + 2.0L * roundoff * magnitude(term1) + underflow;
+        const auto reciprocal = twofold_divide({1.0L, 0.0L}, order);
+        harmonic_error += roundoff * (magnitude(harmonic) + 2.0L / order) + underflow;
+        harmonic = twofold_add(harmonic, reciprocal);
+        auto component = twofold_multiply(harmonic, term0);
+        component.high = -component.high;
+        component.low = -component.low;
+        const long double component_error =
+            magnitude(harmonic) * term0_error +
+            harmonic_error * (magnitude(term0) + term0_error) +
+            roundoff * magnitude(harmonic) * magnitude(term0) + underflow;
+        const auto scaled_derivative = twofold_multiply(component, {2.0L * order, 0.0L});
+        const long double scaled_derivative_error =
+            2.0L * order * component_error +
+            roundoff * magnitude(scaled_derivative) + underflow;
+
+        j0_error += term0_error + roundoff * (magnitude(j0) + magnitude(term0)) + underflow;
+        j1_error += term1_error + roundoff * (magnitude(j1) + magnitude(term1)) + underflow;
+        correction_error += component_error +
+            roundoff * (magnitude(correction) + magnitude(component)) + underflow;
+        derivative_error += scaled_derivative_error +
+            roundoff * (magnitude(derivative) + magnitude(scaled_derivative)) + underflow;
+        j0 = twofold_add(j0, term0);
+        j1 = twofold_add(j1, term1);
+        correction = twofold_add(correction, component);
+        derivative = twofold_add(derivative, scaled_derivative);
+        if (!std::isfinite(magnitude(j0)) || !std::isfinite(magnitude(j1)) ||
+            !std::isfinite(magnitude(correction)) || !std::isfinite(magnitude(derivative)) ||
+            !std::isfinite(j0_error) || !std::isfinite(j1_error) ||
+            !std::isfinite(correction_error) || !std::isfinite(derivative_error)) {
+            return {failure, failure};
+        }
+
+        // DLMF 10.2.2 and 10.8.2: H_(k+1)/H_k <= 2. The decreasing
+        // ratio below bounds all four tails, including x times the derivative.
+        const long double rho =
+            (1.0L + 8.0L * epsilon) * 2.0L * (z + z_error) / denominator1;
+        if (rho < 1.0L) {
+            const long double tail_factor = rho / (1.0L - rho);
+            tail0 = (magnitude(term0) + term0_error) * tail_factor + underflow;
+            tail1 = (magnitude(term1) + term1_error) * tail_factor + underflow;
+            correction_tail = (magnitude(component) + component_error) * tail_factor + underflow;
+            derivative_tail = (magnitude(scaled_derivative) + scaled_derivative_error) *
+                tail_factor + underflow;
+            const long double truncation = epsilon * epsilon;
+            converged =
+                tail0 <= truncation * std::max(1.0L, magnitude(j0)) &&
+                tail1 <= truncation * std::max(1.0L, magnitude(j1)) &&
+                correction_tail <= truncation * std::max(1.0L, magnitude(correction)) &&
+                derivative_tail <= truncation * std::max(1.0L, magnitude(derivative));
+        }
+        if (converged) {
             break;
         }
     }
+    if (!converged) {
+        return {failure, failure};
+    }
 
-    const long double logarithm =
-        std::log(x / 2.0L) + euler_gamma_v<long double>;
-    const long double factor = 2.0L / pi_v<long double>;
-    const long double y0 =
-        factor * (logarithm * j0.value + correction);
-    const long double y1 =
-        factor * (-j0.value / x + logarithm * j1.value - derivative);
-    return {j0.value, y0, j1.value, y1};
+    const long double a = j0.high + j0.low;
+    const long double b = j1.high + j1.low;
+    const long double c = correction.high + correction.low;
+    const long double d = derivative.high + derivative.low;
+    j0_error += tail0 + 2.0L * epsilon * std::abs(a);
+    j1_error += tail1 + 2.0L * epsilon * std::abs(b);
+    correction_error += correction_tail + 2.0L * epsilon * std::abs(c);
+    derivative_error += derivative_tail + 2.0L * epsilon * std::abs(d);
+    const long double logarithm_error =
+        4.0L * epsilon * (1.0L + std::abs(log_x)) + tiny;
+    const long double y0 = factor * (logarithm * a + c);
+    const long double y0_error = factor * (
+        std::abs(logarithm) * j0_error + correction_error +
+        logarithm_error * (std::abs(a) + j0_error) +
+        8.0L * epsilon * (std::abs(logarithm * a) + std::abs(c))) + tiny;
+    const long double scaled_y1 = factor * (-a + x * logarithm * b - d);
+    const long double scaled_y1_error = factor * (
+        j0_error + x * std::abs(logarithm) * j1_error + derivative_error +
+        x * logarithm_error * (std::abs(b) + j1_error) +
+        8.0L * epsilon * (std::abs(a) + std::abs(x * logarithm * b) + std::abs(d))) +
+        2.0L * epsilon * std::abs(scaled_y1) + tiny;
+    const long double y1 = scaled_y1 / x;
+    return {{{a, y0, std::max(j0_error, y0_error),
+              std::isfinite(a) && std::isfinite(y0) &&
+                  j0_error <= target * std::max(1.0L, std::abs(a)) &&
+                  y0_error <= target * std::max(1.0L, std::abs(y0))},
+             {b, y1, std::max(j1_error, scaled_y1_error / x),
+              std::isfinite(b) && !std::isnan(y1) &&
+                  std::isfinite(scaled_y1) && std::isfinite(scaled_y1_error) &&
+                  j1_error <= target * std::max(1.0L, std::abs(b)) &&
+                  scaled_y1_error <= target * std::max(x, std::abs(scaled_y1))}}};
 }
 
 template<class T>
@@ -541,13 +679,8 @@ auto cyl_bessel_reduced_series_pair(long double nu, long double x)
     const long double nearest = std::round(nu);
     const long double delta = nu - nearest;
     if (delta == 0.0L) {
-        const auto values = cyl_bessel_integer_base_series(x);
-        const bool first_order = std::round(nu) == 1.0L;
-        return {
-            values[first_order ? 2u : 0u],
-            values[first_order ? 3u : 1u],
-            target,
-            true};
+        const auto values = cyl_bessel_integer_base_series<T>(x);
+        return values[nearest == 1.0L ? 1u : 0u];
     }
 
     const auto j0 = cyl_bessel_power_series(nu, x, true);
@@ -709,13 +842,27 @@ auto cyl_bessel_segmented_cached_simpson_integral(
 template<class T>
 auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
     -> cyl_bessel_hankel_result<long double> {
+    const cyl_bessel_hankel_result<long double> failure{
+        quiet_nan<long double>(), quiet_nan<long double>(),
+        infinity<long double>(), false};
+    if (!(x > 0.0L) || !std::isfinite(x) || !std::isfinite(nu)) {
+        return failure;
+    }
+    const long double upper = std::max(
+        4.0L,
+        std::asinh((std::abs(nu) + 64.0L) / x) + 1.0L);
+    const long double segment_count = std::max(
+        8.0L, std::ceil(2.0L * (x + std::abs(nu))));
+    // Reject invalid bounds before evaluating any integrand or recursing.
+    if (!std::isfinite(upper) || !std::isfinite(segment_count) ||
+        segment_count > static_cast<long double>(std::numeric_limits<unsigned>::max())) {
+        return failure;
+    }
     const long double target = cyl_bessel_target_tolerance<T>();
     const long double tolerance = std::max(
         64.0L * std::numeric_limits<long double>::epsilon(),
         target * 0.01L);
-    const unsigned segments = static_cast<unsigned>(std::max(
-        8.0L,
-        std::ceil(2.0L * (x + std::abs(nu)))));
+    const unsigned segments = static_cast<unsigned>(segment_count);
     const auto finite_j = cyl_bessel_segmented_cached_simpson_integral(
         [=](long double theta) {
             return std::cos(x * std::sin(theta) - nu * theta);
@@ -733,9 +880,6 @@ auto cyl_bessel_reduced_integral_pair(long double nu, long double x)
         segments,
         tolerance);
 
-    const long double upper = std::max(
-        4.0L,
-        std::asinh((std::abs(nu) + 64.0L) / x) + 1.0L);
     const auto tail_j = cyl_bessel_cached_simpson_integral(
         [=](long double t) {
             return std::exp(-x * std::sinh(t) - nu * t);
