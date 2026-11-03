@@ -42,6 +42,12 @@ function(forge_expect_submdspan_cxx_source_compiles result_var source_name shoul
     set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
+function(forge_expect_submdspan_positive_control result_var source_name failure_message)
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_SUBMDSPAN_POSITIVE_CONTROL=1)
+    forge_expect_submdspan_cxx_source_compiles(
+        ${result_var} "${source_name}" ON "${failure_message}")
+endfunction()
+
 # Runtime tests require <mdspan> to be available.
 # On toolchains without <mdspan> (e.g. GCC 13 libstdc++) the test binary
 # will simply not be buildable; CMake skips it gracefully via the guard below.
@@ -153,6 +159,15 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
             test_submdspan_accept_padded_conversions.cpp
             ON
             "padded conversion probes require compatible conversions to compile")
+        foreach(_forge_case IN ITEMS left_padded_padding right_padded_padding)
+            string(TOUPPER "${_forge_case}" _forge_case_upper)
+            forge_expect_submdspan_positive_control(
+                FORGE_SUBMDSPAN_ACCEPTS_CONTROL_${_forge_case_upper}
+                "test_submdspan_reject_${_forge_case}.cpp"
+                "padded conversion positive control must compile: ${_forge_case}")
+        endforeach()
+        unset(_forge_case)
+        unset(_forge_case_upper)
         foreach(_forge_padded_conversion IN ITEMS
                 left_unpadded_to_padded right_unpadded_to_padded
                 left_padded_to_unpadded right_padded_to_unpadded
@@ -293,6 +308,20 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
         unset(_forge_slice_member_expect)
         unset(_forge_slice_member_result)
         unset(_forge_slice_member_positive)
+
+        foreach(_forge_case IN ITEMS
+                dynamic_range_zero_constant_stride dynamic_empty_range_zero_constant_stride
+                negative_constant_index_unsigned negative_integral_constant_index_unsigned
+                overflow_constant_index_signed overflow_character_constant_index
+                overflow_custom_constant_index)
+            string(TOUPPER "${_forge_case}" _forge_case_upper)
+            forge_expect_submdspan_positive_control(
+                FORGE_SUBMDSPAN_ACCEPTS_CONTROL_${_forge_case_upper}
+                "test_submdspan_reject_${_forge_case}.cpp"
+                "submdspan positive control must compile: ${_forge_case}")
+        endforeach()
+        unset(_forge_case)
+        unset(_forge_case_upper)
 
         foreach(_forge_zero_stride_case IN ITEMS
                 dynamic_range dynamic_empty_range)

@@ -3,7 +3,11 @@
 
 void check_overflow_character_constant_index() {
     const std::dextents<std::uint8_t, 1> source(4);
+#ifdef FORGE_SUBMDSPAN_POSITIVE_CONTROL
+    (void)std::canonical_slices(source, std::cw<char16_t{0}>);
+#else
     (void)std::canonical_slices(source, std::cw<char16_t{256}>);
+#endif
 }
 
 int main() { return 0; }

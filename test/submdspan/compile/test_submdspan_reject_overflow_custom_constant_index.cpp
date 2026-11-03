@@ -2,7 +2,11 @@
 #include <cstdint>
 
 struct oversized_constant_index {
+#ifdef FORGE_SUBMDSPAN_POSITIVE_CONTROL
+    static constexpr unsigned value = 0;
+#else
     static constexpr unsigned value = 256;
+#endif
     constexpr operator unsigned() const noexcept { return value; }
 };
 
