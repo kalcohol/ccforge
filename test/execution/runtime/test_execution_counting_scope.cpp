@@ -1083,6 +1083,38 @@ TEST(CountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {
     expect_join_receiver_may_destroy_operation_on_completion<std::execution::counting_scope>();
 }
 
+TEST(CountingScopeTest, RequestStopHasVoidNoexceptSignatureAndIsIdempotent) {
+    static_assert(std::is_same_v<decltype(
+        std::declval<std::execution::counting_scope&>().request_stop()), void>);
+    static_assert(noexcept(
+        std::declval<std::execution::counting_scope&>().request_stop()));
+    static_assert(std::is_same_v<decltype(
+        std::declval<std::inplace_stop_source&>().request_stop()), bool>);
+
+    std::execution::counting_scope scope;
+    auto token = scope.get_token();
+    auto observe_stop = [](const auto& env) noexcept {
+        auto stop = std::execution::get_stop_token(env);
+        return std::pair{stop.stop_possible(), stop.stop_requested()};
+    };
+    auto initial = std::execution::sync_wait(
+        token.wrap(std::execution::read_env(observe_stop)));
+    ASSERT_TRUE(initial.has_value());
+    EXPECT_TRUE(std::get<0>(*initial).first);
+    EXPECT_FALSE(std::get<0>(*initial).second);
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        SCOPED_TRACE(attempt);
+        scope.request_stop();
+        auto result = std::execution::sync_wait(
+            token.wrap(std::execution::read_env(observe_stop)));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_TRUE(std::get<0>(*result).first);
+        EXPECT_TRUE(std::get<0>(*result).second);
+        EXPECT_EQ(scope.count(), 0u);
+    }
+}
+
 TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
@@ -1425,7 +1457,11 @@ TEST(CountingScopeTest, WrapStopRegistrationFailureDeliversDeclaredStopped) {
     EXPECT_EQ(live_at_completion, 0);
     EXPECT_EQ(live, 0);
     EXPECT_EQ(completions, 1);
-    EXPECT_TRUE(scope.request_stop());
+    scope.request_stop();
+    scope.request_stop();
+    EXPECT_TRUE(stopped);
+    EXPECT_EQ(live, 0);
+    EXPECT_EQ(completions, 1);
 }
 
 TEST(CountingScopeTest, WrapCompletionCanDestroyOperationAfterDeregistration) {
@@ -1570,7 +1606,8 @@ TEST(CountingScopeTest, WrapFusesScopeStopAfterStart) {
         FAIL() << "wrapped sender did not start";
     }
 
-    EXPECT_TRUE(scope.request_stop());
+    scope.request_stop();
+    scope.request_stop();
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
 
@@ -1688,7 +1725,8 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
     ASSERT_TRUE(wait_until_started(state));
     EXPECT_EQ(scope.count(), 1u);
 
-    EXPECT_TRUE(scope.request_stop());
+    scope.request_stop();
+    scope.request_stop();
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
 

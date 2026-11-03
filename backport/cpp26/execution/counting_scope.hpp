@@ -643,8 +643,8 @@ public:
             std::memory_order_release);
     }
 
-    bool request_stop() noexcept {
-        return __stop_source_.request_stop();
+    void request_stop() noexcept {
+        __stop_source_.request_stop();
     }
 
     [[nodiscard]] auto join() noexcept;
