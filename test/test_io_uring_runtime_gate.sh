@@ -43,21 +43,38 @@ chmod +x "${work}/forge-timeout"
 export FORGE_IO_URING_TIMEOUT_COMMAND="${work}/forge-timeout"
 export FORGE_TIMEOUT_MARKER="${work}/timeout.calls"
 
-FAKE_PODMAN_ARGS="${work}/podman.args" \
-PODMAN="${work}/podman" \
-FORGE_IO_URING_PYTHON="${work}/python" \
-FORGE_IO_URING_SECCOMP_BASE="${work}/seccomp.json" \
-FORGE_IO_URING_PROBE_BUILD_DIR="${work}/container-probe" \
-FORGE_IO_URING_PROBE_IMAGE=fake-image \
-FORGE_IO_URING_REQUIRE_RUNTIME=1 \
-    "${repo_root}/scripts/probe-io-uring-container.sh"
-mapfile -t podman_args < "${work}/podman.args"
-podman_arg_count="${#podman_args[@]}"
+run_container_probe() {
+    FAKE_PODMAN_ARGS="${work}/podman.args" \
+    PODMAN="${work}/podman" \
+    FORGE_IO_URING_PYTHON="${work}/python" \
+    FORGE_IO_URING_SECCOMP_BASE="${work}/seccomp.json" \
+    FORGE_IO_URING_PROBE_BUILD_DIR="${work}/container-probe" \
+    FORGE_IO_URING_PROBE_IMAGE=fake-image \
+    FORGE_IO_URING_REQUIRE_RUNTIME=1 \
+    FORGE_IO_URING_TEST_BUILD_DIRS="$1" \
+        "${repo_root}/scripts/probe-io-uring-container.sh"
+    podman_args=()
+    while IFS= read -r argument; do
+        podman_args+=("$argument")
+    done < "${work}/podman.args"
+    podman_arg_count="${#podman_args[@]}"
+}
+run_container_probe ""
 [[ "${podman_args[podman_arg_count - 6]}" == bash ]]
 [[ "${podman_args[podman_arg_count - 5]}" == \
     scripts/run-io-uring-runtime-gate.sh ]]
 [[ "${podman_args[podman_arg_count - 2]}" == 1 ]]
 [[ "${podman_args[podman_arg_count - 1]}" == scripts/probe-io-uring.sh ]]
+
+base_arg_count="$podman_arg_count"
+base_args=("${podman_args[@]}")
+run_container_probe 'build/first build/second'
+[[ "$podman_arg_count" -eq "$((base_arg_count + 2))" ]]
+for ((index = 0; index < base_arg_count; ++index)); do
+    [[ "${podman_args[index]}" == "${base_args[index]}" ]]
+done
+[[ "${podman_args[podman_arg_count - 2]}" == build/first ]]
+[[ "${podman_args[podman_arg_count - 1]}" == build/second ]]
 
 ordinary_output="$(
     "${runner}" c++ 5 0 "${work}/probe-skip" 2>&1

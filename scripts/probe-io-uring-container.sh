@@ -91,4 +91,4 @@ fi
         "${test_timeout_seconds}" \
         "${require_runtime}" \
         scripts/probe-io-uring.sh \
-        "${test_build_dir_args[@]}"
+        ${test_build_dir_args[@]+"${test_build_dir_args[@]}"}
