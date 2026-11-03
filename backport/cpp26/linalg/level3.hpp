@@ -275,20 +275,21 @@ void symmetric_matrix_rank_k_update(
     Triangle)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0), k = A.extent(1);
+    const idx_t n = C.extent(0);
+    const auto k = A.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
@@ -316,20 +317,21 @@ void symmetric_matrix_rank_k_update(
     Triangle)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0), k = A.extent(1);
+    const idx_t n = C.extent(0);
+    const auto k = A.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = E[i, j] + alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * A[j, l];
                 C[i, j] = E[i, j] + alpha * sum;
             }
@@ -366,20 +368,21 @@ void symmetric_matrix_rank_2k_update(
     Triangle)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0), k = A.extent(1);
+    const idx_t n = C.extent(0);
+    const auto k = A.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = sum;
             }
@@ -407,20 +410,21 @@ void symmetric_matrix_rank_2k_update(
     Triangle)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0), k = A.extent(1);
+    const idx_t n = C.extent(0);
+    const auto k = A.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = E[i, j] + sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = E[i, j] + sum;
             }
@@ -442,20 +446,21 @@ void symmetric_matrix_rank_2k_update(
     std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0), k = A.extent(1);
+    const idx_t n = C.extent(0);
+    const auto k = A.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
                 C[i, j] = alpha * sum;
             }
@@ -530,14 +535,14 @@ void hermitian_matrix_rank_k_update(
 {
     using idx_t = typename CExtents::index_type;
     const idx_t n = C.extent(0);
-    const idx_t k = A.extent(1);
+    const auto k = A.extent(1);
     const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
@@ -545,7 +550,7 @@ void hermitian_matrix_rank_k_update(
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
@@ -575,14 +580,14 @@ void hermitian_matrix_rank_k_update(
 {
     using idx_t = typename CExtents::index_type;
     const idx_t n = C.extent(0);
-    const idx_t k = A.extent(1);
+    const auto k = A.extent(1);
     const auto scaling = __detail::__real_if_needed(alpha);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = E[i, j] + scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
@@ -590,7 +595,7 @@ void hermitian_matrix_rank_k_update(
         } else {
             for (idx_t j = 0; j <= i; ++j) {
                 __detail::__accessor_value_t<CAccessor> sum{};
-                for (idx_t l = 0; l < k; ++l)
+                for (typename AExtents::index_type l = 0; l < k; ++l)
                     sum += A[i, l] * __detail::__conj_if_needed(A[j, l]);
                 auto value = E[i, j] + scaling * sum;
                 C[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;

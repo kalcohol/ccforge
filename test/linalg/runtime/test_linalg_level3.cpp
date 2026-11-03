@@ -328,3 +328,163 @@ TEST(LinalgLevel3RankUpdate, HermitianRankKUsesRealPartOfComplexAlpha) {
     expect_complex_near(lower[1, 0], {32.0, -10.0});
     expect_complex_near(upper[0, 1], std::conj(lower[1, 0] - complex{10.0, 0.0}));
 }
+
+TEST(LinalgLevel3RankUpdate, SymmetricRankKInnerExtentDoesNotNarrowToOutputIndex) {
+    for (int k : {0, 3, 255, 256, 257}) {
+        SCOPED_TRACE(k);
+        std::array<double, 2 * 257> a_data{};
+        std::mdspan A(a_data.data(), std::extents<int, 2, std::dynamic_extent>{k});
+        for (int l = 0; l < k; ++l) {
+            A[0, l] = 1.0;
+            A[1, l] = 2.0;
+        }
+        const std::array<double, 4> initial = {5.0, 7.0, 7.0, 13.0};
+        std::array<double, 4> e_data = initial;
+        std::array<double, 4> c_data;
+        std::mdspan E(e_data.data(), std::extents<int, 2, 2>{});
+        std::mdspan C(c_data.data(), std::extents<std::uint8_t, 2, 2>{});
+
+        auto check_triangle = [&](auto triangle, bool upper) {
+            SCOPED_TRACE(upper ? "upper" : "lower");
+            auto expect_result = [&](bool update, bool alias) {
+                for (int i = 0; i < 2; ++i) {
+                    for (int j = 0; j < 2; ++j) {
+                        const int offset = 2 * i + j;
+                        const bool selected = upper ? i <= j : j <= i;
+                        const double product = 2.0 * k * (i + 1) * (j + 1);
+                        const double expected = selected
+                            ? product + (update ? initial[offset] : 0.0)
+                            : (alias ? initial[offset] : -99.0);
+                        EXPECT_DOUBLE_EQ((C[i, j]), expected);
+                    }
+                }
+            };
+            c_data.fill(-99.0);
+            std::linalg::symmetric_matrix_rank_k_update(2.0, A, C, triangle);
+            expect_result(false, false);
+            for (bool alias : {false, true}) {
+                SCOPED_TRACE(alias ? "E==C" : "separate E/C");
+                c_data.fill(-99.0);
+                if (alias) c_data = initial;
+                if (alias)
+                    std::linalg::symmetric_matrix_rank_k_update(2.0, A, C, C, triangle);
+                else
+                    std::linalg::symmetric_matrix_rank_k_update(2.0, A, E, C, triangle);
+                expect_result(true, alias);
+                EXPECT_EQ(e_data, initial);
+            }
+        };
+        check_triangle(std::linalg::upper_triangle, true);
+        check_triangle(std::linalg::lower_triangle, false);
+    }
+}
+
+TEST(LinalgLevel3RankUpdate, SymmetricRank2KInnerExtentDoesNotNarrowToOutputIndex) {
+    for (int k : {0, 3, 255, 256, 257}) {
+        SCOPED_TRACE(k);
+        std::array<double, 2 * 257> a_data{};
+        std::array<double, 2 * 257> b_data{};
+        std::mdspan A(a_data.data(), std::extents<int, 2, std::dynamic_extent>{k});
+        std::mdspan B(b_data.data(), std::extents<int, 2, std::dynamic_extent>{k});
+        for (int l = 0; l < k; ++l) {
+            A[0, l] = 1.0;
+            A[1, l] = 2.0;
+            B[0, l] = 3.0;
+            B[1, l] = 4.0;
+        }
+        const std::array<double, 4> initial = {5.0, 7.0, 7.0, 13.0};
+        std::array<double, 4> e_data = initial;
+        std::array<double, 4> c_data;
+        std::mdspan E(e_data.data(), std::extents<int, 2, 2>{});
+        std::mdspan C(c_data.data(), std::extents<std::uint8_t, 2, 2>{});
+
+        auto check_triangle = [&](auto triangle, bool upper) {
+            SCOPED_TRACE(upper ? "upper" : "lower");
+            auto expect_result = [&](double scale, bool update, bool alias) {
+                for (int i = 0; i < 2; ++i) {
+                    for (int j = 0; j < 2; ++j) {
+                        const int offset = 2 * i + j;
+                        const bool selected = upper ? i <= j : j <= i;
+                        const double product = scale * k *
+                            ((i + 1) * (j + 3) + (i + 3) * (j + 1));
+                        const double expected = selected
+                            ? product + (update ? initial[offset] : 0.0)
+                            : (alias ? initial[offset] : -99.0);
+                        EXPECT_DOUBLE_EQ((C[i, j]), expected);
+                    }
+                }
+            };
+            c_data.fill(-99.0);
+            std::linalg::symmetric_matrix_rank_2k_update(A, B, C, triangle);
+            expect_result(1.0, false, false);
+            c_data.fill(-99.0);
+            std::linalg::symmetric_matrix_rank_2k_update(2.0, triangle, A, B, C);
+            expect_result(2.0, false, false);
+            for (bool alias : {false, true}) {
+                SCOPED_TRACE(alias ? "E==C" : "separate E/C");
+                c_data.fill(-99.0);
+                if (alias) c_data = initial;
+                if (alias)
+                    std::linalg::symmetric_matrix_rank_2k_update(A, B, C, C, triangle);
+                else
+                    std::linalg::symmetric_matrix_rank_2k_update(A, B, E, C, triangle);
+                expect_result(1.0, true, alias);
+                EXPECT_EQ(e_data, initial);
+            }
+        };
+        check_triangle(std::linalg::upper_triangle, true);
+        check_triangle(std::linalg::lower_triangle, false);
+    }
+}
+
+TEST(LinalgLevel3RankUpdate, HermitianRankKInnerExtentDoesNotNarrowToOutputIndex) {
+    for (int k : {0, 3, 255, 256, 257}) {
+        SCOPED_TRACE(k);
+        std::array<complex, 2 * 257> a_data{};
+        std::mdspan A(a_data.data(), std::extents<int, 2, std::dynamic_extent>{k});
+        for (int l = 0; l < k; ++l) {
+            A[0, l] = {1.0, 1.0};
+            A[1, l] = {2.0, -1.0};
+        }
+        const std::array<complex, 4> initial = {
+            complex{5.0, 0.0}, complex{7.0, 2.0}, complex{7.0, -2.0}, complex{13.0, 0.0}};
+        const std::array<complex, 4> products = {
+            complex{2.0, 0.0}, complex{1.0, 3.0}, complex{1.0, -3.0}, complex{5.0, 0.0}};
+        std::array<complex, 4> e_data = initial;
+        std::array<complex, 4> c_data;
+        std::mdspan E(e_data.data(), std::extents<int, 2, 2>{});
+        std::mdspan C(c_data.data(), std::extents<std::uint8_t, 2, 2>{});
+
+        auto check_triangle = [&](auto triangle, bool upper) {
+            SCOPED_TRACE(upper ? "upper" : "lower");
+            auto expect_result = [&](bool update, bool alias) {
+                for (int i = 0; i < 2; ++i) {
+                    for (int j = 0; j < 2; ++j) {
+                        const int offset = 2 * i + j;
+                        const bool selected = upper ? i <= j : j <= i;
+                        const complex expected = selected
+                            ? 2.0 * k * products[offset] + (update ? initial[offset] : complex{})
+                            : (alias ? initial[offset] : complex{-99.0, -99.0});
+                        expect_complex_near(C[i, j], expected);
+                    }
+                }
+            };
+            c_data.fill(complex{-99.0, -99.0});
+            std::linalg::hermitian_matrix_rank_k_update(2.0, A, C, triangle);
+            expect_result(false, false);
+            for (bool alias : {false, true}) {
+                SCOPED_TRACE(alias ? "E==C" : "separate E/C");
+                c_data.fill(complex{-99.0, -99.0});
+                if (alias) c_data = initial;
+                if (alias)
+                    std::linalg::hermitian_matrix_rank_k_update(2.0, A, C, C, triangle);
+                else
+                    std::linalg::hermitian_matrix_rank_k_update(2.0, A, E, C, triangle);
+                expect_result(true, alias);
+                EXPECT_EQ(e_data, initial);
+            }
+        };
+        check_triangle(std::linalg::upper_triangle, true);
+        check_triangle(std::linalg::lower_triangle, false);
+    }
+}
