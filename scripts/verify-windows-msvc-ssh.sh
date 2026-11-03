@@ -24,9 +24,16 @@ FORGE_WINDOWS_CLEANUP_REMOTE_UPLOAD=""
 FORGE_WINDOWS_SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=15)
 
 forge_ps_literal() {
-    local value="$1"
-    value="${value//\'/\'\'}"
-    printf "'%s'" "${value}"
+    local value="$1" index character
+    printf "'"
+    for ((index = 0; index < ${#value}; ++index)); do
+        character="${value:index:1}"
+        printf '%s' "$character"
+        if [[ "$character" == "'" ]]; then
+            printf "'"
+        fi
+    done
+    printf "'"
 }
 
 forge_encode_powershell() {

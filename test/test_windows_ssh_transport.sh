@@ -10,6 +10,18 @@ if [[ "$(forge_ps_literal "a'b")" != "'a''b'" ]]; then
     exit 1
 fi
 
+expect_ps_literal() {
+    if [[ "$(forge_ps_literal "$1")" != "$2" ]]; then
+        printf 'PowerShell literal changed a boundary payload\n' >&2
+        exit 1
+    fi
+}
+expect_ps_literal '' "''"
+expect_ps_literal "'" "''''"
+expect_ps_literal "a''b" "'a''''b'"
+expect_ps_literal $'first\nsecond\n\n' $'\'first\nsecond\n\n\''
+expect_ps_literal "C:\\path\\" "'C:\\path\\'"
+
 forge_validate_ssh_host 'user@example-host'
 for invalid_host in '-oProxyCommand=unexpected' $'example-host\nnext'; do
     if forge_validate_ssh_host "${invalid_host}" >/dev/null 2>&1; then
