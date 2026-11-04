@@ -1083,19 +1083,21 @@ class hive {
             : (by_difference < without_sentinel ? by_difference
                                                 : without_sentinel);
     if constexpr (std::is_empty_v<allocator_type> &&
-                  std::is_trivially_default_constructible_v<allocator_type> &&
-                  std::is_nothrow_default_constructible_v<allocator_type>) {
-      // [hive.overview]/5.3: fold the allocator's upper bound in only for
-      // stateless, nothrow-default-constructible allocator types, whose default
-      // instance is side-effect free and safe to constant evaluate.  For other
-      // allocator types (stateful, throwing, non-literal, or not default
-      // constructible) we never create an allocator object in this static
-      // query: they keep the structural bound and are guarded at instance level
-      // by max_size() and the reserve/insert length_error paths.
-      const size_type allocator_max =
+                  requires {
+                    typename integral_constant<
+                        typename allocator_traits_type::size_type,
+                        allocator_traits_type::max_size(allocator_type{})>;
+                  }) {
+      // Admit a nontrivial constexpr constructor, but require the entire
+      // allocator query (including temporary destruction) to constant evaluate.
+      // Only its integral result is materialized here; no allocator is created
+      // at runtime by this noexcept static query. Stateful and runtime-only
+      // allocators retain the structural cap and instance-level growth checks.
+      constexpr auto allocator_max =
           allocator_traits_type::max_size(allocator_type{});
-      const size_type maximum =
-          by_structure < allocator_max ? by_structure : allocator_max;
+      using common_type = common_type_t<decltype(allocator_max), size_type>;
+      constexpr size_type maximum = static_cast<size_type>(
+          std::min<common_type>(by_structure, allocator_max));
       return hive_limits(maximum < 1 ? maximum : 1, maximum);
     } else {
       return hive_limits(1, by_structure);
