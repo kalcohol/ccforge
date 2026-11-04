@@ -83,6 +83,34 @@ TEST(HiveGrowth, GeometricInsertionReducesDeterministicAllocationCount) {
     EXPECT_TRUE(state->clean());
 }
 
+TEST(HiveGrowth, DefaultSkipfieldBlocksMeetRequestedStorageAndAllocationBudgets) {
+    if (sizeof(int) != 4 || sizeof(void*) != 8) {
+        GTEST_SKIP() << "The requested-byte budget targets four-byte int on 64-bit ABIs";
+    }
+    constexpr std::size_t count = 1000000;
+    auto state = std::make_shared<allocation_state>();
+    {
+        int_hive hive(stateful_allocator<int>(state, 1));
+        EXPECT_EQ(hive.block_capacity_limits().min, 8u);
+        EXPECT_EQ(hive.block_capacity_limits().max, 4096u);
+        for (std::size_t value = 0; value < count; ++value)
+            hive.insert(static_cast<int>(value));
+        EXPECT_EQ(hive.size(), count);
+        EXPECT_LE(state->allocation_attempts, 7825u);
+        std::size_t requested_bytes = 0;
+        for (const auto& [pointer, record] : state->allocations) {
+            (void)pointer;
+            requested_bytes += record.bytes;
+        }
+        EXPECT_LE(requested_bytes, 8 * count);
+        long long sum = 0;
+        for (int value : hive) sum += value;
+        EXPECT_EQ(sum, 499999500000LL);
+        EXPECT_TRUE(hive.__test_invariants());
+    }
+    EXPECT_TRUE(state->clean());
+}
+
 TEST(HiveGrowth, InsertionClampsToFinalAggregateHeadroom) {
     auto state = std::make_shared<allocation_state>();
     state->artificial_int_max_size = 11;
