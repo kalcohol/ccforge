@@ -73,8 +73,9 @@ TEST(HiveGrowth, GeometricInsertionReducesDeterministicAllocationCount) {
             EXPECT_LE(increment, 64u);
         }
         EXPECT_EQ(hive.capacity(), 1024u);
-        // One control plus two allocations per block; minimum-only used 513.
-        EXPECT_EQ(state->allocation_attempts, 41u);
+        // Scheme S: one control plus header, payload and skipfield per block.
+        // A minimum-only allocation policy would require 769 allocations.
+        EXPECT_EQ(state->allocation_attempts, 61u);
         int sum = 0;
         for (const int value : hive) sum += value;
         EXPECT_EQ(sum, 1023 * 1024 / 2);
@@ -111,7 +112,7 @@ TEST(HiveGrowth, ReservePacksLegalMinimumTailsWithinHeadroom) {
         const auto end = hive.end();
         ASSERT_NO_THROW(hive.reserve(11));
         EXPECT_EQ(hive.capacity(), 16u); // Two legal blocks must be 8 + 8.
-        EXPECT_EQ(state->allocation_attempts, 5u);
+        EXPECT_EQ(state->allocation_attempts, 7u);
         EXPECT_EQ(hive.end(), end);
         const auto attempts = state->allocation_attempts;
         for (int value = 0; value != 16; ++value) hive.emplace(value);
@@ -244,7 +245,7 @@ TEST(HiveGrowth, ShrinkUsesReservePlanAndNeverIncreasesCapacity) {
 }
 
 TEST(HiveGrowth, ReserveAllocationFailuresPreserveElementsEndAndLegalPublishedBlocks) {
-    for (long long failure = 0; failure != 4; ++failure) {
+    for (long long failure = 0; failure != 6; ++failure) {
         SCOPED_TRACE(failure);
         auto state = std::make_shared<allocation_state>();
         state->artificial_int_max_size = 24;
@@ -260,7 +261,7 @@ TEST(HiveGrowth, ReserveAllocationFailuresPreserveElementsEndAndLegalPublishedBl
             EXPECT_EQ(std::addressof(*first), address);
             EXPECT_EQ(*first, 42);
             EXPECT_EQ(hive.end(), end);
-            EXPECT_EQ(hive.capacity(), failure < 2 ? 8u : 16u);
+            EXPECT_EQ(hive.capacity(), failure < 3 ? 8u : 16u);
             state->fail_after = -1;
             ASSERT_NO_THROW(hive.reserve(24));
             EXPECT_EQ(hive.capacity(), 24u);
@@ -271,7 +272,7 @@ TEST(HiveGrowth, ReserveAllocationFailuresPreserveElementsEndAndLegalPublishedBl
 }
 
 TEST(HiveGrowth, ShrinkAllocationFailuresOccurBeforeValuesOrIteratorsChange) {
-    for (long long failure = 0; failure != 5; ++failure) {
+    for (long long failure = 0; failure != 7; ++failure) {
         SCOPED_TRACE(failure);
         auto state = std::make_shared<allocation_state>();
         {
@@ -323,7 +324,7 @@ TEST(HiveGrowth, NewGeometricBlockIsNotPublishedBeforeElementConstruction) {
         const auto address = std::addressof(*first);
         const auto end = hive.end();
         const auto allocations = state->allocations.size();
-        for (long long failure = 0; failure != 2; ++failure) {
+        for (long long failure = 0; failure != 3; ++failure) {
             state->fail_after = failure;
             EXPECT_THROW(hive.emplace(8), std::bad_alloc);
             EXPECT_EQ(hive.capacity(), 8u);
