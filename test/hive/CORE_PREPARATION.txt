@@ -1,5 +1,8 @@
 HIVE CORE PREPARATION RECORD -- 2026-11-04
 
+Historical linked-slot baseline record. For the subsequent skipfield branch,
+its actual validation and unresolved gates, see SKIPFIELD_PREPARATION.txt.
+
 Status
 ------
 The bounded core-preparation work is complete on work/hive-core-20261104.

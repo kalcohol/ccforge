@@ -10,12 +10,19 @@ size and no leaks, with element order and individual values unspecified after
 an exception. This is not a claim that the standard has settled value retention;
 LWG 4584 concerns construction preconditions, not exception guarantees. Keep
 the current implementation and its stronger comparator-exception observations
-until a separately reviewed change. Portable get_iterator lookup, general
-allocator policy, native handoff and final platform/consumer admission remain
+until a separately reviewed change. General allocator policy, native handoff
+and final platform/consumer admission remain
 separate gates, as does existing wide-counter exhaustion. See
 CORE_PREPARATION.txt for completed units, validation and measured limits.
-Existing traversal-order behavior is retained. No global
-logical-chain experiment or shared <version> wrapper is adopted here.
+Iterator comparisons remain consistent with traversal. The skipfield branch
+now traverses reused slots in physical address order within each active block.
+No global logical-chain experiment or shared <version> wrapper is adopted.
+
+Current R0-R3 disposition is in SKIPFIELD_PREPARATION.txt: implementation and
+functional validation are ready for co-review, requested-byte/allocation
+budgets pass, timing budgets are inconclusive because of measured noise.
+get_iterator now has an explicit flat-address support boundary. None of this
+is R5 mainline/build/install admission; the original core record is historical.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.
