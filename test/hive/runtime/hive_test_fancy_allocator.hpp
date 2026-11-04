@@ -45,6 +45,12 @@ public:
         requires std::convertible_to<U*, T*>
     constexpr fancy_ptr(const fancy_ptr<U>& other) noexcept : value_(other.value_) {}
 
+    template<class U>
+        requires(std::is_void_v<U> && !std::is_void_v<T> &&
+                 requires(U* value) { static_cast<T*>(value); })
+    constexpr explicit fancy_ptr(const fancy_ptr<U>& other) noexcept
+        : value_(static_cast<T*>(other.value_)) {}
+
     constexpr T* get() const noexcept { return value_; }
     constexpr T* operator->() const noexcept { return value_; }
     constexpr reference operator*() const { return *value_; }
@@ -244,6 +250,28 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
               std::allocator_traits<fancy_allocator<int>>::rebind_alloc<double>,
               fancy_allocator<double>>);
+
+template<class A>
+concept allocator_void_roundtrip = requires(
+    typename std::allocator_traits<A>::pointer p,
+    typename std::allocator_traits<A>::const_pointer cp,
+    typename std::allocator_traits<A>::void_pointer v,
+    typename std::allocator_traits<A>::const_void_pointer cv) {
+    { static_cast<typename std::allocator_traits<A>::void_pointer>(p) };
+    { static_cast<typename std::allocator_traits<A>::const_void_pointer>(cp) };
+    { static_cast<typename std::allocator_traits<A>::pointer>(v) };
+    { static_cast<typename std::allocator_traits<A>::const_pointer>(cv) };
+};
+
+static_assert(allocator_void_roundtrip<std::allocator<int>>);
+static_assert(allocator_void_roundtrip<fancy_allocator<int>>);
+static_assert(std::is_convertible_v<fancy_ptr<int>, fancy_ptr<void>>);
+static_assert(std::is_convertible_v<fancy_ptr<const int>, fancy_ptr<const void>>);
+static_assert(std::is_constructible_v<fancy_ptr<const int>, fancy_ptr<void>>);
+static_assert(!std::is_convertible_v<fancy_ptr<void>, fancy_ptr<int>>);
+static_assert(!std::is_convertible_v<fancy_ptr<const void>, fancy_ptr<const int>>);
+static_assert(!std::is_constructible_v<fancy_ptr<int>, fancy_ptr<const void>>);
+static_assert(!std::is_constructible_v<fancy_ptr<void>, fancy_ptr<const int>>);
 
 } // namespace forge_hive_fancy_allocator_test
 
