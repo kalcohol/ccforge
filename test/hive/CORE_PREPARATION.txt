@@ -77,8 +77,11 @@ and allocation-count improvements are the deterministic acceptance evidence.
 
 Remaining Admission Gates
 -------------------------
-- S1: sort exception-contract disposition; limited characterization does not
-  settle the disputed value-retention interpretation.
+- S1: decided as project policy on 2026-11-05, not a standards resolution.
+  Promise valid structure, unchanged size and no leaks after sort throws;
+  element order and individual values are unspecified. Current stronger
+  comparator-exception observations remain regression controls and cannot be
+  removed without separate review. LWG 4584 does not resolve this question.
 - G1: get_iterator address-model portability and lookup work contract.
 - Existing wide order-counter/epoch exhaustion policy; compression does not
   shorten the counters, but does not resolve their eventual exhaustion.
@@ -88,3 +91,14 @@ Remaining Admission Gates
 
 These are separate follow-up units. Keep the supplied package and earlier
 evidence unchanged; do not apply the rejected S1/global-chain experiment.
+
+Follow-up Work
+--------------
+The linked-slot implementation at 899b01d remains the immutable baseline for
+the independent skipfield preparation branch. Its earlier half-erased cost
+case did not measure random erasure followed by reinsertion. That workload
+must be measured before drawing conclusions about churned traversal.
+The next bounded work covers R0/R1 controls, R2 address-order skipfield layout
+and R3 checked lookup on supported flat-address platforms. R4 sort acceleration
+and R5 public integration are excluded until independent co-review. No claim
+above constitutes approval of that forthcoming representation.

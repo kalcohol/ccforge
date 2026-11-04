@@ -1542,10 +1542,10 @@ class hive {
     }
 
     // In-place heap sort over element values: values are never moved out into a
-    // temporary buffer, so on a comparator exception the container simply holds
-    // a permutation of the original multiset and remains fully destructible.
-    // ([hive.operations]/14: order unspecified; [container.reqmts]/67: values
-    // may not be changed by the operation.)
+    // temporary buffer. With nonthrowing element operations, a comparator
+    // exception leaves a permutation of the original multiset. This observed
+    // implementation property is regression-tested, not a public guarantee
+    // or a resolution of the standard's exception wording.
     // One linear pass builds a position table, so heap accesses afterwards are
     // O(1) rather than re-walking bidirectional iterators per index (which would
     // degenerate the sort into quadratic iterator steps).
