@@ -7,7 +7,9 @@ configuration, native probes, or mainline feature table.
 The supplied core and tests are not a claim of complete conformance. Sort
 exception-contract interpretation, portable get_iterator lookup, general
 allocator policy, native handoff and final platform/consumer admission remain
-separate gates. Existing traversal-order behavior is retained. No global
+separate gates, as does existing wide-counter exhaustion. See
+CORE_PREPARATION.txt for completed units, validation and measured limits.
+Existing traversal-order behavior is retained. No global
 logical-chain experiment or shared <version> wrapper is adopted here.
 
 The opt-in standalone harness records the supported validation surface. A
