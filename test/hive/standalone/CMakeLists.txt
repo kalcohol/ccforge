@@ -100,6 +100,7 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_contract_controls.cpp"
     "${hive_runtime_dir}/test_hive_growth.cpp"
     "${hive_runtime_dir}/test_hive_layout.cpp"
+    "${hive_runtime_dir}/test_hive_skipfield.cpp"
     "${hive_runtime_dir}/test_hive_core_model.cpp"
     "${hive_runtime_dir}/test_hive_exceptions.cpp"
     "${hive_runtime_dir}/test_hive_fancy_allocator.cpp"
@@ -107,6 +108,7 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_semantics.cpp"
     "${hive_runtime_dir}/test_hive_splice_edges.cpp")
 target_include_directories(hive_runtime PRIVATE "${hive_include}")
+target_compile_definitions(hive_runtime PRIVATE FORGE_HIVE_TEST_HOOKS=1)
 target_link_libraries(hive_runtime PRIVATE GTest::gtest_main)
 add_test(NAME hive_runtime COMMAND hive_runtime)
 
@@ -125,3 +127,4 @@ if(FORGE_HIVE_BUILD_COST_PROBE)
     add_executable(hive_cost_probe "${CMAKE_CURRENT_LIST_DIR}/../benchmark/measure_core.cpp")
     target_include_directories(hive_cost_probe PRIVATE "${hive_include}")
 endif()
+
