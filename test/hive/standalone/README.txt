@@ -51,3 +51,14 @@ shapes, allocator failures, retained handles, capacity and traversal. Test-only
 invariant hooks additionally check the skipfield and actual block lists.
 FORGE_HIVE_TEST_HOOKS is defined uniformly for the runtime and stress targets;
 do not mix differing definitions in translation units of the same executable.
+
+get_iterator support assumes flat, order-preserving std::uintptr_t addresses,
+contiguous within one allocation, on the tested Linux, macOS and Windows ABIs.
+Integer address arithmetic proposes one slot per active block; a live-element
+pointer equality check verifies the result. Reserved blocks are not searched,
+and there is no per-slot fallback scan. A pointer to a live element of this
+container is still required; end() on invalid input is diagnostic behavior,
+not an added API guarantee. Non-flat address platforms are not supported.
+Test-only lookup counters record visited active blocks and candidate slots
+for the last call. They are absent without FORGE_HIVE_TEST_HOOKS and are not
+intended for concurrent use.
