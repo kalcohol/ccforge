@@ -1,0 +1,25 @@
+HIVE CORE PREPARATION BRANCH
+
+This branch selectively stages a supplied OpenCode hive candidate for isolated
+repair and measurement. It does not enable hive in the root build, install
+configuration, native probes, or mainline feature table.
+
+The supplied core and tests are not a claim of complete conformance. Sort
+exception-contract interpretation, portable get_iterator lookup, general
+allocator policy, native handoff and final platform/consumer admission remain
+separate gates. Existing traversal-order behavior is retained. No global
+logical-chain experiment or shared <version> wrapper is adopted here.
+
+The opt-in standalone harness records the supported validation surface. A
+<version>-only backport feature-macro test is deliberately deferred, not passed.
+Ordinary downstream header-only consumers gain no GoogleTest dependency.
+
+Provenance: original package /tmp/opencode/hive-package, captured 2026-11-03.
+Original hive.hpp SHA256:
+67a5e8fda087b3619dfb834308893624f5e00ea18675b32887ee1c73a6ba8217
+Original wrapper SHA256:
+4e38bbb8857dd77579512ebf19008eac85390d21aea44dd4f15bab7c6b600e96
+
+Supplied assets retain OpenCode attribution. Subsequent fixes are independent
+commits with their own regression evidence. Do not replace current repository
+files with the supplied snapshot or merge this branch as a completed feature.
