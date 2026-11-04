@@ -145,6 +145,34 @@ class hive {
 
   static constexpr size_type npos = numeric_limits<size_type>::max();
 
+  static constexpr size_type structural_max_size() noexcept {
+    constexpr size_type by_slots =
+        numeric_limits<size_type>::max() / sizeof(slot_type);
+    constexpr size_type by_difference =
+        static_cast<size_type>(numeric_limits<difference_type>::max());
+    return std::min({by_slots, by_difference, npos - 1});
+  }
+
+  static constexpr size_type static_max_size() noexcept {
+    constexpr size_type by_structure = structural_max_size();
+    if constexpr (std::is_empty_v<allocator_type> &&
+                  requires {
+                    typename integral_constant<
+                        typename allocator_traits_type::size_type,
+                        allocator_traits_type::max_size(allocator_type{})>;
+                  }) {
+      // The full query, including destruction, must constant evaluate. Keep
+      // this existing type-level clamp separate from the per-block index cap.
+      constexpr auto allocator_max =
+          allocator_traits_type::max_size(allocator_type{});
+      using common_type = common_type_t<decltype(allocator_max), size_type>;
+      return static_cast<size_type>(
+          std::min<common_type>(by_structure, allocator_max));
+    } else {
+      return by_structure;
+    }
+  }
+
   struct block_type {
     block_type(control_type* control,
                block_allocation_pointer block_allocation,
@@ -953,7 +981,7 @@ class hive {
     const auto allocator_max = allocator_traits_type::max_size(alloc_);
     using common_type = common_type_t<decltype(allocator_max), size_type>;
     return static_cast<size_type>(std::min<common_type>(
-        allocator_max, block_capacity_hard_limits().max));
+        allocator_max, static_max_size()));
   }
 
   size_type capacity() const noexcept {
@@ -1072,36 +1100,8 @@ class hive {
   }
 
   static constexpr hive_limits block_capacity_hard_limits() noexcept {
-    constexpr size_type by_slots =
-        numeric_limits<size_type>::max() / sizeof(slot_type);
-    constexpr size_type by_difference =
-        static_cast<size_type>(numeric_limits<difference_type>::max());
-    constexpr size_type without_sentinel = numeric_limits<size_type>::max() - 1;
-    constexpr size_type by_structure =
-        by_slots < by_difference
-            ? (by_slots < without_sentinel ? by_slots : without_sentinel)
-            : (by_difference < without_sentinel ? by_difference
-                                                : without_sentinel);
-    if constexpr (std::is_empty_v<allocator_type> &&
-                  requires {
-                    typename integral_constant<
-                        typename allocator_traits_type::size_type,
-                        allocator_traits_type::max_size(allocator_type{})>;
-                  }) {
-      // Admit a nontrivial constexpr constructor, but require the entire
-      // allocator query (including temporary destruction) to constant evaluate.
-      // Only its integral result is materialized here; no allocator is created
-      // at runtime by this noexcept static query. Stateful and runtime-only
-      // allocators retain the structural cap and instance-level growth checks.
-      constexpr auto allocator_max =
-          allocator_traits_type::max_size(allocator_type{});
-      using common_type = common_type_t<decltype(allocator_max), size_type>;
-      constexpr size_type maximum = static_cast<size_type>(
-          std::min<common_type>(by_structure, allocator_max));
-      return hive_limits(maximum < 1 ? maximum : 1, maximum);
-    } else {
-      return hive_limits(1, by_structure);
-    }
+    constexpr size_type maximum = static_max_size();
+    return hive_limits(maximum < 1 ? maximum : 1, maximum);
   }
 
   static constexpr bool is_within_hard_limits(hive_limits limits) noexcept {
