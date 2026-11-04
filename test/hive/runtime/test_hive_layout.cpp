@@ -5,9 +5,11 @@
 #include "hive_test_allocator.hpp"
 #include "hive_test_fancy_allocator.hpp"
 
+#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -34,6 +36,8 @@ struct allocation_sample {
     std::size_t count;
     std::size_t object_size;
     std::size_t alignment;
+    bool payload;
+    bool skipfield;
 };
 
 struct layout_probe_state {
@@ -66,7 +70,8 @@ public:
         stateful_allocator<T> underlying(state_->allocations, 1);
         T* const result = underlying.allocate(count);
         try {
-            state_->samples.push_back({count, sizeof(T), alignof(T)});
+            state_->samples.push_back({count, sizeof(T), alignof(T),
+                requires(T& slot) { slot.storage; }, std::is_same_v<T, std::uint16_t>});
         } catch (...) {
             underlying.deallocate(result, count);
             throw;
@@ -102,15 +107,29 @@ void measure_layout(const std::string& name, std::size_t slot_budget = 0) {
         ASSERT_EQ(hive.capacity(), block_capacity);
 
         const allocation_sample* slots = nullptr;
+        const allocation_sample* skipfield = nullptr;
         std::size_t allocated_bytes = 0;
         for (const auto& sample : state->samples) {
             allocated_bytes += sample.count * sample.object_size;
-            if (sample.count == block_capacity) {
+            if (sample.payload) {
                 ASSERT_EQ(slots, nullptr);
                 slots = std::addressof(sample);
             }
+            if (sample.skipfield) {
+                ASSERT_EQ(skipfield, nullptr);
+                skipfield = std::addressof(sample);
+            }
         }
         ASSERT_NE(slots, nullptr);
+        ASSERT_NE(skipfield, nullptr);
+        EXPECT_EQ(slots->count, block_capacity);
+        EXPECT_EQ(skipfield->count, block_capacity);
+        EXPECT_EQ(skipfield->object_size, sizeof(std::uint16_t));
+        EXPECT_EQ(skipfield->alignment, alignof(std::uint16_t));
+        const auto payload_size = std::max(sizeof(T), std::size_t{4});
+        const auto padded_size = (payload_size + alignof(T) - 1) / alignof(T) * alignof(T);
+        EXPECT_EQ(slots->object_size, padded_size);
+        EXPECT_EQ(slots->alignment, alignof(T));
         EXPECT_GE(slots->object_size, sizeof(T));
         EXPECT_GE(slots->alignment, alignof(T));
         EXPECT_EQ(slots->object_size % slots->alignment, 0u);
@@ -118,10 +137,13 @@ void measure_layout(const std::string& name, std::size_t slot_budget = 0) {
 
         testing::Test::RecordProperty(name + "_slot_bytes", std::to_string(slots->object_size));
         testing::Test::RecordProperty(name + "_slot_alignment", std::to_string(slots->alignment));
+        testing::Test::RecordProperty(name + "_skipfield_bytes",
+            std::to_string(block_capacity * skipfield->object_size));
         testing::Test::RecordProperty(name + "_allocation_count", std::to_string(state->samples.size()));
         testing::Test::RecordProperty(name + "_allocated_bytes", std::to_string(allocated_bytes));
         testing::Test::RecordProperty(name + "_header_bytes",
-            std::to_string(allocated_bytes - block_capacity * slots->object_size));
+            std::to_string(allocated_bytes - block_capacity *
+                (slots->object_size + skipfield->object_size)));
         hive.emplace();
         EXPECT_EQ(hive.get_iterator(std::addressof(*hive.begin())), hive.begin());
     }
@@ -140,21 +162,22 @@ struct alignas(64) aligned_64_value {
     int value = 0;
 };
 
-TEST(HiveLayout, OrdinaryFourByteSlotFitsTwentyFourBytes) {
+TEST(HiveLayout, OrdinaryFourBytePayloadHasFourByteSlotsAndSeparateSkipfield) {
     if (!conventional_64bit_slot_abi || sizeof(int) != 4 || alignof(int) > 4) {
-        GTEST_SKIP() << "The 24-byte budget targets ordinary 64-bit ABIs";
+        GTEST_SKIP() << "The four-byte int control targets ordinary 64-bit ABIs";
     }
-    measure_layout<int>("int", 24);
+    measure_layout<int>("int", 4);
 }
 
 TEST(HiveLayout, RecordDoubleLargeAndOveralignedLayoutsSeparately) {
+    measure_layout<char>("char", 4);
     measure_layout<double>("double",
-        conventional_64bit_slot_abi && sizeof(double) == 8 && alignof(double) <= 8 ? 24 : 0);
-    measure_layout<large_value>("large", conventional_64bit_slot_abi ? 48 : 0);
+        conventional_64bit_slot_abi && sizeof(double) == 8 && alignof(double) <= 8 ? 8 : 0);
+    measure_layout<large_value>("large", sizeof(large_value));
     measure_layout<aligned_16_value>("aligned16",
-        conventional_64bit_slot_abi && sizeof(aligned_16_value) == 16 ? 32 : 0);
+        conventional_64bit_slot_abi && sizeof(aligned_16_value) == 16 ? 16 : 0);
     measure_layout<aligned_64_value>("aligned64",
-        conventional_64bit_slot_abi && sizeof(aligned_64_value) == 64 ? 128 : 0);
+        conventional_64bit_slot_abi && sizeof(aligned_64_value) == 64 ? 64 : 0);
 }
 
 TEST(HiveLayout, CompactHardLimitRejectsTheSentinelAsAnIndexNotAsACount) {
@@ -272,6 +295,10 @@ TEST(HiveLayout, HeadMiddleAndTailHolesPreserveRetainedTraversalAndOrdering) {
         std::vector<hive_type::iterator> expected{
             initial[1], initial[2], initial[3], initial[5], initial[6]};
         for (int value = 100; value < 103; ++value) expected.push_back(hive.emplace(value));
+        // A single block traverses by physical address, not reinsertion time.
+        std::sort(expected.begin(), expected.end(), [](auto left, auto right) {
+            return std::less<const int*>{}(std::addressof(*left), std::addressof(*right));
+        });
         ASSERT_EQ(hive.capacity(), 8u);
         auto current = hive.begin();
         for (auto retained : expected) {
@@ -307,7 +334,7 @@ TEST(HiveLayout, HeadMiddleAndTailHolesPreserveRetainedTraversalAndOrdering) {
     EXPECT_TRUE(state->clean());
 }
 
-TEST(HiveLayout, ReusedSlotOrdersRemainWideWithPermanentSurvivors) {
+TEST(HiveLayout, RepeatedTailReusePreservesPhysicalOrderWithPermanentSurvivors) {
     std::hive<int> hive(std::hive_limits{4, 4});
     const auto first = hive.emplace(0);
     const auto second = hive.emplace(1);
@@ -364,7 +391,8 @@ TEST(HiveLayout, FancyPointerLookupReuseAndSpliceRetainOrder) {
         EXPECT_EQ(successor, retained);
         auto reused = destination.emplace(99);
         EXPECT_EQ(std::addressof(*reused), hole_address);
-        EXPECT_LT(retained, reused);
+        EXPECT_LT(reused, retained);
+        EXPECT_EQ(std::next(reused), retained);
         EXPECT_EQ(destination.get_iterator(retained_pointer), retained);
 
         hive_type source(std::hive_limits{4, 4}, allocator_type(state, 7));
@@ -379,8 +407,9 @@ TEST(HiveLayout, FancyPointerLookupReuseAndSpliceRetainOrder) {
                   hive_type::const_iterator(retained));
         EXPECT_EQ(std::addressof(*retained), retained_address);
         EXPECT_LT(reused, migrated);
-        EXPECT_EQ(std::next(reused), migrated);
-        EXPECT_EQ(std::prev(migrated), reused);
+        EXPECT_LT(initial.back(), migrated);
+        EXPECT_EQ(std::next(initial.back()), migrated);
+        EXPECT_EQ(std::prev(migrated), initial.back());
     }
     EXPECT_TRUE(state->clean());
 }

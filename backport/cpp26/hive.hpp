@@ -38,6 +38,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
@@ -132,16 +133,18 @@ class hive {
   struct block_type;
   using slot_index_type = uint16_t;
 
-  // No default member initializers: slot_type remains trivially default
-  // constructible and therefore an implicit-lifetime type.  In particular, an
-  // erased T's storage is never reused to hold links or indices.
+  struct free_run_links {
+    slot_index_type previous;
+    slot_index_type next;
+  };
+
+  // Address-order traversal uses jump counts, following the design ideas in
+  // M. Bentley, "The Advanced 'Jump-Counting' Skipfield Pattern" (2017),
+  // doi:10.1007/s40869-017-0038-3, and P0447. This implementation is independent.
+  // Slots have no metadata. A dead run's first slot holds links as bytes only.
   struct slot_type {
-    alignas(T) unsigned char storage[sizeof(T)];
-    slot_index_type free_next;
-    slot_index_type live_prev;
-    slot_index_type live_next;
-    bool live;
-    size_type order;
+    alignas(T) unsigned char storage[
+        std::max(sizeof(T), sizeof(free_run_links))];
   };
 
   using block_allocator =
@@ -152,6 +155,10 @@ class hive {
       typename allocator_traits_type::template rebind_alloc<slot_type>;
   using slot_traits = allocator_traits<slot_allocator>;
   using slot_allocation_pointer = typename slot_traits::pointer;
+  using skip_allocator =
+      typename allocator_traits_type::template rebind_alloc<slot_index_type>;
+  using skip_traits = allocator_traits<skip_allocator>;
+  using skip_allocation_pointer = typename skip_traits::pointer;
   using control_allocator =
       typename allocator_traits_type::template rebind_alloc<control_type>;
   using control_traits = allocator_traits<control_allocator>;
@@ -173,7 +180,8 @@ class hive {
 
   static constexpr size_type structural_max_size() noexcept {
     constexpr size_type by_slots =
-        numeric_limits<size_type>::max() / sizeof(slot_type);
+        numeric_limits<size_type>::max() /
+        (sizeof(slot_type) + sizeof(slot_index_type));
     constexpr size_type by_difference =
         static_cast<size_type>(numeric_limits<difference_type>::max());
     return std::min({by_slots, by_difference, npos - 1});
@@ -202,24 +210,29 @@ class hive {
     block_type(control_type* control,
                block_allocation_pointer block_allocation,
                slot_allocation_pointer slot_allocation,
+               skip_allocation_pointer skip_allocation,
                size_type block_capacity)
         : control(control),
           block_allocation(block_allocation),
           slot_allocation(slot_allocation),
+          skip_allocation(skip_allocation),
           slots(to_address(slot_allocation)),
+          skip(to_address(skip_allocation)),
           capacity(block_capacity) {}
 
     control_type* control;
     block_allocation_pointer block_allocation;
     slot_allocation_pointer slot_allocation;
+    skip_allocation_pointer skip_allocation;
     slot_type* slots;
+    slot_index_type* skip;
     size_type capacity;
     size_type live_count = 0;
+    // Only [0, high_water) is readable in skip; zero denotes a live slot.
+    // The last initialized slot is live. Dead runs have their length at both
+    // ends, nonzero interiors, and one free-list node at the run's first slot.
     size_type high_water = 0;
     size_type free_head = npos;
-    size_type live_head = npos;
-    size_type live_tail = npos;
-    size_type next_slot_order = 0;
     size_type order = 0;
     block_type* active_prev = nullptr;
     block_type* active_next = nullptr;
@@ -278,14 +291,14 @@ class hive {
     }
 
     constexpr hive_iterator& operator++() noexcept {
-      const size_type next = to_wide_index(block_->slots[index_].live_next);
-      if (next != npos) {
-        index_ = next;
+      const size_type next = index_ + 1;
+      if (next < block_->high_water) {
+        index_ = next + block_->skip[next];
       } else {
         control_type* const control = block_->control;
         block_ = block_->active_next;
         if (block_) {
-          index_ = block_->live_head;
+          index_ = block_->skip[0];
         } else {
           // End iterators carry an owner, never a pointer which has to be
           // dereferenced after POCCA replaces a control state.
@@ -312,17 +325,20 @@ class hive {
           return *this;
         }
         block_ = owner_->control_->active_tail;
-        index_ = block_->live_tail;
+        index_ = block_->high_water - 1;
         owner_ = nullptr;
         epoch_ = 0;
       } else {
-        const size_type previous = to_wide_index(block_->slots[index_].live_prev);
-        if (previous != npos) {
-          index_ = previous;
-        } else {
-          block_ = block_->active_prev;
-          index_ = block_->live_tail;
+        if (index_ != 0) {
+          const size_type previous = index_ - 1;
+          const size_type skipped = block_->skip[previous];
+          if (skipped <= previous) {
+            index_ = previous - skipped;
+            return *this;
+          }
         }
+        block_ = block_->active_prev;
+        index_ = block_->high_water - 1;
       }
       return *this;
     }
@@ -348,11 +364,7 @@ class hive {
         const hive_iterator<OtherConst>& other) const noexcept {
       if (block_ && other.block_) {
         if (block_ == other.block_) {
-          if (index_ == other.index_) {
-            return strong_ordering::equivalent;
-          }
-          return block_->slots[index_].order <=>
-                 other.block_->slots[other.index_].order;
+          return index_ <=> other.index_;
         }
         control_type* const left_control = block_->control;
         control_type* const right_control = other.block_->control;
@@ -467,6 +479,7 @@ class hive {
   block_type* allocate_block(control_type* control, size_type capacity) {
     block_allocator allocator_for_blocks(alloc_);
     slot_allocator allocator_for_slots(alloc_);
+    skip_allocator allocator_for_skip(alloc_);
     const block_allocation_pointer block_allocation =
         block_traits::allocate(allocator_for_blocks, 1);
     slot_allocation_pointer slot_allocation;
@@ -478,11 +491,22 @@ class hive {
       throw;
     }
 
+    skip_allocation_pointer skip_allocation;
+    try {
+      skip_allocation = skip_traits::allocate(allocator_for_skip, capacity);
+    } catch (...) {
+      slot_traits::deallocate(allocator_for_slots, slot_allocation, capacity);
+      block_traits::deallocate(allocator_for_blocks, block_allocation, 1);
+      throw;
+    }
+
     block_type* const block = to_address(block_allocation);
     try {
       block_traits::construct(allocator_for_blocks, block, control,
-                              block_allocation, slot_allocation, capacity);
+                              block_allocation, slot_allocation,
+                              skip_allocation, capacity);
     } catch (...) {
+      skip_traits::deallocate(allocator_for_skip, skip_allocation, capacity);
       slot_traits::deallocate(allocator_for_slots, slot_allocation, capacity);
       block_traits::deallocate(allocator_for_blocks, block_allocation, 1);
       throw;
@@ -493,22 +517,26 @@ class hive {
   void deallocate_block(block_type* block) noexcept {
     block_allocator allocator_for_blocks(alloc_);
     slot_allocator allocator_for_slots(alloc_);
+    skip_allocator allocator_for_skip(alloc_);
     const block_allocation_pointer block_allocation =
         block->block_allocation;
     const slot_allocation_pointer slot_allocation = block->slot_allocation;
+    const skip_allocation_pointer skip_allocation = block->skip_allocation;
     const size_type capacity = block->capacity;
-    slot_traits::deallocate(allocator_for_slots, slot_allocation, capacity);
     block_traits::destroy(allocator_for_blocks, block);
+    skip_traits::deallocate(allocator_for_skip, skip_allocation, capacity);
+    slot_traits::deallocate(allocator_for_slots, slot_allocation, capacity);
     block_traits::deallocate(allocator_for_blocks, block_allocation, 1);
   }
 
   void destroy_live_elements(block_type* block) noexcept {
-    size_type index = block->live_head;
-    while (index != npos) {
-      slot_type& slot = block->slots[index];
-      const size_type next = to_wide_index(slot.live_next);
-      allocator_traits_type::destroy(alloc_, element(slot));
-      index = next;
+    size_type index = block->high_water == 0 ? 0 : block->skip[0];
+    while (index < block->high_water) {
+      allocator_traits_type::destroy(alloc_, element(block->slots[index]));
+      ++index;
+      if (index < block->high_water) {
+        index += block->skip[index];
+      }
     }
   }
 
@@ -516,9 +544,6 @@ class hive {
     block->live_count = 0;
     block->high_water = 0;
     block->free_head = npos;
-    block->live_head = npos;
-    block->live_tail = npos;
-    block->next_slot_order = 0;
   }
 
   static void available_add(control_type* control,
@@ -589,19 +614,54 @@ class hive {
     control->capacity += block->capacity;
   }
 
-  static void live_append(block_type* block, size_type index) noexcept {
-    slot_type& slot = block->slots[index];
-    slot.live = true;
-    slot.live_prev = to_slot_index(block->live_tail);
-    slot.live_next = slot_npos;
-    slot.order = block->next_slot_order++;
-    if (block->live_tail != npos) {
-      block->slots[block->live_tail].live_next = to_slot_index(index);
+  static free_run_links read_free_links(const block_type* block,
+                                       size_type index) noexcept {
+    free_run_links links;
+    std::memcpy(&links, block->slots[index].storage, sizeof(links));
+    return links;
+  }
+
+  static void write_free_links(block_type* block, size_type index,
+                               free_run_links links) noexcept {
+    std::memcpy(block->slots[index].storage, &links, sizeof(links));
+  }
+
+  static void unlink_free_run(block_type* block,
+                              free_run_links links) noexcept {
+    if (links.previous == slot_npos) {
+      block->free_head = to_wide_index(links.next);
     } else {
-      block->live_head = index;
+      free_run_links previous = read_free_links(block, links.previous);
+      previous.next = links.next;
+      write_free_links(block, links.previous, previous);
     }
-    block->live_tail = index;
-    ++block->live_count;
+    if (links.next != slot_npos) {
+      free_run_links next = read_free_links(block, links.next);
+      next.previous = links.previous;
+      write_free_links(block, links.next, next);
+    }
+  }
+
+  static void move_free_run(block_type* block, size_type index,
+                            free_run_links links) noexcept {
+    write_free_links(block, index, links);
+    if (links.previous == slot_npos) {
+      block->free_head = index;
+    } else {
+      free_run_links previous = read_free_links(block, links.previous);
+      previous.next = to_slot_index(index);
+      write_free_links(block, links.previous, previous);
+    }
+    if (links.next != slot_npos) {
+      free_run_links next = read_free_links(block, links.next);
+      next.previous = to_slot_index(index);
+      write_free_links(block, links.next, next);
+    }
+  }
+
+  static void push_free_run(block_type* block, size_type index) noexcept {
+    move_free_run(block, index,
+                  {slot_npos, to_slot_index(block->free_head)});
   }
 
   void touch_end() noexcept { ++end_epoch_; }
@@ -681,10 +741,13 @@ class hive {
 
   size_type allocation_block_max() const {
     slot_allocator allocator_for_slots(alloc_);
+    skip_allocator allocator_for_skip(alloc_);
     const auto slot_max = slot_traits::max_size(allocator_for_slots);
-    using common_type = common_type_t<decltype(slot_max), size_type>;
+    const auto skip_max = skip_traits::max_size(allocator_for_skip);
+    using common_type =
+        common_type_t<decltype(slot_max), decltype(skip_max), size_type>;
     return static_cast<size_type>(
-        std::min<common_type>(limits_.max, slot_max));
+        std::min<common_type>({limits_.max, slot_npos, slot_max, skip_max}));
   }
 
   struct capacity_plan {
@@ -1023,7 +1086,7 @@ class hive {
   iterator begin() noexcept {
     if (control_ && control_->active_head) {
       block_type* const block = control_->active_head;
-      return iterator(block, block->live_head);
+      return iterator(block, block->skip[0]);
     }
     return end();
   }
@@ -1031,7 +1094,7 @@ class hive {
   const_iterator begin() const noexcept {
     if (control_ && control_->active_head) {
       block_type* const block = control_->active_head;
-      return const_iterator(block, block->live_head);
+      return const_iterator(block, block->skip[0]);
     }
     return end();
   }
@@ -1213,18 +1276,38 @@ class hive {
       const bool reuse = block->free_head != npos;
       const size_type index =
           reuse ? block->free_head : block->high_water;
-      allocator_traits_type::construct(alloc_, raw_element(block->slots[index]),
-                                       std::forward<Args>(args)...);
+      const size_type run_length = reuse ? block->skip[index] : 0;
+      const free_run_links links = reuse
+          ? read_free_links(block, index)
+          : free_run_links{slot_npos, slot_npos};
+      try {
+        allocator_traits_type::construct(
+            alloc_, raw_element(block->slots[index]),
+            std::forward<Args>(args)...);
+      } catch (...) {
+        // Construction may overwrite the dead storage holding the node.
+        if (reuse) {
+          write_free_links(block, index, links);
+        }
+        throw;
+      }
 
-      // No potentially throwing operation occurs after T construction starts
-      // and before this commit.  A throwing constructor changes no links,
-      // high-water mark, free list, size, capacity, or end epoch.
+      // After construction succeeds, the commit cannot throw.
+      block->skip[index] = 0;
       if (reuse) {
-        block->free_head = to_wide_index(block->slots[index].free_next);
+        if (run_length == 1) {
+          unlink_free_run(block, links);
+        } else {
+          const slot_index_type remaining =
+              static_cast<slot_index_type>(run_length - 1);
+          block->skip[index + 1] = remaining;
+          block->skip[index + run_length - 1] = remaining;
+          move_free_run(block, index + 1, links);
+        }
       } else {
         ++block->high_water;
       }
-      live_append(block, index);
+      ++block->live_count;
       ++control->size;
       if (block->high_water == block->capacity &&
           block->free_head == npos) {
@@ -1241,9 +1324,10 @@ class hive {
 
       control->reserved_head = block->reserved_next;
       block->reserved_next = nullptr;
+      block->skip[0] = 0;
       block->high_water = 1;
+      block->live_count = 1;
       active_append(control, block);
-      live_append(block, 0);
       if (block->high_water != block->capacity) {
         available_add(control, block);
       }
@@ -1293,9 +1377,10 @@ class hive {
     if (new_control) {
       control_ = control;
     }
+    block->skip[0] = 0;
     block->high_water = 1;
+    block->live_count = 1;
     active_append(control, block);
-    live_append(block, 0);
     if (block->high_water != block->capacity) {
       available_add(control, block);
     }
@@ -1350,21 +1435,40 @@ class hive {
     slot_type& slot = block->slots[index];
 
     allocator_traits_type::destroy(alloc_, element(slot));
-    slot.live = false;
-
-    if (slot.live_prev != slot_npos) {
-      block->slots[slot.live_prev].live_next = slot.live_next;
-    } else {
-      block->live_head = to_wide_index(slot.live_next);
-    }
-    if (slot.live_next != slot_npos) {
-      block->slots[slot.live_next].live_prev = slot.live_prev;
-    } else {
-      block->live_tail = to_wide_index(slot.live_prev);
-    }
-
     --block->live_count;
     --control->size;
+
+    if (index == block->high_water - 1) {
+      block->high_water = index;
+      if (index != 0 && block->skip[index - 1] != 0) {
+        const size_type run_start = index - block->skip[index - 1];
+        unlink_free_run(block, read_free_links(block, run_start));
+        block->high_water = run_start;
+      }
+    } else {
+      const size_type left = index == 0 ? 0 : block->skip[index - 1];
+      const size_type right = block->skip[index + 1];
+      const slot_index_type length =
+          static_cast<slot_index_type>(left + right + 1);
+      if (left == 0 && right == 0) {
+        block->skip[index] = 1;
+        push_free_run(block, index);
+      } else if (right == 0) {
+        block->skip[index - left] = length;
+        block->skip[index] = length;
+      } else if (left == 0) {
+        const free_run_links links = read_free_links(block, index + 1);
+        block->skip[index] = length;
+        block->skip[index + right] = length;
+        move_free_run(block, index, links);
+      } else {
+        block->skip[index - left] = length;
+        block->skip[index + right] = length;
+        block->skip[index] = 1;
+        unlink_free_run(block, read_free_links(block, index + 1));
+      }
+    }
+
     if (block->live_count == 0) {
       available_remove(control, block);
       active_remove(control, block);
@@ -1372,8 +1476,6 @@ class hive {
       block->reserved_next = control->reserved_head;
       control->reserved_head = block;
     } else {
-      slot.free_next = to_slot_index(block->free_head);
-      block->free_head = index;
       if (!block->in_available) {
         available_add(control, block);
       }
@@ -1626,12 +1728,154 @@ class hive {
         continue;
       }
       const slot_type& slot = block->slots[index];
-      if (slot.live && raw_element(slot) == raw) {
+      if (block->skip[index] == 0 && raw_element(slot) == raw) {
         return const_iterator(block, index);
       }
     }
     return end();  // p is required to denote a live element; no failure result.
   }
+
+#if defined(FORGE_HIVE_TEST_HOOKS)
+  // Define this macro uniformly in every linked translation unit that uses
+  // the same hive specialization. No checks or test state exist without it.
+  bool __test_invariants() const {
+    if (!control_) {
+      return true;
+    }
+    const control_type* const control = control_;
+    if (control->owner != this || control->size > control->capacity) {
+      return false;
+    }
+
+    size_type total_capacity = 0;
+    size_type total_live = 0;
+    size_type expected_available = 0;
+    size_type active_count = 0;
+    const auto valid_block = [&](const block_type* block) {
+      return block->control == control && block->capacity != 0 &&
+             block->capacity <= slot_npos &&
+             block->capacity <= control->capacity - total_capacity &&
+             to_address(block->block_allocation) == block &&
+             block->slots && block->skip &&
+             to_address(block->slot_allocation) == block->slots &&
+             to_address(block->skip_allocation) == block->skip;
+    };
+
+    const block_type* previous_block = nullptr;
+    for (const block_type* block = control->active_head; block;
+         block = block->active_next) {
+      if (!valid_block(block) || !block->active || block->reserved_next ||
+          block->active_prev != previous_block ||
+          (previous_block && previous_block->order >= block->order) ||
+          block->live_count == 0 || block->high_water == 0 ||
+          block->high_water > block->capacity ||
+          block->skip[block->high_water - 1] != 0) {
+        return false;
+      }
+      total_capacity += block->capacity;
+
+      size_type live = 0;
+      size_type runs = 0;
+      size_type index = 0;
+      while (index < block->high_water) {
+        if (block->skip[index] == 0) {
+          ++live;
+          ++index;
+          continue;
+        }
+        const size_type start = index;
+        do {
+          ++index;
+        } while (index < block->high_water && block->skip[index] != 0);
+        const size_type length = index - start;
+        if (index == block->high_water || block->skip[start] != length ||
+            block->skip[index - 1] != length) {
+          return false;
+        }
+        ++runs;
+      }
+      if (live != block->live_count || live > control->size - total_live) {
+        return false;
+      }
+      total_live += live;
+
+      // Run heads must occur exactly once, with reciprocal free-list links.
+      // The run count bounds this walk even if a damaged list contains a cycle.
+      size_type nodes = 0;
+      size_type previous_index = npos;
+      for (size_type start = block->free_head; start != npos;) {
+        if (nodes == runs || start >= block->high_water ||
+            block->skip[start] == 0 ||
+            (start != 0 && block->skip[start - 1] != 0)) {
+          return false;
+        }
+        const free_run_links links = read_free_links(block, start);
+        if (to_wide_index(links.previous) != previous_index) {
+          return false;
+        }
+        ++nodes;
+        previous_index = start;
+        start = to_wide_index(links.next);
+      }
+      if (nodes != runs) {
+        return false;
+      }
+
+      const bool available = block->free_head != npos ||
+                             block->high_water < block->capacity;
+      if (block->in_available != available ||
+          (!available && (block->available_prev || block->available_next))) {
+        return false;
+      }
+      expected_available += available ? 1 : 0;
+      ++active_count;
+      previous_block = block;
+    }
+    if (previous_block != control->active_tail || total_live != control->size) {
+      return false;
+    }
+
+    // Positive capacities bound both block walks by the stored total capacity.
+    // Reserved flags also make the active and reserved sets disjoint.
+    for (const block_type* block = control->reserved_head; block;
+         block = block->reserved_next) {
+      if (!valid_block(block) || block->active || block->in_available ||
+          block->live_count != 0 || block->high_water != 0 ||
+          block->free_head != npos || block->active_prev ||
+          block->active_next || block->available_prev || block->available_next) {
+        return false;
+      }
+      total_capacity += block->capacity;
+    }
+    if (total_capacity != control->capacity) {
+      return false;
+    }
+
+    size_type available_count = 0;
+    previous_block = nullptr;
+    for (const block_type* block = control->available_head; block;
+         block = block->available_next) {
+      if (available_count == expected_available) {
+        return false;
+      }
+      // Check actual membership without allocating scratch state. Only block
+      // lists are rescanned; the skipfield and free runs each get one pass.
+      const block_type* member = control->active_head;
+      size_type examined = 0;
+      while (member && member != block && examined < active_count) {
+        member = member->active_next;
+        ++examined;
+      }
+      if (member != block || !block->in_available ||
+          block->available_prev != previous_block) {
+        return false;
+      }
+      ++available_count;
+      previous_block = block;
+    }
+    return available_count == expected_available;
+  }
+#endif
 
  private:
   void append_move_to(hive& destination) {
