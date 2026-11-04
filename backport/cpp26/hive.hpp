@@ -1211,7 +1211,7 @@ class hive {
   static constexpr hive_limits block_capacity_default_limits() noexcept {
     const hive_limits hard = block_capacity_hard_limits();
     const size_type minimum = hard.max < 8 ? hard.max : 8;
-    const size_type maximum = hard.max < 256 ? hard.max : 256;
+    const size_type maximum = hard.max < 4096 ? hard.max : 4096;
     return hive_limits(minimum, maximum);
   }
 
