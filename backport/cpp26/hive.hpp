@@ -654,6 +654,72 @@ class hive {
     return limits.min <= capacity && capacity <= limits.max;
   }
 
+  size_type allocation_block_max() const {
+    slot_allocator allocator_for_slots(alloc_);
+    const auto slot_max = slot_traits::max_size(allocator_for_slots);
+    using common_type = common_type_t<decltype(slot_max), size_type>;
+    return static_cast<size_type>(
+        std::min<common_type>(limits_.max, slot_max));
+  }
+
+  struct capacity_plan {
+    size_type blocks;
+    size_type added;
+    size_type block_max;
+  };
+
+  bool plan_capacity(size_type current, size_type requested,
+                     capacity_plan& plan) const {
+    const size_type maximum = max_size();
+    const size_type block_max = allocation_block_max();
+    if (requested > maximum || current > maximum || limits_.min == 0 ||
+        block_max < limits_.min) {
+      return false;
+    }
+
+    // Callers request growth. O(1) planning: k = ceil(deficit / block_max),
+    // added = max(deficit, k * min). Check headroom before multiplying.
+    const size_type missing = requested - current;
+    const size_type blocks =
+        missing / block_max + (missing % block_max != 0 ? 1 : 0);
+    if (blocks > (maximum - current) / limits_.min) {
+      return false;
+    }
+    plan = {blocks, std::max(missing, blocks * limits_.min), block_max};
+    return true;
+  }
+
+  void reserve_blocks(capacity_plan plan) {
+    while (plan.blocks != 0) {
+      // Leave a legal minimum for every tail block rather than greedily
+      // consuming the headroom (e.g. min 8, max 10, added 16 -> 8 + 8).
+      const size_type block_capacity = std::min(
+          plan.block_max, plan.added - (plan.blocks - 1) * limits_.min);
+      control_type* control = control_;
+      const bool new_control = control == nullptr;
+      if (new_control) {
+        control = allocate_control();
+      }
+
+      block_type* block;
+      try {
+        block = allocate_block(control, block_capacity);
+      } catch (...) {
+        if (new_control) {
+          deallocate_control(control);
+        }
+        throw;
+      }
+
+      if (new_control) {
+        control_ = control;
+      }
+      link_reserved(control, block);
+      plan.added -= block_capacity;
+      --plan.blocks;
+    }
+  }
+
   template<class InputIterator>
   void append_input(InputIterator first, InputIterator last) {
     while (first != last) {
@@ -992,44 +1058,11 @@ class hive {
     if (n <= capacity()) {
       return;
     }
-    const size_type maximum = max_size();
-    if (n > maximum || limits_.min == 0 || capacity() > maximum) {
+    capacity_plan plan;
+    if (!plan_capacity(capacity(), n, plan)) {
       throw length_error("std::hive::reserve exceeds max_size");
     }
-
-    // All newly allocated blocks use current-limits.min.  This is the
-    // implementation's deliberately simple minimum-growth strategy.
-    const size_type missing = n - capacity();
-    const size_type blocks =
-        missing / limits_.min + (missing % limits_.min != 0 ? 1 : 0);
-    if (blocks > (maximum - capacity()) / limits_.min) {
-      throw length_error("std::hive::reserve exceeds max_size");
-    }
-
-    size_type remaining = blocks;
-    while (remaining != 0) {
-      control_type* control = control_;
-      const bool new_control = control == nullptr;
-      if (new_control) {
-        control = allocate_control();
-      }
-
-      block_type* block;
-      try {
-        block = allocate_block(control, limits_.min);
-      } catch (...) {
-        if (new_control) {
-          deallocate_control(control);
-        }
-        throw;
-      }
-
-      if (new_control) {
-        control_ = control;
-      }
-      link_reserved(control, block);
-      --remaining;
-    }
+    reserve_blocks(plan);
     // No end epoch change: reserve preserves every iterator, including end.
   }
 
@@ -1039,16 +1072,11 @@ class hive {
       return;
     }
 
-    const size_type elements = size();
-    const size_type blocks = elements / limits_.min +
-                             (elements % limits_.min != 0 ? 1 : 0);
-    if (blocks > numeric_limits<size_type>::max() / limits_.min) {
+    capacity_plan plan;
+    if (!plan_capacity(0, size(), plan)) {
       return;
     }
-    const size_type projected = blocks * limits_.min;
-    if (projected >= capacity()) {
-      // A non-binding request need not rebuild when the simple growth policy
-      // cannot make the capacity smaller.
+    if (plan.added >= capacity()) {
       return;
     }
 
@@ -1056,7 +1084,7 @@ class hive {
     // Finish every new-block allocation before moving a user value.  A failure
     // here leaves all remaining values unmoved; the earlier reserved-block
     // trim is an explicitly permitted reduction in capacity.
-    rebuilt.reserve(elements);
+    rebuilt.reserve_blocks(plan);
     append_move_to(rebuilt);
     swap(rebuilt);
   }
@@ -1198,10 +1226,17 @@ class hive {
       return iterator(block, 0);
     }
 
-    if (limits_.min == 0 || capacity() > max_size() ||
-        limits_.min > max_size() - capacity()) {
+    const size_type current = capacity();
+    const size_type maximum = max_size();
+    const size_type block_max = allocation_block_max();
+    if (limits_.min == 0 || block_max < limits_.min || current > maximum ||
+        limits_.min > maximum - current) {
       throw length_error("std::hive::emplace exceeds max_size");
     }
+    // Constant-work geometric growth from the capacity scalar, not a block
+    // scan. Adding current doubles total capacity until a bound intervenes.
+    const size_type block_capacity = std::min(
+        {std::max(limits_.min, current), block_max, maximum - current});
 
     const bool new_control = control == nullptr;
     if (new_control) {
@@ -1210,7 +1245,7 @@ class hive {
 
     block_type* block;
     try {
-      block = allocate_block(control, limits_.min);
+      block = allocate_block(control, block_capacity);
     } catch (...) {
       if (new_control) {
         deallocate_control(control);
