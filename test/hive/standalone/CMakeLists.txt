@@ -95,6 +95,7 @@ add_subdirectory("${FORGE_HIVE_GTEST_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/g
 set(hive_runtime_dir "${CMAKE_CURRENT_LIST_DIR}/../runtime")
 add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_allocators.cpp"
+    "${hive_runtime_dir}/test_hive_capacity.cpp"
     "${hive_runtime_dir}/test_hive_core_model.cpp"
     "${hive_runtime_dir}/test_hive_exceptions.cpp"
     "${hive_runtime_dir}/test_hive_fancy_allocator.cpp"
