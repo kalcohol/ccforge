@@ -43,3 +43,11 @@ The probe is not a CTest timing gate. Orchestrate five interleaved processes
 per container/version, record batch load and apply the specification's noise
 rules externally. Compile baseline and new headers with the same probe and
 flags (specified primary toolchain: clang 19, libc++, -O2 -DNDEBUG).
+
+Optional model stress: configure with -DFORGE_HIVE_BUILD_STRESS=ON and run
+hive_stress [seed_count] [steps_per_seed] directly. It is not registered as a
+default CTest test. The preserved external review controls cover four element
+shapes, allocator failures, retained handles, capacity and traversal. Test-only
+invariant hooks additionally check the skipfield and actual block lists.
+FORGE_HIVE_TEST_HOOKS is defined uniformly for the runtime and stress targets;
+do not mix differing definitions in translation units of the same executable.
