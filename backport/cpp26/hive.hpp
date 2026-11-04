@@ -1701,32 +1701,39 @@ class hive {
 
   const_iterator get_iterator(const_pointer p) const noexcept {
     const T* const raw = std::to_address(p);
-    const auto* const target = reinterpret_cast<const unsigned char*>(raw);
+#if defined(FORGE_HIVE_TEST_HOOKS)
+    lookup_work_ = {};
+#endif
+    const uintptr_t target = reinterpret_cast<uintptr_t>(raw);
     if (!control_) {
       return end();
     }
 
-    // std::less provides a strict total order even for unrelated pointers.
-    // Pointer subtraction occurs only after the valid live-element pointer has
-    // been located in its actual slot array, preserving the block-count bound
-    // without requiring uintptr_t or a flat integer address model.
-    const less<const unsigned char*> address_less{};
+    // Supported platforms have flat, order-preserving uintptr_t addresses.
+    // Integer arithmetic only proposes an index; a live-slot pointer equality
+    // check confirms it. There is no unrelated-pointer subtraction or slot
+    // scan, and no base-plus-allocation-size expression that can wrap.
     for (block_type* block = control_->active_head; block;
          block = block->active_next) {
-      const auto* const base =
-          reinterpret_cast<const unsigned char*>(block->slots);
-      const auto* const finish = base + block->capacity * sizeof(slot_type);
-      if (address_less(target, base) || !address_less(target, finish)) {
+#if defined(FORGE_HIVE_TEST_HOOKS)
+      ++lookup_work_.first;
+#endif
+      const uintptr_t base = reinterpret_cast<uintptr_t>(block->slots);
+      if (target < base) {
         continue;
       }
-      const size_type displacement = static_cast<size_type>(target - base);
+      const uintptr_t displacement = target - base;
       if (displacement % sizeof(slot_type) != offsetof(slot_type, storage)) {
         continue;
       }
-      const size_type index = displacement / sizeof(slot_type);
-      if (index >= block->high_water) {
+      const uintptr_t candidate = displacement / sizeof(slot_type);
+      if (candidate >= block->high_water) {
         continue;
       }
+      const size_type index = static_cast<size_type>(candidate);
+#if defined(FORGE_HIVE_TEST_HOOKS)
+      ++lookup_work_.second;
+#endif
       const slot_type& slot = block->slots[index];
       if (block->skip[index] == 0 && raw_element(slot) == raw) {
         return const_iterator(block, index);
@@ -1738,6 +1745,11 @@ class hive {
 #if defined(FORGE_HIVE_TEST_HOOKS)
   // Define this macro uniformly in every linked translation unit that uses
   // the same hive specialization. No checks or test state exist without it.
+  // Last lookup's active blocks visited and candidate slots examined.
+  pair<size_type, size_type> __test_lookup_work() const noexcept {
+    return lookup_work_;
+  }
+
   bool __test_invariants() const {
     if (!control_) {
       return true;
@@ -1891,6 +1903,9 @@ class hive {
   hive_limits limits_ = block_capacity_default_limits();
   control_type* control_ = nullptr;
   size_type end_epoch_ = 0;
+#if defined(FORGE_HIVE_TEST_HOOKS)
+  mutable pair<size_type, size_type> lookup_work_{};
+#endif
 };
 
 // CTAD participation follows [sequence.reqmts]: non-input iterators and
