@@ -98,6 +98,7 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_capacity.cpp"
     "${hive_runtime_dir}/test_hive_contract_controls.cpp"
     "${hive_runtime_dir}/test_hive_growth.cpp"
+    "${hive_runtime_dir}/test_hive_layout.cpp"
     "${hive_runtime_dir}/test_hive_core_model.cpp"
     "${hive_runtime_dir}/test_hive_exceptions.cpp"
     "${hive_runtime_dir}/test_hive_fancy_allocator.cpp"

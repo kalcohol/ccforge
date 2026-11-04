@@ -37,6 +37,7 @@
 #include <compare>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
@@ -117,17 +118,18 @@ class hive {
 
   struct control_type;
   struct block_type;
+  using slot_index_type = uint16_t;
 
   // No default member initializers: slot_type remains trivially default
   // constructible and therefore an implicit-lifetime type.  In particular, an
   // erased T's storage is never reused to hold links or indices.
   struct slot_type {
     alignas(T) unsigned char storage[sizeof(T)];
-    size_type free_next;
-    size_type live_prev;
-    size_type live_next;
-    size_type order;
+    slot_index_type free_next;
+    slot_index_type live_prev;
+    slot_index_type live_next;
     bool live;
+    size_type order;
   };
 
   using block_allocator =
@@ -144,6 +146,18 @@ class hive {
   using control_allocation_pointer = typename control_traits::pointer;
 
   static constexpr size_type npos = numeric_limits<size_type>::max();
+  static constexpr slot_index_type slot_npos =
+      numeric_limits<slot_index_type>::max();
+
+  // Only real indices or npos cross this boundary; counts remain wide.
+  // The block hard limit keeps every real index strictly below slot_npos.
+  static constexpr slot_index_type to_slot_index(size_type index) noexcept {
+    return index == npos ? slot_npos : static_cast<slot_index_type>(index);
+  }
+
+  static constexpr size_type to_wide_index(slot_index_type index) noexcept {
+    return index == slot_npos ? npos : static_cast<size_type>(index);
+  }
 
   static constexpr size_type structural_max_size() noexcept {
     constexpr size_type by_slots =
@@ -253,7 +267,7 @@ class hive {
     }
 
     constexpr hive_iterator& operator++() noexcept {
-      const size_type next = block_->slots[index_].live_next;
+      const size_type next = to_wide_index(block_->slots[index_].live_next);
       if (next != npos) {
         index_ = next;
       } else {
@@ -291,7 +305,7 @@ class hive {
         owner_ = nullptr;
         epoch_ = 0;
       } else {
-        const size_type previous = block_->slots[index_].live_prev;
+        const size_type previous = to_wide_index(block_->slots[index_].live_prev);
         if (previous != npos) {
           index_ = previous;
         } else {
@@ -481,7 +495,7 @@ class hive {
     size_type index = block->live_head;
     while (index != npos) {
       slot_type& slot = block->slots[index];
-      const size_type next = slot.live_next;
+      const size_type next = to_wide_index(slot.live_next);
       allocator_traits_type::destroy(alloc_, element(slot));
       index = next;
     }
@@ -567,11 +581,11 @@ class hive {
   static void live_append(block_type* block, size_type index) noexcept {
     slot_type& slot = block->slots[index];
     slot.live = true;
-    slot.live_prev = block->live_tail;
-    slot.live_next = npos;
+    slot.live_prev = to_slot_index(block->live_tail);
+    slot.live_next = slot_npos;
     slot.order = block->next_slot_order++;
     if (block->live_tail != npos) {
-      block->slots[block->live_tail].live_next = index;
+      block->slots[block->live_tail].live_next = to_slot_index(index);
     } else {
       block->live_head = index;
     }
@@ -1128,7 +1142,8 @@ class hive {
   }
 
   static constexpr hive_limits block_capacity_hard_limits() noexcept {
-    constexpr size_type maximum = static_max_size();
+    constexpr size_type maximum = std::min(
+        static_max_size(), static_cast<size_type>(slot_npos));
     return hive_limits(maximum < 1 ? maximum : 1, maximum);
   }
 
@@ -1194,7 +1209,7 @@ class hive {
       // and before this commit.  A throwing constructor changes no links,
       // high-water mark, free list, size, capacity, or end epoch.
       if (reuse) {
-        block->free_head = block->slots[index].free_next;
+        block->free_head = to_wide_index(block->slots[index].free_next);
       } else {
         ++block->high_water;
       }
@@ -1326,15 +1341,15 @@ class hive {
     allocator_traits_type::destroy(alloc_, element(slot));
     slot.live = false;
 
-    if (slot.live_prev != npos) {
+    if (slot.live_prev != slot_npos) {
       block->slots[slot.live_prev].live_next = slot.live_next;
     } else {
-      block->live_head = slot.live_next;
+      block->live_head = to_wide_index(slot.live_next);
     }
-    if (slot.live_next != npos) {
+    if (slot.live_next != slot_npos) {
       block->slots[slot.live_next].live_prev = slot.live_prev;
     } else {
-      block->live_tail = slot.live_prev;
+      block->live_tail = to_wide_index(slot.live_prev);
     }
 
     --block->live_count;
@@ -1346,7 +1361,7 @@ class hive {
       block->reserved_next = control->reserved_head;
       control->reserved_head = block;
     } else {
-      slot.free_next = block->free_head;
+      slot.free_next = to_slot_index(block->free_head);
       block->free_head = index;
       if (!block->in_available) {
         available_add(control, block);
