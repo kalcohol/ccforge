@@ -14,7 +14,7 @@
 namespace {
 
 struct injected_failure {};
-enum class element_operation { move_construct, move_assign, swap };
+enum class element_operation { copy_construct, copy_assign, move_construct, move_assign, swap };
 
 struct element_state {
     std::size_t constructed = 0;
@@ -33,7 +33,7 @@ struct element_state {
 
 // Throwing operations deliberately may change operands before throwing. All
 // surviving objects remain valid; only completed constructions count as live.
-template<bool AdlSwap>
+template<bool AdlSwap, bool Copyable = false>
 struct tracked_value {
     element_state* state;
     int value;
@@ -41,8 +41,16 @@ struct tracked_value {
     tracked_value(element_state& owner, int input) : state(&owner), value(input) {
         state->born();
     }
-    tracked_value(const tracked_value&) = delete;
-    tracked_value& operator=(const tracked_value&) = delete;
+    tracked_value(const tracked_value& other) requires Copyable
+        : state(other.state), value(other.value) {
+        state->hit(element_operation::copy_construct);
+        state->born();
+    }
+    tracked_value& operator=(const tracked_value& other) requires Copyable {
+        value = other.value;
+        state->hit(element_operation::copy_assign);
+        return *this;
+    }
     tracked_value(tracked_value&& other)
         : state(other.state), value(std::exchange(other.value, -1)) {
         state->hit(element_operation::move_construct);
@@ -62,6 +70,15 @@ struct tracked_value {
         right.value = saved;
     }
 };
+
+static_assert(!std::is_copy_constructible_v<tracked_value<true>>);
+static_assert(!std::is_copy_assignable_v<tracked_value<true>>);
+static_assert(std::is_copy_constructible_v<tracked_value<false, true>>);
+static_assert(std::is_copy_assignable_v<tracked_value<false, true>>);
+static_assert(!std::is_nothrow_copy_constructible_v<tracked_value<false, true>>);
+static_assert(!std::is_nothrow_copy_assignable_v<tracked_value<false, true>>);
+static_assert(!std::is_nothrow_move_constructible_v<tracked_value<false, true>>);
+static_assert(!std::is_nothrow_move_assignable_v<tracked_value<false, true>>);
 
 template<class T, class Allocator>
 testing::AssertionResult structurally_valid(const std::hive<T, Allocator>& hive,
@@ -100,38 +117,86 @@ std::vector<int> payloads(const std::hive<T, Allocator>& hive) {
 
 const std::vector<int> sort_input{5, 1, 4, 1, 3, 0, 2};
 
-TEST(HiveContractControls, ComparatorExceptionPreservesPopulationAndLifetimes) {
+TEST(HiveContractControls, ObservedImplementationComparatorExceptionPreservesPopulationAndLifetimes) {
     auto expected = sort_input;
     std::sort(expected.begin(), expected.end());
-    int observed_exceptions = 0;
-    for (const int budget : {0, 1, 3, 100}) {
-        SCOPED_TRACE(budget);
-        element_state state; // Element operations cannot throw in this control.
+    std::size_t total_comparisons = 0;
+    {
+        element_state state;
         {
             std::hive<tracked_value<true>> hive;
             for (const int value : sort_input) hive.emplace(state, value);
-            int comparisons = 0;
+            // Count every comparison on a complete, nonthrowing baseline run.
+            EXPECT_NO_THROW(hive.sort([&](const auto& left, const auto& right) noexcept {
+                ++total_comparisons;
+                return left.value < right.value;
+            }));
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size()));
+            EXPECT_EQ(state.live, hive.size());
+            EXPECT_EQ(payloads(hive), expected);
+        }
+        EXPECT_EQ(state.live, 0u);
+        EXPECT_EQ(state.constructed, state.destroyed);
+    }
+    ASSERT_GT(total_comparisons, 0u);
+    std::size_t observed_exceptions = 0;
+    for (std::size_t throw_index = 0; throw_index < total_comparisons; ++throw_index) {
+        SCOPED_TRACE(throw_index);
+        element_state state; // Element operations cannot throw in this control.
+        {
+            // Rebuild the original input, never reuse a partially sorted attempt.
+            std::hive<tracked_value<true>> hive;
+            for (const int value : sort_input) hive.emplace(state, value);
+            std::size_t comparisons = 0;
             bool threw = false;
             try {
                 hive.sort([&](const auto& left, const auto& right) {
-                    if (comparisons++ == budget) throw injected_failure{};
+                    if (comparisons++ == throw_index) throw injected_failure{};
                     return left.value < right.value;
                 });
             } catch (const injected_failure&) {
                 threw = true;
                 ++observed_exceptions;
             }
+            EXPECT_TRUE(threw);
+            EXPECT_EQ(comparisons, throw_index + 1);
+            // BASIC GUARANTEE: unchanged size, valid traversal and live objects.
             ASSERT_TRUE(structurally_valid(hive, sort_input.size()));
             EXPECT_EQ(state.live, hive.size());
             auto actual = payloads(hive);
             if (!threw) EXPECT_TRUE(std::is_sorted(actual.begin(), actual.end()));
             std::sort(actual.begin(), actual.end());
+            // OBSERVED IMPLEMENTATION property, not a public promise: retain
+            // the exact multiset, including multiplicity, after comparator throws.
             EXPECT_EQ(actual, expected); // Multiplicity, not just size or retry.
+
+            // Continued use with throwing disabled, not merely destruction.
+            EXPECT_NO_THROW(hive.sort([](const auto& left, const auto& right) {
+                return left.value < right.value;
+            }));
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size()));
+            EXPECT_EQ(state.live, hive.size());
+            EXPECT_EQ(payloads(hive), expected); // Same observed property on retry.
+            auto inserted = hive.emplace(state, 99);
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size() + 1));
+            EXPECT_EQ(inserted->value, 99);
+            EXPECT_EQ(state.live, hive.size());
+            hive.erase(inserted);
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size()));
+            EXPECT_EQ(state.live, hive.size());
+            hive.clear();
+            ASSERT_TRUE(structurally_valid(hive, 0));
+            EXPECT_EQ(state.live, 0u);
+            EXPECT_EQ(state.constructed, state.destroyed);
+            hive.emplace(state, 99);
+            ASSERT_TRUE(structurally_valid(hive, 1));
+            EXPECT_EQ(hive.begin()->value, 99);
+            EXPECT_EQ(state.live, 1u);
         }
         EXPECT_EQ(state.live, 0u);
         EXPECT_EQ(state.constructed, state.destroyed);
     }
-    // Coverage information, not a requirement on a particular sorting mechanism.
+    EXPECT_EQ(observed_exceptions, total_comparisons);
     RecordProperty("observed_comparator_exceptions", observed_exceptions);
 }
 
@@ -250,14 +315,14 @@ TEST(HiveRetainedSemantics, TraversalAndIteratorComparisonOrderSurviveReuse) {
     }
 }
 
-template<bool AdlSwap>
+template<bool AdlSwap, bool Copyable = false>
 void characterize_element_exception(element_operation operation) {
     int observed_exceptions = 0;
     for (const int budget : {0, 1, 4}) {
         SCOPED_TRACE(budget);
         element_state state;
         {
-            std::hive<tracked_value<AdlSwap>> hive;
+            std::hive<tracked_value<AdlSwap, Copyable>> hive;
             for (const int value : sort_input) hive.emplace(state, value);
             state.operation = operation;
             state.budget = budget;
@@ -280,8 +345,19 @@ void characterize_element_exception(element_operation operation) {
                 std::sort(expected.begin(), expected.end());
                 EXPECT_EQ(payloads(hive), expected);
             }
+            // Exercise the populated container again without constraining the
+            // values left by a throwing element operation.
+            auto inserted = hive.emplace(state, 99);
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size() + 1));
+            EXPECT_EQ(inserted->value, 99);
+            EXPECT_EQ(state.live, hive.size());
+            hive.erase(inserted);
+            ASSERT_TRUE(structurally_valid(hive, sort_input.size()));
+            EXPECT_EQ(state.live, hive.size());
             hive.clear();
+            ASSERT_TRUE(structurally_valid(hive, 0));
             EXPECT_EQ(state.live, 0u);
+            EXPECT_EQ(state.constructed, state.destroyed);
             hive.emplace(state, 99);
             ASSERT_TRUE(structurally_valid(hive, 1));
             EXPECT_EQ(hive.begin()->value, 99);
@@ -304,6 +380,24 @@ TEST(HiveSortCharacterization, DestructiveMoveAssignmentStructuralLifetime) {
 
 TEST(HiveSortCharacterization, ThrowingAdlSwapStructuralLifetime) {
     characterize_element_exception<true>(element_operation::swap);
+}
+
+// Copyability does not require a sorting mechanism to copy or to throw. These
+// controls retain only the structural/lifetime guarantee after element throws.
+TEST(HiveSortCharacterization, CopyableThrowingCopyConstructionStructuralLifetime) {
+    characterize_element_exception<false, true>(element_operation::copy_construct);
+}
+
+TEST(HiveSortCharacterization, CopyableThrowingCopyAssignmentStructuralLifetime) {
+    characterize_element_exception<false, true>(element_operation::copy_assign);
+}
+
+TEST(HiveSortCharacterization, CopyableThrowingMoveConstructionStructuralLifetime) {
+    characterize_element_exception<false, true>(element_operation::move_construct);
+}
+
+TEST(HiveSortCharacterization, CopyableThrowingMoveAssignmentStructuralLifetime) {
+    characterize_element_exception<false, true>(element_operation::move_assign);
 }
 
 } // namespace
