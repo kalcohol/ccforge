@@ -114,4 +114,4 @@ add_test(NAME hive_multi_tu COMMAND hive_multi_tu)
 set_tests_properties(hive_runtime hive_multi_tu PROPERTIES TIMEOUT 120)
 
 message(STATUS "Hive <version>-only feature macro check: DEFERRED (no shared version backport)")
-message(STATUS "Hive mutation script: DEFERRED (not compatible with isolated toolchain/header scope)")
+include("${CMAKE_CURRENT_LIST_DIR}/Mutation.cmake")

@@ -20,8 +20,9 @@ Deferred: test_hive_version_feature.cpp requires a shared backport <version>,
 which has not been imported. The multi-TU test checks the macro after <hive>,
 not the separate version-only requirement.
 
-Deferred: verify_hive_mutation.cmake forces the backport while copying and
-using the entire backport tree, and invokes the compiler directly without the
-configured CMake toolchain. It therefore does not preserve this harness's
-isolated headers or general compiler/platform configuration. No mutation test
-is registered or reported as passed.
+Mutation.cmake builds the independent model against normal and size-mutated
+Hive-only overlays with the same configured toolchain. CTest requires the
+normal model to pass and the mutant to fail through a model mismatch, not a
+crash or compilation failure. No original implementation file is changed.
+The supplied legacy verify_hive_mutation.cmake remains only as provenance;
+this harness does not invoke its direct compiler path.
