@@ -98,4 +98,3 @@ int main() {
     { std::hive<aligned_value, measured_allocator<aligned_value>> c; run("hive_align64_default", 100000, c); }
     return stats.bytes != 0;
 }
-
