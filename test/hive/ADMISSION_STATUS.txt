@@ -5,7 +5,12 @@ repair and measurement. It does not enable hive in the root build, install
 configuration, native probes, or mainline feature table.
 
 The supplied core and tests are not a claim of complete conformance. Sort
-exception-contract interpretation, portable get_iterator lookup, general
+exception handling is a project decision: promise basic validity, unchanged
+size and no leaks, with element order and individual values unspecified after
+an exception. This is not a claim that the standard has settled value retention;
+LWG 4584 concerns construction preconditions, not exception guarantees. Keep
+the current implementation and its stronger comparator-exception observations
+until a separately reviewed change. Portable get_iterator lookup, general
 allocator policy, native handoff and final platform/consumer admission remain
 separate gates, as does existing wide-counter exhaustion. See
 CORE_PREPARATION.txt for completed units, validation and measured limits.
