@@ -62,6 +62,18 @@ struct hive_limits {
 
 namespace __forge_hive_detail {
 
+// Substitute the full constant expression outside hive's class instantiation.
+// Some compilers otherwise reject a valid nontrivial constexpr allocator.
+template<class A, class = void>
+struct constexpr_allocator_bound {};
+
+template<class A>
+struct constexpr_allocator_bound<A, void_t<integral_constant<
+    typename allocator_traits<A>::size_type,
+    allocator_traits<A>::max_size(A{})>>>
+    : integral_constant<typename allocator_traits<A>::size_type,
+                        allocator_traits<A>::max_size(A{})> {};
+
 // The standard's container-compatible-range is exposition-only.  Keep a Forge
 // exposition-only equivalent so this header does not depend on an implementation
 // having adopted the C++23 spelling of that concept.
@@ -171,14 +183,13 @@ class hive {
     constexpr size_type by_structure = structural_max_size();
     if constexpr (std::is_empty_v<allocator_type> &&
                   requires {
-                    typename integral_constant<
-                        typename allocator_traits_type::size_type,
-                        allocator_traits_type::max_size(allocator_type{})>;
+                    typename __forge_hive_detail::constexpr_allocator_bound<
+                        allocator_type>::type;
                   }) {
       // The full query, including destruction, must constant evaluate. Keep
       // this existing type-level clamp separate from the per-block index cap.
       constexpr auto allocator_max =
-          allocator_traits_type::max_size(allocator_type{});
+          __forge_hive_detail::constexpr_allocator_bound<allocator_type>::value;
       using common_type = common_type_t<decltype(allocator_max), size_type>;
       return static_cast<size_type>(
           std::min<common_type>(by_structure, allocator_max));
