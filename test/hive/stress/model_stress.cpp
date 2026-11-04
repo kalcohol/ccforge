@@ -1,5 +1,5 @@
 // Randomized model-based stress for the hive core-preparation branch.
-// Checks structural invariants after every operation: traversal both ways,
+// Checks structural invariants at model checkpoints: traversal both ways,
 // iterator ordering, get_iterator round trip, retained-iterator stability,
 // capacity accounting against the slot allocations, per-block limits at
 // allocation time, object lifetime balance, and allocation-failure rollback.
