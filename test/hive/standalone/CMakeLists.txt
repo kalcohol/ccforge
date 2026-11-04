@@ -119,3 +119,9 @@ set_tests_properties(hive_runtime hive_multi_tu PROPERTIES TIMEOUT 120)
 
 message(STATUS "Hive <version>-only feature macro check: DEFERRED (no shared version backport)")
 include("${CMAKE_CURRENT_LIST_DIR}/Mutation.cmake")
+
+option(FORGE_HIVE_BUILD_COST_PROBE "Build the optional local Hive cost probe" OFF)
+if(FORGE_HIVE_BUILD_COST_PROBE)
+    add_executable(hive_cost_probe "${CMAKE_CURRENT_LIST_DIR}/../benchmark/measure_core.cpp")
+    target_include_directories(hive_cost_probe PRIVATE "${hive_include}")
+endif()

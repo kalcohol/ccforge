@@ -26,3 +26,10 @@ normal model to pass and the mutant to fail through a model mismatch, not a
 crash or compilation failure. No original implementation file is changed.
 The supplied legacy verify_hive_mutation.cmake remains only as provenance;
 this harness does not invoke its direct compiler path.
+
+Optional cost probe: configure a Release build with
+-DFORGE_HIVE_BUILD_COST_PROBE=ON, build hive_cost_probe, then run it directly.
+It emits CSV for dense and half-erased populations, allocator byte/call counts,
+capacity, consumed checksums and median traversal time from seven samples.
+Repeat whole runs on the same machine. The probe is not a CTest timing gate;
+allocator metadata is excluded and a zero bulk-unit size means not observed.
