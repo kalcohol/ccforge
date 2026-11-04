@@ -29,7 +29,17 @@ this harness does not invoke its direct compiler path.
 
 Optional cost probe: configure a Release build with
 -DFORGE_HIVE_BUILD_COST_PROBE=ON, build hive_cost_probe, then run it directly.
-It emits CSV for dense and half-erased populations, allocator byte/call counts,
-capacity, consumed checksums and median traversal time from seven samples.
-Repeat whole runs on the same machine. The probe is not a CTest timing gate;
-allocator metadata is excluded and a zero bulk-unit size means not observed.
+Usage: hive_cost_probe {list|hive} {int|double|ordinary64|align64}
+                       [default|256|1024|4096|8192]
+The optional block maximum applies only to hive; its minimum remains the
+default minimum. Each process runs one configuration with 1,000,000 elements.
+It prints a CSV header and one row. W1 bytes, peak, allocation calls, size,
+and capacity include container construction and are captured after filling;
+list capacity is its size. Allocator metadata is excluded. W1 and W2 times
+and traversal min/median are total nanoseconds, not per-element values.
+Each traversal has one warmup and 31 samples. W2 uses three seeded random
+erase/reinsert rounds; the dense checksum is validated before W2.
+The probe is not a CTest timing gate. Orchestrate five interleaved processes
+per container/version, record batch load and apply the specification's noise
+rules externally. Compile baseline and new headers with the same probe and
+flags (specified primary toolchain: clang 19, libc++, -O2 -DNDEBUG).
