@@ -1656,6 +1656,11 @@ class hive {
           typename allocator_traits_type::template rebind_alloc<T>;
       using scratch_traits = allocator_traits<scratch_allocator>;
       scratch_allocator scratch(alloc_);
+      // Splice can exceed a single allocation's limit; check before the
+      // allocator's potentially narrower size_type receives the count.
+      if (n > scratch_traits::max_size(scratch)) {
+        throw bad_array_new_length();
+      }
       const auto allocation = scratch_traits::allocate(scratch, n);
       struct release_buffer {
         scratch_allocator& allocator;
