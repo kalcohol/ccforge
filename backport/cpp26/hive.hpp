@@ -1651,6 +1651,19 @@ class hive {
     // container values change. Comparator-exception value retention remains an
     // observed property, not a stronger public exception guarantee.
     const size_type n = size();
+    const auto sort_scratch = [](auto first, auto last, auto compare) {
+      // Monotone inputs need only linear comparison work, independently of
+      // the standard library's general-sort debug validation policy.
+      if (std::is_sorted(first, last, compare)) {
+        return;
+      }
+      if (std::is_sorted(std::make_reverse_iterator(last),
+                         std::make_reverse_iterator(first), compare)) {
+        std::reverse(first, last);
+        return;
+      }
+      std::sort(first, last, compare);
+    };
     if constexpr (sort_uses_value_buffer) {
       using scratch_allocator =
           typename allocator_traits_type::template rebind_alloc<T>;
@@ -1679,7 +1692,7 @@ class hive {
       for (const T& value : *this) {
         std::memcpy(values + index++, std::addressof(value), sizeof(T));
       }
-      std::sort(values, values + n, std::ref(comp));
+      sort_scratch(values, values + n, std::ref(comp));
       index = 0;
       for (T& value : *this) {
         value = values[index++];
@@ -1696,7 +1709,7 @@ class hive {
       for (T& value : *this) {
         order.push_back({std::addressof(value), order.size()});
       }
-      std::sort(order.begin(), order.end(), [&comp](const entry& a, const entry& b) {
+      sort_scratch(order.begin(), order.end(), [&comp](const entry& a, const entry& b) {
         return comp(*a.address, *b.address);
       });
 
