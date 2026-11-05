@@ -10,7 +10,8 @@
 # Targets:
 #   gcc16   GCC 16 container, -std=c++26. Verifies partial-native stand-aside
 #           for std::simd, padded mdspan layouts, and std::constant_wrapper,
-#           plus complete std::submdspan handoff. Also runs the SIMD-only suite
+#           plus complete std::submdspan handoff and the std::hive backport.
+#           Also runs the SIMD-only suite
 #           at -std=c++23, where a declaration-free <simd> selects the backport.
 #   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
 #           native support; full suite must pass (regression on the inject path).
@@ -180,6 +181,7 @@ target_gcc16() {
     assert_partial_stands_aside "${logfile}" "std::constant_wrapper" CONSTANT_WRAPPER
     assert_partial_stands_aside "${logfile}" "std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS
     assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
+    assert_backport_injects "${logfile}" "std::hive" HIVE
     log "gcc16: building + testing (native handoff must compile cleanly)"
     container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
 
