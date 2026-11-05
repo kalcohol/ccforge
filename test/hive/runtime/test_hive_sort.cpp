@@ -799,4 +799,70 @@ TEST(HiveSortRegression, GenericPermutationUsesAtMostNMinusOneSwaps) {
     }
 }
 
+template<class T>
+class narrow_count_allocator {
+    template<class> friend class narrow_count_allocator;
+    std::shared_ptr<std::size_t> zero_requests_;
+
+public:
+    using value_type = T;
+    using size_type = std::uint8_t;
+    template<class U> struct rebind { using other = narrow_count_allocator<U>; };
+
+    narrow_count_allocator() : zero_requests_(std::make_shared<std::size_t>(0)) {}
+    explicit narrow_count_allocator(std::shared_ptr<std::size_t> requests)
+        : zero_requests_(std::move(requests)) {}
+    template<class U>
+    narrow_count_allocator(const narrow_count_allocator<U>& other) noexcept
+        : zero_requests_(other.zero_requests_) {}
+
+    T* allocate(size_type count) {
+        // Reject before allocating: the regression never writes through a
+        // truncated zero-size request, even when run against the old code.
+        if (count == 0) {
+            ++*zero_requests_;
+            throw std::bad_alloc();
+        }
+        if (count > max_size()) throw std::bad_array_new_length();
+        return std::allocator<T>{}.allocate(count);
+    }
+    void deallocate(T* pointer, size_type count) noexcept {
+        std::allocator<T>{}.deallocate(pointer, count);
+    }
+    size_type max_size() const noexcept {
+        return static_cast<size_type>(std::numeric_limits<size_type>::max() / sizeof(T));
+    }
+    friend bool operator==(const narrow_count_allocator& a, const narrow_count_allocator& b) noexcept {
+        return a.zero_requests_ == b.zero_requests_;
+    }
+};
+
+TEST(HiveSortRegression, CopyScratchChecksAllocatorLimitBeforeCountConversion) {
+    using A = narrow_count_allocator<int>;
+    using H = std::hive<int, A>;
+    auto zero_requests = std::make_shared<std::size_t>(0);
+    A allocator(zero_requests);
+    H hive(std::hive_limits{8, 8}, allocator);
+    for (int i = 31; i >= 0; --i) hive.insert(i);
+    hive.sort();
+    EXPECT_TRUE(std::is_sorted(hive.begin(), hive.end()));
+    hive.clear();
+
+    // Splice retains storage and can exceed an individual allocation's limit.
+    for (int part = 0; part < 16; ++part) {
+        H source(std::hive_limits{8, 8}, allocator);
+        for (int i = 0; i < 16; ++i) source.insert(255 - (part * 16 + i));
+        hive.splice(source);
+    }
+    ASSERT_EQ(hive.size(), 256u);
+    ASSERT_GT(hive.size(), allocator.max_size());
+    const auto before = contents(hive);
+    const auto capacity = hive.capacity();
+    EXPECT_THROW(hive.sort(), std::bad_array_new_length);
+    EXPECT_EQ(*zero_requests, 0u);
+    EXPECT_EQ(hive.size(), 256u);
+    EXPECT_EQ(hive.capacity(), capacity);
+    EXPECT_EQ(contents(hive), before);
+}
+
 } // namespace
