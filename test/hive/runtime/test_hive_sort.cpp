@@ -43,7 +43,15 @@ struct lifetime_counts {
 struct element_hooks {
     std::size_t constructed = 0;
     std::size_t destroyed = 0;
+    bool metadata_armed = false;
+    std::size_t metadata_attempts = 0;
+    std::size_t metadata_constructed = 0;
+    std::size_t metadata_destroyed = 0;
+    std::size_t metadata_throw_at = std::numeric_limits<std::size_t>::max();
+    std::vector<const void*> metadata_live;
 };
+
+struct metadata_construct_failure { std::size_t position; };
 
 template<class T, class Element, template<class> class Backing>
 class hook_allocator;
@@ -149,8 +157,8 @@ static_assert(!std::is_move_constructible_v<deleted_move_value>);
 static_assert(std::is_move_assignable_v<deleted_move_value>);
 static_assert(std::is_swappable_v<deleted_move_value>);
 
-// Retain the shared allocation ledger and real fancy-pointer behavior. Only
-// element hooks are counted; constructing a rebound index entry is independent.
+// Retain the shared allocation ledger and real fancy-pointer behavior.
+// Element hooks stay separate from opt-in rebound metadata tracking.
 template<class T, class Element, template<class> class Backing>
 class hook_allocator : public Backing<T> {
     template<class, class, template<class> class> friend class hook_allocator;
@@ -170,6 +178,16 @@ public:
 
     template<class U, class... Args>
     void construct(U* pointer, Args&&... args) {
+        if constexpr (!std::is_same_v<U, Element>) {
+            if (hooks_->metadata_armed) {
+                const auto position = hooks_->metadata_attempts++;
+                if (position == hooks_->metadata_throw_at) throw metadata_construct_failure{position};
+                if (position >= hooks_->metadata_live.size()) {
+                    ADD_FAILURE() << "Unexpected extra metadata construction";
+                    throw metadata_construct_failure{position};
+                }
+            }
+        }
         if constexpr (std::is_same_v<U, deleted_move_value> && sizeof...(Args) == 1 &&
                       (std::is_same_v<Args, deleted_move_value> && ...)) {
             // Allocator-relative rvalue insertion can copy even with deleted moves.
@@ -178,12 +196,39 @@ public:
             // Direct construction also has access to allocator_only_value's move.
             ::new (static_cast<void*>(pointer)) U(std::forward<Args>(args)...);
         }
-        if constexpr (std::is_same_v<U, Element>) ++hooks_->constructed;
+        if constexpr (std::is_same_v<U, Element>) {
+            ++hooks_->constructed;
+        } else if (hooks_->metadata_armed) {
+            // Slots are provisioned before arming, so tracking cannot allocate.
+            hooks_->metadata_live[hooks_->metadata_constructed++] = pointer;
+        }
     }
     template<class U>
     void destroy(U* pointer) noexcept {
+        if constexpr (!std::is_same_v<U, Element>) {
+            if (hooks_->metadata_armed) {
+                const auto found = std::find(hooks_->metadata_live.begin(),
+                                            hooks_->metadata_live.end(), pointer);
+                if (found == hooks_->metadata_live.end()) {
+                    ADD_FAILURE() << "Destroying metadata that is not live";
+                    return;
+                }
+                *found = nullptr;
+                ++hooks_->metadata_destroyed;
+            }
+        }
         std::destroy_at(pointer);
         if constexpr (std::is_same_v<U, Element>) ++hooks_->destroyed;
+    }
+    void deallocate(typename Backing<T>::pointer pointer,
+                    typename Backing<T>::size_type count) noexcept {
+        if constexpr (!std::is_same_v<T, Element>) {
+            if (hooks_->metadata_armed) {
+                EXPECT_TRUE(std::all_of(hooks_->metadata_live.begin(), hooks_->metadata_live.end(),
+                                        [](const void* live) { return live == nullptr; }));
+            }
+        }
+        Backing<T>::deallocate(pointer, count);
     }
     template<class U>
     bool operator==(const hook_allocator<U, Element, Backing>& other) const noexcept {
@@ -608,6 +653,91 @@ TEST(HiveSortRegression, FancyGenericExhaustsComparatorThrowsAndPreservesLifetim
     comparator_failure_sweep<move_only_value, fancy_allocator>();
 }
 
+template<template<class> class Backing>
+void metadata_construct_failure_sweep() {
+    using T = move_only_value;
+    using A = hook_allocator<T, T, Backing>;
+    using H = std::hive<T, A>;
+    constexpr std::size_t n = 37;
+    for (const bool small_blocks : {false, true}) {
+        for (const auto shape : {topology::dense, topology::sparse, topology::churn}) {
+            for (std::size_t fail_at = 0; fail_at <= n; ++fail_at) {
+                SCOPED_TRACE(::testing::Message() << "metadata=" << fail_at
+                    << " blocks8=" << small_blocks << " shape=" << static_cast<int>(shape));
+                auto state = std::make_shared<allocation_state>();
+                auto hooks = std::make_shared<element_hooks>();
+                lifetime_counts counts;
+                {
+                    H hive(small_blocks ? std::hive_limits{8, 8} : H::block_capacity_default_limits(),
+                           A(state, hooks, 61));
+                    populate(hive, n, input_order::duplicates, shape, counts);
+                    const auto before = contents(hive);
+                    const auto addresses = slots(hive);
+                    const auto capacity = hive.capacity();
+                    const auto ledger = state->allocations;
+                    const auto allocations = state->allocation_attempts;
+                    const auto old_hooks = *hooks;
+                    const auto old_counts = counts;
+                    counts.peak = counts.live;
+                    hooks->metadata_live.assign(n, nullptr);
+                    hooks->metadata_throw_at = fail_at;
+                    hooks->metadata_armed = true;
+                    std::size_t comparisons = 0;
+                    bool threw = false;
+                    try {
+                        hive.sort(counted_less<T>{&comparisons});
+                    } catch (const metadata_construct_failure& failure) {
+                        threw = true;
+                        EXPECT_EQ(failure.position, fail_at);
+                    }
+                    hooks->metadata_armed = false;
+                    EXPECT_EQ(threw, fail_at < n);
+                    EXPECT_EQ(hooks->metadata_attempts, fail_at < n ? fail_at + 1 : n);
+                    EXPECT_EQ(hooks->metadata_constructed, fail_at);
+                    EXPECT_EQ(hooks->metadata_destroyed, fail_at);
+                    EXPECT_TRUE(std::all_of(hooks->metadata_live.begin(), hooks->metadata_live.end(),
+                                            [](const void* live) { return live == nullptr; }));
+                    EXPECT_EQ(state->allocation_attempts - allocations, 1u);
+                    expect_ledger(*state, ledger);
+                    EXPECT_EQ(hive.size(), n);
+                    EXPECT_EQ(hive.capacity(), capacity);
+                    EXPECT_EQ(slots(hive), addresses);
+                    EXPECT_EQ(hooks->constructed, old_hooks.constructed);
+                    EXPECT_EQ(hooks->destroyed, old_hooks.destroyed);
+                    expect_lifetime<T>(counts, n);
+                    if (fail_at < n) {
+                        EXPECT_EQ(contents(hive), before);
+                        EXPECT_EQ(comparisons, 0u);
+                        EXPECT_EQ(counts.born, old_counts.born);
+                        EXPECT_EQ(counts.destroyed, old_counts.destroyed);
+                        EXPECT_EQ(counts.peak, n);
+                    } else {
+                        EXPECT_GT(comparisons, 0u);
+                        expect_sorted_and_complete(hive, before);
+                    }
+                    hive.sort([](const T& a, const T& b) { return key_of(a) < key_of(b); });
+                    expect_sorted_and_complete(hive, before);
+                    expect_ledger(*state, ledger);
+                    EXPECT_EQ(hooks->constructed, old_hooks.constructed);
+                    EXPECT_EQ(hooks->destroyed, old_hooks.destroyed);
+                    expect_lifetime<T>(counts, n);
+                }
+                EXPECT_TRUE(state->clean());
+                EXPECT_EQ(counts.live, 0u);
+                EXPECT_EQ(counts.born, counts.destroyed);
+                EXPECT_EQ(hooks->constructed, hooks->destroyed);
+            }
+        }
+    }
+}
+
+TEST(HiveSortRegression, GenericExhaustsMetadataConstructFailuresPreservingExactOrder) {
+    metadata_construct_failure_sweep<raw_allocator>();
+}
+TEST(HiveSortRegression, FancyGenericExhaustsMetadataConstructFailuresPreservingExactOrder) {
+    metadata_construct_failure_sweep<fancy_allocator>();
+}
+
 template<class T>
 void comparison_budgets() {
     using H = std::hive<T>;
@@ -840,10 +970,17 @@ TEST(HiveSortRegression, GenericPermutationUsesAtMostNMinusOneSwaps) {
     }
 }
 
+struct narrow_allocation_probe {
+    std::size_t requests = 0;
+    std::size_t last_count = 0;
+    std::size_t last_limit = 0;
+};
+
 template<class T>
 class narrow_count_allocator {
     template<class> friend class narrow_count_allocator;
     std::shared_ptr<std::size_t> zero_requests_;
+    std::shared_ptr<narrow_allocation_probe> probe_;
 
 public:
     using value_type = T;
@@ -851,13 +988,19 @@ public:
     template<class U> struct rebind { using other = narrow_count_allocator<U>; };
 
     narrow_count_allocator() : zero_requests_(std::make_shared<std::size_t>(0)) {}
-    explicit narrow_count_allocator(std::shared_ptr<std::size_t> requests)
-        : zero_requests_(std::move(requests)) {}
+    explicit narrow_count_allocator(std::shared_ptr<std::size_t> requests,
+                                    std::shared_ptr<narrow_allocation_probe> probe = {})
+        : zero_requests_(std::move(requests)), probe_(std::move(probe)) {}
     template<class U>
     narrow_count_allocator(const narrow_count_allocator<U>& other) noexcept
-        : zero_requests_(other.zero_requests_) {}
+        : zero_requests_(other.zero_requests_), probe_(other.probe_) {}
 
     T* allocate(size_type count) {
+        if (probe_) {
+            ++probe_->requests;
+            probe_->last_count = count;
+            probe_->last_limit = max_size();
+        }
         // Reject before allocating: the regression never writes through a
         // truncated zero-size request, even when run against the old code.
         if (count == 0) {
@@ -904,6 +1047,63 @@ TEST(HiveSortRegression, CopyScratchChecksAllocatorLimitBeforeCountConversion) {
     EXPECT_EQ(hive.size(), 256u);
     EXPECT_EQ(hive.capacity(), capacity);
     EXPECT_EQ(contents(hive), before);
+}
+
+TEST(HiveSortRegression, GenericScratchChecksReboundLimitBeforeCountConversion) {
+    using T = trivial_64;
+    using A = narrow_count_allocator<T>;
+    using H = std::hive<T, A>;
+    auto zero_requests = std::make_shared<std::size_t>(0);
+    auto probe = std::make_shared<narrow_allocation_probe>();
+    A allocator(zero_requests, probe);
+    lifetime_counts unused;
+    std::size_t metadata_limit = 0;
+    {
+        H hive(std::hive_limits{1, 1}, allocator);
+        emplace_value(hive, 2, 0, unused);
+        emplace_value(hive, 1, 1, unused);
+        const auto before = contents(hive);
+        const auto requests = probe->requests;
+        hive.sort([](const T& a, const T& b) { return a.key < b.key; });
+        EXPECT_EQ(probe->requests - requests, 1u);
+        EXPECT_EQ(probe->last_count, 2u);
+        metadata_limit = probe->last_limit;
+        expect_sorted_and_complete(hive, before);
+    }
+    // Observe the rebound limit via the allocator, without naming the private entry type.
+    ASSERT_GT(metadata_limit, allocator.max_size());
+    ASSERT_LT(metadata_limit, std::numeric_limits<A::size_type>::max());
+    for (const std::size_t n : {metadata_limit, metadata_limit + 1, std::size_t{256}}) {
+        SCOPED_TRACE(::testing::Message() << "metadata_size=" << n << " limit=" << metadata_limit);
+        H hive(std::hive_limits{1, 1}, allocator);
+        for (std::size_t i = 0; i < n; ++i) {
+            H source(std::hive_limits{1, 1}, allocator);
+            emplace_value(source, static_cast<int>(n - i), static_cast<int>(i), unused);
+            hive.splice(source);
+        }
+        const auto before = contents(hive);
+        const auto addresses = slots(hive);
+        const auto capacity = hive.capacity();
+        const auto requests = probe->requests;
+        std::size_t comparisons = 0;
+        if (n == metadata_limit) {
+            EXPECT_NO_THROW(hive.sort(counted_less<T>{&comparisons}));
+            EXPECT_EQ(probe->requests - requests, 1u);
+            EXPECT_EQ(probe->last_count, n);
+            EXPECT_GT(comparisons, 0u);
+            expect_sorted_and_complete(hive, before);
+        } else {
+            // The allocator rejects both oversize and truncated-zero requests before any write.
+            EXPECT_THROW(hive.sort(counted_less<T>{&comparisons}), std::bad_array_new_length);
+            EXPECT_EQ(probe->requests, requests);
+            EXPECT_EQ(comparisons, 0u);
+            EXPECT_EQ(contents(hive), before);
+        }
+        EXPECT_EQ(*zero_requests, 0u);
+        EXPECT_EQ(hive.size(), n);
+        EXPECT_EQ(hive.capacity(), capacity);
+        EXPECT_EQ(slots(hive), addresses);
+    }
 }
 
 } // namespace

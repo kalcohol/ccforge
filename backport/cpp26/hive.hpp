@@ -43,11 +43,11 @@
 #include <limits>
 #include <memory>
 #include <memory_resource>
+#include <new>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace std {
 
@@ -1742,12 +1742,35 @@ class hive {
       };
       using entry_allocator =
           typename allocator_traits_type::template rebind_alloc<entry>;
-      std::vector<entry, entry_allocator> order{entry_allocator(alloc_)};
-      order.reserve(n);
-      for (T& value : *this) {
-        order.push_back({std::addressof(value), order.size()});
+      using entry_traits = allocator_traits<entry_allocator>;
+      entry_allocator scratch(alloc_);
+      if (n > entry_traits::max_size(scratch)) {
+        throw bad_array_new_length();
       }
-      sort_scratch(order.begin(), order.end(), [&comp](const entry& a, const entry& b) {
+      const auto allocation = entry_traits::allocate(scratch, n);
+      entry* const order = std::to_address(allocation);
+      // Own the table directly: a debug container can allocate bookkeeping in
+      // a noexcept constructor, preventing allocator failures from propagating.
+      struct release_entries {
+        entry_allocator& allocator;
+        typename entry_traits::pointer allocation;
+        entry* entries;
+        size_type count;
+        size_type constructed = 0;
+        ~release_entries() {
+          while (constructed != 0) {
+            entry_traits::destroy(allocator, entries + --constructed);
+          }
+          entry_traits::deallocate(allocator, allocation, count);
+        }
+      } release{scratch, allocation, order, n};
+      for (T& value : *this) {
+        const size_type index = release.constructed;
+        entry_traits::construct(scratch, order + index,
+                                entry{std::addressof(value), index});
+        ++release.constructed;
+      }
+      sort_scratch(order, order + n, [&comp](const entry& a, const entry& b) {
         return comp(*a.address, *b.address);
       });
 
