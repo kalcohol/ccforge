@@ -6,6 +6,7 @@
 
 ## Standard backports
 
+- [`hive_example.cpp`](../example/hive_example.cpp)（仅 partial、非完整 native 且未强制 backport 时跳过）
 - [`unique_resource_example.cpp`](../example/unique_resource_example.cpp)
 - [`constant_wrapper_example.cpp`](../example/constant_wrapper_example.cpp)
 - [`simd_example.cpp`](../example/simd_example.cpp)

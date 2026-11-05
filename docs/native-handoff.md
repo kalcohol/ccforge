@@ -29,6 +29,10 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 
 检测到原生时，`forge.cmake` 会通过 `FORGE_HAS_NATIVE_*` 宏通知 wrapper 头一并退场。部分原生也让位，是为了避免在 `namespace std` 中 on-top 注入造成 ODR 冲突。
 
+`<hive>` 同样采用三态策略：完整与 partial native 均让位，partial 会警告；无原生
+声明时才注入 backport。包含 `<hive>` 后 backport 提供 `__cpp_lib_hive >= 202502L`；
+不承诺只包含 `<version>` 就能发现该宏。详见 [Hive 说明](backports/hive.md)。
+
 ## 回归验证口径
 
 Native handoff 的回归应优先看“是否正确让位”和“是否正确注册/不注册对应测试”，不要依赖单个全局 CTest 数量：
@@ -72,6 +76,7 @@ examples。
 以下开关仅用于诊断 backport 本身：
 
 - `FORGE_FORCE_SIMD_BACKPORT`
+- `FORGE_FORCE_HIVE_BACKPORT`
 - `FORGE_FORCE_SENDERS_BACKPORT`
 - `FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT`
 - `FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT`

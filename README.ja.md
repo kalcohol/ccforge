@@ -25,6 +25,7 @@ backport ヘッダーを注入します。
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | 実用的な P2300 subset |
 | `std::simd` | `<simd>` | C++26 の主要 surface |
+| `std::hive` | `<hive>` | C++26 backport；[範囲と制限](docs/backports/hive.md) |
 | `std::submdspan` と padded layouts | `<mdspan>` | 現行 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |

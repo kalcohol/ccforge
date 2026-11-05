@@ -35,6 +35,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 ## Backport 文档
 
+- [`std::hive`](backports/hive.md)
 - [`std::execution`](backports/execution.md)
 - [`std::linalg`](backports/linalg.md)
 - [`std::simd`](backports/simd.md)

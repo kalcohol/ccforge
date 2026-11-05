@@ -24,6 +24,7 @@ missing native support injects Forge's backport headers.
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | practical P2300 subset |
 | `std::simd` | `<simd>` | core C++26 surface |
+| `std::hive` | `<hive>` | C++26 backport; [scope and limitations](docs/backports/hive.md) |
 | `std::submdspan` and padded layouts | `<mdspan>` | current C++26 draft surface |
 | `std::linalg` | `<linalg>` | practical BLAS level 1/2/3 subset |
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |

@@ -30,8 +30,9 @@ Decisions And Implementation
 - Tail contraction, run migration/coalescing, constructor rollback, allocator
   bounds and block-list invariants have focused independent controls.
 - The hard per-block ceiling remains 65535 and is distinct from total size.
-  The default range is now {8, 4096} for all element types, subject to existing
-  allocator and structural clamps. Explicit block limits retain their meaning.
+  The defaults are minimum 8 and maximum 4096 for all element types, each
+  clamped to the static hard maximum. Allocator and structural bounds also
+  apply to allocation. Explicit block limits retain their meaning.
 - get_iterator uses checked integer address proposals, then live-slot and
   pointer identity checks. It performs constant candidate work per active
   block, does not search reserved blocks, and has no per-slot fallback scan.

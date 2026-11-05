@@ -23,6 +23,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | 实用 P2300 子集 |
 | `std::simd` | `<simd>` | 核心 C++26 表面 |
+| `std::hive` | `<hive>` | C++26 backport；[范围与限制](docs/backports/hive.md) |
 | `std::submdspan` 与 padded layouts | `<mdspan>` | 当前 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
 | `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
