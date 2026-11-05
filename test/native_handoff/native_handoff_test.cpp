@@ -1,7 +1,7 @@
 // Native handoff test.
 //
 // This translation unit pulls in every Forge backport wrapper that injects into
-// namespace std (<simd>, <execution>, <mdspan>, <linalg>) through the forge::forge
+// namespace std (<simd>, <execution>, <mdspan>, <linalg>, <hive>) through forge::forge
 // include path, and exercises each public API. Its purpose is to catch ODR /
 // redefinition regressions in the "seamless injection" handshake:
 //
@@ -20,6 +20,10 @@
 #include <concepts>
 #include <tuple>
 #include <type_traits>
+
+#if __has_include(<hive>)
+#  include <hive>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -46,6 +50,15 @@ TEST(NativeHandoff, Senders) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
+
+#if defined(FORGE_BACKPORT_HIVE_HPP_INCLUDED)
+TEST(NativeHandoff, HiveBackport) {
+    std::hive<int> values;
+    auto it = values.insert(42);
+    EXPECT_EQ(values.get_iterator(std::addressof(*it)), it);
+    EXPECT_EQ(*it, 42);
+}
+#endif
 
 #if defined(__cpp_lib_mdspan)
 TEST(NativeHandoff, Submdspan) {
