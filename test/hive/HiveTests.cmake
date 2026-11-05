@@ -54,6 +54,8 @@ if(FORGE_HIVE_BUILD_COST_PROBE)
     target_link_libraries(hive_cost_probe PRIVATE ${hive_test_library})
     add_executable(hive_traversal_probe "${CMAKE_CURRENT_LIST_DIR}/benchmark/measure_traversal.cpp")
     target_link_libraries(hive_traversal_probe PRIVATE ${hive_test_library})
+    add_executable(hive_sort_probe "${CMAKE_CURRENT_LIST_DIR}/benchmark/measure_sort.cpp")
+    target_link_libraries(hive_sort_probe PRIVATE ${hive_test_library})
 endif()
 
 option(FORGE_HIVE_BUILD_STRESS "Build the optional randomized Hive model stress" OFF)
