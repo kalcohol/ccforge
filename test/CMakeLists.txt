@@ -6,6 +6,7 @@ option(FORGE_TEST_ENABLE_CONSTANT_WRAPPER "Build Forge std::constant_wrapper tes
 option(FORGE_TEST_ENABLE_UNIQUE_RESOURCE "Build Forge std::unique_resource tests" ON)
 option(FORGE_TEST_ENABLE_SUBMDSPAN "Build Forge std::submdspan tests" ON)
 option(FORGE_TEST_ENABLE_LINALG "Build Forge std::linalg tests" ON)
+option(FORGE_TEST_ENABLE_HIVE "Build Forge std::hive tests" ON)
 option(FORGE_TEST_ENABLE_FORGE "Build Forge extension tests" ON)
 option(FORGE_TEST_ENABLE_FORGE_RUNTIME "Build Forge runtime extension tests" ON)
 option(FORGE_TEST_ENABLE_FORGE_RESOURCE "Build Forge resource policy extension tests" ON)
@@ -29,6 +30,7 @@ if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
+        OR FORGE_TEST_ENABLE_HIVE
         OR FORGE_TEST_ENABLE_ANY_FORGE
         OR FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     set(_FORGE_GTEST_SOURCE_DIR
@@ -110,6 +112,7 @@ if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
+        OR FORGE_TEST_ENABLE_HIVE
         OR FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     set(FORGE_TEST_ENABLE_STD_TARGET ON)
 endif()
@@ -232,6 +235,15 @@ if(FORGE_TEST_ENABLE_LINALG)
     else()
         message(STATUS
             "Forge: linalg backport conformance tests skipped because the native standard library stands aside")
+    endif()
+endif()
+if(FORGE_TEST_ENABLE_HIVE)
+    if(FORGE_FORCE_HIVE_BACKPORT
+            OR (NOT FORGE_HIVE_FULL AND NOT FORGE_HIVE_PARTIAL))
+        add_subdirectory(hive)
+    else()
+        message(STATUS
+            "Forge: Hive backport conformance tests skipped because the native standard library stands aside")
     endif()
 endif()
 if(FORGE_TEST_ENABLE_STD_TARGET)

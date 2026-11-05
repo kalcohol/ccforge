@@ -51,7 +51,6 @@ configure_file("${FORGE_ROOT_DIR}/backport/hive" "${hive_include}/hive" COPYONLY
 configure_file("${FORGE_ROOT_DIR}/backport/cpp26/hive.hpp"
     "${hive_include}/cpp26/hive.hpp" COPYONLY)
 
-set(hive_compile_dir "${CMAKE_CURRENT_LIST_DIR}/../compile")
 function(hive_compile_check name expect_success)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     try_compile(result "${CMAKE_CURRENT_BINARY_DIR}/compile-checks/${name}"
@@ -71,21 +70,6 @@ function(hive_compile_check name expect_success)
     message(STATUS "Hive compile check ${name}: as expected")
 endfunction()
 
-# Each rejection has a corresponding positive control compiled first.
-hive_compile_check(include TRUE)
-hive_compile_check(api TRUE)
-hive_compile_check(fancy_api TRUE)
-hive_compile_check(constexpr_allocator TRUE)
-hive_compile_check(accept_from_range TRUE)
-hive_compile_check(reject_incompatible_from_range FALSE)
-hive_compile_check(accept_construct_only_range TRUE)
-hive_compile_check(accept_assign_range TRUE)
-hive_compile_check(reject_nonassignable_assign_range FALSE)
-hive_compile_check(accept_iterator_allocator TRUE)
-hive_compile_check(reject_non_allocator FALSE)
-hive_compile_check(accept_legacy_input TRUE)
-hive_compile_check(reject_non_input_iterator FALSE)
-
 enable_testing()
 set(INSTALL_GTEST OFF CACHE BOOL "Do not install the standalone test dependency" FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL "The Hive harness only uses GoogleTest" FORCE)
@@ -93,45 +77,10 @@ if(MSVC)
     set(gtest_force_shared_crt ON CACHE BOOL "Use the consumer CRT" FORCE)
 endif()
 add_subdirectory("${FORGE_HIVE_GTEST_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/googletest" EXCLUDE_FROM_ALL)
-set(hive_runtime_dir "${CMAKE_CURRENT_LIST_DIR}/../runtime")
-add_executable(hive_runtime
-    "${hive_runtime_dir}/test_hive_allocators.cpp"
-    "${hive_runtime_dir}/test_hive_capacity.cpp"
-    "${hive_runtime_dir}/test_hive_contract_controls.cpp"
-    "${hive_runtime_dir}/test_hive_growth.cpp"
-    "${hive_runtime_dir}/test_hive_get_iterator.cpp"
-    "${hive_runtime_dir}/test_hive_layout.cpp"
-    "${hive_runtime_dir}/test_hive_skipfield.cpp"
-    "${hive_runtime_dir}/test_hive_core_model.cpp"
-    "${hive_runtime_dir}/test_hive_exceptions.cpp"
-    "${hive_runtime_dir}/test_hive_fancy_allocator.cpp"
-    "${hive_runtime_dir}/test_hive_ranges_types.cpp"
-    "${hive_runtime_dir}/test_hive_semantics.cpp"
-    "${hive_runtime_dir}/test_hive_splice_edges.cpp")
-target_include_directories(hive_runtime PRIVATE "${hive_include}")
-target_compile_definitions(hive_runtime PRIVATE FORGE_HIVE_TEST_HOOKS=1)
-target_link_libraries(hive_runtime PRIVATE GTest::gtest_main)
-add_test(NAME hive_runtime COMMAND hive_runtime)
-
-add_executable(hive_multi_tu
-    "${hive_runtime_dir}/test_hive_multi_tu_main.cpp"
-    "${hive_runtime_dir}/test_hive_multi_tu_other.cpp")
-target_include_directories(hive_multi_tu PRIVATE "${hive_include}")
-add_test(NAME hive_multi_tu COMMAND hive_multi_tu)
-set_tests_properties(hive_runtime hive_multi_tu PROPERTIES TIMEOUT 120)
-
-message(STATUS "Hive <version>-only feature macro check: DEFERRED (no shared version backport)")
-include("${CMAKE_CURRENT_LIST_DIR}/Mutation.cmake")
-
-option(FORGE_HIVE_BUILD_COST_PROBE "Build the optional local Hive cost probe" OFF)
-if(FORGE_HIVE_BUILD_COST_PROBE)
-    add_executable(hive_cost_probe "${CMAKE_CURRENT_LIST_DIR}/../benchmark/measure_core.cpp")
-    target_include_directories(hive_cost_probe PRIVATE "${hive_include}")
-endif()
-
-option(FORGE_HIVE_BUILD_STRESS "Build the optional randomized Hive model stress" OFF)
-if(FORGE_HIVE_BUILD_STRESS)
-    add_executable(hive_stress "${CMAKE_CURRENT_LIST_DIR}/../stress/model_stress.cpp")
-    target_include_directories(hive_stress PRIVATE "${hive_include}")
-    target_compile_definitions(hive_stress PRIVATE FORGE_HIVE_TEST_HOOKS=1)
-endif()
+add_library(hive_standalone_headers INTERFACE)
+target_include_directories(hive_standalone_headers INTERFACE "${hive_include}")
+set(hive_test_library hive_standalone_headers)
+set(hive_source_backport "${hive_include}")
+set(FORGE_TEST_TIMEOUT_SECONDS 120 CACHE STRING
+    "Timeout in seconds for individual Hive tests")
+include("${CMAKE_CURRENT_LIST_DIR}/../HiveTests.cmake")

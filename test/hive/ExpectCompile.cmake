@@ -1,0 +1,23 @@
+foreach(required IN ITEMS BUILD_DIR TARGET_NAME EXPECT_SUCCESS LOG)
+    if(NOT DEFINED ${required})
+        message(FATAL_ERROR "${required} is required")
+    endif()
+endforeach()
+set(config_args)
+if(DEFINED BUILD_CONFIG AND NOT BUILD_CONFIG STREQUAL "")
+    list(APPEND config_args --config "${BUILD_CONFIG}")
+endif()
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" --build "${BUILD_DIR}" ${config_args}
+        --target "${TARGET_NAME}"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+get_filename_component(log_dir "${LOG}" DIRECTORY)
+file(MAKE_DIRECTORY "${log_dir}")
+file(WRITE "${LOG}" "${output}\n${error}")
+if(NOT "${result}" MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "Hive compile control could not run; see ${LOG}")
+elseif(EXPECT_SUCCESS AND NOT result EQUAL 0)
+    message(FATAL_ERROR "Hive positive compile control failed; see ${LOG}")
+elseif(NOT EXPECT_SUCCESS AND result EQUAL 0)
+    message(FATAL_ERROR "Hive rejection compile control unexpectedly succeeded; see ${LOG}")
+endif()
