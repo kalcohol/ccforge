@@ -3,9 +3,10 @@ HIVE SKIPFIELD PREPARATION -- 2026-11-05
 Disposition
 -----------
 R0/R1 preparation and R2/R3 were independently reviewed and accepted by the
-owner on 2026-11-05. This is not mainline admission or a complete conformance
-claim. R5 integration and its verification remain separate; R2.1 iteration
-optimization and R4 sort acceleration remain deferred.
+owner on 2026-11-05. This preparation record is not itself mainline admission
+or a complete conformance claim. Subsequent R5 integration and verification
+are recorded separately in R5_ADMISSION.txt; R2.1 iteration optimization and
+R4 sort acceleration remain deferred.
 
 The functional and measured implementation revision is 16a29f8. Subsequent
 record/comment-only changes do not change the header or executable logic.
@@ -160,5 +161,6 @@ B5 passing. The original B3 list-relative threshold of 1.10 failed at
 traversal <= 1.25 times plf::hive, measured externally by the independent
 reviewer; the reported 1.17 passes. The reviewer also reported churn and memory
 ratios of 1.17 and 1.15 against plf. No third-party source is included here.
-These are review results, not new R5 verification. R5 platform, consumer and
-integration gates remain for the parent to validate; R2.1 and R4 are deferred.
+These are review results, not new R5 performance measurements. Subsequent R5
+platform, consumer and integration results are recorded in R5_ADMISSION.txt;
+R2.1 and R4 are deferred.

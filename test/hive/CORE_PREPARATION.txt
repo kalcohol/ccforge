@@ -1,7 +1,8 @@
 HIVE CORE PREPARATION RECORD -- 2026-11-04
 
 Historical linked-slot baseline record. For the subsequent skipfield branch,
-its actual validation and unresolved gates, see SKIPFIELD_PREPARATION.txt.
+see SKIPFIELD_PREPARATION.txt; for final integration gates, see R5_ADMISSION.txt.
+The admission warnings below describe this earlier preparation stage.
 
 Status
 ------

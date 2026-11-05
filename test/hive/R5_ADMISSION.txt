@@ -1,0 +1,113 @@
+HIVE R5 INTEGRATION ADMISSION -- 2026-11-05
+
+Disposition
+-----------
+The reviewed skipfield implementation is qualified for mainline integration.
+R5 adds wrapper/probe, build/test, consumer, example and documentation support;
+it does not change container algorithms, representation or performance policy.
+R2.1 iteration optimization and R4 sort acceleration remain deferred.
+
+The owner accepted the independent R2/R3 review and replaced B3 with dense
+traversal <= 1.25 times plf::hive, measured externally by the reviewer. The
+reported 1.17 passes. Earlier list-relative failures and noisy measurements
+remain in SKIPFIELD_PREPARATION.txt; R5 did not rerun or replace those data.
+No third-party implementation or paper pseudocode was imported.
+
+Original work/hive-core-20261104, work/hive-skipfield-20261105 and the
+hive-core-linked-baseline-20261104 tag remain unchanged. Selected preparation
+history was replayed onto mainline, with identical final source trees before
+R5 edits. Two attribution-format corrections affect only new commit copies,
+not published history. Original provenance is retained in ADMISSION_STATUS.txt.
+
+Integration Surface
+-------------------
+- <hive> follows the three-state CMake policy at the selected language mode:
+  complete native stands aside, partial native warns and stands aside, and
+  no native declaration injects the backport. FORCE is diagnostic-only.
+- Full probes instantiate operations in function bodies. Independent partial
+  roots cover the macro, limits, template and PMR surfaces. Modular probe
+  contents participate in fingerprint invalidation; native MSVC hive headers
+  are optional. No shared <version> shadow header was introduced.
+- FORGE_TEST_ENABLE_HIVE controls the root test group. Root tests use the real
+  forge::std target; the standalone harness retains its isolated overlay.
+  Both retain the reviewed runtime, compile and independent-model assertions.
+- Native fixtures check public-target consumption and actual main test-tree
+  registration, including warm-cache changes. Synthetic COMPLETE proves the
+  selection mechanism, not the quality of a real native implementation.
+- Source include/add_subdirectory and installed find_package consumers use
+  both forge::std and forge::forge. Explicit ENABLED/PARTIAL manifests prevent
+  a missing executable from silently passing the consumer verifier.
+- The stable-handle example, three READMEs and focused documentation are
+  registered and consistent. The old version-wrapper comment is removed.
+  Default block limits are documented for all element types, subject to clamps.
+
+Validation
+----------
+The principal integration snapshot is 4315e15. Aggregate-header coverage was
+then added and verified at 70653bb; later admission edits are documentation.
+The implementation tested here has the same reviewed core as 16a29f8, except
+for the R5 header injection guard and its comments.
+
+  Toolchain / library                   Mode                 Scope / result
+  Clang 19 / libc++                     C++26                303 pass, 3 skip
+  Clang 19 / libc++                     C++23                focused 30/30
+  GCC 16 / libstdc++                    C++23 and C++26       focused 30/30 each
+  Clang 19 / libc++, ASan+UBSan          C++23 and C++26       focused 30/30 each
+  AppleClang 21 / libc++, arm64          C++23 and C++26       focused 30/30 each
+  MSVC 19.51, x64                       configured C++23      focused 30/30
+
+The full LLVM run registers 306 tests: 303 passed, and the three io_uring
+runtime tests were skipped by the environment gate. None failed. This is not
+an io_uring runtime qualification. The focused sets have no skipped entries.
+The focused set includes 109 runtime cases in one CTest entry, a multi-TU
+entry, normal/mutated model entries, 14 compile controls (10 positive and
+4 expected rejection), 10 native-policy fixtures and 2 fingerprint controls.
+The sanitizer lane separately asserts registration of all four core Hive
+entries; its actual linked standard library was confirmed as libc++.
+No Hive TSan or Windows sanitizer result is claimed.
+
+Windows used the bundled toolchain's actual /std:c++latest mode, not a separate
+CMake C++26 configuration. Its scope is Hive/probe and consumer validation,
+not the entire repository or the pre-existing all-standard-header MSVC target.
+All real toolchains in this matrix selected the Hive backport. Native FULL and
+PARTIAL behavior is additionally covered by synthetic fixtures, not a claim
+of testing a production native Hive implementation.
+
+Opt-in randomized model stress passed on every listed configuration. The
+standalone Clang/libc++ C++26 harness passed its 14 compile controls, 4 CTest
+entries and stress run; its cost probe was built, not used for new benchmarks.
+The all-standard-header target, now including <hive>, passed under Clang and
+GCC in both C++23 and C++26. A full LLVM C++26 rerun also passed after that
+addition. Assertions and expected-rejection controls were not relaxed.
+
+Header-Only Consumer Checks
+---------------------------
+Source archives used for consumer checks deliberately omit GoogleTest and
+confirm that it remains absent after configuration. Include/add_subdirectory
+and installed consumers passed on Linux Clang C++26 and GCC C++23, AppleClang
+C++23/C++26 and Windows MSVC. Both public targets are exercised, together with
+existing export/collision and optional Threads checks. No dependency download
+or GoogleTest linkage is required by those consumers.
+
+A separate install from the tests-enabled LLVM build contains no GoogleTest
+artifacts or references. The standalone Hive harness installs nothing.
+Including <version> before <hive> is covered; a <version>-only feature-macro
+promise remains deliberately deferred.
+
+Review And Remaining Boundaries
+------------------------------
+Independent integration review identified three verification gaps: silent
+consumer executable skipping, missing real test-registration assertions in
+native fixtures, and an insufficient sanitizer registration count. All three
+were corrected and accepted on re-review, then exercised by the parent runs.
+Initial harness failures were fixed and the affected full/focused runs repeated;
+raw logs are retained, not replaced by a success-only account.
+
+The flat-address get_iterator support boundary, sort exception policy and
+existing wide-counter exhaustion limitation remain as documented. This is a
+bounded integration admission, not universal conformance or performance proof.
+The original cost runner now accepts an optional CPU-affinity selection and
+records it in its protocol; this change does not alter old measurements.
+
+Taskbook, history map, independent-review notes, platform commands and raw logs
+are local ignored evidence under build/review/hive-integration-20261105/.

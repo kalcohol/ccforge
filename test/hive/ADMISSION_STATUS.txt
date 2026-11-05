@@ -1,28 +1,26 @@
-HIVE CORE PREPARATION BRANCH
+HIVE ADMISSION STATUS -- 2026-11-05
 
-The original preparation branch selectively staged a supplied OpenCode hive
-candidate for isolated repair and measurement. Its record predates the R5
-root build, install configuration, native probes and documentation work.
+R5 integration is qualified for mainline admission. R5_ADMISSION.txt records
+the native-probe, root/standalone test, platform and header-only consumer gates.
+CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
+for the earlier representations and their separate acceptance decisions.
 
-The supplied core and tests are not a claim of complete conformance. Sort
+This is not a claim of complete conformance on every toolchain or ABI. Sort
 exception handling is a project decision: promise basic validity, unchanged
 size and no leaks, with element order and individual values unspecified after
 an exception. This is not a claim that the standard has settled value retention;
 LWG 4584 concerns construction preconditions, not exception guarantees. Keep
 the current implementation and its stronger comparator-exception observations
-until a separately reviewed change. General allocator policy, native handoff
-and final platform/consumer admission remain
-separate gates, as does existing wide-counter exhaustion. See
-CORE_PREPARATION.txt for completed units, validation and measured limits.
-Iterator comparisons remain consistent with traversal. The skipfield branch
-now traverses reused slots in physical address order within each active block.
+until a separately reviewed change. Existing wide-counter exhaustion remains
+outside this admission. Iterator comparisons remain consistent with traversal;
+reused slots traverse in physical address order within each active block.
 No global logical-chain experiment or shared <version> wrapper is adopted.
 
 The owner accepted R2/R3 after independent review. The original noisy timing
 batches remain inconclusive; the later controlled review and revised B3 are
 recorded in SKIPFIELD_PREPARATION.txt. get_iterator has an explicit flat-address
-support boundary. R5 integration and its verification remain separate gates;
-the original core record is historical.
+support boundary. R2.1 iteration optimization and R4 sort acceleration remain
+deferred; R5 does not change the reviewed container algorithms or representation.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.
@@ -36,4 +34,5 @@ Original wrapper SHA256:
 
 Supplied assets retain OpenCode attribution. Subsequent fixes are independent
 commits with their own regression evidence. Do not replace current repository
-files with the supplied snapshot or treat preparation as completed admission.
+files with the supplied snapshot. Original published preparation branches and
+the baseline tag were not rewritten during integration.
