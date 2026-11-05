@@ -1,9 +1,14 @@
-HIVE ADMISSION STATUS -- 2026-11-05
+HIVE ADMISSION STATUS -- 2026-11-06
 
 R5 integration is qualified for mainline admission. R5_ADMISSION.txt records
 the native-probe, root/standalone test, platform and header-only consumer gates.
 CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
 for the earlier representations and their separate acceptance decisions.
+
+R4_SORT.txt records the separate sort candidate at ee4b6a5, its completed
+parent validation and same-batch P0/P2 results. External Claude review,
+reviewer-only P1 measurement and owner approval remain open; this is not
+mainline admission. Shared-machine measurement limits are stated in that record.
 
 Allocator-policy admission is covered by specification section 4.6 and the
 accepted R2/R3 review: allocator rebind, retained fancy allocation pointers,
@@ -23,8 +28,9 @@ No global logical-chain experiment or shared <version> wrapper is adopted.
 The owner accepted R2/R3 after independent review. The original noisy timing
 batches remain inconclusive; the later controlled review and revised B3 are
 recorded in SKIPFIELD_PREPARATION.txt. get_iterator has an explicit flat-address
-support boundary. R2.1 iteration optimization and R4 sort acceleration remain
-deferred; R5 does not change the reviewed container algorithms or representation.
+support boundary. R2.1 iteration optimization remains deferred. R5 did not
+change the reviewed container algorithms or representation; the separate R4
+candidate changes sort only and does not alter the historical R5 decision.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.
