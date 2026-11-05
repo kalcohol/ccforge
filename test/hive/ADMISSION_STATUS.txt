@@ -5,6 +5,10 @@ the native-probe, root/standalone test, platform and header-only consumer gates.
 CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
 for the earlier representations and their separate acceptance decisions.
 
+Allocator-policy admission is covered by specification section 4.6 and the
+accepted R2/R3 review: allocator rebind, retained fancy allocation pointers,
+construction rollback and allocation-limit clamping.
+
 This is not a claim of complete conformance on every toolchain or ABI. Sort
 exception handling is a project decision: promise basic validity, unchanged
 size and no leaks, with element order and individual values unspecified after

@@ -80,6 +80,16 @@ The all-standard-header target, now including <hive>, passed under Clang and
 GCC in both C++23 and C++26. A full LLVM C++26 rerun also passed after that
 addition. Assertions and expected-rejection controls were not relaxed.
 
+The independent R5 reviewer accepted 6b7a855 and additionally verified the
+Zig 0.14.0 C++23 lane: 50/50 focused CTest entries, four stress types and the
+Hive example passed with the image's default UBSan trap settings. The reviewer
+also independently reran AppleClang 21 C++23/C++26 (31/31 each, including the
+aggregate NativeHandoff entry) and MSVC C++23/latest (30/30), their stress runs
+and no-GoogleTest source/install consumers. These are reviewer results, not
+additional parent runs. The same review verified cache invalidation when only
+the synthetic native header contents changed. Its record is retained under
+build/review/hive-integration-review-20261105/CLAUDE_R5_REVIEW.md.
+
 Header-Only Consumer Checks
 ---------------------------
 Source archives used for consumer checks deliberately omit GoogleTest and
@@ -102,6 +112,10 @@ native fixtures, and an insufficient sanitizer registration count. All three
 were corrected and accepted on re-review, then exercised by the parent runs.
 Initial harness failures were fixed and the affected full/focused runs repeated;
 raw logs are retained, not replaced by a success-only account.
+
+Allocator-policy admission is covered by specification section 4.6 and the
+accepted R2/R3 review: allocator rebind, retained fancy allocation pointers,
+construction rollback and allocation-limit clamping.
 
 The flat-address get_iterator support boundary, sort exception policy and
 existing wide-counter exhaustion limitation remain as documented. This is a
