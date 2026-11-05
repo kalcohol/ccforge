@@ -1,0 +1,155 @@
+HIVE R4 SORT CANDIDATE -- 2026-11-06
+
+Disposition
+-----------
+The R4 implementation and parent verification are complete on the separate
+work/hive-sort-r4-20261105 branch. This is a review candidate, not permission
+to merge master. External Claude review, the reviewer-only P1 comparison and
+owner approval remain pending. No reference implementation was inspected,
+imported or benchmarked by the implementer.
+
+Baseline: 71365c83ca3c7103232c9daaea4f3035dc178fac.
+Verified implementation: ee4b6a56b485294d0fd231f7c914e2c9d25a0c38.
+Subsequent admission edits are records/documentation only. R2.1 remains
+deferred. Representation, iterators, traversal and unrelated members are
+unchanged; no small-N insertion-sort path was added.
+
+Implementation And Contract
+---------------------------
+The generic path sorts an allocator-rebound table of element addresses and
+original indices, then applies its permutation using ADL-aware swaps. The
+table uses 16 bytes per element on the tested 64-bit platforms; each cycle of
+length k needs k-1 swaps. It adds no ordinary move-constructor requirement to
+the existing allocator-relative MoveInsertable/MoveAssignable/Swappable surface.
+
+Small types use a value-copy buffer only when all three trivial-copy traits
+hold, the ordinary move operations needed by std::sort are available, and
+sizeof(T) <= 16. The raw buffer retains its fancy allocation handle and does
+not invoke container-element construction/destruction hooks. Both paths check
+the rebound allocation limit before a potentially narrower count conversion.
+Generic metadata construction has explicit partial-construction cleanup.
+
+The original comparator instance is referenced by the sorting wrappers.
+General monotone-input scans provide linear comparison work for ordered or
+equivalent inputs without depending on a library's debug-sort validation.
+All comparisons finish before container values are permuted or assigned back.
+These are implementation observations, not stronger public exception promises.
+
+D1 is unchanged: after an exception the container is valid, size is unchanged
+and there are no leaks; element order and individual values are unspecified.
+The original stronger comparator-exception observations and the allocator-only
+ADL-swap controls are retained without weakening or renaming their assertions.
+The implementation follows textbook indirect sorting and permutation cycles
+(Knuth, TAOCP volume 3, section 5.2), not third-party Hive source.
+
+Functional Verification
+-----------------------
+All rows below use the committed implementation above, with Debug checks kept.
+
+  Toolchain / library                     Mode                 Result
+  Clang 19.1.7 / libc++                    C++23 and C++26       30/30 each
+  GCC 16.2 / libstdc++                     C++23 and C++26       30/30 each
+  Clang 19 / libc++, ASan+UBSan             C++23 and C++26       30/30 each
+  Zig 0.14 / libc++                        C++23                30/30
+  AppleClang 21 / libc++, arm64            C++23 and C++26       30/30 each
+  MSVC 19.51, x64                         configured C++23      30/30
+  Clang 19.1.7 / libc++, full repository    C++26                303 pass, 3 skip
+
+Each focused configuration runs 136 runtime cases in one CTest entry,
+including 27 sort regressions, plus the compile/model/native-policy controls.
+The opt-in randomized model stress also passed in every configuration and
+the full lane. Sanitizer registration and actual libc++ linkage were checked.
+Zig retained the image's default UBSan trap and debug settings. Windows used
+the toolchain's actual /std:c++latest mode, not a separate C++26 configuration.
+No Windows sanitizer or Hive TSan result is claimed.
+
+The full run has 306 entries and zero failures. Its three skipped entries are
+forge_io_uring_context, forge_io_uring_rw and forge_io_uring_fault; this is not
+an io_uring runtime qualification. All real toolchains exercised the Hive
+backport; synthetic native fixtures test the handoff mechanism only.
+
+Coverage includes dense/sparse/churn layouts, multiple block limits, full
+payload differential comparisons, allocation and comparator failure sweeps,
+raw/fancy metadata construction failures, allocator count limits, object
+lifetime accounting, mutable/by-value comparators, path selection, comparison
+budgets and the N-1 generic swap bound. Ordinary builds expose no new hook.
+The first 18 new baseline-compatible controls passed the old heap code under
+Clang/libc++ before the implementation commit. Later controls cover the new
+paths and corrections.
+
+Final-header mutation controls have a positive 27/27 result. Four runtime
+mutants were rejected by functional assertions (cycle application, copy
+writeback, comparator identity and generic direction); a gate mutant was
+rejected at compilation, paired with the compiling positive control. Mutants
+are ignored local evidence only. An independent permutation model checked all
+409114 permutations of lengths 0 through 9; it is not a full Hive fuzz claim.
+
+Performance Evidence
+--------------------
+The common public-API measure_sort.cpp source was compiled against exact
+baseline and candidate headers using clang 19/libc++, C++26, -O2 -DNDEBUG.
+Processes were pinned to CPU14 (SMT sibling CPU30). Each process performs one
+warmup and 31 samples, or 2001 for S7, rebuilding seed-1 inputs outside timing.
+Five rounds rotate vector/baseline/candidate order across S1-S8. Every sort
+checks key order and the complete payload multiset/checksum. Rebound allocation
+peaks are measured separately, excluding resident storage and timing overhead.
+
+The first complete batch was NOISY (S1 vector ratio 1.265023) and is retained.
+The second complete batch was selected by the unchanged <=1.15 rule, with
+ratio 1.145247. No observations were mixed across batches. Both P0 and P2
+numerical gates pass for every workload in that selected batch:
+
+  Workload       Baseline ms    Candidate ms    Candidate/baseline    Scratch B/T
+  S1 int random     211.110         55.430             0.2626                4
+  S2 int churn      222.424         54.657             0.2457                4
+  S3 int ordered     64.681          4.547             0.0703                4
+  S4 16 keys         94.379         15.508             0.1643                4
+  S5 trivial64       38.259         14.843             0.3880               16
+  S6 string32        78.879         31.251             0.3962               16
+  S7 int 1000         0.013887       0.006513          0.4690                4
+  S8 nontrivial16   312.293        132.580             0.4245               16
+
+P2 is <=24 B/T for generic metadata, <=sizeof(T)+8 B/T for value copies,
+and strictly below the baseline's 32 B/T for both. P3 (S1 candidate/vector)
+is 1.0986 and is recorded only. S8 participates in P0 but not P1.
+
+The final-header threshold study measured trivial16 at 55.99 ms with copies
+versus 122.24 ms with generic metadata. Trivial32 copies were faster but used
+32 B/T, violating the strict improvement requirement; trivial64 copies used
+64 B/T for a smaller benefit. The selected limit remains 16. Threshold timing
+is study-only and does not replace the selected P0 batch or external P1.
+
+This is shared-machine evidence, not a claim of an exclusively idle CCD.
+During the selected batch CPU30 averaged 0.159% active (sampled maximum 1.010%);
+other cores sharing L3 had intermittent background activity. Topology, load
+averages and per-CPU samples are retained for review. The selected noise ratio
+is close to its specified limit; tighter isolation may be requested at review.
+Earlier threshold/invalid-batch occupancy must not be substituted for this
+selected batch's environment record.
+
+GCC 16 results use the same snapshots and one process per implementation and
+workload. They are RECORD_ONLY, not a second five-round admission gate.
+P1 remains EXTERNAL_NOT_MEASURED. In particular S7 is 2.297 times its vector
+lower bound; neither that ratio nor old calibration estimates establish its
+reference-implementation ratio. The reviewer should measure S7 explicitly.
+
+Corrections And Evidence Location
+--------------------------------
+The original four-commit plan was expanded with focused corrections rather
+than rewriting history: allocator count limits, monotone debug-mode behavior,
+and portable metadata allocation/cleanup. Initial Zig and Windows failures
+are retained alongside the corrected runs; no assertion, debug mode or
+sanitizer setting was relaxed to make a gate pass.
+
+The optional root hive_sort_probe target is opt-in; ordinary header-only
+consumers gain no GoogleTest or benchmark dependency. The target was built
+through root CMake after the full lane; 20 reduced smoke processes passed,
+with matching checksums for all ten Hive/vector workload pairs. These smoke
+runs are not performance admission. Existing R5 provenance,
+native-handoff and consumer records remain historical evidence, not reruns
+claimed by R4. Source-style and documentation audits pass.
+
+Taskbook, source reviews, exact commands, source hashes, platform results,
+mutations and performance CSVs are retained locally under
+build/review/hive-sort-r4-20261105/. REVIEW_HANDOFF.md identifies the complete
+evidence sets and the external-review/owner-approval gates that remain open.
