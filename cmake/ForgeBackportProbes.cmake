@@ -35,7 +35,8 @@ set(_forge_modular_probe_sources
     "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeConstantWrapper.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeMdspanPadded.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSubmdspan.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeLinalg.cmake")
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeLinalg.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeHive.cmake")
 _forge_compute_probe_fingerprint(
     _forge_probe_fingerprint "${_forge_std}" ${_forge_modular_probe_sources})
 _forge_refresh_probe_cache(
@@ -81,7 +82,12 @@ _forge_refresh_probe_cache(
     FORGE_LINALG_PARTIAL_SETUP
     FORGE_LINALG_PARTIAL_TAG
     FORGE_LINALG_PARTIAL_LAYOUT
-    FORGE_LINALG_PARTIAL_MATRIX_PRODUCT)
+    FORGE_LINALG_PARTIAL_MATRIX_PRODUCT
+    FORGE_HIVE_FULL
+    FORGE_HIVE_PARTIAL_MACRO
+    FORGE_HIVE_PARTIAL_LIMITS
+    FORGE_HIVE_PARTIAL_TEMPLATE
+    FORGE_HIVE_PARTIAL_PMR)
 
 set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
 _forge_select_cxx_standard_compile_option(
@@ -144,6 +150,7 @@ option(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT "Force the std::constant_wrapper ba
 option(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT "Force the std::mdspan padded-layout backport even if (partial) native support exists" OFF)
 option(FORGE_FORCE_SUBMDSPAN_BACKPORT "Force the std::submdspan backport even if (partial) native support exists" OFF)
 option(FORGE_FORCE_LINALG_BACKPORT "Force the std::linalg backport even if (partial) native support exists" OFF)
+option(FORGE_FORCE_HIVE_BACKPORT "Force the std::hive backport even if (partial) native support exists" OFF)
 
 # std::unique_resource is TS v3, not C++26.
 check_cxx_source_compiles("
@@ -165,6 +172,8 @@ include("${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSimd.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeExecution.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeConstantWrapper.cmake")
+
+include("${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeHive.cmake")
 
 # The mdspan-dependent backports extend a toolchain-provided base <mdspan>;
 # CC Forge does not ship the C++23 mdspan foundation itself.

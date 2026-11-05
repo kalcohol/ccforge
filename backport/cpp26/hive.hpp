@@ -22,14 +22,12 @@
 
 #pragma once
 
-// The version wrapper defines FORGE_BACKPORT_HIVE_VERSION when it, rather than
-// a native standard library, supplied __cpp_lib_hive.  A native feature macro
-// without that marker is always a stand-aside signal.  Consequently including
-// <version> before <hive> cannot hide these declarations.
-#if defined(FORGE_FORCE_HIVE_BACKPORT) || \
-    (!defined(FORGE_HAS_NATIVE_HIVE) && \
-     !defined(FORGE_BACKPORT_HIVE_HPP_INCLUDED) && \
-     (!defined(__cpp_lib_hive) || defined(FORGE_BACKPORT_HIVE_VERSION)))
+// No shared <version> wrapper is used. A native macro or the declaration-level
+// CMake signal suppresses injection, including for partial native libraries.
+// Force is diagnostic-only and does not make mixed native/backport use safe.
+#if !defined(FORGE_BACKPORT_HIVE_HPP_INCLUDED) && \
+    (defined(FORGE_FORCE_HIVE_BACKPORT) || \
+     (!defined(FORGE_HAS_NATIVE_HIVE) && !defined(__cpp_lib_hive)))
 
 #define FORGE_BACKPORT_HIVE_HPP_INCLUDED 1
 

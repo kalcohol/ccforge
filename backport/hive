@@ -35,12 +35,12 @@
 #  endif
 #endif
 
-// A macro supplied by Forge's <version> wrapper is not evidence of native
-// declarations.  As with the other Forge wrappers, the force switch is a
+// A native feature macro is also a stand-aside signal. Forge does not shadow
+// <version>. As with the other Forge wrappers, the force switch is a
 // diagnostic-only injection request; using it with native declarations risks
 // redefinition/ODR violations and is not a supported mixed-native mode.
 #if defined(FORGE_FORCE_HIVE_BACKPORT) || \
     (!defined(FORGE_HAS_NATIVE_HIVE) && \
-     (!defined(__cpp_lib_hive) || defined(FORGE_BACKPORT_HIVE_VERSION)))
+     !defined(__cpp_lib_hive))
 #  include "cpp26/hive.hpp"
 #endif
