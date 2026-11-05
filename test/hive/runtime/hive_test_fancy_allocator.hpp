@@ -18,8 +18,8 @@
 namespace forge_hive_fancy_allocator_test {
 
 // A real non-raw allocator pointer.  The arithmetic is also sufficient for
-// libstdc++/libc++ vector iterators, so hive::sort instantiates its ordinary
-// std::vector<T, allocator_type> temporary instead of needing a test shortcut.
+// libstdc++/libc++ vector iterators, so hive::sort's rebound metadata table and
+// retained scratch-allocation handles need no test-specific shortcut.
 template<class T>
 class fancy_ptr {
     template<class>
