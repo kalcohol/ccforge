@@ -1,8 +1,8 @@
 HIVE CORE PREPARATION BRANCH
 
-This branch selectively stages a supplied OpenCode hive candidate for isolated
-repair and measurement. It does not enable hive in the root build, install
-configuration, native probes, or mainline feature table.
+The original preparation branch selectively staged a supplied OpenCode hive
+candidate for isolated repair and measurement. Its record predates the R5
+root build, install configuration, native probes and documentation work.
 
 The supplied core and tests are not a claim of complete conformance. Sort
 exception handling is a project decision: promise basic validity, unchanged
@@ -18,11 +18,11 @@ Iterator comparisons remain consistent with traversal. The skipfield branch
 now traverses reused slots in physical address order within each active block.
 No global logical-chain experiment or shared <version> wrapper is adopted.
 
-Current R0-R3 disposition is in SKIPFIELD_PREPARATION.txt: implementation and
-functional validation are ready for co-review, requested-byte/allocation
-budgets pass, timing budgets are inconclusive because of measured noise.
-get_iterator now has an explicit flat-address support boundary. None of this
-is R5 mainline/build/install admission; the original core record is historical.
+The owner accepted R2/R3 after independent review. The original noisy timing
+batches remain inconclusive; the later controlled review and revised B3 are
+recorded in SKIPFIELD_PREPARATION.txt. get_iterator has an explicit flat-address
+support boundary. R5 integration and its verification remain separate gates;
+the original core record is historical.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.
@@ -36,4 +36,4 @@ Original wrapper SHA256:
 
 Supplied assets retain OpenCode attribution. Subsequent fixes are independent
 commits with their own regression evidence. Do not replace current repository
-files with the supplied snapshot or merge this branch as a completed feature.
+files with the supplied snapshot or treat preparation as completed admission.

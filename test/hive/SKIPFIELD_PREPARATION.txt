@@ -2,11 +2,10 @@ HIVE SKIPFIELD PREPARATION -- 2026-11-05
 
 Disposition
 -----------
-R0/R1 preparation and the R2/R3 implementation are ready for independent
-co-review on work/hive-skipfield-20261105. This is NOT mainline admission,
-a complete conformance claim, or approval of the timing budgets. R4 sort
-acceleration and R5 public build/install/native-handoff integration are not
-included. The root project and master branch are unchanged by this work.
+R0/R1 preparation and R2/R3 were independently reviewed and accepted by the
+owner on 2026-11-05. This is not mainline admission or a complete conformance
+claim. R5 integration and its verification remain separate; R2.1 iteration
+optimization and R4 sort acceleration remain deferred.
 
 The functional and measured implementation revision is 16a29f8. Subsequent
 record/comment-only changes do not change the header or executable logic.
@@ -31,7 +30,7 @@ Decisions And Implementation
 - Tail contraction, run migration/coalescing, constructor rollback, allocator
   bounds and block-list invariants have focused independent controls.
 - The hard per-block ceiling remains 65535 and is distinct from total size.
-  The default range is now {8, 4096} for ordinary int, subject to existing
+  The default range is now {8, 4096} for all element types, subject to existing
   allocator and structural clamps. Explicit block limits retain their meaning.
 - get_iterator uses checked integer address proposals, then live-slot and
   pointer identity checks. It performs constant candidate work per active
@@ -138,7 +137,7 @@ noise prevents claiming that this is a universally fastest default.
 
 The list dense-traversal max/min ratios in the three five-round batches were
 2.228210, 2.060615 and 1.645522, all above the 1.15 noise limit. Therefore
-ALL timing budgets remain INCONCLUSIVE, including ratio budgets B2 and B3.
+ALL timing budgets for these batches remain INCONCLUSIVE, including B2 and B3.
 This is deliberately stricter than accepting ratios from noisy batches.
 Observed new churn/dense ratios were 1.009244, 0.900890 and 1.055588; these are
 descriptive measurements, not passing gates. B5 needs a quieter rerun too.
@@ -154,10 +153,11 @@ under build/review/hive-skipfield-20261105/. This ignored directory is local
 evidence, not an installed dependency. The standalone harness installs nothing
 and adds no GoogleTest requirement to ordinary header-only consumers.
 
-Next: Claude co-review of R0-R3, including test-oracle quality and the measured
-default decision. Timing budgets need a controlled rerun; the reviewer's
-external black-box comparison is still outstanding. Only after review and
-performance disposition may R5 integrate probes, install/native handoff and
-consumer documentation. R4 sort acceleration remains deferred. General
-allocator-policy admission and existing wide-counter exhaustion remain the
-previously recorded separate decisions; this round does not silently close them.
+Later independent review used controlled batches and reported B1, B2, B4 and
+B5 passing. The original B3 list-relative threshold of 1.10 failed at
+1.286-1.296; that result remains historical. The owner replaced B3 with dense
+traversal <= 1.25 times plf::hive, measured externally by the independent
+reviewer; the reported 1.17 passes. The reviewer also reported churn and memory
+ratios of 1.17 and 1.15 against plf. No third-party source is included here.
+These are review results, not new R5 verification. R5 platform, consumer and
+integration gates remain for the parent to validate; R2.1 and R4 are deferred.
