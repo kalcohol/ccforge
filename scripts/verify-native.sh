@@ -23,7 +23,7 @@
 #           execution + forge utility subsets under ThreadSanitizer
 #           (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
-#           Runs the execution + forge utility subsets and focused SIMD
+#           Runs the execution + forge utility + Hive subsets and focused SIMD
 #           memory/operator/math/bit tests under ASan+UBSan.
 #   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
@@ -73,6 +73,7 @@ container_run() {
 
 FORGE_EXECUTION_ONLY_TEST_ARGS=(
     -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_HIVE=OFF
     -DFORGE_TEST_ENABLE_EXECUTION=ON
     -DFORGE_TEST_ENABLE_SIMD=OFF
     -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=OFF
@@ -85,6 +86,7 @@ FORGE_EXECUTION_ONLY_TEST_ARGS=(
 
 FORGE_EXECUTION_AND_FORGE_TEST_ARGS=(
     -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_HIVE=OFF
     -DFORGE_TEST_ENABLE_EXECUTION=ON
     -DFORGE_TEST_ENABLE_SIMD=OFF
     -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=OFF
@@ -97,6 +99,7 @@ FORGE_EXECUTION_AND_FORGE_TEST_ARGS=(
 
 FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
     -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_HIVE=ON
     -DFORGE_TEST_ENABLE_EXECUTION=OFF
     -DFORGE_TEST_ENABLE_SIMD=OFF
     -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=ON
@@ -109,6 +112,7 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
 
 FORGE_SIMD_ONLY_TEST_ARGS=(
     -DFORGE_BUILD_EXAMPLES=OFF
+    -DFORGE_TEST_ENABLE_HIVE=OFF
     -DFORGE_TEST_ENABLE_EXECUTION=OFF
     -DFORGE_TEST_ENABLE_SIMD=ON
     -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=OFF
@@ -217,7 +221,7 @@ target_llvm() {
     local logfile="${LOG_DIR}/llvm-configure.log"
     container_run forge-llvm build/llvm 26 2>&1 | tee "${logfile}"
     local probe
-    for probe in SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG; do
+    for probe in SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG HIVE; do
         assert_backport_injects "${logfile}" "${probe}" "${probe}"
     done
     ok "llvm verified"
@@ -289,7 +293,7 @@ target_tsan() {
 
 target_asan() {
     build_image forge-asan containers/Containerfile.asan
-    log "asan: building execution + forge utility tests with -fsanitize=address,undefined (libc++)"
+    log "asan: building execution + forge utility + Hive tests with -fsanitize=address,undefined (libc++)"
     "${PODMAN}" run --rm --userns=keep-id --cap-add=SYS_PTRACE \
         -v "${REPO_ROOT}:/src:Z" -w /src forge-asan bash -lc '
             set -euo pipefail
@@ -307,18 +311,23 @@ target_asan() {
             # non-ASan-instrumented system libc++; UBSan halts on first error.
             export ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1"
             export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
-            selected_tests=$(ctest --test-dir build/asan -N -R "execution|forge" | sed -n "s/^Total Tests: //p")
+            hive_controls=$(ctest --test-dir build/asan -N -R "^hive_(runtime|multi_tu|model_positive|model_mutation)$" | sed -n "s/^Total Tests: //p")
+            if [ "${hive_controls:-0}" -ne 4 ]; then
+                echo "[asan] expected four Hive runtime/model controls, got ${hive_controls:-0}" >&2
+                exit 1
+            fi
+            selected_tests=$(ctest --test-dir build/asan -N -R "execution|forge|hive" | sed -n "s/^Total Tests: //p")
             if [ -z "${selected_tests}" ] || [ "${selected_tests}" -le 0 ]; then
-                echo "[asan] selected zero tests for regex: execution|forge" >&2
+                echo "[asan] selected zero tests for regex: execution|forge|hive" >&2
                 exit 1
             fi
             echo "[asan] ctest-count=${selected_tests}"
             scripts/run-sanitizer-ctest.sh \
                 asan \
                 build/asan \
-                "execution|forge" \
+                "execution|forge|hive" \
                 build/asan/ctest-first-run.log
-        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" -DFORGE_TEST_ENABLE_HIVE=ON
     if [ -x build/asan/test/forge/test_forge_io_uring_context ]; then
         log "asan: running io_uring runtime tests in the allow-io_uring container"
         ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1" \
@@ -339,6 +348,7 @@ target_asan() {
                   -DFORGE_BUILD_EXAMPLES=OFF \
                   -DFORGE_TEST_ENABLE_EXECUTION=OFF \
                   -DFORGE_TEST_ENABLE_SIMD=ON \
+                  -DFORGE_TEST_ENABLE_HIVE=OFF \
                   -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=OFF \
                   -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF \
                   -DFORGE_TEST_ENABLE_SUBMDSPAN=OFF \
@@ -372,7 +382,7 @@ target_asan() {
                 "${regex}" \
                 build/asan-simd/ctest-first-run.log
         '
-    ok "asan verified (execution + forge utility subsets plus focused SIMD tests, no UAF/leak/UB)"
+    ok "asan verified (execution + forge utility + Hive subsets plus focused SIMD tests, no UAF/leak/UB)"
 }
 
 targets=("$@")

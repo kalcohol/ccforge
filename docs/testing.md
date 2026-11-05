@@ -124,8 +124,8 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
   declaration-free `<simd>` 不会被误判为 partial native，而会正常注入 backport
 - `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
-- `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution 与
-  `forge::` 扩展子集，并额外运行 7 个 focused SIMD
+- `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution、
+  `forge::` 扩展子集与 Hive runtime/compile/model，并额外运行 7 个 focused SIMD
   memory/operator/math/special-math/bit tests；脚本精确校验选中数量，零匹配不能通过
 - `all`：`gcc16 + llvm + zig + local + gcc-exec + tsan + asan`
 
@@ -320,6 +320,7 @@ focused stress case，再把该 audit 视为 closed。
 
 - `FORGE_TEST_ENABLE_EXECUTION`
 - `FORGE_TEST_ENABLE_SIMD`
+- `FORGE_TEST_ENABLE_HIVE`
 - `FORGE_TEST_ENABLE_CONSTANT_WRAPPER`
 - `FORGE_TEST_ENABLE_UNIQUE_RESOURCE`
 - `FORGE_TEST_ENABLE_SUBMDSPAN`
@@ -340,6 +341,11 @@ stand-aside 决策。纯 execution、TSan 和 ASan 子集会显式关闭该组�
 Execution、SIMD 与 linalg 的 conformance suites 会在对应 Forge backport 实际注入时
 运行；完整或 partial native 实现触发 stand-aside 时，这些依赖 Forge 私有测试辅助符号
 的 suites 会跳过，native handoff fixtures 负责验证探测和让位边界。
+
+`FORGE_TEST_ENABLE_HIVE` 控制 Hive 测试组；完整或 partial native 让位时不将
+backport 专用测试当作 native 验证。Native handoff 的 synthetic fixtures 只验证
+探测与注册策略，不证明真实标准库实现的质量。`FORGE_FORCE_HIVE_BACKPORT` 仅供
+诊断，在已有 native 声明时可能导致重定义或 ODR 问题。
 
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future
