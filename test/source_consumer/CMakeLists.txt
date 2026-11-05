@@ -49,6 +49,21 @@ endforeach()
 add_executable(ccforge_source_consumer main.cpp)
 target_link_libraries(ccforge_source_consumer PRIVATE forge::forge)
 
+# Root probes are cached and remain visible after add_subdirectory returns;
+# the derived PARTIAL variable belongs to the child directory's scope.
+if(FORGE_FORCE_HIVE_BACKPORT OR FORGE_HIVE_FULL OR
+        (NOT FORGE_HIVE_PARTIAL_MACRO AND NOT FORGE_HIVE_PARTIAL_LIMITS
+            AND NOT FORGE_HIVE_PARTIAL_TEMPLATE AND NOT FORGE_HIVE_PARTIAL_PMR))
+    foreach(surface IN ITEMS std forge)
+        add_executable(ccforge_source_hive_${surface} ../consumer_hive.cpp)
+        target_link_libraries(ccforge_source_hive_${surface} PRIVATE forge::${surface})
+    endforeach()
+    target_compile_definitions(ccforge_source_hive_std PRIVATE CCFORGE_CONSUMER_STD_ONLY=1)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/hive-consumers.txt" "ENABLED\n")
+else()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/hive-consumers.txt" "PARTIAL\n")
+endif()
+
 add_library(ccforge_source_exported_consumer INTERFACE)
 target_link_libraries(ccforge_source_exported_consumer INTERFACE forge::forge)
 

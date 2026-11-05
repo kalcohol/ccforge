@@ -73,6 +73,21 @@ run_built_executable() {
     "${path}"
 }
 
+run_hive_consumers() {
+    local build_dir="$1"
+    local prefix="$2"
+    local decision
+    decision=$(<"${build_dir}/hive-consumers.txt")
+    case "${decision}" in
+        ENABLED)
+            run_built_executable "${build_dir}" "${prefix}_hive_std"
+            run_built_executable "${build_dir}" "${prefix}_hive_forge"
+            ;;
+        PARTIAL) log "Hive consumers skipped for partial native support" ;;
+        *) log "ERROR: missing or invalid Hive consumer decision"; exit 1 ;;
+    esac
+}
+
 verify_source_consumer() {
     local mode="$1"
     local build_dir="$2"
@@ -89,6 +104,7 @@ verify_source_consumer() {
 
     log "running source consumer in ${mode} mode"
     run_built_executable "${build_dir}" ccforge_source_consumer
+    run_hive_consumers "${build_dir}" ccforge_source
 
     log "installing source consumer export set in ${mode} mode"
     install_project "${build_dir}" --prefix "${install_dir}"
@@ -177,5 +193,6 @@ install_project "${CONSUMER_BUILD}" --prefix "${CONSUMER_PREFIX}"
 log "running external consumer"
 run_built_executable "${CONSUMER_BUILD}" ccforge_install_consumer
 run_built_executable "${CONSUMER_BUILD}" ccforge_install_std_consumer
+run_hive_consumers "${CONSUMER_BUILD}" ccforge_install
 
 log "ok"

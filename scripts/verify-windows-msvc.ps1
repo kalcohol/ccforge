@@ -337,6 +337,18 @@ function Invoke-InstallPackageCheck {
     Invoke-ForgeNative "install package: run std consumer" `
         (Get-BuiltExecutable $consumerBuild "ccforge_install_std_consumer" $Config $MultiConfig)
 
+    $hiveDecision = (Get-Content -LiteralPath (Join-Path $consumerBuild "hive-consumers.txt") -Raw).Trim()
+    if ($hiveDecision -eq "ENABLED") {
+        Invoke-ForgeNative "install package: run Hive std consumer" `
+            (Get-BuiltExecutable $consumerBuild "ccforge_install_hive_std" $Config $MultiConfig)
+        Invoke-ForgeNative "install package: run Hive forge consumer" `
+            (Get-BuiltExecutable $consumerBuild "ccforge_install_hive_forge" $Config $MultiConfig)
+    } elseif ($hiveDecision -eq "PARTIAL") {
+        Write-Host "[msvc] Hive consumers skipped for partial native support"
+    } else {
+        throw "Invalid Hive consumer decision: $hiveDecision"
+    }
+
     Write-Host "[msvc] install package smoke verified"
 }
 

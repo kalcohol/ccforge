@@ -35,6 +35,19 @@ target_link_libraries(ccforge_install_consumer PRIVATE forge::forge)
 add_executable(ccforge_install_std_consumer std_main.cpp)
 target_link_libraries(ccforge_install_std_consumer PRIVATE forge::std)
 
+if(FORGE_FORCE_HIVE_BACKPORT OR FORGE_HIVE_FULL OR
+        (NOT FORGE_HIVE_PARTIAL_MACRO AND NOT FORGE_HIVE_PARTIAL_LIMITS
+            AND NOT FORGE_HIVE_PARTIAL_TEMPLATE AND NOT FORGE_HIVE_PARTIAL_PMR))
+    foreach(surface IN ITEMS std forge)
+        add_executable(ccforge_install_hive_${surface} ../consumer_hive.cpp)
+        target_link_libraries(ccforge_install_hive_${surface} PRIVATE forge::${surface})
+    endforeach()
+    target_compile_definitions(ccforge_install_hive_std PRIVATE CCFORGE_CONSUMER_STD_ONLY=1)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/hive-consumers.txt" "ENABLED\n")
+else()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/hive-consumers.txt" "PARTIAL\n")
+endif()
+
 add_library(ccforge_install_exported_consumer INTERFACE)
 target_link_libraries(ccforge_install_exported_consumer INTERFACE forge::forge)
 
