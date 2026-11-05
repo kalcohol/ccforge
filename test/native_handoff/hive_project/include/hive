@@ -1,0 +1,116 @@
+#pragma once
+#include <version>
+// Keep the synthetic NONE/independent-root cases deterministic on future hosts.
+#undef __cpp_lib_hive
+
+// Independent synthetic surface: this is a probe-mechanics control, not a hive
+// implementation or evidence about native container semantics. In particular,
+// the vector facade below deliberately makes no iterator-stability promise.
+#if HIVE_FIXTURE_CASE == 1
+#define __cpp_lib_hive 1L
+#elif HIVE_FIXTURE_CASE == 2
+#define __cpp_lib_hive 202502L
+#elif HIVE_FIXTURE_CASE == 3
+namespace std { struct hive_limits; }
+#elif HIVE_FIXTURE_CASE == 4
+namespace std { template<class, class> class hive; }
+#elif HIVE_FIXTURE_CASE == 5
+namespace std::pmr { template<class> class hive; }
+#elif HIVE_FIXTURE_CASE == 6 || HIVE_FIXTURE_CASE == 7
+#include <algorithm>
+#include <functional>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <vector>
+#define __cpp_lib_hive 202502L
+
+namespace std {
+#if !defined(__cpp_lib_containers_ranges)
+struct from_range_t { explicit from_range_t() = default; };
+inline constexpr from_range_t from_range{};
+#endif
+struct hive_limits {
+    size_t min, max;
+    constexpr hive_limits(size_t a, size_t b) : min(a), max(b) {}
+};
+template<class T, class A = allocator<T>>
+class hive {
+    vector<T, A> data_;
+public:
+    using iterator = typename vector<T, A>::iterator;
+    using const_iterator = typename vector<T, A>::const_iterator;
+    using size_type = typename vector<T, A>::size_type;
+    hive() = default;
+    explicit hive(hive_limits) {}
+    explicit hive(const A& a) : data_(a) {}
+    template<ranges::input_range R>
+    hive(from_range_t, R&& r) { insert_range(r); }
+    static constexpr hive_limits block_capacity_default_limits() { return {8, 64}; }
+    static constexpr hive_limits block_capacity_hard_limits() { return {1, 1024}; }
+    iterator begin() { return data_.begin(); }
+    const_iterator begin() const { return data_.begin(); }
+    iterator end() { return data_.end(); }
+    const_iterator end() const { return data_.end(); }
+    auto rbegin() const { return data_.rbegin(); }
+    size_type size() const { return data_.size(); }
+    size_type capacity() const { return data_.capacity(); }
+    size_type max_size() const { return data_.max_size(); }
+    A get_allocator() const { return data_.get_allocator(); }
+    void reserve(size_type n) { data_.reserve(n); }
+    template<class... Args> iterator emplace(Args&&... args) {
+        data_.emplace_back(std::forward<Args>(args)...);
+        return data_.end() - 1;
+    }
+    iterator insert(const T& v) { return emplace(v); }
+    iterator erase(const_iterator i) { return data_.erase(i); }
+    iterator get_iterator(const T* p) {
+        return find_if(begin(), end(), [p](const T& v) { return addressof(v) == p; });
+    }
+    const_iterator get_iterator(const T* p) const {
+        return find_if(begin(), end(), [p](const T& v) { return addressof(v) == p; });
+    }
+    template<ranges::input_range R> void insert_range(R&& r) {
+        for (auto&& v : r) emplace(v);
+    }
+    template<ranges::input_range R> void assign_range(R&& r) {
+        clear();
+        insert_range(r);
+    }
+    void splice(hive& other) { insert_range(other); other.clear(); }
+    template<class Compare = less<T>> void sort(Compare comp = {}) {
+#if HIVE_FIXTURE_CASE == 7
+        static_assert(sizeof(Compare) == 0, "body must be instantiated by FULL");
+#endif
+        std::sort(begin(), end(), comp);
+    }
+    size_type unique() {
+        auto last = std::unique(begin(), end());
+        auto n = static_cast<size_type>(end() - last);
+        data_.erase(last, end());
+        return n;
+    }
+    void reshape(hive_limits) {}
+    void shrink_to_fit() { data_.shrink_to_fit(); }
+    void trim_capacity() {}
+    void trim_capacity(size_type) {}
+    void swap(hive& other) { data_.swap(other.data_); }
+    void clear() { data_.clear(); }
+};
+template<class T, class A, class P>
+typename hive<T, A>::size_type erase_if(hive<T, A>& h, P pred) {
+    auto n = h.size();
+    for (auto i = h.begin(); i != h.end();) {
+        if (pred(*i)) i = h.erase(i); else ++i;
+    }
+    return n - h.size();
+}
+template<class T, class A, class U>
+typename hive<T, A>::size_type erase(hive<T, A>& h, const U& value) {
+    return std::erase_if(h, [&](const T& v) { return v == value; });
+}
+namespace pmr {
+template<class T> using hive = std::hive<T, polymorphic_allocator<T>>;
+}
+}
+#endif

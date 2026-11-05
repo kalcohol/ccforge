@@ -3,6 +3,52 @@
 # and Forge is expected to stand aside.
 forge_add_runtime_test(native_handoff_test native_handoff_test.cpp NativeHandoff)
 
+# Synthetic policy/mechanics controls, not claims about native Hive quality.
+# Preserve the parent's standard library, sanitizer and platform selection in
+# nested configures. An initial cache avoids shell/list splitting of flags.
+set(_hive_parent_cache "")
+set(_hive_parent_variables
+    CMAKE_BUILD_TYPE CMAKE_CXX_COMPILER_TARGET CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN
+    CMAKE_CXX_COMPILER_LAUNCHER CMAKE_CXX_LINKER_LAUNCHER
+    CMAKE_SYSROOT CMAKE_SYSROOT_COMPILE CMAKE_SYSROOT_LINK CMAKE_TOOLCHAIN_FILE
+    CMAKE_OSX_SYSROOT CMAKE_OSX_ARCHITECTURES CMAKE_OSX_DEPLOYMENT_TARGET
+    CMAKE_MSVC_RUNTIME_LIBRARY CMAKE_CXX_STANDARD_LIBRARIES)
+foreach(_hive_flag_base CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS)
+    list(APPEND _hive_parent_variables ${_hive_flag_base})
+    foreach(_hive_config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER "${_hive_config}" _hive_config)
+        list(APPEND _hive_parent_variables ${_hive_flag_base}_${_hive_config})
+    endforeach()
+endforeach()
+list(REMOVE_DUPLICATES _hive_parent_variables)
+foreach(_hive_variable IN LISTS _hive_parent_variables)
+    if(DEFINED ${_hive_variable})
+        string(APPEND _hive_parent_cache
+            "set(${_hive_variable} [==[${${_hive_variable}}]==] CACHE STRING \"Hive parent setting\" FORCE)\n")
+    endif()
+endforeach()
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/hive_parent_$<CONFIG>.cmake"
+    CONTENT "${_hive_parent_cache}")
+foreach(hive_case none macro_old macro_current limits template pmr complete broken_body force warm)
+    add_test(NAME native_handoff_hive_${hive_case}
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/hive_project
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/hive_${hive_case}
+            -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+            -DHIVE_CASE_NAME=${hive_case}
+            -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+            "-DPARENT_CACHE=${CMAKE_CURRENT_BINARY_DIR}/hive_parent_$<CONFIG>.cmake"
+            "-DTEST_CONFIG=$<CONFIG>"
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+            "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/hive_verify.cmake)
+    set_tests_properties(native_handoff_hive_${hive_case} PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+endforeach()
+
 add_test(
     NAME native_handoff_partial_simd_configure
     COMMAND ${CMAKE_COMMAND}
