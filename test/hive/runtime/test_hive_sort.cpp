@@ -443,7 +443,7 @@ struct counted_less {
 };
 
 template<class T, template<class> class Backing = raw_allocator>
-void comparator_failure_sweep() {
+void comparator_failure_sweep(input_order input = input_order::duplicates) {
     using A = hook_allocator<T, T, Backing>;
     using H = std::hive<T, A>;
     constexpr std::size_t n = 37;
@@ -453,7 +453,7 @@ void comparator_failure_sweep() {
             {
                 lifetime_counts counts;
                 H hive(small_blocks ? std::hive_limits{8, 8} : H::block_capacity_default_limits());
-                populate(hive, n, input_order::duplicates, shape, counts);
+                populate(hive, n, input, shape, counts);
                 counts.peak = counts.live;
                 hive.sort(counted_less<T>{&total});
                 expect_lifetime<T>(counts, n);
@@ -469,7 +469,7 @@ void comparator_failure_sweep() {
                 {
                     H hive(small_blocks ? std::hive_limits{8, 8} : H::block_capacity_default_limits(),
                            A(state, hooks, 43));
-                    populate(hive, n, input_order::duplicates, shape, counts);
+                    populate(hive, n, input, shape, counts);
                     const auto before = contents(hive);
                     auto multiset = before;
                     std::sort(multiset.begin(), multiset.end());
@@ -646,6 +646,47 @@ TEST(HiveSortRegression, IntComparisonBudgetSortedReverseEqualAndMedianThreeAdve
 }
 TEST(HiveSortRegression, GenericComparisonBudgetSortedReverseEqualAndMedianThreeAdversarial) {
     comparison_budgets<small_nontrivial_value>();
+}
+
+TEST(HiveSortRegression, BothPathsRecognizeMonotoneInputsWithLinearComparisons) {
+    const auto check = []<class T>() {
+        for (const auto n : {2u, 7u, 64u, 128u, 4096u}) {
+            for (const auto order : {input_order::sorted, input_order::reverse, input_order::equal}) {
+                for (const bool descending : {false, true}) {
+                    for (const bool repeated : {false, true}) {
+                        lifetime_counts counts;
+                        std::hive<T> hive(std::hive_limits{8, 8});
+                        populate(hive, n, order, topology::dense, counts);
+                        if (repeated) {
+                            int serial = 0;
+                            for (auto& value : hive) set_value(value, key_of(value) / 3, serial++);
+                        }
+                        auto expected = contents(hive);
+                        const auto compare = [descending](const T& a, const T& b) {
+                            return descending ? key_of(a) > key_of(b) : key_of(a) < key_of(b);
+                        };
+                        std::size_t comparisons = 0;
+                        hive.sort([&](const T& a, const T& b) { ++comparisons; return compare(a, b); });
+                        EXPECT_LE(comparisons, 4 * n + 4);
+                        EXPECT_TRUE(std::is_sorted(hive.begin(), hive.end(), compare));
+                        auto actual = contents(hive);
+                        std::sort(actual.begin(), actual.end());
+                        std::sort(expected.begin(), expected.end());
+                        EXPECT_EQ(actual, expected);
+                    }
+                }
+            }
+        }
+    };
+    check.template operator()<int>();
+    check.template operator()<trivial_64>();
+}
+
+TEST(HiveSortRegression, MonotoneScansExhaustComparatorFailuresWithoutOrderPromise) {
+    for (const auto input : {input_order::sorted, input_order::reverse, input_order::equal}) {
+        comparator_failure_sweep<int>(input);
+        comparator_failure_sweep<move_only_value>(input);
+    }
 }
 
 TEST(HiveSortRegression, StatefulNonconstByValueComparatorCanSortDescending) {
