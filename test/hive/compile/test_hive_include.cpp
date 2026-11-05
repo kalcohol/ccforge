@@ -12,6 +12,10 @@ static_assert(std::is_same_v<std::hive<int>::value_type, int>);
 static_assert(std::is_same_v<std::pmr::hive<int>,
               std::hive<int, std::pmr::polymorphic_allocator<int>>>);
 
+template<class H>
+concept exposes_sort_test_hook = requires { H::__test_sort_uses_value_buffer(); };
+static_assert(!exposes_sort_test_hook<std::hive<int>>);
+
 int main() {
     std::hive<int> hive;
     hive.emplace(42);

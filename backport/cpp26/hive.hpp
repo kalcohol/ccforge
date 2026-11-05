@@ -166,6 +166,11 @@ class hive {
   static constexpr slot_index_type slot_npos =
       numeric_limits<slot_index_type>::max();
 
+  static constexpr bool sort_uses_value_buffer =
+      sizeof(T) <= 16 && is_trivially_copyable_v<T> &&
+      is_trivially_copy_constructible_v<T> && is_trivially_copy_assignable_v<T> &&
+      is_move_constructible_v<T> && is_move_assignable_v<T>;
+
   // Only real indices or npos cross this boundary; counts remain wide.
   // The block hard limit keeps every real index strictly below slot_npos.
   static constexpr slot_index_type to_slot_index(size_type index) noexcept {
@@ -1641,51 +1646,69 @@ class hive {
       return;
     }
 
-    // In-place heap sort over element values: values are never moved out into a
-    // temporary buffer. With nonthrowing element operations, a comparator
-    // exception leaves a permutation of the original multiset. This observed
-    // implementation property is regression-tested, not a public guarantee
-    // or a resolution of the standard's exception wording.
-    // One linear pass builds a position table, so heap accesses afterwards are
-    // O(1) rather than re-walking bidirectional iterators per index (which would
-    // degenerate the sort into quadratic iterator steps).
-    std::vector<iterator, typename allocator_traits_type::template rebind_alloc<iterator>>
-        positions{typename allocator_traits_type::template rebind_alloc<iterator>(alloc_)};
-    positions.reserve(size());
-    for (auto it = begin(); it != end(); ++it) {
-      positions.push_back(it);
-    }
-    const auto at = [&positions](size_type index) { return positions[index]; };
-    const auto swap_values = [](T& a, T& b) {
-      using std::swap;
-      swap(a, b);
-    };
-    const auto sift_down = [&](size_type first, size_type count) {
-      size_type i = first;
-      for (;;) {
-        const size_type left = 2 * i + 1;
-        if (left >= count) {
-          break;
-        }
-        size_type largest = left;
-        if (left + 1 < count && comp(*at(left), *at(left + 1))) {
-          largest = left + 1;
-        }
-        if (!comp(*at(i), *at(largest))) {
-          break;
-        }
-        swap_values(*at(i), *at(largest));
-        i = largest;
-      }
-    };
-
+    // Independent implementation of textbook indirect sorting and permutation
+    // cycles (Knuth, TAOCP vol. 3, section 5.2). All comparisons finish before
+    // container values change. Comparator-exception value retention remains an
+    // observed property, not a stronger public exception guarantee.
     const size_type n = size();
-    for (size_type i = n / 2; i > 0; --i) {
-      sift_down(i - 1, n);
-    }
-    for (size_type e = n; e > 1; --e) {
-      swap_values(*at(0), *at(e - 1));
-      sift_down(0, e - 1);
+    if constexpr (sort_uses_value_buffer) {
+      using scratch_allocator =
+          typename allocator_traits_type::template rebind_alloc<T>;
+      using scratch_traits = allocator_traits<scratch_allocator>;
+      scratch_allocator scratch(alloc_);
+      const auto allocation = scratch_traits::allocate(scratch, n);
+      struct release_buffer {
+        scratch_allocator& allocator;
+        typename scratch_traits::pointer allocation;
+        size_type count;
+        ~release_buffer() {
+          scratch_traits::deallocate(allocator, allocation, count);
+        }
+      } release{scratch, allocation, n};
+      T* const values = std::to_address(allocation);
+
+      // memcpy starts the implicit-lifetime scratch objects. They are not
+      // container elements, so allocator construct/destroy hooks do not run.
+      // As with std::sort's own temporaries, comp may observe value copies.
+      size_type index = 0;
+      for (const T& value : *this) {
+        std::memcpy(values + index++, std::addressof(value), sizeof(T));
+      }
+      std::sort(values, values + n, std::ref(comp));
+      index = 0;
+      for (T& value : *this) {
+        value = values[index++];
+      }
+    } else {
+      struct entry {
+        T* address;
+        size_type source;
+      };
+      using entry_allocator =
+          typename allocator_traits_type::template rebind_alloc<entry>;
+      std::vector<entry, entry_allocator> order{entry_allocator(alloc_)};
+      order.reserve(n);
+      for (T& value : *this) {
+        order.push_back({std::addressof(value), order.size()});
+      }
+      std::sort(order.begin(), order.end(), [&comp](const entry& a, const entry& b) {
+        return comp(*a.address, *b.address);
+      });
+
+      // order[d].source identifies the original slot whose value belongs at d.
+      // Its address follows that same permutation. Swapping consecutive source
+      // addresses closes each cycle in k-1 swaps; source == index marks visited.
+      for (size_type first = 0; first < n; ++first) {
+        size_type current = first;
+        while (order[current].source != first) {
+          const size_type next = order[current].source;
+          using std::swap;
+          swap(*order[current].address, *order[next].address);
+          order[current].source = current;
+          current = next;
+        }
+        order[current].source = current;
+      }
     }
   }
 
@@ -1743,6 +1766,10 @@ class hive {
 #if defined(FORGE_HIVE_TEST_HOOKS)
   // Define this macro uniformly in every linked translation unit that uses
   // the same hive specialization. No checks or test state exist without it.
+  static constexpr bool __test_sort_uses_value_buffer() noexcept {
+    return sort_uses_value_buffer;
+  }
+
   // Last lookup's active blocks visited and candidate slots examined.
   pair<size_type, size_type> __test_lookup_work() const noexcept {
     return lookup_work_;

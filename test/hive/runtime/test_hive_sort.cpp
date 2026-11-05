@@ -692,4 +692,111 @@ TEST(HiveSortRegression, DeletedMoveTrivialCopySupportsAllocatorRvalueInsertionA
     EXPECT_EQ(hooks->constructed, hooks->destroyed);
 }
 
+TEST(HiveSortRegression, PathSelectionMatchesRealScratchAllocation) {
+    static_assert(std::hive<int>::__test_sort_uses_value_buffer());
+    static_assert(std::hive<std::array<int, 4>>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<trivial_64>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<std::string>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<move_only_value>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<allocator_only_value>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<small_nontrivial_value>::__test_sort_uses_value_buffer());
+    static_assert(!std::hive<deleted_move_value>::__test_sort_uses_value_buffer());
+
+    const auto check = []<class T>(bool copies) {
+        auto state = std::make_shared<allocation_state>();
+        lifetime_counts unused;
+        {
+            std::hive<T, raw_allocator<T>> hive(std::hive_limits{8, 8}, raw_allocator<T>(state, 57));
+            populate(hive, 4096, input_order::random, topology::churn, unused);
+            const auto before = contents(hive);
+            const auto typed = state->template allocation_attempts_for<T>();
+            const auto total = state->allocation_attempts;
+            hive.sort([](const T& a, const T& b) { return key_of(a) < key_of(b); });
+            EXPECT_EQ(state->template allocation_attempts_for<T>() - typed, copies ? 1u : 0u);
+            EXPECT_EQ(state->allocation_attempts - total, 1u);
+            expect_sorted_and_complete(hive, before);
+        }
+        EXPECT_TRUE(state->clean());
+    };
+    check.template operator()<int>(true);
+    check.template operator()<trivial_64>(false);
+}
+
+struct comparator_identity {
+    const void* first = nullptr;
+    std::size_t calls = 0;
+    std::size_t copies = 0;
+    bool consistent = true;
+};
+
+template<class T>
+struct identity_less {
+    comparator_identity* state;
+    explicit identity_less(comparator_identity* s) : state(s) {}
+    identity_less(const identity_less& other) : state(other.state) { ++state->copies; }
+    bool operator()(const T& a, const T& b) {
+        if (state->first == nullptr) state->first = this;
+        state->consistent = state->consistent && state->first == this;
+        ++state->calls;
+        return key_of(a) < key_of(b);
+    }
+};
+
+TEST(HiveSortRegression, BothPathsUseOneMutableComparatorInstance) {
+    const auto check = []<class T>() {
+        lifetime_counts unused;
+        std::hive<T> hive(std::hive_limits{8, 8});
+        populate(hive, 1024, input_order::random, topology::churn, unused);
+        const auto before = contents(hive);
+        comparator_identity identity;
+        hive.sort(identity_less<T>{&identity});
+        EXPECT_GT(identity.calls, 0u);
+        EXPECT_EQ(identity.copies, 0u);
+        EXPECT_TRUE(identity.consistent);
+        expect_sorted_and_complete(hive, before);
+    };
+    check.template operator()<int>();
+    check.template operator()<trivial_64>();
+}
+
+struct swap_counted_value {
+    int key;
+    int serial;
+    inline static std::size_t swaps = 0;
+
+    swap_counted_value(int k, int s) : key(k), serial(s) {}
+    ~swap_counted_value() {} // Keep this on the generic path.
+    friend void swap(swap_counted_value& a, swap_counted_value& b) noexcept {
+        ++swaps;
+        using std::swap;
+        swap(a.key, b.key);
+        swap(a.serial, b.serial);
+    }
+};
+
+TEST(HiveSortRegression, GenericPermutationUsesAtMostNMinusOneSwaps) {
+    for (const auto n : {2u, 7u, 257u, 4096u}) {
+        for (const bool duplicates : {false, true}) {
+            std::hive<swap_counted_value> hive(std::hive_limits{8, 8});
+            std::vector<std::pair<int, int>> expected;
+            std::mt19937_64 rng(1);
+            for (unsigned i = 0; i < n; ++i) {
+                const int key = static_cast<int>(rng() % (duplicates ? 3 : n));
+                hive.emplace(key, static_cast<int>(i));
+                expected.emplace_back(key, static_cast<int>(i));
+            }
+            swap_counted_value::swaps = 0;
+            hive.sort([](const auto& a, const auto& b) { return a.key < b.key; });
+            EXPECT_LE(swap_counted_value::swaps, n - 1);
+            EXPECT_TRUE(std::is_sorted(hive.begin(), hive.end(),
+                [](const auto& a, const auto& b) { return a.key < b.key; }));
+            std::vector<std::pair<int, int>> actual;
+            for (const auto& value : hive) actual.emplace_back(value.key, value.serial);
+            std::sort(actual.begin(), actual.end());
+            std::sort(expected.begin(), expected.end());
+            EXPECT_EQ(actual, expected);
+        }
+    }
+}
+
 } // namespace
