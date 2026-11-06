@@ -56,6 +56,35 @@ constexpr const_iterator singular_const_iterator(singular_iterator);
 static_assert(singular_iterator == singular_const_iterator);
 static_assert((singular_const_iterator <=> singular_iterator) == std::strong_ordering::equal);
 
+template<class Iterator>
+constexpr bool iterator_copy_contract =
+    std::is_trivially_copyable_v<Iterator> &&
+    std::is_trivially_copy_constructible_v<Iterator> &&
+    std::is_trivially_copy_assignable_v<Iterator> &&
+    std::is_nothrow_copy_constructible_v<Iterator> &&
+    std::is_nothrow_copy_assignable_v<Iterator>;
+
+static_assert(iterator_copy_contract<iterator>);
+static_assert(iterator_copy_contract<const_iterator>);
+
+template<class Iterator>
+constexpr bool singular_copy_assignment() {
+    Iterator original;
+    Iterator copied(original);
+    Iterator assigned;
+    assigned = copied;
+    const Iterator& alias = assigned;
+    assigned = alias;
+    const const_iterator converted(assigned);
+    const_iterator converted_assignment;
+    converted_assignment = assigned;
+    return original == copied && copied == assigned && assigned == converted &&
+           converted == converted_assignment;
+}
+
+static_assert(singular_copy_assignment<iterator>());
+static_assert(singular_copy_assignment<const_iterator>());
+
 // Liveness and expected marks come only from test operations, never traversal.
 // Positions of new insertions are unspecified; record them only after checking
 // the complete population and preservation of the old relative order.
@@ -546,6 +575,95 @@ TEST_P(HiveIteration, RetainedTraversalMigratesThroughSpliceSwapAndMoves) {
     ASSERT_TRUE(assigned.empty());
     ASSERT_TRUE(other_model.check_and_mark(empty_destination));
     ASSERT_TRUE(other_model.from_retained(empty_destination, old_destination_tail));
+}
+
+TEST_P(HiveIteration, CopyAssignmentAndConstConversionStateTransitions) {
+    auto hive = make_hive();
+    iteration_model model;
+    int next_id = 0;
+    model.append(hive, next_id, 29);
+    ASSERT_TRUE(model.check_and_mark(hive));
+    for (const int id : {0, 6, 7, 8, 13, 24, 27})
+        ASSERT_TRUE(model.erase(hive, id));
+    ASSERT_TRUE(model.check_and_mark(hive));
+
+    // State indices: singular, nonempty end, head element, interior element.
+    const std::size_t interior = model.order.size() / 2;
+    const auto& head = model.live.at(model.order.front());
+    const auto& middle = model.live.at(model.order[interior]);
+    const std::vector<iterator> mutable_states{iterator{}, hive.end(), head.saved, middle.saved};
+    const std::vector<const_iterator> const_states{
+        const_iterator{}, hive.cend(), head.const_saved, middle.const_saved};
+
+    const auto traverses = [&](auto candidate, std::size_t state) -> testing::AssertionResult {
+        using iterator_type = decltype(candidate);
+        if (state == 0) {
+            if (candidate != iterator_type{})
+                return testing::AssertionFailure() << "singular copy/assignment";
+            return testing::AssertionSuccess();
+        }
+        const std::size_t start = state == 1 ? model.order.size() - 1
+                                           : state == 2 ? 0 : interior;
+        if (state == 1) {
+            if (candidate != hive.cend())
+                return testing::AssertionFailure() << "nonempty end copy/assignment";
+            --candidate;
+        }
+        auto backward = candidate;
+        for (std::size_t index = start; index < model.order.size(); ++index) {
+            const auto& expected = model.live.at(model.order[index]);
+            if (candidate == hive.cend() || candidate->id != model.order[index] ||
+                std::addressof(*candidate) != expected.address || candidate->mark != expected.mark)
+                return testing::AssertionFailure() << "copied forward state " << state;
+            ++candidate;
+        }
+        if (candidate != hive.cend())
+            return testing::AssertionFailure() << "copied forward boundary state " << state;
+        for (std::size_t index = start + 1; index > 0; --index) {
+            const auto& expected = model.live.at(model.order[index - 1]);
+            if (backward == hive.cend() || backward->id != model.order[index - 1] ||
+                std::addressof(*backward) != expected.address || backward->mark != expected.mark)
+                return testing::AssertionFailure() << "copied backward state " << state;
+            if (index > 1) {
+                if (backward == hive.cbegin())
+                    return testing::AssertionFailure() << "early copied begin state " << state;
+                --backward;
+            }
+        }
+        if (backward != hive.cbegin())
+            return testing::AssertionFailure() << "copied backward boundary state " << state;
+        return testing::AssertionSuccess();
+    };
+
+    const auto exercise_copies = [&](const auto& states) {
+        using iterator_type = typename std::remove_cvref_t<decltype(states)>::value_type;
+        for (std::size_t source = 0; source < states.size(); ++source) {
+            SCOPED_TRACE(source);
+            const iterator_type constructed(states[source]);
+            ASSERT_TRUE(traverses(constructed, source));
+            for (std::size_t target = 0; target < states.size(); ++target) {
+                SCOPED_TRACE(target);
+                iterator_type assigned(states[target]);
+                assigned = states[source];
+                ASSERT_TRUE(traverses(assigned, source));
+                const iterator_type& alias = assigned;
+                assigned = alias;
+                ASSERT_TRUE(traverses(assigned, source));
+            }
+        }
+    };
+    exercise_copies(mutable_states);
+    exercise_copies(const_states);
+    for (std::size_t source = 0; source < mutable_states.size(); ++source) {
+        SCOPED_TRACE(source);
+        const const_iterator converted(mutable_states[source]);
+        ASSERT_TRUE(traverses(converted, source));
+        for (const auto& target : const_states) {
+            const_iterator assigned(target);
+            assigned = mutable_states[source];
+            ASSERT_TRUE(traverses(assigned, source));
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(BlockLimits, HiveIteration, testing::Bool(),

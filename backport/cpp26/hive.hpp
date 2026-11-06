@@ -257,6 +257,34 @@ class hive {
     size_type next_block_order = 0;
   };
 
+  struct iterator_position {
+    slot_type* slots;
+    const slot_index_type* skip;
+  };
+
+  struct iterator_end {
+    const hive* owner;
+    size_type epoch;
+  };
+
+  static_assert(is_trivially_default_constructible_v<iterator_position> &&
+                is_trivially_copy_assignable_v<iterator_position> &&
+                is_trivially_default_constructible_v<iterator_end> &&
+                is_trivially_copy_assignable_v<iterator_end>);
+
+  // block_ selects the active member. Only end needs owner/epoch; using the
+  // same storage for active cursors keeps the iterator table used by sort small.
+  union iterator_state {
+    iterator_position position;
+    iterator_end end;
+
+    constexpr iterator_state() noexcept : end{nullptr, 0} {}
+    constexpr iterator_state(slot_type* slots, const slot_index_type* skip) noexcept
+        : position{slots, skip} {}
+    constexpr explicit iterator_state(const hive* owner) noexcept
+        : end{owner, owner->end_epoch_} {}
+  };
+
   template<bool IsConst>
   class hive_iterator {
    public:
@@ -275,34 +303,37 @@ class hive {
     template<bool OtherConst>
       requires(IsConst && !OtherConst)
     constexpr hive_iterator(const hive_iterator<OtherConst>& other) noexcept
-        : block_(other.block_), index_(other.index_), owner_(other.owner_),
-          epoch_(other.epoch_) {}
+        : block_(other.block_), index_(other.index_), state_(other.state_) {}
 
     constexpr reference operator*() const noexcept {
       return *std::launder(reinterpret_cast<pointer>(
-          block_->slots[index_].storage));
+          state_.position.slots[index_].storage));
     }
 
     constexpr pointer operator->() const noexcept {
       return std::launder(reinterpret_cast<pointer>(
-          block_->slots[index_].storage));
+          state_.position.slots[index_].storage));
     }
 
     constexpr hive_iterator& operator++() noexcept {
       const size_type next = index_ + 1;
+      // Bounds and skip entries remain live across mutations. Only allocation
+      // addresses are cached: neither allocation moves while this block lives.
       if (next < block_->high_water) {
-        index_ = next + block_->skip[next];
+        const size_type skipped = state_.position.skip[next];
+        index_ = next + skipped;
       } else {
         control_type* const control = block_->control;
-        block_ = block_->active_next;
-        if (block_) {
-          index_ = block_->skip[0];
+        block_type* const next_block = block_->active_next;
+        if (next_block) {
+          enter_block(next_block, next_block->skip[0]);
         } else {
           // End iterators carry an owner, never a pointer which has to be
           // dereferenced after POCCA replaces a control state.
-          owner_ = control->owner;
+          const hive* const owner = control->owner;
+          block_ = nullptr;
           index_ = npos;
-          epoch_ = owner_->end_epoch_;
+          state_.end = {owner, owner->end_epoch_};
         }
       }
       return *this;
@@ -318,25 +349,24 @@ class hive {
       if (!block_) {
         // Decrementing an empty/singular end is outside the iterator contract.
         // Keeping this as a no-op is only a diagnostic convenience.
-        if (!owner_ || !owner_->control_ ||
-            !owner_->control_->active_tail) {
+        const hive* const owner = state_.end.owner;
+        if (!owner || !owner->control_ ||
+            !owner->control_->active_tail) {
           return *this;
         }
-        block_ = owner_->control_->active_tail;
-        index_ = block_->high_water - 1;
-        owner_ = nullptr;
-        epoch_ = 0;
+        block_type* const last_block = owner->control_->active_tail;
+        enter_block(last_block, last_block->high_water - 1);
       } else {
         if (index_ != 0) {
           const size_type previous = index_ - 1;
-          const size_type skipped = block_->skip[previous];
+          const size_type skipped = state_.position.skip[previous];
           if (skipped <= previous) {
             index_ = previous - skipped;
             return *this;
           }
         }
-        block_ = block_->active_prev;
-        index_ = block_->high_water - 1;
+        block_type* const previous_block = block_->active_prev;
+        enter_block(previous_block, previous_block->high_water - 1);
       }
       return *this;
     }
@@ -354,7 +384,8 @@ class hive {
         return block_ && other.block_ && block_ == other.block_ &&
                index_ == other.index_;
       }
-      return owner_ == other.owner_ && epoch_ == other.epoch_;
+      return state_.end.owner == other.state_.end.owner &&
+             state_.end.epoch == other.state_.end.epoch;
     }
 
     template<bool OtherConst>
@@ -378,9 +409,10 @@ class hive {
       }
 
       if (block_ || other.block_) {
-        const hive* const left_owner = block_ ? block_->control->owner : owner_;
+        const hive* const left_owner =
+            block_ ? block_->control->owner : state_.end.owner;
         const hive* const right_owner =
-            other.block_ ? other.block_->control->owner : other.owner_;
+            other.block_ ? other.block_->control->owner : other.state_.end.owner;
         if (left_owner == right_owner) {
           // A non-end element precedes end in its own comparison domain.
           return block_ ? strong_ordering::less : strong_ordering::greater;
@@ -388,10 +420,10 @@ class hive {
         return identity_order(left_owner, right_owner);
       }
 
-      if (owner_ == other.owner_) {
-        return epoch_ <=> other.epoch_;
+      if (state_.end.owner == other.state_.end.owner) {
+        return state_.end.epoch <=> other.state_.end.epoch;
       }
-      return identity_order(owner_, other.owner_);
+      return identity_order(state_.end.owner, other.state_.end.owner);
     }
 
    private:
@@ -400,10 +432,17 @@ class hive {
     friend class hive;
 
     constexpr hive_iterator(block_type* block, size_type index) noexcept
-        : block_(block), index_(index) {}
+        : block_(block), index_(index),
+          state_(block->slots, block->skip) {}
 
     constexpr explicit hive_iterator(const hive* owner) noexcept
-        : index_(npos), owner_(owner), epoch_(owner->end_epoch_) {}
+        : index_(npos), state_(owner) {}
+
+    constexpr void enter_block(block_type* block, size_type index) noexcept {
+      block_ = block;
+      index_ = index;
+      state_.position = {block->slots, block->skip};
+    }
 
     static constexpr strong_ordering identity_order(
         const void* left, const void* right) noexcept {
@@ -417,8 +456,7 @@ class hive {
 
     block_type* block_ = nullptr;
     size_type index_ = npos;
-    const hive* owner_ = nullptr;
-    size_type epoch_ = 0;
+    iterator_state state_;
   };
 
  public:
