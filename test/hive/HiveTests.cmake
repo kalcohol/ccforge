@@ -24,6 +24,7 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_contract_controls.cpp"
     "${hive_runtime_dir}/test_hive_growth.cpp"
     "${hive_runtime_dir}/test_hive_get_iterator.cpp"
+    "${hive_runtime_dir}/test_hive_iteration.cpp"
     "${hive_runtime_dir}/test_hive_layout.cpp"
     "${hive_runtime_dir}/test_hive_skipfield.cpp"
     "${hive_runtime_dir}/test_hive_core_model.cpp"
