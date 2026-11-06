@@ -1,4 +1,4 @@
-HIVE ADMISSION STATUS -- 2026-11-05
+HIVE ADMISSION STATUS -- 2026-11-06
 
 R5 integration is qualified for mainline admission. R5_ADMISSION.txt records
 the native-probe, root/standalone test, platform and header-only consumer gates.
@@ -23,8 +23,12 @@ No global logical-chain experiment or shared <version> wrapper is adopted.
 The owner accepted R2/R3 after independent review. The original noisy timing
 batches remain inconclusive; the later controlled review and revised B3 are
 recorded in SKIPFIELD_PREPARATION.txt. get_iterator has an explicit flat-address
-support boundary. R2.1 iteration optimization and R4 sort acceleration remain
-deferred; R5 does not change the reviewed container algorithms or representation.
+support boundary. R2.1 iteration optimization is a candidate awaiting independent
+review, not admitted. R21_ITERATION.txt records its correctness evidence, three
+noise-rejected primary performance batches and the unexecuted extra Windows
+stress program. No performance pass or master merge is claimed. R4/R4.1 sort
+acceleration remains separate and deferred pending the R2.1 decision; the current
+candidate keeps the baseline heap-sort algorithm and the reviewed slot layout.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.

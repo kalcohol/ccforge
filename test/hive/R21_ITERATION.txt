@@ -1,0 +1,132 @@
+R2.1 ITERATION CANDIDATE -- 2026-11-06
+
+Status: candidate awaiting independent review; HOLD for performance admission.
+No master merge is authorized by this record. R4.1 remains a separate task.
+
+Baseline: 71365c83ca3c7103232c9daaea4f3035dc178fac.
+Tested implementation: 7c2ce0646f8108965ae2d545c7754d617a720fe8.
+Branch: work/hive-iter-r21-20261106.
+Preparation: fa02bac adds T1-T8; a560b86 adds baseline-compatible controls.
+The final implementation commit also adds two state-copy control instances.
+
+SCOPE AND DIAGNOSIS
+
+Only private iterator representation and traversal operations change. Active
+iterators cache the stable slot and skip allocation bases. Mutable high-water,
+skip entries, active links and ownership are still read live. End owner/epoch
+and active allocation bases occupy discriminated trivial union storage; copies
+preserve its active member. No inactive-member reads or new type punning are
+used. Slot layout, skip encoding, block fields, allocation policy, invalidation
+rules, public interface and all other member algorithms remain unchanged.
+In particular, sort is still the baseline heap algorithm.
+
+Before editing the implementation, isolated public read-sum, buffer-assignment
+and increment loops were compiled with clang 19.1.7/libc++ and GCC 16.2 at
+C++26 -O2 -DNDEBUG. An ordinary in-block forward step has five static memory
+reads in the clang baseline and four in GCC, including payload/input; writable
+loops add one write. Clang rereads both allocation bases in all three loops.
+GCC hoists the slot base for all three, but rereads the skip base. Thus repeated
+metadata reads are confirmed, but a write-only aliasing explanation is not.
+
+The candidate has three such reads in both compilers. Caching removes the base
+loads from the address-dependency chain, but index -> skip entry -> next index
+remains. These are static instruction/dependency observations, not cycle or
+cache-miss measurements. Cross-block paths and end comparisons are excluded.
+The current-slot prototype was superseded by stable bases to avoid maintaining
+two moving positions. All exploratory evidence, including unfavorable samples,
+is retained separately from formal measurement.
+
+Iterator and const_iterator sizes are 32 bytes before and after in the measured
+Linux LLVM/GCC configurations. This is an observation, not an ABI guarantee.
+No block or slot allocation growth is introduced. The formal core observations
+show 6.055736 live requested bytes per dense int for both baseline and candidate;
+the timing batches containing those observations did not qualify for admission.
+
+CORRECTNESS EVIDENCE
+
+The original tests and assertions are unchanged. Before the core edit, all
+126 runtime cases (including 17 new controls) and 30 selected CTests passed
+against the baseline header. The final 19 iteration controls then passed in
+paired baseline/candidate ASan+UBSan libc++ EXTENSIVE builds. The final combined
+runtime suite has 128 cases on each tested platform.
+
+The liveness model checks retained pointers and iterators, independent writable
+marks, both traversal directions, mixed const comparisons, copy/assignment,
+block boundaries, churn, tail growth/deletion, reserve/trim, reshape/shrink,
+splice/swap/move and owner-based ends after allocator propagation. Its loops
+are bounded independently of the container's traversal result.
+
+Final code verification (CTest counts, not individual runtime assertions):
+  LLVM 19.1.7/libc++, C++23 and C++26       30/30 each
+  GCC 16.2/libstdc++, C++23 and C++26       30/30 each
+  ASan+UBSan/libc++ EXTENSIVE, C++23/26     30/30 each
+  Zig, C++23                              30/30
+  AppleClang 21, C++23 and C++26           30/30 each
+  MSVC 19.51, configured C++23             30/30
+    Actual MSVC mode: -std:c++latest.
+  LLVM C++26 full project                 303 passed, 3 skipped, 0 failed
+
+The full-project skips are the three existing io_uring runtime gates, not Hive
+tests. Linux and macOS also pass the model-stress runs: int/char each 6 seeds
+x 2000 steps, align32/64-byte each 4 x 2000. The extra Windows model-stress
+program was not executed: host application-control policy blocked its launch.
+Do not count it as passed. An earlier Windows attempt stopped before tests
+because the private harness accepted only the slash spelling of the equivalent
+MSVC language option; the corrected harness retained the same language mode
+and the same library source. Both attempts remain in the private evidence.
+
+F4 controls use the unhooked layout with ASan+UBSan and EXTENSIVE. The positive
+copy passes all 19 iteration cases. Four separate compiled mutations are
+rejected by assertions, rather than being credited for compile failures:
+  forward skip index    ChurnPreservesInsertionEraIteratorsAndPointers
+  next-block start      ChurnPreservesInsertionEraIteratorsAndPointers
+  active-block cache    POCCA fixture's initial multi-block traversal
+  end epoch update      POCCA fixture's initial traversal/end checks
+The cache mutation preserves end-to-active initialization and fails only the
+active-to-active cache refresh. No mutation is committed. These are test-oracle
+controls; the assertion rejections are not claimed as sanitizer detections.
+
+PERFORMANCE EVIDENCE AND OPEN GATES
+
+measure_traversal.cpp is an opt-in FORGE_HIVE_BUILD_COST_PROBE target using only
+public interfaces. Each process runs one container/workload, with seed 1,
+one warmup and 31 measured traversals (T6: 2001), and checks complete payloads
+outside timing. Churn is three erase/refill rounds. T7 uses 64-byte values;
+T8 is reverse traversal. Smoke runs are explicitly separate from gate data.
+
+The formal LLVM primary protocol pins CPU14 and interleaves vector, baseline
+and candidate for five rotated rounds. The unchanged core W1/W2 and baseline
+heap-sort S1-S8 controls are included in the SAME attempt. W1/W2 retain their
+existing one-observation-per-process protocol; their statistic is the median
+of five observations, not 31 samples per process. Other timings use the median
+of five process medians. Source/binary hashes, compiler flags, topology, sibling
+and L3 sharing, load and CPU samples are retained.
+
+The owner chose the shared host with the unchanged noise rule. All three LLVM
+attempts exceed the T1-vector max/min limit of 1.15:
+  attempt 1: 2.0667   NOISY
+  attempt 2: 3.6576   NOISY
+  attempt 3: 1.1897   NOISY
+There is NO selected valid primary batch. P0, B2 and P2 are NOT passed; neither
+favorable nor unfavorable ratios from these batches establish a gate result.
+No fourth primary attempt was made. In particular, read-only T1 remains a
+review focus: its raw candidate/base ratios exceed one in all three invalid
+batches. S8 also exceeds its limit in one invalid batch. Do not dismiss these
+observations as proven harmless noise or use writable gains to waive P0.
+
+GCC P3 is record-only. Its first two attempts are noisy; attempt 3 is valid
+(noise 1.0610), with candidate/base ratios:
+  T1 0.9844   T2 0.8176   T3 0.9725
+  T4 1.0152   T5 0.7840   T6 0.7379
+These observations do not replace LLVM gates. P1 versus plf::hive was not
+measured by the implementer; it belongs to the external black-box reviewer.
+No third-party container implementation or reviewer calibration source was read.
+
+NEXT DECISION
+
+The candidate needs independent code/fuzz review and valid P0/B2/P2 measurements,
+plus external P1. A confirmed read-only regression rejects the candidate under
+the current taskbook. The Windows extra stress gap also remains explicitly open.
+Keep this branch out of master and do not begin R4.1 integration on the assumption
+that R2.1 has passed. Private raw evidence and REVIEW_HANDOFF.md are under
+build/review/hive-iter-r21-20261106/; original R4 work is unchanged.
