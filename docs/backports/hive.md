@@ -29,7 +29,9 @@ Backport 的 `get_iterator` 支持平面地址模型：指针到 `uintptr_t` 的
 R5 的 Linux、macOS、Windows Hive 集成及无 GoogleTest consumer 门禁已通过，
 具体工具链、测试范围和限制见 [准入记录](../../test/hive/R5_ADMISSION.txt)。
 合成 native fixture 验证的是探测与让位机制，不代表某个原生库完整实现了 Hive。
-R2.1 迭代器优化是**候选待复核，尚未准入**，见
-[候选记录](../../test/hive/R21_ITERATION.txt)。主性能测量三批均超出噪声上限，
-不能宣称不回退；额外 Windows 压力测试也尚未执行。R4/R4.1 排序加速仍是独立
-后续任务，当前候选保持原有堆排序算法。
+R2.1 迭代器优化经独立复核，于 2026-11-09 **获负责人准入**，见
+[准入记录](../../test/hive/R21_ITERATION.txt)。依据为 `CLAUDE_R21_REVIEW.md`
+的正确性复核、补充成对测量及负责人批准的 P1 区间流程。原三批主性能测量仍为
+噪声作废，不追溯改为通过；额外 Windows 压力测试是已知验证缺口。
+新成对性能规则从 R4.1 起生效。R4/R4.1 排序加速仍需独立验证和准入，当前主线
+保持原有堆排序算法。

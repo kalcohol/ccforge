@@ -1,7 +1,7 @@
-R2.1 ITERATION CANDIDATE -- 2026-11-06
+R2.1 ITERATION ADMISSION -- 2026-11-09
 
-Status: candidate awaiting independent review; HOLD for performance admission.
-No master merge is authorized by this record. R4.1 remains a separate task.
+Status: admitted after independent review and the owner's 2026-11-09 decision.
+R4.1 remains a separate task, starting from the admitted mainline revision.
 
 Baseline: 71365c83ca3c7103232c9daaea4f3035dc178fac.
 Tested implementation: 7c2ce0646f8108965ae2d545c7754d617a720fe8.
@@ -86,7 +86,7 @@ The cache mutation preserves end-to-active initialization and fails only the
 active-to-active cache refresh. No mutation is committed. These are test-oracle
 controls; the assertion rejections are not claimed as sanitizer detections.
 
-PERFORMANCE EVIDENCE AND OPEN GATES
+ORIGINAL PERFORMANCE EVIDENCE
 
 measure_traversal.cpp is an opt-in FORGE_HIVE_BUILD_COST_PROBE target using only
 public interfaces. Each process runs one container/workload, with seed 1,
@@ -122,11 +122,24 @@ These observations do not replace LLVM gates. P1 versus plf::hive was not
 measured by the implementer; it belongs to the external black-box reviewer.
 No third-party container implementation or reviewer calibration source was read.
 
-NEXT DECISION
+ADMISSION DECISION
 
-The candidate needs independent code/fuzz review and valid P0/B2/P2 measurements,
-plus external P1. A confirmed read-only regression rejects the candidate under
-the current taskbook. The Windows extra stress gap also remains explicitly open.
-Keep this branch out of master and do not begin R4.1 integration on the assumption
-that R2.1 has passed. Private raw evidence and REVIEW_HANDOFF.md are under
+Independent review is recorded in
+build/review/hive-iter-r21-review-20261106/CLAUDE_R21_REVIEW.md. It accepted
+the code, independent model fuzz and five additional mutation controls. Its
+supplementary alternating paired measurements found no material read-only,
+insertion/deletion or existing-sort regression. The original three primary
+batches above, and the reviewer's four noise-rejected batches, remain invalid
+under their original protocol; none is retroactively counted as a gate pass.
+
+External P1 placed T2/T4 at 1.19-1.27 times plf. On 2026-11-09 the owner
+approved admission through the 1.25-1.5 interval procedure using the reviewer's
+paired evidence and tradeoff assessment. The Windows extra stress program is
+an accepted known validation gap, not a passed test; MSVC's 30 CTests passed.
+
+The owner also approved replacing the batch-noise sentinel with paired P0
+statistics beginning with R4.1, not retroactively for R2.1. The exact protocol
+is in CLAUDE_R41_TASKBOOK.md section 4. Mainline may now fast-forward to this
+admission record. R4.1 still requires its own implementation, verification,
+independent review and owner decision. Private R2.1 evidence is preserved under
 build/review/hive-iter-r21-20261106/; original R4 work is unchanged.
