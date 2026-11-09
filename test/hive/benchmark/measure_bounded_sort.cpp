@@ -48,7 +48,17 @@ void measure(const std::string& implementation, const std::string& workload,
       std::sort(values.begin(), values.end(), compare);
     }
     const auto finish = std::chrono::steady_clock::now();
+    std::vector<unsigned char> seen;
+    if constexpr (!std::is_same_v<T, int>) {
+      seen.resize(values.size());
+    }
     for (std::size_t i = 0; i < values.size(); ++i) {
+      if constexpr (!std::is_same_v<T, int>) {
+        const auto source = values[i].source;
+        if (source >= input.size() || values[i].address != input[source].address || seen[source]++) {
+          throw std::runtime_error("bounded sort cost probe permutation mismatch");
+        }
+      }
       if (compare(values[i], reference[i]) || compare(reference[i], values[i])) {
         throw std::runtime_error("bounded sort cost probe mismatch");
       }

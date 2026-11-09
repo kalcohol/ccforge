@@ -243,14 +243,19 @@ struct reference {
     std::uint64_t hash;
 };
 
-template<class T, bool Vector>
-reference<T> make_reference(const options& opt) {
-    auto container = make_input<T, Vector>(opt, std::allocator<T>{});
+template<class T, class C>
+reference<T> reference_from(const C& container) {
     std::vector<T> values(container.begin(), container.end());
     std::sort(values.begin(), values.end(), full_less{});
     checksum hash;
     for (const auto& value : values) hash.append(value);
     return {std::move(values), hash.value};
+}
+
+template<class T, bool Vector>
+reference<T> make_reference(const options& opt) {
+    auto container = make_input<T, Vector>(opt, std::allocator<T>{});
+    return reference_from<T>(container);
 }
 
 template<class C, class T>
@@ -283,11 +288,14 @@ struct memory_result {
 };
 
 template<class T, bool Vector>
-memory_result measure_memory(const options& opt, const reference<T>& expected) {
+memory_result measure_memory(const options& opt) {
     allocation_state state;
     memory_result result{};
     {
         auto container = make_input<T, Vector>(opt, measured_allocator<T>{state});
+        // Churn order can depend on allocator-specific block layout. Compare
+        // this probe with its own complete input, not the timing allocator's.
+        const auto expected = reference_from<T>(container);
         const auto capacity = container.capacity();
         // Keep live accounting intact for deallocation, but exclude resident bytes.
         const std::size_t baseline = state.live;
@@ -322,9 +330,11 @@ void execute(const options& opt, const char* type) {
             throw std::runtime_error("sort changed the capacity");
         validate(container, expected);
     }
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        std::fprintf(stderr, "sample_ns,%zu,%.0f\n", i, samples[i]);
     std::sort(samples.begin(), samples.end());
     // A separate untimed sort avoids charging counter/rebind bookkeeping to latency.
-    const auto memory = measure_memory<T, Vector>(opt, expected);
+    const auto memory = measure_memory<T, Vector>(opt);
     std::puts("container,workload,type,element_bytes,p0_workload,p1_workload,smoke,size,seed,warmups,samples,timing_allocator,min_ns,median_ns,memory_allocator,memory_probe_sorts,temporary_peak_bytes,temporary_bytes_per_element,temporary_allocation_calls,payload_checksum");
     std::printf("%.*s,%.*s,%s,%zu,%s,%s,%s,%zu,%llu,1,%zu,std_allocator,%.0f,%.0f,rebind_counter,1,%zu,%.6f,%zu,%016llx\n",
         static_cast<int>(opt.container.size()), opt.container.data(),
