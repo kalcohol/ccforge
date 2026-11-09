@@ -713,6 +713,37 @@ TEST(hive_bounded_sort, OrderedInputReportsNoWritebackNeeded) {
     EXPECT_TRUE(std::is_sorted(unordered.begin(), unordered.end()));
 }
 
+TEST(hive_bounded_sort, DistinctKeysUseBoundedTwoWayPartitions) {
+    std::array<int, 257> values{};
+    for (std::size_t i = 0; i < values.size(); ++i) values[i] = static_cast<int>(i);
+    random_bits random{seed};
+    for (std::size_t remaining = values.size(); remaining > 1; --remaining) {
+        std::swap(values[remaining - 1], values[random.next() % remaining]);
+    }
+    kernel::__sort_test_stats stats;
+    auto compare = [](int a, int b) { return a < b; };
+    EXPECT_TRUE(kernel::__bounded_sort(values.data(), values.size(), compare,
+        kernel::__sort_test_options{2, 64}, &stats));
+    EXPECT_GT(stats.two_way_partitions, 0u);
+    EXPECT_EQ(stats.three_way_partitions, 0u);
+    EXPECT_EQ(stats.partitions, stats.two_way_partitions);
+    for (std::size_t i = 0; i < values.size(); ++i) EXPECT_EQ(values[i], i);
+}
+
+TEST(hive_bounded_sort, RepeatedKeysUseBoundedThreeWayPartitions) {
+    std::array<int, 257> values{};
+    for (std::size_t i = 0; i < values.size(); ++i) values[i] = static_cast<int>(i % 5);
+    auto expected = values;
+    std::sort(expected.begin(), expected.end());
+    kernel::__sort_test_stats stats;
+    auto compare = [](int a, int b) { return a < b; };
+    EXPECT_TRUE(kernel::__bounded_sort(values.data(), values.size(), compare,
+        kernel::__sort_test_options{2, 64}, &stats));
+    EXPECT_GT(stats.three_way_partitions, 0u);
+    EXPECT_EQ(stats.partitions, stats.two_way_partitions + stats.three_way_partitions);
+    EXPECT_EQ(values, expected);
+}
+
 TEST(hive_bounded_sort, SupportsDeletedCopyAndMoveConstructors) {
     struct value {
         int key;

@@ -36,6 +36,8 @@ struct __sort_test_options {
 
 struct __sort_test_stats {
   size_t partitions = 0;
+  size_t two_way_partitions = 0;
+  size_t three_way_partitions = 0;
   size_t heap_fallbacks = 0;
   size_t insertions = 0;
 };
@@ -117,6 +119,65 @@ size_t __sort_pivot(T* data, size_t count, Compare& comp) {
   return comp(data[middle], data[last]) ? last : middle;
 }
 
+struct __sort_partition_bounds {
+  size_t less;
+  size_t right;
+};
+
+template<bool CollectEquals, class T, class Compare>
+__sort_partition_bounds __sort_partition(T* data, size_t count, Compare& comp) {
+  const size_t pivot = count - 1;
+  size_t scan_left = 0;
+  size_t scan_right = pivot;
+  size_t equal_left = 0;
+  size_t equal_right = pivot;
+  // Both specializations keep, independently of comp:
+  // equal_left <= scan_left <= scan_right <= equal_right <= pivot.
+  // The pivot stays in its live array slot; no T constructor is required.
+  while (scan_left < scan_right) {
+    while (scan_left < scan_right && comp(data[scan_left], data[pivot])) {
+      ++scan_left;
+    }
+    while (scan_left < scan_right && comp(data[pivot], data[scan_right - 1])) {
+      --scan_right;
+    }
+    if (scan_left == scan_right) {
+      break;
+    }
+    if (scan_right - scan_left == 1) {
+      if constexpr (CollectEquals) {
+        __sort_exchange(data + equal_left, data + scan_left);
+        ++equal_left;
+        ++scan_left;
+      }
+      break;
+    }
+    --scan_right;
+    __sort_exchange(data + scan_left, data + scan_right);
+    if constexpr (CollectEquals) {
+      if (!comp(data[scan_left], data[pivot])) {
+        __sort_exchange(data + equal_left, data + scan_left);
+        ++equal_left;
+      }
+      if (!comp(data[pivot], data[scan_right])) {
+        --equal_right;
+        __sort_exchange(data + scan_right, data + equal_right);
+      }
+    }
+    ++scan_left;
+  }
+  const size_t less = scan_left - equal_left;
+  const size_t left_swaps = equal_left < less ? equal_left : less;
+  for (size_t index = 0; index < left_swaps; ++index) {
+    __sort_exchange(data + index, data + scan_left - 1 - index);
+  }
+  const size_t right_equal_count = count - equal_right; // Includes the pivot.
+  for (size_t index = 0; index < right_equal_count; ++index) {
+    __sort_exchange(data + scan_left + index, data + equal_right + index);
+  }
+  return {less, scan_left + right_equal_count};
+}
+
 template<class T, class Compare>
 void __sort_partition_loop(T* data, size_t count, Compare& comp,
                            size_t threshold, size_t depth
@@ -146,52 +207,23 @@ void __sort_partition_loop(T* data, size_t count, Compare& comp,
 #endif
     const size_t pivot = count - 1;
     __sort_exchange(data + __sort_pivot(data, count, comp), data + pivot);
-    size_t scan_left = 0;
-    size_t scan_right = pivot;
-    size_t equal_left = 0;
-    size_t equal_right = pivot;
-    // Scan inward and exchange only misplaced pairs. Equivalent keys collect
-    // at the ends, then rotate into the middle. Throughout, independently of
-    // comp: equal_left <= scan_left <= scan_right <= equal_right <= pivot.
-    // The pivot stays in its live array slot; no T constructor is required.
-    while (scan_left < scan_right) {
-      while (scan_left < scan_right && comp(data[scan_left], data[pivot])) {
-        ++scan_left;
+    // A sampled equivalent key selects duplicate collection. Ordinary distinct
+    // partitions need only the inward scans, not equality checks on every pair.
+    // Neither choice changes the explicit bounds or the excluded pivot.
+    const bool collect_equals = !comp(data[0], data[pivot]) && !comp(data[pivot], data[0]);
+#if defined(FORGE_HIVE_TEST_HOOKS)
+    if (stats) {
+      if (collect_equals) {
+        ++stats->three_way_partitions;
+      } else {
+        ++stats->two_way_partitions;
       }
-      while (scan_left < scan_right && comp(data[pivot], data[scan_right - 1])) {
-        --scan_right;
-      }
-      if (scan_left == scan_right) {
-        break;
-      }
-      if (scan_right - scan_left == 1) {
-        // Both bounded scans stopped on the same slot. Collect it once.
-        __sort_exchange(data + equal_left, data + scan_left);
-        ++equal_left;
-        ++scan_left;
-        break;
-      }
-      --scan_right;
-      __sort_exchange(data + scan_left, data + scan_right);
-      if (!comp(data[scan_left], data[pivot])) {
-        __sort_exchange(data + equal_left, data + scan_left);
-        ++equal_left;
-      }
-      if (!comp(data[pivot], data[scan_right])) {
-        --equal_right;
-        __sort_exchange(data + scan_right, data + equal_right);
-      }
-      ++scan_left;
     }
-    const size_t less = scan_left - equal_left;
-    for (size_t index = 0; index < equal_left; ++index) {
-      __sort_exchange(data + index, data + scan_left - 1 - index);
-    }
-    const size_t right_equal_count = count - equal_right; // Includes the pivot.
-    for (size_t index = 0; index < right_equal_count; ++index) {
-      __sort_exchange(data + scan_left + index, data + equal_right + index);
-    }
-    const size_t right = scan_left + right_equal_count;
+#endif
+    const auto bounds = collect_equals ? __sort_partition<true>(data, count, comp)
+                                       : __sort_partition<false>(data, count, comp);
+    const size_t less = bounds.less;
+    const size_t right = bounds.right;
     const size_t right_count = count - right;
     // Even a contradictory comp cannot remove the pivot from the middle:
     // both remaining ranges are strictly smaller than count. Recursing only
