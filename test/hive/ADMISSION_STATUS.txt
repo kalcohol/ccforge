@@ -5,10 +5,13 @@ the native-probe, root/standalone test, platform and header-only consumer gates.
 CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
 for the earlier representations and their separate acceptance decisions.
 
-R4_SORT.txt records the separate sort candidate at ee4b6a5, its completed
-parent validation and same-batch P0/P2 results. External Claude review,
-reviewer-only P1 measurement and owner approval remain open; this is not
-mainline admission. Shared-machine measurement limits are stated in that record.
+R4_SORT.txt records the separate R4.1 sort candidate at f8a904b, its bounded
+kernel controls and paired P0/P2 results against admitted M21 (fd7dd5a).
+The candidate is HOLD for admission: Windows compilation passed but host
+application control prevented runtime qualification. Independent Claude review,
+reviewer-only P1 and owner approval also remain open. Shared-host limitations,
+the K1 small-buffer gap and the Windows evidence are stated in that record.
+This is not mainline admission; the original R4 branch remains unchanged.
 
 Allocator-policy admission is covered by specification section 4.6 and the
 accepted R2/R3 review: allocator rebind, retained fancy allocation pointers,
