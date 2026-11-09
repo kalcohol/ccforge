@@ -1,17 +1,20 @@
-HIVE ADMISSION STATUS -- 2026-11-09
+HIVE ADMISSION STATUS -- 2026-11-10
 
 R5 integration is qualified for mainline admission. R5_ADMISSION.txt records
 the native-probe, root/standalone test, platform and header-only consumer gates.
 CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
 for the earlier representations and their separate acceptance decisions.
 
-R4_SORT.txt records the separate R4.1 sort candidate at f8a904b, its bounded
+R4_SORT.txt records the separate R4.2 sort candidate at ce05ce3, its bounded
 kernel controls and paired P0/P2 results against admitted M21 (fd7dd5a).
-The candidate is HOLD for admission pending independent Claude review,
-reviewer-only P1 and owner approval. Windows runtime qualification now passes;
-e954526 corrects only allocation-observer test bookkeeping, without changing
-the implementation. Shared-host limitations, the K1 small-buffer gap and all
-Windows attempts are stated in that record.
+R4.1 passed independent correctness review but failed external S7 P1; that
+decision remains unchanged. R4.2 changes only the internal kernel and its
+corresponding tests/records, not hive.hpp or the formal measurement program.
+Linux, macOS, Windows, both sanitizer libraries, all 13 runtime mutations and
+all eight P0/P2 groups pass. Closing full LLVM has 304 passes, three recorded
+io_uring runtime skips and zero failures. The candidate remains HOLD pending
+independent Claude review, reviewer-only P1 and owner approval. Shared-host
+limits, K1 qualifications and historical evidence remain explicit in the record.
 This is not mainline admission; the original R4 branch remains unchanged.
 
 Allocator-policy admission is covered by specification section 4.6 and the
@@ -37,7 +40,7 @@ support boundary. R2.1 iteration optimization was admitted by the owner on
 the 1.25-1.5 interval procedure. R21_ITERATION.txt preserves the original three
 noise-rejected primary batches and references the reviewer's supplementary
 paired evidence. The unexecuted Windows extra stress program remains a known
-gap. New paired performance rules apply from R4.1 onward. R4/R4.1 sort
+gap. New paired performance rules apply from R4.1 onward. R4/R4.1/R4.2 sort
 acceleration remains separate; the admitted implementation keeps the baseline
 heap-sort algorithm and reviewed slot layout until a separate approval.
 

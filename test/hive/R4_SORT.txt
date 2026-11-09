@@ -1,204 +1,198 @@
-HIVE R4.1 SORT CANDIDATE -- 2026-11-09
+HIVE R4.2 SORT CANDIDATE -- 2026-11-10
 
 Disposition
 -----------
-HOLD for admission: the R4.1 implementation is a separate review candidate.
-Windows runtime qualification now passes after the owner restored execution
-and a test-only allocation-observer correction. External Claude review,
-reviewer-only P1 measurement and owner approval remain open. Do not merge this
-branch on these records.
+Author qualification is complete; admission remains HOLD pending independent
+Claude review, reviewer-only P1 and owner approval. R4.1 passed independent
+correctness/bounds review but failed external S7 P1 at 1.64-1.67 times plf.
+R4.2 addresses that review without relabelling the old outcome. Do not merge
+this branch on author P0/K1 evidence alone.
 
-M21 baseline: fd7dd5ad08ff78404cbed0ba15120b6094921333.
-Frozen implementation: f8a904b7eb2dafc8dc011c6ee2fb7df7dc04d74b.
 Branch: work/hive-sort-r41-20261109.
-Test-harness correction: e954526c3cb1657e15cb33c8cb2fbc9757aded02; production
-headers, configuration and benchmarks remain identical to f8a904b. Subsequent
-record edits are documentation only. R2.1 was admitted first and
-master was fast-forwarded and pushed. Original R4 branch 0f20a1f remains
-unchanged; its seven commits were replayed to 5e4e2cd before the R4.1 changes.
-The saved range-diff identifies trailer normalization and the CMake/document
-conflicts needed to retain R2.1. Neither representation nor iteration changed.
+R4.1 starting point: dfc2cee97b6731812d800424b145a61c1658cc73.
+Frozen implementation/tests: ce05ce3c9badfa2b323e1c0b6afb1572a5af6d7d.
+Admitted M21/mainline and P0 baseline: fd7dd5ad08ff78404cbed0ba15120b6094921333.
+Later record edits are documentation only. Original R4 branch 0f20a1f and
+mainline remain unchanged. The original seven-commit replay to 5e4e2cd and
+its saved range-diff remain intact; no published history was rewritten.
 
-Implementation And Contract
----------------------------
-backport/cpp26/hive/detail/bounded_sort.hpp is an independent C++20 kernel
-using textbook depth-limited quicksort, bounded three-way partitioning,
-small-range insertion and an internal heap fallback. Each scan has explicit
-index bounds; a partition excludes a nonempty middle and leaves strictly
-smaller sides. The smaller side recurses and the larger side iterates.
+R4.2 Scope And Design
+--------------------
+Production changes are confined to
+backport/cpp26/hive/detail/bounded_sort.hpp. The two corresponding test files
+gain controls; hive.hpp, representation, iteration, public APIs, the R4
+integration and measure_sort.cpp are unchanged from dfc2cee.
 
-The production insertion threshold is 24 and depth credit is twice
-floor(log2(N)). Byte exchanges and insertion rotations neither construct T
-nor invoke its assignment/swap overloads. The kernel requires a live array
-of trivially copyable objects, allocates nothing, and calls no library sort
-or heap algorithm. Only the supplied comparator can throw. Comparisons
-must return or throw and must not modify the values/storage; inconsistent
-comparison answers do not control index bounds or termination.
+The independent C++20 kernel retains depth-limited quicksort, explicit scan
+bounds, a smaller-side recursion/larger-side loop and an internal heap
+fallback. Production insertion threshold remains 24; depth credit is twice
+floor(log2(N)). No standard-library sorting/heap implementation is used.
+There is no kernel allocation, user-defined construction/assignment or
+input-specific benchmark detection.
 
-Both Hive scratch paths use this kernel. Small eligible values use the
-unchanged <=16-byte trivial-copy gate, allocator-rebound scratch and memcpy
-writeback. Already ordered scratch returns before writeback. Other values use
-an allocator-rebound address/index table and the existing ADL-swap permutation
-cycles. Fancy allocation handles, count limits and construction rollback remain
-intact. No stack small-N container scratch was introduced; the kernel has only
-bounded local exchange storage and logarithmic recursion.
+Insertion now uses bounded element shifts rather than a variable-sized block
+move. Nonscalars finish comparisons against a live array slot before copying
+bytes, preserving support for deleted copy/move constructors. Scalars keep
+the current key in a scalar local while shifting; if comparison throws, the
+current hole is restored before rethrowing. The buffer is a permutation on
+normal return and exception propagation, not necessarily at every intermediate
+scalar callback. Comparators must terminate or throw, produce ordinary Boolean
+results, and not modify/invalidate storage or reenter sorting on that range.
+No callback-observed slot-identity or scalar representation guarantee is added.
 
-All container comparisons finish before writeback/permutation. D1 remains
-unchanged: after an exception the container is valid, size is unchanged and
-there are no leaks; element order and individual values are unspecified.
-Existing stronger comparator-exception observations were not weakened.
-S-I9 is an internally validated property under the stated comparator boundary,
-not a new public promise in docs/backports/hive.md. No third-party sorting or
-container implementation source was inspected, imported or benchmarked by the
-implementer. External similarity review is still a separate reviewer action.
+A sampled pivot-equivalent key selects three-way gathering; otherwise the
+bounded inward scans omit per-exchange equality checks. Neither choice controls
+index bounds, pivot exclusion or progress. Both sides are strictly smaller,
+and the existing depth fallback bounds worst-case work. Left equal-region
+finalization uses min(equal_left, less), avoiding redundant exchanges.
+Distinct/repeated-key controls verify that both specializations actually run.
+
+L5 is a direct behavioral writeback control without editing hive.hpp. A
+test-only callback marks ordered scratch immediately before the kernel's
+false return; Hive must leave its original elements and structure untouched.
+Positive and nested/exception-restoration controls prove that the marker
+actually ran and was removed correctly. An isolated ordered-copyback mutant
+is rejected. This is not a literal hardware-store counter; ordinary builds
+contain neither the callback state nor its branch.
+
+Both Hive scratch paths and allocator handling remain as reviewed in R4.1.
+All container comparisons finish before writeback/permutation. D1 is unchanged:
+after an exception the container is valid, size is unchanged and there are
+no leaks; element order and individual values are unspecified. S-I9 remains
+an internally validated property under the stated comparator boundary, not a
+new public promise. No third-party sorting/container implementation source or
+reviewer experimental source was inspected or imported by the implementer.
 
 Functional Verification
 -----------------------
-All completed rows use the frozen implementation above. Debug checks remain
-enabled; the standalone kernel target uses C++20 in every configuration.
+Every row below ran the frozen ce05ce3 snapshot with debug checks retained.
+The standalone kernel test uses C++20 in every configuration; Hive uses the
+listed lane standard.
 
   Toolchain / library                     Hive mode             CTest result
   Clang 19.1.7 / libc++                    C++23 and C++26        31/31 each
   GCC 16.2 / libstdc++                     C++23 and C++26        31/31 each
   Clang 19 / libc++, ASan+UBSan             C++23 and C++26        31/31 each
   GCC 16 / libstdc++, ASan+UBSan            C++23 and C++26         5/5 each
-  Zig 0.14 / libc++                        C++23                 31/31
+  Zig / libc++                            C++23                 31/31
   AppleClang 21 / libc++, arm64            C++23 and C++26        31/31 each
   MSVC 19.51, x64                         configured C++23      31/31
   Clang 19.1.7 / libc++, full repository    C++26                 304 pass, 3 skip
 
-The scoped GCC sanitizer rows run the independent kernel plus four Hive core
-controls, not all native/compile probes. Successful runtime configurations
-contain 167 Hive GTest cases and 32 independent kernel cases. The broader
-focused sort filter has 51 cases. Extra stress invocation "6 2000" passed on
-ordinary Linux, libc++ sanitizer, Zig, macOS and Windows lanes; scoped GCC sanitizer
-rows did not run that additional executable.
+Every row includes 170 Hive and 35 kernel GTest cases. Scoped GCC sanitizer
+rows run the kernel plus four Hive core controls, not every compile/native
+probe. Extra stress invocation "6 2000" passes on ordinary Linux, libc++
+sanitizer, Zig, macOS and Windows lanes, including closing full LLVM; the
+scoped GCC sanitizer rows do not run that additional executable.
 
-The original matrix used f8a904b. The test-only revision e954526 was additionally
-verified on Windows, AppleClang C++23/26, both C++23 sanitizer libraries, and
-the closing full LLVM C++26 lane.
-This does not claim every earlier lane ran the corrected test harness. The
-production implementation and all benchmark inputs remained unchanged.
+libc++ sanitizer linkage and EXTENSIVE hardening were checked separately from
+libstdc++ linkage and _GLIBCXX_ASSERTIONS. Both use ASan+UBSan with nonrecovering
+diagnostics. Zig retains its image's UBSan trap settings. No Windows sanitizer
+or Hive TSan result is claimed. Windows confirms C++20 on the kernel test/probe
+and c++latest for configured C++23 Hive compilation. No host security setting
+was changed by the agent.
 
-libc++ sanitizer linkage and EXTENSIVE hardening were asserted; libstdc++
-linkage and _GLIBCXX_ASSERTIONS were asserted separately. Both use ASan+UBSan
-with nonrecovering diagnostics. Zig retains its image's UBSan trap settings.
-No Windows sanitizer or Hive TSan result is claimed. The closing full lane has
-307 entries, zero failures and three runtime skips: forge_io_uring_context,
-forge_io_uring_rw and forge_io_uring_fault. This is not io_uring runtime
-qualification. Its additional Hive stress invocation also passed.
+Closing full LLVM ran last: 307 entries, zero failures and the recorded runtime
+skips forge_io_uring_context, forge_io_uring_rw and forge_io_uring_fault.
+These skips are not io_uring runtime qualification.
 
-Windows verified C++20 on the kernel test/probe and c++latest for configured
-C++23 Hive compilation. All 31 CTest entries, 167 Hive cases, 32 kernel cases
-and the extra stress invocation passed on e954526. Earlier attempts remain:
-one was denied by host application control; after the owner restored execution,
-another passed 30/31 CTests and exposed assertion-framework allocation in a
-test's measured scope. The correction moves only assertion bookkeeping outside
-that scope and adds a positive allocation-observer control; zero-allocation
-and forced-path assertions are unchanged. No sorting implementation changed.
-The agent changed no host security setting. This new qualification does not
-retroactively relabel the historical R2.1 extra-stress gap.
-
-A fresh install without a GoogleTest source checkout passed. The installed
+A fresh install without a GoogleTest source checkout passes. The installed
 detail header matches the source byte-for-byte, compiles/runs independently
 under C++20, and a C++23 find_package(CCForge) Hive consumer passes. The
 installation prefix contains no GoogleTest artifacts.
 
 Coverage And Negative Controls
 ------------------------------
-V1 covers int, address entries and a 16-byte record: 92 sizes, eight input
-patterns and both directions, including 0-65 and up to one million elements.
-There are 3584 sort calls per type; small cases additionally force threshold
-2 with depth 0 or 1. Full-payload differential and permutation checks use
-std::sort only with correct comparison functions.
+V1 covers int, address entries and a 16-byte record: 92 sizes, eight patterns
+and both directions, up to one million elements; 3584 calls per type.
+Small cases also force threshold 2 with depth 0 or 1.
 
 V2 covers seven nonthrowing inconsistent-comparison kinds at 21 sizes, eight
-patterns and three modes: 3528 calls per type, 10584 total. Every-comparison
-throw sweeps cover eight kinds, eight sizes, two patterns and three modes:
-80895 calls and 80127 injected exceptions per type. Guards, no-allocation,
-permutation and comparison-budget checks are active.
+patterns and three modes: 3528 calls per type. Every-comparison throw sweeps
+cover eight kinds, eight sizes, two patterns and three modes: 82869 calls
+and 82101 injected exceptions per type. Bounds, no-allocation, permutation
+and F5 comparison-budget controls remain active.
 
-V3 checks 66067 distinct boolean relations for n=0..4 (65536 at n=4),
-plus one million distinct sampled relations for each n=5..8. Every relation
-runs in three modes: 4066067 relations, 12198201 sort invocations. It also
-checks all 598445 ordered equality rank words through n=8, each in three
-modes and two directions: 3590670 invocations. Counters verify actual
-partition, insertion and heap-fallback execution.
+V3 checks 66067 distinct Boolean relations for n=0..4 (65536 at n=4), plus
+one million sampled relations for each n=5..8. Each runs in three modes:
+4066067 relations and 12198201 sort invocations. All 598445 ordered equality
+rank words through n=8 run in three modes and both directions: 3590670 calls.
+Counters check actual partition, insertion and heap-fallback execution.
 
-Hive V6 covers both paths, two block-limit settings, six sizes, dense/sparse
-layouts and eight comparator variants: 384 matrix cells. Throwing cells have
-baseline, selected throw positions and recovery invocations; 384 is not an
-invocation count. L1/L2 add assignment-template, multifield and 16-byte
-differentials, every-comparison exception sweeps and allocation-failure sweeps.
-Structure, addresses, full payloads and allocation ledgers are checked.
+Hive V6 retains both paths, two block-limit settings, six sizes, dense/sparse
+layouts and eight comparator variants: 384 matrix cells, not invocation count.
+L1/L2 full-payload differentials, every-comparison exceptions, allocation
+failures, structure/address checks and allocation ledgers remain unchanged.
+New controls were added; existing assertions were not weakened.
 
-V4 was not run: no configured CBMC/ESBMC lane; optional in the taskbook.
-V5 rejected all six kernel mutants at runtime; F7 rejected all four Hive
-mutants at runtime. Positive controls passed 32 kernel and 39 selected Hive
-cases; compile failures did not count. Mutants remain ignored evidence only.
-Two kernel source reviews and a separate integration review found no confirmed
-defect. A nonblocking gap remains: ordered Hive writeback omission is proven
-by code inspection plus the kernel's boolean control, not a direct Hive-level
-writeback counter. It is disclosed for independent review.
+V4 was not run: no configured CBMC/ESBMC lane; it is optional in the taskbook.
+V5 rejects all eight kernel mutants at runtime. Four original F7 mutants and
+the L5 ordered-copyback mutant are also rejected. Clean positive controls pass
+35 kernel and 42 Hive cases. All 13 rejections are assertion or sanitizer
+diagnostics; no compile failure, unknown crash or timeout was counted.
+Mutation validation uses Clang/libc++ ASan+UBSan with EXTENSIVE hardening,
+kernel C++20 and Hive C++23; it is not an additional MSVC mutation run.
+
+Independent delta reviews and a separate artifact audit found no substantive
+issue within their stated scopes. Their retained notes distinguish source
+inspection from execution, and do not certify reviewer P1 or admission.
 
 Paired Performance And Memory
 -----------------------------
-One group of exactly 15 pairs was collected for each S1-S8 against M21, with
-odd pairs baseline-first and even pairs candidate-first. Both binaries use the
-same candidate measure_sort.cpp, clang/libc++, C++26, -O2 -DNDEBUG and CPU14.
-Each process has one warmup and 31 samples, or 2001 for S7. No group was
-rerun, removed or replaced. Vector results are informational, not a noise gate.
+One formal group of exactly 15 pairs per S1-S8 compares the new implementation
+with M21, alternating baseline-first and candidate-first. Both binaries use
+the unchanged candidate measure_sort.cpp, clang/libc++, C++26, -O2 -DNDEBUG
+and CPU14. Each process has one warmup and 31 timed samples, or 2001 for S7.
+No group or sample was discarded, rerun or replaced.
 
-  Workload          Median new/base   Upper quartile   Faster pairs   Scratch B/T
-  S1 int random           0.3429           0.3501            15/15            4
-  S2 int churn            0.3309           0.3435            15/15            4
-  S3 int ordered          0.0361           0.0374            15/15            4
-  S4 16 keys              0.1849           0.1889            15/15            4
-  S5 trivial64            0.4418           0.4574            15/15           16
-  S6 string32             0.4651           0.4911            15/15           16
-  S7 int 1000             0.8149           0.8313            15/15            4
-  S8 nontrivial16         0.4678           0.5031            15/15           16
+  Workload   Median new/base  Upper quartile  Faster pairs   Scratch B/T
+  S1               0.3145          0.3179        15/15             4
+  S2               0.3254          0.3276        15/15             4
+  S3               0.0386          0.0393        15/15             4
+  S4               0.2010          0.2029        15/15             4
+  S5               0.4240          0.4266        15/15            16
+  S6               0.4444          0.4479        15/15            16
+  S7               0.6092          0.6336        15/15             4
+  S8               0.4678          0.4772        15/15            16
 
-P0 passes all eight: median of pair ratios <=1.00 and nearest-rank upper
-quartile (12th of 15 sorted ratios) <=1.02. P2 passes the 4/16 B limits.
-These are medians of paired ratios, not ratios of aggregate medians.
+All eight pass P0 (median <=1.00 and nearest-rank upper quartile <=1.02) and
+P2 (4/16 B limits). The quartile is the 12th of 15 sorted pair ratios. These
+are medians of paired ratios, not ratios of aggregate medians.
 
-All 248 process records and 68758 timed raw samples were independently
-cross-checked against the reported medians/minima and pairing order. Source,
-binary, image, compiler and topology evidence are retained. This was a shared
-host: CPU14's sibling is CPU30; observed activity included a short 44.55%
-CPU30 interval during S2. No exclusivity claim is made and no sample was
-discarded because of that activity. S7 is too short for a two-second sampler
-interval; its before/after snapshots remain available.
+All 248 process records and 68758 timed raw samples were cross-checked against
+the reported medians, minima and pairing order. Source, binary, image, compiler
+and topology records remain available. CPU14's sibling is CPU30; its largest
+recorded interval activity was 2.5%. This remains a shared-host measurement,
+not an exclusivity claim. S7 is shorter than the two-second sampler interval;
+before/after snapshots are retained. Vector results are informational only.
 
-K1 is separate exploratory evidence, not P0 or P1. Three committed candidates
-were measured; all studies remain available. Final production bounded/std
-ratios are random 1.0930, few-key 1.1448, ordered 0.3341, n=1000 2.0077 and
-address-table 1.1570. Threshold 48 favors large random/address data but worsens
-small input; threshold 16 modestly favors small input while worsening other
-random cases. Keep 24 as the balanced choice.
+L6 uses two retained K1 studies, each with 150 processes and 63750 timed samples.
+Final actual-production bounded/std ratios are random 1.0499, few-key 1.1225,
+ordered 0.3339, n=1000 1.2279 and address-table 1.0688. Like-for-like hooked
+thresholds 16/24/32/48 support retaining balanced 24: 16 modestly favors small
+input but costs random/address work; 32/48 favor some large inputs but worsen
+small input. Production and hooked 24 are separately compiled/measured paths;
+no hypothetical production-16 timing is inferred.
 
-The small-buffer gap exceeds K1's explanatory threshold. Two pre-P0 changes
-reduced copy traffic and partition exchanges, improving the recorded small
-ratio from 2.1912 to 2.0077 and addresses from 1.4513 to 1.1570. They did not
-close the small-buffer gap; no third-party implementation was inspected to
-attribute its cause. S7 is 0.8149 of the admitted M21 baseline, but this does
-not establish P1. External S7 and the other P1 workloads must be measured by
-Claude before admission; no stack scratch or input-specific special case was
-introduced to improve the number.
+The first K1 study at 96a1d6b motivated one scalar movement refinement. Its
+small ratio was 1.4829; final ce05ce3 is 1.2279 against its own standard-sort
+reference. This is not a direct paired R4.1/R4.2 timing, and the 1.10 K1 target
+is not fully met. Explicit bounds and constructor-free support were retained.
+The independent same-input comparison-count probe reports 13889 -> 11215 at
+n=1000 and 30619118 -> 23234958 at n=1000000 versus R4.1 dfc2cee. Counts are
+not timings; their baseline differs from P0's M21.
 
 Evidence And Remaining Gates
 ----------------------------
-Evidence root: build/review/hive-sort-r41-20261109/.
-REVIEW_HANDOFF.md is the reviewer entry point. It links range-diff, code
-reviews, mutation controls, raw measurements, platform XML/logs and all K1
-studies. R4/R2.1 historical noisy batches retain their original status.
+Evidence root: build/review/hive-sort-r42-20261110/.
+REVIEW_HANDOFF.md is the reviewer entry point; FUNCTIONAL_RESULTS.json,
+COVERAGE.json, MUTATION_RESULTS.json, PERFORMANCE_VERIFICATION.json,
+K1_DECISION.md and the original raw logs/data provide the supporting evidence.
+Private summary-parser checks account for shared macOS logs and wrapped
+Windows command lines; they do not change tests or measurements.
 
-A private runner was edited during the functional sequence, causing a shell
-reload interruption after the completed ASan23 lane. The unchanged source
-resumed at ASan26 after syntax validation; no completed lane or performance
-group was retried. ORCHESTRATION_NOTE.txt records the incident.
-
-Admission still requires independent review/P1 and owner approval. Mainline
-remains M21. The original Windows denial, subsequent test failure and successful
-corrected-harness run are all retained in WINDOWS_STATUS.md.
+R4/R4.1/R2.1 historical evidence, noisy batches, Windows attempts and admission
+decisions retain their original status. Current Windows qualification does not
+retroactively relabel R2.1's historical extra-stress gap. Master stays at M21.
+Independent Claude review, external P1 (especially S7) and owner approval are
+still required; author P0/K1 results are not substitutes.
