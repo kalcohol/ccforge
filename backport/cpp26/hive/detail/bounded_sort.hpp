@@ -83,9 +83,16 @@ template<class T, class Compare>
 void __sort_insert(T* data, size_t count, Compare& comp) {
   for (size_t next = 1; next < count; ++next) {
     size_t current = next;
-    while (current != 0 && comp(data[current], data[current - 1])) {
-      __sort_exchange(data + current, data + current - 1);
+    // Locate the insertion point before moving any bytes. The live array slot
+    // remains the comparison source; no T construction or assignment is needed.
+    while (current != 0 && comp(data[next], data[current - 1])) {
       --current;
+    }
+    if (current != next) {
+      unsigned char saved[sizeof(T)];
+      std::memcpy(saved, data + next, sizeof(T));
+      std::memmove(data + current + 1, data + current, (next - current) * sizeof(T));
+      std::memcpy(data + current, saved, sizeof(T));
     }
   }
 }
