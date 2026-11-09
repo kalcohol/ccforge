@@ -697,6 +697,25 @@ TEST(hive_bounded_sort, OrderedInputReportsNoWritebackNeeded) {
     EXPECT_TRUE(std::is_sorted(unordered.begin(), unordered.end()));
 }
 
+TEST(hive_bounded_sort, SupportsDeletedCopyAndMoveConstructors) {
+    struct value {
+        int key;
+        explicit value(int k) : key(k) {}
+        value(const value&) = delete;
+        value(value&&) = delete;
+        value& operator=(const value&) = default;
+    };
+    static_assert(std::is_trivially_copyable_v<value>);
+    for (const int mode : modes) {
+        std::array<value, 5> values{value{3}, value{1}, value{4}, value{0}, value{2}};
+        auto compare = [](const value& a, const value& b) { return a.key < b.key; };
+        observation observed;
+        ASSERT_NO_THROW(invoke(values.data(), values.size(), compare, mode, observed));
+        for (std::size_t i = 0; i < values.size(); ++i) EXPECT_EQ(values[i].key, i);
+        EXPECT_EQ(observed.allocations, 0u);
+    }
+}
+
 TEST(hive_bounded_sort, F5CountingComparatorProductionAndForcedPaths) {
     constexpr std::array<std::size_t, 13> sizes{0, 1, 2, 23, 24, 25, 65, 257, 1024,
         4096, 65536, 262144, 1000000};
