@@ -1719,7 +1719,9 @@ class hive {
       for (const T& value : *this) {
         std::memcpy(values + index++, std::addressof(value), sizeof(T));
       }
-      __forge_hive_detail::__bounded_sort(values, n, comp);
+      if (!__forge_hive_detail::__bounded_sort(values, n, comp)) {
+        return;
+      }
       index = 0;
       for (T& value : *this) {
         // The trait gate covers trivial copy, not arbitrary assignment

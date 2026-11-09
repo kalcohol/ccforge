@@ -683,6 +683,20 @@ TEST(hive_bounded_sort, ForcedDepthAndInsertionCountersAreLive) {
     EXPECT_EQ(observed.allocations, 0u);
 }
 
+TEST(hive_bounded_sort, OrderedInputReportsNoWritebackNeeded) {
+    auto compare = [](int a, int b) { return a < b; };
+    std::array<int, 7> ordered{1, 1, 2, 3, 3, 8, 10};
+    const auto original = ordered;
+    EXPECT_FALSE(kernel::__bounded_sort(ordered.data(), ordered.size(), compare));
+    EXPECT_EQ(ordered, original);
+    std::reverse(ordered.begin(), ordered.end());
+    EXPECT_TRUE(kernel::__bounded_sort(ordered.data(), ordered.size(), compare));
+    EXPECT_EQ(ordered, original);
+    std::array<int, 3> unordered{3, 1, 2};
+    EXPECT_TRUE(kernel::__bounded_sort(unordered.data(), unordered.size(), compare));
+    EXPECT_TRUE(std::is_sorted(unordered.begin(), unordered.end()));
+}
+
 TEST(hive_bounded_sort, F5CountingComparatorProductionAndForcedPaths) {
     constexpr std::array<std::size_t, 13> sizes{0, 1, 2, 23, 24, 25, 65, 257, 1024,
         4096, 65536, 262144, 1000000};
