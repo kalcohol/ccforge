@@ -369,4 +369,196 @@ void violation_matrix() {
 TEST(HiveSortR41Violation, CopyPathEightComparatorVariants) { violation_matrix<multifield_value>(); }
 TEST(HiveSortR41Violation, GenericPathEightComparatorVariants) { violation_matrix<generic_value>(); }
 
+template<class T>
+void differential_matrix() {
+    using H = hive_type<T>;
+    for (const bool small_blocks : {false, true}) {
+        for (const auto n : sizes) {
+            for (const auto order : orders) {
+                for (const auto shape : shapes) {
+                    SCOPED_TRACE(::testing::Message() << "n=" << n << " blocks8=" << small_blocks
+                        << " order=" << static_cast<int>(order) << " shape=" << static_cast<int>(shape));
+                    auto state = std::make_shared<allocation_state>();
+                    {
+                        H hive(small_blocks ? std::hive_limits{8, 8} : H::block_capacity_default_limits(),
+                               allocator<T>(state, 142));
+                        populate(hive, n, order, shape);
+                        const observation before(hive, *state);
+                        checked_sort(hive);
+                        before.expect_preserved(hive, *state);
+                        before.expect_sorted(hive);
+                        expect_no_assignment_template<T>();
+                    }
+                    EXPECT_TRUE(state->clean());
+                }
+            }
+        }
+    }
+}
+
+template<class T>
+void comparison_failure_sweep() {
+    using H = hive_type<T>;
+    constexpr std::size_t n = 37;
+    for (const bool small_blocks : {false, true}) {
+        for (const auto order : orders) {
+            for (const auto shape : shapes) {
+                SCOPED_TRACE(::testing::Message() << "blocks8=" << small_blocks
+                    << " order=" << static_cast<int>(order) << " shape=" << static_cast<int>(shape));
+                const auto limits = small_blocks ? std::hive_limits{8, 8}
+                                                  : H::block_capacity_default_limits();
+                std::size_t total = 0;
+                auto baseline = std::make_shared<allocation_state>();
+                {
+                    H hive(limits, allocator<T>(baseline, 143));
+                    populate(hive, n, order, shape);
+                    const observation before(hive, *baseline);
+                    total = checked_sort(hive);
+                    before.expect_preserved(hive, *baseline);
+                    before.expect_sorted(hive);
+                    expect_no_assignment_template<T>();
+                }
+                EXPECT_TRUE(baseline->clean());
+                ASSERT_GT(total, 0u);
+                // Every comparison position is injected, plus the first non-throwing position.
+                for (std::size_t position = 0; position <= total; ++position) {
+                    SCOPED_TRACE(::testing::Message() << "throw_at=" << position << " total=" << total);
+                    auto state = std::make_shared<allocation_state>();
+                    {
+                        H hive(limits, allocator<T>(state, 143));
+                        populate(hive, n, order, shape);
+                        const observation before(hive, *state);
+                        const auto calls = checked_sort(hive, comparison_kind::throwing,
+                                                        position, position < total);
+                        EXPECT_EQ(calls, position < total ? position + 1 : total);
+                        before.expect_preserved(hive, *state);
+                        if (position == total) before.expect_sorted(hive);
+                        expect_no_assignment_template<T>();
+                        checked_sort(hive);
+                        before.expect_preserved(hive, *state);
+                        before.expect_sorted(hive);
+                        expect_no_assignment_template<T>();
+                    }
+                    EXPECT_TRUE(state->clean());
+                }
+            }
+        }
+    }
+}
+
+template<class T>
+void allocation_failure_sweep() {
+    using H = hive_type<T>;
+    constexpr std::size_t n = 1025;
+    for (const bool small_blocks : {false, true}) {
+        for (const auto shape : shapes) {
+            SCOPED_TRACE(::testing::Message() << "blocks8=" << small_blocks
+                << " shape=" << static_cast<int>(shape));
+            const auto limits = small_blocks ? std::hive_limits{8, 8}
+                                              : H::block_capacity_default_limits();
+            std::size_t allocations = 0;
+            auto baseline = std::make_shared<allocation_state>();
+            {
+                H hive(limits, allocator<T>(baseline, 144));
+                populate(hive, n, input_order::random, shape);
+                const observation before(hive, *baseline);
+                const auto attempts = baseline->allocation_attempts;
+                const auto typed = baseline->template allocation_attempts_for<T>();
+                checked_sort(hive);
+                allocations = baseline->allocation_attempts - attempts;
+                EXPECT_EQ(allocations, 1u);
+                EXPECT_EQ(baseline->template allocation_attempts_for<T>() - typed, 1u);
+                before.expect_preserved(hive, *baseline);
+                before.expect_sorted(hive);
+                expect_no_assignment_template<T>();
+            }
+            EXPECT_TRUE(baseline->clean());
+            ASSERT_GT(allocations, 0u);
+            for (std::size_t fail_at = 0; fail_at <= allocations; ++fail_at) {
+                SCOPED_TRACE(::testing::Message() << "fail_at=" << fail_at << " allocations=" << allocations);
+                auto state = std::make_shared<allocation_state>();
+                {
+                    H hive(limits, allocator<T>(state, 144));
+                    populate(hive, n, input_order::random, shape);
+                    const observation before(hive, *state);
+                    const auto attempts = state->allocation_attempts;
+                    comparison_state comparisons{0, comparison_budget(n)};
+                    comparator<T> compare{comparisons, comparison_kind::throwing};
+                    bool threw = false;
+                    state->fail_after = static_cast<long long>(fail_at);
+                    try {
+                        hive.sort(std::ref(compare));
+                    } catch (const std::bad_alloc& failure) {
+                        threw = true;
+                        EXPECT_EQ(typeid(failure), typeid(std::bad_alloc));
+                    } catch (...) {
+                        ADD_FAILURE() << "Allocation failure sweep propagated an unexpected exception";
+                    }
+                    state->fail_after = -1;
+                    EXPECT_EQ(threw, fail_at < allocations);
+                    EXPECT_EQ(state->allocation_attempts - attempts, fail_at);
+                    EXPECT_LE(comparisons.calls, comparisons.budget);
+                    EXPECT_TRUE(comparisons.same_instance);
+                    before.expect_preserved(hive, *state);
+                    if (fail_at < allocations) EXPECT_EQ(contents(hive), before.values); // S-I6 includes order.
+                    else before.expect_sorted(hive);
+                    expect_no_assignment_template<T>();
+                    checked_sort(hive);
+                    before.expect_preserved(hive, *state);
+                    before.expect_sorted(hive);
+                    expect_no_assignment_template<T>();
+                }
+                EXPECT_TRUE(state->clean());
+            }
+        }
+    }
+}
+
+TEST(HiveSortR41Copy, AssignmentTemplateIsNeverCalledDuringWriteback) {
+    using T = assignment_template_value;
+    using H = hive_type<T>;
+    T::template_assignments = 0;
+    for (const bool small_blocks : {false, true}) {
+        for (const auto shape : shapes) {
+            for (const auto order : {input_order::random, input_order::reverse, input_order::duplicates}) {
+                SCOPED_TRACE(::testing::Message() << "blocks8=" << small_blocks
+                    << " shape=" << static_cast<int>(shape) << " order=" << static_cast<int>(order));
+                auto state = std::make_shared<allocation_state>();
+                {
+                    H hive(small_blocks ? std::hive_limits{8, 8} : H::block_capacity_default_limits(),
+                           allocator<T>(state, 145));
+                    populate(hive, 257, order, shape);
+                    const observation before(hive, *state);
+                    checked_sort(hive);
+                    expect_no_assignment_template<T>();
+                    before.expect_preserved(hive, *state);
+                    before.expect_sorted(hive);
+                }
+                EXPECT_TRUE(state->clean());
+            }
+        }
+    }
+}
+
+TEST(HiveSortR41Copy, MultifieldDifferential) { differential_matrix<multifield_value>(); }
+TEST(HiveSortR41Copy, AssignmentTemplateDifferential) {
+    assignment_template_value::template_assignments = 0;
+    differential_matrix<assignment_template_value>();
+}
+TEST(HiveSortR41Copy, Boundary16ByteDifferential) { differential_matrix<boundary_value>(); }
+
+TEST(HiveSortR41Copy, MultifieldEveryComparisonThrow) { comparison_failure_sweep<multifield_value>(); }
+TEST(HiveSortR41Copy, AssignmentTemplateEveryComparisonThrow) {
+    assignment_template_value::template_assignments = 0;
+    comparison_failure_sweep<assignment_template_value>();
+}
+TEST(HiveSortR41Copy, Boundary16ByteEveryComparisonThrow) { comparison_failure_sweep<boundary_value>(); }
+
+TEST(HiveSortR41Copy, MultifieldEveryAllocationFailure) { allocation_failure_sweep<multifield_value>(); }
+TEST(HiveSortR41Copy, AssignmentTemplateEveryAllocationFailure) {
+    assignment_template_value::template_assignments = 0;
+    allocation_failure_sweep<assignment_template_value>();
+}
+TEST(HiveSortR41Copy, Boundary16ByteEveryAllocationFailure) { allocation_failure_sweep<boundary_value>(); }
+
 } // namespace

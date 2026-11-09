@@ -1722,7 +1722,9 @@ class hive {
       __forge_hive_detail::__bounded_sort(values, n, comp);
       index = 0;
       for (T& value : *this) {
-        value = values[index++];
+        // The trait gate covers trivial copy, not arbitrary assignment
+        // templates that might be preferred for a mutable source expression.
+        std::memcpy(std::addressof(value), values + index++, sizeof(T));
       }
     } else {
       struct entry {
