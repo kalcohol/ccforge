@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -538,6 +539,160 @@ TEST(HiveSortR41Copy, AssignmentTemplateIsNeverCalledDuringWriteback) {
             }
         }
     }
+}
+
+struct ordered_buffer_probe {
+    std::size_t calls = 0;
+    std::size_t count = 0;
+    std::size_t element_size = 0;
+    std::size_t overwritten = 0;
+};
+
+thread_local ordered_buffer_probe* active_ordered_buffer_probe = nullptr;
+
+int ordered_buffer_marker(std::size_t index) noexcept {
+    return -1000 - static_cast<int>(index);
+}
+
+void overwrite_ordered_int_buffer(void* buffer, std::size_t count,
+                                  std::size_t element_size) noexcept {
+    auto* probe = active_ordered_buffer_probe;
+    if (probe == nullptr) return;
+    ++probe->calls;
+    probe->count = count;
+    probe->element_size = element_size;
+    if (element_size != sizeof(int)) return;
+    auto* bytes = static_cast<unsigned char*>(buffer);
+    for (std::size_t index = 0; index < count; ++index) {
+        const int marker = ordered_buffer_marker(index);
+        std::memcpy(bytes + index * sizeof(int), &marker, sizeof(marker));
+        ++probe->overwritten;
+    }
+}
+
+class scoped_ordered_buffer_probe {
+    using hook_type = void (*)(void*, std::size_t, std::size_t) noexcept;
+    hook_type previous_hook;
+    ordered_buffer_probe* previous_probe;
+
+public:
+    explicit scoped_ordered_buffer_probe(ordered_buffer_probe& probe) noexcept
+        : previous_hook(std::__forge_hive_detail::__sort_test_ordered_buffer),
+          previous_probe(active_ordered_buffer_probe) {
+        active_ordered_buffer_probe = &probe;
+        std::__forge_hive_detail::__sort_test_ordered_buffer = &overwrite_ordered_int_buffer;
+    }
+
+    scoped_ordered_buffer_probe(const scoped_ordered_buffer_probe&) = delete;
+    scoped_ordered_buffer_probe& operator=(const scoped_ordered_buffer_probe&) = delete;
+
+    ~scoped_ordered_buffer_probe() {
+        std::__forge_hive_detail::__sort_test_ordered_buffer = previous_hook;
+        active_ordered_buffer_probe = previous_probe;
+    }
+};
+
+TEST(HiveSortR41Copy, OrderedScratchHookPositiveControl) {
+    std::array<int, 7> scratch{1, 1, 2, 3, 3, 8, 10};
+    const auto original = scratch;
+    ordered_buffer_probe probe;
+    {
+        scoped_ordered_buffer_probe installed(probe);
+        std::less<int> compare;
+        EXPECT_FALSE(std::__forge_hive_detail::__bounded_sort(
+            scratch.data(), scratch.size(), compare));
+    }
+    EXPECT_EQ(probe.calls, 1u);
+    EXPECT_EQ(probe.count, scratch.size());
+    EXPECT_EQ(probe.element_size, sizeof(int));
+    EXPECT_EQ(probe.overwritten, scratch.size());
+    EXPECT_NE(scratch, original);
+    for (std::size_t index = 0; index < scratch.size(); ++index) {
+        EXPECT_EQ(scratch[index], ordered_buffer_marker(index));
+    }
+}
+
+TEST(HiveSortR41Copy, OrderedScratchIsNotWrittenBack) {
+    using H = hive_type<int>;
+    static_assert(H::__test_sort_uses_value_buffer());
+    for (const bool small_blocks : {false, true}) {
+        for (const auto n : {2u, 7u, 65u}) {
+            for (const auto shape : shapes) {
+                for (const bool duplicates : {false, true}) {
+                    SCOPED_TRACE(::testing::Message() << "n=" << n << " blocks8=" << small_blocks
+                        << " shape=" << static_cast<int>(shape) << " duplicates=" << duplicates);
+                    auto state = std::make_shared<allocation_state>();
+                    {
+                        H hive(small_blocks ? std::hive_limits{8, 8}
+                                            : H::block_capacity_default_limits(),
+                               allocator<int>(state, 146));
+                        for (unsigned index = 0; index < n; ++index) hive.emplace(0);
+                        if (shape != topology::dense) {
+                            std::size_t index = 0;
+                            std::size_t removed = 0;
+                            for (auto it = hive.begin(); it != hive.end();) {
+                                if (index++ % 3 == 2) { it = hive.erase(it); ++removed; }
+                                else ++it;
+                            }
+                            if (shape == topology::churn) {
+                                for (std::size_t i = 0; i < removed; ++i) hive.emplace(0);
+                            }
+                        }
+                        int next = 1;
+                        for (int& value : hive) {
+                            value = duplicates ? next++ / 3 : next++;
+                        }
+                        const auto values = collect(hive, [](int value) { return value; });
+                        const auto addresses = slots(hive);
+                        const auto size = hive.size();
+                        const auto capacity = hive.capacity();
+                        ASSERT_GE(size, 2u);
+                        ordered_buffer_probe probe;
+                        {
+                            scoped_ordered_buffer_probe installed(probe);
+                            // The hook poisons only scratch, after the ordered decision.
+                            // Falling through to Hive's memcpy loop would copy the markers.
+                            hive.sort();
+                        }
+                        EXPECT_EQ(probe.calls, 1u);
+                        EXPECT_EQ(probe.count, size);
+                        EXPECT_EQ(probe.element_size, sizeof(int));
+                        EXPECT_EQ(probe.overwritten, size);
+                        EXPECT_EQ(hive.size(), size);
+                        EXPECT_EQ(hive.capacity(), capacity);
+                        EXPECT_EQ(slots(hive), addresses);
+                        EXPECT_EQ(collect(hive, [](int value) { return value; }), values);
+                        EXPECT_TRUE(state->valid_deallocations);
+                    }
+                    EXPECT_TRUE(state->clean());
+                }
+            }
+        }
+    }
+}
+
+TEST(HiveSortR41Copy, OrderedScratchHookRestoresAfterComparatorException) {
+    struct comparison_exception {};
+    ordered_buffer_probe outer;
+    scoped_ordered_buffer_probe installed(outer);
+    const auto previous_hook = std::__forge_hive_detail::__sort_test_ordered_buffer;
+    ordered_buffer_probe inner;
+    EXPECT_THROW(([&] {
+        scoped_ordered_buffer_probe nested(inner);
+        std::hive<int> hive;
+        for (int value : {1, 2, 3}) hive.emplace(value);
+        hive.sort([](int, int) -> bool { throw comparison_exception{}; });
+    }()), comparison_exception);
+    EXPECT_EQ(std::__forge_hive_detail::__sort_test_ordered_buffer, previous_hook);
+    EXPECT_EQ(active_ordered_buffer_probe, &outer);
+    EXPECT_EQ(inner.calls, 0u);
+    std::array<int, 2> scratch{1, 2};
+    std::less<int> compare;
+    EXPECT_FALSE(std::__forge_hive_detail::__bounded_sort(scratch.data(), scratch.size(), compare));
+    EXPECT_EQ(outer.calls, 1u);
+    EXPECT_EQ(outer.overwritten, scratch.size());
+    EXPECT_EQ(scratch[0], ordered_buffer_marker(0));
+    EXPECT_EQ(scratch[1], ordered_buffer_marker(1));
 }
 
 TEST(HiveSortR41Copy, MultifieldDifferential) { differential_matrix<multifield_value>(); }

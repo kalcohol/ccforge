@@ -39,6 +39,8 @@ struct __sort_test_stats {
   size_t heap_fallbacks = 0;
   size_t insertions = 0;
 };
+
+inline thread_local void (*__sort_test_ordered_buffer)(void*, size_t, size_t) noexcept = nullptr;
 #endif
 
 template<class T>
@@ -233,6 +235,11 @@ bool __sort_with_limits(T* data, size_t count, Compare& comp,
     ++next;
   }
   if (next == count) {
+#if defined(FORGE_HIVE_TEST_HOOKS)
+    if (__sort_test_ordered_buffer) {
+      __sort_test_ordered_buffer(data, count, sizeof(T));
+    }
+#endif
     return false;
   }
   next = 1;
