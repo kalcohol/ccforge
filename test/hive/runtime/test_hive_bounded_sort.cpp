@@ -671,16 +671,32 @@ TEST(hive_bounded_sort, ForcedDepthAndInsertionCountersAreLive) {
     std::array<int, 3> small{2, 0, 1};
     controlled_compare compare(relation_kind::less, small.size());
     observation observed;
-    {
+    const auto sort_small = [&] {
+        // Assertion bookkeeping may allocate; only measure the kernel call.
         bounded_sort_allocations::scope allocations(observed.allocations);
-        ASSERT_NO_THROW((void)kernel::__bounded_sort(small.data(), small.size(), compare,
-            kernel::__sort_test_options{3, 8}, &observed.stats));
-    }
+        (void)kernel::__bounded_sort(small.data(), small.size(), compare,
+            kernel::__sort_test_options{3, 8}, &observed.stats);
+    };
+    ASSERT_NO_THROW(sort_small());
     EXPECT_TRUE(std::is_sorted(small.begin(), small.end()));
     EXPECT_GT(observed.stats.insertions, 0u);
     EXPECT_EQ(observed.stats.partitions, 0u);
     EXPECT_EQ(observed.stats.heap_fallbacks, 0u);
     EXPECT_EQ(observed.allocations, 0u);
+
+    std::array<int, 3> allocation_probe{2, 0, 1};
+    std::size_t comparison_calls = 0;
+    auto allocating_compare = [&](int a, int b) {
+        ++comparison_calls;
+        void* memory = ::operator new(1);
+        ::operator delete(memory);
+        return a < b;
+    };
+    observation allocation_observed;
+    ASSERT_NO_THROW(invoke(allocation_probe.data(), allocation_probe.size(),
+        allocating_compare, 0, allocation_observed));
+    EXPECT_GT(comparison_calls, 0u);
+    EXPECT_EQ(allocation_observed.allocations, comparison_calls);
 }
 
 TEST(hive_bounded_sort, OrderedInputReportsNoWritebackNeeded) {
