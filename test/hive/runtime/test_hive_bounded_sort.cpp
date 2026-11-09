@@ -730,6 +730,19 @@ TEST(hive_bounded_sort, DistinctKeysUseBoundedTwoWayPartitions) {
     for (std::size_t i = 0; i < values.size(); ++i) EXPECT_EQ(values[i], i);
 }
 
+TEST(hive_bounded_sort, ScalarInsertionRestoresTheHoleOnThrow) {
+    std::array<int, 3> values{3, 1, 2};
+    std::size_t calls = 0;
+    auto compare = [&](int a, int b) {
+        if (++calls == 3) throw injected_exception{calls};
+        return a < b;
+    };
+    EXPECT_THROW(kernel::__sort_insert(values.data(), values.size(), compare), injected_exception);
+    EXPECT_EQ(calls, 3u);
+    std::sort(values.begin(), values.end());
+    EXPECT_EQ(values, (std::array<int, 3>{1, 2, 3}));
+}
+
 TEST(hive_bounded_sort, RepeatedKeysUseBoundedThreeWayPartitions) {
     std::array<int, 257> values{};
     for (std::size_t i = 0; i < values.size(); ++i) values[i] = static_cast<int>(i % 5);

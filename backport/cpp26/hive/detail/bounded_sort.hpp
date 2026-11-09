@@ -86,6 +86,25 @@ void __sort_heap(T* data, size_t count, Compare& comp) {
 template<class T, class Compare>
 void __sort_insert(T* data, size_t count, Compare& comp) {
   for (size_t next = 1; next < count; ++next) {
+    if constexpr (is_scalar_v<T>) {
+      if (!comp(data[next], data[next - 1])) {
+        continue;
+      }
+      const T saved = data[next];
+      size_t current = next;
+      try {
+        do {
+          data[current] = data[current - 1];
+          --current;
+        } while (current != 0 && comp(saved, data[current - 1]));
+      } catch (...) {
+        // Fill the only hole before propagating a comparator exception.
+        data[current] = saved;
+        throw;
+      }
+      data[current] = saved;
+      continue;
+    }
     size_t current = next;
     // Locate the insertion point before moving any bytes. The live array slot
     // remains the comparison source; no T construction or assignment is needed.
