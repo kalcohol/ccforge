@@ -93,7 +93,9 @@ void __sort_insert(T* data, size_t count, Compare& comp) {
     if (current != next) {
       unsigned char saved[sizeof(T)];
       std::memcpy(saved, data + next, sizeof(T));
-      std::memmove(data + current + 1, data + current, (next - current) * sizeof(T));
+      for (size_t destination = next; destination > current; --destination) {
+        std::memcpy(data + destination, data + destination - 1, sizeof(T));
+      }
       std::memcpy(data + current, saved, sizeof(T));
     }
   }
