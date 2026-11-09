@@ -142,26 +142,52 @@ void __sort_partition_loop(T* data, size_t count, Compare& comp,
 #endif
     const size_t pivot = count - 1;
     __sort_exchange(data + __sort_pivot(data, count, comp), data + pivot);
-    size_t less = 0;
-    size_t next = 0;
-    size_t greater = pivot;
-    // [0,less) < pivot; [less,next) equivalent; [greater,pivot) > pivot.
-    // The pivot remains in its live array slot, so T need not have a usable
-    // constructor. Each iteration shrinks [next,greater) by exactly one.
-    while (next < greater) {
-      if (comp(data[next], data[pivot])) {
-        __sort_exchange(data + less, data + next);
-        ++less;
-        ++next;
-      } else if (comp(data[pivot], data[next])) {
-        --greater;
-        __sort_exchange(data + next, data + greater);
-      } else {
-        ++next;
+    size_t scan_left = 0;
+    size_t scan_right = pivot;
+    size_t equal_left = 0;
+    size_t equal_right = pivot;
+    // Scan inward and exchange only misplaced pairs. Equivalent keys collect
+    // at the ends, then rotate into the middle. Throughout, independently of
+    // comp: equal_left <= scan_left <= scan_right <= equal_right <= pivot.
+    // The pivot stays in its live array slot; no T constructor is required.
+    while (scan_left < scan_right) {
+      while (scan_left < scan_right && comp(data[scan_left], data[pivot])) {
+        ++scan_left;
       }
+      while (scan_left < scan_right && comp(data[pivot], data[scan_right - 1])) {
+        --scan_right;
+      }
+      if (scan_left == scan_right) {
+        break;
+      }
+      if (scan_right - scan_left == 1) {
+        // Both bounded scans stopped on the same slot. Collect it once.
+        __sort_exchange(data + equal_left, data + scan_left);
+        ++equal_left;
+        ++scan_left;
+        break;
+      }
+      --scan_right;
+      __sort_exchange(data + scan_left, data + scan_right);
+      if (!comp(data[scan_left], data[pivot])) {
+        __sort_exchange(data + equal_left, data + scan_left);
+        ++equal_left;
+      }
+      if (!comp(data[pivot], data[scan_right])) {
+        --equal_right;
+        __sort_exchange(data + scan_right, data + equal_right);
+      }
+      ++scan_left;
     }
-    __sort_exchange(data + greater, data + pivot);
-    const size_t right = greater + 1;
+    const size_t less = scan_left - equal_left;
+    for (size_t index = 0; index < equal_left; ++index) {
+      __sort_exchange(data + index, data + scan_left - 1 - index);
+    }
+    const size_t right_equal_count = count - equal_right; // Includes the pivot.
+    for (size_t index = 0; index < right_equal_count; ++index) {
+      __sort_exchange(data + scan_left + index, data + equal_right + index);
+    }
+    const size_t right = scan_left + right_equal_count;
     const size_t right_count = count - right;
     // Even a contradictory comp cannot remove the pivot from the middle:
     // both remaining ranges are strictly smaller than count. Recursing only
