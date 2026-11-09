@@ -33,6 +33,7 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_ranges_types.cpp"
     "${hive_runtime_dir}/test_hive_semantics.cpp"
     "${hive_runtime_dir}/test_hive_sort.cpp"
+    "${hive_runtime_dir}/test_hive_sort_r41.cpp"
     "${hive_runtime_dir}/test_hive_splice_edges.cpp")
 target_compile_definitions(hive_runtime PRIVATE FORGE_HIVE_TEST_HOOKS=1)
 target_link_libraries(hive_runtime PRIVATE GTest::gtest_main ${hive_test_library})

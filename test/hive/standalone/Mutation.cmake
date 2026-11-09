@@ -20,6 +20,8 @@ if(NOT second EQUAL -1)
 endif()
 string(REPLACE "${anchor}" "${replacement}" mutant "${implementation}")
 file(WRITE "${mutant_include}/cpp26/hive.hpp" "${mutant}")
+configure_file("${hive_source_backport}/cpp26/hive/detail/bounded_sort.hpp"
+    "${mutant_include}/cpp26/hive/detail/bounded_sort.hpp" COPYONLY)
 
 foreach(variant IN ITEMS normal mutated)
     add_executable(hive_model_${variant} "${CMAKE_CURRENT_LIST_DIR}/../mutation/model_main.cpp")

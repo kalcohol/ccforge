@@ -50,6 +50,8 @@ file(MAKE_DIRECTORY "${hive_include}/cpp26")
 configure_file("${FORGE_ROOT_DIR}/backport/hive" "${hive_include}/hive" COPYONLY)
 configure_file("${FORGE_ROOT_DIR}/backport/cpp26/hive.hpp"
     "${hive_include}/cpp26/hive.hpp" COPYONLY)
+configure_file("${FORGE_ROOT_DIR}/backport/cpp26/hive/detail/bounded_sort.hpp"
+    "${hive_include}/cpp26/hive/detail/bounded_sort.hpp" COPYONLY)
 
 function(hive_compile_check name expect_success)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
