@@ -3,14 +3,17 @@ HIVE R4.1 SORT CANDIDATE -- 2026-11-09
 Disposition
 -----------
 HOLD for admission: the R4.1 implementation is a separate review candidate.
-Windows compilation passed, but host application control prevented runtime
-tests from starting. External Claude review, reviewer-only P1 measurement and
-owner approval also remain open. Do not merge this branch on these records.
+Windows runtime qualification now passes after the owner restored execution
+and a test-only allocation-observer correction. External Claude review,
+reviewer-only P1 measurement and owner approval remain open. Do not merge this
+branch on these records.
 
 M21 baseline: fd7dd5ad08ff78404cbed0ba15120b6094921333.
 Frozen implementation: f8a904b7eb2dafc8dc011c6ee2fb7df7dc04d74b.
 Branch: work/hive-sort-r41-20261109.
-Subsequent record edits are documentation only. R2.1 was admitted first and
+Test-harness correction: e954526c3cb1657e15cb33c8cb2fbc9757aded02; production
+headers, configuration and benchmarks remain identical to f8a904b. Subsequent
+record edits are documentation only. R2.1 was admitted first and
 master was fast-forwarded and pushed. Original R4 branch 0f20a1f remains
 unchanged; its seven commits were replayed to 5e4e2cd before the R4.1 changes.
 The saved range-diff identifies trailer normalization and the CMake/document
@@ -61,15 +64,21 @@ enabled; the standalone kernel target uses C++20 in every configuration.
   GCC 16 / libstdc++, ASan+UBSan            C++23 and C++26         5/5 each
   Zig 0.14 / libc++                        C++23                 31/31
   AppleClang 21 / libc++, arm64            C++23 and C++26        31/31 each
-  MSVC 19.51, x64                         configured C++23      build only
+  MSVC 19.51, x64                         configured C++23      31/31
   Clang 19.1.7 / libc++, full repository    C++26                 304 pass, 3 skip
 
 The scoped GCC sanitizer rows run the independent kernel plus four Hive core
 controls, not all native/compile probes. Successful runtime configurations
 contain 167 Hive GTest cases and 32 independent kernel cases. The broader
 focused sort filter has 51 cases. Extra stress invocation "6 2000" passed on
-ordinary Linux, libc++ sanitizer, Zig and macOS lanes; scoped GCC sanitizer
+ordinary Linux, libc++ sanitizer, Zig, macOS and Windows lanes; scoped GCC sanitizer
 rows did not run that additional executable.
+
+The original matrix used f8a904b. The test-only revision e954526 was additionally
+verified on Windows, AppleClang C++23/26, both C++23 sanitizer libraries, and
+the closing full LLVM C++26 lane.
+This does not claim every earlier lane ran the corrected test harness. The
+production implementation and all benchmark inputs remained unchanged.
 
 libc++ sanitizer linkage and EXTENSIVE hardening were asserted; libstdc++
 linkage and _GLIBCXX_ASSERTIONS were asserted separately. Both use ASan+UBSan
@@ -80,11 +89,15 @@ forge_io_uring_rw and forge_io_uring_fault. This is not io_uring runtime
 qualification. Its additional Hive stress invocation also passed.
 
 Windows verified C++20 on the kernel test/probe and c++latest for configured
-C++23 Hive compilation. Its 31 CTest entries comprise 26 passing compile/config
-controls, four unstarted runtime programs and one dependent skipped control.
-A single ordinary launch diagnostic confirmed application-control rejection.
-No policy or execution route was changed. Extra stress did not start. This
-new runtime gap is broader than the historical R2.1 extra-stress gap.
+C++23 Hive compilation. All 31 CTest entries, 167 Hive cases, 32 kernel cases
+and the extra stress invocation passed on e954526. Earlier attempts remain:
+one was denied by host application control; after the owner restored execution,
+another passed 30/31 CTests and exposed assertion-framework allocation in a
+test's measured scope. The correction moves only assertion bookkeeping outside
+that scope and adds a positive allocation-observer control; zero-allocation
+and forced-path assertions are unchanged. No sorting implementation changed.
+The agent changed no host security setting. This new qualification does not
+retroactively relabel the historical R2.1 extra-stress gap.
 
 A fresh install without a GoogleTest source checkout passed. The installed
 detail header matches the source byte-for-byte, compiles/runs independently
@@ -186,5 +199,6 @@ reload interruption after the completed ASan23 lane. The unchanged source
 resumed at ASan26 after syntax validation; no completed lane or performance
 group was retried. ORCHESTRATION_NOTE.txt records the incident.
 
-Admission still requires Windows runtime qualification (or an explicit owner
-disposition), independent review/P1 and owner approval. Mainline remains M21.
+Admission still requires independent review/P1 and owner approval. Mainline
+remains M21. The original Windows denial, subsequent test failure and successful
+corrected-harness run are all retained in WINDOWS_STATUS.md.

@@ -7,10 +7,11 @@ for the earlier representations and their separate acceptance decisions.
 
 R4_SORT.txt records the separate R4.1 sort candidate at f8a904b, its bounded
 kernel controls and paired P0/P2 results against admitted M21 (fd7dd5a).
-The candidate is HOLD for admission: Windows compilation passed but host
-application control prevented runtime qualification. Independent Claude review,
-reviewer-only P1 and owner approval also remain open. Shared-host limitations,
-the K1 small-buffer gap and the Windows evidence are stated in that record.
+The candidate is HOLD for admission pending independent Claude review,
+reviewer-only P1 and owner approval. Windows runtime qualification now passes;
+e954526 corrects only allocation-observer test bookkeeping, without changing
+the implementation. Shared-host limitations, the K1 small-buffer gap and all
+Windows attempts are stated in that record.
 This is not mainline admission; the original R4 branch remains unchanged.
 
 Allocator-policy admission is covered by specification section 4.6 and the
