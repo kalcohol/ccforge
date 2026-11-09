@@ -57,6 +57,9 @@ if(FORGE_HIVE_BUILD_COST_PROBE)
     target_link_libraries(hive_traversal_probe PRIVATE ${hive_test_library})
     add_executable(hive_sort_probe "${CMAKE_CURRENT_LIST_DIR}/benchmark/measure_sort.cpp")
     target_link_libraries(hive_sort_probe PRIVATE ${hive_test_library})
+    add_executable(hive_bounded_sort_probe "${CMAKE_CURRENT_LIST_DIR}/benchmark/measure_bounded_sort.cpp")
+    set_target_properties(hive_bounded_sort_probe PROPERTIES
+        CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 endif()
 
 option(FORGE_HIVE_BUILD_STRESS "Build the optional randomized Hive model stress" OFF)
@@ -65,3 +68,13 @@ if(FORGE_HIVE_BUILD_STRESS)
     target_link_libraries(hive_stress PRIVATE ${hive_test_library})
     target_compile_definitions(hive_stress PRIVATE FORGE_HIVE_TEST_HOOKS=1)
 endif()
+
+# Direct-header kernel validation deliberately does not inherit Hive's C++23 target.
+add_executable(hive_bounded_sort "${hive_runtime_dir}/test_hive_bounded_sort.cpp")
+target_compile_definitions(hive_bounded_sort PRIVATE FORGE_HIVE_TEST_HOOKS=1)
+target_link_libraries(hive_bounded_sort PRIVATE GTest::gtest_main)
+set_target_properties(hive_bounded_sort PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+add_test(NAME hive_bounded_sort COMMAND hive_bounded_sort)
+# Full million-relation and every-throw controls remain enabled in sanitizer lanes.
+set_tests_properties(hive_bounded_sort PROPERTIES TIMEOUT 3600 LABELS "hive;bounded_sort;full_controls")
