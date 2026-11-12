@@ -1,68 +1,50 @@
-HIVE MEASUREMENT PROVENANCE -- 2026-11-12
+Hive 基准运行说明
+=================
 
-Scope
------
-This protocol records the R4.2 review's L8 requirement for future Hive
-performance work. It supplements, rather than replaces, each approved
-taskbook's workloads, fixed baselines, pairing order, sample counts, noise
-rules and acceptance thresholds. Apply it to P0/P1 and related K1 tuning.
-Do not retrospectively change the status of earlier batches.
+用途
+----
+这些独立程序用于观察特定负载下的成本，不是性能保证或准入门槛。
+从仓库根目录执行以下命令。要求支持 std::from_range 的 C++23 标准库，
+并使用没有原生 hive 声明的工具链；-Ibackport 仅供这些独立 backport 测量使用。
+本说明不要求下载第三方容器实现。
 
-Batch Identity
---------------
-Each batch must retain a manifest with:
-- a stable, non-private host identifier and run date;
-- CPU model, architecture, core type, selected CPU, affinity and sibling
-  topology; do not infer topology from CPU numbers used on another host;
-- configured frequency policy, boost state, frequency limits and observed
-  frequency/load during the run, plus OS/kernel version;
-- memory configuration and DDR speed when available, allocator/runtime,
-  compiler and standard-library versions, flags and container image identity;
-- candidate, fixed baseline and previous-candidate commit IDs, source and
-  binary hashes, workload/seed, timing boundary and sample/pair order.
+构建与运行（以 clang++ 为例，可替换为适用的 g++）
+------------------------------------------------
+mkdir -p build/hive-benchmark
+clang++ -std=c++23 -O2 -DNDEBUG -Ibackport test/hive/benchmark/measure_sort.cpp -o build/hive-benchmark/measure_sort
+clang++ -std=c++23 -O2 -DNDEBUG -Ibackport test/hive/benchmark/measure_traversal.cpp -o build/hive-benchmark/measure_traversal
+clang++ -std=c++23 -O2 -DNDEBUG -Ibackport test/hive/benchmark/measure_core.cpp -o build/hive-benchmark/measure_core
+clang++ -std=c++23 -O2 -DNDEBUG test/hive/benchmark/measure_bounded_sort.cpp -o build/hive-benchmark/measure_bounded_sort
 
-Record unavailable metadata explicitly instead of guessing it. Keep private
-machine names and local paths in ignored evidence, not committed summaries.
-S7 includes allocation in its timed region; changing allocation or timing
-boundaries requires a separate protocol decision, not an implicit comparison.
+build/hive-benchmark/measure_sort hive S1 --smoke
+build/hive-benchmark/measure_sort vector S1 --smoke
+build/hive-benchmark/measure_traversal hive T1 --smoke
+build/hive-benchmark/measure_traversal vector T1 --smoke
+build/hive-benchmark/measure_core hive int
+build/hive-benchmark/measure_core list int
+build/hive-benchmark/measure_bounded_sort bounded random
+build/hive-benchmark/measure_bounded_sort standard random
 
-Same-Host Comparisons
----------------------
-All implementations used for a conclusion must run on the same host, with
-the same selected core and recorded environment, interleaved within the
-same measurement session. Every batch also includes the previous candidate
-as a named control. That control does not replace the approved fixed baseline
-or external reference. For P0, preserve baseline/candidate alternating pairs
-and add separately identified previous-candidate comparisons in the same
-batch. For P1, include the previous candidate in the rotated implementations.
-If the previous candidate is already the fixed baseline, label both roles.
+measure_sort 和 measure_traversal 的 --help 给出工作负载及采样参数；
+不带 --smoke 时使用程序内的完整规模。工作负载名仅用于选择输入。
+measure_core 另可选择元素类型和块容量参数，参数以其 usage 输出为准。
+measure_bounded_sort 只观察内部内核，不代表容器整体排序成本。
 
-On a host, CPU/core type, memory, kernel or toolchain change, start a new
-measurement series. Rebuild and rerun the candidate and controls with recorded
-inputs. Never combine old/new absolute timings or normalized ratios to infer
-an implementation speedup, regression or acceptance result. Identical binaries
-do not make different hosts comparable. Label historical results by their
-original host; do not apply an old host's threshold-tuning conclusion to the
-new one without new measurements.
+绑核与环境
+----------
+Linux 可先用 lscpu 查看拓扑，然后以 taskset -c <CPU> <命令> 将所有对比程序
+绑定到同一个可用 CPU。不要从另一台机器的 CPU 编号推断核类型。
+其他平台应记录使用的亲和性工具；无法绑核时明确记录该限制。
+每次运行保存非私密主机标识、日期、CPU 型号及核类型、选定 CPU、兄弟线程拓扑、
+频率策略与观测频率、负载、内存配置、OS/内核、编译器及标准库版本、编译选项、
+分配器、容器镜像（若使用）、源码提交、二进制摘要、工作负载、种子和采样顺序。
+缺失元数据应注明，不要猜测。
 
-Noise And Hardware Incidents
-----------------------------
-Retain every raw batch, including rejected batches, with the stated reason
-and the taskbook's rerun decision. Do not select favorable samples or rerun
-solely to cross a threshold. Record concurrent load and interference without
-claiming exclusive use of a shared host.
-
-If memory errors or other hardware faults are discovered, attach that caveat
-to affected historical evidence. Do not treat those runs as a clean current
-baseline or silently relabel them as passing, failing or harmless noise.
-Claims renewed after the incident need same-environment repetitions on a
-healthy host; missing repetitions remain explicit gaps. Correctness results
-and timing results are separate evidence categories.
-
-Reporting
----------
-Report within-session candidate/reference ratios, paired statistics where
-required, ranges and noise decisions alongside the host identifier. Keep
-author P0, reviewer P1 and tuning K1 distinct; none substitutes for another.
-An optional tuning target is not an admission blocker unless the approved
-taskbook or owner decision makes it one.
+比较与报告
+----------
+只在同一次运行内比较：同一主机、同一核心、同一工具链和环境下交错执行候选与
+对照，保持输入、计时边界及采样配置一致。记录绝对耗时、分布、比值和并发负载，
+同时保存所有原始样本及异常批次，不选择性保留有利结果。
+换主机、内存、内核或工具链后重新构建并重跑所有对照；不拼接不同环境的耗时或
+比值来推断提速。发现硬件故障时标注受影响结果，在健康环境重新测量。
+正确性结果与计时结果分别报告；本说明没有固定性能阈值。
