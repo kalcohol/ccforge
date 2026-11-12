@@ -197,4 +197,5 @@ TEST(ExecutionComposition, AssociateCompositionDoesNotAcquireDuringBinding) {
         EXPECT_EQ(std::get<0>(*result), 9);
     }
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }

@@ -661,6 +661,7 @@ TEST(SimpleCountingScopeTest, AssociationLifecycle) {
     }
 
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, JoinSenderCompletesWhenEmpty) {
@@ -773,6 +774,7 @@ TEST(SimpleCountingScopeTest, AssociationMoveTransfersOwnership) {
     }
 
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, ClosedScopeReturnsDisengagedAssociation) {
@@ -784,6 +786,7 @@ TEST(SimpleCountingScopeTest, ClosedScopeReturnsDisengagedAssociation) {
 
     EXPECT_FALSE(static_cast<bool>(assoc));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, SpawnAndJoin) {
@@ -885,6 +888,7 @@ TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, AssociatedSenderCleanupPrecedesDisassociation) {
@@ -919,6 +923,7 @@ TEST(SimpleCountingScopeTest, WrapCompletesAndDisassociates) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
@@ -931,6 +936,7 @@ TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, WrapClosedScopeStillReturnsInputSender) {
@@ -943,6 +949,7 @@ TEST(SimpleCountingScopeTest, WrapClosedScopeStillReturnsInputSender) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, AssociateDisassociatesOnError) {
@@ -952,6 +959,7 @@ TEST(SimpleCountingScopeTest, AssociateDisassociatesOnError) {
     EXPECT_THROW((void)std::execution::sync_wait(
         std::execution::associate(std::execution::just_error(42), token)), int);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, SpawnDisassociatesOnStopped) {
@@ -990,6 +998,7 @@ TEST(SimpleCountingScopeTest, AssociateOwnsAssociationUntilOperationDestruction)
     }
 
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, UnstartedAssociatedOperationReleasesAssociationOnDestruction) {
@@ -1013,6 +1022,7 @@ TEST(SimpleCountingScopeTest, UnstartedAssociatedOperationReleasesAssociationOnD
     EXPECT_FALSE(started);
     EXPECT_FALSE(completed);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, MultipleSpawns) {
@@ -1053,6 +1063,7 @@ TEST(CountingScopeTest, IsDistinctAndAssociatesWork) {
     }
 
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, JoinStartReturnsWhileScopeIsNonEmpty) {
@@ -1113,6 +1124,7 @@ TEST(CountingScopeTest, RequestStopHasVoidNoexceptSignatureAndIsIdempotent) {
         EXPECT_TRUE(std::get<0>(*result).second);
         EXPECT_EQ(scope.count(), 0u);
     }
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapPreservesCompletionResults) {
@@ -1131,6 +1143,7 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     auto stopped = std::execution::sync_wait(token.wrap(std::execution::just_stopped()));
     EXPECT_FALSE(stopped.has_value());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 namespace {
@@ -1238,6 +1251,7 @@ TEST(CountingScopeTest, WrapBorrowsStableNoncopyableEnvAndFusesStop) {
             }
             EXPECT_EQ(*env.alive, 1);
             EXPECT_EQ(scope.count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
         };
 
         int alive = 0;
@@ -1303,6 +1317,7 @@ TEST(CountingScopeTest, WrapOwnsImmovablePrvalueEnvAndFusesStop) {
         }
         EXPECT_EQ(alive, 0);
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -1428,6 +1443,7 @@ TEST(CountingScopeTest, WrapRegistersStopOnlyBetweenStartAndCompletion) {
         EXPECT_EQ(live_at_completion, 0);
         EXPECT_EQ(live, 0);
         EXPECT_EQ(completions, 1);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -1462,6 +1478,7 @@ TEST(CountingScopeTest, WrapStopRegistrationFailureDeliversDeclaredStopped) {
     EXPECT_TRUE(stopped);
     EXPECT_EQ(live, 0);
     EXPECT_EQ(completions, 1);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapCompletionCanDestroyOperationAfterDeregistration) {
@@ -1492,6 +1509,7 @@ TEST(CountingScopeTest, WrapCompletionCanDestroyOperationAfterDeregistration) {
         EXPECT_EQ(live_at_completion, 0);
         EXPECT_EQ(live, 0);
         EXPECT_EQ(completions, 1);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -1506,6 +1524,7 @@ TEST(CountingScopeTest, CloseRejectsNewAssociatedWork) {
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(scope.is_closed());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapExposesStoppableToken) {
@@ -1521,6 +1540,7 @@ TEST(CountingScopeTest, WrapExposesStoppableToken) {
     EXPECT_TRUE(stop_token.stop_possible());
     EXPECT_FALSE(stop_token.stop_requested());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
@@ -1543,6 +1563,7 @@ TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
     EXPECT_TRUE(stop_token.stop_possible());
     EXPECT_TRUE(stop_token.stop_requested());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
@@ -1584,6 +1605,7 @@ TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
         EXPECT_EQ(state->stop_completion_attempts, 1);
     }
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapFusesScopeStopAfterStart) {
@@ -1620,6 +1642,7 @@ TEST(CountingScopeTest, WrapFusesScopeStopAfterStart) {
         EXPECT_EQ(state->stop_completion_attempts, 1);
     }
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
@@ -1673,6 +1696,7 @@ TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
             EXPECT_EQ(state->stop_completion_attempts, 1);
         }
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -1696,6 +1720,7 @@ TEST(CountingScopeTest, WrapConnectFailurePropagatesFromConnect) {
     EXPECT_THROW((void)std::execution::sync_wait(
         token.wrap(throwing_connect_sender{})), throwing_connect_error);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, AssociateConnectFailurePropagatesFromConnect) {
@@ -1713,6 +1738,7 @@ TEST(CountingScopeTest, AssociateConnectFailurePropagatesFromConnect) {
     EXPECT_THROW((void)std::execution::sync_wait(
         std::move(associated)), throwing_connect_error);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {

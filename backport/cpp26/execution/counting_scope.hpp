@@ -187,9 +187,17 @@ public:
 
     simple_counting_scope() noexcept = default;
     ~simple_counting_scope() noexcept {
-        // Destructor: if count > 0, work was not properly joined.
-        // Forge follows the standard-style precondition here and terminates.
-        if (__count_.load(std::memory_order_acquire) != 0) {
+        // The working draft requires joined, unused, or unused-and-closed.
+        // Wait for the final decrement's critical section before teardown.
+        using __state = __forge_counting_scope::__scope_state;
+        __state state;
+        {
+            std::lock_guard lk{__mtx_};
+            state = __state_.load(std::memory_order_relaxed);
+        }
+        // terminate() can invoke a user-installed handler; do not hold the lock.
+        if (state != __state::joined && state != __state::unused
+            && state != __state::unused_and_closed) {
             std::terminate();
         }
     }
@@ -624,7 +632,17 @@ public:
 
     counting_scope() noexcept = default;
     ~counting_scope() noexcept {
-        if (__count_.load(std::memory_order_acquire) != 0) {
+        // The working draft requires joined, unused, or unused-and-closed.
+        // Wait for the final decrement's critical section before teardown.
+        using __state = __forge_counting_scope::__scope_state;
+        __state state;
+        {
+            std::lock_guard lk{__mtx_};
+            state = __state_.load(std::memory_order_relaxed);
+        }
+        // terminate() can invoke a user-installed handler; do not hold the lock.
+        if (state != __state::joined && state != __state::unused
+            && state != __state::unused_and_closed) {
             std::terminate();
         }
     }

@@ -39,6 +39,7 @@ int main() {
 
     std::execution::simple_counting_scope scope;
     std::execution::spawn(std::execution::just(), scope.get_token());
+    (void)std::this_thread::sync_wait(scope.join());
 
     auto joined = std::execution::when_all(std::execution::just());
     auto joined_op = std::execution::connect(std::move(joined), noexcept_receiver{});

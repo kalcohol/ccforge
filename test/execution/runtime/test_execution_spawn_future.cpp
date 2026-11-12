@@ -467,6 +467,7 @@ TEST(SpawnFutureTest, CompletedBeforeConsumerDeliversValue) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
@@ -502,6 +503,7 @@ TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
     ASSERT_TRUE(observed.has_value());
     EXPECT_EQ(*observed, 7);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
@@ -519,6 +521,7 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
 
     EXPECT_FALSE(stopped.has_value());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
@@ -533,6 +536,7 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 31);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
@@ -611,6 +615,7 @@ TEST(SpawnTest, BorrowsNoncopyableSourceAllocatorAttributes) {
         EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
         EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -646,6 +651,7 @@ TEST(SpawnTest, OwnsImmovablePrvalueSourceAllocatorAttributes) {
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnTest, ExplicitAllocatorStillOverridesBorrowedSourceAttributes) {
@@ -673,6 +679,7 @@ TEST(SpawnTest, ExplicitAllocatorStillOverridesBorrowedSourceAttributes) {
     EXPECT_EQ(explicit_counts->allocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(explicit_counts->deallocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
@@ -697,6 +704,7 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
@@ -719,6 +727,7 @@ TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, SuppliedAllocatorOverridesSenderAttributes) {
@@ -748,6 +757,7 @@ TEST(SpawnFutureTest, SuppliedAllocatorOverridesSenderAttributes) {
     EXPECT_EQ(receiver_counts->allocations.load(std::memory_order_relaxed),
               receiver_counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, FallsBackToSenderAllocatorWithAndWithoutExplicitEnvironment) {
@@ -776,6 +786,7 @@ TEST(SpawnFutureTest, FallsBackToSenderAllocatorWithAndWithoutExplicitEnvironmen
         EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
                   counts->deallocations.load(std::memory_order_relaxed));
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -798,6 +809,7 @@ TEST(SpawnFutureTest, SelectsAllocatorFromTokenWrappedSender) {
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, DefaultAllocatorDoesNotAddAnAllocatorQueryToSpawnEnvironment) {
@@ -817,6 +829,7 @@ TEST(SpawnFutureTest, DefaultAllocatorDoesNotAddAnAllocatorQueryToSpawnEnvironme
         ASSERT_TRUE(result.has_value());
         EXPECT_FALSE(std::get<0>(*result));
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -853,6 +866,7 @@ TEST(SpawnFutureTest, SenderAllocatorFallbackPreservesMoveOnlyPayloadAndEnvironm
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, SenderAllocatorFailureReleasesAssociationWithoutStartingWork) {
@@ -873,6 +887,7 @@ TEST(SpawnFutureTest, SenderAllocatorFailureReleasesAssociationWithoutStartingWo
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
@@ -896,6 +911,7 @@ TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
@@ -918,6 +934,7 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     auto result = std::execution::sync_wait(std::move(future));
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
@@ -937,6 +954,7 @@ TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
     check(std::execution::just_error(spawn_future_marker_error{}));
     check(std::execution::just_stopped());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
@@ -963,6 +981,7 @@ TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
         auto result = std::execution::sync_wait(std::move(future));
         EXPECT_EQ(result.has_value(), !stop);
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }
 
@@ -1064,6 +1083,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
             EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
                       counts->deallocations.load(std::memory_order_relaxed));
             EXPECT_EQ(scope.count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
         }
     }
 }
@@ -1116,6 +1136,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureOverridesCachedValue) {
     }
 
     expect_registration_error(observation);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
@@ -1149,6 +1170,7 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
     EXPECT_EQ(observation.errors, 0);
     EXPECT_EQ(observation.stopped, 1);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {
@@ -1168,6 +1190,7 @@ TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(started.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
@@ -1186,6 +1209,7 @@ TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, UnstartedConsumerOperationRequestsStopOnDestruction) {
@@ -1279,6 +1303,7 @@ TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
         EXPECT_EQ(scope.count(), 0u);
     }
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SpawnFutureTest, DownstreamStopCompletesBeforeStopIgnoringWorkFinishes) {
@@ -1370,5 +1395,6 @@ TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
         ASSERT_TRUE(observed.has_value());
         EXPECT_EQ(*observed, i);
         EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
     }
 }

@@ -23,6 +23,7 @@ void check_binding() {
     EXPECT_EQ(state.wraps, 0);
     EXPECT_EQ(state.attempts, 0);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 template<category Category, bool Pipe>
@@ -55,6 +56,7 @@ void check_application() {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 template<bool Pipe>
@@ -78,6 +80,7 @@ void check_scope() {
         EXPECT_EQ(std::get<0>(*result), 23);
     }
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 template<class Scope>
@@ -124,6 +127,7 @@ TEST(ExecutionAssociateClosure, ClosingAfterBindingMakesApplicationCompleteStopp
     auto result = ex::sync_wait(ex::just(42) | closure);
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(ExecutionAssociateClosure, WrappingExceptionsPropagateOnlyAtApplication) {
@@ -137,6 +141,7 @@ TEST(ExecutionAssociateClosure, WrappingExceptionsPropagateOnlyAtApplication) {
     EXPECT_EQ(state.wraps, 1);
     EXPECT_EQ(state.attempts, 0);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(ExecutionAssociateClosure, AssociationExceptionsPropagateOnlyAtApplication) {
@@ -150,4 +155,5 @@ TEST(ExecutionAssociateClosure, AssociationExceptionsPropagateOnlyAtApplication)
     EXPECT_EQ(state.wraps, 1);
     EXPECT_EQ(state.attempts, 1);
     EXPECT_EQ(scope.count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
 }
