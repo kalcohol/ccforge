@@ -1,20 +1,31 @@
-HIVE R4.2 SORT CANDIDATE -- 2026-11-10
+HIVE R4.2 SORT ADMISSION -- 2026-11-12
 
 Disposition
 -----------
-Author qualification is complete; admission remains HOLD pending independent
-Claude review, reviewer-only P1 and owner approval. R4.1 passed independent
-correctness/bounds review but failed external S7 P1 at 1.64-1.67 times plf.
-R4.2 addresses that review without relabelling the old outcome. Do not merge
-this branch on author P0/K1 evidence alone.
+The owner admitted R4.2 on 2026-11-12 after CLAUDE_R42_REVIEW.md sections 4,
+5a and 6, authorizing a fast-forward of the candidate branch into master.
+Independent correctness, bounds, clean-room review and current-host P1 pass;
+S7 is 1.05-1.09 times plf, directly within the 1.25 target. No interval waiver
+is needed. L7 and K1 threshold retuning are optional follow-ups, not blockers.
+L8 is adopted in benchmark/MEASUREMENT_PROTOCOL.txt.
+
+Author P0/K1 ran on the original host; independent R4.2 P1 ran on its
+replacement. The owner reports multiple DDR bit errors on the original host.
+Its measurements remain historical evidence with that hardware caveat, not
+a clean baseline for the replacement host. Admission uses the reviewer's
+same-host, same-batch P1 comparisons and current-host correctness reruns;
+no performance improvement is inferred by comparing timings or ratios across
+hosts. R4.1's original-host S7 result of 1.64-1.67 times plf and rejection
+remain historical, not revised results. They must not be combined with R4.2 P1.
 
 Branch: work/hive-sort-r41-20261109.
 R4.1 starting point: dfc2cee97b6731812d800424b145a61c1658cc73.
 Frozen implementation/tests: ce05ce3c9badfa2b323e1c0b6afb1572a5af6d7d.
-Admitted M21/mainline and P0 baseline: fd7dd5ad08ff78404cbed0ba15120b6094921333.
-Later record edits are documentation only. Original R4 branch 0f20a1f and
-mainline remain unchanged. The original seven-commit replay to 5e4e2cd and
-its saved range-diff remain intact; no published history was rewritten.
+Reviewed handoff: e6cacdfb5b5fecfb62e1ab8662a699dc78a7b00a.
+Prior mainline M21/P0 baseline: fd7dd5ad08ff78404cbed0ba15120b6094921333.
+Admission edits are documentation only. Original R4 branch 0f20a1f is unchanged.
+The original seven-commit replay to 5e4e2cd and its saved range-diff remain
+intact; no published history is rewritten for the fast-forward admission.
 
 R4.2 Scope And Design
 --------------------
@@ -63,9 +74,13 @@ an internally validated property under the stated comparator boundary, not a
 new public promise. No third-party sorting/container implementation source or
 reviewer experimental source was inspected or imported by the implementer.
 
-Functional Verification
------------------------
-Every row below ran the frozen ce05ce3 snapshot with debug checks retained.
+Historical Author Functional Verification
+----------------------------------------
+The following records describe the 2026-11-10 author qualification, not a
+fresh rerun during admission. Linux lanes ran on the original host; macOS and
+Windows lanes used their separate remote machines. Retain the original-host
+hardware caveat above. Current-host independent reruns are recorded below.
+Every row ran the frozen ce05ce3 snapshot with debug checks retained.
 The standalone kernel test uses C++20 in every configuration; Hive uses the
 listed lane standard.
 
@@ -137,8 +152,11 @@ Independent delta reviews and a separate artifact audit found no substantive
 issue within their stated scopes. Their retained notes distinguish source
 inspection from execution, and do not certify reviewer P1 or admission.
 
-Paired Performance And Memory
------------------------------
+Original-Host Paired Performance And Memory
+------------------------------------------
+P0/P2 and both K1 studies below ran on the original host on 2026-11-10.
+These historical results retain their within-run statistics and hardware
+caveat. They are not replacement-host measurements or cross-host speedups.
 One formal group of exactly 15 pairs per S1-S8 compares the new implementation
 with M21, alternating baseline-first and candidate-first. Both binaries use
 the unchanged candidate measure_sort.cpp, clang/libc++, C++26, -O2 -DNDEBUG
@@ -155,16 +173,18 @@ No group or sample was discarded, rerun or replaced.
   S7               0.6092          0.6336        15/15             4
   S8               0.4678          0.4772        15/15            16
 
-All eight pass P0 (median <=1.00 and nearest-rank upper quartile <=1.02) and
-P2 (4/16 B limits). The quartile is the 12th of 15 sorted pair ratios. These
-are medians of paired ratios, not ratios of aggregate medians.
+All eight met the recorded P0 (median <=1.00 and nearest-rank upper quartile
+<=1.02) and P2 (4/16 B limits) thresholds. The quartile is the 12th of 15
+sorted pair ratios. These are medians of paired ratios, not ratios of
+aggregate medians. No new P0 series is claimed for the replacement host.
 
 All 248 process records and 68758 timed raw samples were cross-checked against
 the reported medians, minima and pairing order. Source, binary, image, compiler
-and topology records remain available. CPU14's sibling is CPU30; its largest
-recorded interval activity was 2.5%. This remains a shared-host measurement,
-not an exclusivity claim. S7 is shorter than the two-second sampler interval;
-before/after snapshots are retained. Vector results are informational only.
+and topology records remain available. On that original host, CPU14's sibling
+was CPU30; its largest recorded interval activity was 2.5%. This was a
+shared-host measurement, not an exclusivity claim. S7 is shorter than the
+two-second sampler interval; before/after snapshots are retained. Vector
+results are informational only.
 
 L6 uses two retained K1 studies, each with 150 processes and 63750 timed samples.
 Final actual-production bounded/std ratios are random 1.0499, few-key 1.1225,
@@ -182,8 +202,46 @@ The independent same-input comparison-count probe reports 13889 -> 11215 at
 n=1000 and 30619118 -> 23234958 at n=1000000 versus R4.1 dfc2cee. Counts are
 not timings; their baseline differs from P0's M21.
 
-Evidence And Remaining Gates
-----------------------------
+Independent Review And Current-Host P1
+-------------------------------------
+CLAUDE_R42_REVIEW.md (2026-11-12) independently accepts the frozen candidate.
+On the replacement host, its libc++ ASan+UBSan EXTENSIVE runs cover 11 seeds
+and all 33554432 Boolean relations at n=5; libstdc++ ASan+UBSan with
+_GLIBCXX_ASSERTIONS covers six seeds. Both include the Hive layer and pass.
+Of eight reviewer mutations, six are rejected and two are equivalent variants,
+not missed defects. Source/bounds and clean-room similarity reviews also pass.
+These reviewer results are distinct from the author's V1-V5 records above.
+
+Formal P1 uses the current i9-13900 hybrid-core host, pinned to its P-core
+CPU14, with vector, M21, R4.1, R4.2 and plf in each rotated batch. There are
+five rounds per batch and three batches. The reviewer reports ten minutes
+of loadavg below 1.5 before starting, 1.1-1.3 during the run, within-implementation
+round dispersion <=1.07 and between-batch differences below 1%.
+
+  Workload   New/plf batch 1   Batch 2   Batch 3   Verdict
+  S1                  1.070     1.071     1.071   pass
+  S2                  1.070     1.069     1.069   pass
+  S3                  0.681     0.681     0.680   pass
+  S4                  1.182     1.186     1.182   pass
+  S5                  1.100     1.100     1.101   pass
+  S6                  1.064     1.060     1.061   pass
+  S7                  1.051     1.087     1.066   pass
+
+All seven P1 workloads meet the 1.25 target on this host. S8 is P0-only;
+there is no new reviewer P1 claim for S8. The same-batch R4.1 control permits
+within-host comparisons without extrapolating the original-host results.
+The earlier p1-noisy/ batch stays rejected and is not admission evidence.
+Cross-host estimates in the review's historical discussion are not used.
+
+L7 records original-host K1's small-input ratio of 1.2279 against its 1.10
+tuning target. Small-input optimization and current-host threshold retuning
+remain optional; production threshold 24 is unchanged. L8 requires host/core,
+frequency and kernel provenance plus a same-batch previous-candidate control
+for future measurements. The withdrawn L9 does not change the original-host
+CPU14/CPU30 topology record or impose that topology on the new host.
+
+Evidence And Admission Boundary
+-------------------------------
 Evidence root: build/review/hive-sort-r42-20261110/.
 REVIEW_HANDOFF.md is the reviewer entry point; FUNCTIONAL_RESULTS.json,
 COVERAGE.json, MUTATION_RESULTS.json, PERFORMANCE_VERIFICATION.json,
@@ -191,8 +249,13 @@ K1_DECISION.md and the original raw logs/data provide the supporting evidence.
 Private summary-parser checks account for shared macOS logs and wrapped
 Windows command lines; they do not change tests or measurements.
 
+Independent review evidence root: build/review/hive-sort-r42-review-20261112/.
+CLAUDE_R42_REVIEW.md is the decision source; p1/ contains formal measurements,
+p1-noisy/ the rejected batch, and fuzz/ and similarity/ the independent checks.
+The owner's 2026-11-12 approval closes admission; it does not expand D1 or
+turn these host-specific measurements into general performance guarantees.
+
 R4/R4.1/R2.1 historical evidence, noisy batches, Windows attempts and admission
-decisions retain their original status. Current Windows qualification does not
-retroactively relabel R2.1's historical extra-stress gap. Master stays at M21.
-Independent Claude review, external P1 (especially S7) and owner approval are
-still required; author P0/K1 results are not substitutes.
+decisions retain their original status with the hardware-provenance caveat.
+R4.2's historical Windows qualification does not retroactively relabel R2.1's
+extra-stress gap. Original author P0/K1 are not substitutes for reviewer P1.

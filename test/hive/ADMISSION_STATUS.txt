@@ -1,21 +1,27 @@
-HIVE ADMISSION STATUS -- 2026-11-10
+HIVE ADMISSION STATUS -- 2026-11-12
 
 R5 integration is qualified for mainline admission. R5_ADMISSION.txt records
 the native-probe, root/standalone test, platform and header-only consumer gates.
 CORE_PREPARATION.txt and SKIPFIELD_PREPARATION.txt remain historical evidence
 for the earlier representations and their separate acceptance decisions.
 
-R4_SORT.txt records the separate R4.2 sort candidate at ce05ce3, its bounded
-kernel controls and paired P0/P2 results against admitted M21 (fd7dd5a).
-R4.1 passed independent correctness review but failed external S7 P1; that
-decision remains unchanged. R4.2 changes only the internal kernel and its
-corresponding tests/records, not hive.hpp or the formal measurement program.
-Linux, macOS, Windows, both sanitizer libraries, all 13 runtime mutations and
-all eight P0/P2 groups pass. Closing full LLVM has 304 passes, three recorded
-io_uring runtime skips and zero failures. The candidate remains HOLD pending
-independent Claude review, reviewer-only P1 and owner approval. Shared-host
-limits, K1 qualifications and historical evidence remain explicit in the record.
-This is not mainline admission; the original R4 branch remains unchanged.
+The owner admitted R4.2 on 2026-11-12 and authorized fast-forward integration
+of work/hive-sort-r41-20261109 into master. R4_SORT.txt records the frozen
+ce05ce3 implementation/tests, reviewed handoff e6cacdf and M21 baseline
+fd7dd5a. CLAUDE_R42_REVIEW.md independently accepts correctness, bounds,
+clean-room review and current-host P1; S1-S7 pass, with S7 at 1.05-1.09 times
+plf. The admission commit changes only records, not executable code or tests.
+The original R4 branch and R4.1's historical rejection remain unchanged.
+
+Author P0/K1 were measured on the original host; reviewer P1 and independent
+correctness reruns use the replacement host. The owner reports DDR bit errors
+on the original host, so its evidence carries that hardware caveat.
+Do not compare timings or ratios across hosts, or present the old runs as a
+clean current-host baseline. R4_SORT.txt retains the original platform/mutation
+results and their scope separately from the current-host reviewer evidence.
+No fresh author P0 or full platform rerun is claimed for this docs-only
+admission. L7 and K1 threshold retuning remain optional follow-ups; L8 is
+adopted in benchmark/MEASUREMENT_PROTOCOL.txt. D1 remains unchanged.
 
 Allocator-policy admission is covered by specification section 4.6 and the
 accepted R2/R3 review: allocator rebind, retained fancy allocation pointers,
@@ -40,9 +46,9 @@ support boundary. R2.1 iteration optimization was admitted by the owner on
 the 1.25-1.5 interval procedure. R21_ITERATION.txt preserves the original three
 noise-rejected primary batches and references the reviewer's supplementary
 paired evidence. The unexecuted Windows extra stress program remains a known
-gap. New paired performance rules apply from R4.1 onward. R4/R4.1/R4.2 sort
-acceleration remains separate; the admitted implementation keeps the baseline
-heap-sort algorithm and reviewed slot layout until a separate approval.
+gap. New paired performance rules apply from R4.1 onward. R4.2 now separately
+admits the bounded sort kernel with a heap fallback; the reviewed slot layout
+and iterator representation remain unchanged.
 
 The opt-in standalone harness records the supported validation surface. A
 <version>-only backport feature-macro test is deliberately deferred, not passed.
