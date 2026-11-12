@@ -269,34 +269,9 @@ io_uring completion backend 的原生 platform IO awaitable。父子 `io_task` a
 symmetric transfer；本 track 不把 sender cancellation 规则重新包装成另一套稳定 async
 model。
 
-弃置（销毁悬挂中的 `io_task` 链）按迭代方式逐帧执行：每帧在 await 子 task 时记录
-向下链接，销毁时沿链循环拆帧而不是经嵌套 awaitable 析构递归，深链弃置的 native
-stack 占用是常数。该保证只覆盖 task 链本身；悬挂中的叶子 awaitable/operation 的
-弃置语义按 backend 分为两类：
-
-- 可安全弃置（poller 持有，库可同步撤销）：timer facade 与 epoll backend 的
-  readiness/byte operation。弃置析构先原子认领完成权（poller 此后不可能再打进
-  该 operation state），再从注册表摘除记录。若完成方先赢得认领，析构按投递
-  线程区分：完成正发生在本调用栈上（正常 continuation 路径销毁自身 state）时
-  直接放行以免自锁；另一线程的在途投递则被等待收尾——receiver 完成与 stop
-  注册的拆除都严格先于析构返回。协程桥（`await_sender`）在析构时同时认领
-  完成槽，迟到的投递只写结果成员、不会 resume 正在销毁的 coroutine。因此与
-  完成"同一瞬间"的弃置也是安全结算的：析构返回后结果不再变化。
-- task 链层面的弃置仲裁：链根 promise 记录 started/finalized 标记、在途 resume
-  credit 与当前挂起所在的 generation-tagged 桥完成槽。完成槽状态存放在稳定的链根
-  而不是 awaitable 对象内，连接失败会撤销发布，因此仲裁不会读取已结束生命周期的
-  awaitable 成员。跨线程弃置先对完成槽做认领仲裁（认领成功则
-  投递永不 resume；失败则等链推进到下一稳定态后重仲裁），并在任何拆帧前等在途
-  resume 计数归零，保证 resume 调用回卷离开帧之前帧不消失。弃置发生在 resume
-  链自己调用栈上（receiver 在完成回调内同步销毁 operation state，这是受支持
-  用法，`when_all_results` 的自毁聚合即依赖它）时既不等待
-  （自锁）也不当场拆帧（resume 仍在帧间回卷），而是把拆帧交给最后一个回卷完毕
-  的 resume 尾部执行。初始 task start、sender bridge completion，以及 Forge 自带的
-  backend-direct/erased-stream continuation 都使用同一 credit；sender operation-state
-  先析构 task、后析构 receiver，使跨线程弃置等待期间 receiver 仍然有效。
-- 快速失败（kernel 持有 borrowed buffer，无法同步撤销）：io_uring 与 IOCP 的
-  in-flight operation。弃置违反 borrowed 契约，析构护栏 `std::terminate()`，
-  见各 backend 一节。erased async stream 的悬挂 operation 同属此类。
+弃置 task 链使用常数 native stack；timer 与 epoll pending operation 可安全弃置，析构返回后不再访问其状态或借用 buffer。
+io_uring、IOCP 和 erased async stream 的 in-flight operation 不允许弃置，违反 borrowed 契约会 `std::terminate()`。
+机制说明见[IO 设计笔记](roadmap/forge-io-design-notes.md)。
 
 `io_task` 帧分配支持 P4127 的显式参数路径：coroutine 参数列表以
 `(std::allocator_arg_t, std::pmr::memory_resource*)` 开头时，coroutine frame 从该
@@ -314,9 +289,7 @@ auto task = parse(std::allocator_arg, &pool, 40);
 
 规则与边界：
 
-- 帧分配在帧尾保留一个 pointer 大小的 trailer 记录 owning resource；deallocate 与
-  allocate 的 size/alignment 严格配对。全局路径同样带 trailer，即每帧一个指针的
-  固定开销。
+- 显式帧分配的 resource 接收配对的释放请求；机制见[IO 设计笔记](roadmap/forge-io-design-notes.md)。
 - resource 为 null 时回退全局路径。
 - 帧分配失败以异常从 coroutine 调用表达式传播；刻意不提供
   `get_return_object_on_allocation_failure`，避免把 throwing resource 误判成空 task。
@@ -346,9 +319,7 @@ auto task = parse(std::allocator_arg, &pool, 40);
 `io_env::memory` 维持原语义：只作为 awaitable/operation 内部分配的来源提示，不会
 自动接管 coroutine frame allocation。
 
-性能口径（2026-08 基准，见 roadmap `coroutine-native-io.md` 的记录）：小帧上全局
-路径更快；pool 帧在 syscall 主导的 io_uring echo 路径上至多带来中个位数百分比改善。
-显式 allocator 参数的定位是分配次数控制与确定性，不是默认性能建议。
+显式帧分配用于控制分配来源和次数；具体性能应在应用负载下测量。
 
 Sender interop 分两层：
 
@@ -535,11 +506,7 @@ nonblocking 模式；如果传入 blocking fd，poller thread 可能在后续 sy
 V1 设计边界：epoll backend 的实际 `read(2)` / `write(2)` syscall 在单个 poller
 线程上执行，所有 fd 的数据拷贝互相串行化；高吞吐或大 buffer 场景应换用
 io_uring backend 或自行分片。
-epoll backend 的 operation state 支持安全弃置：销毁已 start 未完成的 operation
-会认领完成权并从注册表摘除记录，poller 不会再打进已销毁的 state 或向借用
-buffer 写入（见上文弃置语义两分类）。弃置与并发投递的对抗性交错（readiness
-已触发、poller 正在投递、拥有方同时析构）由 512 轮扫窗压力测试在 readiness
-与 byte 两条路径上钉住，sanitizer lane 下任何协议破坏都会硬失败。
+epoll operation 可安全弃置，析构返回后不会再访问其状态或借用 buffer；机制见[IO 设计笔记](roadmap/forge-io-design-notes.md)。
 空 span 是特殊情况：Linux backend 不等待 readiness，直接完成 `set_value(0)`。
 `0` 对 read 表示 EOF 或零长度 buffer；write 可能因非阻塞 fd 状态只完成部分 bytes。
 span 是 borrowed，调用方必须保证 buffer 活到 operation 完成。`EINTR` 会重试；
@@ -833,7 +800,7 @@ Portable 验证允许该通道对 runtime-unavailable 返回有界 skip；releas
 `FORGE_IO_URING_REQUIRE_RUNTIME=1`，把同一情况升级为失败。该 gate 只验证 Linux，和
 Windows/MSVC matrix 无关。
 
-不做（另立任务书前不变）：socket 建连/accept/DNS/TLS、SQPOLL、registered buffers、
+当前范围不包含以下功能，扩展需负责人另行决定：socket 建连/accept/DNS/TLS、SQPOLL、registered buffers、
 multishot、链式 SQE、显式 file offset API、mandatory liburing 依赖，以及对 epoll
 readiness backend 的任何替代或改动。
 

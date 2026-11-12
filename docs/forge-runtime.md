@@ -186,13 +186,4 @@ Non-owning view 和 lightweight handle 不应在 destructor 中阻塞。
 
 ## V1 cancellation 边界
 
-Forge primitive 应优先提供小而明确的 guarantee，而不是半正确的大 guarantee。
-
-对 pending operation cancellation，v1 primitive 可以选择以下层级之一：
-
-- 只在 pre-start 观察 stop token；
-- 只通过 primitive-owned close/shutdown wakeup 取消；
-- full per-operation stop-callback cancellation。只有在 callback lifetime 和 exactly-once
-  completion 已证明并在 sanitizer 下测试后，才应选择这个层级。
-
-如果没有实现 full callback cancellation，文档必须明确写出缺失的 case。
+新增原语的取消层级与维护规则见[贡献指南](contributing-forge-primitives.md)。

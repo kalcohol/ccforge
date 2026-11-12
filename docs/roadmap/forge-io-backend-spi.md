@@ -69,7 +69,7 @@ read/write 用例；项目还没有需要 kernel submission/completion queues �
 （RoCEv2/RDMA、DMA、PCIe/UALink/UCIe 类加速器互连），该类 workload 属于
 submission/completion queue 语义，重估条件成立。`io_uring` 是该模型在通用 Linux
 内核上可验证的 commodity 载体，是未来 coroutine-native backend proof 的首选候选。
-启动前仍需独立 taskbook，且 taskbook 必须先解决：
+当时启动前仍需负责人另行决定，并先解决：
 
 - native protocol 选择：sender-native + coroutine facade，或 coroutine-native +
   sender bridge（初步倾向后者，作为 per-backend native protocol 原则的首个
@@ -150,8 +150,8 @@ backend。
   `io_uring_setup`、mmap SQ/CQ/SQEs、提交 `IORING_OP_NOP`，再用
   `io_uring_enter` 等待并验证 CQE。探针只依赖 `<linux/io_uring.h>`、libc syscall/mmap
   surface 和 C++23 compiler。
-- 2026-08-19 本机证据：8-entry setup 成功，kernel 返回 8 SQ entries、16 CQ entries、
-  features `0x3ffff`，NOP CQE result 为 `0`。这证明当前 host lane 可运行 raw ring，
+- 2026-08-19 当时主机的证据：8-entry setup 成功，kernel 返回 8 SQ entries、16 CQ entries、
+  features `0x3ffff`，NOP CQE result 为 `0`。这证明当时 host lane 可运行 raw ring，
   不只是在 compile-time 看见 UAPI header。
 - `io_uring_setup` / `io_uring_enter` 因 `ENOSYS`、`EPERM` 或 `EACCES` 不可用时，探针以
   `77` 退出，供 AUTO gate 和 CTest 表达 graceful skip；其它 setup/mmap/CQE 错误保持
@@ -190,7 +190,7 @@ backend。
   detail API 绕过 public lifetime contract。
 
 `scripts/probe-io-uring.sh` 已扩展为同时检查 `IORING_FEAT_NODROP` 和上述四个
-opcode；当前 host 返回 33 个 probe entries，必需集合全部可用。
+opcode；2026-08-19 的主机返回了 33 个 probe entries，必需集合当时全部可用。
 
 ### D4：verification lane 与 sandbox policy
 
@@ -198,15 +198,17 @@ V1 分开验证 build capability、kernel capability 和 container sandbox polic
 
 | lane | 预期结果 | 说明 |
 |---|---|---|
-| Host `scripts/probe-io-uring.sh` | pass 或 77 skip | 当前 host pass；直接验证 setup、mmap、register、enter 与 CQ drain |
-| 默认 rootless Podman policy | 77 skip | Fedora/Podman 默认 seccomp 对 setup 返回 `ENOSYS`；这不是 kernel 缺失 |
-| 自定义 seccomp、默认 SELinux container label | 77 skip | 当前 Fedora policy 对 setup 返回 `EACCES` |
-| `scripts/probe-io-uring-container.sh` | pass | 从 Podman 默认 profile 派生并只放行三个 io_uring syscalls；当前返回 58 个 probe entries |
+| Host `scripts/probe-io-uring.sh` | pass 或 77 skip | 2026-08-19 主机验证通过；当时直接验证 setup、mmap、register、enter 与 CQ drain |
+| 默认 rootless Podman policy | 77 skip | 2026-08-19，Fedora/Podman 默认 seccomp 对 setup 返回 `ENOSYS`；这是当时的 policy 观察，不是 kernel 缺失 |
+| 自定义 seccomp、默认 SELinux container label | 77 skip | 2026-08-19，Fedora policy 对 setup 返回 `EACCES` |
+| `scripts/probe-io-uring-container.sh` | pass | 从 Podman 默认 profile 派生并只放行三个 io_uring syscalls；2026-08-19 当时返回了 58 个 probe entries |
 
-Container lane 需要关闭 SELinux container label 才能在当前 Fedora host 上执行
-`io_uring_setup`。这是 backend verification 专用的安全例外，不是生产容器建议。脚本同时
-使用无网络、drop all capabilities、`no-new-privileges`、只读 source mount 和 ephemeral
-container 来缩小范围；它不会使用 `--privileged` 或 seccomp unconfined。Custom profile
+2026-08-19 的 Fedora host 验证中，container lane 需要关闭 SELinux container label
+才能执行 `io_uring_setup`；这是该历史环境的观察结果。当前
+`scripts/probe-io-uring-container.sh` 配置了 `--security-opt label=disable`，属于
+backend verification 专用的安全例外，不是生产容器建议。脚本默认同时使用无网络、
+drop all capabilities、`no-new-privileges`、只读 source mount 和 ephemeral container
+来缩小范围；它不会使用 `--privileged` 或 seccomp unconfined。Custom profile
 由 `/usr/share/containers/seccomp.json` 派生，可通过
 `FORGE_IO_URING_SECCOMP_BASE` 指定其他 Podman profile。
 

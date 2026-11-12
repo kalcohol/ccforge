@@ -1,8 +1,6 @@
 # Forge 稳定性基线
 
-这份文档记录 `include/forge/` 工作的当前交付基线，以及判断是否继续扩展 runtime/IO
-工作的自循环规则。它是维护指南，不承诺每个 optional proof backend 都达到 production
-complete。
+这份文档记录 `include/forge/` 的交付基线。它是维护指南，不承诺每个 optional proof backend 都达到 production complete。
 
 ## 范围
 
@@ -91,7 +89,7 @@ Sanitizer gate filters 旨在捕捉 execution 和 `forge::` lifetime issues。
 
 ## 收敛清单
 
-每轮 taskbook 后使用这张清单。
+变更后使用这张清单核对交付范围。
 
 | 目标 | 证据 | 当前状态 |
 | --- | --- | --- |
@@ -115,20 +113,6 @@ Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state
 `scripts/audit-runtime-wakeups.sh` 作为 candidate-site inventory。该脚本不证明正确性；
 它把 review 聚焦到需要人工 lifecycle check 的位置。
 
-## 自循环协议
-
-每个新的 runtime/IO taskbook 都应遵循：
-
-1. **Inspect** 当前代码和文档。不要从过时 taskbook facts 直接实现。
-2. **Implement one slice**，并形成聚焦提交。
-3. **Verify** 聚焦测试，再跑 taskbook 要求的 gates。
-4. **Review** UAF、races、completion-under-lock、stop-callback lifetime、gate drift 和 docs drift。
-5. **Update backlog**：如果发现新的高价值 gap，编辑相关 roadmap/taskbook。
-6. **Converge check**：回到上面的清单逐项确认。
-
-如果剩余项高价值且风险低/中，创建下一小轮并重复。若剩余工作需要新 OS backend、
-广泛 API commitment 或外部生态 adapter，停止并要求独立 owner decision。
-
 ## 已知刻意边界
 
 - Windows/MSVC smoke 是 manual/self-hosted optional gate，不替代 Linux container verification。
@@ -140,6 +124,6 @@ Timer cancellation hardening 暴露过一类反复出现的 bug：`atomic` state
   backend 仍延后。
 - Additional IOCP hardening 是 requirement-driven。当前 proof 覆盖 completion drain、
   per-operation cancellation 和 conservative associated handle pruning；更强 handle ownership
-  或 high-churn pooling 需要新 taskbook。
+  或 high-churn pooling 需负责人另行决定，并在下一次工作草案快照审计时复查。
 - `timer_context` 对 pending timer cancellation 使用 receiver stop callbacks。
 - 不应只为了支持 `forge::` extension 而改变 `std::execution` backport behavior。

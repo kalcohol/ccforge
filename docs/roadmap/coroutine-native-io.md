@@ -20,7 +20,7 @@ Forge 可以吸收的是“可替换 backend 的异步字节流支撑层”，�
 
 这些设施服务 Forge 既有身份：C++ backport 加面向资源型异步系统的组合式支撑层。完整
 networking framework、socket option surface、DNS、TLS、Boost.Asio/Capy/Corosio 适配器
-和新平台 backend 都需要独立 taskbook 与 owner decision。
+和新平台 backend 都需负责人另行决定，并在下一次工作草案快照审计时复查。
 
 ## 当前实现状态
 
@@ -216,7 +216,7 @@ runtime composition smoke。
 
 当前 deferred decision：
 
-- TCP/DNS/UDP/TLS 仍不是本 track 的目标；需要独立 networking taskbook、backend owner 和
+- TCP/DNS/UDP/TLS 仍不是本 track 的目标；需负责人另行决定，并明确 backend owner 和
   security/release policy。
 - Boost.Asio、Capy、Corosio 或其它 adapter 暂不引入，避免把 Forge 的小型 substrate 变成
   adapter matrix。
@@ -239,7 +239,9 @@ runtime composition smoke。
 
 ## io_task 帧分配基准记录（2026-08）
 
-测量环境：Fedora 宿主（kernel 7.1.5-201.fc44，x86-64），GCC 15.2.0（conda
+这是一份不可复现的 2026-08 历史快照，不作为当前性能结论；硬件健康状态未记录，不能据此认定其与后续更换的主机相同。
+
+当时测量环境为 Fedora 宿主（kernel 7.1.5-201.fc44，x86-64），GCC 15.2.0（conda
 toolchain），`-O2 -DNDEBUG`，单线程驱动加 io_uring context poller thread。数字为
 3 次运行的范围；allocation 计数由替换的全局 operator new 与 pool 的 counting
 upstream 观察。帧尺寸（含 pointer trailer）：io_uring echo coroutine 928 bytes，
@@ -284,7 +286,6 @@ frame-only coroutine 104 bytes。注意：以下数字是当时一次性 scratch
 - 聚焦测试或文档证据覆盖本 stage；
 - 没有 `backport/io`、`<io>`、`<networking>`、`std::io` 或新 `namespace std` 名字；
 - 没有引入完整 networking surface；
-- 完成的 round 及时 commit，并在 remote/凭据可用时 push。
 
 Stages 3、6、8 结束时应跑本地 baseline：
 

@@ -347,10 +347,7 @@ backport 专用测试当作 native 验证。Native handoff 的 synthetic fixture
 探测与注册策略，不证明真实标准库实现的质量。`FORGE_FORCE_HIVE_BACKPORT` 仅供
 诊断，在已有 native 声明时可能导致重定义或 ODR 问题。
 
-Hive 后续性能测量遵守[测量溯源协议](../test/hive/benchmark/MEASUREMENT_PROTOCOL.txt)：
-每批记录主机、CPU 核类型、频率、内核和工具链，并保留同批上一轮候选对照。
-换机或硬件故障后的结果不能与旧主机耗时或比值拼接推断性能；P0、P1 与 K1
-分别记录，仍使用各任务书规定的成对统计、噪声规则和准入门槛。
+Hive 基准运行方法见[测量说明](../test/hive/benchmark/MEASUREMENT_PROTOCOL.txt)。
 
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future

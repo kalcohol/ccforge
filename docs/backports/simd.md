@@ -72,8 +72,7 @@ const V result = std::simd::select(selector, values, V(0.0f));
 
 ## 验证
 
-历史文档曾报告在 x86_64、aarch64、riscv64、loongarch64 上验证；目前未找到对应
-运行的版本、工具链、测试范围和结果记录，因此该历史报告不能作为当前版本的验证证明。
+验证入口见[测试说明](../testing.md)。跨架构支持须以对应工具链实际运行结果为准，不承诺所有架构均已验证。
 
 当前 GCC 16 在 C++26 提供 partial-native `std::simd`，Forge 会严格让位并给出警告；
 同一标准库在 C++23 虽可安装 `<simd>` 文件但不暴露声明，此时声明级 probe 会启用

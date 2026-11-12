@@ -115,7 +115,7 @@ stand-aside，并且 native implementation 不容忍 source 在自身 `request_s
   才会交付 stopped。
 
 不要把两者描述成同一个状态机，也不要把现有异常投递改写成非抛 channel。非抛 stopped
-channel 可以作为未来 task redesign 的独立 taskbook，而不是本轮小修。
+channel 的未来 task redesign 需负责人另行决定，并在下一次工作草案快照审计时复查。
 
 ## Known accepted limitations
 
@@ -152,5 +152,5 @@ channel 可以作为未来 task redesign 的独立 taskbook，而不是本轮小
 `as_sender(io_task<T>, env)` 会融合 `io_env.stop_token` 和 receiver/env stop token。
 
 除此之外，不建议从本文直接派生新的实现任务。若后续 review 在某个具体 primitive 上发现
-native stop-source lifetime 差异或未覆盖的 callback path，应写 focused taskbook，并附
+native stop-source lifetime 差异或未覆盖的 callback path，需负责人另行决定，并提供
 对应 ASan/TSan 或 Windows lane evidence。

@@ -15,7 +15,7 @@ tensor 或 driver framework。
 - `OFF`：该 backend 的 tests/examples 注册数为零。
 
 Backend 代码不存在时，不要提前添加 SDK probe。未来 `io_uring` 或其它 platform proof
-必须在同一份 taskbook 里同时添加 probe、backend 代码和测试。
+需负责人另行决定，并同时提供 probe、backend 代码和测试。
 
 Package install 不能冻结构建机器上的 probe 结果。Installed configs 应在 consumer project
 中重新运行 backend probes。
@@ -78,7 +78,7 @@ mapping 决策和测试之后，在 backend-specific detail 中保留 raw status
 - 新 error taxonomy；
 - 超出已有 Forge contexts 的 long-running background runtime。
 
-拿不准时，先写 taskbook，并保持 portable surface mock-first。
+拿不准时，需负责人另行决定，并保持 portable surface mock-first。
 
 ## 当前 backend 立场
 
@@ -92,8 +92,7 @@ Linux `io_uring` 的重估条件已于 2026-08 触发（byte-stream fabric 方�
 关闭且 `ON`+父 OFF 组合是 configure 错误）、focused tests、gated example、sanitizer
 lanes 与 sandbox skip 语义齐备（见 `forge-io-backend-spi.md`）。它不参与 portable
 context 选择，也不替代 `epoll` readiness backend。超出 proof 的 production hardening（如
-SQPOLL、registered buffers、multishot）与 RoCEv2/RDMA 类 fabric backend 仍需独立
-taskbook。
+SQPOLL、registered buffers、multishot）与 RoCEv2/RDMA 类 fabric backend 需负责人另行决定，并在下一次工作草案快照审计时复查。
 
 其它平台或外部生态 adapter 只有在现有 IO/runtime surface 证明需求后，才作为独立 proof
 启动。不要为尚不存在的 backend 先冻结 public ABI。

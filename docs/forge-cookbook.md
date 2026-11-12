@@ -316,16 +316,4 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `example/forge_any_sender_example.cpp`
 - `example/forge_any_receiver_example.cpp`
 
-## Shutdown checklist（关闭检查表）
-
-写一个拥有型 runtime 或 session 时，按这个顺序检查：
-
-1. 新入口是否有 `close()` 或 `shutdown()` 后拒绝策略。
-2. Pending operation 是否会被 close/stop 唤醒。
-3. Receiver completion 是否在内部锁外调用。
-4. Receiver stop-token 的 callback 生命周期是否短于 receiver completion 生命周期。
-5. `wait()` 是否只承诺有限 drain，还是需要无界 loop-until-idle。
-6. 析构是否可能阻塞；如果会，文档是否写清楚。
-7. Examples 是否展示了正常完成和停机路径。
-
-这也是新增 `forge::` 原语时的审查清单。
+新增原语的评审要求见[贡献指南](contributing-forge-primitives.md)。

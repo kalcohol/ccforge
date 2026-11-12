@@ -3,7 +3,7 @@
 本文记录 `include/forge/` 扩展设施的中长期方向。它不是标准 backport 计划，也不向
 `namespace std` 增加名字。目标是让 Forge 在 `std::execution` backport 之上，提供一组
 小而实用的运行时原语，服务结构化并发、消息通路、IO/protocol flow 和资源生命周期管理。
-当前稳定交付基线和自循环验收规则见
+当前稳定交付基线见
 [`Forge 稳定性基线`](forge-stability-baseline.md)。
 
 ## 当前基线
@@ -76,7 +76,7 @@ Resource policy、IO readiness、coroutine-native byte IO 和 typed-error integr
 networking framework surface；它不排除 byte-stream transport substrate 本身。
 2026-08 确认：非以太网介质的字节流场景（io_uring SQ/CQ、RoCEv2/RDMA、DMA、
 PCIe/UALink/UCIe 类加速器互连）属于本支撑层要服务的 workload。这类 backend 仍受
-backend proof 政策与独立 taskbook gate 约束。
+backend proof 政策约束；扩展需负责人另行决定。
 
 未来 backend shape 记录在 [`forge::io` backend SPI 草案](forge-io-backend-spi.md)。
 Gate、lifetime、verification 和 typed-error 规则记录在
@@ -106,7 +106,7 @@ Reference runtime helpers 仍延后。当前 examples 已证明组合模式，�
 scheduler/spawn/close/request_stop/shutdown/wait；避免把 IO、protocol、tensor 或 serving
 policy 内置进通用 helper。
 
-以下事项仍在远景内，但不应在没有单独拍板和新任务书时顺手启动：
+以下远景事项需负责人另行决定，并在下一次工作草案快照审计时复查：
 
 - 新平台 IO backend：Linux `io_uring` proof 已于 2026-08 按独立 taskbook 落地（见
   `forge-io-backend-spi.md`）；超出 proof 的 io_uring hardening（SQPOLL、registered
@@ -118,9 +118,7 @@ policy 内置进通用 helper。
 - 标准 backport 的未来 conformance 复查。`std::execution` stop-token type-erasure
   control block 已接受 allocator-neutral 取舍；不要把它当成开放 bug 继续打磨。
 
-每次启动这些大项前，先写一份总计划和若干子任务书，明确 gate、examples、测试矩阵和回滚
-边界。没有明确收益或验证条件时，维持现状比扩大 surface 更好。Backend proof work 也必须满足
-[`backend proof` 策略](forge-backend-proof-policy.md)。
+Backend proof work 必须满足 [`backend proof` 策略](forge-backend-proof-policy.md)。
 
 ## 可移植性与 Windows 预期
 
@@ -210,10 +208,10 @@ backend 和 Windows IOCP completion proof；后续仍建议分三层推进：
 kqueue 当前不在项目需求内。`io_uring` 的 defer 重估条件已于 2026-08 触发（byte-stream
 fabric 方向确认），随后按独立 taskbook 落地为 coroutine-native completion proof（见
 `forge-io-backend-spi.md`）。RoCEv2/RDMA
-类 fabric backend 需要独立 taskbook 和可验证硬件（或 soft-RoCE）故事，当前仍 deferred。
+类 fabric backend 需负责人另行决定，并具备可验证硬件（或 soft-RoCE）条件；下一次工作草案快照审计时复查。
 IOCP 当前 proof 已覆盖 completion drain、per-operation cancellation 和 conservative
 associated-handle pruning；更强的 owned-handle lifetime 或 high-churn handle-pool policy
-仍需独立 taskbook。
+需负责人另行决定，并在下一次工作草案快照审计时复查。
 
 ## Coroutine-native byte IO
 
@@ -237,7 +235,7 @@ Coroutine-native byte IO 是当前 IO 方向的下一层 ergonomics，而不是�
 - Windows IOCP named-pipe coroutine smoke 应作为未来 Windows gate 补上。
 
 不要提前承诺 `std::io`、`std::networking`、`<io>` 或 `<networking>`。若 WG21 后续 adopted
-wording，另开 taskbook 评估是否做 standard-shaped backport。
+wording，是否做 standard-shaped backport 需负责人另行决定，并在下一次工作草案快照审计时复查。
 
 ## Typed-error erased sender（类型化错误擦除 sender）
 
