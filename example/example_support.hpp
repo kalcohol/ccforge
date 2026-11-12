@@ -23,12 +23,17 @@
 #pragma once
 
 #include <cstdlib>
+#include <cstdio>
+#include <source_location>
 
 namespace forge_example {
 
 template<class T>
-void require(const T& value) {
+void require(const T& value, const char* message = "requirement failed",
+             std::source_location location = std::source_location::current()) {
     if (!static_cast<bool>(value)) {
+        std::fprintf(stderr, "%s:%u: %s\n", location.file_name(),
+                     static_cast<unsigned>(location.line()), message);
         std::abort();
     }
 }
