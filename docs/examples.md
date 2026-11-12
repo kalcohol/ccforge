@@ -6,7 +6,13 @@
 
 ## Standard backports
 
-- [`hive_example.cpp`](../example/hive_example.cpp)（仅 partial、非完整 native 且未强制 backport 时跳过）
+- hive 示例（只在注入 backport 或完整 native 时构建）：
+  - [`hive_example.cpp`](../example/hive_example.cpp)：插入、删除与存活迭代器。
+  - [`hive_stable_handles_example.cpp`](../example/hive_stable_handles_example.cpp)：粒子回收中的稳定句柄。
+  - [`hive_capacity_limits_example.cpp`](../example/hive_capacity_limits_example.cpp)：突发容量规划及 reshape。
+  - [`hive_sort_unique_example.cpp`](../example/hive_sort_unique_example.cpp)：遥测键排序去重。
+  - [`hive_get_iterator_example.cpp`](../example/hive_get_iterator_example.cpp)：从存活回调指针恢复迭代器。
+  - [`hive_splice_example.cpp`](../example/hive_splice_example.cpp)：流水线转移与不兼容上限。
 - [`unique_resource_example.cpp`](../example/unique_resource_example.cpp)
 - [`constant_wrapper_example.cpp`](../example/constant_wrapper_example.cpp)
 - [`simd_example.cpp`](../example/simd_example.cpp)
