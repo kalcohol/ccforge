@@ -180,9 +180,11 @@
   association 释放后，completion 会调度到 receiver env 的
   `get_start_scheduler`，并在 scope mutex 外执行。join completion 会建立 terminal
   `joined` state；此后 `try_associate()` 返回 disengaged
-  association，`spawn()` 不再接受新 work。Scope destructor 仍保留 Forge 既有的宽松
-  diagnostic：只在 outstanding association count 非零时 terminate；已经自然 drain
-  但未消费 `join()` 的 scope 不额外终止。
+  association，`spawn()` 不再接受新 work。两个 scope 的 destructor 遵循
+  [working draft](https://eel.is/c++draft/exec.simple.counting.ctor)：仅允许
+  `joined`、`unused` 或 `unused-and-closed` state，否则调用 `terminate`，包括
+  count 已自然 drain 到零但未消费 `join()` 的情况。Destructor 在 mutex 下检查
+  state，与最后一次 association decrement 的 critical section 同步。
 - `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义
   receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task
   operation-state。task promise env 除 stop token 外还转发外层 receiver env 的
