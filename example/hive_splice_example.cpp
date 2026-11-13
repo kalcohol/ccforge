@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Transfer stage results without losing downstream pointers
+// Key APIs: splice, get_iterator, is_within_hard_limits
+// Requires: injected backport or complete native <hive>; C++23
+// See also: docs/backports/hive.md
+
 #include <hive>
 #include <iostream>
 #include <memory>

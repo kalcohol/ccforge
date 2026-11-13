@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge owned async stream
+// Key APIs: forge::io::owning_any_async_read_stream, forge::io::io_task
+// Requires: always available ; C++23
+// See also: docs/forge-io.md
+
 #include "forge_owned_async_stream_protocol.hpp"
 
 #include <forge/io/memory_stream.hpp>

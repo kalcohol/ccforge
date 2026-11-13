@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: execution schedulers
+// Key APIs: std::execution::just, std::execution::then, std::execution::run_loop, std::execution::starts_on
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #include <execution>
 #include "example_support.hpp"
 #include <iostream>

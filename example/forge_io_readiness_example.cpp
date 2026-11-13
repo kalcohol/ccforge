@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge io readiness
+// Key APIs: forge::io::context
+// Requires: FORGE_ENABLE_FORGE_RUNTIME + epoll backend ; C++23
+// See also: docs/forge-io.md
+
 #include <forge/io.hpp>
 #include <execution>
 #include "example_support.hpp"

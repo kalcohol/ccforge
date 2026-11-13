@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Standard sender awaiting in a custom coroutine
+// Key APIs: std::execution::env, std::execution::with_awaitable_senders, std::execution::just, std::execution::then
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #if __cpp_impl_coroutine >= 201902L
 #include <coroutine>
 #include <execution>

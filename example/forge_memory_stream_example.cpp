@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge memory stream
+// Key APIs: forge::io::memory_read_stream, forge::io::memory_write_stream
+// Requires: always available ; C++23
+// See also: docs/forge-io.md
+
 #include <forge/io/memory_stream.hpp>
 
 #include "example_support.hpp"

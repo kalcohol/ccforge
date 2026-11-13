@@ -220,7 +220,7 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 
 - [execution_affine_example.cpp](../../example/execution_affine_example.cpp)：execution affine 的接口组合与完成结果。
 
-- [execution_phase3_example.cpp](../../example/execution_phase3_example.cpp)：when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写）。
+- [execution_combinators_example.cpp](../../example/execution_combinators_example.cpp)：when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写）。
 
 - [execution_coro_example.cpp](../../example/execution_coro_example.cpp)：execution coro 的接口组合与完成结果。
 
@@ -232,7 +232,7 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 
 - [execution_schedulers_example.cpp](../../example/execution_schedulers_example.cpp)：execution schedulers 的接口组合与完成结果。
 
-- [execution_phase4_example.cpp](../../example/execution_phase4_example.cpp)：scope spawn 与异步 join。
+- [execution_scope_example.cpp](../../example/execution_scope_example.cpp)：scope spawn 与异步 join。
 
 - [execution_spawn_future_example.cpp](../../example/execution_spawn_future_example.cpp)：execution spawn future 的接口组合与完成结果。
 

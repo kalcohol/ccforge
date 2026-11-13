@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: execution stop token
+// Key APIs: std::inplace_stop_source, std::inplace_stop_callback
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #include <execution>
 #include "example_support.hpp"
 

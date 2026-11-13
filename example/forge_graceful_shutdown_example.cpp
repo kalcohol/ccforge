@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge graceful shutdown
+// Key APIs: forge::resource_context, forge::bounded_channel
+// Requires: FORGE_ENABLE_FORGE_RUNTIME ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
 #include <forge/strand.hpp>

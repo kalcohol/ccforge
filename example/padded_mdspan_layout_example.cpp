@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: padded mdspan layout
+// Key APIs: std::layout_left_padded, std::layout_right_padded
+// Requires: MDSPAN_PADDED_LAYOUTS: injected backport or complete native; mdspan ; C++23
+// See also: docs/backports/mdspan.md
+
 #include <mdspan>
 #include <array>
 #include <type_traits>

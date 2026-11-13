@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge system context
+// Key APIs: forge::system_context
+// Requires: FORGE_ENABLE_FORGE_RUNTIME ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/system_context.hpp>
 #include "example_support.hpp"
 #include <iostream>

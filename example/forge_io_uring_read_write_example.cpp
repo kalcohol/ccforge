@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge io uring read write
+// Key APIs: forge::io::io_uring_context, forge::io::as_sender
+// Requires: FORGE_ENABLE_FORGE_RUNTIME + io_uring backend ; C++23
+// See also: docs/forge-io.md
+
 #include <forge/io/io_uring_context.hpp>
 
 #include "example_support.hpp"

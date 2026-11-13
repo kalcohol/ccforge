@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge task
+// Key APIs: forge::task
+// Requires: FORGE_ENABLE_FORGE_RUNTIME ; C++23
+// See also: docs/forge-utilities.md
+
 #include <execution>
 #include <forge/task.hpp>
 

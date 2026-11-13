@@ -89,7 +89,7 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
 | 场景 | 示例 |
 | --- | --- |
-| execution scope work | `example/execution_phase4_example.cpp`, `example/execution_spawn_future_example.cpp` |
+| execution scope work | `example/execution_scope_example.cpp`, `example/execution_spawn_future_example.cpp` |
 | execution scheduler adaptors | `example/execution_on_example.cpp`, `example/execution_affine_example.cpp`, `example/execution_unstoppable_example.cpp` |
 | CPU scheduler basics | `example/forge_thread_pool_example.cpp`, `example/forge_runtime_context_example.cpp` |
 | timer / single-thread / system context | `example/forge_timer_context_example.cpp`, `example/forge_single_thread_context_example.cpp`, `example/forge_system_context_example.cpp` |

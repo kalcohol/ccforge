@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge any sender
+// Key APIs: forge::any_sender_of
+// Requires: FORGE_ENABLE_FORGE_RUNTIME ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/any_sender.hpp>
 #include "example_support.hpp"
 #include <iostream>

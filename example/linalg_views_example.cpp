@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: linalg views
+// Key APIs: std::mdspan, std::linalg::matrix_vector_product
+// Requires: LINALG: injected backport or complete native; mdspan ; C++23
+// See also: docs/backports/linalg.md
+
 #include <version>
 #if defined(__cpp_lib_mdspan)
 #include <linalg>

@@ -46,7 +46,7 @@ function(forge_add_example target_name source_file)
 endfunction()
 
 # Explicit exceptions depend on Forge extensions even with complete native support.
-set(FORGE_EXAMPLE_NATIVE_INCOMPATIBLE execution_phase3_example simd_complete_example)
+set(FORGE_EXAMPLE_NATIVE_INCOMPATIBLE execution_combinators_example simd_complete_example)
 function(forge_example_standard_gate suffix output)
     if(FORGE_FORCE_${suffix}_BACKPORT OR FORGE_${suffix}_FULL OR NOT FORGE_${suffix}_PARTIAL)
         set(${output} ON PARENT_SCOPE)
@@ -104,12 +104,12 @@ endif()
 # Native-compatible execution sources use <execution> and current protocol tags;
 # the combinators example remains excluded because it demonstrates extensions.
 forge_add_standard_example(SENDERS execution_example execution_example.cpp TBB SKIP77)
-forge_add_standard_example(SENDERS execution_phase3_example execution_phase3_example.cpp TBB SKIP77)
+forge_add_standard_example(SENDERS execution_combinators_example execution_combinators_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_schedulers execution_schedulers_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_let execution_let_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_stop_token execution_stop_token_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_spawn_future execution_spawn_future_example.cpp TBB SKIP77)
-forge_add_standard_example(SENDERS execution_phase4 execution_phase4_example.cpp TBB SKIP77)
+forge_add_standard_example(SENDERS execution_scope execution_scope_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_on execution_on_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_affine execution_affine_example.cpp TBB SKIP77)
 forge_add_standard_example(SENDERS execution_unstoppable execution_unstoppable_example.cpp TBB SKIP77)

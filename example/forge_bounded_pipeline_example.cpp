@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Nonblocking channel consumer on a single worker
+// Key APIs: forge::task, forge::bounded_channel, forge::strand
+// Requires: FORGE_ENABLE_FORGE_RUNTIME + FORGE_ENABLE_FORGE_RESOURCE_POLICY ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
 #include <forge/strand.hpp>

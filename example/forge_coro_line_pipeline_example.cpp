@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge coro line pipeline
+// Key APIs: forge::io::io_task, forge::io::as_sender
+// Requires: always available ; C++23
+// See also: docs/forge-io.md
+
 #include <forge/io/coro.hpp>
 #include <forge/io/memory_stream.hpp>
 #include <forge/io/stream.hpp>

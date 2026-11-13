@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Scoped spawn and asynchronous join
+// Key APIs: std::execution::simple_counting_scope, std::execution::spawn, std::execution::just, std::execution::then
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #include <execution>
 #include "example_support.hpp"
 

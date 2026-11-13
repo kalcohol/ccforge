@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge strand
+// Key APIs: forge::strand
+// Requires: FORGE_ENABLE_FORGE_RUNTIME ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/static_thread_pool.hpp>
 #include <forge/start_detached.hpp>
 #include <forge/strand.hpp>

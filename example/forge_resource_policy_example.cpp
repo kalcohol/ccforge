@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge resource policy
+// Key APIs: forge::resource_policy
+// Requires: FORGE_ENABLE_FORGE_RUNTIME + FORGE_ENABLE_FORGE_RESOURCE_POLICY ; C++23
+// See also: docs/forge-utilities.md
+
 #include <forge/channel.hpp>
 #include <forge/resource_policy.hpp>
 #include <forge/start_detached.hpp>

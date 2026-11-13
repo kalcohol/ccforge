@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: execution unstoppable
+// Key APIs: std::execution::env, std::execution::prop, std::execution::get_stop_token_t, std::execution::write_env
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #include <execution>
 
 #include "example_support.hpp"

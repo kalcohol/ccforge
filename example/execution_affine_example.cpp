@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Affine completion with a member-query receiver
+// Key APIs: std::execution::run_loop, std::execution::get_start_scheduler_t, std::execution::receiver_tag, std::execution::continues_on
+// Requires: SENDERS: injected backport or complete native ; C++23
+// See also: docs/backports/execution.md
+
 #include <execution>
 
 #include "example_support.hpp"

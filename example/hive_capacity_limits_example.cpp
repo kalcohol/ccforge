@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: Plan connection bursts and change block limits
+// Key APIs: hive_limits, reserve, trim_capacity, reshape
+// Requires: injected backport or complete native <hive>; C++23
+// See also: docs/backports/hive.md
+
 #include <hive>
 #include <iostream>
 #include <memory>

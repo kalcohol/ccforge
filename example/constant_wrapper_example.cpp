@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: constant wrapper
+// Key APIs: std::constant_wrapper, std::cw
+// Requires: CONSTANT_WRAPPER: injected backport or complete native ; C++23
+// See also: docs/backports/mdspan.md
+
 #include <utility>
 
 #include <cstddef>

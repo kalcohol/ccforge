@@ -28,13 +28,13 @@
 | 文件 | 演示内容 | target / 冒烟测试 | 门控 | 文档页 |
 | --- | --- | --- | --- | --- |
 | [execution_affine_example.cpp](../example/execution_affine_example.cpp) | execution affine 的接口组合与完成结果 | `execution_affine` / `example_execution_affine_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
-| [execution_phase3_example.cpp](../example/execution_phase3_example.cpp) | when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写） | `execution_phase3_example` / `example_execution_phase3_example_smoke` | SENDERS：强制 OR 完整 OR 非部分；NATIVE_INCOMPATIBLE，Forge 扩展 | [说明](backports/execution.md) |
+| [execution_combinators_example.cpp](../example/execution_combinators_example.cpp) | when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写） | `execution_combinators_example` / `example_execution_combinators_example_smoke` | SENDERS：强制 OR 完整 OR 非部分；NATIVE_INCOMPATIBLE，Forge 扩展 | [说明](backports/execution.md) |
 | [execution_coro_example.cpp](../example/execution_coro_example.cpp) | execution coro 的接口组合与完成结果 | `execution_coro` / `example_execution_coro_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_example.cpp](../example/execution_example.cpp) | execution 的接口组合与完成结果 | `execution_example` / `example_execution_example_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_let_example.cpp](../example/execution_let_example.cpp) | execution let 的接口组合与完成结果 | `execution_let` / `example_execution_let_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_on_example.cpp](../example/execution_on_example.cpp) | execution on 的接口组合与完成结果 | `execution_on` / `example_execution_on_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_schedulers_example.cpp](../example/execution_schedulers_example.cpp) | execution schedulers 的接口组合与完成结果 | `execution_schedulers` / `example_execution_schedulers_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
-| [execution_phase4_example.cpp](../example/execution_phase4_example.cpp) | scope spawn 与异步 join | `execution_phase4` / `example_execution_phase4_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
+| [execution_scope_example.cpp](../example/execution_scope_example.cpp) | scope spawn 与异步 join | `execution_scope` / `example_execution_scope_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_spawn_future_example.cpp](../example/execution_spawn_future_example.cpp) | execution spawn future 的接口组合与完成结果 | `execution_spawn_future` / `example_execution_spawn_future_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_stop_token_example.cpp](../example/execution_stop_token_example.cpp) | execution stop token 的接口组合与完成结果 | `execution_stop_token` / `example_execution_stop_token_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_unstoppable_example.cpp](../example/execution_unstoppable_example.cpp) | execution unstoppable 的接口组合与完成结果 | `execution_unstoppable` / `example_execution_unstoppable_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |

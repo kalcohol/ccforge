@@ -20,6 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Demonstrates: forge coro executor hop
+// Key APIs: forge::io::io_task, forge::io::as_sender
+// Requires: always available ; C++23
+// See also: docs/forge-io.md
+
 #include <forge/io/coro.hpp>
 #include <forge/static_thread_pool.hpp>
 
