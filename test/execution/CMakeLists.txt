@@ -302,6 +302,8 @@ forge_add_execution_runtime_test(
     test_execution_static_opstate_allocations
     test_execution_static_opstate_allocations.cpp
     execution_static_opstate_allocations)
+set_tests_properties(execution_static_opstate_allocations PROPERTIES
+    SKIP_RETURN_CODE 77)
 forge_add_execution_runtime_test(
     test_execution_static_opstate_exceptions
     test_execution_static_opstate_exceptions.cpp

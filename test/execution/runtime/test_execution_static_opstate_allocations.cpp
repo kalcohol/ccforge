@@ -1,3 +1,21 @@
+#if defined(__SANITIZE_THREAD__)
+#define FORGE_TEST_STATIC_OPSTATE_TSAN 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define FORGE_TEST_STATIC_OPSTATE_TSAN 1
+#endif
+#endif
+
+#if defined(FORGE_TEST_STATIC_OPSTATE_TSAN)
+#include <cstdio>
+
+int main() {
+    std::fprintf(stderr,
+        "Skipped: ThreadSanitizer defines the global allocation replacements used by this test.\n");
+    return 77;
+}
+#else
+
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
@@ -439,3 +457,5 @@ TEST(ExecutionStaticOpstateAllocations, SyncWaitDrivesNestedWhenAll) {
     EXPECT_EQ(sum, 6);
 }
 } // namespace
+
+#endif // defined(FORGE_TEST_STATIC_OPSTATE_TSAN)
