@@ -115,6 +115,16 @@ namespace __forge_run_loop {
 
 struct __env {
     run_loop* __loop;
+    auto query(get_scheduler_t) const noexcept -> run_loop::scheduler;
+    auto query(get_completion_scheduler_t<set_value_t>) const noexcept -> run_loop::scheduler;
+    auto query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> run_loop::scheduler;
+    // Match the scheduler CPO's environment-dependent domain fallback without
+    // adding unary domain attributes.
+    template<class CPO, class Env, class... Envs>
+    auto query(get_completion_domain_t<CPO>, Env&& env, Envs&&... envs) const noexcept
+        -> decltype(std::execution::get_completion_domain<CPO>(
+            std::declval<run_loop::scheduler>(), static_cast<Env&&>(env),
+            static_cast<Envs&&>(envs)...));
     friend auto tag_invoke(get_scheduler_t, const __env& self) noexcept
         -> run_loop::scheduler;
     friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
@@ -130,7 +140,8 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
     run_loop* __loop;
     R __rcvr;
 
-    __op(run_loop* loop, R rcvr) : __loop(loop), __rcvr(std::move(rcvr)) {
+    __op(run_loop* loop, R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>)
+        : __loop(loop), __rcvr(std::move(rcvr)) {
         this->__execute = [](run_loop::__task_base* t) noexcept {
             auto* self = static_cast<__op*>(t);
             auto token = std::execution::get_stop_token(
@@ -167,12 +178,12 @@ struct __sender {
     }
 
     template<receiver R>
-    auto connect(R rcvr) && -> __op<R> {
+    auto connect(R rcvr) && noexcept(std::is_nothrow_move_constructible_v<R>) -> __op<R> {
         return __op<R>{__loop, std::move(rcvr)};
     }
 
     template<receiver R>
-    auto connect(R rcvr) const& -> __op<R> {
+    auto connect(R rcvr) const& noexcept(std::is_nothrow_move_constructible_v<R>) -> __op<R> {
         return __op<R>{__loop, std::move(rcvr)};
     }
 
@@ -191,6 +202,16 @@ public:
 
     [[nodiscard]] auto schedule() const noexcept -> __forge_run_loop::__sender {
         return __forge_run_loop::__sender{__loop};
+    }
+
+    auto query(get_completion_scheduler_t<set_value_t>) const noexcept -> scheduler {
+        return *this;
+    }
+    auto query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> scheduler {
+        return *this;
+    }
+    auto query(get_forward_progress_guarantee_t) const noexcept -> forward_progress_guarantee {
+        return forward_progress_guarantee::weakly_parallel;
     }
 
 private:
@@ -213,6 +234,24 @@ inline run_loop::scheduler run_loop::get_scheduler() noexcept {
 }
 
 namespace __forge_run_loop {
+template<class CPO, class Env, class... Envs>
+auto __env::query(get_completion_domain_t<CPO>, Env&& env, Envs&&... envs) const noexcept
+    -> decltype(std::execution::get_completion_domain<CPO>(
+        std::declval<run_loop::scheduler>(), static_cast<Env&&>(env),
+        static_cast<Envs&&>(envs)...)) {
+    return std::execution::get_completion_domain<CPO>(
+        __loop->get_scheduler(), static_cast<Env&&>(env), static_cast<Envs&&>(envs)...);
+}
+
+inline auto __env::query(get_scheduler_t) const noexcept -> run_loop::scheduler {
+    return __loop->get_scheduler();
+}
+inline auto __env::query(get_completion_scheduler_t<set_value_t>) const noexcept -> run_loop::scheduler {
+    return __loop->get_scheduler();
+}
+inline auto __env::query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> run_loop::scheduler {
+    return __loop->get_scheduler();
+}
 inline auto tag_invoke(get_scheduler_t, const __env& self) noexcept
     -> run_loop::scheduler {
     return self.__loop->get_scheduler();
