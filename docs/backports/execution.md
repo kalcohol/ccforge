@@ -253,9 +253,9 @@ strict 模式仍只考虑成员。原环境类型的保留属于兼容扩展。I
 [`HIDE-SCHED`](https://eel.is/c++draft/exec.queries.expos) 环境查询 scheduler completion domain，
 最后取 `default_domain`。隐藏环境屏蔽 `get_scheduler` / `get_domain`，使 inline 及转发其查询的
 scheduler 终止递归，同时保留外层自定义重载的选择。
-`continues_on` attrs、`counting_scope` / `spawn_future` env 仍采用已有兼容接口；
-`continues_on` 的 completion-domain fallback 过滤、后两者的 stop-when / `write_env`
-组合所需 `FWD-ENV` 过滤及相应成员查询仍待补齐。
+`counting_scope` / `spawn_future` 的 stop-when environment 现已提供成员查询，
+只转发 `FWD-ENV` queries，并保持融合 stop token 的覆盖优先级。
+`continues_on` attrs 仍采用已有兼容接口，其 completion-domain fallback 过滤仍待补齐。
 `prop` / `env` 的 assignability 等其他 surface 差异仍属于现有 subset 边界。
 新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
 
@@ -301,19 +301,42 @@ over-aligned 以及空的 immovable operation states；空间与对齐需求计�
 在组成对象及其查询、结果构造不自行分配时，唯一保留的分配边界仍是组合中实际发生的
 stop callback registration；`inplace_stop_callback` 的 control block 规则不变。
 
-`associate`、`split`、`spawn_future` 和
-`counting_scope` 的部分内部路径仍使用 `__op_storage` 小缓冲。
-`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐
-（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过
-`new` / `delete` 使用全局堆；这些缓冲回退分配不保证遵从 `get_allocator(env)`。
-`spawn` 将 operation state 作为独立 state 的直接成员；state 使用 allocator 分配，
-优先取传入 environment 的 `get_allocator(env)`，其次取 wrapped sender environment 的 allocator，
-否则使用 `std::allocator<std::byte>`。scope token 的 `wrap` 若引入 `counting_scope` wrapper，
-wrapper 内部仍使用自己的小缓冲及融合 stop 状态。
-`spawn_future` 的 shared state 对象和 consumer records 使用 environment allocator（缺省为
-`std::allocator<std::byte>`），但 state 的 `shared_ptr` control block 仍使用全局分配。
-`split` 的 shared state 和 subscriber records、`counting_scope` 的融合 stop 状态、
-`inplace_stop_callback` 的 control block 也使用全局分配。
+所有 adaptor 均使用 concrete operation type 的原位存储，已移除 `__op_storage`
+小缓冲及其按大小、对齐触发的全局 `new` 回退。`associate` 只在 association 成功时
+构造 union 中的 typed holder；holder 内的 operation 是普通成员，不依赖向
+potentially-overlapping subobject 的 copy elision。`join()` 的 schedule operation、
+`split` shared state 的 child operation、`spawn` / `spawn_future` state 的 spawned
+operation 均为普通成员，支持 immovable、超过 4 KiB 及 over-aligned operation。
+
+`spawn` 和 `spawn_future` 的 allocator 均按以下顺序选择：显式 environment 的
+`get_allocator(env)`、`token.wrap(sndr)` 的 sender attributes 中的 allocator、
+`std::allocator<void>`。第二种情况还向 spawned environment 注入所选 allocator；
+缺省情况不额外添加 allocator query。`spawn` 用 rebound allocator 分配一个 state，
+其 operation 无独立分配。`spawn_future` 用同一所选 allocator 分别分配生命周期 resource、
+state 和 state 的 `shared_ptr` control block；连接 consumer 时用 `allocate_shared`
+分配合并的 consumer record/control block。resource 持有 association，所有内部 allocator
+副本共同保持其存活；consumer 在完成前解除与外层 operation 的存储所有权。
+以上存储均不回退至另一 allocator；connect 或分配抛出时销毁已构造对象并回收内存。
+state、consumer、全部 control block 以及 resource 自身均销毁并 deallocate 后，才释放
+association；已完成的 consumer operation 可以继续存活，不保留上述分配。
+
+`counting_scope::token::wrap` 使用内部 stop-when：operation 内持有
+`inplace_stop_source`、所需的具体 token callback 和 child operation，不分配融合状态。
+不可停止的 receiver token 直接使用 scope token；其他情况在连接 child 前注册两个输入，
+在转发 completion 前注销。融合 token 的 `stop_requested()` 和 `stop_possible()` 分别返回
+两个输入查询结果的逻辑或；child 在 connect 时注册的 callback 也可在 start 前收到通知，
+且最多调用一次。注册时输入已请求停止，则在注册线程立即调用该 callback，即使输入的
+其他 callback 仍在阻塞停止传播。当前 callback 注册失败保留 `set_stopped()` 完成路径。
+`spawn_future` 的 producer environment 按
+`write_env(stop-when(sndr, ssource.get_token()), env)` 组成；stop-when 边界仅转发
+`FWD-ENV` queries，融合 token 覆盖原 stop token。consumer stop callback 仍直接使用
+receiver environment 的具体 token 类型。`split` 为非 WD extension，shared state 和
+subscriber 的合并 control block 使用 source attributes 的 allocator，缺省为
+`std::allocator<void>`；subscriber 入链不再分配，缓存仍以 `const&` 重放。
+对于自身不分配的 sender、scheduler、receiver、所选 allocator、environment queries、
+decayed 结果构造及自定义 stop-token callbacks，这些路径剩余的全局分配仅来自每次
+`inplace_stop_callback` registration 的 control block；上述用户代码自行分配的内存另计。使用缺省
+allocator 时，`spawn` / `spawn_future` / `split` 的上述共享或 detached 存储仍会分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
 `simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
 
