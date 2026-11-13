@@ -24,6 +24,7 @@
 
 #include "accessor.hpp"
 #if defined(__cpp_lib_mdspan)
+#define FORGE_LINALG_BACKPORT_ACTIVE 1
 
 #include <limits>
 
@@ -281,10 +282,11 @@ auto dotc(
 }
 
 // vector_two_norm — [linalg.algs.blas1.nrm2]
+// Borrow the public function parameters without copying their accessors or Scalar.
 template<class Extents, class Layout, class Accessor, class T>
-T vector_two_norm(
-    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
-    T init)
+T __vector_two_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor>& x,
+    T& init)
 {
     if constexpr (
         std::is_integral_v<__detail::__accessor_value_t<Accessor>> &&
@@ -328,13 +330,50 @@ T vector_two_norm(
 }
 
 template<class Extents, class Layout, class Accessor>
-auto vector_two_norm(
+auto __vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
     using magnitude_type = decltype(__detail::__abs_if_needed(x[0]));
     using T = decltype(std::declval<magnitude_type>() *
                        std::declval<magnitude_type>());
-    return vector_two_norm(x, T{});
+    T init{};
+    return __vector_two_norm(x, init);
+}
+
+template<class Extents, class Layout, class Accessor, class T>
+    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
+T vector_two_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
+    T init)
+{
+    return std::linalg::__vector_two_norm(x, init);
+}
+
+template<class Extents, class Layout, class Accessor, class T>
+    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
+[[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
+T vector_two_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
+    T init)
+{
+    return std::linalg::__vector_two_norm(x, init);
+}
+
+template<class Extents, class Layout, class Accessor>
+    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
+auto vector_two_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
+{
+    return std::linalg::__vector_two_norm(x);
+}
+
+template<class Extents, class Layout, class Accessor>
+    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
+[[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
+auto vector_two_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
+{
+    return std::linalg::__vector_two_norm(x);
 }
 
 // vector_abs_sum — [linalg.algs.blas1.asum]

@@ -510,6 +510,7 @@ template<class Triangle,
     requires (__detail::__always_unique_mapping_v<CExtents, CLayout> &&
               __detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
+[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
 void hermitian_matrix_product(
     Triangle t,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
@@ -610,6 +611,7 @@ template<class Triangle,
     requires (__detail::__possibly_packed_output_mapping_v<CExtents, CLayout> &&
               __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
               __detail::__packed_triangle_matches_v<CLayout, Triangle>)
+[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
 void hermitian_matrix_rank_k_update(
     Triangle t,
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,

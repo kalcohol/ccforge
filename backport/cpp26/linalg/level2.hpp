@@ -742,6 +742,7 @@ template<class Triangle,
     requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
+[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
 void hermitian_matrix_rank_1_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
@@ -830,6 +831,7 @@ template<class Triangle,
     requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
+[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
 void hermitian_matrix_rank_2_update(
     Triangle t,
     std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
