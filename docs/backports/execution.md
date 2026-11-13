@@ -223,7 +223,47 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 
 ### 分配与可移植性边界
 
-内部 operation state 的小缓冲容量取决于 adaptor：例如 `let_*` 使用 1024 字节缓冲，`when_all` 的每个 child 使用 512 字节缓冲，其 stop callback 缓冲为 256 字节。`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过 `new` / `delete` 使用全局堆。这些内部路径不保证遵从 `get_allocator(env)`。`counting_scope` 的融合 stop 状态、stop callback 控制块也使用全局分配。
+`let_value` / `let_error` / `let_stopped` 将 predecessor operation state 直接内联存储，
+分别以去重后的 `variant` 保存 decayed 参数 tuples 和所有可能的 successor operation state
+的 typed holders，两个 `variant` 均以 `monostate` 初始化。holder 以普通数据成员保存 operation state，
+由 factory prvalue 直接初始化，避免空且不可移动的类型作为潜在重叠子对象时失去 guaranteed copy elision。
+参数与 successor 在对应 completion 到达后原位构造；
+successor 和参数先于 predecessor 析构，保证同步完成路径中的引用生命周期。
+参数 decay-copy、函数调用和 successor `connect` 的潜在异常通过
+`set_error(std::exception_ptr)` 报告；现有 completion signatures 保留该通道。
+
+`when_all` 在静态类型的 `tuple` 中保存各 child 的 typed holder，
+child operation state 在 holder 的构造函数中直接初始化为普通数据成员，
+values 以 decayed tuple 的 `optional<variant<...>>` 保存（保留多 value shape 扩展），
+errors、stop source 和具体类型的 `optional` stop callback 均在 operation state 内存储。
+stop callback 在启动任何 child 前注册，并在向下游发送 completion 前注销；
+child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析构。
+上述 `let_*` / `when_all` 的 operation-state storage 本身不再分配，
+不依赖固定容量或 `std::max_align_t` 对齐上限，也不会因 operation state 或 callback
+对象的大小、对齐要求而回退到全局分配；所需空间计入具体 operation state 的大小与对齐要求。
+在 senders、schedulers、receivers、environment queries、结果类型及用户函数均不分配的前提下，
+这些组合的 `connect`、`start` 和 completion 路径保留的全局分配仅来自
+`inplace_stop_callback`：每次在 stoppable `inplace_stop_token` 上注册 callback，
+仍按既有设计创建一个独立的 control block。
+`when_all` 仅在 receiver token 的 `stop_possible()` 为 `true` 时注册；
+嵌套 `when_all` 会在 parent 的 stop source 上注册，因此仍有相应的 control-block 分配。
+没有此类注册时，上述路径无需全局分配；自定义 stop token 的 callback 构造若自行分配，
+也须单独计入。control block 的设计约束见
+[`inplace_stop_callback` 设计记录](../roadmap/inplace-stop-callback-design.md)。
+
+`continues_on`、`on`、`associate`、`split`、`spawn_future` 和
+`counting_scope` 的部分内部路径仍使用 `__op_storage` 小缓冲。
+`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐
+（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过
+`new` / `delete` 使用全局堆；这些缓冲回退分配不保证遵从 `get_allocator(env)`。
+`spawn` 将 operation state 作为独立 state 的直接成员；state 使用 allocator 分配，
+优先取传入 environment 的 `get_allocator(env)`，其次取 wrapped sender environment 的 allocator，
+否则使用 `std::allocator<std::byte>`。scope token 的 `wrap` 若引入 `counting_scope` wrapper，
+wrapper 内部仍使用自己的小缓冲及融合 stop 状态。
+`spawn_future` 的 shared state 对象和 consumer records 使用 environment allocator（缺省为
+`std::allocator<std::byte>`），但 state 的 `shared_ptr` control block 仍使用全局分配。
+`split` 的 shared state 和 subscriber records、`counting_scope` 的融合 stop 状态、
+`inplace_stop_callback` 的 control block 也使用全局分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
 `simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
 
