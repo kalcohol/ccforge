@@ -258,13 +258,14 @@ function(forge_add_strict_test stem)
 endfunction()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
-    foreach(_stem IN ITEMS runtime_context async_scope strand strand_rejection thread_pool task_member_queries)
+    foreach(_stem IN ITEMS runtime_context async_scope strand strand_rejection thread_pool task task_member_queries)
         forge_add_strict_test(${_stem})
     endforeach()
     target_compile_definitions(test_forge_strict_thread_pool PRIVATE
         FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
-    # Full task tests use write_env; defer strict registration until its base
-    # environment obeys FWD-ENV filtering. Keep task_member_queries coverage.
+    if(MSVC)
+        target_compile_options(test_forge_strict_task PRIVATE /bigobj)
+    endif()
 endif()
 if(FORGE_TEST_ENABLE_FORGE_ERASURE)
     foreach(_stem IN ITEMS any_scheduler any_receiver any_sender erased_sender)

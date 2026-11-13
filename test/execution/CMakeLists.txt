@@ -63,6 +63,22 @@ forge_add_execution_compile_probe(
     execution_strict_env_queries_compile)
 target_compile_definitions(test_execution_strict_env_queries PRIVATE
     FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+if(MSVC)
+    target_compile_options(test_execution_env_queries PRIVATE /bigobj)
+    target_compile_options(test_execution_strict_env_queries PRIVATE /bigobj)
+endif()
+
+foreach(_mode IN ITEMS default strict)
+    set(_query_target test_execution_${_mode}_scheduler_env_queries)
+    forge_add_execution_runtime_test(${_query_target}
+        test_execution_scheduler_env_queries.cpp execution_${_mode}_scheduler_env_queries)
+    if(_mode STREQUAL "strict")
+        target_compile_definitions(${_query_target} PRIVATE FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+    endif()
+    if(MSVC)
+        target_compile_options(${_query_target} PRIVATE /bigobj)
+    endif()
+endforeach()
 
 forge_add_execution_compile_probe(
     test_execution_api_core
