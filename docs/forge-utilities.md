@@ -240,9 +240,10 @@ stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level
 - `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或
   异步 sender，外部可以用 `std::this_thread::sync_wait` 或其他 sender 组合器消费。
 
-当前限制：`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；
-自定义 receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的
-task operation-state。
+`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion。自定义
+receiver 在不再需要完成参数后，可以在 `set_value` / `set_error` / `set_stopped`
+回调内销毁连接的 task operation-state；销毁也会释放 coroutine frame 和其中的结果，
+此后不得访问 receiver 自身或指向该存储的参数引用。
 Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，用户 `catch(...)`
 可以捕获它；一旦 promise 标记 stopped，后续异常不会改写最终 stopped completion。
 
@@ -323,14 +324,15 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 ## 两种协程任务
 
 `forge::task` 面向 sender 组合，`io_task` 面向 coroutine-native byte IO，两者具有不同的取消与环境契约，这是有意的设计。`io_task` 内用 `await_sender` 消费 sender，用 `as_sender` 将任务交给 sender 消费者；因此 `forge::task` 也可 await 经该桥转换的 IO 任务。
-目前对 task 完成回调内销毁 op state 保持保守限制：标准 [exec.async.ops]/8 允许的自毁需要先取走完成参数，而当前 final_suspend 路径尚需专门回归验证。
+依据 [exec.async.ops](https://eel.is/c++draft/exec.async.ops)，task operation-state 的生命周期可以在 completion operation 内结束；完成参数若仍需使用，应在销毁前转移到独立存储。
 
 
 ### task 环境与结果
 
 - `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
-  不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
-  operation-state。连接时会把 downstream receiver 的 stop token 与
+  可以在不再需要完成参数后，于 `set_value` / `set_error` / `set_stopped` callback
+  内销毁连接的 task operation-state；销毁后不得再访问 receiver 或 frame 内的结果。
+  连接时会把 downstream receiver 的 stop token 与
   `get_start_scheduler`（若存在）擦除后放进 task promise env：task 内 `co_await`
   的 sender 能观察调用方取消，需要 start scheduler 的算法（如
   `counting_scope::join`）也能拿到与外层一致的调度器（例如 `sync_wait` 的
