@@ -132,3 +132,15 @@ Windows 配置为 C++23，实际使用 `/std:c++latest`；其结果限于 hive�
 不证明生产原生 hive 的完整性。项目性能对比只是特定主机上的测量，不构成性能保证。
 
 实现仍有宽位序计数器与 epoch 最终耗尽的边界；不承诺无限次数的结构变更，也不提供并发容器保证。
+
+## 可移植测试
+
+`hive_portable_runtime` 选取仅依赖 [hive](https://eel.is/c++draft/hive) 与
+[sequence.reqmts](https://eel.is/c++draft/sequence.reqmts) 所保证语义的测试，
+在 backport、完整或部分原生 `<hive>` 下均注册。覆盖插入与存活元素地址稳定性、
+双向遍历、范围删除返回值、自引用插入、`erase` / `erase_if` / `swap`，以及
+`reserve`、`trim_capacity`、`shrink_to_fit`、`reshape` 的内容与容量限制契约。
+测试不假定插入位置、块大小或增长策略，也不要求压缩或重塑后的精确容量与元素顺序。
+另覆盖 allocator 传播与存储释放、单元素插入异常的无效果保证、输入与代理范围、
+元素类型要求、splice 后的迭代器归属，以及双向迭代器的复制、转换和存活元素遍历。
+仅依赖标准要求的编译检查也在上述配置下注册；实现专属测试仅在启用 backport 时注册。

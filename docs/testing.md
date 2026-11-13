@@ -401,9 +401,13 @@ Execution、SIMD 与 linalg 的 conformance suites 会在对应 Forge backport �
 运行；完整或 partial native 实现触发 stand-aside 时，这些依赖 Forge 私有测试辅助符号
 的 suites 会跳过，native handoff fixtures 负责验证探测和让位边界。
 
-`FORGE_TEST_ENABLE_HIVE` 控制 Hive 测试组；完整或 partial native 让位时不将
-backport 专用测试当作 native 验证。Native handoff 的 synthetic fixtures 只验证
-探测与注册策略，不证明真实标准库实现的质量。`FORGE_FORCE_HIVE_BACKPORT` 仅供
+`FORGE_TEST_ENABLE_HIVE` 控制 Hive 测试组。backport、完整或 partial native 下均注册
+`hive_portable_runtime`、可移植编译检查和 `hive_test_gate_matrix`；可移植测试仅依赖
+工作草案的公开 API 与语义保证。`hive_runtime`、`hive_multi_tu`、实现专属编译检查及
+model/mutation 等实现测试仅在启用 backport 时注册。Native handoff 的 synthetic
+fixtures 检查上述注册集合，只构建共享头文件路径的 `hive_consumer`，不编译或运行
+可移植测试；其中不完整或故意损坏的模拟头文件只用于验证探测与让位边界，
+不证明真实标准库实现的质量。`FORGE_FORCE_HIVE_BACKPORT` 仅供
 诊断，在已有 native 声明时可能导致重定义或 ODR 问题。
 
 Hive 基准运行方法见[测量说明](../test/hive/benchmark/MEASUREMENT_PROTOCOL.txt)。
