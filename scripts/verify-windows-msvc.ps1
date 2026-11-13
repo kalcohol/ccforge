@@ -19,7 +19,8 @@ param(
     [switch]$Keep,
     [switch]$SkipGoogletestProvision,
     [switch]$SkipGateChecks,
-    [switch]$SkipInstallPackageCheck
+    [switch]$SkipInstallPackageCheck,
+    [switch]$SkipSimdChecks
 )
 
 Set-StrictMode -Version 2.0
@@ -210,6 +211,52 @@ function Get-BuiltExecutable {
         $directory = Join-Path $BuildRoot $Config
     }
     return Join-Path $directory "$Name.exe"
+}
+
+function Invoke-SimdChecks {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$GeneratorName,
+        [Parameter(Mandatory = $true)][string]$Config,
+        [Parameter(Mandatory = $true)][bool]$MultiConfig
+    )
+
+    foreach ($architecture in @("default", "avx2")) {
+        $simdBuild = Reset-ForgeBuildChild $SourceRoot "$Name-simd-$architecture"
+        $configure = @(Get-ConfigurePrefix $SourceRoot $simdBuild $GeneratorName $Config $MultiConfig)
+        $configure += @(
+            "-DCMAKE_CXX_STANDARD=23",
+            "-DFORGE_BUILD_TESTS=ON",
+            "-DFORGE_BUILD_EXAMPLES=OFF",
+            "-DFORGE_TEST_ENABLE_SIMD=ON"
+        )
+        if ($architecture -eq "avx2") {
+            # Preserve exception unwinding when overriding CMake's MSVC flags.
+            $configure += "-DCMAKE_CXX_FLAGS=/EHsc /arch:AVX2"
+        }
+        foreach ($group in @("EXECUTION", "HIVE", "CONSTANT_WRAPPER", "UNIQUE_RESOURCE",
+                "SUBMDSPAN", "LINALG", "FORGE", "FORGE_RUNTIME", "FORGE_RESOURCE",
+                "FORGE_IO", "FORGE_ERASURE", "NATIVE_HANDOFF")) {
+            $configure += "-DFORGE_TEST_ENABLE_$group=OFF"
+        }
+        Invoke-ForgeNative "simd $architecture configure" "cmake" $configure
+        $buildArgs = @(Get-BuildArguments $simdBuild $Config)
+        if ($GeneratorName -like "Ninja*") {
+            # Report every independent compile failure before failing this lane.
+            $buildArgs += @("--", "-k", "0")
+        }
+        Invoke-ForgeNative "simd $architecture build" "cmake" $buildArgs
+
+        # No MSVC-specific exclusions: runtime tests and CTest compile targets
+        # both run. Existing CMake feature guards skip unavailable __int128 and
+        # the GNU/Clang-only mixed-ISA fixture (cpuid.h and -m ISA options).
+        $testArgs = @(Get-CtestArguments $simdBuild $Config)
+        $testArgs += @("-R", "simd")
+        $listed = Invoke-ForgeNativeOutput "simd $architecture list tests" "ctest" ($testArgs + "-N")
+        Assert-CtestNonZero (Get-CtestCount $listed.StdOut) "simd $architecture registration"
+        Invoke-ForgeNative "simd $architecture test" "ctest" ($testArgs + "--output-on-failure")
+    }
 }
 
 function Invoke-GateChecks {
@@ -474,6 +521,10 @@ try {
     $test = @(Get-CtestArguments $buildDir $Configuration)
     $test += @("-R", $CTestRegex, "--output-on-failure")
     Invoke-ForgeNative "test" "ctest" $test
+
+    if (-not $SkipSimdChecks) {
+        Invoke-SimdChecks $sourceRoot $BuildName $Generator $Configuration $multiConfig
+    }
 
     if (-not $SkipInstallPackageCheck) {
         Invoke-InstallPackageCheck `

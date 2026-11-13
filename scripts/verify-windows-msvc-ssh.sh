@@ -11,7 +11,8 @@
 #   FORGE_WINDOWS_BUILD_NAME, FORGE_WINDOWS_GENERATOR,
 #   FORGE_WINDOWS_CONFIGURATION, FORGE_WINDOWS_CTEST_REGEX,
 #   FORGE_WINDOWS_USE_LOCAL_SOURCE, FORGE_WINDOWS_KEEP,
-#   FORGE_WINDOWS_SKIP_GATE_CHECKS, FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK.
+#   FORGE_WINDOWS_SKIP_GATE_CHECKS, FORGE_WINDOWS_SKIP_SIMD_CHECKS,
+#   FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK.
 
 set -euo pipefail
 
@@ -163,6 +164,9 @@ forge_common_parameter_block() {
     fi
     if [[ "${FORGE_WINDOWS_SKIP_GATE_CHECKS:-0}" == "1" ]]; then
         block+=$'\n$params.SkipGateChecks = $true'
+    fi
+    if [[ "${FORGE_WINDOWS_SKIP_SIMD_CHECKS:-0}" == "1" ]]; then
+        block+=$'\n$params.SkipSimdChecks = $true'
     fi
     if [[ "${FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK:-0}" == "1" ]]; then
         block+=$'\n$params.SkipInstallPackageCheck = $true'
