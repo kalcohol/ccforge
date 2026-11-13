@@ -161,4 +161,4 @@
 #include "execution/associate.hpp"
 #include "execution/spawn.hpp"
 #include "execution/spawn_future.hpp"
-#include "execution/canon.hpp"
+#include "execution/sender_adaptor_closure.hpp"

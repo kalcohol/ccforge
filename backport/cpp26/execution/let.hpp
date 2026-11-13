@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "detail/op_holder.hpp"
 #include "env.hpp"
@@ -506,7 +507,7 @@ struct __sender {
 };
 
 template<class Fn, class Which>
-struct __let_closure {
+struct __let_closure : sender_adaptor_closure<__let_closure<Fn, Which>> {
     Fn __fn;
     template<sender S>
         requires std::constructible_from<Fn, Fn&>
@@ -538,15 +539,6 @@ struct __let_closure {
     template<class S> void operator()(S&&) const & = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const && = delete;
-
-    template<sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, __let_closure> &&
-                 requires(Self&& self, S&& s) {
-                     static_cast<Self&&>(self)(std::forward<S>(s));
-                 }
-    friend constexpr auto operator|(S&& s, Self&& self) {
-        return static_cast<Self&&>(self)(std::forward<S>(s));
-    }
 };
 
 template<class Which>
@@ -561,7 +553,7 @@ struct __let_t {
     template<class Fn>
         requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return __let_closure<std::decay_t<Fn>, Which>{std::decay_t<Fn>(std::forward<Fn>(fn))};
+        return __let_closure<std::decay_t<Fn>, Which>{{}, std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 

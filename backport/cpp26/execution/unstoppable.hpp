@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "write_env.hpp"
@@ -32,7 +33,7 @@ namespace std::execution {
 
 namespace __forge_unstoppable {
 
-struct __closure {
+struct __closure : sender_adaptor_closure<__closure> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         auto env = std::execution::make_env(
@@ -41,14 +42,9 @@ struct __closure {
         return std::execution::write_env(
             __forge_detail::__forward_as_given(std::forward<S>(sndr)), env);
     }
-
-    template<sender S>
-    friend constexpr auto operator|(S&& sndr, __closure self) {
-        return self(std::forward<S>(sndr));
-    }
 };
 
-struct __unstoppable_t {
+struct __unstoppable_t : sender_adaptor_closure<__unstoppable_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __closure{}(std::forward<S>(sndr));

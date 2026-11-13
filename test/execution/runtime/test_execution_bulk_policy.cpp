@@ -18,7 +18,7 @@ void check_owned() {
     int calls = 0;
     {
         bound_t<Chunked, copyable_policy> bound{
-            copyable_policy{state}, 3, callback<Chunked>{&calls}};
+            {}, copyable_policy{state}, 3, callback<Chunked>{&calls}};
         ASSERT_EQ(state.alive, 1);
         state.constructions = {};
         auto sender = apply<Category, Pipe>(bound);
@@ -46,7 +46,7 @@ void check_borrowed(int shape) {
     policy_state state;
     int calls = 0;
     {
-        bound_t<Chunked, Policy> bound{Policy{state}, shape, callback<Chunked>{&calls}};
+        bound_t<Chunked, Policy> bound{{}, Policy{state}, shape, callback<Chunked>{&calls}};
         ASSERT_EQ(state.alive, 1);
         state.constructions = {};
         auto sender = apply<Category, Pipe>(bound);
@@ -146,7 +146,7 @@ TEST(ExecutionBulkPolicy, ImmovableImplementationPoliciesRemainBorrowed) {
 }
 
 TEST(ExecutionBulkPolicy, ExplicitCopyIsNotTheCopyConstructibleConcept) {
-    bound_t<false, explicit_copy_policy> bound{explicit_copy_policy{}, 3, {}};
+    bound_t<false, explicit_copy_policy> bound{{}, explicit_copy_policy{}, 3, {}};
     auto sender = bound(ex::just(10));
     static_assert(std::same_as<stored_policy_t<decltype(sender)>, const explicit_copy_policy&>);
     EXPECT_EQ(std::addressof(sender.__policy), std::addressof(bound.__policy_));
@@ -157,7 +157,7 @@ TEST(ExecutionBulkPolicy, ExplicitCopyIsNotTheCopyConstructibleConcept) {
 
 TEST(ExecutionBulkPolicy, ThrowingCopiesAreNotReplacedByBorrowing) {
     bool should_throw = false;
-    bound_t<false, throwing_copy_policy> bound{throwing_copy_policy{should_throw}, 3, {}};
+    bound_t<false, throwing_copy_policy> bound{{}, throwing_copy_policy{should_throw}, 3, {}};
     should_throw = true;
     EXPECT_THROW((void)bound(ex::just(10)), policy_failure);
     EXPECT_THROW((void)(ex::just(10) | std::as_const(bound)), policy_failure);

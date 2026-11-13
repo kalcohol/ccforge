@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 
@@ -185,7 +186,7 @@ struct __bulk_closure {
     std::decay_t<Fn> __fn_;
 
     template<class Policy, class Shape>
-    struct __with_shape {
+    struct __with_shape : sender_adaptor_closure<__with_shape<Policy, Shape>> {
         using policy_t = std::decay_t<Policy>;
         using sender_policy_t = __policy_t<policy_t>;
         using fn_t = std::decay_t<Fn>;
@@ -241,15 +242,6 @@ struct __bulk_closure {
         template<class S> void operator()(S&&) const & = delete;
         template<class S> void operator()(S&&) && = delete;
         template<class S> void operator()(S&&) const && = delete;
-
-        template<std::execution::sender S, class Self>
-            requires std::same_as<std::remove_cvref_t<Self>, __with_shape> &&
-                     requires(Self&& self, S&& s) {
-                         static_cast<Self&&>(self)(std::forward<S>(s));
-                     }
-        friend constexpr auto operator|(S&& s, Self&& self) {
-            return static_cast<Self&&>(self)(std::forward<S>(s));
-        }
     };
 };
 
@@ -290,7 +282,7 @@ struct __bulk_t {
         using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
             ::template __with_shape<std::decay_t<Policy>, Shape>;
         return closure_t{
-            std::decay_t<Policy>(std::forward<Policy>(policy)),
+            {}, std::decay_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape),
             std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
@@ -303,7 +295,7 @@ struct __bulk_t {
         using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
             ::template __with_shape<__serial_policy, Shape>;
         return closure_t{
-            __serial_policy{},
+            {}, __serial_policy{},
             std::move(shape),
             std::decay_t<Fn>(std::forward<Fn>(fn))};
     }

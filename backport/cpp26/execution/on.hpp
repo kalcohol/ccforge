@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "continues_on.hpp"
 #include "env.hpp"
@@ -401,7 +402,7 @@ struct __closure_sender {
 };
 
 template<class Scheduler, class Closure>
-struct __bound_closure {
+struct __bound_closure : sender_adaptor_closure<__bound_closure<Scheduler, Closure>> {
     Scheduler __sch;
     Closure __closure;
 
@@ -468,16 +469,6 @@ struct __bound_closure {
     template<class S> void operator()(S&&) const& = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const&& = delete;
-
-    template<sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, __bound_closure> &&
-                 requires(Self&& self, S&& sndr) {
-                     static_cast<Self&&>(self)(static_cast<S&&>(sndr));
-                 }
-    friend constexpr auto operator|(S&& sndr, Self&& self)
-        noexcept(noexcept(static_cast<Self&&>(self)(static_cast<S&&>(sndr)))) {
-        return static_cast<Self&&>(self)(static_cast<S&&>(sndr));
-    }
 };
 
 struct on_t {

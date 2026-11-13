@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "continues_on.hpp"
 #include "env.hpp"
@@ -101,16 +102,11 @@ struct __sender {
 
 } // namespace __forge_affine
 
-struct affine_t {
+struct affine_t : sender_adaptor_closure<affine_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __forge_affine::__sender<std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-    }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, affine_t self) {
-        return self(std::forward<S>(sndr));
     }
 };
 

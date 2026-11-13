@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 
@@ -374,20 +375,15 @@ struct __error_sender {
 namespace __forge_stopped {
 
 // Do not infer receiver-environment completion shapes while forming the adaptor.
-struct __optional_closure {
+struct __optional_closure : sender_adaptor_closure<__optional_closure> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __optional_sender<std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
     }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __optional_closure self) {
-        return self(std::forward<S>(sndr));
-    }
 };
 
-struct __optional_t {
+struct __optional_t : sender_adaptor_closure<__optional_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __optional_sender<std::decay_t<S>>{
@@ -397,15 +393,10 @@ struct __optional_t {
     [[nodiscard]] auto operator()() const noexcept {
         return __optional_closure{};
     }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __optional_t self) {
-        return self(std::forward<S>(sndr));
-    }
 };
 
 template<class Err>
-struct __error_closure {
+struct __error_closure : sender_adaptor_closure<__error_closure<Err>> {
     [[no_unique_address]] Err __err;
 
     template<sender S>
@@ -421,17 +412,6 @@ struct __error_closure {
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::move(__err)};
     }
-
-    template<sender S>
-        requires std::copy_constructible<Err>
-    friend auto operator|(S&& sndr, const __error_closure& self) {
-        return self(std::forward<S>(sndr));
-    }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __error_closure&& self) {
-        return std::move(self)(std::forward<S>(sndr));
-    }
 };
 
 struct __error_t {
@@ -444,7 +424,7 @@ struct __error_t {
 
     template<class Err>
     [[nodiscard]] auto operator()(Err&& err) const {
-        return __error_closure<std::decay_t<Err>>{std::forward<Err>(err)};
+        return __error_closure<std::decay_t<Err>>{{}, std::forward<Err>(err)};
     }
 };
 

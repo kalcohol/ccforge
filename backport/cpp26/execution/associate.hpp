@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "counting_scope.hpp"
 #include "detail/op_holder.hpp"
@@ -193,12 +194,12 @@ struct __associate_t {
     [[nodiscard]] constexpr auto operator()(Token&& token) const
         noexcept(std::is_nothrow_constructible_v<std::decay_t<Token>, Token>)
         -> __closure<std::decay_t<Token>> {
-        return {std::decay_t<Token>(static_cast<Token&&>(token))};
+        return {{}, std::decay_t<Token>(static_cast<Token&&>(token))};
     }
 };
 
 template<class Token>
-struct __closure {
+struct __closure : sender_adaptor_closure<__closure<Token>> {
     Token __token;
 
     template<sender S>
@@ -237,16 +238,6 @@ struct __closure {
     template<class S> void operator()(S&&) const& = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const&& = delete;
-
-    template<sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, __closure> &&
-                 requires(Self&& self, S&& sndr) {
-                     static_cast<Self&&>(self)(static_cast<S&&>(sndr));
-                 }
-    friend auto operator|(S&& sndr, Self&& self)
-        noexcept(noexcept(static_cast<Self&&>(self)(static_cast<S&&>(sndr)))) {
-        return static_cast<Self&&>(self)(static_cast<S&&>(sndr));
-    }
 };
 
 } // namespace __forge_associate

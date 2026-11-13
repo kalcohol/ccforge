@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 
@@ -273,7 +274,7 @@ struct __sender {
 };
 
 template<class Fn>
-struct __upon_error_closure {
+struct __upon_error_closure : sender_adaptor_closure<__upon_error_closure<Fn>> {
     Fn __fn;
     template<sender S>
         requires std::constructible_from<Fn, Fn&>
@@ -305,19 +306,10 @@ struct __upon_error_closure {
     template<class S> void operator()(S&&) const & = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const && = delete;
-
-    template<sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, __upon_error_closure> &&
-                 requires(Self&& self, S&& s) {
-                     static_cast<Self&&>(self)(std::forward<S>(s));
-                 }
-    friend constexpr auto operator|(S&& s, Self&& self) {
-        return static_cast<Self&&>(self)(std::forward<S>(s));
-    }
 };
 
 template<class Fn>
-struct __upon_stopped_closure {
+struct __upon_stopped_closure : sender_adaptor_closure<__upon_stopped_closure<Fn>> {
     Fn __fn;
     template<sender S>
         requires std::constructible_from<Fn, Fn&>
@@ -349,15 +341,6 @@ struct __upon_stopped_closure {
     template<class S> void operator()(S&&) const & = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const && = delete;
-
-    template<sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, __upon_stopped_closure> &&
-                 requires(Self&& self, S&& s) {
-                     static_cast<Self&&>(self)(std::forward<S>(s));
-                 }
-    friend constexpr auto operator|(S&& s, Self&& self) {
-        return static_cast<Self&&>(self)(std::forward<S>(s));
-    }
 };
 
 struct __upon_error_t {
@@ -371,7 +354,7 @@ struct __upon_error_t {
     template<class Fn>
         requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return __upon_error_closure<std::decay_t<Fn>>{std::decay_t<Fn>(std::forward<Fn>(fn))};
+        return __upon_error_closure<std::decay_t<Fn>>{{}, std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 
@@ -386,7 +369,7 @@ struct __upon_stopped_t {
     template<class Fn>
         requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return __upon_stopped_closure<std::decay_t<Fn>>{std::decay_t<Fn>(std::forward<Fn>(fn))};
+        return __upon_stopped_closure<std::decay_t<Fn>>{{}, std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 

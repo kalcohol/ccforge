@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 
 #include <exception>
@@ -251,7 +252,7 @@ struct then_sender {
 };
 
 template<class Fn>
-struct then_closure {
+struct then_closure : sender_adaptor_closure<then_closure<Fn>> {
     [[no_unique_address]] Fn fn_;
 
     template<std::execution::sender S>
@@ -287,15 +288,6 @@ struct then_closure {
     template<class S> void operator()(S&&) const & = delete;
     template<class S> void operator()(S&&) && = delete;
     template<class S> void operator()(S&&) const && = delete;
-
-    template<std::execution::sender S, class Self>
-        requires std::same_as<std::remove_cvref_t<Self>, then_closure> &&
-                 requires(Self&& self, S&& s) {
-                     static_cast<Self&&>(self)(std::forward<S>(s));
-                 }
-    friend constexpr auto operator|(S&& s, Self&& self) {
-        return static_cast<Self&&>(self)(std::forward<S>(s));
-    }
 };
 
 struct then_t {
@@ -310,7 +302,7 @@ struct then_t {
     template<class Fn>
         requires std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Fn&& fn) const {
-        return then_closure<std::decay_t<Fn>>{std::decay_t<Fn>(std::forward<Fn>(fn))};
+        return then_closure<std::decay_t<Fn>>{{}, std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 };
 

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 
@@ -173,7 +174,7 @@ struct __sender {
 };
 
 template<class OverrideEnv>
-struct __closure {
+struct __closure : sender_adaptor_closure<__closure<OverrideEnv>> {
     OverrideEnv __env;
 
     template<sender S>
@@ -189,17 +190,6 @@ struct __closure {
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::move(__env)};
     }
-
-    template<sender S>
-        requires std::copy_constructible<OverrideEnv>
-    friend constexpr auto operator|(S&& sndr, const __closure& self) {
-        return self(std::forward<S>(sndr));
-    }
-
-    template<sender S>
-    friend constexpr auto operator|(S&& sndr, __closure&& self) {
-        return std::move(self)(std::forward<S>(sndr));
-    }
 };
 
 struct __write_env_t {
@@ -212,7 +202,7 @@ struct __write_env_t {
 
     template<queryable Env>
     [[nodiscard]] auto operator()(Env&& env) const {
-        return __closure<std::decay_t<Env>>{std::forward<Env>(env)};
+        return __closure<std::decay_t<Env>>{{}, std::forward<Env>(env)};
     }
 };
 

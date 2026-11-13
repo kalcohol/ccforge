@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "sync_wait.hpp"
@@ -307,20 +308,15 @@ struct __into_variant_sender {
 
 namespace __forge_into_variant {
 
-struct __into_variant_closure {
+struct __into_variant_closure : sender_adaptor_closure<__into_variant_closure> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __into_variant_sender<std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
     }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __into_variant_closure self) {
-        return self(std::forward<S>(sndr));
-    }
 };
 
-struct __into_variant_t {
+struct __into_variant_t : sender_adaptor_closure<__into_variant_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __into_variant_sender<std::decay_t<S>>{
@@ -329,11 +325,6 @@ struct __into_variant_t {
 
     [[nodiscard]] auto operator()() const noexcept {
         return __into_variant_closure{};
-    }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __into_variant_t self) {
-        return self(std::forward<S>(sndr));
     }
 };
 

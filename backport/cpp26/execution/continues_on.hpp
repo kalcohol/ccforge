@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "just.hpp"
@@ -350,7 +351,7 @@ struct __sender {
 };
 
 template<class Scheduler>
-struct __closure {
+struct __closure : sender_adaptor_closure<__closure<Scheduler>> {
     Scheduler __scheduler;
 
     template<sender S>
@@ -359,17 +360,6 @@ struct __closure {
 
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) &&;
-
-    template<sender S>
-        requires std::copy_constructible<Scheduler>
-    friend auto operator|(S&& sndr, const __closure& self) {
-        return self(std::forward<S>(sndr));
-    }
-
-    template<sender S>
-    friend auto operator|(S&& sndr, __closure&& self) {
-        return std::move(self)(std::forward<S>(sndr));
-    }
 };
 
 } // namespace __forge_continues_on
@@ -390,7 +380,7 @@ struct continues_on_t {
         requires scheduler<std::remove_cvref_t<Scheduler>>
     [[nodiscard]] auto operator()(Scheduler&& sch) const {
         return __forge_continues_on::__closure<std::remove_cvref_t<Scheduler>>{
-            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch))};
+            {}, __forge_detail::__forward_as_given(std::forward<Scheduler>(sch))};
     }
 };
 
