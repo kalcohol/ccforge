@@ -80,7 +80,8 @@ struct __results<completion_signatures<Sigs...>> {
 template<class Scheduler, class S, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
-    using __results_t = __results<completion_signatures_of_t<S, env_of_t<R>>>;
+    using __env_t = __forge_env_detail::__forwarding_attrs<env_of_t<R>>;
+    using __results_t = __results<completion_signatures_of_t<S, __env_t>>;
 
     struct __sched_recv {
         using receiver_concept = receiver_t;
@@ -105,8 +106,8 @@ struct __op : __forge_detail::__immovable {
         void set_stopped() && noexcept {
             std::execution::set_stopped(std::move(__self->__outer));
         }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer);
+        auto get_env() const noexcept -> __env_t {
+            return {std::execution::get_env(__self->__outer)};
         }
     };
 
@@ -143,8 +144,8 @@ struct __op : __forge_detail::__immovable {
         void set_stopped() && noexcept {
             __self->__save_and_schedule(set_stopped_t{});
         }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer);
+        auto get_env() const noexcept -> __env_t {
+            return {std::execution::get_env(__self->__outer)};
         }
     };
 
@@ -170,26 +171,36 @@ struct __op : __forge_detail::__immovable {
 };
 
 template<class Query>
-inline constexpr bool __completion_scheduler_query_v =
-    std::same_as<
-        std::remove_cvref_t<Query>,
-        get_completion_scheduler_t<set_value_t>> ||
-    std::same_as<
-        std::remove_cvref_t<Query>,
-        get_completion_scheduler_t<set_error_t>> ||
-    std::same_as<
-        std::remove_cvref_t<Query>,
-        get_completion_scheduler_t<set_stopped_t>>;
+inline constexpr bool __completion_query_v = false;
 
-template<class Query>
-consteval bool __is_forwarding_query() {
-    using query_t = std::remove_cvref_t<Query>;
-    if constexpr (std::default_initializable<query_t>) {
-        return std::forwarding_query(query_t{});
-    } else {
-        return false;
-    }
-}
+template<class CPO>
+inline constexpr bool __completion_query_v<get_completion_scheduler_t<CPO>> = true;
+
+template<class CPO>
+inline constexpr bool __completion_query_v<get_completion_domain_t<CPO>> = true;
+
+// Borrow query arguments without copying their state, and expose the same
+// forwarding queries as the connected receivers.
+template<class Env>
+using __query_env_t = __forge_env_detail::__forwarding_attrs<Env&&>;
+
+template<class Scheduler, class ChildEnv>
+struct __completion_attrs;
+
+} // namespace __forge_continues_on
+
+namespace __forge_domain {
+
+// An unavailable domain member must not let the public CPO retry the
+// destination scheduler with queries hidden from the schedule receiver.
+template<class Scheduler, class ChildEnv, class Env>
+struct __completion_domain_env<
+    __forge_continues_on::__completion_attrs<Scheduler, ChildEnv>, Env>
+    : std::type_identity<__forge_continues_on::__query_env_t<Env>> {};
+
+} // namespace __forge_domain
+
+namespace __forge_continues_on {
 
 template<class Scheduler, class ChildEnv>
 struct __completion_attrs {
@@ -197,12 +208,12 @@ struct __completion_attrs {
         std::execution::schedule(std::declval<Scheduler&>()));
     using __schedule_attrs_t = env_of_t<__schedule_sender_t>;
 
-    template<class CPO, class Env>
+    template<class CPO, class... Envs>
     static consteval bool __domain_query_nothrow() {
         if constexpr (__forge_env_detail::__queryable<
                           get_completion_domain_t<CPO>,
                           const __schedule_attrs_t&,
-                          Env>) {
+                          __query_env_t<Envs>...>) {
             return noexcept(std::execution::schedule(
                        std::declval<Scheduler&>())) &&
                 std::is_nothrow_copy_constructible_v<Scheduler> &&
@@ -211,74 +222,78 @@ struct __completion_attrs {
                 __forge_env_detail::__nothrow_query<
                     get_completion_domain_t<CPO>,
                     const __schedule_attrs_t&,
-                    Env>;
+                    __query_env_t<Envs>...>;
         } else {
             return __forge_env_detail::__nothrow_query<
                 get_completion_domain_t<CPO>,
                 const Scheduler&,
-                Env>;
+                __query_env_t<Envs>...>;
         }
     }
 
     [[no_unique_address]] Scheduler __sch;
     [[no_unique_address]] ChildEnv __child;
 
-    friend auto tag_invoke(
-        get_completion_scheduler_t<set_value_t>,
-        const __completion_attrs& self) noexcept
-            -> Scheduler {
-        return self.__sch;
+    auto query(get_completion_scheduler_t<set_value_t>) const noexcept -> Scheduler {
+        return __sch;
     }
 
-    friend auto tag_invoke(
-        get_completion_scheduler_t<set_stopped_t>,
-        const __completion_attrs& self) noexcept
-            -> Scheduler {
-        return self.__sch;
+    auto query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> Scheduler {
+        return __sch;
     }
 
-    template<class CPO, class Env>
-        requires (!std::same_as<CPO, set_error_t>) &&
+    // Scheduling errors may run on an unspecified agent. Do not claim a
+    // unique error scheduler or domain, including via child forwarding.
+    template<class CPO, class... Envs>
+        requires (std::same_as<CPO, void> || std::same_as<CPO, set_value_t> ||
+                  std::same_as<CPO, set_stopped_t>) &&
                  (__forge_env_detail::__queryable<
                       get_completion_domain_t<CPO>,
                       const __schedule_attrs_t&,
-                      Env> ||
+                      __query_env_t<Envs>...> ||
                   __forge_env_detail::__queryable<
                       get_completion_domain_t<CPO>,
                       const Scheduler&,
-                      Env>)
-    friend auto tag_invoke(
-        get_completion_domain_t<CPO> query,
-        const __completion_attrs& self,
-        Env&& env)
-        noexcept(__domain_query_nothrow<CPO, Env>()) {
+                      __query_env_t<Envs>...>)
+    auto query(get_completion_domain_t<CPO>, Envs&&... envs) const
+        noexcept(__domain_query_nothrow<CPO, Envs...>()) {
         if constexpr (__forge_env_detail::__queryable<
                           get_completion_domain_t<CPO>,
                           const __schedule_attrs_t&,
-                          Env>) {
-            auto scheduler = self.__sch;
+                          __query_env_t<Envs>...>) {
+            auto scheduler = __sch;
             auto sched_sender = std::execution::schedule(scheduler);
             auto attrs = std::execution::get_env(sched_sender);
             return std::execution::get_completion_domain<CPO>(
-                attrs, static_cast<Env&&>(env));
+                attrs, __query_env_t<Envs>{static_cast<Envs&&>(envs)}...);
         } else if constexpr (__forge_env_detail::__queryable<
                                  get_completion_domain_t<CPO>,
                                  const Scheduler&,
-                                 Env>) {
+                                 __query_env_t<Envs>...>) {
             return std::execution::get_completion_domain<CPO>(
-                self.__sch, static_cast<Env&&>(env));
+                __sch, __query_env_t<Envs>{static_cast<Envs&&>(envs)}...);
         }
     }
 
-    template<class Query>
-        requires (!__completion_scheduler_query_v<Query>) &&
-                 (__is_forwarding_query<Query>()) &&
-                 __forge_env_detail::__queryable<Query, const ChildEnv&>
-    friend decltype(auto) tag_invoke(
-        Query query,
-        const __completion_attrs& self)
-        noexcept(__forge_env_detail::__nothrow_query<Query, const ChildEnv&>) {
-        return __forge_env_detail::__query(std::move(query), self.__child);
+    // Completion queries belong to the destination even when its answer is
+    // unavailable. FWD-ENV alone would also forward the child's domain tags.
+    template<class Query, class... Args>
+        requires (!__completion_query_v<std::remove_cvref_t<Query>>) &&
+                 __forge_env_detail::__forwarding_query<Query> &&
+                 __forge_env_detail::__queryable<Query, const ChildEnv&, Args...>
+    constexpr decltype(auto) query(Query q, Args&&... args) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const ChildEnv&, Args...>) {
+        return __forge_env_detail::__query(std::move(q), __child,
+                                           static_cast<Args&&>(args)...);
+    }
+
+    template<class Query, class... Args>
+        requires requires(const __completion_attrs& attrs, Query q, Args&&... args) {
+            attrs.query(q, static_cast<Args&&>(args)...);
+        }
+    friend decltype(auto) tag_invoke(Query q, const __completion_attrs& self, Args&&... args)
+        noexcept(noexcept(self.query(q, static_cast<Args&&>(args)...))) {
+        return self.query(q, static_cast<Args&&>(args)...);
     }
 };
 
@@ -293,15 +308,16 @@ struct __sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
+        using env_t = __forge_env_detail::__forwarding_attrs<Env>;
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
+            std::declval<env_t>()));
         using results_t = __results<source_cs_t>;
         using sched_sndr_t = decltype(std::execution::schedule(
             std::declval<Scheduler&>()));
         using sched_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<sched_sndr_t>(),
-            std::declval<Env>()));
+            std::declval<env_t>()));
         using sched_non_value_cs_t =
             __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
         return __forge_meta::__concat_unique_cs_t<

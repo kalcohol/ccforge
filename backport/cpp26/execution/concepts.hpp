@@ -819,6 +819,11 @@ namespace __forge_domain {
 
 struct __no_completion_query {};
 
+// Adaptors can match scheduler-domain fallback arguments to the environment
+// used by their connected receivers. Ordinary attributes keep their arguments.
+template<class Attrs, class Env>
+struct __completion_domain_env : std::type_identity<Env> {};
+
 template<class Query, class Attrs, class... Envs>
 consteval auto __completion_query_type() {
     // Domain selection uses only query types, never the queried values.
@@ -857,7 +862,9 @@ private:
             using scheduler_t = typename decltype(__completion_query_type<
                 get_completion_scheduler_t<CPO>, Attrs, Envs...>())::type;
             using scheduler_domain_t = typename decltype(__completion_query_type<
-                get_completion_domain_t<set_value_t>, scheduler_t, Envs...>())::type;
+                get_completion_domain_t<set_value_t>, scheduler_t,
+                typename __completion_domain_env<
+                    std::remove_cvref_t<Attrs>, Envs>::type...>())::type;
             if constexpr (!std::same_as<scheduler_t, __no_completion_query> &&
                           !std::same_as<scheduler_domain_t, __no_completion_query>) {
                 return std::type_identity<scheduler_domain_t>{};
