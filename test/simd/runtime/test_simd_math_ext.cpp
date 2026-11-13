@@ -283,11 +283,11 @@ static_assert(std::same_as<volatile_comparison_common_reference, const volatile 
 static_assert(std::same_as<volatile_comparison_common_reference,
     std::common_reference_t<const volatile_comparison_value&, const volatile_comparison_wrapper&>>);
 static_assert(std::convertible_to<const volatile_comparison_wrapper&,
-    const volatile_comparison_common_reference&> ||
-    std::convertible_to<volatile_comparison_wrapper, const volatile_comparison_common_reference&>);
+    volatile_comparison_common_reference> ||
+    std::convertible_to<volatile_comparison_wrapper, volatile_comparison_common_reference>);
 static_assert(std::convertible_to<const volatile_comparison_value&,
-    const volatile_comparison_common_reference&> ||
-    std::convertible_to<volatile_comparison_value, const volatile_comparison_common_reference&>);
+    volatile_comparison_common_reference> ||
+    std::convertible_to<volatile_comparison_value, volatile_comparison_common_reference>);
 
 using volatile_equality_common_reference = std::common_reference_t<
     const volatile_reference_math_wrapper&,

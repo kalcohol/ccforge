@@ -299,8 +299,8 @@ TEST(ExecutionOnClosure, ThrowingMovesPropagateWithoutDisablingValidCopies) {
     auto first = ex::on(ex::inline_scheduler{}, throwing_move_adaptor{should_throw});
     auto second = ex::on(ex::inline_scheduler{}, throwing_move_adaptor{should_throw});
     should_throw = true;
-    EXPECT_THROW(std::move(first)(ex::schedule(ex::inline_scheduler{})), capture_failure);
-    EXPECT_THROW(ex::schedule(ex::inline_scheduler{}) | std::move(second), capture_failure);
+    EXPECT_THROW((void)std::move(first)(ex::schedule(ex::inline_scheduler{})), capture_failure);
+    EXPECT_THROW((void)(ex::schedule(ex::inline_scheduler{}) | std::move(second)), capture_failure);
     ASSERT_TRUE(should_throw);
     auto copied = first(ex::schedule(ex::inline_scheduler{}));
     auto piped_copy = ex::schedule(ex::inline_scheduler{}) | std::as_const(second);
