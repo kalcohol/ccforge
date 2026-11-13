@@ -103,6 +103,8 @@ if(FORGE_IS_TOP_LEVEL)
 
     option(FORGE_BUILD_EXAMPLES "Build Forge examples" ON)
     option(FORGE_BUILD_TESTS "Build Forge tests" ON)
+    option(FORGE_VERIFY_EXTENSION_DEPRECATIONS
+        "Treat deprecations as errors in all positive tests and examples" OFF)
 
     if(FORGE_BUILD_TESTS)
         enable_testing()
@@ -117,4 +119,59 @@ if(FORGE_IS_TOP_LEVEL)
     endif()
 else()
     message(STATUS "Forge: Building as subproject")
+endif()
+
+if(FORGE_IS_TOP_LEVEL AND FORGE_BUILD_TESTS)
+    add_custom_target(test_extension_deprecations_strict)
+    foreach(_target IN ITEMS test_execution_extension_deprecations_strict
+            test_linalg_extension_deprecations_strict
+            test_forge_any_sender_deprecation_strict
+            test_forge_strict_any_sender_deprecation_strict)
+        if(TARGET ${_target})
+            add_dependencies(test_extension_deprecations_strict ${_target})
+        endif()
+    endforeach()
+    foreach(_target IN ITEMS test_forge_any_sender_deprecation_strict
+            test_forge_strict_any_sender_deprecation_strict)
+        if(TARGET ${_target} AND TARGET test_execution_extension_deprecations_strict)
+            add_dependencies(test_execution_extension_deprecations_strict ${_target})
+        endif()
+    endforeach()
+    unset(_target)
+endif()
+
+if(FORGE_IS_TOP_LEVEL AND FORGE_BUILD_TESTS AND FORGE_VERIFY_EXTENSION_DEPRECATIONS)
+    # Include EXCLUDE_FROM_ALL compile probes as well as runtime tests and examples.
+    # Compatibility sources suppress only their intentional legacy calls locally.
+    function(forge_collect_deprecation_targets directory result)
+        get_property(_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+        set(_checked_targets)
+        foreach(_target IN LISTS _targets)
+            get_target_property(_type ${_target} TYPE)
+            get_target_property(_source_dir ${_target} SOURCE_DIR)
+            get_target_property(_skip ${_target} FORGE_DEPRECATION_STRICT_SKIP)
+            if(_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$"
+                    AND _source_dir MATCHES "^${PROJECT_SOURCE_DIR}/(test|example)(/|$)"
+                    AND NOT _skip)
+                if(MSVC)
+                    target_compile_options(${_target} PRIVATE /we4996)
+                elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+                    target_compile_options(${_target} PRIVATE -Werror=deprecated-declarations)
+                endif()
+                list(APPEND _checked_targets ${_target})
+            endif()
+        endforeach()
+        get_property(_children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+        foreach(_child IN LISTS _children)
+            forge_collect_deprecation_targets("${_child}" _child_targets)
+            list(APPEND _checked_targets ${_child_targets})
+        endforeach()
+        set(${result} "${_checked_targets}" PARENT_SCOPE)
+    endfunction()
+
+    forge_collect_deprecation_targets("${CMAKE_CURRENT_SOURCE_DIR}" _forge_deprecation_targets)
+    if(_forge_deprecation_targets)
+        add_dependencies(test_extension_deprecations_strict ${_forge_deprecation_targets})
+    endif()
+    unset(_forge_deprecation_targets)
 endif()

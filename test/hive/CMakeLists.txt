@@ -7,7 +7,9 @@ function(hive_compile_check name expect_success)
     add_library(${target} OBJECT "${hive_compile_dir}/test_hive_${name}.cpp")
     target_link_libraries(${target} PRIVATE forge::std)
     if(NOT expect_success)
-        set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+        # Rejections are built only by the existing CTest failure harness.
+        set_target_properties(${target} PROPERTIES
+            EXCLUDE_FROM_ALL TRUE FORGE_DEPRECATION_STRICT_SKIP TRUE)
     endif()
 
     add_test(NAME ${target}

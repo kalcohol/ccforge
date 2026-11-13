@@ -52,6 +52,9 @@ if(FORGE_HIVE_BUILD_COST_PROBE)
     add_executable(hive_bounded_sort_probe "${CMAKE_CURRENT_LIST_DIR}/benchmark/measure_bounded_sort.cpp")
     set_target_properties(hive_bounded_sort_probe PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    # Measurements may intentionally inspect deprecated standard-library traits.
+    set_target_properties(hive_cost_probe hive_traversal_probe hive_sort_probe
+        hive_bounded_sort_probe PROPERTIES FORGE_DEPRECATION_STRICT_SKIP TRUE)
 endif()
 
 option(FORGE_HIVE_BUILD_STRESS "Build the optional randomized Hive model stress" OFF)

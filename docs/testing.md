@@ -463,6 +463,45 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 链接器不支持 `--wrap` 时该目标不注册（configure 输出提示），容器
 放行通道对缺失的该二进制打印说明而不失败。
 
+## 扩展弃用诊断检查
+
+`test_execution_extension_deprecations_strict` 与
+`test_linalg_extension_deprecations_strict` 构建专用副本，以 `/we4996`（MSVC）或
+`-Werror=deprecated-declarations`（GCC、Clang、AppleClang）检查弃用诊断。
+覆盖范围包括 scope 观察、execution 组合与 future、`execution_wave1`、
+`execution_schedule_from`、Forge 的两种 `any_sender` 查询模式、linalg Level 1
+及兼容源文件的正向对照。专用副本不参与默认构建，不改变普通运行测试的警告选项；
+兼容测试仍只在旧拼写调用处局部抑制诊断。功能关闭或原生实现让位时，对应目标可能不注册。
+`test_extension_deprecations_strict` 汇总当前已注册的检查目标。
+
+每个运行测试副本均注册 `<原 CTest 名称>_deprecation_strict_compile`，
+使用当前构建配置单独构建副本，通过 `forge_main_build` 锁串行访问构建目录，
+并使用标准测试超时。副本仅用于检查弃用诊断，不注册额外的运行检查。
+运行断言由原 CTest 执行一次，其环境、跳过返回码、标签、超时及运行依赖等属性保持不变。
+默认构建后运行 CTest 即可执行这些检查，无需显式构建严格汇总目标。
+execution 与 Forge 副本名称分别保留 `execution` 和 `forge`，因此也会被
+现有 sanitizer 测试筛选表达式选中。
+
+需要扩大覆盖范围时，在独立构建目录启用默认关闭的
+`FORGE_VERIFY_EXTENSION_DEPRECATIONS`。该选项对已启用的正向测试和示例目标添加
+上述弃用错误选项，包含 `EXCLUDE_FROM_ALL` 正向编译探针；不包含第三方依赖、
+预期编译失败目标及可选 Hive 测量探针。预期失败检查继续通过原有 CTest harness
+运行。新建预期失败目标或测量探针时，应设置目标属性
+`FORGE_DEPRECATION_STRICT_SKIP=TRUE`，使其不加入严格汇总的依赖集合。
+
+```bash
+cmake -S . -B build/deprecation-checks \
+  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=ON \
+  -DFORGE_VERIFY_EXTENSION_DEPRECATIONS=ON
+cmake --build build/deprecation-checks --target test_extension_deprecations_strict -j 4
+cmake --build build/deprecation-checks -j 4
+ctest --test-dir build/deprecation-checks --output-on-failure
+```
+
+该选项仅影响当前配置中实际注册的目标；关闭的测试组、未实例化的模板分支及独立
+配置的原生让位 fixture 需要分别验证。普通构建也会采用该配置已启用的严格警告选项，
+因此建议保留独立目录。运行完整 CTest 前还需构建默认目标，以生成汇总范围之外的程序。
+
 ## Example smoke tests（示例冒烟）
 
 当 `FORGE_BUILD_EXAMPLES=ON` 且 `FORGE_BUILD_TESTS=ON` 时，实际构建出来的 examples
