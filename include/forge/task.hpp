@@ -167,8 +167,8 @@ struct __final_awaiter {
 
     template<class Promise>
     void await_suspend(std::coroutine_handle<Promise> coro) noexcept {
-        // Completion runs while the coroutine frame is still on the resume stack.
-        // Receivers must not synchronously destroy this task operation state here.
+        // The coroutine is suspended before await_suspend is entered. Completion
+        // may destroy the operation and frame; do not access either afterward.
         if (auto* op = coro.promise().__op_) {
             op->__complete();
         }

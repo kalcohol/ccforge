@@ -322,6 +322,110 @@ struct inline_completion_sender {
     }
 };
 
+// The receiver itself and the promise result are destroyed with the heap op.
+struct destroying_completion_state {
+    void* operation = nullptr;
+    void (*destroy)(void*) noexcept = nullptr;
+    int completions = 0;
+    int channel = 0;
+    int value = 0;
+    int live_results = 0;
+};
+
+struct destruction_result {
+    destroying_completion_state* state;
+    int value = 42;
+
+    explicit destruction_result(destroying_completion_state* state) : state(state) {
+        ++state->live_results;
+    }
+    destruction_result(destruction_result&& other) noexcept
+        : state(other.state), value(other.value) {
+        ++state->live_results;
+    }
+    ~destruction_result() { --state->live_results; }
+};
+
+struct destroying_task_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    destroying_completion_state* state;
+
+    void finish(int channel) && noexcept {
+        auto* saved = state;
+        auto* operation = saved->operation;
+        auto destroy = saved->destroy;
+        saved->operation = nullptr;
+        destroy(operation);
+        // Only external storage is accessed after deleting this receiver.
+        EXPECT_EQ(saved->live_results, 0);
+        saved->channel = channel;
+        ++saved->completions;
+    }
+    void set_value(destruction_result&& result) && noexcept {
+        state->value = result.value;
+        EXPECT_EQ(state->live_results, 1);
+        std::move(*this).finish(1);
+    }
+    void set_value() && noexcept { std::move(*this).finish(1); }
+    void set_error(std::exception_ptr&& error) && noexcept {
+        EXPECT_THROW(std::rethrow_exception(error), task_marker_error);
+        std::move(*this).finish(2);
+    }
+    void set_stopped() && noexcept { std::move(*this).finish(3); }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
+};
+
+template<class T>
+forge::task<T> destroying_completion_task(
+    destroying_completion_state* state, int channel,
+    std::execution::run_loop::scheduler scheduler, bool asynchronous) {
+    if (asynchronous) {
+        co_await std::execution::schedule(scheduler);
+    }
+    if (channel == 2) {
+        throw task_marker_error{};
+    }
+    if (channel == 3) {
+        co_await std::execution::just_stopped();
+    }
+    if constexpr (std::is_void_v<T>) {
+        co_return;
+    } else {
+        co_return destruction_result{state};
+    }
+}
+
+template<class T>
+void check_destroying_completions(bool asynchronous) {
+    for (int channel : {1, 2, 3}) {
+        SCOPED_TRACE(channel);
+        std::execution::run_loop loop;
+        destroying_completion_state state;
+        using operation = decltype(std::execution::connect(
+            destroying_completion_task<T>(&state, channel, loop.get_scheduler(), asynchronous),
+            destroying_task_receiver{&state}));
+        auto* op = new operation(std::execution::connect(
+            destroying_completion_task<T>(&state, channel, loop.get_scheduler(), asynchronous),
+            destroying_task_receiver{&state}));
+        state.operation = op;
+        state.destroy = [](void* pointer) noexcept { delete static_cast<operation*>(pointer); };
+        std::execution::start(*op);
+        if (asynchronous) {
+            EXPECT_EQ(state.completions, 0);
+            loop.finish();
+            std::thread runner{[&loop] { loop.run(); }};
+            runner.join();
+        }
+        EXPECT_EQ(state.operation, nullptr);
+        EXPECT_EQ(state.completions, 1);
+        EXPECT_EQ(state.channel, channel);
+        EXPECT_EQ(state.live_results, 0);
+        if constexpr (!std::is_void_v<T>) {
+            if (channel == 1) EXPECT_EQ(state.value, 42);
+        }
+    }
+}
+
 } // namespace
 
 forge::task<int> simple_task() {
@@ -431,6 +535,22 @@ forge::task<void> await_scope_join_record_thread_task(
     std::atomic<std::thread::id>* resumed_on) {
     co_await scope->join();
     resumed_on->store(std::this_thread::get_id(), std::memory_order_release);
+}
+
+TEST(TaskTest, ReceiverDestroysValueOperationSynchronously) {
+    check_destroying_completions<destruction_result>(false);
+}
+
+TEST(TaskTest, ReceiverDestroysVoidOperationSynchronously) {
+    check_destroying_completions<void>(false);
+}
+
+TEST(TaskTest, ReceiverDestroysValueOperationOnRunLoop) {
+    check_destroying_completions<destruction_result>(true);
+}
+
+TEST(TaskTest, ReceiverDestroysVoidOperationOnRunLoop) {
+    check_destroying_completions<void>(true);
 }
 
 TEST(TaskTest, IntTask) {
