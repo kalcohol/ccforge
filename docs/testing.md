@@ -506,7 +506,18 @@ task、擦除和无需 io_uring 的 IO coroutine/combinator 测试，以及 `for
 query dispatch 只接受 const member `query`。默认关闭，不传播到 `forge::forge`；同一
 可执行文件的所有 translation unit 必须一致定义。该开关不改变 receiver completion、
 `get_env` 或 forwarding-query 分类的兼容 dispatch，也不影响 native stand-aside 实现。
-完整 task suite 中依赖 backport `sync_wait_env` start scheduler 的测试，以及
-`erased_sender` 中依赖 backport `let` env 的 `starts_on` 测试不进入 strict 集合；
-task 使用独立的 value/stopped 测试，擦除使用 any sender/receiver/scheduler 测试。
+`forge_strict_erased_sender` 套件包含依赖 backport `let` env 的 `starts_on` 用例；
+完整 task suite 因 `write_env` 的成员查询与 `FWD-ENV` 过滤尚未补齐而不进入 strict 集合，
+保留独立 `task_member_queries` 测试。线程池、strand、
+any scheduler 的 stop-token fixtures 通过 `env{prop{...}}` 组合查询。
+`execution_env_queries_compile` 与 `execution_strict_env_queries_compile` 分别在默认和
+strict 模式直接包含 backport headers，断言 `env` / `prop` 及内部 helper 的成员查询、
+默认模式的 member / tag 混合选择、strict 模式的成员选择、具名左值 query、
+借用子环境的 cv/ref 限定、引用类型、variadic forwarding、缺失查询和条件 `noexcept`；
+`when_all` 拒绝额外参数，`spawn_future` 尚无成员查询。
+`continues_on`、`write_env`、`counting_scope`、`spawn_future`、`inline_scheduler` 和 `run_loop`
+的兼容查询探针仅在默认模式启用，待 completion-domain / `FWD-ENV` 过滤及 scheduler
+查询一致性补齐后再加入 strict 集合。
+两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
+`ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
 此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。

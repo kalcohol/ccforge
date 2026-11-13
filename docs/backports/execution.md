@@ -204,8 +204,21 @@ auto result = std::this_thread::sync_wait(std::move(work));
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如
 `connect` / `get_env` / `set_value` / `schedule`）。一参数 environment/scheduler query
-也采用 member `.query(cpo)` 优先、`tag_invoke` fallback；组合 environment 保持这一
-优先级和 leftmost-wins。新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
+采用 member `.query(cpo)` 优先、`tag_invoke` fallback。
+`prop.query(q, args...)` 以 `const Value&` 返回属性且为 `noexcept`；
+[`env.query(q, args...)`](https://eel.is/c++draft/exec.env) 的参与约束使用
+`e.query(QueryTag(), args...)`；默认模式按声明顺序选择首个可经兼容 dispatch
+（member 优先、`tag_invoke` fallback）回答的子环境，因此混合子环境的普通 CPO 调用
+保持原有 scheduler / stop-token 选择。strict 测试模式仅选择能回答具名左值 `q`
+的成员查询。借用子环境保持 referent 的 cv/ref 限定；结果保留引用类型，条件 `noexcept` 根据所选调用的实际表达式计算。
+`env` 的旧 `tag_invoke` 接口继续保留。
+`sync_wait` env 与 `let` / `when_all` helper env 提供 const member
+`query`；`when_all` 只转发一参数 forwarding query。
+`run_loop` / `inline_scheduler` attrs、`continues_on` attrs、`write_env` /
+`counting_scope` / `spawn_future` env 仍采用已有兼容接口；其成员查询、scheduler 与 schedule attrs 的
+查询一致性、环境相关 inline attrs 和 `FWD-ENV` 过滤仍有待补齐。
+`prop` / `env` 的 assignability 等其他 surface 差异仍属于现有 subset 边界。
+新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
 
 
 ### 分配与可移植性边界
