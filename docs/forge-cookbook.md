@@ -19,10 +19,10 @@ lifecycle contract](forge-runtime.md)、[`forge::io`](forge-io.md) 和
 建议按这个顺序读：
 
 1. `example/forge_thread_pool_example.cpp`：最小 scheduler + `schedule`。
-2. `example/forge_runtime_context_example.cpp`：显式拥有 runtime，并用 `wait()` drain。
+2. `example/forge_runtime_context_example.cpp`：显式拥有 runtime，由析构执行 shutdown 与 drain。
 3. `example/forge_channel_example.cpp`：异步 send/recv 与 close/stop 语义。
 4. `example/forge_graceful_shutdown_example.cpp`：服务入口 close/drain 与 stop/cancel。
-5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、scope、strand
+5. `example/forge_bounded_pipeline_example.cpp`：arena、bounded channel、resource_context、strand
    组合成一个受控 pipeline。
 6. `example/execution_on_example.cpp`：用 `on` 显式切换起始 scheduler，或在 closure
    内临时切换再切回原 completion scheduler。
@@ -105,8 +105,7 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 | Windows IOCP proof | `example/forge_io_iocp_example.cpp` |
 
 `example/CMakeLists.txt` 会把已构建的示例注册成 `example_<target>_smoke`，所以这些
-路径不是只编译不运行的文档片段；受 IO 或 mdspan gate 控制的示例只在对应 target
-存在时注册 smoke test。
+路径不是只编译不运行的文档片段；各类门控见[示例表](examples.md)，只有 target 存在时才注册 smoke test。
 
 ## Recipe：CPU work queue（CPU 工作队列）
 
@@ -317,3 +316,9 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 - `example/forge_any_receiver_example.cpp`
 
 新增原语的评审要求见[贡献指南](contributing-forge-primitives.md)。
+
+## 消费循环与线程预算
+
+推荐 `forge_bounded_pipeline_example.cpp` 的 `forge::task` 消费循环：`co_await` 挂起时释放 worker，单 worker 也能处理后续 strand 工作。其他示例在 worker 内调用 `sync_wait` 会占用线程，可能因线程耗尽死锁，应为阻塞和调度跳转留足线程预算。
+阅读 sender 协程和拥有工作时，依次看 [task](../example/forge_task_example.cpp)、[async_scope](../example/forge_async_scope_example.cpp)；`forge::start_detached` 适合外部已保证寿命且不需要观察 error 的工作。
+PMR 仅控制明确接入的路径：strand 的 `any_scheduler` 和 timer/channel 的 stop-token 擦除仍走全局堆。

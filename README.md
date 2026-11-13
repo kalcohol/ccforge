@@ -9,7 +9,7 @@ systems.
 The project has two layers:
 
 - `backport/`: standard-header backports such as `<execution>`, `<simd>`,
-  `<mdspan>`, `<linalg>`, `<memory>`, and `<utility>`.
+  `<mdspan>`, `<linalg>`, `<memory>`, `<hive>`, and `<utility>`.
 - `include/forge/`: non-standard utilities in `namespace forge`, including
   schedulers, scopes, channels, IO proofs, coroutine tasks, and type erasure
   helpers.
@@ -23,7 +23,7 @@ missing native support injects Forge's backport headers.
 | Area | Header | Status |
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | practical P2300 subset |
-| `std::simd` | `<simd>` | core C++26 surface |
+| `std::simd` | `<simd>` | C++26 [simd.syn] surface |
 | `std::hive` | `<hive>` | C++26 backport; [scope and limitations](docs/backports/hive.md) |
 | `std::submdspan` and padded layouts | `<mdspan>` | current C++26 draft surface |
 | `std::linalg` | `<linalg>` | practical BLAS level 1/2/3 subset |
@@ -31,6 +31,7 @@ missing native support injects Forge's backport headers.
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer: pool, scope, channel, strand, timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP portable backends |
+| `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | Coroutine-native byte IO; include direct headers |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend, outside the portable context selection |
 
 For exact behavior and caveats, see the [documentation index](docs/README.md).
@@ -69,6 +70,7 @@ More examples live in [`example/`](example/) and the
 Installed package:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -83,6 +85,7 @@ target_link_libraries(myapp PRIVATE forge::std)
 Source tree:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 include(/path/to/ccforge/forge.cmake)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -90,6 +93,7 @@ target_link_libraries(myapp PRIVATE forge::forge)
 or:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -121,6 +125,7 @@ standard-library headers and avoid directory/header name collisions.
 ## Verification
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 cmake -S . -B build/local -DCMAKE_CXX_STANDARD=23 -DFORGE_BUILD_TESTS=ON
 cmake --build build/local
 ctest --test-dir build/local --output-on-failure
@@ -129,6 +134,7 @@ ctest --test-dir build/local --output-on-failure
 Full container entrypoint:
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 ```
 
@@ -160,3 +166,6 @@ including NVIDIA/stdexec, VcDevel/std-simd, Kokkos stdBLAS, and ncnn.
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+
+FORGE_ENABLE_FORGE_RUNTIME controls runtime examples only. Set CMAKE_CXX_STANDARD before Forge probes; a later target cxx_std_26 can otherwise disagree with the probe language mode.

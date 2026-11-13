@@ -108,3 +108,5 @@ query 不在 v1 范围内。
 - downstream stop token 传播；
 - move-only source sender；
 - sanitizer gate 下的 erased operation/receiver 生命周期。
+
+当前 v1 是 move-only、heap-first 的 connectable 擦除，仍受固定环境模型限制。lvalue 与 const lvalue 可重复 connect，共享 source state；rvalue connect 会移空 sender。

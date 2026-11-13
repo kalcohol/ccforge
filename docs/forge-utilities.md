@@ -74,33 +74,22 @@ terminal completion 尾部释放，因此它的 resource 还必须活到该释�
   `timer_context`。`resource_context` 还会把同一 resource 传给内部 `async_scope`
   spawned op-state。
 
-Allocation audit:
+## 分配审计
 
-| component | resource-controlled paths | intentionally uncontrolled / deferred | evidence |
+| 组件 | resource 控制的路径 | 未控制的路径 | 参考示例 |
 | --- | --- | --- | --- |
-| `static_thread_pool` | shared pool state block, pool queue `pmr::deque` nodes, and queued task callable records | worker thread objects and OS thread resources | `forge_thread_pool`, `example/forge_resource_policy_example.cpp` |
-| `timer_context` | context state, timer op data, timer item control blocks, timer queue, timer callback callable records | OS timer worker thread resources | `forge_timer_context` |
-| `runtime_context` | forwards the resource to the internal pool and timer | no separate allocation policy beyond its members | `forge_runtime_context` |
-| `resource_context` | forwards the resource to the internal runtime and async scope spawned op-state | no separate allocation policy beyond its members | `forge_resource_context` |
-| `bounded_channel<T>` | channel state, buffer, send/recv record control blocks | pending send/recv links are embedded in records; storage inside user-provided `T` values is the user's responsibility | `forge_channel` |
-| `strand` | strand state, pending queue, stopped batches, receiver records, runner keepalive nodes | underlying scheduler resources remain owned by that scheduler | `forge_strand` |
-| `async_scope` | scope state and spawned op-state nodes | source sender internals remain controlled by the source sender | `forge_async_scope` |
-| `forge::io` Linux backend | context state, fd waiter map, epoll event buffer, readiness records | deferred completion batches use an allocation-free intrusive record chain; fd ownership and borrowed buffers stay with the caller; OS kernel objects are outside PMR | `forge_io_context` |
-| `forge::io` Windows backend | context state, pending record map, associated handle cache, IO records | `HANDLE` ownership and borrowed buffers stay with the caller; IOCP/kernel resources are outside PMR | `forge_io_iocp` |
-| type erasure helpers | none in V1 | `any_sender_of` and `any_receiver_of` use 64B SBO with heap fallback; `any_scheduler` always heap-allocates its erased state and each connect'd operation via `shared_ptr`; `erased_sender` is heap-first without SBO; none are allocator-aware | `forge_any_sender`, `forge_any_receiver`, `forge_any_scheduler`, `forge_erased_sender` |
+| static_thread_pool | state、队列节点、task callable record | worker 对象与 OS 线程 | `forge_thread_pool` |
+| timer_context | state、op data、timer item、队列、callback record | OS 线程；stop-token 擦除与 callback 注册走全局堆 | `forge_timer_context` |
+| runtime_context | 转发给 pool 和 timer | 无独立分配策略 | `forge_runtime_context` |
+| resource_context | 转发给 runtime 和 scope | 无独立分配策略 | `forge_resource_context` |
+| bounded_channel | state、buffer、send/recv record | 用户 T 的内部存储；stop-token 擦除与 callback 注册走全局堆，pending 链内嵌 | `forge_channel` |
+| strand | state、队列、stop 批次、receiver record、runner node | 底层 scheduler；any_scheduler 构造及每次 runner 启动的 erased operation 走全局堆 | `forge_strand` |
+| async_scope | state、spawned op-state node | source sender 内部路径 | `forge_async_scope` |
+| Linux IO context | state、fd map、event buffer、readiness record | fd、借用 buffer、内核对象；deferred 链内嵌不分配 | `forge_io_readiness` |
+| Windows IO context | state、pending map、handle cache、IO record | HANDLE、借用 buffer、内核对象 | `forge_io_iocp` |
+| 类型擦除 | 无 | any_sender/receiver 64B SBO 溢出走堆；any_scheduler state 与每次 connect 走 shared_ptr 堆；erased_sender 使用堆，无 allocator 支持 | `forge_type_erased_boundary` |
 
-Failure policy:
-
-- Capacity full or shutdown-after-start paths complete with stopped where the
-  primitive can make that decision without throwing from `start()`.
-- Allocation failure generally follows the default exception path. Typed-error
-  variants only classify allocation/capacity failures when the classification is
-  stable for that surface.
-- `bounded_channel::async_send` reports a buffer-node allocation failure through
-  `set_error(std::exception_ptr)`; `strand` treats an enqueue allocation failure
-  like a scheduler launch failure and fails closed with stopped completions.
-- Forge does not claim global zero allocation. The policy is scoped to the
-  paths listed above.
+容量满或关闭后的路径在可于 `start()` 内不抛异常地判定时以 stopped 完成。分配失败通常遵循异常路径；typed-error 仅暴露稳定分类。`bounded_channel::async_send` 的 buffer 节点分配失败以 `set_error(std::exception_ptr)` 完成；strand 入队分配失败会关闭并以 stopped 完成。stop-token 擦除和 callback 注册也可能分配失败。资源策略不承诺全局零分配。
 
 ## 调度与上下文
 
@@ -296,3 +285,46 @@ C++26 member-query env 口径仍是 forward-compat caveat。
 ```bash
 ctest --test-dir build/local -R '^forge_' --output-on-failure
 ```
+
+## 取消与入口关闭
+
+`timer_context::request_stop()` 永久关闭定时器入口；`runtime_context` 和 `resource_context` 会转发此操作，后续 timer 也以 stopped 完成。它们的 CPU pool 仍按排空语义工作。
+`static_thread_pool` 和 `strand` 只在 `start()` 前检查 receiver stop token；入队后请求停止不会撤回工作。strand 的 `shutdown()` 会停止待处理工作。
+底层有界池一次满队就会使 strand 永久关闭，后续工作以 stopped 完成；此行为可能在未来版本改变。
+
+## 通道容量
+
+`bounded_channel_options::capacity` 默认 0，表示会合：send 必须交给等待中的 receiver 才完成。需要缓冲时显式指定正容量。
+`capacity()` 读取容量，`closed()` 查询关闭状态。析构调用 `shutdown()`，丢弃缓冲并以 stopped 完成待处理操作，不执行阻塞等待。
+
+## 同步结果与分离启动
+
+`wait_result` 是 `wait_result_of` 的便利入口，返回 `wait_result_value<Value, Error>`。
+`has_value()`、`has_error()`、`stopped()` 查询三种完成状态，`operator bool` 等同于 `has_value()`；`value()` / `error()` 读取对应内容，状态不符时抛异常；`error_if<E>()` 返回指针或空指针。
+多个 value 形状或多个 error 类型使用 `variant`；error 集合始终包含 `std::exception_ptr`。`wait_stopped_t` 表示停止状态。
+`forge::start_detached` 遇到 error completion 会在运行时终止程序；需要观察失败时应由 scope 拥有工作。
+空 `any_sender_of` 的同步消费抛 `runtime_error`；空或已移动的 `forge::task` 连接时抛 `logic_error`。
+
+## 两种协程任务
+
+`forge::task` 面向 sender 组合，`io_task` 面向 coroutine-native byte IO，两者具有不同的取消与环境契约，这是有意的设计。`io_task` 内用 `await_sender` 消费 sender，用 `as_sender` 将任务交给 sender 消费者；因此 `forge::task` 也可 await 经该桥转换的 IO 任务。
+目前对 task 完成回调内销毁 op state 保持保守限制：标准 [exec.async.ops]/8 允许的自毁需要先取走完成参数，而当前 final_suspend 路径尚需专门回归验证。
+
+
+### task 环境与结果
+
+- `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
+  不应在 `set_value` / `set_error` / `set_stopped` callback 内同步销毁连接的 task
+  operation-state。连接时会把 downstream receiver 的 stop token 与
+  `get_start_scheduler`（若存在）擦除后放进 task promise env：task 内 `co_await`
+  的 sender 能观察调用方取消，需要 start scheduler 的算法（如
+  `counting_scope::join`）也能拿到与外层一致的调度器（例如 `sync_wait` 的
+  run_loop）。外层 env 没有 start scheduler 时回退到一个 inline 调度器：join 这类
+  completion 会停留在触发它的线程上（等价于无重调度的旧行为）。其他 receiver env
+  query 不会传播。Stopped completion 通过 coroutine bridge 的内部异常返回 task
+  frame，可以被用户 `catch(...)` 捕获；promise 的 stopped 状态是 sticky 的，后续异常
+  不会覆盖 stopped completion。Moved-from task 不能再次连接，尝试连接会抛
+  `std::logic_error`。`task<T>` 支持 throwing-move 的 `T`：completion 把已存储
+  的结果按引用交给 receiver（调用表达式中不构造 `T`），物化值的 receiver（如
+  `sync_wait`）在自己体内 try/catch 并把抛出路由到 error channel；`co_return`
+  时 move 进 promise result variant 的异常落在 `unhandled_exception`。

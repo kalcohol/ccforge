@@ -7,7 +7,7 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 只需要 `<execution>`、`<simd>`、`<mdspan>` 等标准入口的 consumer 应优先链接
 `forge::std`。
 
-## 工具链原生进度（截至 2026-07）
+## 工具链原生进度（固定验证镜像，最后核对 2026-11-13）
 
 这些特性均已（除 `unique_resource` 外）并入或服务于 C++26，但主流标准库的原生落地进度差异很大，直接决定哪个 backport 会在你的工具链上自动退场：
 
@@ -18,6 +18,8 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 | `std::submdspan` | 当前 GCC 16 验证镜像通过 Forge 的完整 surface probe | 未实现 | GCC 16 lane 要求完整原生并严格让位 |
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::linalg` | 未实现 | 未实现 | backport 仍是唯一路径 |
+| `std::hive` | 无原生，注入 | 无原生，注入 | 以配置 probe 为准 |
+| `std::unique_resource` | 无原生 | 无原生 | TS v3，具体入口见对应页面 |
 
 ## 三态探测
 
@@ -111,3 +113,5 @@ target），让 `forge.cmake` 的探针宏与 include path 一起传播。仅手
 extensionless 头只模拟标准库入口，项目扩展不伪装成标准库头。
 
 > 注意：向 `namespace std` 注入声明/定义在严格意义上属于未定义行为。这是 backport 为达成“无感切换”的工程性权衡，通过“仅在工具链缺失该特性时启用”来降低风险面。
+
+失败的探测结果有意不缓存，以便工具链或配置变化后重新判断；每次重新配置会多花几秒。

@@ -1,5 +1,7 @@
 # `std::execution` 当前 WD 收敛清单
 
+
+
 这份清单记录 execution backport 从早期 Forge/stdexec-era 混合 surface 收敛到当前
 working-draft-shaped subset 的执行口径。它与更完整的
 [`std::execution` 一致性台账](execution-conformance-ledger.md)配套使用。

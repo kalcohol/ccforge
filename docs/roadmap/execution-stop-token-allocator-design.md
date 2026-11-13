@@ -1,5 +1,7 @@
 # Erased stop-token allocator 设计记录
 
+
+
 这份记录说明 Forge extension 的 erased stop-token callback allocator-awareness 取舍。
 它是设计结论，不是待实现任务。
 

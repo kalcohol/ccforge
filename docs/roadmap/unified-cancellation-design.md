@@ -1,5 +1,7 @@
 # Unified cancellation design（统一取消语义）
 
+
+
 本文整理 CC Forge 当前的 cancellation surface。它不是新机制提案，也不是要求每个
 primitive 都升级到同一种最强取消模型；目标是把全仓已经实现、已接受和明确延后的取消语义
 放进同一张地图，避免后续在 `stop_token`、`request_stop()`、operation-state 自毁和
@@ -136,14 +138,14 @@ channel 的未来 task redesign 需负责人另行决定，并在下一次工作
 - Windows IOCP cancel 是 completion-based；`CancelIoEx` 请求取消后仍以最终 completion packet
   为准，成功 completion 可以赢过 cancel。
 
-## Do not fix in this design round
+## 后续范围（下一次工作草案快照审计时复查，需负责人另行决定）
 
 - 不新增全仓统一 cancellation base class 或 type-erased cancellation object。
 - 不把 every primitive 升级到 per-operation callback；只有已经证明 callback lifetime 和
   exactly-once 的 path 才使用该层级。
 - 不把 coroutine stopped 改成非异常 channel；这会牵动 task ABI/behavior，需要单独设计。
 - 不把 Windows IOCP completion 包装成 Linux readiness。
-- 不新增 networking surface、`io_uring` backend 或 `<io>` / `<networking>` backport。
+- io_uring 已上线；扩展 networking surface 或 `<io>` / `<networking>` backport 需负责人另行决定，在下一次工作草案快照审计时复查。
 
 ## Current action items
 
@@ -154,3 +156,12 @@ channel 的未来 task redesign 需负责人另行决定，并在下一次工作
 除此之外，不建议从本文直接派生新的实现任务。若后续 review 在某个具体 primitive 上发现
 native stop-source lifetime 差异或未覆盖的 callback path，需负责人另行决定，并提供
 对应 ASan/TSan 或 Windows lane evidence。
+
+## 新增后端与组合器
+
+| 表面 | 取消 |
+| --- | --- |
+| io_uring | env stop 与 context stop 发起 best-effort ASYNC_CANCEL，target CQE 决定终态 |
+| when_any_results / with_timeout | 请求 sibling stop 并 drain，保留 late result |
+
+当前语义见 [IO 用户文档](../forge-io.md)。

@@ -9,10 +9,10 @@
   （含 flags、mask、range 重载），以及 `partial_gather_from` /
   `unchecked_gather_from` / `partial_scatter_to` / `unchecked_scatter_to`
 - **归约与排列**：scalar/vector `reduce`、`reduce_min`/`reduce_max`、
-  `reduce_min_index`/`reduce_max_index`、`chunk`/`cat`、`select`
+  `reduce_min_index`/`reduce_max_index`、`chunk`/`cat`、`permute`、`select`
 - **创建与可见性**：`iota<T>` variable template、两个 `basic_vec` deduction guides，
   以及 `[simd.syn]` 要求加入顶层 `std` overload set 的 math/bit/complex declarations
-- **Layer 1 向量化**：GCC/Clang vector extension 后端，`if consteval` 保持 constexpr 正确性
+- **参考实现**：逐元素运算依赖编译器自动向量化；mask/select、浮点归约和数学函数不保证生成向量代码
 - **Feature macros**：定义 `__cpp_lib_simd = 202606L`、
   `__cpp_lib_simd_bitops = 202607L`、`__cpp_lib_simd_complex = 202502L` 和
   `__cpp_lib_simd_permutations = 202506L`
@@ -77,3 +77,8 @@ const V result = std::simd::select(selector, values, V(0.0f));
 当前 GCC 16 在 C++26 提供 partial-native `std::simd`，Forge 会严格让位并给出警告；
 同一标准库在 C++23 虽可安装 `<simd>` 文件但不暴露声明，此时声明级 probe 会启用
 backport。检测到 partial-native 声明时不注入 backport，以避免 ODR 冲突。
+
+## 限制与偏差
+
+`std::simd` 下 `native_abi`、`simd_size`、`fixed_size_abi`、`deduce_abi_t`、`abi_lane_count`、`simd_size_type` 以及实现提供的额外标志类型是 Forge 独有公开名，不可移植；原生让位后不能依赖这些名字。存储对齐也不等同于 ISA 向量对齐，调用者应遵守实际 load/store 的对齐要求。
+

@@ -184,9 +184,7 @@ SSH wrapper 的参数只描述验证环境，不改变测试语义：
 - `FORGE_WINDOWS_SKIP_GATE_CHECKS` / `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK`：
   临时缩小 smoke；默认不建议跳过。
 
-To run the repeatable smoke as a small self-hosted/manual matrix, use the
-wrapper. It defaults to the current VS lane (`18`) and uses local-source mode
-unless overridden:
+可通过 wrapper 运行自托管或手工 smoke 矩阵。默认 VS lane 为 `18`，默认使用 local-source 模式：
 
 ```bash
 FORGE_WINDOWS_HOST=<windows-host> \
@@ -194,10 +192,7 @@ FORGE_WINDOWS_VS_VERSIONS='18' \
 scripts/verify-windows-msvc-matrix.sh
 ```
 
-Older MSVC lanes are exploratory. For example, `FORGE_WINDOWS_VS_VERSIONS='18
-17'` can be used to measure VS 2026 plus VS 2022 compatibility, but the older
-lane is not a reason to degrade modern C++ code generation or contort public
-APIs.
+旧 MSVC lane 属于探索性验证。例如 `FORGE_WINDOWS_VS_VERSIONS='18 17'` 可测量 VS 2026 与 VS 2022 兼容性；不为旧 lane 改写现代 C++ 接口或降低代码生成要求。
 
 默认 SSH wrapper 会在远端 clone `FORGE_WINDOWS_REPO`，并使用调用方仓库当前 `HEAD`
 commit 作为不可变 ref；显式提供 symbolic `FORGE_WINDOWS_REF` 时，远端会在本次运行开始时
@@ -289,10 +284,7 @@ production handoff safety 的证据。
 
 ## Runtime wakeup audit helper（唤醒审计）
 
-`scripts/audit-runtime-wakeups.sh` lists condition-variable, notify,
-stop-callback, and cancellation sites under `include/forge` and the execution
-backport. It is a manual review aid, not a proof. Use it after touching
-cancellation or shutdown paths. The key rule is:
+`scripts/audit-runtime-wakeups.sh` 列出 `include/forge` 与 execution backport 中的 condition-variable、notify、stop callback 和取消位置，用于修改取消或 shutdown 后的人工检查，不能替代正确性验证。关键规则是：
 
 > 如果 waiter 在 mutex 下观察 predicate，那么修改该 predicate 也应在同一把 mutex 下
 > publish，然后再 `notify_one` / `notify_all`。
@@ -489,3 +481,13 @@ FORGE_INSTALL_CONFIG=Release scripts/verify-install-package.sh
 - SIMD configure probes 在 CMake configure 阶段运行；configure failure 可能是 probe failure，还没进入 build target
 - `linalg` 和 `submdspan` tests/examples 依赖 `<mdspan>`，在较旧标准库上会跳过
 - 某些 libstdc++/PSTL 发行版中，`<execution>`（并行策略实现）在链接期可能需要 `tbb`；Forge tests/examples 会在检测到 `tbb` 时自动链接
+
+## 示例与负面编译测试的解释
+
+无编译器主机请显式选择容器目标 `scripts/verify-native.sh gcc16 llvm zig gcc-exec tsan asan`，排除依赖主机工具链的 `local`；不要使用包含 local 的默认 all。
+所有容器流程串行执行，不在同一工作树并发运行。镜像对应关系见[容器说明](../containers/README.md)。
+负面编译测试分为两类：固定工作草案规则（例如 noexcept completion、receiver 不抛异常移动）与固定 Forge 自身子集偏差（例如 creation 时延迟验证的形状）。测试通过只说明拒绝了该输入，不代表所有拒绝都是标准规则。
+
+
+
+`FORGE_ENABLE_FORGE_RUNTIME` 只控制 runtime 示例；runtime 测试由 `FORGE_TEST_ENABLE_FORGE_RUNTIME` 独立控制，公共头文件始终可包含。文档审计还覆盖三语 README 一致性、测试开关文档、路线图状态、特性宏、用途头与扩展拼写，并逐项运行正反自测。

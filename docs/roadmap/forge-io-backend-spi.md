@@ -1,9 +1,13 @@
 # `forge::io` backend SPI 草案
 
-这是未来 IO backend proof 的设计草案。它不是 public plugin ABI，也不单独批准
-`io_uring` 或 networking abstraction。
 
-当前发布的 IO surface 有两个刻意不同的 backend model：
+
+> 2026-11-13：io_uring 已上线。下文 Phase 0–4 是 2026-08 的历史准入记录，不描述当前提交与唤醒机制；当前机制以 [IO 用户文档](../forge-io.md#io_uring-completion-backendcoroutine-native-proof) 为准。当前后端为 epoll、IOCP 和 io_uring。
+
+
+这是 2026-08 的 IO backend proof 设计记录，不是 public plugin ABI。io_uring 已按独立 gate 上线，当前机制见 [IO 文档](../forge-io.md)。
+
+2026-08 早期的 IO surface 有两个刻意不同的 backend model：
 
 - Linux `epoll` / `eventfd` readiness；
 - Windows IOCP completion。
@@ -56,7 +60,7 @@ Readiness backend 和 completion backend 不需要拥有完全相同的 API。�
 不要把 `io_uring` 当成“更好的 epoll”添加。只有项目需要 kernel submission/completion queue
 语义，并能测试不同的 cancellation/drain behavior 时，才考虑它。
 
-当前决策：延后 `io_uring`。Linux epoll/eventfd backend 已覆盖当前 readiness 和 one-shot
+2026-08 早期决策：延后 `io_uring`（已被后续实现取代）。Linux epoll/eventfd backend 已覆盖当前 readiness 和 one-shot
 read/write 用例；项目还没有需要 kernel submission/completion queues 的场景。只有以下条件同时满足时才重新评估：
 
 - epoll readiness 加 `async_read_some` / `async_write_some` 不够；
@@ -314,11 +318,11 @@ Proof 已按 D1-D5 落地（`include/forge/io/io_uring_context.hpp` 与
   `no_buffer_space` 拒绝；若 head 已前进，kernel ownership 已成立，operation 必须
   保持注册直至 CQE drain。EBUSY 保持 parked，CQ backlog 保证 poller 醒来并在下轮
   serialized flush 消费。
-- Poller 对阻塞 GETEVENTS 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
+- 历史机制（已取代；当前 poller 等待 ring 与 control eventfd 的 poll）：Poller 对阻塞 GETEVENTS 的 EINTR/EAGAIN/EBUSY 重试，其它错误视为 backend
   fatal 并停机；serialized submit-only flush 的错误则保留诊断并在锁外有界退避后
   重试。此时仍悬挂的 awaiter 不被恢复，属 proof 阶段已记录边界。构造期的
   同步 NOP round-trip 已把"环从未可用"的环境在构造时排除。
-- 2026-08-20 修复（原理论边界）：wakeup NOP 的 flush 硬失败（持续 EAGAIN 放弃、
+- 2026-08-20 历史修复（已取代；当前 wait 只等待，唤醒重试由 poller 执行）：wakeup NOP 的 flush 硬失败（持续 EAGAIN 放弃、
   ENOMEM 等）不再依赖单次成功。失败的 NOP 留驻 SQ，`wait()`（含析构）在 join 前
   经 `wait_poller_exit()` 以 1ms 周期重驱动完整唤醒链（NOP 因 SQ 满而从未发布成功
   时重试发布，已发布未 flush 时重试 flush；flush 本身会顺带消费占满 SQ 的 parked

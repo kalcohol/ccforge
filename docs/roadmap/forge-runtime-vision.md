@@ -1,5 +1,7 @@
 # Forge runtime 远景图
 
+
+
 本文记录 `include/forge/` 扩展设施的中长期方向。它不是标准 backport 计划，也不向
 `namespace std` 增加名字。目标是让 Forge 在 `std::execution` backport 之上，提供一组
 小而实用的运行时原语，服务结构化并发、消息通路、IO/protocol flow 和资源生命周期管理。
@@ -172,7 +174,7 @@ FORGE_TEST_ENABLE_FORGE_ERASURE=ON
 ```
 
 `AUTO` 表示依赖可用时启用，不可用时跳过；显式 `ON` 缺依赖应报错。纯 header 设施不应因为
-全局 gate 变成不可 include；gate 主要控制 umbrella header、examples、tests 和带外部依赖的
+全局 gate 变成不可 include；gate 按各自用途控制 examples、tests 和带外部依赖的
 backend。IO gate 已用于 Linux `epoll`/`eventfd` readiness backend 和 Windows IOCP proof
 backend；erasure 设施是 header-only，不再有独立功能 gate。
 
@@ -268,3 +270,5 @@ Examples 必须从“能编译”升级为“能教会人怎么组合”：
 
 这些 examples 应避免营销式代码，重点展示“资源在哪里、取消如何传播、何时 drain、
 错误如何处理、谁拥有谁”。
+
+`FORGE_ENABLE_FORGE_RUNTIME` 仅控制示例，不控制 umbrella header 或测试；测试有独立的 `FORGE_TEST_ENABLE_FORGE_RUNTIME`。

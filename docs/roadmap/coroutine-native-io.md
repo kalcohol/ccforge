@@ -1,5 +1,7 @@
 # Coroutine-native byte IO 路线图
 
+
+
 本文记录 Forge 如何跟踪 WG21 Network Endeavor / coroutine-native IO 的 C++29 讨论，
 并把其中对本仓库有用的 Stage One 能力吸收到 `forge::` extension layer。它不是 `std::io`、不是
 `std::networking` backport，也不是完整网络库计划。
@@ -306,3 +308,5 @@ ctest --test-dir build/local --output-on-failure
 - 不把 Linux readiness 与 Windows IOCP 包装成同一个虚假的 portable model。
 - 不为了这个 extension track 改变标准 backport 的 native handoff 或 `std::execution`
   conformance 行为。
+
+帧分配基准是 2026-08 的不可复现历史快照：当时的主机、构建条件与样本仅见上文原始记录，缺少完整复现环境，不能作为当前性能或方案选择结论。下一次工作草案快照审计时需重新测量。

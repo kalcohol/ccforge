@@ -250,8 +250,6 @@ struct then_sender {
     }
 };
 
-// TODO([exec.adapt.obj]): replace per-adaptor friend operator| with
-//   sender_adaptor_closure<then_closure<Fn>> CRTP base when adding more adaptors.
 template<class Fn>
 struct then_closure {
     [[no_unique_address]] Fn fn_;

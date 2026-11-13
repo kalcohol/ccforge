@@ -9,7 +9,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 项目分两层：
 
 - `backport/`：标准设施 backport，按标准头文件名暴露，例如 `<execution>`、
-  `<simd>`、`<mdspan>`、`<linalg>`、`<memory>` 和 `<utility>`。
+  `<simd>`、`<mdspan>`、`<linalg>`、`<memory>`、`<hive>` 和 `<utility>`。
 - `include/forge/`：非标准扩展，全部在 `namespace forge`，包括线程池、
   scope、channel、strand、IO proof、coroutine task 和类型擦除工具。
 
@@ -22,7 +22,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | 领域 | 入口 | 状态 |
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | 实用 P2300 子集 |
-| `std::simd` | `<simd>` | 核心 C++26 表面 |
+| `std::simd` | `<simd>` | C++26 [simd.syn] 表面 |
 | `std::hive` | `<hive>` | C++26 backport；[范围与限制](docs/backports/hive.md) |
 | `std::submdspan` 与 padded layouts | `<mdspan>` | 当前 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
@@ -30,6 +30,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层：线程池、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP portable backends |
+| `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | 协程 byte IO；直接包含对应头文件 |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend，不参与 portable context 选择 |
 
 更精确的语义、限制和状态说明见 [文档目录](docs/README.md)。
@@ -67,6 +68,7 @@ pool.wait();
 安装后使用：
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -81,6 +83,7 @@ target_link_libraries(myapp PRIVATE forge::std)
 源码树直接引用：
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 include(/path/to/ccforge/forge.cmake)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -88,6 +91,7 @@ target_link_libraries(myapp PRIVATE forge::forge)
 或：
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -114,6 +118,7 @@ library 和 `CMAKE_CXX_STANDARD`。
 - 可选：Windows/MSVC 主机，用于 Windows IOCP smoke gate
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 cmake -S . -B build/local -DCMAKE_CXX_STANDARD=23 -DFORGE_BUILD_TESTS=ON
 cmake --build build/local
 ctest --test-dir build/local --output-on-failure
@@ -122,6 +127,7 @@ ctest --test-dir build/local --output-on-failure
 完整容器入口：
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 ```
 
@@ -153,3 +159,6 @@ VcDevel/std-simd、Kokkos stdBLAS 和 ncnn。
 ## 许可证
 
 MIT License。见 [LICENSE](LICENSE)。
+
+
+FORGE_ENABLE_FORGE_RUNTIME 只控制 runtime 示例。探测前设置 CMAKE_CXX_STANDARD；稍后在 target 上指定 cxx_std_26 可能使编译语言模式与探测不一致。

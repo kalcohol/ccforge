@@ -1,5 +1,7 @@
 # `std::execution` 一致性台账
 
+
+
 这份台账记录最近几轮 runtime hardening 后，Forge execution backport 的当前状态。它刻意与
 用户向的 [`std::execution`](../backports/execution.md) 文档分开：后者说明如何使用，本文是为
 future native handoff 和 conformance work 保留的工程审计记录。
@@ -66,20 +68,20 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `split` | Implemented subset | `split.hpp`；非 WD extension。缓存单一 value completion shape 并以 `const&` 广播，impossible empty result state 会 fail-fast terminate；内部 callback 入链分配失败以 `set_error(std::exception_ptr)` 完成。完整 stop-source/on_done cycle 未实现；abandoned source sender 是已接受 residual。 |
 | `sync_wait`, `sync_wait_with_variant` | Implemented subset | 支持多个 value alternatives；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 |
 | `associate`, `spawn` | Implemented current-WD subset | 已实现 top-level association 和 fire-and-forget spawn；`associate` 在 outer `connect` 中预连接 wrapped sender，connect failure 不成为 completion channel；`spawn` 只接受 `set_value()` / `set_stopped()` senders。 |
-| `spawn_future` | Implemented subset | Eager single-consumer future sender；value/error 结果按 decayed types 存储、声明并以 rvalue 交付；shared state 和 consumer records 尊重 `get_allocator(env)`；consumer stop callback 直接使用 receiver env 的具体 token 类型。 |
-| `inplace_stop_source/token/callback` | Accepted conformance deviation | Callback invocation / deregistration concurrency 和 Forge reentrant self-destroy paths 已测试；registration 当前使用独立 control block，因此会分配且 constructor 未满足 2026-08-22 current-WD conditional `noexcept`。2026-08-23 复核未发现 correctness gap 或零分配 consumer requirement，故保留该 ownership model；见 [`inplace-stop-callback-design.md`](inplace-stop-callback-design.md)。 |
+| `spawn_future` | Implemented subset | Eager single-consumer future sender；value/error 结果按 decayed types 存储、声明并以 rvalue 交付；shared state 和 consumer records 使用 `get_allocator(env)`；超过 1 KB 的子 op、counting_scope 融合 stop 状态与 stop callback 控制块走全局分配；consumer stop callback 直接使用 receiver env 的具体 token 类型。 |
+| `inplace_stop_source/token/callback` | Accepted conformance deviation | 有分配与异常规格偏差，当前保证见 [execution](../backports/execution.md#当前限制)，设计选择见 [stop callback 设计](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | Token `wrap`、top-level association/spawn、`counting_scope` fused stop-token injection 和 async sender-returning `join()` 已实现。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；多 value-alternative sender 退回原表达式，因而不会经该 bridge 变成 awaitable。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 |
 | `schedule_from` | Implemented current-WD-shaped subset | 实现 current-WD 单参数 departure marker sender；default domain 逐字转发 child attributes、completion signatures 与 operation，product access 暴露 `schedule_from_t` tag 供 completion domain 识别。`continues_on` 通过该 marker 连接 source sender，source completion domain 可定制离开其 execution resource 的方式。 |
 | `transform_sender`, `apply_sender` | Implemented current-WD-shaped subset | Public `transform_sender(sender, env)` 先递归应用 sender completion domain，再递归应用 receiver start domain；`default_domain` 支持 sender-tag transform。`apply_sender(domain, tag, sender, args...)` 采用 explicit-domain-first、algorithm-tag fallback，保持 forwarding 与条件 `noexcept`。旧两参数 domain transform 仅作为 Forge source-compatibility extension。 |
 | `affine` | Implemented subset | `affine.hpp`；单参数 CPO / bare-pipe 形式从 receiver env 查询 `get_start_scheduler`，通过 unstoppable schedule sender 复用 `continues_on` transfer subset；因此仍受单一 value completion shape 限制。 |
 | `get_env` | Implemented subset | Member-first，tag-invoke fallback，默认 `empty_env`。 |
-| `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 暴露 current-WD marker spelling 和 basic-sender-shaped `tag_of_t`；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
+| `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 只有 `schedule_from` 提供结构化访问，其他库 sender 的 `tag_of_t` 无法成立；自定义 domain 无法按工作草案方式匹配这些库 sender。暴露 marker spelling；旧 `*_t` spelling 保留为 source-compatibility aliases。 |
 | `get_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；组合 environment 保持 leftmost-wins。 |
 | `get_start_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` / `affine` forwarding tests 覆盖。 |
 | `get_delegation_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；`make_prop` / `write_env` forwarding tests 覆盖。 |
 | `get_completion_scheduler` | Implemented subset | Member `.query` 优先、tag-invoke fallback；scheduler envs 暴露 roundtrip。 |
-| `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。EX27 sender-attribute 过滤只保留 default-instance 常量 gate，采用 type-SFINAE；false 或不能常量求值时不转发。实际 query object 与 type concept 的剩余差异见下方 accepted subset tracking。 |
+| `forwarding_query` | Implemented subset | 暴露 current WD query，支持 member `.query(forwarding_query)` 和 Forge tag-invoke fallback；Forge query objects 按需声明 forwarding。sender-attribute 过滤只保留 default-instance 常量 gate，采用 type-SFINAE；false 或不能常量求值时不转发。实际 query object 与 type concept 的剩余差异见下方 accepted subset tracking。 |
 | `get_await_completion_adaptor` | Implemented subset | 为 coroutine environments 暴露 member-first、tag-invoke fallback query object；没有提供 default adaptor。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | 一参数/双参数查询均采用 member-query-first、tag-invoke fallback；query 只选择 domain 类型，公开 CPO 按 current WD `MANDATE-NOTHROW(D())` 默认构造结果，不保留查询值的运行时状态。Recursive `connect` transform model 已存在；非 default-domain `get_completion_signatures(sender, env)` 会先通过 transformed sender type 重算再读取 signatures，包括 rawless source senders 经 transform 获救的情况。 |
 | `get_allocator` | Implemented subset | Member `.query` 优先、tag-invoke fallback；用于 `spawn` / `spawn_future` allocator paths。`empty_env` 没有 default allocator query。 |
@@ -112,7 +114,7 @@ risk triage 的事实来源。
 | `std::execution::spawn` | Implemented current-WD subset | Top-level `spawn(sender, token[, env])` 分配 detached state，通过 `token.try_associate()` 关联并 eager start。只接受 `set_value()` / `set_stopped()` senders。 | 测试继续对齐 current-WD fire-and-forget spelling。 |
 | `std::execution::counting_scope::join()` | Implemented current-WD-shaped subset | `simple_counting_scope::join()` 和 `counting_scope::join()` 返回 async senders；空 scope 在 `start()` 调用线程内联完成，非空 scope 的 count drain 在 mutex 外启动 receiver env 的 start-scheduler operation，并在完成前建立 terminal `joined` state。 | 两个 scope 的 destructor 遵循 current-WD：仅允许 joined / unused / unused-and-closed，否则 terminate（包括 naturally-drained-but-unjoined）；在 mutex 下检查 state，与最后一次 decrement critical section 同步。保持 zero-count inline / real-drain 后拒绝 association、start-scheduler handoff、last-decrement vs join-register races 压力测试。 |
 | Scope-token `wrap` / `associate` / member `spawn` | 已收敛 surface，语义实现当前目标 | Token-member `associate` / `spawn` 已移除。`simple_counting_scope::token::wrap` 是 identity forwarding；`counting_scope::token::wrap` 给 child env 暴露 fused stop token，scope stop 与下游 receiver/env stop 任一请求都会让 child 观察到 stop。Top-level `associate` / `spawn` / `spawn_future` 拥有 association。 | 继续测试 allocator/env、fused stop-token lifetime 和 async join details；不要在 `std::execution` 恢复 token-member helpers。 |
-| Throwing receiver completion callbacks | 刻意 unsupported boundary | `set_value`、`set_error`、`set_stopped` 必须 `noexcept`；negative compile probe 强制该边界。 | 除非有聚焦任务重写 completion dispatch，否则保持拒绝。 |
+| Throwing receiver completion callbacks | 工作草案要求 | `set_value`、`set_error`、`set_stopped` 必须不抛异常，receiver 必须不抛异常地移动；negative compile probe 固定这些标准规则。 | 保持拒绝。 |
 | Execution domain dispatch | Tested current-WD subset | Public `transform_sender`、`connect` 和 completion-signature computation 应用 sender completion-domain recursion，再应用 receiver start-domain recursion；`apply_sender` 采用 explicit-domain-first、sender-tag fallback；非 default-domain 的 `get_completion_signatures(sender, env)` 使用同一 transformed sender type。 | 保持 recursive transforms、customization order、forwarding/noexcept 和 transformed-signature computation 覆盖，包括 rawless source senders。 |
 | `forge::any_scheduler` | Forge local utility | 建模 Forge local scheduler concept，使用 shared-state identity equality；schedule env 同时提供 current member-query 与 Forge tag-invoke fallback 的 completion-scheduler roundtrip。 | 保持在 `forge::`，不声称标准 type-erasure API。 |
 | `forge::wait_result` | Forge local utility | 同步保留 value、stopped 和 closed-set typed error，不通过 throw 表达。 | typed error 需要跨同步边界时使用；它不是 `std::this_thread::sync_wait`。 |
@@ -121,9 +123,9 @@ risk triage 的事实来源。
 
 ## 已接受 residuals 与未来风险
 
-### EX27 Actual Query Classification
+### 实际 query 分类
 
-EX27 的 sender-attribute 过滤采用保守、已接受的子集：
+sender-attribute 过滤采用保守、已接受的子集：
 只有 `forwarding_query(remove_cvref_t<Q>{})` 可常量求值为 true 才允许转发。
 使用 `enable_if_t` type requirement 将 false 和非恒定表达式留在替换失败路径，
 而非产生 nested constraint 的硬错误。member=false 保持拒绝，不以 marker、兼容
@@ -138,7 +140,7 @@ type concept 使用 `forwarding_query(Q{})`。非 constexpr 默认构造但有 c
 且 [LLVM 状态表](https://clang.llvm.org/cxx_status.html) 将 P2280 unknown-reference
 支持列为 Clang20 起。当前不宣称该扩展可用，也不添加未经验证的构造、静态 flag
 或对象表示替代方案。对 default gate 无法确定为 true 的 stateless / stateful flag，
-均保守不转发。这是 EX27 附带的独立 residual tracking，
+均保守不转发。这是独立的 residual tracking，
 不能将未分类 query 重新解释成非法 CPO，也不能作为放宽 nonforwarding 查询的依据。
 重新扩大支持前，需要合法 CPO 的独立证据及可移植的 C++23 / C++26 分类方案。
 
@@ -169,39 +171,16 @@ type concept 使用 `forwarding_query(Q{})`。非 constexpr 默认构造但有 c
 
 ## stdexec 可行性状态
 
-NVIDIA stdexec 可以作为 sender/receiver 的语义参考实现。它不是本仓库 native-handoff lane
-的直接替代：
-
-- Forge 通过 `<execution>` 暴露 `std::execution`；
-- stdexec 暴露自己的 `stdexec::` surface 和 `<stdexec/execution.hpp>` 等 header；
-- 有意义的 compatibility lane 需要先有 adapter/shim plan，才能测试 Forge `include/forge/`
-  utilities 是否能面向 stdexec 工作。
-
-可选脚本 `scripts/probe-stdexec-feasibility.sh` 会检查用户本地提供的 stdexec checkout，以及
-一小组命名的 Forge execution facilities。它不会 fetch stdexec，也不属于默认 verification
-floor。`STDEXEC_ROOT` 缺失时，它用 skip code 77 退出并打印 `result=skipped`；成功时打印
-`result=passed`。
-
-当前命名检查：
-
-- `stdexec_just_smoke`：stdexec headers 能编译一个极小 `stdexec::just` 程序；
-- `forge_execution_sync_wait`：Forge `<execution>` backport 能运行 `sync_wait(just(42))`；
-- `forge_wait_result_typed_error`：`forge::wait_result` 保留 closed-set typed error；
-- `forge_erased_sender_typed_error`：`forge::erased_sender` 让同一 typed error 跨 erased sender boundary；
-- `forge_any_scheduler`：`forge::any_scheduler` 建模 local Forge scheduler concept 并能 schedule；
-- `forge_receiver_stop_env`：receiver env stop-token propagation 仍可通过 `forge::wait_result` 观察。
-
-这些检查是 feasibility ledger，不是 compatibility proof。它们不会把 Forge `std::execution`
-代码适配到 stdexec namespace 上，也不应被当成 native `std::execution` handoff 完成的证据。
-
-当前 convergence round 的本地状态：
-
-- `STDEXEC_ROOT` 缺失：按预期 skip，exit code 77；
-- `STDEXEC_ROOT` 指向本地 stdexec checkout：所有命名检查通过；
-- 这仍是可选 reference probe，不提升为默认 verification floor。
+stdexec 属于可选参考实现探测，不代表 native handoff 完成。流程、命名检查和跳过规则统一见[测试说明](../testing.md)。
 
 ## 后续有价值的检查
 
 1. 继续把 `scripts/verify-native.sh gcc-exec` 作为当前 libstdc++ execution backport lane。
 2. 只有本地存在 stdexec checkout 时才运行 `scripts/probe-stdexec-feasibility.sh`；审查每个命名检查结果，不只看最终 `result=passed`。
 3. 如果 stdexec 对比变得有价值，adapter layer 设计需负责人另行决定，并明确哪些 examples/tests 必须同时在 Forge 和 stdexec 上 portable。
+
+## 快照范围与待复查事项
+
+这是 2026-08-23 快照，之后的提交未复审；下一次工作草案快照审计时需重新核对整个台账，需负责人另行决定。
+
+`simple_counting_scope` 的 `count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。`spawn_future` 的 allocator 只覆盖 shared state 和 consumer record，不覆盖溢出子 op 或 callback 控制块。

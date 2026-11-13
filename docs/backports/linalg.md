@@ -15,6 +15,8 @@
 本 backport 仍提供旧接口，但它们不属于当前 WD 的标准接口；不能依赖它们切换到原生
 `<linalg>`。此处仅标明遗留状态，不移除或迁移现有接口。
 
+**矩阵范数：** `matrix_frob_norm`、`matrix_one_norm`、`matrix_inf_norm`。
+
 **BLAS Level 2：** `matrix_vector_product`、`triangular_matrix_vector_product`、
 `triangular_matrix_vector_solve`、`symmetric_matrix_vector_product`、
 `hermitian_matrix_vector_product`、`matrix_rank_1_update` / `_c`、
@@ -82,3 +84,8 @@ layout/default accessor。验证入口见[测试说明](../testing.md)；跨架�
 无 execution policy 的 `std::linalg` overload 默认保持顺序执行；Forge 当前不再因为
 翻译单元带 `-fopenmp` 就隐式并行化 GEMM/GEMV。未来若补并行路径，会放在显式 opt-in
 或 execution policy overload 下。
+
+## 非标准重载
+
+`std::linalg` 下将 Triangle 放在第一个参数、以及带额外 alpha 的兼容重载不是工作草案形态，原生让位后可能无法编译。整数范数也属于非工作草案扩展，参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)，原生实现上无法依赖。是否保留或迁出这些接口需负责人另行决定，下一次工作草案快照审计时复查。
+

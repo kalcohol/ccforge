@@ -60,6 +60,7 @@ slice stride；若后续 wording 修正该冲突，再按新的标准结果收�
 
 - `__cpp_lib_constant_wrapper = 202606L`
 - `__cpp_lib_submdspan = 202603L`
+- padded layouts 不提升 `__cpp_lib_mdspan` 至 `202406L`，原有 `<mdspan>` 宏保持由标准库提供
 
 GCC 16 当前提供 `202603L` 的 pre-P4206 native surface。它属于 partial native：
 Forge 会警告并让位，不会在同一 `namespace std` 中叠加声明。专用

@@ -26,4 +26,3 @@ Forge primitive 应优先提供小而明确的 guarantee，而不是半正确的
 5. `wait()` 是否只承诺有限 drain，还是需要无界 loop-until-idle。
 6. 析构是否可能阻塞；如果会，文档是否写清楚。
 7. Examples 是否展示了正常完成和停机路径。
-

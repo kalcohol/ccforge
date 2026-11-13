@@ -9,7 +9,7 @@ backport と、構造化された非同期システムを作るための小さ�
 このプロジェクトは二つの層に分かれています。
 
 - `backport/`: `<execution>`、`<simd>`、`<mdspan>`、`<linalg>`、
-  `<memory>`、`<utility>` など、標準ヘッダー名で公開される backport。
+  `<memory>`、`<hive>`、`<utility>` など、標準ヘッダー名で公開される backport。
 - `include/forge/`: `namespace forge` に置かれる非標準の拡張。scheduler、
   scope、channel、strand、IO proof、coroutine task、型消去 helper
   などを含みます。
@@ -24,7 +24,7 @@ backport ヘッダーを注入します。
 | 領域 | 入口 | 状態 |
 | --- | --- | --- |
 | `std::execution` senders/receivers | `<execution>` | 実用的な P2300 subset |
-| `std::simd` | `<simd>` | C++26 の主要 surface |
+| `std::simd` | `<simd>` | C++26 [simd.syn] surface |
 | `std::hive` | `<hive>` | C++26 backport；[範囲と制限](docs/backports/hive.md) |
 | `std::submdspan` と padded layouts | `<mdspan>` | 現行 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
@@ -32,6 +32,7 @@ backport ヘッダーを注入します。
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化 async support：pool、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP portable backends |
+| `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | コルーチン byte IO；個別ヘッダーを使用 |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend（portable context 選択の対象外） |
 
 正確な意味、制限、現在の状態については [ドキュメント索引](docs/README.md) を参照してください。
@@ -69,6 +70,7 @@ pool.wait();
 インストール済み package:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 find_package(CCForge CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -83,6 +85,7 @@ target_link_libraries(myapp PRIVATE forge::std)
 ソースツリーを直接使う場合:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 include(/path/to/ccforge/forge.cmake)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -90,6 +93,7 @@ target_link_libraries(myapp PRIVATE forge::forge)
 または:
 
 ```cmake
+set(CMAKE_CXX_STANDARD 26)
 add_subdirectory(ccforge)
 target_link_libraries(myapp PRIVATE forge::forge)
 ```
@@ -119,6 +123,7 @@ header 名の衝突も避けられます。
 - 任意: Windows/MSVC host。Windows IOCP smoke gate に使用します。
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 cmake -S . -B build/local -DCMAKE_CXX_STANDARD=23 -DFORGE_BUILD_TESTS=ON
 cmake --build build/local
 ctest --test-dir build/local --output-on-failure
@@ -127,6 +132,7 @@ ctest --test-dir build/local --output-on-failure
 全体の container entrypoint:
 
 ```bash
+git submodule update --init --depth 1 -- 3rdparty/googletest
 scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
 ```
 
@@ -158,3 +164,6 @@ NVIDIA/stdexec、VcDevel/std-simd、Kokkos stdBLAS、ncnn です。
 ## ライセンス
 
 MIT License。[LICENSE](LICENSE) を参照してください。
+
+
+FORGE_ENABLE_FORGE_RUNTIME は runtime サンプルのみを制御します。Forge の検出前に CMAKE_CXX_STANDARD を設定してください。後から target に cxx_std_26 を指定すると検出時の言語モードと異なる場合があります。

@@ -12,7 +12,7 @@
   `bulk_chunked` / `bulk_unchunked`（串行 subset）
 - Forge 兼容扩展：`transfer_just`、`split`
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
-  `when_all_with_variant`、`split`、`associate`、`spawn`、`spawn_future`
+  `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
   value completions 返回 `optional<variant<tuple<...>, ...>>`，零组返回
   `optional<tuple<>>`；WD 要求恰好一组 value completion signature，接受零/多组
@@ -52,11 +52,9 @@
   直接 include fragment（尤其先于平台 `<execution>`）不受支持，可能绕过 wrapper
   prelude / feature decisions，并在 libc++ inline namespace 或
   `FORGE_HAS_NATIVE_EXECUTION_POLICIES` 等配置上形成跨 TU 不一致。
-- Receiver completion callbacks 当前必须为 `noexcept`，包括 `set_value`、`set_error` 和
-  `set_stopped`；throwing completion callbacks 尚不支持，并由配置期 negative compile
-  probe 覆盖。`receiver` concept 额外要求 receiver 类型
-  `is_nothrow_move_constructible`（WD 无此要求），throwing-move receiver 会被
-  concept 拒绝。
+- 工作草案 MANDATE-NOTHROW 与 [exec.recv.concepts] 要求完成函数
+  `set_value`、`set_error`、`set_stopped` 不抛异常，receiver 可不抛异常地移动。
+  这些是标准要求；配置期负面编译探测固定这些规则。
 - `inplace_stop_callback` 当前为保持 Forge 已验证的 callback/source 重入销毁路径，使用
   allocator-neutral control block。因此 registration 会分配，constructor 尚未满足
   current WD 对 nothrow callback 的条件 `noexcept`。不要在 `noexcept` 路径中假设注册
@@ -206,3 +204,10 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 `scripts/verify-native.sh tsan` 与 `scripts/verify-native.sh asan` 分别覆盖 execution
 子集的 ThreadSanitizer 与 ASan+UBSan 路径；`gcc-exec` 覆盖 libstdc++ 上的
 execution-only 路径。
+
+## 分配与可移植性边界
+
+内部 operation state 的小缓冲容量取决于 adaptor：例如 `let_*` 使用 1024 字节缓冲，`when_all` 的每个 child 使用 512 字节缓冲，其 stop callback 缓冲为 256 字节。`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过 `new` / `delete` 使用全局堆。这些内部路径不保证遵从 `get_allocator(env)`。`counting_scope` 的融合 stop 状态、stop callback 控制块也使用全局分配。
+只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
+`simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
+

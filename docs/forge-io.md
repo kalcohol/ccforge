@@ -4,7 +4,7 @@
 OS IO backend。它不是标准 backport，不向 `namespace std` 增加名字。
 
 Linux backend 是 `epoll/eventfd` readiness backend；Windows backend 是小型 IOCP
-completion proof。两者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
+completion proof；Linux 另有独立门控的 io_uring coroutine-native completion 后端。三者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
 未来 backend entry rules 记录在
 [`forge::io` backend SPI sketch](roadmap/forge-io-backend-spi.md) 和
 [backend proof policy](roadmap/forge-backend-proof-policy.md) 中。
@@ -49,6 +49,8 @@ coroutine substrate 和 combinator proof helper 都应直接包含对应 `<forge
 这让不需要 OS backend 的代码可以在 `FORGE_ENABLE_FORGE_IO=OFF` 或无 epoll/IOCP 平台上
 继续使用 byte vocabulary。
 
+### 结果与 EOF
+
 `forge::io::io_result<Ts...>` 是以 `std::error_code` 为首元素的 compound result，
 同时带一个轻量状态位：`value`、`eof` 或 `error`。它保留原有 structured binding
 形状：
@@ -69,12 +71,16 @@ auto [ec, n] = result;
 Tuple access 通过 `forge::io` 中的 ADL `get` 提供；支持 structured binding，未承诺
 `std::get<0>(result)` 这一非必要拼写。
 
+### 缓冲区
+
 `forge::io::const_buffer` 和 `forge::io::mutable_buffer` 是 borrowed byte-region
 descriptors。它们不拥有内存，只记录 pointer 和 byte count。`buffer_size`、
 `buffer_empty`、`buffer_prefix` 和 `buffer_copy` 覆盖单 buffer 与 scatter/gather
 buffer sequence 的最小用法；单个 source/destination region 即使重叠也按
 `memmove` 语义复制。纯 vocabulary 不受 `FORGE_ENABLE_FORGE_IO` backend gate
 控制；backend gate 仍只控制 OS IO context、backend examples 和 backend tests。
+
+### 内存流
 
 `forge::io::memory_read_stream`、`forge::io::memory_write_stream`、
 `forge::io::memory_stream` 和 `forge::io::scripted_read_stream` 是同一条路线的第二批
@@ -172,6 +178,8 @@ concrete stream 类型，但这不是 plugin ABI 承诺。
 `forge_owned_async_stream_protocol.cc` 分属不同 translation units：main TU 构造
 `immediate_async_stream<memory_read_stream>`，protocol TU 只通过
 `owning_any_async_read_stream&` 执行 coroutine read loop。
+
+### 组合器
 
 P4124 风格的 domain-aware combinator 当前提供 two-child、IO-result-specific proof：
 `when_all_results(first, second, env)`、`when_any_results(first, second, env)` 和基于后者的
@@ -320,6 +328,8 @@ auto task = parse(std::allocator_arg, &pool, 40);
 自动接管 coroutine frame allocation。
 
 显式帧分配用于控制分配来源和次数；具体性能应在应用负载下测量。
+
+### Sender 桥接
 
 Sender interop 分两层：
 
@@ -553,12 +563,7 @@ std::execution::set_error_t(forge::io::error)
 - `error_kind::unknown`
 
 `error::code` 保留底层 `std::error_code`。V1 typed API 只覆盖最稳定的分类；默认
-exception_ptr API 仍是主路径。Typed wrappers currently map `std::system_error`
-to `forge::io::error`; non-`system_error` exceptions become
-`error_kind::unknown` with a generic `std::errc::io_error` code (an empty code
-means no exception at all), keeping the failure diagnosable while the original
-exception detail is dropped. Use the default `std::exception_ptr` API when
-preserving arbitrary exception diagnostics matters.
+exception_ptr API 仍是主路径。typed wrapper 将 `std::system_error` 映射为 `forge::io::error`；其他异常映射为 `error_kind::unknown` 与 `std::errc::io_error`，保留失败分类但丢弃原始异常详情。需要完整异常诊断时使用默认 `std::exception_ptr` API。
 
 Typed sender 可以直接跨 `forge::erased_sender` 边界，并用 `forge::wait_result`
 同步消费，不需要为常见边界手写 receiver：
@@ -705,7 +710,7 @@ V1 每次启动 operation 都会尝试把 handle 关联到 context IOCP；如果
 proof：`forge::io::io_uring_context` 持有 SQ/CQ mappings 与专职 poller thread，原生
 operation 是直接实现 `io_awaitable` 协议的非协程 operation-state 对象，不是 sender。
 Sender consumer 通过显式 `io_task` + `as_sender(io_task, env)` 桥接；该桥会分配
-coroutine frame，属于 interop cost。设计决策与冻结语义见
+coroutine frame，属于 interop cost。历史设计选择见
 `docs/roadmap/forge-io-backend-spi.md` 的 Phase 0 决策记录。
 
 ```cpp
@@ -838,3 +843,51 @@ state/record terminal release tail；仅活到 context destructor 返回并不�
 - `example/forge_io_uring_read_write_example.cpp`：io_uring completion backend 上的
   coroutine-native write -> read round trip，echo coroutine 经显式 allocator 参数把
   frame 放进 pool resource；runtime 受限沙箱下打印 skip 信息退出。
+
+## 完成在哪个线程恢复
+
+异步完成时，epoll 的轮询线程、timer 的定时器线程、IOCP 工作线程和 io_uring 轮询线程通常直接恢复等待的协程。若操作在启动或检查就绪时内联完成，协程可在当前调用线程继续执行，不能一概认为会切换线程。
+
+在 `io_task` 内需要业务执行器的线程归属时，使用 `co_await forge::io::await_sender(env.executor.schedule())`；`await_sender` 将 sender 桥接为 IO awaitable。该擦除路径会额外为 operation state 分配一次内存；底层 scheduler 自身的排队、调度和分配成本另计。不要在完成线程中执行长时间阻塞工作。
+
+## EOF 循环
+
+EOF 时 `auto [ec, n]` 中的 `ec` 为空，单独 `if (ec) break;` 会造成空转。读取非空 buffer 的循环可写成：
+
+```cpp
+for (;;) {
+    auto result = co_await stream.read_some(buffer);
+    auto [ec, n] = result;
+    if (result.status() == forge::io::io_status::error) break;
+    // Consume n bytes here, including partial progress at EOF.
+    if (result.eof() || n == 0) break;
+}
+```
+
+## 放弃在飞操作
+
+| 后端 / 边界 | 销毁在飞 operation |
+| --- | --- |
+| epoll | 安全注销，不再交付 |
+| timer | 安全注销并同步在途交付 |
+| io_uring | 终止程序 |
+| IOCP | 终止程序 |
+| 擦除后的异步流 | 终止程序 |
+
+## io_uring 配置与装箱
+
+`io_uring_context_options{.memory = resource, .entries = 64}` 设置非拥有资源与 ring 请求深度；64 是默认 entries。资源必须线程安全并活过 detached poller 的最终释放。
+原生 awaitable 超过 owning erasure 的 slot；可自行编写只持有堆上 operation 指针的小型 awaitable，转发 await 协议并保证在飞状态存活，以接入 `owning_any_async_*`。每次操作多一次堆分配，仍必须遵守不可弃置契约。
+
+### io_result 参考
+
+| 接口 | 含义 |
+| --- | --- |
+| `io_status` / `status()` | value、eof、error 三种状态；error code 非空时为 error |
+| `success(values...)` | 创建 value 状态 |
+| `failure(ec, values...)` | 创建 error 状态，允许 ec 为空 |
+| `end_of_file(values...)` | 创建 EOF 状态并保留 partial progress |
+| `error()` / `values()` | 按值类别访问 error code 与 payload tuple |
+| ADL `get<I>` | tuple element 0 为 error code，其余为 payload |
+
+`status()`、`has_value()`、`eof()` 是分类依据；空 error code 不意味着成功，`failure({}, ...)` 仍是 error。`as_sender` 把整个 `io_result` 作为单个 value 传递，不隐式拆分为 sender 的 value/error 通道。

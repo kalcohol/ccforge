@@ -1,5 +1,7 @@
 # `inplace_stop_callback` 无分配设计记录
 
+
+
 这份记录说明 Forge execution backport 的 `std::inplace_stop_callback` 为什么暂时保留
 per-registration control-block allocation，以及未来移除该分配必须同时证明哪些不变量。
 它记录的是一个明确的 conformance residual，不把当前实现描述成 current-WD complete。
@@ -139,3 +141,7 @@ context。
    掩盖 UAF。
 
 在这些条件具备前，不把一个局部 `source` condition variable patch 当作修复。
+
+## stop source 持有者
+
+后续无分配方案需逐项审计 `when_all`、`spawn_future`、`counting_scope` 的融合状态：这些 sender 拥有 `inplace_stop_source`。
