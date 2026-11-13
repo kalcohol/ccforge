@@ -23,7 +23,6 @@
 #pragma once
 
 #include "concepts.hpp"
-#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "just.hpp"
 #include "run_loop.hpp"
@@ -32,245 +31,142 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace std::execution {
 
 namespace __forge_continues_on {
 
+// Each completion alternative owns its decayed datums until the hop completes.
 template<class Sig>
-struct __is_value_completion : std::false_type {};
+struct __result_sig;
 
-template<class... Vs>
-struct __is_value_completion<set_value_t(Vs...)> : std::true_type {};
+template<class Tag, class... As>
+struct __result_sig<Tag(As...)> {
+    using tuple = std::tuple<Tag, std::decay_t<As>...>;
+    using completion = completion_signatures<Tag(std::decay_t<As>...)>;
+    static constexpr bool nothrow =
+        (std::is_nothrow_constructible_v<std::decay_t<As>, As> && ...);
+};
+
+template<class List>
+struct __as_variant;
+
+template<class... Ts>
+struct __as_variant<__forge_meta::type_list<Ts...>> {
+    using type = std::variant<Ts...>;
+};
 
 template<class CS>
-struct __value_completion_count;
+struct __results;
 
 template<class... Sigs>
-struct __value_completion_count<completion_signatures<Sigs...>>
-    : std::integral_constant<
-          std::size_t,
-          (std::size_t{0} + ... +
-           static_cast<std::size_t>(__is_value_completion<Sigs>::value))> {};
-
-template<class CS>
-inline constexpr std::size_t __value_completion_count_v =
-    __value_completion_count<CS>::value;
-
-template<class Sig>
-struct __decayed_completion {
-    using type = completion_signatures<Sig>;
+struct __results<completion_signatures<Sigs...>> {
+    static constexpr bool nothrow = (__result_sig<Sigs>::nothrow && ...);
+    using exception_completion = std::conditional_t<nothrow,
+        completion_signatures<>, completion_signatures<set_error_t(std::exception_ptr)>>;
+    using source_completions = __forge_meta::__concat_unique_cs_t<
+        typename __result_sig<Sigs>::completion...>;
+    using alternatives = __forge_meta::list_push_unique_all_t<
+        __forge_meta::type_list<std::monostate>, typename __result_sig<Sigs>::tuple...>;
+    using with_exception = std::conditional_t<nothrow, alternatives,
+        __forge_meta::list_push_unique_t<alternatives, std::tuple<set_error_t, std::exception_ptr>>>;
+    using variant = typename __as_variant<with_exception>::type;
 };
 
-template<class... Vs>
-struct __decayed_completion<set_value_t(Vs...)> {
-    using type = completion_signatures<set_value_t(std::decay_t<Vs>...)>;
-};
-
-template<class E>
-struct __decayed_completion<set_error_t(E)> {
-    using type = completion_signatures<set_error_t(std::decay_t<E>)>;
-};
-
-template<class CS>
-struct __decayed_completions;
-
-template<class... Sigs>
-struct __decayed_completions<completion_signatures<Sigs...>> {
-    using type = __forge_meta::__concat_unique_cs_t<
-        typename __decayed_completion<Sigs>::type...>;
-};
-
-template<class CS>
-using __decayed_completions_t = typename __decayed_completions<CS>::type;
-
-template<class R>
-concept __can_set_exception_ptr = requires(R& r, std::exception_ptr ep) {
-    std::execution::set_error(std::move(r), std::move(ep));
-};
-
-template<class R, class... StoredVs>
-struct __sched_value_recv {
-    using receiver_concept = receiver_t;
-    R* __outer;
-    std::tuple<StoredVs...>* __vals;
-
-    void set_value() && noexcept {
-        std::apply([this](auto&&... vs) {
-            std::execution::set_value(std::move(*__outer), static_cast<StoredVs&&>(vs)...);
-        }, std::move(*__vals));
-    }
-    template<class E>
-    void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
-    }
-    void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(*__outer));
-    }
-    auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(*__outer);
-    }
-};
-
-template<class R, class E>
-struct __sched_error_recv {
-    using receiver_concept = receiver_t;
-    R* __outer;
-    E* __error;
-
-    void set_value() && noexcept {
-        std::execution::set_error(std::move(*__outer), std::move(*__error));
-    }
-    template<class Other>
-    void set_error(Other&& e) && noexcept {
-        std::execution::set_error(std::move(*__outer), static_cast<Other&&>(e));
-    }
-    void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(*__outer));
-    }
-    auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(*__outer);
-    }
-};
-
-template<class R>
-struct __sched_stopped_recv {
-    using receiver_concept = receiver_t;
-    R* __outer;
-
-    void set_value() && noexcept {
-        std::execution::set_stopped(std::move(*__outer));
-    }
-    template<class E>
-    void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
-    }
-    void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(*__outer));
-    }
-    auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(*__outer);
-    }
-};
-
-template<class Scheduler, class S, class R, class ValTuple>
-struct __op_impl;
-
-template<class Scheduler, class S, class R, class... Vs>
-struct __op_impl<Scheduler, S, R, std::tuple<Vs...>> : __forge_detail::__immovable {
+template<class Scheduler, class S, class R>
+struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
+    using __results_t = __results<completion_signatures_of_t<S, env_of_t<R>>>;
 
-    using __sched_value_recv_t = __sched_value_recv<R, Vs...>;
-    using __sched_sndr_t = decltype(
-        std::execution::schedule(std::declval<Scheduler&>()));
-
-    void __deliver_schedule_failure() noexcept {
-        if constexpr (__can_set_exception_ptr<R>) {
-            auto error = std::current_exception();
-            if (!error) {
-                error = std::make_exception_ptr(
-                    std::runtime_error("continues_on: scheduling failed"));
-            }
-            std::execution::set_error(std::move(__outer), std::move(error));
-        } else {
-            std::terminate();
-        }
-    }
-
-    template<class Recv>
-    void __start_scheduled(Recv recv) noexcept {
-        using sched_op_t = connect_result_t<__sched_sndr_t, Recv>;
-        try {
-            auto* op = __sched_storage.template emplace_from<sched_op_t>([&]() -> sched_op_t {
-                return std::execution::connect(std::execution::schedule(__sch), std::move(recv));
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            __deliver_schedule_failure();
-        }
-    }
-
-    void __schedule_payload_failure() noexcept {
-        if constexpr (__can_set_exception_ptr<R>) {
-            __payload_error = std::current_exception();
-            __start_scheduled(__sched_error_recv<R, std::exception_ptr>{
-                std::addressof(__outer), std::addressof(__payload_error)});
-        } else {
-            std::terminate();
-        }
-    }
-
-    struct __up_recv {
+    struct __sched_recv {
         using receiver_concept = receiver_t;
-        __op_impl* __self;
+        __op* __self;
 
-        template<class... Us>
-            requires std::constructible_from<std::tuple<Vs...>, Us...>
-        void set_value(Us&&... vs) && noexcept {
-            try {
-                auto* vals = __self->__payload_storage.template emplace<std::tuple<Vs...>>(
-                    static_cast<Us&&>(vs)...);
-                __self->__start_scheduled(__sched_value_recv_t{
-                    std::addressof(__self->__outer), vals});
-            } catch (...) {
-                __self->__schedule_payload_failure();
-            }
+        void set_value() && noexcept {
+            // The receiver can destroy the entire operation during this call.
+            // Neither visitor nor caller may inspect the state afterwards.
+            std::visit([outer = std::addressof(__self->__outer)](auto& result) noexcept {
+                using tuple_t = std::remove_cvref_t<decltype(result)>;
+                if constexpr (!std::same_as<tuple_t, std::monostate>) {
+                    std::apply([outer](auto tag, auto&... args) noexcept {
+                        tag(std::move(*outer), std::move(args)...);
+                    }, result);
+                }
+            }, __self->__result);
         }
         template<class E>
-        void set_error(E&& e) && noexcept {
-            using error_t = std::decay_t<E>;
-            try {
-                auto* error = __self->__payload_storage.template emplace<error_t>(
-                    static_cast<E&&>(e));
-                __self->__start_scheduled(
-                    __sched_error_recv<R, error_t>{std::addressof(__self->__outer), error});
-            } catch (...) {
-                __self->__schedule_payload_failure();
-            }
+        void set_error(E&& error) && noexcept {
+            std::execution::set_error(std::move(__self->__outer), static_cast<E&&>(error));
         }
         void set_stopped() && noexcept {
-            __self->__start_scheduled(
-                __sched_stopped_recv<R>{std::addressof(__self->__outer)});
+            std::execution::set_stopped(std::move(__self->__outer));
         }
         auto get_env() const noexcept -> env_of_t<R> {
             return std::execution::get_env(__self->__outer);
         }
     };
 
+    template<class Tag, class... As>
+    void __save_and_schedule(Tag tag, As&&... args) noexcept {
+        using result_t = std::tuple<Tag, std::decay_t<As>...>;
+        constexpr bool nothrow =
+            (std::is_nothrow_constructible_v<std::decay_t<As>, As> && ...);
+        if constexpr (nothrow) {
+            __result.template emplace<result_t>(tag, static_cast<As&&>(args)...);
+        } else {
+            try {
+                __result.template emplace<result_t>(tag, static_cast<As&&>(args)...);
+            } catch (...) {
+                __result.template emplace<std::tuple<set_error_t, std::exception_ptr>>(
+                    set_error_t{}, std::current_exception());
+            }
+        }
+        std::execution::start(__sched_op);
+    }
+
+    struct __up_recv {
+        using receiver_concept = receiver_t;
+        __op* __self;
+
+        template<class... As>
+        void set_value(As&&... args) && noexcept {
+            __self->__save_and_schedule(set_value_t{}, static_cast<As&&>(args)...);
+        }
+        template<class E>
+        void set_error(E&& error) && noexcept {
+            __self->__save_and_schedule(set_error_t{}, static_cast<E&&>(error));
+        }
+        void set_stopped() && noexcept {
+            __self->__save_and_schedule(set_stopped_t{});
+        }
+        auto get_env() const noexcept -> env_of_t<R> {
+            return std::execution::get_env(__self->__outer);
+        }
+    };
+
+    using __sched_op_t = connect_result_t<decltype(
+        std::execution::schedule(std::declval<Scheduler&>())), __sched_recv>;
     using __up_op_t = connect_result_t<S, __up_recv>;
 
     R __outer;
-    Scheduler __sch;
-    std::exception_ptr __payload_error;
-    // Both inner operations must be destroyed before their borrowed state.
-    __forge_detail::__op_storage<64> __payload_storage;
-    __forge_detail::__op_storage<1024> __sched_storage;
+    typename __results_t::variant __result;
+    // Destroy both operations before their borrowed result and receiver.
+    __sched_op_t __sched_op;
     __up_op_t __up_op;
 
-    __op_impl(Scheduler sch, S sndr, R recv)
+    __op(Scheduler sch, S sndr, R recv)
         : __outer(std::move(recv))
-        , __sch(std::move(sch))
+        , __sched_op(std::execution::connect(std::execution::schedule(sch), __sched_recv{this}))
         , __up_op(std::execution::connect(std::move(sndr), __up_recv{this}))
     {}
 
     void start() & noexcept {
         std::execution::start(__up_op);
     }
-};
-
-template<class Scheduler, class S, class R>
-struct __op_selector {
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::declval<env_of_t<R>>()));
-    static_assert(
-        __value_completion_count_v<cs_t> <= 1,
-        "continues_on supports at most one value completion shape");
-    using val_tup_t = __forge_meta::__single_value_tuple_t<cs_t>;
-    using type = __op_impl<Scheduler, S, R, val_tup_t>;
 };
 
 template<class Query>
@@ -400,10 +296,7 @@ struct __sender {
         using source_cs_t = decltype(std::execution::get_completion_signatures(
             std::declval<typename self_t::source_t>(),
             std::declval<Env>()));
-        using decayed_source_cs_t = __decayed_completions_t<source_cs_t>;
-        static_assert(
-            __value_completion_count_v<source_cs_t> <= 1,
-            "continues_on supports at most one value completion shape");
+        using results_t = __results<source_cs_t>;
         using sched_sndr_t = decltype(std::execution::schedule(
             std::declval<Scheduler&>()));
         using sched_cs_t = decltype(std::execution::get_completion_signatures(
@@ -412,25 +305,24 @@ struct __sender {
         using sched_non_value_cs_t =
             __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
         return __forge_meta::__concat_unique_cs_t<
-            decayed_source_cs_t,
-            sched_non_value_cs_t,
-            completion_signatures<set_error_t(std::exception_ptr)>>{};
+            typename __results<source_cs_t>::source_completions,
+            sched_non_value_cs_t, typename results_t::exception_completion>{};
     }
 
     template<receiver R>
     auto connect(R r) &&
-        -> typename __op_selector<Scheduler, S, R>::type
+        -> __op<Scheduler, S, R>
     {
-        return typename __op_selector<Scheduler, S, R>::type(
+        return __op<Scheduler, S, R>(
             std::move(__sch), std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
     auto connect(R r) const&
-        -> typename __op_selector<Scheduler, S, R>::type
+        -> __op<Scheduler, S, R>
     {
-        return typename __op_selector<Scheduler, S, R>::type(
+        return __op<Scheduler, S, R>(
             __sch, __sndr, std::move(r));
     }
 

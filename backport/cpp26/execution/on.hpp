@@ -24,7 +24,6 @@
 
 #include "concepts.hpp"
 #include "continues_on.hpp"
-#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "run_loop.hpp"
 
@@ -68,9 +67,6 @@ struct __starts_on_op : __forge_detail::__immovable {
     Scheduler __sch;
     env_of_t<R> __outer_env;
 
-    __forge_detail::__op_storage<1024> __sched_storage;
-    __forge_detail::__op_storage<1024> __sndr_storage;
-
     struct __sndr_recv {
         using receiver_concept = receiver_t;
         __starts_on_op* __self;
@@ -100,7 +96,7 @@ struct __starts_on_op : __forge_detail::__immovable {
 
         void set_value() && noexcept {
             std::execution::start(
-                __self->__sndr_storage.template get<__sndr_op_t>());
+                __self->__sndr_op);
         }
         template<class E>
         void set_error(E&& e) && noexcept {
@@ -117,22 +113,20 @@ struct __starts_on_op : __forge_detail::__immovable {
     using __sched_op_t = connect_result_t<
         decltype(std::execution::schedule(std::declval<Scheduler&>())), __sched_recv>;
 
+    // Ordinary members preserve guaranteed elision, including empty states.
+    __sched_op_t __sched_op;
+    __sndr_op_t __sndr_op;
+
     __starts_on_op(Scheduler sch, S sndr, R recv)
         : __outer_recv(std::move(recv))
         , __sch(std::move(sch))
         , __outer_env(std::execution::get_env(__outer_recv))
-    {
-        __sched_storage.template emplace_from<__sched_op_t>([&]() -> __sched_op_t {
-            return std::execution::connect(std::execution::schedule(__sch), __sched_recv{this});
-        });
-        __sndr_storage.template emplace_from<__sndr_op_t>([&]() -> __sndr_op_t {
-            return std::execution::connect(
-                std::move(sndr), __sndr_recv{this});
-        });
-    }
+        , __sched_op(std::execution::connect(std::execution::schedule(__sch), __sched_recv{this}))
+        , __sndr_op(std::execution::connect(std::move(sndr), __sndr_recv{this}))
+    {}
 
     void start() & noexcept {
-        std::execution::start(__sched_storage.template get<__sched_op_t>());
+        std::execution::start(__sched_op);
     }
 };
 
@@ -237,20 +231,22 @@ struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     using inner_op_t = __inner_op_t<Scheduler, S, R>;
 
-    __forge_detail::__op_storage<1024> __storage;
+    inner_op_t __inner_op;
 
-    __op(Scheduler sch, S sndr, R rcvr) {
+    static auto __connect(Scheduler sch, S sndr, R rcvr) -> inner_op_t {
         auto orig_sch = std::execution::get_start_scheduler(std::execution::get_env(rcvr));
         auto composed = std::execution::continues_on(
             std::execution::starts_on(std::move(sch), std::move(sndr)),
             std::move(orig_sch));
-        __storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-            return std::execution::connect(std::move(composed), std::move(rcvr));
-        });
+        return std::execution::connect(std::move(composed), std::move(rcvr));
     }
 
+    __op(Scheduler sch, S sndr, R rcvr)
+        : __inner_op(__connect(std::move(sch), std::move(sndr), std::move(rcvr)))
+    {}
+
     void start() & noexcept {
-        std::execution::start(__storage.template get<inner_op_t>());
+        std::execution::start(__inner_op);
     }
 };
 
@@ -339,21 +335,24 @@ struct __closure_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     using inner_op_t = __closure_inner_op_t<S, Scheduler, Closure, R>;
 
-    __forge_detail::__op_storage<1024> __storage;
+    inner_op_t __inner_op;
 
-    __closure_op(S sndr, Scheduler sch, Closure closure, R rcvr) {
+    static auto __connect(S sndr, Scheduler sch, Closure closure, R rcvr) -> inner_op_t {
         auto orig_sch = std::execution::get_completion_scheduler<set_value_t>(
             std::execution::get_env(sndr));
         auto shifted = std::execution::continues_on(std::move(sndr), std::move(sch));
         auto adapted = std::move(closure)(std::move(shifted));
         auto composed = std::execution::continues_on(std::move(adapted), std::move(orig_sch));
-        __storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-            return std::execution::connect(std::move(composed), std::move(rcvr));
-        });
+        return std::execution::connect(std::move(composed), std::move(rcvr));
     }
 
+    __closure_op(S sndr, Scheduler sch, Closure closure, R rcvr)
+        : __inner_op(__connect(std::move(sndr), std::move(sch),
+              std::move(closure), std::move(rcvr)))
+    {}
+
     void start() & noexcept {
-        std::execution::start(__storage.template get<inner_op_t>());
+        std::execution::start(__inner_op);
     }
 };
 
