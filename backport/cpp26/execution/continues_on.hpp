@@ -506,6 +506,7 @@ template<sender S>
 
 template<scheduler Scheduler, class... Vs>
     requires (std::move_constructible<std::decay_t<Vs>> && ...)
+[[deprecated("use forge::transfer_just or continues_on(just(...), scheduler)")]]
 [[nodiscard]] auto transfer_just(Scheduler sch, Vs&&... vs) {
     return std::execution::continues_on(
         std::execution::just(std::forward<Vs>(vs)...), std::move(sch));

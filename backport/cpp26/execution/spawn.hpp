@@ -80,7 +80,7 @@ struct __state {
             __owner->__complete();
         }
 
-        auto get_env() const noexcept -> empty_env {
+        auto get_env() const noexcept -> __empty_env {
             return {};
         }
     };
@@ -142,7 +142,7 @@ void __launch(S sndr, Token token, Alloc alloc) {
     using state_traits_t = std::allocator_traits<state_alloc_t>;
 
     using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<source_t>(), std::declval<empty_env>()));
+        std::declval<source_t>(), std::declval<__empty_env>()));
     static_assert(__spawnable_completions_v<cs_t>,
         "std::execution::spawn requires a sender that completes with set_value() or set_stopped()");
 
@@ -175,7 +175,7 @@ void __spawn_wrapped(Wrapped wrapped, Token token, Env env) {
         decltype(auto) source_env = std::execution::get_env(wrapped);
         auto alloc = std::execution::get_allocator(source_env);
         auto joined_env = std::execution::make_env(
-            std::execution::make_prop(std::execution::get_allocator_t{}, alloc),
+            std::execution::prop(std::execution::get_allocator_t{}, alloc),
             std::move(env));
         __launch_with_env(
             std::move(wrapped), std::move(token), std::move(joined_env), std::move(alloc));
@@ -197,7 +197,7 @@ struct __spawn_t {
 
     template<sender S, scope_token Token>
     void operator()(S&& sndr, Token token) const {
-        (*this)(static_cast<S&&>(sndr), std::move(token), empty_env{});
+        (*this)(static_cast<S&&>(sndr), std::move(token), __empty_env{});
     }
 };
 

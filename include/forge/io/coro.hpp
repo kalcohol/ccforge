@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <forge/io/detail/coro_lifetime.hpp>
 #include <forge/io/env.hpp>
 
@@ -816,7 +817,7 @@ public:
         }
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

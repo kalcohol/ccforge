@@ -544,7 +544,7 @@ struct __sender {
             std::index_sequence_for<Senders...>{}};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };

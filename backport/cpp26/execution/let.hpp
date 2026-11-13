@@ -201,11 +201,11 @@ auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
         auto domain = std::execution::get_completion_domain<cpo_t>(
             child_env,
             __forwarding_env<OuterEnv>{&outer_env});
-        return std::execution::make_prop(
+        return std::execution::prop(
             get_domain_t{},
             std::move(domain));
     } else {
-        return empty_env{};
+        return __empty_env{};
     }
 }
 

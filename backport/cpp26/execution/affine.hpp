@@ -94,7 +94,7 @@ struct __sender {
         return std::execution::connect(std::move(shifted), std::move(receiver));
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };

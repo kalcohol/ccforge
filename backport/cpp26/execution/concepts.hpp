@@ -231,11 +231,11 @@ struct get_completion_signatures_t {
     }
 
     template<class S>
-        requires __forge_cpo_detail::__raw_completion_signatures_available<S, empty_env>
+        requires __forge_cpo_detail::__raw_completion_signatures_available<S, __empty_env>
     auto operator()(S&& s) const
-        noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, empty_env>()) {
+        noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, __empty_env>()) {
         return __forge_cpo_detail::__raw_completion_signatures(
-            static_cast<S&&>(s), empty_env{});
+            static_cast<S&&>(s), __empty_env{});
     }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};

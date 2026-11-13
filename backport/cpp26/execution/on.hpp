@@ -34,9 +34,9 @@ namespace __forge_on {
 
 template<class Scheduler, class OuterEnv>
 auto __make_starts_on_env(Scheduler& scheduler, const OuterEnv& outer) {
-    auto scheduler_prop = std::execution::make_prop(
+    auto scheduler_prop = std::execution::prop(
         std::execution::get_scheduler, std::cref(scheduler));
-    auto start_prop = std::execution::make_prop(
+    auto start_prop = std::execution::prop(
         std::execution::get_start_scheduler, std::cref(scheduler));
     // The operation owns value environments; this view has a stable shape.
     auto child_env = std::execution::env<
@@ -46,7 +46,7 @@ auto __make_starts_on_env(Scheduler& scheduler, const OuterEnv& outer) {
     // SCHED-ENV exposes only a direct domain query, not a synthesized fallback.
     if constexpr (__forge_env_detail::__queryable<get_domain_t, const Scheduler&>) {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_domain,
                 std::execution::get_domain(scheduler)),
             std::move(child_env));
@@ -289,7 +289,7 @@ struct __sender {
         return __op<Scheduler, S, R>{__sch, __sndr, std::move(r)};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         // Completion returns to the receiver's start scheduler, not the child's.
         return {};
     }

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <execution>
 #include <cstddef>
 #include <exception>
@@ -157,7 +158,7 @@ struct typed_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

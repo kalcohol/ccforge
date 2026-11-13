@@ -376,6 +376,8 @@ inline constexpr sync_wait_with_variant_t sync_wait_with_variant{};
 
 namespace std::execution {
 
+// Deprecated compatibility alias: retain identity and unqualified lookup.
+// A using-declaration cannot carry a separate deprecated attribute.
 using std::this_thread::sync_wait_with_variant;
 
 } // namespace std::execution

@@ -22,6 +22,8 @@
 
 #pragma once
 
+#define FORGE_EXECUTION_BACKPORT_ACTIVE 1
+
 // NOTE: This is a Forge backport of a focused P2300 sender/receiver subset.
 // It is intentionally correctness-first and leaves large conformance gaps
 // documented below instead of papering over them.

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include "detail/completion_meta.hpp"
 
 #include <execution>
@@ -246,7 +247,7 @@ public:
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };

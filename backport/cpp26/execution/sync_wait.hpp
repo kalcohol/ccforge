@@ -127,7 +127,7 @@ struct receiver {
 
 namespace std::this_thread {
 
-struct sync_wait_t {
+struct __sync_wait_impl_t {
     template<class S>
         requires std::execution::sender_in<
             S, std::execution::__forge_sync_wait::sync_wait_env>
@@ -156,12 +156,45 @@ struct sync_wait_t {
     }
 };
 
+namespace __forge_wait_detail {
+template<class Signature> struct __is_value : std::false_type {};
+template<class... Vs>
+struct __is_value<std::execution::set_value_t(Vs...)> : std::true_type {};
+template<class Signatures> struct __value_count;
+template<class... Sigs>
+struct __value_count<std::execution::completion_signatures<Sigs...>>
+    : std::integral_constant<std::size_t, (std::size_t{0} + ... + __is_value<Sigs>::value)> {};
+template<class S>
+inline constexpr bool __multiple_values = __value_count<
+    std::execution::completion_signatures_of_t<S,
+        std::execution::__forge_sync_wait::sync_wait_env>>::value > 1;
+}
+
+struct sync_wait_t {
+    template<class S>
+        requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
+                 (!__forge_wait_detail::__multiple_values<S>)
+    auto operator()(S&& sndr) const {
+        return __sync_wait_impl_t{}(std::forward<S>(sndr));
+    }
+
+    template<class S>
+        requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
+                 __forge_wait_detail::__multiple_values<S>
+    [[deprecated("multi-value sync_wait is a Forge extension; use forge::sync_wait or std::this_thread::sync_wait_with_variant")]]
+    auto operator()(S&& sndr) const {
+        return __sync_wait_impl_t{}(std::forward<S>(sndr));
+    }
+};
+
 inline constexpr sync_wait_t sync_wait{};
 
 } // namespace std::this_thread
 
 namespace std::execution {
 
+// Deprecated compatibility alias: retain identity and unqualified lookup.
+// A using-declaration cannot carry a separate deprecated attribute.
 using std::this_thread::sync_wait;
 
 } // namespace std::execution

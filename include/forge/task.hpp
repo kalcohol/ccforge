@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include "any_scheduler.hpp"
 #include "any_stop_token.hpp"
 
@@ -291,7 +292,7 @@ public:
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) &&
@@ -371,7 +372,7 @@ public:
             std::execution::set_stopped_t()> {
         return {};
     }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) &&

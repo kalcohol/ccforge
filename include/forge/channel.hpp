@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include "any_stop_token.hpp"
 #include "resource_policy.hpp"
 
@@ -670,7 +671,7 @@ struct __send_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R rcvr) && -> __send_op<T, R> {
@@ -692,7 +693,7 @@ struct __recv_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R rcvr) && -> __recv_op<T, R> {

@@ -80,7 +80,7 @@ using __cached_completion_signatures_t =
 template<class S>
 struct __shared_state {
     using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::execution::empty_env{}));
+        std::declval<S>(), std::execution::__empty_env{}));
     using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
 
     enum class Phase { idle, running, done };
@@ -210,7 +210,7 @@ struct __inner_recv {
         }
         st->notify_all();
     }
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };
@@ -310,7 +310,7 @@ struct __sender {
         return __op<S, R>{__shared, std::move(r)};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };
@@ -318,7 +318,7 @@ struct __sender {
 } // namespace __forge_split
 
 template<sender S>
-[[nodiscard]] auto split(S&& sndr) {
+[[nodiscard]] auto __split(S&& sndr) {
     using source_t = std::decay_t<S>;
     using ST = __forge_split::__shared_state<source_t>;
     using inner_recv_t = __forge_split::__inner_recv<source_t>;
@@ -336,6 +336,12 @@ template<sender S>
     };
 
     return __forge_split::__sender<source_t>{std::move(shared)};
+}
+
+template<sender S>
+[[deprecated("use forge::split")]]
+[[nodiscard]] auto split(S&& sndr) {
+    return std::execution::__split(std::forward<S>(sndr));
 }
 
 } // namespace std::execution

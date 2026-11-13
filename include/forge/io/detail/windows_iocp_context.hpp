@@ -34,6 +34,7 @@
 #define FORGE_IO_UNDEFINE_WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <forge/execution_extensions.hpp>
 #include <windows.h>
 #if defined(FORGE_IO_UNDEFINE_WIN32_LEAN_AND_MEAN)
 #undef WIN32_LEAN_AND_MEAN
@@ -784,7 +785,7 @@ struct __byte_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

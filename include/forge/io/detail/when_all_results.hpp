@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <forge/io/detail/combinator_common.hpp>
 
 #include <exception>
@@ -353,7 +354,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

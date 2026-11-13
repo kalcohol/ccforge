@@ -41,7 +41,7 @@ template<class Receiver>
 using receiver_domain_t = env_domain_t<
     decltype(std::execution::get_env(std::declval<const Receiver&>()))>;
 
-template<class Sender, class Env = empty_env>
+template<class Sender, class Env = __empty_env>
 using sender_domain_t = decltype(get_domain(
     std::execution::get_env(std::declval<Sender>())));
 

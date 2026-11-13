@@ -59,7 +59,10 @@ inline constexpr forwarding_query_t forwarding_query{};
 
 namespace std::execution {
 
-struct empty_env {};
+// Deprecate only the compatibility spelling, never the underlying type.
+// Clang diagnoses uses through aliases of a deprecated class as well.
+struct __empty_env {};
+using empty_env [[deprecated("use std::execution::env<> or forge::empty_env")]] = __empty_env;
 
 namespace __forge_env_detail {
 
@@ -175,7 +178,7 @@ struct get_env_t {
         } else if constexpr (__forge_detail::tag_invocable<get_env_t, const T&>) {
             return __forge_detail::tag_invoke_fn(*this, obj);
         } else {
-            return empty_env{};
+            return __empty_env{};
         }
     }
 };
@@ -306,6 +309,7 @@ template<class Tag, class Value>
 prop(Tag, Value) -> prop<Tag, std::unwrap_reference_t<Value>>;
 
 template<class Tag, class Value>
+[[deprecated("use std::execution::prop")]]
 [[nodiscard]] auto make_prop(Tag tag, Value&& val) {
     return prop{tag, std::forward<Value>(val)};
 }

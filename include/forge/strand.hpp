@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include "any_scheduler.hpp"
 #include "resource_policy.hpp"
 #include "static_thread_pool.hpp"
@@ -168,7 +169,7 @@ struct __runner_recv {
     void set_value() && noexcept;
     void set_stopped() && noexcept;
     void set_error(std::exception_ptr) && noexcept;
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 template<class Sender>
@@ -209,7 +210,7 @@ struct __pool_sender {
     static auto get_completion_signatures() noexcept -> __completion_signatures {
         return {};
     }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     struct __op {
         using operation_state_concept = std::execution::operation_state_t;

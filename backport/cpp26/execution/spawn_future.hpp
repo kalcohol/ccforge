@@ -184,7 +184,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     using started_sender_t = decltype(std::execution::write_env(
         std::declval<S>(), std::declval<spawn_env_t>()));
     using upstream_cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<started_sender_t>(), std::declval<empty_env>()));
+        std::declval<started_sender_t>(), std::declval<__empty_env>()));
     using output_cs_t = __future_completion_signatures_t<upstream_cs_t>;
     using result_t = __result_variant_t<output_cs_t>;
     using inner_recv_t = __inner_recv<__shared_state>;
@@ -403,7 +403,7 @@ struct __inner_recv {
         state->__complete_with(__stopped_result{});
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };
@@ -605,7 +605,7 @@ struct __sender {
         }
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 
@@ -671,7 +671,7 @@ struct spawn_future_t {
                       }) {
             auto alloc = std::execution::get_allocator(std::execution::get_env(wrapped));
             auto joined_env = std::execution::make_env(
-                std::execution::make_prop(std::execution::get_allocator_t{}, std::move(alloc)),
+                std::execution::prop(std::execution::get_allocator_t{}, std::move(alloc)),
                 std::move(env));
             return __forge_spawn_future::__spawn_future(
                 std::move(wrapped),
@@ -687,7 +687,7 @@ struct spawn_future_t {
 
     template<sender S, scope_token Token>
     [[nodiscard]] auto operator()(S&& sndr, Token token) const {
-        return (*this)(static_cast<S&&>(sndr), std::move(token), empty_env{});
+        return (*this)(static_cast<S&&>(sndr), std::move(token), __empty_env{});
     }
 };
 

@@ -167,7 +167,7 @@ decltype(auto) __get_promise_env(const Promise& p)
 
 template<class Promise>
     requires (!__has_promise_env<Promise>)
-auto __get_promise_env(const Promise&) noexcept -> empty_env {
+auto __get_promise_env(const Promise&) noexcept -> __empty_env {
     return {};
 }
 

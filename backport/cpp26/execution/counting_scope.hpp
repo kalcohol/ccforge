@@ -152,7 +152,7 @@ struct __test_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };
@@ -164,7 +164,7 @@ concept scope_token =
     std::copyable<Token> &&
     requires(const Token token) {
         { token.try_associate() } -> scope_association;
-        { token.wrap(std::declval<__forge_scope_detail::__test_sender>()) } -> sender_in<empty_env>;
+        { token.wrap(std::declval<__forge_scope_detail::__test_sender>()) } -> sender_in<__empty_env>;
     };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -433,7 +433,7 @@ struct __join_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include "execution_extensions.hpp"
 #include "async_scope.hpp"
 #include "any_stop_token.hpp"
 #include "any_receiver.hpp"

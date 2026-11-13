@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include "any_stop_token.hpp"
 #include "resource_policy.hpp"
 
@@ -383,7 +384,7 @@ struct __sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

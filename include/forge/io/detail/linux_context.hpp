@@ -26,6 +26,7 @@
 #error "forge::io linux context requires FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND"
 #endif
 
+#include <forge/execution_extensions.hpp>
 #include "../error.hpp"
 #include "../../any_stop_token.hpp"
 #include "../../resource_policy.hpp"
@@ -1027,7 +1028,7 @@ struct __sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -1161,7 +1162,7 @@ struct __byte_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

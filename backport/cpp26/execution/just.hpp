@@ -75,7 +75,7 @@ struct sender {
     }
 
     // Completion is synchronous in start(); there is no associated scheduler.
-    auto get_env() const noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> __empty_env { return {}; }
 };
 
 } // namespace __forge_just
@@ -130,7 +130,7 @@ struct sender {
     }
 
     // Completion is synchronous in start(); there is no associated scheduler.
-    auto get_env() const noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> __empty_env { return {}; }
 };
 
 } // namespace __forge_just_error
@@ -178,7 +178,7 @@ struct sender {
     }
 
     // Completion is synchronous in start(); there is no associated scheduler.
-    auto get_env() const noexcept -> empty_env { return {}; }
+    auto get_env() const noexcept -> __empty_env { return {}; }
 };
 
 } // namespace __forge_just_stopped

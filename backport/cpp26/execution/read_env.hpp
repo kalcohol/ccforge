@@ -86,7 +86,7 @@ struct __sender {
         return __op<Tag, R>{__tag, std::move(r)};
     }
 
-    auto get_env() const noexcept -> empty_env {
+    auto get_env() const noexcept -> __empty_env {
         return {};
     }
 };
