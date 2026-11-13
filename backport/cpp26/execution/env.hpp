@@ -348,6 +348,86 @@ private:
         }
     }
 
+    // [exec.env] uses a temporary tag for participation, but a named lvalue
+    // for selection and invocation. Default mode retains compatibility dispatch.
+    template<class E, class Q, class... Args>
+    static constexpr bool __has_query = requires(const E& e, Args&&... args) {
+        e.query(Q(), static_cast<Args&&>(args)...);
+    };
+
+#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
+    template<class E, class Q, class... Args>
+        requires requires(const E& e, Q& q, Args&&... args) {
+            e.query(q, static_cast<Args&&>(args)...);
+        }
+    static constexpr decltype(auto) __child_query(const E& e, Q& q, Args&&... args)
+        noexcept(noexcept(e.query(q, static_cast<Args&&>(args)...))) {
+        return e.query(q, static_cast<Args&&>(args)...);
+    }
+#else
+    template<class E, class Q, class... Args>
+        requires __forge_env_detail::__member_query<Q, const E&, Args...> &&
+                 requires(const E& e, Q& q, Args&&... args) {
+                     e.query(q, static_cast<Args&&>(args)...);
+                 }
+    static constexpr decltype(auto) __child_query(const E& e, Q& q, Args&&... args)
+        noexcept(noexcept(e.query(q, static_cast<Args&&>(args)...))) {
+        return e.query(q, static_cast<Args&&>(args)...);
+    }
+
+    template<class E, class Q, class... Args>
+        requires (!__forge_env_detail::__member_query<Q, const E&, Args...>) &&
+                 __forge_detail::tag_invocable<Q, const E&, Args...>
+    static constexpr decltype(auto) __child_query(const E& e, Q& q, Args&&... args)
+        noexcept(noexcept(__forge_detail::tag_invoke_fn(
+            std::move(q), e, static_cast<Args&&>(args)...))) {
+        return __forge_detail::tag_invoke_fn(
+            std::move(q), e, static_cast<Args&&>(args)...);
+    }
+#endif
+
+    // Specify the stored E explicitly: deduction through const E& would add
+    // const to borrowed referents instead of preserving reference collapsing.
+    template<class E, class Q, class... Args>
+    static constexpr bool __answers_query = requires(const E& e, Q& q, Args&&... args) {
+        __child_query<E>(e, q, static_cast<Args&&>(args)...);
+    };
+
+    template<std::size_t I, class Q, class... Args>
+    static consteval bool __member_nothrow() {
+        if constexpr (I == sizeof...(Envs)) {
+            return true;
+        } else {
+            using E = std::tuple_element_t<I, std::tuple<Envs...>>;
+            if constexpr (__answers_query<E, Q, Args...>) {
+                return noexcept(__child_query<E>(std::declval<const E&>(),
+                    std::declval<Q&>(), std::declval<Args>()...));
+            } else {
+                return __member_nothrow<I + 1, Q, Args...>();
+            }
+        }
+    }
+
+    template<std::size_t I, class Q, class... Args>
+    constexpr decltype(auto) __member_query(Q& q, Args&&... args) const {
+        static_assert(I < sizeof...(Envs));
+        using E = std::tuple_element_t<I, std::tuple<Envs...>>;
+        if constexpr (__answers_query<E, Q, Args...>) {
+            return __child_query<E>(std::get<I>(__envs), q, static_cast<Args&&>(args)...);
+        } else {
+            return __member_query<I + 1>(q, static_cast<Args&&>(args)...);
+        }
+    }
+
+public:
+    template<class QueryTag, class... Args>
+        requires (__has_query<Envs, QueryTag, Args...> || ...)
+    constexpr decltype(auto) query(QueryTag q, Args&&... args) const
+        noexcept(__member_nothrow<0, QueryTag, Args...>()) {
+        return __member_query<0>(q, static_cast<Args&&>(args)...);
+    }
+
+private:
     template<class Query>
         requires __query_available<Query>
     friend constexpr decltype(auto) tag_invoke(Query query, const env& self)

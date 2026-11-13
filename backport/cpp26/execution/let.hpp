@@ -75,6 +75,15 @@ template<class Env>
 struct __forwarding_env {
     const Env* __env;
 
+    template<class Query, class... Args>
+        requires (__is_forwarding_query<Query>() &&
+                  __forge_env_detail::__queryable<Query, const Env&, Args...>)
+    decltype(auto) query(
+        Query query, Args&&... args) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&, Args...>) {
+        return __forge_env_detail::__query(std::move(query), *this->__env, static_cast<Args&&>(args)...);
+    }
+
     template<class Query>
         requires (__is_forwarding_query<Query>() &&
                   __forge_env_detail::__queryable<Query, const Env&>)
@@ -89,6 +98,12 @@ struct __forwarding_env {
 template<class Scheduler>
 struct __scheduler_env {
     [[no_unique_address]] Scheduler __scheduler;
+
+    auto query(
+        get_start_scheduler_t) const noexcept(
+            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
+        return this->__scheduler;
+    }
 
     friend auto tag_invoke(
         get_start_scheduler_t,
@@ -106,6 +121,12 @@ struct __scheduler_env {
         return self.__scheduler;
     }
 
+    decltype(auto) query(
+        get_domain_t query) const noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Scheduler&>)
+        requires __forge_env_detail::__queryable<get_domain_t, const Scheduler&> {
+        return __forge_env_detail::__query(query, this->__scheduler);
+    }
+
     friend decltype(auto) tag_invoke(
         get_domain_t query,
         const __scheduler_env& self)
@@ -120,6 +141,15 @@ struct __inner_env {
     const PrimaryEnv* __primary;
     const OuterEnv* __outer;
 
+    template<class Query, class... Args>
+        requires __forge_env_detail::__queryable<Query, const PrimaryEnv&, Args...>
+    decltype(auto) query(
+        Query query, Args&&... args) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const PrimaryEnv&, Args...>) {
+        return __forge_env_detail::__query(std::move(query), *this->__primary,
+            static_cast<Args&&>(args)...);
+    }
+
     template<class Query>
         requires __forge_env_detail::__queryable<Query, const PrimaryEnv&>
     friend decltype(auto) tag_invoke(
@@ -127,6 +157,17 @@ struct __inner_env {
         const __inner_env& self)
         noexcept(__forge_env_detail::__nothrow_query<Query, const PrimaryEnv&>) {
         return __forge_env_detail::__query(std::move(query), *self.__primary);
+    }
+
+    template<class Query, class... Args>
+        requires (!__forge_env_detail::__queryable<Query, const PrimaryEnv&, Args...> &&
+                  __is_forwarding_query<Query>() &&
+                  __forge_env_detail::__queryable<Query, const OuterEnv&, Args...>)
+    decltype(auto) query(
+        Query query, Args&&... args) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const OuterEnv&, Args...>) {
+        return __forge_env_detail::__query(std::move(query), *this->__outer,
+            static_cast<Args&&>(args)...);
     }
 
     template<class Query>

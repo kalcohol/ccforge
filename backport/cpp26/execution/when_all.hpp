@@ -53,9 +53,24 @@ struct __child_env {
     Env __base;
     inplace_stop_token __token;
 
+    auto query(get_stop_token_t) const noexcept
+        -> inplace_stop_token {
+        return this->__token;
+    }
+
     friend auto tag_invoke(get_stop_token_t, const __child_env& self) noexcept
         -> inplace_stop_token {
         return self.__token;
+    }
+
+    template<class Query>
+        requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
+                  __forge_env_detail::__forwarding_query<Query> &&
+                  __forge_env_detail::__queryable<Query, const base_t&>)
+    decltype(auto) query(Query query) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
+        return __forge_env_detail::__query(
+            std::move(query), static_cast<const base_t&>(this->__base));
     }
 
     template<class Query>

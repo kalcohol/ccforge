@@ -44,12 +44,24 @@ struct stopped_t {};
 struct sync_wait_env {
     run_loop* loop_;
 
+    auto query(get_scheduler_t) const noexcept {
+        return this->loop_->get_scheduler();
+    }
+
     friend auto tag_invoke(get_scheduler_t, const sync_wait_env& self) noexcept {
         return self.loop_->get_scheduler();
     }
 
+    auto query(get_start_scheduler_t) const noexcept {
+        return this->loop_->get_scheduler();
+    }
+
     friend auto tag_invoke(get_start_scheduler_t, const sync_wait_env& self) noexcept {
         return self.loop_->get_scheduler();
+    }
+
+    auto query(get_delegation_scheduler_t) const noexcept {
+        return this->loop_->get_scheduler();
     }
 
     friend auto tag_invoke(get_delegation_scheduler_t, const sync_wait_env& self) noexcept {
