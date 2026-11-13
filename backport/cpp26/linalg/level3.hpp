@@ -23,7 +23,7 @@
 #pragma once
 
 #include "level2.hpp"
-#include <vector>
+#include <array>
 #if defined(__cpp_lib_mdspan)
 
 namespace std::linalg {
@@ -31,6 +31,74 @@ namespace std::linalg {
 // ──────────────────────────────────────────────────────────────────────────
 // BLAS Level 3 — [linalg.algs.blas3]
 // ──────────────────────────────────────────────────────────────────────────
+
+namespace __detail {
+
+// Zero denotes an unknown layout: never infer contiguity from runtime strides.
+template<class Layout> inline constexpr int __product_order = 0;
+template<> inline constexpr int __product_order<layout_right> = 1;
+template<> inline constexpr int __product_order<layout_left> = 2;
+template<size_t P> inline constexpr int __product_order<layout_right_padded<P>> = 1;
+template<size_t P> inline constexpr int __product_order<layout_left_padded<P>> = 2;
+
+// Keep arbitrary user accessors on the scalar traversal, including when nested
+// in a view. All paths access elements through mdspan, without pointer arithmetic.
+template<class Acc> inline constexpr bool __product_plain_accessor = false;
+template<class T> inline constexpr bool __product_plain_accessor<default_accessor<T>> = true;
+template<class S, class Acc>
+inline constexpr bool __product_plain_accessor<scaled_accessor<S, Acc>> =
+    __product_plain_accessor<Acc>;
+template<class Acc>
+inline constexpr bool __product_plain_accessor<conjugated_accessor<Acc>> =
+    __product_plain_accessor<Acc>;
+
+// A short strip of independent sums exposes a contiguous inner dimension without
+// a matrix-sized scratch buffer or reassociation of any individual reduction.
+// Each output is assigned once, after its ascending-k reduction is complete.
+template<class Value, class AL, class BL, bool Plain, class Index, class K,
+         class Accumulate, class Store>
+void __product_sums(Index m, Index n, K first, K last,
+                    Accumulate accumulate, Store store)
+{
+    constexpr Index width = 8;
+    if constexpr (Plain && __product_order<AL> != 0 && __product_order<BL> == 1) {
+        for (Index i = 0; i < m; ++i)
+            for (Index j = 0; j < n; ) {
+                const Index count = n - j < width ? n - j : width;
+                std::array<Value, 8> sums{Value{}, Value{}, Value{}, Value{},
+                                          Value{}, Value{}, Value{}, Value{}};
+                for (K k = first; k < last; ++k)
+                    for (Index t = 0; t < count; ++t)
+                        accumulate(sums[t], i, Index(j + t), k);
+                for (Index t = 0; t < count; ++t)
+                    store(i, Index(j + t), sums[t]);
+                j += count;
+            }
+    } else if constexpr (Plain && __product_order<AL> == 2 && __product_order<BL> != 0) {
+        for (Index j = 0; j < n; ++j)
+            for (Index i = 0; i < m; ) {
+                const Index count = m - i < width ? m - i : width;
+                std::array<Value, 8> sums{Value{}, Value{}, Value{}, Value{},
+                                          Value{}, Value{}, Value{}, Value{}};
+                for (K k = first; k < last; ++k)
+                    for (Index t = 0; t < count; ++t)
+                        accumulate(sums[t], Index(i + t), j, k);
+                for (Index t = 0; t < count; ++t)
+                    store(Index(i + t), j, sums[t]);
+                i += count;
+            }
+    } else {
+        for (Index i = 0; i < m; ++i)
+            for (Index j = 0; j < n; ++j) {
+                Value sum{};
+                for (K k = first; k < last; ++k)
+                    accumulate(sum, i, j, k);
+                store(i, j, sum);
+            }
+    }
+}
+
+} // namespace __detail
 
 // matrix_product — C = A * B  [linalg.algs.blas3.gemm]
 template<class AExtents, class ALayout, class AAccessor,
@@ -46,13 +114,13 @@ void matrix_product(
     using idx_t = typename CExtents::index_type;
     const idx_t m = C.extent(0), n = C.extent(1);
     const auto k = A.extent(1);
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j) {
-            __detail::__accessor_value_t<CAccessor> sum{};
-            for (typename AExtents::index_type l = 0; l < k; ++l)
-                sum += A[i, l] * B[l, j];
-            C[i, j] = sum;
-        }
+    __detail::__product_sums<__detail::__accessor_value_t<CAccessor>, ALayout, BLayout,
+        __detail::__product_plain_accessor<AAccessor> &&
+        __detail::__product_plain_accessor<BAccessor> &&
+        __detail::__product_plain_accessor<CAccessor> &&
+        (__detail::__product_order<CLayout> != 0)>(m, n, typename AExtents::index_type{0}, k,
+        [&](auto& sum, idx_t i, idx_t j, auto l) { sum += A[i, l] * B[l, j]; },
+        [&](idx_t i, idx_t j, const auto& sum) { C[i, j] = sum; });
 }
 
 // matrix_product (update) — C = E + A * B
@@ -73,13 +141,15 @@ void matrix_product(
     using idx_t = typename CExtents::index_type;
     const idx_t m = C.extent(0), n = C.extent(1);
     const auto k = A.extent(1);
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j) {
-            __detail::__accessor_value_t<CAccessor> sum{};
-            for (typename AExtents::index_type l = 0; l < k; ++l)
-                sum += A[i, l] * B[l, j];
-            C[i, j] = E[i, j] + sum;
-        }
+    __detail::__product_sums<__detail::__accessor_value_t<CAccessor>, ALayout, BLayout,
+        __detail::__product_plain_accessor<AAccessor> &&
+        __detail::__product_plain_accessor<BAccessor> &&
+        __detail::__product_plain_accessor<CAccessor> &&
+        __detail::__product_plain_accessor<EAccessor> &&
+        (__detail::__product_order<CLayout> != 0) &&
+        (__detail::__product_order<ELayout> != 0)>(m, n, typename AExtents::index_type{0}, k,
+        [&](auto& sum, idx_t i, idx_t j, auto l) { sum += A[i, l] * B[l, j]; },
+        [&](idx_t i, idx_t j, const auto& sum) { C[i, j] = E[i, j] + sum; });
 }
 
 // triangular_matrix_left_product — C = A * C, in place [linalg.algs.blas3.trmm]
@@ -98,42 +168,26 @@ void triangular_matrix_left_product(
     using idx_t = typename CExtents::index_type;
     using value_t = std::remove_cv_t<typename CAccessor::element_type>;
     const idx_t m = C.extent(0), n = C.extent(1);
-    const auto column_count = static_cast<std::size_t>(n);
-    std::vector<value_t> tmp(__detail::__checked_matrix_storage_size(m, n));
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j)
-            tmp[static_cast<std::size_t>(i) * column_count +
-                static_cast<std::size_t>(j)] = C[i, j];
-
-    auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
-        return tmp[static_cast<std::size_t>(i) * column_count +
-                   static_cast<std::size_t>(j)];
-    };
-
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j) {
-            value_t sum{};
-            if constexpr (is_upper) {
-                for (idx_t k = i; k < m; ++k) {
-                    if constexpr (is_unit) {
-                        sum += (k == i ? at_tmp(k, j) : A[i, k] * at_tmp(k, j));
-                    } else {
-                        sum += A[i, k] * at_tmp(k, j);
-                    }
-                }
-            } else {
-                for (idx_t k = 0; k <= i; ++k) {
-                    if constexpr (is_unit) {
-                        sum += (k == i ? at_tmp(k, j) : A[i, k] * at_tmp(k, j));
-                    } else {
-                        sum += A[i, k] * at_tmp(k, j);
-                    }
-                }
-            }
-            C[i, j] = sum;
-        }
+    constexpr bool is_unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    // Upper reads rows at or above i; lower reads rows at or below i.
+    for (idx_t step = 0; step < m; ++step) {
+        const idx_t i = is_upper ? step : idx_t(m - 1 - step);
+        const idx_t first = is_upper ? i : idx_t{0};
+        const idx_t last = is_upper ? m : idx_t(i + 1);
+        __detail::__product_sums<value_t, ALayout, CLayout,
+            __detail::__product_plain_accessor<AAccessor> &&
+            __detail::__product_plain_accessor<CAccessor> &&
+            (__detail::__product_order<CLayout> != 0)>(
+            idx_t{1}, n, first, last,
+            [&](auto& sum, idx_t, idx_t j, idx_t k) {
+                if constexpr (is_unit)
+                    sum += (k == i ? value_t(C[k, j]) : A[i, k] * value_t(C[k, j]));
+                else
+                    sum += A[i, k] * value_t(C[k, j]);
+            },
+            [&](idx_t, idx_t j, const auto& sum) { C[i, j] = sum; });
+    }
 }
 
 // triangular_matrix_right_product — C = C * A, in place [linalg.algs.blas3.trmm]
@@ -152,42 +206,27 @@ void triangular_matrix_right_product(
     using idx_t = typename CExtents::index_type;
     using value_t = std::remove_cv_t<typename CAccessor::element_type>;
     const idx_t m = C.extent(0), n = C.extent(1);
-    const auto column_count = static_cast<std::size_t>(n);
-    std::vector<value_t> tmp(__detail::__checked_matrix_storage_size(m, n));
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j)
-            tmp[static_cast<std::size_t>(i) * column_count +
-                static_cast<std::size_t>(j)] = C[i, j];
-
-    auto at_tmp = [&](idx_t i, idx_t j) -> value_t& {
-        return tmp[static_cast<std::size_t>(i) * column_count +
-                   static_cast<std::size_t>(j)];
-    };
-
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j) {
-            value_t sum{};
-            if constexpr (is_upper) {
-                for (idx_t k = 0; k <= j; ++k) {
-                    if constexpr (is_unit) {
-                        sum += (k == j ? at_tmp(i, k) : at_tmp(i, k) * A[k, j]);
-                    } else {
-                        sum += at_tmp(i, k) * A[k, j];
-                    }
-                }
-            } else {
-                for (idx_t k = j; k < n; ++k) {
-                    if constexpr (is_unit) {
-                        sum += (k == j ? at_tmp(i, k) : at_tmp(i, k) * A[k, j]);
-                    } else {
-                        sum += at_tmp(i, k) * A[k, j];
-                    }
-                }
-            }
-            C[i, j] = sum;
-        }
+    constexpr bool is_unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    // Upper reads columns at or below j; lower reads columns at or above j.
+    for (idx_t step = 0; step < n; ++step) {
+        const idx_t j = is_upper ? idx_t(n - 1 - step) : step;
+        const idx_t first = is_upper ? idx_t{0} : j;
+        const idx_t last = is_upper ? idx_t(j + 1) : n;
+        __detail::__product_sums<value_t, CLayout,
+            std::conditional_t<(__detail::__product_order<ALayout> != 0), layout_left, ALayout>,
+            __detail::__product_plain_accessor<AAccessor> &&
+            __detail::__product_plain_accessor<CAccessor> &&
+            (__detail::__product_order<CLayout> != 0)>(
+            m, idx_t{1}, first, last,
+            [&](auto& sum, idx_t i, idx_t, idx_t k) {
+                if constexpr (is_unit)
+                    sum += (k == j ? value_t(C[i, k]) : value_t(C[i, k]) * A[k, j]);
+                else
+                    sum += value_t(C[i, k]) * A[k, j];
+            },
+            [&](idx_t i, idx_t, const auto& sum) { C[i, j] = sum; });
+    }
 }
 
 // triangular_matrix_matrix_left_solve — B = A^{-1} * B  [linalg.algs.blas3.trsm]
@@ -240,24 +279,25 @@ void symmetric_matrix_product(
     std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
 {
     using idx_t = typename CExtents::index_type;
-    const idx_t m = C.extent(0), n = C.extent(1), k = A.extent(0);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < m; ++i)
-        for (idx_t j = 0; j < n; ++j) {
-            __detail::__accessor_value_t<CAccessor> sum{};
-            for (idx_t l = 0; l < k; ++l) {
-                auto ail = [&]() -> decltype(auto) {
-                    if (i == l) return A[i, i];
-                    if constexpr (is_upper) {
-                        return i < l ? A[i, l] : A[l, i];
-                    } else {
-                        return i > l ? A[i, l] : A[l, i];
-                    }
-                }();
-                sum += ail * B[l, j];
-            }
-            C[i, j] = sum;
-        }
+    __detail::__product_sums<__detail::__accessor_value_t<CAccessor>, ALayout, BLayout,
+        __detail::__product_plain_accessor<AAccessor> &&
+        __detail::__product_plain_accessor<BAccessor> &&
+        __detail::__product_plain_accessor<CAccessor> &&
+        (__detail::__product_order<CLayout> != 0)>(
+        C.extent(0), C.extent(1), idx_t{0}, static_cast<idx_t>(A.extent(1)),
+        [&](auto& sum, idx_t i, idx_t j, idx_t l) {
+            auto ail = [&]() -> decltype(auto) {
+                if (i == l) return A[i, i];
+                if constexpr (is_upper) {
+                    return i < l ? A[i, l] : A[l, i];
+                } else {
+                    return i > l ? A[i, l] : A[l, i];
+                }
+            }();
+            sum += ail * B[l, j];
+        },
+        [&](idx_t i, idx_t j, const auto& sum) { C[i, j] = sum; });
 }
 
 // symmetric_matrix_rank_k_update — C = alpha * A * A^T  [linalg.algs.blas3.syrk]
@@ -484,23 +524,24 @@ void hermitian_matrix_product(
 {
     using idx_t = typename CExtents::index_type;
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < C.extent(0); ++i) {
-        for (idx_t j = 0; j < C.extent(1); ++j) {
-            __detail::__accessor_value_t<CAccessor> sum{};
-            for (idx_t l = 0; l < A.extent(1); ++l) {
-                auto ail = [&]() -> typename CAccessor::element_type {
-                    if (i == l) return __detail::__real_if_needed(A[i, i]);
-                    if constexpr (is_upper) {
-                        return i < l ? A[i, l] : __detail::__conj_if_needed(A[l, i]);
-                    } else {
-                        return i > l ? A[i, l] : __detail::__conj_if_needed(A[l, i]);
-                    }
-                }();
-                sum += ail * B[l, j];
-            }
-            C[i, j] = sum;
-        }
-    }
+    __detail::__product_sums<__detail::__accessor_value_t<CAccessor>, ALayout, BLayout,
+        __detail::__product_plain_accessor<AAccessor> &&
+        __detail::__product_plain_accessor<BAccessor> &&
+        __detail::__product_plain_accessor<CAccessor> &&
+        (__detail::__product_order<CLayout> != 0)>(
+        C.extent(0), C.extent(1), idx_t{0}, static_cast<idx_t>(A.extent(1)),
+        [&](auto& sum, idx_t i, idx_t j, idx_t l) {
+            auto ail = [&]() -> typename CAccessor::element_type {
+                if (i == l) return __detail::__real_if_needed(A[i, i]);
+                if constexpr (is_upper) {
+                    return i < l ? A[i, l] : __detail::__conj_if_needed(A[l, i]);
+                } else {
+                    return i > l ? A[i, l] : __detail::__conj_if_needed(A[l, i]);
+                }
+            }();
+            sum += ail * B[l, j];
+        },
+        [&](idx_t i, idx_t j, const auto& sum) { C[i, j] = sum; });
 }
 
 template<class Triangle,
