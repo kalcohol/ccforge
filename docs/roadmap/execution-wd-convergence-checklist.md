@@ -1,5 +1,6 @@
 # `std::execution` 当前 WD 收敛清单
 
+> 状态：done；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 这份清单记录 execution backport 从早期 Forge/stdexec-era 混合 surface 收敛到当前

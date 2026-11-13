@@ -1,5 +1,6 @@
 # Unified cancellation design（统一取消语义）
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 本文整理 CC Forge 当前的 cancellation surface。它不是新机制提案，也不是要求每个

@@ -3,7 +3,29 @@
 当前为 P2300 senders/receivers 的实用 current-draft subset；精确覆盖与偏差见下文及
 [`execution-conformance-ledger.md`](../roadmap/execution-conformance-ledger.md)。
 
-## 已实现
+## 如何使用
+
+包含 `<execution>` 并链接 `forge::std`（需要扩展时使用 `forge::forge`），采用 C++23 或更新模式。
+
+```cpp
+#include <execution>
+auto work = std::execution::just(21)
+    | std::execution::then([](int n) { return n * 2; });
+auto result = std::this_thread::sync_wait(std::move(work));
+// result holds tuple<int> on value completion.
+```
+
+## 特性宏
+
+包含 `<execution>` 后 backport 不定义 `__cpp_lib_senders`，不能据此宣称完整标准实现。
+
+## Native 让位
+
+统一策略见 [native handoff](../native-handoff.md)。`FORGE_FORCE_SENDERS_BACKPORT` 只用于诊断，具有 ODR 风险。
+
+## 覆盖范围
+
+### 已实现
 
 - Sender 工厂：`just`、`just_error`、`just_stopped`、`read_env`
 - 适配器：`then`、`upon_error`、`upon_stopped`、`let_value`、`let_error`、
@@ -45,7 +67,9 @@
   domain-first/tag-fallback `apply_sender`
 - Async scope subset：`simple_counting_scope`、`counting_scope`（独立 stop-aware scope）
 
-## 当前限制
+## 限制与偏差
+
+### 当前限制
 
 - 支持的 public include 是 `<execution>`，并应通过 `forge::std` / `forge::forge`
   target 消费。`backport/cpp26/execution/*.hpp` 是实现 fragment，不是独立公共入口；
@@ -74,15 +98,8 @@
   `get_completion_domain<set_value_t>` 时生效，否则会回退到 `default_domain`。
   `get_domain` 与双参数 `get_completion_domain` 查询均采用 member-query-first、
   tag-invoke fallback；查询只选择 domain 类型，并按 current WD 默认构造该类型，
-  不保留 query 返回对象携带的运行时状态。sender attributes 只跨 adaptor 边界转发声明为
-  `forwarding_query` 的 child query。EX27 接受的过滤子集要求
-  `forwarding_query(Q{})` 可常量求值为 true；检查采用 type-SFINAE，false 或
-  非常量表达式均不转发，不作为硬约束错误。member=false 不会因 marker 或兼容
-  tag 定制而放行。非 constexpr 默认构造但有 constexpr 显式构造的无状态 query
-  可以是合法 CPO，但当前也不跨 adaptor 转发。unknown-reference member 扩展未保留，
-  不承诺支持任意 stateless 或 stateful actual-query 分类。WD 的 FWD-ENV 判断实际
-  `forwarding_query(q)`，因此这仍是明确的实现边界，独立跟踪于
-  [`execution-conformance-ledger.md`](../roadmap/execution-conformance-ledger.md#ex27-actual-query-classification)。
+  不保留 query 返回对象携带的运行时状态。sender attributes 只跨 adaptor 边界转发声明为 `forwarding_query` 且默认 query 可常量求值为 true 的查询。详细分类边界见
+  [环境查询分类](../roadmap/execution-conformance-ledger.md#实际-query-分类)。
   `get_completion_signatures(sender, env)` 会先按同一 transform 模型得到最终 sender 类型，
   再读取 completion signatures；非 default-domain 路径允许原 sender 没有 raw
   completion signatures，只要 transformed sender 提供可用 signatures。
@@ -183,31 +200,50 @@
   `joined`、`unused` 或 `unused-and-closed` state，否则调用 `terminate`，包括
   count 已自然 drain 到零但未消费 `join()` 的情况。Destructor 在 mutex 下检查
   state，与最后一次 association decrement 的 critical section 同步。
-- `forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion；自定义
-  receiver 不应在 `set_value` / `set_error` / `set_stopped` 回调内同步销毁连接的 task
-  operation-state。task promise env 除 stop token 外还转发外层 receiver env 的
-  `get_start_scheduler`（type-erased；缺失时回退 inline 完成），因此
-  `co_await scope.join()` 这类需要 start scheduler 的组合在 task 内可用。当前
-  coroutine bridge 把 stopped completion 作为内部异常回到 task
-  frame；用户代码里的 `catch(...)` 可以捕获该取消路径。一旦 task promise 进入 stopped
-  状态，后续异常不会覆盖 stopped completion；不要在 task body 中吞掉 catch-all 后继续
-  假设可以报告普通 error。
+- `forge::task` 的完成与取消契约见[工具参考](../forge-utilities.md#两种协程任务)。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如
 `connect` / `get_env` / `set_value` / `schedule`）。一参数 environment/scheduler query
 也采用 member `.query(cpo)` 优先、`tag_invoke` fallback；组合 environment 保持这一
-优先级和 leftmost-wins。新代码建议优先使用成员式定制。当原生 `<execution>` 可用时，
-整个 backport 自动禁用。
+优先级和 leftmost-wins。新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
+
+
+### 分配与可移植性边界
+
+内部 operation state 的小缓冲容量取决于 adaptor：例如 `let_*` 使用 1024 字节缓冲，`when_all` 的每个 child 使用 512 字节缓冲，其 stop callback 缓冲为 256 字节。`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过 `new` / `delete` 使用全局堆。这些内部路径不保证遵从 `get_allocator(env)`。`counting_scope` 的融合 stop 状态、stop callback 控制块也使用全局分配。
+只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
+`simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
+
+## 示例
+
+示例门控与所有文件见[示例索引](../examples.md)。只在注入或完整原生时构建；明确依赖扩展者另列限制。验证流程见[测试说明](../testing.md)，测试组为 `FORGE_TEST_ENABLE_EXECUTION`。
+
+- [execution_affine_example.cpp](../../example/execution_affine_example.cpp)：execution affine 的接口组合与完成结果。
+
+- [execution_phase3_example.cpp](../../example/execution_phase3_example.cpp)：when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写）。
+
+- [execution_coro_example.cpp](../../example/execution_coro_example.cpp)：execution coro 的接口组合与完成结果。
+
+- [execution_example.cpp](../../example/execution_example.cpp)：execution 的接口组合与完成结果。
+
+- [execution_let_example.cpp](../../example/execution_let_example.cpp)：execution let 的接口组合与完成结果。
+
+- [execution_on_example.cpp](../../example/execution_on_example.cpp)：execution on 的接口组合与完成结果。
+
+- [execution_schedulers_example.cpp](../../example/execution_schedulers_example.cpp)：execution schedulers 的接口组合与完成结果。
+
+- [execution_phase4_example.cpp](../../example/execution_phase4_example.cpp)：scope spawn 与异步 join。
+
+- [execution_spawn_future_example.cpp](../../example/execution_spawn_future_example.cpp)：execution spawn future 的接口组合与完成结果。
+
+- [execution_stop_token_example.cpp](../../example/execution_stop_token_example.cpp)：execution stop token 的接口组合与完成结果。
+
+- [execution_unstoppable_example.cpp](../../example/execution_unstoppable_example.cpp)：execution unstoppable 的接口组合与完成结果。
+
+`sender_t`、`receiver_t`、`operation_state_t`、`scheduler_t` 是旧兼容别名；新代码使用对应的 `_tag` 名。`forge::any_stop_token` 是非标准擦除，分配不遵从 env allocator，不能用作标准 stop-token API 的替代承诺。
 
 ## 验证
 
 `scripts/verify-native.sh tsan` 与 `scripts/verify-native.sh asan` 分别覆盖 execution
 子集的 ThreadSanitizer 与 ASan+UBSan 路径；`gcc-exec` 覆盖 libstdc++ 上的
 execution-only 路径。
-
-## 分配与可移植性边界
-
-内部 operation state 的小缓冲容量取决于 adaptor：例如 `let_*` 使用 1024 字节缓冲，`when_all` 的每个 child 使用 512 字节缓冲，其 stop callback 缓冲为 256 字节。`__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐（默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过 `new` / `delete` 使用全局堆。这些内部路径不保证遵从 `get_allocator(env)`。`counting_scope` 的融合 stop 状态、stop callback 控制块也使用全局分配。
-只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
-`simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
-

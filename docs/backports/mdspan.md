@@ -1,10 +1,43 @@
-# `std::submdspan` / `std::constant_wrapper` backport 说明
+# `<mdspan>` 扩展与 `std::constant_wrapper` backport 说明
 
 当前对齐 2026-05 C++26 working draft 的 `submdspan` surface；
 `constant_wrapper` 采用 P2781 operator algebra、P3978 call/subscript 语义与
 P4206 DR 后的直接 `template<auto>` 形状；伪变更运算符跟进 LWG4383/4500。
 
+## 如何使用
+
+包含 `<mdspan>` 并链接 `forge::std`（需要扩展时使用 `forge::forge`），采用 C++23 或更新模式。
+
+```cpp
+#include <mdspan>
+int data[6]{};
+std::mdspan matrix(data, std::extents<int, 2, 3>{});
+auto row = std::submdspan(matrix, 0, std::full_extent);
+// row views three elements of the same storage.
+```
+
+## 特性宏
+
+当 Forge 注入 backport 时定义：
+
+- `__cpp_lib_constant_wrapper = 202606L`
+- `__cpp_lib_submdspan = 202603L`
+- padded layouts 不提升 `__cpp_lib_mdspan` 至 `202406L`，原有 `<mdspan>` 宏保持由标准库提供
+
+GCC 16 的 `std::constant_wrapper` 提供 `202603L` pre-P4206 native surface；`submdspan` 已通过完整 probe。它属于 partial native：
+Forge 会警告并让位，不会在同一 `namespace std` 中叠加声明。专用
+`constant_wrapper` conformance tests 只在 Forge 注入或检测到完整 `202606L`
+native surface 时运行。
+
+## Native 让位
+
+统一策略见 [native handoff](../native-handoff.md)。`FORGE_FORCE_SUBMDSPAN_BACKPORT` 只用于诊断，具有 ODR 风险。
+
+其他入口：`<utility>` 提供 constant_wrapper；诊断开关为 `FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT` 和 `FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT`。
+
 ## 覆盖范围
+
+### 覆盖范围
 
 Forge 的 `<mdspan>` backport 扩展覆盖：
 
@@ -36,6 +69,9 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
 - `example/padded_mdspan_layout_example.cpp`：`layout_left_padded` /
   `layout_right_padded` 的 stride 与 full-slice layout 保留。
 
+
+## Padded layouts
+
 Padded layout mapping 的 converting constructor 只在不会改变 mapping 唯一性的形状下
 接受相反 layout：rank-1 mapping 可互转，rank>1 的 left-padded 与 right-padded mapping
 不会互转；rank-0/rank-1 mapping 也接受相反的未 padded layout。rank>1 的
@@ -54,20 +90,8 @@ false。
 sliceable-mapping 的逐元素地址等式。Forge 在这一格有意返回 `layout_stride`，保留实际
 slice stride；若后续 wording 修正该冲突，再按新的标准结果收敛。
 
-## Feature macros（特性宏）
 
-当 Forge 注入 backport 时定义：
-
-- `__cpp_lib_constant_wrapper = 202606L`
-- `__cpp_lib_submdspan = 202603L`
-- padded layouts 不提升 `__cpp_lib_mdspan` 至 `202406L`，原有 `<mdspan>` 宏保持由标准库提供
-
-GCC 16 当前提供 `202603L` 的 pre-P4206 native surface。它属于 partial native：
-Forge 会警告并让位，不会在同一 `namespace std` 中叠加声明。专用
-`constant_wrapper` conformance tests 只在 Forge 注入或检测到完整 `202606L`
-native surface 时运行。
-
-## `constant_wrapper` conformance ledger
+### `constant_wrapper` conformance ledger
 
 - 已实现：P4206 的 `constant_wrapper<auto X, class T = decltype(X)>` / `cw<X>`
   类型形状、显式第二类型一致性要求、P2781 运算符与伪变异运算、P3978
@@ -84,10 +108,26 @@ native surface 时运行。
 - native stdlib 只要已经声明任意 partial surface，Forge 就不会覆盖注入；这是
   项目的 ODR 安全策略，不代表该 native 实现满足上述完整 baseline。
 
-## 旧拼写
+## 限制与偏差
+
+### 旧拼写
 
 Forge 不保留早期 P2630-era 的 `strided_slice` / `submdspan_extents` 兼容拼写；新代码应
 直接使用当前 draft 的 `extent_slice` / `range_slice` 与 `subextents`。
 
 `forge.cmake` 仍保留 legacy `strided_slice` probe，仅用于检测旧式 partial-native stdlib
 并让位；这不是 Forge 公开 API。
+
+## 示例
+
+示例门控与所有文件见[示例索引](../examples.md)。只在注入或完整原生时构建；明确依赖扩展者另列限制。验证流程见[测试说明](../testing.md)，测试组为 `FORGE_TEST_ENABLE_SUBMDSPAN`。
+
+- [constant_wrapper_example.cpp](../../example/constant_wrapper_example.cpp)：constant wrapper 的接口组合与完成结果。
+
+- [padded_mdspan_layout_example.cpp](../../example/padded_mdspan_layout_example.cpp)：padded mdspan layout 的接口组合与完成结果。
+
+- [submdspan_example.cpp](../../example/submdspan_example.cpp)：行列、步长切片与边界单元。
+
+## 验证
+
+验证流程见[测试说明](../testing.md)，使用对应测试组及 `ctest -R '^example_'` 运行示例。

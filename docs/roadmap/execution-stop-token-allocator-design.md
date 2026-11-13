@@ -1,5 +1,6 @@
 # Erased stop-token allocator 设计记录
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 这份记录说明 Forge extension 的 erased stop-token callback allocator-awareness 取舍。

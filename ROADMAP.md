@@ -1,15 +1,3 @@
 # CC Forge roadmap
 
-The active roadmap lives under [`docs/roadmap/`](docs/roadmap/). Keep this file
-as a short root index so the repository top level stays compact.
-
-- [Forge 稳定性基线](docs/roadmap/forge-stability-baseline.md)
-- [Forge runtime 远景图](docs/roadmap/forge-runtime-vision.md)
-- [Coroutine-native byte IO 路线图](docs/roadmap/coroutine-native-io.md)
-- [统一取消语义设计](docs/roadmap/unified-cancellation-design.md)
-- [Backend proof 策略](docs/roadmap/forge-backend-proof-policy.md)
-- [`std::execution` 一致性台账](docs/roadmap/execution-conformance-ledger.md)
-- [`std::execution` 当前 WD 收敛清单](docs/roadmap/execution-wd-convergence-checklist.md)
-- [`forge::io` backend SPI 草案](docs/roadmap/forge-io-backend-spi.md)
-- [Execution stop-token allocator 设计记录](docs/roadmap/execution-stop-token-allocator-design.md)
-- [`inplace_stop_callback` 无分配设计记录](docs/roadmap/inplace-stop-callback-design.md)
+规划、设计记录与台账统一见[路线图索引](docs/roadmap/README.md)。

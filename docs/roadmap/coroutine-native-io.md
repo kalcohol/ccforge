@@ -1,5 +1,6 @@
 # Coroutine-native byte IO 路线图
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 本文记录 Forge 如何跟踪 WG21 Network Endeavor / coroutine-native IO 的 C++29 讨论，

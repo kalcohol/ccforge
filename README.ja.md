@@ -165,5 +165,6 @@ NVIDIA/stdexec、VcDevel/std-simd、Kokkos stdBLAS、ncnn です。
 
 MIT License。[LICENSE](LICENSE) を参照してください。
 
+[インストールとオプション](docs/install-options.md)
 
 FORGE_ENABLE_FORGE_RUNTIME は runtime サンプルのみを制御します。Forge の検出前に CMAKE_CXX_STANDARD を設定してください。後から target に cxx_std_26 を指定すると検出時の言語モードと異なる場合があります。

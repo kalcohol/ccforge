@@ -167,5 +167,6 @@ including NVIDIA/stdexec, VcDevel/std-simd, Kokkos stdBLAS, and ncnn.
 
 MIT License. See [LICENSE](LICENSE).
 
+[Installation and options](docs/install-options.md)
 
 FORGE_ENABLE_FORGE_RUNTIME controls runtime examples only. Set CMAKE_CXX_STANDARD before Forge probes; a later target cxx_std_26 can otherwise disagree with the probe language mode.

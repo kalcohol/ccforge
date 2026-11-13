@@ -160,5 +160,6 @@ VcDevel/std-simd、Kokkos stdBLAS 和 ncnn。
 
 MIT License。见 [LICENSE](LICENSE)。
 
+[安装与选项](docs/install-options.md)
 
 FORGE_ENABLE_FORGE_RUNTIME 只控制 runtime 示例。探测前设置 CMAKE_CXX_STANDARD；稍后在 target 上指定 cxx_std_26 可能使编译语言模式与探测不一致。

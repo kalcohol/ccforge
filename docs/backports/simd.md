@@ -2,7 +2,29 @@
 
 当前 `std::simd` backport 已覆盖 [simd.syn] 公开表面。
 
-## 公开 API
+## 如何使用
+
+包含 `<simd>` 并链接 `forge::std`（需要扩展时使用 `forge::forge`），采用 C++23 或更新模式。
+
+```cpp
+#include <simd>
+using V = std::simd::vec<float, 4>;
+V values(2.0f);
+auto doubled = values + values;
+// doubled contains four lanes with value 4.
+```
+
+## 特性宏
+
+包含 `<simd>` 后定义 `__cpp_lib_simd = 202606L`、`__cpp_lib_simd_bitops = 202607L`、`__cpp_lib_simd_complex = 202502L`、`__cpp_lib_simd_permutations = 202506L`。
+
+## Native 让位
+
+统一策略见 [native handoff](../native-handoff.md)。`FORGE_FORCE_SIMD_BACKPORT` 只用于诊断，具有 ODR 风险。
+
+## 覆盖范围
+
+### 公开 API
 
 - **核心 API**：`std::simd::basic_vec<T, Abi>`、`std::simd::vec<T, N>`、`std::simd::mask<T, N>`、构造/转换/下标/算术/比较/位运算
 - **内存操作**：`partial_load`/`partial_store`、`unchecked_load`/`unchecked_store`
@@ -42,14 +64,17 @@ libstdc++ lane 充当 fallback oracle。
 负 characteristic 通过保留 complement 的解析变换处理；极端完整端点的
 退避由相对误差界控制。零模数路径使用闭式表达式并显式区分极点两侧。
 
-## Native ABI 的类型标识
+## 限制与偏差
+
+### Native ABI 的类型标识
 
 默认 native ABI 的 lane 数由当前 translation unit 的 ISA 选项决定，且宽度是 ABI
 tag 类型标识的一部分。同一宽度的显式 native tag 在不同 translation unit 中保持
 一致的 lane 数和布局。通常仍应使用一致的 ISA 编译选项；这个类型标识保证不等于
 整个 header-only 实现对任意混合 ISA 编译都提供 ODR 保证。
 
-## Mask 变换的 ABI
+
+### Mask 变换的 ABI
 
 mask 的 `permute`、`chunk`、`cat` 和 SIMD 下标操作不保证保留输入的 ABI
 类型，也不保证结果与同宽向量的 `mask_type` 是同一类型。
@@ -70,6 +95,19 @@ const V::mask_type selector(transformed);
 const V result = std::simd::select(selector, values, V(0.0f));
 ```
 
+
+### 限制与偏差
+
+`std::simd` 下 `native_abi`、`simd_size`、`fixed_size_abi`、`deduce_abi_t`、`abi_lane_count`、`simd_size_type` 以及实现提供的额外标志类型是 Forge 独有公开名，不可移植；原生让位后不能依赖这些名字。存储对齐也不等同于 ISA 向量对齐，调用者应遵守实际 load/store 的对齐要求。
+
+## 示例
+
+示例门控与所有文件见[示例索引](../examples.md)。只在注入或完整原生时构建；明确依赖扩展者另列限制。验证流程见[测试说明](../testing.md)，测试组为 `FORGE_TEST_ENABLE_SIMD`。
+
+- [simd_complete_example.cpp](../../example/simd_complete_example.cpp)：SIMD 内存、mask 与排列（Forge 扩展拼写）。
+
+- [simd_example.cpp](../../example/simd_example.cpp)：simd 的接口组合与完成结果。
+
 ## 验证
 
 验证入口见[测试说明](../testing.md)。跨架构支持须以对应工具链实际运行结果为准，不承诺所有架构均已验证。
@@ -77,8 +115,3 @@ const V result = std::simd::select(selector, values, V(0.0f));
 当前 GCC 16 在 C++26 提供 partial-native `std::simd`，Forge 会严格让位并给出警告；
 同一标准库在 C++23 虽可安装 `<simd>` 文件但不暴露声明，此时声明级 probe 会启用
 backport。检测到 partial-native 声明时不注入 backport，以避免 ODR 冲突。
-
-## 限制与偏差
-
-`std::simd` 下 `native_abi`、`simd_size`、`fixed_size_abi`、`deduce_abi_t`、`abi_lane_count`、`simd_size_type` 以及实现提供的额外标志类型是 Forge 独有公开名，不可移植；原生让位后不能依赖这些名字。存储对齐也不等同于 ISA 向量对齐，调用者应遵守实际 load/store 的对齐要求。
-

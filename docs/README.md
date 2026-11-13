@@ -32,6 +32,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 - [Native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
+- [安装与 CMake 选项](install-options.md)
 
 ## Backport 文档
 
@@ -44,13 +45,4 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 ## Roadmap 文档
 
-- [Forge 稳定性基线](roadmap/forge-stability-baseline.md)
-- [Forge runtime 远景图](roadmap/forge-runtime-vision.md)
-- [Coroutine-native byte IO 路线图](roadmap/coroutine-native-io.md)
-- [统一取消语义设计](roadmap/unified-cancellation-design.md)
-- [Backend proof 策略](roadmap/forge-backend-proof-policy.md)
-- [`forge::io` backend SPI 草案](roadmap/forge-io-backend-spi.md)
-- [`std::execution` 一致性台账](roadmap/execution-conformance-ledger.md)
-- [`std::execution` 当前 WD 收敛清单](roadmap/execution-wd-convergence-checklist.md)
-- [Execution stop-token allocator 设计记录](roadmap/execution-stop-token-allocator-design.md)
-- [`inplace_stop_callback` 无分配设计记录](roadmap/inplace-stop-callback-design.md)
+[路线图与设计记录索引](roadmap/README.md)。

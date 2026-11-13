@@ -2,7 +2,29 @@
 
 当前为 P1673R13 风格的实验性 backport，提供一个不依赖外部 BLAS 库的实用 BLAS 子集。
 
+## 如何使用
+
+包含 `<linalg>` 并链接 `forge::std`（需要扩展时使用 `forge::forge`），采用 C++23 或更新模式。
+
+```cpp
+#include <linalg>
+#include <mdspan>
+float data[] = {1, 2, 3};
+std::mdspan v(data, std::extents<int, 3>{});
+auto sum = std::linalg::dot(v, v);
+```
+
+## 特性宏
+
+包含 `<linalg>` 后不定义 `__cpp_lib_linalg`，因为实现仍是工作草案子集。
+
+## Native 让位
+
+统一策略见 [native handoff](../native-handoff.md)。`FORGE_FORCE_LINALG_BACKPORT` 只用于诊断，具有 ODR 风险。
+
 ## 覆盖范围
+
+### 覆盖范围
 
 以下列出已实现的函数族，不表示包含当前 WD 的每个重载；具体缺口见下方限制。
 
@@ -31,7 +53,9 @@
 `scaled_accessor`、`conjugated_accessor`、`layout_transpose`、`layout_blas_packed`、
 标记类型（`upper_triangle` / `lower_triangle` / `column_major` / `row_major` 等）
 
-## 语义和限制
+## 限制与偏差
+
+### 语义和限制
 
 - 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。
 - 当原生 `<linalg>` 可用时，backport 自动禁用。
@@ -69,7 +93,8 @@
 - Level 3 triangular solve 仅实现左侧 in-place 矩阵版本，未实现右侧、out-of-place
   或自定义 `BinaryDivideOp` 重载；Hermitian rank-2k 仍未实现。
 
-## SIMD 加速
+
+### SIMD 加速
 
 BLAS Level 1 归约操作（`dot`、`vector_abs_sum`）以及 `copy`、`scale` 在 Forge
 `std::simd` 可用时自动使用 SIMD 加速路径；`vector_two_norm` 和
@@ -79,13 +104,30 @@ BLAS Level 1 归约操作（`dot`、`vector_abs_sum`）以及 `copy`、`scale` �
 支持非复数标准算术类型中的 SIMD-friendly 子集；实际启用路径要求 contiguous
 layout/default accessor。验证入口见[测试说明](../testing.md)；跨架构支持须以对应工具链实际运行结果为准。
 
-## OpenMP 并行
+
+### OpenMP 并行
 
 无 execution policy 的 `std::linalg` overload 默认保持顺序执行；Forge 当前不再因为
 翻译单元带 `-fopenmp` 就隐式并行化 GEMM/GEMV。未来若补并行路径，会放在显式 opt-in
 或 execution policy overload 下。
 
-## 非标准重载
+
+### 非标准重载
 
 `std::linalg` 下将 Triangle 放在第一个参数、以及带额外 alpha 的兼容重载不是工作草案形态，原生让位后可能无法编译。整数范数也属于非工作草案扩展，参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)，原生实现上无法依赖。是否保留或迁出这些接口需负责人另行决定，下一次工作草案快照审计时复查。
 
+## 示例
+
+示例门控与所有文件见[示例索引](../examples.md)。只在注入或完整原生时构建；明确依赖扩展者另列限制。验证流程见[测试说明](../testing.md)，测试组为 `FORGE_TEST_ENABLE_LINALG`。
+
+- [linalg_level2_example.cpp](../../example/linalg_level2_example.cpp)：linalg level2 的接口组合与完成结果。
+
+- [linalg_level3_example.cpp](../../example/linalg_level3_example.cpp)：linalg level3 的接口组合与完成结果。
+
+- [linalg_simd_example.cpp](../../example/linalg_simd_example.cpp)：linalg simd 的接口组合与完成结果。
+
+- [linalg_views_example.cpp](../../example/linalg_views_example.cpp)：linalg views 的接口组合与完成结果。
+
+## 验证
+
+验证流程见[测试说明](../testing.md)，使用对应测试组及 `ctest -R '^example_'` 运行示例。

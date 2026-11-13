@@ -1,5 +1,6 @@
 # `inplace_stop_callback` 无分配设计记录
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 这份记录说明 Forge execution backport 的 `std::inplace_stop_callback` 为什么暂时保留

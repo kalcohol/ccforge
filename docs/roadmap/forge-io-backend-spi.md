@@ -1,5 +1,6 @@
 # `forge::io` backend SPI 草案
 
+> 状态：superseded；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：当前机制见 ../forge-io.md。状态分类不代表正文已全部重新审计。
 
 
 > 2026-11-13：io_uring 已上线。下文 Phase 0–4 是 2026-08 的历史准入记录，不描述当前提交与唤醒机制；当前机制以 [IO 用户文档](../forge-io.md#io_uring-completion-backendcoroutine-native-proof) 为准。当前后端为 epoll、IOCP 和 io_uring。

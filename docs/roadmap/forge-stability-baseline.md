@@ -1,5 +1,6 @@
 # Forge 稳定性基线
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 这份文档记录 `include/forge/` 的交付基线。它是维护指南，不承诺每个 optional proof backend 都达到 production complete。

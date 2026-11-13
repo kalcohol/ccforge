@@ -1,40 +1,12 @@
-# Verification containers
+# 验证镜像
 
-These Containerfiles back `scripts/verify-native.sh`. Prefer the script over
-manual `podman build` / `podman run` commands so image names, mount flags, test
-filters, and build directories stay consistent.
+lane 内容、运行命令、串行要求与支持范围统一见[测试说明](../docs/testing.md)。
 
-## Targets
-
-| Script target | Image | Containerfile | Purpose |
-| --- | --- | --- | --- |
-| `llvm` | `forge-llvm` | `Containerfile.llvm` | LLVM/libc++ path at `-std=c++26`; exercises backport injection where libc++ lacks C++26 facilities. |
-| `gcc16` | `forge-gcc16` | `Containerfile.gcc16` | GCC 16 partial-native stand-aside for `std::simd`, `std::constant_wrapper`, and padded mdspan layouts; complete-native handoff for `std::submdspan`; C++23 SIMD backport floor. |
-| `zig` | `forge-zig` | `Containerfile.zig` | Zig C++ compiler path at C++23; exercises the backport injection path. |
-| `tsan` | `forge-tsan` | `Containerfile.tsan` | ThreadSanitizer gate for the execution and `forge::` utility subsets. |
-| `asan` | `forge-asan` | `Containerfile.asan` | AddressSanitizer + UBSan gate for the execution and `forge::` utility subsets, plus focused SIMD memory, operator, math, special-math, and bit tests. |
-| `gcc-exec` | `forge-gcc16` | `Containerfile.gcc16` | Execution-only libstdc++ path without SIMD/native handoff probes. |
-
-## Normal use
-
-```sh
-scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
-```
-
-The script uses rootless-friendly mounts:
-
-```sh
-podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
-```
-
-Keep that shape for manual debugging to avoid root-owned build artifacts and
-SELinux mount issues.
-
-## Notes
-
-- `all` runs `gcc16`, `llvm`, `zig`, `local`, `gcc-exec`, `tsan`, and `asan`.
-- Sanitizer images intentionally run the execution and `forge::` utility
-  subsets; ASan/UBSan also runs focused SIMD memory/operator/math/bit tests. They are targeted
-  lifetime/race/memory gates, not full feature-matrix gates.
-- The Zig image uses build args for the Zig version and tarball name. Update both
-  together if the upstream archive naming changes.
+| 目标 | 镜像 | Containerfile |
+| --- | --- | --- |
+| llvm | forge-llvm | Containerfile.llvm |
+| gcc16 / gcc-exec | forge-gcc16 | Containerfile.gcc16 |
+| zig | forge-zig | Containerfile.zig |
+| tsan | forge-tsan | Containerfile.tsan |
+| asan | forge-asan | Containerfile.asan |
+| local | 主机工具链 | 无 |

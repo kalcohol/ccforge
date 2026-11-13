@@ -1,5 +1,6 @@
 # Backend proof 策略
 
+> 状态：active；最后核对：2026-11-13，基线 `5e4a9eb`；取代关系：无。状态分类不代表正文已全部重新审计。
 
 
 这份策略适用于 `include/forge/` 下的 optional platform/vendor proof backend。它不适用于
