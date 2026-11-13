@@ -65,9 +65,49 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
 改动 `forge.cmake` probe、wrapper guard 或 feature macro 时，至少运行对应的 native stand-aside lane 和 inject-path lane，并检查相关测试/示例的注册形态。
 标准声明探针使用 CMake 为当前 `CMAKE_CXX_STANDARD` 与 extensions 模式选择的
 compile option，不自行拼接编译器特定的 `-std=` 方言名字。
-探针结论属于当前 configure 的全局语言模式；同一 build tree 中消费标准同名 wrapper
-的 target 必须使用该模式。只对单个 target 提高或降低 `CXX_STANDARD` 会让探针结论与
-实际包含的标准库声明不一致，不属于支持配置；需要不同语言模式时使用独立 build tree。
+探针结论属于当前 configure 的全局语言模式；通过 `forge::forge` 或 `forge::std`
+接收 Forge 编译要求的 C++ translation unit 必须使用该模式。需要以不同模式直接消费
+Forge 时，应使用独立 build tree。
+
+直接 `include(forge.cmake)` 或 `find_package(CCForge CONFIG REQUIRED)` 前，必须显式
+设置 `CMAKE_CXX_STANDARD` 为 23 或更新版本；未设置时配置会报告
+`CC Forge requires an explicit CMAKE_CXX_STANDARD`。仅调用
+`target_compile_features(app PRIVATE cxx_std_26)` 无法指定 Forge probe 的语言模式。
+通过 `add_subdirectory` 或 FetchContent 引入源码工程时，工程仍保留 C++23 默认值；
+需要其他模式时应在引入前设置 `CMAKE_CXX_STANDARD`。
+
+`FORGE_PROBE_CXX_STANDARD` 记录 probe 请求的标准。`forge::forge` 和 `forge::std`
+通过 INTERFACE usage requirement 传递一个轻量的强制包含校验头，随 CMake 的编译要求
+传播；语言模式不一致时，在编译阶段报告 `CC Forge language standard mismatch`。
+消息包含 consumer 的实际语言阶段、probe 的语言阶段与请求的 `CMAKE_CXX_STANDARD`，
+并提示在引入 Forge 前设置该变量、统一 consumer 的 compile features 与 flags。
+GCC、Clang、AppleClang 和 Zig 使用 `-include`，MSVC frontend 使用 `/FI`。
+安装包在 consumer build tree 重新生成该头，单配置与多配置 generator 使用同一检查。
+
+检查使用 `__cplusplus`（MSVC 使用 `_MSVC_LANG`）识别实际 C++23 / C++26 语言阶段，
+兼容 draft 宏值及 `/std:c++latest`，不要求等于最终 ISO 宏值。判断以 probe 和实际
+translation unit 的有效语言模式为准：例如 probe 使用 C++26 时，target 的
+`CXX_STANDARD=23` 经自身或传递的 `cxx_std_26` 提升到 C++26，仍可正常编译。
+校验头无需手动包含，不引入声明，也不保留辅助 macro。整个头仅在定义
+`__cplusplus` 时生效；即使 generator 将强制包含选项传给混合 target 的 C 源文件，
+C translation unit 也不会执行语言检查。
+
+PRIVATE 依赖的边界由 CMake 决定。例如 library 通过 PRIVATE 链接 `forge::forge`，
+该 library 自身的 C++ 编译接受检查；只链接此 library、未接收 Forge 编译要求的
+executable 可以使用 C++20。若 executable 也使用 Forge，应显式链接相应 Forge target。
+
+同一次 configure 中，重复引入 Forge 必须使用相同设置。
+`CMAKE_REQUIRED_*` 等附加 flags、include / library 列表的未定义与空值视为等价；
+`CMAKE_CXX_EXTENSIONS` 仍独立参与比较，因为 GNU 扩展方言可能改变标准库 feature macros。
+全局 fingerprint 包含
+标准、force flags、runtime / IO 选项及 probe 共用的输入清单，包括编译器、编译与链接
+选项、sysroot、deployment target、自定义 try-compile platform variables 和头文件搜索
+环境变量等输入，以及解析到的 toolchain、probe source 与头文件内容摘要；
+路径不变而文件内容变化也会报告冲突。
+相同 fingerprint 直接复用首次配置；不同 fingerprint 会以
+`CC Forge configuration changed after first inclusion` 终止，并列出变化的输入及前后值。
+该规则也适用于跨目录引入；修改配置后重新运行 CMake 属于新的 configure，仍可正常
+重新探测。
 
 partial-native 工具链上，Forge 仍严格让位。依赖该标准 surface 完整实现的 examples
 会跳过注册，而不是强行混入 backport；完整原生和无原生声明的 inject path 仍构建这些

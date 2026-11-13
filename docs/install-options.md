@@ -15,6 +15,19 @@ target_link_libraries(myapp PRIVATE forge::std)
 
 通过 `CMAKE_PREFIX_PATH` 指向安装前缀。消费者不需要 GoogleTest；开发测试需要先初始化 `3rdparty/googletest`。
 
+安装包在 consumer 配置时重新运行 probe。`find_package` 前未设置
+`CMAKE_CXX_STANDARD` 会报告 `CC Forge requires an explicit CMAKE_CXX_STANDARD`；
+接收 `forge::forge` / `forge::std` 编译要求的 C++ translation unit，其有效语言模式
+与 probe 不一致时会在编译阶段报告 `CC Forge language standard mismatch`，列出两个
+语言阶段与 probe 请求的标准，并提示修复设置。compile features 提升后与 probe 一致的
+target 可以正常编译；仅通过 PRIVATE library 依赖、未接收 Forge 编译要求的 consumer
+可使用其他标准。检查头在 consumer build tree 生成，适用于单配置与多配置 generator。
+同一次 configure 中重复查找或引入 Forge 时，标准、force flags 和其他配置输入必须
+一致（包括 deployment target、自定义 try-compile platform variables 和头文件搜索环境），
+否则报告 `CC Forge configuration changed after first inclusion` 并列出变化项与前后值。
+fingerprint 同时记录 toolchain 与 probe 头文件内容摘要，路径不变的内容变更也会触发冲突。
+强制包含校验头对 C translation unit 完全无效。检查机制与源码消费一致，详见 [native handoff](native-handoff.md)。
+
 | 选项 | 用途 |
 | --- | --- |
 | `FORGE_ENABLE_INSTALL` | 生成安装规则与 CMake package |
