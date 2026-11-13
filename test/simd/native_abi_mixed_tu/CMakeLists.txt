@@ -2,11 +2,17 @@ cmake_minimum_required(VERSION 3.17)
 
 project(forge_native_abi_mixed_tu LANGUAGES CXX)
 
-if(NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 23)
+# In the main test tree, reuse the parent's probe dialect and standard settings.
+# Only a standalone configure chooses its own defaults before including Forge.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    if(NOT DEFINED CMAKE_CXX_STANDARD)
+        set(CMAKE_CXX_STANDARD 23)
+    endif()
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    if(NOT DEFINED CMAKE_CXX_EXTENSIONS)
+        set(CMAKE_CXX_EXTENSIONS OFF)
+    endif()
 endif()
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
         OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
