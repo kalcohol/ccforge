@@ -462,6 +462,31 @@ struct get_completion_scheduler_t {
         return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
+    // TRY-QUERY with environment arguments. Keep the unary compatibility
+    // overload and its constraints unchanged.
+    template<class Attrs, class Env, class... Envs>
+        requires (__forge_env_detail::__queryable<
+                      get_completion_scheduler_t<CPO>, Attrs, Env, Envs...> ||
+                  __forge_env_detail::__queryable<get_completion_scheduler_t<CPO>, Attrs>)
+    decltype(auto) operator()(Attrs&& attrs, Env&& env, Envs&&... envs) const
+        noexcept([] {
+            if constexpr (__forge_env_detail::__queryable<
+                              get_completion_scheduler_t<CPO>, Attrs, Env, Envs...>) {
+                return __forge_env_detail::__nothrow_query<
+                    get_completion_scheduler_t<CPO>, Attrs, Env, Envs...>;
+            } else {
+                return __forge_env_detail::__nothrow_query<get_completion_scheduler_t<CPO>, Attrs>;
+            }
+        }()) {
+        if constexpr (__forge_env_detail::__queryable<
+                          get_completion_scheduler_t<CPO>, Attrs, Env, Envs...>) {
+            return __forge_env_detail::__query(*this, static_cast<Attrs&&>(attrs),
+                static_cast<Env&&>(env), static_cast<Envs&&>(envs)...);
+        } else {
+            return __forge_env_detail::__query(*this, static_cast<Attrs&&>(attrs));
+        }
+    }
+
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_scheduler_t) noexcept {
         return true;
     }

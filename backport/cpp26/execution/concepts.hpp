@@ -899,6 +899,53 @@ template<class Env>
 concept __valid_env_domain =
     __nothrow_default_domain_query<get_domain_t, const Env&>;
 
+// Inline completion domains use HIDE-SCHED when deriving an environment's
+// domain. Keep this view out of the public compatibility overload selection.
+template<class Env>
+struct __hide_scheduler {
+    const Env* __env;
+
+    template<class Query, class... Args>
+        requires (!std::same_as<Query, get_scheduler_t> &&
+                  !std::same_as<Query, get_domain_t> &&
+                  __forge_env_detail::__queryable<Query, const Env&, Args...>)
+    decltype(auto) query(Query q, Args&&... args) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&, Args...>) {
+        return __forge_env_detail::__query(q, *__env, static_cast<Args&&>(args)...);
+    }
+};
+
+template<class Env>
+consteval auto __hidden_scheduler_domain_type() {
+    if constexpr (__env_domain<Env>) {
+        return std::type_identity<__queried_domain_t<get_domain_t, const Env&>>{};
+    } else if constexpr (requires {
+        std::execution::get_completion_domain<set_value_t>(
+            std::execution::get_scheduler(std::declval<const Env&>()),
+            std::declval<__hide_scheduler<Env>>());
+    }) {
+        return std::type_identity<decltype(std::execution::get_completion_domain<set_value_t>(
+            std::execution::get_scheduler(std::declval<const Env&>()),
+            std::declval<__hide_scheduler<Env>>()))>{};
+    } else {
+        return std::type_identity<default_domain>{};
+    }
+}
+
+template<class Env>
+using __hidden_scheduler_domain_t =
+    typename decltype(__hidden_scheduler_domain_type<Env>())::type;
+
+// Apply the draft get_domain alternatives inside inline attributes. Performing
+// the hidden lookup here terminates recursion even through forwarding schedulers,
+// without replacing the environment seen by existing member or ADL overloads.
+template<class Env>
+    requires std::is_nothrow_default_constructible_v<__hidden_scheduler_domain_t<Env>>
+auto __get_domain_with_hidden_scheduler(const Env&) noexcept
+    -> __hidden_scheduler_domain_t<Env> {
+    return {};
+}
+
 template<class Env>
 concept __scheduler_completion_domain = requires(const Env& env) {
     std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), env);
