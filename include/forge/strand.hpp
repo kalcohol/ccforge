@@ -24,6 +24,7 @@
 
 #include "any_scheduler.hpp"
 #include "resource_policy.hpp"
+#include "static_thread_pool.hpp"
 
 #include <execution>
 #include <atomic>
@@ -162,6 +163,7 @@ struct __runner_recv {
 
     std::shared_ptr<__state> state;
     __runner_base* node;
+    bool capacity_rejected = false;
 
     void set_value() && noexcept;
     void set_stopped() && noexcept;
@@ -197,17 +199,73 @@ struct __runner final : __runner_base {
     op_t op_;
 };
 
+// Use the pool state directly, before erasure, to distinguish full-queue
+// rejection from closure/allocation failure. Only the former can be parked.
+struct __pool_sender {
+    using sender_concept = std::execution::sender_t;
+    std::shared_ptr<__pool_detail::__pool_state> pool;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> __completion_signatures {
+        return {};
+    }
+    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+
+    struct __op {
+        using operation_state_concept = std::execution::operation_state_t;
+        std::shared_ptr<__pool_detail::__pool_state> pool;
+        __runner_recv rcvr;
+
+        void start() & noexcept {
+            bool full = false;
+            try {
+                if (pool->__submit([this]() noexcept {
+                        std::execution::set_value(std::move(rcvr));
+                    }, &full)) return;
+            } catch (...) {
+                // Allocation failures are terminal, not capacity notifications.
+            }
+            // Preserve the full reason before the normal stopped completion.
+            rcvr.capacity_rejected = full;
+            std::execution::set_stopped(std::move(rcvr));
+        }
+    };
+
+    auto connect(__runner_recv rcvr) && -> __op {
+        return {std::move(pool), std::move(rcvr)};
+    }
+};
+
 struct __state : std::enable_shared_from_this<__state> {
     using queue_t = std::pmr::list<std::shared_ptr<__record_base>>;
 
-    __state(any_scheduler scheduler, strand_options options)
+    __state(any_scheduler scheduler, strand_options options,
+            std::shared_ptr<__pool_detail::__pool_state> retry_pool = {})
         : scheduler_(std::move(scheduler))
+        , retry_pool_(std::move(retry_pool))
         , memory_(normalize_memory_resource(options.memory))
         , queue_(memory_)
-    {}
+    {
+        capacity_waiter_.notify = [](std::shared_ptr<void> keepalive, bool closed) noexcept {
+            auto state = std::static_pointer_cast<__state>(std::move(keepalive));
+            if (closed) {
+                state->stop_all();
+                return;
+            }
+            bool launch = false;
+            {
+                std::lock_guard lk{state->mtx_};
+                launch = !state->closed_ && state->running_ && !state->active_ &&
+                    !state->queue_.empty();
+            }
+            // This is a notifying pool worker. Enqueue, never run work inline.
+            if (launch) state->launch_runner();
+        };
+    }
 
     void enqueue(std::shared_ptr<__record_base> record) noexcept {
         auto keepalive = shared_from_this();
+        std::shared_ptr<void> cancelled;
         std::shared_ptr<__record_base> deferred_stopped;
         bool launch = false;
         bool drain = false;
@@ -231,6 +289,7 @@ struct __state : std::enable_shared_from_this<__state> {
                     }
                 } catch (...) {
                     closed_ = true;
+                    cancelled = cancel_waiter_locked();
                     defer_queue_locked();
                     append_deferred_stopped_locked(std::move(record));
                     if (!active_) {
@@ -258,12 +317,14 @@ struct __state : std::enable_shared_from_this<__state> {
 
     void shutdown() noexcept {
         auto keepalive = shared_from_this();
+        std::shared_ptr<void> cancelled;
         std::shared_ptr<__record_base> deferred_stopped;
         bool drain = false;
         bool notify = false;
         {
             std::lock_guard lk{mtx_};
             closed_ = true;
+            cancelled = cancel_waiter_locked();
             if (!active_) {
                 if (queue_.empty() && !deferred_stopped_head_) {
                     running_ = false;
@@ -367,6 +428,19 @@ struct __state : std::enable_shared_from_this<__state> {
         shutdown();
     }
 
+    void park_runner() noexcept {
+        bool stopped = false;
+        {
+            std::lock_guard lk{mtx_};
+            if (closed_) return;
+            // Keep running_ set to prevent enqueue-driven duplicate launches.
+            // Registration and cancellation nest strand -> pool; the pool
+            // extracts the node and releases its mutex before calling us.
+            stopped = !retry_pool_->__park(capacity_waiter_, shared_from_this());
+        }
+        if (stopped) stop_all();
+    }
+
     void wait() noexcept {
         for (auto* guard = __current_guard;
              guard != nullptr;
@@ -392,6 +466,10 @@ struct __state : std::enable_shared_from_this<__state> {
     }
 
 private:
+    auto cancel_waiter_locked() noexcept -> std::shared_ptr<void> {
+        return retry_pool_ ? retry_pool_->__cancel(capacity_waiter_) : nullptr;
+    }
+
     void defer_queue_locked() noexcept {
         while (!queue_.empty()) {
             auto record = std::move(queue_.front());
@@ -466,27 +544,31 @@ private:
 
     void launch_runner_once() noexcept {
         try {
-            auto sender = std::execution::schedule(scheduler_);
-            using sender_t = decltype(sender);
-            using runner_t = __runner<sender_t>;
-            std::pmr::polymorphic_allocator<runner_t> alloc{memory_};
-            auto* runner = alloc.allocate(1);
-            try {
-                std::construct_at(runner,
-                    memory_,
-                    this->shared_from_this(),
-                    std::move(sender));
-            } catch (...) {
-                alloc.deallocate(runner, 1);
-                throw;
-            }
-            runner->start();
+            if (retry_pool_) launch_sender(__pool_sender{retry_pool_});
+            else launch_sender(std::execution::schedule(scheduler_));
         } catch (...) {
             stop_all();
         }
     }
 
+    template<class Sender>
+    void launch_sender(Sender sender) {
+        using runner_t = __runner<Sender>;
+        std::pmr::polymorphic_allocator<runner_t> alloc{memory_};
+        auto* runner = alloc.allocate(1);
+        try {
+            std::construct_at(runner,
+                memory_, this->shared_from_this(), std::move(sender));
+        } catch (...) {
+            alloc.deallocate(runner, 1);
+            throw;
+        }
+        runner->start();
+    }
+
     any_scheduler scheduler_;
+    std::shared_ptr<__pool_detail::__pool_state> retry_pool_;
+    __pool_detail::__capacity_waiter capacity_waiter_;
     std::pmr::memory_resource* memory_;
     mutable std::mutex mtx_;
     std::condition_variable cv_;
@@ -504,7 +586,8 @@ inline void __runner_recv::set_value() && noexcept {
 }
 
 inline void __runner_recv::set_stopped() && noexcept {
-    state->stop_all();
+    if (capacity_rejected) state->park_runner();
+    else state->stop_all();
     node->release();
 }
 
@@ -644,7 +727,7 @@ public:
               && (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
               && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
     explicit strand(Scheduler&& scheduler)
-        : strand(any_scheduler{static_cast<Scheduler&&>(scheduler)})
+        : strand(static_cast<Scheduler&&>(scheduler), strand_options{})
     {}
 
     template<class Scheduler>
@@ -652,7 +735,7 @@ public:
               && (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
               && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
     strand(Scheduler&& scheduler, strand_options options)
-        : strand(any_scheduler{static_cast<Scheduler&&>(scheduler)}, options)
+        : state_(__make_state(static_cast<Scheduler&&>(scheduler), options))
     {}
 
     strand(const strand&) = delete;
@@ -682,14 +765,19 @@ public:
     }
 
 private:
-    static auto __make_state(any_scheduler scheduler, strand_options options)
+    template<class Scheduler>
+    static auto __make_state(Scheduler scheduler, strand_options options)
         -> std::shared_ptr<__strand_detail::__state> {
         options.memory = normalize_memory_resource(options.memory);
+        std::shared_ptr<__pool_detail::__pool_state> retry_pool;
+        if constexpr (std::is_same_v<Scheduler, static_thread_pool::scheduler>) {
+            retry_pool = scheduler.__capacity_state();
+        }
         return std::allocate_shared<__strand_detail::__state>(
             std::pmr::polymorphic_allocator<__strand_detail::__state>{
                 options.memory},
-            std::move(scheduler),
-            options);
+            any_scheduler{std::move(scheduler)},
+            options, std::move(retry_pool));
     }
 
     std::shared_ptr<__strand_detail::__state> state_;

@@ -167,6 +167,25 @@ private:
     const __ops* ops_ = nullptr;
 };
 
+// Intrusive one-shot registration. All links and keepalive are protected by
+// the pool mutex. Extraction transfers keepalive before unlocking; callbacks
+// may reuse/destroy the node, so dispatch never touches it after unlocking.
+struct __capacity_waiter {
+    __capacity_waiter* previous = nullptr;
+    __capacity_waiter* next = nullptr;
+    std::shared_ptr<void> keepalive;
+    void (*notify)(std::shared_ptr<void>, bool) noexcept = nullptr;
+};
+
+struct __capacity_notification {
+    std::shared_ptr<void> keepalive;
+    void (*notify)(std::shared_ptr<void>, bool) noexcept = nullptr;
+
+    void operator()(bool closed) noexcept {
+        if (notify) notify(std::move(keepalive), closed);
+    }
+};
+
 // Mutable pool state shared between the pool handle and its workers. The
 // workers capture the owning shared_ptr, so destroying the pool object from
 // one of its own worker threads can detach the workers (mirroring
@@ -181,9 +200,72 @@ struct __pool_state {
     {}
 
     void __shutdown() noexcept {
+        {
+            std::lock_guard lk{__mtx_};
+            // Only the first shutdown caller drains waiters. A stopped
+            // completion may reenter shutdown while that drain is in progress.
+            if (__stop_) return;
+            __stop_ = true;
+            __cv_.notify_all();
+        }
+        for (;;) {
+            __capacity_notification notification;
+            {
+                std::lock_guard lk{__mtx_};
+                if (!__waiters_head_) break;
+                notification = __take_waiter_locked();
+            }
+            // Never call strand code while holding the pool mutex.
+            notification(true);
+        }
+    }
+
+    bool __has_capacity_locked() const noexcept {
+        return !__queue_capacity_ || __queue_.size() < *__queue_capacity_;
+    }
+
+    // Caller may hold the strand mutex: lock ordering is strand -> pool.
+    // Even if capacity was released before registration, wake a worker to
+    // dispatch the callback; registration never invokes it inline.
+    bool __park(__capacity_waiter& node, std::shared_ptr<void> keepalive) noexcept {
         std::lock_guard lk{__mtx_};
-        __stop_ = true;
-        __cv_.notify_all();
+        if (__stop_) return false;
+        node.keepalive = std::move(keepalive);
+        node.previous = __waiters_tail_;
+        node.next = nullptr;
+        if (__waiters_tail_) __waiters_tail_->next = &node;
+        else __waiters_head_ = &node;
+        __waiters_tail_ = &node;
+        __cv_.notify_one();
+        return true;
+    }
+
+    // Empty means dispatch already owns this registration (or none exists).
+    // The caller releases the returned keepalive outside its strand mutex.
+    auto __cancel(__capacity_waiter& node) noexcept -> std::shared_ptr<void> {
+        std::lock_guard lk{__mtx_};
+        if (!node.keepalive) return {};
+        __unlink_waiter_locked(node);
+        return std::move(node.keepalive);
+    }
+
+    void __unlink_waiter_locked(__capacity_waiter& node) noexcept {
+        if (node.previous) node.previous->next = node.next;
+        else __waiters_head_ = node.next;
+        if (node.next) node.next->previous = node.previous;
+        else __waiters_tail_ = node.previous;
+        node.previous = node.next = nullptr;
+    }
+
+    auto __take_waiter_locked() noexcept -> __capacity_notification {
+        auto& node = *__waiters_head_;
+        __unlink_waiter_locked(node);
+        return {std::move(node.keepalive), node.notify};
+    }
+
+    bool __closed() noexcept {
+        std::lock_guard lk{__mtx_};
+        return __stop_;
     }
 
     void __wait_idle() noexcept {
@@ -194,12 +276,13 @@ struct __pool_state {
     }
 
     template<class F>
-    bool __submit(F&& task) {
+    bool __submit(F&& task, bool* full = nullptr) {
         std::lock_guard lk{__mtx_};
         if (__stop_) {
             return false;
         }
         if (__queue_capacity_ && __queue_.size() >= *__queue_capacity_) {
+            if (full) *full = true;
             return false;
         }
         __queue_.push_back(__task::make(
@@ -213,17 +296,34 @@ struct __pool_state {
     void __run() noexcept {
         while (true) {
             __task task;
+            __capacity_notification notification;
+            bool notification_closed = false;
             {
                 std::unique_lock lk{__mtx_};
-                __cv_.wait(lk, [this] { return !__queue_.empty() || __stop_; });
-                if (__queue_.empty()) break;
-                task = std::move(__queue_.front());
-                __queue_.pop_front();
+                __cv_.wait(lk, [this] {
+                    return !__queue_.empty() || __stop_ ||
+                        (__waiters_head_ && __has_capacity_locked());
+                });
+                if (!__queue_.empty()) {
+                    task = std::move(__queue_.front());
+                    __queue_.pop_front();
+                }
+                if (__waiters_head_ && (__stop_ || __has_capacity_locked())) {
+                    notification = __take_waiter_locked();
+                    notification_closed = __stop_;
+                    ++__active_;
+                }
+                if (!task && !notification.notify) break;
             }
-            try { task(); } catch (...) {}
+            // Callback only enqueues a runner; strand work is never run inline.
+            // A concurrent shutdown is observed by that enqueue or by __park.
+            notification(notification_closed);
+            if (task) {
+                try { task(); } catch (...) {}
+            }
             {
                 std::lock_guard lk{__mtx_};
-                --__active_;
+                __active_ -= (task ? 1 : 0) + (notification.notify ? 1 : 0);
                 if (__queue_.empty() && __active_ == 0)
                     __cv_wait_.notify_all();
             }
@@ -238,6 +338,8 @@ struct __pool_state {
     std::optional<std::size_t> __queue_capacity_;
     bool __stop_ = false;
     std::size_t __active_ = 0;
+    __capacity_waiter* __waiters_head_ = nullptr;
+    __capacity_waiter* __waiters_tail_ = nullptr;
 };
 
 template<class R>
@@ -301,6 +403,15 @@ public:
         }
 
         static_thread_pool* __pool; // public for simplicity
+
+        [[nodiscard]] bool closed() const noexcept {
+            return __pool->closed();
+        }
+
+        auto __capacity_state() const noexcept
+            -> std::shared_ptr<__pool_detail::__pool_state> {
+            return __pool->__state_;
+        }
     };
 
     explicit static_thread_pool(
@@ -372,6 +483,10 @@ public:
 
     void shutdown() noexcept {
         __state_->__shutdown();
+    }
+
+    [[nodiscard]] bool closed() const noexcept {
+        return __state_->__closed();
     }
 
     void wait() noexcept {
