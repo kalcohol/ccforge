@@ -40,17 +40,30 @@ struct __joined_env {
 
     template<class Tag>
         requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
-                  __forge_env_detail::__queryable<Tag, const BaseEnv&>)
-    friend decltype(auto) tag_invoke(Tag tag, const __joined_env& self)
+                  (__forge_env_detail::__forwarding_query<Tag> &&
+                   __forge_env_detail::__queryable<Tag, const BaseEnv&>))
+    constexpr decltype(auto) query(Tag tag) const
         noexcept((__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
                   __forge_env_detail::__nothrow_query<Tag, const OverrideEnv&>) ||
                  (!__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
                   __forge_env_detail::__nothrow_query<Tag, const BaseEnv&>)) {
         if constexpr (__forge_env_detail::__queryable<Tag, const OverrideEnv&>) {
-            return __forge_env_detail::__query(tag, *self.__overlay_env);
+            return __forge_env_detail::__query(tag, *__overlay_env);
         } else {
-            return __forge_env_detail::__query(tag, *self.__base);
+            return __forge_env_detail::__query(tag, *__base);
         }
+    }
+
+    template<class Tag>
+        requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
+                  (__forge_env_detail::__forwarding_query<Tag> &&
+                   __forge_env_detail::__queryable<Tag, const BaseEnv&>))
+    friend decltype(auto) tag_invoke(Tag tag, const __joined_env& self)
+        noexcept((__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
+                  __forge_env_detail::__nothrow_query<Tag, const OverrideEnv&>) ||
+                 (!__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
+                  __forge_env_detail::__nothrow_query<Tag, const BaseEnv&>)) {
+        return self.query(tag);
     }
 };
 
@@ -101,6 +114,10 @@ struct __op : __forge_detail::__immovable {
     inner_op_t __inner_op;
 
     __op(S sndr, OverrideEnv env, R rcvr)
+        noexcept(std::is_nothrow_move_constructible_v<R> &&
+                 std::is_nothrow_move_constructible_v<OverrideEnv> &&
+                 noexcept(base_env_t(std::execution::get_env(std::declval<R&>()))) &&
+                 noexcept(std::execution::connect(std::declval<S>(), std::declval<recv_t>())))
         : __rcvr(std::move(rcvr))
         , __env(std::move(env))
         , __base_env(std::execution::get_env(__rcvr))
@@ -135,14 +152,18 @@ struct __sender {
     }
 
     template<receiver R>
-    auto connect(R r) && -> __op<S, OverrideEnv, R> {
+    auto connect(R r) &&
+        noexcept(noexcept(__op<S, OverrideEnv, R>{
+            std::move(__sndr), std::move(__env), std::move(r)})) -> __op<S, OverrideEnv, R> {
         return __op<S, OverrideEnv, R>{
             std::move(__sndr), std::move(__env), std::move(r)};
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && std::copy_constructible<OverrideEnv>
-    auto connect(R r) const& -> __op<S, OverrideEnv, R> {
+    auto connect(R r) const&
+        noexcept(noexcept(__op<S, OverrideEnv, R>{
+            __sndr, __env, std::move(r)})) -> __op<S, OverrideEnv, R> {
         return __op<S, OverrideEnv, R>{__sndr, __env, std::move(r)};
     }
 
