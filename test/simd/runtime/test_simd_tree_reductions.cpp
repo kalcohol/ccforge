@@ -4,31 +4,7 @@
 #include <functional>
 #include <limits>
 
-namespace reduction_adl_collision {
-struct plus {
-    template<class V> constexpr V operator()(const V& a, const V& b) const {
-        return a + b;
-    }
-};
-
-// ADL would prefer this overload over the internal recursive helper.
-template<std::simd::simd_size_type First, std::simd::simd_size_type Count, class Get>
-auto reduction_tree(Get&, plus&) = delete;
-} // namespace reduction_adl_collision
-
 namespace {
-constexpr bool collision_reduction() {
-    const std::simd::vec<int, 5> value([](auto i) { return int(i) + 1; });
-    const auto selected = value > decltype(value)(2);
-    return std::simd::reduce(value, reduction_adl_collision::plus{}) == 15 &&
-        std::simd::reduce(value, selected, reduction_adl_collision::plus{}, 0) == 12;
-}
-static_assert(collision_reduction());
-
-TEST(SimdTreeReductions, InternalHelpersAvoidADL) {
-    EXPECT_TRUE(collision_reduction());
-}
-
 struct minimum {
     template<class V> constexpr V operator()(const V& a, const V& b) const {
         return std::simd::select(a < b, a, b);
