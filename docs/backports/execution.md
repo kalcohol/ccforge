@@ -121,11 +121,20 @@ auto result = std::this_thread::sync_wait(std::move(work));
   `affine(sender)` / `sender | affine` 从 receiver environment 的 `get_start_scheduler`
   取得目标 scheduler，通过 unstoppable schedule sender 复用同一 transfer 路径，
   因而也保留多种 value shapes，并采用相同的条件 `exception_ptr` 规则。
-  `continues_on` 为转移后的 value 和 stopped completion 发布 destination scheduler
-  attribute。调度失败的 error completion 允许发生在 unspecified agent，因此不为
-  error disposition 声称唯一 completion scheduler；completion domain 同样只从
-  destination scheduler 或其 schedule sender 派生；但 completion-domain fallback 的
-  child attribute 过滤尚未补齐，当前仍可能落到 child domain。
+  [`continues_on`](https://eel.is/c++draft/exec.continues.on) 的 attributes 通过成员
+  `query` 为 value 和 stopped completion 发布 destination scheduler。调度失败的
+  error completion 允许发生在 unspecified agent，因此不为 error disposition
+  声称唯一 completion scheduler 或 domain。value / stopped 及默认 tag 的
+  completion-domain 成员优先查询 destination schedule sender attributes，未命中时
+  查询 destination scheduler；默认模式保留 member-first / tag-invoke fallback。
+  所有 completion-scheduler / completion-domain tags 均从 child 转发入口排除；
+  destination 查询不可用时不会回退到 child domain，包括 value、stopped、error 和
+  默认 tag。其余 child attributes 只经 `forwarding_query` 过滤后 variadic 转发，
+  保留引用答案与条件 `noexcept`。目标 domain 查询的参与条件、异常规格、分派与公开
+  CPO 的 completion-scheduler 回退，以及两条内部 receiver 路径与 signatures 推导均使用
+  [`FWD-ENV`](https://eel.is/c++draft/exec.snd.expos) 的过滤视图。receiver 的按值环境
+  由视图持有，借用环境保留引用。过滤视图的具体类型无需等于原环境类型，forwarding query 的
+  引用返回类型与对象身份保持不变。
 - `starts_on` 和 `associate` 在 `connect` 阶段构造 child operation；构造失败由
   `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 在收到上游
   completion 后选择并构造 successor operation，因此仍为 late-connect 失败保留
@@ -255,7 +264,10 @@ strict 模式仍只考虑成员。原环境类型的保留属于兼容扩展。I
 scheduler 终止递归，同时保留外层自定义重载的选择。
 `counting_scope` / `spawn_future` 的 stop-when environment 现已提供成员查询，
 只转发 `FWD-ENV` queries，并保持融合 stop token 的覆盖优先级。
-`continues_on` attrs 仍采用已有兼容接口，其 completion-domain fallback 过滤仍待补齐。
+`continues_on` attributes 与两条内部 receiver environment 均支持成员 `query`；
+completion tags 只由 destination 提供，不参与 child attribute 转发。
+默认与 strict 模式均检查目标查询缺失时的
+[`get_completion_domain`](https://eel.is/c++draft/exec.get.compl.domain) 回退，避免 child domain 泄漏。
 `prop` / `env` 的 assignability 等其他 surface 差异仍属于现有 subset 边界。
 新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
 

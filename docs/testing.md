@@ -595,6 +595,17 @@ Completion scheduler / domain 探针还比较成员与 ADL 竞争、通用回退
 并检查 inline 及转发其查询的 scheduler 的 domain 递归终止。探针还使用满足 `receiver` 的非抛出移动类型，覆盖
 schedule sender 及其 `write_env` 包装的 `connect` / `start` 异常规格；rvalue receiver 移动
 不抛出，lvalue receiver 的复制可以抛出，并检查 receiver / query 结果的值类别。
+`continues_on` 的直接成员探针在两种模式均启用，覆盖 destination completion scheduler / domain、
+schedule sender attributes 优先于 scheduler 的 domain 选择、forwarding 与本地 child attributes、
+variadic 参数与引用答案、查询和 `connect` / `start` 异常规格，以及两条 receiver environment 的
+成员查询过滤与引用身份。环境相关 destination 会根据本地 query 是否可见改变 domain
+类型、参与条件与 `noexcept`，检查 schedule sender 分支与 scheduler 回退均使用过滤环境。
+直接 domain 成员不可用时，公开 CPO 的 completion-scheduler 回退仍使用过滤环境；
+value / stopped / 默认 tag 的探针覆盖无环境、单环境与多个环境参数、不同值类别和
+兼容接口，并以 stopped 回退到 scheduler 的 value domain 作为正例。
+其他 sender attributes 的对照探针保留原始环境参数的可见性。
+负例为 child 提供 value / stopped / error / 默认 tag 的 completion domain，
+同时使 destination 查询不可用，检查 unary 与多个环境参数下的成员、CPO 和兼容接口均不泄漏 child domain。
 `execution_default_scheduler_env_queries` 与 `execution_strict_scheduler_env_queries` 运行相同的
 针对性测试，覆盖 `write_env` child 查询过滤、不同 loop 的 scheduler identity、inline 环境相关查询、
 schedule / `let` / `write_env` 组合中的 child scheduler 传播，以及 run-loop schedule sender
@@ -603,9 +614,14 @@ schedule / `let` / `write_env` 组合中的 child scheduler 传播，以及 run-
 临时 attributes / 按值与借用 receiver environment 中引用答案的值保存。
 receiver env 缺少 scheduler 时，inline predecessor 在 strict 模式选择 completion domain，
 默认模式保留 legacy unary scheduler 回退；运行测试同时检查 child 的 start scheduler。
+`continues_on` 用例检查 source 与 schedule sender 在 signatures、连接及执行阶段使用过滤环境，
+并检查 scheduler operation 在 `connect` 预连接。value / stopped 经 downstream `let` 取得
+destination scheduler / domain，error completion 经 destination hop 后到达 successor；
+source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule sender 的 domain
+答案区分原始与过滤环境，并与 signatures、连接及执行阶段的 receiver environment 比较。
+`execution_adaptors` 通过 forwarding query 检查借用 receiver environment 的引用身份与
+析构期间的可用性，不依赖过滤视图的具体类型或直接访问其非查询成员。
 两项运行测试随 `FORGE_TEST_ENABLE_EXECUTION` 注册。
-`continues_on`、`counting_scope`、`spawn_future` 的直接兼容查询探针仍仅在默认模式启用；
-分别等待 completion-domain fallback 过滤及 stop-when / `write_env` 所需 `FWD-ENV` 过滤和成员查询。
 两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
 `ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
 此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。
