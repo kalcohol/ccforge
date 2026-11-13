@@ -8,6 +8,12 @@ target_compile_definitions(test_simd_expansion PRIVATE FORGE_SIMD_ENABLE_CHUNK_C
 forge_add_simd_runtime_test(test_simd_permute_protocol test_simd_permute_protocol.cpp)
 
 forge_add_simd_runtime_test(test_simd_reductions test_simd_reductions.cpp)
+forge_add_simd_runtime_test(test_simd_tree_reductions test_simd_tree_reductions.cpp)
+if(MSVC)
+    # Widths 1..64 exceed the regular COFF section limit in debug builds.
+    target_compile_options(test_simd_tree_reductions PRIVATE /bigobj)
+endif()
+forge_add_simd_runtime_test(test_simd_math_values test_simd_math_values.cpp)
 forge_add_simd_runtime_test(test_simd_reduce_scalar_complex test_simd_reduce_scalar_complex.cpp)
 forge_add_simd_runtime_test(test_simd_reduce_order_constraints test_simd_reduce_order_constraints.cpp)
 forge_add_simd_runtime_test(test_simd_mask_reduce_constraints test_simd_mask_reduce_constraints.cpp)
