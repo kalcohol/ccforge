@@ -40,7 +40,38 @@ FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(5, name, detail::deduced_math_vector_t<V>
 FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(6, name, detail::deduced_math_vector_t<V>, V, detail::deduced_math_vector_t<V>, ) \
 FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(7, name, V, detail::deduced_math_vector_t<V>, detail::deduced_math_vector_t<V>, )
 
-FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(sqrt)
+// SIMD math leaves errno access unspecified. Limit the GCC option to this
+// function: never change the including translation unit's floating-point mode.
+template<class V>
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("no-math-errno")))
+#endif
+constexpr remove_cvref_t<V> sqrt(const V& value)
+    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    using result_type = remove_cvref_t<V>;
+    using T = typename result_type::value_type;
+    if consteval {
+        return detail::unary_math_transform<result_type>(value, detail::math_sqrt_fn{});
+    } else {
+        result_type result;
+        for (simd_size_type i = 0; i < result_type::size(); ++i) {
+#if defined(__clang__) && defined(__has_builtin)
+#  if __has_builtin(__builtin_elementwise_sqrt)
+            detail::set_lane(result, i, __builtin_elementwise_sqrt(static_cast<T>(value[i])));
+#  else
+            detail::set_lane(result, i, std::sqrt(value[i]));
+#  endif
+#elif defined(__GNUC__)
+            if constexpr (is_same_v<T, float>) detail::set_lane(result, i, __builtin_sqrtf(value[i]));
+            else if constexpr (is_same_v<T, double>) detail::set_lane(result, i, __builtin_sqrt(value[i]));
+            else detail::set_lane(result, i, std::sqrt(value[i]));
+#else
+            detail::set_lane(result, i, std::sqrt(value[i]));
+#endif
+        }
+        return result;
+    }
+}
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(sin)
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(cos)
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(tan)
