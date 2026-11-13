@@ -1,0 +1,59 @@
+SIMD 基准运行说明
+=================
+
+用途与构建
+----------
+measure_simd.cpp 是独立程序，不注册到 CTest，也不作为性能准入门槛。
+采用支持本库的 C++23 工具链，并确认该模式不暴露 partial-native SIMD 声明。
+从仓库根目录执行；不要用强制注入宏覆盖 partial-native 声明。
+
+mkdir -p build/simd-benchmark
+g++ -std=c++23 -O3 -DNDEBUG -Ibackport test/simd/benchmark/measure_simd.cpp -o build/simd-benchmark/measure_simd
+taskset -c 2 build/simd-benchmark/measure_simd 1000000
+
+CPU 编号仅为命令示例，先用 lscpu 和 taskset -pc $$ 选择允许使用的核心。
+可将 g++ 换为 clang++；本测量程序依赖 GCC/Clang 的 compiler barrier。
+默认严格浮点选项；不使用 -ffast-math。ISA 选项必须在两边完全一致。
+整数类型不执行浮点 math。当前 API 用 select 表达条件选择；where 不是公开 API。
+
+配对测量
+--------
+先固定 benchmark 源码，再构建基线与候选。脚本使用同一份 benchmark 源码，
+只切换 backport 头文件。编译前将基线 git archive、候选 backport 目录与整个
+benchmark harness 保存到 /tmp/simd-benchmark.*；两边均只从快照编译。
+候选快照包含当前文件系统中的 staged、unstaged 与 untracked 内容。
+脚本不修改仓库或 Git 索引；复制期间应暂停编辑输入文件，以取得一致快照。
+
+BASE_REF=c37fd4b PAIRS=10 ITERATIONS=1000000 bash test/simd/benchmark/run_paired.sh 2 g++ -march=native
+BASE_REF=c37fd4b PAIRS=10 ITERATIONS=1000000 bash test/simd/benchmark/run_paired.sh 2 clang++ -march=native
+
+两条命令分别形成独立实验。脚本按 base/branch、branch/base 交错执行，均由
+taskset 绑定到同一个核心。每次新建 /tmp/simd-benchmark.*，保存原始 samples.csv、
+metadata.txt、二进制摘要及候选头文件 diff；不跨目录拼接结果。
+base-source.sha256、candidate-source.sha256 与 harness.sha256 记录各快照的逐文件摘要，
+snapshots.sha256 记录这些清单的摘要，并写入 metadata.txt。
+保留整个输出目录以便重建；branch.patch 仅作辅助，未跟踪文件由快照完整保留。
+脚本需要系统 tar、cp、find、sort、xargs、awk 和 sha256sum。
+
+覆盖与计时边界
+--------------
+输出每行以 simd_bench 开头，后续字段为 type、abi、lanes、op、iterations、ns；
+配对脚本追加 candidate 和 sample。ns 是整个 timed loop 的耗时，除以 iterations
+得到每次 kernel 耗时，再按 lanes 归一化时必须注明口径。
+每个 kernel 先预热；构造输入和输出文本不在计时区间内。
+输入固定且有界；乘积不溢出，math 不触发域或范围错误。
+每次迭代包含 compiler memory barrier 和结果观察；barrier kernel 用于观察固定成本，
+不要机械扣除该成本。store 的观察对象是整个输出数组，不含额外 checksum 归约。
+这些是小向量 kernel 的吞吐/调用成本观测，不代表大数组带宽或真实应用性能。
+运行前检查优化报告或反汇编，确认被测运算没有被循环外提或常量折叠。
+
+环境记录与报告
+--------------
+遵循 ../../hive/benchmark/MEASUREMENT_PROTOCOL.txt 的环境与报告原则。
+补充记录非私密主机标识、日期、CPU 型号及核类型、选定核心与 SMT 兄弟拓扑、
+频率策略与观测频率、系统负载、内存配置、OS/内核、编译器与标准库版本、
+完整编译选项、源码状态、二进制摘要和采样顺序。脚本未自动采集的项目手工补录；
+缺失项明确标注，不猜测。先在同一核心完成正确性验证，再做计时。
+保留所有原始样本及异常批次，报告绝对耗时、分布和配对比值。
+换主机、核心、ISA、工具链或系统环境后，两边都重新构建与运行。
+正确性与性能结果分别报告；没有固定提速阈值。
