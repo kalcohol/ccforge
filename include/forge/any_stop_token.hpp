@@ -32,6 +32,8 @@
 namespace forge {
 
 // Copyable, allocator-neutral stop-token erasure for Forge extension APIs.
+// Erasure does not extend an inplace source's lifetime. Its owner must keep it
+// alive through callback deregistration and every outstanding request_stop().
 class any_stop_token {
 public:
     template<class Callback>
@@ -111,7 +113,9 @@ private:
         std::shared_ptr<__callback_state_base> state;
 
         void operator()() noexcept {
-            state->invoke();
+            // Invocation may deregister and destroy the erased callback handle.
+            auto keepalive = state;
+            keepalive->invoke();
         }
     };
 
