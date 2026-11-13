@@ -129,16 +129,26 @@ namespace __coro_detail {
 struct await_sender_receiver_env {
     const io_env* env = nullptr;
 
+    auto query(std::execution::get_stop_token_t) const noexcept
+        -> std::inplace_stop_token {
+        return env ? env->stop_token : std::inplace_stop_token{};
+    }
+
+    auto query(std::execution::get_scheduler_t) const noexcept
+        -> forge::any_scheduler {
+        return env ? env->executor.scheduler() : forge::any_scheduler{};
+    }
+
     friend auto tag_invoke(
         std::execution::get_stop_token_t,
         const await_sender_receiver_env& self) noexcept -> std::inplace_stop_token {
-        return self.env ? self.env->stop_token : std::inplace_stop_token{};
+        return self.query(std::execution::get_stop_token);
     }
 
     friend auto tag_invoke(
         std::execution::get_scheduler_t,
         const await_sender_receiver_env& self) noexcept -> forge::any_scheduler {
-        return self.env ? self.env->executor.scheduler() : forge::any_scheduler{};
+        return self.query(std::execution::get_scheduler);
     }
 };
 

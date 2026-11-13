@@ -530,6 +530,11 @@ struct __scheduler {
 
 struct __env {
     std::shared_ptr<__state> state;
+
+    auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept -> __scheduler {
+        return __scheduler{state};
+    }
 };
 
 struct __sender {
@@ -612,7 +617,8 @@ auto __sender::connect(R rcvr) const& -> __op<R> {
 inline auto tag_invoke(
     std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
     const __env& env) noexcept -> __scheduler {
-    return __scheduler{env.state};
+    return env.query(std::execution::get_completion_scheduler<
+        std::execution::set_value_t>);
 }
 
 inline auto __scheduler::schedule() const noexcept -> __sender {

@@ -58,6 +58,10 @@ forge_add_execution_compile_probe(
     test_execution_api_core.cpp
     execution_api_core_compile)
 forge_add_execution_compile_probe(
+    test_execution_query_subsumption
+    test_execution_query_subsumption.cpp
+    execution_query_subsumption_compile)
+forge_add_execution_compile_probe(
     test_execution_counting_scope_limits
     test_execution_counting_scope_limits.cpp
     execution_counting_scope_limits_compile)

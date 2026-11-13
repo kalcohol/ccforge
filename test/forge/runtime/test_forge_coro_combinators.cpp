@@ -374,6 +374,11 @@ struct aggregate_receiver {
     struct env {
         std::inplace_stop_source* stop = nullptr;
 
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> std::inplace_stop_token {
+            return stop ? stop->get_token() : std::inplace_stop_token{};
+        }
+
         friend auto tag_invoke(
             std::execution::get_stop_token_t,
             const env& self) noexcept -> std::inplace_stop_token {
@@ -434,6 +439,11 @@ struct any_aggregate_receiver {
 
     struct env {
         std::inplace_stop_source* stop = nullptr;
+
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> std::inplace_stop_token {
+            return stop ? stop->get_token() : std::inplace_stop_token{};
+        }
 
         friend auto tag_invoke(
             std::execution::get_stop_token_t,

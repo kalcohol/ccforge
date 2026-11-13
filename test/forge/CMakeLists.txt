@@ -238,3 +238,45 @@ if(FORGE_TEST_ENABLE_FORGE_ERASURE)
     forge_add_forge_test(test_forge_any_sender test_forge_any_sender.cpp forge_any_sender)
     forge_add_forge_test(test_forge_any_receiver test_forge_any_receiver.cpp forge_any_receiver)
 endif()
+
+# Compile each executable consistently in member-only query mode. No definition
+# is exported by forge::forge. Keep backport-only query wrappers out of this set.
+add_custom_target(test_forge_strict_member_queries)
+function(forge_add_strict_test stem)
+    set(_strict_target "test_forge_strict_${stem}")
+    forge_add_forge_test(${_strict_target} "test_forge_${stem}.cpp" "forge_strict_${stem}")
+    target_compile_definitions(${_strict_target} PRIVATE
+        FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+    add_dependencies(test_forge_strict_member_queries ${_strict_target})
+endfunction()
+
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
+    foreach(_stem IN ITEMS runtime_context async_scope strand thread_pool task_member_queries)
+        forge_add_strict_test(${_stem})
+    endforeach()
+    target_compile_definitions(test_forge_strict_thread_pool PRIVATE
+        FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
+    # The full task suite depends on sync_wait_env's legacy start scheduler.
+endif()
+if(FORGE_TEST_ENABLE_FORGE_ERASURE)
+    foreach(_stem IN ITEMS any_scheduler any_receiver any_sender)
+        forge_add_strict_test(${_stem})
+    endforeach()
+    # erased_sender's starts_on regression depends on backport let environments.
+endif()
+if(FORGE_TEST_ENABLE_FORGE_IO)
+    foreach(_stem IN ITEMS coro_io coro_interop coro_combinators)
+        forge_add_strict_test(${_stem})
+    endforeach()
+endif()
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME OR FORGE_TEST_ENABLE_FORGE_ERASURE
+        OR FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_compile_probe(test_forge_member_queries
+        test_forge_member_queries.cpp forge_member_queries)
+    target_compile_definitions(test_forge_member_queries PRIVATE
+        FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1
+        FORGE_TEST_QUERY_RUNTIME=$<BOOL:${FORGE_TEST_ENABLE_FORGE_RUNTIME}>
+        FORGE_TEST_QUERY_ERASURE=$<BOOL:${FORGE_TEST_ENABLE_FORGE_ERASURE}>
+        FORGE_TEST_QUERY_IO=$<BOOL:${FORGE_TEST_ENABLE_FORGE_IO}>)
+    add_dependencies(test_forge_strict_member_queries test_forge_member_queries)
+endif()

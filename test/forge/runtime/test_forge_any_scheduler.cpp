@@ -100,11 +100,15 @@ struct stop_aware_schedule_receiver {
         *stopped = true;
     }
 
-    auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::make_prop(
-                std::execution::get_stop_token_t{},
-                source->get_token()));
+    struct env {
+        std::inplace_stop_token token;
+
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> std::inplace_stop_token { return token; }
+    };
+
+    auto get_env() const noexcept -> env {
+        return {source->get_token()};
     }
 };
 

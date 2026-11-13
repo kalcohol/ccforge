@@ -66,6 +66,9 @@ inline void test_reset_thread_launch_failure() noexcept {
 
 struct __env {
     static_thread_pool* pool;
+
+    auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept;
 };
 
 class __task {
@@ -288,6 +291,11 @@ public:
         using scheduler_concept = std::execution::scheduler_t;
         bool operator==(const scheduler&) const noexcept = default;
 
+        auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+            -> std::execution::forward_progress_guarantee {
+            return std::execution::forward_progress_guarantee::parallel;
+        }
+
         auto schedule() const noexcept -> __pool_detail::__sender {
             return __pool_detail::__sender{__pool};
         }
@@ -403,19 +411,25 @@ private:
 
 namespace __pool_detail {
 
+inline auto __env::query(std::execution::get_completion_scheduler_t<
+                            std::execution::set_value_t>) const noexcept {
+    return static_thread_pool::scheduler{pool};
+}
+
 inline auto tag_invoke(
     std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
     const __env& self) noexcept -> static_thread_pool::scheduler {
-    return static_thread_pool::scheduler{self.pool};
+    return self.query(std::execution::get_completion_scheduler<
+        std::execution::set_value_t>);
 }
 
 } // namespace __pool_detail
 
 inline auto tag_invoke(
     std::execution::get_forward_progress_guarantee_t,
-    const static_thread_pool::scheduler&) noexcept
+    const static_thread_pool::scheduler& self) noexcept
     -> std::execution::forward_progress_guarantee {
-    return std::execution::forward_progress_guarantee::parallel;
+    return self.query(std::execution::get_forward_progress_guarantee);
 }
 
 // Define __op start after static_thread_pool is complete

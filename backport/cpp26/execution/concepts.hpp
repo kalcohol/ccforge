@@ -789,6 +789,7 @@ struct __queried_domain<Query, Env, Args...> {
             std::declval<const Query&>(), std::declval<Args>()...))>;
 };
 
+#if !defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) || !FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
 template<class Query, class Env, class... Args>
     requires (!__forge_env_detail::__member_query<Query, Env, Args...>) &&
              __forge_detail::tag_invocable<Query, Env, Args...>
@@ -796,6 +797,7 @@ struct __queried_domain<Query, Env, Args...> {
     using type = std::remove_cvref_t<
         __forge_detail::tag_invoke_result_t<Query, Env, Args...>>;
 };
+#endif
 
 template<class Query, class Env, class... Args>
 using __queried_domain_t =

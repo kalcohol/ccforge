@@ -58,6 +58,10 @@ class __inline_fallback_scheduler;
 namespace __inline_fallback {
 
 struct __env {
+    auto query(std::execution::get_completion_scheduler_t<
+                   std::execution::set_value_t>) const noexcept
+        -> __inline_fallback_scheduler;
+
     friend auto tag_invoke(
         std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
         const __env&) noexcept -> __inline_fallback_scheduler;
@@ -113,10 +117,17 @@ public:
 };
 
 namespace __inline_fallback {
+inline auto __env::query(std::execution::get_completion_scheduler_t<
+                            std::execution::set_value_t>) const noexcept
+    -> __inline_fallback_scheduler {
+    return {};
+}
+
 inline auto tag_invoke(
     std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
-    const __env&) noexcept -> __inline_fallback_scheduler {
-    return {};
+    const __env& self) noexcept -> __inline_fallback_scheduler {
+    return self.query(std::execution::get_completion_scheduler<
+        std::execution::set_value_t>);
 }
 } // namespace __inline_fallback
 

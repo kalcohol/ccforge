@@ -492,3 +492,21 @@ FORGE_INSTALL_CONFIG=Release scripts/verify-install-package.sh
 gcc16 的示例流程启用 `FORGE_BUILD_TESTS=ON`、关闭全部 `FORGE_TEST_ENABLE_*` 测试组、构建示例后运行 `ctest --test-dir build/gcc16-examples -R '^example_' --output-on-failure`，因此 libstdc++ 上的示例也有运行覆盖。
 
 `FORGE_ENABLE_FORGE_RUNTIME` 只控制 runtime 示例；runtime 测试由 `FORGE_TEST_ENABLE_FORGE_RUNTIME` 独立控制，公共头文件始终可包含。文档审计还覆盖三语 README 一致性、测试开关文档、路线图状态、特性宏、用途头与扩展拼写，并逐项运行正反自测。
+
+## Forge member query dispatch（strict member query 测试）
+
+`test_forge_strict_member_queries` 构建代表性的 runtime、async scope、strand、线程池、
+task、擦除和无需 io_uring 的 IO coroutine/combinator 测试，以及 `forge_member_queries`
+编译探针。运行 `ctest --test-dir build/llvm -R '^forge_(strict_|member_queries$)' --output-on-failure`。
+它们随 `FORGE_TEST_ENABLE_FORGE_RUNTIME`、`FORGE_TEST_ENABLE_FORGE_ERASURE` 和
+`FORGE_TEST_ENABLE_FORGE_IO` 开关注册。
+
+这些独立可执行文件私有定义测试专用宏
+`FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1`，使 backport 的 environment/scheduler
+query dispatch 只接受 const member `query`。默认关闭，不传播到 `forge::forge`；同一
+可执行文件的所有 translation unit 必须一致定义。该开关不改变 receiver completion、
+`get_env` 或 forwarding-query 分类的兼容 dispatch，也不影响 native stand-aside 实现。
+完整 task suite 中依赖 backport `sync_wait_env` start scheduler 的测试，以及
+`erased_sender` 中依赖 backport `let` env 的 `starts_on` 测试不进入 strict 集合；
+task 使用独立的 value/stopped 测试，擦除使用 any sender/receiver/scheduler 测试。
+此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。

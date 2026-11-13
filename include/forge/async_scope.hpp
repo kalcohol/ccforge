@@ -132,10 +132,15 @@ constexpr decltype(auto) __copy_or_move_lvalue(T&& value) noexcept {
 struct __env {
     std::shared_ptr<__state> state;
 
+    auto query(std::execution::get_stop_token_t) const noexcept
+        -> std::inplace_stop_token {
+        return state->stop_source.get_token();
+    }
+
     friend auto tag_invoke(
         std::execution::get_stop_token_t,
         const __env& self) noexcept -> std::inplace_stop_token {
-        return self.state->stop_source.get_token();
+        return self.query(std::execution::get_stop_token);
     }
 };
 

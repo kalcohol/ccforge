@@ -89,6 +89,16 @@ concept __nothrow_member_query = requires(
     { env.query(query, static_cast<Args&&>(args)...) } noexcept;
 };
 
+// Test-only: define consistently in every translation unit of a test executable.
+// Keep default constraint expressions unchanged: extra true atoms affect subsumption.
+#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
+template<class Query, class Env, class... Args>
+concept __queryable = __member_query<Query, Env, Args...>;
+
+template<class Query, class Env, class... Args>
+inline constexpr bool __nothrow_query =
+    __nothrow_member_query<Query, Env, Args...>;
+#else
 template<class Query, class Env, class... Args>
 concept __queryable =
     __member_query<Query, Env, Args...> ||
@@ -100,6 +110,7 @@ inline constexpr bool __nothrow_query =
      __nothrow_member_query<Query, Env, Args...>) ||
     (!__member_query<Query, Env, Args...> &&
      __forge_detail::nothrow_tag_invocable<Query, Env, Args...>);
+#endif
 
 template<class Query, class Env, class... Args>
     requires __queryable<Query, Env, Args...>

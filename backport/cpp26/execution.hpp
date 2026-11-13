@@ -59,7 +59,8 @@
 //   - CPO customization is member-first for Forge-provided senders/receivers,
 //     with tag_invoke fallback retained for existing custom types.
 //     One-argument environment and scheduler queries are also member-query-
-//     first, with tag_invoke fallback.
+//     first, with tag_invoke fallback. The test-only macro
+//     FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1 disables that query fallback.
 //   - sync_wait computes result types against its run_loop environment
 //     (sync_wait_env: get_scheduler / get_start_scheduler /
 //     get_delegation_scheduler). As an extension it also accepts senders

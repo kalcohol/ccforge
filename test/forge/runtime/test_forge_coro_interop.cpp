@@ -395,6 +395,11 @@ struct task_result_receiver {
     struct env {
         std::inplace_stop_source* source = nullptr;
 
+        auto query(std::execution::get_stop_token_t) const noexcept
+            -> std::inplace_stop_token {
+            return source ? source->get_token() : std::inplace_stop_token{};
+        }
+
         friend auto tag_invoke(
             std::execution::get_stop_token_t,
             const env& self) noexcept -> std::inplace_stop_token {
