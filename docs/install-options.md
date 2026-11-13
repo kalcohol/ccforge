@@ -26,3 +26,7 @@ target_link_libraries(myapp PRIVATE forge::std)
 | `FORGE_ENABLE_FORGE_IO_URING` | AUTO/ON/OFF，独立启用 Linux io_uring |
 
 强制 `FORGE_FORCE_*_BACKPORT` 开关只用于诊断，会绕过原生检测并带来 ODR 风险，列表见 [native handoff](native-handoff.md)。测试组的 `FORGE_TEST_ENABLE_*` 与验证流程见[测试说明](testing.md)。打包应关闭测试和示例，避免开发依赖进入消费者配置。
+
+## 版本策略
+
+当前版本为 `0.1.0`，仍处于 1.0 之前的开发期；minor 版本变化可能破坏源码兼容性，不承诺跨 minor 兼容。生成的 package version 使用 `SameMinorVersion`：同 major、同 minor 且已安装版本不低于请求版本才兼容。项目尚无发布 tag，当前使用应固定提交。

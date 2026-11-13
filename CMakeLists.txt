@@ -1,6 +1,6 @@
 # Forge Project CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
-project(CCForge VERSION 1.0.0 LANGUAGES CXX)
+project(CCForge VERSION 0.1.0 LANGUAGES CXX)
 
 # This project relies on C++23 language features (e.g. requires-expressions).
 # Do not silently downgrade user-provided standards; require at least C++23.
@@ -45,7 +45,7 @@ if(FORGE_ENABLE_INSTALL)
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfigVersion.cmake"
         VERSION "${PROJECT_VERSION}"
-        COMPATIBILITY SameMajorVersion
+        COMPATIBILITY SameMinorVersion
         ARCH_INDEPENDENT
     )
 

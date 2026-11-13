@@ -164,7 +164,7 @@ build_project "${FORGE_BUILD}"
 log "installing to ${PREFIX}"
 install_project "${FORGE_BUILD}"
 
-log "checking installed header-only version compatibility"
+log "checking installed header-only SameMinorVersion compatibility"
 cmake -DFORGE_INSTALL_PREFIX="${PREFIX}" \
     -P "${REPO_ROOT}/test/check_installed_package_version.cmake"
 
