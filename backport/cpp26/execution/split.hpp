@@ -23,18 +23,15 @@
 #pragma once
 
 #include "concepts.hpp"
-#include "detail/op_storage.hpp"
 #include "detail/value_result.hpp"
 #include "env.hpp"
 
 #include <atomic>
 #include <cstddef>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <variant>
-#include <vector>
 
 namespace std::execution {
 
@@ -77,8 +74,51 @@ template<class CS>
 using __cached_completion_signatures_t =
     typename __cached_completion_signatures<CS>::type;
 
+// A named concept rather than a requires-expression default argument: MSVC
+// rejects the failed call inside the latter instead of yielding false.
 template<class S>
-struct __shared_state {
+concept __source_has_allocator = requires(const S& s) {
+    std::execution::get_allocator(std::execution::get_env(s));
+};
+
+template<class S, bool = __source_has_allocator<S>>
+struct __allocator_for_source {
+    using type = std::allocator<void>;
+    static type get(const S&) noexcept { return {}; }
+};
+
+template<class S>
+struct __allocator_for_source<S, true> {
+    using type = std::decay_t<decltype(std::execution::get_allocator(
+        std::execution::get_env(std::declval<const S&>())))>;
+    static type get(const S& s) {
+        return std::execution::get_allocator(std::execution::get_env(s));
+    }
+};
+
+template<class S>
+struct __shared_state;
+
+template<class S>
+struct __inner_recv {
+    using receiver_concept = receiver_t;
+    __shared_state<S>* __st;
+
+    template<class... Vs> void set_value(Vs&&... vs) && noexcept;
+    template<class E> void set_error(E&& e) && noexcept;
+    void set_stopped() && noexcept;
+    auto get_env() const noexcept -> __empty_env { return {}; }
+};
+
+template<class S>
+struct __subscriber_base {
+    std::shared_ptr<__subscriber_base> next;
+    virtual ~__subscriber_base() = default;
+    virtual void deliver(__shared_state<S>&) noexcept = 0;
+};
+
+template<class S>
+struct __shared_state : std::enable_shared_from_this<__shared_state<S>> {
     using cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<S>(), std::execution::__empty_env{}));
     using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
@@ -88,19 +128,35 @@ struct __shared_state {
     std::mutex mtx{};
     Phase phase = Phase::idle;
     std::variant<std::monostate, value_tuple_t, std::exception_ptr, __stopped_tag> result{};
-    std::vector<std::function<void()>> on_done{};
+    std::shared_ptr<__subscriber_base<S>> on_done;
+    __subscriber_base<S>* tail = nullptr;
+    std::shared_ptr<__shared_state> keepalive;
+    using allocator_t = typename __allocator_for_source<S>::type;
+    allocator_t allocator;
+    using op_t = connect_result_t<S, __inner_recv<S>>;
+    op_t op;
 
-    __forge_detail::__op_storage<1024> op_storage{};
-    void* op_ptr = nullptr;
-    void (*op_start)(void*) noexcept = nullptr;
+    template<class Source>
+    explicit __shared_state(Source&& source, allocator_t alloc)
+        : allocator(std::move(alloc))
+        , op(std::execution::connect(
+              static_cast<Source&&>(source), __inner_recv<S>{this}))
+    {}
 
     void notify_all() noexcept {
-        std::vector<std::function<void()>> cbs;
+        std::shared_ptr<__subscriber_base<S>> callbacks;
+        std::shared_ptr<__shared_state> pin;
         {
             std::lock_guard lk{mtx};
-            cbs = std::move(on_done);
+            callbacks = std::move(on_done);
+            tail = nullptr;
+            pin = std::move(keepalive);
         }
-        for (auto& cb : cbs) cb();
+        while (callbacks) {
+            auto next = std::move(callbacks->next);
+            callbacks->deliver(*this);
+            callbacks = std::move(next);
+        }
     }
 };
 
@@ -135,95 +191,84 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
     }, st.result);
 }
 
-template<class R>
-struct __subscriber {
+template<class S, class R>
+struct __subscriber : __subscriber_base<S> {
     explicit __subscriber(R r) : rcvr(std::move(r)) {}
+
+    void deliver(__shared_state<S>& state) noexcept override {
+        if (active.exchange(false, std::memory_order_acq_rel)) {
+            deliver_result(state, rcvr);
+        }
+    }
 
     std::atomic<bool> active{true};
     R rcvr;
 };
 
-template<class R>
-void deliver_exception_to_subscriber(const std::shared_ptr<__subscriber<R>>& sub,
-                                     std::exception_ptr ep) noexcept {
-    if (sub && sub->active.exchange(false, std::memory_order_acq_rel)) {
-        std::execution::set_error(std::move(sub->rcvr), std::move(ep));
-    }
-}
-
 template<class S, class R>
 void deliver_to_subscriber(const std::shared_ptr<__shared_state<S>>& sh,
-                           const std::shared_ptr<__subscriber<R>>& sub) noexcept {
+                           const std::shared_ptr<__subscriber<S, R>>& sub) noexcept {
     if (sub && sub->active.exchange(false, std::memory_order_acq_rel)) {
         deliver_result(*sh, sub->rcvr);
     }
 }
 
 template<class S>
-struct __inner_recv {
-    using receiver_concept = receiver_t;
-    std::weak_ptr<__shared_state<S>> __st;
-
-    template<class... Vs>
-    void set_value(Vs&&... vs) && noexcept {
-        auto st = __st.lock();
-        if (!st) { return; }
+template<class... Vs>
+void __inner_recv<S>::set_value(Vs&&... vs) && noexcept {
+    auto st = __st->shared_from_this();
+    {
+        std::lock_guard lk{st->mtx};
         try {
-            {
-                std::lock_guard lk{st->mtx};
-                st->result.template emplace<1>(
-                    static_cast<Vs&&>(vs)...);
-                st->phase = __shared_state<S>::Phase::done;
-            }
-            st->notify_all();
+            st->result.template emplace<1>(static_cast<Vs&&>(vs)...);
         } catch (...) {
-            {
-                std::lock_guard lk{st->mtx};
-                st->result.template emplace<2>(std::current_exception());
-                st->phase = __shared_state<S>::Phase::done;
-            }
-            st->notify_all();
+            st->result.template emplace<2>(std::current_exception());
         }
+        st->phase = __shared_state<S>::Phase::done;
     }
-    template<class E>
-    void set_error(E&& e) && noexcept {
-        auto st = __st.lock();
-        if (!st) { return; }
-        {
-            std::lock_guard lk{st->mtx};
-            if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>)
-                st->result.template emplace<2>(static_cast<E&&>(e));
-            else
-                st->result.template emplace<2>(
-                    std::make_exception_ptr(static_cast<E&&>(e)));
-            st->phase = __shared_state<S>::Phase::done;
+    st->notify_all();
+}
+
+template<class S>
+template<class E>
+void __inner_recv<S>::set_error(E&& e) && noexcept {
+    auto st = __st->shared_from_this();
+    {
+        std::lock_guard lk{st->mtx};
+        if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
+            st->result.template emplace<2>(static_cast<E&&>(e));
+        } else {
+            try { throw static_cast<E&&>(e); }
+            catch (...) { st->result.template emplace<2>(std::current_exception()); }
         }
-        st->notify_all();
+        st->phase = __shared_state<S>::Phase::done;
     }
-    void set_stopped() && noexcept {
-        auto st = __st.lock();
-        if (!st) { return; }
-        {
-            std::lock_guard lk{st->mtx};
-            st->result.template emplace<3>(__stopped_tag{});
-            st->phase = __shared_state<S>::Phase::done;
-        }
-        st->notify_all();
+    st->notify_all();
+}
+
+template<class S>
+void __inner_recv<S>::set_stopped() && noexcept {
+    auto st = __st->shared_from_this();
+    {
+        std::lock_guard lk{st->mtx};
+        st->result.template emplace<3>(__stopped_tag{});
+        st->phase = __shared_state<S>::Phase::done;
     }
-    auto get_env() const noexcept -> __empty_env {
-        return {};
-    }
-};
+    st->notify_all();
+}
 
 template<class S, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
     std::shared_ptr<__shared_state<S>> __shared;
-    std::shared_ptr<__subscriber<R>> __sub;
+    std::shared_ptr<__subscriber<S, R>> __sub;
 
     __op(std::shared_ptr<__shared_state<S>> sh, R r)
-        : __shared(std::move(sh)), __sub(std::make_shared<__subscriber<R>>(std::move(r))) {}
+        : __shared(std::move(sh))
+        , __sub(std::allocate_shared<__subscriber<S, R>>(
+              __shared->allocator, std::move(r)))
+    {}
 
     ~__op() {
         if (__sub) {
@@ -234,50 +279,21 @@ struct __op : __forge_detail::__immovable {
     void start() & noexcept {
         auto sh = __shared;
         auto sub = __sub;
-        auto weak_sub = std::weak_ptr<__subscriber<R>>{sub};
         auto& st = *sh;
-        std::function<void()> callback;
-        try {
-            callback = [sh, weak_sub]() mutable {
-                auto locked = weak_sub.lock();
-                // User completion may destroy the subscriber operation on a
-                // different thread. Drop the callback's weak ownership first;
-                // the local strong reference pins the receiver through delivery.
-                weak_sub.reset();
-                if (locked) {
-                    deliver_to_subscriber(sh, locked);
-                }
-            };
-        } catch (...) {
-            deliver_exception_to_subscriber(sub, std::current_exception());
-            return;
-        }
         std::unique_lock lk{st.mtx};
-
         if (st.phase == __shared_state<S>::Phase::done) {
             lk.unlock();
             deliver_to_subscriber(sh, sub);
-        } else if (st.phase == __shared_state<S>::Phase::idle) {
+            return;
+        }
+        if (st.tail) st.tail->next = sub;
+        else st.on_done = sub;
+        st.tail = sub.get();
+        if (st.phase == __shared_state<S>::Phase::idle) {
             st.phase = __shared_state<S>::Phase::running;
-            try {
-                st.on_done.push_back(std::move(callback));
-            } catch (...) {
-                st.result.template emplace<2>(std::current_exception());
-                st.phase = __shared_state<S>::Phase::done;
-                lk.unlock();
-                deliver_to_subscriber(sh, sub);
-                return;
-            }
+            st.keepalive = sh;
             lk.unlock();
-            st.op_start(st.op_ptr);
-        } else {
-            try {
-                st.on_done.push_back(std::move(callback));
-            } catch (...) {
-                auto error = std::current_exception();
-                lk.unlock();
-                deliver_exception_to_subscriber(sub, std::move(error));
-            }
+            std::execution::start(st.op);
         }
     }
 };
@@ -321,19 +337,9 @@ template<sender S>
 [[nodiscard]] auto __split(S&& sndr) {
     using source_t = std::decay_t<S>;
     using ST = __forge_split::__shared_state<source_t>;
-    using inner_recv_t = __forge_split::__inner_recv<source_t>;
-    using inner_op_t   = connect_result_t<source_t, inner_recv_t>;
-
-    auto shared = std::make_shared<ST>();
-
-    shared->op_ptr = shared->op_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-        return std::execution::connect(
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-            inner_recv_t{std::weak_ptr<ST>{shared}});
-    });
-    shared->op_start = [](void* p) noexcept {
-        std::execution::start(*static_cast<inner_op_t*>(p));
-    };
+    auto alloc = __forge_split::__allocator_for_source<source_t>::get(sndr);
+    auto shared = std::allocate_shared<ST>(alloc,
+        __forge_detail::__forward_as_given(std::forward<S>(sndr)), alloc);
 
     return __forge_split::__sender<source_t>{std::move(shared)};
 }
