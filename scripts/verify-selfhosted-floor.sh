@@ -11,7 +11,7 @@
 #   scripts/verify-selfhosted-floor.sh [native-lane ...]
 #
 # Defaults:
-#   native lanes: llvm gcc-exec tsan asan
+#   native lanes: gcc16-slim llvm gcc-exec tsan asan
 #   install package check: enabled
 #   Windows/MSVC smoke: disabled unless FORGE_VERIFY_FLOOR_WINDOWS=1
 #
@@ -27,6 +27,8 @@
 #   FORGE_VERIFY_FLOOR_WINDOWS=1
 #       Also run the Windows/MSVC smoke through scripts/verify-windows-msvc-matrix.sh.
 #       The Windows wrapper consumes FORGE_WINDOWS_* environment variables.
+#   FORGE_VERIFY_FLOOR_MACOS=1
+#       Also run the arm64 macOS lane using FORGE_MACOS_* variables.
 #   FORGE_VERIFY_FLOOR_REQUIRE_IO_URING_RUNTIME=1
 #       Require the Linux io_uring raw runtime probe to run successfully.
 
@@ -43,7 +45,7 @@ if [[ $# -gt 0 ]]; then
     native_lanes=("$@")
 else
     # shellcheck disable=SC2206
-    native_lanes=(${FORGE_VERIFY_FLOOR_NATIVE_LANES-llvm gcc-exec tsan asan})
+    native_lanes=(${FORGE_VERIFY_FLOOR_NATIVE_LANES-gcc16-slim llvm gcc-exec tsan asan})
 fi
 
 if [[ ${#native_lanes[@]} -eq 0 ]]; then
@@ -97,6 +99,14 @@ if [[ "${FORGE_VERIFY_FLOOR_WINDOWS:-0}" == "1" ]]; then
     log "ok Windows/MSVC smoke"
 else
     log "skip Windows/MSVC smoke (set FORGE_VERIFY_FLOOR_WINDOWS=1 to enable)"
+fi
+
+if [[ "${FORGE_VERIFY_FLOOR_MACOS:-0}" == "1" ]]; then
+    log "start macOS verification"
+    bash scripts/verify-macos-ssh.sh
+    log "ok macOS verification"
+else
+    log "skip macOS verification (set FORGE_VERIFY_FLOOR_MACOS=1 to enable)"
 fi
 
 log "verification floor passed"
