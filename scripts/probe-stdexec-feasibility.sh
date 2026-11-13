@@ -75,7 +75,7 @@ cat > "${BUILD_ROOT}/forge_execution_sync_wait.cpp" <<'CPP'
 #include <tuple>
 
 int main() {
-    auto result = std::execution::sync_wait(std::execution::just(42));
+    auto result = std::this_thread::sync_wait(std::execution::just(42));
     return result && std::get<0>(*result) == 42 ? 0 : 1;
 }
 CPP
@@ -101,7 +101,7 @@ struct typed_error_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::empty_env{};
+        return std::execution::env<>{};
     }
 
     template<class R>
@@ -150,7 +150,7 @@ struct typed_error_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::empty_env{};
+        return std::execution::env<>{};
     }
 
     template<class R>
@@ -194,7 +194,7 @@ int main() {
 
     forge::static_thread_pool pool{1};
     forge::any_scheduler scheduler{pool.get_scheduler()};
-    auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
+    auto result = std::this_thread::sync_wait(std::execution::schedule(scheduler));
     pool.shutdown();
     pool.wait();
     return result ? 0 : 1;
@@ -217,7 +217,7 @@ struct stop_env_probe_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::empty_env{};
+        return std::execution::env<>{};
     }
 
     template<class R>
