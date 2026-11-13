@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/static_thread_pool.hpp>
 #include <forge/strand.hpp>
@@ -40,7 +41,7 @@ struct receiver {
     }
     void set_value() && noexcept { complete(false); }
     void set_stopped() && noexcept { complete(true); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 void submit(forge::strand::scheduler scheduler, results& output, int id) {
@@ -188,7 +189,7 @@ struct rejecting_sender {
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(), std::execution::set_stopped_t()> { return {}; }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -443,7 +444,7 @@ TEST(StrandRejectionTest, ReentrantPoolShutdownHasBoundedCompletionDepth) {
             pool->shutdown();
             --*depth;
         }
-        auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+        auto get_env() const noexcept -> forge::empty_env { return {}; }
     };
     constexpr int count = 512;
     std::vector<std::unique_ptr<forge::strand>> strands;

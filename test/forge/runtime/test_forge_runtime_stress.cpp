@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/async_scope.hpp>
 #include <forge/channel.hpp>
@@ -389,7 +390,7 @@ TEST(StaticThreadPoolStressTest, ScheduleRacesShutdown) {
             callers.emplace_back([&, i] {
                 spin_until_go(ready, go);
                 perturb(iteration, i);
-                auto result = std::execution::sync_wait(
+                auto result = forge::sync_wait(
                     std::execution::schedule(scheduler));
                 if (result.has_value()) {
                     value.fetch_add(1, std::memory_order_acq_rel);

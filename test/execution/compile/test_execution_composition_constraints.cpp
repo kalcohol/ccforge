@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <execution>
 #include <utility>
 
@@ -57,7 +58,7 @@ static_assert(copyable_matrix<decltype(ex::into_variant())>());
 static_assert(copyable_matrix<decltype(ex::unstoppable)>());
 static_assert(copyable_matrix<decltype(ex::unstoppable())>());
 static_assert(copyable_matrix<decltype(ex::affine)>());
-static_assert(copyable_matrix<decltype(ex::write_env(ex::empty_env{}))>());
+static_assert(copyable_matrix<decltype(ex::write_env(forge::empty_env{}))>());
 static_assert(copyable_matrix<decltype(ex::continues_on(ex::inline_scheduler{}))>());
 static_assert(copyable_matrix<decltype(ex::on(ex::inline_scheduler{}, std::declval<value_closure>()))>());
 static_assert(copyable_matrix<decltype(ex::associate(

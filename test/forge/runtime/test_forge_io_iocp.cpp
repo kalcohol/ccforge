@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #if !defined(NOMINMAX)
@@ -216,7 +217,7 @@ struct io_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -252,7 +253,7 @@ struct typed_size_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -368,7 +369,7 @@ struct blocking_io_receiver {
     void set_value(std::size_t) && noexcept { block(); }
     void set_error(std::exception_ptr) && noexcept { block(); }
     void set_stopped() && noexcept { block(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
 private:
     void block() noexcept {
@@ -423,7 +424,7 @@ struct self_destroying_io_receiver {
     void set_value(std::size_t) && noexcept { context->destroy(); }
     void set_error(std::exception_ptr) && noexcept { context->destroy(); }
     void set_stopped() && noexcept { context->destroy(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct context_destroying_io_receiver {
@@ -463,7 +464,7 @@ struct context_destroying_io_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 [[nodiscard]] auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
@@ -580,14 +581,14 @@ TEST(IoIocpTest, AsyncWriteAndReadNamedPipe) {
     forge::io::context ctx;
 
     std::array<std::byte, 3> payload{byte('i'), byte('o'), byte('c')};
-    auto write_result = std::execution::sync_wait(
+    auto write_result = forge::sync_wait(
         ctx.async_write_some(pipe.client.get(), std::span<const std::byte>{payload}));
 
     ASSERT_TRUE(write_result.has_value());
     EXPECT_EQ(std::get<0>(*write_result), payload.size());
 
     std::array<std::byte, 3> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{buffer}));
 
     ASSERT_TRUE(read_result.has_value());
@@ -602,7 +603,7 @@ TEST(IoIocpTest, ContextUsesConfiguredMemoryResource) {
         forge::io::context ctx{{.memory = &memory}};
 
         std::array<std::byte, 3> payload{byte('p'), byte('m'), byte('r')};
-        auto write_result = std::execution::sync_wait(
+        auto write_result = forge::sync_wait(
             ctx.async_write_some(
                 pipe.client.get(),
                 std::span<const std::byte>{payload}));
@@ -610,7 +611,7 @@ TEST(IoIocpTest, ContextUsesConfiguredMemoryResource) {
         EXPECT_EQ(std::get<0>(*write_result), payload.size());
 
         std::array<std::byte, 3> buffer{};
-        auto read_result = std::execution::sync_wait(
+        auto read_result = forge::sync_wait(
             ctx.async_read_some(pipe.server.get(), std::span{buffer}));
         ASSERT_TRUE(read_result.has_value());
         EXPECT_EQ(std::get<0>(*read_result), payload.size());
@@ -630,12 +631,12 @@ TEST(IoIocpTest, BackendOwnedSkipModeCompletesSynchronousSuccess) {
     std::array<std::byte, 3> payload{byte('s'), byte('y'), byte('n')};
     std::array<std::byte, 3> received{};
 
-    auto written = std::execution::sync_wait(
+    auto written = forge::sync_wait(
         ctx.async_write_some(pipe.server.get(), std::span{payload}));
     ASSERT_TRUE(written.has_value());
     ASSERT_EQ(std::get<0>(*written), payload.size());
 
-    auto read = std::execution::sync_wait(
+    auto read = forge::sync_wait(
         ctx.async_read_some(pipe.client.get(), std::span{received}));
     ASSERT_TRUE(read.has_value());
     EXPECT_EQ(std::get<0>(*read), received.size());
@@ -782,7 +783,7 @@ TEST(IoIocpTest, MessagePipePartialReadCompletesWithTransferredBytes) {
     write_overlapped(pipe.client.get(), payload);
 
     std::array<std::byte, 8> buffer{};
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{buffer}));
 
     ASSERT_TRUE(result.has_value());
@@ -818,7 +819,7 @@ TEST(IoIocpTest, AsyncReadReturnsZeroWhenPipeIsDisconnected) {
         << "DisconnectNamedPipe failed with " << ::GetLastError();
 
     std::array<std::byte, 1> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{buffer}));
 
     ASSERT_TRUE(read_result.has_value());
@@ -830,7 +831,7 @@ TEST(IoIocpTest, ContextAwaitAsyncReadWriteReturnIoResult) {
     forge::io::context ctx;
 
     std::array<std::byte, 3> payload{byte('c'), byte('o'), byte('r')};
-    auto write_result = std::execution::sync_wait(
+    auto write_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_write_some(
                 ctx,
@@ -845,7 +846,7 @@ TEST(IoIocpTest, ContextAwaitAsyncReadWriteReturnIoResult) {
     EXPECT_EQ(written, payload.size());
 
     std::array<std::byte, 3> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(ctx, pipe.server.get(), std::span{buffer})));
 
@@ -864,7 +865,7 @@ TEST(IoIocpTest, ContextAwaitPeerCloseMapsReadZeroToEof) {
     pipe.client.reset();
 
     std::array<std::byte, 1> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(ctx, pipe.server.get(), std::span{buffer})));
 
@@ -880,7 +881,7 @@ TEST(IoIocpTest, ContextAwaitInvalidHandleMapsToIoResultError) {
     forge::io::context ctx;
     std::array<std::byte, 1> buffer{};
 
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 ctx,
@@ -917,7 +918,7 @@ TEST(IoIocpTest, AsyncWriteSomeTypedReturnsByteCount) {
     EXPECT_EQ(state->bytes, payload.size());
 
     std::array<std::byte, 3> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{buffer}));
     ASSERT_TRUE(read_result.has_value());
     EXPECT_EQ(buffer, payload);
@@ -928,28 +929,28 @@ TEST(IoIocpTest, ReusesAssociatedHandleForSequentialOperations) {
     forge::io::context ctx;
 
     std::array<std::byte, 2> first{byte('o'), byte('n')};
-    auto first_write = std::execution::sync_wait(
+    auto first_write = forge::sync_wait(
         ctx.async_write_some(pipe.client.get(), std::span<const std::byte>{first}));
 
     ASSERT_TRUE(first_write.has_value());
     EXPECT_EQ(std::get<0>(*first_write), first.size());
 
     std::array<std::byte, 2> first_read{};
-    auto first_read_result = std::execution::sync_wait(
+    auto first_read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{first_read}));
 
     ASSERT_TRUE(first_read_result.has_value());
     EXPECT_EQ(first_read, first);
 
     std::array<std::byte, 3> second{byte('t'), byte('w'), byte('o')};
-    auto second_write = std::execution::sync_wait(
+    auto second_write = forge::sync_wait(
         ctx.async_write_some(pipe.client.get(), std::span<const std::byte>{second}));
 
     ASSERT_TRUE(second_write.has_value());
     EXPECT_EQ(std::get<0>(*second_write), second.size());
 
     std::array<std::byte, 3> second_read{};
-    auto second_read_result = std::execution::sync_wait(
+    auto second_read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{second_read}));
 
     ASSERT_TRUE(second_read_result.has_value());
@@ -963,14 +964,14 @@ TEST(IoIocpTest, HandlesHighChurnBorrowedHandles) {
         auto pipe = make_pipe_pair();
         std::array<std::byte, 1> payload{
             byte(static_cast<char>('a' + (i % 20)))};
-        auto write_result = std::execution::sync_wait(
+        auto write_result = forge::sync_wait(
             ctx.async_write_some(
                 pipe.client.get(),
                 std::span<const std::byte>{payload}));
         ASSERT_TRUE(write_result.has_value());
 
         std::array<std::byte, 1> buffer{};
-        auto read_result = std::execution::sync_wait(
+        auto read_result = forge::sync_wait(
             ctx.async_read_some(pipe.server.get(), std::span{buffer}));
         ASSERT_TRUE(read_result.has_value());
         EXPECT_EQ(buffer, payload);
@@ -978,14 +979,14 @@ TEST(IoIocpTest, HandlesHighChurnBorrowedHandles) {
 
     auto pipe = make_pipe_pair();
     std::array<std::byte, 2> payload{byte('o'), byte('k')};
-    auto write_result = std::execution::sync_wait(
+    auto write_result = forge::sync_wait(
         ctx.async_write_some(
             pipe.client.get(),
             std::span<const std::byte>{payload}));
     ASSERT_TRUE(write_result.has_value());
 
     std::array<std::byte, 2> buffer{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         ctx.async_read_some(pipe.server.get(), std::span{buffer}));
     ASSERT_TRUE(read_result.has_value());
     EXPECT_EQ(buffer, payload);
@@ -1232,7 +1233,7 @@ TEST(IoIocpTest, InvalidHandleCompletesWithError) {
     std::array<std::byte, 1> buffer{};
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(
+        (void)forge::sync_wait(
             ctx.async_read_some(INVALID_HANDLE_VALUE, std::span{buffer})),
         std::system_error);
 }
@@ -1242,9 +1243,9 @@ TEST(IoIocpTest, EmptyTransfersDoNotTouchInvalidHandle) {
     std::span<std::byte> empty_read;
     std::span<const std::byte> empty_write;
 
-    auto read = std::execution::sync_wait(
+    auto read = forge::sync_wait(
         ctx.async_read_some(INVALID_HANDLE_VALUE, empty_read));
-    auto write = std::execution::sync_wait(
+    auto write = forge::sync_wait(
         ctx.async_write_some(INVALID_HANDLE_VALUE, empty_write));
 
     ASSERT_TRUE(read.has_value());

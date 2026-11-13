@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/combinators.hpp>
@@ -95,7 +96,7 @@ struct throwing_aggregate_receiver {
         state->stopped = true;
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -336,7 +337,7 @@ struct controlled_sender {
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -538,7 +539,7 @@ struct self_destroying_aggregate_receiver {
         state->cv.notify_all();
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -1328,7 +1329,7 @@ TEST(ForgeCoroCombinatorsTest, WithTimeoutPreservesLatePartialResult) {
         wait_returned(state);
     });
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::with_timeout(
             child_task(state),
             1ms,
@@ -1355,7 +1356,7 @@ TEST(ForgeCoroCombinatorsTest, WithTimeoutPreservesLatePartialResult) {
 TEST(ForgeCoroCombinatorsTest, WithTimeoutStopsTimerAfterTaskWins) {
     forge::timer_context timers;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::with_timeout(
             immediate_child_task(child_result::success(23)),
             1h,
@@ -1386,7 +1387,7 @@ TEST(ForgeCoroCombinatorsTest, WithTimeoutZeroExpiresPendingTask) {
         wait_returned(state);
     });
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::with_timeout(
             child_task(state),
             0ms,
@@ -1414,7 +1415,7 @@ TEST(ForgeCoroCombinatorsTest, WithTimeoutObservesExternalStopFirst) {
     cio::io_env env;
     env.stop_token = stop.get_token();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::with_timeout(
             child_task(state),
             1h,

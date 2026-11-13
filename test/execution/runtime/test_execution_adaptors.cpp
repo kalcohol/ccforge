@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <array>
@@ -85,7 +86,7 @@ struct throwing_value_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const throwing_value_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -117,7 +118,7 @@ struct stack_value_sender {
         return op<R>{std::move(r)};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -197,10 +198,10 @@ struct inline_error_sender {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_completion_scheduler<std::execution::set_error_t>,
                 std::execution::inline_scheduler{}),
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_completion_domain<std::execution::set_error_t>,
                 on_child_domain{}));
     }
@@ -504,7 +505,7 @@ struct continues_source {
         return op<R>{state, std::move(r)};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct continues_schedule_sender;
@@ -633,7 +634,7 @@ TEST(ReadEnvTest, SenderExists) {
     auto sndr = std::execution::read_env(std::execution::get_stop_token);
     static_assert(std::execution::sender<decltype(sndr)>);
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(!has_exception_ptr_error<cs_t>::value);
     SUCCEED();
 }
@@ -641,9 +642,9 @@ TEST(ReadEnvTest, SenderExists) {
 TEST(ReadEnvTest, ThrowingQueryCompletesWithError) {
     auto sndr = std::execution::read_env(throwing_query{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(has_exception_ptr_error<cs_t>::value);
-    EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW(forge::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(ThenTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
@@ -652,7 +653,7 @@ TEST(ThenTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
                     return value + 1;
                 });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(!has_exception_ptr_error<cs_t>::value);
 }
 
@@ -660,7 +661,7 @@ TEST(UponErrorTest, ValuePassThrough) {
     bool fn_called = false;
     auto sndr = std::execution::just(10)
               | std::execution::upon_error([&](auto) { fn_called = true; });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(fn_called);
     EXPECT_EQ(std::get<0>(*result), 10);
@@ -670,7 +671,7 @@ TEST(UponErrorTest, ErrorHandledWithoutThrow) {
     bool fn_called = false;
     auto sndr = std::execution::just_error(42)
               | std::execution::upon_error([&](int) { fn_called = true; });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
@@ -679,7 +680,7 @@ TEST(UponErrorTest, ReportsHandledErrorAsValueSignature) {
     auto sndr = std::execution::just_error(42)
               | std::execution::upon_error([](int) { return 3.14; });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -691,7 +692,7 @@ TEST(UponErrorTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
     auto sndr = std::execution::just_error(42)
               | std::execution::upon_error([](int) noexcept { return 3.14; });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(!has_exception_ptr_error<cs_t>::value);
 }
 
@@ -699,7 +700,7 @@ TEST(UponStoppedTest, ValuePassThrough) {
     bool fn_called = false;
     auto sndr = std::execution::just(10)
               | std::execution::upon_stopped([&] { fn_called = true; });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(fn_called);
     EXPECT_EQ(std::get<0>(*result), 10);
@@ -709,7 +710,7 @@ TEST(UponStoppedTest, StoppedHandledWithoutThrow) {
     bool fn_called = false;
     auto sndr = std::execution::just_stopped()
               | std::execution::upon_stopped([&] { fn_called = true; });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
@@ -718,7 +719,7 @@ TEST(UponStoppedTest, ReportsHandledStoppedAsValueSignature) {
     auto sndr = std::execution::just_stopped()
               | std::execution::upon_stopped([] { return 7; });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -730,7 +731,7 @@ TEST(UponStoppedTest, NothrowHandlerDoesNotAdvertiseExceptionPtr) {
     auto sndr = std::execution::just_stopped()
               | std::execution::upon_stopped([]() noexcept { return 7; });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(!has_exception_ptr_error<cs_t>::value);
 }
 
@@ -739,7 +740,7 @@ TEST(LetValueTest, ChainNewSender) {
               | std::execution::let_value([](int x) {
                     return std::execution::just(x + 1);
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 43);
 }
@@ -782,7 +783,7 @@ TEST(LetValueTest, StoresCompletionValuesForAsyncInnerSender) {
                            });
                 });
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     loop.finish();
     worker.join();
 
@@ -797,7 +798,7 @@ TEST(LetValueTest, ErrorPassThrough) {
                     fn_called = true;
                     return std::execution::just(0);
                 });
-    EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW(forge::sync_wait(std::move(sndr)), int);
     EXPECT_FALSE(fn_called);
 }
 
@@ -807,7 +808,7 @@ TEST(LetValueTest, ReportsInnerSenderSignatures) {
                     return std::execution::just(3.14);
                 });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -822,7 +823,7 @@ TEST(LetErrorTest, HandleError) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
@@ -834,7 +835,7 @@ TEST(LetErrorTest, ValuePassThrough) {
                     fn_called = true;
                     return std::execution::just(0);
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(fn_called);
     EXPECT_EQ(std::get<0>(*result), 10);
@@ -846,7 +847,7 @@ TEST(LetErrorTest, ReportsInnerSenderSignatures) {
                     return std::execution::just_stopped();
                 });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -861,7 +862,7 @@ TEST(LetStoppedTest, HandleStopped) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     EXPECT_FALSE(result.has_value());
     EXPECT_TRUE(fn_called);
 }
@@ -872,7 +873,7 @@ TEST(LetStoppedTest, ReportsInnerSenderSignatures) {
                     return std::execution::just(7);
                 });
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -892,7 +893,7 @@ TEST(StartsOnTest, RunsOnScheduler) {
             result = x;
         }));
 
-    std::execution::sync_wait(std::move(sndr));
+    forge::sync_wait(std::move(sndr));
     loop.finish();
     worker.join();
 
@@ -902,11 +903,11 @@ TEST(StartsOnTest, RunsOnScheduler) {
 TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
     const std::execution::inline_scheduler target;
 
-    auto scheduler_result = std::execution::sync_wait(
+    auto scheduler_result = forge::sync_wait(
         std::execution::starts_on(
             target,
             std::execution::read_env(std::execution::get_scheduler)));
-    auto start_scheduler_result = std::execution::sync_wait(
+    auto start_scheduler_result = forge::sync_wait(
         std::execution::starts_on(
             target,
             std::execution::read_env(
@@ -927,7 +928,7 @@ TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
 TEST(StartsOnTest, ChildEnvironmentReportsDefaultConstructedTargetDomain) {
     const domain_scheduler target{47};
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::starts_on(
             target,
             std::execution::read_env(std::execution::get_domain)));
@@ -985,14 +986,14 @@ TEST(OnTest, FirstFormDoesNotAdvertiseChildErrorSchedulerOrDomain) {
     static_assert(has_on_completion_scheduler<std::execution::set_error_t, child_attrs>);
     static_assert(std::is_invocable_v<
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
-        child_attrs, std::execution::empty_env>);
+        child_attrs, forge::empty_env>);
 
     auto sndr = std::execution::on(std::execution::inline_scheduler{}, std::move(child));
     using attrs = decltype(std::execution::get_env(sndr));
     static_assert(!has_on_completion_scheduler<std::execution::set_error_t, attrs>);
     static_assert(!std::is_invocable_v<
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
-        attrs, std::execution::empty_env>);
+        attrs, forge::empty_env>);
     SUCCEED();
 }
 
@@ -1033,7 +1034,7 @@ TEST(OnTest, FirstFormLetInnerEnvironmentMatchesActualReturnScheduler) {
                 observed_thread = std::this_thread::get_id();
                 return std::execution::read_env(std::execution::get_start_scheduler);
             }));
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), receiver_scheduler);
@@ -1063,20 +1064,20 @@ TEST(OnTest, ClosureFormReturnsToChildCompletionScheduler) {
             return 9;
         }));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 9);
 }
 
 TEST(OnTest, SyncWaitSuppliesTheStartScheduler) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::on(
             std::execution::inline_scheduler{},
             std::execution::just(42)));
@@ -1131,7 +1132,7 @@ TEST(OnTest, ClosureFormReturnsToTransferredChildCompletionScheduler) {
               returned_observed = std::this_thread::get_id();
           });
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_NE(expected_source_id, expected_child_id);
@@ -1148,14 +1149,14 @@ TEST(AffineTest, CompletesOnRequestedScheduler) {
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 5);
 }
 
 TEST(AffineTest, PipeFormCompletesOnRequestedScheduler) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::just(6) | std::execution::affine);
 
     ASSERT_TRUE(result.has_value());
@@ -1163,7 +1164,7 @@ TEST(AffineTest, PipeFormCompletesOnRequestedScheduler) {
 }
 
 TEST(ContinuesOnTest, SupportsStandardPipeForm) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::just(7)
         | std::execution::continues_on(std::execution::inline_scheduler{}));
 
@@ -1653,7 +1654,7 @@ struct optional_stopped_sender {
     template<std::execution::receiver R>
     auto connect(R r) const -> op<R> { return op<R>{std::move(r), stopped}; }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 TEST(StoppedAsOptionalTest, SenderExists) {
@@ -1665,7 +1666,7 @@ TEST(StoppedAsOptionalTest, SenderExists) {
 }
 
 TEST(StoppedAsOptionalTest, SupportsPipeForm) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         optional_stopped_sender{} | std::execution::stopped_as_optional);
 
     ASSERT_TRUE(result.has_value());
@@ -1675,12 +1676,12 @@ TEST(StoppedAsOptionalTest, SupportsPipeForm) {
 TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
     auto sndr = std::execution::stopped_as_optional(std::execution::just(42));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(std::optional<int>)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(std::get<0>(*result).has_value());
@@ -1690,12 +1691,12 @@ TEST(StoppedAsOptionalTest, WrapsSingleValueInOptional) {
 TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
     auto sndr = std::execution::stopped_as_optional(std::execution::just(1, 2));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(std::optional<std::tuple<int, int>>)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(std::get<0>(*result).has_value());
@@ -1706,12 +1707,12 @@ TEST(StoppedAsOptionalTest, WrapsMultiValueInOptionalTuple) {
 TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
     auto sndr = std::execution::stopped_as_optional(optional_stopped_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(std::optional<int>)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(std::get<0>(*result).has_value());
@@ -1720,25 +1721,25 @@ TEST(StoppedAsOptionalTest, ConvertsStoppedToEmptyOptional) {
 TEST(StoppedAsOptionalTest, ValueConstructionThrowCompletesWithError) {
     auto sndr = std::execution::stopped_as_optional(throwing_value_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(has_exception_ptr_error<cs_t>::value);
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(StoppedAsErrorTest, ConvertsStoppedToError) {
     auto sndr = std::execution::stopped_as_error(std::execution::just_stopped(), 42);
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<std::execution::set_error_t(int)>>);
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
 }
 
 TEST(StoppedAsErrorTest, SupportsPipeForm) {
     auto sndr =
         std::execution::just_stopped() | std::execution::stopped_as_error(42);
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
 }

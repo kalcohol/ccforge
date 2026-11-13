@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/async_scope.hpp>
 #include <forge/timer_context.hpp>
@@ -60,7 +61,7 @@ struct timer_receiver {
         }
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -70,7 +71,7 @@ struct pre_stopped_timer_receiver : timer_receiver {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
@@ -80,7 +81,7 @@ struct stopped_timer_receiver : timer_receiver {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
@@ -127,7 +128,7 @@ struct self_destroying_timer_receiver {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
@@ -179,7 +180,7 @@ TEST(TimerContextTest, AbandonRacesConcurrentDelivery) {
 TEST(TimerContextTest, ScheduleAfterZeroCompletes) {
     forge::timer_context ctx;
 
-    auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+    auto result = forge::sync_wait(ctx.schedule_after(0ms));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -191,7 +192,7 @@ TEST(TimerContextTest, CustomMemoryResourceControlsTimerStorage) {
         forge::timer_context ctx{
             forge::timer_context_options{.memory = &resource}};
 
-        auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+        auto result = forge::sync_wait(ctx.schedule_after(0ms));
 
         EXPECT_TRUE(result.has_value());
         EXPECT_GT(resource.allocations(), 0u);
@@ -213,7 +214,7 @@ TEST(TimerContextTest, AllocationFailureCompletesStopped) {
     using sender_t = decltype(ctx.schedule_after(1h));
     using signatures_t = std::execution::completion_signatures_of_t<
         sender_t,
-        std::execution::empty_env>;
+        forge::empty_env>;
     static_assert(std::same_as<
         signatures_t,
         std::execution::completion_signatures<
@@ -334,7 +335,7 @@ TEST(TimerContextTest, ScheduleAtSystemClockDeadlineDoesNotCompleteEarly) {
 TEST(TimerContextTest, ScheduleAtPastSystemClockDeadlineCompletesPromptly) {
     forge::timer_context ctx;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.schedule_at(std::chrono::system_clock::now() - 1h));
 
     EXPECT_TRUE(result.has_value());
@@ -423,7 +424,7 @@ TEST(TimerContextTest, ScheduleAtCoarsePastDeadlineCompletesPromptly) {
     const auto past = std::chrono::time_point_cast<
         std::chrono::duration<long long>>(
         std::chrono::system_clock::now() - 1h);
-    auto result = std::execution::sync_wait(ctx.schedule_at(past));
+    auto result = forge::sync_wait(ctx.schedule_at(past));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -454,7 +455,7 @@ TEST(TimerContextTest, DestroyingPendingOperationDeregistersItem) {
     EXPECT_FALSE(state.done());
 
     // The context stays fully usable afterwards.
-    auto result = std::execution::sync_wait(ctx.schedule_after(1ms));
+    auto result = forge::sync_wait(ctx.schedule_after(1ms));
     EXPECT_TRUE(result.has_value());
 }
 
@@ -482,7 +483,7 @@ TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
 
         void set_error(std::exception_ptr) && noexcept {}
         void set_stopped() && noexcept {}
-        auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+        auto get_env() const noexcept -> forge::empty_env { return {}; }
     };
 
     auto op1 = std::execution::connect(
@@ -511,7 +512,7 @@ TEST(TimerContextTest, ShutdownRejectsNewTimersWithStopped) {
     forge::timer_context ctx;
     ctx.shutdown();
 
-    auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+    auto result = forge::sync_wait(ctx.schedule_after(0ms));
 
     EXPECT_FALSE(result.has_value());
 }
@@ -731,7 +732,7 @@ TEST(TimerContextTest, WaitObservesActiveCallbackCompletion) {
 
         void set_error(std::exception_ptr) && noexcept {}
         void set_stopped() && noexcept {}
-        auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+        auto get_env() const noexcept -> forge::empty_env { return {}; }
     };
 
     auto op = std::execution::connect(
@@ -858,7 +859,7 @@ TEST(TimerContextTest, DestroyingContextInsideTimerCallbackIsSafe) {
             }
         }
 
-        auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+        auto get_env() const noexcept -> forge::empty_env { return {}; }
     };
 
     auto op = std::execution::connect(

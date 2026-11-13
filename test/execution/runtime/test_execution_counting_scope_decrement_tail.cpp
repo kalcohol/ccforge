@@ -21,7 +21,7 @@ struct join_observer {
     void set_stopped() && noexcept { completion->store(3, std::memory_order_release); }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::make_prop(
+        return std::execution::make_env(std::execution::prop(
             std::execution::get_start_scheduler_t{},
             std::execution::inline_scheduler{}));
     }

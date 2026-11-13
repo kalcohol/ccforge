@@ -63,6 +63,12 @@ function(forge_expect_forge_cxx_source_compiles result_var source_name should_co
     unset(_forge_target_definitions)
 endfunction()
 
+# Header availability must not imply that base mdspan/linalg is implemented.
+forge_add_forge_compile_probe(
+    test_forge_linalg_header
+    test_forge_linalg_header.cpp
+    forge_linalg_header_compile)
+
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
@@ -280,4 +286,11 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME OR FORGE_TEST_ENABLE_FORGE_ERASURE
         FORGE_TEST_QUERY_ERASURE=$<BOOL:${FORGE_TEST_ENABLE_FORGE_ERASURE}>
         FORGE_TEST_QUERY_IO=$<BOOL:${FORGE_TEST_ENABLE_FORGE_IO}>)
     add_dependencies(test_forge_strict_member_queries test_forge_member_queries)
+endif()
+
+if(FORGE_SENDERS_FULL AND NOT FORGE_FORCE_SENDERS_BACKPORT)
+    forge_add_forge_compile_probe(
+        test_forge_execution_extensions_native
+        test_forge_execution_extensions_native.cpp
+        forge_execution_extensions_native_compile)
 endif()

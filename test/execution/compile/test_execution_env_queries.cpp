@@ -1,4 +1,5 @@
 // Include fragments directly so native stand-aside cannot hide regressions.
+#include <forge/execution_extensions.hpp>
 #include "cpp26/execution/sync_wait.hpp"
 #include "cpp26/execution/inline_scheduler.hpp"
 #include "cpp26/execution/let.hpp"
@@ -45,7 +46,7 @@ template<class E, class Q, class... Args>
 concept answers = requires(const E& e, Q q, Args&&... args) {
     e.query(q, static_cast<Args&&>(args)...);
 };
-using composed = ex::env<ex::empty_env, answer, throwing_answer>;
+using composed = ex::env<forge::empty_env, answer, throwing_answer>;
 static_assert(answers<composed, key>);
 static_assert(!answers<composed, missing>);
 static_assert(!answers<ex::env<>, key>);
@@ -54,7 +55,7 @@ static_assert(!answers<ex::env<nondefault_answer>, nondefault_key>);
 static_assert(std::same_as<decltype(std::declval<const composed&>().query(key{})), const int&>);
 static_assert(noexcept(std::declval<const composed&>().query(key{})));
 static_assert(!noexcept(std::declval<const ex::env<throwing_answer, answer>&>().query(key{})));
-constexpr composed values{ex::empty_env{}, answer{42}, throwing_answer{}};
+constexpr composed values{forge::empty_env{}, answer{42}, throwing_answer{}};
 static_assert(values.query(key{}) == 42);
 static_assert(&values.query(key{}) == &values.query(key{}));
 constexpr bool variadic_selection() {
@@ -266,7 +267,7 @@ static_assert(!answers<scheduler_env, ex::get_domain_t>);
 using inner_env = ex::__forge_let::__inner_env<answer, throwing_answer>;
 static_assert(nothrow_answer<inner_env, key, const int&>);
 static_assert(answers<inner_env, local_key>);
-using outer_only_env = ex::__forge_let::__inner_env<ex::empty_env, answer>;
+using outer_only_env = ex::__forge_let::__inner_env<forge::empty_env, answer>;
 static_assert(nothrow_answer<outer_only_env, key, const int&>);
 static_assert(!answers<outer_only_env, local_key>);
 static_assert(!answers<inner_env, missing>);

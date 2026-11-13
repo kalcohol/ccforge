@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include "../forwarding_attrs_probe.hpp"
@@ -190,7 +191,7 @@ TEST(ExecutionForwardingAttrs, NestedFiltersPreserveBorrowedReferenceAndCompleti
     EXPECT_EQ(state.copies, 0);
     EXPECT_EQ(state.moves, 0);
 
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     const auto& payload = std::get<0>(*result);
     ASSERT_TRUE(payload.has_value());

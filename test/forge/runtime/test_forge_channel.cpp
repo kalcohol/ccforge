@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include "forge_counting_resource.hpp"
@@ -28,7 +29,7 @@ struct send_receiver {
     void set_stopped() && noexcept { state->stopped = true; }
     template<class E>
     void set_error(E&&) && noexcept { state->error = true; }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 template<class T>
@@ -47,7 +48,7 @@ struct recv_receiver {
     void set_stopped() && noexcept { state->stopped = true; }
     template<class E>
     void set_error(E&&) && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct stop_env {
@@ -106,7 +107,7 @@ struct reenter_receiver {
     void set_stopped() && noexcept {}
     template<class E>
     void set_error(E&&) && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct self_destroying_recv_receiver {
@@ -135,7 +136,7 @@ struct retiring_recv_receiver {
     }
     void set_stopped() && noexcept { context->destroy(); }
     void set_error(std::exception_ptr) && noexcept { context->destroy(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct retirement_observing_send_receiver {
@@ -153,7 +154,7 @@ struct retirement_observing_send_receiver {
     }
     void set_stopped() && noexcept { ADD_FAILURE(); }
     void set_error(std::exception_ptr) && noexcept { ADD_FAILURE(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 } // namespace
@@ -194,8 +195,8 @@ TEST(ChannelTest, RetiresCompletedReceiverBeforeCounterpartCompletion) {
 TEST(ChannelTest, SendThenRecvDeliversValue) {
     forge::bounded_channel<int> channel{1};
 
-    auto sent = std::execution::sync_wait(channel.async_send(42));
-    auto received = std::execution::sync_wait(channel.async_recv());
+    auto sent = forge::sync_wait(channel.async_send(42));
+    auto received = forge::sync_wait(channel.async_recv());
 
     ASSERT_TRUE(sent.has_value());
     ASSERT_TRUE(received.has_value());
@@ -213,7 +214,7 @@ TEST(ChannelTest, OptionsConstructorUsesCustomMemoryResource) {
         EXPECT_EQ(channel.capacity(), 1u);
         EXPECT_GT(resource.allocations(), 0u);
 
-        ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+        ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());
 
         auto send_state_ptr = std::make_shared<send_state>();
         auto pending = channel.async_send(2);
@@ -225,7 +226,7 @@ TEST(ChannelTest, OptionsConstructorUsesCustomMemoryResource) {
         EXPECT_FALSE(send_state_ptr->value);
         EXPECT_GT(resource.allocations(), 0u);
 
-        auto first = std::execution::sync_wait(channel.async_recv());
+        auto first = forge::sync_wait(channel.async_recv());
         ASSERT_TRUE(first.has_value());
         EXPECT_EQ(std::get<0>(*first), 1);
         EXPECT_TRUE(send_state_ptr->value);
@@ -251,8 +252,8 @@ TEST(ChannelTest, BufferAllocationFailureCompletesErrorAndPreservesChannel) {
     EXPECT_TRUE(state->error);
     EXPECT_FALSE(state->stopped);
 
-    EXPECT_TRUE(std::execution::sync_wait(channel.async_send(2)).has_value());
-    auto received = std::execution::sync_wait(channel.async_recv());
+    EXPECT_TRUE(forge::sync_wait(channel.async_send(2)).has_value());
+    auto received = forge::sync_wait(channel.async_recv());
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(std::get<0>(*received), 2);
 }
@@ -358,7 +359,7 @@ TEST(ChannelTest, RecvThenSendDirectlyHandsOffValue) {
     std::execution::start(op);
 
     EXPECT_FALSE(state->value.has_value());
-    auto sent = std::execution::sync_wait(channel.async_send(7));
+    auto sent = forge::sync_wait(channel.async_send(7));
 
     ASSERT_TRUE(sent.has_value());
     ASSERT_TRUE(state->value.has_value());
@@ -367,7 +368,7 @@ TEST(ChannelTest, RecvThenSendDirectlyHandsOffValue) {
 
 TEST(ChannelTest, BoundedCapacityBackpressuresPendingSend) {
     forge::bounded_channel<int> channel{1};
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());
 
     auto send_state_ptr = std::make_shared<send_state>();
     auto pending = channel.async_send(2);
@@ -376,28 +377,28 @@ TEST(ChannelTest, BoundedCapacityBackpressuresPendingSend) {
 
     EXPECT_FALSE(send_state_ptr->value);
 
-    auto first = std::execution::sync_wait(channel.async_recv());
+    auto first = forge::sync_wait(channel.async_recv());
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(std::get<0>(*first), 1);
     EXPECT_TRUE(send_state_ptr->value);
 
-    auto second = std::execution::sync_wait(channel.async_recv());
+    auto second = forge::sync_wait(channel.async_recv());
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(std::get<0>(*second), 2);
 }
 
 TEST(ChannelTest, CloseRejectsFutureSendsAndDrainsBufferedValues) {
     forge::bounded_channel<int> channel{2};
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(2)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(2)).has_value());
 
     channel.close();
 
-    EXPECT_FALSE(std::execution::sync_wait(channel.async_send(3)).has_value());
+    EXPECT_FALSE(forge::sync_wait(channel.async_send(3)).has_value());
 
-    auto first = std::execution::sync_wait(channel.async_recv());
-    auto second = std::execution::sync_wait(channel.async_recv());
-    auto stopped = std::execution::sync_wait(channel.async_recv());
+    auto first = forge::sync_wait(channel.async_recv());
+    auto second = forge::sync_wait(channel.async_recv());
+    auto stopped = forge::sync_wait(channel.async_recv());
 
     ASSERT_TRUE(first.has_value());
     ASSERT_TRUE(second.has_value());
@@ -425,7 +426,7 @@ TEST(ChannelTest, CloseCompletesPendingSendStopped) {
 
 TEST(ChannelTest, CloseDrainsBufferedValueThenStopsPendingReceivers) {
     forge::bounded_channel<int> channel{1};
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(9)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(9)).has_value());
 
     auto first = std::make_shared<recv_state<int>>();
     auto second = std::make_shared<recv_state<int>>();
@@ -473,7 +474,7 @@ TEST(ChannelTest, RequestStopCancelsPendingOperationsAndDiscardsBuffer) {
     EXPECT_TRUE(pending_recv_state->stopped);
 
     forge::bounded_channel<int> recv_channel{1};
-    ASSERT_TRUE(std::execution::sync_wait(recv_channel.async_send(9)).has_value());
+    ASSERT_TRUE(forge::sync_wait(recv_channel.async_send(9)).has_value());
     auto recv_state_ptr = std::make_shared<recv_state<int>>();
     auto recv = recv_channel.async_recv();
     auto recv_op = std::execution::connect(std::move(recv), recv_receiver<int>{recv_state_ptr});
@@ -487,9 +488,9 @@ TEST(ChannelTest, RequestStopCancelsPendingOperationsAndDiscardsBuffer) {
 TEST(ChannelTest, MoveOnlyValuesWork) {
     forge::bounded_channel<std::unique_ptr<int>> channel{1};
 
-    ASSERT_TRUE(std::execution::sync_wait(
+    ASSERT_TRUE(forge::sync_wait(
         channel.async_send(std::make_unique<int>(33))).has_value());
-    auto received = std::execution::sync_wait(channel.async_recv());
+    auto received = forge::sync_wait(channel.async_recv());
 
     ASSERT_TRUE(received.has_value());
     auto ptr = std::move(std::get<0>(*received));
@@ -569,7 +570,7 @@ TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingRecv) {
 
 TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingSend) {
     forge::bounded_channel<int> channel{1};
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());
 
     std::inplace_stop_source source;
     auto state = std::make_shared<send_state>();
@@ -635,7 +636,7 @@ TEST(ChannelTest, CompletionDoesNotHoldChannelMutex) {
         reenter_receiver{&channel, state});
     std::execution::start(recv_op);
 
-    ASSERT_TRUE(std::execution::sync_wait(channel.async_send(1)).has_value());
+    ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());
     EXPECT_TRUE(state->received);
     EXPECT_TRUE(state->sent);
 
@@ -652,7 +653,7 @@ TEST(ChannelTest, CrossThreadCompletionReleasesStopCallbackBeforeReceiverReturns
 
     std::thread waiter{[&] {
         waiter_started.store(true, std::memory_order_release);
-        auto result = std::execution::sync_wait(channel.async_recv());
+        auto result = forge::sync_wait(channel.async_recv());
         got_value.store(
             result.has_value() && std::get<0>(*result) == 7,
             std::memory_order_release);

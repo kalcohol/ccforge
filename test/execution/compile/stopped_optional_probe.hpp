@@ -1,5 +1,6 @@
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <execution>
 #include <optional>
 #include <utility>
@@ -15,7 +16,7 @@ struct signature_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> CS { return {}; }
 
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 template<class CS>
@@ -39,7 +40,7 @@ struct dependent_sender {
     static auto get_completion_signatures() noexcept
         -> typename Env::optional_completions { return {}; }
 
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {

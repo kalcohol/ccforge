@@ -1,5 +1,6 @@
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <execution>
 #include <atomic>
 #include <chrono>
@@ -113,7 +114,7 @@ struct manual_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

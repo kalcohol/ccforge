@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -73,7 +74,7 @@ struct observing_receiver {
         state->stopped = true;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -98,7 +99,7 @@ struct reference_value_receiver {
         *selected_overload = -1;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -119,7 +120,7 @@ struct reference_error_receiver {
         *observed = std::move(error);
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -132,7 +133,7 @@ struct zero_receiver {
     void set_value() && noexcept { ++state->zero_values; }
     void set_error(std::exception_ptr) && noexcept { state->errored = true; }
     void set_stopped() && noexcept { state->stopped = true; }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct int_only_receiver {
@@ -144,7 +145,7 @@ struct int_only_receiver {
         *value = v;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -170,7 +171,7 @@ struct self_destroying_zero_receiver {
         context->destroy();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct borrowed_operation_sender {
@@ -202,7 +203,7 @@ struct borrowed_operation_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct operation {
@@ -246,7 +247,7 @@ struct stop_receiver {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
@@ -273,7 +274,7 @@ struct multi_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -312,7 +313,7 @@ struct zero_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -342,7 +343,7 @@ struct error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -378,7 +379,7 @@ struct reference_error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -412,7 +413,7 @@ struct rvalue_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -446,7 +447,7 @@ struct rvalue_error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -480,7 +481,7 @@ struct stopped_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -510,7 +511,7 @@ struct stop_probe_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -553,7 +554,7 @@ struct move_only_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -585,7 +586,7 @@ struct typed_error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -615,7 +616,7 @@ struct error_code_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -650,7 +651,7 @@ struct status_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -710,7 +711,7 @@ struct env_pruned_sender {
         }
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -748,7 +749,7 @@ struct reentrant_connect_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -865,7 +866,7 @@ TEST(ErasedSenderTest, DeliversSelectedValueAlternative) {
 }
 
 TEST(ErasedSenderTest, PreservesSplitConstReferenceValueCategory) {
-    auto split_sender = std::execution::split(
+    auto split_sender = forge::split(
         std::execution::just(std::string{"shared"}));
     using split_sender_t = decltype(split_sender);
     using split_cs_t = std::execution::completion_signatures_of_t<split_sender_t>;
@@ -1129,7 +1130,7 @@ TEST(ErasedSenderTest, DeliversFromSchedulerThread) {
                 return 23;
             }))};
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     pool.wait();
 
     ASSERT_TRUE(result.has_value());

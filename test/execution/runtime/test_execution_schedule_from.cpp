@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -33,7 +34,7 @@ using marked_multi_sender_t = decltype(std::execution::schedule_from(
     std::execution::just(1, 2)));
 using marked_multi_signatures_t = std::execution::completion_signatures_of_t<
     marked_multi_sender_t,
-    std::execution::empty_env>;
+    forge::empty_env>;
 
 static_assert(std::same_as<
     std::execution::tag_of_t<marked_multi_sender_t>,

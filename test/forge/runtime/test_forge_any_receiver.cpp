@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/any_receiver.hpp>
 #include <execution>
@@ -29,7 +30,7 @@ struct exception_capture_receiver {
     using receiver_concept = std::execution::receiver_t;
     std::exception_ptr* error;
     void set_error(std::exception_ptr ep) && noexcept { *error = std::move(ep); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 TEST(AnyReceiverTest, CapturesTypedErrorConversionFailureAndSuccess) {
@@ -74,7 +75,7 @@ struct test_recv {
     }
     friend void tag_invoke(std::execution::set_error_t, test_recv&&, std::exception_ptr) noexcept {}
     friend void tag_invoke(std::execution::set_stopped_t, test_recv&&) noexcept {}
-    friend std::execution::empty_env tag_invoke(std::execution::get_env_t, const test_recv&) noexcept {
+    friend forge::empty_env tag_invoke(std::execution::get_env_t, const test_recv&) noexcept {
         return {};
     }
 };
@@ -88,7 +89,7 @@ struct value_only_recv {
         *out = value;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -107,7 +108,7 @@ struct error_stopped_recv {
         *stopped = true;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -163,7 +164,7 @@ struct reference_category_recv {
         *observed = &value;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -175,7 +176,7 @@ struct mutable_reference_recv {
         value = 41;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -218,7 +219,7 @@ struct tracking_recv {
 
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct alignas(64) over_aligned_recv {
@@ -250,7 +251,7 @@ struct alignas(64) over_aligned_recv {
 
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 static_assert(alignof(over_aligned_recv) > alignof(std::max_align_t));

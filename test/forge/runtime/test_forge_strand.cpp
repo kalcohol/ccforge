@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -33,7 +34,7 @@ struct stopped_receiver {
     void set_stopped() && noexcept { state->stopped = true; }
     template<class E>
     void set_error(E&&) && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct blocking_stopped_state {
@@ -67,7 +68,7 @@ struct blocking_stopped_receiver {
     template<class E>
     void set_error(E&&) && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct pre_stopped_blocking_receiver {
@@ -113,7 +114,7 @@ struct ordered_stopped_receiver {
     template<class E>
     void set_error(E&&) && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct delayed_scheduler_state {
@@ -134,7 +135,7 @@ struct delayed_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -200,7 +201,7 @@ struct inline_depth_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -277,7 +278,7 @@ TEST(StrandTest, OptionsConstructorUsesCustomMemoryResourceForRecords) {
             forge::strand_options{.memory = &resource}};
         auto scheduler = strand.get_scheduler();
 
-        auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
+        auto result = forge::sync_wait(std::execution::schedule(scheduler));
         EXPECT_TRUE(result.has_value());
 
         strand.wait();

@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include "../bulk_policy_probe.hpp"
@@ -32,7 +33,7 @@ void check_owned() {
         auto copy = sender;
         auto moved = std::move(copy);
         EXPECT_EQ(moved.__policy.value, 7);
-        auto result = ex::sync_wait(std::move(moved));
+        auto result = forge::sync_wait(std::move(moved));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 13);
         EXPECT_EQ(calls, Chunked ? 1 : 3);
@@ -59,7 +60,7 @@ void check_borrowed(int shape) {
         EXPECT_EQ(std::addressof(moved.__policy), std::addressof(bound.__policy_));
         EXPECT_EQ(state.alive, 1);
         EXPECT_EQ(state.constructions, (std::array<int, 4>{}));
-        auto result = ex::sync_wait(std::move(moved));
+        auto result = forge::sync_wait(std::move(moved));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), shape > 0 ? 13 : 10);
         EXPECT_EQ(calls, shape > 0 ? (Chunked ? 1 : 3) : 0);
@@ -100,14 +101,14 @@ void check_native(Algo algo, const Policy& policy, Fn fn) {
         static_assert(std::same_as<stored, const Policy&>);
         EXPECT_EQ(std::addressof(sender.__policy), std::addressof(policy));
     }
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
     if constexpr (std::constructible_from<Policy, const Policy&>) {
         auto bound = algo(policy, 3, fn);
         static_assert(std::same_as<decltype(bound.__policy_), Policy>);
         auto from_bound = ex::just(10) | bound;
-        auto bound_result = ex::sync_wait(std::move(from_bound));
+        auto bound_result = forge::sync_wait(std::move(from_bound));
         ASSERT_TRUE(bound_result.has_value());
         EXPECT_EQ(std::get<0>(*bound_result), 13);
     }
@@ -149,7 +150,7 @@ TEST(ExecutionBulkPolicy, ExplicitCopyIsNotTheCopyConstructibleConcept) {
     auto sender = bound(ex::just(10));
     static_assert(std::same_as<stored_policy_t<decltype(sender)>, const explicit_copy_policy&>);
     EXPECT_EQ(std::addressof(sender.__policy), std::addressof(bound.__policy_));
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
 }
@@ -161,7 +162,7 @@ TEST(ExecutionBulkPolicy, ThrowingCopiesAreNotReplacedByBorrowing) {
     EXPECT_THROW((void)bound(ex::just(10)), policy_failure);
     EXPECT_THROW((void)(ex::just(10) | std::as_const(bound)), policy_failure);
     should_throw = false;
-    auto result = ex::sync_wait(bound(ex::just(10)));
+    auto result = forge::sync_wait(bound(ex::just(10)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
 }

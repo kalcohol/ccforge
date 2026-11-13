@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/timer_await.hpp>
@@ -65,7 +66,7 @@ struct completion_receiver {
     }
 
     [[nodiscard]] auto get_env() const noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -91,7 +92,7 @@ auto observe_resume_thread(
 TEST(ForgeTimerAwaitTest, SleepForZeroCompletesWithValue) {
     forge::timer_context context;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(cio::async_sleep_for(context, 0ms)));
 
     ASSERT_TRUE(result.has_value());
@@ -103,7 +104,7 @@ TEST(ForgeTimerAwaitTest, SleepForZeroCompletesWithValue) {
 TEST(ForgeTimerAwaitTest, SleepUntilPastDeadlineCompletesWithValue) {
     forge::timer_context context;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(cio::async_sleep_until(
             context,
             std::chrono::steady_clock::now() - 1ms)));
@@ -119,7 +120,7 @@ TEST(ForgeTimerAwaitTest, DeadlineCompletionResumesOnTimerWorker) {
     std::thread::id after;
     const auto caller = std::this_thread::get_id();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(observe_resume_thread(context, &before, &after)));
 
     ASSERT_TRUE(result.has_value());
@@ -175,7 +176,7 @@ TEST(ForgeTimerAwaitTest, ShutdownRejectsNewSleepWithStopped) {
     forge::timer_context context;
     context.shutdown();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(cio::async_sleep_for(context, 0ms)));
 
     EXPECT_FALSE(result.has_value());
@@ -188,7 +189,7 @@ TEST(ForgeTimerAwaitTest, ConnectAllocationFailureMapsToIoResultError) {
     auto task = cio::async_sleep_for(context, 0ms);
     resource.fail_next_allocation();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(std::move(task)));
 
     ASSERT_TRUE(result.has_value());

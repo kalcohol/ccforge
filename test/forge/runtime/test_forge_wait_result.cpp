@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/execution.hpp>
 #include <execution>
@@ -18,7 +19,7 @@ struct error_code_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -55,7 +56,7 @@ struct multi_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -92,7 +93,7 @@ struct throwing_error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {

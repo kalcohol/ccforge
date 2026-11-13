@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/coro.hpp>
@@ -204,7 +205,7 @@ TEST(ForgeIoTaskAllocTest, ExplicitResourceOwnsTheFrame) {
         EXPECT_EQ(memory.allocate_calls(), 1U);
         EXPECT_EQ(memory.live(), 1U);
 
-        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        auto result = forge::sync_wait(cio::as_sender(std::move(task)));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 41);
     }
@@ -223,7 +224,7 @@ TEST(ForgeIoTaskAllocTest, VoidTaskFrameUsesTheResourceToo) {
         auto task = make_counted_void(&memory, &ran);
         EXPECT_EQ(memory.allocate_calls(), 1U);
 
-        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        auto result = forge::sync_wait(cio::as_sender(std::move(task)));
         ASSERT_TRUE(result.has_value());
     }
 
@@ -243,7 +244,7 @@ TEST(ForgeIoTaskAllocTest, NestedExplicitRePassHitsTheSameResource) {
         auto task = make_parent_sum(&memory, 19, 23);
         EXPECT_EQ(memory.allocate_calls(), 1U);
 
-        auto result = std::execution::sync_wait(
+        auto result = forge::sync_wait(
             cio::as_sender(std::move(task), env));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 42);
@@ -265,7 +266,7 @@ TEST(ForgeIoTaskAllocTest, EnvMemoryAloneDoesNotAllocateFrames) {
     cio::io_env env;
     env.memory = &memory;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(plain_value(), env));
 
     ASSERT_TRUE(result.has_value());
@@ -282,7 +283,7 @@ TEST(ForgeIoTaskAllocTest, MemberCoroutineExplicitResourceOwnsTheFrame) {
         auto task = make_member_counted(host, &memory, 41);
         EXPECT_EQ(memory.allocate_calls(), 1U);
 
-        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        auto result = forge::sync_wait(cio::as_sender(std::move(task)));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 42);
     }
@@ -299,7 +300,7 @@ TEST(ForgeIoTaskAllocTest, LambdaCoroutineExplicitResourceOwnsTheFrame) {
         auto task = make_lambda_counted(&memory, 21);
         EXPECT_EQ(memory.allocate_calls(), 1U);
 
-        auto result = std::execution::sync_wait(cio::as_sender(std::move(task)));
+        auto result = forge::sync_wait(cio::as_sender(std::move(task)));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 42);
     }
@@ -310,7 +311,7 @@ TEST(ForgeIoTaskAllocTest, LambdaCoroutineExplicitResourceOwnsTheFrame) {
 }
 
 TEST(ForgeIoTaskAllocTest, NullResourceFallsBackToTheGlobalPath) {
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         counted_value(std::allocator_arg, nullptr)));
 
     ASSERT_TRUE(result.has_value());
@@ -323,7 +324,7 @@ TEST(ForgeIoTaskAllocTest, AllocationFailurePropagatesAndLeaksNothing) {
     EXPECT_THROW((void)make_counted_value(&broken), std::bad_alloc);
 
     recording_resource memory;
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         make_counted_value(&memory)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 41);

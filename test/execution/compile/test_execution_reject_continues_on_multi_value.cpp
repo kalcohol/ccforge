@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <execution>
 
 #include <exception>
@@ -14,12 +15,12 @@ struct multi_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 int main() {
     auto sender = std::execution::continues_on(
         multi_value_sender{}, std::execution::inline_scheduler{});
     (void)std::execution::get_completion_signatures(
-        sender, std::execution::empty_env{});
+        sender, forge::empty_env{});
 }

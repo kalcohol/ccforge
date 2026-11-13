@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/context_await.hpp>
@@ -37,7 +38,7 @@ TEST(ForgeContextAwaitTest, AsyncReadWriteSomeReturnIoResult) {
     auto pipe = make_pipe();
     std::array<char, 3> payload{'a', 'b', 'c'};
 
-    auto write_result = std::execution::sync_wait(
+    auto write_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_write_some(
                 context,
@@ -50,7 +51,7 @@ TEST(ForgeContextAwaitTest, AsyncReadWriteSomeReturnIoResult) {
     EXPECT_EQ(written, payload.size());
 
     std::array<std::byte, 3> input{};
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
@@ -71,7 +72,7 @@ TEST(ForgeContextAwaitTest, EmptyReadPreservesBackendBehavior) {
     auto pipe = make_pipe();
     std::array<std::byte, 1> input{};
 
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
@@ -92,7 +93,7 @@ TEST(ForgeContextAwaitTest, PeerCloseMapsReadZeroToEof) {
     pipe.second.reset();
     std::array<std::byte, 1> input{};
 
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
@@ -111,7 +112,7 @@ TEST(ForgeContextAwaitTest, InvalidHandleMapsToIoResultError) {
     forge::io::context context;
     std::array<std::byte, 1> input{};
 
-    auto read_result = std::execution::sync_wait(
+    auto read_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::async_read_some(
                 context,
@@ -131,7 +132,7 @@ TEST(ForgeContextAwaitTest, ReadinessAwaitableHasNoByteCount) {
     const char byte = 'x';
     ASSERT_EQ(::write(pipe.second.get(), &byte, 1), 1);
 
-    auto ready_result = std::execution::sync_wait(
+    auto ready_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::readable(context, pipe.first.get())));
 
@@ -145,7 +146,7 @@ TEST(ForgeContextAwaitTest, WritableReadinessAwaitableHasNoByteCount) {
     forge::io::context context;
     auto pipe = make_pipe();
 
-    auto ready_result = std::execution::sync_wait(
+    auto ready_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::writable(context, pipe.second.get())));
 
@@ -188,7 +189,7 @@ struct abandon_receiver {
         state->stopped = true;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -248,7 +249,7 @@ TEST(ForgeContextAwaitTest, ReadinessObservesCoroutineEnvStopToken) {
     forge::io::io_env env;
     env.stop_token = source.get_token();
 
-    auto ready_result = std::execution::sync_wait(
+    auto ready_result = forge::sync_wait(
         forge::io::as_sender(
             forge::io::readable(context, pipe.first.get()),
             env));

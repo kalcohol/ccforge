@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -15,7 +16,7 @@ namespace {
 template<class Sender>
 using signatures_t = decltype(std::execution::get_completion_signatures(
     std::declval<Sender>(),
-    std::execution::empty_env{}));
+    forge::empty_env{}));
 
 template<bool Nothrow>
 struct unchunked_category_callback {
@@ -78,7 +79,7 @@ TEST(BulkTest, UnchunkedRvalueOnlyIndexIsACopy) {
                 std::execution::completion_signatures<
                     std::execution::set_value_t(int)>>);
 
-            auto result = std::execution::sync_wait(std::move(sndr));
+            auto result = forge::sync_wait(std::move(sndr));
             ASSERT_TRUE(result.has_value());
             EXPECT_EQ(calls, shape > 0 ? 4 : 0);
             EXPECT_EQ(std::get<0>(*result), shape > 0 ? 16 : 10);
@@ -111,7 +112,7 @@ TEST(BulkTest, ChunkedAcceptsRvalueOnlyBounds) {
             std::execution::completion_signatures<
                 std::execution::set_value_t(int)>>);
 
-        auto result = std::execution::sync_wait(std::move(sndr));
+        auto result = forge::sync_wait(std::move(sndr));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(calls, shape > 0 ? 1 : 0);
         EXPECT_EQ(begin_seen, shape > 0 ? 0 : -1);
@@ -133,7 +134,7 @@ TEST(BulkTest, UnchunkedSelectsNothrowRvalueOverload) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(rvalue_calls, 4);
     EXPECT_EQ(lvalue_calls, 0);
@@ -154,7 +155,7 @@ TEST(BulkTest, UnchunkedSelectsThrowingRvalueOverload) {
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), std::runtime_error);
     EXPECT_EQ(rvalue_calls, 1);
     EXPECT_EQ(lvalue_calls, 0);
 }
@@ -172,7 +173,7 @@ TEST(BulkTest, ChunkedSelectsNothrowRvalueOverload) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(rvalue_calls, 1);
     EXPECT_EQ(lvalue_calls, 0);
@@ -193,7 +194,7 @@ TEST(BulkTest, ChunkedSelectsThrowingRvalueOverload) {
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), std::runtime_error);
     EXPECT_EQ(rvalue_calls, 1);
     EXPECT_EQ(lvalue_calls, 0);
 }
@@ -215,7 +216,7 @@ TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(indexes, (std::vector<int>{0, 1, 2, 3}));
@@ -235,7 +236,7 @@ TEST(BulkTest, NothrowFunctionDoesNotAdvertiseExceptionPtr) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 16);
 }
@@ -256,7 +257,7 @@ TEST(BulkTest, UnchunkedAcceptsStandardPolicyParameter) {
             value += index;
         });
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(indexes, (std::vector<int>{0, 1, 2}));
@@ -272,7 +273,7 @@ TEST(BulkTest, UnchunkedPipeVisitsEveryIndex) {
                     sum += index;
                     value += 2 * index;
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(sum, 0 + 1 + 2 + 3 + 4);
@@ -291,7 +292,7 @@ TEST(BulkTest, ChunkedPipeAcceptsStandardPolicyParameter) {
                         ++calls;
                         value += end - begin;
                     });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(calls, 1);
@@ -318,7 +319,7 @@ TEST(BulkTest, ChunkedDirectUsesSingleSerialChunk) {
             std::execution::set_value_t(int),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(chunks.size(), 1u);
@@ -334,7 +335,7 @@ TEST(BulkTest, ChunkedPipeUsesSingleSerialChunk) {
                     ++calls;
                     value *= end - begin;
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(calls, 1);
@@ -358,8 +359,8 @@ TEST(BulkTest, ZeroShapeDoesNotCallFunction) {
             ++chunked_calls;
         });
 
-    auto unchunked_result = std::execution::sync_wait(std::move(unchunked));
-    auto chunked_result = std::execution::sync_wait(std::move(chunked));
+    auto unchunked_result = forge::sync_wait(std::move(unchunked));
+    auto chunked_result = forge::sync_wait(std::move(chunked));
 
     ASSERT_TRUE(unchunked_result.has_value());
     ASSERT_TRUE(chunked_result.has_value());
@@ -396,9 +397,9 @@ TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
             ++chunked_calls;
         });
 
-    auto bulk_result = std::execution::sync_wait(std::move(bulk));
-    auto unchunked_result = std::execution::sync_wait(std::move(unchunked));
-    auto chunked_result = std::execution::sync_wait(std::move(chunked));
+    auto bulk_result = forge::sync_wait(std::move(bulk));
+    auto unchunked_result = forge::sync_wait(std::move(unchunked));
+    auto chunked_result = forge::sync_wait(std::move(chunked));
 
     ASSERT_TRUE(bulk_result.has_value());
     ASSERT_TRUE(unchunked_result.has_value());
@@ -421,7 +422,7 @@ TEST(BulkTest, UnchunkedFunctionExceptionBecomesExceptionPtrError) {
             }
         });
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(BulkTest, ChunkedFunctionExceptionBecomesExceptionPtrError) {
@@ -432,7 +433,7 @@ TEST(BulkTest, ChunkedFunctionExceptionBecomesExceptionPtrError) {
             throw std::runtime_error("bulk chunked");
         });
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(BulkTest, MoveOnlySenderUsesExplicitMove) {
@@ -448,7 +449,7 @@ TEST(BulkTest, MoveOnlySenderUsesExplicitMove) {
         [](int index, int& value) {
             value += index;
         });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 10);

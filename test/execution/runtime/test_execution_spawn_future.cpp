@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include "test_execution_manual_sender.hpp"
@@ -45,7 +46,7 @@ struct reference_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -79,7 +80,7 @@ struct reference_error_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -359,7 +360,7 @@ struct observed_consumer_receiver {
     void set_stopped() && noexcept { ++observation->stopped; }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::make_prop(
+        return std::execution::make_env(std::execution::prop(
             std::execution::get_stop_token_t{}, token));
     }
 };
@@ -396,7 +397,7 @@ struct spawn_future_stop_receiver {
 
     auto get_env() const noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_stop_token_t{}, source->get_token()));
     }
 };
@@ -420,7 +421,7 @@ struct join_probe_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::make_prop(
+        return std::execution::make_env(std::execution::prop(
             std::execution::get_start_scheduler_t{},
             std::execution::inline_scheduler{}));
     }
@@ -462,7 +463,7 @@ TEST(SpawnFutureTest, CompletedBeforeConsumerDeliversValue) {
     ASSERT_TRUE(wait_until_completed(state));
     EXPECT_EQ(scope.count(), 1u);
 
-    auto result = std::execution::sync_wait(std::move(future));
+    auto result = forge::sync_wait(std::move(future));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -482,7 +483,7 @@ TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
     std::exception_ptr failure;
     std::thread consumer{[future = std::move(future), &observed, &failure]() mutable {
         try {
-            auto result = std::execution::sync_wait(std::move(future));
+            auto result = forge::sync_wait(std::move(future));
             if (result.has_value()) {
                 observed = std::get<0>(*result);
             }
@@ -510,13 +511,13 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    EXPECT_THROW((void)std::execution::sync_wait(
+    EXPECT_THROW((void)forge::sync_wait(
         std::execution::spawn_future(
             std::execution::just_error(spawn_future_marker_error{}), token)),
         spawn_future_marker_error);
     EXPECT_EQ(scope.count(), 0u);
 
-    auto stopped = std::execution::sync_wait(
+    auto stopped = forge::sync_wait(
         std::execution::spawn_future(std::execution::just_stopped(), token));
 
     EXPECT_FALSE(stopped.has_value());
@@ -531,7 +532,7 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
         | std::execution::then(deref_unique{});
 
     auto future = std::execution::spawn_future(std::move(sndr), token);
-    auto result = std::execution::sync_wait(std::move(future));
+    auto result = forge::sync_wait(std::move(future));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 31);
@@ -555,7 +556,7 @@ TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
                   value_cs_t,
                   std::execution::set_value_t(int&)>::value);
 
-    auto value_result = std::execution::sync_wait(std::move(value_future));
+    auto value_result = forge::sync_wait(std::move(value_future));
     ASSERT_TRUE(value_result.has_value());
     EXPECT_EQ(std::get<0>(*value_result), 42);
 
@@ -573,11 +574,11 @@ TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
                       const spawn_future_marker_error&)>::value);
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(std::move(error_future)),
+        (void)forge::sync_wait(std::move(error_future)),
         spawn_future_marker_error);
     EXPECT_EQ(scope.count(), 0u);
 
-    auto joined = std::execution::sync_wait(scope.join());
+    auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
 }
 
@@ -606,7 +607,7 @@ TEST(SpawnTest, BorrowsNoncopyableSourceAllocatorAttributes) {
 
         if (explicit_env)
             std::execution::spawn(
-                std::move(sender), scope.get_token(), std::execution::empty_env{});
+                std::move(sender), scope.get_token(), forge::empty_env{});
         else
             std::execution::spawn(std::move(sender), scope.get_token());
 
@@ -643,7 +644,7 @@ TEST(SpawnTest, OwnsImmovablePrvalueSourceAllocatorAttributes) {
     queries = 0;
 
     std::execution::spawn(
-        std::move(sender), scope.get_token(), std::execution::empty_env{});
+        std::move(sender), scope.get_token(), forge::empty_env{});
 
     EXPECT_EQ(completions, 1);
     EXPECT_EQ(queries, 1);
@@ -689,12 +690,12 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
 
     {
         auto env = std::execution::make_env(
-            std::execution::make_prop(
+            std::execution::prop(
                 std::execution::get_allocator_t{},
                 counting_allocator<std::byte>{counts}));
         auto future = std::execution::spawn_future(
             std::execution::just(42), token, env);
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 42);
@@ -717,7 +718,7 @@ TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
             std::execution::read_env(std::execution::get_allocator),
             token,
             member_allocator_env{counting_allocator<std::byte>{counts}});
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result).counts, counts);
@@ -745,7 +746,7 @@ TEST(SpawnFutureTest, SuppliedAllocatorOverridesSenderAttributes) {
         auto future = std::execution::spawn_future(
             std::move(sender), scope.get_token(),
             member_allocator_env{counting_allocator<std::byte>{receiver_counts}});
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result).counts, receiver_counts);
@@ -773,9 +774,9 @@ TEST(SpawnFutureTest, FallsBackToSenderAllocatorWithAndWithoutExplicitEnvironmen
                 &queries};
             auto future = explicit_env
                 ? std::execution::spawn_future(
-                    std::move(sender), scope.get_token(), std::execution::empty_env{})
+                    std::move(sender), scope.get_token(), forge::empty_env{})
                 : std::execution::spawn_future(std::move(sender), scope.get_token());
-            auto result = std::execution::sync_wait(std::move(future));
+            auto result = forge::sync_wait(std::move(future));
 
             ASSERT_TRUE(result.has_value());
             EXPECT_EQ(std::get<0>(*result).counts, counts);
@@ -799,7 +800,7 @@ TEST(SpawnFutureTest, SelectsAllocatorFromTokenWrappedSender) {
             scope.get_token(), counting_allocator<std::byte>{counts}};
         auto future = std::execution::spawn_future(
             std::execution::read_env(std::execution::get_allocator), token);
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result).counts, counts);
@@ -820,11 +821,11 @@ TEST(SpawnFutureTest, DefaultAllocatorDoesNotAddAnAllocatorQueryToSpawnEnvironme
         });
         auto future = explicit_env
             ? std::execution::spawn_future(
-                std::move(sender), scope.get_token(), std::execution::empty_env{})
+                std::move(sender), scope.get_token(), forge::empty_env{})
             : std::execution::spawn_future(std::move(sender), scope.get_token());
         using allocator_t = typename decltype(future)::state_t::allocator_t;
         static_assert(std::same_as<allocator_t, std::allocator<std::byte>>);
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         EXPECT_FALSE(std::get<0>(*result));
@@ -852,7 +853,7 @@ TEST(SpawnFutureTest, SenderAllocatorFallbackPreservesMoveOnlyPayloadAndEnvironm
             std::move(sender), scope.get_token(),
             move_only_scheduler_env{
                 std::make_unique<std::execution::run_loop::scheduler>(loop.get_scheduler())});
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
         const auto& value = std::get<0>(*result);
@@ -896,7 +897,7 @@ TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
     std::inplace_stop_source source;
     source.request_stop();
     auto env = std::execution::make_env(
-        std::execution::make_prop(
+        std::execution::prop(
             std::execution::get_stop_token_t{}, source.get_token()));
 
     auto future = std::execution::spawn_future(
@@ -906,7 +907,7 @@ TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
               }),
         token,
         std::move(env));
-    auto result = std::execution::sync_wait(std::move(future));
+    auto result = forge::sync_wait(std::move(future));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
@@ -919,7 +920,7 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     auto token = scope.get_token();
     std::inplace_stop_source source;
     auto env = std::execution::make_env(
-        std::execution::make_prop(
+        std::execution::prop(
             std::execution::get_stop_token_t{}, source.get_token()));
     auto state = std::make_shared<manual_state>();
 
@@ -931,7 +932,7 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
 
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
-    auto result = std::execution::sync_wait(std::move(future));
+    auto result = forge::sync_wait(std::move(future));
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
@@ -941,7 +942,7 @@ TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
     std::execution::simple_counting_scope scope;
     std::inplace_stop_source source;
     std::atomic<int> registrations{0};
-    auto env = std::execution::make_env(std::execution::make_prop(
+    auto env = std::execution::make_env(std::execution::prop(
         std::execution::get_stop_token,
         observed_stop_token{source.get_token(), &registrations}));
     auto check = [&](auto sender) {
@@ -962,7 +963,7 @@ TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
         std::execution::simple_counting_scope scope;
         std::inplace_stop_source source;
         std::atomic<int> registrations{0};
-        auto env = std::execution::make_env(std::execution::make_prop(
+        auto env = std::execution::make_env(std::execution::prop(
             std::execution::get_stop_token,
             observed_stop_token{source.get_token(), &registrations}));
         auto state = std::make_shared<manual_state>();
@@ -978,7 +979,7 @@ TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
         }
         EXPECT_TRUE(wait_until_completed(state));
         EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
-        auto result = std::execution::sync_wait(std::move(future));
+        auto result = forge::sync_wait(std::move(future));
         EXPECT_EQ(result.has_value(), !stop);
         EXPECT_EQ(scope.count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
@@ -992,7 +993,7 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     auto counts = std::make_shared<allocation_counts>();
     counts->fail_on_attempt.store(2, std::memory_order_relaxed);
     auto env = std::execution::make_env(
-        std::execution::make_prop(
+        std::execution::prop(
             std::execution::get_allocator_t{},
             counting_allocator<std::byte>{counts}));
     auto future = std::execution::spawn_future(
@@ -1023,7 +1024,7 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 
-    auto joined = std::execution::sync_wait(scope.join());
+    auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_EQ(
         counts->allocations.load(std::memory_order_relaxed),
@@ -1185,7 +1186,7 @@ TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {
         }),
         token);
 
-    auto result = std::execution::sync_wait(std::move(future));
+    auto result = forge::sync_wait(std::move(future));
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(started.load(std::memory_order_relaxed), 0);
@@ -1241,7 +1242,7 @@ TEST(SpawnFutureTest, UnstartedConsumerOperationRequestsStopOnDestruction) {
     EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
     EXPECT_EQ(scope.count(), 0u);
 
-    auto joined = std::execution::sync_wait(scope.join());
+    auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
 }
 
@@ -1335,7 +1336,7 @@ TEST(SpawnFutureTest, DownstreamStopCompletesBeforeStopIgnoringWorkFinishes) {
     complete_manual_value(state, 42);
 
     EXPECT_TRUE(wait_until_completed(state));
-    auto joined = std::execution::sync_wait(scope.join());
+    auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_EQ(scope.count(), 0u);
 }
@@ -1364,7 +1365,7 @@ TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
                 std::this_thread::yield();
             }
             try {
-                auto result = std::execution::sync_wait(std::move(future));
+                auto result = forge::sync_wait(std::move(future));
                 if (result.has_value()) {
                     observed = std::get<0>(*result);
                 }

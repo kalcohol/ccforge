@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/coro.hpp>
@@ -176,12 +177,12 @@ TEST(ForgeCoroIoTest, IoTaskPropagatesStopTokenAndMemory) {
     env.stop_token = source.get_token();
     env.memory = &memory;
 
-    auto stop_result = std::execution::sync_wait(
+    auto stop_result = forge::sync_wait(
         cio::as_sender(observes_stop_token(), env));
     ASSERT_TRUE(stop_result.has_value());
     EXPECT_TRUE(std::get<0>(*stop_result));
 
-    auto memory_result = std::execution::sync_wait(
+    auto memory_result = forge::sync_wait(
         cio::as_sender(observes_memory(&memory), env));
     ASSERT_TRUE(memory_result.has_value());
     EXPECT_TRUE(std::get<0>(*memory_result));
@@ -194,7 +195,7 @@ TEST(ForgeCoroIoTest, IoTaskCanAwaitChildTaskWithSameEnv) {
     cio::io_env env;
     env.stop_token = source.get_token();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(awaits_child_task(), env));
 
     ASSERT_TRUE(result.has_value());
@@ -205,7 +206,7 @@ TEST(ForgeCoroIoTest, IoTaskCanAwaitVoidChildTask) {
     cio::io_env env;
     bool observed = false;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(awaits_void_child_task(&observed), env));
 
     ASSERT_TRUE(result.has_value());
@@ -220,18 +221,18 @@ TEST(ForgeCoroIoTest, ExecutorRefAdaptsForgeScheduler) {
 
     EXPECT_TRUE(env.executor);
 
-    auto scheduled = std::execution::sync_wait(env.executor.schedule());
+    auto scheduled = forge::sync_wait(env.executor.schedule());
     pool.wait();
     ASSERT_TRUE(scheduled.has_value());
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(observes_executor(), env));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
 }
 
 TEST(ForgeCoroIoTest, IoTaskPassesThroughRegularAwaitables) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(awaits_regular_awaitable()));
 
     ASSERT_TRUE(result.has_value());
@@ -245,7 +246,7 @@ TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableLvalueAwaitables) {
     cio::io_env env;
     env.memory = &memory;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(awaits_noncopyable_lvalue(awaitable), env));
 
     ASSERT_TRUE(result.has_value());
@@ -256,7 +257,7 @@ TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableLvalueAwaitables) {
 TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableRegularLvalueAwaitables) {
     noncopyable_regular_awaitable awaitable;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(awaits_noncopyable_regular_lvalue(awaitable)));
 
     ASSERT_TRUE(result.has_value());
@@ -264,14 +265,14 @@ TEST(ForgeCoroIoTest, IoTaskBorrowsNoncopyableRegularLvalueAwaitables) {
 }
 
 TEST(ForgeCoroIoTest, IoTaskRethrowsStoredException) {
-    EXPECT_THROW((void)std::execution::sync_wait(
+    EXPECT_THROW((void)forge::sync_wait(
                      cio::as_sender(throws_from_task())),
                  std::runtime_error);
 }
 
 TEST(ForgeCoroIoTest, StandardExceptionCatchDoesNotSwallowStopped) {
     bool caught = false;
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(catches_standard_exception(&caught)));
     EXPECT_FALSE(result.has_value());
     EXPECT_FALSE(caught);
@@ -279,7 +280,7 @@ TEST(ForgeCoroIoTest, StandardExceptionCatchDoesNotSwallowStopped) {
 }
 
 TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithValue) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(catches_stopped(caught_stop_completion::value)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -287,13 +288,13 @@ TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithValue) {
 
 TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithError) {
     EXPECT_THROW(
-        std::execution::sync_wait(
+        forge::sync_wait(
             cio::as_sender(catches_stopped(caught_stop_completion::error))),
         std::runtime_error);
 }
 
 TEST(ForgeCoroIoTest, RethrownStoppedPreservesStoppedCompletion) {
-    EXPECT_FALSE(std::execution::sync_wait(
+    EXPECT_FALSE(forge::sync_wait(
         cio::as_sender(catches_stopped(caught_stop_completion::stopped))).has_value());
 }
 
@@ -301,7 +302,7 @@ TEST(ForgeCoroIoTest, VoidIoTaskUsesEnv) {
     cio::io_env env;
     bool observed = false;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(completes_void(&observed), env));
 
     ASSERT_TRUE(result.has_value());

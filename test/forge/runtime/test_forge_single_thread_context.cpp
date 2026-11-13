@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/single_thread_context.hpp>
 #include <forge/start_detached.hpp>
@@ -14,7 +15,7 @@ TEST(SingleThreadContextTest, RunsOnDedicatedThread) {
     forge::single_thread_context ctx;
     auto main_id = std::this_thread::get_id();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
             | std::execution::then([main_id] {
                   return std::this_thread::get_id() != main_id;
@@ -28,10 +29,10 @@ TEST(SingleThreadContextTest, ReusesSameWorkerThread) {
     forge::single_thread_context ctx;
     auto sch = ctx.get_scheduler();
 
-    auto first = std::execution::sync_wait(
+    auto first = forge::sync_wait(
         std::execution::schedule(sch)
             | std::execution::then([] { return std::this_thread::get_id(); }));
-    auto second = std::execution::sync_wait(
+    auto second = forge::sync_wait(
         std::execution::schedule(sch)
             | std::execution::then([] { return std::this_thread::get_id(); }));
 
@@ -64,7 +65,7 @@ TEST(SingleThreadContextTest, ScheduleAfterShutdownCompletesStopped) {
     auto sch = ctx.get_scheduler();
     ctx.shutdown();
 
-    auto result = std::execution::sync_wait(std::execution::schedule(sch));
+    auto result = forge::sync_wait(std::execution::schedule(sch));
 
     EXPECT_FALSE(result.has_value());
 }

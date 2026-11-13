@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -30,7 +31,7 @@ TEST(RunLoopTest, BasicScheduleThenSyncWait) {
     auto sndr = std::execution::schedule(sch)
               | std::execution::then([&] { result = 42; });
 
-    std::execution::sync_wait(std::move(sndr));
+    forge::sync_wait(std::move(sndr));
     loop.finish();
     worker.join();
 
@@ -54,7 +55,7 @@ TEST(RunLoopTest, MultipleTasksExecuteInOrder) {
     for (int i = 0; i < 5; ++i) {
         auto sndr = std::execution::schedule(sch)
                   | std::execution::then([&order, i] { order.push_back(i); });
-        std::execution::sync_wait(std::move(sndr));
+        forge::sync_wait(std::move(sndr));
     }
 
     loop.finish();
@@ -89,7 +90,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
     auto scheduler = loop.get_scheduler();
     std::inplace_stop_source source;
     source.request_stop();
-    auto env = std::execution::make_env(std::execution::make_prop(
+    auto env = std::execution::make_env(std::execution::prop(
         std::execution::get_stop_token_t{},
         source.get_token()));
     auto sender = std::execution::write_env(
@@ -97,7 +98,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
         std::move(env));
     using signatures_t = decltype(std::execution::get_completion_signatures(
         sender,
-        std::execution::empty_env{}));
+        forge::empty_env{}));
     static_assert(std::is_same_v<
         signatures_t,
         std::execution::completion_signatures<
@@ -105,7 +106,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
             std::execution::set_stopped_t()>>);
 
     std::thread worker([&] { loop.run(); });
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     loop.finish();
     worker.join();
@@ -133,7 +134,7 @@ TEST(RunLoopTest, ConcurrentPush) {
             for (int j = 0; j < kTasksPerThread; ++j) {
                 auto sndr = std::execution::schedule(sch)
                           | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); });
-                std::execution::sync_wait(std::move(sndr));
+                forge::sync_wait(std::move(sndr));
             }
         });
     }

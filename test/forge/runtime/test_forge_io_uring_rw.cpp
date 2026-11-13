@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <forge/io/io_uring_context.hpp>
 
 #include <forge/io/async_stream.hpp>
@@ -212,7 +213,7 @@ struct completion_receiver {
         state->cv.notify_all();
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -297,7 +298,7 @@ void check_write_then_read(std::pmr::memory_resource* memory) {
     std::byte write_buffer[5];
     std::memcpy(write_buffer, payload, sizeof(write_buffer));
 
-    auto write_result = std::execution::sync_wait(cio::as_sender(
+    auto write_result = forge::sync_wait(cio::as_sender(
         write_task(context, pipe.write_end, write_buffer)));
     RW_CHECK(write_result.has_value());
     if (write_result.has_value()) {
@@ -308,7 +309,7 @@ void check_write_then_read(std::pmr::memory_resource* memory) {
 
     // A larger destination observes the natural short read.
     std::byte read_buffer[64] = {};
-    auto read_result = std::execution::sync_wait(cio::as_sender(
+    auto read_result = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, read_buffer)));
     RW_CHECK(read_result.has_value());
     if (read_result.has_value()) {
@@ -335,7 +336,7 @@ void check_pending_read_resumes_on_poller(std::pmr::memory_resource* memory) {
         (void)!::write(pipe.write_end, payload, 4);
     }};
 
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         observe_read(context, pipe.read_end, read_buffer, &before, &after)));
     writer.join();
 
@@ -444,7 +445,7 @@ void check_read_eof(std::pmr::memory_resource* memory) {
     pipe.close_write();
 
     std::byte read_buffer[16] = {};
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, read_buffer)));
     RW_CHECK(result.has_value());
     if (result.has_value()) {
@@ -459,7 +460,7 @@ void check_empty_buffer_completes_inline(std::pmr::memory_resource* memory) {
     pipe_pair pipe;
     RW_CHECK(pipe.read_end >= 0);
 
-    auto read_result = std::execution::sync_wait(cio::as_sender(
+    auto read_result = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, std::span<std::byte>{})));
     RW_CHECK(read_result.has_value());
     if (read_result.has_value()) {
@@ -472,7 +473,7 @@ void check_empty_buffer_completes_inline(std::pmr::memory_resource* memory) {
     // The empty-buffer fast path never consults the context, so it still
     // completes with value 0 after close().
     context.close();
-    auto closed_result = std::execution::sync_wait(cio::as_sender(
+    auto closed_result = forge::sync_wait(cio::as_sender(
         write_task(
             context,
             pipe.write_end,
@@ -491,7 +492,7 @@ void check_bad_descriptor_maps_to_error(std::pmr::memory_resource* memory) {
     RW_CHECK(pipe.read_end >= 0);
 
     const std::byte payload[1] = {};
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         write_task(context, pipe.read_end, payload)));
     RW_CHECK(result.has_value());
     if (result.has_value()) {
@@ -512,7 +513,7 @@ void check_write_to_closed_reader_maps_to_epipe(
     pipe.close_read();
 
     const std::byte payload[4] = {};
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         write_task(context, pipe.write_end, payload)));
     RW_CHECK(result.has_value());
     if (result.has_value()) {
@@ -535,7 +536,7 @@ void check_pre_stopped_env_never_submits(std::pmr::memory_resource* memory) {
     std::byte read_buffer[16] = {};
     // Returning at all proves the read was never submitted: the pipe never
     // carries data, so a submitted read would keep this wait pending.
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, read_buffer),
         env));
     RW_CHECK(!result.has_value());
@@ -566,7 +567,7 @@ void check_coroutine_composition(std::pmr::memory_resource* memory) {
     std::memcpy(source, payload, sizeof(source));
     std::byte scratch[32] = {};
 
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         echo_round_trip(
             context,
             pipe.write_end,
@@ -610,7 +611,7 @@ void check_async_stream_concept_interop(std::pmr::memory_resource* memory) {
     std::memcpy(source, payload, sizeof(source));
     std::byte scratch[16] = {};
 
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         stream_round_trip(stream, source, scratch)));
     RW_CHECK(result.has_value());
     if (result.has_value()) {
@@ -622,7 +623,7 @@ void check_async_stream_concept_interop(std::pmr::memory_resource* memory) {
 
     // EOF surfaces through the adapter unchanged.
     pipe.close_write();
-    auto eof_result = std::execution::sync_wait(cio::as_sender(
+    auto eof_result = forge::sync_wait(cio::as_sender(
         stream_round_trip_read_only(stream, scratch)));
     RW_CHECK(eof_result.has_value());
     if (eof_result.has_value()) {
@@ -644,7 +645,7 @@ void check_pre_stopped_env_wins_over_empty_buffer(
 
     // The stop precheck is ordered before the empty-buffer fast path, so a
     // pre-stopped environment observes stopped rather than value 0.
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, std::span<std::byte>{}),
         env));
     RW_CHECK(!result.has_value());
@@ -785,7 +786,7 @@ void check_request_stop_cancels_in_flight(std::pmr::memory_resource* memory) {
     }
 
     // Ingress stays closed for later submissions.
-    auto late = std::execution::sync_wait(cio::as_sender(
+    auto late = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, read_buffer)));
     RW_CHECK(!late.has_value());
     context.wait();
@@ -936,7 +937,7 @@ void check_destroy_context_from_completion(std::pmr::memory_resource* memory) {
         (void)!::write(pipe.write_end, "bye", 3);
     }};
 
-    auto result = std::execution::sync_wait(cio::as_sender(
+    auto result = forge::sync_wait(cio::as_sender(
         read_then_destroy(context, pipe.read_end, read_buffer)));
     writer.join();
 

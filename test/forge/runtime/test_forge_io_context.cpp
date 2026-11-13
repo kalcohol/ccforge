@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
 #include <forge/io.hpp>
@@ -118,7 +119,7 @@ struct io_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -167,7 +168,7 @@ struct typed_void_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -215,7 +216,7 @@ struct byte_size_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -229,7 +230,7 @@ struct self_destroying_typed_io_receiver {
     void set_value(std::size_t) && noexcept { context->destroy(); }
     void set_error(forge::io::error) && noexcept { context->destroy(); }
     void set_stopped() && noexcept { context->destroy(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct stop_env {
@@ -259,7 +260,7 @@ struct self_destroying_io_receiver {
     void set_value(std::size_t) && noexcept { context->destroy(); }
     void set_error(std::exception_ptr) && noexcept { context->destroy(); }
     void set_stopped() && noexcept { context->destroy(); }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct self_destroying_size_io_receiver {
@@ -300,7 +301,7 @@ struct self_destroying_size_io_receiver {
         context->destroy();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct context_destroying_receiver {
@@ -336,7 +337,7 @@ struct context_destroying_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 auto wait_done(const std::shared_ptr<io_state>& state) -> bool {
@@ -506,7 +507,7 @@ TEST(IoContextTest, ReadableCompletesWhenPipeHasData) {
     forge::io::context ctx;
 
     write_byte(pipe.second.get());
-    auto result = std::execution::sync_wait(ctx.readable(pipe.first.get()));
+    auto result = forge::sync_wait(ctx.readable(pipe.first.get()));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -683,7 +684,7 @@ TEST(IoContextTest, WritableCompletesForSocketpair) {
     auto sockets = make_socketpair();
     forge::io::context ctx;
 
-    auto result = std::execution::sync_wait(ctx.writable(sockets.first.get()));
+    auto result = forge::sync_wait(ctx.writable(sockets.first.get()));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -816,7 +817,7 @@ TEST(IoContextTest, AsyncReadSomeReturnsByteCountAndData) {
               static_cast<ssize_t>(sizeof(payload)));
 
     std::array<std::byte, sizeof(payload)> buffer{};
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_read_some(pipe.first.get(), std::span{buffer}));
 
     ASSERT_TRUE(result.has_value());
@@ -831,7 +832,7 @@ TEST(IoContextTest, AsyncReadSomeZeroLengthReturnsZero) {
     forge::io::context ctx;
 
     std::array<std::byte, 1> buffer{};
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_read_some(pipe.first.get(), std::span{buffer}.first(0)));
 
     ASSERT_TRUE(result.has_value());
@@ -862,7 +863,7 @@ TEST(IoContextTest, AsyncReadSomeReturnsZeroAtEof) {
 
     forge::io::context ctx;
     std::array<std::byte, 1> buffer{};
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_read_some(pipe.first.get(), std::span{buffer}));
 
     ASSERT_TRUE(result.has_value());
@@ -890,7 +891,7 @@ TEST(IoContextTest, ReadinessToSyscallRaceSurfacesWouldBlock) {
                 });
 
     try {
-        (void)std::execution::sync_wait(std::move(work));
+        (void)forge::sync_wait(std::move(work));
         FAIL() << "expected second read to report would-block";
     } catch (const std::system_error& e) {
         const std::error_code expected{EAGAIN, std::generic_category()};
@@ -903,7 +904,7 @@ TEST(IoContextTest, AsyncWriteSomeReturnsByteCountAndData) {
     forge::io::context ctx;
     std::array<char, 3> payload{'x', 'y', 'z'};
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_write_some(
             pipe.second.get(),
             std::as_bytes(std::span{payload})));
@@ -924,7 +925,7 @@ TEST(IoContextTest, AsyncWriteSomeBrokenPipeReportsErrorWithoutSignal) {
     std::array<std::byte, 1> payload{std::byte{'x'}};
 
     try {
-        (void)std::execution::sync_wait(
+        (void)forge::sync_wait(
             ctx.async_write_some(pipe.second.get(), std::span{payload}));
         FAIL() << "expected a broken-pipe error";
     } catch (const std::system_error& error) {
@@ -939,7 +940,7 @@ TEST(IoContextTest, AsyncWriteSomeZeroLengthDoesNotWaitForReadiness) {
     forge::io::context ctx;
 
     std::array<std::byte, 1> payload{};
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         ctx.async_write_some(
             sockets.first.get(),
             std::span<const std::byte>{payload}.first(0)));
@@ -1205,7 +1206,7 @@ TEST(IoContextTest, WaitBlocksUntilRequestStopCallbackReturns) {
             cv->notify_all();
         }
 
-        auto get_env() const noexcept -> std::execution::empty_env {
+        auto get_env() const noexcept -> forge::empty_env {
             return {};
         }
     };
@@ -1294,7 +1295,7 @@ TEST(IoContextTest, PollerWaitDoesNotConsumeExternalJoinBarrier) {
 
         void set_error(std::exception_ptr) && noexcept {}
         void set_stopped() && noexcept {}
-        auto get_env() const noexcept -> std::execution::empty_env {
+        auto get_env() const noexcept -> forge::empty_env {
             return {};
         }
     };
@@ -1467,7 +1468,7 @@ TEST(IoContextTest, PostEnqueueReceiverStopCompletesPendingReadable) {
     EXPECT_FALSE(state->error);
 
     write_byte(pipe.second.get());
-    auto result = std::execution::sync_wait(ctx.readable(pipe.first.get()));
+    auto result = forge::sync_wait(ctx.readable(pipe.first.get()));
     EXPECT_TRUE(result.has_value());
 }
 
@@ -1496,7 +1497,7 @@ TEST(IoContextTest, InvalidFdCompletesWithError) {
     forge::io::context ctx;
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(ctx.readable(-1)),
+        (void)forge::sync_wait(ctx.readable(-1)),
         std::system_error);
 }
 

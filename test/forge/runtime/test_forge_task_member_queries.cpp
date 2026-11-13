@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/task.hpp>
 #include <execution>
@@ -15,9 +16,9 @@ auto stopped_task() -> forge::task<int> {
 }
 }
 TEST(TaskMemberQueriesTest, ValueAndStoppedSurviveStrictDispatch) {
-    auto value = std::execution::sync_wait(value_task());
+    auto value = forge::sync_wait(value_task());
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(std::get<0>(*value), 42);
-    EXPECT_FALSE(std::execution::sync_wait(stopped_task()).has_value());
+    EXPECT_FALSE(forge::sync_wait(stopped_task()).has_value());
 }
 #endif

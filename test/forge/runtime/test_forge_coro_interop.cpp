@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/erased_sender.hpp>
@@ -63,7 +64,7 @@ struct borrowed_error_sender {
         -> std::execution::completion_signatures<
             std::execution::set_error_t(const throwing_copy_error&)> { return {}; }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct operation {
@@ -339,7 +340,7 @@ struct lifetime_receiver {
         std::terminate();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -373,7 +374,7 @@ struct self_destroying_task_receiver {
         std::terminate();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -556,7 +557,7 @@ struct stop_wait_sender {
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -664,7 +665,7 @@ struct gated_async_sender {
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -707,7 +708,7 @@ struct inline_probe_sender {
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -745,7 +746,7 @@ struct stop_probe_sender {
         return {};
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -984,7 +985,7 @@ auto ordered_suspended_chain(std::vector<int>* order, int depth)
 } // namespace
 
 TEST(ForgeCoroInteropTest, AwaitSenderConsumesJust) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_just_task()));
 
     ASSERT_TRUE(result.has_value());
@@ -1021,20 +1022,20 @@ TEST(ForgeCoroInteropTest, AwaitSenderSchedulesOnExecutorRef) {
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesError) {
-    EXPECT_THROW((void)std::execution::sync_wait(
+    EXPECT_THROW((void)forge::sync_wait(
                      cio::as_sender(await_error_task())),
                  interop_marker_error);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPropagatesStopped) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_stopped_task()));
 
     EXPECT_FALSE(result.has_value());
 }
 
 TEST(ForgeCoroInteropTest, AwaitingMovedFromChildReportsError) {
-    EXPECT_THROW((void)std::execution::sync_wait(
+    EXPECT_THROW((void)forge::sync_wait(
                      cio::as_sender(await_moved_from_child_task())),
                  std::logic_error);
 }
@@ -1044,13 +1045,13 @@ TEST(ForgeCoroInteropTest, MovedFromTaskSenderReportsError) {
     auto moved = std::move(task);
     (void)moved;
 
-    EXPECT_THROW((void)std::execution::sync_wait(
+    EXPECT_THROW((void)forge::sync_wait(
                      cio::as_sender(std::move(task))),
                  std::logic_error);
 }
 
 TEST(ForgeCoroInteropTest, AwaitSenderPreservesMoveOnlyValue) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_move_only_task()));
 
     ASSERT_TRUE(result.has_value());
@@ -1062,7 +1063,7 @@ TEST(ForgeCoroInteropTest, AwaitSenderExposesIoEnvStopToken) {
     stop.request_stop();
     cio::io_env env;
     env.stop_token = stop.get_token();
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_stop_probe_task(), env));
 
     EXPECT_FALSE(result.has_value());
@@ -1181,14 +1182,14 @@ TEST(ForgeCoroInteropTest, AsSenderCompletesOnceWhenIoEnvAndReceiverStopRace) {
 }
 
 TEST(ForgeCoroInteropTest, AsSenderExposesVoidTask) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_void_task()));
 
     EXPECT_TRUE(result.has_value());
 }
 
 TEST(ForgeCoroInteropTest, AsSenderKeepsIoResultAsValue) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_io_result_task()));
 
     ASSERT_TRUE(result.has_value());
@@ -1206,7 +1207,7 @@ TEST(ForgeCoroInteropTest, AsSenderWorksAcrossErasedSenderBoundary) {
 
     forge::erased_sender<completions> erased{
         cio::as_sender(await_just_task())};
-    auto result = std::execution::sync_wait(std::move(erased));
+    auto result = forge::sync_wait(std::move(erased));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -1240,7 +1241,7 @@ TEST(ForgeCoroInteropTest, AwaitSenderCompletesAfterAsyncSuspension) {
 TEST(ForgeCoroInteropTest, InlineCompletionDoesNotRecursivelyResumeFromStart) {
     inline_probe_state probe;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_inline_probe_task(&probe)));
 
     ASSERT_TRUE(result.has_value());
@@ -1256,10 +1257,10 @@ TEST(ForgeCoroInteropTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
         forge_test::completion_agent_state state;
         auto sender = cio::as_sender(await_early_completion_io_task(&state, kind));
         if (kind == forge_test::completion_kind::error) {
-            EXPECT_THROW(std::execution::sync_wait(std::move(sender)),
+            EXPECT_THROW(forge::sync_wait(std::move(sender)),
                          forge_test::early_completion_error);
         } else {
-            auto result = std::execution::sync_wait(std::move(sender));
+            auto result = forge::sync_wait(std::move(sender));
             EXPECT_EQ(result.has_value(), kind == forge_test::completion_kind::value);
         }
         EXPECT_EQ(state.resumed_on, state.completed_on);
@@ -1269,7 +1270,7 @@ TEST(ForgeCoroInteropTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
 }
 
 TEST(ForgeCoroInteropTest, InitialTaskResumeCarriesLifetimeCredit) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(observe_initial_resume_credit_task()));
 
     ASSERT_TRUE(result.has_value());
@@ -1358,7 +1359,7 @@ TEST(ForgeCoroInteropTest, DirectAwaitableResumeCarriesLifetimeCredit) {
 }
 
 TEST(ForgeCoroInteropTest, ConnectFailureClearsPublishedBridgeSlot) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(observe_connect_failure_cleanup_task()));
 
     ASSERT_TRUE(result.has_value());
@@ -1531,7 +1532,7 @@ TEST(ForgeCoroInteropTest, ReceiverOutlivesCrossThreadTaskAbandonment) {
 TEST(ForgeCoroInteropTest, InlineChildTasksUseBoundedNativeStack) {
     constexpr int child_count = 2048;
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         cio::as_sender(await_inline_child_chain(child_count)));
 
     ASSERT_TRUE(result.has_value());
@@ -1646,7 +1647,7 @@ TEST(ForgeCoroInteropTest, AwaitSenderPropagatesAsyncStopped) {
 
 TEST(ForgeCoroInteropTest, AwaitSenderCapturesTypedErrorCopyFailure) {
     const throwing_copy_error error;
-    auto result = std::execution::sync_wait(cio::as_sender(catch_error_copy_failure(error)));
+    auto result = forge::sync_wait(cio::as_sender(catch_error_copy_failure(error)));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
 }

@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "forge_completion_agent.hpp"
 #include <forge/task.hpp>
@@ -68,7 +69,7 @@ struct pending_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -102,7 +103,7 @@ struct recording_receiver {
         completed->store(true, std::memory_order_release);
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -138,7 +139,7 @@ struct error_category_receiver {
         state->completed = true;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -272,7 +273,7 @@ struct throwing_connect_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -311,7 +312,7 @@ struct inline_completion_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -434,13 +435,13 @@ forge::task<void> await_scope_join_record_thread_task(
 
 TEST(TaskTest, IntTask) {
     auto t = simple_task();
-    auto result = std::execution::sync_wait(std::move(t));
+    auto result = forge::sync_wait(std::move(t));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(TaskTest, CoAwaitJustStillWorks) {
-    auto result = std::execution::sync_wait(await_just_task());
+    auto result = forge::sync_wait(await_just_task());
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
@@ -448,7 +449,7 @@ TEST(TaskTest, CoAwaitJustStillWorks) {
 TEST(TaskTest, InlineSenderResumesAfterStartReturns) {
     inline_completion_state state;
 
-    auto result = std::execution::sync_wait(await_inline_completion_task(&state));
+    auto result = forge::sync_wait(await_inline_completion_task(&state));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(state.start_returned);
@@ -460,7 +461,7 @@ TEST(TaskTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
                       forge_test::completion_kind::error,
                       forge_test::completion_kind::stopped}) {
         forge_test::completion_agent_state state;
-        auto result = std::execution::sync_wait(
+        auto result = forge::sync_wait(
             await_early_completion_task(&state, kind));
         EXPECT_EQ(state.resumed_on, state.completed_on);
         EXPECT_NE(state.resumed_on, std::this_thread::get_id());
@@ -470,7 +471,7 @@ TEST(TaskTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
 }
 
 TEST(TaskTest, CoAwaitNonCopyableLvalueSenderRequiresMove) {
-    auto result = std::execution::sync_wait(await_move_only_lvalue_sender_task());
+    auto result = forge::sync_wait(await_move_only_lvalue_sender_task());
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 53);
 }
@@ -478,7 +479,7 @@ TEST(TaskTest, CoAwaitNonCopyableLvalueSenderRequiresMove) {
 TEST(TaskTest, VoidTask) {
     int val = 0;
     auto t = void_task(&val);
-    std::execution::sync_wait(std::move(t));
+    forge::sync_wait(std::move(t));
     EXPECT_EQ(val, 77);
 }
 
@@ -492,7 +493,7 @@ TEST(TaskTest, CoAwaitRunLoopSuspendsUntilLoopRuns) {
     auto task = await_run_loop_task(loop.get_scheduler(), &phase);
     std::thread waiter{[&] {
         try {
-            result = std::execution::sync_wait(std::move(task));
+            result = forge::sync_wait(std::move(task));
             completed.store(true, std::memory_order_release);
         } catch (...) {
             failure = std::current_exception();
@@ -523,7 +524,7 @@ TEST(TaskTest, CoAwaitRunLoopSuspendsUntilLoopRuns) {
 TEST(TaskTest, CoAwaitStaticThreadPoolResumesAsynchronously) {
     forge::static_thread_pool pool{1};
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         await_thread_pool_task(pool.get_scheduler()));
     pool.wait();
 
@@ -536,10 +537,10 @@ TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
     std::inplace_stop_source source;
     source.request_stop();
     auto env = std::execution::make_env(
-        std::execution::make_prop(
+        std::execution::prop(
             std::execution::get_stop_token_t{}, source.get_token()));
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::write_env(
             await_thread_pool_task(pool.get_scheduler()), env));
     pool.wait();
@@ -568,16 +569,16 @@ TEST(TaskTest, ConnectingMovedFromTaskThrows) {
     auto live = std::move(empty);
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(std::move(empty)),
+        (void)forge::sync_wait(std::move(empty)),
         std::logic_error);
 
-    auto result = std::execution::sync_wait(std::move(live));
+    auto result = forge::sync_wait(std::move(live));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(TaskTest, CoAwaitErrorPropagates) {
-    EXPECT_THROW((void)std::execution::sync_wait(await_error_task()), task_marker_error);
+    EXPECT_THROW((void)forge::sync_wait(await_error_task()), task_marker_error);
 }
 
 TEST(TaskTest, ValueTaskDeliversStoredErrorAsRvalue) {
@@ -607,21 +608,21 @@ TEST(TaskTest, VoidTaskDeliversStoredErrorAsRvalue) {
 }
 
 TEST(TaskTest, CoAwaitStoppedPropagates) {
-    auto result = std::execution::sync_wait(await_stopped_task());
+    auto result = forge::sync_wait(await_stopped_task());
 
     EXPECT_FALSE(result.has_value());
 }
 
 TEST(TaskTest, CoAwaitThrowingConnectPropagatesException) {
     EXPECT_THROW(
-        (void)std::execution::sync_wait(await_throwing_connect_task()),
+        (void)forge::sync_wait(await_throwing_connect_task()),
         std::runtime_error);
 }
 
 TEST(TaskTest, CoAwaitDrainedScopeJoinCompletesInsideTask) {
     std::execution::simple_counting_scope scope;
 
-    auto result = std::execution::sync_wait(await_scope_join_task(&scope));
+    auto result = forge::sync_wait(await_scope_join_task(&scope));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), std::this_thread::get_id());
@@ -644,7 +645,7 @@ TEST(TaskTest, CoAwaitPendingScopeJoinResumesOnStartScheduler) {
     // scheduler; the task forwards it, so join's completion must hop back
     // onto the loop drained by this thread instead of resuming the
     // coroutine on the releasing thread.
-    auto result = std::execution::sync_wait(await_scope_join_task(&scope));
+    auto result = forge::sync_wait(await_scope_join_task(&scope));
     releaser.join();
 
     ASSERT_TRUE(result.has_value());
@@ -693,12 +694,12 @@ TEST(TaskTest, ThrowingMoveResultRoutesToErrorChannel) {
     // Allowance 1: the move into the promise variant succeeds, the move
     // inside sync_wait's receiver throws and lands in the error channel.
     EXPECT_THROW(
-        (void)std::execution::sync_wait(make(1)),
+        (void)forge::sync_wait(make(1)),
         task_marker_error);
 
     // A generous allowance completes normally, proving task<T> accepts and
     // delivers potentially-throwing-move result types.
-    auto result = std::execution::sync_wait(make(8));
+    auto result = forge::sync_wait(make(8));
     ASSERT_TRUE(result.has_value());
     EXPECT_GE(std::get<0>(*result).moves_allowed, 0);
 }

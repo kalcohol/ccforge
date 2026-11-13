@@ -21,10 +21,11 @@
 // SOFTWARE.
 
 // Demonstrates: when_all, cached split, bulk and scoped spawn; backport-only spelling
-// Key APIs: std::execution::when_all, std::execution::just, std::execution::split, std::execution::then
+// Key APIs: std::execution::when_all, std::execution::just, forge::split, std::execution::then
 // Requires: injected backport only; backport-only spelling; C++23
 // See also: docs/backports/execution.md
 
+#include <forge/execution_extensions.hpp>
 #include <execution>
 #include "example_support.hpp"
 #include <tuple>
@@ -41,7 +42,7 @@ int main() {
     forge_example::require(b > 3.0);
 
     // split: reuse a single sender result
-    auto shared = ex::split(ex::just(100) | ex::then([](int x) { return x * 2; }));
+    auto shared = forge::split(ex::just(100) | ex::then([](int x) { return x * 2; }));
     auto first_shared = std::this_thread::sync_wait(shared);
     auto second_shared = std::this_thread::sync_wait(shared);
     forge_example::require(first_shared.has_value());

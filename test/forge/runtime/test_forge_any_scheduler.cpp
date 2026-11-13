@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/any_scheduler.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -80,7 +81,7 @@ struct self_destroying_schedule_receiver {
         context->destroy();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct stop_aware_schedule_receiver {
@@ -127,7 +128,7 @@ struct error_category_receiver {
         *selected_overload = -1;
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 } // namespace
@@ -143,7 +144,7 @@ TEST(AnySchedulerTest, EmptyScheduleCompletesWithError) {
     forge::any_scheduler scheduler;
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(std::execution::schedule(scheduler)),
+        (void)forge::sync_wait(std::execution::schedule(scheduler)),
         std::runtime_error);
 }
 
@@ -163,7 +164,7 @@ TEST(AnySchedulerTest, WrappedThreadPoolSchedulerRunsWork) {
     forge::static_thread_pool pool{1};
     forge::any_scheduler scheduler{pool.get_scheduler()};
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::schedule(scheduler)
         | std::execution::then([] { return 42; }));
 
@@ -180,7 +181,7 @@ TEST(AnySchedulerTest, CopyAndMoveShareIdentity) {
     EXPECT_FALSE(bool(scheduler));
     EXPECT_TRUE(copied == moved);
 
-    auto result = std::execution::sync_wait(std::execution::schedule(copied));
+    auto result = forge::sync_wait(std::execution::schedule(copied));
     EXPECT_TRUE(result.has_value());
 }
 
@@ -198,7 +199,7 @@ TEST(AnySchedulerTest, ShutdownUnderlyingPoolCompletesStopped) {
     forge::any_scheduler scheduler{pool.get_scheduler()};
     pool.shutdown();
 
-    auto result = std::execution::sync_wait(std::execution::schedule(scheduler));
+    auto result = forge::sync_wait(std::execution::schedule(scheduler));
 
     EXPECT_FALSE(result.has_value());
 }
@@ -233,7 +234,7 @@ TEST(AnySchedulerTest, TrackingSchedulerLifetimeIsShared) {
         EXPECT_EQ(counts->copied, 1);
         EXPECT_TRUE(erased == copied);
 
-        auto result = std::execution::sync_wait(std::execution::schedule(copied));
+        auto result = forge::sync_wait(std::execution::schedule(copied));
         EXPECT_TRUE(result.has_value());
     }
 

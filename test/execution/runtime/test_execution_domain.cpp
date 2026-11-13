@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <cstddef>
@@ -27,7 +28,7 @@ struct transformed_env_query_t {
 
 inline constexpr transformed_env_query_t transformed_env_query{};
 
-template<class Env = std::execution::empty_env>
+template<class Env = forge::empty_env>
 struct int_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -77,7 +78,7 @@ struct direct_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -151,14 +152,14 @@ struct envless_completion_attrs {
 struct explicit_void_completion_attrs : value_completion_attrs {
     using value_completion_attrs::query;
     auto query(std::execution::get_completion_domain_t<>,
-               const std::execution::empty_env&) const
+               const forge::empty_env&) const
         -> std::execution::default_domain { throw 42; }
 };
 
 struct invalid_void_completion_attrs : value_completion_attrs {
     using value_completion_attrs::query;
     void query(std::execution::get_completion_domain_t<>,
-               const std::execution::empty_env&) const noexcept {}
+               const forge::empty_env&) const noexcept {}
 };
 
 struct completion_domain_scheduler;
@@ -276,7 +277,7 @@ concept has_domain_query = requires(const Env& env) {
 template<class Attrs>
 concept has_completion_domain_query = requires(const Attrs& attrs) {
     std::execution::get_completion_domain<>(
-        attrs, std::execution::empty_env{});
+        attrs, forge::empty_env{});
 };
 
 static_assert(!has_domain_query<non_default_domain_env>);
@@ -321,7 +322,7 @@ struct transform_only_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -341,7 +342,7 @@ struct signature_source_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -355,7 +356,7 @@ struct signature_transformed_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -378,7 +379,7 @@ struct signature_domain_env {
 struct rawless_signature_source_sender {
     using sender_concept = std::execution::sender_t;
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -392,7 +393,7 @@ struct rawless_signature_transformed_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -511,7 +512,7 @@ struct env_observing_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -682,7 +683,7 @@ struct exact_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -827,7 +828,7 @@ concept can_apply_sender = requires(Domain domain, Tag tag, Sender&& sndr) {
 // Domain dispatch tests
 
 TEST(DefaultDomainTest, GetDomainFromEmptyEnv) {
-    std::execution::empty_env env{};
+    forge::empty_env env{};
     auto domain = std::execution::get_domain(env);
     static_assert(std::is_same_v<decltype(domain), std::execution::default_domain>);
     SUCCEED();
@@ -848,18 +849,18 @@ TEST(DefaultDomainTest, CompletionQuerySelectsTypeWithoutEvaluatingQueryValue) {
     runtime_completion_domain_attrs::calls = 0;
 
     auto domain = std::execution::get_completion_domain<>(
-        runtime_completion_domain_attrs{}, std::execution::empty_env{});
+        runtime_completion_domain_attrs{}, forge::empty_env{});
 
     static_assert(noexcept(std::execution::get_completion_domain<>(
         std::declval<const runtime_completion_domain_attrs&>(),
-        std::execution::empty_env{})));
+        forge::empty_env{})));
     EXPECT_EQ(runtime_completion_domain_attrs::calls, 0);
     EXPECT_EQ(domain.identity, 17);
 }
 
 TEST(CompletionDomainTest, VoidTagFallsBackToValueTag) {
     EXPECT_TRUE((completion_domain_is<void, queried_domain,
-        value_completion_attrs, std::execution::empty_env>));
+        value_completion_attrs, forge::empty_env>));
 }
 
 TEST(CompletionDomainTest, SupportsEnvlessQueriesAndTheirFallback) {
@@ -868,35 +869,35 @@ TEST(CompletionDomainTest, SupportsEnvlessQueriesAndTheirFallback) {
     EXPECT_TRUE((completion_domain_is<void, queried_domain,
         envless_completion_attrs>));
     EXPECT_TRUE((completion_domain_is<void, queried_domain,
-        envless_completion_attrs, std::execution::empty_env>));
+        envless_completion_attrs, forge::empty_env>));
 }
 
 TEST(CompletionDomainTest, FallsBackThroughCompletionScheduler) {
     EXPECT_TRUE((completion_domain_is<void, queried_domain,
         completion_domain_schedule_sender::attributes,
-        std::execution::empty_env>));
+        forge::empty_env>));
 }
 
 TEST(CompletionDomainTest, DefaultDomainRequiresSchedulerAndEnvironment) {
     EXPECT_TRUE((completion_domain_is<void, std::execution::default_domain,
-        std::execution::inline_scheduler, std::execution::empty_env>));
+        std::execution::inline_scheduler, forge::empty_env>));
     EXPECT_FALSE((completion_domain_is<void, std::execution::default_domain,
         std::execution::inline_scheduler>));
     EXPECT_FALSE((completion_domain_is<void, std::execution::default_domain,
-        std::execution::empty_env, std::execution::empty_env>));
+        forge::empty_env, forge::empty_env>));
     EXPECT_FALSE((completion_domain_is<int, queried_domain,
-        value_completion_attrs, std::execution::empty_env>));
+        value_completion_attrs, forge::empty_env>));
 }
 
 TEST(CompletionDomainTest, FallbackDoesNotEvaluateQueriesOrOverrideDirectVoidTag) {
     value_completion_attrs::calls = 0;
     envless_completion_attrs::calls = 0;
     auto value_domain = std::execution::get_completion_domain<>(
-        value_completion_attrs{}, std::execution::empty_env{});
+        value_completion_attrs{}, forge::empty_env{});
     auto envless_domain = std::execution::get_completion_domain<>(
         envless_completion_attrs{});
     auto explicit_domain = std::execution::get_completion_domain<>(
-        explicit_void_completion_attrs{}, std::execution::empty_env{});
+        explicit_void_completion_attrs{}, forge::empty_env{});
     static_assert(std::same_as<decltype(explicit_domain),
         std::execution::default_domain>);
     EXPECT_EQ(value_domain.identity, queried_domain{}.identity);
@@ -904,7 +905,7 @@ TEST(CompletionDomainTest, FallbackDoesNotEvaluateQueriesOrOverrideDirectVoidTag
     EXPECT_EQ(value_completion_attrs::calls, 0);
     EXPECT_EQ(envless_completion_attrs::calls, 0);
     EXPECT_FALSE((completion_domain_is<void, queried_domain,
-        invalid_void_completion_attrs, std::execution::empty_env>));
+        invalid_void_completion_attrs, forge::empty_env>));
 }
 
 TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
@@ -916,7 +917,7 @@ TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
         completion_domain_scheduler{},
         std::execution::read_env(std::execution::get_domain));
     using signatures = std::execution::completion_signatures_of_t<
-        decltype(sndr), std::execution::empty_env>;
+        decltype(sndr), forge::empty_env>;
     static_assert(std::same_as<signatures,
         std::execution::completion_signatures<
             std::execution::set_value_t(queried_domain)>>);
@@ -937,7 +938,7 @@ TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
 
 TEST(CompletionDomainTest, FirstFormOnChildUsesSchedulerCompletionDomain) {
     value_completion_attrs::calls = 0;
-    auto env = std::execution::make_prop(
+    auto env = std::execution::prop(
         std::execution::get_start_scheduler, std::execution::inline_scheduler{});
     int value = 0;
     bool completed = false;
@@ -998,7 +999,7 @@ TEST(CompletionDomainTest, NestedLetUsesItsOwnCompletionSchedulerDomain) {
 TEST(CompletionDomainTest, StartsOnAndLetPreserveDirectSchedulerDomainPriority) {
     explicit_domain_scheduler::domain_queries = 0;
     value_completion_attrs::calls = 0;
-    auto env = std::execution::make_prop(std::execution::get_domain, queried_domain{});
+    auto env = std::execution::prop(std::execution::get_domain, queried_domain{});
     auto check = [&env](auto child) {
         int value = 0;
         bool completed = false;
@@ -1034,7 +1035,7 @@ TEST(CompletionDomainTest, DefaultSchedulerDoesNotSynthesizeDomainOverride) {
     EXPECT_TRUE(completed);
     EXPECT_EQ(value, 1);
 
-    auto env = std::execution::make_prop(std::execution::get_domain, queried_domain{});
+    auto env = std::execution::prop(std::execution::get_domain, queried_domain{});
     value = 0;
     completed = false;
     auto inherited_op = std::execution::connect(
@@ -1049,7 +1050,7 @@ TEST(CompletionDomainTest, DefaultSchedulerDoesNotSynthesizeDomainOverride) {
 
 TEST(DefaultDomainTest, TransformSenderIsIdentity) {
     auto sndr = std::execution::just(42);
-    std::execution::empty_env env{};
+    forge::empty_env env{};
     std::execution::default_domain domain{};
     auto& result = domain.transform_sender(sndr, env);
     static_assert(std::same_as<
@@ -1064,7 +1065,7 @@ TEST(DefaultDomainTest, PublicTransformUsesSenderTagCustomization) {
     public_transform_tag::transformed = false;
 
     auto transformed = std::execution::transform_sender(
-        sender_tag_transform_source{}, std::execution::empty_env{});
+        sender_tag_transform_source{}, forge::empty_env{});
 
     static_assert(std::same_as<decltype(transformed), transformed_sender>);
     EXPECT_TRUE(public_transform_tag::transformed);
@@ -1088,7 +1089,7 @@ TEST(DefaultDomainTest, ExplicitEnvSignaturesUseSenderTagCustomization) {
     using raw_cs = std::execution::completion_signatures_of_t<
         sender_tag_signature_source>;
     using transformed_cs = std::execution::completion_signatures_of_t<
-        sender_tag_signature_source, std::execution::empty_env>;
+        sender_tag_signature_source, forge::empty_env>;
     static_assert(std::same_as<raw_cs, std::execution::completion_signatures<
         std::execution::set_value_t(int),
         std::execution::set_error_t(std::exception_ptr)>>);
@@ -1129,7 +1130,7 @@ TEST(DefaultDomainTest, PublicTransformRunsCompletionThenStartRecursion) {
     recursive_start_domain::second = false;
 
     auto completion_transformed = std::execution::transform_sender(
-        completion_domain_source{}, std::execution::empty_env{});
+        completion_domain_source{}, forge::empty_env{});
     auto start_transformed = std::execution::transform_sender(
         start_seed_sender{}, recursive_start_domain_env{});
 
@@ -1327,7 +1328,7 @@ TEST(DefaultDomainTest, ExplicitEmptyEnvUsesCompletionDomainTransform) {
         explicit_empty_signature_source>;
     using transformed_cs_t = std::execution::completion_signatures_of_t<
         explicit_empty_signature_source,
-        std::execution::empty_env>;
+        forge::empty_env>;
 
     static_assert(std::is_same_v<
         raw_cs_t,

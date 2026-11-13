@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <forge/erased_sender.hpp>
 #include <forge/execution.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -20,7 +21,7 @@ struct error_code_receiver {
     }
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -35,7 +36,7 @@ struct error_code_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 

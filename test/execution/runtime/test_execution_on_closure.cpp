@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -161,10 +162,10 @@ void check_category() {
     EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(ex::get_env(sender)),
         ex::inline_scheduler{});
 
-    using cs_t = ex::completion_signatures_of_t<decltype(sender), ex::empty_env>;
+    using cs_t = ex::completion_signatures_of_t<decltype(sender), forge::empty_env>;
     static_assert(std::same_as<cs_t, ex::completion_signatures<
         ex::set_value_t(int), ex::set_error_t(std::exception_ptr)>>);
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(state.applications, 1);
@@ -173,7 +174,7 @@ void check_category() {
 
 template<class S>
 void expect_value(S sender, int expected = 42) {
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected);
 }

@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <type_traits>
@@ -49,7 +50,7 @@ forge::task<int> await_error_code_sender() {
 
 TEST(CoroutineBridgeTest, ErrorCodeCompletionBecomesSystemError) {
     try {
-        (void)std::execution::sync_wait(await_error_code_sender());
+        (void)forge::sync_wait(await_error_code_sender());
         FAIL() << "Expected a system_error completion";
     } catch (const std::system_error& error) {
         EXPECT_EQ(error.code(), std::make_error_code(std::errc::invalid_argument));
@@ -123,7 +124,7 @@ struct sender_awaiter {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
     bool await_ready() const noexcept { return true; }
     void await_suspend(std::coroutine_handle<>) const noexcept {}
     int await_resume() const noexcept { return 23; }
@@ -139,7 +140,7 @@ struct member_co_await_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
     auto operator co_await() && noexcept -> immediate_value_awaiter<29> {
         return {};
     }
@@ -155,7 +156,7 @@ struct free_co_await_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 auto operator co_await(free_co_await_sender&&) noexcept
@@ -173,7 +174,7 @@ struct member_as_awaitable_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class Promise>
     auto as_awaitable(Promise&) && noexcept -> immediate_value_awaiter<37> {
@@ -349,7 +350,7 @@ struct multi_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -388,7 +389,7 @@ struct empty_or_int_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
@@ -638,10 +639,10 @@ forge::task<void> stopped_void_task() {
 }
 
 TEST(CoroutineBridgeTest, ForgeTaskPropagatesStoppedCompletion) {
-    auto int_result = std::execution::sync_wait(stopped_int_task());
+    auto int_result = forge::sync_wait(stopped_int_task());
     EXPECT_FALSE(int_result.has_value());
 
-    auto void_result = std::execution::sync_wait(stopped_void_task());
+    auto void_result = forge::sync_wait(stopped_void_task());
     EXPECT_FALSE(void_result.has_value());
 }
 #endif

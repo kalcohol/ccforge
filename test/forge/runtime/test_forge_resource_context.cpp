@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include <forge/resource_context.hpp>
@@ -32,7 +33,7 @@ struct stop_probe_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<class R>
     struct op {
@@ -94,7 +95,7 @@ struct resource_timer_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -106,7 +107,7 @@ static_assert(std::execution::scheduler<forge::resource_context::scheduler>);
 TEST(ResourceContextTest, SchedulerWorkRuns) {
     forge::resource_context ctx{1};
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([] { return 42; }));
 
@@ -194,7 +195,7 @@ TEST(ResourceContextTest, OptionsConstructorForwardsResourceToAsyncScope) {
 TEST(ResourceContextTest, TimerWorkRuns) {
     forge::resource_context ctx{1};
 
-    auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+    auto result = forge::sync_wait(ctx.schedule_after(0ms));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -363,17 +364,17 @@ TEST(ResourceContextTest, FakeCommandLoopExitsWhenCommandChannelCloses) {
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([&] noexcept {
             while (true) {
-                auto command = std::execution::sync_wait(commands.async_recv());
+                auto command = forge::sync_wait(commands.async_recv());
                 if (!command) {
                     break;
                 }
-                (void)std::execution::sync_wait(
+                (void)forge::sync_wait(
                     events.async_send(std::get<0>(*command) + 1));
             }
         })));
 
-    ASSERT_TRUE(std::execution::sync_wait(commands.async_send(41)).has_value());
-    auto event = std::execution::sync_wait(events.async_recv());
+    ASSERT_TRUE(forge::sync_wait(commands.async_send(41)).has_value());
+    auto event = forge::sync_wait(events.async_recv());
     ASSERT_TRUE(event.has_value());
     EXPECT_EQ(std::get<0>(*event), 42);
 

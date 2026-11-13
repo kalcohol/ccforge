@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -257,7 +258,7 @@ struct synchronous_sender {
         return op<R>{state, std::move(r)};
     }
 
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 template<adaptor_kind Kind, bool Nothrow = false, class S>
@@ -335,7 +336,7 @@ TYPED_TEST(ThrowingMoveAdaptors, RvalueAndCopyableLvalueConnect) {
         probe state;
         {
             auto sndr = make_sender<kind, true>(state);
-            using cs = ex::completion_signatures_of_t<decltype(sndr), ex::empty_env>;
+            using cs = ex::completion_signatures_of_t<decltype(sndr), forge::empty_env>;
             if constexpr (kind == adaptor_kind::stopped_as_error) {
                 static_assert(std::is_same_v<cs, ex::completion_signatures<
                     ex::set_error_t(payload<kind, true>)>>);

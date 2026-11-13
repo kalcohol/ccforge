@@ -1,5 +1,6 @@
 #pragma once
 
+#include <forge/execution_extensions.hpp>
 #include <execution>
 
 #include <array>
@@ -93,7 +94,7 @@ struct literal_source {
     using sender_concept = ex::sender_t;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     int value;
-    constexpr ex::empty_env get_env() const noexcept { return {}; }
+    constexpr forge::empty_env get_env() const noexcept { return {}; }
 };
 
 struct forwarding_identity {

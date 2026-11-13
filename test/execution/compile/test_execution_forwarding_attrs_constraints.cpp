@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include "../forwarding_attrs_probe.hpp"
 
 #include <concepts>
@@ -96,7 +97,7 @@ void check_queries() {
     using domain_query = ex::get_completion_domain_t<>;
     static_assert(queryable_both<Env, domain_query, receiver_env>);
     static_assert(unavailable_both<Env, domain_query>);
-    static_assert(unavailable_both<Env, domain_query, ex::empty_env>);
+    static_assert(unavailable_both<Env, domain_query, forge::empty_env>);
     static_assert(std::same_as<decltype(std::declval<const Env&>().query(
         domain_query{}, receiver_env{})), member_domain>);
     static_assert(!noexcept(std::declval<const Env&>().query(domain_query{}, receiver_env{})));
@@ -106,12 +107,12 @@ void check_queries() {
         member_domain>);
     static_assert(std::is_nothrow_invocable_v<domain_query, const Env&, receiver_env>);
     static_assert(!std::is_invocable_v<domain_query, const Env&>);
-    static_assert(!std::is_invocable_v<domain_query, const Env&, ex::empty_env>);
+    static_assert(!std::is_invocable_v<domain_query, const Env&, forge::empty_env>);
 
     using value_domain_query = ex::get_completion_domain_t<ex::set_value_t>;
     static_assert(queryable_both<Env, value_domain_query, receiver_env>);
     static_assert(unavailable_both<Env, value_domain_query>);
-    static_assert(unavailable_both<Env, value_domain_query, ex::empty_env>);
+    static_assert(unavailable_both<Env, value_domain_query, forge::empty_env>);
     static_assert(std::same_as<decltype(std::declval<const Env&>().query(
         value_domain_query{}, receiver_env{})), tag_domain>);
     static_assert(noexcept(std::declval<const Env&>().query(value_domain_query{}, receiver_env{})));

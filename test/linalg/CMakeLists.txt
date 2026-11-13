@@ -56,6 +56,23 @@ check_cxx_source_compiles("
 " FORGE_LINALG_HAS_MDSPAN_HEADER)
 
 if(FORGE_LINALG_HAS_MDSPAN_HEADER)
+    # Extension compatibility requires actual base mdspan and the backport.
+    if(FORGE_FORCE_LINALG_BACKPORT
+            OR (NOT FORGE_LINALG_FULL AND NOT FORGE_LINALG_PARTIAL))
+        forge_add_linalg_compile_probe(
+            test_linalg_extension_compat
+            test_linalg_extension_compat.cpp
+            linalg_extension_compat_compile)
+        add_test(NAME linalg_extension_compat COMMAND test_linalg_extension_compat)
+        set_tests_properties(linalg_extension_compat PROPERTIES
+            DEPENDS linalg_extension_compat_compile
+            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+        if(MSVC)
+            target_compile_options(test_linalg_extension_compat PRIVATE /we4996)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(test_linalg_extension_compat PRIVATE -Werror=deprecated-declarations)
+        endif()
+    endif()
     forge_add_linalg_runtime_test(test_linalg_auxiliary test_linalg_auxiliary.cpp linalg_auxiliary)
     forge_add_linalg_runtime_test(test_linalg_level1 test_linalg_level1.cpp linalg_level1)
     forge_add_linalg_runtime_test(test_linalg_adl_helpers test_linalg_adl_helpers.cpp linalg_adl_helpers)

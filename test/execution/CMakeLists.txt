@@ -342,3 +342,24 @@ forge_add_execution_runtime_test(
     test_execution_spawn_future.cpp
     execution_spawn_future)
 forge_add_execution_runtime_test(test_execution_any_sender test_execution_any_sender.cpp execution_any_sender)
+
+forge_add_execution_compile_probe(
+    test_execution_extension_compat
+    test_execution_extension_compat.cpp
+    execution_extension_compat_compile)
+forge_add_execution_runtime_test(
+    test_execution_extensions
+    test_execution_extensions.cpp
+    execution_extensions)
+add_test(NAME execution_extension_compat COMMAND test_execution_extension_compat)
+set_tests_properties(execution_extension_compat PROPERTIES
+    DEPENDS execution_extension_compat_compile
+    TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+foreach(_forge_extension_test IN ITEMS
+        test_execution_extensions test_execution_extension_compat)
+    if(MSVC)
+        target_compile_options(${_forge_extension_test} PRIVATE /we4996)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${_forge_extension_test} PRIVATE -Werror=deprecated-declarations)
+    endif()
+endforeach()

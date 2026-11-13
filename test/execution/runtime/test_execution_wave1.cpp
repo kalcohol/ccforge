@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/start_detached.hpp>
 #include <execution>
@@ -57,7 +58,7 @@ struct throwing_value_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const throwing_value_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -96,7 +97,7 @@ struct scheduler_value_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -151,7 +152,7 @@ struct scheduler_value_receiver {
 
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_receiver& self) noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(std::execution::get_scheduler_t{}, self.expected));
+            std::execution::prop(std::execution::get_scheduler_t{}, self.expected));
     }
 };
 
@@ -171,7 +172,7 @@ struct throwing_connect_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R) && -> never_started_op<R> {
@@ -304,7 +305,7 @@ struct error_stopped_schedule_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) && -> error_stopped_schedule_op<R> {
@@ -353,7 +354,7 @@ struct affine_error_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::make_prop(
+        return std::execution::make_env(std::execution::prop(
             std::execution::get_start_scheduler_t{},
             error_stopped_scheduler{}));
     }
@@ -503,7 +504,7 @@ struct run_loop_value_only_receiver {
         loop->finish();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -515,7 +516,7 @@ TEST(RunLoopTest, UnstoppableEnvironmentOnlyRequiresValueCompletion) {
     bool completed = false;
     auto sender = std::execution::schedule(loop.get_scheduler());
     using signatures_t = std::execution::completion_signatures_of_t<
-        decltype(sender), std::execution::empty_env>;
+        decltype(sender), forge::empty_env>;
     static_assert(std::same_as<signatures_t,
         std::execution::completion_signatures<std::execution::set_value_t()>>);
     static_assert(std::execution::sender_to<
@@ -533,19 +534,19 @@ TEST(IntoVariantTest, WrapsValue) {
     auto sndr = std::execution::into_variant(std::execution::just(42));
     using var_t = std::variant<std::tuple<int>>;
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(var_t)>>);
 
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     auto& var = std::get<0>(*result);
     EXPECT_EQ(std::get<std::tuple<int>>(var), std::make_tuple(42));
 }
 
 TEST(IntoVariantTest, SupportsPipeForm) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::just(42) | std::execution::into_variant);
 
     ASSERT_TRUE(result.has_value());
@@ -557,18 +558,18 @@ TEST(IntoVariantTest, ReportsConstructionFailureAsError) {
     auto sndr = std::execution::into_variant(throwing_value_sender{});
     using var_t = std::variant<std::tuple<throwing_move_value>>;
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(var_t),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), std::runtime_error);
+    EXPECT_THROW(forge::sync_wait(std::move(sndr)), std::runtime_error);
 }
 
 TEST(IntoVariantTest, StoppedOnlySenderDoesNotInstantiateEmptyVariant) {
     auto sndr = std::execution::into_variant(std::execution::just_stopped());
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     EXPECT_FALSE(result.has_value());
 }
@@ -576,14 +577,14 @@ TEST(IntoVariantTest, StoppedOnlySenderDoesNotInstantiateEmptyVariant) {
 TEST(IntoVariantTest, ErrorOnlySenderDoesNotInstantiateEmptyVariant) {
     auto sndr = std::execution::into_variant(std::execution::just_error(42));
 
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
 }
 
 TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
     auto sndr = std::execution::into_variant(
         std::execution::just_error(std::exception_ptr{}));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -629,7 +630,7 @@ TEST(BulkTest, SerialExecution) {
               | std::execution::bulk(5, [&sum](int idx, int& v) {
                     sum += idx; v += idx;
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(sum, 0+1+2+3+4);
     EXPECT_EQ(std::get<0>(*result), 0+1+2+3+4);
@@ -679,7 +680,7 @@ TEST(StartsOnTest, SupportsMutableLvalueSchedule) {
         }));
     EXPECT_EQ(started, 0);
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -698,7 +699,7 @@ TEST(OnTest, SupportsMutableLvalueSchedule) {
         }));
     EXPECT_EQ(started, 0);
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -711,14 +712,14 @@ TEST(StartsOnTest, SourceConnectFailurePropagatesFromConnect) {
     auto sndr = std::execution::starts_on(sch, throwing_connect_sender{});
     using cs_t = std::execution::completion_signatures_of_t<
         decltype(sndr),
-        std::execution::empty_env>;
+        forge::empty_env>;
     static_assert(std::is_same_v<
         cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t()>>);
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(std::move(sndr)),
+        (void)forge::sync_wait(std::move(sndr)),
         std::runtime_error);
 }
 
@@ -727,7 +728,7 @@ TEST(StartsOnTest, DeclaresOnlySchedulerErrors) {
         error_stopped_scheduler{},
         std::execution::just(42));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -736,7 +737,7 @@ TEST(StartsOnTest, DeclaresOnlySchedulerErrors) {
             std::execution::set_stopped_t()>>);
 
     try {
-        (void)std::execution::sync_wait(std::move(sndr));
+        (void)forge::sync_wait(std::move(sndr));
         FAIL() << "expected scheduler set_error(int) to propagate";
     } catch (int value) {
         EXPECT_EQ(value, 17);
@@ -763,7 +764,7 @@ TEST(ContinuesOnTest, TransfersToScheduler) {
     auto sndr = std::execution::continues_on(
                   std::execution::just(42) | std::execution::then([&result](int x) { result = x; }),
                   sch);
-    std::execution::sync_wait(std::move(sndr));
+    forge::sync_wait(std::move(sndr));
 
     loop.finish();
     worker.join();
@@ -808,7 +809,7 @@ TEST(ContinuesOnTest, SupportsMutableLvalueSchedule) {
         std::execution::just(42),
         mutable_schedule_scheduler{});
 
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -822,13 +823,13 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
 
     auto domain = std::execution::get_completion_domain<>(
         attrs,
-        std::execution::empty_env{});
+        forge::empty_env{});
 
     EXPECT_EQ(domain.identity, 0);
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
         const decltype(attrs)&,
-        std::execution::empty_env>);
+        forge::empty_env>);
 }
 
 TEST(ContinuesOnTest, ReportsDestinationStoppedScheduler) {
@@ -862,7 +863,7 @@ TEST(CompletionDomainTest, SupportsMemberQueryProtocol) {
     auto domain = std::execution::get_completion_domain<
         std::execution::set_value_t>(
         member_completion_domain_env{43},
-        std::execution::empty_env{});
+        forge::empty_env{});
 
     EXPECT_EQ(domain.identity, 0);
 }
@@ -881,7 +882,7 @@ TEST(ContinuesOnTest, UsesMemberQueriedDestinationDomain) {
 
     auto domain = std::execution::get_completion_domain<>(
         attrs,
-        std::execution::empty_env{});
+        forge::empty_env{});
 
     EXPECT_EQ(domain.identity, 0);
 }
@@ -895,7 +896,7 @@ TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_domain_t<>,
         const decltype(attrs)&,
-        std::execution::empty_env>);
+        forge::empty_env>);
 }
 
 TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
@@ -904,7 +905,7 @@ TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
         throwing_scheduler{});
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(std::move(sndr)),
+        (void)forge::sync_wait(std::move(sndr)),
         std::runtime_error);
 }
 
@@ -919,14 +920,14 @@ TEST(LetValueTest, InnerSenderSeesChildCompletionScheduler) {
             return std::execution::read_env(
                 std::execution::get_start_scheduler);
         });
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     auto legacy_sender = std::execution::let_value(
         std::execution::schedule(child_scheduler),
         []() noexcept {
             return std::execution::read_env(std::execution::get_scheduler);
         });
-    auto legacy_result = std::execution::sync_wait(std::move(legacy_sender));
+    auto legacy_result = forge::sync_wait(std::move(legacy_sender));
 
     child_loop.finish();
     child_worker.join();
@@ -943,14 +944,14 @@ TEST(LetValueTest, InnerSenderSeesDefaultConstructedChildCompletionDomain) {
         []() noexcept {
             return std::execution::read_env(std::execution::get_domain);
         });
-    auto result = std::execution::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result).identity, 0);
 }
 
 TEST(LetValueTest, InvokesStoredFunctionAsRvalue) {
-    auto result = std::execution::sync_wait(std::execution::let_value(
+    auto result = forge::sync_wait(std::execution::let_value(
         std::execution::just(41),
         rvalue_only_let_fn{}));
 
@@ -963,7 +964,7 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
         std::execution::just(42),
         error_stopped_scheduler{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -973,7 +974,7 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
             std::execution::set_error_t(std::exception_ptr)>>);
 
     try {
-        (void)std::execution::sync_wait(std::move(sndr));
+        (void)forge::sync_wait(std::move(sndr));
         FAIL() << "expected scheduler set_error(int) to propagate";
     } catch (int value) {
         EXPECT_EQ(value, 17);
@@ -1008,7 +1009,7 @@ TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {
             std::execution::just(8),
             error_stopped_scheduler{}));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -1018,7 +1019,7 @@ TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {
             std::execution::set_error_t(std::exception_ptr)>>);
 
     try {
-        (void)std::execution::sync_wait(std::move(sndr));
+        (void)forge::sync_wait(std::move(sndr));
         FAIL() << "expected scheduler set_error(int) to propagate";
     } catch (int value) {
         EXPECT_EQ(value, 17);
@@ -1061,7 +1062,7 @@ TEST(ContinuesOnTest, TransfersErrorToScheduler) {
                         FAIL() << "unexpected scheduler error";
                     }
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     loop.finish();
     worker.join();
@@ -1085,7 +1086,7 @@ TEST(ContinuesOnTest, TransfersStoppedToScheduler) {
               | std::execution::upon_stopped([&] {
                     observed_id = std::this_thread::get_id();
                 });
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
 
     loop.finish();
     worker.join();

@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <atomic>
@@ -9,7 +10,7 @@
 namespace {
 
 auto inline_join_env() noexcept {
-    return std::execution::make_env(std::execution::make_prop(
+    return std::execution::make_env(std::execution::prop(
         std::execution::get_start_scheduler_t{},
         std::execution::inline_scheduler{}));
 }
@@ -42,7 +43,7 @@ struct chained_join_receiver {
 
     void set_value() && noexcept {
         completions->fetch_add(1, std::memory_order_acq_rel);
-        auto result = std::execution::sync_wait(scope->join());
+        auto result = forge::sync_wait(scope->join());
         if (result.has_value()) {
             completions->fetch_add(1, std::memory_order_acq_rel);
         }

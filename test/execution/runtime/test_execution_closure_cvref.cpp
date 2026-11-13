@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -138,7 +139,7 @@ void check_category(MakeClosure make_closure, MakeSource make_source,
     }
     EXPECT_EQ(state.calls, 0);
 
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected_value);
     EXPECT_EQ(state.calls, expected_calls);
@@ -159,7 +160,7 @@ void check_all_categories(MakeClosure make_closure, MakeSource make_source,
 
 template<class Sender>
 void expect_value(Sender sender, int expected = 42) {
-    auto result = ex::sync_wait(std::move(sender));
+    auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected);
 }

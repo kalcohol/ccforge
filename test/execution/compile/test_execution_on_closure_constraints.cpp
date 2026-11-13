@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <execution>
 
 #include <concepts>
@@ -165,7 +166,7 @@ static_assert(!noexcept(ex::on(ex::inline_scheduler{},
 
 struct constexpr_source {
     using sender_concept = ex::sender_t;
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 static_assert([] {

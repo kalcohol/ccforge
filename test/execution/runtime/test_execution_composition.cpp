@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include "../composition_probe.hpp"
@@ -77,8 +78,8 @@ TEST(ExecutionComposition, NestedClosuresRunLeftToRight) {
     auto closure = ex::then([](int value) noexcept { return value + 2; })
         | ex::then([](int value) noexcept { return value * 3; })
         | ex::then([](int value) noexcept { return value - 1; });
-    auto direct = ex::sync_wait(closure(ex::just(7)));
-    auto piped = ex::sync_wait(ex::just(7) | closure);
+    auto direct = forge::sync_wait(closure(ex::just(7)));
+    auto piped = forge::sync_wait(ex::just(7) | closure);
     ASSERT_TRUE(direct.has_value());
     ASSERT_TRUE(piped.has_value());
     EXPECT_EQ(std::get<0>(*direct), 26);
@@ -146,7 +147,7 @@ TEST(ExecutionComposition, MoveOnlyCapturesAndPayloadRemainUsableAsRvalues) {
         return *value * *factor;
     });
     auto closure = std::move(first) | std::move(second);
-    auto result = ex::sync_wait(ex::just(std::make_unique<int>(7)) | std::move(closure));
+    auto result = forge::sync_wait(ex::just(std::make_unique<int>(7)) | std::move(closure));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 27);
 }
@@ -154,12 +155,12 @@ TEST(ExecutionComposition, MoveOnlyCapturesAndPayloadRemainUsableAsRvalues) {
 TEST(ExecutionComposition, MixedErrorAndStoppedAdaptorsKeepTheirCompletionPaths) {
     auto error_closure = ex::upon_error([](int error) noexcept { return error + 1; })
         | ex::then([](int value) noexcept { return value * 2; });
-    auto error_result = ex::sync_wait(ex::just_error(7) | error_closure);
+    auto error_result = forge::sync_wait(ex::just_error(7) | error_closure);
     ASSERT_TRUE(error_result.has_value());
     EXPECT_EQ(std::get<0>(*error_result), 16);
     auto stopped_closure = ex::upon_stopped([]() noexcept { return 11; })
         | ex::let_value([](int value) { return ex::just(value + 1); });
-    auto stopped_result = ex::sync_wait(ex::just_stopped() | stopped_closure);
+    auto stopped_result = forge::sync_wait(ex::just_stopped() | stopped_closure);
     ASSERT_TRUE(stopped_result.has_value());
     EXPECT_EQ(std::get<0>(*stopped_result), 12);
 }
@@ -168,7 +169,7 @@ TEST(ExecutionComposition, SingleArgumentCposComposeWithBoundClosures) {
     auto closure = ex::then([](int value) noexcept { return value + 2; })
         | ex::into_variant | ex::stopped_as_optional
         | ex::then([](const auto& value) noexcept { return std::get<0>(std::get<0>(*value)) * 2; });
-    auto result = ex::sync_wait(ex::just(3) | closure);
+    auto result = forge::sync_wait(ex::just(3) | closure);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 10);
 }
@@ -178,7 +179,7 @@ TEST(ExecutionComposition, BulkCompositionKeepsNonpositiveShapesEmpty) {
         int calls = 0;
         auto closure = ex::bulk(shape, [&calls](int index, int& value) noexcept { ++calls; value += index; })
             | ex::then([](int value) noexcept { return value * 2; });
-        auto result = ex::sync_wait(ex::just(7) | closure);
+        auto result = forge::sync_wait(ex::just(7) | closure);
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), shape > 0 ? 20 : 14);
         EXPECT_EQ(calls, shape > 0 ? 3 : 0);
@@ -192,7 +193,7 @@ TEST(ExecutionComposition, AssociateCompositionDoesNotAcquireDuringBinding) {
     {
         auto sender = ex::just(7) | closure;
         EXPECT_EQ(scope.count(), 1u);
-        auto result = ex::sync_wait(std::move(sender));
+        auto result = forge::sync_wait(std::move(sender));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 9);
     }

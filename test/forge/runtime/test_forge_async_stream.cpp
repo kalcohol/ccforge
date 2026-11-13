@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <forge/io/async_stream.hpp>
@@ -262,7 +263,7 @@ struct completion_receiver {
     }
 
     [[nodiscard]] auto get_env() const noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -305,7 +306,7 @@ TEST(ForgeAsyncStreamTest, ImmediateAdapterTransfersReadAndWriteData) {
             cio::memory_read_stream{std::string_view{input}}}};
     std::array<char, 5> read_output{};
 
-    auto read_completion = std::execution::sync_wait(
+    auto read_completion = forge::sync_wait(
         cio::as_sender(read_once(
             reader,
             cio::mutable_buffer{std::span{read_output}})));
@@ -324,7 +325,7 @@ TEST(ForgeAsyncStreamTest, ImmediateAdapterTransfersReadAndWriteData) {
             cio::memory_write_stream{
                 cio::mutable_buffer{std::span{write_output}}}}};
 
-    auto write_completion = std::execution::sync_wait(
+    auto write_completion = forge::sync_wait(
         cio::as_sender(write_once(
             writer,
             cio::const_buffer{"byte", 4})));
@@ -410,7 +411,7 @@ TEST(ForgeAsyncStreamTest, CompoundErrorAndEofRemainDistinct) {
                 cio::scripted_read_step::eof()}}};
     std::array<char, 1> output{};
 
-    auto error_completion = std::execution::sync_wait(
+    auto error_completion = forge::sync_wait(
         cio::as_sender(read_once(
             reader,
             cio::mutable_buffer{std::span{output}})));
@@ -421,7 +422,7 @@ TEST(ForgeAsyncStreamTest, CompoundErrorAndEofRemainDistinct) {
         std::make_error_code(std::errc::connection_reset));
     EXPECT_FALSE(error_result.eof());
 
-    auto eof_completion = std::execution::sync_wait(
+    auto eof_completion = forge::sync_wait(
         cio::as_sender(read_once(
             reader,
             cio::mutable_buffer{std::span{output}})));
@@ -460,7 +461,7 @@ TEST(ForgeAsyncStreamTest, SingleFlightRejectsOverlapAndActiveMutation) {
     EXPECT_FALSE(reader);
     EXPECT_TRUE(moved);
 
-    auto completion = std::execution::sync_wait(
+    auto completion = forge::sync_wait(
         cio::as_sender(read_once(
             moved,
             cio::mutable_buffer{std::span{output}})));
@@ -500,7 +501,7 @@ TEST(ForgeAsyncStreamTest, AwaitResumeExceptionReleasesOperationSlot) {
     std::array<char, 1> output{};
 
     EXPECT_THROW(
-        (void)std::execution::sync_wait(
+        (void)forge::sync_wait(
             cio::as_sender(read_once(
                 reader,
                 cio::mutable_buffer{std::span{output}}))),

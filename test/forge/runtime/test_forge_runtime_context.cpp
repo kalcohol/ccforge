@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/runtime_context.hpp>
 #include <forge/start_detached.hpp>
@@ -22,7 +23,7 @@ struct stopped_receiver {
     void set_value() && noexcept { *stopped = false; }
     void set_error(std::exception_ptr) && noexcept { *stopped = false; }
     void set_stopped() && noexcept { *stopped = true; }
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
 struct timer_state {
@@ -65,7 +66,7 @@ struct timer_receiver {
         state->cv.notify_all();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -88,7 +89,7 @@ TEST(RuntimeContextTest, CpuScheduleRunsOnWorkerThread) {
     forge::runtime_context ctx{1};
     auto main_thread = std::this_thread::get_id();
 
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::schedule(ctx.get_scheduler())
         | std::execution::then([] { return std::this_thread::get_id(); }));
 
@@ -156,7 +157,7 @@ TEST(RuntimeContextTest, OptionsConstructorUsesCustomMemoryResourceForPoolQueue)
 TEST(RuntimeContextTest, ScheduleAfterZeroCompletes) {
     forge::runtime_context ctx{1};
 
-    auto result = std::execution::sync_wait(ctx.schedule_after(0ms));
+    auto result = forge::sync_wait(ctx.schedule_after(0ms));
 
     EXPECT_TRUE(result.has_value());
 }
@@ -181,7 +182,7 @@ TEST(RuntimeContextTest, ShutdownMakesNewCpuScheduleStopped) {
     auto sch = ctx.get_scheduler();
     ctx.shutdown();
 
-    auto result = std::execution::sync_wait(std::execution::schedule(sch));
+    auto result = forge::sync_wait(std::execution::schedule(sch));
 
     EXPECT_FALSE(result.has_value());
 }

@@ -9,6 +9,7 @@
 // - the lifecycle wakeup chain self-heals across hard flush failures and
 //   across a wakeup NOP that could never be published into a saturated SQ.
 
+#include <forge/execution_extensions.hpp>
 #include <forge/io/io_uring_context.hpp>
 
 #include <linux/io_uring.h>
@@ -225,7 +226,7 @@ struct completion_receiver {
         state->cv.notify_all();
     }
 
-    [[nodiscard]] auto get_env() const noexcept -> std::execution::empty_env {
+    [[nodiscard]] auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -276,7 +277,7 @@ void check_hard_flush_failure_rejects_submission() {
     const unsigned injected_before =
         injected_submit_calls.load(std::memory_order_acquire);
     inject_submit_errno.store(ENOMEM);
-    auto rejected = std::execution::sync_wait(cio::as_sender(
+    auto rejected = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, buffer)));
     inject_submit_errno.store(0);
 
@@ -297,7 +298,7 @@ void check_hard_flush_failure_rejects_submission() {
     // operation afterwards completes end to end.
     const char payload = 'x';
     FAULT_CHECK(::write(pipe.write_end, &payload, 1) == 1);
-    auto accepted = std::execution::sync_wait(cio::as_sender(
+    auto accepted = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, buffer)));
     FAULT_CHECK(accepted.has_value());
     if (accepted.has_value()) {
@@ -323,7 +324,7 @@ void check_consumed_submission_retains_kernel_ownership() {
     std::byte buffer[4] = {};
 
     inject_submit_errno_after_success.store(ENOMEM);
-    auto completed = std::execution::sync_wait(cio::as_sender(
+    auto completed = forge::sync_wait(cio::as_sender(
         read_task(context, pipe.read_end, buffer)));
     inject_submit_errno_after_success.store(0);
 

@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <exception>
@@ -30,7 +31,7 @@ struct shape_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> ex::completion_signatures<ex::set_value_t(environment_shape<Env>)> { return {}; }
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
     template<class R>
     struct operation {
         using operation_state_concept = ex::operation_state_t;
@@ -164,8 +165,8 @@ TEST(ExecutionBorrowedEnvTest, WriteEnvBorrowsReferencesAndOwnsValues) {
     std::inplace_stop_source source;
     borrowed_env borrowed{source.get_token()};
     owned_env owned{source.get_token()};
-    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::empty_env{}), borrowed);
-    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::empty_env{}), owned);
+    check_environment(ex::write_env(inspect_environment(source.get_token()), forge::empty_env{}), borrowed);
+    check_environment(ex::write_env(inspect_environment(source.get_token()), forge::empty_env{}), owned);
     std::inplace_stop_source overlay;
     check_environment(ex::write_env(inspect_environment(overlay.get_token()),
         owned_env{overlay.get_token()}), borrowed);

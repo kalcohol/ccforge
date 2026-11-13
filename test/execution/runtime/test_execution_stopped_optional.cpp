@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include "../../forge/runtime/forge_operation_destroy.hpp"
@@ -21,7 +22,7 @@ enum class completion { value, error, stopped };
 struct optional_env { using optional_values = void; };
 
 struct empty_void_query {
-    void operator()(ex::empty_env) const noexcept {}
+    void operator()(forge::empty_env) const noexcept {}
     int operator()(optional_env) const noexcept { return 42; }
 };
 
@@ -37,7 +38,7 @@ struct typed_sender {
         requires (!Dependent || requires { typename Env::optional_values; })
     static auto get_completion_signatures() noexcept -> signatures { return {}; }
 
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {
@@ -154,7 +155,7 @@ struct reference_sender {
     static auto get_completion_signatures() noexcept
         -> ex::completion_signatures<ex::set_value_t(const throwing_copy&)> { return {}; }
 
-    auto get_env() const noexcept -> ex::empty_env { return {}; }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {
@@ -173,9 +174,9 @@ struct reference_sender {
 } // namespace
 
 TEST(ExecutionStoppedOptional, TypedStoppedCompletesWithEmptyOptionalInAllForms) {
-    auto direct = ex::sync_wait(ex::stopped_as_optional(typed_sender<>{}));
-    auto piped = ex::sync_wait(typed_sender<>{} | ex::stopped_as_optional);
-    auto closure = ex::sync_wait(typed_sender<>{} | ex::stopped_as_optional());
+    auto direct = forge::sync_wait(ex::stopped_as_optional(typed_sender<>{}));
+    auto piped = forge::sync_wait(typed_sender<>{} | ex::stopped_as_optional);
+    auto closure = forge::sync_wait(typed_sender<>{} | ex::stopped_as_optional());
     ASSERT_TRUE(direct.has_value());
     ASSERT_TRUE(piped.has_value());
     ASSERT_TRUE(closure.has_value());
@@ -246,8 +247,8 @@ TEST(ExecutionStoppedOptional, SingleMultiParameterSignatureUsesOptionalTuple) {
     static_assert(std::is_same_v<ex::completion_signatures_of_t<adapted>,
         ex::completion_signatures<ex::set_value_t(std::optional<std::tuple<int, int>>),
             ex::set_error_t(int)>>);
-    auto value = ex::sync_wait(ex::stopped_as_optional(typed_sender<true>{completion::value}));
-    auto stopped = ex::sync_wait(ex::stopped_as_optional(typed_sender<true>{}));
+    auto value = forge::sync_wait(ex::stopped_as_optional(typed_sender<true>{completion::value}));
+    auto stopped = forge::sync_wait(ex::stopped_as_optional(typed_sender<true>{}));
     ASSERT_TRUE(value.has_value());
     ASSERT_TRUE(std::get<0>(*value).has_value());
     EXPECT_EQ(*std::get<0>(*value), (std::tuple{42, 43}));
@@ -256,13 +257,13 @@ TEST(ExecutionStoppedOptional, SingleMultiParameterSignatureUsesOptionalTuple) {
 }
 
 TEST(ExecutionStoppedOptional, OneEmptyTuplePayloadIsNotAVoidSignature) {
-    auto result = ex::sync_wait(ex::stopped_as_optional(ex::just(std::tuple<>{})));
+    auto result = forge::sync_wait(ex::stopped_as_optional(ex::just(std::tuple<>{})));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result).has_value());
 }
 
 TEST(ExecutionStoppedOptional, PreservesMoveOnlyAndReferenceWrapperPayloads) {
-    auto moved = ex::sync_wait(ex::stopped_as_optional(ex::just(std::make_unique<int>(42))));
+    auto moved = forge::sync_wait(ex::stopped_as_optional(ex::just(std::make_unique<int>(42))));
     ASSERT_TRUE(moved.has_value());
     ASSERT_TRUE(std::get<0>(*moved).has_value());
     ASSERT_TRUE(*std::get<0>(*moved));
@@ -271,7 +272,7 @@ TEST(ExecutionStoppedOptional, PreservesMoveOnlyAndReferenceWrapperPayloads) {
     int value = 41;
     auto sender = ex::stopped_as_optional(ex::just(std::ref(value)));
     value = 42;
-    auto borrowed = ex::sync_wait(std::move(sender));
+    auto borrowed = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(borrowed.has_value());
     ASSERT_TRUE(std::get<0>(*borrowed).has_value());
     EXPECT_EQ(std::get<0>(*borrowed)->get(), 42);
@@ -320,12 +321,12 @@ TEST(ExecutionStoppedOptional, OptionalConstructionExceptionsBecomeExceptionPtrE
     static_assert(std::is_same_v<ex::completion_signatures_of_t<decltype(sender)>,
         ex::completion_signatures<ex::set_value_t(std::optional<throwing_copy>),
             ex::set_error_t(std::exception_ptr)>>);
-    EXPECT_THROW((void)ex::sync_wait(std::move(sender)), copy_failure);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sender)), copy_failure);
 }
 
 TEST(ExecutionStoppedOptional, ReadSchedulerUsesTheActualSyncWaitEnvironment) {
     auto verify = [](auto sender) {
-        auto result = ex::sync_wait(std::move(sender) | ex::then(
+        auto result = forge::sync_wait(std::move(sender) | ex::then(
             [](std::optional<ex::run_loop::scheduler> scheduler) noexcept {
                 return scheduler.has_value();
             }));
@@ -339,7 +340,7 @@ TEST(ExecutionStoppedOptional, ReadSchedulerUsesTheActualSyncWaitEnvironment) {
 }
 
 TEST(ExecutionStoppedOptional, EmptyEnvironmentVoidDoesNotRejectActualIntValue) {
-    static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, ex::empty_env>>);
+    static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, forge::empty_env>>);
     static_assert(std::is_same_v<std::invoke_result_t<empty_void_query&, optional_env>, int>);
 
     auto verify = [](auto sender) {

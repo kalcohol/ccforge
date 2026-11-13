@@ -1,3 +1,4 @@
+#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <exception>
@@ -20,7 +21,7 @@ struct multi_value_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const multi_value_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -39,7 +40,7 @@ struct other_multi_value_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const other_multi_value_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -68,7 +69,7 @@ struct scheduler_receiver {
 
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_receiver& self) noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(std::execution::get_scheduler_t{}, self.expected));
+            std::execution::prop(std::execution::get_scheduler_t{}, self.expected));
     }
 };
 
@@ -138,7 +139,7 @@ struct int_error_receiver {
     friend void tag_invoke(std::execution::set_stopped_t, int_error_receiver&&) noexcept {}
 
     friend auto tag_invoke(std::execution::get_env_t, const int_error_receiver&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -202,7 +203,7 @@ struct stop_observing_sender {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const stop_observing_sender&) noexcept
-        -> std::execution::empty_env {
+        -> forge::empty_env {
         return {};
     }
 };
@@ -230,7 +231,7 @@ struct outer_stop_receiver {
 
     friend auto tag_invoke(std::execution::get_env_t, const outer_stop_receiver& self) noexcept {
         return std::execution::make_env(
-            std::execution::make_prop(std::execution::get_stop_token_t{}, self.source->get_token()));
+            std::execution::prop(std::execution::get_stop_token_t{}, self.source->get_token()));
     }
 };
 
@@ -286,7 +287,7 @@ struct value_error_receiver {
 
     friend auto tag_invoke(
         std::execution::get_env_t,
-        const value_error_receiver&) noexcept -> std::execution::empty_env {
+        const value_error_receiver&) noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -395,7 +396,7 @@ TEST(WhenAllTest, AggregatesMultipleValues) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just(2.0));
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 1);
     EXPECT_DOUBLE_EQ(std::get<1>(*result), 2.0);
@@ -403,7 +404,7 @@ TEST(WhenAllTest, AggregatesMultipleValues) {
 
 TEST(WhenAllTest, SingleSender) {
     auto sndr = std::execution::when_all(std::execution::just(42));
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
@@ -425,7 +426,7 @@ TEST(WhenAllTest, ErrorPropagates) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just_error(42));
-    EXPECT_THROW(std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW(forge::sync_wait(std::move(sndr)), int);
 }
 
 TEST(WhenAllTest, ReportsCartesianValueAndChildErrorSignatures) {
@@ -433,7 +434,7 @@ TEST(WhenAllTest, ReportsCartesianValueAndChildErrorSignatures) {
         multi_value_sender{},
         other_multi_value_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -451,7 +452,7 @@ TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
         multi_value_sender{},
         other_multi_value_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
     using first_variant_t = std::variant<std::tuple<int>, std::tuple<double>>;
     using second_variant_t = std::variant<std::tuple<char>, std::tuple<bool>>;
 
@@ -464,7 +465,7 @@ TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
 }
 
 TEST(WhenAllTest, WithVariantAggregatesRuntimeValues) {
-    auto result = std::execution::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::when_all_with_variant(
             std::execution::just(1),
             std::execution::just(2.0)));
@@ -483,7 +484,7 @@ TEST(WhenAllTest, DropsValueSignatureWhenAChildCannotProduceValue) {
         std::execution::just_error(42),
         std::execution::just(2));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::execution::empty_env{}));
+        sndr, forge::empty_env{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
@@ -638,7 +639,7 @@ TEST(WhenAllTest, StoppedPropagates) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just_stopped());
-    auto result = std::execution::sync_wait(std::move(sndr));
+    auto result = forge::sync_wait(std::move(sndr));
     EXPECT_FALSE(result.has_value());
 }
 
@@ -646,7 +647,7 @@ TEST(WhenAllTest, ErrorOverridesPriorStopped) {
     auto sndr = std::execution::when_all(
         std::execution::just_stopped(),
         std::execution::just_error(42));
-    EXPECT_THROW((void)std::execution::sync_wait(std::move(sndr)), int);
+    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
 }
 
 TEST(WhenAllTest, OuterStopRequestReachesChildren) {
