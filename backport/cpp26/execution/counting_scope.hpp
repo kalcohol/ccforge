@@ -656,6 +656,7 @@ public:
     }
 
     void request_stop() noexcept {
+        // The scope must remain alive through this call, even if a join completes.
         __stop_source_.request_stop();
     }
 
@@ -909,6 +910,9 @@ struct __stop_op : __forge_detail::__immovable {
         std::execution::start(__inner_op);
     }
 
+    // Deregistration waits for input callbacks executing on other threads.
+    // Forward unchanged only after their fused-source requests have returned.
+    // Same-thread source destruction still relies on the backport control block.
     void __release_stop_callbacks() noexcept {
         __scope_stop.reset();
         __downstream_stop.reset();
