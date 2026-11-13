@@ -102,7 +102,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `dependent_sender_error`, dependent-sender concept surface | Not implemented | 当前 completion-signature diagnostics 不建模这组 dependent sender contract。需要先有可移植编译器/参考实现证据。 |
 | `indeterminate_domain` | Not implemented | 当前 domain dispatch 使用本 backport 的 `default_domain` 和显式 scheduler/env customization subset。 |
 | `inlinable_receiver` | Not implemented | 当前 operation-state ownership 不对外承诺该优化查询；不能由现有 inline completion 行为推导。 |
-| `sender_adaptor_closure` | Out of scope as public type | Adaptors 使用内部 closure machinery 并提供 pipe syntax，但不暴露 current-draft public closure base/type。 |
+| `sender_adaptor_closure` | Implemented | 按 [`[execution.syn]`](https://eel.is/c++draft/execution.syn) / [`[exec.adapt.obj]`](https://eel.is/c++draft/exec.adapt.obj) 暴露 class-type 约束的公开 CRTP base，允许 incomplete `D`。Pipe 识别要求公开且无歧义的自身 specialization、无其他 specialization base，并排除 sender；所有库内 closures 通过同一机制参与。支持用户 closure 与库 closure 双向组合、按原 cv/ref 类别初始化保存对象，以及四种非 volatile 调用类别的 perfect forwarding、条件 `noexcept` 和 `constexpr`；编译探测覆盖错误 / 多重 / 不可访问派生、非 sender 左操作数与 move-only capture。 |
 
 ## 兼容性分类
 
@@ -111,6 +111,7 @@ risk triage 的事实来源。
 
 | Item | 分类 | 当前状态 | Native-handoff action |
 | --- | --- | --- | --- |
+| 库 closure 的隐式转换 pipe | 工作草案识别规则 | 按 [`[exec.adapt.obj]/2`](https://eel.is/c++draft/exec.adapt.obj#2)，识别依据是操作数自身去除 cv/ref 后的类型。库 closure 的派生类与 `std::reference_wrapper` 不再仅凭转换参与；`sender \| std::ref(closure)` / `sender \| std::cref(closure)` 不再有效。 | 直接使用原 closure 或 `wrapper.get()`；自定义 closure 使用自身的公开 CRTP specialization，并满足唯一 specialization 要求。 |
 | Library adaptor non-copyable lvalue `connect` | 已收敛的 standard-shaped behavior | Standard backport sender 对 move-only lvalue 要求显式 `std::move(sndr)`。 | 保持测试和示例显式 move；不要在标准路径恢复 destructive lvalue connect。 |
 | `forge::async_scope::spawn(lvalue)` | Forge extension convenience | 对 non-copyable non-const lvalue sender 做 destructive move，作为 Forge runtime convenience。 | 继续文档化为 Forge-only extension；native-friendly 示例写 `scope.spawn(std::move(sndr))`。 |
 | `std::execution::ensure_started` | 已移除的 non-WD extension name | `<execution>` backport 不再暴露。 | 保持在 `std::execution` 外；未来如需工具，只能放入 `forge::`。 |

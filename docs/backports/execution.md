@@ -15,6 +15,55 @@ auto result = std::this_thread::sync_wait(std::move(work));
 // result holds tuple<int> on value completion.
 ```
 
+### Pipe 与 sender adaptor closure
+
+公开 `std::execution::sender_adaptor_closure<D>` 按
+[`[execution.syn]`](https://eel.is/c++draft/execution.syn) 与
+[`[exec.adapt.obj]`](https://eel.is/c++draft/exec.adapt.obj) 提供 CRTP opt-in。
+`D` 必须是无 cv/ref 修饰的 class type，实例化 base 时可以尚未完整定义。
+在参与 `operator|` 时，`D` 必须完整且公开、无歧义地派生自
+`sender_adaptor_closure<D>`；不得同时具有其他 `sender_adaptor_closure<U>`
+base，也不得满足 `sender`。仅提供 `operator()` 不构成 opt-in。
+按 `[exec.adapt.obj]`，这类操作数的 `operator|` 若选择程序自行定义的重载，行为未定义。
+
+```cpp
+struct twice : std::execution::sender_adaptor_closure<twice> {
+    template<std::execution::sender S>
+    auto operator()(S&& source) const {
+        return std::execution::then(std::forward<S>(source),
+            [](int value) noexcept { return value * 2; });
+    }
+};
+
+const twice multiply{};
+auto pipeline = multiply | std::execution::then([](int value) { return value + 1; });
+auto work = std::execution::just(20) | pipeline;
+// sync_wait(std::move(work)) yields 41.
+```
+
+`sender | closure` 与 `closure(sender)` 保留相同的参数转发、返回引用类别及条件
+`noexcept`，调用可常量求值时也保留 `constexpr`。`c1 | c2` 按原操作数的类别分别
+直接初始化两个按值保存的 closure，调用顺序为 `c2(c1(sender))`；创建组合时只检查
+保存对象所需的初始化，实际调用时再检查调用表达式。组合对象的 `&`、`const&`、
+`&&`、`const&&` 调用分别以相同类别转发保存的对象，遵循
+[`[func.require]`](https://eel.is/c++draft/func.require) 的 perfect forwarding call wrapper
+规则。组合对象不提供 volatile 调用；自定义 closure 自身若支持 volatile 调用，
+仍可按其调用约束直接 pipe。
+
+所有库内 pipeable closures 均使用该公开机制，包括单参数 CPO、`on(scheduler, closure)`、
+`continues_on(scheduler)`、`associate(token)` 和各 bulk closure。`into_variant`、
+`stopped_as_optional`、`unstoppable`、`affine` 可直接作为 pipe 右操作数；已有的
+nullary closure 便利入口继续保留。Native `<execution>` 路径使用原生公开类型。
+
+采用公开识别规则后，库 closure 的派生类及 `std::reference_wrapper` 不再仅凭到库
+closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c++draft/exec.adapt.obj#2)，
+识别依据是操作数自身去除 cv/ref 后的类型，而非其可转换到的类型；因此
+`sender | std::ref(closure)` 和 `sender | std::cref(closure)` 不再有效。
+可直接使用 `sender | closure`，或通过 `wrapper.get()` 显式取出被引用的 closure；
+`std::ref(closure)(sender)` 与 `std::cref(closure)(sender)` 仍按直接调用的约束工作。
+自定义 closure 应直接派生自自身的 `sender_adaptor_closure<D>` specialization，
+并满足上述唯一 specialization 要求。
+
 ## 特性宏
 
 包含 `<execution>` 后 backport 不定义 `__cpp_lib_senders`，不能据此宣称完整标准实现。
