@@ -356,6 +356,13 @@ Sender interop 分两层：
   需要把 compound I/O result 转成 sender channels 时，应写显式 adapter，避免静默丢失
   partial progress。
 
+`forge::io::sender_stopped` 是可复制、nothrow 构造的独立类型，不派生自
+`std::exception`；`what() const noexcept` 仍返回稳定诊断字符串。这是有意的行为变更：
+`catch (const std::exception&)` 不再吞掉 stopped。需要观察取消时可显式捕获
+`const forge::io::sender_stopped&` 并 `throw;` 保留 stopped completion；通用
+`catch (...)` 也应重新抛出取消。显式捕获后正常返回仍交付 value，抛出其他异常则交付
+error，`io_task` 不保存 sticky stopped 状态。
+
 `await_sender(sender)` 当前在源 sender 的 completion 线程上 resume coroutine，不会自动
 hop 到 `io_env.executor`。如果源 sender inline 完成，awaiter 会在 `await_suspend`
 返回后继续 coroutine，避免从 completion callback 递归 resume。经 `context_await.hpp`

@@ -109,6 +109,9 @@ stand-aside，并且 native implementation 不容忍 source 在自身 `request_s
   `forge::io::sender_stopped`；
 - `as_sender(io_task<T>, env)` 捕获 `sender_stopped` 并交付 `set_stopped()`。
 
+`forge::io::sender_stopped` 不派生自 `std::exception`，保留 `what() const noexcept`
+诊断。`catch (const std::exception&)` 不捕获取消；显式捕获 `sender_stopped` 或
+`catch (...)` 时应重新抛出以保留 stopped。
 这两个 bridge 的异常都能被用户 `catch(...)` 捕获，但捕获后的 completion 不同：
 
 - `forge::task` 的 stopped 状态是 sticky 的；body 即使继续执行，后续普通 error 也不会

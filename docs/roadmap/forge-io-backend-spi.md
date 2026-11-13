@@ -280,7 +280,9 @@ Lifecycle 与现有 epoll/IOCP context 使用同一词汇：
 
 `io_result<std::size_t>` 继续承载 value/EOF/`std::error_code` compound result；stopped
 继续通过 `sender_stopped` 跨 coroutine 边界，并由 `as_sender(io_task)` 恢复为 sender
-stopped channel。Raw negative CQE 使用 `std::generic_category()` 的正 errno 值。
+stopped channel。`sender_stopped` 不派生自 `std::exception`，保留 nothrow `what()`；
+`catch (const std::exception&)` 不捕获取消，显式捕获或 `catch (...)` 应重新抛出以保留 stopped。
+Raw negative CQE 使用 `std::generic_category()` 的正 errno 值。
 Typed adapter 继续调用既有 `typed_detail::classify`，closed `error_kind` 集合保持
 `unknown`、`system`、`invalid_handle`、`operation_in_progress`、`would_block`，不新增
 io_uring-only kind。无 stop request 的 `-ECANCELED` 是普通

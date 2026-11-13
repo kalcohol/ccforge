@@ -117,9 +117,9 @@ private:
     return {};
 }
 
-class sender_stopped : public std::exception {
+class sender_stopped {
 public:
-    [[nodiscard]] auto what() const noexcept -> const char* override {
+    [[nodiscard]] auto what() const noexcept -> const char* {
         return "forge::io sender stopped";
     }
 };

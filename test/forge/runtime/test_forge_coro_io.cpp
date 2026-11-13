@@ -69,6 +69,10 @@ struct noncopyable_regular_awaitable {
     int await_resume() noexcept { return 13; }
 };
 
+static_assert(!std::is_base_of_v<std::exception, cio::sender_stopped>);
+static_assert(std::is_nothrow_copy_constructible_v<cio::sender_stopped>);
+static_assert(std::is_nothrow_default_constructible_v<cio::sender_stopped>);
+static_assert(noexcept(cio::sender_stopped{}.what()));
 static_assert(cio::io_awaitable<env_shape_awaitable>);
 static_assert(cio::io_awaitable<noncopyable_env_awaitable&>);
 static_assert(!cio::io_awaitable<regular_awaitable>);
@@ -133,6 +137,15 @@ auto catches_stopped(caught_stop_completion completion) -> cio::io_task<int> {
         if (completion == caught_stop_completion::stopped) {
             throw;
         }
+    }
+    co_return 42;
+}
+
+auto catches_standard_exception(bool* caught) -> cio::io_task<int> {
+    try {
+        co_await cio::await_sender(std::execution::just_stopped());
+    } catch (const std::exception&) {
+        *caught = true;
     }
     co_return 42;
 }
@@ -254,6 +267,15 @@ TEST(ForgeCoroIoTest, IoTaskRethrowsStoredException) {
     EXPECT_THROW((void)std::execution::sync_wait(
                      cio::as_sender(throws_from_task())),
                  std::runtime_error);
+}
+
+TEST(ForgeCoroIoTest, StandardExceptionCatchDoesNotSwallowStopped) {
+    bool caught = false;
+    auto result = std::execution::sync_wait(
+        cio::as_sender(catches_standard_exception(&caught)));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_FALSE(caught);
+    EXPECT_STREQ(cio::sender_stopped{}.what(), "forge::io sender stopped");
 }
 
 TEST(ForgeCoroIoTest, CaughtStoppedCanCompleteWithValue) {
