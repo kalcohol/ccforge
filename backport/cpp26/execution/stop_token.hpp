@@ -158,6 +158,20 @@ public:
             }
             {
                 std::lock_guard lk{control->mtx};
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+                // A native implementation may revisit its source after invocation.
+                // Volatile keeps the ASan probe observable even in optimized tests.
+                const volatile auto source_state = state_.load(std::memory_order_acquire);
+                (void)source_state;
+                // Self-removal and sibling removal are legal. Only revisit a node
+                // still registered as live, with deregistration excluded by mtx.
+                if (control->object) {
+                    const volatile auto* live_node =
+                        static_cast<__forge_stop_detail::callback_base*>(control->object);
+                    const auto node_function = live_node->invoke_fn;
+                    (void)node_function;
+                }
+#endif
                 control->running = false;
                 control->cancelled = true;
                 control->object = nullptr;
