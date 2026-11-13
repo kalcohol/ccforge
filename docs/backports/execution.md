@@ -339,6 +339,12 @@ association；已完成的 consumer operation 可以继续存活，不保留上�
 两个输入查询结果的逻辑或；child 在 connect 时注册的 callback 也可在 start 前收到通知，
 且最多调用一次。注册时输入已请求停止，则在注册线程立即调用该 callback，即使输入的
 其他 callback 仍在阻塞停止传播。当前 callback 注册失败保留 `set_stopped()` 完成路径。
+completion 前先注销两个输入 callback；另一线程上的 callback invocation 返回后才继续，
+随后按原 channel 和原参数引用直接转发，不保存参数、不增加分配，也不把 value/error
+改成 stopped。同一线程的 stop propagation 内若 receiver 销毁 operation，仍依赖 backport
+的独立 control block；采用标准 source lifetime 规则前必须解决这一边界。
+scope 本身须活过其全部 stop 调用，包括使 join receiver 同步完成的调用。详见
+[`inplace_stop_callback` lifetime 设计](../roadmap/inplace-stop-callback-design.md)。
 `spawn_future` 的 producer environment 按
 `write_env(stop-when(sndr, ssource.get_token()), env)` 组成；stop-when 边界仅转发
 `FWD-ENV` queries，融合 token 覆盖原 stop token。consumer stop callback 仍直接使用
