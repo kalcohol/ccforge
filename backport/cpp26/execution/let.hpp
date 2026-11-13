@@ -23,7 +23,7 @@
 #pragma once
 
 #include "concepts.hpp"
-#include "detail/op_storage.hpp"
+#include "detail/op_holder.hpp"
 #include "env.hpp"
 
 #include <exception>
@@ -31,6 +31,7 @@
 #include <type_traits>
 #include <tuple>
 #include <utility>
+#include <variant>
 
 namespace std::execution {
 
@@ -292,6 +293,53 @@ struct __let_cs<S, Fn, Which, Env, completion_signatures<Sigs...>> {
         typename __maybe_eptr_cs<handles_completion>::type>;
 };
 
+template<class List>
+struct __as_variant;
+
+template<class... Ts>
+struct __as_variant<__forge_meta::type_list<Ts...>> {
+    using type = std::variant<Ts...>;
+};
+
+template<class Fn, class Recv, class Sig, bool Matches>
+struct __inner_types {
+    using args = __forge_meta::type_list<>;
+    using ops = __forge_meta::type_list<>;
+};
+
+template<class Fn, class Recv, class Tag, class... As>
+struct __inner_types<Fn, Recv, Tag(As...), true> {
+    using args = __forge_meta::type_list<std::tuple<std::decay_t<As>...>>;
+    using ops = __forge_meta::type_list<__forge_detail::__op_holder<connect_result_t<
+        std::invoke_result_t<Fn, std::decay_t<As>&...>, Recv>>>;
+};
+
+template<class List, class... Lists>
+struct __merge_types;
+
+template<class List>
+struct __merge_types<List> {
+    using type = List;
+};
+
+template<class List, class... Ts, class... Rest>
+struct __merge_types<List, __forge_meta::type_list<Ts...>, Rest...>
+    : __merge_types<__forge_meta::list_push_unique_all_t<List, Ts...>, Rest...> {};
+
+template<class Fn, class Recv, class Which, class CS>
+struct __state_types;
+
+template<class Fn, class Recv, class Which, class... Sigs>
+struct __state_types<Fn, Recv, Which, completion_signatures<Sigs...>> {
+    template<class Sig>
+    using __types = __inner_types<Fn, Recv, Sig, __matches_which<Which, Sig>::value>;
+
+    using args = typename __as_variant<typename __merge_types<
+        __forge_meta::type_list<std::monostate>, typename __types<Sigs>::args...>::type>::type;
+    using ops = typename __as_variant<typename __merge_types<
+        __forge_meta::type_list<std::monostate>, typename __types<Sigs>::ops...>::type>::type;
+};
+
 template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
@@ -303,10 +351,6 @@ struct __op : __forge_detail::__immovable {
     outer_env_t __outer_env_;
     let_env_t __let_env_;
     Fn __fn_;
-
-    __forge_detail::__op_storage<1024> __outer_storage_;
-    __forge_detail::__op_storage<1024> __arg_storage_;
-    __forge_detail::__op_storage<1024> __inner_storage_;
 
     struct __inner_recv {
         using receiver_concept = receiver_t;
@@ -331,18 +375,27 @@ struct __op : __forge_detail::__immovable {
     void __start_inner(Vs&&... vs) noexcept {
         try {
             using args_t = std::tuple<std::decay_t<Vs>...>;
-            auto* args = __arg_storage_.template emplace_from<args_t>([&]() -> args_t {
-                return args_t{static_cast<Vs&&>(vs)...};
-            });
-            auto inner_sndr = std::apply(std::move(__fn_), *args);
-            using inner_sender_t = std::decay_t<decltype(inner_sndr)>;
+            auto& args = __args_.template emplace<args_t>(static_cast<Vs&&>(vs)...);
+            auto&& inner_sndr = std::apply(std::move(__fn_), args);
+            using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
             using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
-            auto* op = __inner_storage_.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(std::move(inner_sndr), __inner_recv{this});
-            });
-            std::execution::start(*op);
+            auto& holder = __inner_ops_.template emplace<__forge_detail::__op_holder<inner_op_t>>(
+                [&]() -> inner_op_t {
+                    return std::execution::connect(
+                        static_cast<inner_sender_t&&>(inner_sndr), __inner_recv{this});
+                });
+            std::execution::start(holder.__op);
         } catch (...) {
-            set_error(std::move(__outer_recv_), std::current_exception());
+            using args_t = std::tuple<std::decay_t<Vs>...>;
+            using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
+            constexpr bool nothrow =
+                std::is_nothrow_constructible_v<args_t, Vs...> &&
+                std::is_nothrow_invocable_v<Fn, std::decay_t<Vs>&...> &&
+                noexcept(std::execution::connect(
+                    std::declval<inner_sender_t>(), __inner_recv{this}));
+            if constexpr (!nothrow) {
+                std::execution::set_error(std::move(__outer_recv_), std::current_exception());
+            }
         }
     }
 
@@ -379,20 +432,25 @@ struct __op : __forge_detail::__immovable {
     };
 
     using __outer_op_t = connect_result_t<S, __outer_recv>;
+    using __types = __state_types<Fn, __inner_recv, Which,
+        completion_signatures_of_t<S, outer_env_t>>;
+
+    // Keep the predecessor alive while the arguments and inner operation can
+    // still refer to it. Destroy the inner operation first.
+    __outer_op_t __outer_op_;
+    typename __types::args __args_;
+    typename __types::ops __inner_ops_;
 
     __op(S sndr, Fn fn, R r)
         : __outer_recv_(std::move(r))
         , __outer_env_(std::execution::get_env(__outer_recv_))
         , __let_env_(__make_let_env<Which>(sndr, __outer_env_))
         , __fn_(std::move(fn))
-    {
-        __outer_storage_.template emplace_from<__outer_op_t>([&]() -> __outer_op_t {
-            return std::execution::connect(std::move(sndr), __outer_recv{this});
-        });
-    }
+        , __outer_op_(std::execution::connect(std::move(sndr), __outer_recv{this}))
+    {}
 
     void start() & noexcept {
-        std::execution::start(__outer_storage_.template get<__outer_op_t>());
+        std::execution::start(__outer_op_);
     }
 };
 

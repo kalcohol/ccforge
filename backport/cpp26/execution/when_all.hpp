@@ -24,7 +24,7 @@
 
 #include "concepts.hpp"
 #include "detail/value_result.hpp"
-#include "detail/op_storage.hpp"
+#include "detail/op_holder.hpp"
 #include "env.hpp"
 #include "into_variant.hpp"
 #include "stop_token.hpp"
@@ -277,6 +277,17 @@ using __when_all_error_variant_t = typename __error_variant_from_list<__error_ty
 template<class OuterRecv, class... Senders>
 struct __op;
 
+template<class Token, class Callback,
+         bool = std::stoppable_token_for<Token, Callback>>
+struct __callback_type {
+    using type = std::monostate;
+};
+
+template<class Token, class Callback>
+struct __callback_type<Token, Callback, true> {
+    using type = stop_callback_for_t<Token, Callback>;
+};
+
 template<std::size_t I, class OuterRecv, class... Senders>
 struct __child_recv {
     using receiver_concept = receiver_t;
@@ -306,7 +317,7 @@ struct __child_recv {
     void set_stopped() && noexcept {
         __self->child_stop();
     }
-    auto get_env() const noexcept {
+    auto get_env() const noexcept -> __child_env_t<env_of_t<OuterRecv>> {
         return __child_env_t<env_of_t<OuterRecv>>{
             std::execution::get_env(__self->__outer_recv),
             __self->__stop_src.get_token()};
@@ -357,31 +368,28 @@ struct __op : __forge_detail::__immovable {
         }
     };
 
-    __forge_detail::__op_storage<512> __child_storages[N];
-    void* __child_ptrs[N]{};
-    void (*__child_starts[N])(void*) noexcept;
-    __forge_detail::__op_storage<256> __stop_callback_storage;
+    using __outer_token_t = std::remove_cvref_t<decltype(
+        std::execution::get_stop_token(std::declval<env_of_t<OuterRecv>>()))>;
+    using __callback_t = typename __callback_type<__outer_token_t, __outer_stop_callback>::type;
+
+    template<std::size_t... Is>
+    static auto __child_ops_type(std::index_sequence<Is...>)
+        -> std::tuple<__forge_detail::__op_holder<
+            connect_result_t<Senders, __child_recv<Is, OuterRecv, Senders...>>>...>;
+
+    using __child_ops_t = decltype(__child_ops_type(std::index_sequence_for<Senders...>{}));
+    __child_ops_t __children;
+    // Unregister before destroying children, including an unstarted operation.
+    std::optional<__callback_t> __stop_callback;
 
     template<std::size_t... Is>
     __op(OuterRecv r, std::tuple<Senders...> sndrs, std::index_sequence<Is...>)
         : __outer_recv(std::move(r))
-    {
-        (..., init_child<Is>(std::get<Is>(std::move(sndrs))));
-    }
-
-    template<std::size_t I>
-    void init_child(std::tuple_element_t<I, std::tuple<Senders...>> sndr) {
-        using S = std::tuple_element_t<I, std::tuple<Senders...>>;
-        using child_op_t = connect_result_t<S, __child_recv<I, OuterRecv, Senders...>>;
-        __child_ptrs[I] = __child_storages[I].template emplace_from<child_op_t>([&]() -> child_op_t {
-            return std::execution::connect(
-                std::move(sndr),
-                __child_recv<I, OuterRecv, Senders...>{this});
-        });
-        __child_starts[I] = [](void* p) noexcept {
-            std::execution::start(*static_cast<child_op_t*>(p));
-        };
-    }
+        , __children([&]() {
+            return std::execution::connect(std::get<Is>(std::move(sndrs)),
+                __child_recv<Is, OuterRecv, Senders...>{this});
+        }...)
+    {}
 
     void register_outer_stop_callback() noexcept {
         using outer_env_t = env_of_t<OuterRecv>;
@@ -393,11 +401,8 @@ struct __op : __forge_detail::__immovable {
                 auto token = std::execution::get_stop_token(std::execution::get_env(__outer_recv));
                 if (!token.stop_possible()) { return; }
 
-                using callback_t = stop_callback_for_t<outer_token_t, __outer_stop_callback>;
-
                 try {
-                    __stop_callback_storage.template emplace<callback_t>(
-                        token, __outer_stop_callback{this});
+                    __stop_callback.emplace(token, __outer_stop_callback{this});
                 } catch (...) {
                     __stop_src.request_stop();
                 }
@@ -447,7 +452,7 @@ struct __op : __forge_detail::__immovable {
     }
 
     void deliver() noexcept {
-        __stop_callback_storage.destroy();
+        __stop_callback.reset();
         if (__result.index() == 1) {
             std::visit([this](auto& err) noexcept {
                 using error_t = std::remove_cvref_t<decltype(err)>;
@@ -495,11 +500,14 @@ struct __op : __forge_detail::__immovable {
         }
     }
 
+    template<std::size_t... Is>
+    void __start_children(std::index_sequence<Is...>) noexcept {
+        (std::execution::start(std::get<Is>(__children).__op), ...);
+    }
+
     void start() & noexcept {
         register_outer_stop_callback();
-        constexpr std::size_t n = N;
-        for (std::size_t i = 0; i < n; ++i)
-            __child_starts[i](__child_ptrs[i]);
+        __start_children(std::index_sequence_for<Senders...>{});
     }
 };
 
