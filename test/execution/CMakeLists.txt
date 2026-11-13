@@ -299,6 +299,19 @@ forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_t
 forge_add_execution_runtime_test(test_execution_run_loop test_execution_run_loop.cpp execution_run_loop)
 forge_add_execution_runtime_test(test_execution_adaptors test_execution_adaptors.cpp execution_adaptors)
 forge_add_execution_runtime_test(
+    test_execution_static_opstate_allocations
+    test_execution_static_opstate_allocations.cpp
+    execution_static_opstate_allocations)
+forge_add_execution_runtime_test(
+    test_execution_static_opstate_exceptions
+    test_execution_static_opstate_exceptions.cpp
+    execution_static_opstate_exceptions)
+if(MSVC)
+    # Nested compositions can exceed the regular COFF section limit in debug builds.
+    target_compile_options(test_execution_static_opstate_allocations PRIVATE /bigobj)
+    target_compile_options(test_execution_static_opstate_exceptions PRIVATE /bigobj)
+endif()
+forge_add_execution_runtime_test(
     test_execution_throwing_move_adaptors
     test_execution_throwing_move_adaptors.cpp
     execution_throwing_move_adaptors)
