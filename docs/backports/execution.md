@@ -112,20 +112,22 @@ auto result = std::this_thread::sync_wait(std::move(work));
   sender attributes 暴露 `get_completion_scheduler<set_value_t>`，再通过
   `continues_on(closure(continues_on(child, sch)), orig_sch)` 返回原
   value-completion scheduler。
-- `continues_on` 当前只实现单一 value completion shape 的 transfer subset；value
-  参数会 decay-copy 到调度 hop 的 operation state。`affine(sender)` / `sender | affine`
-  从 receiver environment 的 `get_start_scheduler` 取得目标 scheduler，并通过
-  unstoppable schedule sender 返回该 execution resource；它继承同一个单一 value
-  shape 限制。多 value-alternative 和引用 value-signature 的逐位 WD 语义需要单独
-  重构，不应从当前 subset 推断。
+- `continues_on` 保留 predecessor 的全部 value completion shapes，并将 value / error
+  datums decay-copy 到去重的 tagged tuple `variant`。只有某个 datum 的 decay-copy
+  可能抛出时才额外声明 `set_error_t(std::exception_ptr)`；scheduler sender 声明的 error
+  和 stopped completions 也会加入结果 signatures。scheduler operation 在 `connect`
+  阶段构造，连接失败直接从 `connect` 抛出；decay-copy 失败则缓存 `exception_ptr`，
+  仍经过 scheduler hop 后交付，scheduler 的 error / stopped 优先于缓存结果。
+  `affine(sender)` / `sender | affine` 从 receiver environment 的 `get_start_scheduler`
+  取得目标 scheduler，通过 unstoppable schedule sender 复用同一 transfer 路径，
+  因而也保留多种 value shapes，并采用相同的条件 `exception_ptr` 规则。
   `continues_on` 为转移后的 value 和 stopped completion 发布 destination scheduler
   attribute。调度失败的 error completion 允许发生在 unspecified agent，因此不为
   error disposition 声称唯一 completion scheduler；completion domain 同样只从
   destination scheduler 或其 schedule sender 派生，不借用 child domain。
 - `starts_on` 和 `associate` 在 `connect` 阶段构造 child operation；构造失败由
-  `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 与
-  `continues_on` 必须在收到上游 completion 后选择并构造动态 child/schedule
-  operation，因此当前实现会为这些真实的 late-connect 失败保留
+  `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 在收到上游
+  completion 后选择并构造 successor operation，因此仍为 late-connect 失败保留
   `set_error(std::exception_ptr)` 通道。`starts_on` 的 source child environment 以
   目标 scheduler 覆盖 `get_scheduler` 和 `get_start_scheduler`；目标 scheduler 有
   直接 `get_domain` 定制时优先使用它，否则保留 outer environment 的 domain 查询及
@@ -251,7 +253,18 @@ child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析�
 也须单独计入。control block 的设计约束见
 [`inplace_stop_callback` 设计记录](../roadmap/inplace-stop-callback-design.md)。
 
-`continues_on`、`on`、`associate`、`split`、`spawn_future` 和
+`continues_on` 将 scheduler operation 和 predecessor operation 作为普通成员直接构造，
+结果用 tagged decayed tuples 的 `variant` 原位保存；`schedule_from` 只转发 departure
+marker 的 child，不增加独立缓冲。`starts_on` 以普通成员保存 scheduler operation 和
+child operation，仍在 outer `connect` 中预连接 child；这保留现有异常传播方式，
+与 working draft 的 `let_value` 展开在 child 连接时机上仍有差异。
+`on` 的两种形式将其组合 sender 的 operation 作为普通成员从 factory prvalue
+直接初始化。这些路径不再使用大小或对齐不足时分配的缓冲，支持大于固定缓冲容量、
+over-aligned 以及空的 immovable operation states；空间与对齐需求计入外层 operation。
+在组成对象及其查询、结果构造不自行分配时，唯一保留的分配边界仍是组合中实际发生的
+stop callback registration；`inplace_stop_callback` 的 control block 规则不变。
+
+`associate`、`split`、`spawn_future` 和
 `counting_scope` 的部分内部路径仍使用 `__op_storage` 小缓冲。
 `__op_storage` 只有在对象大小不超过缓冲容量、且对齐要求不超过缓冲对齐
 （默认 `alignof(std::max_align_t)`）时才内联存储；任一条件不满足就通过
