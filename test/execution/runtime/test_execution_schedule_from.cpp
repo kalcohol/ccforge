@@ -265,7 +265,7 @@ TEST(ScheduleFromTest, DefaultDomainForwardsValues) {
 }
 
 TEST(ScheduleFromTest, DefaultDomainForwardsStopped) {
-    auto result = std::this_thread::sync_wait(
+    auto result = forge::sync_wait(
         std::execution::schedule_from(std::execution::just_stopped()));
 
     EXPECT_FALSE(result.has_value());
@@ -277,7 +277,7 @@ TEST(ScheduleFromTest, DefaultDomainForwardsErrors) {
             std::runtime_error("schedule_from"))));
 
     EXPECT_THROW(
-        static_cast<void>(std::this_thread::sync_wait(std::move(sender))),
+        static_cast<void>(forge::sync_wait(std::move(sender))),
         std::runtime_error);
 }
 

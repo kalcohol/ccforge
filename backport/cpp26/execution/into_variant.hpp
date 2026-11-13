@@ -352,7 +352,7 @@ struct sync_wait_with_variant_t {
         using source_cs_t = std::execution::completion_signatures_of_t<S, env_t>;
         using variant_t =
             std::execution::__forge_into_variant::__variant_type_of_t<source_cs_t>;
-        auto result = std::this_thread::sync_wait(
+        auto result = std::this_thread::__sync_wait_impl_t{}(
             std::execution::into_variant(
                 std::execution::__forge_detail::__forward_as_given(
                     std::forward<S>(sndr))));

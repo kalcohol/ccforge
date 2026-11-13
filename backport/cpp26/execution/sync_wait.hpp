@@ -165,23 +165,23 @@ template<class... Sigs>
 struct __value_count<std::execution::completion_signatures<Sigs...>>
     : std::integral_constant<std::size_t, (std::size_t{0} + ... + __is_value<Sigs>::value)> {};
 template<class S>
-inline constexpr bool __multiple_values = __value_count<
+inline constexpr bool __nonstandard_values = __value_count<
     std::execution::completion_signatures_of_t<S,
-        std::execution::__forge_sync_wait::sync_wait_env>>::value > 1;
+        std::execution::__forge_sync_wait::sync_wait_env>>::value != 1;
 }
 
 struct sync_wait_t {
     template<class S>
         requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
-                 (!__forge_wait_detail::__multiple_values<S>)
+                 (!__forge_wait_detail::__nonstandard_values<S>)
     auto operator()(S&& sndr) const {
         return __sync_wait_impl_t{}(std::forward<S>(sndr));
     }
 
-    template<class S>
+    template<class S, bool = true>
         requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
-                 __forge_wait_detail::__multiple_values<S>
-    [[deprecated("multi-value sync_wait is a Forge extension; use forge::sync_wait or std::this_thread::sync_wait_with_variant")]]
+                 __forge_wait_detail::__nonstandard_values<S>
+    [[deprecated("sync_wait with zero or multiple value completions is a Forge extension; use forge::sync_wait or std::this_thread::sync_wait_with_variant")]]
     auto operator()(S&& sndr) const {
         return __sync_wait_impl_t{}(std::forward<S>(sndr));
     }

@@ -242,6 +242,32 @@ TEST(AnySenderTest, SyncWaitRunsStoredSender) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
+#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
+// Zero-value erasure is supported by the backport wait implementation.
+TEST(AnySenderTest, SyncWaitPreservesStoppedWithoutValueCompletions) {
+    using signatures = std::execution::completion_signatures<
+        std::execution::set_stopped_t()>;
+    forge::any_sender_of<signatures> erased = std::execution::just_stopped();
+
+    auto result = erased.sync_wait();
+    static_assert(std::is_same_v<decltype(result), std::optional<std::tuple<>>>);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(AnySenderTest, SyncWaitPreservesErrorWithoutValueCompletions) {
+    using signatures = std::execution::completion_signatures<
+        std::execution::set_error_t(int)>;
+    forge::any_sender_of<signatures> erased = std::execution::just_error(42);
+
+    try {
+        (void)erased.sync_wait();
+        FAIL() << "Expected the stored error";
+    } catch (int error) {
+        EXPECT_EQ(error, 42);
+    }
+}
+#endif
+
 TEST(AnySenderTest, MoveConstructsSmallObjectStorageSender) {
     sender_move_counts counts;
 

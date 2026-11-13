@@ -479,6 +479,24 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endforeach()
     set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 endif()
+forge_add_execution_compile_probe(test_execution_zero_wait_compat test_execution_zero_wait_compat.cpp execution_zero_wait_compat_compile)
+add_test(NAME execution_zero_wait_compat COMMAND test_execution_zero_wait_compat)
+set_tests_properties(execution_zero_wait_compat PROPERTIES DEPENDS execution_zero_wait_compat_compile)
+if(MSVC)
+    target_compile_options(test_execution_zero_wait_compat PRIVATE /we4996)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_execution_zero_wait_compat PRIVATE -Werror=deprecated-declarations)
+endif()
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ZERO_WAIT_COMPAT
+        test_execution_zero_wait_compat.cpp ON "Suppressed legacy extensions and Forge replacements must compile")
+    foreach(_forge_case RANGE 1 2)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs} -DFORGE_DEPRECATION_CASE=${_forge_case})
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ZERO_WAIT_DEPRECATED_${_forge_case}
+            test_execution_zero_wait_compat.cpp OFF "Each legacy extension must diagnose deprecation")
+    endforeach()
+    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
+endif()
 set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 unset(_forge_extension_flags)
@@ -491,7 +509,7 @@ set(_forge_scope_strict_targets
     test_execution_counting_scope_stress test_execution_counting_scope_lifetime
     test_execution_counting_scope_decrement_tail test_execution_spawn_future
     test_execution_static_opstate_scope test_execution_associate_closure
-    test_execution_composition)
+    test_execution_composition test_execution_wave1 test_execution_schedule_from)
 set(_forge_scope_strict_copies)
 foreach(_forge_target IN LISTS _forge_scope_strict_targets)
     string(REGEX REPLACE "^test_" "" _forge_source_test "${_forge_target}")
@@ -503,7 +521,7 @@ foreach(_forge_target IN LISTS _forge_scope_strict_targets)
 endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
     ${_forge_scope_strict_copies} test_execution_scope_observer_compat
-    test_execution_extension_compat test_execution_extensions)
+    test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)
 unset(_forge_target)

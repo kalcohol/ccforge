@@ -142,7 +142,7 @@ class any_sender_of {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
             .do_sync_wait = [](void* p) -> std::optional<VT> {
-                auto result = std::this_thread::sync_wait(
+                auto result = forge::sync_wait(
                     __stored_sender_ref<S>{static_cast<S*>(p)});
                 static_assert(std::same_as<decltype(result), std::optional<VT>>);
                 return result;
