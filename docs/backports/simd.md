@@ -70,21 +70,23 @@ libstdc++ lane 充当 fallback oracle。
 
 逐元素算术、连续 load/store 与 `select` 的实现便于编译器自动向量化；
 实际代码生成取决于工具链、ISA、向量宽度与调用上下文，不保证使用特定指令。
-mask 仍使用原有存储布局，类型的 size/alignment 不因这些优化改变。
+mask 的存储布局与类型的 size/alignment 由实现决定。
 当前公开接口用 `select` 表达条件选择，没有 `where` 接口。
 
-`reduce`、`reduce_min`、`reduce_max` 与 `reduce_count` 使用 pairwise tree，
-总工作量为 O(N)，归约依赖深度为 O(log N)。masked 形式先收集选中 lane，
-奇数尾项直接进入下一层，不向非空归约注入 identity；空 mask 返回指定的 identity。
-收集过程仍是逐 lane 扫描。`all_of`/`any_of` 保留短路扫描，
+当前实现的 `reduce`、`reduce_min`、`reduce_max` 与 `reduce_count` 按 lane 索引顺序
+逐项扫描，总工作量为 O(N)。`reduce` 从首个选中 lane 开始累积，
+masked 形式跳过未选中 lane，不向非空归约注入 identity；空 mask 返回指定的 identity。
+masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>::max()` /
+`numeric_limits<T>::lowest()`。`all_of`/`any_of` 使用短路扫描，
 `reduce_min_index`/`reduce_max_index` 保留按索引扫描，以返回要求的最小/最大索引。
 
 [simd.reductions](https://eel.is/c++draft/simd.reductions) 的 `reduce` 使用
 [numerics.defns](https://eel.is/c++draft/numerics.defns) 定义的 `GENERALIZED_SUM`，
-允许改变分组和排列；
+不规定固定归约顺序，允许改变分组和排列；
 [reduction-binary-operation](https://eel.is/c++draft/simd.expos.defn) 要求运算具有
 commutative 的逐元素语义，没有显式的 associative 要求。
-调用者不能依赖从左至右的执行顺序。浮点 `plus` 的分组变化不仅影响末位舍入，
+当前顺序扫描是实现选择，调用者不能将从左至右的执行顺序视为可移植保证。
+浮点 `plus` 的分组变化不仅影响末位舍入，
 还可能改变对消以及中间结果的 overflow/underflow，导致明显不同的结果。
 浮点 `multiplies` 也可能因舍入或中间范围而变化；验证浮点和时应采用适合输入范围的容差，
 并单独检查对消与范围边界情形。
@@ -99,10 +101,8 @@ element-wise equal，包含 `sqrt` 的函数组则只要求
 本实现以有效域内逐 lane 与对应标量函数一致为更强的精度目标。
 草案不规定是否访问 `errno`；标量 domain/pole/range error 对应的 lane 结果未指定。
 因此不能用 `errno` 检查 SIMD 数学函数的可移植错误状态。
-GCC 的 `sqrt` 仅在该函数内启用 `no-math-errno`，允许编译器直接生成平方根指令；
-支持 `__builtin_elementwise_sqrt` 的 Clang 使用该 builtin。常量求值保留原路径，
-其他编译器及不支持 builtin 的 Clang 保留标准标量调用。
-软件 libm 退避仍可能访问 `errno`，这里不保证所有目标上的 errno-free 执行。
+`sqrt` 通过通用逐元素变换调用对应标量函数，常量求值使用既有 constexpr 路径。
+标量库调用可能访问 `errno`，这里不保证 errno-free 执行。
 `sin`、`exp`、`fma` 等其他函数保留现有标量库路径，不引入近似多项式或全局
 `fast-math` 选项，也不改变调用者的浮点异常模式。
 草案没有把浮点异常状态与 `errno` 一并豁免；实现不额外清除或屏蔽异常，
@@ -113,6 +113,8 @@ NaN、无穷、signed zero 与 subnormal 按既有标量语义处理；不提供
 [SIMD benchmark protocol](../../test/simd/benchmark/MEASUREMENT_PROTOCOL.txt)。
 基准不注册到默认 CTest；使用同一源码、工具链与 ISA 构建基线和候选，
 通过 `taskset` 绑到同一可用核心并交错采样。结果仅反映记录的环境和负载。
+性能优化仅在配对测量证实目标负载受益后采纳；需要同时检查不同类型、
+向量宽度与 mask 分布，不能由单个 kernel 的收益推断整体收益。
 
 ### Native ABI 的类型标识
 
