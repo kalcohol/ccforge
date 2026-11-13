@@ -78,6 +78,13 @@ for dir in "$@"; do
         run_bounded "${binary}"
     done
 
+    # Strict suites are optional in builds that omit the lifetime test targets.
+    strict_binary="${dir}/test/forge/test_forge_stop_lifetime_io_uring_rw"
+    if [[ -x "${strict_binary}" ]]; then
+        printf '[io-uring-container] running %s\n' "${strict_binary}"
+        run_bounded "${strict_binary}"
+    fi
+
     # The failure-injection binary only exists when the linker supports
     # --wrap=syscall, so absence is a toolchain capability gap.
     fault_binary="${dir}/test/forge/test_forge_io_uring_fault"

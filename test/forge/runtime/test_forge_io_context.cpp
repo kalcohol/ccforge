@@ -263,6 +263,11 @@ struct self_destroying_io_receiver {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
+struct stopping_destroying_io_receiver : self_destroying_io_receiver {
+    std::inplace_stop_source* source;
+    auto get_env() const noexcept -> stop_env { return stop_env{source}; }
+};
+
 struct self_destroying_size_io_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -1470,6 +1475,26 @@ TEST(IoContextTest, PostEnqueueReceiverStopCompletesPendingReadable) {
     write_byte(pipe.second.get());
     auto result = forge::sync_wait(ctx.readable(pipe.first.get()));
     EXPECT_TRUE(result.has_value());
+}
+
+TEST(IoContextTest, ReceiverStopAllowsOperationDestruction) {
+    auto pipe = make_pipe();
+    forge::io::context ctx;
+    std::inplace_stop_source source;
+    using sender_t = decltype(ctx.readable(pipe.first.get()));
+    using op_t = std::execution::connect_result_t<sender_t, stopping_destroying_io_receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(ctx.readable(pipe.first.get()),
+            stopping_destroying_io_receiver{{&context}, &source});
+    });
+    std::execution::start(op);
+    source.request_stop();
+    ctx.shutdown();
+    ctx.wait();
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }
 
 TEST(IoContextTest, PostEnqueueReceiverStopCompletesPendingWritable) {

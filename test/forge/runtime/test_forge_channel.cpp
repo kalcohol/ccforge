@@ -568,6 +568,23 @@ TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingRecv) {
     EXPECT_EQ(*value, 4);
 }
 
+TEST(ChannelTest, EnqueuedStopAllowsReceiverToDestroyOperation) {
+    forge::bounded_channel<int> channel{1};
+    std::inplace_stop_source source;
+    using sender_t = decltype(channel.async_recv());
+    using op_t = std::execution::connect_result_t<sender_t, self_destroying_recv_receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(channel.async_recv(),
+            self_destroying_recv_receiver{&source, &context});
+    });
+    std::execution::start(op);
+    source.request_stop();
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+}
+
 TEST(ChannelTest, PostEnqueueReceiverStopCompletesPendingSend) {
     forge::bounded_channel<int> channel{1};
     ASSERT_TRUE(forge::sync_wait(channel.async_send(1)).has_value());

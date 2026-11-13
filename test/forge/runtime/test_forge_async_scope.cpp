@@ -392,6 +392,21 @@ TEST(AsyncScopeTest, StopTokenIsVisibleToSpawnedSender) {
     EXPECT_TRUE(second->requested);
 }
 
+TEST(AsyncScopeTest, StopRequestReturnsBeforeSpawnedOperationRetires) {
+    forge::async_scope scope;
+    int calls = 0;
+    ASSERT_TRUE(scope.spawn(std::execution::then(
+        std::execution::read_env(std::execution::get_stop_token),
+        [&scope, &calls](auto token) {
+            std::inplace_stop_callback registration(token, [&calls]() noexcept { ++calls; });
+            scope.request_stop();
+            EXPECT_EQ(calls, 1);
+        })));
+    scope.wait();
+    EXPECT_EQ(calls, 1);
+    EXPECT_TRUE(scope.stop_requested());
+}
+
 TEST(AsyncScopeTest, CloseDoesNotRequestStop) {
     forge::async_scope scope;
     auto probe = std::make_shared<stop_probe>();

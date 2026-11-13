@@ -128,6 +128,37 @@ TEST(ForgeAnyStopTokenTest, CallbackRunsExactlyOnce) {
     EXPECT_EQ(calls, 1);
 }
 
+TEST(ForgeAnyStopTokenTest, SelfRemovalKeepsCallableAliveUntilInvocationReturns) {
+    struct callable {
+        std::shared_ptr<int> owned;
+        std::weak_ptr<int>* observer;
+        void* owner;
+        void (*remove)(void*) noexcept;
+        bool* alive_after_removal;
+        void operator()() noexcept {
+            auto* weak = observer;
+            auto* result = alive_after_removal;
+            remove(owner);
+            *result = !weak->expired();
+        }
+    };
+    std::inplace_stop_source source;
+    using callback_t = forge::any_stop_token::callback_type<callable>;
+    std::unique_ptr<callback_t> callback;
+    auto owned = std::make_shared<int>(42);
+    std::weak_ptr<int> observer = owned;
+    bool alive = false;
+    callback = std::make_unique<callback_t>(forge::any_stop_token{source.get_token()},
+        callable{std::move(owned), &observer, &callback,
+            [](void* ptr) noexcept {
+                static_cast<std::unique_ptr<callback_t>*>(ptr)->reset();
+            }, &alive});
+    source.request_stop();
+    EXPECT_TRUE(alive);
+    EXPECT_TRUE(observer.expired());
+    EXPECT_FALSE(callback);
+}
+
 TEST(ForgeAnyStopTokenTest, CallbackInvocationPreservesCallbackTypeCategory) {
     for (bool already_stopped : {false, true}) {
         std::inplace_stop_source source;

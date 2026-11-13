@@ -573,6 +573,24 @@ TEST(TimerContextTest, PreStoppedReceiverMayDestroyOperationInCallback) {
     EXPECT_FALSE(context.has_value);
 }
 
+TEST(TimerContextTest, EnqueuedStopAllowsReceiverToDestroyOperation) {
+    forge::timer_context ctx;
+    std::inplace_stop_source source;
+    using sender_t = decltype(ctx.schedule_after(1h));
+    using op_t = std::execution::connect_result_t<sender_t, self_destroying_timer_receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(ctx.schedule_after(1h),
+            self_destroying_timer_receiver{&source, &context});
+    });
+    std::execution::start(op);
+    source.request_stop();
+    ctx.wait();
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
+}
+
 TEST(TimerContextTest, PreStoppedCompletionAllowsCrossThreadDestruction) {
     forge::timer_context ctx;
     timer_state state;

@@ -112,10 +112,25 @@ done
 FORGE_IO_URING_TEST_MARKER_DIR="${marker_dir}" \
     "${runner}" c++ 5 1 "${work}/probe-pass" "${build_dir}" \
     >/dev/null
+[[ ! -e "${marker_dir}/test_forge_stop_lifetime_io_uring_rw" ]]
+for name in test_forge_io_uring_context test_forge_io_uring_rw test_forge_io_uring_fault; do
+    [[ -e "${marker_dir}/${name}" ]]
+done
+
+# Repeat with the optional strict target present and verify it is replayed.
+printf '%s\n' '#!/usr/bin/env bash' \
+    'touch "${FORGE_IO_URING_TEST_MARKER_DIR}/test_forge_stop_lifetime_io_uring_rw"' \
+    > "${binary_dir}/test_forge_stop_lifetime_io_uring_rw"
+chmod +x "${binary_dir}/test_forge_stop_lifetime_io_uring_rw"
+
+FORGE_IO_URING_TEST_MARKER_DIR="${marker_dir}" \
+    "${runner}" c++ 5 1 "${work}/probe-pass" "${build_dir}" \
+    >/dev/null
 
 for name in \
         test_forge_io_uring_context \
         test_forge_io_uring_rw \
+        test_forge_stop_lifetime_io_uring_rw \
         test_forge_io_uring_fault; do
     [[ -e "${marker_dir}/${name}" ]]
 done

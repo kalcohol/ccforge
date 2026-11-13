@@ -427,6 +427,11 @@ struct self_destroying_io_receiver {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
+struct stopping_destroying_io_receiver : self_destroying_io_receiver {
+    std::inplace_stop_source* source;
+    auto get_env() const noexcept -> stop_env { return stop_env{source}; }
+};
+
 struct context_destroying_io_receiver {
     using receiver_concept = std::execution::receiver_t;
 
@@ -1047,6 +1052,27 @@ TEST(IoIocpTest, ImmediateReceiverStopAfterStartCancelsPendingRead) {
     EXPECT_FALSE(state->value);
     EXPECT_TRUE(state->stopped);
     EXPECT_FALSE(state->error);
+}
+
+TEST(IoIocpTest, ReceiverStopAllowsOperationDestruction) {
+    auto pipe = make_pipe_pair();
+    forge::io::context ctx;
+    std::array<std::byte, 8> buffer{};
+    std::inplace_stop_source source;
+    using sender_t = decltype(ctx.async_read_some(pipe.server.get(), std::span{buffer}));
+    using op_t = std::execution::connect_result_t<sender_t, stopping_destroying_io_receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(ctx.async_read_some(pipe.server.get(), std::span{buffer}),
+            stopping_destroying_io_receiver{{&context}, &source});
+    });
+    std::execution::start(op);
+    source.request_stop();
+    ctx.shutdown();
+    ctx.wait();
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(context.has_value);
 }
 
 TEST(IoIocpTest, PostEnqueueReceiverStopCancelsPendingRead) {

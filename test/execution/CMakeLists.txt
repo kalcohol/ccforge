@@ -316,6 +316,42 @@ forge_add_execution_runtime_test(
     test_execution_inline_scheduler.cpp
     execution_inline_scheduler)
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
+forge_add_execution_runtime_test(test_execution_stop_callback_lifetime
+    test_execution_stop_callback_lifetime.cpp execution_stop_callback_lifetime)
+
+# This macro belongs exclusively to test executables; never export it from a
+# library target or set it as a production configuration option.
+forge_add_execution_runtime_test(test_execution_stop_callback_strict_lifetime
+    test_execution_stop_callback_lifetime.cpp execution_stop_callback_strict_lifetime)
+target_sources(test_execution_stop_callback_strict_lifetime PRIVATE
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_stop_token.cpp"
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_when_all.cpp"
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_counting_scope.cpp"
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_counting_scope_lifetime.cpp"
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_counting_scope_stress.cpp"
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_spawn_future.cpp")
+target_compile_definitions(test_execution_stop_callback_strict_lifetime PRIVATE
+    FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
+# These cases deliberately destroy an executing inline source. Keep the strict
+# reproducer available without adding the known ASan failure to the passing gate.
+set_tests_properties(execution_stop_callback_strict_lifetime PROPERTIES
+    ENVIRONMENT "GTEST_FILTER=-*KnownOpenTest.*")
+add_custom_target(test_execution_stop_callback_known_open
+    COMMAND $<TARGET_FILE:test_execution_stop_callback_strict_lifetime>
+        "--gtest_filter=*KnownOpenTest.*"
+    DEPENDS test_execution_stop_callback_strict_lifetime
+    USES_TERMINAL VERBATIM)
+forge_add_execution_runtime_test(test_execution_stop_callback_allocations
+    test_execution_stop_callback_allocations.cpp execution_stop_callback_allocations)
+target_compile_definitions(test_execution_stop_callback_allocations PRIVATE
+    FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
+set_tests_properties(execution_stop_callback_allocations PROPERTIES SKIP_RETURN_CODE 77)
+if(MSVC)
+    target_compile_options(test_execution_stop_callback_lifetime PRIVATE /bigobj)
+    target_compile_options(test_execution_stop_callback_strict_lifetime PRIVATE /bigobj)
+endif()
+add_custom_target(test_stop_callback_strict_lifetime
+    DEPENDS test_execution_stop_callback_strict_lifetime test_execution_stop_callback_allocations)
 forge_add_execution_runtime_test(test_execution_run_loop test_execution_run_loop.cpp execution_run_loop)
 forge_add_execution_runtime_test(test_execution_adaptors test_execution_adaptors.cpp execution_adaptors)
 forge_add_execution_runtime_test(

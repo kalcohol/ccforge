@@ -295,3 +295,55 @@ if(FORGE_SENDERS_FULL AND NOT FORGE_FORCE_SENDERS_BACKPORT)
         test_forge_execution_extensions_native.cpp
         forge_execution_extensions_native_compile)
 endif()
+
+# Rebuild lifetime-heavy suites with the source/node probes in every TU.
+# The test names match both sanitizer lanes' execution|forge selectors.
+function(forge_add_stop_lifetime_test stem)
+    set(_lifetime_target "test_forge_stop_lifetime_${stem}")
+    forge_add_forge_test(${_lifetime_target} "test_forge_${stem}.cpp"
+        "forge_stop_callback_strict_lifetime_${stem}")
+    target_compile_definitions(${_lifetime_target} PRIVATE
+        FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
+    if(MSVC)
+        target_compile_options(${_lifetime_target} PRIVATE /bigobj)
+    endif()
+    if(TARGET test_stop_callback_strict_lifetime)
+        add_dependencies(test_stop_callback_strict_lifetime ${_lifetime_target})
+    endif()
+endfunction()
+
+if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
+    foreach(_stem IN ITEMS any_stop_token timer_context channel async_scope wait_result)
+        forge_add_stop_lifetime_test(${_stem})
+    endforeach()
+endif()
+if(FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_forge_test(test_forge_stop_callback_lifetime
+        test_forge_stop_callback_lifetime.cpp forge_stop_callback_lifetime)
+    if(MSVC)
+        target_compile_options(test_forge_stop_callback_lifetime PRIVATE /bigobj)
+    endif()
+    foreach(_stem IN ITEMS stop_callback_lifetime coro_interop coro_combinators)
+        forge_add_stop_lifetime_test(${_stem})
+    endforeach()
+endif()
+if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_stop_lifetime_test(io_context)
+    if(FORGE_TEST_HAS_EPOLL_CTL_WRAP)
+        target_compile_definitions(test_forge_stop_lifetime_io_context PRIVATE
+            FORGE_TEST_HAS_EPOLL_CTL_WRAP=1)
+        target_link_options(test_forge_stop_lifetime_io_context PRIVATE "-Wl,--wrap=epoll_ctl")
+    endif()
+endif()
+if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_stop_lifetime_test(io_iocp)
+endif()
+if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
+    forge_add_stop_lifetime_test(io_uring_rw)
+    if("${FORGE_ENABLE_FORGE_IO_URING}" STREQUAL "ON")
+        target_compile_definitions(test_forge_stop_lifetime_io_uring_rw PRIVATE
+            FORGE_TEST_IO_URING_RUNTIME_REQUIRED=1)
+    endif()
+    set_tests_properties(forge_stop_callback_strict_lifetime_io_uring_rw PROPERTIES
+        SKIP_RETURN_CODE 77)
+endif()

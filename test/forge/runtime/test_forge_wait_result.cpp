@@ -144,6 +144,19 @@ TEST(ForgeWaitResultTest, CapturesStopped) {
     EXPECT_TRUE(result.stopped());
 }
 
+TEST(ForgeWaitResultTest, StopRegistrationEndsBeforeStackSourceDestruction) {
+    bool called = false;
+    auto result = forge::wait_result(std::execution::then(
+        std::execution::read_env(std::execution::get_stop_token),
+        [&called](auto token) {
+            std::inplace_stop_callback registration(token, [&called]() noexcept { called = true; });
+            return token.stop_possible() && !token.stop_requested();
+        }));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(result.value()));
+    EXPECT_FALSE(called);
+}
+
 TEST(ForgeWaitResultTest, CapturesExceptionPtrError) {
     auto error = std::make_exception_ptr(std::runtime_error{"boom"});
     auto result = forge::wait_result(std::execution::just_error(error));

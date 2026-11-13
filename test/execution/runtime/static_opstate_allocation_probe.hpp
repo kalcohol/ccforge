@@ -36,6 +36,7 @@ int main() {
 namespace allocation_probe {
 std::atomic<bool> enabled{false};
 std::atomic<std::size_t> calls{0};
+inline thread_local bool fail_allocations = false;
 
 void count() noexcept {
     if (enabled.load(std::memory_order_relaxed)) {
@@ -45,6 +46,7 @@ void count() noexcept {
 
 void* allocate(std::size_t size) {
     count();
+    if (fail_allocations) throw std::bad_alloc{};
     for (;;) {
         if (void* p = std::malloc(size == 0 ? 1 : size)) return p;
         if (auto handler = std::get_new_handler()) handler();

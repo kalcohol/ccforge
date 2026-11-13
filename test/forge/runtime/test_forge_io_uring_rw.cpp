@@ -754,7 +754,8 @@ void check_stop_cancels_pending_read(std::pmr::memory_resource* memory) {
     // start() drives the coroutine to its suspension point, so the read is
     // registered with the ring before stop is requested.
     std::execution::start(operation);
-    stop.request_stop();
+    RW_CHECK(stop.request_stop());
+    RW_CHECK(!stop.request_stop());
 
     RW_CHECK(wait_done(state));
     {
