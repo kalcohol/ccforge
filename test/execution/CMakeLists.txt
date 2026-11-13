@@ -97,6 +97,10 @@ forge_add_execution_compile_probe(
     test_execution_on_closure_constraints.cpp
     execution_on_closure_constraints_compile)
 forge_add_execution_compile_probe(
+    test_execution_transfer_signatures
+    test_execution_accept_continues_on_multi_value.cpp
+    execution_transfer_signatures_compile)
+forge_add_execution_compile_probe(
     test_execution_associate_closure_constraints
     test_execution_associate_closure_constraints.cpp
     execution_associate_closure_constraints_compile)
@@ -213,10 +217,10 @@ forge_expect_execution_cxx_source_compiles(
     OFF
     "std::execution::when_all must reject zero senders")
 forge_expect_execution_cxx_source_compiles(
-    FORGE_EXECUTION_REJECTS_CONTINUES_ON_MULTI_VALUE
-    test_execution_reject_continues_on_multi_value.cpp
-    OFF
-    "std::execution::continues_on subset must reject multiple value completion shapes")
+    FORGE_EXECUTION_ACCEPTS_CONTINUES_ON_MULTI_VALUE
+    test_execution_accept_continues_on_multi_value.cpp
+    ON
+    "std::execution::continues_on must preserve multiple value completion shapes")
 forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_REJECTS_MISMATCHED_UPON_ERROR
     test_execution_reject_mismatched_upon_error.cpp
@@ -305,6 +309,12 @@ forge_add_execution_runtime_test(
 set_tests_properties(execution_static_opstate_allocations PROPERTIES
     SKIP_RETURN_CODE 77)
 forge_add_execution_runtime_test(
+    test_execution_static_opstate_transfer
+    test_execution_static_opstate_transfer.cpp
+    execution_static_opstate_transfer)
+set_tests_properties(execution_static_opstate_transfer PROPERTIES
+    SKIP_RETURN_CODE 77)
+forge_add_execution_runtime_test(
     test_execution_static_opstate_exceptions
     test_execution_static_opstate_exceptions.cpp
     execution_static_opstate_exceptions)
@@ -312,6 +322,7 @@ if(MSVC)
     # Nested compositions can exceed the regular COFF section limit in debug builds.
     target_compile_options(test_execution_static_opstate_allocations PRIVATE /bigobj)
     target_compile_options(test_execution_static_opstate_exceptions PRIVATE /bigobj)
+    target_compile_options(test_execution_static_opstate_transfer PRIVATE /bigobj)
 endif()
 forge_add_execution_runtime_test(
     test_execution_throwing_move_adaptors

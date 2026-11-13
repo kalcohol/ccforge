@@ -947,8 +947,7 @@ TEST(OnTest, FirstFormReturnsToReceiverStartScheduler) {
         sndr, start_scheduler_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(int),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(int)>>);
 
     int value = 0;
     bool completed = false;
@@ -1146,8 +1145,7 @@ TEST(AffineTest, CompletesOnRequestedScheduler) {
         sndr, start_scheduler_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(int),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_value_t(int)>>);
 
     auto result = forge::sync_wait(std::move(sndr));
 
@@ -1362,29 +1360,25 @@ TEST(ContinuesOnTest, CachedConstructionErrorsAllowInlineCompletionAndSelfDestru
     check.template operator()<true, true>();
 }
 
-TEST(ContinuesOnTest, ScheduleConnectFailureKeepsBufferedStateOwned) {
+TEST(ContinuesOnTest, ScheduleConnectFailurePropagatesBeforeStarting) {
     auto check = []<bool Error>() {
         SCOPED_TRACE(Error);
         continues_hop_state state;
-        {
-            auto op = std::execution::connect(
-                std::execution::continues_on(continues_source<Error>{&state},
-                    continues_scheduler{&state}), continues_receiver{state});
-            state.throw_on_connect = true;
-            std::execution::start(op);
-            EXPECT_EQ(state.values, 0);
-            EXPECT_EQ(state.errors, 1);
-            EXPECT_EQ(state.stopped, 0);
-            EXPECT_EQ(state.connects, 1);
-            EXPECT_EQ(state.starts, 0);
-            EXPECT_EQ(state.pending, nullptr);
-            EXPECT_TRUE(state.payload_alive);
-            EXPECT_EQ(state.live_payloads, 2);
-            ASSERT_TRUE(state.exception);
-            EXPECT_THROW(std::rethrow_exception(state.exception), continues_connect_failure);
-        }
+        state.throw_on_connect = true;
+        EXPECT_THROW((void)std::execution::connect(
+            std::execution::continues_on(continues_source<Error>{&state},
+                continues_scheduler{&state}), continues_receiver{state}),
+            continues_connect_failure);
+        EXPECT_EQ(state.values + state.errors + state.stopped, 0);
+        EXPECT_EQ(state.connects, 1);
+        EXPECT_EQ(state.starts, 0);
+        EXPECT_EQ(state.pending, nullptr);
+        EXPECT_EQ(state.live_payloads, 0);
+        EXPECT_FALSE(state.payload_alive);
+        EXPECT_FALSE(state.outer_alive);
+        EXPECT_FALSE(state.exception);
         EXPECT_EQ(state.schedule_order, 0);
-        expect_continues_destruction(state, false);
+        EXPECT_EQ(state.upstream_order, 0);
     };
     check.template operator()<false>();
     check.template operator()<true>();
@@ -1497,54 +1491,43 @@ TEST(ContinuesOnTest, SchedulerErrorAndStoppedCanDestroyTheOperationAtCompletion
     check.template operator()<true>();
 }
 
-TEST(ContinuesOnTest, SetupFailuresCanDestroyTheOperationAtCompletion) {
+TEST(ContinuesOnTest, PayloadFailuresCanDestroyTheOperationAtCompletion) {
     auto check = []<bool Error, bool Reference>() {
-        for (bool fail_connect : {false, true}) {
-            SCOPED_TRACE(Error);
-            SCOPED_TRACE(Reference);
-            SCOPED_TRACE(fail_connect);
-            continues_hop_state state;
-            auto sndr = std::execution::continues_on(continues_source<Error, Reference>{&state},
-                continues_scheduler{&state});
-            using op_t = std::execution::connect_result_t<decltype(sndr), continues_receiver>;
-            auto owner = std::unique_ptr<op_t>(new op_t(std::execution::connect(
-                std::move(sndr), continues_receiver{state})));
-            state.destroy = [](void* op) noexcept { delete static_cast<op_t*>(op); };
-            state.self_destroy_op = owner.get();
-            state.throw_on_connect = fail_connect;
-            state.throw_on_move = !fail_connect && !Reference;
-            state.throw_on_copy = !fail_connect && Reference;
-            auto* op = owner.release();
-            std::execution::start(*op);
-            if (!fail_connect) {
-                EXPECT_NE(state.self_destroy_op, nullptr);
-                EXPECT_EQ(state.values + state.errors + state.stopped, 0);
-                ASSERT_NE(state.pending, nullptr);
-                state.complete();
-            }
-            EXPECT_EQ(state.self_destroy_op, nullptr);
-            EXPECT_EQ(state.values, 0);
-            EXPECT_EQ(state.errors, 1);
-            EXPECT_EQ(state.stopped, 0);
-            EXPECT_EQ(state.starts, fail_connect ? 0 : 1);
-            ASSERT_TRUE(state.exception);
-            if (fail_connect) {
-                EXPECT_THROW(std::rethrow_exception(state.exception), continues_connect_failure);
-                expect_continues_destruction(state, false);
-            } else {
-                if constexpr (Reference) {
-                    EXPECT_THROW(std::rethrow_exception(state.exception), continues_copy_failure);
-                } else {
-                    EXPECT_THROW(std::rethrow_exception(state.exception), continues_move_failure);
-                }
-                EXPECT_TRUE(state.upstream_saw_outer);
-                EXPECT_LT(state.upstream_order, state.outer_order);
-                EXPECT_EQ(state.live_payloads, 0);
-                EXPECT_FALSE(state.payload_alive);
-                EXPECT_FALSE(state.outer_alive);
-                EXPECT_EQ(state.pending, nullptr);
-            }
+        SCOPED_TRACE(Error);
+        SCOPED_TRACE(Reference);
+        continues_hop_state state;
+        auto sndr = std::execution::continues_on(continues_source<Error, Reference>{&state},
+            continues_scheduler{&state});
+        using op_t = std::execution::connect_result_t<decltype(sndr), continues_receiver>;
+        auto owner = std::unique_ptr<op_t>(new op_t(std::execution::connect(
+            std::move(sndr), continues_receiver{state})));
+        state.destroy = [](void* op) noexcept { delete static_cast<op_t*>(op); };
+        state.self_destroy_op = owner.get();
+        state.throw_on_move = !Reference;
+        state.throw_on_copy = Reference;
+        auto* op = owner.release();
+        std::execution::start(*op);
+        EXPECT_NE(state.self_destroy_op, nullptr);
+        EXPECT_EQ(state.values + state.errors + state.stopped, 0);
+        ASSERT_NE(state.pending, nullptr);
+        state.complete();
+        EXPECT_EQ(state.self_destroy_op, nullptr);
+        EXPECT_EQ(state.values, 0);
+        EXPECT_EQ(state.errors, 1);
+        EXPECT_EQ(state.stopped, 0);
+        EXPECT_EQ(state.starts, 1);
+        ASSERT_TRUE(state.exception);
+        if constexpr (Reference) {
+            EXPECT_THROW(std::rethrow_exception(state.exception), continues_copy_failure);
+        } else {
+            EXPECT_THROW(std::rethrow_exception(state.exception), continues_move_failure);
         }
+        EXPECT_TRUE(state.upstream_saw_outer);
+        EXPECT_LT(state.upstream_order, state.outer_order);
+        EXPECT_EQ(state.live_payloads, 0);
+        EXPECT_FALSE(state.payload_alive);
+        EXPECT_FALSE(state.outer_alive);
+        EXPECT_EQ(state.pending, nullptr);
     };
     check.template operator()<false, false>();
     check.template operator()<true, false>();
@@ -1565,7 +1548,8 @@ TEST(ContinuesOnTest, LargeAndOveralignedPayloadsRemainStableAcrossTheHop) {
             std::execution::start(op);
             auto address = reinterpret_cast<std::uintptr_t>(state.buffered_payload);
             auto begin = reinterpret_cast<std::uintptr_t>(std::addressof(op));
-            EXPECT_TRUE(address < begin || address >= begin + sizeof(op));
+            EXPECT_GE(address, begin);
+            EXPECT_LT(address, begin + sizeof(op));
             EXPECT_EQ(address % alignof(T), 0u);
             state.throw_on_move = true;
             state.complete();

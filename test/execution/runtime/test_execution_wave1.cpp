@@ -899,7 +899,7 @@ TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
         forge::empty_env>);
 }
 
-TEST(ContinuesOnTest, ScheduleConnectFailureBecomesError) {
+TEST(ContinuesOnTest, ScheduleConnectFailurePropagates) {
     auto sndr = std::execution::continues_on(
         std::execution::just(),
         throwing_scheduler{});
@@ -959,7 +959,7 @@ TEST(LetValueTest, InvokesStoredFunctionAsRvalue) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
+TEST(ContinuesOnTest, DeclaresSchedulerErrorsWithoutSetupError) {
     auto sndr = std::execution::continues_on(
         std::execution::just(42),
         error_stopped_scheduler{});
@@ -970,8 +970,7 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(int),
-            std::execution::set_stopped_t(),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_stopped_t()>>);
 
     try {
         (void)forge::sync_wait(std::move(sndr));
@@ -981,7 +980,7 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsAndSetupError) {
     }
 }
 
-TEST(AffineTest, DeclaresSchedulerErrorsAndSetupError) {
+TEST(AffineTest, DeclaresSchedulerErrorsWithoutSetupError) {
     auto sndr = std::execution::affine(std::execution::just(7));
     affine_error_receiver receiver{nullptr};
     using env_t = decltype(receiver.get_env());
@@ -992,8 +991,7 @@ TEST(AffineTest, DeclaresSchedulerErrorsAndSetupError) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(int),
-            std::execution::set_stopped_t(),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_stopped_t()>>);
 
     int error = 0;
     auto op = std::execution::connect(
@@ -1015,8 +1013,7 @@ TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {
         std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_error_t(int),
-            std::execution::set_stopped_t(),
-            std::execution::set_error_t(std::exception_ptr)>>);
+            std::execution::set_stopped_t()>>);
 
     try {
         (void)forge::sync_wait(std::move(sndr));

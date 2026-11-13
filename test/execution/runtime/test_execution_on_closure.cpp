@@ -164,7 +164,7 @@ void check_category() {
 
     using cs_t = ex::completion_signatures_of_t<decltype(sender), forge::empty_env>;
     static_assert(std::same_as<cs_t, ex::completion_signatures<
-        ex::set_value_t(int), ex::set_error_t(std::exception_ptr)>>);
+        ex::set_value_t(int)>>);
     auto result = forge::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
