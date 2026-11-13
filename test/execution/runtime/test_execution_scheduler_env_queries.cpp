@@ -3,6 +3,8 @@
 #include "cpp26/execution/inline_scheduler.hpp"
 #include "cpp26/execution/run_loop.hpp"
 #include "cpp26/execution/write_env.hpp"
+#include "cpp26/execution/counting_scope.hpp"
+#include "cpp26/execution/spawn_future.hpp"
 #include <gtest/gtest.h>
 
 #include <exception>
@@ -396,4 +398,50 @@ TEST(SchedulerEnvQueriesTest, RunLoopScheduleLetAndWriteEnvReachTheChildEnvironm
     loop.finish();
     loop.run();
     EXPECT_TRUE(got_scheduler);
+}
+
+TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopToken) {
+    ex::counting_scope scope;
+    std::inplace_stop_source downstream;
+    auto inspect = [token = downstream.get_token()](const auto& env) noexcept {
+        static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
+        auto actual = ex::get_stop_token(env);
+        static_assert(std::stoppable_token<decltype(actual)>);
+        if constexpr (std::same_as<decltype(actual), decltype(token)>) {
+            return env.query(forwarding_key{}) == 10 && actual != token;
+        } else {
+            static_assert(std::same_as<decltype(actual),
+                ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>>);
+            return env.query(forwarding_key{}) == 10 && actual.stop_possible() && !actual.stop_requested();
+        }
+    };
+    auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
+    auto result = forge::sync_wait(ex::write_env(
+        scope.get_token().wrap(ex::read_env(inspect)), base));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+    (void)forge::sync_wait(scope.join());
+}
+
+TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopToken) {
+    ex::simple_counting_scope scope;
+    std::inplace_stop_source downstream;
+    auto inspect = [token = downstream.get_token()](const auto& env) noexcept {
+        static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
+        auto actual = ex::get_stop_token(env);
+        static_assert(std::stoppable_token<decltype(actual)>);
+        if constexpr (std::same_as<decltype(actual), decltype(token)>) {
+            return env.query(forwarding_key{}) == 10 && actual != token;
+        } else {
+            static_assert(std::same_as<decltype(actual),
+                ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>>);
+            return env.query(forwarding_key{}) == 10 && actual.stop_possible() && !actual.stop_requested();
+        }
+    };
+    auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
+    auto future = ex::spawn_future(ex::read_env(inspect), scope.get_token(), base);
+    auto result = forge::sync_wait(std::move(future));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
+    (void)forge::sync_wait(scope.join());
 }

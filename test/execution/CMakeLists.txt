@@ -331,6 +331,12 @@ forge_add_execution_runtime_test(
 set_tests_properties(execution_static_opstate_transfer PROPERTIES
     SKIP_RETURN_CODE 77)
 forge_add_execution_runtime_test(
+    test_execution_static_opstate_scope
+    test_execution_static_opstate_scope.cpp
+    execution_static_opstate_scope)
+set_tests_properties(execution_static_opstate_scope PROPERTIES
+    SKIP_RETURN_CODE 77)
+forge_add_execution_runtime_test(
     test_execution_static_opstate_exceptions
     test_execution_static_opstate_exceptions.cpp
     execution_static_opstate_exceptions)
@@ -339,6 +345,7 @@ if(MSVC)
     target_compile_options(test_execution_static_opstate_allocations PRIVATE /bigobj)
     target_compile_options(test_execution_static_opstate_exceptions PRIVATE /bigobj)
     target_compile_options(test_execution_static_opstate_transfer PRIVATE /bigobj)
+    target_compile_options(test_execution_static_opstate_scope PRIVATE /bigobj)
 endif()
 forge_add_execution_runtime_test(
     test_execution_throwing_move_adaptors
@@ -383,6 +390,10 @@ forge_add_execution_runtime_test(
     test_execution_spawn_future
     test_execution_spawn_future.cpp
     execution_spawn_future)
+if(MSVC)
+    target_compile_options(test_execution_counting_scope PRIVATE /bigobj)
+    target_compile_options(test_execution_spawn_future PRIVATE /bigobj)
+endif()
 forge_add_execution_runtime_test(test_execution_any_sender test_execution_any_sender.cpp execution_any_sender)
 
 forge_add_execution_compile_probe(

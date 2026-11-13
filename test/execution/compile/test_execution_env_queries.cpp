@@ -250,12 +250,38 @@ static_assert(!answers<child_env, local_key>);
 static_assert(!answers<child_env, ex::get_stop_token_t, int>);
 static_assert(!noexcept(std::declval<const ex::__forge_when_all::__child_env<throwing_answer>&>().query(key{})));
 using spawn_env = ex::__forge_spawn_future::__spawn_env<answer>;
-// Defer spawn_future members/strict dispatch until stop-when/write_env apply FWD-ENV.
-static_assert(!answers<spawn_env, ex::get_stop_token_t>);
-static_assert(!answers<spawn_env, key>);
+static_assert(nothrow_answer<spawn_env, ex::get_stop_token_t, std::inplace_stop_token>);
+static_assert(nothrow_answer<spawn_env, key, const int&>);
 static_assert(!answers<spawn_env, local_key>);
 static_assert(!answers<spawn_env, missing>);
 static_assert(!answers<spawn_env, ex::get_stop_token_t, int>);
+static_assert(!noexcept(std::declval<const ex::__forge_spawn_future::__spawn_env<throwing_answer>&>().query(key{})));
+using scope_env = ex::__forge_counting_scope::__stop_env<answer>;
+static_assert(nothrow_answer<scope_env, ex::get_stop_token_t, std::inplace_stop_token>);
+static_assert(nothrow_answer<scope_env, key, const int&>);
+static_assert(!answers<scope_env, local_key>);
+static_assert(!answers<scope_env, missing>);
+static_assert(!answers<scope_env, ex::get_stop_token_t, int>);
+static_assert(!noexcept(std::declval<const ex::__forge_counting_scope::__stop_env<throwing_answer>&>().query(key{})));
+using fused_token = ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>;
+using fused_env = ex::__forge_counting_scope::__stop_env<answer, fused_token>;
+static_assert(nothrow_answer<fused_env, ex::get_stop_token_t, fused_token>);
+static_assert(nothrow_answer<fused_env, key, const int&>);
+static_assert(!answers<fused_env, local_key>);
+static_assert(std::stoppable_token<fused_token>);
+
+template<class Overlay, class ExpectedToken>
+constexpr bool stop_when_write_env_signatures = std::same_as<
+    ex::completion_signatures_of_t<decltype(ex::write_env(
+        std::declval<ex::__forge_counting_scope::__stop_sender<
+            decltype(ex::read_env(ex::get_stop_token))>>(), std::declval<Overlay>())),
+        forge::empty_env>,
+    ex::completion_signatures<ex::set_value_t(ExpectedToken), ex::set_stopped_t()>>;
+using allocator_prop = ex::prop<ex::get_allocator_t, std::allocator<std::byte>>;
+static_assert(stop_when_write_env_signatures<forge::empty_env, std::inplace_stop_token>);
+static_assert(stop_when_write_env_signatures<allocator_prop, std::inplace_stop_token>);
+static_assert(stop_when_write_env_signatures<stop_prop, fused_token>);
+static_assert(stop_when_write_env_signatures<ex::env<allocator_prop, stop_prop>, fused_token>);
 using forwarding_env = ex::__forge_let::__forwarding_env<answer>;
 static_assert(nothrow_answer<forwarding_env, key, const int&>);
 static_assert(!answers<forwarding_env, local_key>);
@@ -720,13 +746,6 @@ static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, stop_prop
                            ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
 
 #if !defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) || !FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-// spawn_future needs stop-when/write_env FWD-ENV filtering before member/strict coverage.
-static_assert(ex::__forge_env_detail::__queryable<key, const spawn_env&>);
-static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const spawn_env&>())),
-                           std::inplace_stop_token>);
-// counting_scope needs stop-when's FWD-ENV filtering before member/strict coverage.
-using scope_env = ex::__forge_counting_scope::__stop_env<answer>;
-static_assert(ex::__forge_env_detail::__queryable<key, const scope_env&>);
 // continues_on needs completion-domain filtering before variadic member/strict coverage.
 using attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, answer>;
 static_assert(ex::__forge_env_detail::__queryable<key, const attrs&>);

@@ -7,6 +7,7 @@
 #include "test_execution_manual_sender.hpp"
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -1425,7 +1426,264 @@ struct registration_probe_receiver {
 
 } // namespace
 
-TEST(CountingScopeTest, WrapRegistersStopOnlyBetweenStartAndCompletion) {
+namespace {
+struct prestart_stop_observation {
+    const std::thread::id registering_thread = std::this_thread::get_id();
+    bool requested_at_connect = false;
+    bool possible_at_connect = false;
+    bool requested_at_start = false;
+    bool notified_on_registering_thread = false;
+    int notifications = 0;
+    int completions = 0;
+};
+struct prestart_stop_sender {
+    using sender_concept = std::execution::sender_t;
+    prestart_stop_observation* observed;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> { return {}; }
+    template<class R>
+    struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        prestart_stop_observation* observed;
+        struct notify {
+            prestart_stop_observation* observed;
+            void operator()() const noexcept {
+                observed->notified_on_registering_thread =
+                    std::this_thread::get_id() == observed->registering_thread;
+                ++observed->notifications;
+            }
+        };
+        using token_t = decltype(std::execution::get_stop_token(
+            std::execution::get_env(std::declval<const R&>())));
+        std::optional<std::stop_callback_for_t<token_t, notify>> callback;
+        op(R r, prestart_stop_observation* o) : receiver(std::move(r)), observed(o) {
+            auto token = std::execution::get_stop_token(std::execution::get_env(receiver));
+            observed->requested_at_connect = token.stop_requested();
+            observed->possible_at_connect = token.stop_possible();
+            callback.emplace(token, notify{observed});
+        }
+        void start() & noexcept {
+            observed->requested_at_start = std::execution::get_stop_token(
+                std::execution::get_env(receiver)).stop_requested();
+            callback.reset();
+            std::execution::set_value(std::move(receiver));
+        }
+    };
+    template<class R> auto connect(R r) const -> op<R> { return {std::move(r), observed}; }
+};
+struct prestart_stop_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    std::inplace_stop_token token;
+    prestart_stop_observation* observed;
+    void set_value() && noexcept { ++observed->completions; }
+    void set_stopped() && noexcept { ++observed->completions; }
+    auto get_env() const noexcept { return std::execution::prop(std::execution::get_stop_token, token); }
+};
+
+struct stop_registration_gate {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool request_allowed = false;
+    bool blocked = false;
+    bool released = false;
+
+    void wait_for_request() {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [&] { return request_allowed; });
+    }
+    void request_and_wait_for_blocker() {
+        std::unique_lock lock{mutex};
+        request_allowed = true;
+        cv.notify_all();
+        cv.wait(lock, [&] { return blocked; });
+    }
+    void block_request() {
+        std::unique_lock lock{mutex};
+        blocked = true;
+        cv.notify_all();
+        cv.wait(lock, [&] { return released; });
+    }
+    void release() {
+        std::lock_guard lock{mutex};
+        released = true;
+        cv.notify_all();
+    }
+};
+
+struct stop_registration_observation {
+    const std::thread::id registering_thread = std::this_thread::get_id();
+    std::atomic<int> early_notifications{0};
+    std::atomic<int> late_notifications{0};
+    std::atomic<bool> late_on_registering_thread{false};
+    stop_registration_gate* during_initialization = nullptr;
+    void* operation = nullptr;
+    void (*register_late)(void*) = nullptr;
+    bool requested_before_initialization = false;
+    bool requested_after_registration = false;
+};
+
+struct stop_registration_sender {
+    using sender_concept = std::execution::sender_t;
+    stop_registration_observation* observed;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t()> { return {}; }
+
+    template<class R>
+    struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        stop_registration_observation* observed;
+        struct early_notify {
+            stop_registration_observation* observed;
+            void operator()() const noexcept { observed->early_notifications.fetch_add(1); }
+        };
+        struct late_notify {
+            stop_registration_observation* observed;
+            explicit late_notify(stop_registration_observation* o) : observed(o) {
+                if (observed->during_initialization) {
+                    observed->during_initialization->request_and_wait_for_blocker();
+                }
+            }
+            void operator()() && noexcept {
+                observed->late_on_registering_thread.store(
+                    std::this_thread::get_id() == observed->registering_thread);
+                observed->late_notifications.fetch_add(1);
+            }
+        };
+        using token_t = decltype(std::execution::get_stop_token(
+            std::execution::get_env(std::declval<const R&>())));
+        std::optional<std::stop_callback_for_t<token_t, early_notify>> early;
+        std::optional<std::stop_callback_for_t<token_t, late_notify>> late;
+
+        op(R r, stop_registration_observation* o) : receiver(std::move(r)), observed(o) {
+            auto token = std::execution::get_stop_token(std::execution::get_env(receiver));
+            early.emplace(token, early_notify{observed});
+            observed->operation = this;
+            observed->register_late = [](void* address) {
+                auto* self = static_cast<op*>(address);
+                auto token = std::execution::get_stop_token(std::execution::get_env(self->receiver));
+                self->observed->requested_before_initialization = token.stop_requested();
+                self->late.emplace(token, self->observed);
+                self->observed->requested_after_registration = token.stop_requested();
+            };
+        }
+        void start() & noexcept {
+            late.reset();
+            early.reset();
+            std::execution::set_value(std::move(receiver));
+        }
+    };
+
+    template<class R> auto connect(R r) const -> op<R> { return {std::move(r), observed}; }
+};
+} // namespace
+
+TEST(CountingScopeTest, WrapObservesEitherInputBeforeConnectAndBeforeStart) {
+    for (bool scope_input : {false, true}) {
+        for (bool before_connect : {false, true}) {
+            SCOPED_TRACE(scope_input ? "scope input" : "receiver input");
+            SCOPED_TRACE(before_connect ? "before connect" : "between connect and start");
+            std::execution::counting_scope scope;
+            std::inplace_stop_source downstream;
+            prestart_stop_observation observed;
+            auto request = [&] {
+                if (scope_input) scope.request_stop();
+                else downstream.request_stop();
+            };
+            if (before_connect) request();
+            auto op = std::execution::connect(scope.get_token().wrap(prestart_stop_sender{&observed}),
+                prestart_stop_receiver{downstream.get_token(), &observed});
+            EXPECT_EQ(observed.requested_at_connect, before_connect);
+            EXPECT_TRUE(observed.possible_at_connect);
+            EXPECT_EQ(observed.notifications, before_connect ? 1 : 0);
+            EXPECT_EQ(observed.notified_on_registering_thread, before_connect);
+            request();
+            EXPECT_EQ(observed.notifications, 1);
+            EXPECT_TRUE(observed.notified_on_registering_thread);
+            scope.request_stop();
+            downstream.request_stop();
+            EXPECT_EQ(observed.notifications, 1);
+            EXPECT_EQ(observed.completions, 0);
+            std::execution::start(op);
+            EXPECT_TRUE(observed.requested_at_start);
+            EXPECT_EQ(observed.completions, 1);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    }
+}
+
+TEST(CountingScopeTest, StopWhenRegistrationDuringEitherInputStopInvokesOnRegisteringThread) {
+    for (bool first_input : {false, true}) {
+        for (bool during_initialization : {false, true}) {
+            SCOPED_TRACE(first_input ? "sender input" : "receiver input");
+            SCOPED_TRACE(during_initialization ? "stop during Fn construction" : "stop before registration");
+            std::inplace_stop_source input;
+            std::inplace_stop_source downstream;
+            stop_registration_observation observed;
+            prestart_stop_observation completion;
+            auto sender = std::execution::__forge_counting_scope::__stop_sender<stop_registration_sender>{
+                input.get_token(), stop_registration_sender{&observed}};
+            auto op = std::execution::connect(std::move(sender),
+                prestart_stop_receiver{downstream.get_token(), &completion});
+
+            stop_registration_gate gate;
+            auto& selected = first_input ? input : downstream;
+            // This backport visits the newest input callback first. Block before
+            // its earlier forwarding callback can request the fused source.
+            std::inplace_stop_callback blocker{selected.get_token(), [&]() noexcept { gate.block_request(); }};
+            std::atomic<bool> request_returned{false};
+            std::thread requester{[&] {
+                gate.wait_for_request();
+                selected.request_stop();
+                request_returned.store(true);
+            }};
+
+            if (during_initialization) observed.during_initialization = &gate;
+            else gate.request_and_wait_for_blocker();
+            observed.register_late(observed.operation);
+
+            EXPECT_TRUE(selected.stop_requested());
+            EXPECT_FALSE(request_returned.load());
+            EXPECT_EQ(observed.requested_before_initialization, !during_initialization);
+            EXPECT_TRUE(observed.requested_after_registration);
+            EXPECT_EQ(observed.early_notifications.load(), 0);
+            EXPECT_EQ(observed.late_notifications.load(), 1);
+            EXPECT_TRUE(observed.late_on_registering_thread.load());
+            EXPECT_EQ(completion.completions, 0);
+
+            gate.release();
+            requester.join();
+            EXPECT_TRUE(request_returned.load());
+            EXPECT_EQ(observed.early_notifications.load(), 1);
+            EXPECT_EQ(observed.late_notifications.load(), 1);
+            input.request_stop();
+            downstream.request_stop();
+            EXPECT_EQ(observed.early_notifications.load(), 1);
+            EXPECT_EQ(observed.late_notifications.load(), 1);
+            std::execution::start(op);
+            EXPECT_EQ(completion.completions, 1);
+        }
+    }
+}
+
+TEST(CountingScopeTest, StopWhenReportsNoPossibleStopWhenBothInputsAreEmpty) {
+    prestart_stop_observation observed;
+    auto sender = std::execution::__forge_counting_scope::__stop_sender<prestart_stop_sender>{
+        std::inplace_stop_token{}, prestart_stop_sender{&observed}};
+    auto op = std::execution::connect(std::move(sender), prestart_stop_receiver{{}, &observed});
+    EXPECT_FALSE(observed.possible_at_connect);
+    EXPECT_FALSE(observed.requested_at_connect);
+    EXPECT_EQ(observed.notifications, 0);
+    std::execution::start(op);
+    EXPECT_FALSE(observed.requested_at_start);
+    EXPECT_EQ(observed.completions, 1);
+}
+
+TEST(CountingScopeTest, WrapRegistersStopBeforeChildConnectUntilCompletion) {
     for (int channel : {0, 1, 2}) {
         SCOPED_TRACE(channel);
         std::execution::counting_scope scope;
@@ -1436,7 +1694,7 @@ TEST(CountingScopeTest, WrapRegistersStopOnlyBetweenStartAndCompletion) {
         auto op = std::execution::connect(scope.get_token().wrap(
             registration_probe_sender{&live, &registered_during_work, channel}),
             registration_probe_receiver{&live, &live_at_completion, &completions});
-        EXPECT_EQ(live, 0);
+        EXPECT_EQ(live, 1);
 
         std::execution::start(op);
 
@@ -1759,4 +2017,106 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
 
     (void)forge::sync_wait(scope.join());
     EXPECT_EQ(scope.count(), 0u);
+}
+
+namespace {
+struct counted_connection_sender {
+    using sender_concept = std::execution::sender_t;
+    using completion_signatures = std::execution::completion_signatures<std::execution::set_value_t()>;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
+    int* connects;
+    template<class R> struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        void start() & noexcept { std::execution::set_value(std::move(receiver)); }
+    };
+    template<class R> auto connect(R r) const -> op<R> {
+        ++*connects;
+        return {std::move(r)};
+    }
+};
+
+template<class Scope>
+void check_failed_association_does_not_connect() {
+    Scope scope;
+    scope.close();
+    int connects = 0;
+    auto op = std::execution::connect(std::execution::associate(
+        counted_connection_sender{&connects}, scope.get_token()), scope_probe_receiver{});
+    EXPECT_EQ(connects, 0);
+    std::execution::start(op);
+    EXPECT_EQ(connects, 0);
+    EXPECT_EQ(scope.count(), 0u);
+    (void)forge::sync_wait(scope.join());
+}
+
+template<class Scope>
+void check_associate_completion_destroys_operation() {
+    Scope scope;
+    bool destroyed = false;
+    bool completed = false;
+    auto sender = std::execution::associate(std::execution::just(), scope.get_token());
+    using op_t = decltype(std::execution::connect(std::move(sender), self_destroying_join_receiver{}));
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(std::move(sender),
+            self_destroying_join_receiver{&context, &completed});
+    });
+    std::execution::start(op);
+    EXPECT_TRUE(destroyed);
+    EXPECT_TRUE(completed);
+    EXPECT_FALSE(context.has_value);
+    EXPECT_EQ(scope.count(), 0u);
+    (void)forge::sync_wait(scope.join());
+}
+} // namespace
+
+TEST(SimpleCountingScopeTest, FailedAssociationConstructsNoChildOperation) {
+    check_failed_association_does_not_connect<std::execution::simple_counting_scope>();
+}
+TEST(CountingScopeTest, FailedAssociationConstructsNoChildOperation) {
+    check_failed_association_does_not_connect<std::execution::counting_scope>();
+}
+TEST(SimpleCountingScopeTest, AssociateCompletionCanDestroyOperation) {
+    check_associate_completion_destroys_operation<std::execution::simple_counting_scope>();
+}
+TEST(CountingScopeTest, AssociateCompletionCanDestroyOperation) {
+    check_associate_completion_destroys_operation<std::execution::counting_scope>();
+}
+
+namespace {
+template<class Scope>
+struct association_receiver_teardown {
+    using receiver_concept = std::execution::receiver_t;
+    Scope* scope;
+    bool* destroyed_while_associated;
+    association_receiver_teardown(Scope* s, bool* d) : scope(s), destroyed_while_associated(d) {}
+    association_receiver_teardown(association_receiver_teardown&& other) noexcept
+        : scope(std::exchange(other.scope, nullptr)),
+          destroyed_while_associated(other.destroyed_while_associated) {}
+    ~association_receiver_teardown() {
+        if (scope) *destroyed_while_associated = scope->count() == 1;
+    }
+    void set_value() && noexcept {}
+    void set_stopped() && noexcept {}
+};
+} // namespace
+
+TEST(CountingScopeTest, AssociateDestroysReceiverBeforeDisassociation) {
+    auto check = []<class Scope>() {
+        Scope scope;
+        bool destroyed_while_associated = false;
+        {
+            auto op = std::execution::connect(
+                std::execution::associate(std::execution::just(), scope.get_token()),
+                association_receiver_teardown<Scope>{&scope, &destroyed_while_associated});
+            std::execution::start(op);
+        }
+        EXPECT_TRUE(destroyed_while_associated);
+        EXPECT_EQ(scope.count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
+    };
+    check.template operator()<std::execution::simple_counting_scope>();
+    check.template operator()<std::execution::counting_scope>();
 }

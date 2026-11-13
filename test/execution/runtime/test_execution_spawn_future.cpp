@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include "test_execution_manual_sender.hpp"
+#include "../../forge/runtime/forge_operation_destroy.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -824,7 +825,7 @@ TEST(SpawnFutureTest, DefaultAllocatorDoesNotAddAnAllocatorQueryToSpawnEnvironme
                 std::move(sender), scope.get_token(), forge::empty_env{})
             : std::execution::spawn_future(std::move(sender), scope.get_token());
         using allocator_t = typename decltype(future)::state_t::allocator_t;
-        static_assert(std::same_as<allocator_t, std::allocator<std::byte>>);
+        static_assert(std::same_as<allocator_t, std::allocator<void>>);
         auto result = forge::sync_wait(std::move(future));
 
         ASSERT_TRUE(result.has_value());
@@ -991,7 +992,7 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     auto token = scope.get_token();
     auto source = std::make_shared<manual_state>();
     auto counts = std::make_shared<allocation_counts>();
-    counts->fail_on_attempt.store(2, std::memory_order_relaxed);
+    counts->fail_on_attempt.store(4, std::memory_order_relaxed);
     auto env = std::execution::make_env(
         std::execution::prop(
             std::execution::get_allocator_t{},
@@ -1398,4 +1399,259 @@ TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
         EXPECT_EQ(scope.count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
+}
+
+namespace {
+struct future_connect_error {};
+struct future_state_probe_sender {
+    using sender_concept = std::execution::sender_t;
+    using completion_signatures = std::execution::completion_signatures<std::execution::set_value_t()>;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
+    std::execution::simple_counting_scope* scope;
+    int* live;
+    bool* destroyed_while_associated;
+    bool fail_connect;
+    template<class R> struct op : std::execution::__forge_detail::__immovable {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        std::execution::simple_counting_scope* scope;
+        int* live;
+        bool* destroyed_while_associated;
+        op(R r, std::execution::simple_counting_scope* s, int* l, bool* d)
+            : receiver(std::move(r)), scope(s), live(l), destroyed_while_associated(d) { ++*live; }
+        ~op() {
+            *destroyed_while_associated = scope->count() == 1;
+            --*live;
+        }
+        void start() & noexcept { std::execution::set_value(std::move(receiver)); }
+    };
+    template<class R> auto connect(R r) const -> op<R> {
+        if (fail_connect) throw future_connect_error{};
+        return op<R>{std::move(r), scope, live, destroyed_while_associated};
+    }
+};
+struct destroying_future_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    forge_test::destroy_context_base* context;
+    int* result;
+    void set_value(int value) && noexcept { *result = value; context->destroy(); }
+    template<class E> void set_error(E&&) && noexcept { *result = -1; context->destroy(); }
+    void set_stopped() && noexcept { *result = -2; context->destroy(); }
+};
+} // namespace
+
+TEST(SpawnFutureTest, StateAndControlBlockAllocationFailuresUnwindBeforeDisassociation) {
+    for (int fail_on : {1, 2, 3}) {
+        std::execution::simple_counting_scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        counts->fail_on_attempt.store(fail_on, std::memory_order_relaxed);
+        int live = 0;
+        bool destroyed_while_associated = false;
+        EXPECT_THROW((void)std::execution::spawn_future(
+            future_state_probe_sender{&scope, &live, &destroyed_while_associated, false},
+            scope.get_token(), member_allocator_env{counting_allocator<std::byte>{counts}}),
+            std::bad_alloc);
+        EXPECT_EQ(live, 0);
+        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(counts->allocations.load(), fail_on - 1);
+        EXPECT_EQ(counts->deallocations.load(), fail_on - 1);
+        EXPECT_EQ(destroyed_while_associated, fail_on == 3);
+        (void)forge::sync_wait(scope.join());
+    }
+}
+
+TEST(SpawnFutureTest, ChildConnectFailurePropagatesAndReleasesAllocatedState) {
+    std::execution::simple_counting_scope scope;
+    auto counts = std::make_shared<allocation_counts>();
+    int live = 0;
+    bool destroyed_while_associated = false;
+    EXPECT_THROW((void)std::execution::spawn_future(
+        future_state_probe_sender{&scope, &live, &destroyed_while_associated, true},
+        scope.get_token(), member_allocator_env{counting_allocator<std::byte>{counts}}),
+        future_connect_error);
+    EXPECT_EQ(live, 0);
+    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(counts->allocations.load(), 2);
+    EXPECT_EQ(counts->deallocations.load(), 2);
+    (void)forge::sync_wait(scope.join());
+}
+
+TEST(SpawnFutureTest, SynchronousConsumerCompletionCanDestroyOperation) {
+    std::execution::simple_counting_scope scope;
+    auto future = std::execution::spawn_future(std::execution::just(42), scope.get_token());
+    bool destroyed = false;
+    int result = 0;
+    using op_t = decltype(std::execution::connect(std::move(future), destroying_future_receiver{}));
+    forge_test::operation_destroy_context<op_t> context{&destroyed};
+    auto& op = context.emplace_from([&] {
+        return std::execution::connect(std::move(future), destroying_future_receiver{&context, &result});
+    });
+    std::execution::start(op);
+    EXPECT_TRUE(destroyed);
+    EXPECT_EQ(result, 42);
+    EXPECT_FALSE(context.has_value);
+    EXPECT_EQ(scope.count(), 0u);
+    (void)forge::sync_wait(scope.join());
+}
+
+TEST(SpawnTest, ConnectAndAllocationFailuresReleaseStateWithoutAssociation) {
+    for (bool fail_connect : {false, true}) {
+        std::execution::simple_counting_scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        if (!fail_connect) counts->fail_on_attempt.store(1);
+        int live = 0;
+        bool destroyed_while_associated = false;
+        auto sender = future_state_probe_sender{&scope, &live, &destroyed_while_associated, fail_connect};
+        auto env = member_allocator_env{counting_allocator<std::byte>{counts}};
+        if (fail_connect) {
+            EXPECT_THROW(std::execution::spawn(sender, scope.get_token(), env), future_connect_error);
+        } else {
+            EXPECT_THROW(std::execution::spawn(sender, scope.get_token(), env), std::bad_alloc);
+        }
+        EXPECT_EQ(live, 0);
+        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(counts->allocations.load(), fail_connect ? 1 : 0);
+        EXPECT_EQ(counts->deallocations.load(), counts->allocations.load());
+        (void)forge::sync_wait(scope.join());
+    }
+}
+
+namespace {
+struct allocator_join_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    allocation_counts* counts;
+    int* outstanding_at_join;
+    bool* joined;
+    void set_value() && noexcept {
+        *outstanding_at_join = counts->allocations.load() - counts->deallocations.load();
+        *joined = true;
+    }
+    template<class E> void set_error(E&&) && noexcept { std::terminate(); }
+    void set_stopped() && noexcept { std::terminate(); }
+    auto get_env() const noexcept {
+        return std::execution::prop(std::execution::get_start_scheduler,
+            std::execution::inline_scheduler{});
+    }
+};
+struct allocator_value_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* value;
+    void set_value(int v) && noexcept { *value = v; }
+    template<class E> void set_error(E&&) && noexcept { std::terminate(); }
+    void set_stopped() && noexcept { *value = -1; }
+};
+struct allocator_channel_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* channel;
+    void set_value() && noexcept { *channel = 1; }
+    void set_error(int) && noexcept { *channel = 2; }
+    void set_error(std::exception_ptr) && noexcept { std::terminate(); }
+    void set_stopped() && noexcept { *channel = 3; }
+};
+
+template<class Scope>
+void check_future_allocator_at_join() {
+    auto check_channel = [](auto source, int expected) {
+        Scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        auto future = std::execution::spawn_future(std::move(source), scope.get_token(),
+            member_allocator_env{counting_allocator<std::byte>{counts}});
+        bool joined = false;
+        int outstanding = -1;
+        auto join_op = std::execution::connect(scope.join(),
+            allocator_join_receiver{counts.get(), &outstanding, &joined});
+        std::execution::start(join_op);
+        int channel = 0;
+        auto op = std::execution::connect(std::move(future), allocator_channel_receiver{&channel});
+        std::execution::start(op);
+        EXPECT_EQ(channel, expected);
+        EXPECT_TRUE(joined);
+        EXPECT_EQ(outstanding, 0);
+    };
+    check_channel(std::execution::just(), 1);
+    check_channel(std::execution::just_error(7), 2);
+    check_channel(std::execution::just_stopped(), 3);
+    // Keep the completed consumer alive across join for a cached result.
+    {
+        Scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        auto future = std::execution::spawn_future(std::execution::just(42), scope.get_token(),
+            member_allocator_env{counting_allocator<std::byte>{counts}});
+        bool joined = false;
+        int outstanding = -1;
+        auto join_op = std::execution::connect(scope.join(),
+            allocator_join_receiver{counts.get(), &outstanding, &joined});
+        std::execution::start(join_op);
+        EXPECT_FALSE(joined);
+        int value = 0;
+        auto op = std::execution::connect(std::move(future), allocator_value_receiver{&value});
+        std::execution::start(op);
+        EXPECT_EQ(value, 42);
+        EXPECT_TRUE(joined);
+        EXPECT_EQ(outstanding, 0);
+    }
+    for (int mode : {0, 1, 2}) {
+        Scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        auto source = std::make_shared<manual_state>();
+        std::inplace_stop_source downstream;
+        std::atomic<bool> stopped{false};
+        auto future = std::execution::spawn_future(manual_sender{source}, scope.get_token(),
+            member_allocator_env{counting_allocator<std::byte>{counts}});
+        bool joined = false;
+        int outstanding = -1;
+        auto join_op = std::execution::connect(scope.join(),
+            allocator_join_receiver{counts.get(), &outstanding, &joined});
+        std::execution::start(join_op);
+        EXPECT_FALSE(joined);
+        if (mode == 0) {
+            int value = 0;
+            auto op = std::execution::connect(std::move(future), allocator_value_receiver{&value});
+            std::execution::start(op);
+            complete_manual_value(source, 42);
+            EXPECT_EQ(value, 42);
+            EXPECT_TRUE(joined);
+            EXPECT_EQ(outstanding, 0);
+        } else if (mode == 1) {
+            { auto abandoned = std::move(future); }
+        } else {
+            auto op = std::execution::connect(std::move(future),
+                spawn_future_stop_receiver{&downstream, &stopped});
+            std::execution::start(op);
+            downstream.request_stop();
+            EXPECT_TRUE(stopped.load());
+            EXPECT_TRUE(joined);
+            EXPECT_EQ(outstanding, 0);
+        }
+        EXPECT_TRUE(joined);
+        EXPECT_EQ(outstanding, 0);
+    }
+}
+} // namespace
+
+TEST(SpawnFutureTest, JoinObservesAllAllocatorStorageAlreadyDeallocated) {
+    check_future_allocator_at_join<std::execution::simple_counting_scope>();
+    check_future_allocator_at_join<std::execution::counting_scope>();
+}
+
+TEST(SpawnTest, JoinObservesStateAlreadyDeallocated) {
+    auto check = []<class Scope>() {
+        Scope scope;
+        auto counts = std::make_shared<allocation_counts>();
+        auto source = std::make_shared<manual_state>();
+        std::execution::spawn(std::execution::then(manual_sender{source}, [](int) noexcept {}),
+            scope.get_token(), member_allocator_env{counting_allocator<std::byte>{counts}});
+        bool joined = false;
+        int outstanding = -1;
+        auto join_op = std::execution::connect(scope.join(),
+            allocator_join_receiver{counts.get(), &outstanding, &joined});
+        std::execution::start(join_op);
+        EXPECT_FALSE(joined);
+        complete_manual_value(source, 42);
+        EXPECT_TRUE(joined);
+        EXPECT_EQ(outstanding, 0);
+    };
+    check.template operator()<std::execution::simple_counting_scope>();
+    check.template operator()<std::execution::counting_scope>();
 }
