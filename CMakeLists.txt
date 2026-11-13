@@ -69,27 +69,29 @@ endif()
 
 # Build focused verification copies without changing ordinary target flags.
 # Call in the source target's directory so directory-scoped imported links resolve.
+# Copies use a short "_ds" target suffix so object paths stay within the
+# Windows MAX_PATH limit inside long build directories; test names stay descriptive.
 function(forge_add_deprecation_strict_copy target source_test)
     get_target_property(_sources ${target} SOURCES)
-    add_executable(${target}_deprecation_strict EXCLUDE_FROM_ALL ${_sources})
+    add_executable(${target}_ds EXCLUDE_FROM_ALL ${_sources})
     foreach(_property IN ITEMS INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS
             COMPILE_FEATURES LINK_LIBRARIES LINK_OPTIONS LINK_DIRECTORIES
             CXX_STANDARD CXX_STANDARD_REQUIRED CXX_EXTENSIONS)
         get_target_property(_value ${target} ${_property})
         if(NOT _value STREQUAL "_value-NOTFOUND")
-            set_property(TARGET ${target}_deprecation_strict PROPERTY ${_property} "${_value}")
+            set_property(TARGET ${target}_ds PROPERTY ${_property} "${_value}")
         endif()
     endforeach()
     if(MSVC)
-        target_compile_options(${target}_deprecation_strict PRIVATE /we4996)
+        target_compile_options(${target}_ds PRIVATE /we4996)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${target}_deprecation_strict PRIVATE -Werror=deprecated-declarations)
+        target_compile_options(${target}_ds PRIVATE -Werror=deprecated-declarations)
     endif()
 
     set(_strict_test "${source_test}_deprecation_strict")
     add_test(NAME ${_strict_test}_compile
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target}_deprecation_strict)
+            ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target}_ds)
     set_tests_properties(${_strict_test}_compile PROPERTIES
         RESOURCE_LOCK forge_main_build
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
@@ -125,14 +127,14 @@ if(FORGE_IS_TOP_LEVEL AND FORGE_BUILD_TESTS)
     add_custom_target(test_extension_deprecations_strict)
     foreach(_target IN ITEMS test_execution_extension_deprecations_strict
             test_linalg_extension_deprecations_strict
-            test_forge_any_sender_deprecation_strict
-            test_forge_strict_any_sender_deprecation_strict)
+            test_forge_any_sender_ds
+            test_forge_strict_any_sender_ds)
         if(TARGET ${_target})
             add_dependencies(test_extension_deprecations_strict ${_target})
         endif()
     endforeach()
-    foreach(_target IN ITEMS test_forge_any_sender_deprecation_strict
-            test_forge_strict_any_sender_deprecation_strict)
+    foreach(_target IN ITEMS test_forge_any_sender_ds
+            test_forge_strict_any_sender_ds)
         if(TARGET ${_target} AND TARGET test_execution_extension_deprecations_strict)
             add_dependencies(test_execution_extension_deprecations_strict ${_target})
         endif()

@@ -517,7 +517,7 @@ foreach(_forge_target IN LISTS _forge_scope_strict_targets)
         set(_forge_source_test execution_counting_scope_limits)
     endif()
     forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
-    list(APPEND _forge_scope_strict_copies ${_forge_target}_deprecation_strict)
+    list(APPEND _forge_scope_strict_copies ${_forge_target}_ds)
 endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
     ${_forge_scope_strict_copies} test_execution_scope_observer_compat

@@ -183,5 +183,5 @@ endif()
 if(TARGET test_linalg_integer_compat)
     forge_add_deprecation_strict_copy(test_linalg_level1 linalg_level1)
     add_custom_target(test_linalg_extension_deprecations_strict DEPENDS
-        test_linalg_level1_deprecation_strict test_linalg_integer_compat test_linalg_extension_compat)
+        test_linalg_level1_ds test_linalg_integer_compat test_linalg_extension_compat)
 endif()
