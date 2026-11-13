@@ -1,0 +1,43 @@
+Linalg 基准运行说明
+==================
+
+这些独立程序观察 matrix_product 和 in-place TRMM 的成本，不注册为 CTest，
+不设固定性能阈值。要求提供基础 <mdspan>、支持 C++23 的编译器及标准库，
+并且没有原生 <linalg> 声明，以确保使用两套 backport 头文件。
+
+从仓库根目录构建并交错运行同一个源文件：
+
+CPU=2 CXX=g++ BASE_REF=c37fd4b ROUNDS=5 SAMPLES=5 bash test/linalg/benchmark/run_paired.sh
+
+CPU 必须替换为 taskset -pc $$ 所示允许集合中的一个逻辑 CPU；结合 lscpu 查看
+核心类型与 SMT 兄弟线程。脚本通过 git archive 读取基线，只写入 build/，不会
+切换 checkout。两套二进制均使用 -std=c++23 -O3 -DNDEBUG -ffp-contract=off；
+如需其他选项，同时修改两条构建命令并记录。默认规模为 64、256、512，
+覆盖 float、double 以及 A/B 的四种 layout_left/layout_right 组合。
+TRMM 使用 lower_triangle/explicit_diagonal；b_layout 表示 in-place C 的布局。
+完整 Triangle/DiagonalStorage 正确性由 linalg_product_layouts 测试负责。
+可用 SIZE=64 SAMPLES=1 ROUNDS=2 做快速运行，单独运行命令如下：
+
+taskset -c 2 build/linalg-benchmark/run-XXXXXXXX/measure_base 64 5
+taskset -c 2 build/linalg-benchmark/run-XXXXXXXX/measure_branch 64 5
+
+将 run-XXXXXXXX 替换为脚本输出的本次运行目录；每次通过 mktemp 创建全新目录，
+基线解包、源码快照、二进制与结果均独立保存，重复运行不会合并或覆盖旧样本。
+
+每个工作负载先预热一次，每个样本仅计时一次算法调用。输入初始化、TRMM 的
+输入恢复、输出 checksum 和 JSONL 输出均不在计时区间内。每个样本消费完整输出，
+算法调用标注 noinline；不要启用 LTO。所有随机式输入由固定整数公式生成。
+输出字段为 op、type、a_layout、b_layout、n、sample、ns、checksum。
+脚本按 AB/BA 交错轮次保存全部原始 JSONL，保留编译器版本、源码引用、工作区
+相对 HEAD 的完整 tracked diff（含 staged 与 unstaged）、工作区状态、运行参数和
+二进制 SHA256。编译前复制 backport/、include/ 与 test/linalg/benchmark/ 的
+tracked 及非 ignored untracked 输入，保留已删除文件的状态，并记录输入 SHA256。
+两次构建均读取本次目录内的头文件与同一份 benchmark 源码快照；脚本只写入
+build/，不修改仓库源码或 index。归档完整运行目录以保留可重建输入与原始样本。
+
+遵循 test/hive/benchmark/MEASUREMENT_PROTOCOL.txt 的环境记录与比较要求：
+保存日期、非私密主机标识、CPU/核心类型、亲和性、SMT 拓扑、频率策略及观测值、
+负载、内存、OS/内核、编译器与标准库版本、分配器、编译选项、源码状态、
+采样顺序和异常批次。缺失元数据明确标注。只比较同一主机、同一核心、同一
+工具链的一次配对运行，报告绝对耗时分布与配对比值，不筛选有利样本。
+checksum 用于防止无用计算消除，不能替代参考实现正确性测试。
