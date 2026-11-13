@@ -78,6 +78,7 @@ int main() {
     std::cout << "timer await resumed and hopped to executor\n";
 #else
     std::cout << "timer await unavailable\n";
+    return 77;
 #endif
 }
 

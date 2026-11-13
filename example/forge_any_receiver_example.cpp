@@ -33,7 +33,7 @@ struct print_receiver {
     void set_value(int v) && noexcept { *out = v; }
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
-    auto get_env() const noexcept -> std::execution::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 };
 
 int main() {

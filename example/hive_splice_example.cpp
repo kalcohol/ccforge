@@ -20,11 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Demonstrates: Transfer stage results without losing downstream pointers
-// Key APIs: splice, get_iterator, is_within_hard_limits
-// Requires: injected backport or complete native <hive>; C++23
-// See also: docs/backports/hive.md
-
 #include <hive>
 #include <iostream>
 #include <memory>
@@ -52,6 +47,7 @@ int main() {
     if (!Results::is_within_hard_limits(narrow) ||
         !Results::is_within_hard_limits(wide)) {
         std::cout << "Incompatible-limit demonstration unavailable\n";
+    return 77;
         return 0;
     }
     Results destination(narrow);

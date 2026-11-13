@@ -65,5 +65,6 @@ int main() {
     std::cout << "coro executor hop observed\n";
 #else
     std::cout << "coro executor hop unavailable\n";
+    return 77;
 #endif
 }

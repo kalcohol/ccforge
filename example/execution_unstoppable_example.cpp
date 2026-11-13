@@ -30,8 +30,8 @@
 namespace {
 
 auto stop_env(std::inplace_stop_token token) {
-    return std::execution::make_env(
-        std::execution::make_prop(std::execution::get_stop_token_t{}, token));
+    return std::execution::env(
+        std::execution::prop(std::execution::get_stop_token_t{}, token));
 }
 
 } // namespace

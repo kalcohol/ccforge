@@ -142,5 +142,6 @@ int main() {
               << to_string(memory_output.bytes());
 #else
     std::cout << "coro line pipeline unavailable\n";
+    return 77;
 #endif
 }

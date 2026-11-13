@@ -108,7 +108,7 @@ struct cancellation_receiver {
         state->done.count_down();
     }
 
-    auto get_env() const noexcept -> std::execution::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -150,5 +150,6 @@ int main() {
     std::cout << "context await cancellation observed\n";
 #else
     std::cout << "context await cancellation unavailable\n";
+    return 77;
 #endif
 }

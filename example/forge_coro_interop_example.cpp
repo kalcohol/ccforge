@@ -59,5 +59,6 @@ int main() {
     std::cout << "coro interop frame size: " << std::get<0>(*result) << '\n';
 #else
     std::cout << "coro interop unavailable\n";
+    return 77;
 #endif
 }

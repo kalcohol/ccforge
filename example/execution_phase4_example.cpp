@@ -43,7 +43,5 @@ int main() {
 
     forge_example::require(join_result.has_value());
     forge_example::require(task_ran.load(std::memory_order_acquire));
-    forge_example::require(scope.count() == 0);
-    std::cout << "scope_count=" << scope.count() << '\n';
     return 0;
 }

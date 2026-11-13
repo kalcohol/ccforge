@@ -28,7 +28,7 @@
 
 int main() {
     auto inline_result = std::this_thread::sync_wait(
-        std::execution::schedule(std::execution::inline_scheduler{}) |
+        std::execution::just() |
         std::execution::then([] { return 1; })
     );
     forge_example::require(inline_result.has_value());

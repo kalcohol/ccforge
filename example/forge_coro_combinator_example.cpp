@@ -86,5 +86,6 @@ int main() {
     std::cout << "coro combinator kept partial results across EOF and error\n";
 #else
     std::cout << "coro combinator unavailable\n";
+    return 77;
 #endif
 }

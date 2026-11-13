@@ -68,5 +68,6 @@ int main() {
     std::cout << "coro io env observed\n";
 #else
     std::cout << "coro io env unavailable\n";
+    return 77;
 #endif
 }

@@ -24,8 +24,14 @@ int main() {
 
     // bulk: serial iteration
     int sum = 0;
-    auto bulk_result = std::this_thread::sync_wait(
-        ex::just(0) | ex::bulk(5, [&sum](int i, int&) { sum += i; }));
+    auto bulk_work = ex::just(0) |
+#if FORGE_HAS_NATIVE_EXECUTION_POLICIES && defined(__cpp_lib_execution)
+        ex::bulk(ex::seq, 5, [&sum](int i, int&) { sum += i; });
+#else
+        // Some hosts ship <execution> without policies; retain the compatibility overload.
+        ex::bulk(5, [&sum](int i, int&) { sum += i; });
+#endif
+    auto bulk_result = std::this_thread::sync_wait(std::move(bulk_work));
     forge_example::require(bulk_result.has_value());
     forge_example::require(sum == 0+1+2+3+4);
 

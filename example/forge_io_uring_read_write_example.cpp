@@ -28,6 +28,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cerrno>
 #include <cstddef>
 #include <execution>
 #include <memory>
@@ -109,13 +110,18 @@ int main() {
         std::printf(
             "io_uring backend unavailable here: %s\n",
             error.what());
-        return 0;
+        const auto code = error.code();
+        if (code == std::errc::function_not_supported ||
+            code == std::errc::operation_not_permitted ||
+            code == std::errc::permission_denied ||
+            code == std::errc::not_supported) return 77;
+        return 1;
     }
 
     std::array<char, 5> text{'h', 'e', 'l', 'l', 'o'};
     std::array<std::byte, 16> inbound{};
 
-    std::pmr::unsynchronized_pool_resource frame_pool;
+    std::pmr::synchronized_pool_resource frame_pool;
     auto result = std::this_thread::sync_wait(cio::as_sender(echo(
         std::allocator_arg,
         &frame_pool,

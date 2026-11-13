@@ -144,5 +144,6 @@ int main() {
     std::cout << "context await bytes: " << count << '\n';
 #else
     std::cout << "context await unavailable\n";
+    return 77;
 #endif
 }

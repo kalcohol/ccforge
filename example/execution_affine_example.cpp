@@ -65,13 +65,14 @@ private:
     std::thread worker_;
 };
 
-struct start_env {
-    std::execution::run_loop::scheduler scheduler;
+using loop_scheduler = decltype(std::declval<std::execution::run_loop&>().get_scheduler());
 
-    friend auto tag_invoke(
-        std::execution::get_start_scheduler_t,
-        const start_env& self) noexcept -> std::execution::run_loop::scheduler {
-        return self.scheduler;
+struct start_env {
+    loop_scheduler scheduler;
+
+    auto query(
+        std::execution::get_start_scheduler_t) const noexcept -> loop_scheduler {
+        return scheduler;
     }
 };
 
@@ -83,7 +84,7 @@ struct completion_state {
 };
 
 struct receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     completion_state* state;
     start_env env;

@@ -22,11 +22,11 @@
 
 #if __cpp_impl_coroutine >= 201902L
 #include <coroutine>
-#include <forge/task.hpp>
+#include <execution>
 #include "example_support.hpp"
 #include <iostream>
 
-using exec_env = std::execution::empty_env;
+using exec_env = std::execution::env<>;
 
 struct demo {
     struct promise_type : std::execution::with_awaitable_senders<promise_type> {
@@ -56,7 +56,7 @@ int main() {
 
 int main() {
     std::cout << "C++20 coroutines required\n";
-    (void)sizeof(std::execution::empty_env);
+    (void)sizeof(std::execution::env<>);
     return 0;
 }
 #endif

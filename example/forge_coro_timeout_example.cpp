@@ -100,6 +100,7 @@ int main() {
     std::cout << "coro read completed, then timed out as expected\n";
 #else
     std::cout << "coro timeout unavailable\n";
+    return 77;
 #endif
 }
 

@@ -20,11 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Demonstrates: Plan connection bursts and change block limits
-// Key APIs: hive_limits, reserve, trim_capacity, reshape
-// Requires: injected backport or complete native <hive>; C++23
-// See also: docs/backports/hive.md
-
 #include <hive>
 #include <iostream>
 #include <memory>
@@ -40,6 +35,7 @@ int main() {
     if (!Table::is_within_hard_limits(initial) ||
         !Table::is_within_hard_limits(larger)) {
         std::cout << "Requested connection limits unavailable\n";
+    return 77;
         return 0;
     }
     Table connections(initial);
