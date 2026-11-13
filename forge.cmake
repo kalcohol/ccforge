@@ -47,6 +47,27 @@ option(FORGE_ENABLE_FORGE_RESOURCE_POLICY "Enable forge:: resource policy facili
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO AUTO "Enable forge:: IO backends when available")
 _forge_define_tristate_option(FORGE_ENABLE_FORGE_IO_URING AUTO "Enable the Linux io_uring backend when available")
 
+# Normalize force defaults before comparing repeated inclusions.
+foreach(_forge_feature SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG HIVE)
+    option(FORGE_FORCE_${_forge_feature}_BACKPORT
+        "Force the ${_forge_feature} backport even if native support exists" OFF)
+endforeach()
+
+if(NOT DEFINED CMAKE_CXX_STANDARD OR "${CMAKE_CXX_STANDARD}" STREQUAL "")
+    message(FATAL_ERROR
+        "CC Forge requires an explicit CMAKE_CXX_STANDARD (23 or newer) before inclusion; target_compile_features alone cannot select the probe language mode.")
+endif()
+
+include("${FORGE_CMAKE_DIR}/ForgeConfiguration.cmake")
+_forge_check_configuration(_forge_already_configured)
+if(_forge_already_configured)
+    get_property(_forge_outputs GLOBAL PROPERTY _FORGE_CONFIGURATION_OUTPUTS)
+    foreach(_forge_output IN LISTS _forge_outputs)
+        get_property(${_forge_output} GLOBAL PROPERTY _FORGE_OUTPUT_${_forge_output})
+    endforeach()
+    return()
+endif()
+
 include(CheckCXXSourceCompiles)
 include("${FORGE_CMAKE_DIR}/ForgeProbeFingerprint.cmake")
 
@@ -222,47 +243,43 @@ else()
     unset(_forge_source_wrapper_owner)
 endif()
 
-if(NOT _FORGE_STD_TARGET_CONFIGURED)
-    set(_FORGE_STD_TARGET_CONFIGURED ON)
+target_compile_features(${_FORGE_STD_TARGET} INTERFACE cxx_std_23)
 
-    target_compile_features(${_FORGE_STD_TARGET} INTERFACE cxx_std_23)
+target_compile_options(${_FORGE_STD_TARGET} INTERFACE
+    $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+    $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
+)
 
-    target_compile_options(${_FORGE_STD_TARGET} INTERFACE
-        $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
-        $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
-    )
+target_link_libraries(${_FORGE_STD_TARGET} INTERFACE Threads::Threads)
 
-    target_link_libraries(${_FORGE_STD_TARGET} INTERFACE Threads::Threads)
+set(FORGE_BACKPORT_TARGET ${_FORGE_STD_TARGET})
+include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
+unset(FORGE_BACKPORT_TARGET)
 
-    set(FORGE_BACKPORT_TARGET ${_FORGE_STD_TARGET})
-    include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
-    unset(FORGE_BACKPORT_TARGET)
-
-    # The shadowing backport root requires the real standard-header paths on
-    # MSVC even when only an experimental TS header needs the root.
-    if(FORGE_NEEDS_BACKPORT OR FORGE_NEEDS_EXPERIMENTAL)
-        if(MSVC)
-            include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MEMORY_HEADER memory TRUE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_UTILITY_HEADER utility TRUE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_SIMD_HEADER simd FALSE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_EXECUTION_HEADER execution TRUE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_LINALG_HEADER linalg FALSE)
-            _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_HIVE_HEADER hive FALSE)
-        endif()
-
-        if(_FORGE_PACKAGE_MODE)
-            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
-                "${FORGE_BACKPORT_DIR}")
-        else()
-            target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
-                $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>)
-        endif()
+# The shadowing backport root requires the real standard-header paths on
+# MSVC even when only an experimental TS header needs the root.
+if(FORGE_NEEDS_BACKPORT OR FORGE_NEEDS_EXPERIMENTAL)
+    if(MSVC)
+        include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MEMORY_HEADER memory TRUE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_UTILITY_HEADER utility TRUE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_SIMD_HEADER simd FALSE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_EXECUTION_HEADER execution TRUE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MDSPAN_HEADER mdspan FALSE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_LINALG_HEADER linalg FALSE)
+        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_HIVE_HEADER hive FALSE)
     endif()
 
-    message(STATUS "CC Forge standard-header target configured")
+    if(_FORGE_PACKAGE_MODE)
+        target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+            "${FORGE_BACKPORT_DIR}")
+    else()
+        target_include_directories(${_FORGE_STD_TARGET} BEFORE INTERFACE
+            $<BUILD_INTERFACE:${FORGE_BACKPORT_DIR}>)
+    endif()
 endif()
+
+message(STATUS "CC Forge standard-header target configured")
 
 # Create the full extension target for include/forge utilities. Existing
 # consumers keep linking forge::forge; std-only consumers can link forge::std.
@@ -292,32 +309,42 @@ else()
     unset(_forge_source_wrapper_owner)
 endif()
 
-if(NOT _FORGE_FULL_TARGET_CONFIGURED)
-    set(_FORGE_FULL_TARGET_CONFIGURED ON)
-
-    if(_FORGE_PACKAGE_MODE)
-        target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
-            "${FORGE_INCLUDE_DIR}")
-    else()
-        target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
-            $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
-            $<INSTALL_INTERFACE:include>
-        )
-    endif()
-
-    target_link_libraries(${_FORGE_FULL_TARGET} INTERFACE forge::std)
-
-    if(FORGE_HAS_FORGE_IO_BACKEND)
-        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
-    endif()
-    if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
-        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND=1)
-    endif()
-    if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
-        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
-    endif()
-    if(FORGE_HAS_FORGE_IO_URING_BACKEND)
-        target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_URING_BACKEND=1)
-    endif()
-    message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")
+if(_FORGE_PACKAGE_MODE)
+    target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
+        "${FORGE_INCLUDE_DIR}")
+else()
+    target_include_directories(${_FORGE_FULL_TARGET} INTERFACE
+        $<BUILD_INTERFACE:${FORGE_INCLUDE_DIR}>
+        $<INSTALL_INTERFACE:include>
+    )
 endif()
+
+target_link_libraries(${_FORGE_FULL_TARGET} INTERFACE forge::std)
+_forge_add_language_guard(${_FORGE_FULL_TARGET} ${_FORGE_STD_TARGET})
+
+if(FORGE_HAS_FORGE_IO_BACKEND)
+    target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_BACKEND=1)
+endif()
+if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
+    target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND=1)
+endif()
+if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
+    target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND=1)
+endif()
+if(FORGE_HAS_FORGE_IO_URING_BACKEND)
+    target_compile_definitions(${_FORGE_FULL_TARGET} INTERFACE FORGE_HAS_FORGE_IO_URING_BACKEND=1)
+endif()
+message(STATUS "CC Forge library configured: ${FORGE_INCLUDE_DIR}")
+
+# Publish derived decisions for identical inclusions from sibling directories.
+get_cmake_property(_forge_variables VARIABLES)
+set(_forge_outputs FORGE_PROBE_CXX_STANDARD)
+foreach(_forge_variable IN LISTS _forge_variables)
+    if(_forge_variable MATCHES "^FORGE_(HAS_|NEEDS_|.*_PARTIAL$)")
+        list(APPEND _forge_outputs "${_forge_variable}")
+    endif()
+endforeach()
+set_property(GLOBAL PROPERTY _FORGE_CONFIGURATION_OUTPUTS "${_forge_outputs}")
+foreach(_forge_output IN LISTS _forge_outputs)
+    set_property(GLOBAL PROPERTY _FORGE_OUTPUT_${_forge_output} "${${_forge_output}}")
+endforeach()

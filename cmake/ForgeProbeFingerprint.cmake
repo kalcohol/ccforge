@@ -10,12 +10,33 @@ function(_forge_append_probe_fingerprint_field out_var payload key value)
         PARENT_SCOPE)
 endfunction()
 
-function(_forge_append_probe_fingerprint_variable out_var payload variable_name)
-    if(DEFINED ${variable_name})
+# Only additive probe inputs have equivalent unset and empty forms. Keep
+# selectors (notably CMAKE_CXX_EXTENSIONS) sensitive to definedness.
+function(_forge_normalize_probe_input out_var variable_name)
+    set(_forge_list_inputs
+        CMAKE_INCLUDE_PATH CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
+        CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES
+        CMAKE_CXX_IMPLICIT_LINK_LIBRARIES CMAKE_CXX_STANDARD_LIBRARIES
+        CMAKE_CXX_COMPILER_LAUNCHER CMAKE_CXX_LINKER_LAUNCHER
+        CMAKE_CONFIGURATION_TYPES CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+        CMAKE_OSX_ARCHITECTURES)
+    list(FIND _forge_list_inputs "${variable_name}" _forge_list_index)
+    if((NOT _forge_list_index EQUAL -1
+            OR variable_name MATCHES "^CMAKE_REQUIRED_(FLAGS|DEFINITIONS|INCLUDES|LIBRARIES|LINK_OPTIONS|LINK_DIRECTORIES)$"
+            OR variable_name MATCHES "^CMAKE_(CXX|EXE_LINKER|STATIC_LINKER)_FLAGS(_[A-Za-z0-9_]+)?$"
+            OR variable_name MATCHES "^CMAKE_CXX[0-9]+_(STANDARD|EXTENSION)_COMPILE_OPTION$")
+            AND "${${variable_name}}" STREQUAL "")
+        set(_forge_value "defined:")
+    elseif(DEFINED ${variable_name})
         set(_forge_value "defined:${${variable_name}}")
     else()
-        set(_forge_value "undefined:")
+        set(_forge_value "undefined")
     endif()
+    set(${out_var} "${_forge_value}" PARENT_SCOPE)
+endfunction()
+
+function(_forge_append_probe_fingerprint_variable out_var payload variable_name)
+    _forge_normalize_probe_input(_forge_value "${variable_name}")
     _forge_append_probe_fingerprint_field(
         _forge_payload "${payload}" "${variable_name}" "${_forge_value}")
     set(${out_var} "${_forge_payload}" PARENT_SCOPE)
@@ -184,18 +205,10 @@ function(_forge_append_probe_header_digests out_var payload probe_file)
     set(${out_var} "${_forge_payload}" PARENT_SCOPE)
 endfunction()
 
-function(_forge_compute_probe_fingerprint out_var language_standard)
-    set(_forge_probe_callsite "${CMAKE_CURRENT_LIST_FILE}")
-    set(_forge_fingerprint_module "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
-    get_filename_component(
-        _forge_probe_callsite_dir "${_forge_probe_callsite}" DIRECTORY)
-    set(_forge_payload)
-
-    _forge_append_probe_fingerprint_field(
-        _forge_payload "${_forge_payload}" "fingerprint-version" "3")
-    _forge_append_probe_fingerprint_field(
-        _forge_payload "${_forge_payload}" "language-standard" "${language_standard}")
-
+# Shared by probe-cache invalidation and the per-configure inclusion guard.
+# Include dynamic names as well as their values so toolchain-defined platform
+# inputs and custom configuration flags cannot bypass either fingerprint.
+function(_forge_collect_probe_inputs out_variables out_environment language_standard)
     set(_forge_scalar_inputs
         CMAKE_CXX_COMPILER
         CMAKE_CXX_COMPILER_ARG1
@@ -216,6 +229,7 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
         CMAKE_CXX_STANDARD_REQUIRED
         CMAKE_CXX_EXTENSIONS
         CMAKE_CXX_SCAN_FOR_MODULES
+        CMAKE_INCLUDE_PATH
         CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
         CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES
         CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES
@@ -248,48 +262,49 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
         CMAKE_REQUIRED_LINK_DIRECTORIES
         CMAKE_REQUIRED_LINK_OPTIONS
         CMAKE_REQUIRED_LIBRARIES)
-    foreach(_forge_variable IN LISTS _forge_scalar_inputs)
-        _forge_append_probe_fingerprint_variable(
-            _forge_payload "${_forge_payload}" "${_forge_variable}")
-    endforeach()
-
-    foreach(_forge_variable
-            CMAKE_CXX${language_standard}_STANDARD_COMPILE_OPTION
-            CMAKE_CXX${language_standard}_EXTENSION_COMPILE_OPTION)
-        _forge_append_probe_fingerprint_variable(
-            _forge_payload "${_forge_payload}" "${_forge_variable}")
-    endforeach()
-
-    foreach(_forge_variable IN LISTS CMAKE_TRY_COMPILE_PLATFORM_VARIABLES)
-        if(DEFINED ${_forge_variable})
-            set(_forge_value "defined:${${_forge_variable}}")
-        else()
-            set(_forge_value "undefined:")
-        endif()
-        _forge_append_probe_fingerprint_field(
-            _forge_payload "${_forge_payload}"
-            "try-compile-platform:${_forge_variable}" "${_forge_value}")
-    endforeach()
+    list(APPEND _forge_scalar_inputs
+        CMAKE_CXX${language_standard}_STANDARD_COMPILE_OPTION
+        CMAKE_CXX${language_standard}_EXTENSION_COMPILE_OPTION
+        ${CMAKE_TRY_COMPILE_PLATFORM_VARIABLES})
 
     get_cmake_property(_forge_variables VARIABLES)
-    list(SORT _forge_variables)
     foreach(_forge_variable IN LISTS _forge_variables)
         if(_forge_variable MATCHES
-                "^CMAKE_(CXX|EXE_LINKER|STATIC_LINKER)_FLAGS(_[A-Za-z0-9_]+)?$")
-            _forge_append_probe_fingerprint_variable(
-                _forge_payload "${_forge_payload}" "${_forge_variable}")
+                "^CMAKE_(CXX|EXE_LINKER|STATIC_LINKER)_FLAGS(_[A-Za-z0-9_]+)?$"
+                AND NOT "${${_forge_variable}}" STREQUAL "")
+            # Empty dynamic flag names add no probe input. Omitting them also
+            # keeps the key set stable when an unset flags variable is restored.
+            list(APPEND _forge_scalar_inputs "${_forge_variable}")
         endif()
     endforeach()
+    list(REMOVE_DUPLICATES _forge_scalar_inputs)
+    list(SORT _forge_scalar_inputs)
+    set(${out_variables} "${_forge_scalar_inputs}" PARENT_SCOPE)
+    set(${out_environment}
+        INCLUDE CPATH CPLUS_INCLUDE_PATH CXX_INCLUDE_PATH LIB LIBPATH LIBRARY_PATH
+        PARENT_SCOPE)
+endfunction()
 
-    foreach(_forge_environment_variable
-            INCLUDE CPATH CPLUS_INCLUDE_PATH CXX_INCLUDE_PATH
-            LIB LIBPATH LIBRARY_PATH)
-        _forge_append_probe_fingerprint_field(
-            _forge_payload "${_forge_payload}"
-            "environment:${_forge_environment_variable}"
-            "$ENV{${_forge_environment_variable}}")
-    endforeach()
+# Keep the modular source list shared with the inclusion fingerprint.
+function(_forge_collect_backport_probe_sources out_var)
+    set(_forge_sources
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeSimd.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeExecution.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeConstantWrapper.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeMdspanPadded.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeSubmdspan.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeLinalg.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/probes/ForgeProbeHive.cmake")
+    set(${out_var} "${_forge_sources}" PARENT_SCOPE)
+endfunction()
 
+# Resolve file contents identically for cache invalidation and repeated includes.
+function(_forge_collect_probe_content out_var probe_callsite)
+    set(_forge_probe_callsite "${probe_callsite}")
+    set(_forge_fingerprint_module "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
+    get_filename_component(
+        _forge_probe_callsite_dir "${_forge_probe_callsite}" DIRECTORY)
+    set(_forge_payload "")
     if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_TOOLCHAIN_FILE STREQUAL "")
         if(IS_ABSOLUTE "${CMAKE_TOOLCHAIN_FILE}")
             set(_forge_toolchain_file "${CMAKE_TOOLCHAIN_FILE}")
@@ -330,8 +345,36 @@ function(_forge_compute_probe_fingerprint out_var language_standard)
     _forge_append_probe_header_digests(
         _forge_payload "${_forge_payload}" "${_forge_probe_callsite}")
 
+    set(${out_var} "${_forge_payload}" PARENT_SCOPE)
+endfunction()
+
+function(_forge_compute_probe_fingerprint out_var language_standard)
+    set(_forge_probe_callsite "${CMAKE_CURRENT_LIST_FILE}")
+    set(_forge_payload)
+
+    _forge_append_probe_fingerprint_field(
+        _forge_payload "${_forge_payload}" "fingerprint-version" "5")
+    _forge_append_probe_fingerprint_field(
+        _forge_payload "${_forge_payload}" "language-standard" "${language_standard}")
+    _forge_collect_probe_inputs(
+        _forge_scalar_inputs _forge_environment_inputs "${language_standard}")
+    foreach(_forge_variable IN LISTS _forge_scalar_inputs)
+        _forge_append_probe_fingerprint_variable(
+            _forge_payload "${_forge_payload}" "${_forge_variable}")
+    endforeach()
+    foreach(_forge_environment_variable IN LISTS _forge_environment_inputs)
+        _forge_append_probe_fingerprint_field(
+            _forge_payload "${_forge_payload}"
+            "environment:${_forge_environment_variable}"
+            "$ENV{${_forge_environment_variable}}")
+    endforeach()
+
+    _forge_collect_probe_content(
+        _forge_content "${_forge_probe_callsite}" ${ARGN})
+    string(APPEND _forge_payload "${_forge_content}")
+
     string(SHA256 _forge_fingerprint "${_forge_payload}")
-    set(${out_var} "v3:${_forge_fingerprint}" PARENT_SCOPE)
+    set(${out_var} "v5:${_forge_fingerprint}" PARENT_SCOPE)
 endfunction()
 
 # Positive checks remain cached while their full fingerprint is stable. A

@@ -1,0 +1,29 @@
+#if defined(__cplusplus)
+
+#pragma once
+
+#if defined(_MSVC_LANG)
+#define FORGE_DETAIL_LANGUAGE _MSVC_LANG
+#else
+#define FORGE_DETAIL_LANGUAGE __cplusplus
+#endif
+
+#if FORGE_DETAIL_LANGUAGE < 201103L
+#error "CC Forge language standard mismatch: consumer uses C++98, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE < 201402L
+#error "CC Forge language standard mismatch: consumer uses C++11, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE < 201703L
+#error "CC Forge language standard mismatch: consumer uses C++14, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE < 202002L
+#error "CC Forge language standard mismatch: consumer uses C++17, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE <= 202002L
+#error "CC Forge language standard mismatch: consumer uses C++20, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE <= 202302L && @FORGE_PROBE_LANGUAGE_MODE@ != 23
+#error "CC Forge language standard mismatch: consumer uses C++23, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#elif FORGE_DETAIL_LANGUAGE > 202302L && @FORGE_PROBE_LANGUAGE_MODE@ != 26
+#error "CC Forge language standard mismatch: consumer uses C++26, probes used C++@FORGE_PROBE_LANGUAGE_MODE@ (CMAKE_CXX_STANDARD=@FORGE_PROBE_CXX_STANDARD@). Set CMAKE_CXX_STANDARD before including Forge and align consumer compile features and flags with that mode."
+#endif
+
+#undef FORGE_DETAIL_LANGUAGE
+
+#endif // defined(__cplusplus)

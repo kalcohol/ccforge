@@ -29,14 +29,7 @@ else()
     set(_forge_std 23)
 endif()
 
-set(_forge_modular_probe_sources
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSimd.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeExecution.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeConstantWrapper.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeMdspanPadded.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSubmdspan.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeLinalg.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeHive.cmake")
+_forge_collect_backport_probe_sources(_forge_modular_probe_sources)
 _forge_compute_probe_fingerprint(
     _forge_probe_fingerprint "${_forge_std}" ${_forge_modular_probe_sources})
 _forge_refresh_probe_cache(
