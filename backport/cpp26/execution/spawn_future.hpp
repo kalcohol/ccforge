@@ -24,11 +24,11 @@
 
 #include "concepts.hpp"
 #include "counting_scope.hpp"
-#include "detail/op_storage.hpp"
 #include "env.hpp"
 #include "write_env.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -129,33 +129,58 @@ template<class CS>
 using __future_completion_signatures_t =
     typename __future_completion_signatures<CS>::type;
 
+// The stop-when boundary forwards only FWD-ENV queries from write_env's
+// overlay and replaces its stop token with the fused token.
 template<class Env>
-struct __spawn_env {
-    [[no_unique_address]] Env __env;
-    std::inplace_stop_source* __source;
-
-    friend auto tag_invoke(get_stop_token_t, const __spawn_env& self) noexcept {
-        return self.__source->get_token();
-    }
-
-    template<class Tag>
-        requires (!std::same_as<std::remove_cvref_t<Tag>, get_stop_token_t> &&
-                  __forge_env_detail::__queryable<Tag, const Env&>)
-    friend decltype(auto) tag_invoke(Tag tag, const __spawn_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Tag, const Env&>) {
-        return __forge_env_detail::__query(std::move(tag), self.__env);
-    }
-};
+using __spawn_env = __forge_counting_scope::__stop_env<Env>;
 
 template<class State>
-struct __inner_recv;
+struct __inner_recv {
+    using receiver_concept = receiver_t;
+
+    // Shared ownership is established before start. Pin the state at each
+    // completion entry so delivery may destroy the consumer operation.
+    State* __state;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        auto state = __state->shared_from_this();
+        using tuple_t = std::tuple<std::decay_t<Vs>...>;
+        using alt_t = __value_result<tuple_t>;
+        try {
+            state->__complete_with(alt_t{tuple_t{static_cast<Vs&&>(vs)...}});
+        } catch (...) {
+            state->__complete_with(__error_result<std::exception_ptr>{std::current_exception()});
+        }
+    }
+
+    template<class Error>
+    void set_error(Error&& error) && noexcept {
+        auto state = __state->shared_from_this();
+        using alt_t = __error_result<std::decay_t<Error>>;
+        try {
+            state->__complete_with(alt_t{static_cast<Error&&>(error)});
+        } catch (...) {
+            state->__complete_with(__error_result<std::exception_ptr>{std::current_exception()});
+        }
+    }
+
+    void set_stopped() && noexcept {
+        auto state = __state->shared_from_this();
+        state->__complete_with(__stopped_result{});
+    }
+
+    auto get_env() const noexcept -> __empty_env {
+        return {};
+    }
+};
 
 template<class State>
 struct __consumer_base;
 
 template<class Env>
 struct __allocator_for_env {
-    using type = std::allocator<std::byte>;
+    using type = std::allocator<void>;
 
     static type get(Env&) noexcept {
         return {};
@@ -175,6 +200,70 @@ struct __allocator_for_env<Env> {
 template<class Env>
 using __allocator_for_env_t = typename __allocator_for_env<Env>::type;
 
+// Every allocator copy pins this resource, including copies in shared-pointer
+// control blocks. The final copy releases the association only after freeing
+// the resource itself, so allocator access cannot escape the scope's lifetime.
+template<class Alloc, class Association>
+struct __allocation_resource {
+    using self_t = __allocation_resource;
+    std::atomic<unsigned> __refs{1};
+    Alloc __alloc;
+    Association __association{};
+
+    explicit __allocation_resource(Alloc alloc) : __alloc(std::move(alloc)) {}
+    void __retain() noexcept { __refs.fetch_add(1, std::memory_order_relaxed); }
+    void __release() noexcept {
+        if (__refs.fetch_sub(1, std::memory_order_acq_rel) != 1) return;
+        auto association = std::move(__association);
+        {
+            using alloc_t = typename std::allocator_traits<Alloc>::template rebind_alloc<self_t>;
+            using traits_t = std::allocator_traits<alloc_t>;
+            alloc_t alloc{__alloc};
+            traits_t::destroy(alloc, this);
+            traits_t::deallocate(alloc, this, 1);
+        }
+    }
+};
+
+template<class T, class Alloc, class Association>
+struct __resource_allocator {
+    using value_type = T;
+    using resource_t = __allocation_resource<Alloc, Association>;
+    resource_t* __resource;
+
+    template<class U> struct rebind { using other = __resource_allocator<U, Alloc, Association>; };
+    explicit __resource_allocator(resource_t* resource) noexcept : __resource(resource) {
+        __resource->__retain();
+    }
+    __resource_allocator(const __resource_allocator& other) noexcept
+        : __resource_allocator(other.__resource) {}
+    template<class U>
+    __resource_allocator(const __resource_allocator<U, Alloc, Association>& other) noexcept
+        : __resource_allocator(other.__resource) {}
+    __resource_allocator& operator=(const __resource_allocator& other) noexcept {
+        other.__resource->__retain();
+        auto* old = std::exchange(__resource, other.__resource);
+        old->__release();
+        return *this;
+    }
+    ~__resource_allocator() { __resource->__release(); }
+
+    T* allocate(std::size_t n) {
+        using alloc_t = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+        alloc_t alloc{__resource->__alloc};
+        return std::allocator_traits<alloc_t>::allocate(alloc, n);
+    }
+    void deallocate(T* p, std::size_t n) noexcept {
+        using alloc_t = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+        alloc_t alloc{__resource->__alloc};
+        std::allocator_traits<alloc_t>::deallocate(alloc, p, n);
+    }
+    template<class U>
+    bool operator==(const __resource_allocator<U, Alloc, Association>& other) const noexcept {
+        return __resource == other.__resource;
+    }
+};
+
 template<class S, class Env, class Association>
 struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Association>> {
     using source_t = S;
@@ -182,7 +271,7 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     using association_t = Association;
     using spawn_env_t = __spawn_env<Env>;
     using started_sender_t = decltype(std::execution::write_env(
-        std::declval<S>(), std::declval<spawn_env_t>()));
+        std::declval<__forge_counting_scope::__stop_sender<S>>(), std::declval<Env>()));
     using upstream_cs_t = decltype(std::execution::get_completion_signatures(
         std::declval<started_sender_t>(), std::declval<__empty_env>()));
     using output_cs_t = __future_completion_signatures_t<upstream_cs_t>;
@@ -191,48 +280,37 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     using inner_op_t = connect_result_t<started_sender_t, inner_recv_t>;
     using consumer_base_t = __consumer_base<__shared_state>;
     using allocator_t = __allocator_for_env_t<Env>;
-    using env_stop_token_t = std::remove_cvref_t<decltype(
-        std::execution::get_stop_token(std::declval<const Env&>()))>;
+    using storage_allocator_t = __resource_allocator<std::byte, allocator_t, Association>;
 
     enum class __phase_t { running, done };
     enum class __consume_result { registered, deliver_now, already_consumed };
 
-    explicit __shared_state(Association assoc, allocator_t allocator) noexcept
-        : __association(std::move(assoc))
-        , __state_allocator(std::move(allocator))
-    {}
+    template<class Token>
+    __shared_state(S sndr, Env env, Token token, storage_allocator_t allocator)
+        : __state_allocator(std::move(allocator))
+        , __op(std::execution::connect(
+              std::execution::write_env(
+                  __forge_counting_scope::__stop_sender<S>{
+                      __stop_source.get_token(), std::move(sndr)},
+                  std::move(env)),
+              inner_recv_t{this}))
+    { __state_allocator.__resource->__association = token.try_associate(); }
 
     template<class T, class... Args>
     [[nodiscard]] auto __allocate_shared_aux(Args&&... args) {
-        using alloc_t = typename std::allocator_traits<allocator_t>
+        using alloc_t = typename std::allocator_traits<storage_allocator_t>
             ::template rebind_alloc<T>;
         return std::allocate_shared<T>(
             alloc_t{__state_allocator}, std::forward<Args>(args)...);
     }
 
-    ~__shared_state() noexcept {
-        __op_storage.destroy();
-    }
-
     [[nodiscard]] bool __has_association() const noexcept {
-        return static_cast<bool>(__association);
+        return static_cast<bool>(__state_allocator.__resource->__association);
     }
 
-    void __start(S sndr, Env env) noexcept {
+    void __start() noexcept {
         __keepalive = this->shared_from_this();
-        try {
-            __env_stop.install(
-                std::execution::get_stop_token(env), __stop_source);
-            spawn_env_t spawn_env{std::move(env), &__stop_source};
-            auto started = std::execution::write_env(std::move(sndr), std::move(spawn_env));
-            auto weak = this->weak_from_this();
-            auto* op = __op_storage.template emplace_from<inner_op_t>([&]() -> inner_op_t {
-                return std::execution::connect(std::move(started), inner_recv_t{weak});
-            });
-            std::execution::start(*op);
-        } catch (...) {
-            __complete_with(__error_result<std::exception_ptr>{std::current_exception()});
-        }
+        std::execution::start(__op);
     }
 
     void __complete_not_started() noexcept {
@@ -241,7 +319,6 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
 
     template<class Alt>
     void __complete_with(Alt alt) noexcept {
-        __env_stop.reset();
         std::shared_ptr<consumer_base_t> consumer_cb;
         {
             std::lock_guard lk{__mtx};
@@ -289,10 +366,6 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
         if (consumer_cb) {
             consumer_cb->__deliver(*this);
         }
-    }
-
-    [[nodiscard]] Association __take_association_for_destroy() noexcept {
-        return std::move(__association);
     }
 
     void __abandon_unconsumed() noexcept {
@@ -353,59 +426,9 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     result_t __result{};
     std::shared_ptr<consumer_base_t> __consumer_cb{};
     std::inplace_stop_source __stop_source{};
-    __forge_counting_scope::__optional_stop_callback<env_stop_token_t> __env_stop{};
-    Association __association{};
-    allocator_t __state_allocator;
-    __forge_detail::__op_storage<1024> __op_storage{};
+    storage_allocator_t __state_allocator;
+    inner_op_t __op;
     std::shared_ptr<__shared_state> __keepalive{};
-};
-
-template<class State>
-struct __inner_recv {
-    using receiver_concept = receiver_t;
-
-    std::weak_ptr<State> __state;
-
-    template<class... Vs>
-    void set_value(Vs&&... vs) && noexcept {
-        auto state = __state.lock();
-        if (!state) {
-            return;
-        }
-        using tuple_t = std::tuple<std::decay_t<Vs>...>;
-        using alt_t = __value_result<tuple_t>;
-        try {
-            state->__complete_with(alt_t{tuple_t{static_cast<Vs&&>(vs)...}});
-        } catch (...) {
-            state->__complete_with(__error_result<std::exception_ptr>{std::current_exception()});
-        }
-    }
-
-    template<class Error>
-    void set_error(Error&& error) && noexcept {
-        auto state = __state.lock();
-        if (!state) {
-            return;
-        }
-        using alt_t = __error_result<std::decay_t<Error>>;
-        try {
-            state->__complete_with(alt_t{static_cast<Error&&>(error)});
-        } catch (...) {
-            state->__complete_with(__error_result<std::exception_ptr>{std::current_exception()});
-        }
-    }
-
-    void set_stopped() && noexcept {
-        auto state = __state.lock();
-        if (!state) {
-            return;
-        }
-        state->__complete_with(__stopped_result{});
-    }
-
-    auto get_env() const noexcept -> __empty_env {
-        return {};
-    }
 };
 
 template<class State>
@@ -413,6 +436,9 @@ struct __consumer_base {
     virtual ~__consumer_base() = default;
     virtual void __deliver(State& state) noexcept = 0;
 };
+
+template<class State, class R>
+struct __op;
 
 template<class State, class R>
 struct __consumer : __consumer_base<State> {
@@ -461,11 +487,13 @@ struct __consumer : __consumer_base<State> {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             auto keepalive = std::move(__state);
             __stop_callback.reset();
+            __release_owner();
             state.__deliver_to(__rcvr);
         }
     }
 
     void __abandon() noexcept {
+        __release_owner();
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             auto state = std::move(__state);
             if (state) {
@@ -482,6 +510,7 @@ struct __consumer : __consumer_base<State> {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             auto keepalive = std::move(__state);
             __stop_callback.reset();
+            __release_owner();
             std::execution::set_stopped(std::move(__rcvr));
         }
     }
@@ -490,6 +519,7 @@ struct __consumer : __consumer_base<State> {
         if (__active.exchange(false, std::memory_order_acq_rel)) {
             auto keepalive = std::move(__state);
             __stop_callback.reset();
+            __release_owner();
             std::execution::set_error(std::move(__rcvr), std::move(error));
         }
     }
@@ -501,6 +531,9 @@ struct __consumer : __consumer_base<State> {
     std::shared_ptr<State> __state{};
     std::optional<callback_t> __stop_callback{};
     std::atomic<bool> __active{true};
+    std::mutex __owner_mtx;
+    __op<State, R>* __owner = nullptr;
+    void __release_owner() noexcept;
 };
 
 template<class State, class R>
@@ -510,26 +543,33 @@ struct __op : __forge_detail::__immovable {
 
     std::shared_ptr<State> __state;
     std::shared_ptr<consumer_t> __consumer_state;
+    std::mutex __consumer_mtx;
 
     __op(
         std::shared_ptr<State> state,
         std::shared_ptr<consumer_t> consumer) noexcept
         : __state(std::move(state))
         , __consumer_state(std::move(consumer))
-    {}
+    { __consumer_state->__owner = this; }
 
     ~__op() noexcept {
         if (__state) {
             __state->__abandon_unconsumed();
         }
-        if (__consumer_state) {
-            __consumer_state->__abandon();
+        std::shared_ptr<consumer_t> consumer;
+        {
+            std::lock_guard lk{__consumer_mtx};
+            consumer = std::move(__consumer_state);
         }
+        if (consumer) consumer->__abandon();
     }
 
     void start() & noexcept {
         auto state = std::move(__state);
-        auto consumer = __consumer_state;
+        auto consumer = [&] {
+            std::lock_guard lk{__consumer_mtx};
+            return __consumer_state;
+        }();
         if (!consumer->__install_stop_callback(state)) {
             return;
         }
@@ -550,6 +590,17 @@ struct __op : __forge_detail::__immovable {
         }
     }
 };
+
+template<class State, class R>
+void __consumer<State, R>::__release_owner() noexcept {
+    // The operation destructor takes a local pin before entering this lock.
+    // Detach before receiver completion, which may destroy the operation.
+    std::lock_guard lk{__owner_mtx};
+    if (auto* owner = std::exchange(__owner, nullptr)) {
+        std::lock_guard owner_lk{owner->__consumer_mtx};
+        owner->__consumer_state.reset();
+    }
+}
 
 template<class State>
 struct __sender {
@@ -612,9 +663,8 @@ struct __sender {
     std::shared_ptr<State> __state;
 };
 
-template<class State, class Env, class... Args>
-[[nodiscard]] auto __make_state(Env& env, Args&&... args) {
-    auto alloc = __allocator_for_env<Env>::get(env);
+template<class State, class Alloc, class... Args>
+[[nodiscard]] auto __make_state(Alloc alloc, Args&&... args) {
     using state_alloc_t = typename std::allocator_traits<decltype(alloc)>
         ::template rebind_alloc<State>;
     using state_traits_t = std::allocator_traits<state_alloc_t>;
@@ -623,7 +673,6 @@ template<class State, class Env, class... Args>
         state_alloc_t alloc;
 
         void operator()(State* state) noexcept {
-            auto association = state->__take_association_for_destroy();
             auto local_alloc = alloc;
             state_traits_t::destroy(local_alloc, state);
             state_traits_t::deallocate(local_alloc, state, 1);
@@ -642,20 +691,44 @@ template<class State, class Env, class... Args>
         state_traits_t::deallocate(state_alloc, state, 1);
         throw;
     }
-    return std::shared_ptr<State>{state, state_deleter{std::move(state_alloc)}};
+    // The control block must use the same selected allocator as the state.
+    return std::shared_ptr<State>{state, state_deleter{state_alloc}, state_alloc};
+}
+
+template<class Association, class Alloc>
+[[nodiscard]] auto __make_resource(Alloc alloc) {
+    using resource_t = __allocation_resource<Alloc, Association>;
+    using resource_alloc_t = typename std::allocator_traits<Alloc>
+        ::template rebind_alloc<resource_t>;
+    using resource_traits_t = std::allocator_traits<resource_alloc_t>;
+    resource_alloc_t resource_alloc{alloc};
+    auto* resource = resource_traits_t::allocate(resource_alloc, 1);
+    try {
+        resource_traits_t::construct(resource_alloc, resource, alloc);
+    } catch (...) {
+        resource_traits_t::deallocate(resource_alloc, resource, 1);
+        throw;
+    }
+    return std::unique_ptr<resource_t, decltype([](resource_t* p) noexcept {
+        p->__release();
+    })>{resource};
 }
 
 template<sender S, scope_token Token, queryable Env>
 [[nodiscard]] auto __spawn_future(S sndr, Token token, Env env) {
     using association_t = decltype(token.try_associate());
     using state_t = __shared_state<S, Env, association_t>;
-    auto association = token.try_associate();
-    auto state = __make_state<state_t>(env, std::move(association));
+    // Finish constructing the resource's allocator temporaries before acquiring
+    // an association, including on failure to allocate the state control block.
+    auto resource_owner = __make_resource<association_t>(__allocator_for_env<Env>::get(env));
+    auto* resource = resource_owner.get();
+    auto state = __make_state<state_t>(typename state_t::storage_allocator_t{resource},
+        std::move(sndr), std::move(env), std::move(token));
     if (!state->__has_association()) {
         state->__complete_not_started();
         return __sender<state_t>{std::move(state)};
     }
-    state->__start(std::move(sndr), std::move(env));
+    state->__start();
     return __sender<state_t>{std::move(state)};
 }
 

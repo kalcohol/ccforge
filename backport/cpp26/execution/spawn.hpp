@@ -89,13 +89,13 @@ struct __state {
 
     Alloc __alloc;
     std::atomic<unsigned> __refs{1};
-    association_t __association;
     op_t __op;
+    association_t __association;
 
     __state(Alloc alloc, S sndr, Token token)
         : __alloc(std::move(alloc))
-        , __association(token.try_associate())
         , __op(std::execution::connect(std::move(sndr), __recv{this}))
+        , __association(token.try_associate())
     {}
 
     void __add_ref() noexcept {
@@ -184,7 +184,7 @@ void __spawn_wrapped(Wrapped wrapped, Token token, Env env) {
             std::move(wrapped),
             std::move(token),
             std::move(env),
-            std::allocator<std::byte>{});
+            std::allocator<void>{});
     }
 }
 
