@@ -24,9 +24,11 @@
 
 #include "concepts.hpp"
 #include "counting_scope.hpp"
-#include "detail/op_storage.hpp"
+#include "detail/op_holder.hpp"
 #include "env.hpp"
 
+#include <memory>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -70,14 +72,15 @@ struct __op : __forge_detail::__immovable {
 
     Association __association;
     R __rcvr;
-    __forge_detail::__op_storage<1024> __inner_storage;
+    using holder_t = __forge_detail::__op_holder<inner_op_t>;
+    union { holder_t __inner; };
 
     __op(S sndr, Association association, R rcvr)
         : __association(std::move(association))
         , __rcvr(std::move(rcvr))
     {
         if (__association) {
-            __inner_storage.template emplace_from<inner_op_t>(
+            ::new (static_cast<void*>(std::addressof(__inner))) holder_t(
                 [&]() -> inner_op_t {
                     return std::execution::connect(
                         std::move(sndr), __recv{&__rcvr});
@@ -86,8 +89,8 @@ struct __op : __forge_detail::__immovable {
     }
 
     ~__op() noexcept {
-        __inner_storage.destroy();
-        __association = {};
+        if (__association) std::destroy_at(std::addressof(__inner));
+        // The first member releases the association after the receiver dies.
     }
 
     void start() & noexcept {
@@ -96,7 +99,7 @@ struct __op : __forge_detail::__immovable {
             return;
         }
 
-        std::execution::start(__inner_storage.template get<inner_op_t>());
+        std::execution::start(__inner.__op);
     }
 };
 
