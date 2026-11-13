@@ -359,7 +359,7 @@ TEST(SimdMathSpecialTest, CompleteThirdKindEllipticResolvesJointSingularities) {
     const auto own_neighbors = []<class T>() {
         constexpr int digits = std::numeric_limits<T>::digits;
         if constexpr (digits == 24 || digits == 53 || digits == 64 || digits == 113) {
-            constexpr long double reference = [] {
+            constexpr long double reference = [digits] {
                 if constexpr (digits == 24) {
                     return 13176799.3120658849057330924008326896292577223644725274L;
                 } else if constexpr (digits == 53) {
@@ -490,7 +490,7 @@ TEST(SimdMathSpecialTest, FirstKindEllipticUsesEachTypesOwnEndpointNeighbors) {
         constexpr T rounded_pi = static_cast<T>(
             3.141592653589793238462643383279502884L);
         if constexpr (digits == 24 || digits == 53 || digits == 64 || digits == 113) {
-            constexpr std::array<long double, 3> reference = [] {
+            constexpr std::array<long double, 3> reference = [digits] {
                 if constexpr (digits == 24) {
                     return std::array<long double, 3>{{
                         9.35726853625712452419961169912096170L,
@@ -1416,7 +1416,7 @@ TEST(SimdMathSpecialTest, BesselBoundaryMatchesIndependentIntegerOrderReferences
         SCOPED_TRACE(digits);
         constexpr std::array<T, 4> orders{{T{0}, T{1}, T{2}, T{5}}};
         const V lane_orders = load_vec<V>(orders);
-        const auto tolerance = [](double expected) {
+        const auto tolerance = [digits](double expected) {
             if constexpr (digits == 24) {
                 return 5e-7;
             } else {

@@ -2,6 +2,39 @@
 
 namespace detail {
 
+// Preserve the const-reference scalar arguments used by complex transforms.
+#define FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(name) \
+struct complex_math_##name##_fn { \
+    template<class... T> \
+    constexpr auto operator()(const T&... args) const { return std::name(args...); } \
+};
+
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(abs)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(arg)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(norm)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(pow)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(polar)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(conj)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(proj)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(exp)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(log)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(log10)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(sqrt)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(sin)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(cos)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(tan)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(asin)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(acos)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(atan)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(sinh)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(cosh)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(tanh)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(asinh)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(acosh)
+FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(atanh)
+
+#undef FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION
+
 template<class T>
 struct is_simd_complex_value : false_type {};
 
@@ -55,19 +88,19 @@ constexpr typename remove_cvref_t<V>::real_type imag(const V& value) noexcept
 template<class V>
 constexpr typename remove_cvref_t<V>::real_type abs(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::abs(lane); });
+    return detail::unary_complex_real_transform(value, detail::complex_math_abs_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::real_type arg(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::arg(lane); });
+    return detail::unary_complex_real_transform(value, detail::complex_math_arg_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::real_type norm(const V& value)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, [](const auto& lane) { return std::norm(lane); });
+    return detail::unary_complex_real_transform(value, detail::complex_math_norm_fn{});
 }
 
 #define FORGE_SIMD_UNARY_COMPLEX_MATH(name) \
@@ -75,7 +108,7 @@ template<class V> \
 constexpr remove_cvref_t<V> name(const V& value) \
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_complex_transform<result_type>(value, [](const auto& lane) { return std::name(lane); }); \
+    return detail::unary_complex_transform<result_type>(value, detail::complex_math_##name##_fn{}); \
 }
 
 FORGE_SIMD_UNARY_COMPLEX_MATH(conj)
@@ -103,9 +136,7 @@ template<class V>
 constexpr remove_cvref_t<V> pow(const V& left, const V& right)
     requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::binary_complex_transform<result_type>(left, right, [](const auto& lhs, const auto& rhs) {
-        return std::pow(lhs, rhs);
-    });
+    return detail::binary_complex_transform<result_type>(left, right, detail::complex_math_pow_fn{});
 }
 
 template<class V>
@@ -113,7 +144,7 @@ constexpr rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref
 polar(const V& rho)
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>;
-    return detail::unary_complex_transform<result_type>(rho, [](const auto& lane) { return std::polar(lane); });
+    return detail::unary_complex_transform<result_type>(rho, detail::complex_math_polar_fn{});
 }
 
 template<class V>

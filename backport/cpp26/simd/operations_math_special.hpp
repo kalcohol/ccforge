@@ -2,12 +2,39 @@
 
 #include "operations_math_special_scalar.hpp"
 
+namespace detail {
+
+#define FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(name) \
+struct special_math_##name##_fn { \
+    template<class... T> \
+    constexpr auto operator()(T... args) const { return detail::special_math::name(args...); } \
+};
+
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(comp_ellint_1)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(comp_ellint_2)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(expint)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(riemann_zeta)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(beta)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(comp_ellint_3)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(cyl_bessel_i)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(cyl_bessel_j)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(cyl_bessel_k)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(cyl_neumann)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(ellint_1)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(ellint_2)
+FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION(ellint_3)
+
+#undef FORGE_SIMD_DETAIL_SPECIAL_MATH_FUNCTION
+
+} // namespace detail
+
+
 #define FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(name) \
 template<class V> \
 remove_cvref_t<V> name(const V& value) \
     requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_math_transform<result_type>(value, [](auto lane) { return detail::special_math::name(lane); }); \
+    return detail::unary_math_transform<result_type>(value, detail::special_math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_BINARY_FLOAT_MATH_RUNTIME(name) \
@@ -15,7 +42,7 @@ template<class A, class B> \
 detail::binary_math_result_t<A, B> name(const A& left, const B& right) \
     requires(detail::is_binary_math_floating<A, B>::value) { \
     using result_type = detail::binary_math_result_t<A, B>; \
-    return detail::binary_math_transform<result_type>(left, right, [](auto lhs, auto rhs) { return detail::special_math::name(lhs, rhs); }); \
+    return detail::binary_math_transform<result_type>(left, right, detail::special_math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_TERNARY_FLOAT_MATH_RUNTIME(name) \
@@ -23,7 +50,7 @@ template<class A, class B, class C> \
 detail::ternary_math_result_t<A, B, C> name(const A& x, const B& y, const C& z) \
     requires(detail::is_ternary_math_floating<A, B, C>::value) { \
     using result_type = detail::ternary_math_result_t<A, B, C>; \
-    return detail::ternary_math_transform<result_type>(x, y, z, [](auto vx, auto vy, auto vz) { return detail::special_math::name(vx, vy, vz); }); \
+    return detail::ternary_math_transform<result_type>(x, y, z, detail::special_math_##name##_fn{}); \
 }
 
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(comp_ellint_1)

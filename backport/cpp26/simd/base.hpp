@@ -184,8 +184,12 @@ struct has_mask_representative_value<Bytes, void_t<typename mask_representative_
 template<size_t Bytes>
 using mask_representative_value_t = typename mask_representative_value<Bytes>::type;
 
-template<size_t Bytes>
+template<size_t Bytes, class = void>
 struct has_vectorizable_signed_integer_of_size
+    : false_type {};
+
+template<size_t Bytes>
+struct has_vectorizable_signed_integer_of_size<Bytes, void_t<typename integer_from_size<Bytes>::type>>
     : integral_constant<bool,
         has_integer_from_size<Bytes>::value &&
         is_supported_value<typename integer_from_size<Bytes>::type>::value &&
@@ -380,7 +384,10 @@ using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 64>::v
 #elif defined(__AVX2__) || defined(__AVX__)
 template<class T>
 using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 32>::value>;
-#elif defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
+#elif defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__) || \
+    (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64)))
+// MSVC x64 has baseline SSE2; ARM64 has baseline NEON. Keep ISA feature
+// macros above these target defaults, including when compiling with clang-cl.
 template<class T>
 using native_abi = detail::native_abi_tag<T, detail::native_lane_count<T, 16>::value>;
 #else
@@ -1001,34 +1008,51 @@ constexpr permute_result_t<V, Indices> permute_from_indices(const V& value, cons
     return result;
 }
 
+// Namespace-scope generators avoid local closure identities in templates used
+// for both constant evaluation and runtime construction.
+template<class V, class IndexMap>
+struct permute_lane_generator {
+    const V& value;
+
+    template<class Lane>
+    constexpr auto operator()(Lane) const {
+        using source_index = static_permute_index_t<static_cast<simd_size_type>(V::size),
+            static_cast<simd_size_type>(Lane::value), IndexMap>;
+        return permute_lane(value, source_index::value);
+    }
+};
+
+template<class V>
+struct chunk_lane_generator {
+    const V& value;
+    simd_size_type offset;
+
+    template<class Lane>
+    constexpr auto operator()(Lane) const {
+        return value[offset + Lane::value];
+    }
+};
+
 template<class V, class IndexMap, simd_size_type... I>
 constexpr resize_t<sizeof...(I), V> permute_from_map_impl(const V& value, IndexMap&, integer_sequence<simd_size_type, I...>) {
-    return resize_t<sizeof...(I), V>([&value](auto lane) {
-        using source_index = static_permute_index_t<static_cast<simd_size_type>(V::size),
-            static_cast<simd_size_type>(decltype(lane)::value), IndexMap>;
-        return permute_lane(value, source_index::value);
-    });
+    return resize_t<sizeof...(I), V>(permute_lane_generator<V, IndexMap>{value});
 }
 
 template<class Chunk, class V, size_t... I>
 constexpr array<Chunk, sizeof...(I)> chunk_array_impl(const V& value, index_sequence<I...>) {
-    return {{Chunk([&](auto lane) {
-        return value[static_cast<simd_size_type>(I * static_cast<size_t>(Chunk::size) + static_cast<size_t>(decltype(lane)::value))];
-    })...}};
+    return {{Chunk(chunk_lane_generator<V>{value,
+        static_cast<simd_size_type>(I * static_cast<size_t>(Chunk::size))})...}};
 }
 
 template<class Chunk, class V, size_t... I>
 constexpr auto chunk_tuple_impl(const V& value, index_sequence<I...>) {
-    return make_tuple(Chunk([&](auto lane) {
-        return value[static_cast<simd_size_type>(I * static_cast<size_t>(Chunk::size) + static_cast<size_t>(decltype(lane)::value))];
-    })...);
+    return make_tuple(Chunk(chunk_lane_generator<V>{value,
+        static_cast<simd_size_type>(I * static_cast<size_t>(Chunk::size))})...);
 }
 
 template<class Chunk, class V>
 constexpr Chunk make_chunk(const V& value, simd_size_type offset) {
-    return Chunk([&](auto lane) {
-        return value[offset + decltype(lane)::value];
-    });
+    return Chunk(chunk_lane_generator<V>{value, offset});
 }
 
 template<class Tail, class V>
@@ -1103,9 +1127,11 @@ struct is_contiguous_mask_range<R,
         ranges::sized_range<R> &&
         is_constructible<bool, typename ranges::range_reference_t<R>>::value> {};
 
-// GNU needs body-based extraction; the other path uses only a declared
-// return type. Neither path constructs, copies, or calls the range.
-#if defined(__GNUC__) && !defined(__clang__)
+// GNU and MSVC need body-based extraction. MSVC can misclassify a
+// state-dependent size in the declaration-only return type. Check the
+// constant expression on a reference before deducing the result in a body.
+// Neither path constructs, copies, or calls the range.
+#if (defined(__GNUC__) || defined(_MSC_VER)) && !defined(__clang__)
 template<class R>
 concept has_constant_range_size = requires(R& range) {
     typename integral_constant<simd_size_type, ranges::size(range)>;

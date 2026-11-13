@@ -22,6 +22,20 @@ using native_uint = std::simd::vec<unsigned int>;
 using native_float = std::simd::vec<float>;
 using native_double = std::simd::vec<double>;
 using deduced4 = std::simd::basic_vec<int, std::simd::deduce_abi_t<int, 4>>;
+#if defined(_MSC_VER)
+#if defined(__AVX512F__)
+inline constexpr int expected_native_bytes = 64;
+#elif defined(__AVX2__) || defined(__AVX__)
+inline constexpr int expected_native_bytes = 32;
+#elif defined(_M_X64) || defined(_M_ARM64) || defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
+inline constexpr int expected_native_bytes = 16;
+#else
+inline constexpr int expected_native_bytes = 0;
+#endif
+static_assert(native_int::size == (expected_native_bytes ? expected_native_bytes / sizeof(int) : 1));
+static_assert(native_float::size == (expected_native_bytes ? expected_native_bytes / sizeof(float) : 1));
+static_assert(native_double::size == (expected_native_bytes ? expected_native_bytes / sizeof(double) : 1));
+#endif
 using disabled_longdouble2 = std::simd::basic_vec<long double, std::simd::fixed_size_abi<2>>;
 using disabled_mask3 = std::simd::basic_mask<3, std::simd::fixed_size_abi<4>>;
 using disabled_int65 = std::simd::basic_vec<int, std::simd::fixed_size_abi<65>>;
@@ -141,6 +155,25 @@ TEST(SimdAbiTest, NativeAliasesRemainUsableAcrossValueFamilies) {
     EXPECT_EQ(lane(uint_value, 0), 5u);
     EXPECT_FLOAT_EQ(lane(float_value, 0), 1.5f);
     EXPECT_DOUBLE_EQ(lane(double_value, 0), 2.5);
+}
+
+TEST(SimdAbiTest, NativeArithmeticVisitsEveryLane) {
+    native_int integers([](auto i) { return static_cast<int>(i) + 1; });
+    native_float floats([](auto i) { return static_cast<float>(i) + 1.0f; });
+    integers += native_int(2);
+    integers -= native_int(1);
+    integers *= native_int(2);
+    integers /= native_int(2);
+    floats += native_float(2.0f);
+    floats -= native_float(1.0f);
+    floats *= native_float(2.0f);
+    floats /= native_float(2.0f);
+    for (std::simd::simd_size_type i = 0; i < native_int::size; ++i) {
+        EXPECT_EQ(integers[i], i + 2);
+    }
+    for (std::simd::simd_size_type i = 0; i < native_float::size; ++i) {
+        EXPECT_FLOAT_EQ(floats[i], static_cast<float>(i) + 2.0f);
+    }
 }
 
 } // namespace

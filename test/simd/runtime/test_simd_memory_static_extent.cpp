@@ -76,6 +76,24 @@ static_assert(std::ranges::contiguous_range<dynamic_view>);
 static_assert(std::ranges::sized_range<dynamic_view>);
 
 template<class R>
+concept has_unchecked_static_size = requires {
+    typename std::simd::detail::unchecked_range_size_t<R>;
+};
+
+// Runtime state must not become a zero static extent in MSVC's template
+// return-type substitution. Keep these controls in a normal build target.
+static_assert(std::simd::detail::fixed_range_size<stateful_constexpr_view>::value == -1);
+static_assert(std::simd::detail::fixed_range_size<std::vector<int>>::value == -1);
+static_assert(std::simd::detail::fixed_range_size<std::span<int>>::value == -1);
+static_assert(!has_unchecked_static_size<stateful_constexpr_view>);
+static_assert(!has_unchecked_static_size<std::vector<int>>);
+static_assert(!has_unchecked_static_size<std::span<int>>);
+static_assert(std::simd::detail::fixed_range_size<fixed_view<extent>>::value == extent);
+static_assert(std::simd::detail::unchecked_range_size_t<fixed_view<extent>>::value == extent);
+static_assert(std::simd::detail::fixed_range_size<const const_longer_view>::value == 4);
+static_assert(std::simd::detail::fixed_range_size<const_longer_view>::value == 2);
+
+template<class R>
 concept unchecked_declarations = requires(R&& r, const int4& value,
                                          const int4::mask_type& mask,
                                          const native_int::mask_type& native_mask) {

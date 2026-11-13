@@ -4,6 +4,54 @@ namespace {
 
 using namespace simd_test;
 
+template<class M>
+concept has_unary_plus = requires(const M& value) { +value; };
+template<class M>
+concept has_unary_minus = requires(const M& value) { -value; };
+template<class M>
+concept has_unary_complement = requires(const M& value) { ~value; };
+
+using complex4 = std::simd::vec<std::complex<double>, 4>;
+using wide_mask4 = complex4::mask_type;
+static_assert(std::is_default_constructible_v<wide_mask4>);
+static_assert(std::is_convertible_v<wide_mask4, complex4>);
+static_assert(has_unary_plus<complex4> && has_unary_minus<complex4>);
+// Masks without a vectorizable signed integer of the same size delete unary ops.
+static_assert(!has_unary_plus<wide_mask4>);
+static_assert(!has_unary_minus<wide_mask4>);
+static_assert(!has_unary_complement<wide_mask4>);
+static_assert(has_unary_plus<mask4> && has_unary_minus<mask4> &&
+              has_unary_complement<mask4>);
+
+namespace conversion_fallback {
+
+// Ordinary lookup sees these conversion-taking candidates before the concepts.
+complex4 operator+(const complex4&) noexcept;
+complex4 operator-(const complex4&) noexcept;
+complex4 operator~(const complex4&) noexcept;
+
+template<class M>
+concept accepts_conversion = requires(const M& value) {
+    operator+(value);
+    operator-(value);
+    operator~(value);
+};
+template<class M>
+concept has_plus = requires(const M& value) { +value; };
+template<class M>
+concept has_minus = requires(const M& value) { -value; };
+template<class M>
+concept has_complement = requires(const M& value) { ~value; };
+
+// Function-call syntax proves the fallback is viable; unary syntax must select
+// the exact-match deleted member instead of converting the mask to complex4.
+static_assert(accepts_conversion<wide_mask4>);
+static_assert(!has_plus<wide_mask4>);
+static_assert(!has_minus<wide_mask4>);
+static_assert(!has_complement<wide_mask4>);
+
+} // namespace conversion_fallback
+
 constexpr bool constexpr_mask_from_bitset() {
     constexpr std::bitset<4> bits(0b0101u);
     constexpr mask4 values(bits);

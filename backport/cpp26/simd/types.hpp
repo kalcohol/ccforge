@@ -1,5 +1,19 @@
 #pragma once
 
+namespace detail {
+
+template<class U, class Mask>
+struct mask_vector_generator {
+    const Mask& value;
+
+    template<class Lane>
+    constexpr U operator()(Lane) const {
+        return value[static_cast<simd_size_type>(Lane::value)] ? U{1} : U{0};
+    }
+};
+
+} // namespace detail
+
 template<size_t Bytes, class Abi>
     requires(detail::is_enabled_basic_mask<Bytes, Abi>::value)
 class basic_mask<Bytes, Abi> {
@@ -128,9 +142,7 @@ public:
                  sizeof(U) == Bytes,
                  int>::type = 0>
     constexpr operator basic_vec<U, A>() const noexcept {
-        return basic_vec<U, A>([&](auto lane) {
-            return data_[static_cast<size_t>(decltype(lane)::value)] ? U{1} : U{0};
-        });
+        return basic_vec<U, A>(detail::mask_vector_generator<U, basic_mask>{*this});
     }
 
     template<class U, class A,
@@ -139,9 +151,7 @@ public:
                  sizeof(U) != Bytes,
                  int>::type = 0>
     constexpr explicit operator basic_vec<U, A>() const noexcept {
-        return basic_vec<U, A>([&](auto lane) {
-            return data_[static_cast<size_t>(decltype(lane)::value)] ? U{1} : U{0};
-        });
+        return basic_vec<U, A>(detail::mask_vector_generator<U, basic_mask>{*this});
     }
 
     constexpr basic_mask& operator&=(const basic_mask& other) noexcept {
@@ -204,10 +214,9 @@ public:
         return left;
     }
 
-    friend constexpr basic_vec<
-        typename detail::integer_from_size<Bytes>::type,
-        Abi>
-    operator+(const basic_mask& value) noexcept
+    // Deduce the result only after the constraint succeeds: some enabled
+    // masks (e.g. complex<double>) have no matching signed integer type.
+    constexpr auto operator+() const noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
@@ -215,19 +224,16 @@ public:
             detail::set_lane(
                 result,
                 i,
-                value[i] ? typename result_type::value_type{1}
+                (*this)[i] ? typename result_type::value_type{1}
                          : typename result_type::value_type{0});
         }
         return result;
     }
 
-    friend void operator+(const basic_mask& value) noexcept
+    void operator+() const noexcept
         requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
-    friend constexpr basic_vec<
-        typename detail::integer_from_size<Bytes>::type,
-        Abi>
-    operator-(const basic_mask& value) noexcept
+    constexpr auto operator-() const noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
@@ -235,19 +241,16 @@ public:
             detail::set_lane(
                 result,
                 i,
-                value[i] ? typename result_type::value_type{-1}
+                (*this)[i] ? typename result_type::value_type{-1}
                          : typename result_type::value_type{0});
         }
         return result;
     }
 
-    friend void operator-(const basic_mask& value) noexcept
+    void operator-() const noexcept
         requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
-    friend constexpr basic_vec<
-        typename detail::integer_from_size<Bytes>::type,
-        Abi>
-    operator~(const basic_mask& value) noexcept
+    constexpr auto operator~() const noexcept
         requires(detail::has_vectorizable_signed_integer_of_size<Bytes>::value) {
         using result_type = basic_vec<typename detail::integer_from_size<Bytes>::type, Abi>;
         result_type result;
@@ -256,13 +259,13 @@ public:
             detail::set_lane(
                 result,
                 i,
-                value[i] ? static_cast<lane_type>(~lane_type{1})
+                (*this)[i] ? static_cast<lane_type>(~lane_type{1})
                          : static_cast<lane_type>(~lane_type{0}));
         }
         return result;
     }
 
-    friend void operator~(const basic_mask& value) noexcept
+    void operator~() const noexcept
         requires(!detail::has_vectorizable_signed_integer_of_size<Bytes>::value) = delete;
 
     friend constexpr basic_mask operator==(const basic_mask& left, const basic_mask& right) noexcept {

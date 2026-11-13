@@ -31,6 +31,11 @@ target_include_directories(test_simd_native_handoff BEFORE PRIVATE
     "${CMAKE_SOURCE_DIR}/backport"
     "${FORGE_SIMD_NATIVE_HANDOFF_INCLUDE_DIR}"
     "${FORGE_SIMD_SUPPORT_DIR}")
+if(MSVC)
+    # The wrapper uses an explicit native-header path on MSVC (no include_next).
+    target_compile_definitions(test_simd_native_handoff PRIVATE
+        FORGE_MSVC_SIMD_HEADER="${FORGE_SIMD_NATIVE_HANDOFF_INCLUDE_DIR}/simd")
+endif()
 add_test(
     NAME simd_native_handoff_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target test_simd_native_handoff)

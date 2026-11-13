@@ -24,7 +24,8 @@
 
 // Vector extension type aliases and dispatch helpers for basic_vec Layer 1.
 // Uses GCC/Clang vector_size attribute with CONCRETE byte sizes.
-// Only enabled when compiler supports the required ISA.
+// Only enabled with GCC/Clang vector extensions and the required ISA.
+// Other compilers use the scalar loops below, with the same public ABI width.
 
 #include <cstddef>
 #include <type_traits>
@@ -34,6 +35,7 @@ namespace detail {
 // ─── Concrete vector type aliases ────────────────────────────────────────────
 // vector_size takes TOTAL BYTES, not element count.
 
+#if defined(__GNUC__) || defined(__clang__)
 #if defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
 typedef float  __attribute__((vector_size(16))) __vec_f32x4;
 typedef double __attribute__((vector_size(16))) __vec_f64x2;
@@ -57,21 +59,28 @@ typedef int    __attribute__((vector_size(64))) __vec_i32x16;
 typedef long   __attribute__((vector_size(64))) __vec_i64x8;
 #define FORGE_SIMD_DETAIL_HAVE_512BIT 1
 #endif
+#endif // GCC/Clang vector extensions
 
 // ─── is_constant_evaluated helper ────────────────────────────────────────────
 // __builtin_is_constant_evaluated() is GCC 9+/Clang 9+
 
-#if defined(__has_builtin) && __has_builtin(__builtin_is_constant_evaluated)
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_is_constant_evaluated)
 #define FORGE_SIMD_DETAIL_IS_CONSTEVAL() __builtin_is_constant_evaluated()
-#elif __cpp_lib_is_constant_evaluated >= 201811L
+#endif
+#endif
+#ifndef FORGE_SIMD_DETAIL_IS_CONSTEVAL
+#if __cpp_lib_is_constant_evaluated >= 201811L
 #include <utility>
 #define FORGE_SIMD_DETAIL_IS_CONSTEVAL() ::std::is_constant_evaluated()
 #else
 #define FORGE_SIMD_DETAIL_IS_CONSTEVAL() false
 #endif
+#endif
 
 // ─── Vector add/sub/mul helpers ──────────────────────────────────────────────
 
+#if defined(__GNUC__) || defined(__clang__)
 template<class Vec, class T>
 inline void __simd_add_vec(T* dst, const T* src) noexcept {
     Vec left;
@@ -111,6 +120,7 @@ inline void __simd_div_vec(T* dst, const T* src) noexcept {
     left /= right;
     __builtin_memcpy(dst, &left, sizeof(left));
 }
+#endif // GCC/Clang builtins
 
 template<class T, ::std::size_t N>
 inline void __simd_add(T* dst, const T* src) noexcept {

@@ -503,17 +503,21 @@ constexpr bool constexpr_mixed_math_operands() {
 }
 static_assert(constexpr_mixed_math_operands());
 
+// Keep all-vector and both mixed forms for the same double4 specialization in
+// this TU: MSVC must emit distinct COMDATs even though the function types match.
 TEST(SimdMathExt, MixedBinaryOperandsKeepTheDeducedVector) {
     const double4 values = load_vec<double4>(std::array<double, 4>{{2.5, 3.5, 4.5, 5.5}});
     const int4 integers = load_vec<int4>(std::array<int, 4>{{2, 2, 3, 3}});
     const float4 floats = load_vec<float4>(std::array<float, 4>{{1.0f, 2.0f, 3.0f, 4.0f}});
 #define CHECK_MIXED_BINARY(name) \
     { \
+        const auto all_vectors = std::simd::name(values, double4(2)); \
         const auto scalar_right = std::simd::name(values, 2); \
         const auto scalar_left = std::simd::name(2, values); \
         const auto vector_right = std::simd::name(values, integers); \
         const auto vector_left = std::simd::name(integers, values); \
         for (std::simd::simd_size_type i = 0; i < double4::size; ++i) { \
+            EXPECT_DOUBLE_EQ(all_vectors[i], std::name(values[i], 2.0)); \
             EXPECT_DOUBLE_EQ(scalar_right[i], std::name(values[i], 2.0)); \
             EXPECT_DOUBLE_EQ(scalar_left[i], std::name(2.0, values[i])); \
             EXPECT_DOUBLE_EQ(vector_right[i], std::name(values[i], static_cast<double>(integers[i]))); \
@@ -546,6 +550,34 @@ TEST(SimdMathExt, MixedBinaryOperandsKeepTheDeducedVector) {
     }
 }
 
+TEST(SimdMathExt, ComparisonAndRemquoOverloadsHaveDistinctLinkage) {
+    const double4 values = load_vec<double4>(std::array<double, 4>{{2.5, 3.5, 4.5, 5.5}});
+    const double4 twos(2);
+    const std::array<double4::mask_type, 3> compared{{
+        std::simd::isgreater(values, twos),
+        std::simd::isgreater(2, values),
+        std::simd::isgreater(values, 2) }};
+    using quotient_type = std::simd::rebind_t<int, double4>;
+    std::array<quotient_type, 3> quotients;
+    const std::array<double4, 3> remainders{{
+        std::simd::remquo(values, twos, &quotients[0]),
+        std::simd::remquo(2, values, &quotients[1]),
+        std::simd::remquo(values, 2, &quotients[2]) }};
+    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        EXPECT_EQ(compared[0][i], std::isgreater(values[i], 2.0));
+        EXPECT_EQ(compared[1][i], std::isgreater(2.0, values[i]));
+        EXPECT_EQ(compared[2][i], std::isgreater(values[i], 2.0));
+        for (std::size_t j = 0; j < remainders.size(); ++j) {
+            int quotient = 0;
+            const double expected = j == 1 ? std::remquo(2.0, values[i], &quotient)
+                                           : std::remquo(values[i], 2.0, &quotient);
+            EXPECT_DOUBLE_EQ(remainders[j][i], expected);
+            EXPECT_EQ(quotients[j][i], quotient);
+        }
+    }
+}
+
+// All seven patterns must coexist for fma, hypot and lerp in this TU.
 TEST(SimdMathExt, MixedTernaryOperandsNormalizeEveryPosition) {
     const double4 values = load_vec<double4>(std::array<double, 4>{{2.5, 3.5, 4.5, 5.5}});
     const double4 twos(2);

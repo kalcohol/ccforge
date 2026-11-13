@@ -3,7 +3,8 @@
 namespace detail {
 
 // Inspect an object-independent size without constructing or copying the range.
-#if defined(__GNUC__) && !defined(__clang__)
+// Match constant_range_size's MSVC workaround for state-dependent sizes.
+#if (defined(__GNUC__) || defined(_MSC_VER)) && !defined(__clang__)
 template<class R>
 concept has_unchecked_range_size_constant = requires(R& r) {
     typename integral_constant<decltype(ranges::size(r)), ranges::size(r)>;

@@ -175,20 +175,21 @@ using cat_result_t = resize_t<
         (static_cast<simd_size_type>(Rest::size) + ... + 0),
     First>;
 
+template<class Result, class Current>
+constexpr void cat_append(Result& result, simd_size_type& offset, const Current& current) {
+    using current_type = decay_t<Current>;
+    for (simd_size_type i = 0; i < static_cast<simd_size_type>(current_type::size); ++i) {
+        detail::set_lane(result, offset + i, current[i]);
+    }
+    offset += static_cast<simd_size_type>(current_type::size);
+}
+
 template<class Result, class First, class... Rest>
 constexpr Result cat_impl(const First& first, const Rest&... rest) noexcept {
     Result result;
     simd_size_type offset = 0;
-    const auto append = [&](const auto& current) {
-        using current_type = decay_t<decltype(current)>;
-        for (simd_size_type i = 0; i < static_cast<simd_size_type>(current_type::size); ++i) {
-            detail::set_lane(result, offset + i, current[i]);
-        }
-        offset += static_cast<simd_size_type>(current_type::size);
-    };
-
-    append(first);
-    (append(rest), ...);
+    detail::cat_append(result, offset, first);
+    (detail::cat_append(result, offset, rest), ...);
     return result;
 }
 
@@ -259,6 +260,11 @@ struct iota_vec_traits<basic_vec<T, Abi>> {
 };
 
 template<class T>
+struct iota_lane_generator {
+    constexpr T operator()(T index) const { return index; }
+};
+
+template<class T>
 constexpr T make_iota() {
     static_assert(
         (is_supported_scalar_value<T>::value && is_arithmetic<T>::value) ||
@@ -269,7 +275,7 @@ constexpr T make_iota() {
     if constexpr (is_arithmetic<T>::value) {
         return T{};
     } else {
-        return T([](typename T::value_type index) { return index; });
+        return T(iota_lane_generator<typename T::value_type>{});
     }
 }
 
