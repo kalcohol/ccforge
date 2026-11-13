@@ -18,11 +18,11 @@ int main() {
 #if !defined(FORGE_SIMD_PROBE_OPERATION) || FORGE_SIMD_PROBE_OPERATION == 0
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
     auto gathered = std::simd::partial_gather_from<std::simd::vec<int, 4>>(
-        data.data(), std::simd::simd_size_type{8}, selected, indices);
+        data.data(), std::simd::__simd_size_type{8}, selected, indices);
 #else
     auto gathered = std::simd::partial_gather_from<std::simd::vec<int, 4>>(
         data.data(),
-        std::simd::simd_size_type{8},
+        std::simd::__simd_size_type{8},
         indices,
         selected);
 #endif
@@ -40,9 +40,9 @@ int main() {
 #endif
 #if !defined(FORGE_SIMD_PROBE_OPERATION) || FORGE_SIMD_PROBE_OPERATION == 2
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
-    std::simd::partial_scatter_to(values, data.data(), std::simd::simd_size_type{8}, selected, indices);
+    std::simd::partial_scatter_to(values, data.data(), std::simd::__simd_size_type{8}, selected, indices);
 #else
-    std::simd::partial_scatter_to(values, data.data(), std::simd::simd_size_type{8}, indices, selected);
+    std::simd::partial_scatter_to(values, data.data(), std::simd::__simd_size_type{8}, indices, selected);
 #endif
 #endif
 #if !defined(FORGE_SIMD_PROBE_OPERATION) || FORGE_SIMD_PROBE_OPERATION == 3

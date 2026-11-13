@@ -69,7 +69,7 @@ TEST(SimdRoundConstant, RuntimeRoundKeepsScalarSemantics) {
         return inputs[lane];
     });
     const auto rounded = std::simd::round(values);
-    for (std::simd::simd_size_type lane = 0; lane < vector::size; ++lane) {
+    for (std::simd::__simd_size_type lane = 0; lane < vector::size; ++lane) {
         if (std::isnan(values[lane])) {
             EXPECT_TRUE(std::isnan(rounded[lane]));
         } else {

@@ -31,7 +31,7 @@ constexpr std::size_t highest_power =
 static_assert(std::has_single_bit(highest_power));
 static_assert(has_overaligned_flag<highest_power>);
 static_assert(std::is_same_v<std::remove_cvref_t<decltype(std::simd::flag_overaligned<64>)>,
-    std::simd::flags<std::simd::overaligned_flag<64>>>);
+    std::simd::flags<std::simd::__overaligned_flag<64>>>);
 
 constexpr bool valid_flags_keep_pointer_round_trips() {
     using vector4 = std::simd::vec<int, 4>;

@@ -48,7 +48,7 @@ constexpr V sequence(int first) {
 
 template<class V>
 constexpr bool is_sequence(const V& value, int first) {
-    for (std::simd::simd_size_type i = 0; i < V::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < V::size; ++i) {
         if (value[i] != first + static_cast<int>(i)) {
             return false;
         }
@@ -66,7 +66,7 @@ constexpr bool constexpr_creation() {
     const auto mask_parts = std::simd::chunk<mask2>(mask);
     const auto mask_joined = std::simd::cat(
         std::get<0>(mask_parts), std::get<1>(mask_parts), std::get<2>(mask_parts));
-    for (std::simd::simd_size_type i = 0; i < mask5::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < mask5::size; ++i) {
         if (mask_joined[i] != mask[i]) {
             return false;
         }
@@ -110,7 +110,7 @@ TEST(SimdCreationContract, CatAcceptsDifferentAbisWithTheSameElementType) {
     const auto second = sequence<native_int>(42);
     EXPECT_TRUE(is_sequence(std::simd::cat(first, second), 40));
     const auto reversed = std::simd::cat(second, first);
-    for (std::simd::simd_size_type i = 0; i < native_int::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_int::size; ++i) {
         EXPECT_EQ(reversed[i], second[i]);
     }
     EXPECT_EQ(reversed[native_int::size], first[0]);
@@ -121,14 +121,14 @@ TEST(SimdCreationContract, EvenAndUnevenMaskChunksRetainBooleanLanes) {
     const mask4 even([](auto i) { return i % 2 == 0; });
     const auto even_parts = std::simd::chunk<2>(even);
     const auto even_joined = std::simd::cat(even_parts[0], even_parts[1]);
-    for (std::simd::simd_size_type i = 0; i < mask4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < mask4::size; ++i) {
         EXPECT_EQ(even_joined[i], even[i]);
     }
     const mask5 uneven([](auto i) { return i == 0 || i == 3 || i == 4; });
     const auto parts = std::simd::chunk<mask2>(uneven);
     const auto joined = std::simd::cat(
         std::get<0>(parts), std::get<1>(parts), std::get<2>(parts));
-    for (std::simd::simd_size_type i = 0; i < mask5::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < mask5::size; ++i) {
         EXPECT_EQ(joined[i], uneven[i]);
     }
 }
@@ -140,7 +140,7 @@ TEST(SimdCreationContract, MaskCatAcceptsDifferentAbisWithMatchingBytes) {
     const auto joined = std::simd::cat(first, second);
     EXPECT_TRUE(joined[0]);
     EXPECT_FALSE(joined[1]);
-    for (std::simd::simd_size_type i = 0; i < native_mask::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_mask::size; ++i) {
         EXPECT_EQ(joined[i + 2], second[i]);
     }
 }
@@ -155,7 +155,7 @@ TEST(SimdCreationContract, ComplexChunksAndCatDoNotConvertTheirElements) {
     const auto parts = std::simd::chunk<complex2>(input);
     const auto joined = std::simd::cat(
         std::get<0>(parts), std::get<1>(parts), std::get<2>(parts));
-    for (std::simd::simd_size_type i = 0; i < complex5::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < complex5::size; ++i) {
         EXPECT_EQ(joined[i], input[i]);
     }
 }

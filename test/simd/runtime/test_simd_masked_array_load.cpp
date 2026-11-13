@@ -48,13 +48,13 @@ constexpr bool check_masked_loads(R&& input) {
     const auto deduced_value = std::simd::unchecked_load(std::forward<R>(input), native_mask);
     const auto deduced_flags = std::simd::unchecked_load(
         std::forward<R>(input), native_mask, std::simd::flag_default);
-    for (std::simd::simd_size_type i = 0; i < native_int::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_int::size; ++i) {
         const int expected = i % 2 == 0 ? 10 + static_cast<int>(i) : 0;
         if (deduced_value[i] != expected || deduced_flags[i] != expected) {
             return false;
         }
     }
-    for (std::simd::simd_size_type i = 0; i < int4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < int4::size; ++i) {
         const int expected = i % 2 == 0 ? 10 + static_cast<int>(i) : 0;
         if (explicit_value[i] != expected || explicit_flags[i] != expected) {
             return false;

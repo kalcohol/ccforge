@@ -108,11 +108,11 @@ void run(std::string_view type, std::string_view abi, std::size_t iterations) {
 template<class T>
 void sizes(std::string_view type, std::size_t iterations) {
     run<std::simd::basic_vec<T>>(type, "native", iterations);
-    run<std::simd::basic_vec<T, std::simd::fixed_size_abi<1>>>(type, "fixed", iterations);
-    run<std::simd::basic_vec<T, std::simd::fixed_size_abi<3>>>(type, "fixed", iterations);
-    run<std::simd::basic_vec<T, std::simd::fixed_size_abi<4>>>(type, "fixed", iterations);
-    run<std::simd::basic_vec<T, std::simd::fixed_size_abi<8>>>(type, "fixed", iterations);
-    run<std::simd::basic_vec<T, std::simd::fixed_size_abi<16>>>(type, "fixed", iterations);
+    run<std::simd::basic_vec<T, std::simd::__fixed_size_abi<1>>>(type, "fixed", iterations);
+    run<std::simd::basic_vec<T, std::simd::__fixed_size_abi<3>>>(type, "fixed", iterations);
+    run<std::simd::basic_vec<T, std::simd::__fixed_size_abi<4>>>(type, "fixed", iterations);
+    run<std::simd::basic_vec<T, std::simd::__fixed_size_abi<8>>>(type, "fixed", iterations);
+    run<std::simd::basic_vec<T, std::simd::__fixed_size_abi<16>>>(type, "fixed", iterations);
 }
 
 int main(int argc, char** argv) {

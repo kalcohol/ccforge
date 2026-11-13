@@ -6,16 +6,16 @@ namespace native_abi_fixture {
 
 namespace {
 
-using native_tag = std::simd::native_abi<int>;
+using native_tag = std::simd::__native_abi<int>;
 using native_vec = std::simd::basic_vec<int, native_tag>;
 using native_mask = native_vec::mask_type;
 
 static_assert(native_vec::size() == FORGE_ABI_EXPECTED_LANES);
 static_assert(native_mask::size() == FORGE_ABI_EXPECTED_LANES);
-static_assert(std::simd::abi_lane_count<native_tag>::value == FORGE_ABI_EXPECTED_LANES);
+static_assert(std::simd::__abi_lane_count<native_tag>::value == FORGE_ABI_EXPECTED_LANES);
 static_assert(std::is_same_v<native_vec, std::simd::vec<int>>);
 static_assert(std::is_same_v<native_mask, std::simd::mask<int>>);
-static_assert(std::is_same_v<native_tag, std::simd::deduce_abi_t<int, FORGE_ABI_EXPECTED_LANES>>);
+static_assert(std::is_same_v<native_tag, std::simd::__deduce_abi_t<int, FORGE_ABI_EXPECTED_LANES>>);
 static_assert(std::is_same_v<typename native_vec::abi_type, native_tag>);
 static_assert(sizeof(native_vec) == sizeof(int) * FORGE_ABI_EXPECTED_LANES);
 
@@ -29,7 +29,7 @@ bool check_float_values() {
     const auto roots = std::simd::sqrt(squares);
     const auto magnitudes = std::simd::abs(negatives);
     const auto finite = std::simd::isfinite(roots);
-    for (std::simd::simd_size_type i = 0; i < V::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < V::size(); ++i) {
         const float expected = static_cast<float>(i) + 1.0f;
         if (roots[i] != expected || magnitudes[i] != expected || !finite[i]) {
             return false;
@@ -44,7 +44,7 @@ snapshot FORGE_ABI_PROBE() noexcept {
     const native_vec value = native_vec(1) + native_vec(2);
     const native_mask selected = value == native_vec(3);
     bool values_ok = true;
-    for (std::simd::simd_size_type i = 0; i < native_vec::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_vec::size(); ++i) {
         values_ok = values_ok && value[i] == 3 && selected[i];
     }
     return {&typeid(native_tag), &typeid(native_vec), &typeid(native_mask),

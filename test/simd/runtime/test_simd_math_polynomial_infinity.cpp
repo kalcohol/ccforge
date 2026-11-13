@@ -6,7 +6,7 @@
 #include <limits>
 
 namespace {
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 template<class T>
 void check_limits() {
@@ -47,7 +47,7 @@ TEST(SimdMathPolynomialInfinity, PublicOverloadsFollowSelectedScalarBackend) {
     const double expected_hermite = std::numeric_limits<double>::infinity();
     const double expected_laguerre = -std::numeric_limits<double>::infinity();
 #endif
-    for (std::simd::simd_size_type i = 0; i != vector::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i != vector::size; ++i) {
         if (std::isnan(expected_hermite)) {
             EXPECT_TRUE(std::isnan(hermite[i]));
         } else {

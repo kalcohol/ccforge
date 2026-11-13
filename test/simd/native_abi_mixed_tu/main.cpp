@@ -65,13 +65,13 @@ int main() {
 
     const narrow_vec narrow = roundtrip_narrow_second(roundtrip_narrow_first(narrow_vec(5)));
     const wide_vec wide = roundtrip_wide_second(roundtrip_wide_first(wide_vec(5)));
-    for (std::simd::simd_size_type i = 0; i < narrow_vec::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < narrow_vec::size(); ++i) {
         if (narrow[i] != 7) {
             std::cerr << "Narrow native ABI frame did not survive the TU boundary\n";
             return 1;
         }
     }
-    for (std::simd::simd_size_type i = 0; i < wide_vec::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < wide_vec::size(); ++i) {
         if (wide[i] != 7) {
             std::cerr << "Wide native ABI frame did not survive the TU boundary\n";
             return 1;
@@ -81,13 +81,13 @@ int main() {
     const wide_float_vec negative_wide([](auto i) { return -(static_cast<float>(i) + 1.0f); });
     const auto narrow_abs = roundtrip_float_narrow_second(roundtrip_float_narrow_first(negative_narrow));
     const auto wide_abs = roundtrip_float_wide_second(roundtrip_float_wide_first(negative_wide));
-    for (std::simd::simd_size_type i = 0; i < narrow_float_vec::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < narrow_float_vec::size(); ++i) {
         if (narrow_abs[i] != static_cast<float>(i) + 1.0f) {
             std::cerr << "Narrow floating ABI frame did not survive the TU boundary\n";
             return 1;
         }
     }
-    for (std::simd::simd_size_type i = 0; i < wide_float_vec::size(); ++i) {
+    for (std::simd::__simd_size_type i = 0; i < wide_float_vec::size(); ++i) {
         if (wide_abs[i] != static_cast<float>(i) + 1.0f) {
             std::cerr << "Wide floating ABI frame did not survive the TU boundary\n";
             return 1;

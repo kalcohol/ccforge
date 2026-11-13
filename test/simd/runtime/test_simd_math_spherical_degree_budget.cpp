@@ -7,7 +7,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 TEST(SimdMathSphericalDegreeBudget, FirstUnsupportedDegreeRejectsRegularAndZeroArguments) {
     for (const double x : {0.0, 1.0, 1000.0}) {

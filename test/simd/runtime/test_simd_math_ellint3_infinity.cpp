@@ -12,7 +12,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 template<class T>
 std::array<T, 10> finite_characteristics() {
@@ -109,7 +109,7 @@ void check_public_infinity() {
         SCOPED_TRACE(nu);
         const auto scalar_order = std::simd::ellint_3(moduli, nu, amplitudes);
         const auto vector_order = std::simd::ellint_3(T{}, vector(nu), amplitudes);
-        for (std::simd::simd_size_type i = 0; i < vector::size; ++i) {
+        for (std::simd::__simd_size_type i = 0; i < vector::size; ++i) {
             expect_signed_infinity(scalar_order[i], amplitudes[i]);
             expect_signed_infinity(vector_order[i], amplitudes[i]);
         }

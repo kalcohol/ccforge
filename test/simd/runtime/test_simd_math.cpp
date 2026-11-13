@@ -14,7 +14,7 @@ using mask4 = std::simd::mask<int, 4>;
 
 template<class V, class T, size_t N>
 V load_vec(const std::array<T, N>& values) {
-    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::simd_size_type>(N));
+    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::__simd_size_type>(N));
 }
 
 TEST(SimdMathTest, ReduceUsesProvidedBinaryOperation) {

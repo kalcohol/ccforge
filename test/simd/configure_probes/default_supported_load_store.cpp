@@ -8,7 +8,7 @@ int main() {
     using complex_default = std::simd::basic_vec<std::complex<float>>;
 
     static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr),
-                                                                  std::simd::simd_size_type{})),
+                                                                  std::simd::__simd_size_type{})),
                                  complex_default>);
     static_assert(std::is_same_v<decltype(std::simd::partial_load(static_cast<const std::complex<float>*>(nullptr),
                                                                   static_cast<const std::complex<float>*>(nullptr))),
@@ -16,7 +16,7 @@ int main() {
     static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr))),
                                  complex_default>);
     static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr),
-                                                                    std::simd::simd_size_type{})),
+                                                                    std::simd::__simd_size_type{})),
                                  complex_default>);
     static_assert(std::is_same_v<decltype(std::simd::unchecked_load(static_cast<const std::complex<float>*>(nullptr),
                                                                     static_cast<const std::complex<float>*>(nullptr),

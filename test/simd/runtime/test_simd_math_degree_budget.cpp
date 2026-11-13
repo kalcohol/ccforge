@@ -8,7 +8,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 TEST(SimdMathDegreeBudget, PolynomialFamiliesRejectTheFirstUnsupportedDegree) {
     constexpr unsigned limit = 1024u;

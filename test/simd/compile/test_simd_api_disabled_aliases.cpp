@@ -17,10 +17,10 @@ namespace {
 // [simd.traits]/1 also permits alignment queries on disabled vector types.
 // https://eel.is/c++draft/simd.expos.abi#4
 
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 
 template<class T, size_type N>
-concept has_deduced_abi = requires { typename std::simd::deduce_abi_t<T, N>; };
+concept has_deduced_abi = requires { typename std::simd::__deduce_abi_t<T, N>; };
 
 template<class V>
 concept has_size = requires { V::size; };
@@ -44,7 +44,7 @@ constexpr bool has_disabled_special_members =
 
 template<class T, size_type N>
 constexpr bool disabled_aliases_have_metadata() {
-    using abi = std::simd::deduce_abi_t<T, N>;
+    using abi = std::simd::__deduce_abi_t<T, N>;
     using vector = std::simd::vec<T, N>;
     using mask = std::simd::mask<T, N>;
 
@@ -55,13 +55,13 @@ constexpr bool disabled_aliases_have_metadata() {
            std::is_same_v<typename vector::mask_type, mask> &&
            std::is_same_v<typename mask::value_type, bool> &&
            std::is_same_v<typename mask::abi_type, abi> &&
-           std::simd::simd_size<T, abi>::value == 0 &&
+           std::simd::__simd_size<T, abi>::value == 0 &&
            std::simd::alignment_v<vector, int> >= alignof(int);
 }
 
 template<class T, size_type N>
 constexpr bool enabled_aliases_are_unchanged() {
-    using abi = std::simd::deduce_abi_t<T, N>;
+    using abi = std::simd::__deduce_abi_t<T, N>;
     using vector = std::simd::vec<T, N>;
     using mask = std::simd::mask<T, N>;
 
@@ -74,12 +74,12 @@ constexpr bool enabled_aliases_are_unchanged() {
            std::is_same_v<typename vector::abi_type, abi> &&
            std::is_same_v<typename vector::mask_type, mask> &&
            vector::size == N && mask::size == N &&
-           std::simd::simd_size<T, abi>::value == N &&
+           std::simd::__simd_size<T, abi>::value == N &&
            std::simd::alignment_v<vector> == alignof(T) * N;
 }
 
 // These naming checks distinguish the original missing-type fallback without
-// requiring construction or instantiating a fixed_size_abi with an invalid N.
+// requiring construction or instantiating a __fixed_size_abi with an invalid N.
 static_assert(has_deduced_abi<int, 0>);
 static_assert(has_deduced_abi<int, -1>);
 static_assert(has_deduced_abi<int, 65>);
@@ -127,8 +127,8 @@ static_assert(enabled_aliases_are_unchanged<double, 4>());
 static_assert(enabled_aliases_are_unchanged<std::complex<double>, 4>());
 
 using native_int = std::simd::basic_vec<int>;
-static_assert(std::is_same_v<std::simd::deduce_abi_t<int, native_int::size>,
-    std::simd::native_abi<int>>);
+static_assert(std::is_same_v<std::simd::__deduce_abi_t<int, native_int::size>,
+    std::simd::__native_abi<int>>);
 static_assert(std::is_same_v<std::simd::vec<int>, native_int>);
 static_assert(std::is_default_constructible_v<native_int>);
 

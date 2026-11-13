@@ -24,7 +24,7 @@ static_assert(std::numeric_limits<long double>::digits == 53,
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 static_assert(std::is_same_v<decltype(math::cyl_bessel_jy_fallback(0.0f, 1.0f)),
                              math::cyl_bessel_hankel_result<float>>);
@@ -303,7 +303,7 @@ void check_public(const reflection_reference<T> (&references)[N]) {
         const auto values = reference.finite_component == component::j
             ? std::simd::cyl_bessel_j(reference.order, arguments)
             : std::simd::cyl_neumann(reference.order, arguments);
-        for (std::simd::simd_size_type lane = 0; lane < vector::size; ++lane) {
+        for (std::simd::__simd_size_type lane = 0; lane < vector::size; ++lane) {
             ASSERT_TRUE(std::isfinite(values[lane]));
             EXPECT_NEAR(static_cast<long double>(values[lane]), reference.finite_value,
                         relative_tolerance<T>() * std::abs(reference.finite_value));

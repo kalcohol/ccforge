@@ -15,12 +15,12 @@ TEST(SimdMathSpecial, ZetaReflectionNearEvenRootsRetainsPhasePrecision) {
         {-195.5, 7.37292825916749476430e207}
     };
     for (auto sample : cases) {
-        const auto actual = std::simd::detail::special_math::riemann_zeta_fallback(sample.input);
+        const auto actual = std::simd::__detail::special_math::riemann_zeta_fallback(sample.input);
         EXPECT_TRUE(std::isfinite(actual));
         EXPECT_NEAR(actual / sample.expected, 1.0, 1e-10);
     }
     for (double root : {-200.0, -198.0, -196.0}) {
-        EXPECT_EQ(std::simd::detail::special_math::riemann_zeta_fallback(root), 0.0);
+        EXPECT_EQ(std::simd::__detail::special_math::riemann_zeta_fallback(root), 0.0);
     }
 }
 
@@ -42,7 +42,7 @@ void expect_near_array(const char* label,
                        const std::array<T, 4>& expected,
                        float tolerance) {
     SCOPED_TRACE(label);
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_NEAR(actual[i], static_cast<float>(expected[static_cast<size_t>(i)]), tolerance);
     }
 }
@@ -69,7 +69,7 @@ TEST(SimdMathSpecialTest, SpecialFunctionsApplyPerLane) {
     const auto sph_legendre_value = std::simd::sph_legendre(orders, degrees, unitish);
 
 #if defined(__cpp_lib_math_special_functions)
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_NEAR(comp1[i], std::comp_ellint_1(positive[i]), 1e-5f);
         EXPECT_NEAR(comp2[i], std::comp_ellint_2(positive[i]), 1e-5f);
         EXPECT_NEAR(expint_value[i], std::expint(positive[i]), 1e-5f);
@@ -115,7 +115,7 @@ TEST(SimdMathSpecialTest, SpecialFunctionsApplyPerLane) {
 }
 
 TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     EXPECT_EQ(sm::assoc_legendre_fallback(3u, 4u, 0.25), 0.0);
 
@@ -131,7 +131,7 @@ TEST(SimdMathSpecialTest, SpecialFallbacksHandleDefinedExtremeParameters) {
 }
 
 TEST(SimdMathSpecialTest, EllipticQuadratureKeepsWorkingPrecisionAtEveryNode) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     unsigned evaluations = 0;
     const auto integrand = [&](long double theta) {
         ++evaluations;
@@ -145,7 +145,7 @@ TEST(SimdMathSpecialTest, EllipticQuadratureKeepsWorkingPrecisionAtEveryNode) {
 }
 
 TEST(SimdMathSpecialTest, FloatEllipticQuadraturePreservesIndependentReferences) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct sample {
         float modulus;
         float order;
@@ -171,7 +171,7 @@ TEST(SimdMathSpecialTest, FloatEllipticQuadraturePreservesIndependentReferences)
 #if !defined(__cpp_lib_math_special_functions)
         const auto second = std::simd::ellint_2(float4(value.modulus), value.amplitude);
         const auto third = std::simd::ellint_3(float4(value.modulus), value.order, value.amplitude);
-        for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+        for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
             EXPECT_FLOAT_EQ(second[i], static_cast<float>(value.second));
             EXPECT_FLOAT_EQ(third[i], static_cast<float>(value.third));
         }
@@ -180,7 +180,7 @@ TEST(SimdMathSpecialTest, FloatEllipticQuadraturePreservesIndependentReferences)
 }
 
 TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersMatchIndependentConstants) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct rc_sample { long double x; long double y; long double expected; };
     // Independent mpmath values at 100 decimal digits; inputs are exact binary values.
     const std::array<rc_sample, 5> rc_samples{{
@@ -226,7 +226,7 @@ TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersMatchIndependentConstants) {
 }
 
 TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveDegeneracyAndSymmetry) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const long double epsilon = std::numeric_limits<long double>::epsilon();
     for (const long double value : {0.25L, 1.0L, 4.0L}) {
         EXPECT_EQ(sm::carlson_rc(value, value), 1.0L / std::sqrt(value));
@@ -257,7 +257,7 @@ TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveDegeneracyAndSymmetr
 }
 
 TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveHomogeneity) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     constexpr long double rc_reference =
         0.61547970867038734106746458912399368785517000467754742L;
     constexpr long double rj_reference =
@@ -281,7 +281,7 @@ TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersPreserveHomogeneity) {
 }
 
 TEST(SimdMathSpecialTest, CarlsonSquareRootRcKeepsTinyPositiveParameters) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const long double epsilon = std::numeric_limits<long double>::epsilon();
     const long double root = std::numeric_limits<long double>::min();
     // RC(1,root^2) = log(2/root) to well beyond the working precision here.
@@ -301,7 +301,7 @@ TEST(SimdMathSpecialTest, CarlsonSquareRootRcKeepsTinyPositiveParameters) {
 }
 
 TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersRejectOutsideDomainAndBoundWork) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const long double nan = std::numeric_limits<long double>::quiet_NaN();
     const long double inf = std::numeric_limits<long double>::infinity();
     for (const auto& value : std::array<std::array<long double, 2>, 7>{{
@@ -327,7 +327,7 @@ TEST(SimdMathSpecialTest, CarlsonPositiveRealHelpersRejectOutsideDomainAndBoundW
 }
 
 TEST(SimdMathSpecialTest, CompleteThirdKindEllipticResolvesJointSingularities) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct sample { double modulus; double order; long double expected; };
     // Independent 100-digit values at the exact binary inputs.
     const std::array<sample, 5> samples{{
@@ -401,7 +401,7 @@ TEST(SimdMathSpecialTest, CompleteThirdKindEllipticResolvesJointSingularities) {
 }
 
 TEST(SimdMathSpecialTest, IncompleteFirstKindEllipticResolvesNearSingularEndpoints) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct sample {
         double modulus;
         double amplitude;
@@ -449,7 +449,7 @@ TEST(SimdMathSpecialTest, IncompleteFirstKindEllipticResolvesNearSingularEndpoin
         samples[2].amplitude, samples[3].amplitude, samples[4].amplitude, samples[6].amplitude}});
     const auto actual = std::simd::ellint_1(k, phi);
     const std::array<std::size_t, 4> indices{{2, 3, 4, 6}};
-    for (std::simd::simd_size_type lane = 0; lane < double4::size; ++lane) {
+    for (std::simd::__simd_size_type lane = 0; lane < double4::size; ++lane) {
         const double expected = static_cast<double>(samples[indices[lane]].expected);
         EXPECT_NEAR(actual[lane], expected, expected * 2e-12);
     }
@@ -457,7 +457,7 @@ TEST(SimdMathSpecialTest, IncompleteFirstKindEllipticResolvesNearSingularEndpoin
 }
 
 TEST(SimdMathSpecialTest, FirstKindEllipticFloatAndPeriodIdentitiesStayStable) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct sample { float modulus; float amplitude; double expected; };
     const std::array<sample, 3> samples{{
         {0.9999999403953552f, 1.5700000524520874f, 7.78471665892119619999},
@@ -483,7 +483,7 @@ TEST(SimdMathSpecialTest, FirstKindEllipticFloatAndPeriodIdentitiesStayStable) {
 }
 
 TEST(SimdMathSpecialTest, FirstKindEllipticUsesEachTypesOwnEndpointNeighbors) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const auto check = []<class T>() {
         constexpr int digits = std::numeric_limits<T>::digits;
         // Keep the oracle inputs independent of a library's numbers constants.
@@ -547,7 +547,7 @@ TEST(SimdMathSpecialTest, FirstKindEllipticUsesEachTypesOwnEndpointNeighbors) {
 #if !defined(__cpp_lib_math_special_functions)
 TEST(SimdMathSpecialTest, EllipticFallbackBoundsLargeAmplitudeWork) {
     std::size_t evaluations = 0;
-    const auto integral = std::simd::detail::special_math::elliptic_integral(
+    const auto integral = std::simd::__detail::special_math::elliptic_integral(
         1000.0,
         [&](double theta) {
             ++evaluations;
@@ -567,7 +567,7 @@ TEST(SimdMathSpecialTest, EllipticFallbackBoundsLargeAmplitudeWork) {
         161.01584652277398,
         -1073.1454638747948,
         0.0}};
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_NEAR(values[i], expected[static_cast<std::size_t>(i)], 2e-9);
     }
 }
@@ -586,7 +586,7 @@ TEST(SimdMathSpecialTest, VectorizedSpecialMathCommonResultTypeMatchesScalarSema
     const auto ellint2 = std::simd::ellint_2(left, right);
 
 #if defined(__cpp_lib_math_special_functions)
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_NEAR(comp3[i], std::comp_ellint_3(left[i], right[i]), 1e-5f);
         EXPECT_NEAR(cyl_i[i], std::cyl_bessel_i(left[i], right[i]), 1e-5f);
         EXPECT_NEAR(cyl_j[i], std::cyl_bessel_j(left[i], right[i]), 1e-5f);
@@ -638,7 +638,7 @@ TEST(SimdMathSpecialTest, CylindricalBesselFunctionsRemainStableAtLargeArguments
         3.4101677497894956e-23,
         2.5251198425054723e-36}};
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         const auto index = static_cast<std::size_t>(i);
         EXPECT_NEAR(j[i], static_cast<float>(expected_j[index]), 5e-6f);
         EXPECT_NEAR(y[i], static_cast<float>(expected_y[index]), 5e-6f);
@@ -667,7 +667,7 @@ TEST(SimdMathSpecialTest, CylindricalBesselFunctionsCoverHighOrderTransitionBand
         -0.090545084909696294,
         -0.092924250967987226}};
 
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         const auto index = static_cast<std::size_t>(i);
         EXPECT_NEAR(j[i], expected_j[index], 3e-13);
         EXPECT_NEAR(y[i], expected_y[index], 3e-13);
@@ -693,7 +693,7 @@ TEST(SimdMathSpecialTest, CylindricalBesselFloatFallbackCoversFormerSignAndPreci
         -0.2298332139f,
         -0.0438946535f}};
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         const auto index = static_cast<std::size_t>(i);
         EXPECT_NEAR(j[i], expected_j[index], 5e-7f);
         EXPECT_NEAR(y[i], expected_y[index], 5e-7f);
@@ -703,7 +703,7 @@ TEST(SimdMathSpecialTest, CylindricalBesselFloatFallbackCoversFormerSignAndPreci
 
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
 TEST(SimdMathSpecialTest, BesselSeriesPreservesSmallResultsAndFloatRange) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     const double i140 = sm::cyl_bessel_i_series(140.0, 40.0);
     const double i100 = sm::cyl_bessel_i_series(100.0, 50.0);
@@ -723,7 +723,7 @@ TEST(SimdMathSpecialTest, BesselSeriesPreservesSmallResultsAndFloatRange) {
 }
 
 TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     const double y0 = sm::cyl_bessel_y_fallback(0.0, 0.0);
     const double y2 = sm::cyl_bessel_y_fallback(2.0, 0.0);
@@ -765,7 +765,7 @@ TEST(SimdMathSpecialTest, BesselFallbacksPreserveZeroLimitsAndWideOrders) {
 }
 
 TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     constexpr double argument = 1.0;
     const double half_order_scale =
@@ -847,7 +847,7 @@ TEST(SimdMathSpecialTest, BesselFallbacksSupportNegativeOrdersAndDomains) {
 }
 
 TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     struct reference {
         double modulus;
@@ -882,7 +882,7 @@ TEST(SimdMathSpecialTest, CompleteEllipticIntegralRemainsStableNearSingularity) 
 }
 
 TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const double nan = std::numeric_limits<double>::quiet_NaN();
 
     // NaN arguments and out-of-domain moduli follow ellint_1's policy in
@@ -956,7 +956,7 @@ TEST(SimdMathSpecialTest, IncompleteEllipticGuardsMatchAcrossTheFamily) {
 }
 
 TEST(SimdMathSpecialTest, Ellint3ResolvesTheCharacteristicPoleBoundary) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     constexpr double half_pi = std::numbers::pi_v<double> / 2.0;
 
     const double below_one = std::nextafter(1.0, 0.0);
@@ -1015,7 +1015,7 @@ TEST(SimdMathSpecialTest, Ellint3ResolvesTheCharacteristicPoleBoundary) {
 }
 
 TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     for (const unsigned degree : {30u, 35u, 64u, 100u, 127u}) {
         const long double degree_value = static_cast<long double>(degree);
@@ -1041,7 +1041,7 @@ TEST(SimdMathSpecialTest, SphericalLegendreNormalizesBeforeFloatOverflow) {
 }
 
 TEST(SimdMathSpecialTest, PolynomialFallbacksPreserveNaNAndSmallAngles) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     const double nan = std::numeric_limits<double>::quiet_NaN();
     EXPECT_TRUE(std::isnan(sm::hermite_fallback(0u, nan)));
@@ -1060,7 +1060,7 @@ TEST(SimdMathSpecialTest, PolynomialFallbacksPreserveNaNAndSmallAngles) {
 }
 
 TEST(SimdMathSpecialTest, BesselTinyArgumentFallbackAvoidsCancellation) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     const float moderate =
         sm::cyl_bessel_j_fallback(0.3137f, 1.0e-8f);
@@ -1090,7 +1090,7 @@ TEST(SimdMathSpecialTest, RiemannZetaPreservesNearPoleAndLargeNegativeInputs) {
 }
 
 TEST(SimdMathSpecialTest, RiemannZetaNearPoleUsesStableLocalExpansion) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     constexpr long double euler_gamma =
         0.577215664901532860606512090082402431L;
@@ -1154,7 +1154,7 @@ TEST(SimdMathSpecialTest, PublicBesselApiExercisesForgeFallback) {
 #endif
 
 TEST(SimdMathSpecialTest, BesselLargeOrderTerminatesBeforeIntegerConversion) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     EXPECT_TRUE(std::isnan(sm::cyl_bessel_j_fallback(5.0e9, 3.0)));
     EXPECT_TRUE(std::isnan(sm::cyl_bessel_y_fallback(5.0e9, 3.0)));
@@ -1162,17 +1162,17 @@ TEST(SimdMathSpecialTest, BesselLargeOrderTerminatesBeforeIntegerConversion) {
 
 TEST(SimdMathSpecialTest, ExpintFallbackStaysStableBeyondPowerSeriesBoundary) {
     EXPECT_NEAR(
-        std::simd::detail::special_math::expint_fallback(10.0),
+        std::simd::__detail::special_math::expint_fallback(10.0),
         2492.2289762418777,
         1e-10);
     EXPECT_NEAR(
-        std::simd::detail::special_math::expint_fallback(-10.0),
+        std::simd::__detail::special_math::expint_fallback(-10.0),
         -4.156968929685325e-6,
         1e-12);
 }
 
 TEST(SimdMathSpecialTest, ExpintFallbackAvoidsRepresentableOverflowBand) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     constexpr double expected = 3.1509156882062014e305;
     EXPECT_NEAR(sm::expint_fallback(710.0),
@@ -1188,7 +1188,7 @@ TEST(SimdMathSpecialTest, ExpintFallbackAvoidsRepresentableOverflowBand) {
 }
 
 TEST(SimdMathSpecialTest, ZetaReflectionAvoidsIntermediateOverflow) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     struct reference {
         double argument;
@@ -1213,7 +1213,7 @@ TEST(SimdMathSpecialTest, ZetaReflectionAvoidsIntermediateOverflow) {
 }
 
 TEST(SimdMathSpecialTest, ZetaNearZeroMatchesIndependentReferences) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct reference {
         long double argument;
         long double value;
@@ -1262,7 +1262,7 @@ TEST(SimdMathSpecialTest, ZetaNearZeroMatchesIndependentReferences) {
 }
 
 TEST(SimdMathSpecialTest, ZetaNearZeroBranchBoundaryIsContinuous) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     const auto check = []<class T>() {
         const T boundary = static_cast<T>(1e-5L);
         using wide_t = std::conditional_t<(sizeof(T) < sizeof(double)), double, long double>;
@@ -1303,7 +1303,7 @@ TEST(SimdMathSpecialTest, PublicZetaFallbackStaysFiniteNearZero) {
 
 TEST(SimdMathSpecialTest, ExpintFloatFallbackAvoidsNegativeSeriesCancellation) {
     const float actual =
-        std::simd::detail::special_math::expint_fallback(-6.0f);
+        std::simd::__detail::special_math::expint_fallback(-6.0f);
     constexpr float expected = -0.000360082452163f;
 
     EXPECT_NEAR(actual, expected, std::abs(expected) * 8e-7f);
@@ -1311,19 +1311,19 @@ TEST(SimdMathSpecialTest, ExpintFloatFallbackAvoidsNegativeSeriesCancellation) {
 
 TEST(SimdMathSpecialTest, BesselFallbacksRemainStableOutsideSmallArguments) {
     EXPECT_NEAR(
-        std::simd::detail::special_math::sph_bessel_fallback(8u, 0.5),
+        std::simd::__detail::special_math::sph_bessel_fallback(8u, 0.5),
         1.126143960212129e-10,
         1e-14);
     EXPECT_NEAR(
-        std::simd::detail::special_math::cyl_bessel_j_series(0.0, 20.0),
+        std::simd::__detail::special_math::cyl_bessel_j_series(0.0, 20.0),
         0.16702466434058344,
         1e-10);
     EXPECT_NEAR(
-        std::simd::detail::special_math::cyl_bessel_y_fallback(2.0, 3.0),
+        std::simd::__detail::special_math::cyl_bessel_y_fallback(2.0, 3.0),
         -0.16040039348492402,
         1e-10);
     EXPECT_NEAR(
-        std::simd::detail::special_math::cyl_bessel_k_fallback(2.0, 3.0),
+        std::simd::__detail::special_math::cyl_bessel_k_fallback(2.0, 3.0),
         0.061510458471742052,
         1e-10);
 }
@@ -1361,17 +1361,17 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchIndependentLargeArgumentReferences
             return std::max(1e-300, std::abs(expected) * 5e-12);
         };
         EXPECT_NEAR(
-            std::simd::detail::special_math::cyl_bessel_j_fallback(
+            std::simd::__detail::special_math::cyl_bessel_j_fallback(
                 value.order, value.argument),
             value.j,
             tolerance(value.j));
         EXPECT_NEAR(
-            std::simd::detail::special_math::cyl_bessel_y_fallback(
+            std::simd::__detail::special_math::cyl_bessel_y_fallback(
                 value.order, value.argument),
             value.y,
             tolerance(value.y));
         EXPECT_NEAR(
-            std::simd::detail::special_math::cyl_bessel_k_fallback(
+            std::simd::__detail::special_math::cyl_bessel_k_fallback(
                 value.order, value.argument),
             value.k,
             tolerance(value.k));
@@ -1379,7 +1379,7 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchIndependentLargeArgumentReferences
 }
 
 TEST(SimdMathSpecialTest, BesselBoundaryMatchesIndependentIntegerOrderReferences) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     struct reference {
         int input_digits; // Zero denotes inputs exact in both float and double.
         double argument;
@@ -1434,7 +1434,7 @@ TEST(SimdMathSpecialTest, BesselBoundaryMatchesIndependentIntegerOrderReferences
             const auto lane_y = std::simd::cyl_neumann(lane_orders, V(argument));
             std::array<T, 4> j{};
             std::array<T, 4> y{};
-            for (std::simd::simd_size_type lane = 0; lane < V::size; ++lane) {
+            for (std::simd::__simd_size_type lane = 0; lane < V::size; ++lane) {
                 SCOPED_TRACE(lane);
                 const auto i = static_cast<std::size_t>(lane);
                 j[i] = sm::cyl_bessel_j_fallback(orders[i], argument);
@@ -1462,7 +1462,7 @@ TEST(SimdMathSpecialTest, BesselBoundaryMatchesIndependentIntegerOrderReferences
 }
 
 TEST(SimdMathSpecialTest, BesselIntegerSeedBudgetAvoidsBoundaryQuadrature) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     // This is a work-path contract for the integer seed engine, not a timing
     // threshold: accurate moderate-argument seeds must not require quadrature.
     for (const long double x : {4.0L, 8.0L, 12.0L, 15.75L, 16.0L, 16.25L}) {
@@ -1474,7 +1474,7 @@ TEST(SimdMathSpecialTest, BesselIntegerSeedBudgetAvoidsBoundaryQuadrature) {
 }
 
 TEST(SimdMathSpecialTest, BesselIntegerSeedsPreserveWorkingSubnormalLimits) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     using limits = std::numeric_limits<long double>;
     // Keep the oracle wider than double even on libraries whose numbers
     // constants are initialized through unsuffixed double literals.
@@ -1509,7 +1509,7 @@ TEST(SimdMathSpecialTest, BesselIntegerSeedsPreserveWorkingSubnormalLimits) {
 }
 
 TEST(SimdMathSpecialTest, BesselQuadratureRejectsUnrepresentableBounds) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
     using limits = std::numeric_limits<long double>;
     for (const long double x : {0.0L, limits::denorm_min(), limits::max(), limits::infinity()}) {
         SCOPED_TRACE(x);
@@ -1546,12 +1546,12 @@ TEST(SimdMathSpecialTest, BesselFallbacksMatchHighOrderReferences) {
             return std::max(2e-14, std::abs(expected) * 2e-12);
         };
         EXPECT_NEAR(
-            std::simd::detail::special_math::cyl_bessel_j_fallback(
+            std::simd::__detail::special_math::cyl_bessel_j_fallback(
                 value.order, value.argument),
             value.j,
             tolerance(value.j));
         EXPECT_NEAR(
-            std::simd::detail::special_math::cyl_bessel_y_fallback(
+            std::simd::__detail::special_math::cyl_bessel_y_fallback(
                 value.order, value.argument),
             value.y,
             tolerance(value.y));
@@ -1584,10 +1584,10 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
             "order=" + std::to_string(order) +
             ", argument=" + std::to_string(argument));
         const auto current =
-            std::simd::detail::special_math::cyl_bessel_jy_fallback(
+            std::simd::__detail::special_math::cyl_bessel_jy_fallback(
                 order, argument);
         const auto next =
-            std::simd::detail::special_math::cyl_bessel_jy_fallback(
+            std::simd::__detail::special_math::cyl_bessel_jy_fallback(
                 order + 1.0, argument);
         const double expected =
             -2.0 / (std::numbers::pi * argument);
@@ -1604,7 +1604,7 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyWronskianAcrossRegimes) {
 }
 
 TEST(SimdMathSpecialTest, SphericalBesselFallbackCoversTurningBand) {
-    namespace sm = std::simd::detail::special_math;
+    namespace sm = std::simd::__detail::special_math;
 
     const double j100 = sm::sph_bessel_fallback(100u, 100.0);
     const double j127 = sm::sph_bessel_fallback(127u, 128.0);
@@ -1651,13 +1651,13 @@ TEST(SimdMathSpecialTest, BesselFallbacksSatisfyOrderRecurrenceAcrossRegimes) {
             "order=" + std::to_string(order) +
             ", argument=" + std::to_string(argument));
         const auto previous =
-            std::simd::detail::special_math::cyl_bessel_j_fallback(
+            std::simd::__detail::special_math::cyl_bessel_j_fallback(
                 order - 1.0, argument);
         const auto current =
-            std::simd::detail::special_math::cyl_bessel_j_fallback(
+            std::simd::__detail::special_math::cyl_bessel_j_fallback(
                 order, argument);
         const auto next =
-            std::simd::detail::special_math::cyl_bessel_j_fallback(
+            std::simd::__detail::special_math::cyl_bessel_j_fallback(
                 order + 1.0, argument);
         const double expected =
             2.0 * order / argument * current;
@@ -1687,7 +1687,7 @@ TEST(SimdMathSpecialTest, ModifiedBesselKUsesStableHighOrderRoute) {
             "order=" + std::to_string(value.order) +
             ", argument=" + std::to_string(value.argument));
         const auto actual =
-            std::simd::detail::special_math::cyl_bessel_k_fallback(
+            std::simd::__detail::special_math::cyl_bessel_k_fallback(
                 value.order, value.argument);
         EXPECT_NEAR(
             actual,

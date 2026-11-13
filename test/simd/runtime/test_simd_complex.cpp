@@ -22,7 +22,7 @@ TEST(SimdComplexTest, ConstructsAndAccessorsRoundTripRealAndImaginaryParts) {
     const auto extracted_reals = value.real();
     const auto extracted_imags = std::simd::imag(value);
 
-    for (std::simd::simd_size_type i = 0; i < complex4f::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < complex4f::size; ++i) {
         EXPECT_FLOAT_EQ(value[i].real(), reals[i]);
         EXPECT_FLOAT_EQ(value[i].imag(), imags[i]);
         EXPECT_FLOAT_EQ(extracted_reals[i], reals[i]);
@@ -55,7 +55,7 @@ TEST(SimdComplexTest, ComplexAlgorithmsApplyPerLane) {
     const auto log10_value = std::simd::log10(values);
     const auto pow_value = std::simd::pow(values, values);
 
-    for (std::simd::simd_size_type i = 0; i < complex4f::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < complex4f::size; ++i) {
         EXPECT_NEAR(abs_value[i], std::abs(raw[static_cast<size_t>(i)]), 1e-5f);
         EXPECT_NEAR(arg_value[i], std::arg(raw[static_cast<size_t>(i)]), 1e-5f);
         EXPECT_NEAR(norm_value[i], std::norm(raw[static_cast<size_t>(i)]), 1e-5f);
@@ -77,7 +77,7 @@ TEST(SimdComplexTest, PolarBuildsComplexLanesFromMagnitudeAndAngle) {
     const auto with_default_angle = std::simd::polar(magnitudes);
     const auto with_angle = std::simd::polar(magnitudes, angles);
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         const auto expected_default = std::polar(magnitudes[i]);
         const auto expected_angle = std::polar(magnitudes[i], angles[i]);
 

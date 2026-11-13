@@ -17,7 +17,7 @@ constexpr bool constexpr_generator_and_iota() {
 
 consteval bool consteval_flag_union() {
     using combined_type = decltype(std::simd::flag_default | std::simd::flag_convert);
-    return std::is_same<combined_type, std::simd::flags<std::simd::convert_flag>>::value;
+    return std::is_same<combined_type, std::simd::flags<std::simd::__convert_flag>>::value;
 }
 
 template<class V, class Shift, class = void>
@@ -68,8 +68,8 @@ using byte_mask4 = std::simd::mask<signed char, 4>;
 
 static_assert(std::is_same<typename int4::value_type, int>::value,
     "vec<int, 4> should expose int as value_type");
-static_assert(std::is_signed<std::simd::simd_size_type>::value,
-    "simd_size_type should be a signed integer type");
+static_assert(std::is_signed<std::simd::__simd_size_type>::value,
+    "__simd_size_type should be a signed integer type");
 static_assert(std::is_same<typename float4::value_type, float>::value,
     "rebind_t should switch the value_type");
 static_assert(int4::size == 4, "vec<int, 4> should expose four lanes");
@@ -93,11 +93,11 @@ static_assert(std::simd::iota<int> == 0,
     "scalar iota should be the arithmetic zero value");
 static_assert(consteval_flag_union(),
     "std::simd::flags operator| should remain usable in immediate contexts");
-static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::simd_size_type{}]), int>::value,
+static_assert(std::is_same<decltype(std::declval<const int4&>()[std::simd::__simd_size_type{}]), int>::value,
     "const operator[] should return the lane value by value");
-static_assert(std::is_same<decltype(std::declval<int4&>()[std::simd::simd_size_type{}]), int>::value,
+static_assert(std::is_same<decltype(std::declval<int4&>()[std::simd::__simd_size_type{}]), int>::value,
     "non-const operator[] should also return the lane value by value");
-static_assert(!std::is_assignable<decltype((std::declval<int4&>()[std::simd::simd_size_type{}])), int>::value,
+static_assert(!std::is_assignable<decltype((std::declval<int4&>()[std::simd::__simd_size_type{}])), int>::value,
     "operator[] should not expose writable lane references");
 static_assert(std::is_same<decltype(std::declval<int4&>() <<= std::declval<const int4&>()), int4&>::value,
     "integral vec should expose per-lane left-shift assignment");

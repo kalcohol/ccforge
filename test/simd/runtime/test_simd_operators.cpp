@@ -14,7 +14,7 @@ using longlong_mask4 = std::simd::mask<long long, 4>;
 
 template<class V, class T, size_t N>
 V load_vec(const std::array<T, N>& values) {
-    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::simd_size_type>(N));
+    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::__simd_size_type>(N));
 }
 
 int4 make_int4(int v0, int v1, int v2, int v3) {

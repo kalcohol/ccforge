@@ -17,11 +17,11 @@
 
 namespace {
 
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 
 template<class T, class U, std::size_t N>
 constexpr bool has_rounded_alignment() {
-    using vector = std::simd::basic_vec<T, std::simd::fixed_size_abi<N>>;
+    using vector = std::simd::basic_vec<T, std::simd::__fixed_size_abi<N>>;
     using trait = std::simd::alignment<vector, U>;
     constexpr auto expected = std::bit_ceil(alignof(U) * N);
     return trait::value == expected && std::has_single_bit(trait::value) &&
@@ -57,10 +57,10 @@ static_assert(std::simd::alignment_v<std::simd::vec<float>> ==
     alignof(float) * static_cast<std::size_t>(std::simd::vec<float>::size));
 
 // Disabled vectors still provide valid metadata without rounding huge widths.
-using disabled_value = std::simd::basic_vec<long double, std::simd::fixed_size_abi<4>>;
-using disabled_width = std::simd::basic_vec<int, std::simd::fixed_size_abi<65>>;
+using disabled_value = std::simd::basic_vec<long double, std::simd::__fixed_size_abi<4>>;
+using disabled_width = std::simd::basic_vec<int, std::simd::__fixed_size_abi<65>>;
 using disabled_huge_width = std::simd::basic_vec<int,
-    std::simd::fixed_size_abi<std::numeric_limits<size_type>::max()>>;
+    std::simd::__fixed_size_abi<std::numeric_limits<size_type>::max()>>;
 static_assert(std::simd::alignment_v<disabled_value, float> == alignof(float));
 static_assert(std::simd::alignment_v<disabled_width, int> == alignof(int));
 static_assert(std::simd::alignment_v<disabled_huge_width, double> == alignof(double));

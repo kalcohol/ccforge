@@ -319,17 +319,17 @@ static_assert(std::bool_constant<(static_cast<decltype(enum_value_math_wrapper::
     enum_value_math_wrapper()) == enum_value_math_wrapper::value)>::value);
 
 #if defined(FORGE_BACKPORT_SIMD_HPP_INCLUDED)
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<counted_math_vector>::value);
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<static_value_math_vector>::value);
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<dual_conversion_math_vector>::value);
-static_assert(std::simd::detail::is_constexpr_wrapper_like<class_value_math_wrapper>::value);
-static_assert(std::simd::detail::is_constexpr_wrapper_like<volatile_reference_math_wrapper>::value);
-static_assert(std::simd::detail::is_constexpr_wrapper_like<enum_value_math_wrapper>::value);
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<counted_math_scalar>::value);
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<nonconstexpr_math_wrapper>::value);
-static_assert(!std::simd::detail::is_constexpr_wrapper_like<wrapper_bad_value>::value);
-static_assert(std::simd::detail::is_constexpr_wrapper_like<exact_math_wrapper>::value);
-static_assert(std::simd::detail::is_constexpr_wrapper_like<inexact_math_wrapper>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<counted_math_vector>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<static_value_math_vector>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<dual_conversion_math_vector>::value);
+static_assert(std::simd::__detail::is_constexpr_wrapper_like<class_value_math_wrapper>::value);
+static_assert(std::simd::__detail::is_constexpr_wrapper_like<volatile_reference_math_wrapper>::value);
+static_assert(std::simd::__detail::is_constexpr_wrapper_like<enum_value_math_wrapper>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<counted_math_scalar>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<nonconstexpr_math_wrapper>::value);
+static_assert(!std::simd::__detail::is_constexpr_wrapper_like<wrapper_bad_value>::value);
+static_assert(std::simd::__detail::is_constexpr_wrapper_like<exact_math_wrapper>::value);
+static_assert(std::simd::__detail::is_constexpr_wrapper_like<inexact_math_wrapper>::value);
 #endif
 
 static_assert(std::is_constructible_v<double4, const counted_math_vector&>);
@@ -516,7 +516,7 @@ TEST(SimdMathExt, MixedBinaryOperandsKeepTheDeducedVector) {
         const auto scalar_left = std::simd::name(2, values); \
         const auto vector_right = std::simd::name(values, integers); \
         const auto vector_left = std::simd::name(integers, values); \
-        for (std::simd::simd_size_type i = 0; i < double4::size; ++i) { \
+        for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) { \
             EXPECT_DOUBLE_EQ(all_vectors[i], std::name(values[i], 2.0)); \
             EXPECT_DOUBLE_EQ(scalar_right[i], std::name(values[i], 2.0)); \
             EXPECT_DOUBLE_EQ(scalar_left[i], std::name(2.0, values[i])); \
@@ -540,7 +540,7 @@ TEST(SimdMathExt, MixedBinaryOperandsKeepTheDeducedVector) {
     const auto bool_operand = std::simd::fmax(false, values);
     std::simd::rebind_t<int, double4> quotients;
     const auto remainders = std::simd::remquo(values, 2, &quotients);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(mixed_vectors[i], std::pow(static_cast<double>(floats[i]), values[i]));
         EXPECT_EQ(compared[i], values[i] > static_cast<double>(integers[i]));
         EXPECT_DOUBLE_EQ(bool_operand[i], values[i]);
@@ -563,7 +563,7 @@ TEST(SimdMathExt, ComparisonAndRemquoOverloadsHaveDistinctLinkage) {
         std::simd::remquo(values, twos, &quotients[0]),
         std::simd::remquo(2, values, &quotients[1]),
         std::simd::remquo(values, 2, &quotients[2]) }};
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_EQ(compared[0][i], std::isgreater(values[i], 2.0));
         EXPECT_EQ(compared[1][i], std::isgreater(2.0, values[i]));
         EXPECT_EQ(compared[2][i], std::isgreater(values[i], 2.0));
@@ -592,7 +592,7 @@ TEST(SimdMathExt, MixedTernaryOperandsNormalizeEveryPosition) {
             std::simd::name(2, 1, values), \
             std::simd::name(2, values, 1), \
             std::simd::name(values, 2, 1) }}; \
-        for (std::simd::simd_size_type i = 0; i < double4::size; ++i) { \
+        for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) { \
             const std::array<double, 7> expected{{ \
                 std::name(values[i], 2.0, 0.5), std::name(2.0, values[i], 0.5), \
                 std::name(values[i], 2.0, 0.5), std::name(values[i], 0.5, 2.0), \
@@ -609,7 +609,7 @@ TEST(SimdMathExt, MixedTernaryOperandsNormalizeEveryPosition) {
 #undef CHECK_MIXED_TERNARY
     const int4 integers(2);
     const auto mixed_vectors = std::simd::fma(integers, values, 1);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(mixed_vectors[i], std::fma(2.0, values[i], 1.0));
     }
 }
@@ -630,14 +630,14 @@ TEST(SimdMathExt, NonstaticValueMemberConversionOccursOnce) {
     const counted_math_vector operand{double4(3), &conversions};
     const double4 converted(operand);
     EXPECT_EQ(conversions, 1);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(converted[i], 3.0);
     }
     const auto check_once = [&conversions](auto call, auto expected) {
         conversions = 0;
         const auto result = call();
         EXPECT_EQ(conversions, 1);
-        for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+        for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
             if constexpr (std::is_same_v<decltype(expected), bool>) {
                 EXPECT_EQ(result[i], expected);
             } else {
@@ -665,7 +665,7 @@ TEST(SimdMathExt, NonstaticValueMemberConversionOccursOnce) {
     other_conversions = 0;
     check_once([&] { return std::simd::lerp(values, operand, other); }, 2.5);
     EXPECT_EQ(other_conversions, 1);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(operand.value[i], 3.0);
         EXPECT_DOUBLE_EQ(other.value[i], 0.5);
     }
@@ -686,7 +686,7 @@ TEST(SimdMathExt, StaticVectorValueMemberConversionOccursOnce) {
     conversions = 0;
     const auto compared = std::simd::isgreater(operand, values);
     EXPECT_EQ(conversions, 1);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(converted[i], 3.0);
         EXPECT_DOUBLE_EQ(maxima[i], 3.0);
         EXPECT_DOUBLE_EQ(fused[i], 9.0);
@@ -715,7 +715,7 @@ TEST(SimdMathExt, StaticVectorValueWithDualConversionsPreservesTheSelectedPath) 
     const auto fused = std::simd::fma(operand, values, operand);
     EXPECT_EQ(vector_conversions, 2);
     EXPECT_EQ(scalar_conversions, 0);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_DOUBLE_EQ(converted[i], 3.0);
         EXPECT_DOUBLE_EQ(maxima[i], 3.0);
         EXPECT_DOUBLE_EQ(minima[i], 2.0);
@@ -755,7 +755,7 @@ TEST(SimdMathExt, StaticValueStillRequiresConstexprEquality) {
     const float4 nonconstexpr(nonconstexpr_math_wrapper{});
     const float4 unequal(wrapper_bad_value{});
     const float4 representable(exact_math_wrapper{});
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_FLOAT_EQ(nonconstexpr[i], static_cast<float>(nonconstexpr_math_wrapper::value));
         EXPECT_FLOAT_EQ(unequal[i], 6.0f);
         EXPECT_FLOAT_EQ(representable[i], 16'777'216.0f);
@@ -777,7 +777,7 @@ TEST(SimdMathExt, CustomPrimaryVectorIsDeducedFromConstLvalueAddition) {
     const auto interpolated = std::simd::lerp(value, value, value);
     EXPECT_EQ(conversions, 3);
     EXPECT_EQ(additions, 0);
-    for (std::simd::simd_size_type i = 0; i < double4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < double4::size; ++i) {
         EXPECT_EQ(maxima[i], 3.0);
         EXPECT_EQ(fused[i], 5.0);
         EXPECT_EQ(interpolated[i], 2.0);
@@ -834,7 +834,7 @@ TEST(SimdMathExtTest, ExtendedUnaryMathFunctionsApplyPerLane) {
     const auto lgamma_result = std::simd::lgamma(acosh_values);
     const auto tgamma_result = std::simd::tgamma(log1p_values);
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_NEAR(log10_result[i], std::log10(log10_values[i]), 1e-6f);
         EXPECT_NEAR(log1p_result[i], std::log1p(log1p_values[i]), 1e-6f);
         EXPECT_NEAR(log2_result[i], std::log2(log10_values[i]), 1e-6f);
@@ -892,7 +892,7 @@ TEST(SimdMathExtTest, BinaryMathAndClassificationFunctionsApplyPerLane) {
     const auto unordered_mask = std::simd::isunordered(classification,
         load_vec<float4>(std::array<float, 4>{{0.0f, 0.0f, 0.0f, 0.0f}}));
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_NEAR(hypot_result[i], std::hypot(left[i], 2.0f), 1e-6f);
         EXPECT_NEAR(hypot3_result[i], std::hypot(left[i], 2.0f, 3.0f), 1e-6f);
         EXPECT_NEAR(fmod_result[i], std::fmod(left[i], 2.0f), 1e-6f);
@@ -961,7 +961,7 @@ TEST(SimdMathExtTest, DecompositionFunctionsReturnLaneWiseResults) {
     const auto fractional = std::simd::modf(modf_values, &integral);
     const auto remainders = std::simd::remquo(remquo_values, 2.0f, &quotients);
 
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         int expected_exp = 0;
         int expected_quo = 0;
         float expected_integral = 0.0f;

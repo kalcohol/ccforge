@@ -304,7 +304,7 @@ TEST(SimdMemoryLoadStoreExtensionTest, UncheckedLoadAndStoreSupportMaskedContigu
 
     for (size_t i = 0; i < lane_count; ++i) {
         const bool is_selected = (i % 2) == 0 && i < 4;
-        EXPECT_EQ(value[static_cast<std::simd::simd_size_type>(i)], is_selected ? input[i] : 0);
+        EXPECT_EQ(value[static_cast<std::simd::__simd_size_type>(i)], is_selected ? input[i] : 0);
         EXPECT_EQ(output[i], is_selected ? input[i] : 9);
     }
 }

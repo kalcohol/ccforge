@@ -93,7 +93,7 @@ constexpr bool legal_character_controls() {
     const auto right = std::simd::rotr(value, characters);
     const auto repeated = std::simd::bit_repeat(value, lengths);
     const auto repeated_scalar = std::simd::bit_repeat(value, 2);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         if (swapped[i] != std::byteswap(C{1}) ||
             left[i] != std::rotl(U{1}, 1) || right[i] != std::rotr(U{1}, 1) ||
             repeated[i] != repeated_scalar[i]) {
@@ -127,7 +127,7 @@ constexpr bool ordinary_bit_results() {
     const auto compressed = std::simd::bit_compress(value, mask);
     const auto expanded = std::simd::bit_expand(value, 10u);
     constexpr int digits = std::numeric_limits<unsigned>::digits;
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         if (reversed[i] != ((1u << (digits - 1)) | (1u << (digits - 2))) ||
             counted[i] != 2 || leading_zero[i] != digits - 2 || leading_one[i] != 0 ||
             trailing_zero[i] != 0 || trailing_one[i] != 2 || width[i] != 2 || single[i] ||
@@ -146,7 +146,7 @@ TEST(SimdBitIntegerConstraints, OrdinaryUnsignedAlgorithmsKeepTheirResults) {
     const simd_test::uchar4 value(static_cast<unsigned char>(3));
     const auto result = std::simd::popcount(std::move(value));
     static_assert(std::same_as<std::remove_cv_t<decltype(result)>, simd_test::schar4>);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         EXPECT_EQ(result[i], 2);
     }
 }
@@ -166,7 +166,7 @@ TEST(SimdBitIntegerConstraints, SignedAndUnsignedIntegerShiftsRemainAvailable) {
     const auto right = std::simd::shr(value, shift);
     const auto reversed_left = std::simd::shl(value, -1);
     const auto reversed_right = std::simd::shr(value, -1);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         EXPECT_EQ(left[i], -16);
         EXPECT_EQ(right[i], -4);
         EXPECT_EQ(reversed_left[i], -4);

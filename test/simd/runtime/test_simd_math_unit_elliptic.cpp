@@ -7,7 +7,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 // mpmath 1.3.0 at 100 and 160 decimal digits, with exact binary input ratios.
 struct reference {

@@ -10,7 +10,7 @@
 
 namespace {
 
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 
 // [simd.general]/3 and [simd.traits]/3,7 require an enabled source.
 // https://eel.is/c++draft/simd.traits
@@ -26,10 +26,10 @@ concept has_resize = requires { typename std::simd::resize<N, V>::type; };
 template<size_type N, class V>
 concept has_resize_alias = requires { typename std::simd::resize_t<N, V>; };
 
-using disabled_value = std::simd::basic_vec<long double, std::simd::fixed_size_abi<2>>;
-using disabled_width = std::simd::basic_vec<int, std::simd::fixed_size_abi<65>>;
-using disabled_bytes = std::simd::basic_mask<3, std::simd::fixed_size_abi<4>>;
-using disabled_mask_width = std::simd::basic_mask<sizeof(int), std::simd::fixed_size_abi<65>>;
+using disabled_value = std::simd::basic_vec<long double, std::simd::__fixed_size_abi<2>>;
+using disabled_width = std::simd::basic_vec<int, std::simd::__fixed_size_abi<65>>;
+using disabled_bytes = std::simd::basic_mask<3, std::simd::__fixed_size_abi<4>>;
+using disabled_mask_width = std::simd::basic_mask<sizeof(int), std::simd::__fixed_size_abi<65>>;
 
 // These four checks distinguish source eligibility independently of the
 // earlier invalid-deduction naming repair and of transformed ABI identity.
@@ -54,7 +54,7 @@ static_assert(disabled_source_has_no_results<disabled_width>());
 static_assert(disabled_source_has_no_results<disabled_bytes>());
 static_assert(disabled_source_has_no_results<disabled_mask_width>());
 
-// An unrecognized ABI has no abi_lane_count; eligibility must short-circuit
+// An unrecognized ABI has no __abi_lane_count; eligibility must short-circuit
 // before querying it. Public disabled aliases exercise that path as well.
 struct unknown_abi {};
 using unknown_vector = std::simd::basic_vec<int, unknown_abi>;

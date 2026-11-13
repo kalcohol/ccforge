@@ -139,7 +139,7 @@ static_assert(!std::is_nothrow_constructible_v<int4, throwing_conversion_generat
 
 template<class V>
 constexpr bool all_lanes_equal(const V& values, typename V::value_type expected) {
-    for (std::simd::simd_size_type i = 0; i < V::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < V::size; ++i) {
         if (values[i] != expected) {
             return false;
         }
@@ -177,7 +177,7 @@ constexpr bool constexpr_generator_is_unchanged() {
     if (conversions != 0 || calls != 4) {
         return false;
     }
-    for (std::simd::simd_size_type i = 0; i < int4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < int4::size; ++i) {
         if (order[i] != i || values[i] != i * 3 + 1 || indices[i] != i) {
             return false;
         }
@@ -265,7 +265,7 @@ TEST(SimdBroadcastTest, CallableScalarStillUsesGeneratorInLaneOrder) {
 
     EXPECT_EQ(conversions, 0);
     EXPECT_EQ(calls, 4);
-    for (std::simd::simd_size_type i = 0; i < int4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < int4::size; ++i) {
         EXPECT_EQ(order[i], i);
         EXPECT_EQ(values[i], i * 3 + 1);
     }

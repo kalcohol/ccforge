@@ -77,21 +77,21 @@ static_assert(std::ranges::sized_range<dynamic_view>);
 
 template<class R>
 concept has_unchecked_static_size = requires {
-    typename std::simd::detail::unchecked_range_size_t<R>;
+    typename std::simd::__detail::unchecked_range_size_t<R>;
 };
 
 // Runtime state must not become a zero static extent in MSVC's template
 // return-type substitution. Keep these controls in a normal build target.
-static_assert(std::simd::detail::fixed_range_size<stateful_constexpr_view>::value == -1);
-static_assert(std::simd::detail::fixed_range_size<std::vector<int>>::value == -1);
-static_assert(std::simd::detail::fixed_range_size<std::span<int>>::value == -1);
+static_assert(std::simd::__detail::fixed_range_size<stateful_constexpr_view>::value == -1);
+static_assert(std::simd::__detail::fixed_range_size<std::vector<int>>::value == -1);
+static_assert(std::simd::__detail::fixed_range_size<std::span<int>>::value == -1);
 static_assert(!has_unchecked_static_size<stateful_constexpr_view>);
 static_assert(!has_unchecked_static_size<std::vector<int>>);
 static_assert(!has_unchecked_static_size<std::span<int>>);
-static_assert(std::simd::detail::fixed_range_size<fixed_view<extent>>::value == extent);
-static_assert(std::simd::detail::unchecked_range_size_t<fixed_view<extent>>::value == extent);
-static_assert(std::simd::detail::fixed_range_size<const const_longer_view>::value == 4);
-static_assert(std::simd::detail::fixed_range_size<const_longer_view>::value == 2);
+static_assert(std::simd::__detail::fixed_range_size<fixed_view<extent>>::value == extent);
+static_assert(std::simd::__detail::unchecked_range_size_t<fixed_view<extent>>::value == extent);
+static_assert(std::simd::__detail::fixed_range_size<const const_longer_view>::value == 4);
+static_assert(std::simd::__detail::fixed_range_size<const_longer_view>::value == 2);
 
 template<class R>
 concept unchecked_declarations = requires(R&& r, const int4& value,
@@ -113,7 +113,7 @@ static_assert(unchecked_declarations<fixed_view<2>&>);
 
 template<class V>
 constexpr bool expected_load(const V& value, bool masked) {
-    for (std::simd::simd_size_type i = 0; i < V::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < V::size; ++i) {
         const int expected = !masked || i % 2 == 0 ? 10 + static_cast<int>(i) : 0;
         if (value[i] != expected) {
             return false;
@@ -219,7 +219,7 @@ TEST(SimdMemoryStaticExtent, ExactWidthAndCvDependentStaticSizes) {
     const int4::mask_type none(false);
     const auto empty = std::simd::unchecked_load<int4>(std::span<const int, 4>(input), none);
     std::simd::unchecked_store(int4(7), cv_view, none);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         EXPECT_EQ(empty[i], 0);
         EXPECT_EQ(input[i], 10 + static_cast<int>(i));
     }
@@ -288,7 +288,7 @@ TEST(SimdMemoryStaticExtent, PartialShortRangesKeepTheirDefinedBehavior) {
     const auto array_value = std::simd::partial_load<int4>(short_array);
     const int4::mask_type second(std::bitset<4>(0b0010));
     const auto masked = std::simd::partial_load<int4>(std::span<const int, 2>(input), second);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         EXPECT_EQ(unmasked[i], i < 2 ? 10 + static_cast<int>(i) : 0);
         EXPECT_EQ(array_value[i], unmasked[i]);
         EXPECT_EQ(masked[i], i == 1 ? 11 : 0);
@@ -316,7 +316,7 @@ TEST(SimdMemoryStaticExtent, GatherScatterDoNotRequireAFullWidthRange) {
     const std::array<int, 1> input{42};
     const int4 indices(0);
     const auto gathered = std::simd::unchecked_gather_from<int4>(input, indices);
-    for (std::simd::simd_size_type i = 0; i < 4; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < 4; ++i) {
         EXPECT_EQ(gathered[i], 42);
     }
     std::array<int, 1> output{-1};

@@ -1,8 +1,8 @@
 #include <simd>
 
-using flags_or_ptr = std::simd::flags<std::simd::convert_flag> (*)(
+using flags_or_ptr = std::simd::flags<std::simd::__convert_flag> (*)(
     std::simd::flags<>,
-    std::simd::flags<std::simd::convert_flag>) noexcept;
+    std::simd::flags<std::simd::__convert_flag>) noexcept;
 
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
 constexpr auto combined = std::simd::flag_default | std::simd::flag_convert;

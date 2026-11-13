@@ -40,7 +40,7 @@ static_assert(nothrow_categories<double4, float4>());
 
 using native_complex = std::simd::basic_vec<std::complex<float>>;
 using matching_fixed_complex = std::simd::basic_vec<std::complex<float>,
-    std::simd::fixed_size_abi<native_complex::size>>;
+    std::simd::__fixed_size_abi<native_complex::size>>;
 static_assert(!std::same_as<native_complex, matching_fixed_complex>);
 static_assert(nothrow_categories<matching_fixed_complex, native_complex>());
 static_assert(nothrow_categories<native_complex, matching_fixed_complex>());
@@ -66,7 +66,7 @@ constexpr bool conversions_are_constexpr() {
     const complex_double4 widened(narrowed);
     const double4 reals([](auto i) { return static_cast<double>(i) + 0.75; });
     const complex_float4 from_reals(reals);
-    for (std::simd::simd_size_type i = 0; i < complex_float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < complex_float4::size; ++i) {
         if (narrowed[i] != static_cast<std::complex<float>>(source[i]) ||
             widened[i] != static_cast<std::complex<double>>(narrowed[i]) ||
             from_reals[i] != std::complex<float>(static_cast<float>(reals[i]), 0.0f)) {

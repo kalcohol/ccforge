@@ -25,7 +25,7 @@ TEST(SimdRuntimeTest, DefaultWidthAliasBroadcastsAcrossAllLanes) {
 
     EXPECT_GE(decltype(values)::size, 1u);
 
-    for (std::simd::simd_size_type i = 0; i < decltype(values)::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < decltype(values)::size; ++i) {
         EXPECT_FLOAT_EQ(lane(values, i), 2.5f);
     }
 }

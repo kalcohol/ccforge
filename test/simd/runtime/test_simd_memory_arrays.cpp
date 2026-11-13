@@ -108,7 +108,7 @@ static_assert(scatter_arrays_are_constexpr());
 template<class V, class T>
 void expect_lanes(const V& result, const std::array<T, 4>& expected) {
     for (std::size_t i = 0; i < expected.size(); ++i) {
-        EXPECT_EQ(result[static_cast<std::simd::simd_size_type>(i)], expected[i]);
+        EXPECT_EQ(result[static_cast<std::simd::__simd_size_type>(i)], expected[i]);
     }
 }
 
@@ -337,8 +337,8 @@ static_assert(std::contiguous_iterator<hybrid_iterator>);
 static_assert(std::ranges::contiguous_range<hybrid_iterator>);
 static_assert(std::ranges::sized_range<hybrid_iterator>);
 static_assert(!std::ranges::range<const hybrid_iterator>);
-static_assert(std::simd::detail::is_contiguous_load_store_range<hybrid_iterator>::value);
-static_assert(!std::simd::detail::is_contiguous_load_store_range<const hybrid_iterator&>::value);
+static_assert(std::simd::__detail::is_contiguous_load_store_range<hybrid_iterator>::value);
+static_assert(!std::simd::__detail::is_contiguous_load_store_range<const hybrid_iterator&>::value);
 static_assert(has_explicit_gather_forms<const hybrid_iterator&>);
 static_assert(has_scatter_forms<const hybrid_iterator&>);
 

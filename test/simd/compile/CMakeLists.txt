@@ -42,3 +42,10 @@ add_test(
 set_tests_properties(simd_native_handoff_compile PROPERTIES
     RESOURCE_LOCK forge_main_build
     TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+forge_add_simd_compile_probe(test_simd_extension_compat test_simd_extension_compat.cpp simd_extension_compat_compile)
+if(MSVC)
+    target_compile_options(test_simd_extension_compat PRIVATE /we4996)
+else()
+    target_compile_options(test_simd_extension_compat PRIVATE -Werror=deprecated-declarations)
+endif()

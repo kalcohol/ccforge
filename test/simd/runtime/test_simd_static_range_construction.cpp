@@ -20,7 +20,7 @@ namespace {
 using vector4 = std::simd::vec<int, 4>;
 using vector2 = std::simd::vec<int, 2>;
 using mask4 = vector4::mask_type;
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 
 template<class T, std::size_t N>
 struct derived_array : std::array<T, N> {};

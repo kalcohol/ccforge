@@ -8,7 +8,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 struct phase_reference {
     double order;
@@ -88,7 +88,7 @@ TEST(SimdMathPhase, PublicSimdUsesTheFallbackPhase) {
         const auto j = std::simd::cyl_bessel_j(reference.order, arguments);
         const auto y = std::simd::cyl_neumann(reference.order, arguments);
         const double tolerance = std::hypot(reference.j, reference.y) * 3e-12;
-        for (std::simd::simd_size_type i = 0; i < vector::size; ++i) {
+        for (std::simd::__simd_size_type i = 0; i < vector::size; ++i) {
             EXPECT_NEAR(j[i], reference.j, tolerance);
             EXPECT_NEAR(y[i], reference.y, tolerance);
         }

@@ -71,7 +71,7 @@ struct nonconstexpr_view : constant_view {
 
 template<class R>
 concept has_unchecked_constant = requires {
-    typename std::simd::detail::unchecked_range_size_t<R>;
+    typename std::simd::__detail::unchecked_range_size_t<R>;
 };
 
 template<class R>
@@ -82,16 +82,16 @@ concept can_deduce = requires(R&& range) {
 static_assert(!std::is_default_constructible_v<constant_view>);
 static_assert(!std::is_copy_constructible_v<constant_view>);
 static_assert(!std::is_move_constructible_v<constant_view>);
-static_assert(std::simd::detail::constant_range_size_type<constant_view&>::value == 4);
-static_assert(std::simd::detail::constant_range_size_type<const constant_view&>::value == 4);
-static_assert(std::simd::detail::constant_range_size_type<constant_view&&>::value == 4);
-static_assert(std::simd::detail::constant_range_size_type<const constant_view&&>::value == 4);
-static_assert(std::same_as<std::simd::detail::unchecked_range_size_t<constant_view>,
+static_assert(std::simd::__detail::constant_range_size_type<constant_view&>::value == 4);
+static_assert(std::simd::__detail::constant_range_size_type<const constant_view&>::value == 4);
+static_assert(std::simd::__detail::constant_range_size_type<constant_view&&>::value == 4);
+static_assert(std::simd::__detail::constant_range_size_type<const constant_view&&>::value == 4);
+static_assert(std::same_as<std::simd::__detail::unchecked_range_size_t<constant_view>,
     std::integral_constant<std::size_t, 4>>);
-static_assert(std::simd::detail::constant_range_size_type<cv_view&>::value == 4);
-static_assert(std::simd::detail::constant_range_size_type<const cv_view&>::value == 2);
-static_assert(std::simd::detail::unchecked_range_size_t<cv_view>::value == 4);
-static_assert(std::simd::detail::unchecked_range_size_t<const cv_view>::value == 2);
+static_assert(std::simd::__detail::constant_range_size_type<cv_view&>::value == 4);
+static_assert(std::simd::__detail::constant_range_size_type<const cv_view&>::value == 2);
+static_assert(std::simd::__detail::unchecked_range_size_t<cv_view>::value == 4);
+static_assert(std::simd::__detail::unchecked_range_size_t<const cv_view>::value == 2);
 static_assert(std::is_constructible_v<vector4, const constant_view&>);
 static_assert(std::is_constructible_v<vector4, cv_view&>);
 static_assert(!std::is_constructible_v<vector4, const cv_view&>);
@@ -99,8 +99,8 @@ static_assert(std::is_constructible_v<vector2, const cv_view&>);
 static_assert(can_deduce<const constant_view&>);
 static_assert(can_deduce<const cv_view&>);
 static_assert(has_unchecked_constant<const abstract_view>);
-static_assert(std::simd::detail::constant_range_size_type<const abstract_view&>::value == 4);
-static_assert(std::simd::detail::unchecked_range_size_t<const abstract_view>::value == 4);
+static_assert(std::simd::__detail::constant_range_size_type<const abstract_view&>::value == 4);
+static_assert(std::simd::__detail::unchecked_range_size_t<const abstract_view>::value == 4);
 static_assert(std::is_constructible_v<vector4, const abstract_view&>);
 static_assert(can_deduce<const abstract_view&>);
 
@@ -108,20 +108,20 @@ static_assert(std::ranges::contiguous_range<stateful_view>);
 static_assert(std::ranges::sized_range<stateful_view>);
 static_assert(std::ranges::contiguous_range<private_immediate_view>);
 static_assert(std::ranges::sized_range<private_immediate_view>);
-static_assert(std::simd::detail::constant_range_size_type<stateful_view&>::value == -1);
-static_assert(std::simd::detail::constant_range_size_type<const stateful_view&>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<stateful_view&>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<const stateful_view&>::value == -1);
 static_assert(!has_unchecked_constant<stateful_view>);
 static_assert(!has_unchecked_constant<const stateful_view>);
-static_assert(std::simd::detail::constant_range_size_type<private_immediate_view&>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<private_immediate_view&>::value == -1);
 static_assert(!has_unchecked_constant<private_immediate_view>);
-static_assert(std::simd::detail::constant_range_size_type<private_immediate_view>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<private_immediate_view>::value == -1);
 static_assert(!std::is_constructible_v<vector4, stateful_view&>);
 static_assert(!std::is_constructible_v<vector4, private_immediate_view&>);
 static_assert(!can_deduce<stateful_view&>);
 static_assert(!can_deduce<private_immediate_view&>);
-static_assert(std::simd::detail::constant_range_size_type<nonconstexpr_view&>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<nonconstexpr_view&>::value == -1);
 static_assert(!has_unchecked_constant<nonconstexpr_view>);
-static_assert(std::simd::detail::constant_range_size_type<std::span<int>&>::value == -1);
+static_assert(std::simd::__detail::constant_range_size_type<std::span<int>&>::value == -1);
 static_assert(!has_unchecked_constant<std::span<int>>);
 
 constexpr bool public_controls() {

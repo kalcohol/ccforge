@@ -16,7 +16,7 @@
 namespace {
 
 using vector4 = std::simd::vec<int, 4>;
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 using read_iterator = std::counted_iterator<const int*>;
 using write_iterator = std::counted_iterator<int*>;
 constexpr size_type count = 4;
@@ -28,8 +28,8 @@ static_assert(!std::is_pointer_v<read_iterator>);
 static_assert(!std::is_pointer_v<write_iterator>);
 static_assert(std::sized_sentinel_for<std::default_sentinel_t, read_iterator>);
 static_assert(storage_alignment >= std::simd::alignment_v<vector4>);
-static_assert(sizeof(std::simd::overaligned_flag<1>) > 0);
-static_assert(sizeof(std::simd::overaligned_flag<64>) > 0);
+static_assert(sizeof(std::simd::__overaligned_flag<1>) > 0);
+static_assert(sizeof(std::simd::__overaligned_flag<64>) > 0);
 
 template<class I>
 concept can_load = requires(I first) {

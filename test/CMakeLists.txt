@@ -200,6 +200,34 @@ if(FORGE_TEST_ENABLE_EXECUTION)
     endif()
 endif()
 if(FORGE_TEST_ENABLE_SIMD)
+    set(_forge_simd_aliases_available TRUE)
+    if(NOT FORGE_FORCE_SIMD_BACKPORT AND (FORGE_SIMD_FULL OR FORGE_SIMD_PARTIAL))
+        # Probe the actual test surface, including traits, on partial natives.
+        # Reuse the source so this gate stays in step with its requirements.
+        set(_forge_simd_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
+        set(CMAKE_REQUIRED_INCLUDES "${CMAKE_SOURCE_DIR}/include")
+        forge_detect_cxx_source_compiles(FORGE_SIMD_FORGE_ALIASES_AVAILABLE
+            "${CMAKE_CURRENT_SOURCE_DIR}/simd/compile/test_simd_forge_aliases.cpp")
+        set(CMAKE_REQUIRED_INCLUDES "${_forge_simd_saved_includes}")
+        unset(_forge_simd_saved_includes)
+        set(_forge_simd_aliases_available "${FORGE_SIMD_FORGE_ALIASES_AVAILABLE}")
+    endif()
+    if(_forge_simd_aliases_available)
+        add_executable(test_simd_forge_aliases EXCLUDE_FROM_ALL
+            "${CMAKE_CURRENT_SOURCE_DIR}/simd/compile/test_simd_forge_aliases.cpp")
+        target_link_libraries(test_simd_forge_aliases PRIVATE forge::forge)
+        if(MSVC)
+            target_compile_options(test_simd_forge_aliases PRIVATE /we4996)
+        else()
+            target_compile_options(test_simd_forge_aliases PRIVATE -Werror=deprecated-declarations)
+        endif()
+        add_test(NAME simd_forge_aliases_compile
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS}
+                --target test_simd_forge_aliases)
+        set_tests_properties(simd_forge_aliases_compile PROPERTIES
+            RESOURCE_LOCK forge_main_build TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    endif()
+    unset(_forge_simd_aliases_available)
     if(FORGE_FORCE_SIMD_BACKPORT
             OR (NOT FORGE_SIMD_FULL AND NOT FORGE_SIMD_PARTIAL))
         add_subdirectory(simd)

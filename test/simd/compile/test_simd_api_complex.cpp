@@ -19,28 +19,28 @@ struct has_pow<A, B, std::void_t<decltype(std::simd::pow(std::declval<const A&>(
 
 static_assert(std::is_same_v<typename complex4f::value_type, std::complex<float>>,
     "complex4f should expose complex<float> as value_type");
-static_assert(std::is_same_v<typename complex4f::real_type, float4>,
-    "complex simd should expose a matching real_type");
+static_assert(std::is_same_v<typename complex4f::__real_type, float4>,
+    "complex simd should expose a matching __real_type");
 static_assert(std::is_constructible_v<complex4f, float4, float4>,
     "complex simd should be constructible from real and imaginary parts");
 static_assert(std::is_same_v<decltype(std::declval<const complex4f&>().real()), float4>,
-    "complex simd member real() should return real_type");
+    "complex simd member real() should return __real_type");
 static_assert(std::is_same_v<decltype(std::declval<const complex4f&>().imag()), float4>,
-    "complex simd member imag() should return real_type");
+    "complex simd member imag() should return __real_type");
 static_assert(std::is_same_v<decltype(std::simd::real(std::declval<const complex4f&>())), float4>,
-    "free real() should return real_type");
+    "free real() should return __real_type");
 static_assert(std::is_same_v<decltype(std::simd::imag(std::declval<const complex4f&>())), float4>,
-    "free imag() should return real_type");
+    "free imag() should return __real_type");
 static_assert(noexcept(std::simd::real(std::declval<const complex4f&>())),
     "complex real should be noexcept");
 static_assert(noexcept(std::simd::imag(std::declval<const complex4f&>())),
     "complex imag should be noexcept");
 static_assert(std::is_same_v<decltype(std::simd::abs(std::declval<const complex4f&>())), float4>,
-    "complex abs should return the real_type");
+    "complex abs should return the __real_type");
 static_assert(std::is_same_v<decltype(std::simd::arg(std::declval<const complex4f&>())), float4>,
-    "complex arg should return the real_type");
+    "complex arg should return the __real_type");
 static_assert(std::is_same_v<decltype(std::simd::norm(std::declval<const complex4f&>())), float4>,
-    "complex norm should return the real_type");
+    "complex norm should return the __real_type");
 static_assert(!noexcept(std::simd::abs(std::declval<const complex4f&>())),
     "complex abs should not be noexcept");
 static_assert(!noexcept(std::simd::conj(std::declval<const complex4f&>())),

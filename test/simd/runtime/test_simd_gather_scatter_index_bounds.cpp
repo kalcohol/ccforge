@@ -17,7 +17,7 @@ static_assert(sizeof(std::int64_t) == 8 && sizeof(std::uint64_t) == 8);
 
 #ifdef FORGE_SIMD_REQUIRE_ILP32_INDEX_BOUNDS
 static_assert(sizeof(void*) == 4 && sizeof(std::ptrdiff_t) == 4);
-static_assert(sizeof(std::simd::simd_size_type) == 4);
+static_assert(sizeof(std::simd::__simd_size_type) == 4);
 #endif
 
 namespace {
@@ -25,7 +25,7 @@ namespace {
 using vector4 = std::simd::vec<int, 4>;
 using unsigned_indices4 = std::simd::vec<std::uint64_t, 4>;
 using signed_indices4 = std::simd::vec<std::int64_t, 4>;
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 constexpr std::uint64_t high_unsigned = std::uint64_t{1} << 32;
 constexpr std::int64_t high_signed = std::int64_t{1} << 32;
 
@@ -41,7 +41,7 @@ vector4 scatter_values() {
 }
 
 TEST(SimdGatherScatterIndexBounds, Auxiliary32BitExtentDoesNotNarrowWideIndices) {
-    using std::simd::detail::is_gather_scatter_index_in_range;
+    using std::simd::__detail::is_gather_scatter_index_in_range;
     const std::array<std::uint64_t, 6> unsigned_values{
         0, 3, 4, high_unsigned + 1, high_unsigned + 2, std::numeric_limits<std::uint64_t>::max()};
     const std::array<bool, 6> unsigned_expected{true, true, false, false, false, false};

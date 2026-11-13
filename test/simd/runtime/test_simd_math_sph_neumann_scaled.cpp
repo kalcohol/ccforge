@@ -28,7 +28,7 @@ static_assert(std::numeric_limits<long double>::digits == 53 &&
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 #ifdef FORGE_SM06_PRIVATE_KERNEL_PROBE
 unsigned checked = 0u;

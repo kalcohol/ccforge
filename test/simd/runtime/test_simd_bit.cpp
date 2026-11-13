@@ -187,7 +187,7 @@ TEST(SimdBitTest, BitPermutationAlgorithmsApplyScalarAndVectorPatterns) {
     EXPECT_EQ(repeated_scalar[1], 0x22222222u);
     EXPECT_EQ(repeated_scalar[2], 0x55555555u);
     EXPECT_EQ(repeated_scalar[3], 0x11111111u);
-    for (std::simd::simd_size_type i = 0; i < uint4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < uint4::size; ++i) {
         EXPECT_EQ(repeated_vector[i], repeated_scalar[i]);
     }
 

@@ -14,18 +14,18 @@ static_assert(sizeof(std::int64_t) == 8 && sizeof(std::uint64_t) == 8);
 
 #ifdef FORGE_SIMD_REQUIRE_ILP32_INDEX_BOUNDS
 static_assert(sizeof(void*) == 4 && sizeof(std::ptrdiff_t) == 4);
-static_assert(sizeof(std::simd::simd_size_type) == 4);
+static_assert(sizeof(std::simd::__simd_size_type) == 4);
 #endif
 
 namespace {
 
 using vector4 = std::simd::vec<int, 4>;
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 constexpr std::uint64_t high_unsigned = std::uint64_t{1} << 32;
 constexpr std::int64_t high_signed = std::int64_t{1} << 32;
 
 #ifndef FORGE_SIMD_INDEX_BOUNDS_PUBLIC_ONLY
-using std::simd::detail::is_gather_scatter_index_in_range;
+using std::simd::__detail::is_gather_scatter_index_in_range;
 
 // These are auxiliary 32-bit-extent controls, not an ILP32 public-API run.
 // Both original wide values alias small valid offsets if narrowed first.

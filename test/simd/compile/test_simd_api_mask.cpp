@@ -70,11 +70,11 @@ static_assert(constexpr_mask_from_bitset(),
     "basic_mask(bitset) should remain constexpr-capable");
 static_assert(constexpr_mask_bitset_roundtrip(),
     "basic_mask and bitset should support constexpr round-trip conversion");
-static_assert(std::is_same<decltype(std::declval<const mask4&>()[std::simd::simd_size_type{}]), bool>::value,
+static_assert(std::is_same<decltype(std::declval<const mask4&>()[std::simd::__simd_size_type{}]), bool>::value,
     "const mask operator[] should return bool by value");
-static_assert(std::is_same<decltype(std::declval<mask4&>()[std::simd::simd_size_type{}]), bool>::value,
+static_assert(std::is_same<decltype(std::declval<mask4&>()[std::simd::__simd_size_type{}]), bool>::value,
     "non-const mask operator[] should also return bool by value");
-static_assert(!std::is_assignable<decltype((std::declval<mask4&>()[std::simd::simd_size_type{}])), bool>::value,
+static_assert(!std::is_assignable<decltype((std::declval<mask4&>()[std::simd::__simd_size_type{}])), bool>::value,
     "mask operator[] should not expose writable lane references");
 static_assert(std::is_same<decltype(std::declval<mask4&>() & std::declval<const mask4&>()), mask4>::value,
     "mask bitwise and should remain on the mask type");

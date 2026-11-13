@@ -120,17 +120,17 @@ static_assert(range_write_constraints<const std::ranges::subrange<const int*>&, 
 
 template<class I, bool Writable>
 constexpr bool iterator_write_constraints() {
-    return (requires(const int4& value, I&& output, std::simd::simd_size_type count) {
+    return (requires(const int4& value, I&& output, std::simd::__simd_size_type count) {
         { std::simd::partial_store(value, std::forward<I>(output), count) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, I&& output, std::simd::simd_size_type count, const mask4& mask) {
+    } == Writable) && (requires(const int4& value, I&& output, std::simd::__simd_size_type count, const mask4& mask) {
         { std::simd::partial_store(value, std::forward<I>(output), count, mask) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, I&& output, std::simd::simd_size_type count) {
+    } == Writable) && (requires(const int4& value, I&& output, std::simd::__simd_size_type count) {
         { std::simd::unchecked_store(value, std::forward<I>(output), count) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, I&& output, std::simd::simd_size_type count, const mask4& mask) {
+    } == Writable) && (requires(const int4& value, I&& output, std::simd::__simd_size_type count, const mask4& mask) {
         { std::simd::unchecked_store(value, std::forward<I>(output), count, mask) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, I&& output, std::simd::simd_size_type count, const int4& indices) {
+    } == Writable) && (requires(const int4& value, I&& output, std::simd::__simd_size_type count, const int4& indices) {
         { std::simd::partial_scatter_to(value, std::forward<I>(output), count, indices) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, I&& output, std::simd::simd_size_type count, const mask4& mask, const int4& indices) {
+    } == Writable) && (requires(const int4& value, I&& output, std::simd::__simd_size_type count, const mask4& mask, const int4& indices) {
         { std::simd::partial_scatter_to(value, std::forward<I>(output), count, mask, indices) } -> std::same_as<void>;
     } == Writable) && (requires(const int4& value, I&& output, const int4& indices) {
         { std::simd::unchecked_scatter_to(value, std::forward<I>(output), indices) } -> std::same_as<void>;
@@ -175,9 +175,9 @@ constexpr bool pointer_store_constraints() {
         { std::simd::unchecked_store(value, output) } -> std::same_as<void>;
     } == Writable) && (requires(const int4& value, P output, const mask4& mask) {
         { std::simd::unchecked_store(value, output, mask) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, P output, std::simd::simd_size_type count) {
+    } == Writable) && (requires(const int4& value, P output, std::simd::__simd_size_type count) {
         { std::simd::unchecked_store(value, output, count, std::simd::flag_default) } -> std::same_as<void>;
-    } == Writable) && (requires(const int4& value, P output, std::simd::simd_size_type count, const mask4& mask) {
+    } == Writable) && (requires(const int4& value, P output, std::simd::__simd_size_type count, const mask4& mask) {
         { std::simd::unchecked_store(value, output, count, mask, std::simd::flag_default) } -> std::same_as<void>;
     } == Writable);
 }

@@ -2,7 +2,7 @@
 
 int main() {
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
-    [[maybe_unused]] std::simd::flags<std::simd::convert_flag> invalid{};
+    [[maybe_unused]] std::simd::flags<std::simd::__convert_flag> invalid{};
 #else
     [[maybe_unused]] std::simd::flags<int> invalid{};
 #endif

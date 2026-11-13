@@ -19,13 +19,13 @@ constexpr bool constexpr_iterator_spaceship() {
 static_assert(std::is_same<decltype(std::declval<int4&>().begin()), typename int4::iterator>::value,
     "begin() should return iterator");
 static_assert(requires(typename int4::iterator it) { it <=> it; },
-    "simd_iterator should expose operator<=>");
+    "__simd_iterator should expose operator<=>");
 static_assert(std::is_same<
     decltype(std::declval<typename int4::iterator>() <=> std::declval<typename int4::iterator>()),
     std::strong_ordering>::value,
-    "simd_iterator ordering should be strong_ordering");
+    "__simd_iterator ordering should be strong_ordering");
 static_assert(constexpr_iterator_spaceship(),
-    "simd_iterator operator<=> should be constexpr-capable");
+    "__simd_iterator operator<=> should be constexpr-capable");
 static_assert(std::is_same<decltype(std::declval<typename int4::iterator&>()++), typename int4::iterator>::value,
     "iterator post-increment should return iterator");
 static_assert(std::is_same<decltype(std::declval<typename int4::iterator&>()--), typename int4::iterator>::value,
@@ -46,10 +46,10 @@ static_assert(std::is_same<decltype(std::declval<int4&>().end()), std::default_s
     "end() should return default_sentinel_t");
 static_assert(std::is_same<decltype(std::declval<const int4&>().cend()), std::default_sentinel_t>::value,
     "cend() should return default_sentinel_t");
-static_assert(std::is_same<decltype(std::declval<int4&>().end() - std::declval<int4&>().begin()), std::simd::simd_size_type>::value,
-    "default sentinel difference should use simd_size_type");
-static_assert(std::is_same<decltype(std::declval<int4&>().begin() - std::declval<int4&>().end()), std::simd::simd_size_type>::value,
-    "iterator minus default sentinel should use simd_size_type");
+static_assert(std::is_same<decltype(std::declval<int4&>().end() - std::declval<int4&>().begin()), std::simd::__simd_size_type>::value,
+    "default sentinel difference should use __simd_size_type");
+static_assert(std::is_same<decltype(std::declval<int4&>().begin() - std::declval<int4&>().end()), std::simd::__simd_size_type>::value,
+    "iterator minus default sentinel should use __simd_size_type");
 
 } // namespace
 

@@ -3,7 +3,7 @@
 #include <type_traits>
 
 struct out_of_range_index_map {
-    constexpr std::simd::simd_size_type operator()(std::simd::simd_size_type) const noexcept {
+    constexpr std::simd::__simd_size_type operator()(std::simd::__simd_size_type) const noexcept {
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
         return 3;
 #else
@@ -13,7 +13,7 @@ struct out_of_range_index_map {
 };
 
 static_assert(std::is_same_v<std::invoke_result_t<const out_of_range_index_map&,
-    std::simd::simd_size_type>, std::simd::simd_size_type>);
+    std::simd::__simd_size_type>, std::simd::__simd_size_type>);
 
 int main() {
     const std::simd::vec<int, 4> values(1);

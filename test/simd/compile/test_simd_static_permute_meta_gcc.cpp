@@ -15,7 +15,7 @@
 
 namespace {
 
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 using vector4 = std::simd::vec<int, 4>;
 
 struct borrowed_map {

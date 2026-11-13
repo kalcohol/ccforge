@@ -9,7 +9,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 template<class T>
 struct order_reference {
@@ -147,7 +147,7 @@ void check_public(const order_reference<T> (&references)[N]) {
         SCOPED_TRACE(reference.argument);
         const auto result = std::simd::cyl_neumann(
             reference.order, vector(reference.argument));
-        for (std::simd::simd_size_type lane = 0; lane < vector::size; ++lane) {
+        for (std::simd::__simd_size_type lane = 0; lane < vector::size; ++lane) {
             ASSERT_TRUE(std::isfinite(result[lane]));
             EXPECT_NEAR(static_cast<long double>(result[lane]), reference.y,
                         tolerance(reference));

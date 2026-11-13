@@ -8,7 +8,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 template<class Fun>
 struct counted_function {
@@ -206,7 +206,7 @@ void check_public_quadrature_references() {
         const vector arguments(static_cast<T>(reference.argument));
         const auto j = std::simd::cyl_bessel_j(static_cast<T>(reference.order), arguments);
         const auto y = std::simd::cyl_neumann(static_cast<T>(reference.order), arguments);
-        for (std::simd::simd_size_type i = 0; i < vector::size; ++i) {
+        for (std::simd::__simd_size_type i = 0; i < vector::size; ++i) {
             EXPECT_LE(std::abs(static_cast<long double>(j[i]) - reference.j),
                       target * std::max(1.0L, std::abs(reference.j)));
             EXPECT_LE(std::abs(static_cast<long double>(y[i]) - reference.y),

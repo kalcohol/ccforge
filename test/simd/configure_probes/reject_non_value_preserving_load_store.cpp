@@ -13,16 +13,16 @@ int main() {
 #endif
 #if !defined(FORGE_SIMD_PROBE_OPERATION) || FORGE_SIMD_PROBE_OPERATION == 0
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
-    (void)std::simd::partial_load<V>(data, std::simd::simd_size_type{4}, std::simd::flag_convert);
+    (void)std::simd::partial_load<V>(data, std::simd::__simd_size_type{4}, std::simd::flag_convert);
 #else
-    (void)std::simd::partial_load<V>(static_cast<const float*>(nullptr), std::simd::simd_size_type{4});
+    (void)std::simd::partial_load<V>(static_cast<const float*>(nullptr), std::simd::__simd_size_type{4});
 #endif
 #endif
 #if !defined(FORGE_SIMD_PROBE_OPERATION) || FORGE_SIMD_PROBE_OPERATION == 1
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
-    std::simd::partial_store(value, data, std::simd::simd_size_type{4}, std::simd::flag_convert);
+    std::simd::partial_store(value, data, std::simd::__simd_size_type{4}, std::simd::flag_convert);
 #else
-    std::simd::partial_store(value, static_cast<float*>(nullptr), std::simd::simd_size_type{4});
+    std::simd::partial_store(value, static_cast<float*>(nullptr), std::simd::__simd_size_type{4});
 #endif
 #endif
     return 0;

@@ -52,7 +52,7 @@ bool private_expect(bool passed, const char* expression, int line) {
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 // Independent mpmath references agree at 100 and 160 decimal digits.
 // Associated Legendre references omit the Condon-Shortley phase, as C++ does.
@@ -202,7 +202,7 @@ TEST(SimdMathPolynomialScaling, PublicFloatFallbackPreservesFiniteAndZeroLanes) 
     expect_relative(static_cast<float>(legendre[1]),
         2.92156067128853553533482828922983151255e33L, 3e-6L);
     const auto laguerre = std::simd::assoc_laguerre(50u, 10u, vector(200.0f));
-    for (std::simd::simd_size_type i = 0; i != vector::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i != vector::size; ++i) {
         expect_relative(static_cast<float>(laguerre[i]),
             3.32888592429968127868390631133283872650e38L, 3e-6L);
     }
@@ -217,7 +217,7 @@ TEST(SimdMathPolynomialScaling, PublicDoubleFallbackPreservesOversizedIntermedia
     const auto laguerre = std::simd::laguerre(1000u, vector(1420.0));
     const auto hermite = std::simd::hermite(301u, vector(1e-100));
     const auto legendre = std::simd::assoc_legendre(172u, 171u, vector(1e-100));
-    for (std::simd::simd_size_type i = 0; i != vector::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i != vector::size; ++i) {
         expect_relative(static_cast<double>(laguerre[i]),
             -3.97219102141256760897412813903336452253e306L, 2e-12L);
         expect_relative(static_cast<double>(hermite[i]),

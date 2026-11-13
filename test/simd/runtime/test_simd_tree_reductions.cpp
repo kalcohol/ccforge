@@ -17,7 +17,7 @@ struct maximum {
 };
 
 template<int N> void check_width() {
-    using V = std::simd::basic_vec<int, std::simd::fixed_size_abi<N>>;
+    using V = std::simd::basic_vec<int, std::simd::__fixed_size_abi<N>>;
     const V value([](auto i) { return int(i) % 7 + 1; });
     const V product([](auto i) { return int(i) == 0 ? 2 : 1; });
     auto check = [&](const typename V::mask_type& mask) {
@@ -67,7 +67,7 @@ template<int N> void check_width() {
     EXPECT_EQ(std::simd::reduce_min(value), 1);
     EXPECT_EQ(std::simd::reduce_max(value), std::min(N, 7));
     auto floating = [&]<class T>() {
-        using F = std::simd::basic_vec<T, std::simd::fixed_size_abi<N>>;
+        using F = std::simd::basic_vec<T, std::simd::__fixed_size_abi<N>>;
         const F x([](auto i) { return T(0.1) * T(int(i) + 1); });
         long double expected = 0, selected = 0;
         const typename F::mask_type mask([](auto i) { return int(i) % 2 == 0; });

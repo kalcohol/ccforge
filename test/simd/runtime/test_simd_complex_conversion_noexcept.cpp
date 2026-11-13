@@ -25,7 +25,7 @@ void check_categories(const Source& source) {
     const Target from_const_lvalue(source);
     const Target from_rvalue(std::move(mutable_source));
     const Target from_const_rvalue(std::move(source));
-    for (std::simd::simd_size_type i = 0; i < Target::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < Target::size; ++i) {
         const auto expected = static_cast<typename Target::value_type>(source[i]);
         EXPECT_EQ(from_lvalue[i], expected);
         EXPECT_EQ(from_const_lvalue[i], expected);
@@ -62,7 +62,7 @@ TEST(SimdComplexConversionNoexcept, RealConversionsInitializeImaginaryPartsToZer
 TEST(SimdComplexConversionNoexcept, SameElementConversionsAcrossAbisRemainUsable) {
     using native_complex = std::simd::basic_vec<std::complex<float>>;
     using fixed_complex = std::simd::basic_vec<std::complex<float>,
-        std::simd::fixed_size_abi<native_complex::size>>;
+        std::simd::__fixed_size_abi<native_complex::size>>;
     static_assert(!std::is_same_v<native_complex, fixed_complex>);
     const native_complex native([](auto i) {
         const float index = static_cast<float>(i);

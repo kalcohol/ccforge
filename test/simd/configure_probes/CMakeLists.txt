@@ -357,3 +357,48 @@ unset(_forge_last_operation)
 unset(_forge_operation)
 unset(_forge_accept)
 unset(_forge_alignment_case)
+
+# Check the same source both positively and negatively so a broken include or
+# assertion cannot masquerade as a successful deprecation diagnostic probe.
+set(_forge_simd_deprecation_flags "${CMAKE_REQUIRED_FLAGS}")
+set(_forge_simd_deprecation_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+if(MSVC)
+    string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
+else()
+    string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
+endif()
+forge_add_simd_configure_probe(FORGE_SIMD_COMPAT_ACCEPTED
+    "../compile/test_simd_extension_compat.cpp" TRUE
+    "SIMD compatibility aliases must remain equivalent with local suppression")
+# A member alias in a class template can lose its deprecation diagnostic on
+# GCC/Clang. Case 14 stays in the suppressed positive control, but is not a
+# portable expected failure. Keep the list explicit so case 15 still runs.
+foreach(_forge_simd_case IN ITEMS 1 2 3 4 5 6 7 8 9 10 11 12 13 15)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_simd_deprecation_defs}
+        -DFORGE_SIMD_DEPRECATION_CASE=${_forge_simd_case})
+    forge_add_simd_configure_probe(FORGE_SIMD_DEPRECATED_${_forge_simd_case}
+        "../compile/test_simd_extension_compat.cpp" FALSE
+        "Each old SIMD spelling must diagnose deprecation without suppression")
+endforeach()
+set(CMAKE_REQUIRED_FLAGS "${_forge_simd_deprecation_flags}")
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_simd_deprecation_defs}")
+unset(_forge_simd_deprecation_flags)
+unset(_forge_simd_case)
+
+# Former class-template names now follow alias-template specialization rules.
+foreach(_forge_simd_alias_case RANGE 0 2)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_simd_deprecation_defs}
+        -DFORGE_SIMD_ALIAS_SPECIALIZATION_CASE=${_forge_simd_alias_case})
+    if(_forge_simd_alias_case EQUAL 0)
+        set(_forge_simd_alias_accept TRUE)
+    else()
+        set(_forge_simd_alias_accept FALSE)
+    endif()
+    forge_add_simd_configure_probe(FORGE_SIMD_ALIAS_SPECIALIZATION_${_forge_simd_alias_case}
+        "reject_legacy_alias_specialization.cpp" ${_forge_simd_alias_accept}
+        "Legacy SIMD aliases must support template arguments but reject explicit and partial specialization")
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_simd_deprecation_defs}")
+unset(_forge_simd_deprecation_defs)
+unset(_forge_simd_alias_case)
+unset(_forge_simd_alias_accept)

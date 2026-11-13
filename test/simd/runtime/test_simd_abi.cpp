@@ -17,11 +17,11 @@ using default_int = std::simd::vec<int>;
 using float4 = std::simd::rebind_t<float, int4>;
 using int8 = std::simd::resize_t<8, int4>;
 using mask4 = std::simd::mask<int, 4>;
-using native_int = std::simd::basic_vec<int, std::simd::native_abi<int>>;
+using native_int = std::simd::basic_vec<int, std::simd::__native_abi<int>>;
 using native_uint = std::simd::vec<unsigned int>;
 using native_float = std::simd::vec<float>;
 using native_double = std::simd::vec<double>;
-using deduced4 = std::simd::basic_vec<int, std::simd::deduce_abi_t<int, 4>>;
+using deduced4 = std::simd::basic_vec<int, std::simd::__deduce_abi_t<int, 4>>;
 #if defined(_MSC_VER)
 #if defined(__AVX512F__)
 inline constexpr int expected_native_bytes = 64;
@@ -36,9 +36,9 @@ static_assert(native_int::size == (expected_native_bytes ? expected_native_bytes
 static_assert(native_float::size == (expected_native_bytes ? expected_native_bytes / sizeof(float) : 1));
 static_assert(native_double::size == (expected_native_bytes ? expected_native_bytes / sizeof(double) : 1));
 #endif
-using disabled_longdouble2 = std::simd::basic_vec<long double, std::simd::fixed_size_abi<2>>;
-using disabled_mask3 = std::simd::basic_mask<3, std::simd::fixed_size_abi<4>>;
-using disabled_int65 = std::simd::basic_vec<int, std::simd::fixed_size_abi<65>>;
+using disabled_longdouble2 = std::simd::basic_vec<long double, std::simd::__fixed_size_abi<2>>;
+using disabled_mask3 = std::simd::basic_mask<3, std::simd::__fixed_size_abi<4>>;
+using disabled_int65 = std::simd::basic_vec<int, std::simd::__fixed_size_abi<65>>;
 
 template<class T, class = void>
 struct has_size_member : std::false_type {};
@@ -47,7 +47,7 @@ template<class T>
 struct has_size_member<T, std::void_t<decltype(T::size)>> : std::true_type {};
 
 template<class V>
-auto lane(const V& value, std::simd::simd_size_type index) -> decltype(value[index]) {
+auto lane(const V& value, std::simd::__simd_size_type index) -> decltype(value[index]) {
     return value[index];
 }
 
@@ -67,15 +67,15 @@ static_assert(std::simd::alignment_v<int4, float> == alignof(float) * 4,
     "alignment_v should support vectorizable scalar types beyond the vector value_type");
 static_assert(alignof(int4) >= alignof(int),
     "vec<int, 4> object alignment should be at least the scalar alignment");
-static_assert(std::is_same_v<decltype(int4::size), const std::integral_constant<std::simd::simd_size_type, 4>>,
+static_assert(std::is_same_v<decltype(int4::size), const std::integral_constant<std::simd::__simd_size_type, 4>>,
     "vec<int, 4>::size should model integral_constant");
-static_assert(std::is_same_v<decltype(mask4::size), const std::integral_constant<std::simd::simd_size_type, 4>>,
+static_assert(std::is_same_v<decltype(mask4::size), const std::integral_constant<std::simd::__simd_size_type, 4>>,
     "mask<int, 4>::size should model integral_constant");
 static_assert(std::is_same_v<typename disabled_longdouble2::value_type, long double>,
     "disabled basic_vec specializations should still expose value_type");
-static_assert(std::is_same_v<typename disabled_longdouble2::abi_type, std::simd::fixed_size_abi<2>>,
+static_assert(std::is_same_v<typename disabled_longdouble2::abi_type, std::simd::__fixed_size_abi<2>>,
     "disabled basic_vec specializations should still expose abi_type");
-static_assert(std::is_same_v<typename disabled_longdouble2::mask_type, std::simd::basic_mask<sizeof(long double), std::simd::fixed_size_abi<2>>>,
+static_assert(std::is_same_v<typename disabled_longdouble2::mask_type, std::simd::basic_mask<sizeof(long double), std::simd::__fixed_size_abi<2>>>,
     "disabled basic_vec specializations should still expose mask_type");
 static_assert(!has_size_member<disabled_longdouble2>::value,
     "disabled basic_vec specializations should not expose size");
@@ -85,7 +85,7 @@ static_assert(!std::is_destructible_v<disabled_longdouble2>,
     "disabled basic_vec specializations must delete the destructor");
 static_assert(std::is_same_v<typename disabled_mask3::value_type, bool>,
     "disabled basic_mask specializations should still expose value_type");
-static_assert(std::is_same_v<typename disabled_mask3::abi_type, std::simd::fixed_size_abi<4>>,
+static_assert(std::is_same_v<typename disabled_mask3::abi_type, std::simd::__fixed_size_abi<4>>,
     "disabled basic_mask specializations should still expose abi_type");
 static_assert(!has_size_member<disabled_mask3>::value,
     "disabled basic_mask specializations should not expose size");
@@ -131,8 +131,8 @@ TEST(SimdAbiTest, DefaultWidthAliasRemainsUsable) {
     EXPECT_EQ(lane(values, 0), 4);
 }
 
-static_assert(native_int::size >= 1, "native_abi<int> should produce a valid ABI tag");
-static_assert(deduced4::size == 4, "deduce_abi_t<int, 4> should preserve the requested lane count");
+static_assert(native_int::size >= 1, "__native_abi<int> should produce a valid ABI tag");
+static_assert(deduced4::size == 4, "__deduce_abi_t<int, 4> should preserve the requested lane count");
 
 TEST(SimdAbiExtensionTest, NativeAndDeduceAbiTagsAreUsable) {
     native_int native_value(4);
@@ -168,10 +168,10 @@ TEST(SimdAbiTest, NativeArithmeticVisitsEveryLane) {
     floats -= native_float(1.0f);
     floats *= native_float(2.0f);
     floats /= native_float(2.0f);
-    for (std::simd::simd_size_type i = 0; i < native_int::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_int::size; ++i) {
         EXPECT_EQ(integers[i], i + 2);
     }
-    for (std::simd::simd_size_type i = 0; i < native_float::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < native_float::size; ++i) {
         EXPECT_FLOAT_EQ(floats[i], static_cast<float>(i) + 2.0f);
     }
 }

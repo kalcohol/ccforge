@@ -11,7 +11,7 @@
 namespace {
 
 using namespace simd_test;
-using size_type = std::simd::simd_size_type;
+using size_type = std::simd::__simd_size_type;
 
 constexpr auto identity_map = [](auto index) { return index; };
 constexpr auto exact_unary_map = [](std::same_as<size_type> auto index) { return index; };

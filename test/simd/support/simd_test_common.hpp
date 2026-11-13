@@ -42,20 +42,20 @@ using const_int_iter = std::vector<int>::const_iterator;
 using deque_int_iter = std::deque<int>::iterator;
 
 template<class V>
-constexpr auto lane(const V& value, std::simd::simd_size_type index) -> decltype(value[index]) {
+constexpr auto lane(const V& value, std::simd::__simd_size_type index) -> decltype(value[index]) {
     return value[index];
 }
 
 template<class V, class T, size_t N>
 V load_vec(const std::array<T, N>& values) {
-    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::simd_size_type>(N));
+    return std::simd::partial_load<V>(values.data(), static_cast<std::simd::__simd_size_type>(N));
 }
 
 struct fake_index_vector {
     using value_type = int;
-    static constexpr std::simd::simd_size_type size = 4;
+    static constexpr std::simd::__simd_size_type size = 4;
 
-    int operator[](std::simd::simd_size_type) const noexcept;
+    int operator[](std::simd::__simd_size_type) const noexcept;
 };
 
 struct int_generator {
@@ -126,7 +126,7 @@ template<class V, class I>
 struct has_partial_load_count<V,
                               I,
                               std::void_t<decltype(std::simd::partial_load<V>(std::declval<I>(),
-                                                                             std::simd::simd_size_type{}))>>
+                                                                             std::simd::__simd_size_type{}))>>
     : std::true_type {};
 
 template<class V, class I, class = void>
@@ -137,7 +137,7 @@ struct has_partial_store_count<V,
                                I,
                                std::void_t<decltype(std::simd::partial_store(std::declval<const V&>(),
                                                                              std::declval<I>(),
-                                                                             std::simd::simd_size_type{}))>>
+                                                                             std::simd::__simd_size_type{}))>>
     : std::true_type {};
 
 template<class V, class R, class = void>

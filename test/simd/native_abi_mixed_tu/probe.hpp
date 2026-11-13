@@ -13,12 +13,12 @@
 
 namespace native_abi_fixture {
 
-using narrow_tag = std::simd::detail::native_abi_tag<int, 4>;
-using wide_tag = std::simd::detail::native_abi_tag<int, 8>;
+using narrow_tag = std::simd::__detail::__native_abi_tag<int, 4>;
+using wide_tag = std::simd::__detail::__native_abi_tag<int, 8>;
 using narrow_vec = std::simd::basic_vec<int, narrow_tag>;
 using wide_vec = std::simd::basic_vec<int, wide_tag>;
-using narrow_float_tag = std::simd::detail::native_abi_tag<float, 4>;
-using wide_float_tag = std::simd::detail::native_abi_tag<float, 8>;
+using narrow_float_tag = std::simd::__detail::__native_abi_tag<float, 4>;
+using wide_float_tag = std::simd::__detail::__native_abi_tag<float, 8>;
 using narrow_float_vec = std::simd::basic_vec<float, narrow_float_tag>;
 using wide_float_vec = std::simd::basic_vec<float, wide_float_tag>;
 
@@ -26,12 +26,12 @@ static_assert(sizeof(int) == 4);
 static_assert(narrow_vec::size() == 4 && wide_vec::size() == 8);
 static_assert(sizeof(narrow_vec) == 16 && sizeof(wide_vec) == 32);
 static_assert(narrow_vec::mask_type::size() == 4 && wide_vec::mask_type::size() == 8);
-static_assert(std::simd::simd_size<float, narrow_tag>::value == 4);
-static_assert(std::simd::simd_size<float, wide_tag>::value == 8);
+static_assert(std::simd::__simd_size<float, narrow_tag>::value == 4);
+static_assert(std::simd::__simd_size<float, wide_tag>::value == 8);
 static_assert(std::simd::alignment_v<narrow_vec> == alignof(int) * 4);
 static_assert(std::simd::alignment_v<wide_vec> == alignof(int) * 8);
 
-template<class V, class Abi, std::simd::simd_size_type N>
+template<class V, class Abi, std::simd::__simd_size_type N>
 constexpr bool check_float_traits() {
     using mask_type = typename V::mask_type;
     static_assert(std::is_same_v<typename V::value_type, float>);
@@ -42,8 +42,8 @@ constexpr bool check_float_traits() {
     static_assert(std::is_default_constructible_v<V> && std::is_trivially_copyable_v<V>);
     static_assert(std::is_default_constructible_v<mask_type> && std::is_trivially_copyable_v<mask_type>);
     static_assert(V::size() == N && mask_type::size() == N);
-    static_assert(std::simd::simd_size<float, Abi>::value == N);
-    static_assert(std::simd::abi_lane_count<Abi>::value == N);
+    static_assert(std::simd::__simd_size<float, Abi>::value == N);
+    static_assert(std::simd::__abi_lane_count<Abi>::value == N);
     static_assert(sizeof(V) == sizeof(float) * N && alignof(V) == alignof(float));
     static_assert(sizeof(mask_type) == sizeof(bool) * N && alignof(mask_type) == alignof(bool));
     static_assert(std::simd::alignment_v<V> == alignof(float) * N);

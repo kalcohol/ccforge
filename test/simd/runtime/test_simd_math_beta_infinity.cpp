@@ -12,7 +12,7 @@
 
 namespace {
 
-namespace math = std::simd::detail::special_math;
+namespace math = std::simd::__detail::special_math;
 
 // Direct fallback calls keep native special-math dispatch out of these checks.
 template<class T>

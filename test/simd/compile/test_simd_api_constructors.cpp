@@ -26,7 +26,7 @@ static_assert(std::is_constructible<complex4d, complex4f>::value,
     "complex vector lane conversions should be explicitly constructible");
 static_assert(!std::is_convertible<complex4f, complex4d>::value,
     "complex vector lane conversions are not arithmetic value-preserving conversions");
-static_assert(std::is_constructible<float4, int4, std::simd::flags<std::simd::convert_flag>>::value,
+static_assert(std::is_constructible<float4, int4, std::simd::flags<std::simd::__convert_flag>>::value,
     "flag_convert overload should always be available");
 static_assert(!std::is_constructible<int4, double>::value,
     "scalar broadcasting should reject non-value-preserving arithmetic conversions even when direct-initialized");

@@ -217,10 +217,10 @@ TEST(SimdRuntimeExpansionTest, PermuteReordersLanes) {
     const std::array<int, 4> data{{1, 2, 3, 4}};
     const int4 values = load_vec<int4>(data);
     const auto reversed = std::simd::permute(values, [](auto index) {
-        return std::simd::simd_size_type(3 - index);
+        return std::simd::__simd_size_type(3 - index);
     });
     const auto reversed_with_size = std::simd::permute(values, [](auto index, auto size) {
-        return std::simd::simd_size_type(size - 1 - index);
+        return std::simd::__simd_size_type(size - 1 - index);
     });
     const std::array<int, 4> indices_data{{2, 0, 3, 1}};
     const int4 indices = load_vec<int4>(indices_data);
@@ -241,11 +241,11 @@ TEST(SimdRuntimeExpansionTest, PermuteSupportsZeroAndUninitSentinels) {
     const int4 values = load_vec<int4>(data);
     const auto permuted = std::simd::permute(values, [](auto index) {
         if (index == 0) {
-            return std::simd::simd_size_type(1);
+            return std::simd::__simd_size_type(1);
         } else if (index == 1) {
             return std::simd::zero_element;
         } else if (index == 2) {
-            return std::simd::simd_size_type(3);
+            return std::simd::__simd_size_type(3);
         } else {
             return std::simd::uninit_element;
         }
@@ -349,7 +349,7 @@ TEST(SimdRuntimeExpansionTest, CompressFillUsesOrdinaryImplicitConversionOnce) {
     const implicit_compress_fill fill{-2.5f, &conversions};
     const auto custom_fill = std::simd::compress(values, selected, fill);
     EXPECT_EQ(conversions, 1);
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_FLOAT_EQ(integer_fill[i], i < 2 ? values[i * 2] : 0.0f);
         EXPECT_FLOAT_EQ(double_fill[i], i < 2 ? values[i * 2] : static_cast<float>(0.1));
         EXPECT_FLOAT_EQ(custom_fill[i], i < 2 ? values[i * 2] : -2.5f);
@@ -357,7 +357,7 @@ TEST(SimdRuntimeExpansionTest, CompressFillUsesOrdinaryImplicitConversionOnce) {
     conversions = 0;
     const auto unchanged = std::simd::compress(values, float_mask4(true), fill);
     EXPECT_EQ(conversions, 1);
-    for (std::simd::simd_size_type i = 0; i < float4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < float4::size; ++i) {
         EXPECT_FLOAT_EQ(unchanged[i], values[i]);
     }
     EXPECT_THROW(std::simd::compress(values, selected, throwing_compress_fill{}), std::runtime_error);
@@ -374,7 +374,7 @@ TEST(SimdRuntimeExpansionTest, MaskCompressAndExpandAcceptBitsetSelectors) {
     const std::array<bool, 4> packed_expected{{false, true, true, true}};
     const auto expanded = std::simd::expand(packed, selected, original);
     const std::array<bool, 4> expanded_expected{{true, false, true, true}};
-    for (std::simd::simd_size_type i = 0; i < mask4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < mask4::size; ++i) {
         EXPECT_EQ(packed[i], packed_expected[i]);
         EXPECT_EQ(expanded[i], expanded_expected[i]);
     }
@@ -399,7 +399,7 @@ TEST(SimdRuntimeExpansionTest, MaskSelectorProxyConvertsOncePerCall) {
     const auto expanded = std::simd::expand(packed, selected, mask4(true));
     EXPECT_EQ(conversions, 1);
     const std::array<bool, 4> expanded_expected{{true, false, true, true}};
-    for (std::simd::simd_size_type i = 0; i < mask4::size; ++i) {
+    for (std::simd::__simd_size_type i = 0; i < mask4::size; ++i) {
         EXPECT_EQ(packed[i], packed_expected[i]);
         EXPECT_EQ(expanded[i], expanded_expected[i]);
     }

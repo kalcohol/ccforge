@@ -30,8 +30,8 @@ using native_mask = typename native_int::mask_type;
 
 struct lookalike {
     using value_type = int;
-    static constexpr std::simd::simd_size_type size = 4;
-    constexpr int operator[](std::simd::simd_size_type i) const noexcept {
+    static constexpr std::simd::__simd_size_type size = 4;
+    constexpr int operator[](std::simd::__simd_size_type i) const noexcept {
         return static_cast<int>(i);
     }
 };
@@ -51,7 +51,7 @@ concept can_chunk_type = requires(const V& value) {
     std::simd::chunk<Chunk>(value);
 };
 
-template<std::simd::simd_size_type N, class V>
+template<std::simd::__simd_size_type N, class V>
 concept can_chunk_width = requires(const V& value) {
     std::simd::chunk<N>(value);
 };
@@ -66,7 +66,7 @@ concept nothrow_chunk_type = requires(const V& value) {
     { std::simd::chunk<Chunk>(value) } noexcept;
 };
 
-template<std::simd::simd_size_type N, class V>
+template<std::simd::__simd_size_type N, class V>
 concept nothrow_chunk_width = requires(const V& value) {
     { std::simd::chunk<N>(value) } noexcept;
 };
