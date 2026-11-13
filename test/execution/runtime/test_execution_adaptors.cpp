@@ -374,8 +374,15 @@ struct alignas(Alignment) continues_payload {
 
 static_assert(!std::is_nothrow_move_constructible_v<continues_payload<>>);
 
+// FWD-ENV preserves query references, not the concrete environment surface.
+struct continues_env_key {
+    constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
+};
+
 struct continues_receiver_env {
     continues_hop_state* state;
+
+    const continues_receiver_env& query(continues_env_key) const noexcept { return *this; }
 };
 
 struct continues_receiver {
@@ -475,7 +482,8 @@ struct continues_source {
             state->upstream_saw_payload = state->payload_alive;
             state->upstream_saw_outer = state->outer_alive;
             if (state->outer_alive) {
-                EXPECT_EQ(std::addressof(std::execution::get_env(rcvr)), state->outer_env);
+                EXPECT_EQ(std::addressof(std::execution::get_env(rcvr).query(continues_env_key{})),
+                          state->outer_env);
             }
         }
 
@@ -497,8 +505,10 @@ struct continues_source {
 
     template<std::execution::receiver R>
     auto connect(R r) const -> op<R> {
-        static_assert(std::same_as<std::execution::env_of_t<R>, const continues_receiver_env&>);
-        const auto& env = std::execution::get_env(r);
+        static_assert(std::same_as<decltype(std::execution::get_env(r).query(continues_env_key{})),
+                                   const continues_receiver_env&>);
+        static_assert(noexcept(std::execution::get_env(r).query(continues_env_key{})));
+        const auto& env = std::execution::get_env(r).query(continues_env_key{});
         EXPECT_EQ(env.state, state);
         state->outer_env = std::addressof(env);
         state->outer_alive = true;
@@ -549,7 +559,8 @@ struct continues_schedule_sender {
             state->schedule_saw_payload = state->payload_alive;
             state->schedule_saw_outer = state->outer_alive;
             if (state->outer_alive) {
-                EXPECT_EQ(std::addressof(std::execution::get_env(rcvr)), state->outer_env);
+                EXPECT_EQ(std::addressof(std::execution::get_env(rcvr).query(continues_env_key{})),
+                          state->outer_env);
             }
             if (state->pending == this) {
                 state->pending = nullptr;
@@ -580,8 +591,10 @@ struct continues_schedule_sender {
     template<std::execution::receiver R>
     auto connect(R r) const -> op<R> {
         static_assert(std::is_nothrow_move_constructible_v<R>);
-        static_assert(std::same_as<std::execution::env_of_t<R>, const continues_receiver_env&>);
-        const auto& env = std::execution::get_env(r);
+        static_assert(std::same_as<decltype(std::execution::get_env(r).query(continues_env_key{})),
+                                   const continues_receiver_env&>);
+        static_assert(noexcept(std::execution::get_env(r).query(continues_env_key{})));
+        const auto& env = std::execution::get_env(r).query(continues_env_key{});
         EXPECT_EQ(env.state, scheduler.state);
         if (scheduler.state->outer_env) {
             EXPECT_EQ(std::addressof(env), scheduler.state->outer_env);

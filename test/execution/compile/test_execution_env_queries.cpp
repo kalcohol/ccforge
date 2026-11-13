@@ -233,9 +233,10 @@ constexpr bool borrowed_prop() {
 }
 static_assert(borrowed_prop());
 
-template<class E, class Q, class T>
-constexpr bool nothrow_answer = std::same_as<decltype(std::declval<const E&>().query(Q{})), T>
-    && noexcept(std::declval<const E&>().query(Q{}));
+template<class E, class Q, class T, class... Args>
+constexpr bool nothrow_answer = std::same_as<decltype(std::declval<const E&>().query(
+    Q{}, std::declval<Args>()...)), T>
+    && noexcept(std::declval<const E&>().query(Q{}, std::declval<Args>()...));
 using sync_env = ex::__forge_sync_wait::sync_wait_env;
 static_assert(nothrow_answer<sync_env, ex::get_scheduler_t, ex::run_loop::scheduler>);
 static_assert(nothrow_answer<sync_env, ex::get_start_scheduler_t, ex::run_loop::scheduler>);
@@ -745,16 +746,348 @@ static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, forge::em
 static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, stop_prop>,
                            ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
 
-#if !defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) || !FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-// continues_on needs completion-domain filtering before variadic member/strict coverage.
 using attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, answer>;
-static_assert(ex::__forge_env_detail::__queryable<key, const attrs&>);
-static_assert(!ex::__forge_env_detail::__queryable<local_key, const attrs&>);
-static_assert(!ex::__forge_env_detail::__queryable<ex::get_completion_scheduler_t<ex::set_error_t>, const attrs&>);
-using domain_attrs = ex::__forge_continues_on::__completion_attrs<domain_scheduler, answer>;
-static_assert(ex::__forge_env_detail::__queryable<
-    ex::get_completion_domain_t<ex::set_value_t>, const domain_attrs&, const answer&>);
+static_assert(nothrow_answer<attrs, key, const int&>);
+static_assert(!answers<attrs, local_key>);
+static_assert(!answers<attrs, missing>);
+static_assert(!answers<attrs, error_scheduler_query>);
+static_assert(!cpo_answers<attrs, error_scheduler_query>);
+static_assert(nothrow_answer<attrs, value_scheduler_query, ex::inline_scheduler>);
+static_assert(nothrow_answer<attrs, stopped_scheduler_query, ex::inline_scheduler>);
+static_assert(answers<attrs, variadic_key, int&, int>);
+static_assert(!answers<attrs, variadic_key, int, int>);
+static_assert(noexcept(std::declval<const attrs&>().query(
+    variadic_key{}, std::declval<int&>(), 1)));
+constexpr bool transfer_attribute_values() {
+    attrs environment{ex::inline_scheduler{}, answer{42}};
+    int n = 3;
+    return &environment.query(key{}) == &environment.__child.value &&
+           environment.query(variadic_key{}, n, 4) == 49;
+}
+static_assert(transfer_attribute_values());
+using throwing_attrs = ex::__forge_continues_on::__completion_attrs<
+    ex::inline_scheduler, throwing_answer>;
+static_assert(!noexcept(std::declval<const throwing_attrs&>().query(key{})));
+using legacy_attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, legacy>;
+#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
+static_assert(!answers<legacy_attrs, key>);
+#else
+static_assert(nothrow_answer<legacy_attrs, key, int>);
 #endif
+using domain_attrs = ex::__forge_continues_on::__completion_attrs<domain_scheduler, answer>;
+static_assert(answers<domain_attrs, value_domain_query, const answer&>);
+
+struct child_domain {};
+struct destination_domain {};
+struct completion_child_attrs : answer {
+    using answer::query;
+    int query(local_key, int& n, int&& m) const noexcept { return n + m; }
+    template<class Tag, class... Envs>
+    child_domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
+    template<class Tag, class... Envs>
+    ex::inline_scheduler query(ex::get_completion_scheduler_t<Tag>, Envs&&...) const noexcept {
+        return {};
+    }
+};
+template<class Attrs, class Tag = ex::set_value_t>
+struct transfer_source {
+    using sender_concept = ex::sender_t;
+    Attrs get_env() const noexcept { return {}; }
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        if constexpr (std::same_as<Tag, ex::set_error_t>) {
+            return ex::completion_signatures<ex::set_error_t(int)>{};
+        } else {
+            return ex::completion_signatures<Tag()>{};
+        }
+    }
+    template<class R>
+    struct op {
+        using operation_state_concept = ex::operation_state_t;
+        R receiver;
+        void start() & noexcept {
+            if constexpr (std::same_as<Tag, ex::set_error_t>) {
+                ex::set_error(std::move(receiver), 7);
+            } else {
+                Tag{}(std::move(receiver));
+            }
+        }
+    };
+    template<ex::receiver R>
+    auto connect(R r) const noexcept -> op<R> { return {std::move(r)}; }
+};
+template<class Attrs, bool Nothrow = true>
+struct transfer_scheduler {
+    using scheduler_concept = ex::scheduler_t;
+    auto schedule() const noexcept(Nothrow) { return transfer_source<Attrs>{}; }
+    bool operator==(const transfer_scheduler&) const noexcept = default;
+};
+using unavailable_scheduler = transfer_scheduler<forge::empty_env>;
+template<class Tag>
+using blocked_sender_for = decltype(ex::continues_on(
+    transfer_source<completion_child_attrs, Tag>{}, unavailable_scheduler{}));
+using blocked_sender = blocked_sender_for<ex::set_value_t>;
+using blocked_attrs = ex::env_of_t<blocked_sender>;
+// The child really answers every tag and arity; neither member nor legacy
+// forwarding may supply a completion answer when the destination has none.
+template<class Q, class E = blocked_attrs>
+constexpr bool blocks_child_domain =
+    answers<completion_child_attrs, Q> &&
+    answers<completion_child_attrs, Q, answer> &&
+    answers<completion_child_attrs, Q, answer, answer> &&
+    !answers<E, Q> && !answers<E, Q, answer> && !answers<E, Q, answer, answer> &&
+    !cpo_answers<E, Q> && !cpo_answers<E, Q, answer> &&
+    !cpo_answers<E, Q, answer, answer> &&
+    !ex::__forge_detail::tag_invocable<Q, const E&, answer>;
+static_assert(blocks_child_domain<value_domain_query>);
+static_assert(blocks_child_domain<stopped_domain_query,
+    ex::env_of_t<blocked_sender_for<ex::set_stopped_t>>>);
+static_assert(blocks_child_domain<error_domain_query,
+    ex::env_of_t<blocked_sender_for<ex::set_error_t>>>);
+static_assert(blocks_child_domain<ex::get_completion_domain_t<>>);
+static_assert(!answers<blocked_attrs, error_scheduler_query, answer>);
+static_assert(!cpo_answers<blocked_attrs, error_scheduler_query, answer>);
+static_assert(nothrow_answer<blocked_attrs, value_scheduler_query, unavailable_scheduler>);
+static_assert(nothrow_answer<blocked_attrs, stopped_scheduler_query, unavailable_scheduler>);
+static_assert(std::same_as<decltype(value_scheduler_query{}(
+    std::declval<const blocked_attrs&>(), answer{}, answer{})), unavailable_scheduler>);
+static_assert(std::same_as<decltype(stopped_scheduler_query{}(
+    std::declval<const blocked_attrs&>(), answer{})), unavailable_scheduler>);
+static_assert(noexcept(value_scheduler_query{}(std::declval<const blocked_attrs&>(), answer{})));
+static_assert(noexcept(stopped_scheduler_query{}(std::declval<const blocked_attrs&>(), answer{})));
+static_assert(nothrow_answer<blocked_attrs, key, const int&>);
+static_assert(!answers<blocked_attrs, local_key>);
+static_assert(answers<completion_child_attrs, local_key, int&, int>);
+static_assert(!answers<blocked_attrs, local_key, int&, int>);
+static_assert(answers<blocked_attrs, variadic_key, int&, int>);
+struct destination_attrs {
+    template<class Tag, class... Envs>
+    destination_domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept {
+        return {};
+    }
+};
+struct scheduler_domain_fallback : transfer_scheduler<destination_attrs> {
+    template<class Tag, class... Envs>
+    domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
+};
+struct scheduler_only_domain : unavailable_scheduler {
+    template<class Tag, class... Envs>
+    domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
+};
+using destination_wins = ex::__forge_continues_on::__completion_attrs<
+    scheduler_domain_fallback, completion_child_attrs>;
+using scheduler_fallback = ex::__forge_continues_on::__completion_attrs<
+    scheduler_only_domain, completion_child_attrs>;
+template<class Q>
+constexpr bool destination_domain_selection =
+    nothrow_answer<destination_wins, Q, destination_domain> &&
+    nothrow_answer<destination_wins, Q, destination_domain, answer> &&
+    nothrow_answer<destination_wins, Q, destination_domain, answer, answer> &&
+    nothrow_answer<scheduler_fallback, Q, domain, answer> &&
+    std::same_as<decltype(Q{}(std::declval<const destination_wins&>(), answer{})),
+                 destination_domain>;
+static_assert(destination_domain_selection<value_domain_query>);
+static_assert(destination_domain_selection<stopped_domain_query>);
+static_assert(destination_domain_selection<ex::get_completion_domain_t<>>);
+static_assert(!answers<destination_wins, error_domain_query, answer>);
+static_assert(!cpo_answers<destination_wins, error_domain_query, answer>);
+using throwing_schedule_attrs = ex::__forge_continues_on::__completion_attrs<
+    transfer_scheduler<destination_attrs, false>, answer>;
+static_assert(!noexcept(std::declval<const throwing_schedule_attrs&>().query(
+    value_domain_query{}, answer{})));
+
+// The raw environment exposes a local query; the schedule receiver cannot see
+// it. Domain selection, participation and noexcept must use that filtered view.
+template<bool FilteredNothrow = true>
+struct environment_domain_attrs {
+    template<class Tag, class... Envs>
+    auto query(ex::get_completion_domain_t<Tag>, Envs&&...) const
+        noexcept(FilteredNothrow != (answers<Envs, local_key> || ...))
+        -> std::conditional_t<(answers<Envs, local_key> || ...), child_domain,
+                              destination_domain> { return {}; }
+};
+struct filtered_only_domain_attrs {
+    template<class Tag, class... Envs>
+        requires (sizeof...(Envs) != 0) && (!answers<Envs, local_key> && ...)
+    destination_domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept {
+        return {};
+    }
+};
+struct local_only_domain_attrs {
+    template<class Tag, class... Envs>
+        requires (answers<Envs, local_key> || ...)
+    child_domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const { return {}; }
+};
+template<class Attrs>
+struct environment_domain_scheduler : unavailable_scheduler, Attrs {
+    using Attrs::query;
+};
+template<class Attrs>
+struct environment_schedule_scheduler : transfer_scheduler<Attrs> {
+    template<class Tag, class... Envs>
+    domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
+};
+using environment_destination = ex::__forge_continues_on::__completion_attrs<
+    transfer_scheduler<environment_domain_attrs<>>, completion_child_attrs>;
+using environment_scheduler = ex::__forge_continues_on::__completion_attrs<
+    environment_domain_scheduler<environment_domain_attrs<>>, completion_child_attrs>;
+using filtered_destination = ex::__forge_continues_on::__completion_attrs<
+    environment_schedule_scheduler<filtered_only_domain_attrs>, completion_child_attrs>;
+using filtered_scheduler = ex::__forge_continues_on::__completion_attrs<
+    environment_domain_scheduler<filtered_only_domain_attrs>, completion_child_attrs>;
+using local_destination = ex::__forge_continues_on::__completion_attrs<
+    environment_schedule_scheduler<local_only_domain_attrs>, completion_child_attrs>;
+using local_scheduler = ex::__forge_continues_on::__completion_attrs<
+    environment_domain_scheduler<local_only_domain_attrs>, completion_child_attrs>;
+using throwing_filtered_destination = ex::__forge_continues_on::__completion_attrs<
+    transfer_scheduler<environment_domain_attrs<false>>, completion_child_attrs>;
+using throwing_filtered_scheduler = ex::__forge_continues_on::__completion_attrs<
+    environment_domain_scheduler<environment_domain_attrs<false>>, completion_child_attrs>;
+
+// Ordinary sender attributes must still expose the original environments to
+// the CPO's scheduler-domain fallback, even with continues_on in this TU.
+struct unfiltered_scheduler_attrs {
+    template<class Tag>
+        requires (std::same_as<Tag, ex::set_value_t> || std::same_as<Tag, ex::set_stopped_t>)
+    auto query(ex::get_completion_scheduler_t<Tag>) const noexcept {
+        return environment_domain_scheduler<local_only_domain_attrs>{};
+    }
+};
+// Only the value tag has a direct destination answer. The stopped CPO must
+// reach it through the scheduler fallback, still using the filtered arguments.
+struct value_only_domain_attrs {
+    template<class Tag, class... Envs>
+        requires std::same_as<Tag, ex::set_value_t> && (sizeof...(Envs) != 0)
+    auto query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept
+        -> std::conditional_t<(answers<Envs, local_key> || ...), child_domain,
+                              destination_domain> { return {}; }
+};
+using value_only_scheduler = ex::__forge_continues_on::__completion_attrs<
+    environment_domain_scheduler<value_only_domain_attrs>, completion_child_attrs>;
+static_assert(!answers<value_only_scheduler, stopped_domain_query>);
+static_assert(!answers<value_only_scheduler, stopped_domain_query, answer>);
+static_assert(!cpo_answers<value_only_scheduler, stopped_domain_query>);
+static_assert(!answers<value_only_scheduler, ex::get_completion_domain_t<>, answer>);
+
+template<class Q, class... Envs>
+constexpr bool blocks_local_scheduler_domain =
+    !answers<local_scheduler, Q, Envs...> &&
+    !cpo_answers<local_scheduler, Q, Envs...> &&
+    !cpo_answers<local_scheduler&, Q, Envs...> &&
+    !cpo_answers<const local_scheduler&, Q, Envs...> &&
+    !ex::__forge_detail::tag_invocable<Q, const local_scheduler&, Envs...>;
+template<class Q>
+constexpr bool filtered_domain_selection =
+    std::same_as<decltype(environment_domain_attrs<>{}.query(Q{}, answer{})), child_domain> &&
+    !noexcept(environment_domain_attrs<>{}.query(Q{}, answer{})) &&
+    nothrow_answer<environment_destination, Q, destination_domain, answer> &&
+    nothrow_answer<environment_destination, Q, destination_domain, answer&, const answer&> &&
+    nothrow_answer<environment_scheduler, Q, destination_domain, answer> &&
+    nothrow_answer<environment_scheduler, Q, destination_domain, answer&, const answer&> &&
+    nothrow_answer<filtered_destination, Q, destination_domain, answer> &&
+    nothrow_answer<filtered_scheduler, Q, destination_domain, answer> &&
+    nothrow_answer<local_destination, Q, domain, answer> &&
+    blocks_local_scheduler_domain<Q> &&
+    blocks_local_scheduler_domain<Q, answer> &&
+    blocks_local_scheduler_domain<Q, answer&> &&
+    blocks_local_scheduler_domain<Q, const answer&> &&
+    blocks_local_scheduler_domain<Q, answer&, const answer&> &&
+    blocks_local_scheduler_domain<Q, answer, answer> &&
+    !noexcept(std::declval<const throwing_filtered_destination&>().query(Q{}, answer{})) &&
+    !noexcept(std::declval<const throwing_filtered_scheduler&>().query(Q{}, answer{})) &&
+    std::same_as<decltype(Q{}(std::declval<const environment_destination&>(), answer{})),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const environment_destination&>())),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const environment_scheduler&>())),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const environment_scheduler&>(), answer{})),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const environment_scheduler&>(),
+                             std::declval<answer&>(), std::declval<const answer&>())),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const filtered_destination&>(), answer{})),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const filtered_scheduler&>(), answer{})),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const local_destination&>(), answer{})), domain> &&
+    std::same_as<decltype(Q{}(std::declval<const value_only_scheduler&>(), answer{})),
+                 destination_domain> &&
+    std::same_as<decltype(Q{}(std::declval<const value_only_scheduler&>(),
+                             std::declval<answer&>(), std::declval<const answer&>())),
+                 destination_domain> &&
+    noexcept(Q{}(std::declval<const value_only_scheduler&>(), answer{})) &&
+    !cpo_answers<unfiltered_scheduler_attrs, Q> &&
+    std::same_as<decltype(Q{}(unfiltered_scheduler_attrs{}, answer{})), child_domain> &&
+    std::same_as<decltype(Q{}(unfiltered_scheduler_attrs{},
+                             std::declval<answer&>(), std::declval<const answer&>())),
+                 child_domain>;
+static_assert(filtered_domain_selection<value_domain_query>);
+static_assert(filtered_domain_selection<stopped_domain_query>);
+static_assert(filtered_domain_selection<ex::get_completion_domain_t<>>);
+
+// Scheduler queries keep the destination identity at every CPO arity; the
+// member surface is unary. Error queries cannot fall through to the child.
+using local_destination_scheduler = environment_domain_scheduler<local_only_domain_attrs>;
+template<class Q>
+constexpr bool local_scheduler_selection =
+    nothrow_answer<local_scheduler, Q, local_destination_scheduler> &&
+    !answers<local_scheduler, Q, answer> &&
+    !answers<local_scheduler, Q, answer&, const answer&> &&
+    std::same_as<decltype(Q{}(std::declval<const local_scheduler&>())),
+                 local_destination_scheduler> &&
+    std::same_as<decltype(Q{}(std::declval<const local_scheduler&>(), answer{})),
+                 local_destination_scheduler> &&
+    std::same_as<decltype(Q{}(std::declval<const local_scheduler&>(),
+                             std::declval<answer&>(), std::declval<const answer&>())),
+                 local_destination_scheduler> &&
+    noexcept(Q{}(std::declval<const local_scheduler&>())) &&
+    noexcept(Q{}(std::declval<const local_scheduler&>(), answer{})) &&
+    noexcept(Q{}(std::declval<const local_scheduler&>(),
+                 std::declval<answer&>(), std::declval<const answer&>()));
+static_assert(local_scheduler_selection<value_scheduler_query>);
+static_assert(local_scheduler_selection<stopped_scheduler_query>);
+static_assert(blocks_local_scheduler_domain<error_domain_query>);
+static_assert(blocks_local_scheduler_domain<error_domain_query, answer>);
+static_assert(blocks_local_scheduler_domain<error_domain_query, answer&, const answer&>);
+static_assert(!answers<local_scheduler, error_scheduler_query>);
+static_assert(!answers<local_scheduler, error_scheduler_query, answer>);
+static_assert(!answers<local_scheduler, error_scheduler_query, answer&, const answer&>);
+static_assert(!cpo_answers<local_scheduler, error_scheduler_query>);
+static_assert(!cpo_answers<local_scheduler, error_scheduler_query, answer>);
+static_assert(!cpo_answers<local_scheduler, error_scheduler_query, answer&, const answer&>);
+
+struct transfer_receiver : nothrow_receiver {
+    answer environment;
+    const answer& get_env() const noexcept { return environment; }
+};
+using transfer_op = ex::connect_result_t<blocked_sender, transfer_receiver>;
+using upstream_env = ex::env_of_t<typename transfer_op::__up_recv>;
+using schedule_env = ex::env_of_t<typename transfer_op::__sched_recv>;
+static_assert(nothrow_answer<upstream_env, key, const int&>);
+static_assert(nothrow_answer<schedule_env, key, const int&>);
+static_assert(answers<upstream_env, variadic_key, int&, int>);
+static_assert(answers<schedule_env, variadic_key, int&, int>);
+static_assert(!answers<upstream_env, local_key>);
+static_assert(!answers<schedule_env, local_key>);
+static_assert(!answers<upstream_env, missing>);
+static_assert(!answers<schedule_env, missing>);
+constexpr bool transfer_receiver_reference_identity() {
+    answer environment{42};
+    upstream_env upstream{environment};
+    schedule_env scheduled{environment};
+    return std::addressof(upstream.query(key{})) == std::addressof(environment.value) &&
+           std::addressof(scheduled.query(key{})) == std::addressof(environment.value);
+}
+static_assert(transfer_receiver_reference_identity());
+static_assert(noexcept(ex::get_env(std::declval<const transfer_op::__up_recv&>())));
+static_assert(noexcept(ex::get_env(std::declval<const transfer_op::__sched_recv&>())));
+static_assert(noexcept(ex::start(std::declval<transfer_op&>())));
+// The existing connect surface is potentially throwing; scheduler connect is
+// still performed before start, with no additional error completion signature.
+static_assert(!noexcept(ex::connect(std::declval<blocked_sender>(), transfer_receiver{})));
+static_assert(std::same_as<ex::completion_signatures_of_t<blocked_sender, answer>,
+                           ex::completion_signatures<ex::set_value_t()>>);
 } // namespace
 
 int main() {}

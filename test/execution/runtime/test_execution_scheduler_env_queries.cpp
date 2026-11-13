@@ -5,6 +5,7 @@
 #include "cpp26/execution/write_env.hpp"
 #include "cpp26/execution/counting_scope.hpp"
 #include "cpp26/execution/spawn_future.hpp"
+#include "cpp26/execution/continues_on.hpp"
 #include <gtest/gtest.h>
 
 #include <exception>
@@ -58,6 +59,89 @@ struct probe_receiver {
     int* result;
     void set_value(int value) && noexcept { *result = value; }
     probe_env get_env() const noexcept { return {10, 20}; }
+};
+
+struct transfer_child_domain {};
+struct transfer_destination_domain {};
+struct transfer_child_attrs {
+    ex::run_loop::scheduler scheduler;
+    template<class Tag>
+    auto query(ex::get_completion_scheduler_t<Tag>) const noexcept { return scheduler; }
+    template<class Tag, class... Envs>
+    transfer_child_domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept {
+        return {};
+    }
+};
+struct transfer_schedule_attrs {
+    template<class Tag, class... Envs>
+    auto query(ex::get_completion_domain_t<Tag>, Envs&&...) const
+        noexcept(!(has_local<Envs> || ...))
+        -> std::conditional_t<(has_local<Envs> || ...), transfer_child_domain,
+                              transfer_destination_domain> { return {}; }
+};
+struct transfer_schedule_sender {
+    using sender_concept = ex::sender_t;
+    int* connections;
+    int* active_resource;
+    int destination;
+    transfer_schedule_attrs get_env() const noexcept { return {}; }
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        static_assert(!has_local<Env>);
+        static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+            transfer_schedule_attrs{}, std::declval<Env>())), transfer_destination_domain>);
+        return ex::completion_signatures<ex::set_value_t()>{};
+    }
+    template<class R>
+    struct op {
+        using operation_state_concept = ex::operation_state_t;
+        R receiver;
+        int* active_resource;
+        int destination;
+        void start() & noexcept {
+            auto env = ex::get_env(receiver);
+            static_assert(!has_local<decltype(env)>);
+            static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+                transfer_schedule_attrs{}, env)), transfer_destination_domain>);
+            EXPECT_EQ(env.query(forwarding_key{}), 10);
+            *active_resource = destination;
+            ex::set_value(std::move(receiver));
+        }
+    };
+    template<ex::receiver R>
+    auto connect(R r) const noexcept -> op<R> {
+        auto env = ex::get_env(r);
+        static_assert(!has_local<decltype(env)>);
+        static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+            transfer_schedule_attrs{}, env)), transfer_destination_domain>);
+        EXPECT_EQ(env.query(forwarding_key{}), 10);
+        ++*connections;
+        return {std::move(r), active_resource, destination};
+    }
+};
+struct transfer_scheduler {
+    using scheduler_concept = ex::scheduler_t;
+    int* connections;
+    int* active_resource;
+    int destination;
+    auto schedule() const noexcept {
+        return transfer_schedule_sender{connections, active_resource, destination};
+    }
+    transfer_destination_domain query(ex::get_domain_t) const noexcept { return {}; }
+    bool operator==(const transfer_scheduler&) const noexcept = default;
+};
+struct transfer_receiver {
+    using receiver_concept = ex::receiver_t;
+    probe_env environment;
+    int* active_resource;
+    int destination;
+    bool* matched;
+    void set_value(bool value) && noexcept {
+        *matched = value && *active_resource == destination;
+    }
+    void set_error(std::exception_ptr) && noexcept { *matched = false; }
+    void set_stopped() && noexcept { *matched = false; }
+    const probe_env& get_env() const noexcept { return environment; }
 };
 
 struct domain {};
@@ -177,6 +261,55 @@ struct let_predecessor {
     auto connect(R r) const noexcept -> op<R> { return {std::move(r)}; }
 };
 
+template<class Tag>
+void check_continues_destination() {
+    ex::run_loop source_loop;
+    int connections = 0;
+    int active_resource = 0;
+    transfer_scheduler destination{&connections, &active_resource, 2};
+    auto source = let_predecessor<Tag, transfer_child_attrs>{{source_loop.get_scheduler()}};
+    auto transfer = ex::continues_on(std::move(source), destination);
+    auto attrs = ex::get_env(transfer);
+    EXPECT_EQ(attrs.query(ex::get_completion_scheduler<ex::set_value_t>), destination);
+    EXPECT_EQ(attrs.query(ex::get_completion_scheduler<ex::set_stopped_t>), destination);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+        attrs, probe_env{})), transfer_destination_domain>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_stopped_t>(
+        attrs, probe_env{})), transfer_destination_domain>);
+    (void)attrs.query(ex::get_completion_domain<>, probe_env{});
+    auto child = [destination, &active_resource](auto&...) {
+        return ex::read_env([destination, &active_resource](const auto& env) noexcept {
+            static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
+            bool matched = env.query(forwarding_key{}) == 10 &&
+                           active_resource == destination.destination;
+            if constexpr (!std::same_as<Tag, ex::set_error_t>) {
+                static_assert(std::same_as<decltype(ex::get_domain(env)),
+                                           transfer_destination_domain>);
+                (void)ex::get_domain(env);
+                matched = matched && ex::get_start_scheduler(env) == destination;
+            }
+            return matched;
+        });
+    };
+    auto sender = [&transfer, &child] {
+        if constexpr (std::same_as<Tag, ex::set_value_t>) {
+            return ex::let_value(std::move(transfer), child);
+        } else if constexpr (std::same_as<Tag, ex::set_error_t>) {
+            return ex::let_error(std::move(transfer), child);
+        } else {
+            return ex::let_stopped(std::move(transfer), child);
+        }
+    }();
+    bool matched = false;
+    auto operation = ex::connect(std::move(sender),
+        transfer_receiver{{10, 20}, &active_resource, 2, &matched});
+    EXPECT_EQ(connections, 1);
+    EXPECT_EQ(active_resource, 0);
+    ex::start(operation);
+    EXPECT_TRUE(matched);
+    EXPECT_EQ(connections, 1);
+}
+
 template<class Tag, class Attrs>
 auto make_scheduler_let(Attrs attrs) {
     auto child = [](auto&...) { return ex::read_env(ex::get_start_scheduler); };
@@ -288,6 +421,58 @@ TEST(SchedulerEnvQueriesTest, InlineSchedulerUsesTheSuppliedResourceAndDomain) {
                                    attrs, environment)), domain>);
     (void)attrs.query(ex::get_completion_domain<ex::set_value_t>, environment);
     (void)scheduler.query(ex::get_completion_domain<ex::set_value_t>, environment);
+}
+
+TEST(SchedulerEnvQueriesTest, ContinuesOnFiltersBothReceiverEnvironments) {
+    int connections = 0;
+    int active_resource = 0;
+    int result = 0;
+    auto sender = ex::continues_on(probe_sender<false>{},
+        transfer_scheduler{&connections, &active_resource, 2});
+    using signatures = ex::completion_signatures_of_t<decltype(sender), probe_env>;
+    static_assert(std::same_as<signatures, ex::completion_signatures<ex::set_value_t(int)>>);
+    auto operation = ex::connect(std::move(sender), probe_receiver{&result});
+    EXPECT_EQ(connections, 1);
+    EXPECT_EQ(active_resource, 0);
+    ex::start(operation);
+    EXPECT_EQ(result, 10);
+    EXPECT_EQ(active_resource, 2);
+}
+
+TEST(SchedulerEnvQueriesTest, ContinuesOnDomainUsesScheduleReceiverEnvironment) {
+    int connections = 0;
+    int active_resource = 0;
+    int result = 0;
+    auto sender = ex::continues_on(probe_sender<false>{},
+        transfer_scheduler{&connections, &active_resource, 2});
+    auto attrs = ex::get_env(sender);
+    probe_env environment{10, 20};
+    using query = ex::get_completion_domain_t<ex::set_value_t>;
+    static_assert(std::same_as<decltype(transfer_schedule_attrs{}.query(query{}, environment)),
+                               transfer_child_domain>);
+    static_assert(std::same_as<decltype(attrs.query(query{}, environment)),
+                               transfer_destination_domain>);
+    static_assert(noexcept(attrs.query(query{}, environment)));
+    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+        attrs, environment)), transfer_destination_domain>);
+    (void)attrs.query(query{}, environment);
+    auto operation = ex::connect(std::move(sender), probe_receiver{&result});
+    ex::start(operation);
+    EXPECT_EQ(connections, 1);
+    EXPECT_EQ(result, 10);
+    EXPECT_EQ(active_resource, 2);
+}
+
+TEST(SchedulerEnvQueriesTest, ContinuesOnValuePublishesDestinationToLet) {
+    check_continues_destination<ex::set_value_t>();
+}
+
+TEST(SchedulerEnvQueriesTest, ContinuesOnStoppedPublishesDestinationToLet) {
+    check_continues_destination<ex::set_stopped_t>();
+}
+
+TEST(SchedulerEnvQueriesTest, ContinuesOnErrorReachesLetAfterDestinationHop) {
+    check_continues_destination<ex::set_error_t>();
 }
 
 TEST(SchedulerEnvQueriesTest, RunLoopSchedulerAndAttributesHaveValueAndStoppedParity) {
