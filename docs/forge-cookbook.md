@@ -167,6 +167,9 @@ Coroutine-native byte IO / protocol code 建议按这个顺序读：
 
 - strand 保证 FIFO 且同一时间最多一个 task 处于用户 completion；
 - completion 在锁外执行，允许在 completion 内继续向同一 strand 提交后续 work；
+- 直接使用 `static_thread_pool::scheduler` 时，满队拒绝会保留 FIFO，容量通知驱动 runner
+  重新入队，无需后续提交；pool 关闭会通知停驻的 strand，将 pending work 以 stopped 完成；
+  其他 scheduler（包括 `any_scheduler`）仍采用拒绝即永久关闭的策略；
 - `shutdown()` 会把 pending/future work 以 stopped 完成。
 
 参考：

@@ -37,6 +37,13 @@ standard backport，也不会向 `namespace std` 添加名字。
 计数。只有在 external submission 已 quiescent 后，`shutdown()` + `wait()` 才构成完整的
 owning-context teardown barrier。
 
+直接以 `static_thread_pool::scheduler` 构造的 `strand` 在有界池满队拒绝 runner 时保留
+pending FIFO，注册一次性容量通知；worker 释放容量后通知其重新入队 runner，尾部重启
+被拒绝时也采用相同机制，无需后续提交或轮询。pool 关闭会主动通知停驻的 strand，
+pending work 以 stopped 完成，`wait()` 因而能够结束；容量为 0 时须关闭 pool 或 strand。
+其他 scheduler（包括 `any_scheduler`）在 stopped 拒绝后仍使 strand 永久关闭；仅有
+`closed()` 查询不足以支持重试。分配失败、error completion 和 launch 异常也会关闭 strand。
+
 未来 primitive 若提供异步 drain，可采用 sender 形式的 `join()`；当前 Forge 原语只提供阻塞 `wait()`。
 
 ## Destructor policy（析构策略）

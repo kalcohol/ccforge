@@ -58,7 +58,9 @@ worker 线程共享，resource 本身也必须是线程安全的，例如使用
 
 `async_scope::wait()` 会等到 spawned op-state node 已析构并归还给 resource；resource
 仍然是 non-owning，必须继续活过 scope 对象本身。`strand` 的 runner node 则可能在
-terminal completion 尾部释放，因此它的 resource 还必须活到该释放路径结束。
+terminal completion 尾部释放；容量通知回调也持有共享 state，因此 resource 必须活到
+这些释放路径结束。直接使用 pool scheduler 的 strand 会保留 pool state；应先结束 strand
+及其 scheduler handle 的使用，再销毁底层 pool 和 resource。
 
 - `static_thread_pool` 使用 resource 控制共享 pool state 块、队列 `pmr::deque` 节点
   和内部 queued task callable record；这是 pool 的私有实现细节，不是公开的
@@ -67,7 +69,7 @@ terminal completion 尾部释放，因此它的 resource 还必须活到该释�
 - `bounded_channel` 使用 resource 控制 state、buffer 和 send/recv record control
   block；pending send/recv 使用 record 内嵌链，不另行分配。
 - `strand` 使用 resource 控制 state、pending queue、stop 批次、receiver record 和
-  runner keepalive node。
+  runner keepalive node；容量 waiter 内嵌在 state 中，注册和通知不额外分配。
 - `timer_context` 使用 resource 控制 state、timer op data、timer item control block、
   timer queue 和 timer callback callable record。
 - `runtime_context` 会把 resource 传给内部 `static_thread_pool` 和
@@ -83,7 +85,7 @@ terminal completion 尾部释放，因此它的 resource 还必须活到该释�
 | runtime_context | 转发给 pool 和 timer | 无独立分配策略 | `forge_runtime_context` |
 | resource_context | 转发给 runtime 和 scope | 无独立分配策略 | `forge_resource_context` |
 | bounded_channel | state、buffer、send/recv record | 用户 T 的内部存储；stop-token 擦除与 callback 注册走全局堆，pending 链内嵌 | `forge_channel` |
-| strand | state、队列、stop 批次、receiver record、runner node | 底层 scheduler；any_scheduler 构造及每次 runner 启动的 erased operation 走全局堆 | `forge_strand` |
+| strand | state、队列、stop 批次、receiver record、runner node、内嵌容量 waiter | 底层 scheduler；any_scheduler 构造走全局堆，非直接 pool 路径的 runner 还有 erased operation 分配 | `forge_strand` |
 | async_scope | state、spawned op-state node | source sender 内部路径 | `forge_async_scope` |
 | Linux IO context | state、fd map、event buffer、readiness record | fd、借用 buffer、内核对象；deferred 链内嵌不分配 | `forge_io_readiness` |
 | Windows IO context | state、pending map、handle cache、IO record | HANDLE、借用 buffer、内核对象 | `forge_io_iocp` |
@@ -98,7 +100,8 @@ terminal completion 尾部释放，因此它的 resource 还必须活到该释�
   需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制
   队列节点和 queued task callable record 分配时可传入 `.memory = resource`。队列满、
   shutdown 后新启动、task record 分配失败或 receiver 已停止的 schedule operation 会以
-  `set_stopped` 完成。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列
+  `set_stopped` 完成。pool 和 scheduler 的 `closed()` 在 shutdown 后返回 `true`，
+  单纯满队仍返回 `false`。已接受的任务会在 `shutdown()` 后继续 drain；`wait()` 会等待队列
   和正在运行的任务清空；如果从 pool 自己的 worker 线程调用，`wait()` 会立即返回以避免
   自锁。在 pool 自己的 worker 线程上析构 pool（例如 pool 内任务拥有 pool 或其外层
   `runtime_context`）不会 terminate：析构走 detach 路径，worker 持有共享 state 在
@@ -148,9 +151,19 @@ terminal completion 尾部释放，因此它的 resource 还必须活到该释�
   receiver record 分配。`shutdown()` 会把 pending/future work 以 stopped 完成；从该
   strand 正在执行的 completion 内部调用 `wait()` 会立即返回以避免自锁，完整 drain 应由
   外部 owner 调用；其 schedule sender env 同样暴露 Forge backport
-  completion-scheduler roundtrip。若底层 scheduler launch 失败，strand 会 fail closed
-  并把 pending work 完成为 stopped；当前不区分瞬态 full queue 与永久 shutdown。用于
-  strand 的 resource 还需覆盖 runner keepalive node 的 completion 尾部释放。
+  completion-scheduler roundtrip。直接以 `static_thread_pool::scheduler` 构造时，
+  runner 因有界队列满而被拒绝会保留 pending FIFO，并向 pool 注册一次性容量通知。
+  worker 取出 queued task、释放容量后，在 pool 锁外通知 strand 重新入队 runner；
+  若容量被其他提交占用而再次拒绝，则重新注册，不轮询、不递归执行 strand work，
+  也不需要后续提交来驱动恢复。runner 尾部重启被拒绝时使用相同机制。
+  pool 的 `shutdown()` 会以关闭通知唤醒停驻的 strand，将 pending work 完成为 stopped；
+  strand 自身 `shutdown()` 或析构会注销尚未分发的通知。`wait()` 等待恢复后的工作或
+  stopped drain 完成；容量为 0 时无法恢复，须关闭 pool 或 strand。
+  其他 scheduler（包括先经 `any_scheduler` 擦除的 pool scheduler）没有此通知能力，
+  runner 的 stopped 拒绝仍使 strand 永久关闭；仅提供 `closed()` 查询不足以支持重试。
+  真正的 pool 关闭、分配失败、error completion 或 launch 异常也会 fail closed，
+  并把 pending/future work 完成为 stopped。用于
+  strand 的 resource 还需覆盖 runner keepalive node 和已分发容量通知的释放尾部。
 - `forge::async_scope`：拥有一组 eager-start sender work 的结构化并发 scope。
   `spawn(sender)` 在 scope open 时启动并返回 `true`，`close()` 后拒绝新任务，
   `request_stop()` 会让后续和已拥有任务的 receiver env 暴露已请求的 stop token，
@@ -290,7 +303,9 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 
 `timer_context::request_stop()` 永久关闭定时器入口；`runtime_context` 和 `resource_context` 会转发此操作，后续 timer 也以 stopped 完成。它们的 CPU pool 仍按排空语义工作。
 `static_thread_pool` 和 `strand` 只在 `start()` 前检查 receiver stop token；入队后请求停止不会撤回工作。strand 的 `shutdown()` 会停止待处理工作。
-底层有界池一次满队就会使 strand 永久关闭，后续工作以 stopped 完成；此行为可能在未来版本改变。
+直接以 `static_thread_pool::scheduler` 构造的 strand 在满队拒绝时保留 FIFO，由容量通知重试，
+无需后续提交；pool 关闭会主动通知停驻的 strand，pending work 以 stopped 完成。
+其他 scheduler（包括 `any_scheduler`）在 runner 被拒绝后仍使 strand 永久关闭。
 
 ## 通道容量
 
