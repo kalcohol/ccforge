@@ -25,6 +25,43 @@ function(_forge_require_fingerprint_change description before after)
     endif()
 endfunction()
 
+# Isolate each additive input so another setting cannot mask its normalization.
+function(_forge_check_empty_input variable_name)
+    unset(${variable_name})
+    unset(${variable_name} CACHE)
+    _forge_compute_probe_fingerprint(_undefined 23)
+    set(${variable_name} "")
+    _forge_compute_probe_fingerprint(_empty 23)
+    if(NOT _undefined STREQUAL _empty)
+        message(FATAL_ERROR "Unset and empty ${variable_name} changed the probe fingerprint")
+    endif()
+    set(${variable_name} "forge-nonempty")
+    _forge_compute_probe_fingerprint(_nonempty 23)
+    _forge_require_fingerprint_change(
+        "nonempty ${variable_name}" "${_empty}" "${_nonempty}")
+endfunction()
+foreach(_input
+        CMAKE_REQUIRED_FLAGS CMAKE_REQUIRED_DEFINITIONS CMAKE_REQUIRED_INCLUDES
+        CMAKE_REQUIRED_LIBRARIES CMAKE_REQUIRED_LINK_OPTIONS CMAKE_REQUIRED_LINK_DIRECTORIES
+        CMAKE_INCLUDE_PATH CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
+        CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES
+        CMAKE_CXX_IMPLICIT_LINK_LIBRARIES CMAKE_CXX_STANDARD_LIBRARIES
+        CMAKE_CXX_COMPILER_LAUNCHER CMAKE_CXX_LINKER_LAUNCHER
+        CMAKE_CONFIGURATION_TYPES CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+        CMAKE_OSX_ARCHITECTURES CMAKE_CXX23_STANDARD_COMPILE_OPTION
+        CMAKE_CXX23_EXTENSION_COMPILE_OPTION CMAKE_CXX_FLAGS
+        CMAKE_EXE_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
+        CMAKE_CXX_FLAGS_FORGE_CUSTOM)
+    _forge_check_empty_input("${_input}")
+endforeach()
+
+unset(CMAKE_CXX_EXTENSIONS)
+_forge_compute_probe_fingerprint(_forge_extensions_undefined 23)
+set(CMAKE_CXX_EXTENSIONS OFF)
+_forge_compute_probe_fingerprint(_forge_extensions_off 23)
+_forge_require_fingerprint_change("unset vs OFF dialect"
+    "${_forge_extensions_undefined}" "${_forge_extensions_off}")
+
 set(CMAKE_REQUIRED_DEFINITIONS "ab;c")
 _forge_compute_probe_fingerprint(_forge_boundary_a 23)
 set(CMAKE_REQUIRED_DEFINITIONS "a;bc")

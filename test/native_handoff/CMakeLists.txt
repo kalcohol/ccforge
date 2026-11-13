@@ -119,3 +119,45 @@ if(NOT MSVC)
             TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
     endforeach()
 endif()
+
+# Configuration contracts run with the native-handoff group in existing lanes.
+function(_forge_add_configuration_test name case mode standard)
+    add_test(NAME native_handoff_configuration_${name}
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/configuration_project
+            "-DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/configuration_${name} space"
+            -DFORGE_SOURCE=${CMAKE_SOURCE_DIR}
+            -DCASE=${case} -DMODE=${mode} -DPROBE_STANDARD=${standard}
+            "-DPARENT_CACHE=${CMAKE_CURRENT_BINARY_DIR}/hive_parent_$<CONFIG>.cmake"
+            "-DTEST_CONFIG=$<CONFIG>"
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+            "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_configuration.cmake)
+    set_tests_properties(native_handoff_configuration_${name} PROPERTIES
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+endfunction()
+foreach(_case consistent private same same_empty same_undefined
+        different different_standard different_extensions unset
+        different_deployment different_platform different_environment
+        c_language same_header same_toolchain different_header different_toolchain)
+    _forge_add_configuration_test(${_case} ${_case} include 23)
+endforeach()
+foreach(_mode subdirectory fetchcontent package)
+    _forge_add_configuration_test(${_mode} same ${_mode} 23)
+    if(NOT _mode STREQUAL "package")
+        _forge_add_configuration_test(${_mode}_default source_default ${_mode} 23)
+    endif()
+endforeach()
+# CMake must know how to request C++26 for these consumers to reach compilation.
+if("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    foreach(_case mismatch features transitive)
+        _forge_add_configuration_test(${_case} ${_case} include 23)
+    endforeach()
+    _forge_add_configuration_test(promotion promotion include 26)
+    foreach(_mode subdirectory fetchcontent package)
+        _forge_add_configuration_test(${_mode}_mismatch mismatch ${_mode} 23)
+    endforeach()
+endif()
