@@ -29,7 +29,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层：线程池、scope、channel、strand、timer |
-| `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd 与 Windows IOCP portable backends |
+| `forge::io` | `<forge/io.hpp>` | Linux epoll 与 io_uring、Windows IOCP；macOS/BSD 无 OS readiness/completion backend；仍构建可移植 byte-stream/coroutine targets |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | 协程 byte IO；直接包含对应头文件 |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend，不参与 portable context 选择 |
 

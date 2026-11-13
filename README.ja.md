@@ -31,7 +31,7 @@ backport ヘッダーを注入します。
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化 async support：pool、scope、channel、strand、timer |
-| `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd と Windows IOCP portable backends |
+| `forge::io` | `<forge/io.hpp>` | Linux epoll と io_uring、Windows IOCP；macOS/BSD では OS readiness/completion backend を提供せず、portable byte-stream/coroutine targets は引き続きビルドする |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | コルーチン byte IO；個別ヘッダーを使用 |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend（portable context 選択の対象外） |
 

@@ -3,6 +3,10 @@
 `forge::io` 是 Forge runtime extension 的 byte IO vocabulary、coroutine bridge 与可选
 OS IO backend。它不是标准 backport，不向 `namespace std` 增加名字。
 
+平台范围：Linux 提供 epoll 与 io_uring，Windows 提供 IOCP；macOS/BSD 不提供
+OS readiness/completion backend，不构建对应的 backend 测试与示例 targets；
+可移植的 byte-stream/coroutine targets 仍会构建。
+
 Linux backend 是 `epoll/eventfd` readiness backend；Windows backend 是小型 IOCP
 completion proof；Linux 另有独立门控的 io_uring coroutine-native completion 后端。三者都只覆盖最窄的 sender/receiver 接入，不是完整网络库。
 未来 backend entry rules 记录在

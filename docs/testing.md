@@ -25,7 +25,7 @@ GitHub self-hosted runner 或其它 CI 时，只需要挂接这些入口。
 scripts/verify-selfhosted-floor.sh
 ```
 
-该脚本按顺序调用现有验证入口，默认 native lanes 为 `llvm gcc-exec tsan asan`，
+该脚本按顺序调用现有验证入口，默认 native lanes 为 `gcc16-slim llvm gcc-exec tsan asan`，
 先运行 source-style 与 docs/examples audits，随后运行 install-package smoke。它不会
 并发运行 podman `:Z` bind mount lane。
 如需增加或替换 native lane，直接传参或设置环境变量：
@@ -103,7 +103,7 @@ FORGE_VERIFY_FLOOR_SKIP_DOC_AUDIT=1 scripts/verify-selfhosted-floor.sh
 完整验证入口：
 
 ```bash
-scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
+scripts/verify-native.sh [gcc16|gcc16-slim|llvm|zig|local|gcc-exec|tsan|asan|all]
 ```
 
 目标含义：
@@ -122,12 +122,17 @@ scripts/verify-native.sh [gcc16|llvm|zig|local|gcc-exec|tsan|asan|all]
   以及 `std::submdspan` 的 complete-native stand-aside；另在 C++23 运行
   SIMD-only suite，确认
   declaration-free `<simd>` 不会被误判为 partial native，而会正常注入 backport
-- `gcc-exec`：GCC 16 容器，单独覆盖 libstdc++ 上的 `std::execution` backport，不跑 SIMD probes
+- `gcc16-slim`：GCC 16 C++26，断言上述五项 probe 状态，只构建并运行 `NativeHandoff`
+  单翻译单元检查；省去完整 Hive suite、嵌套配置测试、示例与 C++23 SIMD suite。
+  默认验证使用此精简入口；需要完整覆盖时显式运行 `gcc16`
+- `gcc-exec`：GCC 16 容器，覆盖 libstdc++ 上的 `std::execution` backport 与全部
+  `forge::` runtime、resource、IO、erasure 测试子组，不跑 SIMD probes。
+  io_uring 保留默认 `AUTO` 能力探测和 runtime exit 77 跳过规则
 - `tsan`：LLVM/libc++ 容器，`-fsanitize=thread`，覆盖 execution 与 `forge::` 扩展子集
 - `asan`：LLVM/libc++ 容器，`-fsanitize=address,undefined`，覆盖 execution、
   `forge::` 扩展子集与 Hive runtime/compile/model，并额外运行 7 个 focused SIMD
   memory/operator/math/special-math/bit tests；脚本精确校验选中数量，零匹配不能通过
-- `all`：`gcc16 + llvm + zig + local + gcc-exec + tsan + asan`
+- `all`（无参数时的默认值）：`gcc16-slim + llvm + zig + local + gcc-exec + tsan + asan`
 
 SIMD special-math fallback 的结果证据必须来自 fallback 真正生效的 lane。当前
 LLVM/libc++ lane 不定义 `__cpp_lib_math_special_functions`，因此 public
@@ -143,6 +148,49 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 ```
 
 这样可以避免 root-owned build artifacts 和 orphaned containers。
+
+## macOS SSH 验证
+
+`bash scripts/verify-macos-ssh.sh` 通过 `FORGE_MACOS_HOST` 指定 SSH 主机，串行运行
+C++23 和 C++26 的 configure/build/test，启用 tests 与 examples。主机需要 arm64 macOS、
+支持两种语言模式的 Xcode command line tools（AppleClang、Apple libc++）、CMake/CTest
+与 Make；Ninja 可选，存在时优先使用。远端执行前，脚本将
+`FORGE_MACOS_PATH_PREFIX`（默认 `/opt/homebrew/bin:/usr/local/bin`）添加到 `PATH` 开头，
+可用该变量指定自定义工具目录（冒号分隔，空值表示不添加）；不读取 login profile。
+运行前须在主机安装 CMake（包含 `cmake` 与 `ctest`），例如使用 Homebrew 执行
+`brew install cmake`；也可将 `FORGE_MACOS_PATH_PREFIX` 指向 portable CMake 的 `bin`
+目录。可选的 Ninja 可通过 `brew install ninja` 安装；未安装时使用 Make。
+脚本打印解析后的 Xcode、CMake、CTest 与 Ninja/Make 工具路径。验证辅助脚本还需要 Python 3.6+ 或支持
+`realpath -m` 的工具。SSH 应支持非交互认证；脚本不调用 sudo，也不修改主机设置。
+
+```bash
+FORGE_MACOS_HOST=<macos-host> bash scripts/verify-macos-ssh.sh
+FORGE_MACOS_HOST=<macos-host> FORGE_MACOS_REF=HEAD bash scripts/verify-macos-ssh.sh
+```
+
+发送端需要 Bash、Git、tar、SSH，并已初始化 `3rdparty/googletest`。默认上传 tracked 与
+untracked-not-ignored 文件，保留未提交修改；GoogleTest 单独打包，排除 `.git` 元数据。
+设置 `FORGE_MACOS_REF` 时上传本地可解析 ref 的归档及其 gitlink 指定的 GoogleTest commit，
+发送端的 GoogleTest checkout 必须包含该 commit。远端使用独立临时目录，成功或失败均清理；
+`FORGE_MACOS_KEEP=1` 可保留源码与构建目录供诊断。各步骤打印 `[macos]` 标签，失败状态
+通过 SSH 返回；每个语言模式打印退出状态摘要，任一模式失败仍继续另一模式，最后返回
+首个非零状态。configure/build 失败时跳过该模式的后续步骤。清理失败也会使原本成功的验证失败。
+
+该 lane 覆盖 arm64、AppleClang、Apple libc++，包括 SIMD NEON 与 Hive runtime。
+macOS/BSD 没有 `forge::io` OS readiness/completion backend，对应的 backend 测试与示例
+targets 不构建；可移植的 byte-stream/coroutine targets 仍会构建。仅在 x86 上注册的
+`native_abi_*` 测试也不在此 lane 覆盖范围内。源码归档没有 Git 元数据时，
+`windows_ssh_transport` 先运行不依赖 Git 的断言，再以 exit 77 向 CTest 报告
+真实 Git 集成检查不可用；checkout 中缺少 Git 时仍通过独立断言。
+
+可选接入自托管基线：
+
+```bash
+FORGE_VERIFY_FLOOR_MACOS=1 FORGE_MACOS_HOST=<macos-host> scripts/verify-selfhosted-floor.sh
+```
+
+`macos_ssh_transport` 是离线 CTest，在独立 Bash 进程中使用 SSH/Git 替身检查步骤调度、失败状态、interrupt 与清理行为，
+不连接主机，也不替代真实 macOS 构建。
 
 ## Windows/MSVC smoke（Windows 冒烟验证）
 

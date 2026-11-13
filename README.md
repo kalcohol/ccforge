@@ -30,7 +30,7 @@ missing native support injects Forge's backport headers.
 | `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer: pool, scope, channel, strand, timer |
-| `forge::io` | `<forge/io.hpp>` | Linux epoll/eventfd and Windows IOCP portable backends |
+| `forge::io` | `<forge/io.hpp>` | Linux epoll and io_uring, Windows IOCP; no OS readiness/completion backend on macOS/BSD (portable byte-stream/coroutine targets still build) |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | Coroutine-native byte IO; include direct headers |
 | `forge::io` io_uring proof | `<forge/io/io_uring_context.hpp>` | gated Linux io_uring completion backend, outside the portable context selection |
 
