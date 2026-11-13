@@ -349,7 +349,7 @@ T vector_two_norm(
     return std::linalg::__vector_two_norm(x, init);
 }
 
-template<class Extents, class Layout, class Accessor, class T>
+template<class Extents, class Layout, class Accessor, class T, bool = true>
     requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
 [[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
 T vector_two_norm(
@@ -367,7 +367,7 @@ auto vector_two_norm(
     return std::linalg::__vector_two_norm(x);
 }
 
-template<class Extents, class Layout, class Accessor>
+template<class Extents, class Layout, class Accessor, bool = true>
     requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
 [[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
 auto vector_two_norm(
@@ -466,9 +466,9 @@ struct sum_of_squares_result {
 };
 
 template<class Extents, class Layout, class Accessor, class T>
-sum_of_squares_result<T> vector_sum_of_squares(
-    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
-    sum_of_squares_result<T> init)
+sum_of_squares_result<T> __vector_sum_of_squares(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor>& x,
+    sum_of_squares_result<T>& init)
 {
     if constexpr (std::is_integral_v<T>) {
         // The scaled recurrence divides magnitudes, which truncates to zero
@@ -513,7 +513,7 @@ struct setup_givens_rotation_result {
 
 template<class T>
     requires (!__detail::__is_complex_v<T>)
-setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) noexcept {
+setup_givens_rotation_result<T> __setup_givens_rotation(T& a, T& b) noexcept {
     using std::abs;
     using std::sqrt;
     if (b == T{}) {
@@ -530,6 +530,19 @@ setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) noexcept {
     T c = a / r;
     T s = b / r;
     return {c, s, r};
+}
+
+template<class T>
+    requires (!__detail::__is_complex_v<T> && !std::is_integral_v<T>)
+setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) noexcept {
+    return std::linalg::__setup_givens_rotation(a, b);
+}
+
+template<class T, bool = true>
+    requires (!__detail::__is_complex_v<T> && std::is_integral_v<T>)
+[[deprecated("integer Givens Real is a Forge extension; use forge::setup_givens_rotation")]]
+setup_givens_rotation_result<T> setup_givens_rotation(T a, T b) noexcept {
+    return std::linalg::__setup_givens_rotation(a, b);
 }
 
 template<class Real>
@@ -577,10 +590,10 @@ template<class Extents1, class Layout1, class Accessor1,
     requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
               __detail::__always_unique_mapping_v<Extents2, Layout2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
-void apply_givens_rotation(
-    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
-    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
-    T c, T s)
+void __apply_givens_rotation(
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1>& x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2>& y,
+    T& c, T& s)
 {
     for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
         __detail::__accessor_value_t<Accessor1> xi = x[i];
@@ -588,6 +601,33 @@ void apply_givens_rotation(
         x[i] = c * xi + s * yi;
         y[i] = -s * xi + c * yi;
     }
+}
+
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2, class T, bool = true>
+    requires (std::is_integral_v<T> && __detail::__always_unique_mapping_v<Extents1, Layout1> &&
+              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
+[[deprecated("integer Givens Real is a Forge extension; use forge::apply_givens_rotation")]]
+void apply_givens_rotation(
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
+    T c, T s)
+{
+    std::linalg::__apply_givens_rotation(x, y, c, s);
+}
+
+template<class Extents1, class Layout1, class Accessor1,
+         class Extents2, class Layout2, class Accessor2, class T>
+    requires (!std::is_integral_v<T> && __detail::__always_unique_mapping_v<Extents1, Layout1> &&
+              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+              __detail::__compatible_static_extents_v<Extents1, Extents2>)
+void apply_givens_rotation(
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
+    T c, T s)
+{
+    std::linalg::__apply_givens_rotation(x, y, c, s);
 }
 
 template<class Extents1, class Layout1, class Accessor1,
@@ -611,9 +651,9 @@ void apply_givens_rotation(
 
 // matrix_frob_norm — [linalg.algs.blas1.matfrobnorm]
 template<class Extents, class Layout, class Accessor, class T>
-T matrix_frob_norm(
-    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
-    T init)
+T __matrix_frob_norm(
+    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor>& A,
+    T& init)
 {
     if constexpr (
         std::is_integral_v<__detail::__accessor_value_t<Accessor>> &&
@@ -659,13 +699,54 @@ T matrix_frob_norm(
 }
 
 template<class Extents, class Layout, class Accessor>
-auto matrix_frob_norm(
+auto __matrix_frob_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
     using magnitude_type = decltype(__detail::__abs_if_needed(A[0, 0]));
     using T = decltype(std::declval<magnitude_type>() *
                        std::declval<magnitude_type>());
-    return matrix_frob_norm(A, T{});
+    T init{};
+    return __matrix_frob_norm(A, init);
+}
+
+// Public wrappers borrow their parameters in the shared implementation.
+template<class Extents, class Layout, class Accessor, class T>
+    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
+T matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, T init) {
+    return std::linalg::__matrix_frob_norm(x, init);
+}
+
+template<class Extents, class Layout, class Accessor, class T, bool = true>
+    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
+[[deprecated("integer matrix_frob_norm is a Forge extension; use forge::matrix_frob_norm")]]
+T matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, T init) {
+    return std::linalg::__matrix_frob_norm(x, init);
+}
+
+template<class Extents, class Layout, class Accessor>
+    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
+auto matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x) {
+    return std::linalg::__matrix_frob_norm(x);
+}
+
+template<class Extents, class Layout, class Accessor, bool = true>
+    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
+[[deprecated("integer matrix_frob_norm is a Forge extension; use forge::matrix_frob_norm")]]
+auto matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x) {
+    return std::linalg::__matrix_frob_norm(x);
+}
+
+template<class Extents, class Layout, class Accessor, class T>
+    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
+sum_of_squares_result<T> vector_sum_of_squares(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, sum_of_squares_result<T> init) {
+    return std::linalg::__vector_sum_of_squares(x, init);
+}
+
+template<class Extents, class Layout, class Accessor, class T, bool = true>
+    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
+[[deprecated("integer vector_sum_of_squares is a Forge extension; use forge::vector_sum_of_squares")]]
+sum_of_squares_result<T> vector_sum_of_squares(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, sum_of_squares_result<T> init) {
+    return std::linalg::__vector_sum_of_squares(x, init);
 }
 
 // matrix_one_norm — [linalg.algs.blas1.matonenorm]
