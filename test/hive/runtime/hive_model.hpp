@@ -16,6 +16,7 @@
 #include <list>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>

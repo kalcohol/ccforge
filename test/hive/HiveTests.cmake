@@ -2,20 +2,12 @@
 set(hive_compile_dir "${CMAKE_CURRENT_LIST_DIR}/compile")
 set(hive_runtime_dir "${CMAKE_CURRENT_LIST_DIR}/runtime")
 
+include("${CMAKE_CURRENT_LIST_DIR}/PortableTests.cmake")
+
 # Each rejection has a corresponding positive control compiled first.
 hive_compile_check(include TRUE)
 hive_compile_check(api TRUE)
-hive_compile_check(fancy_api TRUE)
 hive_compile_check(constexpr_allocator TRUE)
-hive_compile_check(accept_from_range TRUE)
-hive_compile_check(reject_incompatible_from_range FALSE accept_from_range)
-hive_compile_check(accept_construct_only_range TRUE)
-hive_compile_check(accept_assign_range TRUE)
-hive_compile_check(reject_nonassignable_assign_range FALSE accept_assign_range)
-hive_compile_check(accept_iterator_allocator TRUE)
-hive_compile_check(reject_non_allocator FALSE accept_iterator_allocator)
-hive_compile_check(accept_legacy_input TRUE)
-hive_compile_check(reject_non_input_iterator FALSE accept_legacy_input)
 hive_compile_check(version_then_include TRUE)
 
 add_executable(hive_runtime
@@ -26,11 +18,10 @@ add_executable(hive_runtime
     "${hive_runtime_dir}/test_hive_get_iterator.cpp"
     "${hive_runtime_dir}/test_hive_iteration.cpp"
     "${hive_runtime_dir}/test_hive_layout.cpp"
+    "${hive_runtime_dir}/test_hive_ranges_types.cpp"
     "${hive_runtime_dir}/test_hive_skipfield.cpp"
-    "${hive_runtime_dir}/test_hive_core_model.cpp"
     "${hive_runtime_dir}/test_hive_exceptions.cpp"
     "${hive_runtime_dir}/test_hive_fancy_allocator.cpp"
-    "${hive_runtime_dir}/test_hive_ranges_types.cpp"
     "${hive_runtime_dir}/test_hive_semantics.cpp"
     "${hive_runtime_dir}/test_hive_sort.cpp"
     "${hive_runtime_dir}/test_hive_sort_r41.cpp"

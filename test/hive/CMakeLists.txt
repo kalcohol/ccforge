@@ -26,8 +26,14 @@ function(hive_compile_check name expect_success)
         set_tests_properties(${target} PROPERTIES FIXTURES_SETUP ${target})
     else()
         set_tests_properties(${target} PROPERTIES
-            FIXTURES_REQUIRED "hive_compile_include;hive_compile_${ARGV2}")
+            FIXTURES_REQUIRED "hive_compile_${ARGV2}")
     endif()
 endfunction()
 
-include("${CMAKE_CURRENT_SOURCE_DIR}/HiveTests.cmake")
+if(FORGE_FORCE_HIVE_BACKPORT
+        OR (NOT FORGE_HIVE_FULL AND NOT FORGE_HIVE_PARTIAL))
+    include("${CMAKE_CURRENT_SOURCE_DIR}/HiveTests.cmake")
+else()
+    include("${CMAKE_CURRENT_SOURCE_DIR}/PortableTests.cmake")
+    message(STATUS "Forge: Hive implementation tests skipped because native Hive stands aside")
+endif()

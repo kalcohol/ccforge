@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+include("${CMAKE_CURRENT_LIST_DIR}/HiveTestExpectations.cmake")
 
 foreach(required SOURCE_DIR BINARY_DIR FORGE_ROOT_DIR HIVE_CASE_NAME PARENT_CACHE)
     if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
@@ -107,16 +108,11 @@ function(hive_configure_and_build phase expected_state expected_roots)
             endif()
         endforeach()
     endif()
-    if(expected_state STREQUAL "BACKPORT" OR expected_state STREQUAL "FORCED")
-        foreach(required_test hive_runtime hive_multi_tu hive_compile_include
-                hive_model_positive hive_model_mutation)
-            if(NOT required_test IN_LIST hive_tests)
-                message(FATAL_ERROR "Hive ${phase} CTest listing omitted ${required_test}")
-            endif()
-        endforeach()
-    elseif(hive_tests)
-        message(FATAL_ERROR "Hive ${phase} CTest listing retained native conformance tests")
-    endif()
+    hive_expected_registrations("${expected_state}" expected_targets expected_tests)
+    hive_assert_registrations("Hive ${phase} CTest listing (${expected_state})"
+        "${hive_tests}" "${expected_tests}")
+    # These headers model probe roots, including declarations-only and broken
+    # bodies. Build only the wrapper consumer, never the conformance targets.
     execute_process(COMMAND "${CMAKE_COMMAND}" --build "${BINARY_DIR}" --config "${config}"
         --target hive_consumer
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)

@@ -1,4 +1,5 @@
 #include <hive>
+#include <ranges>
 #include <vector>
 #include "hive_explicit_int.hpp"
 

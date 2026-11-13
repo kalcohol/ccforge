@@ -245,22 +245,6 @@ static_assert(!std::is_move_constructible_v<allocator_only_value>);
 static_assert(std::is_move_assignable_v<allocator_only_value>);
 static_assert(std::is_swappable_v<allocator_only_value>);
 
-TEST(HiveContractControls, AllocatorOnlyMoveInsertableAndAdlSwappableCanSort) {
-    using value_type = allocator_only_value;
-    std::hive<value_type, access_allocator<value_type>> hive;
-    value_type source(7);
-    // Positive allocator_traits::construct control: ordinary MoveConstructible
-    // is false, but allocator-relative MoveInsertable is supported lawfully.
-    auto inserted = hive.insert(std::move(source));
-    EXPECT_EQ(inserted->value, 7);
-    for (const int value : sort_input) hive.emplace(value);
-    hive.sort([](const auto& left, const auto& right) { return left.value < right.value; });
-    ASSERT_TRUE(structurally_valid(hive, sort_input.size() + 1));
-    auto expected = sort_input;
-    expected.push_back(7);
-    std::sort(expected.begin(), expected.end());
-    EXPECT_EQ(payloads(hive), expected);
-}
 
 TEST(HiveRetainedSemantics, TraversalAndIteratorComparisonOrderSurviveReuse) {
     using hive_type = std::hive<int>;

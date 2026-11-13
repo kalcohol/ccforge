@@ -1,0 +1,10 @@
+add_test(NAME hive_test_gate_matrix
+    COMMAND ${CMAKE_COMMAND}
+        -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+        -DBINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}/hive-gates
+        "-DGENERATOR=${CMAKE_GENERATOR}"
+        "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+        "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+        -P ${CMAKE_CURRENT_LIST_DIR}/verify_test_gates.cmake)
+set_tests_properties(hive_test_gate_matrix PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hive")

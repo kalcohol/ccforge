@@ -48,23 +48,30 @@ add_subdirectory("${FORGE_ROOT_DIR}/test" "${CMAKE_CURRENT_BINARY_DIR}/registere
 
 get_property(test_subdirectories DIRECTORY "${FORGE_ROOT_DIR}/test" PROPERTY SUBDIRECTORIES)
 set(hive_test_directory "${FORGE_ROOT_DIR}/test/hive")
-if(EXPECT_STATE STREQUAL "BACKPORT" OR EXPECT_STATE STREQUAL "FORCED")
-    if(NOT TARGET hive_runtime OR NOT TARGET hive_multi_tu
-            OR NOT TARGET hive_compile_include
-            OR NOT hive_test_directory IN_LIST test_subdirectories)
-        message(FATAL_ERROR "main test tree did not admit Hive backport tests")
-    endif()
-    get_property(hive_registered_tests DIRECTORY "${hive_test_directory}" PROPERTY TESTS)
-    foreach(required_test hive_runtime hive_multi_tu hive_compile_include
-            hive_model_positive hive_model_mutation)
-        if(NOT required_test IN_LIST hive_registered_tests)
-            message(FATAL_ERROR "main test tree did not register ${required_test}")
-        endif()
-    endforeach()
-elseif(TARGET hive_runtime OR TARGET hive_multi_tu OR TARGET hive_compile_include
-        OR hive_test_directory IN_LIST test_subdirectories)
-    message(FATAL_ERROR "main test tree admitted Hive conformance tests on native roots")
+if(NOT hive_test_directory IN_LIST test_subdirectories)
+    message(FATAL_ERROR "main test tree did not enter the Hive test directory")
 endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../HiveTestExpectations.cmake")
+hive_expected_registrations("${EXPECT_STATE}" expected_targets expected_tests)
+# Recurse through the entire registered tree so an implementation target or
+# test moved into another directory cannot evade the native-root check.
+function(hive_collect_registrations directory targets_var tests_var)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    get_property(tests DIRECTORY "${directory}" PROPERTY TESTS)
+    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        hive_collect_registrations("${child}" child_targets child_tests)
+        list(APPEND targets ${child_targets})
+        list(APPEND tests ${child_tests})
+    endforeach()
+    set(${targets_var} "${targets}" PARENT_SCOPE)
+    set(${tests_var} "${tests}" PARENT_SCOPE)
+endfunction()
+hive_collect_registrations("${FORGE_ROOT_DIR}/test" actual_targets actual_tests)
+hive_assert_registrations("main tree Hive targets (${EXPECT_STATE})"
+    "${actual_targets}" "${expected_targets}")
+hive_assert_registrations("main tree Hive tests (${EXPECT_STATE})"
+    "${actual_tests}" "${expected_tests}")
 
 add_executable(hive_consumer main.cpp)
 # Deliberately expose the shared backport path even when Hive is native. Other

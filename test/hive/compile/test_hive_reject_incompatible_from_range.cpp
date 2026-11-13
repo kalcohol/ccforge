@@ -1,4 +1,5 @@
 #include <hive>
+#include <ranges>
 #include <string>
 #include <vector>
 
