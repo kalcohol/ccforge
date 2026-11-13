@@ -105,6 +105,23 @@ BLAS Level 1 归约操作（`dot`、`vector_abs_sum`）以及 `copy`、`scale` �
 layout/default accessor。验证入口见[测试说明](../testing.md)；跨架构支持须以对应工具链实际运行结果为准。
 
 
+### 性能特征
+
+Level 3 的 `matrix_product`（含 updating 重载）、已实现的 symmetric / Hermitian
+product 和 in-place triangular product 按操作数布局选择循环顺序。
+`layout_right` / `layout_right_padded` 优先沿列方向遍历，
+`layout_left` / `layout_left_padded` 在适用时沿行方向遍历；混合布局选择可连续
+访问的操作数。小块独立累加器保持各输出元素的 `k` 递增顺序，updating 版本在
+归约结束后才加上 `E`。`layout_stride`、未知布局及自定义 accessor 使用标量路径；
+所有元素访问均经过 mdspan accessor，支持 scaled、conjugated 和 transposed view。
+三角矩阵的 in-place product 按数据依赖选择行或列方向，无需矩阵大小的临时分配。
+实现不依赖 external BLAS，也不使用手写 intrinsics kernel。
+
+独立基准及同一 CPU 上的配对运行命令见
+[`test/linalg/benchmark/MEASUREMENT_PROTOCOL.txt`](../../test/linalg/benchmark/MEASUREMENT_PROTOCOL.txt)。
+基准不默认注册为 CTest；性能取决于布局、尺寸和工具链。
+
+
 ### OpenMP 并行
 
 无 execution policy 的 `std::linalg` overload 默认保持顺序执行；Forge 当前不再因为
