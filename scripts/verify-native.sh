@@ -190,12 +190,17 @@ target_gcc16() {
         bash -lc '
             set -euo pipefail
             rm -rf build/gcc16-examples
+            example_test_args=()
+            while IFS= read -r option; do
+                example_test_args+=("-D${option}=OFF")
+            done < <(sed -n "s/^option(\(FORGE_TEST_ENABLE_[A-Z_]*\).*/\1/p" test/CMakeLists.txt)
             cmake -S . -B build/gcc16-examples -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug \
                   -DCMAKE_CXX_STANDARD=26 \
-                  -DFORGE_BUILD_TESTS=OFF \
-                  -DFORGE_BUILD_EXAMPLES=ON
+                  -DFORGE_BUILD_TESTS=ON \
+                  -DFORGE_BUILD_EXAMPLES=ON "${example_test_args[@]}"
             cmake --build build/gcc16-examples
+            ctest --test-dir build/gcc16-examples -R "^example_" --output-on-failure
         '
 
     local floor_logfile="${LOG_DIR}/gcc16-cxx23-configure.log"

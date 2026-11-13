@@ -489,5 +489,6 @@ FORGE_INSTALL_CONFIG=Release scripts/verify-install-package.sh
 负面编译测试分为两类：固定工作草案规则（例如 noexcept completion、receiver 不抛异常移动）与固定 Forge 自身子集偏差（例如 creation 时延迟验证的形状）。测试通过只说明拒绝了该输入，不代表所有拒绝都是标准规则。
 
 
+gcc16 的示例流程启用 `FORGE_BUILD_TESTS=ON`、关闭全部 `FORGE_TEST_ENABLE_*` 测试组、构建示例后运行 `ctest --test-dir build/gcc16-examples -R '^example_' --output-on-failure`，因此 libstdc++ 上的示例也有运行覆盖。
 
 `FORGE_ENABLE_FORGE_RUNTIME` 只控制 runtime 示例；runtime 测试由 `FORGE_TEST_ENABLE_FORGE_RUNTIME` 独立控制，公共头文件始终可包含。文档审计还覆盖三语 README 一致性、测试开关文档、路线图状态、特性宏、用途头与扩展拼写，并逐项运行正反自测。
