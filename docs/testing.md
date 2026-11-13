@@ -148,7 +148,8 @@ podman run --rm --userns=keep-id -v "$PWD:/src:Z" -w /src ...
 
 Windows 验证是可选的本机或 self-hosted smoke gate。它不替代 Linux/podman 全量矩阵；
 当前目标是确认 MSVC 能 configure/build/test `std::execution` backport、
-`std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend。
+`std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend，
+以及独立 C++23 SIMD-only builds 的默认 x64 ISA 和 `/arch:AVX2` 路径。
 这条 lane 的定位是可移植的 self-hosted floor：脚本不依赖 GitHub hosted CI，也不写入
 私有主机名或工具链路径。Jenkins、Buildkite、GitHub self-hosted runner 或人工 SSH
 调用都应使用同一组入口，只从外部传入 host、source/ref、MSVC discovery 信息和可选
@@ -235,6 +236,20 @@ smoke 覆盖 cookbook 的关键路径，而不把所有 examples 都塞进默认
 gate-off 检查则显式断言注册数为 0。可设置 `FORGE_WINDOWS_SKIP_GATE_CHECKS=1` 临时跳过
 这些 gate 检查。默认 smoke 也会执行 install package consumer check；可设置
 `FORGE_WINDOWS_SKIP_INSTALL_PACKAGE_CHECK=1` 临时跳过。
+
+默认另建 `<build-name>-simd-default` 和 `<build-name>-simd-avx2`，只启用
+`FORGE_TEST_ENABLE_SIMD=ON`（其余测试组关闭），使用 C++23，第二个 build 经
+`CMAKE_CXX_FLAGS="/EHsc /arch:AVX2"` 选择 ISA 并保留异常展开。两者均执行 configure probes、编译 runtime
+targets，并用独立 `ctest -R simd --output-on-failure` 运行 runtime 和 compile tests，
+不受主 smoke 的 `FORGE_WINDOWS_CTEST_REGEX` 影响；每个 build 先检查注册数非零。
+AVX2 运行要求支持该 ISA 的 x64 主机。可用 PowerShell `-SkipSimdChecks` 或 wrapper
+`FORGE_WINDOWS_SKIP_SIMD_CHECKS=1` 跳过（matrix 同样转发该环境变量）。
+已在 VS 2026 Build Tools / MSVC 19.51、x64、Debug、Ninja 配置验证：主 smoke
+91/91，SIMD 默认 ISA 69/69，SIMD `/arch:AVX2` 69/69，install-package smoke 通过。
+`/arch:AVX`、`/arch:AVX512`、ARM64、x86 32-bit 和 clang-cl 尚未验证。
+现有 CMake guards 对无 `__int128` 的编译器跳过对应 rejection
+probe，GNU/Clang 专用 mixed-ISA fixture 因 `cpuid.h` / `-m` flags 不在 MSVC 注册；
+其余 SIMD tests 没有 MSVC 专属排除。
 
 主 smoke 默认启用可用的 Forge IO backend，并关闭 SIMD/submdspan/linalg/native-handoff
 测试：
@@ -328,7 +343,11 @@ focused stress case，再把该 audit 视为 closed。
 与 runtime matrix。检测到 pre-P4206 partial-native 声明时该组会跳过，因为 Forge
 必须让位且不能在同一 `namespace std` 中补声明；`gcc16` lane 另外断言这个
 stand-aside 决策。纯 execution、TSan 和 ASan 子集会显式关闭该组，完整 `llvm`、
-`zig`、本地与 Windows lanes 则保留覆盖。
+`zig` 与本地完整 lanes 则保留覆盖。Windows 主 smoke 保留该组的 CMake 默认 ON，
+但默认 CTest regex `execution|unique_resource|std_target|forge` 不选择
+constant_wrapper 专用 tests，因此不计作该组的 runtime / CTest compile-probe 覆盖；
+需要时显式用 `FORGE_WINDOWS_CTEST_REGEX=constant_wrapper` 运行。独立 SIMD builds
+关闭该组。
 
 Execution、SIMD 与 linalg 的 conformance suites 会在对应 Forge backport 实际注入时
 运行；完整或 partial native 实现触发 stand-aside 时，这些依赖 Forge 私有测试辅助符号

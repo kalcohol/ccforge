@@ -112,6 +112,19 @@ const V result = std::simd::select(selector, values, V(0.0f));
 
 验证入口见[测试说明](../testing.md)。跨架构支持须以对应工具链实际运行结果为准，不承诺所有架构均已验证。
 
+Windows smoke 默认增加两个独立的 C++23 SIMD-only build：MSVC x64 默认 ISA
+（SSE2）和 `CMAKE_CXX_FLAGS="/EHsc /arch:AVX2"`，均编译 runtime targets、运行 SIMD
+runtime tests 和 CTest compile probes，并执行 configure 阶段的正反向 probes。
+已在 VS 2026 Build Tools / MSVC 19.51、x64、Debug、Ninja 配置验证：主 smoke
+91/91，SIMD 默认 ISA 69/69，SIMD `/arch:AVX2` 69/69，install-package smoke 通过。
+MSVC 使用逐 lane 标准 C++ 算术路径；GCC/Clang 继续使用原有 vector extension 后端。
+native ABI 对 MSVC x64 默认取 16 bytes，对 `__AVX__` / `__AVX2__` 取 32 bytes，
+对 `__AVX512F__` 取 64 bytes，ARM64 NEON 默认取 16 bytes。
+`/arch:AVX`、`/arch:AVX512`、ARM64、x86 32-bit 和 clang-cl 尚未验证；默认 smoke 的 AVX2
+运行要求主机支持 AVX2。现有 feature guards 跳过无 `__int128` 时的 extended-integer
+rejection probe，且 mixed-ISA fixture 仅在使用 `cpuid.h` / `-m` flags 的 GNU/Clang
+非 MSVC 平台注册；其余 SIMD tests 不设 MSVC 专属排除。
+
 当前 GCC 16 在 C++26 提供 partial-native `std::simd`，Forge 会严格让位并给出警告；
 同一标准库在 C++23 虽可安装 `<simd>` 文件但不暴露声明，此时声明级 probe 会启用
 backport。检测到 partial-native 声明时不注入 backport，以避免 ODR 冲突。
