@@ -35,7 +35,7 @@
 namespace {
 
 template<class V>
-auto lane(const V& value, std::simd::simd_size_type index) -> decltype(value[index]) {
+auto lane(const V& value, decltype(std::simd::vec<int>::size()) index) -> decltype(value[index]) {
     return value[index];
 }
 
@@ -48,7 +48,7 @@ int main() {
     using mask4 = std::simd::mask<int, 4>;
 
     const std::array<int, 4> values_raw{{1, 4, 2, 3}};
-    int4 values = std::simd::partial_load<int4>(values_raw.data(), static_cast<std::simd::simd_size_type>(values_raw.size()));
+    int4 values = std::simd::partial_load<int4>(values_raw.data(), static_cast<decltype(std::simd::vec<int>::size())>(values_raw.size()));
     int4 generated([](auto index) {
         return static_cast<int>(decltype(index)::value + 1);
     });
@@ -59,10 +59,10 @@ int main() {
     const std::array<int, 4> threshold_raw{{10, 12, 12, 12}};
     const auto threshold = std::simd::partial_load<int4>(
         threshold_raw.data(),
-        static_cast<std::simd::simd_size_type>(threshold_raw.size()));
+        static_cast<decltype(std::simd::vec<int>::size())>(threshold_raw.size()));
     const auto selected = sum > threshold;
     const auto reversed = std::simd::permute(sum, [](auto index, auto size) {
-        return std::simd::simd_size_type(size - 1 - index);
+        return decltype(std::simd::vec<int>::size())(size - 1 - index);
     });
     const int8 eight = std::simd::iota<int8> + int8(1);
     const auto pieces = std::simd::chunk<int4>(eight);

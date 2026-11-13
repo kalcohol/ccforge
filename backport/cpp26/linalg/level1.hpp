@@ -50,9 +50,9 @@ void copy(
         if constexpr (std::is_same_v<ElemT, OutElemT> &&
                       __detail::__can_simd_v<ElemT, InLayout, InAccessor> &&
                       __detail::__can_simd_v<ElemT, OutLayout, OutAccessor>) {
-            using abi_t  = std::simd::native_abi<ElemT>;
+            using abi_t  = typename std::simd::vec<ElemT>::abi_type;
             using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-            static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+            static constexpr auto kN = std::simd::basic_vec<ElemT, abi_t>::size();
             const auto n = from.extent(0);
             typename InExtents::index_type i = 0;
             const ElemT* src = from.data_handle();
@@ -87,9 +87,9 @@ void scale(
 #if __LINALG_HAS_SIMD
         if constexpr (__detail::__can_simd_v<ElemT, Layout, Accessor> &&
                       std::is_same_v<ScalingFactor, ElemT>) {
-            using abi_t  = std::simd::native_abi<ElemT>;
+            using abi_t  = typename std::simd::vec<ElemT>::abi_type;
             using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-            static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+            static constexpr auto kN = std::simd::basic_vec<ElemT, abi_t>::size();
             const auto n = x.extent(0);
             typename Extents::index_type i = 0;
             ElemT* px = x.data_handle();
@@ -185,9 +185,9 @@ T dot(
                   } &&
                   __detail::__can_simd_v<ElemT, Layout1, Accessor1> &&
                   __detail::__can_simd_v<ElemT, Layout2, Accessor2>) {
-        using abi_t  = std::simd::native_abi<ElemT>;
+        using abi_t  = typename std::simd::vec<ElemT>::abi_type;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        static constexpr auto kN = std::simd::basic_vec<ElemT, abi_t>::size();
         typename Extents1::index_type i = 0;
         const ElemT* px = x.data_handle();
         const ElemT* py = y.data_handle();
@@ -420,9 +420,9 @@ auto vector_abs_sum(
     // reducing in an integral SIMD lane could wrap before widening.
     if constexpr (std::is_floating_point_v<ElemT> &&
                   __detail::__can_simd_v<ElemT, Layout, Accessor>) {
-        using abi_t  = std::simd::native_abi<ElemT>;
+        using abi_t  = typename std::simd::vec<ElemT>::abi_type;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        static constexpr auto kN = std::simd::basic_vec<ElemT, abi_t>::size();
         const auto n = x.extent(0);
         typename Extents::index_type i = 0;
         const ElemT* px = x.data_handle();

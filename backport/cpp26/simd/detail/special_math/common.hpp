@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 inline constexpr unsigned recurrence_order_limit = 1024u;
 
@@ -194,4 +194,4 @@ auto segmented_checked_simpson_integral(
 template<class T>
 T cyl_bessel_j_fallback(T nu, T x);
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail {
+namespace __detail {
 
 // Preserve the const-reference scalar arguments used by complex transforms.
 #define FORGE_SIMD_DETAIL_COMPLEX_MATH_FUNCTION(name) \
@@ -44,18 +44,18 @@ struct is_simd_complex_value<basic_vec<complex<T>, Abi>> : true_type {};
 template<class Result, class V, class Fun>
 constexpr Result unary_complex_transform(const V& value, Fun fun) {
     Result result;
-    for (simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(value[i])));
+    for (__simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(value[i])));
     }
     return result;
 }
 
 template<class V, class Fun>
-constexpr typename remove_cvref_t<V>::real_type unary_complex_real_transform(const V& value, Fun fun) {
-    using result_type = typename remove_cvref_t<V>::real_type;
+constexpr typename remove_cvref_t<V>::__real_type unary_complex_real_transform(const V& value, Fun fun) {
+    using result_type = typename remove_cvref_t<V>::__real_type;
     result_type result;
-    for (simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename result_type::value_type>(fun(value[i])));
+    for (__simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename result_type::value_type>(fun(value[i])));
     }
     return result;
 }
@@ -65,50 +65,50 @@ constexpr Result binary_complex_transform(const A& left, const B& right, Fun fun
     const Result lhs(left, flag_convert);
     const Result rhs(right, flag_convert);
     Result result;
-    for (simd_size_type i = 0; i < Result::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(lhs[i], rhs[i])));
+    for (__simd_size_type i = 0; i < Result::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(lhs[i], rhs[i])));
     }
     return result;
 }
 
-} // namespace detail
+} // namespace __detail
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type real(const V& value) noexcept
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+constexpr typename remove_cvref_t<V>::__real_type real(const V& value) noexcept
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     return value.real();
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type imag(const V& value) noexcept
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+constexpr typename remove_cvref_t<V>::__real_type imag(const V& value) noexcept
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     return value.imag();
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type abs(const V& value)
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, detail::complex_math_abs_fn{});
+constexpr typename remove_cvref_t<V>::__real_type abs(const V& value)
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_complex_real_transform(value, __detail::complex_math_abs_fn{});
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type arg(const V& value)
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, detail::complex_math_arg_fn{});
+constexpr typename remove_cvref_t<V>::__real_type arg(const V& value)
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_complex_real_transform(value, __detail::complex_math_arg_fn{});
 }
 
 template<class V>
-constexpr typename remove_cvref_t<V>::real_type norm(const V& value)
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
-    return detail::unary_complex_real_transform(value, detail::complex_math_norm_fn{});
+constexpr typename remove_cvref_t<V>::__real_type norm(const V& value)
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_complex_real_transform(value, __detail::complex_math_norm_fn{});
 }
 
 #define FORGE_SIMD_UNARY_COMPLEX_MATH(name) \
 template<class V> \
 constexpr remove_cvref_t<V> name(const V& value) \
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_complex_transform<result_type>(value, detail::complex_math_##name##_fn{}); \
+    return __detail::unary_complex_transform<result_type>(value, __detail::complex_math_##name##_fn{}); \
 }
 
 FORGE_SIMD_UNARY_COMPLEX_MATH(conj)
@@ -134,27 +134,27 @@ FORGE_SIMD_UNARY_COMPLEX_MATH(atanh)
 
 template<class V>
 constexpr remove_cvref_t<V> pow(const V& left, const V& right)
-    requires(detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_complex_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::binary_complex_transform<result_type>(left, right, detail::complex_math_pow_fn{});
+    return __detail::binary_complex_transform<result_type>(left, right, __detail::complex_math_pow_fn{});
 }
 
 template<class V>
 constexpr rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>
 polar(const V& rho)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>;
-    return detail::unary_complex_transform<result_type>(rho, detail::complex_math_polar_fn{});
+    return __detail::unary_complex_transform<result_type>(rho, __detail::complex_math_polar_fn{});
 }
 
 template<class V>
 constexpr rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>
 polar(const V& rho, const V& theta)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<complex<typename remove_cvref_t<V>::value_type>, remove_cvref_t<V>>;
     result_type result;
-    for (simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
-        detail::set_lane(result, i, std::polar(rho[i], theta[i]));
+    for (__simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
+        __detail::set_lane(result, i, std::polar(rho[i], theta[i]));
     }
     return result;
 }

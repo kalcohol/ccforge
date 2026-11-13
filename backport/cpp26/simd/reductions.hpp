@@ -5,16 +5,16 @@ template<class T,
          class BinaryOperation = plus<>,
          typename enable_if<
              !is_same<
-                 detail::remove_cvref_t<BinaryOperation>,
+                 __detail::remove_cvref_t<BinaryOperation>,
                  typename basic_vec<T, Abi>::mask_type>::value &&
-             detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             __detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(const basic_vec<T, Abi>& value, BinaryOperation binary_op = {}) noexcept(
     noexcept(std::declval<BinaryOperation&>()(
         std::declval<vec<T, 1>&>(),
         std::declval<vec<T, 1>>()))) {
     vec<T, 1> result(value[0]);
-    for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
         result = binary_op(result, vec<T, 1>(value[i]));
     }
     return result[0];
@@ -24,17 +24,17 @@ template<class T,
          class Abi,
          class BinaryOperation = plus<>,
          typename enable_if<
-             detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             __detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(const basic_vec<T, Abi>& value,
                    const typename basic_vec<T, Abi>::mask_type& mask_value,
                    BinaryOperation binary_op = {},
                    typename type_identity<T>::type identity_element =
-                       detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
+                       __detail::reduction_identity<T, BinaryOperation>::value()) noexcept(
     noexcept(std::declval<BinaryOperation&>()(
         std::declval<vec<T, 1>&>(),
         std::declval<vec<T, 1>>()))) {
-    simd_size_type first = 0;
+    __simd_size_type first = 0;
     while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
         ++first;
     }
@@ -44,7 +44,7 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
     }
 
     vec<T, 1> result(value[first]);
-    for (simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
         if (mask_value[i]) {
             result = binary_op(result, vec<T, 1>(value[i]));
         }
@@ -56,7 +56,7 @@ template<class T, class Abi>
     requires totally_ordered<T>
 constexpr T reduce_min(const basic_vec<T, Abi>& value) noexcept {
     T result = value[0];
-    for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
         if (value[i] < result) {
             result = value[i];
         }
@@ -69,7 +69,7 @@ template<class T, class Abi>
 constexpr T reduce_min(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
-    simd_size_type first = 0;
+    __simd_size_type first = 0;
     while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
         ++first;
     }
@@ -79,7 +79,7 @@ constexpr T reduce_min(
     }
 
     T result = value[first];
-    for (simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
         if (mask_value[i] && value[i] < result) {
             result = value[i];
         }
@@ -91,7 +91,7 @@ template<class T, class Abi>
     requires totally_ordered<T>
 constexpr T reduce_max(const basic_vec<T, Abi>& value) noexcept {
     T result = value[0];
-    for (simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
         if (value[i] > result) {
             result = value[i];
         }
@@ -104,7 +104,7 @@ template<class T, class Abi>
 constexpr T reduce_max(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
-    simd_size_type first = 0;
+    __simd_size_type first = 0;
     while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
         ++first;
     }
@@ -114,7 +114,7 @@ constexpr T reduce_max(
     }
 
     T result = value[first];
-    for (simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
         if (mask_value[i] && value[i] > result) {
             result = value[i];
         }
@@ -125,8 +125,8 @@ constexpr T reduce_max(
 template<class T,
          class BinaryOperation = plus<>,
          typename enable_if<
-             detail::is_supported_value<T>::value &&
-                 detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             __detail::is_supported_value<T>::value &&
+                 __detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(const T& value, BinaryOperation = {}) {
     return value;
@@ -136,28 +136,28 @@ template<class T,
          class Mask,
          class BinaryOperation = plus<>,
          typename enable_if<
-             detail::is_supported_value<T>::value &&
-                 is_same<detail::remove_cvref_t<Mask>, bool>::value &&
-                 detail::is_reduction_binary_operation<T, BinaryOperation>::value,
+             __detail::is_supported_value<T>::value &&
+                 is_same<__detail::remove_cvref_t<Mask>, bool>::value &&
+                 __detail::is_reduction_binary_operation<T, BinaryOperation>::value,
              int>::type = 0>
 constexpr T reduce(
     const T& value,
     Mask mask,
     BinaryOperation = {},
     type_identity_t<T> identity_element =
-        detail::reduction_identity<T, BinaryOperation>::value()) {
+        __detail::reduction_identity<T, BinaryOperation>::value()) {
     return mask ? value : identity_element;
 }
 
 template<class T>
-    requires(detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
+    requires(__detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
 constexpr T reduce_min(const T& value) noexcept {
     return value;
 }
 
 template<class T, class Mask>
     requires(
-        detail::is_supported_scalar_value<T>::value &&
+        __detail::is_supported_scalar_value<T>::value &&
         totally_ordered<T> &&
         same_as<Mask, bool>)
 constexpr T reduce_min(const T& value, Mask mask) noexcept {
@@ -165,14 +165,14 @@ constexpr T reduce_min(const T& value, Mask mask) noexcept {
 }
 
 template<class T>
-    requires(detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
+    requires(__detail::is_supported_scalar_value<T>::value && totally_ordered<T>)
 constexpr T reduce_max(const T& value) noexcept {
     return value;
 }
 
 template<class T, class Mask>
     requires(
-        detail::is_supported_scalar_value<T>::value &&
+        __detail::is_supported_scalar_value<T>::value &&
         totally_ordered<T> &&
         same_as<Mask, bool>)
 constexpr T reduce_max(const T& value, Mask mask) noexcept {
@@ -181,7 +181,7 @@ constexpr T reduce_max(const T& value, Mask mask) noexcept {
 
 template<size_t Bytes, class Abi>
 constexpr bool all_of(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
+    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
         if (!value[i]) {
             return false;
         }
@@ -191,7 +191,7 @@ constexpr bool all_of(const basic_mask<Bytes, Abi>& value) noexcept {
 
 template<size_t Bytes, class Abi>
 constexpr bool any_of(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
+    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
         if (value[i]) {
             return true;
         }
@@ -205,9 +205,9 @@ constexpr bool none_of(const basic_mask<Bytes, Abi>& value) noexcept {
 }
 
 template<size_t Bytes, class Abi>
-constexpr simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexcept {
-    simd_size_type result = 0;
-    for (simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
+constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexcept {
+    __simd_size_type result = 0;
+    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
         if (value[i]) {
             ++result;
         }
@@ -216,8 +216,8 @@ constexpr simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexc
 }
 
 template<size_t Bytes, class Abi>
-constexpr simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
+constexpr __simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value) noexcept {
+    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
         if (value[i]) {
             return i;
         }
@@ -226,8 +226,8 @@ constexpr simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value) n
 }
 
 template<size_t Bytes, class Abi>
-constexpr simd_size_type reduce_max_index(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (simd_size_type i = basic_mask<Bytes, Abi>::size; i > 0; --i) {
+constexpr __simd_size_type reduce_max_index(const basic_mask<Bytes, Abi>& value) noexcept {
+    for (__simd_size_type i = basic_mask<Bytes, Abi>::size; i > 0; --i) {
         if (value[i - 1]) {
             return i - 1;
         }
@@ -247,14 +247,14 @@ constexpr bool none_of(same_as<bool> auto value) noexcept {
     return !value;
 }
 
-constexpr simd_size_type reduce_count(same_as<bool> auto value) noexcept {
+constexpr __simd_size_type reduce_count(same_as<bool> auto value) noexcept {
     return value ? 1 : 0;
 }
 
-constexpr simd_size_type reduce_min_index(same_as<bool> auto) noexcept {
+constexpr __simd_size_type reduce_min_index(same_as<bool> auto) noexcept {
     return 0;
 }
 
-constexpr simd_size_type reduce_max_index(same_as<bool> auto) noexcept {
+constexpr __simd_size_type reduce_max_index(same_as<bool> auto) noexcept {
     return 0;
 }

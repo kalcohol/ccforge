@@ -30,7 +30,7 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace detail {
+namespace __detail {
 
 // ─── Concrete vector type aliases ────────────────────────────────────────────
 // vector_size takes TOTAL BYTES, not element count.
@@ -197,7 +197,7 @@ inline void __simd_div(T* dst, const T* src) noexcept {
     for (::std::size_t i = 0; i < N; ++i) dst[i] /= src[i];
 }
 
-} // namespace detail
+} // namespace __detail
 
 #undef FORGE_SIMD_DETAIL_IS_CONSTEVAL
 #undef FORGE_SIMD_DETAIL_HAVE_128BIT

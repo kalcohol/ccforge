@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 template<class T>
 T sph_bessel_fallback(unsigned n, T x) {
@@ -1319,4 +1319,4 @@ T cyl_bessel_i_fallback(T nu, T x) {
         2.0L / pi_v<long double> * trig.sine * irregular);
 }
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

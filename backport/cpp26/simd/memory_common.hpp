@@ -1,19 +1,19 @@
 #pragma once
 
-namespace detail {
+namespace __detail {
 
 template<size_t Bytes, class Abi>
-constexpr bool& lane_ref(basic_mask<Bytes, Abi>& value, simd_size_type i) noexcept {
+constexpr bool& lane_ref(basic_mask<Bytes, Abi>& value, __simd_size_type i) noexcept {
     return value.data_[i];
 }
 
 template<class T, class Abi>
-constexpr T& lane_ref(basic_vec<T, Abi>& value, simd_size_type i) noexcept {
+constexpr T& lane_ref(basic_vec<T, Abi>& value, __simd_size_type i) noexcept {
     return value.data_[i];
 }
 
 template<class V, class U>
-constexpr void set_lane(V& value, simd_size_type i, U&& lane) noexcept {
+constexpr void set_lane(V& value, __simd_size_type i, U&& lane) noexcept {
     lane_ref(value, i) = std::forward<U>(lane);
 }
 
@@ -62,10 +62,10 @@ template<class R, class Indices>
 using default_gather_vector_t = typename default_gather_vector<R, Indices>::type;
 
 template<class V, class U, class... Flags>
-constexpr V load_impl(const U* first, simd_size_type count, flags<Flags...> f);
+constexpr V load_impl(const U* first, __simd_size_type count, flags<Flags...> f);
 
 template<class V, class U, class... Flags>
-constexpr V load_impl(const U* first, simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f);
+constexpr V load_impl(const U* first, __simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f);
 
 template<class V,
          class I,
@@ -82,10 +82,10 @@ template<class V,
 constexpr V load_impl(I first, S last, const typename V::mask_type& mask_value, flags<Flags...> f);
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f);
+constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, __simd_size_type count, flags<Flags...> f);
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
+constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, __simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
 
 template<class T,
          class Abi,
@@ -104,51 +104,51 @@ template<class T,
 constexpr void store_impl(const basic_vec<T, Abi>& value, I first, S last, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f);
 
 template<class V, class I, class... Flags>
-constexpr V load_n_impl(I first, simd_size_type count, flags<Flags...> f) {
+constexpr V load_n_impl(I first, __simd_size_type count, flags<Flags...> f) {
     require_nonnegative_extent(count);
     V result;
-    for (simd_size_type i = 0; i < V::size; ++i) {
+    for (__simd_size_type i = 0; i < V::size; ++i) {
         if (i < count) {
-            detail::set_lane(result, i, convert_or_copy<typename V::value_type>(*first, f));
+            __detail::set_lane(result, i, convert_or_copy<typename V::value_type>(*first, f));
             ++first;
         } else {
-            detail::set_lane(result, i, typename V::value_type{});
+            __detail::set_lane(result, i, typename V::value_type{});
         }
     }
     return result;
 }
 
 template<class V, class I, class... Flags>
-constexpr V load_n_impl(I first, simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f) {
+constexpr V load_n_impl(I first, __simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f) {
     require_nonnegative_extent(count);
     V result;
-    for (simd_size_type i = 0; i < V::size; ++i) {
+    for (__simd_size_type i = 0; i < V::size; ++i) {
         if (i < count) {
             if (mask_value[i]) {
-                detail::set_lane(result, i, convert_or_copy<typename V::value_type>(*first, f));
+                __detail::set_lane(result, i, convert_or_copy<typename V::value_type>(*first, f));
             } else {
-                detail::set_lane(result, i, typename V::value_type{});
+                __detail::set_lane(result, i, typename V::value_type{});
             }
             ++first;
         } else {
-            detail::set_lane(result, i, typename V::value_type{});
+            __detail::set_lane(result, i, typename V::value_type{});
         }
     }
     return result;
 }
 
 template<class T, class Abi, class I, class... Flags>
-constexpr void store_n_impl(const basic_vec<T, Abi>& value, I first, simd_size_type count, flags<Flags...> f) {
+constexpr void store_n_impl(const basic_vec<T, Abi>& value, I first, __simd_size_type count, flags<Flags...> f) {
     require_nonnegative_extent(count);
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size && i < count; ++i, ++first) {
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size && i < count; ++i, ++first) {
         *first = convert_or_copy<typename remove_reference<iterator_reference_t<I>>::type>(value[i], f);
     }
 }
 
 template<class T, class Abi, class I, class... Flags>
-constexpr void store_n_impl(const basic_vec<T, Abi>& value, I first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f) {
+constexpr void store_n_impl(const basic_vec<T, Abi>& value, I first, __simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f) {
     require_nonnegative_extent(count);
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size && i < count; ++i, ++first) {
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size && i < count; ++i, ++first) {
         if (mask_value[i]) {
             *first = convert_or_copy<typename remove_reference<iterator_reference_t<I>>::type>(value[i], f);
         }
@@ -161,7 +161,7 @@ constexpr V load_impl(const U* first, flags<Flags...> f = {}) {
 }
 
 template<class V, class U>
-constexpr V load_impl(const U* first, simd_size_type count) {
+constexpr V load_impl(const U* first, __simd_size_type count) {
     return load_n_impl<V>(first, count, flag_default);
 }
 
@@ -171,12 +171,12 @@ constexpr V load_impl(const U* first, const typename V::mask_type& mask_value, f
 }
 
 template<class V, class U>
-constexpr V load_impl(const U* first, simd_size_type count, const typename V::mask_type& mask_value) {
+constexpr V load_impl(const U* first, __simd_size_type count, const typename V::mask_type& mask_value) {
     return load_n_impl<V>(first, count, mask_value, flag_default);
 }
 
 template<class V, class U, class... Flags>
-constexpr V load_impl(const U* first, simd_size_type count, flags<Flags...> f) {
+constexpr V load_impl(const U* first, __simd_size_type count, flags<Flags...> f) {
     return load_n_impl<V>(first, count, f);
 }
 
@@ -190,7 +190,7 @@ constexpr V load_impl(I first, S last, flags<Flags...> f) {
 }
 
 template<class V, class U, class... Flags>
-constexpr V load_impl(const U* first, simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f) {
+constexpr V load_impl(const U* first, __simd_size_type count, const typename V::mask_type& mask_value, flags<Flags...> f) {
     return load_n_impl<V>(first, count, mask_value, f);
 }
 
@@ -209,7 +209,7 @@ constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, flags<Flags.
 }
 
 template<class T, class Abi, class U>
-constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, simd_size_type count) {
+constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, __simd_size_type count) {
     store_n_impl(value, first, count, flag_default);
 }
 
@@ -221,13 +221,13 @@ constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, const typena
 template<class T, class Abi, class U>
 constexpr void store_impl(const basic_vec<T, Abi>& value,
                           U* first,
-                          simd_size_type count,
+                          __simd_size_type count,
                           const typename basic_vec<T, Abi>::mask_type& mask_value) {
     store_n_impl(value, first, count, mask_value, flag_default);
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, simd_size_type count, flags<Flags...> f) {
+constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, __simd_size_type count, flags<Flags...> f) {
     store_n_impl(value, first, count, f);
 }
 
@@ -242,7 +242,7 @@ constexpr void store_impl(const basic_vec<T, Abi>& value, I first, S last, flags
 }
 
 template<class T, class Abi, class U, class... Flags>
-constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f) {
+constexpr void store_impl(const basic_vec<T, Abi>& value, U* first, __simd_size_type count, const typename basic_vec<T, Abi>::mask_type& mask_value, flags<Flags...> f) {
     store_n_impl(value, first, count, mask_value, f);
 }
 
@@ -256,4 +256,4 @@ constexpr void store_impl(const basic_vec<T, Abi>& value, I first, S last, const
     store_n_impl(value, first, iterator_distance(first, last), mask_value, f);
 }
 
-} // namespace detail
+} // namespace __detail

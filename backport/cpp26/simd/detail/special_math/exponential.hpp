@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 template<class T>
 T beta_fallback(T x, T y) {
@@ -281,4 +281,4 @@ T riemann_zeta_fallback(T s) {
     return riemann_zeta_hasse(s);
 }
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

@@ -2,12 +2,12 @@
 
 template<class V, class Indices,
          typename enable_if<
-             detail::is_simd_index_vector<Indices>::value,
+             __detail::is_simd_index_vector<Indices>::value,
              int>::type>
-constexpr detail::permute_result_t<V, Indices> permute(
+constexpr __detail::permute_result_t<V, Indices> permute(
     const V& value,
     const Indices& indices) {
-    return detail::permute_from_indices(value, indices);
+    return __detail::permute_from_indices(value, indices);
 }
 
 template<class T, class Abi>
@@ -16,17 +16,17 @@ constexpr basic_vec<T, Abi> compress(
     const typename basic_vec<T, Abi>::mask_type& mask_value,
     const type_identity_t<T>& fill_value) noexcept {
     basic_vec<T, Abi> result;
-    simd_size_type out = 0;
-    for (simd_size_type i = 0;
-         i < static_cast<simd_size_type>(basic_vec<T, Abi>::size);
+    __simd_size_type out = 0;
+    for (__simd_size_type i = 0;
+         i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size);
          ++i) {
         if (mask_value[i]) {
-            detail::set_lane(result, out, value[i]);
+            __detail::set_lane(result, out, value[i]);
             ++out;
         }
     }
-    for (; out < static_cast<simd_size_type>(basic_vec<T, Abi>::size); ++out) {
-        detail::set_lane(result, out, fill_value);
+    for (; out < static_cast<__simd_size_type>(basic_vec<T, Abi>::size); ++out) {
+        __detail::set_lane(result, out, fill_value);
     }
     return result;
 }
@@ -44,17 +44,17 @@ constexpr basic_mask<Bytes, Abi> compress(
     const type_identity_t<basic_mask<Bytes, Abi>>& mask_value,
     bool fill_value = false) noexcept {
     basic_mask<Bytes, Abi> result(fill_value);
-    simd_size_type out = 0;
-    for (simd_size_type i = 0;
-         i < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size);
+    __simd_size_type out = 0;
+    for (__simd_size_type i = 0;
+         i < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size);
          ++i) {
         if (mask_value[i]) {
-            detail::lane_ref(result, out) = value[i];
+            __detail::lane_ref(result, out) = value[i];
             ++out;
         }
     }
-    for (; out < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size); ++out) {
-        detail::lane_ref(result, out) = fill_value;
+    for (; out < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size); ++out) {
+        __detail::lane_ref(result, out) = fill_value;
     }
     return result;
 }
@@ -65,12 +65,12 @@ constexpr basic_vec<T, Abi> expand(
     const typename basic_vec<T, Abi>::mask_type& mask_value,
     const basic_vec<T, Abi>& original) noexcept {
     basic_vec<T, Abi> result = original;
-    simd_size_type in = 0;
-    for (simd_size_type i = 0;
-         i < static_cast<simd_size_type>(basic_vec<T, Abi>::size);
+    __simd_size_type in = 0;
+    for (__simd_size_type i = 0;
+         i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size);
          ++i) {
         if (mask_value[i]) {
-            detail::set_lane(result, i, value[in]);
+            __detail::set_lane(result, i, value[in]);
             ++in;
         }
     }
@@ -90,12 +90,12 @@ constexpr basic_mask<Bytes, Abi> expand(
     const type_identity_t<basic_mask<Bytes, Abi>>& mask_value,
     const basic_mask<Bytes, Abi>& original = basic_mask<Bytes, Abi>{}) noexcept {
     basic_mask<Bytes, Abi> result = original;
-    simd_size_type in = 0;
-    for (simd_size_type i = 0;
-         i < static_cast<simd_size_type>(basic_mask<Bytes, Abi>::size);
+    __simd_size_type in = 0;
+    for (__simd_size_type i = 0;
+         i < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size);
          ++i) {
         if (mask_value[i]) {
-            detail::lane_ref(result, i) = value[in];
+            __detail::lane_ref(result, i) = value[in];
             ++in;
         }
     }
@@ -103,25 +103,25 @@ constexpr basic_mask<Bytes, Abi> expand(
 }
 
 template<
-    simd_size_type N,
+    __simd_size_type N,
     class V,
     class IndexMap,
     typename enable_if<
-        !detail::is_simd_index_vector<detail::remove_cvref_t<IndexMap>>::value &&
-            detail::is_static_permute_index_map<IndexMap>::value,
+        !__detail::is_simd_index_vector<__detail::remove_cvref_t<IndexMap>>::value &&
+            __detail::is_static_permute_index_map<IndexMap>::value,
         int>::type>
-constexpr resize_t<(N == 0 ? static_cast<simd_size_type>(V::size) : N), V>
+constexpr resize_t<(N == 0 ? static_cast<__simd_size_type>(V::size) : N), V>
 permute(const V& value, IndexMap&& index_map) {
-    constexpr simd_size_type lane_count = N == 0 ? static_cast<simd_size_type>(V::size) : N;
+    constexpr __simd_size_type lane_count = N == 0 ? static_cast<__simd_size_type>(V::size) : N;
     static_assert(lane_count > 0, "std::simd::permute requires a positive lane count");
 
-    return detail::permute_from_map_impl(
+    return __detail::permute_from_map_impl(
         value,
         index_map,
-        make_integer_sequence<simd_size_type, lane_count>{});
+        make_integer_sequence<__simd_size_type, lane_count>{});
 }
 
-namespace detail {
+namespace __detail {
 
 template<class Chunk>
 struct chunk_type_traits {
@@ -148,22 +148,22 @@ concept chunk_has_valid_tail = V::size % Chunk::size == 0 || requires {
 template<class Chunk, class V>
 constexpr auto chunk_impl(const V& value) noexcept {
     using chunk_type = Chunk;
-    constexpr simd_size_type chunk_size = static_cast<simd_size_type>(chunk_type::size);
-    constexpr simd_size_type full_chunk_count = static_cast<simd_size_type>(V::size) / chunk_size;
-    constexpr simd_size_type tail_size = static_cast<simd_size_type>(V::size) % chunk_size;
+    constexpr __simd_size_type chunk_size = static_cast<__simd_size_type>(chunk_type::size);
+    constexpr __simd_size_type full_chunk_count = static_cast<__simd_size_type>(V::size) / chunk_size;
+    constexpr __simd_size_type tail_size = static_cast<__simd_size_type>(V::size) % chunk_size;
 
     static_assert(chunk_size > 0, "std::simd::chunk requires a positive chunk width");
 
     if constexpr (tail_size == 0) {
-        return detail::chunk_array_impl<chunk_type>(
+        return __detail::chunk_array_impl<chunk_type>(
             value,
             make_index_sequence<static_cast<size_t>(full_chunk_count)>{});
     } else {
         return tuple_cat(
-            detail::chunk_tuple_impl<chunk_type>(
+            __detail::chunk_tuple_impl<chunk_type>(
                 value,
                 make_index_sequence<static_cast<size_t>(full_chunk_count)>{}),
-            make_tuple(detail::tail_chunk<resize_t<tail_size, chunk_type>>(
+            make_tuple(__detail::tail_chunk<resize_t<tail_size, chunk_type>>(
                 value,
                 full_chunk_count * chunk_size)));
     }
@@ -171,49 +171,49 @@ constexpr auto chunk_impl(const V& value) noexcept {
 
 template<class First, class... Rest>
 using cat_result_t = resize_t<
-    static_cast<simd_size_type>(First::size) +
-        (static_cast<simd_size_type>(Rest::size) + ... + 0),
+    static_cast<__simd_size_type>(First::size) +
+        (static_cast<__simd_size_type>(Rest::size) + ... + 0),
     First>;
 
 template<class Result, class Current>
-constexpr void cat_append(Result& result, simd_size_type& offset, const Current& current) {
+constexpr void cat_append(Result& result, __simd_size_type& offset, const Current& current) {
     using current_type = decay_t<Current>;
-    for (simd_size_type i = 0; i < static_cast<simd_size_type>(current_type::size); ++i) {
-        detail::set_lane(result, offset + i, current[i]);
+    for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(current_type::size); ++i) {
+        __detail::set_lane(result, offset + i, current[i]);
     }
-    offset += static_cast<simd_size_type>(current_type::size);
+    offset += static_cast<__simd_size_type>(current_type::size);
 }
 
 template<class Result, class First, class... Rest>
 constexpr Result cat_impl(const First& first, const Rest&... rest) noexcept {
     Result result;
-    simd_size_type offset = 0;
-    detail::cat_append(result, offset, first);
-    (detail::cat_append(result, offset, rest), ...);
+    __simd_size_type offset = 0;
+    __detail::cat_append(result, offset, first);
+    (__detail::cat_append(result, offset, rest), ...);
     return result;
 }
 
-} // namespace detail
+} // namespace __detail
 
 template<class Chunk, class Abi>
-    requires detail::chunk_type_traits<Chunk>::enabled &&
-             detail::chunk_has_valid_tail<Chunk,
-                 basic_vec<typename detail::chunk_type_traits<Chunk>::value_type, Abi>>
+    requires __detail::chunk_type_traits<Chunk>::enabled &&
+             __detail::chunk_has_valid_tail<Chunk,
+                 basic_vec<typename __detail::chunk_type_traits<Chunk>::value_type, Abi>>
 constexpr auto chunk(
-    const basic_vec<typename detail::chunk_type_traits<Chunk>::value_type, Abi>& value) noexcept {
-    return detail::chunk_impl<Chunk>(value);
+    const basic_vec<typename __detail::chunk_type_traits<Chunk>::value_type, Abi>& value) noexcept {
+    return __detail::chunk_impl<Chunk>(value);
 }
 
 template<class Chunk, class Abi>
-    requires detail::chunk_type_traits<Chunk>::enabled &&
-             detail::chunk_has_valid_tail<Chunk,
-                 basic_mask<detail::chunk_type_traits<Chunk>::mask_bytes, Abi>>
+    requires __detail::chunk_type_traits<Chunk>::enabled &&
+             __detail::chunk_has_valid_tail<Chunk,
+                 basic_mask<__detail::chunk_type_traits<Chunk>::mask_bytes, Abi>>
 constexpr auto chunk(
-    const basic_mask<detail::chunk_type_traits<Chunk>::mask_bytes, Abi>& value) noexcept {
-    return detail::chunk_impl<Chunk>(value);
+    const basic_mask<__detail::chunk_type_traits<Chunk>::mask_bytes, Abi>& value) noexcept {
+    return __detail::chunk_impl<Chunk>(value);
 }
 
-template<simd_size_type N, class T, class Abi>
+template<__simd_size_type N, class T, class Abi>
     requires requires(const basic_vec<T, Abi>& value) {
         simd::chunk<resize_t<N, basic_vec<T, Abi>>>(value);
     }
@@ -221,7 +221,7 @@ constexpr auto chunk(const basic_vec<T, Abi>& value) noexcept {
     return simd::chunk<resize_t<N, basic_vec<T, Abi>>>(value);
 }
 
-template<simd_size_type N, size_t Bytes, class Abi>
+template<__simd_size_type N, size_t Bytes, class Abi>
     requires requires(const basic_mask<Bytes, Abi>& value) {
         simd::chunk<resize_t<N, basic_mask<Bytes, Abi>>>(value);
     }
@@ -230,20 +230,20 @@ constexpr auto chunk(const basic_mask<Bytes, Abi>& value) noexcept {
 }
 
 template<class T, class FirstAbi, class... Abis>
-constexpr detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>
+constexpr __detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>
 cat(const basic_vec<T, FirstAbi>& first, const basic_vec<T, Abis>&... rest) noexcept {
-    using result_type = detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>;
-    return detail::cat_impl<result_type>(first, rest...);
+    using result_type = __detail::cat_result_t<basic_vec<T, FirstAbi>, basic_vec<T, Abis>...>;
+    return __detail::cat_impl<result_type>(first, rest...);
 }
 
 template<size_t Bytes, class FirstAbi, class... Abis>
-constexpr detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>
+constexpr __detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>
 cat(const basic_mask<Bytes, FirstAbi>& first, const basic_mask<Bytes, Abis>&... rest) noexcept {
-    using result_type = detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>;
-    return detail::cat_impl<result_type>(first, rest...);
+    using result_type = __detail::cat_result_t<basic_mask<Bytes, FirstAbi>, basic_mask<Bytes, Abis>...>;
+    return __detail::cat_impl<result_type>(first, rest...);
 }
 
-namespace detail {
+namespace __detail {
 
 template<class T>
 struct iota_vec_traits {
@@ -279,10 +279,10 @@ constexpr T make_iota() {
     }
 }
 
-} // namespace detail
+} // namespace __detail
 
 template<class T>
-constexpr T iota = detail::make_iota<T>();
+constexpr T iota = __detail::make_iota<T>();
 
 template<class T, class Abi>
 constexpr basic_vec<T, Abi> min(
@@ -293,8 +293,8 @@ constexpr basic_vec<T, Abi> min(
     }
 {
     basic_vec<T, Abi> result;
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-        detail::set_lane(result, i, right[i] < left[i] ? right[i] : left[i]);
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+        __detail::set_lane(result, i, right[i] < left[i] ? right[i] : left[i]);
     }
     return result;
 }
@@ -308,8 +308,8 @@ constexpr basic_vec<T, Abi> max(
     }
 {
     basic_vec<T, Abi> result;
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-        detail::set_lane(result, i, left[i] < right[i] ? right[i] : left[i]);
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+        __detail::set_lane(result, i, left[i] < right[i] ? right[i] : left[i]);
     }
     return result;
 }
@@ -333,8 +333,8 @@ constexpr basic_vec<T, Abi> clamp(const basic_vec<T, Abi>& value,
     }
 {
     basic_vec<T, Abi> result;
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
-        detail::set_lane(
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+        __detail::set_lane(
             result,
             i,
             value[i] < low[i] ? low[i]
@@ -348,15 +348,15 @@ template<
     class Abi,
     class T,
     class U,
-    class Result = decltype(simd_select_impl(
+    class Result = decltype(__simd_select_impl(
         declval<const basic_mask<Bytes, Abi>&>(),
         declval<const T&>(),
         declval<const U&>()))>
 constexpr Result select(const basic_mask<Bytes, Abi>& mask_value,
                         const T& true_value,
                         const U& false_value) noexcept(
-    noexcept(simd_select_impl(mask_value, true_value, false_value))) {
-    return simd_select_impl(mask_value, true_value, false_value);
+    noexcept(__simd_select_impl(mask_value, true_value, false_value))) {
+    return __simd_select_impl(mask_value, true_value, false_value);
 }
 
 template<class T, class U>

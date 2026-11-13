@@ -3,42 +3,42 @@
 #define FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(name) \
 template<class V> \
 constexpr remove_cvref_t<V> name(const V& value) \
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_math_transform<result_type>(value, detail::math_##name##_fn{}); \
+    return __detail::unary_math_transform<result_type>(value, __detail::math_##name##_fn{}); \
 }
 
 // The unused defaulted argument gives each deduction pattern a distinct
 // specialization identity even when its substituted function type is identical.
 #define FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(overload_id, name, left_type, right_type) \
 template<class V, int = overload_id> \
-constexpr detail::deduced_math_vector_t<V> name(const left_type& left, const right_type& right) \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
-    return detail::binary_math_transform<result_type>(left, right, detail::math_##name##_fn{}); \
+constexpr __detail::deduced_math_vector_t<V> name(const left_type& left, const right_type& right) \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
+    return __detail::binary_math_transform<result_type>(left, right, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(name) \
 FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(1, name, V, V) \
-FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(2, name, detail::deduced_math_vector_t<V>, V) \
-FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(3, name, V, detail::deduced_math_vector_t<V>)
+FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(2, name, __detail::deduced_math_vector_t<V>, V) \
+FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(3, name, V, __detail::deduced_math_vector_t<V>)
 
 #define FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(overload_id, name, x_type, y_type, z_type, noexcept_spec) \
 template<class V, int = overload_id> \
-constexpr detail::deduced_math_vector_t<V> name(const x_type& x, const y_type& y, const z_type& z) noexcept_spec \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
-    return detail::ternary_math_transform<result_type>(x, y, z, detail::math_##name##_fn{}); \
+constexpr __detail::deduced_math_vector_t<V> name(const x_type& x, const y_type& y, const z_type& z) noexcept_spec \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
+    return __detail::ternary_math_transform<result_type>(x, y, z, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_TERNARY_FLOAT_MATH_CONSTEXPR(name, noexcept_spec) \
 FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(1, name, V, V, V, noexcept_spec) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(2, name, detail::deduced_math_vector_t<V>, V, V, ) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(3, name, V, detail::deduced_math_vector_t<V>, V, ) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(4, name, V, V, detail::deduced_math_vector_t<V>, ) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(5, name, detail::deduced_math_vector_t<V>, detail::deduced_math_vector_t<V>, V, ) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(6, name, detail::deduced_math_vector_t<V>, V, detail::deduced_math_vector_t<V>, ) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(7, name, V, detail::deduced_math_vector_t<V>, detail::deduced_math_vector_t<V>, )
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(2, name, __detail::deduced_math_vector_t<V>, V, V, ) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(3, name, V, __detail::deduced_math_vector_t<V>, V, ) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(4, name, V, V, __detail::deduced_math_vector_t<V>, ) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(5, name, __detail::deduced_math_vector_t<V>, __detail::deduced_math_vector_t<V>, V, ) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(6, name, __detail::deduced_math_vector_t<V>, V, __detail::deduced_math_vector_t<V>, ) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(7, name, V, __detail::deduced_math_vector_t<V>, __detail::deduced_math_vector_t<V>, )
 
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(sqrt)
 FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(sin)

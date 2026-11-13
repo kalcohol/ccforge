@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 template<class T>
 T comp_ellint_1(T x) {
@@ -203,4 +203,4 @@ T sph_legendre(unsigned l, unsigned m, T theta) {
 #endif
 }
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

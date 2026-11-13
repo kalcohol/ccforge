@@ -2,114 +2,114 @@
 
 template<class V>
 constexpr remove_cvref_t<V> abs(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_fabs_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_fabs_fn{});
 }
 
 template<class V>
 constexpr remove_cvref_t<V> abs(const V& value)
-    requires(detail::is_simd_signed_integral_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_signed_integral_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_signed_abs_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_signed_abs_fn{});
 }
 
 template<class V>
 constexpr remove_cvref_t<V> fabs(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_fabs_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_fabs_fn{});
 }
 
 #define FORGE_SIMD_UNARY_FLOAT_MATH_CONSTEXPR(name) \
 template<class V> \
 constexpr remove_cvref_t<V> name(const V& value) \
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_math_transform<result_type>(value, detail::math_##name##_fn{}); \
+    return __detail::unary_math_transform<result_type>(value, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(name) \
 template<class V> \
 remove_cvref_t<V> name(const V& value) \
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = remove_cvref_t<V>; \
-    return detail::unary_math_transform<result_type>(value, detail::math_##name##_fn{}); \
+    return __detail::unary_math_transform<result_type>(value, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_UNARY_FLOAT_INT_MATH_CONSTEXPR(name, int_type) \
 template<class V> \
 constexpr rebind_t<int_type, remove_cvref_t<V>> name(const V& value) \
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = rebind_t<int_type, remove_cvref_t<V>>; \
-    return detail::unary_math_transform<result_type>(value, detail::math_##name##_fn{}); \
+    return __detail::unary_math_transform<result_type>(value, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(name, int_type) \
 template<class V> \
 rebind_t<int_type, remove_cvref_t<V>> name(const V& value) \
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) { \
     using result_type = rebind_t<int_type, remove_cvref_t<V>>; \
-    return detail::unary_math_transform<result_type>(value, detail::math_##name##_fn{}); \
+    return __detail::unary_math_transform<result_type>(value, __detail::math_##name##_fn{}); \
 }
 
 // The unused defaulted argument gives each deduction pattern a distinct
 // specialization identity even when its substituted function type is identical.
 #define FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(overload_id, name, left_type, right_type) \
 template<class V, int = overload_id> \
-constexpr detail::deduced_math_vector_t<V> name(const left_type& left, const right_type& right) \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
-    return detail::binary_math_transform<result_type>(left, right, detail::math_##name##_fn{}); \
+constexpr __detail::deduced_math_vector_t<V> name(const left_type& left, const right_type& right) \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
+    return __detail::binary_math_transform<result_type>(left, right, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(name) \
 FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(1, name, V, V) \
-FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(2, name, detail::deduced_math_vector_t<V>, V) \
-FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(3, name, V, detail::deduced_math_vector_t<V>)
+FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(2, name, __detail::deduced_math_vector_t<V>, V) \
+FORGE_SIMD_BINARY_FLOAT_MATH_OVERLOAD(3, name, V, __detail::deduced_math_vector_t<V>)
 
 #define FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(overload_id, name, x_type, y_type, z_type) \
 template<class V, int = overload_id> \
-constexpr detail::deduced_math_vector_t<V> name(const x_type& x, const y_type& y, const z_type& z) \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
-    return detail::ternary_math_transform<result_type>(x, y, z, detail::math_##name##_fn{}); \
+constexpr __detail::deduced_math_vector_t<V> name(const x_type& x, const y_type& y, const z_type& z) \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
+    return __detail::ternary_math_transform<result_type>(x, y, z, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_TERNARY_FLOAT_MATH_CONSTEXPR(name) \
 FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(1, name, V, V, V) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(2, name, detail::deduced_math_vector_t<V>, V, V) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(3, name, V, detail::deduced_math_vector_t<V>, V) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(4, name, V, V, detail::deduced_math_vector_t<V>) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(5, name, detail::deduced_math_vector_t<V>, detail::deduced_math_vector_t<V>, V) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(6, name, detail::deduced_math_vector_t<V>, V, detail::deduced_math_vector_t<V>) \
-FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(7, name, V, detail::deduced_math_vector_t<V>, detail::deduced_math_vector_t<V>)
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(2, name, __detail::deduced_math_vector_t<V>, V, V) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(3, name, V, __detail::deduced_math_vector_t<V>, V) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(4, name, V, V, __detail::deduced_math_vector_t<V>) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(5, name, __detail::deduced_math_vector_t<V>, __detail::deduced_math_vector_t<V>, V) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(6, name, __detail::deduced_math_vector_t<V>, V, __detail::deduced_math_vector_t<V>) \
+FORGE_SIMD_TERNARY_FLOAT_MATH_OVERLOAD(7, name, V, __detail::deduced_math_vector_t<V>, __detail::deduced_math_vector_t<V>)
 
 #define FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(overload_id, name, left_type, right_type) \
 template<class V, int = overload_id> \
-constexpr typename detail::deduced_math_vector_t<V>::mask_type name(const left_type& left, const right_type& right) \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
-    return detail::binary_math_mask_transform<result_type>(left, right, detail::math_##name##_fn{}); \
+constexpr typename __detail::deduced_math_vector_t<V>::mask_type name(const left_type& left, const right_type& right) \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
+    return __detail::binary_math_mask_transform<result_type>(left, right, __detail::math_##name##_fn{}); \
 }
 
 #define FORGE_SIMD_BINARY_FLOAT_MASK_CONSTEXPR(name) \
 FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(1, name, V, V) \
-FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(2, name, detail::deduced_math_vector_t<V>, V) \
-FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(3, name, V, detail::deduced_math_vector_t<V>)
+FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(2, name, __detail::deduced_math_vector_t<V>, V) \
+FORGE_SIMD_BINARY_FLOAT_MASK_OVERLOAD(3, name, V, __detail::deduced_math_vector_t<V>)
 
 template<class V>
 constexpr remove_cvref_t<V> ceil(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_ceil_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_ceil_fn{});
 }
 
 template<class V>
 constexpr remove_cvref_t<V> floor(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_floor_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_floor_fn{});
 }
 
 FORGE_SIMD_UNARY_FLOAT_MATH_RUNTIME(nearbyint)
@@ -119,30 +119,30 @@ FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(lrint, long int)
 FORGE_SIMD_UNARY_FLOAT_INT_MATH_RUNTIME(llrint, long long int)
 template<class V>
 constexpr remove_cvref_t<V> round(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_round_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_round_fn{});
 }
 
 template<class V>
 constexpr rebind_t<long int, remove_cvref_t<V>> lround(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<long int, remove_cvref_t<V>>;
-    return detail::unary_math_transform<result_type>(value, detail::math_round_to_integer_fn<long int>{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_round_to_integer_fn<long int>{});
 }
 
 template<class V>
 constexpr rebind_t<long long int, remove_cvref_t<V>> llround(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<long long int, remove_cvref_t<V>>;
-    return detail::unary_math_transform<result_type>(value, detail::math_round_to_integer_fn<long long int>{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_round_to_integer_fn<long long int>{});
 }
 
 template<class V>
 constexpr remove_cvref_t<V> trunc(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
-    return detail::unary_math_transform<result_type>(value, detail::math_trunc_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_trunc_fn{});
 }
 
 FORGE_SIMD_BINARY_FLOAT_MATH_CONSTEXPR(fmod)
@@ -156,39 +156,39 @@ FORGE_SIMD_TERNARY_FLOAT_MATH_CONSTEXPR(fma)
 
 template<class V>
 constexpr rebind_t<int, remove_cvref_t<V>> fpclassify(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = rebind_t<int, remove_cvref_t<V>>;
-    return detail::unary_math_transform<result_type>(value, detail::math_fpclassify_fn{});
+    return __detail::unary_math_transform<result_type>(value, __detail::math_fpclassify_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type isfinite(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, detail::math_isfinite_fn{});
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_math_mask_transform(value, __detail::math_isfinite_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type isinf(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, detail::math_isinf_fn{});
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_math_mask_transform(value, __detail::math_isinf_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type isnan(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, detail::math_isnan_fn{});
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_math_mask_transform(value, __detail::math_isnan_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type isnormal(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, detail::math_isnormal_fn{});
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_math_mask_transform(value, __detail::math_isnormal_fn{});
 }
 
 template<class V>
 constexpr typename remove_cvref_t<V>::mask_type signbit(const V& value)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
-    return detail::unary_math_mask_transform(value, detail::math_signbit_fn{});
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    return __detail::unary_math_mask_transform(value, __detail::math_signbit_fn{});
 }
 
 FORGE_SIMD_BINARY_FLOAT_MASK_CONSTEXPR(isgreater)
@@ -200,16 +200,16 @@ FORGE_SIMD_BINARY_FLOAT_MASK_CONSTEXPR(isunordered)
 
 template<class V>
 constexpr remove_cvref_t<V> frexp(const V& value, rebind_t<int, remove_cvref_t<V>>* exp)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using vec_type = remove_cvref_t<V>;
     using exp_type = rebind_t<int, vec_type>;
 
     vec_type fraction;
     exp_type exponent;
-    for (simd_size_type i = 0; i < vec_type::size; ++i) {
+    for (__simd_size_type i = 0; i < vec_type::size; ++i) {
         int lane_exponent = 0;
-        detail::set_lane(fraction, i, static_cast<typename vec_type::value_type>(std::frexp(value[i], &lane_exponent)));
-        detail::set_lane(exponent, i, lane_exponent);
+        __detail::set_lane(fraction, i, static_cast<typename vec_type::value_type>(std::frexp(value[i], &lane_exponent)));
+        __detail::set_lane(exponent, i, lane_exponent);
     }
     if (exp != nullptr) {
         *exp = exponent;
@@ -222,10 +222,10 @@ constexpr basic_vec<T, Abi> modf(const type_identity_t<basic_vec<T, Abi>>& value
     requires(is_floating_point<T>::value) {
     basic_vec<T, Abi> fractional;
     basic_vec<T, Abi> integral;
-    for (simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+    for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
         T integral_lane{};
-        detail::set_lane(fractional, i, static_cast<T>(std::modf(value[i], &integral_lane)));
-        detail::set_lane(integral, i, integral_lane);
+        __detail::set_lane(fractional, i, static_cast<T>(std::modf(value[i], &integral_lane)));
+        __detail::set_lane(integral, i, integral_lane);
     }
     if (iptr != nullptr) {
         *iptr = integral;
@@ -235,19 +235,19 @@ constexpr basic_vec<T, Abi> modf(const type_identity_t<basic_vec<T, Abi>>& value
 
 #define FORGE_SIMD_REMQUO_OVERLOAD(overload_id, left_type, right_type) \
 template<class V, int = overload_id> \
-constexpr detail::deduced_math_vector_t<V> \
-remquo(const left_type& left, const right_type& right, rebind_t<int, detail::deduced_math_vector_t<V>>* quo) \
-    requires(detail::math_floating_point<V>) { \
-    using result_type = detail::deduced_math_vector_t<V>; \
+constexpr __detail::deduced_math_vector_t<V> \
+remquo(const left_type& left, const right_type& right, rebind_t<int, __detail::deduced_math_vector_t<V>>* quo) \
+    requires(__detail::math_floating_point<V>) { \
+    using result_type = __detail::deduced_math_vector_t<V>; \
     using quo_type = rebind_t<int, result_type>; \
-    const result_type lhs = detail::to_math_vector<result_type>(left); \
-    const result_type rhs = detail::to_math_vector<result_type>(right); \
+    const result_type lhs = __detail::to_math_vector<result_type>(left); \
+    const result_type rhs = __detail::to_math_vector<result_type>(right); \
     result_type remainder_value; \
     quo_type quotient_bits; \
-    for (simd_size_type i = 0; i < result_type::size; ++i) { \
+    for (__simd_size_type i = 0; i < result_type::size; ++i) { \
         int quotient = 0; \
-        detail::set_lane(remainder_value, i, static_cast<typename result_type::value_type>(std::remquo(lhs[i], rhs[i], &quotient))); \
-        detail::set_lane(quotient_bits, i, quotient); \
+        __detail::set_lane(remainder_value, i, static_cast<typename result_type::value_type>(std::remquo(lhs[i], rhs[i], &quotient))); \
+        __detail::set_lane(quotient_bits, i, quotient); \
     } \
     if (quo != nullptr) { \
         *quo = quotient_bits; \
@@ -256,40 +256,40 @@ remquo(const left_type& left, const right_type& right, rebind_t<int, detail::ded
 }
 
 FORGE_SIMD_REMQUO_OVERLOAD(1, V, V)
-FORGE_SIMD_REMQUO_OVERLOAD(2, detail::deduced_math_vector_t<V>, V)
-FORGE_SIMD_REMQUO_OVERLOAD(3, V, detail::deduced_math_vector_t<V>)
+FORGE_SIMD_REMQUO_OVERLOAD(2, __detail::deduced_math_vector_t<V>, V)
+FORGE_SIMD_REMQUO_OVERLOAD(3, V, __detail::deduced_math_vector_t<V>)
 
 #undef FORGE_SIMD_REMQUO_OVERLOAD
 
 template<class V>
 constexpr remove_cvref_t<V> ldexp(const V& value, const rebind_t<int, remove_cvref_t<V>>& exp)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
     result_type result;
-    for (simd_size_type i = 0; i < result_type::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::ldexp(value[i], exp[i])));
+    for (__simd_size_type i = 0; i < result_type::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::ldexp(value[i], exp[i])));
     }
     return result;
 }
 
 template<class V>
 constexpr remove_cvref_t<V> scalbn(const V& value, const rebind_t<int, remove_cvref_t<V>>& exp)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
     result_type result;
-    for (simd_size_type i = 0; i < result_type::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::scalbn(value[i], exp[i])));
+    for (__simd_size_type i = 0; i < result_type::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::scalbn(value[i], exp[i])));
     }
     return result;
 }
 
 template<class V>
 constexpr remove_cvref_t<V> scalbln(const V& value, const rebind_t<long int, remove_cvref_t<V>>& exp)
-    requires(detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
+    requires(__detail::is_simd_floating_value<remove_cvref_t<V>>::value) {
     using result_type = remove_cvref_t<V>;
     result_type result;
-    for (simd_size_type i = 0; i < result_type::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::scalbln(value[i], exp[i])));
+    for (__simd_size_type i = 0; i < result_type::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename result_type::value_type>(std::scalbln(value[i], exp[i])));
     }
     return result;
 }

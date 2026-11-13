@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail {
+namespace __detail {
 
 // Keep scalar callables outside vector function templates: MSVC can emit
 // duplicate COMDATs for local generic lambdas shared by constexpr/runtime uses.
@@ -61,16 +61,16 @@ FORGE_SIMD_DETAIL_MATH_FUNCTION(pow, std::pow)
 FORGE_SIMD_DETAIL_MATH_FUNCTION(hypot, std::hypot)
 FORGE_SIMD_DETAIL_MATH_FUNCTION(lerp, std::lerp)
 
-FORGE_SIMD_DETAIL_MATH_FUNCTION(fabs, detail::math_fabs)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(ceil, detail::math_ceil)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(floor, detail::math_floor)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(round, detail::math_round)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(trunc, detail::math_trunc)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(copysign, detail::math_copysign)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(fmax, detail::math_fmax)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(fmin, detail::math_fmin)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(fpclassify, detail::math_fpclassify)
-FORGE_SIMD_DETAIL_MATH_FUNCTION(signbit, detail::math_signbit)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(fabs, __detail::math_fabs)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(ceil, __detail::math_ceil)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(floor, __detail::math_floor)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(round, __detail::math_round)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(trunc, __detail::math_trunc)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(copysign, __detail::math_copysign)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(fmax, __detail::math_fmax)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(fmin, __detail::math_fmin)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(fpclassify, __detail::math_fpclassify)
+FORGE_SIMD_DETAIL_MATH_FUNCTION(signbit, __detail::math_signbit)
 
 #undef FORGE_SIMD_DETAIL_MATH_FUNCTION
 
@@ -83,8 +83,8 @@ template<class Integer>
 struct math_round_to_integer_fn {
     template<class T>
     constexpr auto operator()(T lane) const {
-        return detail::math_round_to_integer<Integer>(lane);
+        return __detail::math_round_to_integer<Integer>(lane);
     }
 };
 
-} // namespace detail
+} // namespace __detail

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 inline long double carlson_rf(long double x, long double y, long double z) {
     if (std::isnan(x) || std::isnan(y) || std::isnan(z) ||
@@ -546,4 +546,4 @@ T comp_ellint_3_fallback(T k, T nu) {
     return ellint_3_fallback(k, nu, pi_v<T> / T{2});
 }
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail {
+namespace __detail {
 
 template<class T>
 constexpr T constexpr_math_integral_bound() noexcept {
@@ -317,8 +317,8 @@ constexpr Result to_math_vector(const Arg& arg) {
 template<class Result, class V, class Fun>
 constexpr Result unary_math_transform(const V& value, Fun fun) {
     Result result;
-    for (simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(value[i])));
+    for (__simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(value[i])));
     }
     return result;
 }
@@ -326,8 +326,8 @@ constexpr Result unary_math_transform(const V& value, Fun fun) {
 template<class V, class Fun>
 constexpr typename remove_cvref_t<V>::mask_type unary_math_mask_transform(const V& value, Fun fun) {
     typename remove_cvref_t<V>::mask_type result;
-    for (simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
-        detail::set_lane(result, i, static_cast<bool>(fun(value[i])));
+    for (__simd_size_type i = 0; i < remove_cvref_t<V>::size; ++i) {
+        __detail::set_lane(result, i, static_cast<bool>(fun(value[i])));
     }
     return result;
 }
@@ -337,8 +337,8 @@ constexpr Result binary_math_transform(const A& left, const B& right, Fun fun) {
     const Result lhs = to_math_vector<Result>(left);
     const Result rhs = to_math_vector<Result>(right);
     Result result;
-    for (simd_size_type i = 0; i < Result::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(lhs[i], rhs[i])));
+    for (__simd_size_type i = 0; i < Result::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(lhs[i], rhs[i])));
     }
     return result;
 }
@@ -348,8 +348,8 @@ constexpr typename Result::mask_type binary_math_mask_transform(const A& left, c
     const Result lhs = to_math_vector<Result>(left);
     const Result rhs = to_math_vector<Result>(right);
     typename Result::mask_type result;
-    for (simd_size_type i = 0; i < Result::size; ++i) {
-        detail::set_lane(result, i, static_cast<bool>(fun(lhs[i], rhs[i])));
+    for (__simd_size_type i = 0; i < Result::size; ++i) {
+        __detail::set_lane(result, i, static_cast<bool>(fun(lhs[i], rhs[i])));
     }
     return result;
 }
@@ -360,10 +360,10 @@ constexpr Result ternary_math_transform(const A& x, const B& y, const C& z, Fun 
     const Result vy = to_math_vector<Result>(y);
     const Result vz = to_math_vector<Result>(z);
     Result result;
-    for (simd_size_type i = 0; i < Result::size; ++i) {
-        detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(vx[i], vy[i], vz[i])));
+    for (__simd_size_type i = 0; i < Result::size; ++i) {
+        __detail::set_lane(result, i, static_cast<typename Result::value_type>(fun(vx[i], vy[i], vz[i])));
     }
     return result;
 }
 
-} // namespace detail
+} // namespace __detail

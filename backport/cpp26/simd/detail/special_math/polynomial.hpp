@@ -1,6 +1,6 @@
 #pragma once
 
-namespace detail::special_math {
+namespace __detail::special_math {
 
 struct polynomial_scaled_value {
     long double fraction;
@@ -285,4 +285,4 @@ T sph_legendre_fallback(unsigned l, unsigned m, T theta) {
     return static_cast<T>(current);
 }
 
-} // namespace detail::special_math
+} // namespace __detail::special_math

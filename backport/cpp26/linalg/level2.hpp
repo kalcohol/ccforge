@@ -56,9 +56,9 @@ void matrix_vector_product(
                   __detail::__can_simd_v<ElemT, XLayout, XAccessor> &&
                   __detail::__can_simd_v<ElemT, ALayout, AAccessor> &&
                   std::is_same_v<ALayout, std::layout_right>) {
-        using abi_t  = std::simd::native_abi<ElemT>;
+        using abi_t  = typename std::simd::vec<ElemT>::abi_type;
         using simd_t = std::simd::basic_vec<ElemT, abi_t>;
-        static constexpr auto kN = std::simd::simd_size<ElemT, abi_t>::value;
+        static constexpr auto kN = std::simd::basic_vec<ElemT, abi_t>::size();
         const auto rows = A.extent(0), cols = A.extent(1);
         const ElemT* px = x.data_handle();
         for (idx_t i = 0; i < rows; ++i) {
