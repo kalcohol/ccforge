@@ -54,6 +54,17 @@ function(forge_expect_execution_cxx_source_compiles result_var source_name shoul
 endfunction()
 
 forge_add_execution_compile_probe(
+    test_execution_env_queries
+    test_execution_env_queries.cpp
+    execution_env_queries_compile)
+forge_add_execution_compile_probe(
+    test_execution_strict_env_queries
+    test_execution_env_queries.cpp
+    execution_strict_env_queries_compile)
+target_compile_definitions(test_execution_strict_env_queries PRIVATE
+    FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+
+forge_add_execution_compile_probe(
     test_execution_api_core
     test_execution_api_core.cpp
     execution_api_core_compile)

@@ -240,7 +240,7 @@ if(FORGE_TEST_ENABLE_FORGE_ERASURE)
 endif()
 
 # Compile each executable consistently in member-only query mode. No definition
-# is exported by forge::forge. Keep backport-only query wrappers out of this set.
+# is exported by forge::forge.
 add_custom_target(test_forge_strict_member_queries)
 function(forge_add_strict_test stem)
     set(_strict_target "test_forge_strict_${stem}")
@@ -256,13 +256,13 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
     endforeach()
     target_compile_definitions(test_forge_strict_thread_pool PRIVATE
         FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
-    # The full task suite depends on sync_wait_env's legacy start scheduler.
+    # Full task tests use write_env; defer strict registration until its base
+    # environment obeys FWD-ENV filtering. Keep task_member_queries coverage.
 endif()
 if(FORGE_TEST_ENABLE_FORGE_ERASURE)
-    foreach(_stem IN ITEMS any_scheduler any_receiver any_sender)
+    foreach(_stem IN ITEMS any_scheduler any_receiver any_sender erased_sender)
         forge_add_strict_test(${_stem})
     endforeach()
-    # erased_sender's starts_on regression depends on backport let environments.
 endif()
 if(FORGE_TEST_ENABLE_FORGE_IO)
     foreach(_stem IN ITEMS coro_io coro_interop coro_combinators)
