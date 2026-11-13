@@ -452,3 +452,59 @@ foreach(_forge_extension_test IN ITEMS
         target_compile_options(${_forge_extension_test} PRIVATE -Werror=deprecated-declarations)
     endif()
 endforeach()
+
+# Deprecated extension calls remain usable and diagnose independently.
+set(_forge_extension_flags "${CMAKE_REQUIRED_FLAGS}")
+set(_forge_extension_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+if(MSVC)
+    string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
+endif()
+forge_add_execution_compile_probe(test_execution_scope_observer_compat test_execution_scope_observer_compat.cpp execution_scope_observer_compat_compile)
+add_test(NAME execution_scope_observer_compat COMMAND test_execution_scope_observer_compat)
+set_tests_properties(execution_scope_observer_compat PROPERTIES DEPENDS execution_scope_observer_compat_compile)
+if(MSVC)
+    target_compile_options(test_execution_scope_observer_compat PRIVATE /we4996)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_execution_scope_observer_compat PRIVATE -Werror=deprecated-declarations)
+endif()
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_SCOPE_OBSERVER_COMPAT
+        test_execution_scope_observer_compat.cpp ON "Suppressed legacy extensions and Forge replacements must compile")
+    foreach(_forge_case RANGE 1 4)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs} -DFORGE_DEPRECATION_CASE=${_forge_case})
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_SCOPE_OBSERVER_DEPRECATED_${_forge_case}
+            test_execution_scope_observer_compat.cpp OFF "Each legacy extension must diagnose deprecation")
+    endforeach()
+    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
+endif()
+set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
+unset(_forge_extension_flags)
+unset(_forge_extension_defs)
+unset(_forge_case)
+
+# Build separate strict copies of the migrated and zero-value runtime tests.
+set(_forge_scope_strict_targets
+    test_execution_counting_scope test_execution_counting_scope_limits_runtime
+    test_execution_counting_scope_stress test_execution_counting_scope_lifetime
+    test_execution_counting_scope_decrement_tail test_execution_spawn_future
+    test_execution_static_opstate_scope test_execution_associate_closure
+    test_execution_composition)
+set(_forge_scope_strict_copies)
+foreach(_forge_target IN LISTS _forge_scope_strict_targets)
+    string(REGEX REPLACE "^test_" "" _forge_source_test "${_forge_target}")
+    if(_forge_target STREQUAL "test_execution_counting_scope_limits_runtime")
+        set(_forge_source_test execution_counting_scope_limits)
+    endif()
+    forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
+    list(APPEND _forge_scope_strict_copies ${_forge_target}_deprecation_strict)
+endforeach()
+add_custom_target(test_execution_extension_deprecations_strict DEPENDS
+    ${_forge_scope_strict_copies} test_execution_scope_observer_compat
+    test_execution_extension_compat test_execution_extensions)
+unset(_forge_scope_strict_targets)
+unset(_forge_scope_strict_copies)
+unset(_forge_target)
+unset(_forge_source_test)

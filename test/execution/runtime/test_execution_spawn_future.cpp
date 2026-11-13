@@ -458,17 +458,17 @@ TEST(SpawnFutureTest, CompletedBeforeConsumerDeliversValue) {
         manual_sender{state}, token);
 
     ASSERT_TRUE(wait_until_started(state));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     complete_manual_value(state, 42);
     ASSERT_TRUE(wait_until_completed(state));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     auto result = forge::sync_wait(std::move(future));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -494,7 +494,7 @@ TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
     }};
 
     ASSERT_TRUE(wait_until_started(state));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     complete_manual_value(state, 7);
     consumer.join();
@@ -504,7 +504,7 @@ TEST(SpawnFutureTest, ConsumerBeforeCompletionWaitsForValue) {
     }
     ASSERT_TRUE(observed.has_value());
     EXPECT_EQ(*observed, 7);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -516,13 +516,13 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
         std::execution::spawn_future(
             std::execution::just_error(spawn_future_marker_error{}), token)),
         spawn_future_marker_error);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 
     auto stopped = forge::sync_wait(
         std::execution::spawn_future(std::execution::just_stopped(), token));
 
     EXPECT_FALSE(stopped.has_value());
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -537,7 +537,7 @@ TEST(SpawnFutureTest, NonCopyableLvaluePipelineConsumesSource) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 31);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -577,7 +577,7 @@ TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
     EXPECT_THROW(
         (void)forge::sync_wait(std::move(error_future)),
         spawn_future_marker_error);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 
     auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
@@ -616,7 +616,7 @@ TEST(SpawnTest, BorrowsNoncopyableSourceAllocatorAttributes) {
         EXPECT_EQ(queries, 1);
         EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
         EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
 }
@@ -652,7 +652,7 @@ TEST(SpawnTest, OwnsImmovablePrvalueSourceAllocatorAttributes) {
     EXPECT_EQ(alive, 0);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 1);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -680,7 +680,7 @@ TEST(SpawnTest, ExplicitAllocatorStillOverridesBorrowedSourceAttributes) {
     EXPECT_EQ(sender_counts->attempts.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(explicit_counts->allocations.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(explicit_counts->deallocations.load(std::memory_order_relaxed), 1);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -705,7 +705,7 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
     EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -728,7 +728,7 @@ TEST(SpawnFutureTest, ForwardsMemberQueriedEnvironmentToWrappedSender) {
     EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -758,7 +758,7 @@ TEST(SpawnFutureTest, SuppliedAllocatorOverridesSenderAttributes) {
     EXPECT_GE(receiver_counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(receiver_counts->allocations.load(std::memory_order_relaxed),
               receiver_counts->deallocations.load(std::memory_order_relaxed));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -787,7 +787,7 @@ TEST(SpawnFutureTest, FallsBackToSenderAllocatorWithAndWithoutExplicitEnvironmen
         EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
         EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
                   counts->deallocations.load(std::memory_order_relaxed));
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
 }
@@ -810,7 +810,7 @@ TEST(SpawnFutureTest, SelectsAllocatorFromTokenWrappedSender) {
     EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -830,7 +830,7 @@ TEST(SpawnFutureTest, DefaultAllocatorDoesNotAddAnAllocatorQueryToSpawnEnvironme
 
         ASSERT_TRUE(result.has_value());
         EXPECT_FALSE(std::get<0>(*result));
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
 }
@@ -867,7 +867,7 @@ TEST(SpawnFutureTest, SenderAllocatorFallbackPreservesMoveOnlyPayloadAndEnvironm
     EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
               counts->deallocations.load(std::memory_order_relaxed));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -888,7 +888,7 @@ TEST(SpawnFutureTest, SenderAllocatorFailureReleasesAssociationWithoutStartingWo
     EXPECT_EQ(counts->attempts.load(std::memory_order_relaxed), 1);
     EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(counts->deallocations.load(std::memory_order_relaxed), 0);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -912,7 +912,7 @@ TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -935,7 +935,7 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     EXPECT_TRUE(wait_until_completed(state));
     auto result = forge::sync_wait(std::move(future));
     EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -955,7 +955,7 @@ TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
     check(std::execution::just(42));
     check(std::execution::just_error(spawn_future_marker_error{}));
     check(std::execution::just_stopped());
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -982,7 +982,7 @@ TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
         EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
         auto result = forge::sync_wait(std::move(future));
         EXPECT_EQ(result.has_value(), !stop);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
 }
@@ -1003,7 +1003,7 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
         env);
 
     ASSERT_TRUE(wait_until_started(source));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     std::inplace_stop_source downstream_stop;
     std::atomic<bool> receiver_stopped{false};
@@ -1023,7 +1023,7 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
 
     EXPECT_TRUE(wait_until_completed(source));
     EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 
     auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
@@ -1052,7 +1052,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
                     manual_sender{source}, scope.get_token(),
                     member_allocator_env{counting_allocator<std::byte>{counts}});
                 ASSERT_TRUE(wait_until_started(source));
-                EXPECT_EQ(scope.count(), 1u);
+                EXPECT_EQ(scope.__count(), 1u);
                 auto op = std::execution::connect(
                     std::move(future),
                     observed_consumer_receiver{
@@ -1070,21 +1070,21 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
                 if (!completes_on_stop) {
                     std::lock_guard lk{source->mtx};
                     EXPECT_FALSE(source->completed);
-                    EXPECT_EQ(scope.count(), 1u);
+                    EXPECT_EQ(scope.__count(), 1u);
                 }
                 if (!completes_on_stop || !stop_requested) {
                     complete_manual_value(source, 42);
                 }
                 EXPECT_TRUE(wait_until_completed(source));
                 expect_registration_error(observation);
-                EXPECT_EQ(scope.count(), 0u);
+                EXPECT_EQ(scope.__count(), 0u);
             }
 
             expect_registration_error(observation);
             EXPECT_GE(counts->allocations.load(std::memory_order_relaxed), 2);
             EXPECT_EQ(counts->allocations.load(std::memory_order_relaxed),
                       counts->deallocations.load(std::memory_order_relaxed));
-            EXPECT_EQ(scope.count(), 0u);
+            EXPECT_EQ(scope.__count(), 0u);
             (void)std::this_thread::sync_wait(scope.join());
         }
     }
@@ -1122,7 +1122,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureOverridesCachedValue) {
         static_assert(std::same_as<cs_t, std::execution::completion_signatures_of_t<
             decltype(future), std::execution::env_of_t<never_receiver_t>>>);
 
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
         auto op = std::execution::connect(
             std::move(future),
             receiver_t{
@@ -1134,7 +1134,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureOverridesCachedValue) {
         expect_registration_error(observation);
         EXPECT_EQ(attempts, 1);
         EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
     }
 
     expect_registration_error(observation);
@@ -1165,13 +1165,13 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
         EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
         EXPECT_TRUE(wait_until_stop_requested(source));
         EXPECT_TRUE(wait_until_completed(source));
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
     }
 
     EXPECT_EQ(observation.values, 0);
     EXPECT_EQ(observation.errors, 0);
     EXPECT_EQ(observation.stopped, 1);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -1191,7 +1191,7 @@ TEST(SpawnFutureTest, ClosedScopeDoesNotStartWork) {
 
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(started.load(std::memory_order_relaxed), 0);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -1205,12 +1205,12 @@ TEST(SpawnFutureTest, AbandonedFutureRequestsStop) {
             manual_sender{state}, token);
 
         ASSERT_TRUE(wait_until_started(state));
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
     }
 
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -1225,7 +1225,7 @@ TEST(SpawnFutureTest, UnstartedConsumerOperationRequestsStopOnDestruction) {
         auto future = std::execution::spawn_future(
             manual_sender{state}, token);
         ASSERT_TRUE(wait_until_started(state));
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
 
         auto op = std::execution::connect(
             std::move(future),
@@ -1241,7 +1241,7 @@ TEST(SpawnFutureTest, UnstartedConsumerOperationRequestsStopOnDestruction) {
 
     EXPECT_TRUE(wait_until_completed(state));
     EXPECT_FALSE(receiver_stopped.load(std::memory_order_acquire));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 
     auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
@@ -1258,7 +1258,7 @@ TEST(SpawnFutureTest, AssociationOutlivesProducerUntilFutureIsReleased) {
     future.emplace(std::execution::spawn_future(manual_sender{state}, token));
 
     ASSERT_TRUE(wait_until_started(state));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     std::atomic<bool> joined{false};
     auto join_op = std::execution::connect(
@@ -1270,13 +1270,13 @@ TEST(SpawnFutureTest, AssociationOutlivesProducerUntilFutureIsReleased) {
 
     EXPECT_TRUE(wait_until_completed(state));
     EXPECT_FALSE(joined.load(std::memory_order_acquire));
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     future.reset();
 
     EXPECT_TRUE(wait_for_flag(joined));
     EXPECT_FALSE(future.has_value());
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 }
 
 TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
@@ -1295,16 +1295,16 @@ TEST(SpawnFutureTest, DownstreamStopRequestsCancelSpawnedWork) {
 
         std::execution::start(op);
         ASSERT_TRUE(wait_until_started(state));
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
 
         downstream_stop.request_stop();
 
         EXPECT_TRUE(wait_until_stop_requested(state));
         EXPECT_TRUE(wait_until_completed(state));
         EXPECT_TRUE(receiver_stopped.load(std::memory_order_acquire));
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
     }
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
 
@@ -1332,14 +1332,14 @@ TEST(SpawnFutureTest, DownstreamStopCompletesBeforeStopIgnoringWorkFinishes) {
         std::lock_guard lk{state->mtx};
         EXPECT_FALSE(state->completed);
     }
-    EXPECT_EQ(scope.count(), 1u);
+    EXPECT_EQ(scope.__count(), 1u);
 
     complete_manual_value(state, 42);
 
     EXPECT_TRUE(wait_until_completed(state));
     auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 }
 
 TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
@@ -1396,7 +1396,7 @@ TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
         }
         ASSERT_TRUE(observed.has_value());
         EXPECT_EQ(*observed, i);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
 }
@@ -1421,7 +1421,7 @@ struct future_state_probe_sender {
         op(R r, std::execution::simple_counting_scope* s, int* l, bool* d)
             : receiver(std::move(r)), scope(s), live(l), destroyed_while_associated(d) { ++*live; }
         ~op() {
-            *destroyed_while_associated = scope->count() == 1;
+            *destroyed_while_associated = scope->__count() == 1;
             --*live;
         }
         void start() & noexcept { std::execution::set_value(std::move(receiver)); }
@@ -1453,7 +1453,7 @@ TEST(SpawnFutureTest, StateAndControlBlockAllocationFailuresUnwindBeforeDisassoc
             scope.get_token(), member_allocator_env{counting_allocator<std::byte>{counts}}),
             std::bad_alloc);
         EXPECT_EQ(live, 0);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         EXPECT_EQ(counts->allocations.load(), fail_on - 1);
         EXPECT_EQ(counts->deallocations.load(), fail_on - 1);
         EXPECT_EQ(destroyed_while_associated, fail_on == 3);
@@ -1471,7 +1471,7 @@ TEST(SpawnFutureTest, ChildConnectFailurePropagatesAndReleasesAllocatedState) {
         scope.get_token(), member_allocator_env{counting_allocator<std::byte>{counts}}),
         future_connect_error);
     EXPECT_EQ(live, 0);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     EXPECT_EQ(counts->allocations.load(), 2);
     EXPECT_EQ(counts->deallocations.load(), 2);
     (void)forge::sync_wait(scope.join());
@@ -1491,7 +1491,7 @@ TEST(SpawnFutureTest, SynchronousConsumerCompletionCanDestroyOperation) {
     EXPECT_TRUE(destroyed);
     EXPECT_EQ(result, 42);
     EXPECT_FALSE(context.has_value);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)forge::sync_wait(scope.join());
 }
 
@@ -1510,7 +1510,7 @@ TEST(SpawnTest, ConnectAndAllocationFailuresReleaseStateWithoutAssociation) {
             EXPECT_THROW(std::execution::spawn(sender, scope.get_token(), env), std::bad_alloc);
         }
         EXPECT_EQ(live, 0);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
         EXPECT_EQ(counts->allocations.load(), fail_connect ? 1 : 0);
         EXPECT_EQ(counts->deallocations.load(), counts->allocations.load());
         (void)forge::sync_wait(scope.join());

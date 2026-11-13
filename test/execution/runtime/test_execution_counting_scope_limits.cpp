@@ -22,34 +22,34 @@ template<class Scope>
 void expect_public_association_cleanup() {
     Scope scope;
     const auto token = scope.get_token();
-    EXPECT_EQ(scope.count(), 0u);
-    EXPECT_FALSE(scope.is_closed());
+    EXPECT_EQ(scope.__count(), 0u);
+    EXPECT_FALSE(scope.__is_closed());
     {
         auto first = token.try_associate();
         ASSERT_TRUE(static_cast<bool>(first));
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
         auto second = first.try_associate();
         ASSERT_TRUE(static_cast<bool>(second));
-        EXPECT_EQ(scope.count(), 2u);
+        EXPECT_EQ(scope.__count(), 2u);
 
         first = decltype(first){};
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
         auto replacement = token.try_associate();
         ASSERT_TRUE(static_cast<bool>(replacement));
-        EXPECT_EQ(scope.count(), 2u);
+        EXPECT_EQ(scope.__count(), 2u);
 
         scope.close();
-        EXPECT_TRUE(scope.is_closed());
+        EXPECT_TRUE(scope.__is_closed());
         EXPECT_FALSE(static_cast<bool>(token.try_associate()));
         EXPECT_FALSE(static_cast<bool>(second.try_associate()));
         EXPECT_FALSE(static_cast<bool>(replacement.try_associate()));
-        EXPECT_EQ(scope.count(), 2u);
+        EXPECT_EQ(scope.__count(), 2u);
     }
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     const auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 }
 
 template<class Scope>
@@ -57,13 +57,13 @@ void expect_unused_closed_scope_stays_empty() {
     Scope scope;
     const auto token = scope.get_token();
     scope.close();
-    EXPECT_TRUE(scope.is_closed());
+    EXPECT_TRUE(scope.__is_closed());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     const auto joined = forge::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 }
 
 } // namespace

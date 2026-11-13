@@ -172,7 +172,7 @@ void check_associate() {
     EXPECT_EQ(out.values, 1);
     EXPECT_EQ(out.live, 0);
     EXPECT_TRUE(out.aligned);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     join(scope);
 }
 
@@ -202,7 +202,7 @@ void check_spawn(bool future, bool abandoned) {
     EXPECT_EQ(counts.deallocations, counts.allocations);
     EXPECT_EQ(out.live, 0);
     EXPECT_TRUE(out.aligned);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     if (future && !abandoned) EXPECT_EQ(out.values, 1);
     join(scope);
 }

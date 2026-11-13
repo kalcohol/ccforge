@@ -111,7 +111,7 @@ void stress_join_start_races_last_release() {
         releaser.join();
 
         EXPECT_EQ(completions.load(std::memory_order_acquire), 1);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
     }
 }
 
@@ -165,7 +165,7 @@ void stress_multiple_joiners_race_last_release() {
         releaser.join();
 
         EXPECT_EQ(completions.load(std::memory_order_acquire), 3);
-        EXPECT_EQ(scope.count(), 0u);
+        EXPECT_EQ(scope.__count(), 0u);
     }
 }
 
@@ -185,7 +185,7 @@ void expect_join_completion_can_start_another_join() {
     assoc = decltype(assoc){};
 
     EXPECT_EQ(completions.load(std::memory_order_acquire), 2);
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
 }
 
 } // namespace

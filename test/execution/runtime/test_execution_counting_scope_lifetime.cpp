@@ -30,13 +30,13 @@ void expect_cross_thread_join_then_destroy() {
 
             // Also exercise join's zero-count path racing the final unlock.
             if (iteration % 2 == 0) {
-                while (scope.count() != 0) {
+                while (scope.__count() != 0) {
                     std::this_thread::yield();
                 }
             }
             auto joined = std::this_thread::sync_wait(scope.join());
             EXPECT_TRUE(joined.has_value());
-            EXPECT_EQ(scope.count(), 0u);
+            EXPECT_EQ(scope.__count(), 0u);
             EXPECT_NE(worker, std::thread::id{});
             EXPECT_NE(worker, owner);
         } // Destroy immediately after join, before waiting for the worker pool.
@@ -51,7 +51,7 @@ void destroy_drained_without_join(bool close) {
     std::execution::spawn(std::execution::just(), scope.get_token());
     // A different exit status prevents an outstanding-count check from
     // accidentally satisfying this regression test.
-    if (scope.count() != 0) std::_Exit(87);
+    if (scope.__count() != 0) std::_Exit(87);
     if (close) scope.close();
 }
 

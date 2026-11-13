@@ -219,12 +219,18 @@ public:
 
     [[nodiscard]] auto join() noexcept;
 
-    [[nodiscard]] bool is_closed() const noexcept {
+    [[nodiscard, deprecated("use forge::scope_is_closed (backport only)")]]
+    bool is_closed() const noexcept { return __is_closed(); }
+
+    [[nodiscard]] bool __is_closed() const noexcept {
         return __forge_counting_scope::__scope_rejects_association(
             __state_.load(std::memory_order_acquire));
     }
 
-    [[nodiscard]] std::size_t count() const noexcept {
+    [[nodiscard, deprecated("use forge::scope_count (backport only)")]]
+    std::size_t count() const noexcept { return __count(); }
+
+    [[nodiscard]] std::size_t __count() const noexcept {
         return __count_.load(std::memory_order_acquire);
     }
 
@@ -662,12 +668,18 @@ public:
 
     [[nodiscard]] auto join() noexcept;
 
-    [[nodiscard]] bool is_closed() const noexcept {
+    [[nodiscard, deprecated("use forge::scope_is_closed (backport only)")]]
+    bool is_closed() const noexcept { return __is_closed(); }
+
+    [[nodiscard]] bool __is_closed() const noexcept {
         return __forge_counting_scope::__scope_rejects_association(
             __state_.load(std::memory_order_acquire));
     }
 
-    [[nodiscard]] std::size_t count() const noexcept {
+    [[nodiscard, deprecated("use forge::scope_count (backport only)")]]
+    std::size_t count() const noexcept { return __count(); }
+
+    [[nodiscard]] std::size_t __count() const noexcept {
         return __count_.load(std::memory_order_acquire);
     }
 

@@ -56,7 +56,7 @@ void expect_destruction_synchronizes_with_decrement_tail() {
         // count() reaches zero before __decrement publishes joined, detaches
         // the joiner, and unlocks. Do not observe join completion or join the
         // thread until after destruction: that would hide the destructor race.
-        while (scope->count() != 0) {}
+        while (scope->__count() != 0) {}
         scope.reset();
 
         releaser.join();

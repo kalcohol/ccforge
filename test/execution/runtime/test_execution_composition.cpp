@@ -189,14 +189,14 @@ TEST(ExecutionComposition, BulkCompositionKeepsNonpositiveShapesEmpty) {
 TEST(ExecutionComposition, AssociateCompositionDoesNotAcquireDuringBinding) {
     ex::simple_counting_scope scope;
     auto closure = ex::associate(scope.get_token()) | ex::then(value_callback{2});
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     {
         auto sender = ex::just(7) | closure;
-        EXPECT_EQ(scope.count(), 1u);
+        EXPECT_EQ(scope.__count(), 1u);
         auto result = forge::sync_wait(std::move(sender));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 9);
     }
-    EXPECT_EQ(scope.count(), 0u);
+    EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
