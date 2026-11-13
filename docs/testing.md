@@ -578,17 +578,34 @@ query dispatch 只接受 const member `query`。默认关闭，不传播到 `for
 可执行文件的所有 translation unit 必须一致定义。该开关不改变 receiver completion、
 `get_env` 或 forwarding-query 分类的兼容 dispatch，也不影响 native stand-aside 实现。
 `forge_strict_erased_sender` 套件包含依赖 backport `let` env 的 `starts_on` 用例；
-完整 task suite 因 `write_env` 的成员查询与 `FWD-ENV` 过滤尚未补齐而不进入 strict 集合，
-保留独立 `task_member_queries` 测试。线程池、strand、
+完整 task suite 以 `forge_strict_task` 注册，包含经 `write_env` 传播 receiver stop token 的用例，
+同时保留独立 `task_member_queries` 测试。线程池、strand、
 any scheduler 的 stop-token fixtures 通过 `env{prop{...}}` 组合查询。
 `execution_env_queries_compile` 与 `execution_strict_env_queries_compile` 分别在默认和
 strict 模式直接包含 backport headers，断言 `env` / `prop` 及内部 helper 的成员查询、
 默认模式的 member / tag 混合选择、strict 模式的成员选择、具名左值 query、
 借用子环境的 cv/ref 限定、引用类型、variadic forwarding、缺失查询和条件 `noexcept`；
 `when_all` 拒绝额外参数，`spawn_future` 尚无成员查询。
-`continues_on`、`write_env`、`counting_scope`、`spawn_future`、`inline_scheduler` 和 `run_loop`
-的兼容查询探针仅在默认模式启用，待 completion-domain / `FWD-ENV` 过滤及 scheduler
-查询一致性补齐后再加入 strict 集合。
+`write_env` 的 overlay 优先、本地 base 查询拒绝、本地 overlay 查询保留，以及
+`inline_scheduler` 的环境相关 value completion scheduler / domain 与 scheduler / attrs 一致性，
+`run_loop` 的 value / stopped completion scheduler 一致性、带环境参数的 completion-domain CPO
+一致性、unary domain 缺失与 progress 成员均在两种模式检查。精确环境类型的 completion-domain
+成员重载优先于通用成员回退，两种模式均有探针；默认模式另检查对应的 ADL 重载选择。
+Completion scheduler / domain 探针还比较成员与 ADL 竞争、通用回退、带环境查询和 unary 回退，
+并检查 inline 及转发其查询的 scheduler 的 domain 递归终止。探针还使用满足 `receiver` 的非抛出移动类型，覆盖
+schedule sender 及其 `write_env` 包装的 `connect` / `start` 异常规格；rvalue receiver 移动
+不抛出，lvalue receiver 的复制可以抛出，并检查 receiver / query 结果的值类别。
+`execution_default_scheduler_env_queries` 与 `execution_strict_scheduler_env_queries` 运行相同的
+针对性测试，覆盖 `write_env` child 查询过滤、不同 loop 的 scheduler identity、inline 环境相关查询、
+schedule / `let` / `write_env` 组合中的 child scheduler 传播，以及 run-loop schedule sender
+从 receiver env 读取 stop token。三个 `let` adaptor 均检查 unary completion-scheduler 回退、
+环境相关查询优先、receiver 本地查询过滤、scheduler 优先于 completion domain，以及
+临时 attributes / 按值与借用 receiver environment 中引用答案的值保存。
+receiver env 缺少 scheduler 时，inline predecessor 在 strict 模式选择 completion domain，
+默认模式保留 legacy unary scheduler 回退；运行测试同时检查 child 的 start scheduler。
+两项运行测试随 `FORGE_TEST_ENABLE_EXECUTION` 注册。
+`continues_on`、`counting_scope`、`spawn_future` 的直接兼容查询探针仍仅在默认模式启用；
+分别等待 completion-domain fallback 过滤及 stop-when / `write_env` 所需 `FWD-ENV` 过滤和成员查询。
 两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
 `ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
 此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。

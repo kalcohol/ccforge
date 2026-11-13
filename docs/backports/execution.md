@@ -124,7 +124,8 @@ auto result = std::this_thread::sync_wait(std::move(work));
   `continues_on` 为转移后的 value 和 stopped completion 发布 destination scheduler
   attribute。调度失败的 error completion 允许发生在 unspecified agent，因此不为
   error disposition 声称唯一 completion scheduler；completion domain 同样只从
-  destination scheduler 或其 schedule sender 派生，不借用 child domain。
+  destination scheduler 或其 schedule sender 派生；但 completion-domain fallback 的
+  child attribute 过滤尚未补齐，当前仍可能落到 child domain。
 - `starts_on` 和 `associate` 在 `connect` 阶段构造 child operation；构造失败由
   `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 在收到上游
   completion 后选择并构造 successor operation，因此仍为 late-connect 失败保留
@@ -133,6 +134,17 @@ auto result = std::this_thread::sync_wait(std::move(work));
   直接 `get_domain` 定制时优先使用它，否则保留 outer environment 的 domain 查询及
   现有 scheduler-derived domain 选取，不额外插入会遮蔽这些路径的 `default_domain`。
   其余 forwarding query 继续来自 outer receiver environment。
+- [`let_value`、`let_error`、`let_stopped`](https://eel.is/c++draft/exec.let) 的 child
+  environment 按对应 completion tag 依次选择：从 predecessor attributes 与 receiver 的
+  `FWD-ENV` 查询 completion scheduler，并构造 `SCHED-ENV`；若该查询不可用，则以相同的
+  attributes 和 `FWD-ENV` 查询 completion domain；两者均不可用时使用空环境。
+  带环境参数的 scheduler 查询优先，只有 unary 查询的 attributes 仍通过 CPO 的
+  `TRY-QUERY` 回退提供 scheduler。选中的 scheduler 按值保存，并作为 child 的
+  `get_start_scheduler` 答案；因此 inline schedule predecessor 使用 receiver 环境中的
+  scheduler，run-loop predecessor 则保留其所属 loop 的 scheduler。receiver env 缺少
+  `get_scheduler` 时，inline predecessor 在 strict 模式选择 completion domain；默认模式
+  仍可通过旧 unary 查询选择 inline scheduler。Child 查询优先访问选中的
+  环境，未命中时仅从 receiver environment 转发 forwarding queries。
 - `schedule_from` 是 current-WD 的单参数 departure marker sender，`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
@@ -216,9 +228,34 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 `env` 的旧 `tag_invoke` 接口继续保留。
 `sync_wait` env 与 `let` / `when_all` helper env 提供 const member
 `query`；`when_all` 只转发一参数 forwarding query。
-`run_loop` / `inline_scheduler` attrs、`continues_on` attrs、`write_env` /
-`counting_scope` / `spawn_future` env 仍采用已有兼容接口；其成员查询、scheduler 与 schedule attrs 的
-查询一致性、环境相关 inline attrs 和 `FWD-ENV` 过滤仍有待补齐。
+[`write_env`](https://eel.is/c++draft/exec.write.env) 的 child env 提供一参数 const member
+`query`：先查询 overlay，未命中时仅转发 receiver env 中满足 `forwarding_query` 的查询。
+因此 base 的本地查询不可见，overlay 提供的本地查询仍可见；结果引用与条件 `noexcept` 保留。
+[`inline_scheduler`](https://eel.is/c++draft/exec.inline.scheduler) 与 schedule sender attrs
+提供相同成员查询：带一个环境参数的 value completion scheduler / domain 分别按
+`get_scheduler(env)` / 草案 `get_domain(env)` 的规则选择。旧的一参数 scheduler self-answer 仅通过
+tag-invoke 保留为默认模式的兼容扩展，不属于成员查询，strict 模式不接受它；
+环境相关查询优先使用传入环境。该环境没有 scheduler 时，strict 模式的 `let` 使用
+completion-domain 分支，默认模式仍可通过 unary 回退选择 inline scheduler。
+[`run_loop`](https://eel.is/c++draft/exec.run.loop.types) scheduler 与 schedule attrs 均通过
+成员提供 value / stopped completion scheduler，并返回同一 loop 的 scheduler；不提供
+error completion scheduler 或 unary completion-domain 成员。带环境参数时，attrs 的
+completion-domain 成员转发到 scheduler CPO，两侧均得到 `default_domain`；
+该 CPO 的 error-tag fallback 可用性不代表 schedule sender 提供 error completion。
+两个 scheduler 的 progress 查询也有成员入口。Completion-scheduler CPO 支持带环境参数的
+直接查询，未命中时按
+`TRY-QUERY` 回退至一参数查询；原有一参数 dispatch 顺序不变。该入口未实现草案完整的
+scheduler 递归解析与 scheduler 默认回退，仍属于现有 query subset。
+`get_domain` 从 scheduler 派生 domain 时保留原环境类型，在完整重载集合中按成员优先、
+tag-invoke 回退选择答案；精确环境成员与 ADL 重载均保留相对于同类通用回退的优先级，
+strict 模式仍只考虑成员。原环境类型的保留属于兼容扩展。Inline completion-domain 成员
+在内部按草案的 `get_domain` 顺序选择类型：先取环境的直接 domain，再用
+[`HIDE-SCHED`](https://eel.is/c++draft/exec.queries.expos) 环境查询 scheduler completion domain，
+最后取 `default_domain`。隐藏环境屏蔽 `get_scheduler` / `get_domain`，使 inline 及转发其查询的
+scheduler 终止递归，同时保留外层自定义重载的选择。
+`continues_on` attrs、`counting_scope` / `spawn_future` env 仍采用已有兼容接口；
+`continues_on` 的 completion-domain fallback 过滤、后两者的 stop-when / `write_env`
+组合所需 `FWD-ENV` 过滤及相应成员查询仍待补齐。
 `prop` / `env` 的 assignability 等其他 surface 差异仍属于现有 subset 边界。
 新代码建议优先使用成员式定制。原生 P2300 senders 被检测到时让位，详见 [native handoff](../native-handoff.md)。
 
