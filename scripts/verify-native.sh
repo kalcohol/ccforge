@@ -17,16 +17,18 @@
 #           native support; full suite must pass (regression on the inject path).
 #   zig     Zig container. Backport inject path (native x86_64).
 #   local   Host toolchain (no container), -std=c++23 baseline regression.
+#   gcc16-slim
+#           GCC 16 C++26 probe assertions and the combined native handoff TU.
 #   gcc-exec
-#           GCC 16 container, -std=c++26. Builds only execution tests to cover
-#           the std::execution backport on libstdc++ without SIMD test probes.
+#           GCC 16 container, -std=c++26. Execution and forge utility tests
+#           on libstdc++ without SIMD test probes.
 #   tsan    LLVM/libc++ container, -std=c++26 + -fsanitize=thread. Runs the
 #           execution + forge utility subsets under ThreadSanitizer
 #           (data-race / deadlock check).
 #   asan    LLVM/libc++ container, -std=c++26 + -fsanitize=address,undefined.
 #           Runs the execution + forge utility + Hive subsets and focused SIMD
 #           memory/operator/math/bit tests under ASan+UBSan.
-#   all     gcc16 + llvm + zig + local + gcc-exec + tsan + asan (default).
+#   all     gcc16-slim + llvm + zig + local + gcc-exec + tsan + asan (default).
 #
 set -euo pipefail
 
@@ -251,11 +253,41 @@ target_local() {
     ok "local verified"
 }
 
+target_gcc16_slim() {
+    build_image forge-gcc16 containers/Containerfile.gcc16
+    local logfile="${LOG_DIR}/gcc16-slim-configure.log"
+    log "gcc16-slim: C++26 probe assertions + combined native handoff TU"
+    "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
+        bash -lc '
+            set -euo pipefail
+            rm -rf build/gcc16-slim
+            cmake -S . -B build/gcc16-slim -G Ninja \
+                -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=26 \
+                -DFORGE_BUILD_TESTS=ON "$@"
+        ' bash "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" 2>&1 | tee "${logfile}"
+    assert_partial_stands_aside "${logfile}" "std::simd" SIMD
+    assert_partial_stands_aside "${logfile}" "std::constant_wrapper" CONSTANT_WRAPPER
+    assert_partial_stands_aside "${logfile}" "std::mdspan padded layouts" MDSPAN_PADDED_LAYOUTS
+    assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
+    assert_backport_injects "${logfile}" "std::hive" HIVE
+    "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
+        bash -lc '
+            set -euo pipefail
+            cmake --build build/gcc16-slim --target native_handoff_test
+            ctest --test-dir build/gcc16-slim -R "^NativeHandoff$" --no-tests=error --output-on-failure
+        '
+    ok "gcc16-slim verified"
+}
+
 target_gcc_exec() {
     build_image forge-gcc16 containers/Containerfile.gcc16
-    log "gcc-exec: configuring + testing execution subset on GCC/libstdc++"
-    container_run forge-gcc16 build/gcc-exec 26 "${FORGE_EXECUTION_ONLY_TEST_ARGS[@]}"
-    ok "gcc-exec verified (execution subset on libstdc++)"
+    log "gcc-exec: configuring + testing execution + forge utilities on GCC/libstdc++"
+    container_run forge-gcc16 build/gcc-exec 26 "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" \
+        -DFORGE_TEST_ENABLE_FORGE_RUNTIME=ON \
+        -DFORGE_TEST_ENABLE_FORGE_RESOURCE=ON \
+        -DFORGE_TEST_ENABLE_FORGE_IO=ON \
+        -DFORGE_TEST_ENABLE_FORGE_ERASURE=ON
+    ok "gcc-exec verified (execution + forge utilities on libstdc++)"
 }
 
 target_tsan() {
@@ -394,19 +426,20 @@ target_asan() {
 
 targets=("$@")
 if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(gcc16 llvm zig local gcc-exec tsan asan)
+    targets=(gcc16-slim llvm zig local gcc-exec tsan asan)
 fi
 
 for t in "${targets[@]}"; do
     case "${t}" in
         gcc16) target_gcc16 ;;
+        gcc16-slim) target_gcc16_slim ;;
         llvm)  target_llvm ;;
         zig)   target_zig ;;
         local) target_local ;;
         gcc-exec) target_gcc_exec ;;
         tsan)  target_tsan ;;
         asan)  target_asan ;;
-        all)   target_gcc16; target_llvm; target_zig; target_local; target_gcc_exec; target_tsan; target_asan ;;
+        all)   target_gcc16_slim; target_llvm; target_zig; target_local; target_gcc_exec; target_tsan; target_asan ;;
         *)     fail "unknown target: ${t}" ;;
     esac
 done
