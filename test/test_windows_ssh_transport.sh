@@ -74,9 +74,45 @@ done
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/ccforge-windows-archive-test.XXXXXXXX")"
 trap 'rm -rf -- "${scratch}"' EXIT
+# Exercise archive filtering even when the lane has no Git executable.
+(
+    REPO_ROOT="${scratch}/fixture"
+    mkdir -p "${REPO_ROOT}/3rdparty/googletest"
+    : >"${REPO_ROOT}/CMakeLists.txt"
+    : >"${REPO_ROOT}/3rdparty/googletest/CMakeLists.txt"
+    git() {
+        printf '%s\0' CMakeLists.txt 3rdparty/googletest \
+            3rdparty/googletest/CMakeLists.txt missing-file
+    }
+    forge_create_local_source_archive "${scratch}/mock.tgz" "${scratch}/mock-files"
+    tar -tzf "${scratch}/mock.tgz" >"${scratch}/mock-contents"
+    [[ "$(cat "${scratch}/mock-contents")" == CMakeLists.txt ]]
+)
+
+# Only the Git integration checks below require a real source checkout.
 if ! command -v git >/dev/null 2>&1; then
-    printf 'git unavailable; archive-index check skipped\n'
-    exit 0
+    printf 'git unavailable; real Git integration checks skipped\n'
+    if [[ -e "${REPO_ROOT}/.git" || -L "${REPO_ROOT}/.git" ]]; then exit 0; fi
+    exit 77
+fi
+git_probe=$(LC_ALL=C git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree 2>&1) || {
+    # Missing metadata is expected in source archives; other Git errors are real.
+    if [[ ! -e "${REPO_ROOT}/.git" && ! -L "${REPO_ROOT}/.git" &&
+            "${git_probe}" == 'fatal: not a git repository ('* ]]; then
+        printf 'no git work tree; windows_ssh_transport skipped\n'
+        exit 77
+    fi
+    printf '%s\n' "${git_probe}" >&2
+    exit 1
+}
+if [[ "${git_probe}" != true ]]; then
+    printf 'no git work tree; windows_ssh_transport skipped\n'
+    exit 77
+fi
+git_root=$(git -C "${REPO_ROOT}" rev-parse --show-toplevel)
+if [[ "${git_root}" != "${REPO_ROOT}" ]]; then
+    printf 'source directory is not a git checkout root; windows_ssh_transport skipped\n'
+    exit 77
 fi
 gtest_commit="$(git -C "${REPO_ROOT}" ls-files --stage -- \
     3rdparty/googletest | awk '{print $2}')"

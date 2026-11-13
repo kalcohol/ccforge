@@ -78,6 +78,14 @@ if(UNIX)
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_windows_ssh_transport.sh")
     set_tests_properties(
         windows_ssh_transport PROPERTIES
+        SKIP_RETURN_CODE 77
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+
+    add_test(
+        NAME macos_ssh_transport
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/test_macos_ssh_transport.sh")
+    set_tests_properties(
+        macos_ssh_transport PROPERTIES
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
     add_test(
