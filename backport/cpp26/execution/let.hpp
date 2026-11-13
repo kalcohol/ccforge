@@ -188,10 +188,15 @@ auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
     using cpo_t = __set_cpo_t<Which>;
     decltype(auto) child_env = std::execution::get_env(sndr);
     if constexpr (requires {
-        std::execution::get_completion_scheduler<cpo_t>(child_env);
+        std::execution::get_completion_scheduler<cpo_t>(
+            child_env,
+            __forwarding_env<OuterEnv>{&outer_env});
     }) {
+        // Own the result: the query can refer into the temporary view or attrs.
         auto scheduler =
-            std::execution::get_completion_scheduler<cpo_t>(child_env);
+            std::execution::get_completion_scheduler<cpo_t>(
+                child_env,
+                __forwarding_env<OuterEnv>{&outer_env});
         return __scheduler_env<std::decay_t<decltype(scheduler)>>{
             std::move(scheduler)};
     } else if constexpr (requires {
@@ -348,6 +353,7 @@ struct __op : __forge_detail::__immovable {
     using inner_env_t = __inner_env<let_env_t, std::remove_cvref_t<outer_env_t>>;
 
     R __outer_recv_;
+    // The forwarding view used to select __let_env_ borrows this environment.
     outer_env_t __outer_env_;
     let_env_t __let_env_;
     Fn __fn_;
