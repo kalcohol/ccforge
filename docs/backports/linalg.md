@@ -114,7 +114,7 @@ layout/default accessor。验证入口见[测试说明](../testing.md)；跨架�
 
 ### 非标准重载
 
-`std::linalg` 下将 Triangle 放在第一个参数、以及带额外 alpha 的兼容重载不是工作草案形态，原生让位后可能无法编译。整数范数也属于非工作草案扩展，参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)，原生实现上无法依赖。是否保留或迁出这些接口需负责人另行决定，下一次工作草案快照审计时复查。
+`std::linalg` 下将 Triangle 放在第一个参数、以及带额外 alpha 的兼容重载不是工作草案形态，原生让位后可能无法编译。整数范数也属于非工作草案扩展，参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)，原生实现上无法依赖。上述 Triangle 首参入口及整数 `vector_two_norm` 已弃用，迁移方法见下表；其他扩展暂时保留。
 
 ## 示例
 
@@ -131,3 +131,19 @@ layout/default accessor。验证入口见[测试说明](../testing.md)；跨架�
 ## 验证
 
 验证流程见[测试说明](../testing.md)，使用对应测试组及 `ctest -R '^example_'` 运行示例。
+
+## 扩展重载弃用与迁移
+
+以下旧入口保留至少一个带 `[[deprecated]]` 的发布版本；计划在后续版本移除，具体版本由维护者决定。旧入口的计算结果保持不变。
+
+| 弃用入口 | 替代入口 |
+| --- | --- |
+| `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
+| `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
+| `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
+| `hermitian_matrix_rank_k_update(t, A, C)` | `hermitian_matrix_rank_k_update(Scalar{1}, A, C, t)` |
+| `std::linalg::vector_two_norm(v[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 中的 `forge::vector_two_norm(v[, init])`，或显式转换为符合草案的浮点/复数输入及 `Scalar` |
+
+上表矩阵算法位于 `std::linalg`；`Scalar{1}` 应采用原输出元素对应的标量类型。浮点和复数的标准范数调用不产生弃用诊断。`forge::vector_two_norm` 共用原范数实现，整数结果仍向零截断并饱和；原生 linalg 让位时转用标准入口，整数扩展仅在 `FORGE_LINALG_BACKPORT_ACTIVE` 已定义时受支持。`matrix_frob_norm` 与 `vector_sum_of_squares` 的整数支持不在此次弃用范围内。
+
+依据为 2026-11-13 查阅的 [linalg synopsis](https://eel.is/c++draft/linalg.syn) 与 [vector_two_norm Mandates](https://eel.is/c++draft/linalg.algs.blas1.nrm2)。整数实例化超出当前草案要求；[LWG 4315](https://cplusplus.github.io/LWG/issue4315) 仅作为相关问题线索，不将未来可能的修改视为当前标准保证。

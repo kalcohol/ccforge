@@ -32,7 +32,7 @@ auto result = std::this_thread::sync_wait(std::move(work));
   `let_stopped`、`write_env`、`unstoppable`
 - 调度器适配器：`starts_on`、`continues_on`、`on`、`affine`、`bulk` /
   `bulk_chunked` / `bulk_unchunked`（串行 subset）
-- Forge 兼容扩展：`transfer_just`、`split`
+- Forge 兼容扩展：`forge::transfer_just`、`forge::split`；旧 `std::execution` 入口已弃用
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
   `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
@@ -161,7 +161,7 @@ auto result = std::this_thread::sync_wait(std::move(work));
   `forge::wait_result(sender)`。
 - Current-WD 拼写是 `std::this_thread::sync_wait` 与
   `std::this_thread::sync_wait_with_variant`。Forge backport 暂时也在
-  `std::execution` 中 re-export 这两个对象以兼容旧源码，但 portable consumer、文档与
+  `std::execution` 中保留这两个已在文档中弃用的对象别名以兼容旧源码，但 portable consumer、文档与
   示例不依赖该扩展别名。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和
   consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token callback
@@ -260,3 +260,23 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 `scripts/verify-native.sh tsan` 与 `scripts/verify-native.sh asan` 分别覆盖 execution
 子集的 ThreadSanitizer 与 ASan+UBSan 路径；`gcc-exec` 覆盖 libstdc++ 上的
 execution-only 路径。
+
+## 扩展入口弃用与迁移
+
+以下旧入口保留至少一个弃用发布版本；可独立标注的入口使用 `[[deprecated]]`，计划在后续版本移除，具体版本由维护者决定。既有调用的完成行为、异常传播和结果类型保持不变。等待入口的两个 `std::execution` 别名继续通过 using-declaration 引用 `std::this_thread` 中的同一对象，以保留实体身份和同时导入两个命名空间时的非限定查找；它们仅在文档中弃用，不单独添加属性。
+
+| 弃用入口 | 替代入口 |
+| --- | --- |
+| `std::execution::split(s)` | `forge::split(s)` |
+| `std::execution::empty_env` | 新代码使用 `std::execution::env<>`；需要旧类型身份时使用 `forge::empty_env` |
+| `std::execution::transfer_just(sch, values...)` | `forge::transfer_just(sch, values...)` 或 `std::execution::continues_on(std::execution::just(values...), sch)` |
+| `std::execution::make_prop(q, value)` | `std::execution::prop(q, value)` |
+| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
+| `std::execution::sync_wait_with_variant(s)` | `std::this_thread::sync_wait_with_variant(s)` |
+| `std::this_thread::sync_wait(s)` 接受多种 value completion 的扩展 | `forge::sync_wait(s)` 保持原 tuple-or-variant 结果；标准替代为 `std::this_thread::sync_wait_with_variant(s)`，其结果形态不同 |
+
+Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execution.hpp>` 汇总。`forge::split` 与原入口共用缓存实现，保持惰性启动、单次执行和 `const&` 重放语义。它依赖 backport 的共享状态，仅在 `FORGE_EXECUTION_BACKPORT_ACTIVE` 已定义时提供；原生 execution 让位时不注入此算法。
+
+`forge::transfer_just` 仅组合标准 `just` 与 `continues_on`，完整原生实现下也可用。`forge::empty_env` 在 backport 下保留旧类型身份，在完整原生实现下等同于 `std::execution::env<>`。`forge::sync_wait` 在 backport 下保留旧的 tuple-or-variant 行为，在完整原生实现下转用标准单一 value completion 的 `std::this_thread::sync_wait`；跨实现消费多种 value completion 应使用标准 `sync_wait_with_variant`。零种 value completion 的既有扩展暂时保留，本次未增加弃用诊断。
+
+依据为 2026-11-13 查阅的 [execution synopsis](https://eel.is/c++draft/execution.syn)、[env](https://eel.is/c++draft/exec.env)、[prop](https://eel.is/c++draft/exec.prop) 与 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
