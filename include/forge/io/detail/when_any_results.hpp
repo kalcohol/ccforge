@@ -404,8 +404,8 @@ public:
         using first_receiver_t = child_receiver<0, state_t, First>;
         using second_receiver_t = child_receiver<1, state_t, Second>;
         using receiver_env_t = std::execution::env_of_t<Receiver>;
-        using receiver_stop_token_t = decltype(
-            std::execution::get_stop_token(std::declval<receiver_env_t>()));
+        using receiver_stop_token_t = std::remove_cvref_t<decltype(
+            std::execution::get_stop_token(std::declval<receiver_env_t>()))>;
         using first_sender_t = decltype(as_sender(
             std::declval<io_task<First>>(),
             std::declval<io_env>()));
@@ -444,7 +444,7 @@ public:
                 receiver_stop_.install(
                     std::execution::get_stop_token(
                         std::execution::get_env(state->receiver())),
-                    state->stop_source());
+                    state->stop_source(), state);
             } catch (...) {
                 state->set_start_error(std::current_exception());
                 return;

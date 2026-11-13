@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <exception>
 #include <execution>
+#include <memory>
 #include <new>
 #include <optional>
 #include <stdexcept>
@@ -55,9 +56,18 @@ class io_task_sender_op;
 
 struct request_fused_stop {
     std::inplace_stop_source* source = nullptr;
+    std::shared_ptr<void> owner;
+    void* completion_object = nullptr;
+    void (*propagate)(void*) noexcept = nullptr;
 
     auto operator()() const noexcept -> void {
-        if (source != nullptr) {
+        // The operation containing this callback may be destroyed by completion.
+        auto keepalive = owner;
+        auto propagate_fn = propagate;
+        auto* object = completion_object;
+        if (propagate_fn != nullptr) {
+            propagate_fn(object);
+        } else if (source != nullptr) {
             source->request_stop();
         }
     }
@@ -65,26 +75,35 @@ struct request_fused_stop {
 
 template<class Token, bool = std::stoppable_token_for<Token, request_fused_stop>>
 struct optional_stop_callback {
-    auto install(Token token, std::inplace_stop_source& source) -> void {
+    auto install(Token token, std::inplace_stop_source& source,
+                 std::shared_ptr<void> owner = {}, void* object = nullptr,
+                 void (*propagate)(void*) noexcept = nullptr) -> void {
         if (token.stop_requested()) {
-            source.request_stop();
+            request_fused_stop{&source, std::move(owner), object, propagate}();
         }
     }
+
+    auto reset() noexcept -> void {}
 };
 
 template<class Token>
 struct optional_stop_callback<Token, true> {
     using callback_t = std::stop_callback_for_t<Token, request_fused_stop>;
 
-    auto install(Token token, std::inplace_stop_source& source) -> void {
+    auto install(Token token, std::inplace_stop_source& source,
+                 std::shared_ptr<void> owner = {}, void* object = nullptr,
+                 void (*propagate)(void*) noexcept = nullptr) -> void {
         if (token.stop_requested()) {
-            source.request_stop();
+            request_fused_stop{&source, std::move(owner), object, propagate}();
             return;
         }
         if (token.stop_possible()) {
-            callback.emplace(std::move(token), request_fused_stop{&source});
+            callback.emplace(std::move(token),
+                request_fused_stop{&source, std::move(owner), object, propagate});
         }
     }
+
+    auto reset() noexcept -> void { callback.reset(); }
 
     std::optional<callback_t> callback;
 };
@@ -730,8 +749,8 @@ class io_task_sender_op {
 public:
     using operation_state_concept = std::execution::operation_state_t;
     using receiver_env_t = std::execution::env_of_t<Receiver>;
-    using receiver_stop_token_t = decltype(
-        std::execution::get_stop_token(std::declval<receiver_env_t>()));
+    using receiver_stop_token_t = std::remove_cvref_t<decltype(
+        std::execution::get_stop_token(std::declval<receiver_env_t>()))>;
 
     io_task_sender_op(io_task<T> task, io_env env, Receiver receiver)
         : env_(std::move(env))
@@ -747,25 +766,51 @@ public:
 
     auto start() & noexcept -> void {
         try {
-            env_stop_.install(env_.stop_token, fused_stop_);
+            env_stop_.install(env_.stop_token, fused_stop_, {}, this, &request_stop_callback);
             receiver_stop_.install(
                 std::execution::get_stop_token(
                     std::execution::get_env(receiver_)),
-                fused_stop_);
+                fused_stop_, {}, this, &request_stop_callback);
             effective_env_.stop_token = fused_stop_.get_token();
             task_.__set_completion(this, &complete_callback);
             task_.__start_borrowed(effective_env_);
         } catch (...) {
+            env_stop_.reset();
+            receiver_stop_.reset();
             std::execution::set_error(std::move(receiver_), std::current_exception());
         }
     }
 
 private:
     static auto complete_callback(void* self) noexcept -> void {
-        static_cast<io_task_sender_op*>(self)->complete();
+        static_cast<io_task_sender_op*>(self)->release_completion();
+    }
+
+    static auto request_stop_callback(void* object) noexcept -> void {
+        auto* self = static_cast<io_task_sender_op*>(object);
+        auto credits = self->completion_credits_.load(std::memory_order_acquire);
+        while (credits != 0) {
+            if (self->completion_credits_.compare_exchange_weak(
+                    credits, credits + 1, std::memory_order_acq_rel)) {
+                self->fused_stop_.request_stop();
+                self->release_completion();
+                return;
+            }
+        }
+    }
+
+    auto release_completion() noexcept -> void {
+        // The existing frame owns the task result. Delay its ordinary delivery
+        // without retaining, moving or converting any completion arguments.
+        if (completion_credits_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            complete();
+        }
     }
 
     auto complete() noexcept -> void {
+        // Also wait for callbacks which observed zero completion credits.
+        env_stop_.reset();
+        receiver_stop_.reset();
         try {
             if constexpr (std::is_void_v<T>) {
                 std::move(task_).result();
@@ -783,6 +828,7 @@ private:
 
     io_env env_;
     io_env effective_env_;
+    std::atomic<std::size_t> completion_credits_{1};
     std::inplace_stop_source fused_stop_{};
     optional_stop_callback<std::inplace_stop_token> env_stop_;
     optional_stop_callback<receiver_stop_token_t> receiver_stop_;
