@@ -364,7 +364,18 @@ struct __op : __forge_detail::__immovable {
         __op* __self;
 
         void operator()() const noexcept {
-            __self->__stop_src.request_stop();
+            auto* self = __self;
+            // Take a completion credit only while children are still pending.
+            // A terminal thread may already be waiting in callback deregistration.
+            auto pending = self->__pending.load(std::memory_order_acquire);
+            while (pending != 0) {
+                if (self->__pending.compare_exchange_weak(
+                        pending, pending + 1, std::memory_order_acq_rel)) {
+                    self->__stop_src.request_stop();
+                    self->child_done();
+                    return;
+                }
+            }
         }
     };
 

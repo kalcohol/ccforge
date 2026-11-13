@@ -346,6 +346,8 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Asso
     }
 
     void __request_stop() noexcept {
+        // Completion can release both the producer and the last consumer owner.
+        auto keepalive = this->shared_from_this();
         __stop_source.request_stop();
     }
 
