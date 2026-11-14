@@ -190,22 +190,48 @@ public:
 
     friend constexpr basic_mask operator&&(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
-        constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+#if defined(__clang__)
+        // Clang folds ANDed lanes unevenly after inlining and only partly
+        // vectorizes compare chains (float x4); separate lane tests do not.
+        for (__simd_size_type i = 0; i < size; ++i) {
+            const bool left_lane = left.data_[i] != 0;
+            const bool right_lane = right.data_[i] != 0;
+            result.data_[i] = __detail::mask_bits<Bytes>(left_lane & right_lane);
+        }
+#else
+        // GCC copies a two-lane blend block into both arms of a short-circuit
+        // tail branch and then cannot vectorize it (double x3), so AND every
+        // lane there; larger blocks stay vectorized with the faster tail.
+        constexpr auto block = __detail::mask_blend_prefix<Bytes, size>;
+        constexpr __simd_size_type prefix = block == 2 ? size() : block;
         for (__simd_size_type i = 0; i < prefix; ++i) {
             result.data_[i] = left.data_[i] & right.data_[i];
         }
         for (__simd_size_type i = prefix; i < size; ++i) {
             result.data_[i] = __detail::mask_bits<Bytes>((left.data_[i] != 0) && (right.data_[i] != 0));
         }
+#endif
         return result;
     }
 
     friend constexpr basic_mask operator||(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+#if defined(__clang__)
+        // Clang merges ORed (or != 0) lanes and folds them unevenly, leaving
+        // partial SLP of float x4 compare chains; all-ones tests stay separate.
+        // Short-circuit tails measured faster.
+        constexpr auto ones = static_cast<lane_type>(~lane_type{0});
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            const bool left_lane = left.data_[i] == ones;
+            const bool right_lane = right.data_[i] == ones;
+            result.data_[i] = __detail::mask_bits<Bytes>(left_lane | right_lane);
+        }
+#else
         for (__simd_size_type i = 0; i < prefix; ++i) {
             result.data_[i] = left.data_[i] | right.data_[i];
         }
+#endif
         for (__simd_size_type i = prefix; i < size; ++i) {
             result.data_[i] = __detail::mask_bits<Bytes>((left.data_[i] != 0) || (right.data_[i] != 0));
         }
