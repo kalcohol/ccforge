@@ -128,10 +128,11 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
 - 工作草案 MANDATE-NOTHROW 与 [exec.recv.concepts] 要求完成函数
   `set_value`、`set_error`、`set_stopped` 不抛异常，receiver 可不抛异常地移动。
   这些是标准要求；配置期负面编译探测固定这些规则。
-- `inplace_stop_callback` 当前为保持 Forge 已验证的 callback/source 重入销毁路径，使用
-  allocator-neutral control block。因此 registration 会分配，constructor 尚未满足
-  current WD 对 nothrow callback 的条件 `noexcept`。不要在 `noexcept` 路径中假设注册
-  不会失败；收敛方案和实现门槛见
+- `inplace_stop_callback` 的 intrusive registration 零分配，constructor 遵循条件
+  `noexcept(is_nothrow_constructible_v<CallbackFn, Initializer>)`，只有 callback 初始化
+  可以抛出异常。callback 可自毁或注销 pending sibling；另一线程注销执行中的 callback
+  会等待 invocation 返回。source 必须活过全部注册和 `request_stop()`，包括 callback
+  返回后的 source 访问。协议见
   [`inplace-stop-callback-design.md`](../roadmap/inplace-stop-callback-design.md)。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和 copyable lvalue 拷贝路径；
   non-copyable lvalue sender 需要显式传入 `std::move(sndr)`，以保持 native C++26
@@ -341,13 +342,10 @@ child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析�
 不依赖固定容量或 `std::max_align_t` 对齐上限，也不会因 operation state 或 callback
 对象的大小、对齐要求而回退到全局分配；所需空间计入具体 operation state 的大小与对齐要求。
 在 senders、schedulers、receivers、environment queries、结果类型及用户函数均不分配的前提下，
-这些组合的 `connect`、`start` 和 completion 路径保留的全局分配仅来自
-`inplace_stop_callback`：每次在 stoppable `inplace_stop_token` 上注册 callback，
-仍按既有设计创建一个独立的 control block。
+这些组合的 `connect`、`start` 和 completion 路径无需全局分配。
 `when_all` 仅在 receiver token 的 `stop_possible()` 为 `true` 时注册；
-嵌套 `when_all` 会在 parent 的 stop source 上注册，因此仍有相应的 control-block 分配。
-没有此类注册时，上述路径无需全局分配；自定义 stop token 的 callback 构造若自行分配，
-也须单独计入。control block 的设计约束见
+嵌套 `when_all` 会在 parent 的 stop source 上注册，这些 inplace registration 也零分配。
+自定义 stop token 的 callback 构造若自行分配，须单独计入。intrusive 协议见
 [`inplace_stop_callback` 设计记录](../roadmap/inplace-stop-callback-design.md)。
 
 `continues_on` 将 scheduler operation 和 predecessor operation 作为普通成员直接构造，
@@ -358,8 +356,8 @@ child operation，仍在 outer `connect` 中预连接 child；这保留现有异
 `on` 的两种形式将其组合 sender 的 operation 作为普通成员从 factory prvalue
 直接初始化。这些路径不再使用大小或对齐不足时分配的缓冲，支持大于固定缓冲容量、
 over-aligned 以及空的 immovable operation states；空间与对齐需求计入外层 operation。
-在组成对象及其查询、结果构造不自行分配时，唯一保留的分配边界仍是组合中实际发生的
-stop callback registration；`inplace_stop_callback` 的 control block 规则不变。
+在组成对象及其查询、结果构造和自定义 token callback 不自行分配时，组合无需全局分配；
+`inplace_stop_callback` 的 registration 使用内联 node。
 
 所有 adaptor 均使用 concrete operation type 的原位存储，已移除 `__op_storage`
 小缓冲及其按大小、对齐触发的全局 `new` 回退。`associate` 只在 association 成功时
@@ -395,8 +393,8 @@ token；其他情况的融合 token 只保存 scope token 和 receiver token 的
 child 负责其 callback 的注册、注销和注册失败处理；stop-when 按原 channel 和原参数引用
 直接转发，不保存参数、不增加分配，也不合成 stopped completion 或额外 signature。
 receiver 可在同线程 stop completion 中销毁 operation，输入 source 的 owner 仍须覆盖
-stop 调用。一个 child callback 对应两个输入 registration，当前 backport 每个 registration
-仍分配独立 control block；stop-when 本身没有其他分配。
+stop 调用。一个 child callback 对应两个输入 registration；输入为 inplace token 时，
+二者均零分配，stop-when 本身也不分配。
 scope 本身须活过其全部 stop 调用，包括使 join receiver 同步完成的调用。详见
 [`inplace_stop_callback` lifetime 设计](../roadmap/inplace-stop-callback-design.md)。
 `spawn_future` 的 producer environment 按
@@ -415,8 +413,8 @@ consumer 取消路径与工作草案不完全相同：草案在停止已登记�
 subscriber 的合并 control block 使用 source attributes 的 allocator，缺省为
 `std::allocator<void>`；subscriber 入链不再分配，缓存仍以 `const&` 重放。
 对于自身不分配的 sender、scheduler、receiver、所选 allocator、environment queries、
-decayed 结果构造及自定义 stop-token callbacks，这些路径剩余的全局分配仅来自每次
-`inplace_stop_callback` registration 的 control block；上述用户代码自行分配的内存另计。使用缺省
+decayed 结果构造及自定义 stop-token callbacks，这些路径除上述 allocator 管理的存储外
+没有额外全局分配；inplace registration 不分配。上述用户代码自行分配的内存另计。使用缺省
 allocator 时，`spawn` / `spawn_future` / `split` 的上述共享或 detached 存储仍会分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
 `simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
