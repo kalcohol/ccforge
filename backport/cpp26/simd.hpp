@@ -32,6 +32,7 @@
 #include <complex>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <limits>

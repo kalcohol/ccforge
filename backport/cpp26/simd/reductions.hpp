@@ -35,7 +35,7 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
         std::declval<vec<T, 1>&>(),
         std::declval<vec<T, 1>>()))) {
     __simd_size_type first = 0;
-    while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
+    while (first < basic_vec<T, Abi>::size && !__detail::mask_lane(mask_value, first)) {
         ++first;
     }
 
@@ -45,7 +45,7 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
 
     vec<T, 1> result(value[first]);
     for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
-        if (mask_value[i]) {
+        if (__detail::mask_lane(mask_value, i)) {
             result = binary_op(result, vec<T, 1>(value[i]));
         }
     }
@@ -70,7 +70,7 @@ constexpr T reduce_min(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
     __simd_size_type first = 0;
-    while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
+    while (first < basic_vec<T, Abi>::size && !__detail::mask_lane(mask_value, first)) {
         ++first;
     }
 
@@ -80,7 +80,7 @@ constexpr T reduce_min(
 
     T result = value[first];
     for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
-        if (mask_value[i] && value[i] < result) {
+        if (__detail::mask_lane(mask_value, i) && value[i] < result) {
             result = value[i];
         }
     }
@@ -105,7 +105,7 @@ constexpr T reduce_max(
     const basic_vec<T, Abi>& value,
     const typename basic_vec<T, Abi>::mask_type& mask_value) noexcept {
     __simd_size_type first = 0;
-    while (first < basic_vec<T, Abi>::size && !mask_value[first]) {
+    while (first < basic_vec<T, Abi>::size && !__detail::mask_lane(mask_value, first)) {
         ++first;
     }
 
@@ -115,7 +115,7 @@ constexpr T reduce_max(
 
     T result = value[first];
     for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
-        if (mask_value[i] && value[i] > result) {
+        if (__detail::mask_lane(mask_value, i) && value[i] > result) {
             result = value[i];
         }
     }
@@ -179,24 +179,42 @@ constexpr T reduce_max(const T& value, Mask mask) noexcept {
     return mask ? value : numeric_limits<T>::lowest();
 }
 
+namespace __detail {
+
+template<bool All, size_t Bytes, class Abi>
+constexpr bool mask_test(const basic_mask<Bytes, Abi>& value) noexcept {
+    // Both early-decided and full-scan inputs were measured: GCC keeps a
+    // predictable early exit, the same algorithm as the bool representation.
+    // Other compilers get a branch-free reduction mapping to compare/pack/
+    // movemask sequences or AND/OR trees.
+#if defined(__GNUC__) && !defined(__clang__)
+    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
+        if ((mask_lane(value, i) != 0) != All) return !All;
+    }
+    return All;
+#else
+    if constexpr (All) {
+        auto acc = static_cast<mask_lane_t<Bytes>>(~mask_lane_t<Bytes>{0});
+        for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) acc &= mask_lane(value, i);
+        return acc != 0;
+    } else {
+        mask_lane_t<Bytes> acc{0};
+        for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) acc |= mask_lane(value, i);
+        return acc != 0;
+    }
+#endif
+}
+
+} // namespace __detail
+
 template<size_t Bytes, class Abi>
 constexpr bool all_of(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
-        if (!value[i]) {
-            return false;
-        }
-    }
-    return true;
+    return __detail::mask_test<true>(value);
 }
 
 template<size_t Bytes, class Abi>
 constexpr bool any_of(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
-        if (value[i]) {
-            return true;
-        }
-    }
-    return false;
+    return __detail::mask_test<false>(value);
 }
 
 template<size_t Bytes, class Abi>
@@ -206,11 +224,11 @@ constexpr bool none_of(const basic_mask<Bytes, Abi>& value) noexcept {
 
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexcept {
+    // Measured lane summation avoids the byte-view cost at every width and
+    // works unchanged in constant evaluation.
     __simd_size_type result = 0;
     for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
-        if (value[i]) {
-            ++result;
-        }
+        result += static_cast<__simd_size_type>(__detail::mask_lane(value, i) & 1u);
     }
     return result;
 }
@@ -218,7 +236,7 @@ constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noe
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value) noexcept {
     for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
-        if (value[i]) {
+        if (__detail::mask_lane(value, i)) {
             return i;
         }
     }
@@ -228,7 +246,7 @@ constexpr __simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value)
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_max_index(const basic_mask<Bytes, Abi>& value) noexcept {
     for (__simd_size_type i = basic_mask<Bytes, Abi>::size; i > 0; --i) {
-        if (value[i - 1]) {
+        if (__detail::mask_lane(value, i - 1)) {
             return i - 1;
         }
     }

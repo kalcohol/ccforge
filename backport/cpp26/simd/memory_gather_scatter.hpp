@@ -67,7 +67,7 @@ constexpr V partial_gather_from(I first,
     V result;
     for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(V::size); ++i) {
         const auto index = indices[i];
-        if (mask_value[i] && __detail::is_gather_scatter_index_in_range(index, count)) {
+        if (__detail::mask_lane(mask_value, i) && __detail::is_gather_scatter_index_in_range(index, count)) {
             const __simd_size_type offset = static_cast<__simd_size_type>(index);
             __detail::set_lane(result, i, __detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
         } else {
@@ -100,7 +100,7 @@ constexpr V unchecked_gather_from_impl(I& first, const typename Indices::mask_ty
     V result;
     for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(V::size); ++i) {
         const __simd_size_type offset = static_cast<__simd_size_type>(indices[i]);
-        if (mask_value[i]) {
+        if (__detail::mask_lane(mask_value, i)) {
             assert(offset >= 0);
             __detail::set_lane(result, i, __detail::convert_or_copy<typename V::value_type>(*(first + offset), f));
         } else {
@@ -254,7 +254,7 @@ constexpr void partial_scatter_to(const basic_vec<T, Abi>& value,
 
     for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size); ++i) {
         const auto index = indices[i];
-        if (mask_value[i] && __detail::is_gather_scatter_index_in_range(index, count)) {
+        if (__detail::mask_lane(mask_value, i) && __detail::is_gather_scatter_index_in_range(index, count)) {
             const __simd_size_type offset = static_cast<__simd_size_type>(index);
             *(first + offset) = __detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
         }
@@ -281,7 +281,7 @@ constexpr void unchecked_scatter_to_impl(const basic_vec<T, Abi>& value, I& firs
     __detail::require_iterator_compatible_flags<I, flags<Flags...>>();
     for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size); ++i) {
         const __simd_size_type offset = static_cast<__simd_size_type>(indices[i]);
-        if (mask_value[i]) {
+        if (__detail::mask_lane(mask_value, i)) {
             assert(offset >= 0);
             *(first + offset) = __detail::convert_or_copy<typename iterator_traits<I>::value_type>(value[i], f);
         }

@@ -56,8 +56,8 @@ int main() {
     if (first.lanes != FORGE_ABI_FIRST_LANES || second.lanes != FORGE_ABI_SECOND_LANES ||
         first.vec_bytes != sizeof(int) * first.lanes ||
         second.vec_bytes != sizeof(int) * second.lanes ||
-        first.mask_bytes != sizeof(bool) * first.lanes ||
-        second.mask_bytes != sizeof(bool) * second.lanes ||
+        first.mask_bytes != sizeof(std::uint32_t) * first.lanes ||
+        second.mask_bytes != sizeof(std::uint32_t) * second.lanes ||
         !first.values_ok || !second.values_ok) {
         std::cerr << "Native ABI width, storage, or lane values changed\n";
         return 1;

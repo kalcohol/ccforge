@@ -574,14 +574,106 @@ inline constexpr __simd_size_type uninit_element = -2;
 
 namespace __detail {
 
+// Bytes > 8 uses the widest portable lane, including complex<double> masks.
+template<size_t Bytes>
+using mask_lane_t = conditional_t<Bytes == 1, uint8_t,
+    conditional_t<Bytes == 2, uint16_t,
+    conditional_t<Bytes == 4, uint32_t, uint64_t>>>;
+
+template<size_t Bytes>
+constexpr mask_lane_t<Bytes> mask_bits(bool value) noexcept {
+    return static_cast<mask_lane_t<Bytes>>(mask_lane_t<Bytes>{0} -
+        static_cast<mask_lane_t<Bytes>>(value));
+}
+
+struct mask_access {
+    template<size_t Bytes, class Abi>
+    static constexpr mask_lane_t<Bytes> get(const basic_mask<Bytes, Abi>& value,
+                                           __simd_size_type i) noexcept {
+        return value.data_[i];
+    }
+
+    template<size_t Bytes, class Abi>
+    static constexpr void set(basic_mask<Bytes, Abi>& value, __simd_size_type i, bool lane) noexcept {
+        value.data_[i] = mask_bits<Bytes>(lane);
+    }
+
+    // Both source and destination lanes use the zero/all-ones invariant.
+    template<size_t Bytes, class Abi, size_t SourceBytes, class SourceAbi>
+    static constexpr void copy(basic_mask<Bytes, Abi>& destination, __simd_size_type to,
+                               const basic_mask<SourceBytes, SourceAbi>& source,
+                               __simd_size_type from) noexcept {
+        if constexpr (sizeof(mask_lane_t<Bytes>) == sizeof(mask_lane_t<SourceBytes>)) {
+            destination.data_[to] = source.data_[from];
+        } else {
+            // Sign extension preserves all ones; narrowing preserves the low bits.
+            using source_lane = mask_lane_t<SourceBytes>;
+            destination.data_[to] = static_cast<mask_lane_t<Bytes>>(
+                bit_cast<make_signed_t<source_lane>>(source.data_[from]));
+        }
+    }
+};
+
 template<size_t Bytes, class Abi>
-constexpr bool& lane_ref(basic_mask<Bytes, Abi>& value, __simd_size_type i) noexcept;
+constexpr mask_lane_t<Bytes> mask_lane(const basic_mask<Bytes, Abi>& value, __simd_size_type i) noexcept {
+    return mask_access::get(value, i);
+}
+
+template<class V>
+constexpr auto lane_value(const V& value, __simd_size_type i) noexcept {
+    if constexpr (is_same_v<typename V::value_type, bool>) {
+        return mask_lane(value, i);
+    } else {
+        return value[i];
+    }
+}
+
+// A complete 128-bit block can use the blend loop even at the baseline ISA.
+// Scalar tails stay conditional, including vec<T, 1> reduction accumulators.
+template<size_t Bytes>
+inline constexpr __simd_size_type mask_blend_block = 16 / sizeof(mask_lane_t<Bytes>);
+
+template<size_t Bytes, __simd_size_type Lanes>
+inline constexpr __simd_size_type mask_blend_prefix =
+    Lanes / mask_blend_block<Bytes> * mask_blend_block<Bytes>;
+
+template<size_t Bytes, __simd_size_type Lanes, class T>
+inline constexpr __simd_size_type select_blend_prefix =
+#if defined(__clang__)
+    // Four-lane 32-bit conditionals are cheaper in Clang's measured kernels.
+    (Lanes == 4 && sizeof(T) == 4 && is_arithmetic_v<T>) ? 0 :
+#endif
+    mask_blend_prefix<Bytes, Lanes>;
+
+template<size_t Bytes, bool Blend, class T>
+constexpr T select_lane(mask_lane_t<Bytes> bits, const T& when_true, const T& when_false) noexcept {
+    if constexpr (Blend && sizeof(T) == sizeof(mask_lane_t<Bytes>) && is_arithmetic_v<T>) {
+        if (!is_constant_evaluated()) {
+            using lane_type = mask_lane_t<Bytes>;
+            return bit_cast<T>(static_cast<lane_type>(
+                (bits & bit_cast<lane_type>(when_true)) |
+                (static_cast<lane_type>(~bits) & bit_cast<lane_type>(when_false))));
+        }
+    }
+    return bits ? when_true : when_false;
+}
 
 template<class T, class Abi>
 constexpr T& lane_ref(basic_vec<T, Abi>& value, __simd_size_type i) noexcept;
 
 template<class V, class U>
 constexpr void set_lane(V& value, __simd_size_type i, U&& lane) noexcept;
+
+template<class Destination, class Source>
+constexpr void copy_lane(Destination& destination, __simd_size_type to,
+                         const Source& source, __simd_size_type from) noexcept {
+    if constexpr (is_same_v<typename Destination::value_type, bool> &&
+                  is_same_v<typename Source::value_type, bool>) {
+        mask_access::copy(destination, to, source, from);
+    } else {
+        set_lane(destination, to, source[from]);
+    }
+}
 
 template<class From, class To, class = void>
 struct is_explicitly_simd_convertible : false_type {};
@@ -911,7 +1003,7 @@ struct lane_mapped_value {
 
 template<size_t Bytes, class Abi>
 struct lane_mapped_value<basic_mask<Bytes, Abi>> {
-    using type = bool;
+    using type = mask_lane_t<Bytes>;
 };
 
 template<class V>
@@ -925,14 +1017,7 @@ struct is_data_parallel_type<basic_mask<Bytes, Abi>> : is_enabled_basic_mask<Byt
 
 template<class V>
 constexpr lane_mapped_value_t<V> permute_lane(const V& value, __simd_size_type index) noexcept {
-    return index == zero_element || index == uninit_element ? lane_mapped_value_t<V>{} : value[index];
-}
-
-template<class V>
-constexpr lane_mapped_value_t<V> dynamic_permute_lane(const V& value, __simd_size_type index) noexcept {
-    assert(index >= 0);
-    assert(index < static_cast<__simd_size_type>(V::size));
-    return value[index];
+    return index == zero_element || index == uninit_element ? lane_mapped_value_t<V>{} : static_cast<lane_mapped_value_t<V>>(lane_value(value, index));
 }
 
 template<__simd_size_type Size, class IndexMap>
@@ -1003,7 +1088,10 @@ template<class V, class Indices>
 constexpr permute_result_t<V, Indices> permute_from_indices(const V& value, const Indices& indices) noexcept {
     permute_result_t<V, Indices> result;
     for (__simd_size_type i = 0; i < decltype(result)::size; ++i) {
-        __detail::set_lane(result, i, dynamic_permute_lane(value, static_cast<__simd_size_type>(indices[i])));
+        const auto index = static_cast<__simd_size_type>(indices[i]);
+        assert(index >= 0);
+        assert(index < static_cast<__simd_size_type>(V::size));
+        __detail::copy_lane(result, i, value, index);
     }
     return result;
 }
@@ -1029,30 +1117,52 @@ struct chunk_lane_generator {
 
     template<class Lane>
     constexpr auto operator()(Lane) const {
-        return value[offset + Lane::value];
+        return lane_value(value, offset + Lane::value);
     }
 };
 
+template<class IndexMap, __simd_size_type Lane, class Result, class V>
+constexpr void copy_permuted_lane(Result& result, const V& value) {
+    using source_index = static_permute_index_t<static_cast<__simd_size_type>(V::size), Lane, IndexMap>;
+    if constexpr (source_index::value != zero_element && source_index::value != uninit_element) {
+        __detail::copy_lane(result, Lane, value, source_index::value);
+    }
+}
+
 template<class V, class IndexMap, __simd_size_type... I>
 constexpr resize_t<sizeof...(I), V> permute_from_map_impl(const V& value, IndexMap&, integer_sequence<__simd_size_type, I...>) {
-    return resize_t<sizeof...(I), V>(permute_lane_generator<V, IndexMap>{value});
-}
-
-template<class Chunk, class V, size_t... I>
-constexpr array<Chunk, sizeof...(I)> chunk_array_impl(const V& value, index_sequence<I...>) {
-    return {{Chunk(chunk_lane_generator<V>{value,
-        static_cast<__simd_size_type>(I * static_cast<size_t>(Chunk::size))})...}};
-}
-
-template<class Chunk, class V, size_t... I>
-constexpr auto chunk_tuple_impl(const V& value, index_sequence<I...>) {
-    return make_tuple(Chunk(chunk_lane_generator<V>{value,
-        static_cast<__simd_size_type>(I * static_cast<size_t>(Chunk::size))})...);
+    if constexpr (is_same_v<typename V::value_type, bool>) {
+        resize_t<sizeof...(I), V> result;
+        (__detail::copy_permuted_lane<IndexMap, I>(result, value), ...);
+        return result;
+    } else {
+        return resize_t<sizeof...(I), V>(permute_lane_generator<V, IndexMap>{value});
+    }
 }
 
 template<class Chunk, class V>
 constexpr Chunk make_chunk(const V& value, __simd_size_type offset) {
-    return Chunk(chunk_lane_generator<V>{value, offset});
+    if constexpr (is_same_v<typename Chunk::value_type, bool>) {
+        Chunk result;
+        for (__simd_size_type i = 0; i < Chunk::size; ++i) {
+            __detail::copy_lane(result, i, value, offset + i);
+        }
+        return result;
+    } else {
+        return Chunk(chunk_lane_generator<V>{value, offset});
+    }
+}
+
+template<class Chunk, class V, size_t... I>
+constexpr array<Chunk, sizeof...(I)> chunk_array_impl(const V& value, index_sequence<I...>) {
+    return {{make_chunk<Chunk>(value,
+        static_cast<__simd_size_type>(I * static_cast<size_t>(Chunk::size)))...}};
+}
+
+template<class Chunk, class V, size_t... I>
+constexpr auto chunk_tuple_impl(const V& value, index_sequence<I...>) {
+    return make_tuple(make_chunk<Chunk>(value,
+        static_cast<__simd_size_type>(I * static_cast<size_t>(Chunk::size)))...);
 }
 
 template<class Tail, class V>

@@ -8,16 +8,23 @@ struct mask_vector_generator {
 
     template<class Lane>
     constexpr U operator()(Lane) const {
-        return value[static_cast<__simd_size_type>(Lane::value)] ? U{1} : U{0};
+        return static_cast<U>(mask_lane(value, static_cast<__simd_size_type>(Lane::value)) & 1u);
     }
 };
+
+template<size_t Bytes, class G, size_t... I>
+constexpr array<mask_lane_t<Bytes>, sizeof...(I)> generate_mask_array(G& gen, index_sequence<I...>)
+    noexcept(is_nothrow_simd_generator<G, bool, sizeof...(I)>::value) {
+    return {{mask_bits<Bytes>(static_cast<bool>(gen(generator_index_constant<I>{})))...}};
+}
 
 } // namespace __detail
 
 template<size_t Bytes, class Abi>
     requires(__detail::is_enabled_basic_mask<Bytes, Abi>::value)
 class basic_mask<Bytes, Abi> {
-    friend constexpr bool& __detail::lane_ref<Bytes, Abi>(basic_mask& value, __simd_size_type i) noexcept;
+    friend struct __detail::mask_access;
+    using lane_type = __detail::mask_lane_t<Bytes>;
 
 public:
     using value_type = bool;
@@ -32,7 +39,7 @@ public:
              typename enable_if<is_same<__detail::remove_cvref_t<U>, bool>::value, int>::type = 0>
     constexpr explicit basic_mask(U value) noexcept : data_{} {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = value;
+            data_[i] = __detail::mask_bits<Bytes>(value);
         }
     }
 
@@ -45,7 +52,7 @@ public:
                  int>::type = 0>
     constexpr explicit basic_mask(const basic_mask<OtherBytes, OtherAbi>& other) noexcept : data_{} {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = other[i];
+            __detail::mask_access::copy(*this, i, other, i);
         }
     }
 
@@ -58,7 +65,7 @@ public:
         using unsigned_type = __detail::remove_cvref_t<U>;
         unsigned_type bits = static_cast<unsigned_type>(value);
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = (bits & unsigned_type{1}) != 0;
+            data_[i] = __detail::mask_bits<Bytes>((bits & unsigned_type{1}) != 0);
             bits >>= 1;
         }
     }
@@ -67,7 +74,7 @@ public:
              typename enable_if<N == __abi_lane_count<Abi>::value, int>::type = 0>
     constexpr basic_mask(const bitset<N>& bits) noexcept : data_{} {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = bits[static_cast<size_t>(i)];
+            data_[i] = __detail::mask_bits<Bytes>(bits[static_cast<size_t>(i)]);
         }
     }
 
@@ -76,10 +83,10 @@ public:
                  !is_same<__detail::remove_cvref_t<G>, basic_mask>::value, int>::type = 0>
     constexpr explicit basic_mask(G&& gen)
         noexcept(__detail::is_nothrow_simd_generator<G, bool, __abi_lane_count<Abi>::value>::value)
-        : data_(__detail::generate_array<bool, __abi_lane_count<Abi>::value>(gen)) {}
+        : data_(__detail::generate_mask_array<Bytes>(gen, make_index_sequence<__abi_lane_count<Abi>::value>{})) {}
 
     constexpr bool operator[](__simd_size_type i) const noexcept {
-        return data_[i];
+        return data_[i] != 0;
     }
 
     template<class Indices,
@@ -117,7 +124,7 @@ public:
         } else {
             bitset<__abi_lane_count<Abi>::value> result;
             for (__simd_size_type i = 0; i < size; ++i) {
-                result.set(static_cast<size_t>(i), data_[i]);
+                result.set(static_cast<size_t>(i), data_[i] != 0);
             }
             return result;
         }
@@ -129,9 +136,7 @@ public:
         unsigned long long result = 0;
         const __simd_size_type active_lanes = size < digit_count ? size : digit_count;
         for (__simd_size_type i = 0; i < active_lanes; ++i) {
-            if (data_[i]) {
-                result |= (1ull << static_cast<unsigned>(i));
-            }
+            result |= (static_cast<unsigned long long>(data_[i] & 1u) << static_cast<unsigned>(i));
         }
         return result;
     }
@@ -156,21 +161,21 @@ public:
 
     constexpr basic_mask& operator&=(const basic_mask& other) noexcept {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = data_[i] && other[i];
+            data_[i] &= other.data_[i];
         }
         return *this;
     }
 
     constexpr basic_mask& operator|=(const basic_mask& other) noexcept {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = data_[i] || other[i];
+            data_[i] |= other.data_[i];
         }
         return *this;
     }
 
     constexpr basic_mask& operator^=(const basic_mask& other) noexcept {
         for (__simd_size_type i = 0; i < size; ++i) {
-            data_[i] = data_[i] != other[i];
+            data_[i] ^= other.data_[i];
         }
         return *this;
     }
@@ -178,23 +183,31 @@ public:
     friend constexpr basic_mask operator!(const basic_mask& value) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = !value[i];
+            result.data_[i] = static_cast<lane_type>(~value.data_[i]);
         }
         return result;
     }
 
     friend constexpr basic_mask operator&&(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] && right[i];
+        constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            result.data_[i] = left.data_[i] & right.data_[i];
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            result.data_[i] = __detail::mask_bits<Bytes>((left.data_[i] != 0) && (right.data_[i] != 0));
         }
         return result;
     }
 
     friend constexpr basic_mask operator||(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] || right[i];
+        constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            result.data_[i] = left.data_[i] | right.data_[i];
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            result.data_[i] = __detail::mask_bits<Bytes>((left.data_[i] != 0) || (right.data_[i] != 0));
         }
         return result;
     }
@@ -224,8 +237,7 @@ public:
             __detail::set_lane(
                 result,
                 i,
-                (*this)[i] ? typename result_type::value_type{1}
-                         : typename result_type::value_type{0});
+                static_cast<typename result_type::value_type>(data_[i] & 1u));
         }
         return result;
     }
@@ -241,8 +253,7 @@ public:
             __detail::set_lane(
                 result,
                 i,
-                (*this)[i] ? typename result_type::value_type{-1}
-                         : typename result_type::value_type{0});
+                static_cast<typename result_type::value_type>(-static_cast<typename result_type::value_type>(data_[i] & 1u)));
         }
         return result;
     }
@@ -259,8 +270,7 @@ public:
             __detail::set_lane(
                 result,
                 i,
-                (*this)[i] ? static_cast<lane_type>(~lane_type{1})
-                         : static_cast<lane_type>(~lane_type{0}));
+                static_cast<lane_type>(~static_cast<lane_type>(data_[i] & 1u)));
         }
         return result;
     }
@@ -271,7 +281,7 @@ public:
     friend constexpr basic_mask operator==(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] == right[i];
+            result.data_[i] = static_cast<lane_type>(~(left.data_[i] ^ right.data_[i]));
         }
         return result;
     }
@@ -279,7 +289,7 @@ public:
     friend constexpr basic_mask operator!=(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] != right[i];
+            result.data_[i] = left.data_[i] ^ right.data_[i];
         }
         return result;
     }
@@ -287,7 +297,7 @@ public:
     friend constexpr basic_mask operator<(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] < right[i];
+            result.data_[i] = static_cast<lane_type>(static_cast<lane_type>(~left.data_[i]) & right.data_[i]);
         }
         return result;
     }
@@ -295,7 +305,7 @@ public:
     friend constexpr basic_mask operator<=(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] <= right[i];
+            result.data_[i] = static_cast<lane_type>(static_cast<lane_type>(~left.data_[i]) | right.data_[i]);
         }
         return result;
     }
@@ -303,7 +313,7 @@ public:
     friend constexpr basic_mask operator>(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] > right[i];
+            result.data_[i] = static_cast<lane_type>(left.data_[i] & static_cast<lane_type>(~right.data_[i]));
         }
         return result;
     }
@@ -311,7 +321,7 @@ public:
     friend constexpr basic_mask operator>=(const basic_mask& left, const basic_mask& right) noexcept {
         basic_mask result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = left[i] >= right[i];
+            result.data_[i] = static_cast<lane_type>(left.data_[i] | static_cast<lane_type>(~right.data_[i]));
         }
         return result;
     }
@@ -345,8 +355,13 @@ public:
         const basic_mask& when_true,
         const basic_mask& when_false) noexcept {
         basic_mask result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = cond[i] ? when_true[i] : when_false[i];
+        constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            result.data_[i] = static_cast<lane_type>((cond.data_[i] & when_true.data_[i]) |
+                (static_cast<lane_type>(~cond.data_[i]) & when_false.data_[i]));
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            result.data_[i] = cond.data_[i] ? when_true.data_[i] : when_false.data_[i];
         }
         return result;
     }
@@ -356,8 +371,13 @@ public:
         same_as<bool> auto when_true,
         same_as<bool> auto when_false) noexcept {
         basic_mask result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            result.data_[i] = cond[i] ? when_true : when_false;
+        constexpr auto prefix = __detail::mask_blend_prefix<Bytes, size>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            result.data_[i] = static_cast<lane_type>((cond.data_[i] & __detail::mask_bits<Bytes>(when_true)) |
+                (static_cast<lane_type>(~cond.data_[i]) & __detail::mask_bits<Bytes>(when_false)));
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            result.data_[i] = __detail::mask_bits<Bytes>(cond.data_[i] ? when_true : when_false);
         }
         return result;
     }
@@ -367,14 +387,19 @@ public:
     __simd_select_impl(const basic_mask& cond, const U& when_true, const U& when_false) noexcept {
         using result_type = basic_vec<U, __deduce_abi_t<U, __abi_lane_count<Abi>::value>>;
         result_type result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, cond[i] ? when_true : when_false);
+        constexpr auto prefix = __detail::select_blend_prefix<Bytes, size, U>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            __detail::set_lane(result, i, __detail::select_lane<Bytes, true>(cond.data_[i], when_true, when_false));
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            __detail::set_lane(result, i, __detail::select_lane<Bytes, false>(cond.data_[i], when_true, when_false));
         }
         return result;
     }
 
 private:
-    array<bool, __abi_lane_count<Abi>::value> data_;
+    // Every lane is zero or numeric_limits<lane_type>::max().
+    array<lane_type, __abi_lane_count<Abi>::value> data_;
 };
 
 template<size_t Bytes, class Abi>
@@ -459,7 +484,7 @@ public:
     constexpr basic_vec(R&& r, const mask_type& mask_value, flags<Flags...> f = {}) noexcept : data_{} {
         auto* first = ranges::data(r);
         for (__simd_size_type i = 0; i < size; ++i) {
-            if (mask_value[i]) {
+            if (__detail::mask_lane(mask_value, i)) {
                 data_[i] = __detail::convert_or_copy<T>(first[i], f);
             }
             // else: zero-initialized by data_{}
@@ -571,7 +596,7 @@ public:
         requires requires(const T& lane) { static_cast<bool>(!lane); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, !value[i]);
+            __detail::mask_access::set(result, i, !value[i]);
         }
         return result;
     }
@@ -797,7 +822,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value == right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] == right[i]);
+            __detail::mask_access::set(result, i, left[i] == right[i]);
         }
         return result;
     }
@@ -806,7 +831,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value != right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] != right[i]);
+            __detail::mask_access::set(result, i, left[i] != right[i]);
         }
         return result;
     }
@@ -815,7 +840,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value < right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] < right[i]);
+            __detail::mask_access::set(result, i, left[i] < right[i]);
         }
         return result;
     }
@@ -824,7 +849,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value <= right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] <= right[i]);
+            __detail::mask_access::set(result, i, left[i] <= right[i]);
         }
         return result;
     }
@@ -833,7 +858,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value > right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] > right[i]);
+            __detail::mask_access::set(result, i, left[i] > right[i]);
         }
         return result;
     }
@@ -842,7 +867,7 @@ public:
         requires requires(const T& left_value, const T& right_value) { static_cast<bool>(left_value >= right_value); } {
         mask_type result;
         for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, left[i] >= right[i]);
+            __detail::mask_access::set(result, i, left[i] >= right[i]);
         }
         return result;
     }
@@ -860,8 +885,14 @@ public:
         const basic_vec& when_true,
         const basic_vec& when_false) noexcept {
         basic_vec result;
-        for (__simd_size_type i = 0; i < size; ++i) {
-            __detail::set_lane(result, i, cond[i] ? when_true[i] : when_false[i]);
+        constexpr auto prefix = __detail::select_blend_prefix<sizeof(T), size, T>;
+        for (__simd_size_type i = 0; i < prefix; ++i) {
+            __detail::set_lane(result, i, __detail::select_lane<sizeof(T), true>(
+                __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]));
+        }
+        for (__simd_size_type i = prefix; i < size; ++i) {
+            __detail::set_lane(result, i, __detail::select_lane<sizeof(T), false>(
+                __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]));
         }
         return result;
     }

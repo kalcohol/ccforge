@@ -45,7 +45,7 @@ constexpr bool check_float_traits() {
     static_assert(std::simd::__simd_size<float, Abi>::value == N);
     static_assert(std::simd::__abi_lane_count<Abi>::value == N);
     static_assert(sizeof(V) == sizeof(float) * N && alignof(V) == alignof(float));
-    static_assert(sizeof(mask_type) == sizeof(bool) * N && alignof(mask_type) == alignof(bool));
+    static_assert(sizeof(mask_type) == sizeof(std::uint32_t) * N && alignof(mask_type) == alignof(std::uint32_t));
     static_assert(std::simd::alignment_v<V> == alignof(float) * N);
     static_assert(std::simd::alignment_v<V, int> == alignof(int) * N);
     static_assert(std::simd::rebind_t<int, V>::size() == N);

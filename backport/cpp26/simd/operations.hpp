@@ -20,7 +20,7 @@ constexpr basic_vec<T, Abi> compress(
     for (__simd_size_type i = 0;
          i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size);
          ++i) {
-        if (mask_value[i]) {
+        if (__detail::mask_lane(mask_value, i)) {
             __detail::set_lane(result, out, value[i]);
             ++out;
         }
@@ -48,13 +48,13 @@ constexpr basic_mask<Bytes, Abi> compress(
     for (__simd_size_type i = 0;
          i < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size);
          ++i) {
-        if (mask_value[i]) {
-            __detail::lane_ref(result, out) = value[i];
+        if (__detail::mask_lane(mask_value, i)) {
+            __detail::copy_lane(result, out, value, i);
             ++out;
         }
     }
     for (; out < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size); ++out) {
-        __detail::lane_ref(result, out) = fill_value;
+        __detail::set_lane(result, out, fill_value);
     }
     return result;
 }
@@ -69,7 +69,7 @@ constexpr basic_vec<T, Abi> expand(
     for (__simd_size_type i = 0;
          i < static_cast<__simd_size_type>(basic_vec<T, Abi>::size);
          ++i) {
-        if (mask_value[i]) {
+        if (__detail::mask_lane(mask_value, i)) {
             __detail::set_lane(result, i, value[in]);
             ++in;
         }
@@ -94,8 +94,8 @@ constexpr basic_mask<Bytes, Abi> expand(
     for (__simd_size_type i = 0;
          i < static_cast<__simd_size_type>(basic_mask<Bytes, Abi>::size);
          ++i) {
-        if (mask_value[i]) {
-            __detail::lane_ref(result, i) = value[in];
+        if (__detail::mask_lane(mask_value, i)) {
+            __detail::copy_lane(result, i, value, in);
             ++in;
         }
     }
@@ -179,7 +179,7 @@ template<class Result, class Current>
 constexpr void cat_append(Result& result, __simd_size_type& offset, const Current& current) {
     using current_type = decay_t<Current>;
     for (__simd_size_type i = 0; i < static_cast<__simd_size_type>(current_type::size); ++i) {
-        __detail::set_lane(result, offset + i, current[i]);
+        __detail::copy_lane(result, offset + i, current, i);
     }
     offset += static_cast<__simd_size_type>(current_type::size);
 }
