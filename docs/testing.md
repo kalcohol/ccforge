@@ -83,13 +83,24 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
 
 `scripts/audit-docs-and-examples.sh` 是轻量防回归脚本。它检查：
 
-- docs / README 中引用的 `example/*.cpp` 是否真实存在；
+- docs / README 中引用的 `example/*.cpp` 是否真实存在，每个 example 是否至少被一处文档引用；
 - `example/CMakeLists.txt` 中注册的 example source 是否存在；
 - 每个 `example/*.cpp` 是否被 `example/CMakeLists.txt` 注册；
 - docs / README 中的本地 Markdown link 是否仍能解析到文件；
+- docs / README / example 中引用的 `<forge/...>` 头文件是否存在；
 - committed docs/scripts/tests 是否泄漏私有主机名或本地路径；
 - 非 WD 的 `std::execution::ensure_started` / `std::execution::start_detached`
-  是否只出现在“已移除”说明中。
+  是否只出现在“已移除”说明中；
+- 公开文档和 example 中带限定的 `sync_wait` 是否写作 `std::this_thread::sync_wait`
+  （Forge 扩展入口 `forge::sync_wait` 除外）；
+- 三语 README 的特性表、代码块和链接结构是否一致；
+- `test/CMakeLists.txt` 声明的 `FORGE_TEST_ENABLE_*` 和 `forge.cmake` 声明的
+  `FORGE_ENABLE_FORGE_*` 是否与 `docs/testing.md` / `docs/install-options.md`
+  记载的集合完全一致；
+- 治理守卫：`FORGE_FORCE_*_BACKPORT` 与 backport 定义的 `__cpp_lib_*` 宏有文档；
+  标准 example 被对应的 backport 页面链接；`docs/roadmap/` 下各文档的状态行与索引一致；
+  example 带用途头注释（冻结的 `unique_resource_example.cpp` 除外）且 env / bulk 写法
+  可移植。每个守卫谓词都有一对正反自测样例。
 
 该脚本不编译代码，也不证明 API correctness；它只负责文档和 example registry 的
 机械一致性。`verify-selfhosted-floor.sh` 默认运行它；特殊情况下可设置：
