@@ -3,6 +3,7 @@
 
 #include <forge/io/combinators.hpp>
 #include "forge_operation_destroy.hpp"
+#include "../../stop_completion_probe.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <semaphore>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -122,7 +124,9 @@ struct controlled_state {
     bool release = false;
     bool returned = false;
     bool stop_completes = true;
-    bool reset_callback_before_completion = true;
+    bool deregistering = false;
+    std::binary_semaphore* worker_tail = nullptr;
+    std::thread* worker_owner = nullptr;
     bool block_stop = false;
     bool stop_entered = false;
     bool release_stop = false;
@@ -187,6 +191,9 @@ struct controlled_delivery {
     std::shared_ptr<controlled_state> state;
     std::optional<callback_t> callback;
     std::atomic<bool> done{false};
+    std::mutex registration_mutex;
+    bool registration_ready = false;
+    bool deferred_stop = false;
 
     controlled_delivery(R rcvr, std::shared_ptr<controlled_state> st)
         : receiver(std::move(rcvr))
@@ -206,19 +213,26 @@ struct controlled_delivery {
             should_complete = state->stop_completes;
         }
         if (should_complete) {
-            complete_stopped(false);
+            {
+                std::lock_guard lock{registration_mutex};
+                // An immediate invocation can run inside optional::emplace.
+                // Its completion must wait until the registration exists.
+                if (!registration_ready) {
+                    deferred_stop = true;
+                    return;
+                }
+            }
+            complete_stopped();
         } else {
             state->cv.notify_all();
         }
     }
 
-    auto complete_stopped(bool reset_callback = true) noexcept -> void {
+    auto complete_stopped() noexcept -> void {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
-        if (reset_callback) {
-            callback.reset();
-        }
+        callback.reset();
         std::execution::set_stopped(std::move(receiver));
         {
             std::lock_guard lock{state->mtx};
@@ -231,9 +245,12 @@ struct controlled_delivery {
         if (done.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
-        if (state->reset_callback_before_completion) {
-            callback.reset();
+        {
+            std::lock_guard lock{state->mtx};
+            state->deregistering = true;
         }
+        state->cv.notify_all();
+        callback.reset();
         std::execution::set_value(std::move(receiver), std::move(result));
         {
             std::lock_guard lock{state->mtx};
@@ -271,28 +288,40 @@ struct controlled_op {
     }
 
     auto start() & noexcept -> void {
+        // Completion can destroy the operation while start still owns delivery.
+        auto shared = delivery;
         try {
             auto token = std::execution::get_stop_token(
-                std::execution::get_env(delivery->receiver));
+                std::execution::get_env(shared->receiver));
             {
-                std::lock_guard lock{delivery->state->mtx};
-                delivery->state->started = true;
+                std::lock_guard lock{shared->state->mtx};
+                shared->state->started = true;
             }
-            delivery->state->cv.notify_all();
+            shared->state->cv.notify_all();
 
             if (token.stop_requested()) {
-                delivery->complete_stopped_from_stop();
+                shared->registration_ready = true;
+                shared->complete_stopped_from_stop();
                 return;
             }
             if (token.stop_possible()) {
-                delivery->callback.emplace(
+                shared->callback.emplace(
                     token,
                     typename controlled_delivery<R>::stop_callback{
-                        delivery});
+                        shared});
             }
 
-            auto shared = delivery;
-            std::thread([shared] {
+            bool complete_deferred;
+            {
+                std::lock_guard lock{shared->registration_mutex};
+                shared->registration_ready = true;
+                complete_deferred = shared->deferred_stop;
+            }
+            if (complete_deferred) {
+                shared->complete_stopped();
+                return;
+            }
+            std::thread worker([shared] {
                 controlled_completion completion;
                 child_result result;
                 {
@@ -314,10 +343,18 @@ struct controlled_op {
                     shared->complete_stopped();
                     break;
                 }
-            }).detach();
+                if (shared->state->worker_tail) shared->state->worker_tail->acquire();
+            });
+            if (shared->state->worker_owner) {
+                *shared->state->worker_owner = std::move(worker);
+            } else {
+                worker.detach();
+            }
         } catch (...) {
+            if (shared->done.exchange(true, std::memory_order_acq_rel)) return;
+            shared->callback.reset();
             std::execution::set_error(
-                std::move(delivery->receiver),
+                std::move(shared->receiver),
                 std::current_exception());
         }
     }
@@ -622,6 +659,40 @@ using when_any_op_t = std::execution::connect_result_t<
 static_assert(std::execution::operation_state<when_any_op_t>);
 
 } // namespace
+
+TEST(ForgeCoroCombinatorsTest, StopTriggeredDeliveryDeregistersBeforeWorkerTail) {
+    auto state = std::make_shared<controlled_state>();
+    std::binary_semaphore release_tail{0};
+    std::thread worker;
+    state->worker_tail = &release_tail;
+    state->worker_owner = &worker;
+    std::inplace_stop_source stop;
+    cio::io_env env;
+    env.stop_token = stop.get_token();
+    forge_test::stop_completion_probe probe;
+    using sender_t = decltype(cio::as_sender(child_task(state)));
+    using op_t = std::execution::connect_result_t<sender_t,
+        forge_test::stop_completion_probe::receiver>;
+    bool destroyed = false;
+    forge_test::operation_destroy_context<op_t> owner{&destroyed};
+    auto& op = owner.emplace_from([&] {
+        return std::execution::connect(cio::as_sender(child_task(state), env), probe.get_receiver());
+    });
+    std::execution::start(op);
+    // Drive complete_stopped_from_stop, whose old path retained the callback.
+    // Use the env source: the receiver releases its own source on completion.
+    EXPECT_TRUE(stop.request_stop());
+    probe.wait();
+    wait_returned(state);
+    EXPECT_EQ(state->stop_attempts, 1);
+    // The stop request has returned; destroy the fused source before releasing
+    // the worker's last delivery owner and its optional callback destructor.
+    owner.destroy();
+    release_tail.release();
+    worker.join();
+    EXPECT_TRUE(destroyed);
+    EXPECT_FALSE(probe.source);
+}
 
 TEST(ForgeCoroCombinatorsTest, WhenAllResultsAcceptsNonAssignableThrowingMovePayload) {
     auto first_control = std::make_shared<throwing_move_control>();
@@ -966,7 +1037,6 @@ TEST(ForgeCoroCombinatorsTest, SiblingStopFinishesBeforeCrossThreadDelivery) {
     fixture f;
     f.second->stop_completes = false;
     f.second->block_stop = true;
-    f.second->reset_callback_before_completion = false;
     using sender_t = decltype(cio::when_all_results(
         child_task(f.first),
         child_task(f.second)));
@@ -998,7 +1068,11 @@ TEST(ForgeCoroCombinatorsTest, SiblingStopFinishesBeforeCrossThreadDelivery) {
         f.second,
         controlled_completion::value,
         child_result::success(4));
-    wait_returned(f.second);
+    {
+        std::unique_lock lock{f.second->mtx};
+        f.second->cv.wait(lock, [&] { return f.second->deregistering; });
+        EXPECT_FALSE(f.second->returned);
+    }
 
     {
         std::lock_guard lock{f.aggregate->mtx};
