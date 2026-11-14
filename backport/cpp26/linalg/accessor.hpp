@@ -344,17 +344,34 @@ template<class ElementType, class Extents, class Layout, class Accessor>
         return result_t(
             x.data_handle(), mapping_t(transposed_extents), x.accessor());
     } else if constexpr (
-        traits_t::kind == __detail::__transpose_mapping_kind::left_padded) {
-        return result_t(
-            x.data_handle(),
-            mapping_t(transposed_extents, x.mapping().stride(1)),
-            x.accessor());
-    } else if constexpr (
+        traits_t::kind == __detail::__transpose_mapping_kind::left_padded ||
         traits_t::kind == __detail::__transpose_mapping_kind::right_padded) {
-        return result_t(
-            x.data_handle(),
-            mapping_t(transposed_extents, x.mapping().stride(0)),
-            x.accessor());
+        constexpr auto padded_rank =
+            traits_t::kind == __detail::__transpose_mapping_kind::left_padded ? 1 : 0;
+        const index_t stride = x.mapping().stride(padded_rank);
+        if (stride > 0) {
+            // Conversion preserves the exact stride and only requires the
+            // required span size, rather than the full padded product, to fit.
+            // Swapping dimensions also preserves a valid stride ordering.
+            const std::layout_stride::mapping<new_extents_t> strided(
+                transposed_extents,
+                std::array<index_t, 2>{
+                    x.mapping().stride(1), x.mapping().stride(0)});
+            return result_t(x.data_handle(), mapping_t(strided), x.accessor());
+        }
+        // A zero stride implies a zero padded extent. layout_stride requires
+        // positive strides; the padding constructor reproduces this case.
+        if constexpr (mapping_t::padding_value != std::dynamic_extent) {
+            return result_t(
+                x.data_handle(),
+                mapping_t(transposed_extents, mapping_t::padding_value),
+                x.accessor());
+        } else {
+            return result_t(
+                x.data_handle(),
+                mapping_t(transposed_extents, index_t(1)),
+                x.accessor());
+        }
     } else if constexpr (
         traits_t::kind == __detail::__transpose_mapping_kind::strided) {
         return result_t(

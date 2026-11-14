@@ -57,6 +57,21 @@ auto sum = std::linalg::dot(v, v);
 
 ### 语义和限制
 
+- `transposed` 对 padded layouts 按草案的预期映射语义实现，偏离
+  [linalg.transp.transposed](https://eel.is/c++draft/linalg.transp.transposed)
+  p4.2/p4.3 直接将 source stride 作为 padding 参数的字面写法。
+  对有效源 mapping，padded stride 为正时，以交换后的 extents 和 strides 构造
+  `layout_stride::mapping`，再显式转换为结果 padded mapping，保留精确 stride。
+  此路径也适用于转换构造产生的零 padded extent、正 stride，以及完整 padded product
+  超出 `index_type`、但 `required_span_size()` 可表示的映射。
+  stride 为零时，padded extent 必为零；静态 padding 传入 `padding_value`，
+  动态 padding 传入 `1`，均重建零 stride。由此保留交换后的 extents、strides、
+  required span size 与元素映射；不要求源映射可由 `(extents, padding)` 重建。
+  静态 padding 的零 padded extent 要求 stride 为零，故不包含正 stride 情形。
+  构造器前置条件见
+  [mdspan.layout.leftpad.cons](https://eel.is/c++draft/mdspan.layout.leftpad.cons) 与
+  [mdspan.layout.rightpad.cons](https://eel.is/c++draft/mdspan.layout.rightpad.cons) 与
+  [mdspan.layout.stride.cons](https://eel.is/c++draft/mdspan.layout.stride.cons)。
 - 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。
 - 当原生 `<linalg>` 可用时，backport 自动禁用。
 - Forge 当前不定义标准 feature-test macro `__cpp_lib_linalg`，因为这仍是实验性 draft
