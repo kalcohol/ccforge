@@ -75,11 +75,14 @@ libstdc++ lane 充当 fallback oracle。
 `Bytes == 16`（例如 `complex<double>` 的 mask）使用 `uint64_t` lane，
 使用最宽的标准定宽整数，避免依赖非标准的 128 位整数或分片 lane；
 complex 值仍通过条件复制选择，不将 64 位 mask 当作 128 位值。数组不额外对齐，公开下标仍返回 `bool`。
-比较直接生成整数 mask；完整向量块的逻辑运算使用整数位运算，短 mask 的逻辑运算使用布尔条件后归一化。
+比较直接生成整数 mask。mask 的 `&&`/`||` 在 Clang 下对每个 lane 分别测试两侧后归一化
+（`||` 的完整块测试是否为全一），避免内联后各 lane 折叠形式不一致而只能部分向量化；
+其他编译器对完整 128-bit 块使用整数位运算、尾部使用布尔条件后归一化，
+其中只有一个 2-lane 块加尾部的 8-byte mask（3 lane）对全部 lane 使用按位与。
 算术类型的运行期 `select` 按编译期确定的完整 128-bit 块使用同宽 `bit_cast` 与按位混合，
-不足一块的尾部使用条件选择；单 lane 累积值始终使用条件选择。
-Clang 的 4-lane、4-byte 算术选择也使用条件形式。
-两种形式均保留选中值的全部位，常量求值与 complex 类型使用条件选择。
+超过 8 lane 时混合写成 `f ^ ((t ^ f) & m)`，不足一块的尾部使用条件选择；单 lane 累积值始终使用条件选择。
+Clang 的 4-lane、4-byte 算术选择也使用条件形式；GCC 的 2-lane、8-byte 选择通过生成器原位构造结果。
+各形式均保留选中值的全部位，常量求值与 complex 类型使用条件选择。
 跨宽度 mask 转换通过有符号扩展或低位截断保留零/全一。
 这一布局让同宽 blend 与比较更易向量化，减少消费端从 `bool` 扩宽的开销。mask 的 size/alignment 因此与旧布局不同，
 使用方需要重新编译。
@@ -87,21 +90,32 @@ Clang 的 4-lane、4-byte 算术选择也使用条件形式。
 
 当前实现的归约总工作量为 O(N)。`reduce` 从首个选中 lane 开始累积，
 masked 形式跳过未选中 lane，不向非空归约注入 identity；空 mask 返回指定的 identity。
+整数元素与 `plus<>` 的 masked `reduce` 在 Clang（3 lane 及以上）和 GCC（完整 128-bit 块）上
+改用无分支形式：在同宽无符号类型中累加每个 lane 与其 mask lane 的按位与，返回值规则不变。
+这一路径上的有符号溢出（标准中为未定义行为）按二进制补码回绕，常量求值也不会因此失败。
 masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>::max()` /
 `numeric_limits<T>::lowest()`。`all_of`/`any_of` 在 GCC 使用整数 lane 的可预测早退出，
 与旧 `bool` 表示生成的算法相同；其他编译器使用无分支的整数 AND/OR 累积，
 便于生成 compare/pack/movemask 或 AND/OR tree；`none_of` 对 `any_of` 取反。
-`reduce_count` 对每个 lane 的低位求和；`reduce_min_index`/`reduce_max_index`
-分别正序、逆序扫描整数 lane，遇到 true 返回索引。运行期与常量求值共用这些循环。
+`reduce_count` 在 Clang 且启用 AVX2 与 POPCNT 时，对 4 或 8 个 4-byte lane 与 4 个 8-byte lane
+统计等于全一的 lane（比较、movemask 与 popcnt）；其他情形从 2 lane（Clang）或 4 lane（其他编译器）起
+在 lane 类型中按模依次减去每个 lane（置位 lane 为全一，相当于 -1，累减结果即计数），
+更短的 mask 对每个 lane 的低位求和。
+`reduce_min_index`/`reduce_max_index` 分别正序、逆序扫描整数 lane，遇到 true 返回索引。
+运行期与常量求值共用这些循环。
 
 测量使用 GCC 16.2、Clang 19.1.7，x86-64 baseline 与 `-march=native`
 （AVX2，无 AVX-512），固定在一个 performance core，覆盖 1 至 16 lane。
 基准操作数按 cache line 对齐，计时 lambda 强制内联；不涉及 mask 的对照 kernel
 比值几何均值约 1.00，用来确认栈布局与内联决策没有主导比较。
+基准还对代码位置敏感：只在代码前插入 32 字节填充，计时循环指令相同的 kernel 就可能相差 10% 以上，
+因此另用 `-falign-functions=64 -falign-loops=64` 构建做交叉检查，下列结论在两种构建下一致。
 下列比值为相对旧 `bool` 表示的 candidate/base，取 15 组交错配对样本的中位数，越低越快。
+528 个涉及 mask 的 kernel 几何均值为 GCC 0.83、GCC native 0.75、Clang 0.81、Clang native 0.73。
 至少 4 lane 的 `select`、`compare_select_*`、`mask_and_select`、`mask_or_select`
-各 kernel 在各配置下的中位比值为 0.17–0.61，最佳组合约 0.08；GCC 的 `compare_reduce_count`
-为 0.18–0.64，`convert_mask_select_double` 为 0.29–0.94。
+各 kernel 在各配置下的中位比值为 0.17–0.62，最佳组合约 0.08；GCC 的 `compare_reduce_count`
+为 0.15–0.61，`convert_mask_select_double` 为 0.28–0.94；
+走无分支路径的 int32 masked `reduce`（存储的 mask 或直接消费比较结果）为 0.08–0.97。
 
 水平测试对输入分布敏感。原输入让 `all_of` 在 lane 0、`any_of`/`none_of`
 在 lane 1 决定，偏向早退出；全真 `all_of` 和全假 `any_of`/`none_of` 则要求完整扫描。
@@ -109,33 +123,36 @@ masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>:
 
 | 水平测试 | GCC 提前决定 | GCC 完整扫描 | Clang 提前决定 | Clang 完整扫描 |
 |---|---|---|---|---|
-| stored `all_of`/`any_of`/`none_of` | 0.74–1.03 | 0.76–1.03 | all 1.26–4.01；any/none 0.82–2.44 | 0.20–1.48 |
-| fused `all_of`/`any_of`/`none_of` | 0.90–1.06 | 0.99–1.01 | all 0.75–2.56；any/none 0.28–1.05 | 0.28–1.12 |
+| stored `all_of`/`any_of`/`none_of` | 0.73–1.06 | 0.77–1.03 | all 1.25–4.01；any/none 0.81–2.42 | 0.21–1.47 |
+| fused `all_of`/`any_of`/`none_of` | 0.97–1.08 | 0.99–1.01 | all 0.72–2.56；any/none 0.28–1.05 | 0.28–1.12 |
 
 GCC 下两种表示生成同一早退出算法，差异只在具体比较指令；单 lane 的 stored 测试为
 1.0–2.0，绝对差约一个周期（旧表示约 0.25 ns/次）。Clang 对整数 mask 使用无分支归约：
-答案由前几个 lane 决定时慢于旧表示的早退出分支链，需要完整扫描时明显更快；单 lane 为 0.99–1.30。
+答案由前几个 lane 决定时慢于旧表示的早退出分支链，需要完整扫描时明显更快；单 lane 为 0.99–1.01。
 `reduce_min_index`/`reduce_max_index` 在两种表示下都是按 lane 早退出扫描，
-除下表所列组合外，2 至 16 lane 的比值在 0.89–1.27 之间。
+2 至 16 lane 的比值在 0.89–1.27 之间；超过 1.15 的集中在 Clang 的 2–4 lane（1.18–1.24，
+以完整扫描为主）、Clang native int32 ×8 的 `reduce_max_index`（1.24–1.27）
+和 GCC baseline double native（2 lane）的 `reduce_max_index`（1.21–1.22），
+另有 Clang baseline float ×8 的 `reduce_min_index`（1.21，对齐构建下为 1.00）。
+Clang 的 `reduce_count` 在 8 与 16 lane 为 0.41–0.93，GCC 在 2 lane 及以上为 0.28–1.08。
 更大的 mask 存储仍会增加 cache footprint，真实应用应按输入分布复测。
 
-当前仍有以下较慢组合，属于后续可调优的编译器向量化或代码生成限制：
+除上述水平测试、index 归约与单 lane stored 测试外，比值不低于 1.15 的组合如下：
 
 | 编译器与 ISA | kernel、元素类型与 lane 数 | 近似比值 |
 |---|---|---|
-| Clang native AVX2 | `mask_or_select` / `mask_and_select`，float ×4 | 2.29 / 1.84 |
-| Clang native AVX2 | `masked_reduce_plus`，int32 ×4 / ×8 | 1.75 / 1.8–2.0 |
-| GCC native AVX2 | `compare_masked_reduce`，int32 ×8 / ×16 | 2.22 / 1.53 |
-| Clang baseline 与 native | stored `reduce_count`，4–16 lane | 1.3–2.6 |
-| Clang baseline | `compare_select_clamp`，double ×16 | 1.30 |
-| GCC baseline 与 native | `mask_and_select`，double ×3 | 1.34–1.39 |
-| GCC baseline | `compare_select_clamp`，double native（2 lane） | 1.37 |
-| GCC native AVX2 | `reduce_max_index`，float ×3 | 1.70 |
-| Clang native AVX2 | `reduce_max_index`，int32 ×8 | 1.27 |
-| Clang baseline | stored / 完整扫描 `all_of`，double native（2 lane） | 1.26 / 1.48 |
+| Clang baseline | stored `reduce_count`，4 lane | 1.47–1.48 |
+| Clang native AVX2 | stored `reduce_count`，4 lane | 1.17–1.24 |
+| Clang baseline | 完整扫描 `all_of`，double native（2 lane） | 1.47 |
+| Clang baseline | `compare_masked_reduce`，float ×4 | 1.22–1.24 |
+| Clang baseline 与 native | 单 lane `select`（double）；baseline 另有单 lane `mask_or_select`（float/double） | 1.15–1.16 |
 
-Clang native 的 4-lane float 逻辑选择会出现部分 SLP 向量化，留下标量比较、
-GPR AND 与 blend mask 重建。上述数据不代表所有 kernel 均无回退。
+4-lane `reduce_count` 需要对 16 字节（4-byte lane）或 32 字节（8-byte lane）的 mask 做水平归约，
+旧表示只需对 4 个字节求和。2-lane `all_of` 与 int32 ×8 `reduce_max_index` 的诊断观察
+与基准对寄存器压力和布局的敏感一致：计时循环保留 12 个 barrier 地址，无分支的 2-lane AND
+需要多一个寄存器，每次迭代多一次地址重载；int32 ×8 的热路径指令在两种表示下相同，
+额外的 load 发射随栈布局变化。这些行在真实应用中的代价尚未确认。
+上述数据不代表所有 kernel 均无回退。
 
 [simd.reductions](https://eel.is/c++draft/simd.reductions) 的 `reduce` 使用
 [numerics.defns](https://eel.is/c++draft/numerics.defns) 定义的 `GENERALIZED_SUM`，
