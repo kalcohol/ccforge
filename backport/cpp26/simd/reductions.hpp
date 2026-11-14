@@ -20,6 +20,28 @@ constexpr T reduce(const basic_vec<T, Abi>& value, BinaryOperation binary_op = {
     return result[0];
 }
 
+namespace __detail {
+
+// Integer plus<> wraps in the same-width unsigned mask lane type. Adding
+// every lane ANDed with its mask lane loads all lanes; it was measured
+// faster than the predictable branches from three lanes on Clang and for
+// complete 128-bit blocks on GCC, which keeps other widths scalar.
+// Other compilers keep the conditional loop.
+template<class T, class BinaryOperation, __simd_size_type Lanes>
+inline constexpr bool is_masked_integer_plus =
+    is_vectorizable_integral<T>::value &&
+    is_same_v<remove_cvref_t<BinaryOperation>, plus<>> &&
+    sizeof(mask_lane_t<sizeof(T)>) == sizeof(T) &&
+#if defined(__clang__)
+    Lanes >= 3;
+#elif defined(__GNUC__)
+    Lanes % mask_blend_block<sizeof(T)> == 0;
+#else
+    false;
+#endif
+
+} // namespace __detail
+
 template<class T,
          class Abi,
          class BinaryOperation = plus<>,
@@ -34,6 +56,24 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
     noexcept(std::declval<BinaryOperation&>()(
         std::declval<vec<T, 1>&>(),
         std::declval<vec<T, 1>>()))) {
+    if constexpr (__detail::is_masked_integer_plus<T, BinaryOperation, basic_vec<T, Abi>::size>) {
+        // Clang vectorized the conditional loop below with masked loads and
+        // GCC with spilled mask lanes and a scalar tail; the sum of every lane
+        // ANDed with its mask lane maps to AND/ADD trees instead. Unsigned
+        // lanes add no signed overflow.
+        using lane_type = __detail::mask_lane_t<sizeof(T)>;
+        lane_type sum{0};
+        lane_type any{0};
+        for (__simd_size_type i = 0; i < basic_vec<T, Abi>::size; ++i) {
+            const lane_type bits = __detail::mask_lane(mask_value, i);
+            sum = static_cast<lane_type>(sum + (static_cast<lane_type>(value[i]) & bits));
+            any = static_cast<lane_type>(any | bits);
+        }
+        // An empty mask leaves sum zero and keeps identity_element; this
+        // term folds away for the default identity.
+        return static_cast<T>(static_cast<lane_type>(
+            sum + (static_cast<lane_type>(identity_element) & static_cast<lane_type>(~any))));
+    }
     __simd_size_type first = 0;
     while (first < basic_vec<T, Abi>::size && !__detail::mask_lane(mask_value, first)) {
         ++first;
