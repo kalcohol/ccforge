@@ -16,7 +16,7 @@ function(hive_expected_registrations state targets_var tests_var)
     list(REMOVE_ITEM tests hive_portable)
     list(APPEND tests hive_portable_runtime hive_test_gate_matrix)
     if(state STREQUAL "BACKPORT" OR state STREQUAL "FORCED")
-        set(implementation_targets hive_runtime hive_multi_tu
+        set(implementation_targets hive_runtime hive_multi_tu hive_alloc_layout
             hive_compile_include hive_compile_api hive_compile_constexpr_allocator
             hive_compile_version_then_include hive_model_normal hive_model_mutated
             hive_bounded_sort)
