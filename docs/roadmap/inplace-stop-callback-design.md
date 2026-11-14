@@ -1,5 +1,7 @@
 # `inplace_stop_callback` 无分配设计
 
+> 状态：active；最后核对：2026-11-14；取代关系：无。
+
 `std::inplace_stop_callback` 遵守标准 source lifetime，以 callback object
 内联的 node 注册到 source 的 intrusive list。不再为 registration 分配 control block。
 constructor 的异常规格为 `noexcept(is_nothrow_constructible_v<CallbackFn, Initializer>)`，
