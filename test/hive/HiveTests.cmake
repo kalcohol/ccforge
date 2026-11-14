@@ -11,6 +11,7 @@ hive_compile_check(constexpr_allocator TRUE)
 hive_compile_check(version_then_include TRUE)
 
 add_executable(hive_runtime
+    "${hive_runtime_dir}/test_hive_alloc_layout.cpp"
     "${hive_runtime_dir}/test_hive_allocators.cpp"
     "${hive_runtime_dir}/test_hive_capacity.cpp"
     "${hive_runtime_dir}/test_hive_contract_controls.cpp"
@@ -30,12 +31,17 @@ target_compile_definitions(hive_runtime PRIVATE FORGE_HIVE_TEST_HOOKS=1)
 target_link_libraries(hive_runtime PRIVATE GTest::gtest_main ${hive_test_library})
 add_test(NAME hive_runtime COMMAND hive_runtime)
 
+# Also check the production layout without diagnostic members.
+add_executable(hive_alloc_layout "${hive_runtime_dir}/test_hive_alloc_layout.cpp")
+target_link_libraries(hive_alloc_layout PRIVATE GTest::gtest_main ${hive_test_library})
+add_test(NAME hive_alloc_layout COMMAND hive_alloc_layout)
+
 add_executable(hive_multi_tu
     "${hive_runtime_dir}/test_hive_multi_tu_main.cpp"
     "${hive_runtime_dir}/test_hive_multi_tu_other.cpp")
 target_link_libraries(hive_multi_tu PRIVATE ${hive_test_library})
 add_test(NAME hive_multi_tu COMMAND hive_multi_tu)
-set_tests_properties(hive_runtime hive_multi_tu PROPERTIES
+set_tests_properties(hive_runtime hive_multi_tu hive_alloc_layout PROPERTIES
     TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
 message(STATUS "Hive <version>-only feature macro check: DEFERRED (no shared version backport)")
