@@ -41,7 +41,14 @@ snapshots.sha256 记录这些清单的摘要，并写入 metadata.txt。
 配对脚本追加 candidate 和 sample。ns 是整个 timed loop 的耗时，除以 iterations
 得到每次 kernel 耗时，再按 lanes 归一化时必须注明口径。
 每个 kernel 先预热；构造输入和输出文本不在计时区间内。
+原有 all_of 在 lane 0、any_of/none_of 在 lane 1 即可决定（单 lane 为边界情况），
+有利于早退出；compare_* 水平测试使用相同分布。full_* 水平测试使用全真或全假输入，
+测量必须扫描全部 lane 的相反情况。index 测试使用既有 mask；单 lane 改用非空 mask。
+full_reduce_min_index 仅最后一个 lane 为真，full_reduce_max_index 仅第一个 lane 为真，
+分别迫使正序、逆序扫描到底。所有新增操作数及存储 mask 均经过 input_barrier。
 输入固定且有界；乘积不溢出，math 不触发域或范围错误。
+操作数按 64 字节对齐，计时 lambda 强制内联：两种实现的 mask 大小不同，否则栈布局和
+内联决策的差异可能主导比值；不涉及 mask 的 kernel 可作为这一点的对照。
 每次迭代包含 compiler memory barrier 和结果观察；barrier kernel 用于观察固定成本，
 不要机械扣除该成本。store 的观察对象是整个输出数组，不含额外 checksum 归约。
 这些是小向量 kernel 的吞吐/调用成本观测，不代表大数组带宽或真实应用性能。
