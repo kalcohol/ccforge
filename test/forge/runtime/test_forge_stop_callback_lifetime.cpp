@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <forge/io/combinators.hpp>
+#include "../../stop_completion_probe.hpp"
 
 #include <memory>
 #include <optional>
@@ -130,5 +131,43 @@ TEST(ForgeStopCallbackLifetimeTest, ReferenceTokenReceiverStopDeliversBeforeRequ
     destroy_on_stop([] { return cio::as_sender(stopped_task()); }, false);
     destroy_on_stop([] { return cio::when_all_results(stopped_task(), stopped_task()); }, false);
     destroy_on_stop([] { return cio::when_any_results(stopped_task(), stopped_task()); }, false);
+}
+
+namespace {
+auto value_task() -> cio::io_task<cio::io_result<int>> {
+    co_return cio::io_result<int>::success(7);
+}
+template<class Factory>
+void release_source_in_completion(Factory factory) {
+    forge_test::stop_completion_probe probe;
+    auto op = std::execution::connect(factory(), probe.get_receiver());
+    std::execution::start(op);
+    probe.wait();
+    EXPECT_FALSE(probe.source);
+}
+} // namespace
+
+TEST(ForgeStopCallbackLifetimeTest, TaskDeregistersBeforeCompletionReleasesSource) {
+    release_source_in_completion([] { return cio::as_sender(value_task()); });
+}
+TEST(ForgeStopCallbackLifetimeTest, WhenAllDeregistersBeforeCompletionReleasesSource) {
+    release_source_in_completion([] { return cio::when_all_results(value_task(), value_task()); });
+}
+TEST(ForgeStopCallbackLifetimeTest, WhenAnyDeregistersBeforeCompletionReleasesSource) {
+    release_source_in_completion([] { return cio::when_any_results(value_task(), value_task()); });
+}
+TEST(ForgeStopCallbackLifetimeTest, TimeoutDeregistersBeforeCompletionReleasesSource) {
+    forge::timer_context timers;
+    release_source_in_completion([&] {
+        return cio::with_timeout(value_task(), std::chrono::hours{1}, timers);
+    });
+    timers.wait();
+}
+TEST(ForgeStopCallbackLifetimeTest, TimerAwaitDeregistersBeforeCompletionReleasesSource) {
+    forge::timer_context timers;
+    release_source_in_completion([&] {
+        return cio::as_sender(cio::async_sleep_for(timers, std::chrono::milliseconds{0}));
+    });
+    timers.wait();
 }
 #endif

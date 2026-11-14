@@ -90,6 +90,11 @@ public:
         return *receiver_;
     }
 
+    void set_completion_cleanup(void* object, void (*cleanup)(void*) noexcept) noexcept {
+        cleanup_object_ = object;
+        completion_cleanup_ = cleanup;
+    }
+
     template<std::size_t I, class Result>
     auto set_value(Result&& result) noexcept -> void {
         const auto outcome =
@@ -330,10 +335,16 @@ private:
         }
     }
 
-    static auto deliver(completion_action& action) noexcept -> void {
+    auto deliver(completion_action& action) noexcept -> void {
         if (!action.receiver) {
             return;
         }
+
+        // No state mutex is held while waiting for a foreign stop invocation.
+        // Completion may release the downstream source while retaining the op.
+        // completion_sent_ admits one winner; constructor writes precede start(), so plain cleanup fields are safe.
+        auto cleanup = std::exchange(completion_cleanup_, nullptr);
+        if (cleanup) cleanup(cleanup_object_);
 
         switch (action.kind) {
         case action_kind::none:
@@ -355,6 +366,8 @@ private:
     }
 
     std::mutex mtx_;
+    void* cleanup_object_ = nullptr;
+    void (*completion_cleanup_)(void*) noexcept = nullptr;
     std::optional<Receiver> receiver_;
     std::inplace_stop_source stop_source_{};
     std::size_t pending_ = 2;
@@ -431,7 +444,12 @@ public:
             , second_op_(std::execution::connect(
                   as_sender(std::move(second), std::move(env)),
                   second_receiver_t{state_}))
-        {}
+        {
+            state_->set_completion_cleanup(&receiver_stop_, [](void* object) noexcept {
+                static_cast<__coro_detail::optional_stop_callback<receiver_stop_token_t>*>(
+                    object)->reset();
+            });
+        }
 
         operation(operation&&) = delete;
         auto operator=(operation&&) -> operation& = delete;
@@ -465,10 +483,12 @@ public:
 
     private:
         std::shared_ptr<state_t> state_;
-        first_op_t first_op_;
-        second_op_t second_op_;
+        // Child abandonment can wait for an in-flight terminal delivery.
+        // Keep its cleanup target alive until both child operations retire.
         __coro_detail::optional_stop_callback<receiver_stop_token_t>
             receiver_stop_;
+        first_op_t first_op_;
+        second_op_t second_op_;
     };
 
     template<std::execution::receiver Receiver>
