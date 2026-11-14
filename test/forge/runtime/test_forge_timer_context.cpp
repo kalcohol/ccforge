@@ -4,6 +4,7 @@
 #include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
 #include "forge_operation_destroy.hpp"
+#include "../../stop_completion_probe.hpp"
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -12,6 +13,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <semaphore>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -63,6 +65,51 @@ struct timer_receiver {
 
     auto get_env() const noexcept -> forge::empty_env {
         return {};
+    }
+};
+
+// Keep async_scope's start reference until the timer receiver has returned.
+// The final operation teardown must then run on the thread calling spawn().
+template<class S>
+struct finish_before_start_returns {
+    using sender_concept = std::execution::sender_t;
+    S sender;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> decltype(std::execution::get_completion_signatures(
+            std::declval<S>(), std::declval<Env>())) { return {}; }
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        struct receiver {
+            using receiver_concept = std::execution::receiver_t;
+            R downstream;
+            std::binary_semaphore* finished;
+            void set_value() && noexcept {
+                auto* signal = finished;
+                std::execution::set_value(std::move(downstream));
+                signal->release();
+            }
+            void set_stopped() && noexcept {
+                auto* signal = finished;
+                std::execution::set_stopped(std::move(downstream));
+                signal->release();
+            }
+            auto get_env() const noexcept {
+                return std::execution::get_env(downstream);
+            }
+        };
+        std::binary_semaphore finished{0};
+        std::execution::connect_result_t<S, receiver> inner;
+        op(S s, R r)
+            : inner(std::execution::connect(std::move(s), receiver{std::move(r), &finished})) {}
+        void start() & noexcept {
+            std::execution::start(inner);
+            finished.acquire();
+        }
+    };
+    template<class R> auto connect(R r) && -> op<R> {
+        return op<R>{std::move(sender), std::move(r)};
     }
 };
 
@@ -810,11 +857,17 @@ TEST(TimerContextTest, WaitIncludesReceiverCleanupAfterValueOrStopped) {
             lock.unlock();
             ctx.wait();
         }};
-        scope.spawn(
-            ctx.schedule_after(stopped ? 1h : 0h)
-            | std::execution::then([owned = std::move(owned)] noexcept {}));
-        if (stopped) {
-            ctx.request_stop();
+        // spawn may own the last reference after a fast timer completion.
+        // Run it independently so either cleanup thread can await our signal.
+        std::thread starter{[&, owned = std::move(owned)]() mutable {
+            scope.spawn(
+                ctx.schedule_after(stopped ? 1h : 0h)
+                | std::execution::then([owned = std::move(owned)] noexcept {}));
+        }};
+        if (stopped) ctx.request_stop();
+        {
+            std::unique_lock lock{mutex};
+            cv.wait(lock, [&] { return cleanup_entered; });
         }
         std::thread waiter{[&] {
             {
@@ -838,7 +891,52 @@ TEST(TimerContextTest, WaitIncludesReceiverCleanupAfterValueOrStopped) {
             cv.notify_all();
         }
         waiter.join();
+        starter.join();
         EXPECT_TRUE(waiter_returned);
+    }
+}
+
+TEST(TimerContextTest, FastCompletionCleansUpOnSpawnerBeforeSpawnReturns) {
+    for (bool stopped : {false, true}) {
+        forge::timer_context ctx;
+        forge::async_scope scope;
+        if (stopped) ctx.shutdown();
+        std::binary_semaphore entered{0}, release{0};
+        std::thread::id spawning_thread;
+        auto owned = std::shared_ptr<void>{nullptr, [&](void*) noexcept {
+            EXPECT_EQ(std::this_thread::get_id(), spawning_thread);
+            entered.release();
+            release.acquire();
+            ctx.wait();
+        }};
+        std::atomic<bool> spawn_returned{false};
+        std::thread starter{[&, owned = std::move(owned)]() mutable {
+            spawning_thread = std::this_thread::get_id();
+            scope.spawn(finish_before_start_returns{ctx.schedule_after(0ms)}
+                | std::execution::then([owned = std::move(owned)] noexcept {}));
+            spawn_returned.store(true, std::memory_order_release);
+        }};
+        entered.acquire();
+        EXPECT_FALSE(spawn_returned.load(std::memory_order_acquire));
+        release.release();
+        starter.join();
+        scope.wait();
+        ctx.wait();
+        EXPECT_TRUE(spawn_returned.load(std::memory_order_acquire));
+    }
+}
+
+TEST(TimerContextTest, CompletionReleasesSourceBeforeRetainedOperation) {
+    for (bool stopped : {false, true}) {
+        forge::timer_context ctx;
+        forge_test::stop_completion_probe probe;
+        auto op = std::execution::connect(
+            ctx.schedule_after(stopped ? 1h : 0h), probe.get_receiver());
+        std::execution::start(op);
+        if (stopped) ctx.shutdown();
+        probe.wait();
+        ctx.wait();
+        EXPECT_FALSE(probe.source);
     }
 }
 
