@@ -910,11 +910,23 @@ public:
         const mask_type& cond,
         const basic_vec& when_true,
         const basic_vec& when_false) noexcept {
-        basic_vec result;
         constexpr auto prefix = __detail::select_blend_prefix<sizeof(T), size, T>;
+        if constexpr (__detail::select_direct_init<sizeof(T), size>) {
+            return basic_vec([&](auto lane) noexcept {
+                constexpr __simd_size_type i = decltype(lane)::value;
+                return __detail::select_lane<sizeof(T), (i < prefix)>(
+                    __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]);
+            });
+        }
+        basic_vec result;
         for (__simd_size_type i = 0; i < prefix; ++i) {
-            __detail::set_lane(result, i, __detail::select_lane<sizeof(T), true>(
-                __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]));
+            if constexpr (size > 8) {
+                __detail::set_lane(result, i, __detail::select_lane_xor<sizeof(T)>(
+                    __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]));
+            } else {
+                __detail::set_lane(result, i, __detail::select_lane<sizeof(T), true>(
+                    __detail::mask_lane(cond, i), when_true.data_[i], when_false.data_[i]));
+            }
         }
         for (__simd_size_type i = prefix; i < size; ++i) {
             __detail::set_lane(result, i, __detail::select_lane<sizeof(T), false>(

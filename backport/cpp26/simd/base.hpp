@@ -658,6 +658,33 @@ constexpr T select_lane(mask_lane_t<Bytes> bits, const T& when_true, const T& wh
     return bits ? when_true : when_false;
 }
 
+// Selects wider than eight lanes use the xor form: one operation fewer per
+// lane keeps Clang's inline cost for the whole select inside its threshold.
+// Reading the true lane first leaves GCC's code identical to select_lane.
+template<size_t Bytes, class T>
+constexpr T select_lane_xor(mask_lane_t<Bytes> bits, const T& when_true, const T& when_false) noexcept {
+    if constexpr (sizeof(T) == sizeof(mask_lane_t<Bytes>) && is_arithmetic_v<T>) {
+        if (!is_constant_evaluated()) {
+            using lane_type = mask_lane_t<Bytes>;
+            const lane_type true_bits = bit_cast<lane_type>(when_true);
+            const lane_type false_bits = bit_cast<lane_type>(when_false);
+            return bit_cast<T>(static_cast<lane_type>(
+                false_bits ^ ((true_bits ^ false_bits) & bits)));
+        }
+    }
+    return bits ? when_true : when_false;
+}
+
+// GCC sizes a two-lane, 8-byte select built in place well below the zeroed
+// loop with its copy-out, which keeps fused compare/select kernels inlinable.
+template<size_t Bytes, __simd_size_type Lanes>
+inline constexpr bool select_direct_init =
+#if defined(__GNUC__) && !defined(__clang__)
+    Bytes == 8 && Lanes == 2;
+#else
+    false;
+#endif
+
 template<class T, class Abi>
 constexpr T& lane_ref(basic_vec<T, Abi>& value, __simd_size_type i) noexcept;
 
