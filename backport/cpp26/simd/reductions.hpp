@@ -264,13 +264,50 @@ constexpr bool none_of(const basic_mask<Bytes, Abi>& value) noexcept {
 
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexcept {
-    // Measured lane summation avoids the byte-view cost at every width and
-    // works unchanged in constant evaluation.
-    __simd_size_type result = 0;
-    for (__simd_size_type i = 0; i < basic_mask<Bytes, Abi>::size; ++i) {
-        result += static_cast<__simd_size_type>(__detail::mask_lane(value, i) & 1u);
+    // Every loop works unchanged in constant evaluation.
+    using lane_type = __detail::mask_lane_t<Bytes>;
+    constexpr __simd_size_type size = basic_mask<Bytes, Abi>::size;
+#if defined(__clang__) && defined(__AVX2__) && defined(__POPCNT__)
+    // One 16/32-byte compare with all ones, movemask and popcnt: measured
+    // faster than the add tree for Clang AVX2 at these widths only.
+    constexpr bool compare_count = (sizeof(lane_type) == 4 && (size == 4 || size == 8)) ||
+                                   (sizeof(lane_type) == 8 && size == 4);
+#else
+    constexpr bool compare_count = false;
+#endif
+#if defined(__clang__)
+    constexpr __simd_size_type wrap_min = 2;
+#else
+    // GCC kept the low-bit sum scalar and faster below four lanes.
+    constexpr __simd_size_type wrap_min = 4;
+#endif
+    constexpr bool wrap_sum = size >= wrap_min &&
+        static_cast<unsigned long long>(size) <=
+            static_cast<unsigned long long>(numeric_limits<lane_type>::max());
+    if constexpr (compare_count) {
+        __simd_size_type result = 0;
+        for (__simd_size_type i = 0; i < size; ++i) {
+            result += static_cast<__simd_size_type>(
+                __detail::mask_lane(value, i) == static_cast<lane_type>(~lane_type{0}));
+        }
+        return result;
+    } else if constexpr (wrap_sum) {
+        // A set lane is all ones, -1 modulo the lane width, so the wrap-around
+        // sum in the lane type is the count. It stays one add tree in the lane
+        // width; the low-bit sum was split into vector and scalar parts
+        // (Clang) or widened to 64 bits (GCC).
+        lane_type acc{0};
+        for (__simd_size_type i = 0; i < size; ++i) {
+            acc = static_cast<lane_type>(acc - __detail::mask_lane(value, i));
+        }
+        return static_cast<__simd_size_type>(acc);
+    } else {
+        __simd_size_type result = 0;
+        for (__simd_size_type i = 0; i < size; ++i) {
+            result += static_cast<__simd_size_type>(__detail::mask_lane(value, i) & 1u);
+        }
+        return result;
     }
-    return result;
 }
 
 template<size_t Bytes, class Abi>
