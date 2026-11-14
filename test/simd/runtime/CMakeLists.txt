@@ -26,6 +26,12 @@ add_test(NAME simd_traits COMMAND test_simd_abi)
 forge_add_simd_runtime_test(test_simd_alignment_power2 test_simd_alignment_power2.cpp)
 
 forge_add_simd_runtime_test(test_simd_mask test_simd_mask.cpp)
+forge_add_simd_runtime_test(test_simd_mask_int test_simd_mask_int.cpp)
+forge_add_simd_runtime_test(test_simd_mask_io test_simd_mask_io.cpp)
+if(MSVC)
+    target_compile_options(test_simd_mask_int PRIVATE /bigobj /constexpr:steps2000000)
+    target_compile_options(test_simd_mask_io PRIVATE /bigobj /constexpr:steps2000000)
+endif()
 
 forge_add_simd_runtime_test(test_simd_memory_load_store test_simd_memory_load_store.cpp)
 target_compile_definitions(test_simd_memory_load_store PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
