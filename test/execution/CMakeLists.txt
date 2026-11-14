@@ -333,6 +333,19 @@ forge_add_execution_runtime_test(test_stop_intrusive
 target_compile_definitions(test_stop_intrusive PRIVATE
     FORGE_EXECUTION_TEST_STOP_HOOKS=1)
 set_tests_properties(execution_stop_intrusive PROPERTIES TIMEOUT 180)
+
+# Forced-parking and conditional-notification tests for inplace_stop_source.
+# Both targets need the test-only hooks; the strict one adds the lifetime probes.
+forge_add_execution_runtime_test(test_stop_wait
+    test_execution_stop_wait.cpp execution_stop_wait)
+target_compile_definitions(test_stop_wait PRIVATE
+    FORGE_EXECUTION_TEST_STOP_HOOKS=1)
+forge_add_execution_runtime_test(test_stop_wait_strict
+    test_execution_stop_wait.cpp execution_stop_wait_strict)
+target_compile_definitions(test_stop_wait_strict PRIVATE
+    FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1
+    FORGE_EXECUTION_TEST_STOP_HOOKS=1)
+set_tests_properties(execution_stop_wait execution_stop_wait_strict PROPERTIES TIMEOUT 600)
 forge_add_execution_runtime_test(test_execution_stop_callback_lifetime
     test_execution_stop_callback_lifetime.cpp execution_stop_callback_lifetime)
 
@@ -357,11 +370,13 @@ target_compile_definitions(test_execution_stop_callback_allocations PRIVATE
     FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
 set_tests_properties(execution_stop_callback_allocations PROPERTIES SKIP_RETURN_CODE 77)
 if(MSVC)
+    target_compile_options(test_stop_wait PRIVATE /bigobj)
+    target_compile_options(test_stop_wait_strict PRIVATE /bigobj)
     target_compile_options(test_execution_stop_callback_lifetime PRIVATE /bigobj)
     target_compile_options(test_execution_stop_callback_strict_lifetime PRIVATE /bigobj)
 endif()
 add_custom_target(test_stop_callback_strict_lifetime
-    DEPENDS test_stop_intrusive test_execution_stop_callback_strict_lifetime test_execution_stop_callback_allocations)
+    DEPENDS test_stop_intrusive test_stop_wait test_stop_wait_strict test_execution_stop_callback_strict_lifetime test_execution_stop_callback_allocations)
 forge_add_execution_runtime_test(test_execution_run_loop test_execution_run_loop.cpp execution_run_loop)
 forge_add_execution_runtime_test(test_execution_adaptors test_execution_adaptors.cpp execution_adaptors)
 forge_add_execution_runtime_test(
