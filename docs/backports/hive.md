@@ -133,6 +133,12 @@ Windows 配置为 C++23，实际使用 `/std:c++latest`；其结果限于 hive�
 
 实现仍有宽位序计数器与 epoch 最终耗尽的边界；不承诺无限次数的结构变更，也不提供并发容器保证。
 
+## 实现说明
+
+空 allocator 不增加容器大小：allocator 成员使用 `[[no_unique_address]]`；
+MSVC ABI 下优先使用 `[[msvc::no_unique_address]]`，因为标准拼写在该 ABI 下会被忽略。
+不支持这两种属性的编译器保留普通成员布局。
+
 ## 可移植测试
 
 `hive_portable_runtime` 选取仅依赖 [hive](https://eel.is/c++draft/hive) 与
