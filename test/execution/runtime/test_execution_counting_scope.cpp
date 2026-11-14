@@ -1227,8 +1227,7 @@ TEST(CountingScopeTest, WrapBorrowsStableNoncopyableEnvAndFusesStop) {
                 decltype(sender), Env&>;
             static_assert(std::is_same_v<signatures_t,
                 std::execution::completion_signatures<
-                    std::execution::set_value_t(std::execution::inline_scheduler),
-                    std::execution::set_stopped_t()>>);
+                    std::execution::set_value_t(std::execution::inline_scheduler)>>);
             auto value_op = std::execution::connect(
                 std::move(sender), receiver_t{{&result}, &env});
             std::execution::start(value_op);
@@ -1293,8 +1292,7 @@ TEST(CountingScopeTest, WrapOwnsImmovablePrvalueEnvAndFusesStop) {
             decltype(sender), immovable_wrap_env>;
         static_assert(std::is_same_v<signatures_t,
             std::execution::completion_signatures<
-                std::execution::set_value_t(std::execution::inline_scheduler),
-                std::execution::set_stopped_t()>>);
+                std::execution::set_value_t(std::execution::inline_scheduler)>>);
         auto value_op = std::execution::connect(std::move(sender), receiver);
         std::execution::start(value_op);
         EXPECT_EQ(result, 1);
@@ -1373,9 +1371,20 @@ struct registration_probe_sender {
         bool* registered_during_work;
         int channel;
         R receiver;
+        struct notify { void operator()() const noexcept {} };
+        using token_t = std::remove_cvref_t<decltype(std::execution::get_stop_token(
+            std::execution::get_env(std::declval<const R&>())))>;
+        std::optional<std::stop_callback_for_t<token_t, notify>> registration;
+
+        operation(int* l, bool* registered, int c, R r)
+            : live(l), registered_during_work(registered), channel(c), receiver(std::move(r)) {
+            registration.emplace(std::execution::get_stop_token(
+                std::execution::get_env(receiver)), notify{});
+        }
 
         void start() & noexcept {
             *registered_during_work = *live == 1;
+            registration.reset();
             if (channel == 0) {
                 std::execution::set_value(std::move(receiver), 42);
             } else if (channel == 1) {
@@ -1632,8 +1641,8 @@ TEST(CountingScopeTest, StopWhenRegistrationDuringEitherInputStopInvokesOnRegist
 
             stop_registration_gate gate;
             auto& selected = first_input ? input : downstream;
-            // This backport visits the newest input callback first. Block before
-            // its earlier forwarding callback can request the fused source.
+            // This backport visits the newest input callback first. Delay the
+            // early registration while a new registration observes stopped.
             std::inplace_stop_callback blocker{selected.get_token(), [&]() noexcept { gate.block_request(); }};
             std::atomic<bool> request_returned{false};
             std::thread requester{[&] {
@@ -1683,7 +1692,7 @@ TEST(CountingScopeTest, StopWhenReportsNoPossibleStopWhenBothInputsAreEmpty) {
     EXPECT_EQ(observed.completions, 1);
 }
 
-TEST(CountingScopeTest, WrapRegistersStopBeforeChildConnectUntilCompletion) {
+TEST(CountingScopeTest, WrapChildRegistersStopDuringConnectUntilCompletion) {
     for (int channel : {0, 1, 2}) {
         SCOPED_TRACE(channel);
         std::execution::counting_scope scope;
@@ -1706,7 +1715,7 @@ TEST(CountingScopeTest, WrapRegistersStopBeforeChildConnectUntilCompletion) {
     }
 }
 
-TEST(CountingScopeTest, WrapStopRegistrationFailureDeliversDeclaredStopped) {
+TEST(CountingScopeTest, WrapChildStopRegistrationFailurePropagatesFromConnect) {
     std::execution::counting_scope scope;
     int live = 0;
     int live_at_completion = -1;
@@ -1720,23 +1729,19 @@ TEST(CountingScopeTest, WrapStopRegistrationFailureDeliversDeclaredStopped) {
         decltype(sender), env_t>;
     static_assert(completion_contains<
         std::execution::set_stopped_t(), signatures_t>::value);
-    auto op = std::execution::connect(std::move(sender),
+    EXPECT_THROW((void)std::execution::connect(std::move(sender),
         registration_probe_receiver{
-            &live, &live_at_completion, &completions, true, &stopped});
+            &live, &live_at_completion, &completions, true, &stopped}), std::bad_alloc);
     EXPECT_EQ(live, 0);
-
-    std::execution::start(op);
-
     EXPECT_FALSE(registered_during_work);
-    EXPECT_TRUE(stopped);
-    EXPECT_EQ(live_at_completion, 0);
-    EXPECT_EQ(live, 0);
-    EXPECT_EQ(completions, 1);
+    EXPECT_FALSE(stopped);
+    EXPECT_EQ(live_at_completion, -1);
+    EXPECT_EQ(completions, 0);
     scope.request_stop();
     scope.request_stop();
-    EXPECT_TRUE(stopped);
+    EXPECT_FALSE(stopped);
     EXPECT_EQ(live, 0);
-    EXPECT_EQ(completions, 1);
+    EXPECT_EQ(completions, 0);
     (void)std::this_thread::sync_wait(scope.join());
 }
 

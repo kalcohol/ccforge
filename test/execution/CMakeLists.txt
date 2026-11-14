@@ -344,15 +344,6 @@ target_sources(test_execution_stop_callback_strict_lifetime PRIVATE
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_spawn_future.cpp")
 target_compile_definitions(test_execution_stop_callback_strict_lifetime PRIVATE
     FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
-# These cases deliberately destroy an executing inline source. Keep the strict
-# reproducer available without adding the known ASan failure to the passing gate.
-set_tests_properties(execution_stop_callback_strict_lifetime PROPERTIES
-    ENVIRONMENT "GTEST_FILTER=-*KnownOpenTest.*")
-add_custom_target(test_execution_stop_callback_known_open
-    COMMAND $<TARGET_FILE:test_execution_stop_callback_strict_lifetime>
-        "--gtest_filter=*KnownOpenTest.*"
-    DEPENDS test_execution_stop_callback_strict_lifetime
-    USES_TERMINAL VERBATIM)
 forge_add_execution_runtime_test(test_execution_stop_callback_allocations
     test_execution_stop_callback_allocations.cpp execution_stop_callback_allocations)
 target_compile_definitions(test_execution_stop_callback_allocations PRIVATE

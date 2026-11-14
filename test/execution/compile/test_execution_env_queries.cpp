@@ -277,7 +277,7 @@ constexpr bool stop_when_write_env_signatures = std::same_as<
         std::declval<ex::__forge_counting_scope::__stop_sender<
             decltype(ex::read_env(ex::get_stop_token))>>(), std::declval<Overlay>())),
         forge::empty_env>,
-    ex::completion_signatures<ex::set_value_t(ExpectedToken), ex::set_stopped_t()>>;
+    ex::completion_signatures<ex::set_value_t(ExpectedToken)>>;
 using allocator_prop = ex::prop<ex::get_allocator_t, std::allocator<std::byte>>;
 static_assert(stop_when_write_env_signatures<forge::empty_env, std::inplace_stop_token>);
 static_assert(stop_when_write_env_signatures<allocator_prop, std::inplace_stop_token>);

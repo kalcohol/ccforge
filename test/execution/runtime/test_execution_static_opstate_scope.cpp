@@ -194,8 +194,8 @@ void check_spawn(bool future, bool abandoned) {
             ex::spawn(large_sender{&out}, scope.get_token(), allocator_env(counts));
         }
     });
-    const auto registrations = future
-        ? (std::is_same_v<Scope, ex::counting_scope> ? 2u : 0u) + (abandoned ? 1u : 0u)
+    const auto registrations = future && abandoned
+        ? (std::is_same_v<Scope, ex::counting_scope> ? 2u : 1u)
         : 0u;
     EXPECT_EQ(calls, registrations * per_registration);
     EXPECT_EQ(counts.allocations, future ? (abandoned ? 3 : 4) : 1);
@@ -238,13 +238,32 @@ TEST(StaticOpstateScope, AssociateFusesBothTokensWithoutStateAllocation) {
     ex::counting_scope scope;
     std::inplace_stop_source downstream;
     observations out;
+    out.deferred = true;
     const auto per_registration = allocation_probe::allocations_per_registration();
     auto calls = allocation_probe::measure([&] {
         auto op = ex::connect(ex::associate(large_sender{&out}, scope.get_token()),
             receiver<std::inplace_stop_token>{&out, downstream.get_token()});
         ex::start(op);
+        out.finish(out.pending);
     });
     EXPECT_EQ(calls, 2 * per_registration);
+    EXPECT_EQ(out.values, 1);
+    EXPECT_EQ(out.live, 0);
+    join(scope);
+}
+
+TEST(StaticOpstateScope, WrapperWithoutChildRegistrationDoesNotAllocate) {
+    ex::counting_scope scope;
+    std::inplace_stop_source downstream;
+    observations out;
+    const auto calls = allocation_probe::measure([&] {
+        allocation_probe::fail_allocations = true;
+        auto op = ex::connect(scope.get_token().wrap(large_sender{&out}),
+            receiver<std::inplace_stop_token>{&out, downstream.get_token()});
+        ex::start(op);
+        allocation_probe::fail_allocations = false;
+    });
+    EXPECT_EQ(calls, 0u);
     EXPECT_EQ(out.values, 1);
     EXPECT_EQ(out.live, 0);
     join(scope);

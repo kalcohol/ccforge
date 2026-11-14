@@ -31,7 +31,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -486,7 +485,6 @@ template<class Token>
 struct __fused_stop_token {
     std::inplace_stop_token __input;
     Token __downstream;
-    std::inplace_stop_token __fused;
 
     bool stop_requested() const noexcept {
         return __input.stop_requested() || __downstream.stop_requested();
@@ -499,23 +497,37 @@ struct __fused_stop_token {
     template<class Fn>
     struct callback_type {
         struct __invoke {
-            std::add_pointer_t<Fn> __fn;
-            void operator()() const noexcept { std::forward<Fn>(*__fn)(); }
+            callback_type* __owner;
+            void operator()() const noexcept {
+                auto* owner = __owner;
+                if (!owner->__invoked.exchange(true, std::memory_order_relaxed)) {
+                    // Invocation can destroy this callback and both registrations.
+                    // Do not access any of their storage after calling Fn.
+                    std::forward<Fn>(owner->__fn)();
+                }
+            }
         };
 
-        Fn __fn;
-        std::inplace_stop_source __stopped_source;
-        // Not named __callback: MSVC <sal.h> defines that identifier as a macro.
-        std::inplace_stop_callback<__invoke> __registration;
+        using __input_registration_t =
+            std::stop_callback_for_t<std::inplace_stop_token, __invoke>;
+        using __downstream_registration_t =
+            std::stop_callback_for_t<Token, __invoke>;
 
-        std::inplace_stop_token __callback_token(__fused_stop_token token) noexcept {
-            // An input can be stopped while an earlier callback delays propagation.
-            // Deliver this registration immediately without invoking other callbacks.
+        // Initialize the callable and arbitration before observing stop or
+        // registering; destroy both registrations before them.
+        Fn __fn;
+        std::atomic<bool> __invoked{false};
+        __input_registration_t __input_registration;
+        __downstream_registration_t __downstream_registration;
+
+        std::inplace_stop_token __prepare_input(const __fused_stop_token& token) noexcept {
+            // Observe the logical token before publishing either registration.
+            // An already-stopped second input must invoke on this thread even
+            // if the first input requests stop before the second is registered.
             if (token.stop_requested()) {
-                __stopped_source.request_stop();
-                return __stopped_source.get_token();
+                __invoke{this}();
             }
-            return token.__fused;
+            return token.__input;
         }
 
         template<class Init>
@@ -523,11 +535,12 @@ struct __fused_stop_token {
         explicit callback_type(__fused_stop_token token, Init&& init)
             noexcept(std::is_nothrow_constructible_v<Fn, Init> &&
                      std::is_nothrow_constructible_v<
-                         std::inplace_stop_callback<__invoke>,
-                         std::inplace_stop_token, __invoke>)
+                         __input_registration_t, std::inplace_stop_token, __invoke> &&
+                     std::is_nothrow_constructible_v<
+                         __downstream_registration_t, Token, __invoke>)
             : __fn(std::forward<Init>(init))
-            // Initialize Fn before observing the inputs for registration.
-            , __registration(__callback_token(token), __invoke{std::addressof(__fn)}) {}
+            , __input_registration(__prepare_input(token), __invoke{this})
+            , __downstream_registration(token.__downstream, __invoke{this}) {}
     };
 };
 
@@ -557,46 +570,6 @@ struct __stop_env {
 
 template<class Env>
 using __stop_env_t = __stop_env<Env>;
-
-struct __request_fused_stop {
-    std::inplace_stop_source* __source = nullptr;
-
-    void operator()() const noexcept {
-        if (__source) {
-            __source->request_stop();
-        }
-    }
-};
-
-template<class Token, bool = std::stoppable_token_for<Token, __request_fused_stop>>
-struct __optional_stop_callback {
-    void install(Token token, std::inplace_stop_source& source) {
-        if (token.stop_requested()) {
-            source.request_stop();
-        }
-    }
-
-    void reset() noexcept {}
-};
-
-template<class Token>
-struct __optional_stop_callback<Token, true> {
-    using callback_t = std::stop_callback_for_t<Token, __request_fused_stop>;
-
-    void install(Token token, std::inplace_stop_source& source) {
-        if (token.stop_requested()) {
-            source.request_stop();
-            return;
-        }
-        if (token.stop_possible()) {
-            __cb.emplace(std::move(token), __request_fused_stop{&source});
-        }
-    }
-
-    void reset() noexcept { __cb.reset(); }
-
-    std::optional<callback_t> __cb;
-};
 
 } // namespace __forge_counting_scope
 
@@ -855,22 +828,16 @@ struct __stop_op : __forge_detail::__immovable {
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
-            auto* rcvr = &__owner->__rcvr;
-            __owner->__release_stop_callbacks();
-            std::execution::set_value(std::move(*rcvr), static_cast<Vs&&>(vs)...);
+            std::execution::set_value(std::move(__owner->__rcvr), static_cast<Vs&&>(vs)...);
         }
 
         template<class E>
         void set_error(E&& e) && noexcept {
-            auto* rcvr = &__owner->__rcvr;
-            __owner->__release_stop_callbacks();
-            std::execution::set_error(std::move(*rcvr), static_cast<E&&>(e));
+            std::execution::set_error(std::move(__owner->__rcvr), static_cast<E&&>(e));
         }
 
         void set_stopped() && noexcept {
-            auto* rcvr = &__owner->__rcvr;
-            __owner->__release_stop_callbacks();
-            std::execution::set_stopped(std::move(*rcvr));
+            std::execution::set_stopped(std::move(__owner->__rcvr));
         }
 
         auto get_env() const noexcept -> __stop_env<env_of_t<R>, child_token_t> {
@@ -882,52 +849,26 @@ struct __stop_op : __forge_detail::__immovable {
 
     using inner_op_t = connect_result_t<S, __recv>;
 
-    token_t __token;
     R __rcvr;
-    std::inplace_stop_source __fused_source;
-    __optional_stop_callback<std::inplace_stop_token> __scope_stop;
-    __optional_stop_callback<downstream_stop_token_t> __downstream_stop;
-    bool __registration_failed = false;
     inner_op_t __inner_op;
 
     __stop_op(token_t token, S sndr, R rcvr)
-        : __token(token)
-        , __rcvr(std::move(rcvr))
+        : __rcvr(std::move(rcvr))
         , __inner_op(std::execution::connect(
-              std::move(sndr), __recv{this, __prepare_token()}))
+              std::move(sndr), __recv{this, __prepare_token(token)}))
     {}
 
-    child_token_t __prepare_token() {
+    child_token_t __prepare_token(token_t token) {
         if constexpr (!std::unstoppable_token<downstream_stop_token_t>) {
             auto downstream = std::execution::get_stop_token(std::execution::get_env(__rcvr));
-            try {
-                __scope_stop.install(__token, __fused_source);
-                __downstream_stop.install(downstream, __fused_source);
-            } catch (...) {
-                __release_stop_callbacks();
-                __registration_failed = true;
-                __fused_source.request_stop();
-            }
-            return {__token, std::move(downstream), __fused_source.get_token()};
+            return {token, std::move(downstream)};
         } else {
-            return __token;
+            return token;
         }
     }
 
     void start() & noexcept {
-        if (__registration_failed) {
-            std::execution::set_stopped(std::move(__rcvr));
-            return;
-        }
         std::execution::start(__inner_op);
-    }
-
-    // Deregistration waits for input callbacks executing on other threads.
-    // Forward unchanged only after their fused-source requests have returned.
-    // Same-thread source destruction still relies on the backport control block.
-    void __release_stop_callbacks() noexcept {
-        __scope_stop.reset();
-        __downstream_stop.reset();
     }
 };
 
@@ -951,9 +892,7 @@ struct __stop_sender {
         using up_cs_t = completion_signatures_of_t<
             typename self_t::source_t&&,
             child_env_t>;
-        return __forge_meta::__concat_unique_cs_t<
-            up_cs_t,
-            completion_signatures<set_stopped_t()>>{};
+        return up_cs_t{};
     }
 
     template<receiver R>

@@ -306,6 +306,301 @@ struct observed_stop_token {
     }
 };
 
+struct retained_stop_state {
+    void* operation = nullptr;
+    void (*finish)(void*, int) noexcept = nullptr;
+    int connections = 0;
+    int destructions = 0;
+    int notifications = 0;
+    int completions = 0;
+    bool complete_on_stop = true;
+};
+
+// Keep the callback until operation destruction, including after completion.
+struct retained_stop_sender {
+    using sender_concept = std::execution::sender_t;
+    retained_stop_state* state;
+    int inline_channel = -1;
+    bool fail_connect = false;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int),
+            std::execution::set_error_t(spawn_future_marker_error),
+            std::execution::set_stopped_t()> { return {}; }
+
+    template<class R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        R receiver;
+        retained_stop_state* state;
+        int inline_channel;
+        struct notify {
+            retained_stop_state* state;
+            void operator()() const noexcept {
+                auto* local = state;
+                ++local->notifications;
+                // Completion clears this external hook before invalidating the op.
+                if (local->complete_on_stop && local->finish)
+                    local->finish(local->operation, 2);
+            }
+        };
+        using token_t = decltype(std::execution::get_stop_token(
+            std::execution::get_env(std::declval<const R&>())));
+        using callback_t = std::stop_callback_for_t<token_t, notify>;
+        // The callback has independent storage, so post-completion invocation
+        // accesses neither the invalid operation nor any of its subobjects.
+        std::unique_ptr<callback_t> registration;
+
+        op(R r, retained_stop_state* s, int channel, bool fail)
+            : receiver(std::move(r)), state(s), inline_channel(channel) {
+            registration = std::make_unique<callback_t>(std::execution::get_stop_token(
+                std::execution::get_env(receiver)), notify{state});
+            ++state->connections;
+            if (fail) throw std::bad_alloc{};
+        }
+        ~op() {
+            ++state->destructions;
+            state->operation = nullptr;
+            state->finish = nullptr;
+        }
+        void complete(int channel) noexcept {
+            state->operation = nullptr;
+            state->finish = nullptr;
+            ++state->completions;
+            if (channel == 0) std::execution::set_value(std::move(receiver), 42);
+            else if (channel == 1)
+                std::execution::set_error(std::move(receiver), spawn_future_marker_error{});
+            else std::execution::set_stopped(std::move(receiver));
+        }
+        void start() & noexcept {
+            state->operation = this;
+            state->finish = [](void* ptr, int channel) noexcept {
+                static_cast<op*>(ptr)->complete(channel);
+            };
+            if (inline_channel >= 0) complete(inline_channel);
+        }
+    };
+    template<class R> auto connect(R r) const -> op<R> {
+        return op<R>{std::move(r), state, inline_channel, fail_connect};
+    }
+};
+
+struct retained_result_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    int* channel;
+    std::inplace_stop_token token{};
+    void set_value(int value) && noexcept { EXPECT_EQ(value, 42); *channel = 0; }
+    void set_error(spawn_future_marker_error) && noexcept { *channel = 1; }
+    void set_error(std::exception_ptr) && noexcept { ADD_FAILURE(); *channel = 3; }
+    void set_stopped() && noexcept { *channel = 2; }
+    auto get_env() const noexcept {
+        return std::execution::prop(std::execution::get_stop_token, token);
+    }
+};
+
+auto retained_stop_env(std::inplace_stop_source& source, std::atomic<int>& registrations,
+    const std::shared_ptr<allocation_counts>& counts) {
+    return std::execution::make_env(
+        std::execution::prop(std::execution::get_stop_token,
+            observed_stop_token{source.get_token(), &registrations}),
+        std::execution::prop(std::execution::get_allocator,
+            counting_allocator<std::byte>{counts}));
+}
+
+template<class Scope>
+void check_completed_environment_registration(bool consume) {
+    for (bool inline_completion : {false, true}) {
+        for (int channel : {0, 1, 2}) {
+            SCOPED_TRACE(inline_completion);
+            SCOPED_TRACE(channel);
+            Scope scope;
+            std::inplace_stop_source source;
+            std::atomic<int> registrations{0};
+            auto counts = std::make_shared<allocation_counts>();
+            retained_stop_state state;
+            auto future = std::execution::spawn_future(
+                retained_stop_sender{&state, inline_completion ? channel : -1},
+                scope.get_token(), retained_stop_env(source, registrations, counts));
+            if (!inline_completion) state.finish(state.operation, channel);
+            EXPECT_EQ(state.completions, 1);
+            EXPECT_EQ(state.destructions, 0);
+            EXPECT_EQ(registrations.load(), 1);
+            EXPECT_EQ(scope.__count(), 1u);
+
+            // A completed child may still receive stop; it must not complete twice.
+            EXPECT_TRUE(source.request_stop());
+            EXPECT_EQ(state.notifications, 1);
+            EXPECT_EQ(state.completions, 1);
+            EXPECT_EQ(registrations.load(), 1);
+            if (consume) {
+                int received = -1;
+                auto op = std::execution::connect(std::move(future),
+                    retained_result_receiver{&received});
+                std::execution::start(op);
+                EXPECT_EQ(received, channel);
+                // State teardown is independent of the consumer operation's lifetime.
+                EXPECT_EQ(state.destructions, 1);
+                EXPECT_EQ(registrations.load(), 0);
+            } else {
+                auto abandoned = std::move(future);
+            }
+            EXPECT_EQ(state.destructions, 1);
+            EXPECT_EQ(registrations.load(), 0);
+            EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+            EXPECT_EQ(scope.__count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    }
+    if (consume) {
+        // Also consume before producer completion, while the receiver is pending.
+        for (int channel : {0, 1, 2}) {
+            SCOPED_TRACE(channel);
+            Scope scope;
+            std::inplace_stop_source source;
+            std::atomic<int> registrations{0};
+            auto counts = std::make_shared<allocation_counts>();
+            retained_stop_state state;
+            auto future = std::execution::spawn_future(retained_stop_sender{&state},
+                scope.get_token(), retained_stop_env(source, registrations, counts));
+            int received = -1;
+            auto op = std::execution::connect(std::move(future),
+                retained_result_receiver{&received});
+            std::execution::start(op);
+            EXPECT_EQ(received, -1);
+            EXPECT_EQ(registrations.load(), 1);
+            ASSERT_NE(state.finish, nullptr);
+            state.finish(state.operation, channel);
+            EXPECT_EQ(received, channel);
+            EXPECT_EQ(state.destructions, 1);
+            EXPECT_EQ(registrations.load(), 0);
+            EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+            EXPECT_TRUE(source.request_stop());
+            EXPECT_EQ(state.notifications, 0);
+            EXPECT_EQ(scope.__count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    }
+}
+
+enum class future_release { abandon, unstarted_consumer, started_consumer, consumer_stop };
+
+template<class Scope>
+void check_pending_environment_registration() {
+    for (auto release : {future_release::abandon, future_release::unstarted_consumer,
+             future_release::started_consumer, future_release::consumer_stop}) {
+        for (bool complete_on_stop : {false, true}) {
+            SCOPED_TRACE(static_cast<int>(release));
+            SCOPED_TRACE(complete_on_stop);
+            Scope scope;
+            std::inplace_stop_source source;
+            std::inplace_stop_source downstream;
+            std::atomic<int> registrations{0};
+            auto counts = std::make_shared<allocation_counts>();
+            retained_stop_state state;
+            state.complete_on_stop = complete_on_stop;
+            int received = -1;
+            {
+                auto future = std::execution::spawn_future(retained_stop_sender{&state},
+                    scope.get_token(), retained_stop_env(source, registrations, counts));
+                EXPECT_EQ(registrations.load(), 1);
+                if (release != future_release::abandon) {
+                    auto op = std::execution::connect(std::move(future),
+                        retained_result_receiver{&received, downstream.get_token()});
+                    if (release != future_release::unstarted_consumer)
+                        std::execution::start(op);
+                    if (release == future_release::consumer_stop) {
+                        EXPECT_TRUE(downstream.request_stop());
+                        EXPECT_EQ(received, 2);
+                        EXPECT_EQ(state.destructions, complete_on_stop ? 1 : 0);
+                        EXPECT_EQ(registrations.load(), complete_on_stop ? 0 : 1);
+                    }
+                }
+            }
+            EXPECT_EQ(received, release == future_release::consumer_stop ? 2 : -1);
+            EXPECT_EQ(state.notifications, 1);
+            EXPECT_EQ(state.destructions, complete_on_stop ? 1 : 0);
+            EXPECT_EQ(registrations.load(), complete_on_stop ? 0 : 1);
+            // Ignoring cancellation keeps the producer alive until its actual completion.
+            EXPECT_TRUE(source.request_stop());
+            EXPECT_EQ(state.notifications, 1);
+            if (!complete_on_stop) {
+                EXPECT_EQ(state.completions, 0);
+                ASSERT_NE(state.finish, nullptr);
+                state.finish(state.operation, 0);
+            }
+            EXPECT_EQ(state.completions, 1);
+            EXPECT_EQ(state.destructions, 1);
+            EXPECT_EQ(registrations.load(), 0);
+            EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+            EXPECT_EQ(scope.__count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    }
+}
+
+template<class Scope>
+void check_environment_registration_allocation_failure() {
+    for (int fail_on : {1, 2, 3, 4}) {
+        for (bool complete_on_stop : {false, true}) {
+            SCOPED_TRACE(fail_on);
+            SCOPED_TRACE(complete_on_stop);
+            Scope scope;
+            std::inplace_stop_source source;
+            std::atomic<int> registrations{0};
+            auto counts = std::make_shared<allocation_counts>();
+            counts->fail_on_attempt.store(fail_on);
+            retained_stop_state state;
+            state.complete_on_stop = complete_on_stop;
+            auto env = retained_stop_env(source, registrations, counts);
+            if (fail_on < 4) {
+                EXPECT_THROW((void)std::execution::spawn_future(
+                    retained_stop_sender{&state}, scope.get_token(), env), std::bad_alloc);
+                EXPECT_EQ(state.connections, fail_on == 3 ? 1 : 0);
+                EXPECT_EQ(state.destructions, fail_on == 3 ? 1 : 0);
+            } else {
+                auto future = std::execution::spawn_future(
+                    retained_stop_sender{&state}, scope.get_token(), env);
+                EXPECT_EQ(registrations.load(), 1);
+                int received = -1;
+                EXPECT_THROW((void)std::execution::connect(std::move(future),
+                    retained_result_receiver{&received}), std::bad_alloc);
+                EXPECT_EQ(received, -1);
+                EXPECT_EQ(state.notifications, 1);
+                EXPECT_EQ(registrations.load(), complete_on_stop ? 0 : 1);
+                if (!complete_on_stop) {
+                    ASSERT_NE(state.finish, nullptr);
+                    state.finish(state.operation, 0);
+                }
+                EXPECT_EQ(state.destructions, 1);
+            }
+            EXPECT_EQ(registrations.load(), 0);
+            EXPECT_EQ(counts->attempts.load(), fail_on);
+            EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+            EXPECT_TRUE(source.request_stop());
+            EXPECT_EQ(scope.__count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    }
+
+    // Unwind a fully constructed callback when a later child constructor step throws.
+    Scope scope;
+    std::inplace_stop_source source;
+    std::atomic<int> registrations{0};
+    auto counts = std::make_shared<allocation_counts>();
+    retained_stop_state state;
+    EXPECT_THROW((void)std::execution::spawn_future(retained_stop_sender{&state, -1, true},
+        scope.get_token(), retained_stop_env(source, registrations, counts)), std::bad_alloc);
+    EXPECT_EQ(state.connections, 1);
+    EXPECT_EQ(state.destructions, 0);
+    EXPECT_EQ(registrations.load(), 0);
+    EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+    EXPECT_TRUE(source.request_stop());
+    EXPECT_EQ(state.notifications, 0);
+    EXPECT_EQ(scope.__count(), 0u);
+    (void)std::this_thread::sync_wait(scope.join());
+}
+
 struct callback_registration_error {
     int marker;
 };
@@ -939,7 +1234,7 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     (void)std::this_thread::sync_wait(scope.join());
 }
 
-TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
+TEST(SpawnFutureTest, InlineCompletionWithoutChildCallbackDoesNotRegisterOnEnvironment) {
     std::execution::simple_counting_scope scope;
     std::inplace_stop_source source;
     std::atomic<int> registrations{0};
@@ -959,7 +1254,7 @@ TEST(SpawnFutureTest, InlineCompletionRemovesEnvironmentStopRegistration) {
     (void)std::this_thread::sync_wait(scope.join());
 }
 
-TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
+TEST(SpawnFutureTest, DeferredCompletionReleasesEnvironmentRegistrationWhenConsumed) {
     for (bool stop : {false, true}) {
         std::execution::simple_counting_scope scope;
         std::inplace_stop_source source;
@@ -979,12 +1274,103 @@ TEST(SpawnFutureTest, DeferredCompletionRemovesEnvironmentStopRegistration) {
             complete_manual_value(state, 42);
         }
         EXPECT_TRUE(wait_until_completed(state));
-        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+        // The stopped path retains its callback until the child is destroyed;
+        // the value path explicitly resets it before forwarding completion.
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), stop ? 1 : 0);
+        EXPECT_EQ(source.request_stop(), !stop);
         auto result = forge::sync_wait(std::move(future));
         EXPECT_EQ(result.has_value(), !stop);
+        EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
         EXPECT_EQ(scope.__count(), 0u);
         (void)std::this_thread::sync_wait(scope.join());
     }
+}
+
+TEST(SpawnFutureTest, CompletedChildReleasesEnvironmentRegistrationOnConsumption) {
+    check_completed_environment_registration<std::execution::simple_counting_scope>(true);
+    check_completed_environment_registration<std::execution::counting_scope>(true);
+}
+
+TEST(SpawnFutureTest, CompletedChildReleasesEnvironmentRegistrationOnAbandonment) {
+    check_completed_environment_registration<std::execution::simple_counting_scope>(false);
+    check_completed_environment_registration<std::execution::counting_scope>(false);
+}
+
+TEST(SpawnFutureTest, PendingChildReleasesEnvironmentRegistrationAfterCancellation) {
+    check_pending_environment_registration<std::execution::simple_counting_scope>();
+    check_pending_environment_registration<std::execution::counting_scope>();
+}
+
+TEST(SpawnFutureTest, AllocationFailuresReleaseEnvironmentRegistrationWithState) {
+    check_environment_registration_allocation_failure<std::execution::simple_counting_scope>();
+    check_environment_registration_allocation_failure<std::execution::counting_scope>();
+}
+
+TEST(SpawnFutureTest, UnstartedChildReleasesEnvironmentRegistrationWithRejectedFuture) {
+    auto check = []<class Scope>() {
+        for (bool consume : {false, true}) {
+            SCOPED_TRACE(consume);
+            Scope scope;
+            scope.close();
+            std::inplace_stop_source source;
+            std::atomic<int> registrations{0};
+            auto counts = std::make_shared<allocation_counts>();
+            retained_stop_state state;
+            {
+                auto future = std::execution::spawn_future(retained_stop_sender{&state},
+                    scope.get_token(), retained_stop_env(source, registrations, counts));
+                EXPECT_EQ(state.connections, 1);
+                EXPECT_EQ(state.completions, 0);
+                EXPECT_EQ(registrations.load(), 1);
+                EXPECT_TRUE(source.request_stop());
+                EXPECT_EQ(state.notifications, 1);
+                EXPECT_EQ(state.completions, 0);
+                if (consume) {
+                    int channel = -1;
+                    auto op = std::execution::connect(std::move(future),
+                        retained_result_receiver{&channel});
+                    std::execution::start(op);
+                    EXPECT_EQ(channel, 2);
+                    EXPECT_EQ(registrations.load(), 0);
+                }
+            }
+            EXPECT_EQ(state.destructions, 1);
+            EXPECT_EQ(registrations.load(), 0);
+            EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+            EXPECT_EQ(scope.__count(), 0u);
+            (void)std::this_thread::sync_wait(scope.join());
+        }
+    };
+    check.template operator()<std::execution::simple_counting_scope>();
+    check.template operator()<std::execution::counting_scope>();
+}
+
+TEST(SpawnFutureTest, EnvironmentRegistrationFailureUnwindsPartialChildConstruction) {
+    auto check = []<class Scope>() {
+        Scope scope;
+        std::inplace_stop_source source;
+        std::atomic<int> registrations{0};
+        auto counts = std::make_shared<allocation_counts>();
+        int attempts = 0;
+        retained_stop_state state;
+        auto env = std::execution::make_env(
+            std::execution::prop(std::execution::get_stop_token,
+                throwing_registration_stop_token{source.get_token(), &attempts, &registrations}),
+            std::execution::prop(std::execution::get_allocator,
+                counting_allocator<std::byte>{counts}));
+        EXPECT_THROW((void)std::execution::spawn_future(
+            retained_stop_sender{&state}, scope.get_token(), env), callback_registration_error);
+        EXPECT_EQ(attempts, 1);
+        EXPECT_EQ(state.connections, 0);
+        EXPECT_EQ(registrations.load(), 0);
+        EXPECT_EQ(counts->allocations.load(), counts->deallocations.load());
+        EXPECT_TRUE(source.request_stop());
+        EXPECT_EQ(state.notifications, 0);
+        EXPECT_EQ(scope.__count(), 0u);
+        (void)std::this_thread::sync_wait(scope.join());
+    };
+    check.template operator()<std::execution::simple_counting_scope>();
+    check.template operator()<std::execution::counting_scope>();
 }
 
 TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
@@ -1040,6 +1426,8 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
             source->stop_completes = completes_on_stop;
             auto counts = std::make_shared<allocation_counts>();
             std::inplace_stop_source downstream_stop;
+            std::inplace_stop_source environment_stop;
+            std::atomic<int> environment_registrations{0};
             int attempts = 0;
             std::atomic<int> registrations{0};
             consumer_completion_observation observation;
@@ -1050,8 +1438,9 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
             {
                 auto future = std::execution::spawn_future(
                     manual_sender{source}, scope.get_token(),
-                    member_allocator_env{counting_allocator<std::byte>{counts}});
+                    retained_stop_env(environment_stop, environment_registrations, counts));
                 ASSERT_TRUE(wait_until_started(source));
+                EXPECT_EQ(environment_registrations.load(), 1);
                 EXPECT_EQ(scope.__count(), 1u);
                 auto op = std::execution::connect(
                     std::move(future),
@@ -1065,6 +1454,7 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
                 expect_registration_error(observation);
                 EXPECT_EQ(attempts, 1);
                 EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+                EXPECT_EQ(environment_registrations.load(), completes_on_stop ? 0 : 1);
                 const bool stop_requested = wait_until_stop_requested(source);
                 EXPECT_TRUE(stop_requested);
                 if (!completes_on_stop) {
@@ -1076,6 +1466,8 @@ TEST(SpawnFutureTest, ConsumerCallbackRegistrationFailureDeliversErrorAndAbandon
                     complete_manual_value(source, 42);
                 }
                 EXPECT_TRUE(wait_until_completed(source));
+                EXPECT_EQ(environment_registrations.load(), 0);
+                EXPECT_TRUE(environment_stop.request_stop());
                 expect_registration_error(observation);
                 EXPECT_EQ(scope.__count(), 0u);
             }
@@ -1145,13 +1537,19 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
     std::execution::simple_counting_scope scope;
     auto source = std::make_shared<manual_state>();
     std::inplace_stop_source downstream_stop;
+    std::inplace_stop_source environment_stop;
     downstream_stop.request_stop();
     std::atomic<int> registrations{0};
+    std::atomic<int> environment_registrations{0};
     consumer_completion_observation observation;
 
     {
-        auto future = std::execution::spawn_future(manual_sender{source}, scope.get_token());
+        auto env = std::execution::make_env(std::execution::prop(
+            std::execution::get_stop_token,
+            observed_stop_token{environment_stop.get_token(), &environment_registrations}));
+        auto future = std::execution::spawn_future(manual_sender{source}, scope.get_token(), env);
         ASSERT_TRUE(wait_until_started(source));
+        EXPECT_EQ(environment_registrations.load(), 1);
         auto op = std::execution::connect(
             std::move(future),
             observed_consumer_receiver{
@@ -1163,6 +1561,8 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
         EXPECT_EQ(observation.errors, 0);
         EXPECT_EQ(observation.stopped, 1);
         EXPECT_EQ(registrations.load(std::memory_order_relaxed), 0);
+        EXPECT_EQ(environment_registrations.load(), 0);
+        EXPECT_TRUE(environment_stop.request_stop());
         EXPECT_TRUE(wait_until_stop_requested(source));
         EXPECT_TRUE(wait_until_completed(source));
         EXPECT_EQ(scope.__count(), 0u);
@@ -1171,6 +1571,7 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
     EXPECT_EQ(observation.values, 0);
     EXPECT_EQ(observation.errors, 0);
     EXPECT_EQ(observation.stopped, 1);
+    EXPECT_EQ(environment_registrations.load(), 0);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
