@@ -1,7 +1,11 @@
 #include "simd_test_common.hpp"
 #include <gtest/gtest.h>
+#include <bit>
+#include <complex>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <type_traits>
 
 namespace {
 namespace ds = std::simd;
@@ -237,5 +241,159 @@ TEST(SimdMaskInteger, ReductionLanePatterns) {
 
 TEST(SimdMaskInteger, AllWidthsAndRepresentations) {
     check_widths(std::make_integer_sequence<int, 64>{});
+}
+
+// select and masked integer sums use blend, xor-blend, in-place and
+// branch-free forms depending on the width and the compiler. Every form must
+// keep the chosen lanes bit for bit and match the lane-by-lane result.
+template<class T>
+constexpr bool same_bits(const T& left, const T& right) {
+    if constexpr (std::is_arithmetic_v<T>) {
+        using Raw = ds::__detail::mask_lane_t<sizeof(T)>;
+        return std::bit_cast<Raw>(left) == std::bit_cast<Raw>(right);
+    } else {
+        return same_bits(left.real(), right.real()) && same_bits(left.imag(), right.imag());
+    }
+}
+
+// Special floating values (a NaN payload, signed zeros, infinities and a
+// subnormal) appear only at runtime; constant evaluation uses finite values.
+template<class T>
+constexpr T select_sample(int i, bool second, bool special) {
+    if constexpr (std::is_floating_point_v<T>) {
+        if (special) {
+            using Raw = ds::__detail::mask_lane_t<sizeof(T)>;
+            const Raw quiet = std::bit_cast<Raw>(std::numeric_limits<T>::quiet_NaN());
+            const T values[]{std::bit_cast<T>(static_cast<Raw>(quiet | Raw{5})), -T(0), T(0),
+                std::numeric_limits<T>::infinity(), -std::numeric_limits<T>::infinity(),
+                std::numeric_limits<T>::denorm_min(), T(1.5), T(-2.25)};
+            return values[(2 * i + (second ? 1 : 0)) % 8];
+        }
+        const T values[]{T(0.5), -T(0), T(0), T(3), T(-4), T(1.5), T(-2.25), T(8)};
+        return values[(2 * i + (second ? 1 : 0)) % 8];
+    } else if constexpr (std::is_arithmetic_v<T>) {
+        const T values[]{std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(), T(0), T(1),
+            static_cast<T>(-1), T(42), static_cast<T>(100 + i), T(7)};
+        return values[(3 * i + (second ? 5 : 0)) % 8];
+    } else {
+        using R = typename T::value_type;
+        return T(select_sample<R>(i, second, special), select_sample<R>(i + 1, !second, special));
+    }
+}
+
+template<class T, int N>
+constexpr bool check_select_bits(std::uint64_t bits, bool special) {
+    using V = ds::basic_vec<T, ds::__fixed_size_abi<N>>;
+    const V when_true([special](auto i) { return select_sample<T>(int(i), false, special); });
+    const V when_false([special](auto i) { return select_sample<T>(int(i), true, special); });
+    const typename V::mask_type mask([bits](auto i) { return ((bits >> int(i)) & 1u) != 0; });
+    const V result = ds::select(mask, when_true, when_false);
+    for (int i = 0; i < N; ++i) {
+        const T expected = ((bits >> i) & 1u) != 0 ? when_true[i] : when_false[i];
+        if (!same_bits(result[i], expected)) return false;
+    }
+    return true;
+}
+
+template<class T, int N>
+void check_select_width() {
+    SCOPED_TRACE(N);
+    if constexpr (N <= 8) {
+        for (std::uint64_t bits = 0; bits < (std::uint64_t{1} << N); ++bits)
+            EXPECT_TRUE((check_select_bits<T, N>(bits, true)));
+    } else {
+        for (const std::uint64_t bits : {std::uint64_t{0}, ~std::uint64_t{0}, std::uint64_t{0x5555555555555555},
+                 std::uint64_t{0xaaaaaaaaaaaaaaaa}, std::uint64_t{0x0123456789abcdef}})
+            EXPECT_TRUE((check_select_bits<T, N>(bits, true)));
+        for (int i = 0; i < N; ++i)
+            EXPECT_TRUE((check_select_bits<T, N>(std::uint64_t{1} << i, true)));
+    }
+}
+
+template<int... N>
+void check_select_widths(std::integer_sequence<int, N...>) {
+    (check_select_width<float, N>(), ...);
+    (check_select_width<double, N>(), ...);
+    (check_select_width<std::int8_t, N>(), ...);
+    (check_select_width<std::int32_t, N>(), ...);
+    (check_select_width<std::int64_t, N>(), ...);
+    (check_select_width<std::uint64_t, N>(), ...);
+}
+
+TEST(SimdMaskInteger, SelectKeepsChosenBits) {
+    check_select_widths(std::integer_sequence<int, 1, 2, 3, 4, 8, 9, 16, 17, 32>{});
+    check_select_width<std::complex<float>, 2>();
+    check_select_width<std::complex<float>, 3>();
+    static_assert(check_select_bits<double, 2>(0b01, false));
+    static_assert(check_select_bits<std::int64_t, 2>(0b10, false));
+    static_assert(check_select_bits<std::complex<float>, 2>(0b01, false));
+    static_assert(check_select_bits<float, 16>(0xa55a, false));
+    static_assert(check_select_bits<double, 16>(0x0ff0, false));
+    static_assert(check_select_bits<std::int8_t, 32>(0x0123abcd, false));
+}
+
+// Narrow and unsigned lanes exercise wrap-around sums, which are defined for
+// them; wider signed lanes stay small so that no sum overflows.
+template<class T>
+constexpr T plus_sample(int i) {
+    if constexpr (std::is_unsigned_v<T>) {
+        return static_cast<T>(std::numeric_limits<T>::max() - static_cast<T>(3 * i));
+    } else if constexpr (sizeof(T) <= 2) {
+        return static_cast<T>(100 + 13 * i);
+    } else {
+        return static_cast<T>((i % 3 - 1) * (1 << 20) + i);
+    }
+}
+
+template<class T, int N>
+constexpr bool check_masked_plus(std::uint64_t bits) {
+    using V = ds::basic_vec<T, ds::__fixed_size_abi<N>>;
+    using U = std::make_unsigned_t<T>;
+    const V values([](auto i) { return plus_sample<T>(int(i)); });
+    const typename V::mask_type mask([bits](auto i) { return ((bits >> int(i)) & 1u) != 0; });
+    U sum = 0;
+    for (int i = 0; i < N; ++i)
+        if (((bits >> i) & 1u) != 0) sum = static_cast<U>(sum + static_cast<U>(values[i]));
+    // An empty mask yields the identity, T() for plus.
+    const T expected = static_cast<T>(sum);
+    return ds::reduce(values, mask) == expected && ds::reduce(values, mask, std::plus<>{}) == expected &&
+        ds::reduce(values, mask, std::plus<>{}, T(0)) == expected;
+}
+
+template<class T, int N>
+void check_masked_plus_width() {
+    SCOPED_TRACE(N);
+    if constexpr (N <= 8) {
+        for (std::uint64_t bits = 0; bits < (std::uint64_t{1} << N); ++bits)
+            EXPECT_TRUE((check_masked_plus<T, N>(bits)));
+    } else {
+        for (const std::uint64_t bits : {std::uint64_t{0}, ~std::uint64_t{0}, std::uint64_t{0x5555555555555555},
+                 std::uint64_t{0xaaaaaaaaaaaaaaaa}, std::uint64_t{0x0123456789abcdef}})
+            EXPECT_TRUE((check_masked_plus<T, N>(bits)));
+        for (int i = 0; i < N; ++i) {
+            EXPECT_TRUE((check_masked_plus<T, N>(std::uint64_t{1} << i)));
+            EXPECT_TRUE((check_masked_plus<T, N>(~(std::uint64_t{1} << i))));
+        }
+    }
+}
+
+template<int... N>
+void check_masked_plus_widths(std::integer_sequence<int, N...>) {
+    (check_masked_plus_width<std::int8_t, N>(), ...);
+    (check_masked_plus_width<std::uint8_t, N>(), ...);
+    (check_masked_plus_width<std::int16_t, N>(), ...);
+    (check_masked_plus_width<std::int32_t, N>(), ...);
+    (check_masked_plus_width<std::uint32_t, N>(), ...);
+    (check_masked_plus_width<std::int64_t, N>(), ...);
+    (check_masked_plus_width<std::uint64_t, N>(), ...);
+}
+
+TEST(SimdMaskInteger, MaskedIntegerPlus) {
+    check_masked_plus_widths(std::integer_sequence<int, 1, 2, 3, 4, 5, 8, 12, 16, 17, 32>{});
+    static_assert(check_masked_plus<std::int32_t, 8>(0xa5));
+    static_assert(check_masked_plus<std::int32_t, 4>(0));
+    static_assert(check_masked_plus<std::uint8_t, 16>(0xffff));
+    static_assert(check_masked_plus<std::int16_t, 8>(0x3c));
+    static_assert(check_masked_plus<std::uint64_t, 2>(0b11));
 }
 } // namespace
