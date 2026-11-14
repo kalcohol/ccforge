@@ -51,6 +51,18 @@
 
 #include "hive/detail/bounded_sort.hpp"
 
+// MSVC ABI targets accept the standard spelling but need the vendor attribute.
+#if defined(__has_cpp_attribute)
+#  if __has_cpp_attribute(msvc::no_unique_address)
+#    define FORGE_HIVE_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#  elif __has_cpp_attribute(no_unique_address)
+#    define FORGE_HIVE_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#  endif
+#endif
+#ifndef FORGE_HIVE_NO_UNIQUE_ADDRESS
+#  define FORGE_HIVE_NO_UNIQUE_ADDRESS
+#endif
+
 namespace std {
 
 struct hive_limits {
@@ -1997,7 +2009,7 @@ class hive {
     }
   }
 
-  allocator_type alloc_;
+  FORGE_HIVE_NO_UNIQUE_ADDRESS allocator_type alloc_;
   hive_limits limits_ = block_capacity_default_limits();
   control_type* control_ = nullptr;
   size_type end_epoch_ = 0;
@@ -2070,6 +2082,8 @@ using hive = std::hive<T, polymorphic_allocator<T>>;
 } // namespace pmr
 
 } // namespace std
+
+#undef FORGE_HIVE_NO_UNIQUE_ADDRESS
 
 #if !defined(__cpp_lib_hive)
 #  define __cpp_lib_hive 202502L
