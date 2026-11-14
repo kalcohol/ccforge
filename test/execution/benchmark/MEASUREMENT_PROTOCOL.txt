@@ -1,0 +1,78 @@
+inplace_stop_source 基准运行说明
+================================
+
+用途与构建
+----------
+measure_stop_token.cpp 是独立程序，不注册到 CTest，也不作为准入门槛。它观察
+inplace_stop_source backport 的注册、注销、停止请求、callback 自毁和完整生命周期成本。
+程序要求标准库没有原生 inplace_stop_token；检测到原生实现时编译失败。不要定义
+FORGE_EXECUTION_TEST_STOP_HOOKS 或 FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME。
+从仓库根目录执行：
+
+mkdir -p build/stop-benchmark
+g++ -std=c++26 -O3 -DNDEBUG -Ibackport test/execution/benchmark/measure_stop_token.cpp -o build/stop-benchmark/measure_stop_token -pthread
+taskset -c 2 build/stop-benchmark/measure_stop_token 1000000
+
+CPU 编号仅为命令示例。先用 lscpu 和 taskset -pc $$ 选择允许使用的核心，并让其 SMT 兄弟线程
+保持空闲。可将 g++ 换为 clang++；使用 libc++ 时加 -stdlib=libc++。程序依赖 GCC/Clang 的
+compiler barrier。
+
+配对测量
+--------
+run_paired.sh 把基线 backport、候选 backport 和整个 harness 复制到 /tmp/stop-benchmark.*
+（OUT_ROOT 可指定父目录），两边只从快照编译，编译选项完全相同。基线取 BASE_REF 指定提交的
+git archive；没有 git 的环境改用 BASE_BACKPORT 指定基线 backport 目录。候选默认取当前文件系统
+中的 backport，包含 staged、unstaged 与 untracked 内容；CANDIDATE_BACKPORT 可改为其他目录。
+脚本不修改仓库或 Git 索引；复制期间应暂停编辑输入文件。
+
+BASE_REF=<基线提交> PAIRS=15 bash test/execution/benchmark/run_paired.sh 2 g++
+BASE_BACKPORT=<基线 backport 目录> CANDIDATE_BACKPORT=<候选 backport 目录> PAIRS=15 bash test/execution/benchmark/run_paired.sh 2 clang++ -stdlib=libc++
+
+PAIRS 默认 15，ITERATIONS 默认 1000000 且不得小于 1000（lifecycle kernel 的次数为 ITERATIONS
+除以 callback 数加一），STD 默认 c++26。基线快照中出现符号链接时脚本拒绝运行。每条命令形成独立实验：脚本按
+base/candidate、candidate/base 交错执行，均由 taskset 绑定到同一个核心，保存原始 samples.csv、
+metadata.txt、二进制摘要、候选头文件 diff、反汇编（有 objdump 时）以及 summarize_pairs.py 的
+汇总（有 python3 时，也可事后在其他机器上运行）。base-source.sha256、candidate-source.sha256 与
+harness.sha256 记录各快照的逐文件摘要，snapshots.sha256 记录这些清单的摘要。保留整个输出目录
+以便重建，不跨目录拼接结果。
+
+内核与计时边界
+--------------
+输出每行以 stop_bench 开头，字段为 kernel、iterations、ns；ns 是全部 iterations 的耗时，配对
+脚本追加 candidate 与 sample。summarize_pairs.py 以 ns/iterations 计算每次操作耗时，对每个
+sample 计算 candidate/base 比值，输出比值的中位数、四分位数（inclusive 方法）和极值。
+
+barrier 与 stop_requested 是对照，不执行被修改的代码；其配对中位比值应在 0.98 与 1.02 之间，
+否则该批次作废。losing_request_stop 在早期 acquire 检查处返回，不进入锁。
+register_deregister 在未停止的 source 上构造并销毁一个 callback；register_deregister_4live
+另有四个常驻 callback；post_stop_register 在已停止的 source 上构造（立即调用）并销毁 callback。
+request_stop_N（N 为 0、1、4、16）预先建立 256 个各有 N 个 callback 的 source，只计时 256 次
+request_stop，建立和销毁不计时；self_destroy 中唯一的 callback 在调用中销毁自己。lifecycle_N
+计时构造 source、注册 N 个 callback、request_stop、注销和析构 source 的完整过程，不要从中机械
+扣除 request_stop_N。每个 kernel 先预热；source 与 callback 存储按 64 字节对齐，source 指针
+每次迭代经过 input_barrier，结果经过 observe，计时 lambda 强制内联。
+
+竞争测量（仅供参考）
+--------------------
+measure_stop_token --contended THREADS MILLISECONDS WORK 让 THREADS 个线程在同一 source 上反复
+注册和注销；WORK 是注册期间与注册之外各执行的工作单位数。输出总操作数、耗时以及单线程份额的
+最小值和最大值。用 taskset -c 指定一组物理核心，例如：
+
+taskset -c 8,10,12,14 build/stop-benchmark/measure_stop_token --contended 4 300 0
+
+锁不公平，饱和竞争的结果波动很大，不参与配对结论，只用于观察竞争路径的退让与阻塞。
+
+反汇编检查
+----------
+测量前检查反汇编：基线在每次 unlock 之后无条件调用标准库 notify 入口（libstdc++ 为
+std::__detail::__notify_impl，libc++ 为 __cxx_atomic_notify_all）；候选的 unlock 为 exchange
+（x86-64 为 xchg）后测试 waiter bit，只在置位时调用 notify；completion 的 store 与 notify 只
+出现在 awaited 分支。
+
+环境记录与报告
+--------------
+遵循 ../../hive/benchmark/MEASUREMENT_PROTOCOL.txt 的环境与报告原则：记录非私密主机标识、日期、
+CPU 型号及核类型、选定核心与 SMT 兄弟拓扑、频率策略、系统负载、OS/内核、编译器与标准库版本、
+完整编译选项、源码状态、二进制摘要和采样顺序；缺失项明确标注，不猜测。先完成正确性验证，
+再做计时；正确性与性能结果分别报告。保留所有原始样本及异常批次，报告绝对耗时、分布和配对比值。
+换主机、核心、工具链或系统环境后，两边都重新构建与运行，不跨主机比较。
