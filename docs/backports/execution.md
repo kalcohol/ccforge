@@ -256,11 +256,10 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   association 由 top-level `associate(sender, token)`、`spawn(sender, token[, env])`
   和 `spawn_future(sender, token[, env])` 持有。`spawn` 只接受 completion signatures
   为 `set_value()` / `set_stopped()` 的 sender；会产生 value 或 error completion 的
-  sender 需要先转换成无 error、无 value 的形态。fused token 使用共享 control block，
-  因此 `read_env(get_stop_token)` 把 token 作为 value 返回时不会悬垂；父级 scope /
-  downstream callback 只在 operation active 期间保持注册。
-  stop callback 在 `start()` 内注册，并在转交 terminal completion 前注销；注册分配失败
-  会清理已注册的 callback 并交付已声明的 `set_stopped()`，不启动 child。
+  sender 需要先转换成无 error、无 value 的形态。fused token 只保存两个输入 token 的副本，
+  `read_env(get_stop_token)` 返回的 token 不依赖 wrapper operation 的 lifetime；输入 source
+  仍须存活。每个 child callback 直接向两个输入注册，至多调用一次；注册和注销由 child
+  的 callback lifetime 决定，注册失败由 child 自己处理。
 - `simple_counting_scope::join()` / `counting_scope::join()` 返回异步 sender，可用
   `sync_wait(scope.join())` 等 sender 消费方式等待 drain；`start()` 只注册 join
   operation。若 scope 已空，join 在 `start()` 调用线程内联完成；否则最后一个
@@ -381,23 +380,38 @@ state 和 state 的 `shared_ptr` control block；连接 consumer 时用 `allocat
 state、consumer、全部 control block 以及 resource 自身均销毁并 deallocate 后，才释放
 association；已完成的 consumer operation 可以继续存活，不保留上述分配。
 
-`counting_scope::token::wrap` 使用内部 stop-when：operation 内持有
-`inplace_stop_source`、所需的具体 token callback 和 child operation，不分配融合状态。
-不可停止的 receiver token 直接使用 scope token；其他情况在连接 child 前注册两个输入，
-在转发 completion 前注销。融合 token 的 `stop_requested()` 和 `stop_possible()` 分别返回
+`counting_scope::token::wrap` 使用内部 stop-when：operation 内持有 receiver 和 child
+operation，不持有融合 source 或输入 callback。不可停止的 receiver token 直接使用 scope
+token；其他情况的融合 token 只保存 scope token 和 receiver token 的副本。
+融合 token 的 `stop_requested()` 和 `stop_possible()` 分别返回
 两个输入查询结果的逻辑或；child 在 connect 时注册的 callback 也可在 start 前收到通知，
 且最多调用一次。注册时输入已请求停止，则在注册线程立即调用该 callback，即使输入的
-其他 callback 仍在阻塞停止传播。当前 callback 注册失败保留 `set_stopped()` 完成路径。
-completion 前先注销两个输入 callback；另一线程上的 callback invocation 返回后才继续，
-随后按原 channel 和原参数引用直接转发，不保存参数、不增加分配，也不把 value/error
-改成 stopped。同一线程的 stop propagation 内若 receiver 销毁 operation，仍依赖 backport
-的独立 control block；采用标准 source lifetime 规则前必须解决这一边界。
+其他 callback 仍在阻塞停止传播。每个 `callback_type<Fn>` 先构造 `Fn` 和 atomic flag，
+再查询逻辑 token 并通过两个输入各自的 `stop_callback_for_t` 注册 trampoline；已停止时
+在发布 registration 前于构造线程调用，exchange 保证两个输入并发
+停止时也只调用一次。调用 `Fn` 后不再访问 callback storage，允许同线程 self-deregistration。
+析构先注销两个输入 registration，再销毁 `Fn`；注销等待另一线程正在执行的 invocation，
+输掉 exchange 的 trampoline 直接返回，不形成等待环。
+child 负责其 callback 的注册、注销和注册失败处理；stop-when 按原 channel 和原参数引用
+直接转发，不保存参数、不增加分配，也不合成 stopped completion 或额外 signature。
+receiver 可在同线程 stop completion 中销毁 operation，输入 source 的 owner 仍须覆盖
+stop 调用。一个 child callback 对应两个输入 registration，当前 backport 每个 registration
+仍分配独立 control block；stop-when 本身没有其他分配。
 scope 本身须活过其全部 stop 调用，包括使 join receiver 同步完成的调用。详见
 [`inplace_stop_callback` lifetime 设计](../roadmap/inplace-stop-callback-design.md)。
 `spawn_future` 的 producer environment 按
 `write_env(stop-when(sndr, ssource.get_token()), env)` 组成；stop-when 边界仅转发
 `FWD-ENV` queries，融合 token 覆盖原 stop token。consumer stop callback 仍直接使用
-receiver environment 的具体 token 类型。`split` 为非 WD extension，shared state 和
+receiver environment 的具体 token 类型。producer 完成后，child operation 仍随 future state
+保存到结果消费或 future 放弃；child 若保留 callback，用户 environment token 上的注册也可
+保留至该 operation 析构，不能将 producer completion 当作注销时点。输入 source 必须覆盖
+这些注册的 lifetime；完成后收到 stop 的 callback 不得访问已失效的 operation。
+pending producer 若忽略取消，future 放弃或 consumer 收到 stopped 后仍须等 producer
+实际完成，才能销毁其 operation 并释放注册。state 构造失败时，已构造的注册随成员展开注销。
+consumer 取消路径与工作草案不完全相同：草案在停止已登记的 consumer 时调用 `destroy()`，
+本实现保留 producer keepalive，operation 的销毁和注册释放要等 producer 实际完成；
+其余时点遵循 [`[exec.spawn.future]`](https://eel.is/c++draft/exec.spawn.future) 的状态生命周期。
+`split` 为非 WD extension，shared state 和
 subscriber 的合并 control block 使用 source attributes 的 allocator，缺省为
 `std::allocator<void>`；subscriber 入链不再分配，缓存仍以 `const&` 重放。
 对于自身不分配的 sender、scheduler、receiver、所选 allocator、environment queries、

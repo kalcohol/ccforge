@@ -43,7 +43,7 @@ coroutine stopped 传播上重新推导。
 | Execution consumers | `sync_wait` | No cancellation support | receiver env 暴露 start/delegation scheduler；缺失 stop query 因而得到 `never_stop_token`；`set_stopped` 返回 empty optional。 | Blocking consumer，不是 cancellation framework，也不向 child 提供 caller-owned stop source。 |
 | Execution composition | `when_all` | Sibling cancellation | child env 暴露 shared stop token；error 覆盖 stopped；外部 stop token 可传给 children。 | 至少一个 child sender；完整泛化仍受 backport subset 限制。 |
 | Execution scope | `simple_counting_scope::token::wrap` | No child-token fusion | Current-WD shape 下 simple scope wrap 是 identity forwarding。 | Association 由 `associate` / `spawn` / `spawn_future` 拥有。 |
-| Execution scope | `counting_scope::token::wrap` | Fused token / composed stop source | child env 暴露 fused stop token；scope stop 与 downstream receiver/env stop 任一请求都会让 child 观察 stop。 | 融合状态、输入 stop callback 和 child operation 在 `connect()` 期间建立；child connection 失败同步抛出，输入 callback 注册失败则记入 operation，在 `start()` 交付 stopped，不启动 child。 |
+| Execution scope | `counting_scope::token::wrap` | Fused token | child env 暴露只持有两个输入副本的 fused stop token；每个 child callback 直接向两个输入注册并至多调用一次。 | operation 不持有融合 source 或输入 callback；child 负责 callback lifetime 和注册失败处理，stop-when 原样转发 completion。输入 source 仍须活过 stop 调用。 |
 | Execution scope | `spawn` | Scope-owned execution | 只接受 `set_value()` / `set_stopped()` sender；error/value sender 需先转换。 | 不提供 fire-and-forget error channel。 |
 | Execution scope | `spawn_future` | Cancel-on-abandon + single-consumer future | abandoned/unconsumed future 和 unstarted connected operation 请求 stop；consumer stop token 也请求 producer stop。 | Single-consumer；typed result 经 future sender 交付。 |
 | Forge scheduler | `static_thread_pool` schedule op | Pre-start observation + primitive-owned shutdown | start 边沿观察 receiver stop token；shutdown 后/queue 拒绝时完成 stopped。 | 已运行 user work 不被强制中断。 |
@@ -95,9 +95,10 @@ stand-aside，并且 native implementation 不容忍 source 在自身 `request_s
 sender 必须保护正在调用的 source。`when_all` 与 `as_sender(io_task)` 使用已有结果存储和
 completion credit，内部 stop propagation 返回后才交付；不额外复制 completion 参数。
 IO combinator 的 downstream forwarding callback 持有 shared-state owner。
-stop-when 在 completion 前注销输入 callback，等待其他线程的 propagation 返回，然后
-原样转发 channel 和参数引用。同线程 stop callback 内完成并销毁内联 source 仍是开放边界，
-当前依赖 backport control block，采用标准 lifetime 规则前必须决定其 contract 或存储方式。详见
+stop-when 已移除内联 source，每个 child callback 直接向两个输入注册；atomic exchange
+保证至多调用一次，两个 registration 先于 `Fn` 析构，调用 `Fn` 后不再访问 callback storage。
+wrapper 原样转发 channel 和参数引用，同线程 receiver 销毁 operation 不会销毁输入 source。
+输入 source 的 owner 仍须覆盖 stop 调用。详见
 [`inplace_stop_callback` lifetime 设计](inplace-stop-callback-design.md)。当前 policy 是：
 
 - 对 Forge/backport path：使用 sanitizer tests 锁住已证明的 self-destroy path；

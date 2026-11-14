@@ -58,6 +58,9 @@ request_stop()
 `docs/roadmap/unified-cancellation-design.md` 和对应 ASan tests 已把这条路径纳入 Forge
 backport 的 proof surface。共享 control block 让 `request_stop()` 在用户 callback 返回后
 不必再次访问已经销毁的 callback object，也不依赖 owning operation 仍然存在。
+其中 source 同步销毁属于历史扩展能力，不是当前 sender 可以依赖的标准契约。
+下文的 lifetime 准备已保护具体持有者，并移除 stop-when 的内部 source；callback 自毁和
+sibling 注销仍须支持，不能因为 source lifetime 已收敛而删除这些 primitive 回归。
 
 ## 参考实现对照
 
@@ -158,8 +161,7 @@ context。
 | --- | --- |
 | `stop_token.hpp` | 保留 detached control block；source owner 须覆盖全部 registration 与 stop 调用。允许 callback 自毁和 sibling 注销。 |
 | `when_all` | outer stop callback 在 children 尚未结束时取得 completion credit，内部 `request_stop()` 返回后归还；child error/stopped 自身尚未归还的 pending credit 保护 sibling stop。满足。 |
-| `counting_scope::token::wrap` / 内部 stop-when | completion 前注销两个输入 callback，等待其他线程的 invocation 返回，随后原样转发。跨线程满足；同线程完成并销毁内联 source 仍是开放项，依赖现有 control block。 |
-| fused token 的 `__stopped_source` | 先请求一个尚无 registration 的局部 source，再用它执行 immediate registration；source 调用已返回才执行用户 callback。满足。 |
+| `counting_scope::token::wrap` / 内部 stop-when | token 只保存两个输入 token；每个 child callback 直接向两个输入注册，以 atomic exchange 保证 `Fn` 至多调用一次。operation 不再持有 source 或输入 callback；同线程完成并销毁 operation 不会销毁正在执行的 source。满足输入 source 的 owner 前置条件时安全。 |
 | `counting_scope` | scope owner 必须覆盖 `request_stop()`；即使 stop 使 join receiver 同步完成，也不能在 stop 返回前销毁 scope。 |
 | `spawn_future` | producer stop 调用持有 shared-state owner，也覆盖其中的 stop-when operation；consumer callback 的 weak lock、delivery/abandon 的局部 owner 继续保护其他访问。满足。 |
 | `any_stop_token` | invoker 在调用 erased callable 前复制 shared owner，callable 活到 invocation 返回；它不拥有 borrowed inplace source。满足 caller 的 source 前置条件时安全。 |
@@ -175,19 +177,43 @@ context。
 
 [`[exec.stop.when]`](https://eel.is/c++draft/exec.stop.when) 的 forwarding 语义要求保留
 completion channel 和参数引用身份，不能通过复制 packet 或保存失败时改成 stopped 来延长
-lifetime。stop-when 不新增结果存储或分配；其 completion 先执行输入 callback 的注销。
+lifetime。stop-when 不新增结果存储或分配；其 completion 直接转发。child 自己负责 callback
+lifetime，以及 completion、operation 析构与其他线程 invocation 之间的协调。若 completion
+会同步销毁 operation，child 须保证正在执行的 callback 不再访问失效的 operation；
+提前注销是实现这种协调的一种方式，并非所有 child 都必须在 completion 前注销。
+child 保留到 operation 析构的 callback 也会继续占用输入 registration。
 [`[stoptoken.concepts]`](https://eel.is/c++draft/stoptoken.concepts) 要求注销等待另一线程的
 invocation 返回。当前 backport destructor 在 control mutex 下检查 running 和 request thread，
 通过 condition variable 等待 running 清除，符合这一要求。
 
-同线程注销不能等待自己。如果 child 在 fused source 的 `request_stop()` 内同步完成，
-receiver 又销毁 operation，则 fused source 随之销毁。现有 control block 让 production
-request loop 在 callback 返回后无需访问该 source，因此当前行为仍可工作；标准 lifetime
-规则允许再次访问 source，这一路径不满足该规则。采用方向 A 前必须决定以下方案之一：
+stop-when 已按 `[exec.stop.when]` 的 `stoken-t` 语义移除 fused source 和临时
+`__stopped_source`。token 的两个查询仍返回输入查询的逻辑或；`callback_type<Fn>` 按
+`Fn`、atomic flag、scope registration、receiver registration 的顺序构造，逆序析构。
+每个 registration 使用其输入 token 的 `stop_callback_for_t`；发布 registration 前先查询
+逻辑 token，已停止则在构造线程调用 trampoline，避免第二个输入已停止时被第一个输入的
+并发请求抢先。底层 registration 也可在构造时立即调用 trampoline，flag 此时已初始化，
+第二次调用只交换 flag 后返回。两次 registration
+之间出现 stop request、两个输入同时停止、或两个 token 指向相同 source 时，也只有一个
+trampoline 能调用 `Fn`。trampoline 调用 `Fn` 后不再访问 callback storage。
 
-- 收紧并明确约定 stop request 内交付 completion 时 receiver 的销毁时机；
-- 为 stop-when 的 fused source 保留独立的内部机制；
-- 把 fused source 移到可独立保活的存储中。
+析构先注销两个 registration，再销毁 flag 和 `Fn`。另一线程正在运行的 trampoline 由
+对应 registration destructor 等待；同线程 self-deregistration 不等待自己。输掉 exchange
+的 trampoline 不等待获胜者，不调用 `Fn`，因此获胜者销毁 callback 并等待另一 registration
+时不会形成等待环。构造尚未结束时，调用方仍须保证正在构造的 callback storage 有效。
+registration 构造失败按普通成员展开顺序注销先前成功的 registration；异常由 child 的
+注册位置处理，stop-when 不再合成 stopped completion 或额外 completion signature。
+
+原同线程开放项已关闭：receiver 销毁 operation 仅销毁 child 和 registrations，正在执行的
+source 属于输入 owner，仍须活过 `request_stop()`。每个 child registration 现在对应两个
+输入 registration，当前 backport 的每个输入 registration 仍分配 control block；没有其他
+新增分配，零分配与条件 `noexcept` 的 residual 保持不变。
+
+上表其余持有者的复核结论为：`when_all` 和 `as_sender(io_task)` 的 completion credit、
+`spawn_future` / erased callable / IO aggregate 的局部 shared owner 均覆盖 source 调用；
+timer、channel、epoll、io_uring 和 IOCP 不拥有 caller source，其 callback 注销仍遵守原
+borrowed lifetime；`counting_scope`、`async_scope` 的 owner 前置条件及 `wait_result` 的
+stack 析构顺序保持。静态审计未发现其他依赖同线程销毁正在执行 source 的内部路径；
+callback 自毁与 sibling 注销仍是必须保留的合法行为，不能与 source 自毁混同。
 
 `when_all` 已有 aggregate result 存储，`io_task` 已有 frame result 存储，credit 只推迟走
 原有交付路径，不复制参数、不增加 move、不改变 value/error/stopped 的选择。`spawn_future`、
@@ -213,27 +239,17 @@ callback 不允许抛异常的要求保持不变。
 
 `CountingFusionWaitsForOtherThreadAndForwardsOriginalReference` 用 semaphore 固定交错：
 线程 A 阻塞在 child stop callback，线程 B 交付不可复制对象的 value/error 引用或 stopped；
-进入输入注销后仍没有 receiver completion，释放 A 后才交付原地址并由 receiver 释放 operation。
+child 进入 registration 注销后仍没有 receiver completion，释放 A 后才交付原地址并由
+receiver 释放 operation；两个输入分别覆盖，wrapper 自身不再持有 registration。
 `execution_stop_callback_allocations` 在注册完成后拒绝 allocation，验证重叠 completion
 不复制会抛异常的 payload、不分配且保持 channel 和地址；TSan 因全局 allocation replacement
 冲突按返回码 77 跳过该独立 executable，其他严格 lifetime 测试仍运行。
 
-同线程开放项保留为 `StopCallbackLifetimeKnownOpenTest.CountingFusionSameThreadReceiverDestroysSource`。
-普通 backport 测试继续运行；严格 executable 的 CTest entry 使用 `GTEST_FILTER` 排除这一 suite，
-因此不属于通过门禁。以下命令单独执行严格重现，在 ASan 下预期报告 heap-use-after-free：
-
-```sh
-cmake --build build/asan --target test_execution_stop_callback_known_open
-```
-
-也可直接选择这一 suite：
-
-```sh
-build/asan/test/execution/test_execution_stop_callback_strict_lifetime --gtest_filter='*KnownOpenTest.*'
-```
-
-这不是 expected-success death test；非零退出和 ASan 报告使开放项保持可见。它覆盖两个输入和
-value/error/stopped，不能作为标准 lifetime 已满足的证据。
+`StopCallbackLifetimeTest.CountingFusionSameThreadReceiverDestroysOperation` 是普通 passing
+regression，覆盖两个输入和 value/error/stopped；严格 CTest entry 不再排除该路径，也不再
+提供独立的 known-open target。新增直接 registration tests 覆盖双输入预先停止、两个
+registration 之间停止、并发 stop/self-destruction、输掉仲裁的 invocation 与析构重叠，以及
+两次注销先于 `Fn` 析构的顺序。ASan 严格模式仍须运行完整 suite 和上述 negative control。
 
 原有 ASan proof surface 包括 `WhenAllResultsAllowsSelfDestroyDuringSiblingStop`、
 `SiblingStopFinishesBeforeCrossThreadDelivery`、
@@ -246,9 +262,9 @@ task env/receiver stop 及两个 IO combinator 的 downstream stop。
 
 ### 状态机改动之前仍需证明
 
-当前仍采用方向 C 的存储。stop-when 同线程 source 销毁的 contract 或存储方案尚未决定，
-解决前不能切换到方向 A。其余 lifetime 保护须在 ASan、TSan、MSVC、AppleClang 与 native
-stand-aside 环境实际验证，不能以静态审计代替运行结果。
+当前仍采用方向 C 的存储。stop-when 同线程 source 销毁的结构性缺口已通过直接 registration
+关闭；所有 lifetime 保护仍须在 ASan、TSan、MSVC、AppleClang 与 native stand-aside 环境
+实际验证，不能以静态审计代替运行结果。输入 source 的 owner 前置条件不能取消。
 后续独立状态机实现仍须满足上面的七项门槛，特别是 same-thread removal、pending sibling
 removal、cross-thread destructor wait、registration publication 和条件 `noexcept`。
 必须保留严格 suites 与 negative control；移除 control block 后应将 probe 调整为新 node
