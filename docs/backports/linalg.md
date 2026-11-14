@@ -114,7 +114,14 @@ product 和 in-place triangular product 按操作数布局选择循环顺序。
 访问的操作数。小块独立累加器保持各输出元素的 `k` 递增顺序，updating 版本在
 归约结束后才加上 `E`。`layout_stride`、未知布局及自定义 accessor 使用标量路径；
 所有元素访问均经过 mdspan accessor，支持 scaled、conjugated 和 transposed view。
-三角矩阵的 in-place product 按数据依赖选择行或列方向，无需矩阵大小的临时分配。
+三角矩阵的 in-place product 无需动态分配。对于 default accessor，右乘在 A 与 C
+均为 `layout_right` / `layout_right_padded` 时逐行执行 scaled row update：
+下三角按源列 `k` 递增，上三角递减，内层连续访问 A 与 C 的行。左乘在两者均为
+`layout_left` / `layout_left_padded` 时逐列执行对应的 scaled column update：
+上三角按源行 `k` 递增，下三角递减，内层连续访问两者的列。每步先保存尚未覆盖的
+源元素，再处理对角项并更新已消费源元素的位置；implicit unit diagonal 不读取 A
+的对角项。这两条路径可改变浮点累加顺序。其余布局组合保留按依赖顺序计算输出的
+dot product 路径；`layout_stride`、packed layout 和非 default accessor 保留原有路径。
 实现不依赖 external BLAS，也不使用手写 intrinsics kernel。
 
 独立基准及同一 CPU 上的配对运行命令见

@@ -170,6 +170,32 @@ void triangular_matrix_left_product(
     const idx_t m = C.extent(0), n = C.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    if constexpr (__detail::__product_order<ALayout> == 2 &&
+                  __detail::__product_order<CLayout> == 2 &&
+                  std::is_same_v<AAccessor, default_accessor<typename AAccessor::element_type>> &&
+                  std::is_same_v<CAccessor, default_accessor<typename CAccessor::element_type>>) {
+        // Transform each column independently. Consume source k before any
+        // update can reach it: upper ascends, lower descends. Both inner
+        // accesses follow columns, including for padded layouts.
+        for (idx_t j = 0; j < n; ++j)
+            for (idx_t step = 0; step < m; ++step) {
+                const idx_t k = is_upper ? step : idx_t(m - 1 - step);
+                const value_t source(C[k, j]);
+                if constexpr (!is_unit) {
+                    value_t sum{};
+                    sum += A[k, k] * source;
+                    C[k, j] = sum;
+                }
+                const idx_t first = is_upper ? idx_t{0} : idx_t(k + 1);
+                const idx_t last = is_upper ? k : m;
+                for (idx_t i = first; i < last; ++i) {
+                    value_t sum(C[i, j]);
+                    sum += A[i, k] * source;
+                    C[i, j] = sum;
+                }
+            }
+        return;
+    }
     // Upper reads rows at or above i; lower reads rows at or below i.
     for (idx_t step = 0; step < m; ++step) {
         const idx_t i = is_upper ? step : idx_t(m - 1 - step);
@@ -208,6 +234,32 @@ void triangular_matrix_right_product(
     const idx_t m = C.extent(0), n = C.extent(1);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
     constexpr bool is_unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    if constexpr (__detail::__product_order<ALayout> == 1 &&
+                  __detail::__product_order<CLayout> == 1 &&
+                  std::is_same_v<AAccessor, default_accessor<typename AAccessor::element_type>> &&
+                  std::is_same_v<CAccessor, default_accessor<typename CAccessor::element_type>>) {
+        // Transform each row independently. Lower consumes sources ascending,
+        // upper descending; destinations have already supplied their original
+        // values. The inner loop follows contiguous rows of both A and C.
+        for (idx_t i = 0; i < m; ++i)
+            for (idx_t step = 0; step < n; ++step) {
+                const idx_t k = is_upper ? idx_t(n - 1 - step) : step;
+                const value_t source(C[i, k]);
+                if constexpr (!is_unit) {
+                    value_t sum{};
+                    sum += source * A[k, k];
+                    C[i, k] = sum;
+                }
+                const idx_t first = is_upper ? idx_t(k + 1) : idx_t{0};
+                const idx_t last = is_upper ? n : k;
+                for (idx_t j = first; j < last; ++j) {
+                    value_t sum(C[i, j]);
+                    sum += source * A[k, j];
+                    C[i, j] = sum;
+                }
+            }
+        return;
+    }
     // Upper reads columns at or below j; lower reads columns at or above j.
     for (idx_t step = 0; step < n; ++step) {
         const idx_t j = is_upper ? idx_t(n - 1 - step) : step;
