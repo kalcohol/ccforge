@@ -23,14 +23,15 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <concepts>
 #include <cstdint>
-#include <memory>
-#include <mutex>
 #include <thread>
 #include <type_traits>
 #include <utility>
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+#include <cstdio>
+#include <cstdlib>
+#endif
 
 namespace std {
 
@@ -45,34 +46,42 @@ class inplace_stop_callback;
 
 namespace __forge_stop_detail {
 
-struct callback_control {
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::shared_ptr<callback_control> next_detached;
-    std::thread::id request_thread{};
-    void (*invoke_fn)(void*) noexcept = nullptr;
-    void* object = nullptr;
-    bool detached = false;
-    bool running = false;
-    bool cancelled = false;
-};
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+// Each test thread installs its own observer before destroying a callback.
+inline thread_local void* deregister_context = nullptr;
+inline thread_local void (*deregister_wait_hook)(void*) noexcept = nullptr;
+#endif
 
 struct callback_base {
     using fn_t = void(callback_base*) noexcept;
     fn_t*          invoke_fn = nullptr;
     callback_base* next      = nullptr;
     callback_base** prev     = nullptr;
-    std::shared_ptr<callback_control> control{};
+    // invoke_fn is immutable after publication. Other non-atomic fields are
+    // protected by the source lock. A nonnull prev means pending; a nonnull
+    // removed means selected for invocation.
+    bool* removed = nullptr;
+    std::thread::id request_thread{};
+    alignas(sizeof(std::uint32_t)) std::atomic<std::uint32_t> completion{0};
 };
 
 } // namespace __forge_stop_detail
 
 class inplace_stop_source {
 public:
-    inplace_stop_source() noexcept = default;
+    constexpr inplace_stop_source() noexcept = default;
     // Precondition: no inplace_stop_callback objects referencing this source
-    // exist at the point of destruction.  See [stopsource.inplace.general].
+    // exist and no request_stop() is executing at the point of destruction.
+    // See [stopsource.inplace.general].
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+    ~inplace_stop_source() noexcept {
+        // Leave a tombstone in still-addressable storage. ASan continues to
+        // diagnose freed storage; this also catches late teardown on the stack.
+        state_.store(kDestroyed, std::memory_order_release);
+    }
+#else
     ~inplace_stop_source() noexcept = default;
+#endif
 
     inplace_stop_source(const inplace_stop_source&) = delete;
     inplace_stop_source& operator=(const inplace_stop_source&) = delete;
@@ -81,109 +90,57 @@ public:
     [[nodiscard]] static constexpr bool stop_possible() noexcept { return true; }
 
     bool request_stop() noexcept {
-        std::shared_ptr<__forge_stop_detail::callback_control> head;
-        {
-            std::lock_guard lk{mtx_};
-            auto st = state_.load(std::memory_order_acquire);
-            if ((st & kStopRequested) != 0) {
-                return false;
-            }
-            state_.store(static_cast<std::uint8_t>(st | kStopRequested),
-                         std::memory_order_release);
-
-            // Detach the callback list under the lock, but do NOT invoke
-            // callbacks here.  Invoking user callbacks while holding mtx_
-            // would deadlock if the callback tries to register/remove
-            // another callback.  See [stopsource.inplace.mem].
-            auto* raw = callbacks_;
-            callbacks_ = nullptr;
-            std::shared_ptr<__forge_stop_detail::callback_control> prev;
-            const auto request_thread = std::this_thread::get_id();
-            while (raw) {
-                auto* next_raw = raw->next;
-                auto control = raw->control;
-                if (control) {
-                    {
-                        std::lock_guard control_lk{control->mtx};
-                        control->detached = true;
-                        control->request_thread = request_thread;
-                        control->object = raw;
-                        control->invoke_fn = raw->invoke_fn
-                            ? [](void* ptr) noexcept {
-                                  auto* cb = static_cast<__forge_stop_detail::callback_base*>(ptr);
-                                  cb->invoke_fn(cb);
-                              }
-                            : nullptr;
-                        control->cancelled = false;
-                        control->next_detached.reset();
-                        // A destructor that observes detached=true skips the
-                        // source lock, so finish object-list writes while the
-                        // control lock still excludes that destructor.
-                        raw->next = nullptr;
-                        raw->prev = nullptr;
-                    }
-                    if (!head) {
-                        head = control;
-                    }
-                    if (prev) {
-                        prev->next_detached = control;
-                    }
-                    prev = std::move(control);
-                } else {
-                    raw->next = nullptr;
-                    raw->prev = nullptr;
-                }
-                raw = next_raw;
-            }
+        if (stop_requested()) return false;
+        const auto state = lock();
+        if ((state & kStopRequested) != 0) {
+            unlock();
+            return false;
         }
-
-        // Invoke callbacks outside the lock.
-        while (head) {
-            auto control = std::move(head);
-            head = std::move(control->next_detached);
-            control->next_detached.reset();
-
-            void* object = nullptr;
-            void (*invoke_fn)(void*) noexcept = nullptr;
-            {
-                std::lock_guard lk{control->mtx};
-                if (!control->cancelled && control->object && control->invoke_fn) {
-                    control->running = true;
-                    object = control->object;
-                    invoke_fn = control->invoke_fn;
-                }
-            }
-            if (invoke_fn) {
-                invoke_fn(object);
-            }
-            {
-                std::lock_guard lk{control->mtx};
+        // The release RMW publishes the request to acquire stop queries.
+        state_.fetch_or(kStopRequested, std::memory_order_release);
+        while (callbacks_) {
+            auto* node = callbacks_;
+            unlink(node);
+            bool removed = false;
+            node->removed = &removed;
+            node->request_thread = std::this_thread::get_id();
+            unlock();
+            node->invoke_fn(node);
 #if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
-                // A native implementation may revisit its source after invocation.
-                // Volatile keeps the ASan probe observable even in optimized tests.
-                const volatile auto source_state = state_.load(std::memory_order_acquire);
-                (void)source_state;
-                // Self-removal and sibling removal are legal. Only revisit a node
-                // still registered as live, with deregistration excluded by mtx.
-                if (control->object) {
-                    const volatile auto* live_node =
-                        static_cast<__forge_stop_detail::callback_base*>(control->object);
-                    const auto node_function = live_node->invoke_fn;
-                    (void)node_function;
-                }
+            // Always revisit the source, even when the callback destroyed itself.
+            // Volatile preserves the ASan negative control in optimized tests.
+            const volatile auto source_state = stop_requested();
+            (void)source_state;
 #endif
-                control->running = false;
-                control->cancelled = true;
-                control->object = nullptr;
-                control->invoke_fn = nullptr;
+            (void)lock();
+            // A self-destructor only writes this stack flag. Never dereference
+            // node again in that case, including for the strict lifetime probe.
+            if (!removed) {
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+                const volatile auto* live_node = node;
+                const auto node_function = live_node->invoke_fn;
+                (void)node_function;
+#endif
+                node->removed = nullptr;
+                // Publish callback side effects to the waiting destructor.
+                // seq_cst closes the store-buffer pattern when notify checks
+                // a waiter count with a plain load and could miss the waiter.
+                // Notify while locked: the waiter must reacquire this lock
+                // before freeing the atomic's storage.
+                node->completion.store(1, std::memory_order_seq_cst);
+                node->completion.notify_all();
             }
-            control->cv.notify_all();
         }
+        unlock();
         return true;
     }
 
     [[nodiscard]] bool stop_requested() const noexcept {
-        return (state_.load(std::memory_order_acquire) & kStopRequested) != 0;
+        const auto state = state_.load(std::memory_order_acquire);
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+        check_lifetime(state);
+#endif
+        return (state & kStopRequested) != 0;
     }
 
 private:
@@ -192,8 +149,9 @@ private:
     friend class inplace_stop_callback;
 
     bool try_add_callback(__forge_stop_detail::callback_base* cb) const noexcept {
-        std::lock_guard lk{mtx_};
-        if (stop_requested()) {
+        const auto state = lock();
+        if ((state & kStopRequested) != 0) {
+            unlock();
             return false;
         }
 
@@ -203,15 +161,45 @@ private:
             callbacks_->prev = &cb->next;
         }
         callbacks_ = cb;
+        unlock();
         return true;
     }
 
     void remove_callback(__forge_stop_detail::callback_base* cb) const noexcept {
-        std::lock_guard lk{mtx_};
-        if (!cb->prev) {
-            return; // already removed/detached
+        (void)lock();
+        if (cb->prev) {
+            unlink(cb);
+            unlock();
+            return;
         }
+        if (!cb->removed) {
+            unlock();
+            return; // invocation and its final node accesses have completed
+        }
+        if (cb->request_thread == std::this_thread::get_id()) {
+            *cb->removed = true;
+            unlock();
+            return; // the requester will use only its stack flag
+        }
+        unlock();
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+        if (__forge_stop_detail::deregister_wait_hook) {
+            __forge_stop_detail::deregister_wait_hook(
+                __forge_stop_detail::deregister_context);
+        }
+#endif
+        // Only this callback's invocation can delay destruction. Acquire makes
+        // invocation side effects visible; wait parks rather than busy-spinning.
+        while (cb->completion.load(std::memory_order_acquire) == 0) {
+            cb->completion.wait(0, std::memory_order_acquire);
+        }
+        // completion may become visible before notify_all finishes. Exclude the
+        // requester's last node access before allowing storage reclamation.
+        (void)lock();
+        unlock();
+    }
 
+    void unlink(__forge_stop_detail::callback_base* cb) const noexcept {
         if (cb->next) {
             cb->next->prev = cb->prev;
         }
@@ -220,10 +208,45 @@ private:
         cb->prev = nullptr;
     }
 
-    static constexpr std::uint8_t kStopRequested = 1;
+    // Successful acquire pairs with the preceding owner's release unlock.
+    // Failed CAS, polling and wait only select a retry, so need no ordering.
+    std::uint32_t lock() const noexcept {
+        auto state = state_.load(std::memory_order_relaxed);
+        for (;;) {
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+            check_lifetime(state);
+#endif
+            if ((state & kLocked) == 0) {
+                if (state_.compare_exchange_weak(state, state | kLocked,
+                        std::memory_order_acquire, std::memory_order_relaxed)) {
+                    return state;
+                }
+            } else {
+                state_.wait(state, std::memory_order_relaxed);
+                state = state_.load(std::memory_order_relaxed);
+            }
+        }
+    }
 
-    std::atomic<std::uint8_t> state_{0};
-    mutable std::mutex mtx_{};
+    void unlock() const noexcept {
+        state_.fetch_and(~kLocked, std::memory_order_release);
+        state_.notify_all();
+    }
+
+    static constexpr std::uint32_t kStopRequested = 1;
+    static constexpr std::uint32_t kLocked = 2;
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+    static constexpr std::uint32_t kDestroyed = 0x80000000u;
+    static void check_lifetime(std::uint32_t state) noexcept {
+        if ((state & kDestroyed) != 0) {
+            std::fputs("inplace stop source accessed after destruction\n", stderr);
+            std::abort();
+        }
+    }
+#endif
+
+    // Use naturally aligned words for atomic wait on Windows and AppleClang.
+    alignas(sizeof(std::uint32_t)) mutable std::atomic<std::uint32_t> state_{0};
     mutable __forge_stop_detail::callback_base* callbacks_ = nullptr;
 };
 
@@ -263,57 +286,32 @@ inline constexpr inplace_stop_token inplace_stop_source::get_token() const noexc
 
 template<class Callback>
 class inplace_stop_callback : __forge_stop_detail::callback_base {
+    static_assert(std::invocable<Callback> && std::destructible<Callback>);
 public:
     using callback_type = Callback;
 
     template<class Cb>
         requires std::constructible_from<Callback, Cb>
     explicit inplace_stop_callback(inplace_stop_token token, Cb&& cb)
+        noexcept(std::is_nothrow_constructible_v<Callback, Cb>)
         : callback_(std::forward<Cb>(cb))
-        , source_(token.source_)
-        , control_(std::make_shared<std::__forge_stop_detail::callback_control>()) {
-        this->control = control_;
+        , source_(token.source_) {
         this->invoke_fn = [](std::__forge_stop_detail::callback_base* base) noexcept {
             auto* self = static_cast<inplace_stop_callback*>(base);
             std::forward<Callback>(self->callback_)();
         };
-        {
-            std::lock_guard lk{control_->mtx};
-            control_->object = this;
-            control_->invoke_fn = [](void* ptr) noexcept {
-                auto* self = static_cast<inplace_stop_callback*>(ptr);
-                std::forward<Callback>(self->callback_)();
-            };
-        }
-
         if (source_ && !source_->try_add_callback(this)) {
-            // Already stopped: detach before invoking because the callback
-            // may destroy this callback object synchronously.
+            // Immediate invocations are not associated. Clear before invoking
+            // to allow self-destruction; the noexcept thunk enforces terminate
+            // on invocation exceptions even if callback construction can throw.
             source_ = nullptr;
-            std::forward<Callback>(callback_)();
+            this->invoke_fn(this);
         }
     }
 
     ~inplace_stop_callback() {
-        auto control = control_;
-        bool detached = false;
-        if (control) {
-            std::lock_guard lk{control->mtx};
-            detached = control->detached;
-        }
-        if (source_ && !detached) {
+        if (source_) {
             source_->remove_callback(this);
-        }
-        if (!control) {
-            return;
-        }
-        std::unique_lock lk{control->mtx};
-        control->cancelled = true;
-        control->object = nullptr;
-        control->invoke_fn = nullptr;
-        if (control->running
-                && control->request_thread != std::this_thread::get_id()) {
-            control->cv.wait(lk, [&] { return !control->running; });
         }
     }
 
@@ -323,7 +321,6 @@ public:
 private:
     [[no_unique_address]] Callback callback_;
     const inplace_stop_source* source_;
-    std::shared_ptr<std::__forge_stop_detail::callback_control> control_;
 };
 
 template<class Cb>
