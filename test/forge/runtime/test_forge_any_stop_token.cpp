@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <thread>
 
@@ -125,6 +126,19 @@ TEST(ForgeAnyStopTokenTest, CallbackRunsExactlyOnce) {
 
     EXPECT_TRUE(source.request_stop());
     EXPECT_FALSE(source.request_stop());
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(ForgeAnyStopTokenTest, ErasedHandleDeregistersBeforeSourceIsReleased) {
+    std::optional<std::inplace_stop_source> source{std::in_place};
+    forge::any_stop_token token{source->get_token()};
+    int calls = 0;
+    auto fn = [&]() noexcept { ++calls; };
+    std::optional<std::stop_callback_for_t<forge::any_stop_token, decltype(fn)>> callback;
+    callback.emplace(token, fn);
+    source->request_stop();
+    callback.reset();
+    source.reset();
     EXPECT_EQ(calls, 1);
 }
 

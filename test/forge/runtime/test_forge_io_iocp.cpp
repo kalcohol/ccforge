@@ -1,4 +1,5 @@
 #include <forge/execution_extensions.hpp>
+#include "../../stop_completion_probe.hpp"
 #include <gtest/gtest.h>
 
 #if !defined(NOMINMAX)
@@ -523,6 +524,22 @@ TEST(IoIocpTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
     ctx.shutdown();
     ctx.wait();
+}
+
+TEST(IoIocpTest, RecordDeregistersBeforeCompletionReleasesSource) {
+    for (int channel : {0, 1, 2}) {
+        forge_test::stop_completion_probe probe;
+        using record_t = forge::io::__detail::__record<forge_test::stop_completion_probe::receiver>;
+        record_t record{INVALID_HANDLE_VALUE, forge::io::__detail::__operation_kind::read,
+            {}, {}, probe.get_receiver()};
+        record.stop_callback.emplace(forge::any_stop_token{probe.source->get_token()},
+            forge::io::__detail::__stop_callback_fn{});
+        if (channel == 0) record.complete_value(0);
+        else if (channel == 1) record.complete_error(std::exception_ptr{});
+        else record.complete_stopped();
+        probe.wait();
+        EXPECT_FALSE(probe.source);
+    }
 }
 
 TEST(IoIocpTest, WorkerWaitPreservesExternalDrainBarrier) {

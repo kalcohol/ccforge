@@ -1,4 +1,5 @@
 #include <forge/execution_extensions.hpp>
+#include "../../stop_completion_probe.hpp"
 #include <gtest/gtest.h>
 #include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -266,6 +267,18 @@ TEST(StrandTest, FifoOrder) {
 
     ASSERT_EQ(order.size(), 8u);
     EXPECT_TRUE(std::is_sorted(order.begin(), order.end()));
+}
+
+TEST(StrandTest, CompletionReleasesSourceWithRetainedOperation) {
+    forge::static_thread_pool pool{1};
+    forge::strand strand{pool.get_scheduler()};
+    forge_test::stop_completion_probe probe;
+    auto op = std::execution::connect(
+        std::execution::schedule(strand.get_scheduler()), probe.get_receiver());
+    std::execution::start(op);
+    probe.wait();
+    strand.wait();
+    EXPECT_FALSE(probe.source);
 }
 
 TEST(StrandTest, OptionsConstructorUsesCustomMemoryResourceForRecords) {

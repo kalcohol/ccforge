@@ -4,6 +4,7 @@
 #include <forge/io/async_stream.hpp>
 
 #include "forge_counting_resource.hpp"
+#include "../../stop_completion_probe.hpp"
 
 #include <sys/wait.h>
 #include <sys/socket.h>
@@ -632,6 +633,22 @@ void check_async_stream_concept_interop(std::pmr::memory_resource* memory) {
     }
 }
 
+void check_completion_releases_source_before_retained_operation() {
+    cio::io_uring_context context;
+    pipe_pair pipe;
+    std::byte buffer[1]{};
+    forge_test::stop_completion_probe probe;
+    auto op = std::execution::connect(
+        cio::as_sender(read_task(context, pipe.read_end, buffer)), probe.get_receiver());
+    std::execution::start(op);
+    const char payload = 'a';
+    RW_CHECK(::write(pipe.write_end, &payload, 1) == 1);
+    probe.wait();
+    context.close();
+    context.wait();
+    RW_CHECK(!probe.source);
+}
+
 void check_pre_stopped_env_wins_over_empty_buffer(
     std::pmr::memory_resource* memory) {
     cio::io_uring_context context{{.memory = memory, .entries = 8}};
@@ -1188,6 +1205,7 @@ int main() {
     check_write_to_closed_reader_maps_to_epipe(&memory);
     check_coroutine_composition(&memory);
     check_async_stream_concept_interop(&memory);
+    check_completion_releases_source_before_retained_operation();
     check_pre_stopped_env_never_submits(&memory);
     check_pre_stopped_env_wins_over_empty_buffer(&memory);
     check_stop_races_natural_completion(&memory);

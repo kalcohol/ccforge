@@ -315,7 +315,7 @@ function(forge_add_stop_lifetime_test stem)
 endfunction()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
-    foreach(_stem IN ITEMS any_stop_token timer_context channel async_scope wait_result)
+    foreach(_stem IN ITEMS any_stop_token timer_context channel async_scope wait_result strand)
         forge_add_stop_lifetime_test(${_stem})
     endforeach()
 endif()

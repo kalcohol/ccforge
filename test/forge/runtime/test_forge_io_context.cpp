@@ -1,4 +1,5 @@
 #include <forge/execution_extensions.hpp>
+#include "../../stop_completion_probe.hpp"
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
 #include <forge/io.hpp>
@@ -390,6 +391,21 @@ TEST(IoContextTest, EmptyContextDestroysCleanly) {
     forge::io::context ctx;
     ctx.shutdown();
     ctx.wait();
+}
+
+TEST(IoContextTest, RecordDeregistersBeforeCompletionReleasesSource) {
+    for (int channel : {0, 1, 2}) {
+        forge_test::stop_completion_probe probe;
+        using record_t = forge::io::__detail::__record<forge_test::stop_completion_probe::receiver>;
+        record_t record{-1, forge::io::readiness::read, probe.get_receiver()};
+        record.stop_callback.emplace(forge::any_stop_token{probe.source->get_token()},
+            forge::io::__detail::__stop_callback_fn{});
+        if (channel == 0) record.complete_value();
+        else if (channel == 1) record.complete_error(std::exception_ptr{});
+        else record.complete_stopped();
+        probe.wait();
+        EXPECT_FALSE(probe.source);
+    }
 }
 
 TEST(IoContextTest, OptionsConstructorUsesCustomMemoryResource) {

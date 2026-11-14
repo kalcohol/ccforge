@@ -3,6 +3,7 @@
 #include <forge/async_scope.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <forge/task.hpp>
+#include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
 #include <execution>
 #include <atomic>
@@ -11,6 +12,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 
@@ -405,6 +407,18 @@ TEST(AsyncScopeTest, StopRequestReturnsBeforeSpawnedOperationRetires) {
     scope.wait();
     EXPECT_EQ(calls, 1);
     EXPECT_TRUE(scope.stop_requested());
+}
+
+TEST(AsyncScopeTest, WaitRetiresTimerRegistrationBeforeScopeSource) {
+    forge::timer_context timer;
+    std::optional<forge::async_scope> scope{std::in_place};
+    ASSERT_TRUE(scope->spawn(timer.schedule_after(std::chrono::hours{1})));
+    scope->request_stop();
+    scope->wait();
+    // The timer's completed item can remain on its worker's stack; it must
+    // no longer carry a registration against the scope being released here.
+    scope.reset();
+    timer.wait();
 }
 
 TEST(AsyncScopeTest, CloseDoesNotRequestStop) {

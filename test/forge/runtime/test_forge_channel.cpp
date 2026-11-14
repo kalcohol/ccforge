@@ -1,4 +1,5 @@
 #include <forge/execution_extensions.hpp>
+#include "../../stop_completion_probe.hpp"
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include "forge_counting_resource.hpp"
@@ -201,6 +202,37 @@ TEST(ChannelTest, SendThenRecvDeliversValue) {
     ASSERT_TRUE(sent.has_value());
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(std::get<0>(*received), 42);
+}
+
+TEST(ChannelTest, RecordsDeregisterBeforeCompletionReleasesSource) {
+    for (int channel : {0, 1, 2}) {
+        forge_test::stop_completion_probe probe;
+        using record_t = forge::__channel_detail::__send_record<
+            int, forge_test::stop_completion_probe::receiver>;
+        record_t record{probe.get_receiver(), 7};
+        record.stop_callback.emplace(forge::any_stop_token{probe.source->get_token()},
+            record_t::__stop_callback_fn{});
+        if (channel == 0) record.complete_value();
+        else if (channel == 1) record.complete_error(std::exception_ptr{});
+        else record.complete_stopped();
+        probe.wait();
+        EXPECT_FALSE(probe.source);
+    }
+    for (bool stopped : {false, true}) {
+        forge_test::stop_completion_probe probe;
+        using record_t = forge::__channel_detail::__recv_record<
+            int, forge_test::stop_completion_probe::receiver>;
+        record_t record{probe.get_receiver()};
+        record.stop_callback.emplace(forge::any_stop_token{probe.source->get_token()},
+            record_t::__stop_callback_fn{});
+        if (stopped) record.complete_stopped();
+        else {
+            record.prepare_value(7);
+            record.complete_value();
+        }
+        probe.wait();
+        EXPECT_FALSE(probe.source);
+    }
 }
 
 TEST(ChannelTest, OptionsConstructorUsesCustomMemoryResource) {
