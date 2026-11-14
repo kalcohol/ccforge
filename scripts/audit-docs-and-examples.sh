@@ -179,7 +179,9 @@ check_portable_sync_wait_spelling() {
         docs README*.md example >>"${audit_tmp}/sync-wait-spelling" || true
     rg -n 'std::execution::sync_wait(_with_variant)?' \
         include >>"${audit_tmp}/sync-wait-spelling" || true
-    if rg -v 'std::this_thread::sync_wait(_with_variant)?' \
+    # forge::sync_wait is the documented Forge extension entry point for the
+    # tuple-or-variant result shape, not a nonportable standard spelling.
+    if rg -v '(std::this_thread|\bforge)::sync_wait(_with_variant)?' \
         "${audit_tmp}/sync-wait-spelling" \
         >"${audit_tmp}/nonportable-sync-wait"; then
         cat "${audit_tmp}/nonportable-sync-wait" >&2
