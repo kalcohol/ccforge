@@ -28,7 +28,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME) || defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
 #include <cstdio>
 #include <cstdlib>
 #endif
@@ -46,10 +46,45 @@ class inplace_stop_callback;
 
 namespace __forge_stop_detail {
 
+// Names the place where the source lock is released or a wake decision is
+// made. Production builds pass it to unlock() and ignore it; test builds
+// report it to the thread-local observer below.
+enum class stop_site : unsigned char {
+    add,                  // try_add_callback linked the node (lock held)
+    add_stopped,          // try_add_callback found the stop bit (lock held)
+    request_lost,         // request_stop found the stop bit (lock held)
+    request_invoke,       // request_stop selected a node to invoke (lock held)
+    request_final,        // request_stop drained the list (lock held)
+    remove_pending,       // remove_callback unlinked a pending node (lock held)
+    remove_completed,     // remove_callback found the invocation done (lock held)
+    remove_self,          // remove_callback ran on the requester (lock held)
+    remove_await,         // remove_callback recorded awaited (lock held)
+    remove_handoff,       // final handoff of a waiting destructor (lock held)
+    lock_park,            // lock() is about to wait with kLockWaiters set
+    lock_notify,          // unlock() released a word carrying kLockWaiters
+    completion_published, // completion stored, notify not yet issued (lock held)
+};
+
+// Requester-owned record of one invocation. It lives on the requesting
+// thread's stack and is read and written only under the source lock.
+enum class invocation_status : unsigned char {
+    running,                // no destructor has reached the executing node
+    destroyed_on_requester, // destroyed on the requesting thread; node is gone
+    awaited,                // a destructor on another thread waits for completion
+};
+
 #if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
 // Each test thread installs its own observer before destroying a callback.
 inline thread_local void* deregister_context = nullptr;
 inline thread_local void (*deregister_wait_hook)(void*) noexcept = nullptr;
+// Each test thread may also observe the lock protocol. Sites marked "lock
+// held" run inside the source critical section: the observer may block there
+// to keep the lock held, but must never call into the same source.
+inline thread_local void* event_context = nullptr;
+inline thread_local void (*event_hook)(void*, stop_site) noexcept = nullptr;
+inline void test_event(stop_site site) noexcept {
+    if (event_hook) event_hook(event_context, site);
+}
 #endif
 
 struct callback_base {
@@ -59,9 +94,11 @@ struct callback_base {
     callback_base** prev     = nullptr;
     // invoke_fn is immutable after publication. Other non-atomic fields are
     // protected by the source lock. A nonnull prev means pending; a nonnull
-    // removed means selected for invocation.
-    bool* removed = nullptr;
+    // status means selected for invocation and not yet completed, and points
+    // to the requester's record for that invocation.
+    invocation_status* status = nullptr;
     std::thread::id request_thread{};
+    // Stored and notified only for a destructor that recorded awaited.
     alignas(sizeof(std::uint32_t)) std::atomic<std::uint32_t> completion{0};
 };
 
@@ -77,7 +114,11 @@ public:
     ~inplace_stop_source() noexcept {
         // Leave a tombstone in still-addressable storage. ASan continues to
         // diagnose freed storage; this also catches late teardown on the stack.
-        state_.store(kDestroyed, std::memory_order_release);
+        // A thread parked in lock() violates the precondition; wake it so its
+        // lock loop reports the violation instead of sleeping forever.
+        if ((state_.exchange(kDestroyed, std::memory_order_release) & kLockWaiters) != 0) {
+            state_.notify_all();
+        }
     }
 #else
     ~inplace_stop_source() noexcept = default;
@@ -90,21 +131,25 @@ public:
     [[nodiscard]] static constexpr bool stop_possible() noexcept { return true; }
 
     bool request_stop() noexcept {
+        using __forge_stop_detail::invocation_status;
+        using __forge_stop_detail::stop_site;
         if (stop_requested()) return false;
-        const auto state = lock();
+        auto state = lock();
         if ((state & kStopRequested) != 0) {
-            unlock();
+            unlock(stop_site::request_lost, state);
             return false;
         }
-        // The release RMW publishes the request to acquire stop queries.
+        // The release RMW publishes the request to acquire stop queries. It
+        // must stay an RMW: a contender may set kLockWaiters concurrently.
         state_.fetch_or(kStopRequested, std::memory_order_release);
+        state |= kStopRequested;
         while (callbacks_) {
             auto* node = callbacks_;
             unlink(node);
-            bool removed = false;
-            node->removed = &removed;
+            invocation_status status = invocation_status::running;
+            node->status = &status;
             node->request_thread = std::this_thread::get_id();
-            unlock();
+            unlock(stop_site::request_invoke, state);
             node->invoke_fn(node);
 #if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
             // Always revisit the source, even when the callback destroyed itself.
@@ -112,26 +157,42 @@ public:
             const volatile auto source_state = stop_requested();
             (void)source_state;
 #endif
-            (void)lock();
-            // A self-destructor only writes this stack flag. Never dereference
-            // node again in that case, including for the strict lifetime probe.
-            if (!removed) {
+            state = lock();
+            // A destructor on this thread only wrote the stack record. Never
+            // dereference node again in that case, including for the strict
+            // lifetime probe.
+            if (status != invocation_status::destroyed_on_requester) {
 #if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
                 const volatile auto* live_node = node;
                 const auto node_function = live_node->invoke_fn;
                 (void)node_function;
 #endif
-                node->removed = nullptr;
-                // Publish callback side effects to the waiting destructor.
-                // seq_cst closes the store-buffer pattern when notify checks
-                // a waiter count with a plain load and could miss the waiter.
-                // Notify while locked: the waiter must reacquire this lock
-                // before freeing the atomic's storage.
-                node->completion.store(1, std::memory_order_seq_cst);
-                node->completion.notify_all();
+                node->status = nullptr;
+                // Only a destructor that recorded awaited under this lock waits
+                // for completion. One arriving later sees status == nullptr and
+                // returns without reading completion.
+                if (status == invocation_status::awaited) {
+                    // Publish callback side effects to the waiting destructor.
+                    // seq_cst closes the store-buffer pattern when notify checks
+                    // a waiter count with a plain load and could miss the waiter.
+                    // Notify while locked: the waiter must reacquire this lock
+                    // before freeing the atomic's storage.
+                    node->completion.store(1, std::memory_order_seq_cst);
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+                    __forge_stop_detail::test_event(stop_site::completion_published);
+#endif
+                    node->completion.notify_all();
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+                    // The waiter cannot reclaim the node before this thread
+                    // unlocks; without the final handoff this read is a use
+                    // after free that ASan reports.
+                    const auto notified_function = live_node->invoke_fn;
+                    (void)notified_function;
+#endif
+                }
             }
         }
-        unlock();
+        unlock(stop_site::request_final, state);
         return true;
     }
 
@@ -149,9 +210,10 @@ private:
     friend class inplace_stop_callback;
 
     bool try_add_callback(__forge_stop_detail::callback_base* cb) const noexcept {
+        using __forge_stop_detail::stop_site;
         const auto state = lock();
         if ((state & kStopRequested) != 0) {
-            unlock();
+            unlock(stop_site::add_stopped, state);
             return false;
         }
 
@@ -161,27 +223,33 @@ private:
             callbacks_->prev = &cb->next;
         }
         callbacks_ = cb;
-        unlock();
+        unlock(stop_site::add, state);
         return true;
     }
 
     void remove_callback(__forge_stop_detail::callback_base* cb) const noexcept {
-        (void)lock();
+        using __forge_stop_detail::invocation_status;
+        using __forge_stop_detail::stop_site;
+        const auto state = lock();
         if (cb->prev) {
             unlink(cb);
-            unlock();
+            unlock(stop_site::remove_pending, state);
             return;
         }
-        if (!cb->removed) {
-            unlock();
+        if (!cb->status) {
+            unlock(stop_site::remove_completed, state);
             return; // invocation and its final node accesses have completed
         }
         if (cb->request_thread == std::this_thread::get_id()) {
-            *cb->removed = true;
-            unlock();
-            return; // the requester will use only its stack flag
+            *cb->status = invocation_status::destroyed_on_requester;
+            unlock(stop_site::remove_self, state);
+            return; // the requester will use only its stack record
         }
-        unlock();
+        // Record the wait in the same critical section that observed the
+        // invocation unfinished. The requester reads the record under this
+        // lock, so it stores and notifies completion exactly when awaited.
+        *cb->status = invocation_status::awaited;
+        unlock(stop_site::remove_await, state);
 #if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
         if (__forge_stop_detail::deregister_wait_hook) {
             __forge_stop_detail::deregister_wait_hook(
@@ -195,8 +263,7 @@ private:
         }
         // completion may become visible before notify_all finishes. Exclude the
         // requester's last node access before allowing storage reclamation.
-        (void)lock();
-        unlock();
+        unlock(stop_site::remove_handoff, lock());
     }
 
     void unlink(__forge_stop_detail::callback_base* cb) const noexcept {
@@ -208,8 +275,15 @@ private:
         cb->prev = nullptr;
     }
 
-    // Successful acquire pairs with the preceding owner's release unlock.
-    // Failed CAS, polling and wait only select a retry, so need no ordering.
+    // Lock word invariants:
+    // - kLockWaiters is set only while kLocked is set, by a contender's CAS on
+    //   a locked word. Only unlock() clears either bit, and it clears both.
+    // - While a thread holds the lock, the only write to state_ by any other
+    //   thread is that contender CAS. A new writer of state_ must keep this
+    //   true, or unlock() would silently discard its write.
+    // Successful acquire pairs with the preceding owner's unlock. Failed CAS,
+    // polling, the waiter-bit CAS and wait only select a retry, so they need
+    // no ordering.
     std::uint32_t lock() const noexcept {
         auto state = state_.load(std::memory_order_relaxed);
         for (;;) {
@@ -217,24 +291,85 @@ private:
             check_lifetime(state);
 #endif
             if ((state & kLocked) == 0) {
+                // An unlocked word never carries kLockWaiters.
                 if (state_.compare_exchange_weak(state, state | kLocked,
                         std::memory_order_acquire, std::memory_order_relaxed)) {
                     return state;
                 }
             } else {
-                state_.wait(state, std::memory_order_relaxed);
-                state = state_.load(std::memory_order_relaxed);
+                state = wait_for_unlock(state);
             }
         }
     }
 
-    void unlock() const noexcept {
-        state_.fetch_and(~kLocked, std::memory_order_release);
-        state_.notify_all();
+    // Precondition: state was loaded from state_ and has kLocked set.
+    // Returns a freshly loaded word for lock() to examine again.
+    std::uint32_t wait_for_unlock(std::uint32_t state) const noexcept {
+        // Holds last a few stores. Re-read before publishing the waiter bit,
+        // which would take the owner's cache line and make its unlock notify.
+        for (int attempt = 0; attempt != kLockBackoffYields; ++attempt) {
+            std::this_thread::yield();
+            state = state_.load(std::memory_order_relaxed);
+            if ((state & kLocked) == 0) return state;
+        }
+        if ((state & kLockWaiters) == 0) {
+            // Succeeds only on the locked word just observed, so the unlock
+            // that ends this hold reads the bit. Relaxed: nothing is published.
+            if (!state_.compare_exchange_weak(state, state | kLockWaiters,
+                    std::memory_order_relaxed, std::memory_order_relaxed)) {
+                return state; // examine again; never wait on an unarmed word
+            }
+            state |= kLockWaiters;
+        }
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+        __forge_stop_detail::test_event(__forge_stop_detail::stop_site::lock_park);
+#endif
+        // state carries kLocked | kLockWaiters: the unlock ending this hold
+        // reads the bit and notifies after releasing.
+        state_.wait(state, std::memory_order_relaxed);
+        return state_.load(std::memory_order_relaxed);
+    }
+
+    // known: the word as this critical section leaves it, without kLocked and
+    // kLockWaiters: the value lock() returned, plus kStopRequested if this
+    // section set it.
+    void unlock([[maybe_unused]] __forge_stop_detail::stop_site site,
+                std::uint32_t known) const noexcept {
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+        __forge_stop_detail::test_event(site);
+#endif
+        // By the invariants above the word is known | kLocked, possibly with
+        // kLockWaiters, so this exchange is fetch_and(~(kLocked | kLockWaiters))
+        // without a load or CAS loop, and its result decides the wake exactly.
+        // seq_cst rather than release: it also orders this write before the
+        // waiter check inside the library's notify. A wake missed there would
+        // be permanent, because no later unlock sees the cleared bit.
+        const auto previous = state_.exchange(known, std::memory_order_seq_cst);
+#if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+        check_lifetime(previous); // the source was destroyed during the hold
+#endif
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS) || defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
+        if ((previous & ~kLockWaiters) != (known | kLocked)) {
+            std::fputs("inplace stop source lock word changed while held\n", stderr);
+            std::abort();
+        }
+#endif
+        if ((previous & kLockWaiters) != 0) {
+#if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
+            __forge_stop_detail::test_event(__forge_stop_detail::stop_site::lock_notify);
+#endif
+            // After the release, so woken waiters can take the lock. Wake all
+            // of them: the bit is now clear for every waiter, and those that
+            // lose the race publish it again before parking.
+            state_.notify_all();
+        }
     }
 
     static constexpr std::uint32_t kStopRequested = 1;
     static constexpr std::uint32_t kLocked = 2;
+    static constexpr std::uint32_t kLockWaiters = 4;
+    // Read-only yields before a contender publishes kLockWaiters.
+    static constexpr int kLockBackoffYields = 4;
 #if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
     static constexpr std::uint32_t kDestroyed = 0x80000000u;
     static void check_lifetime(std::uint32_t state) noexcept {
