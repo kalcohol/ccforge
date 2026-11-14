@@ -165,7 +165,65 @@ void trmm(A a, C c, Triangle triangle, Diagonal diagonal) {
     else std::linalg::triangular_matrix_right_product(a, triangle, diagonal, c);
     for (std::size_t i = 0; i < c.extent(0); ++i)
         for (std::size_t j = 0; j < c.extent(1); ++j)
-            exact(T(c[i, j]), ref[i * c.extent(1) + j]);
+            EXPECT_LE(std::abs(T(c[i, j]) - ref[i * c.extent(1) + j]),
+                16 * std::numeric_limits<decltype(std::abs(T{}))>::epsilon() * a.extent(0) *
+                (1 + std::abs(ref[i * c.extent(1) + j])));
+}
+
+// Fixed rectangular outputs also check that dispatch through a plain transpose
+// retains default accessors and reaches the contiguous update branches.
+template<bool Left, class AT, class CT, class AL, class CL, bool Transpose>
+void typed_trmm() {
+    using namespace std::linalg;
+    using AE = std::extents<std::size_t, 7, 7>;
+    using CE = std::extents<std::size_t, Left ? 7 : 9, Left ? 9 : 7>;
+    const typename AL::template mapping<AE> am(AE{});
+    const typename CL::template mapping<CE> cm(CE{});
+    std::vector<AT> ad(am.required_span_size() + 1, AT(-777));
+    std::vector<CT> cd(cm.required_span_size() + 1, CT(-777));
+    const std::mdspan<AT, AE, AL> original(ad.data(), am);
+    const auto a = [&] {
+        if constexpr (Transpose) return transposed(original);
+        else return original;
+    }();
+    const std::mdspan<CT, CE, CL> c(cd.data(), cm);
+    static_assert(std::is_same_v<typename decltype(a)::accessor_type,
+                                 std::default_accessor<AT>>);
+    static_assert(std::is_same_v<typename decltype(c)::accessor_type,
+                                 std::default_accessor<CT>>);
+    fill(a);
+    trmm<Left>(a, c, upper_triangle, explicit_diagonal);
+    trmm<Left>(a, c, lower_triangle, explicit_diagonal);
+    for (std::size_t i = 0; i < 7; ++i)
+        a[i, i] = AT(std::numeric_limits<double>::quiet_NaN());
+    trmm<Left>(a, c, upper_triangle, implicit_unit_diagonal);
+    trmm<Left>(a, c, lower_triangle, implicit_unit_diagonal);
+    std::vector<bool> used(cd.size(), false);
+    for (std::size_t i = 0; i < c.extent(0); ++i)
+        for (std::size_t j = 0; j < c.extent(1); ++j) used[cm(i, j)] = true;
+    for (std::size_t p = 0; p < cd.size(); ++p)
+        if (!used[p]) EXPECT_EQ(cd[p], CT(-777));
+}
+
+template<class AT, class CT>
+void mixed_trmm() {
+    typed_trmm<true, AT, CT, std::layout_left, std::layout_left, false>();
+    typed_trmm<false, AT, CT, std::layout_right, std::layout_right, false>();
+}
+
+TEST(LinalgProductLayouts, MixedElementTriangularProducts) {
+    mixed_trmm<float, double>();
+    mixed_trmm<double, float>();
+    mixed_trmm<double, std::complex<double>>();
+}
+
+TEST(LinalgProductLayouts, PlainTransposeStaticRectangularProducts) {
+    typed_trmm<true, double, double, std::layout_right, std::layout_left, true>();
+    typed_trmm<false, double, double, std::layout_left, std::layout_right, true>();
+    typed_trmm<true, double, double, std::layout_right_padded<8>,
+               std::layout_left_padded<8>, true>();
+    typed_trmm<false, double, double, std::layout_left_padded<8>,
+               std::layout_right_padded<8>, true>();
 }
 
 template<class Triangle, class A, class B, class C>
@@ -198,7 +256,7 @@ void structured(A a, B b, C c, Triangle triangle) {
 template<class T, class AL, class BL>
 void pair() {
     using namespace std::linalg;
-    for (std::size_t s : {0, 1, 3, 9}) {
+    for (std::size_t s : {0, 1, 2, 3, 7, 9, 33, 64}) {
         const std::size_t n = s + 2;
         matrix<T, AL> aa(s, s), cc(s, n);
         matrix<T, BL> bb(s, n), ee(s, n), rr(n, s);
@@ -255,24 +313,64 @@ TEST(LinalgProductLayouts, MixedLayoutsAndAllTriangularTags) {
     pair<float, std::layout_right, std::layout_left>();
 }
 
+template<class Triangle, class Order, class CL>
+void packed_trmm(Triangle triangle) {
+    using namespace std::linalg;
+    using AL = layout_blas_packed<Triangle, Order>;
+    constexpr bool upper = std::is_same_v<Triangle, upper_triangle_t>;
+    for (std::size_t n : {1, 2, 3, 7, 33, 64}) {
+        matrix<double, AL> aa(n, n);
+        matrix<double, CL> right(n + 2, n), left(n, n + 2);
+        auto a = aa.view();
+        for (std::size_t i = 0; i < n; ++i)
+            for (std::size_t j = 0; j < n; ++j)
+                if (upper ? i <= j : i >= j) a[i, j] = value<double>(i, j);
+        trmm<false>(a, right.view(), triangle, explicit_diagonal);
+        trmm<true>(a, left.view(), triangle, explicit_diagonal);
+        for (std::size_t i = 0; i < n; ++i)
+            a[i, i] = std::numeric_limits<double>::quiet_NaN();
+        trmm<false>(a, right.view(), triangle, implicit_unit_diagonal);
+        trmm<true>(a, left.view(), triangle, implicit_unit_diagonal);
+        padding(right); padding(left);
+    }
+}
+
+TEST(LinalgProductLayouts, PackedTriangularInputs) {
+    using namespace std::linalg;
+    packed_trmm<upper_triangle_t, row_major_t, std::layout_right>(upper_triangle);
+    packed_trmm<lower_triangle_t, row_major_t, std::layout_right>(lower_triangle);
+    packed_trmm<upper_triangle_t, column_major_t, std::layout_right>(upper_triangle);
+    packed_trmm<lower_triangle_t, column_major_t, std::layout_right>(lower_triangle);
+    packed_trmm<upper_triangle_t, row_major_t, std::layout_left>(upper_triangle);
+    packed_trmm<lower_triangle_t, row_major_t, std::layout_left>(lower_triangle);
+    packed_trmm<upper_triangle_t, column_major_t, std::layout_left>(upper_triangle);
+    packed_trmm<lower_triangle_t, column_major_t, std::layout_left>(lower_triangle);
+}
+
 TEST(LinalgProductLayouts, ComposedViews) {
     using namespace std::linalg;
-    matrix<std::complex<double>, std::layout_right_padded<8>> aa(9, 9);
-    matrix<std::complex<double>, std::layout_left> bb(5, 9), cc(9, 5), ee(9, 5);
-    fill(aa.view()); fill(bb.view()); fill(ee.view());
-    auto a = conjugated(scaled(2.0, transposed(aa.view())));
-    auto b = conjugated(transposed(bb.view()));
-    gemm(a, b, cc.view(), ee.view());
-    structured(a, b, cc.view(), upper_triangle);
-    structured(a, b, cc.view(), lower_triangle);
-    trmm<true>(a, cc.view(), upper_triangle, explicit_diagonal);
-    trmm<true>(a, cc.view(), lower_triangle, implicit_unit_diagonal);
-    trmm<true>(a, cc.view(), lower_triangle, explicit_diagonal);
-    trmm<true>(a, cc.view(), upper_triangle, implicit_unit_diagonal);
-    trmm<false>(a, bb.view(), upper_triangle, implicit_unit_diagonal);
-    trmm<false>(a, bb.view(), lower_triangle, explicit_diagonal);
-    trmm<false>(a, bb.view(), upper_triangle, explicit_diagonal);
-    trmm<false>(a, bb.view(), lower_triangle, implicit_unit_diagonal);
+    for (std::size_t n : {1, 2, 3, 7, 33, 64}) {
+        matrix<std::complex<double>, std::layout_right_padded<8>> aa(n, n);
+        matrix<std::complex<double>, std::layout_left> bb(n + 2, n), cc(n, n + 2), ee(n, n + 2);
+        fill(aa.view()); fill(bb.view()); fill(ee.view());
+        auto a = conjugated(scaled(2.0, transposed(aa.view())));
+        auto b = conjugated(transposed(bb.view()));
+        gemm(a, b, cc.view(), ee.view());
+        structured(a, b, cc.view(), upper_triangle);
+        structured(a, b, cc.view(), lower_triangle);
+        trmm<true>(a, cc.view(), upper_triangle, explicit_diagonal);
+        trmm<true>(a, cc.view(), lower_triangle, implicit_unit_diagonal);
+        trmm<true>(a, cc.view(), lower_triangle, explicit_diagonal);
+        trmm<true>(a, cc.view(), upper_triangle, implicit_unit_diagonal);
+        trmm<false>(a, bb.view(), upper_triangle, implicit_unit_diagonal);
+        trmm<false>(a, bb.view(), lower_triangle, explicit_diagonal);
+        trmm<false>(a, bb.view(), upper_triangle, explicit_diagonal);
+        trmm<false>(a, bb.view(), lower_triangle, implicit_unit_diagonal);
+        trmm<false>(a, transposed(cc.view()), upper_triangle, explicit_diagonal);
+        trmm<false>(a, transposed(cc.view()), lower_triangle, explicit_diagonal);
+        trmm<false>(a, transposed(cc.view()), upper_triangle, implicit_unit_diagonal);
+        trmm<false>(a, transposed(cc.view()), lower_triangle, implicit_unit_diagonal);
+    }
 }
 
 // A non-pointer handle ensures kernels cannot accidentally bypass access().

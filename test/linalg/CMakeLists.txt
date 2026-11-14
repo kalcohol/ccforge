@@ -83,9 +83,10 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
     forge_add_linalg_runtime_test(test_linalg_level2 test_linalg_level2.cpp linalg_level2)
     forge_add_linalg_runtime_test(test_linalg_level3 test_linalg_level3.cpp linalg_level3)
     forge_add_linalg_runtime_test(test_linalg_product_layouts test_linalg_product_layouts.cpp linalg_product_layouts)
-    # The scalar references and strip kernels intentionally compare FP bits.
+    forge_add_linalg_runtime_test(test_linalg_trmm_alloc test_linalg_trmm_alloc.cpp linalg_trmm_alloc)
+    # Non-TRMM scalar references and strip kernels intentionally compare FP bits.
     if(MSVC)
-        target_compile_options(test_linalg_product_layouts PRIVATE /fp:strict)
+        target_compile_options(test_linalg_product_layouts PRIVATE /fp:strict /bigobj)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|Zig)$")
         target_compile_options(test_linalg_product_layouts PRIVATE -fno-fast-math -ffp-contract=off)
     endif()
