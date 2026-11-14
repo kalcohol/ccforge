@@ -328,6 +328,11 @@ forge_add_execution_runtime_test(
     test_execution_inline_scheduler.cpp
     execution_inline_scheduler)
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
+forge_add_execution_runtime_test(test_stop_intrusive
+    test_execution_stop_intrusive.cpp execution_stop_intrusive)
+target_compile_definitions(test_stop_intrusive PRIVATE
+    FORGE_EXECUTION_TEST_STOP_HOOKS=1)
+set_tests_properties(execution_stop_intrusive PROPERTIES TIMEOUT 180)
 forge_add_execution_runtime_test(test_execution_stop_callback_lifetime
     test_execution_stop_callback_lifetime.cpp execution_stop_callback_lifetime)
 
@@ -336,6 +341,7 @@ forge_add_execution_runtime_test(test_execution_stop_callback_lifetime
 forge_add_execution_runtime_test(test_execution_stop_callback_strict_lifetime
     test_execution_stop_callback_lifetime.cpp execution_stop_callback_strict_lifetime)
 target_sources(test_execution_stop_callback_strict_lifetime PRIVATE
+    "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_stop_intrusive.cpp"
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_stop_token.cpp"
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_when_all.cpp"
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_counting_scope.cpp"
@@ -343,7 +349,8 @@ target_sources(test_execution_stop_callback_strict_lifetime PRIVATE
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_counting_scope_stress.cpp"
     "${FORGE_EXECUTION_RUNTIME_DIR}/test_execution_spawn_future.cpp")
 target_compile_definitions(test_execution_stop_callback_strict_lifetime PRIVATE
-    FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1)
+    FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME=1
+    FORGE_EXECUTION_TEST_STOP_HOOKS=1)
 forge_add_execution_runtime_test(test_execution_stop_callback_allocations
     test_execution_stop_callback_allocations.cpp execution_stop_callback_allocations)
 target_compile_definitions(test_execution_stop_callback_allocations PRIVATE
@@ -354,7 +361,7 @@ if(MSVC)
     target_compile_options(test_execution_stop_callback_strict_lifetime PRIVATE /bigobj)
 endif()
 add_custom_target(test_stop_callback_strict_lifetime
-    DEPENDS test_execution_stop_callback_strict_lifetime test_execution_stop_callback_allocations)
+    DEPENDS test_stop_intrusive test_execution_stop_callback_strict_lifetime test_execution_stop_callback_allocations)
 forge_add_execution_runtime_test(test_execution_run_loop test_execution_run_loop.cpp execution_run_loop)
 forge_add_execution_runtime_test(test_execution_adaptors test_execution_adaptors.cpp execution_adaptors)
 forge_add_execution_runtime_test(

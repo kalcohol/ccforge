@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <execution>
+#include "../../stop_completion_probe.hpp"
 
 #include <functional>
 #include <atomic>
@@ -494,6 +495,38 @@ TEST(StopCallbackLifetimeTest, FutureConsumerStopCanReleaseLastOperationOwner) {
     source.request_stop();
     EXPECT_EQ(completions, 1);
     EXPECT_EQ(owner.object, nullptr);
+    (void)std::this_thread::sync_wait(scope.join());
+}
+
+TEST(StopCallbackLifetimeTest, WhenAllDeregistersBeforeCompletionReleasesSource) {
+    forge_test::stop_completion_probe probe;
+    auto op = std::execution::connect(
+        std::execution::when_all(std::execution::just(1), std::execution::just(2)),
+        probe.get_receiver());
+    std::execution::start(op);
+    probe.wait();
+    EXPECT_FALSE(probe.source);
+}
+
+TEST(StopCallbackLifetimeTest, FutureDeregistersBeforeCompletionReleasesSource) {
+    std::execution::simple_counting_scope scope;
+    forge_test::stop_completion_probe probe;
+    auto future = std::execution::spawn_future(std::execution::just(1), scope.get_token());
+    auto op = std::execution::connect(std::move(future), probe.get_receiver());
+    std::execution::start(op);
+    probe.wait();
+    EXPECT_FALSE(probe.source);
+    (void)std::this_thread::sync_wait(scope.join());
+}
+
+TEST(StopCallbackLifetimeTest, CountingWrapCompletionReleasesSourceWithRetainedOperation) {
+    std::execution::counting_scope scope;
+    forge_test::stop_completion_probe probe;
+    auto op = std::execution::connect(
+        scope.get_token().wrap(std::execution::just(1)), probe.get_receiver());
+    std::execution::start(op);
+    probe.wait();
+    EXPECT_FALSE(probe.source);
     (void)std::this_thread::sync_wait(scope.join());
 }
 

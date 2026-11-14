@@ -232,8 +232,8 @@ TEST(ExecutionStaticOpstateAllocations, ReceiverTokenControlsTopLevelRegistratio
 }
 
 TEST(ExecutionStaticOpstateAllocations, LargeOverAlignedStopCallbackBeforeChildStart) {
-    // The library's inplace_stop_callback has its own control-block allocation.
-    // Use a non-allocating token to isolate when_all's callback storage.
+    // Use an over-aligned custom token to verify when_all's callback storage
+    // beyond the alignment and size of the library's inplace_stop_callback.
     bool requested = false;
     int live_callbacks = 0;
     const large_stop_token token{&requested, &live_callbacks};

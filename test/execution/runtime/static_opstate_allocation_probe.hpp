@@ -147,10 +147,12 @@ struct calibration_callback {
 
 std::size_t allocations_per_registration() {
     std::inplace_stop_source source;
-    return allocation_probe::measure([&] {
+    const auto allocations = allocation_probe::measure([&] {
         std::inplace_stop_callback<calibration_callback> callback(
             source.get_token(), calibration_callback{});
     });
+    EXPECT_EQ(allocations, 0u);
+    return allocations;
 }
 
 } // namespace allocation_probe

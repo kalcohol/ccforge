@@ -60,6 +60,40 @@ struct allocation_sender {
 };
 } // namespace
 
+TEST(StopCallbackAllocationTest, RegistrationAllocatesNothing) {
+    EXPECT_EQ(allocation_probe::allocations_per_registration(), 0u);
+    for (bool stopped : {false, true}) {
+        std::inplace_stop_source source;
+        if (stopped) source.request_stop();
+        int calls = 0;
+        const auto allocations = allocation_probe::measure([&] {
+            allocation_probe::fail_allocations = true;
+            for (int index = 0; index != 128; ++index) {
+                std::inplace_stop_callback callback(source.get_token(), [&] { ++calls; });
+            }
+            allocation_probe::fail_allocations = false;
+        });
+        EXPECT_EQ(allocations, 0u);
+        EXPECT_EQ(calls, stopped ? 128 : 0);
+    }
+}
+
+TEST(StopCallbackAllocationTest, RegistrationInsideRequestAllocatesNothing) {
+    std::inplace_stop_source source;
+    int calls = 0;
+    const auto allocations = allocation_probe::measure([&] {
+        allocation_probe::fail_allocations = true;
+        std::inplace_stop_callback outer(source.get_token(), [&] {
+            ++calls;
+            std::inplace_stop_callback nested(source.get_token(), [&] { ++calls; });
+        });
+        source.request_stop();
+        allocation_probe::fail_allocations = false;
+    });
+    EXPECT_EQ(allocations, 0u);
+    EXPECT_EQ(calls, 2);
+}
+
 TEST(StopCallbackAllocationTest, OverlappingCompletionPreservesReferencesWhenAllocationFails) {
     for (int expected : {0, 1}) {
         std::execution::counting_scope scope;
