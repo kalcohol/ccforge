@@ -11,6 +11,7 @@
 #   gcc16   GCC 16 container, -std=c++26. Verifies partial-native stand-aside
 #           for std::simd, padded mdspan layouts, and std::constant_wrapper,
 #           plus complete std::submdspan handoff and the std::hive backport.
+#           Runs linalg against native padded layouts and submdspan.
 #           Also runs the SIMD-only suite
 #           at -std=c++23, where a declaration-free <simd> selects the backport.
 #   llvm    LLVM/libc++ container, -std=c++26. Backports inject where libc++ lacks
@@ -108,7 +109,7 @@ FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS=(
     -DFORGE_TEST_ENABLE_CONSTANT_WRAPPER=ON
     -DFORGE_TEST_ENABLE_UNIQUE_RESOURCE=OFF
     -DFORGE_TEST_ENABLE_SUBMDSPAN=ON
-    -DFORGE_TEST_ENABLE_LINALG=OFF
+    -DFORGE_TEST_ENABLE_LINALG=ON
     -DFORGE_TEST_ENABLE_FORGE=OFF
     -DFORGE_TEST_ENABLE_NATIVE_HANDOFF=ON
 )

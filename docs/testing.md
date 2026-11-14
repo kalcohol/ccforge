@@ -119,11 +119,13 @@ scripts/verify-native.sh [gcc16|gcc16-slim|llvm|zig|local|gcc-exec|tsan|asan|all
   `long double` 精度与范围
 - `gcc16`：GCC 16 容器，在 C++26 验证 `std::simd`、pre-P4206
   `std::constant_wrapper` 与 padded mdspan layouts 的 partial-native stand-aside，
-  以及 `std::submdspan` 的 complete-native stand-aside；另在 C++23 运行
+  以及 `std::submdspan` 的 complete-native stand-aside；构建并运行 linalg 测试组，
+  验证 linalg backport 与 native padded layouts、native submdspan 的组合；另在 C++23 运行
   SIMD-only suite，确认
   declaration-free `<simd>` 不会被误判为 partial native，而会正常注入 backport
 - `gcc16-slim`：GCC 16 C++26，断言上述五项 probe 状态，只构建并运行 `NativeHandoff`
-  单翻译单元检查；省去完整 Hive suite、嵌套配置测试、示例与 C++23 SIMD suite。
+  单翻译单元检查；配置时启用 linalg 测试组（包含 configure probes），但不构建或运行其测试目标；
+  省去完整 Hive suite、嵌套配置测试、示例与 C++23 SIMD suite。
   默认验证使用此精简入口；需要完整覆盖时显式运行 `gcc16`
 - `gcc-exec`：GCC 16 容器，覆盖 libstdc++ 上的 `std::execution` backport 与全部
   `forge::` runtime、resource、IO、erasure 测试子组，不跑 SIMD probes。
