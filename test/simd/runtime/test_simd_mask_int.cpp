@@ -396,4 +396,62 @@ TEST(SimdMaskInteger, MaskedIntegerPlus) {
     static_assert(check_masked_plus<std::int16_t, 8>(0x3c));
     static_assert(check_masked_plus<std::uint64_t, 2>(0b11));
 }
+
+// big + 1 rounds back to big while 1 + 1 + big does not, so the bits show the
+// order and the number of additions; a lone -0.0 shows that no zero is added.
+template<class T>
+constexpr T order_sample(int i) {
+    constexpr T big = std::is_same_v<T, float> ? T(16777216.0) : T(9007199254740992.0);
+    return i % 3 == 0 ? T(1) : (i % 3 == 1 ? big : -T(0));
+}
+
+template<class T, int N>
+constexpr bool check_masked_order(std::uint64_t bits) {
+    using V = ds::basic_vec<T, ds::__fixed_size_abi<N>>;
+    const V values([](auto i) { return order_sample<T>(int(i)); });
+    const typename V::mask_type mask([bits](auto i) { return ((bits >> int(i)) & 1u) != 0; });
+    // The first selected lane starts the sum; each later one is added in lane order.
+    const T identity = T(7);
+    T expected = identity;
+    bool started = false;
+    for (int i = 0; i < N; ++i) {
+        if (((bits >> i) & 1u) == 0) continue;
+        expected = started ? T(expected + values[i]) : values[i];
+        started = true;
+    }
+    return same_bits(ds::reduce(values, mask, std::plus<>{}, identity), expected) &&
+        same_bits(ds::reduce(values, mask), started ? expected : T());
+}
+
+template<class T, int N>
+void check_masked_order_width() {
+    SCOPED_TRACE(N);
+    if constexpr (N <= 8) {
+        for (std::uint64_t bits = 0; bits < (std::uint64_t{1} << N); ++bits)
+            EXPECT_TRUE((check_masked_order<T, N>(bits)));
+    } else {
+        for (const std::uint64_t bits : {std::uint64_t{0}, ~std::uint64_t{0}, std::uint64_t{0x5555555555555555},
+                 std::uint64_t{0xaaaaaaaaaaaaaaaa}, std::uint64_t{0x0123456789abcdef}})
+            EXPECT_TRUE((check_masked_order<T, N>(bits)));
+        for (int i = 0; i < N; ++i) {
+            EXPECT_TRUE((check_masked_order<T, N>(std::uint64_t{1} << i)));
+            EXPECT_TRUE((check_masked_order<T, N>(~(std::uint64_t{1} << i))));
+        }
+    }
+}
+
+template<int... N>
+void check_masked_order_widths(std::integer_sequence<int, N...>) {
+    (check_masked_order_width<float, N>(), ...);
+    (check_masked_order_width<double, N>(), ...);
+}
+
+TEST(SimdMaskInteger, MaskedFloatingReduceOrder) {
+    check_masked_order_widths(std::integer_sequence<int, 1, 2, 3, 4, 5, 8, 9, 16, 17, 32>{});
+    static_assert(check_masked_order<float, 8>(0xa5));
+    static_assert(check_masked_order<double, 4>(0b0110));
+    static_assert(check_masked_order<float, 16>(0x8421));
+    static_assert(check_masked_order<double, 3>(0b100));
+    static_assert(check_masked_order<float, 1>(0));
+}
 } // namespace
