@@ -93,6 +93,11 @@ masked 形式跳过未选中 lane，不向非空归约注入 identity；空 mask
 整数元素与 `plus<>` 的 masked `reduce` 在 Clang（3 lane 及以上）和 GCC（完整 128-bit 块）上
 改用无分支形式：在同宽无符号类型中累加每个 lane 与其 mask lane 的按位与，返回值规则不变。
 这一路径上的有符号溢出（标准中为未定义行为）按二进制补码回绕，常量求值也不会因此失败。
+其余 masked `reduce`（浮点、complex、其他运算，以及不走上述路径的宽度）在 Clang 下用从 lane 1
+开始的循环检查首个选中 lane 之后的各 lane，循环展开后下标在编译期可知，运算及其顺序不变；
+若循环从首个选中 lane 之后开始，mask 以运行期下标读取，在 x86-64 上测得 Clang 19 会把
+直接消费的比较结果生成的 mask 留在栈上，并把 float ×4 比较标量化。
+GCC 与其他编译器保留从首个选中 lane 之后开始的循环。
 masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>::max()` /
 `numeric_limits<T>::lowest()`。`all_of`/`any_of` 在 GCC 使用整数 lane 的可预测早退出，
 与旧 `bool` 表示生成的算法相同；其他编译器使用无分支的整数 AND/OR 累积，
@@ -101,7 +106,9 @@ masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>:
 统计等于全一的 lane（比较、movemask 与 popcnt）；其他情形从 2 lane（Clang）或 4 lane（其他编译器）起
 在 lane 类型中按模依次减去每个 lane（置位 lane 为全一，相当于 -1，累减结果即计数），
 更短的 mask 对每个 lane 的低位求和。
-`reduce_min_index`/`reduce_max_index` 分别正序、逆序扫描整数 lane，遇到 true 返回索引。
+`reduce_min_index`/`reduce_max_index` 分别正序、逆序扫描整数 lane，遇到 true 返回索引；
+3 lane 及以上的 `reduce_max_index` 在 lane 2 及以上均未置位时直接返回 lane 1 的最低位（1 或 0），
+省去最后一次比较。
 运行期与常量求值共用这些循环。
 
 测量使用 GCC 16.2、Clang 19.1.7，x86-64 baseline 与 `-march=native`
@@ -111,11 +118,13 @@ masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>:
 基准还对代码位置敏感：只在代码前插入 32 字节填充，计时循环指令相同的 kernel 就可能相差 10% 以上，
 因此另用 `-falign-functions=64 -falign-loops=64` 构建做交叉检查，下列结论在两种构建下一致。
 下列比值为相对旧 `bool` 表示的 candidate/base，取 15 组交错配对样本的中位数，越低越快。
-528 个涉及 mask 的 kernel 几何均值为 GCC 0.83、GCC native 0.75、Clang 0.81、Clang native 0.73。
+528 个涉及 mask 的 kernel 几何均值为 GCC 0.83、GCC native 0.75、Clang 0.79、Clang native 0.72。
 至少 4 lane 的 `select`、`compare_select_*`、`mask_and_select`、`mask_or_select`
 各 kernel 在各配置下的中位比值为 0.17–0.62，最佳组合约 0.08；GCC 的 `compare_reduce_count`
-为 0.15–0.61，`convert_mask_select_double` 为 0.28–0.94；
-走无分支路径的 int32 masked `reduce`（存储的 mask 或直接消费比较结果）为 0.08–0.97。
+为 0.15–0.61，`convert_mask_select_double` 为 0.29–0.95；
+走无分支路径的 int32 masked `reduce`（存储的 mask 或直接消费比较结果）为 0.08–0.98；
+Clang 下 3 lane 及以上的 float/double masked `reduce` 直接消费比较结果时为 0.31–0.45，
+使用存储的 mask 时为 0.60–1.01。
 
 水平测试对输入分布敏感。原输入让 `all_of` 在 lane 0、`any_of`/`none_of`
 在 lane 1 决定，偏向早退出；全真 `all_of` 和全假 `any_of`/`none_of` 则要求完整扫描。
@@ -123,32 +132,34 @@ masked `reduce_min`/`reduce_max` 在空 mask 时分别返回 `numeric_limits<T>:
 
 | 水平测试 | GCC 提前决定 | GCC 完整扫描 | Clang 提前决定 | Clang 完整扫描 |
 |---|---|---|---|---|
-| stored `all_of`/`any_of`/`none_of` | 0.73–1.06 | 0.77–1.03 | all 1.25–4.01；any/none 0.81–2.42 | 0.21–1.47 |
-| fused `all_of`/`any_of`/`none_of` | 0.97–1.08 | 0.99–1.01 | all 0.72–2.56；any/none 0.28–1.05 | 0.28–1.12 |
+| stored `all_of`/`any_of`/`none_of` | 0.69–1.15 | 0.79–1.03 | all 1.24–4.01；any/none 0.82–2.45 | 0.20–1.47 |
+| fused `all_of`/`any_of`/`none_of` | 0.90–1.06 | 0.99–1.01 | all 0.72–2.56；any/none 0.27–1.05 | 0.28–1.12 |
 
 GCC 下两种表示生成同一早退出算法，差异只在具体比较指令；单 lane 的 stored 测试为
-1.0–2.0，绝对差约一个周期（旧表示约 0.25 ns/次）。Clang 对整数 mask 使用无分支归约：
+1.01–2.10，绝对差约一个周期（旧表示约 0.25 ns/次）。GCC stored 提前决定的上限 1.15 来自
+double native（2 lane）的 `none_of`：15 组样本中约半数间歇变慢，对齐构建下为 1.04，
+与上文的代码位置敏感一致。Clang 对整数 mask 使用无分支归约：
 答案由前几个 lane 决定时慢于旧表示的早退出分支链，需要完整扫描时明显更快；单 lane 为 0.99–1.01。
 `reduce_min_index`/`reduce_max_index` 在两种表示下都是按 lane 早退出扫描，
-2 至 16 lane 的比值在 0.89–1.27 之间；超过 1.15 的集中在 Clang 的 2–4 lane（1.18–1.24，
+2 至 16 lane 的比值在 0.81–1.27 之间；超过 1.15 的集中在 Clang 的 2–4 lane（1.18–1.22，
 以完整扫描为主）、Clang native int32 ×8 的 `reduce_max_index`（1.24–1.27）
-和 GCC baseline double native（2 lane）的 `reduce_max_index`（1.21–1.22），
-另有 Clang baseline float ×8 的 `reduce_min_index`（1.21，对齐构建下为 1.00）。
-Clang 的 `reduce_count` 在 8 与 16 lane 为 0.41–0.93，GCC 在 2 lane 及以上为 0.28–1.08。
+和 GCC baseline double native（2 lane）的 `reduce_max_index`（1.21–1.23）。
+Clang 的 `reduce_count` 在 8 与 16 lane 为 0.41–0.87，GCC 在 2 lane 及以上为 0.28–1.21（见下表）。
 更大的 mask 存储仍会增加 cache footprint，真实应用应按输入分布复测。
 
 除上述水平测试、index 归约与单 lane stored 测试外，比值不低于 1.15 的组合如下：
 
 | 编译器与 ISA | kernel、元素类型与 lane 数 | 近似比值 |
 |---|---|---|
-| Clang baseline | stored `reduce_count`，4 lane | 1.47–1.48 |
-| Clang native AVX2 | stored `reduce_count`，4 lane | 1.17–1.24 |
+| Clang baseline | stored `reduce_count`，4 lane | 1.47–1.54 |
+| Clang native AVX2 | stored `reduce_count`，4 lane | 1.17–1.25 |
+| GCC native AVX2 | stored `reduce_count`，double ×4（对齐构建下为 1.01） | 1.21 |
 | Clang baseline | 完整扫描 `all_of`，double native（2 lane） | 1.47 |
-| Clang baseline | `compare_masked_reduce`，float ×4 | 1.22–1.24 |
-| Clang baseline 与 native | 单 lane `select`（double）；baseline 另有单 lane `mask_or_select`（float/double） | 1.15–1.16 |
+| Clang baseline 与 native | 单 lane `select`（double）；baseline 另有单 lane `mask_or_select`（double）与 `reduce_min_op`（float，对齐构建下为 1.00） | 1.15–1.20 |
 
 4-lane `reduce_count` 需要对 16 字节（4-byte lane）或 32 字节（8-byte lane）的 mask 做水平归约，
-旧表示只需对 4 个字节求和。2-lane `all_of` 与 int32 ×8 `reduce_max_index` 的诊断观察
+旧表示只需对 4 个字节求和；GCC native 的 double ×4 一行只在部分样本中变慢，
+同样与代码位置敏感一致。2-lane `all_of` 与 int32 ×8 `reduce_max_index` 的诊断观察
 与基准对寄存器压力和布局的敏感一致：计时循环保留 12 个 barrier 地址，无分支的 2-lane AND
 需要多一个寄存器，每次迭代多一次地址重载；int32 ×8 的热路径指令在两种表示下相同，
 额外的 load 发射随栈布局变化。这些行在真实应用中的代价尚未确认。
@@ -162,6 +173,7 @@ commutative 的逐元素语义，没有显式的 associative 要求。
 当前顺序扫描是实现选择，调用者不能将从左至右的执行顺序视为可移植保证。
 浮点 `plus` 的分组变化不仅影响末位舍入，
 还可能改变对消以及中间结果的 overflow/underflow，导致明显不同的结果。
+分组不变时，多个参与运算的 NaN 返回哪个 payload 也由编译器决定（编译器可以交换加法与乘法的操作数）。
 浮点 `multiplies` 也可能因舍入或中间范围而变化；验证浮点和时应采用适合输入范围的容差，
 并单独检查对消与范围边界情形。
 min/max 对相等候选保留较早的选中元素，保留 signed zero；当前实现也保留首个
