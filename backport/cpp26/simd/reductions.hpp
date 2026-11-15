@@ -322,12 +322,25 @@ constexpr __simd_size_type reduce_min_index(const basic_mask<Bytes, Abi>& value)
 
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_max_index(const basic_mask<Bytes, Abi>& value) noexcept {
-    for (__simd_size_type i = basic_mask<Bytes, Abi>::size; i > 0; --i) {
-        if (__detail::mask_lane(value, i - 1)) {
-            return i - 1;
+    if constexpr (basic_mask<Bytes, Abi>::size > 2) {
+        for (__simd_size_type i = basic_mask<Bytes, Abi>::size - 1; i > 1; --i) {
+            if (__detail::mask_lane(value, i)) {
+                return i;
+            }
         }
+        // With no higher lane set the result is 1 or 0: the low bit of lane 1.
+        // Both compilers emitted a compare and setcc for this last test.
+        return static_cast<__simd_size_type>(__detail::mask_lane(value, 1) & 1u);
+    } else {
+        // Two-lane masks keep the plain loop: with the low-bit form there, other
+        // two-lane kernels built by GCC measured slower in the benchmark.
+        for (__simd_size_type i = basic_mask<Bytes, Abi>::size; i > 0; --i) {
+            if (__detail::mask_lane(value, i - 1)) {
+                return i - 1;
+            }
+        }
+        return 0;
     }
-    return 0;
 }
 
 constexpr bool all_of(same_as<bool> auto value) noexcept {
