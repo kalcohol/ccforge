@@ -88,7 +88,7 @@ stop bit 再加 `kStopRequested`。由于持锁期间其他线程只能设置 wa
 等价于 `fetch_and(~(kLocked | kLockWaiters))`，却不需要 load 或 CAS 循环。只有返回的旧值
 含 `kLockWaiters` 时，unlock 才在释放之后调用 `notify_all()`。必须唤醒全部等待者：unlock
 已为所有等待者清除了 waiter bit，抢锁失败者重新设置后再等待；`notify_one` 会让其余等待者
-在已清除的位上永久阻塞。
+在已清除的位上阻塞，库的等待没有超时重查时即为永久阻塞。
 
 不丢唤醒：等待者只在含 `kLocked | kLockWaiters` 的值上阻塞。该值属于某个持锁区间，而
 持锁区间内 waiter bit 不会被清除；结束该区间的 unlock 是 RMW，必然读到 waiter bit，并在
@@ -100,8 +100,8 @@ unlock 之前观察到这个值而阻塞的 wait 都有资格被这次 notify �
 唤醒延迟：负责唤醒的是读到 waiter bit 的那次 unlock。该线程若在 RMW 与 notify 之间被
 抢占，锁可能已被其他线程取得并释放，而这些 unlock 读不到 waiter bit，不会 notify；等待者
 要到该线程恢复运行才被唤醒。这是延迟而不是丢失唤醒，上界是该线程被抢占的时长。条件通知
-同时去掉了“后续任意 unlock 都会顺带唤醒”的冗余：标准库内部若漏掉一次唤醒，等待者将永久
-阻塞。下文对标准库的假设排除这种情况。
+同时去掉了“后续任意 unlock 都会顺带唤醒”的冗余：标准库内部若漏掉一次唤醒，后续 unlock
+不会补发；库的等待没有超时重查时，等待者将永久阻塞。下文对标准库的假设排除这种情况。
 
 公平性：source lock 不保证公平，刚释放锁的线程可以在被唤醒者之前再次取得锁。临界区很短、
 多个线程连续竞争同一个 source 时，各线程完成的操作数可能明显不均；被唤醒者会继续竞争，
@@ -114,13 +114,13 @@ unlock 之前观察到这个值而阻塞的 wait 都有资格被这次 notify �
 | source lock 初始 load、退让后的重读、CAS failure、lock wait 及其后的重读 | `relaxed`；只决定重试，不读取受保护数据 |
 | lock CAS success | `acquire`；不含 `kLocked` 的值只由 unlock 写入，CAS 直接读取前一个 owner 的 unlock 并与之同步，发布注册、摘链及执行状态 |
 | 设置 `kLockWaiters` 的 CAS | `relaxed`（success 与 failure）；不发布数据。它位于当前持锁区间之内，结束该区间的 unlock RMW 必然读到它；作为 RMW 也不打断 stop bit 的 release sequence |
-| unlock `exchange` | `seq_cst`；release 部分发布受保护写入并保留 stop bit；返回值精确决定是否 notify；seq_cst 还使这次写入先于标准库 notify 内部对 waiter count 的检查 |
+| unlock `exchange` | `seq_cst`；release 部分发布受保护写入并保留 stop bit；返回值精确决定是否 notify；标准库 notify 以 seq_cst load 检查 waiter count 时，seq_cst 还使这次写入先于该检查（见下文假设） |
 | unlock 的 `notify_all()` | 仅在旧值含 `kLockWaiters` 时调用，位于释放之后；不承担 publication，只访问 source 的 `state_` |
 | 设置 stop bit 的 `fetch_or` | `release`；查询可观察请求之前的写入；赢家判断和设置在同一临界区。必须保持 RMW，以保留竞争者同时设置的 waiter bit |
 | `stop_requested()` 及严格 source probe | `acquire`；与 stop 发布同步。其后对 `state_` 的写入都是 RMW，release sequence 不中断，查询保持单调 |
 | `status` 指针、`invocation_status`、`request_thread` 与链表 | 普通访问，由 source lock 保护 |
-| `completion.store(1)`（仅 `awaited`） | `seq_cst`；发布 invocation 的写入，并封闭 completion 与 notify 内部 waiter count 之间的 store-buffer 模式 |
-| `completion.load` / `completion.wait` | `acquire`；保证 invocation 返回强先发生于另一线程的 callback function 析构 |
+| `completion.store(1)`（仅 `awaited`） | `seq_cst`；标准库 notify 以 seq_cst load 检查 waiter count 时，封闭 completion 与该计数之间的 store-buffer 模式；invocation 写入对析构方的可见性另由最终锁交接保证 |
+| `completion.load` / `completion.wait` | `acquire`；与 completion store 配对。invocation 返回强先发生于另一线程的 callback function 析构，这一点同时由其后的最终锁交接保证 |
 | `completion.notify_all()`（仅 `awaited`） | 不承担 publication；在锁内调用，等待方的最后一次锁交接覆盖 storage reclamation |
 | 严格测试模式 destructor 的 `exchange(kDestroyed)` | `release`；写入 tombstone；旧值含 waiter bit 时 notify，使违反前置条件而阻塞的线程在 lifetime 检查中终止 |
 
@@ -132,9 +132,12 @@ reclamation。unlock 在释放之后的 notify 只访问 source 自身的 `state
 前置条件覆盖。completion 只从零变为一，没有 node 重注册或 completion ABA；lock word 可循环，
 但等待者只需等到能重新竞争锁，lock 的 acquire CAS 才是访问 list 的授权。
 
-completion 的 `seq_cst` store 还保证唤醒协议的顺序：若 notify 以 plain load 查询 waiter
-count，不能让通知方漏看已经登记的 waiter，同时等待方仍读取旧 completion 并进入睡眠。
-仅有 release store 不足以排除这类 store-buffer 交错；最终 source lock 交接仍负责
+completion 的 `seq_cst` store 还保证唤醒协议的顺序：若 notify 以 seq_cst load 查询 waiter
+count，通知方不会漏看已经登记的 waiter，而等待方仍读取旧 completion 并进入睡眠。
+仅有 release store 不足以排除这类 store-buffer 交错，即使计数检查是 seq_cst load 也是如此。
+若计数检查只是 plain load，`seq_cst` store 只在它本身是完整屏障的目标上足够（如 x86-64）；
+GCC/Clang 在 AArch64 上把 seq_cst store 实现为 STLR，其后的 plain load 可以在这次写入可见之前
+完成，此时需要库自身的屏障，见下文假设。最终 source lock 交接仍负责
 notify 结束前的 node storage 保护，不能由更强的 completion store 替代。unlock 的
 `exchange` 取 `seq_cst` 出于同一理由。协议不使用 `atomic_thread_fence`。
 
@@ -143,8 +146,13 @@ notify 结束前的 node storage 保护，不能由更强的 completion store �
 条件通知要求：每次实际发出的 notify 之前的写入（unlock 的 `seq_cst` exchange、completion 的
 `seq_cst` store）先于标准库在 notify 中决定是否唤醒的检查。
 
-- libstdc++：notify 以 seq_cst load 读取共享表中的 waiter count，计数为零时不唤醒；waiter 先以
-  seq_cst RMW 增加计数，再由 futex 比较值。双方都是 seq_cst，store-buffer 交错被排除。
+- libstdc++：GCC 13、14 的头文件实现中，notify 以 seq_cst load 读取共享表中的 waiter count，
+  计数为零时不唤醒；waiter 先以 seq_cst RMW 增加计数，再由 futex 比较值。双方都是 seq_cst，
+  store-buffer 交错被排除。GCC 16 把等待与唤醒移入共享库：waiter 先有限次重读值，此后每次进入
+  futex 睡眠前增加计数、醒来后减少，再由调用方重新检查值；notify 读取计数为零时同样跳过唤醒。
+  x86-64 上这次读取是普通 `mov`，与该平台 seq_cst load 的实现相同，无法据此区分 seq_cst 与
+  relaxed；unlock 的 `exchange` 与 completion 的 `seq_cst` store 在 x86-64 上都是完整屏障，
+  结论不受影响。AArch64 上 GCC 16 的计数读取顺序未经验证。
 - libc++：`atomic<uint32_t>` 使用全局表路径，notify 先对表项的 platform state 做 RMW，再读取
   contention state，waiter 以 platform state 为监视值，不依赖调用方的写入顺序；按类型选择的
   native 路径与 libstdc++ 相同。处于轮询或 yield 阶段、尚未进入睡眠的等待者已经设置 waiter bit，
@@ -152,7 +160,8 @@ notify 结束前的 node storage 保护，不能由更强的 completion store �
 - MSVC STL：notify 直接调用 `WakeByAddressAll`，是否需要唤醒由系统内部决定且未公开；`seq_cst`
   exchange 在 x64 为 `xchg`，在 ARM64 带完整屏障，调用前的写入已全局可见。
 
-若某个库以 relaxed load 检查 waiter count 且不加屏障，这一假设不成立。条件通知的测试随
+若某个库以 relaxed load 检查 waiter count 且不加屏障，而调用方的 seq_cst store 或 RMW 在该目标上
+也不是完整屏障（例如 AArch64 的常见映射），这一假设不成立。条件通知的测试随
 execution 测试组在所有测试平台运行；AArch64 上的 libstdc++ 与 MSVC ARM64 不在测试平台之列，
 只有上述静态论证。
 
@@ -226,7 +235,7 @@ node 的 `invoke_fn`；`awaited` 分支在 completion notify 之后再读取一�
 由 ASan 报告 heap-use-after-free。此时跨线程 destructor 尚不能释放 node，已自毁 node
 完全不访问。source destructor 以 release exchange 将 state 写为专用 poison bit，lock、
 unlock 与 query 检查该 bit，对仍可寻址 storage 上的延迟访问直接终止；旧值含 waiter bit
-时 destructor 还会 notify，使阻塞在 `lock()` 中的线程醒来并终止，而不是永久睡眠。ASan
+时 destructor 还会 notify，使阻塞在 `lock()` 中的线程醒来并终止，而不是继续睡眠。ASan
 继续检查已经释放的 storage。这个 probe 不延长 lifetime，也不能区分同一地址重新构造后的
 source identity。宏未定义时不增加成员或 probe。生产路径本身也需要重新访问 source。
 
@@ -249,7 +258,10 @@ source；`lock()` 设置 waiter bit 之后、`wait` 之前以 `lock_park` 调用
 重新设置 waiter bit 的接力唤醒、completion 等待、晚到 destructor 既不等待也不触发
 notify、最终锁交接阻塞到 requester unlock、destructor 在 notify 返回前观察到 completion、
 无竞争路径不发出任何 notify，以及 oversubscription 与持锁注入下的压力。每个测试带
-watchdog，丢失唤醒时以退出码 124 失败。严格目标另以 death test 检查持锁期间销毁 source
+watchdog：在 libstdc++ 上，丢失的唤醒使线程永久阻塞，测试以退出码 124 失败；Linux 上的
+libc++ 以 2 秒超时调用 futex 等待并重新检查（libc++ 19 已核对），丢失的唤醒只表现为至多
+约 2 秒的延迟，watchdog 不会触发，这些构建上的动态测试不能发现丢失唤醒。严格目标另以
+death test 检查持锁期间销毁 source
 时 unlock 终止，以及 destructor 唤醒阻塞的竞争者后由其终止。无竞争路径的配对测量方法见
 [测量说明](../../test/execution/benchmark/MEASUREMENT_PROTOCOL.txt)。
 

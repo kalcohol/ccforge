@@ -115,7 +115,7 @@ public:
         // Leave a tombstone in still-addressable storage. ASan continues to
         // diagnose freed storage; this also catches late teardown on the stack.
         // A thread parked in lock() violates the precondition; wake it so its
-        // lock loop reports the violation instead of sleeping forever.
+        // lock loop reports the violation instead of staying parked.
         if ((state_.exchange(kDestroyed, std::memory_order_release) & kLockWaiters) != 0) {
             state_.notify_all();
         }
@@ -172,11 +172,13 @@ public:
                 // for completion. One arriving later sees status == nullptr and
                 // returns without reading completion.
                 if (status == invocation_status::awaited) {
-                    // Publish callback side effects to the waiting destructor.
-                    // seq_cst closes the store-buffer pattern when notify checks
-                    // a waiter count with a plain load and could miss the waiter.
+                    // seq_cst orders this store before the waiter-count check in
+                    // notify_all when the library makes that check with a seq_cst
+                    // load, or where a seq_cst store is a full barrier; otherwise
+                    // notify could miss a waiter that still reads 0.
                     // Notify while locked: the waiter must reacquire this lock
-                    // before freeing the atomic's storage.
+                    // before freeing the atomic's storage, which also orders the
+                    // invocation before the destructor returns.
                     node->completion.store(1, std::memory_order_seq_cst);
 #if defined(FORGE_EXECUTION_TEST_STOP_HOOKS)
                     __forge_stop_detail::test_event(stop_site::completion_published);
@@ -256,8 +258,9 @@ private:
                 __forge_stop_detail::deregister_context);
         }
 #endif
-        // Only this callback's invocation can delay destruction. Acquire makes
-        // invocation side effects visible; wait parks rather than busy-spinning.
+        // Only this callback's invocation can delay destruction; wait parks
+        // rather than busy-spinning. Acquire pairs with the completion store,
+        // and the handoff below also orders the invocation before reclamation.
         while (cb->completion.load(std::memory_order_acquire) == 0) {
             cb->completion.wait(0, std::memory_order_acquire);
         }
@@ -342,8 +345,9 @@ private:
         // kLockWaiters, so this exchange is fetch_and(~(kLocked | kLockWaiters))
         // without a load or CAS loop, and its result decides the wake exactly.
         // seq_cst rather than release: it also orders this write before the
-        // waiter check inside the library's notify. A wake missed there would
-        // be permanent, because no later unlock sees the cleared bit.
+        // waiter check inside the library's notify when that check is a seq_cst
+        // load. No later unlock would repeat a wake missed there, because none
+        // sees the cleared bit.
         const auto previous = state_.exchange(known, std::memory_order_seq_cst);
 #if defined(FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME)
         check_lifetime(previous); // the source was destroyed during the hold
