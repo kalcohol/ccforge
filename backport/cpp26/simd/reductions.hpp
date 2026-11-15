@@ -40,6 +40,20 @@ inline constexpr bool is_masked_integer_plus =
     false;
 #endif
 
+// Clang visits the later lanes of a masked reduce at constant indices once the
+// loop is unrolled. The loop that starts after the first lane reads the mask at
+// a run-time index: Clang 19 on x86-64 then kept a stack copy of a fused
+// comparison's mask (scalarizing the float x4 compare), and stored masks were
+// slower as well at the tested widths (3 to 16 lanes). GCC 16.2 measured slower
+// stored-mask kernels with the constant-index form; GCC and other compilers
+// keep the loop that starts after the first lane.
+inline constexpr bool masked_reduce_constant_index =
+#if defined(__clang__)
+    true;
+#else
+    false;
+#endif
+
 } // namespace __detail
 
 template<class T,
@@ -84,9 +98,18 @@ constexpr T reduce(const basic_vec<T, Abi>& value,
     }
 
     vec<T, 1> result(value[first]);
-    for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
-        if (__detail::mask_lane(mask_value, i)) {
-            result = binary_op(result, vec<T, 1>(value[i]));
+    if constexpr (__detail::masked_reduce_constant_index) {
+        // Same lanes and order as below: every selected lane after the first.
+        for (__simd_size_type i = 1; i < basic_vec<T, Abi>::size; ++i) {
+            if (i > first && __detail::mask_lane(mask_value, i)) {
+                result = binary_op(result, vec<T, 1>(value[i]));
+            }
+        }
+    } else {
+        for (__simd_size_type i = first + 1; i < basic_vec<T, Abi>::size; ++i) {
+            if (__detail::mask_lane(mask_value, i)) {
+                result = binary_op(result, vec<T, 1>(value[i]));
+            }
         }
     }
     return result[0];
