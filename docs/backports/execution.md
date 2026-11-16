@@ -250,6 +250,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `connect()` 无条件 `noexcept` 的代码。Connected consumer 与 shared state 在 active
   期间有短暂的双向 strong ownership，terminal completion、未启动 operation 析构和
   abandon 路径负责切断该关系；不要绕过这些公开 ownership 路径手工拆状态。
+  [spawn_future 协议模型](../../formal/spawn_future/README.md) 在有限边界内检验完成、取消、共享所有权及 association 释放顺序。
 - Scope-token surface 已改为 current-WD-shaped：
   `simple_counting_scope::token::wrap(sender)` 是 identity forwarding，
   `counting_scope::token::wrap(sender)` 会给 child env 暴露一个 fused stop token：
