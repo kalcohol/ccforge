@@ -14,14 +14,14 @@ return, a supported requires-clause and validated attributes, then body, ctor
 initializers or try. Other tokens never establish a definition. Constraints are
 unparenthesized qualified concept names (optional template arguments), or
 requires-expressions, joined by &&/||; declaration-level requires-expressions
-are supported. Parenthesized clauses are rejected throughout the source.
-Attributes accept one identifier, optional ::identifier, and optional arguments
+are supported. A parenthesized conjunction beginning with a negated concept is also supported.
+Attributes accept a comma-separated list of identifiers, optional ::identifier, and optional arguments
 of identifiers/literals/commas/balanced parentheses only. Digraphs are rejected
 in code (including directives), honoring the standard <:: lexical exception.
 Unsupported constructs fail closed with their physical line.
 Class heads accept class/struct/union, validated attributes, one plain ASCII
 identifier, optional final and an allowlisted base list before the body. Other
-body-introducing heads fail closed. Include header-names are opaque tokens.
+body-introducing heads fail closed; namespace-level qualified nested heads are supported. Include header-names are opaque tokens.
 References omit namespaces and require the exact complete class path, whether
 explicitly qualified or implied by nesting. Any enclosing function/block body
 excludes a candidate, including local classes. Exact class paths in different
@@ -217,7 +217,7 @@ def template_end(values, pairs, start):
     return j
 
 
-def class_bodies(values, pairs):
+def class_bodies(values, pairs, parents):
     """Accept only plain ASCII class heads; reject unhandled body introducers."""
     bodies = {}
 
@@ -247,6 +247,27 @@ def class_bodies(values, pairs):
             continue
         name = values[j]
         j += 1
+        if values[j:j + 1] == ["::"]:
+            # Out-of-class nested definitions occur only at namespace level.
+            # Local/inline qualified definitions remain outside the subset.
+            namespaces = namespace_bodies(values)
+            parent = parents[i]
+            while values[j:j + 1] == ["::"]:
+                j += 1
+                if j >= len(values) or not re.fullmatch(IDENTIFIER, values[j]) or values[j] in KEYWORDS:
+                    raise Unsupported("class head qualified identifier", i)
+                name += "::" + values[j]
+                j += 1
+            if values[j:j + 1] in (["{"], [":"], ["final"]) and parent is not None and parent not in namespaces:
+                raise Unsupported("class head qualified outside namespace", i)
+        if "::" in name and values[j:j + 1] in (["{"], [":"], ["final"]):
+            # Only nested heads rooted in an already defined class in this
+            # namespace block are needed. Do not mistake a namespace prefix
+            # for an extra class path, or resolve an unknown qualification.
+            root_name = name.split("::")[0]
+            if not any(n == root_name and parents[body] == parents[i]
+                       for body, (n, _) in bodies.items()):
+                raise Unsupported("class head qualified root", i)
         if values[j:j + 1] == ["final"]:
             j += 1
         if values[j:j + 1] == [":"]:
@@ -300,34 +321,39 @@ def lambda_body(values, pairs, start):
 
 
 def attribute_end(values, pairs, start):
-    """Accept exactly [[name[::name][(identifier/literal/comma/paren...)]]]."""
+    """Allow comma-separated attributes with the existing argument grammar."""
     end = pairs[start]
     j = start + 2
-    if j >= end or not re.fullmatch(IDENTIFIER, values[j]):
-        raise Unsupported("attribute name", start)
-    j += 1
-    if j < end and values[j] == "::":
+    while True:
+        if j >= end - 1 or not re.fullmatch(IDENTIFIER, values[j]) or values[j] in KEYWORDS:
+            raise Unsupported("attribute name", start)
         j += 1
-        if j >= end or not re.fullmatch(IDENTIFIER, values[j]):
-            raise Unsupported("attribute namespace", j)
+        if j < end and values[j] == "::":
+            j += 1
+            if j >= end or not re.fullmatch(IDENTIFIER, values[j]) or values[j] in KEYWORDS:
+                raise Unsupported("attribute namespace", j)
+            j += 1
+        if j < end and values[j] == "(":
+            finish = pairs[j]
+            for k in range(j + 1, finish):
+                value = values[k]
+                allowed = value in ("(", ")", ",", "\x00literal") or re.fullmatch(IDENTIFIER + "|" + PP_NUMBER, value)
+                if not allowed or value in ("co_await", "co_yield", "co_return"):
+                    raise Unsupported("attribute argument", k)
+            j = finish + 1
+        if values[j:j + 1] != [","]:
+            break
         j += 1
-    if j < end and values[j] == "(":
-        finish = pairs[j]
-        for k in range(j + 1, finish):
-            value = values[k]
-            allowed = value in ("(", ")", ",", "\x00literal") or re.fullmatch(IDENTIFIER + "|" + PP_NUMBER, value)
-            if not allowed or value in ("co_await", "co_yield", "co_return"):
-                raise Unsupported("attribute argument", k)
-        j = finish + 1
     if j != end - 1 or values[j] != "]":
         raise Unsupported("attribute specifier", start)
     return end + 1
 
 
-def qualified_name_end(values, pairs, start):
+def qualified_name_end(values, pairs, start, concept=False):
     """Allow an identifier path with optional template arguments on each part."""
     j = start + (values[start:start + 1] == ["::"])
-    while j < len(values) and re.fullmatch(IDENTIFIER, values[j]):
+    while (j < len(values) and re.fullmatch(IDENTIFIER, values[j])
+           and (not concept or values[j] not in KEYWORDS)):
         j += 1
         if j < len(values) and values[j] == "<":
             j = template_end(values, pairs, j)
@@ -342,7 +368,18 @@ def requires_end(values, pairs, start):
     j = start + 1
     while j < len(values):
         if values[j] == "(":
-            raise Unsupported("ambiguous trailing requires parentheses", j)
+            # Deliberately narrow: the header needs (!Concept && Concept ...).
+            # Calls, arithmetic, nested expressions and other constraints reject.
+            finish = pairs[j]
+            k = j + 1
+            if values[k:k + 1] != ["!"]:
+                raise Unsupported("ambiguous trailing requires parentheses", j)
+            k = qualified_name_end(values, pairs, k + 1, concept=True)
+            while values[k:k + 1] == ["&&"]:
+                k = qualified_name_end(values, pairs, k + 1, concept=True)
+            if k != finish:
+                raise Unsupported("parenthesized requires constraint", j)
+            return finish + 1
         if values[j] == "requires":
             j += 1
             if values[j:j + 1] == ["("]:
@@ -470,7 +507,7 @@ def enclosing_paths(values, pairs, parents, classes, namespaces):
         if start in namespaces:
             tail = tuple(("namespace", name) for name in namespaces[start])
         elif start in classes:
-            tail = (("class", classes[start][0]),)
+            tail = tuple(("class", name) for name in classes[start][0].split("::"))
         else:
             tail = (("body", str(start)),)
         paths[start] = paths[parents[start]] + tail
@@ -519,7 +556,7 @@ def analyze(text):
         for i, value in enumerate(values[:-1]):
             if values[i:i + 2] == ["[", "["]:
                 attribute_end(values, pairs, i)
-        classes = class_bodies(values, pairs)
+        classes = class_bodies(values, pairs, parents)
         namespaces = namespace_bodies(values)
         paths = enclosing_paths(values, pairs, parents, classes, namespaces)
         declarations = set(classes) | set(namespaces) | {None}
@@ -543,10 +580,11 @@ def analyze(text):
                     )
                 if values[j:j + 1] == ["("]:
                     if not expression:
-                        raise Unsupported("ambiguous trailing requires parentheses", i)
-                    j = pairs[j] + 1
-                    if values[j:j + 1] != ["{"]:
-                        raise Unsupported("requires-expression", i)
+                        requires_end(values, pairs, i)
+                    else:
+                        j = pairs[j] + 1
+                        if values[j:j + 1] != ["{"]:
+                            raise Unsupported("requires-expression", i)
                 if values[j:j + 1] == ["{"]:
                     requirements.add(j)
                 else:

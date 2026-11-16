@@ -241,7 +241,7 @@ def allowlist_cases():
         ("attribute semicolon", "[[assume(x; y)]]"),
         ("attribute operator", "[[assume(x + y)]]"),
         ("attribute scope argument", "[[assume(N::x)]]"),
-        ("attribute list", "[[a, b]]"),
+        ("attribute trailing comma", "[[a, b,]]"),
         ("attribute using", "[[using N: a]]"),
         ("attribute third name", "[[N::a::b]]"),
         ("attribute empty name", "[[]]"),
@@ -704,6 +704,7 @@ def transaction_tests(root, source, package):
 
 def run(root):
     lexical_tests(root)
+    counting_subset_tests()
     subset_tests()
     allowlist_tests()
     byte_scope_tests()
@@ -716,3 +717,34 @@ def run(root):
         source, package = qualification_tests(scratch)
         output_tests(scratch)
         transaction_tests(scratch, source, package)
+
+
+def counting_subset_tests():
+    """Extensions required by counting_scope, with rejecting near-neighbors."""
+    for attribute in ('[[nodiscard, deprecated("old")]]', '[[N::a(x), b, c((1))]]'):
+        assert source_lock.locate(attribute + ' void A::f() { target(); }', 'A::f', 'target();') == 1
+    for attribute in ('[[,a]]', '[[a,,b]]', '[[a,b,]]', '[[a, using N: b]]',
+                      '[[a, b(x + y)]]', '[[a, b([]{})]]', '[[a, N::b::c]]'):
+        refused(lambda: source_lock.analyze(attribute + ' void f();'))
+    for constraint in ('(!N::C<T>)', '(!C<T> && N::D<T> && E<T, const B&>)'):
+        text = 'template<class T> requires ' + constraint + ' void A::f() { target(); }'
+        assert source_lock.locate(text, 'A::f', 'target();') == 1
+    for constraint in ('(!C<T> + D<T>)', '(!C<T> && f())', '(!C<T> || D<T>)',
+                       '(!C<T> && []{})', '(!C<T>; x)', '(!C<T> && (D<T>))',
+                       '(!true)', '(!false)', '(!int)', '(!C<T> && true)',
+                       '(!N::false)', '(!class<T>)', '(!C<T> && N::return)'):
+        refused(lambda: source_lock.analyze('void A::f() requires ' + constraint + ' {}'))
+    text = 'namespace N { class A { class B; }; class A::B { void f() { target(); } }; }'
+    assert source_lock.locate(text, 'A::B::f', 'target();') == 1
+    refused(lambda: source_lock.locate(text, 'B::f', 'target();'))
+    for head in ('A::', 'A::B<int>', 'A::B::', 'A::日本'):
+        refused(lambda: source_lock.analyze('class ' + head + ' { void f() {} };'))
+    refused(lambda: source_lock.analyze('void g() { class A::B { void f() {} }; }'))
+    # Scoped enum heads already work; they must not provide a class scope.
+    text = 'enum class E : std::uint8_t { x }; void A::f() { target(); }'
+    assert source_lock.locate(text, 'A::f', 'target();') == 1
+    refused(lambda: source_lock.locate(text, 'E::f', 'target();'))
+
+    for text in ('namespace N {} class N::A { void f() {} };',
+                 'class Unknown::B { void f() {} };'):
+        refused(lambda: source_lock.analyze(text))
