@@ -413,6 +413,9 @@ constant_wrapper 专用 tests，因此不计作该组的 runtime / CTest compile
 Execution、SIMD 与 linalg 的 conformance suites 会在对应 Forge backport 实际注入时
 运行；完整或 partial native 实现触发 stand-aside 时，这些依赖 Forge 私有测试辅助符号
 的 suites 会跳过，native handoff fixtures 负责验证探测和让位边界。
+x86-64 上的 GCC/Clang 在 SIMD backport 实际注入且配置主机能执行 AVX2 与 POPCNT 时，
+另以 `-mavx2 -mpopcnt` 构建 `test_simd_mask_int_avx2`，覆盖只在启用这两项 ISA 扩展时
+才使用的 mask 归约路径；交叉编译或主机不支持时不注册。
 
 `FORGE_TEST_ENABLE_HIVE` 控制 Hive 测试组。backport、完整或 partial native 下均注册
 `hive_portable_runtime`、可移植编译检查和 `hive_test_gate_matrix`；可移植测试仅依赖

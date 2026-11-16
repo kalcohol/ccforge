@@ -32,6 +32,31 @@ if(MSVC)
     target_compile_options(test_simd_mask_int PRIVATE /bigobj /constexpr:steps2000000)
     target_compile_options(test_simd_mask_io PRIVATE /bigobj /constexpr:steps2000000)
 endif()
+# Some mask reductions take a different path when AVX2 and POPCNT are enabled.
+# Build the integer-mask test that way too when the configure host can run it.
+# The parent only adds these tests when the backport is in use.
+if(NOT MSVC AND NOT CMAKE_CROSSCOMPILING AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$"
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    include(CheckCXXSourceRuns)
+    set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -mavx2 -mpopcnt")
+    # Execute one AVX2 and one POPCNT instruction directly; a host without them
+    # faults, so the variant is not registered. No CPU-model runtime is needed.
+    check_cxx_source_runs([=[
+int main() {
+    unsigned value = 3;
+    __asm__ volatile("vpaddd %%ymm0, %%ymm0, %%ymm0; vzeroupper; popcnt %0, %0"
+                     : "+r"(value) : : "xmm0");
+    return value == 2 ? 0 : 1;
+}
+]=] FORGE_SIMD_TEST_HOST_RUNS_AVX2)
+    set(CMAKE_REQUIRED_FLAGS "${_forge_saved_required_flags}")
+    unset(_forge_saved_required_flags)
+    if(FORGE_SIMD_TEST_HOST_RUNS_AVX2)
+        forge_add_simd_runtime_test(test_simd_mask_int_avx2 test_simd_mask_int.cpp)
+        target_compile_options(test_simd_mask_int_avx2 PRIVATE -mavx2 -mpopcnt)
+    endif()
+endif()
 
 forge_add_simd_runtime_test(test_simd_memory_load_store test_simd_memory_load_store.cpp)
 target_compile_definitions(test_simd_memory_load_store PRIVATE FORGE_SIMD_ENABLE_UNCHECKED_MEMORY_TESTS)
