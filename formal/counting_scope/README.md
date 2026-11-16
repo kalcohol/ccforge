@@ -4,7 +4,7 @@
 
 ## 代码与状态
 
-`model.py` 保存状态、转移、source references、ghost HB 时钟和性质；`scenarios.py` 保存有限脚本；`tiers.py` 保存矩阵与 quick 代表；`mutants.py` 保存变更和 controls；`sensitivity.txt` 是人工维护的逐配置失败名单。`expected/results.tsv` 与 `source.lock` 使用公共 engine 的维护事务。
+`model.py` 保存状态、转移、source references、ghost HB 时钟和性质；`scenarios.py` 保存有限脚本；`tiers.py` 保存矩阵与 quick 代表；`mutants.py` 保存变更和 controls；`sensitivity.txt` 是人工维护的逐配置失败名单。`expected/results.tsv` 与 `source.lock` 使用公共 engine 的维护事务。通用 vector clocks、atomic histories、coherent loads 和 race 检查位于 `engine/memory.py`，由本模型通过 memory client 调用。
 
 J 只实现一次，以 `scope_kind` 区分 `simple_counting_scope` 和 `counting_scope`。所有 CLI 入口比较两个类的 destructor、`close`、`__try_associate`、`__start_join`、`__decrement`、association `__release`、`__count`、`__is_closed` 及 token/association 两个 `try_associate` forwarding body。比较实际 token spelling，包括字符串、字符、raw literal、数字和 preprocessing directives；忽略注释，仅规范化两个 scope 类名。注释和空白的漂移仍受全头文件字节 digest 保护。负向 fixtures 包括只改单侧 literal 内容、escape spelling 或其他 body token。
 
@@ -125,7 +125,9 @@ python3 -B formal/counting_scope/check.py --check-source
 
 | Tier | 配置数 | Workers / start | Runner wall s | 最大 worker MiB | States | Transitions |
 |---|---:|---|---:|---:|---:|---:|
-| full | 455 | 8 / spawn | 5.830 | 50.57 | 136,769 | 282,616 |
-| quick | 109 | 8 / spawn | 1.838 | 49.26 | 37,637 | 78,902 |
+| full | 455 | 8 / spawn | 6.086 | 50.13 | 136,769 | 282,616 |
+| quick | 109 | 8 / spawn | 1.835 | 48.86 | 37,637 | 78,902 |
 
-2026-11-16，Python 3.13.13。full 中 419 通过、36 预期反例：414 个 baseline 全部通过，34 个 mutant 配置中 30 个失败、四个 witness 对照通过，七个 controls 中六个失败、正常 queue 对照通过。15 个 mutants 都有 killer；strict abort terminals 共 46 个。最大配置为 `base.s_fused.counting_scope.queued.sc_hb`，6,225 states。runner wall 含 pool 启动，但不含 CLI 入口的模型 self-tests；full 从 CLI 启动到结束共 7.681 s。未测量 pool peak，实际资源随机器和负载变化。
+2026-11-16，Python 3.13.13。full 中 419 通过、36 预期反例：414 个 baseline 全部通过，34 个 mutant 配置中 30 个失败、四个 witness 对照通过，七个 controls 中六个失败、正常 queue 对照通过。15 个 mutants 都有 killer；strict abort terminals 共 46 个。最大配置为 `base.s_fused.counting_scope.queued.sc_hb`，6,225 states。runner wall 含 pool 启动，但不含 CLI 入口的模型 self-tests；full 从 CLI 启动到结束共 7.950 s。未测量 pool peak，实际资源随机器和负载变化。
+
+共享 memory 抽出后，455 个逐配置 expected records 保持字节一致；交替 paired wall 测量的最大 median ratio 为 1.085，每配置低于 10% regression 边界。stop_token.hpp 与 counting_scope.hpp 的完整 matcher analysis structures 及全部 step resolutions 与扩展前一致。

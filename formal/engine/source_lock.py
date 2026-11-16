@@ -7,7 +7,8 @@ ambiguous angle operators need parentheses. Function bodies exclude nested
 classes and plain lambdas: capture, optional parameters, optional mutable,
 constexpr/consteval, noexcept (with optional operand), trailing return, body.
 Lambda attributes, template heads, constraints and other specifier positions,
-coroutine keywords and body-level requires-expressions are unsupported.
+coroutine keywords are unsupported. Body requires-expressions are limited to
+if constexpr conditions with simple member/call requirements.
 Scope decisions use allowlists: a definition tail accepts only cv/ref qualifiers,
 noexcept with an optional balanced operand, override/final, a balanced trailing
 return, a supported requires-clause and validated attributes, then body, ctor
@@ -20,7 +21,7 @@ of identifiers/literals/commas/balanced parentheses only. Digraphs are rejected
 in code (including directives), honoring the standard <:: lexical exception.
 Unsupported constructs fail closed with their physical line.
 Class heads accept class/struct/union, validated attributes, one plain ASCII
-identifier, optional final and an allowlisted base list before the body. Other
+identifier, optional final and an allowlisted base list before the body. Namespace-level specializations require a previously declared primary. Other
 body-introducing heads fail closed; namespace-level qualified nested heads are supported. Include header-names are opaque tokens.
 References omit namespaces and require the exact complete class path, whether
 explicitly qualified or implied by nesting. Any enclosing function/block body
@@ -268,6 +269,23 @@ def class_bodies(values, pairs, parents):
             if not any(n == root_name and parents[body] == parents[i]
                        for body, (n, _) in bodies.items()):
                 raise Unsupported("class head qualified root", i)
+        if values[j:j + 1] == ["<"] and values[i-1:i] != ["friend"]:
+            # Specializations only at declaration scope, rooted in a previously
+            # declared primary template. Qualified specialization is not needed.
+            parent = parents[i]
+            namespaces = namespace_bodies(values)
+            if parent is not None and parent not in namespaces or "::" in name:
+                raise Unsupported("class head specialization scope", i)
+            def primary_head(k):
+                begin = k - 1
+                while begin >= 0 and values[begin] not in (";", "{", "}"):
+                    begin -= 1
+                return "template" in values[begin+1:k]
+            primary = any(values[k] in ("class", "struct") and values[k+1:k+2] == [name]
+                          and parents[k] == parent and primary_head(k) for k in range(i))
+            if not primary:
+                raise Unsupported("class head specialization primary", i)
+            j = template_end(values, pairs, j)
         if values[j:j + 1] == ["final"]:
             j += 1
         if values[j:j + 1] == [":"]:
@@ -361,6 +379,49 @@ def qualified_name_end(values, pairs, start, concept=False):
             return j
         j += 1
     raise Unsupported("qualified name", start)
+
+
+def requires_expression_end(values, pairs, start):
+    """Narrow simple requirements: a member expression or qualified call."""
+    j = start + 1
+    if values[j:j+1] == ["("]:
+        finish = pairs[j]
+        k = j + 1
+        while k < finish:
+            token = values[k]
+            if token == "decltype" and values[k+1:k+2] == ["("]:
+                end = pairs[k+1]
+                if end != k+3 or not re.fullmatch(IDENTIFIER, values[k+2]):
+                    raise Unsupported("requires-expression parameter decltype", k)
+                k = end + 1
+            elif re.fullmatch(IDENTIFIER, token) or token in ("::", "&", "&&", "*", ","):
+                k += 1
+            else:
+                raise Unsupported("requires-expression parameters", k)
+        j = finish + 1
+    if values[j:j+1] != ["{"]:
+        raise Unsupported("requires-expression body", start)
+    finish, k = pairs[j], j + 1
+    while k < finish:
+        begin = k
+        while k < finish and values[k] != ";":
+            token = values[k]
+            if token == "(":
+                end = pairs[k]
+                if any(v in ("{", "}", "[", "]", ";", "requires") for v in values[k+1:end]):
+                    raise Unsupported("requires-expression call", k)
+                k = end + 1
+            elif (re.fullmatch(IDENTIFIER, token) and token not in KEYWORDS
+                  or token in ("::", ".", "->")):
+                k += 1
+            else:
+                raise Unsupported("requires-expression simple requirement", k)
+        if k == begin or k == finish:
+            raise Unsupported("requires-expression terminator", k)
+        k += 1
+    if k == j + 1:
+        raise Unsupported("requires-expression empty body", j)
+    return finish + 1
 
 
 def requires_end(values, pairs, start):
@@ -514,7 +575,29 @@ def enclosing_paths(values, pairs, parents, classes, namespaces):
     return paths
 
 
-def definition_scope(values, start, path, namespace_paths, class_paths):
+def qualifier_start(values, pairs, separator):
+    """One ordinary or template-id qualifier before ::, never a suffix."""
+    j = separator - 1
+    if values[j] in (">", ">>"):
+        candidates = []
+        for k in range(j - 1, -1, -1):
+            if values[k] in (";", "{", "}"):
+                break
+            if values[k] == "<":
+                try:
+                    if template_end(values, pairs, k) == separator:
+                        candidates.append(k)
+                except Unsupported:
+                    pass
+        if len(candidates) != 1:
+            raise Unsupported("qualified template definition scope", separator)
+        j = candidates[0] - 1
+    if j < 0 or not re.fullmatch(IDENTIFIER, values[j]) or values[j] in KEYWORDS:
+        raise Unsupported("qualified definition scope", separator)
+    return j
+
+
+def definition_scope(values, pairs, start, path, namespace_paths, class_paths):
     """Resolve the entire declarator qualifier, never a suffix of it."""
     namespaces = tuple(name for kind, name in path if kind == "namespace")
     classes = tuple(name for kind, name in path if kind == "class")
@@ -522,10 +605,9 @@ def definition_scope(values, start, path, namespace_paths, class_paths):
     while j >= 0 and values[j] == "::":
         if j == 0 or values[j - 1] in KEYWORDS:
             break  # Leading global qualifier, possibly after a return type.
-        if not re.fullmatch(IDENTIFIER, values[j - 1]):
-            raise Unsupported("qualified definition scope", j)
-        qualifiers.insert(0, values[j - 1])
-        j -= 2
+        part = qualifier_start(values, pairs, j)
+        qualifiers.insert(0, values[part])
+        j = part - 1
     absolute = j >= 0 and values[j] == "::"
     if j >= 0 and values[j] in (".", "->"):
         return None
@@ -565,14 +647,23 @@ def analyze(text):
             if value in ("co_await", "co_yield", "co_return"):
                 raise Unsupported("coroutine keyword " + value, i)
             if value == "requires":
-                if parents[i] not in declarations | requirements:
-                    form = "requires-expression" if values[i + 1] in ("{", "(") else "requires-clause"
-                    raise Unsupported(form + " in function body", i)
+                body_expression = parents[i] not in declarations | requirements
+                if body_expression:
+                    # Only the target's if constexpr condition positions; no
+                    # general body constraints or nested requirements.
+                    condition = next((k for k in range(i-1, -1, -1)
+                                      if values[k:k+3] == ["if", "constexpr", "("]
+                                      and k+2 in pairs and k+2 < i < pairs[k+2]), None)
+                    if condition is None:
+                        raise Unsupported(("requires-expression" if values[i+1] in ("{", "(") else "requires-clause") + " in function body", i)
+                    finish = requires_expression_end(values, pairs, i)
+                    if values[finish:finish+1] not in ([")"], ["&&"], ["||"]):
+                        raise Unsupported("requires-expression condition tail", i)
                 j = i + 1
                 # Expression positions are explicitly listed. Qualifiers and
                 # attributes cannot turn a trailing clause into an expression.
                 previous = values[i - 1] if i else ""
-                expression = previous in ("=", "(", "requires")
+                expression = body_expression or previous in ("=", "(", "requires")
                 if previous in ("&&", "||") and i >= 2:
                     operand = values[i - 2]
                     expression = operand in (">", ">>", "}") or (
@@ -708,10 +799,10 @@ def declaration_prefix(values, pairs, begin, start, typeless):
     # Remove the explicit namespace/class qualifier from the declarator head.
     end = start
     while end and values[end - 1] == "::":
-        end -= 1
-        if end and re.fullmatch(IDENTIFIER, values[end - 1]) and values[end - 1] not in KEYWORDS:
+        try:
+            end = qualifier_start(values, pairs, end - 1)
+        except Unsupported:
             end -= 1
-        else:
             break
     if end == begin:
         return typeless
@@ -767,7 +858,7 @@ def definition_candidates(text, function):
             i, complete_name = declarator
             if i in expression_tokens or complete_name != name_tokens:
                 continue
-            candidate = definition_scope(values, i, path, namespace_paths, class_paths)
+            candidate = definition_scope(values, pairs, i, path, namespace_paths, class_paths)
             if candidate is None or candidate[1] != scope_names:
                 continue
             constructor = bool(scope_names) and name_tokens == [scope_names[-1]]

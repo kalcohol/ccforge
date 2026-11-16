@@ -1,12 +1,12 @@
 {
-  "assessment": "Engine matcher extension only: validated comma-separated attribute lists, narrowly parenthesized negated-concept conjunctions with keyword operands rejected, and namespace-block qualified nested class heads rooted in an already defined class. Reviewed the unchanged stop_token.hpp: its complete analyzed structures and all 57 step resolutions are identical to the prior checker. No stop_token transition, scenario, tier, expected record or sensitivity entry changed; this full qualification records the shared checker digest.",
-  "checker_digest": "d938d0d13007910c7ea783f3d01dc778d5f760a272995a37d879aaa6507f67e8",
+  "assessment": "Engine-only change: narrow matcher support for namespace-block class template specializations, if-constexpr simple requires-expressions and template-id out-of-class qualifiers, with fail-closed positive and negative fixtures. The complete stop_token.hpp analysis structures and every step resolution are identical to the prior matcher. Shared memory machinery was extracted into the engine for the other models and is not imported by the stop_token protocol model. stop_token.hpp, model behaviour, expected records and sensitivity are unchanged; the full records match without regeneration.",
+  "checker_digest": "bd66a4e806e3ce3bedff3ce7652826b49391eae6d2d1dd28062daa3f4b2b6cdb",
   "configuration_count": 7577,
   "date": "2026-11-16",
   "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",
   "last_full_qualification": {
-    "assessment": "Engine matcher extension only: validated comma-separated attribute lists, narrowly parenthesized negated-concept conjunctions with keyword operands rejected, and namespace-block qualified nested class heads rooted in an already defined class. Reviewed the unchanged stop_token.hpp: its complete analyzed structures and all 57 step resolutions are identical to the prior checker. No stop_token transition, scenario, tier, expected record or sensitivity entry changed; this full qualification records the shared checker digest.",
-    "checker_digest": "d938d0d13007910c7ea783f3d01dc778d5f760a272995a37d879aaa6507f67e8",
+    "assessment": "Engine-only change: narrow matcher support for namespace-block class template specializations, if-constexpr simple requires-expressions and template-id out-of-class qualifiers, with fail-closed positive and negative fixtures. The complete stop_token.hpp analysis structures and every step resolution are identical to the prior matcher. Shared memory machinery was extracted into the engine for the other models and is not imported by the stop_token protocol model. stop_token.hpp, model behaviour, expected records and sensitivity are unchanged; the full records match without regeneration.",
+    "checker_digest": "bd66a4e806e3ce3bedff3ce7652826b49391eae6d2d1dd28062daa3f4b2b6cdb",
     "configuration_count": 7577,
     "date": "2026-11-16",
     "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",

@@ -9,6 +9,7 @@ Mutants change one source-level protocol choice, never a property predicate.
 import copy
 from pathlib import Path
 from types import SimpleNamespace
+from engine.memory import Memory, put, change, merge, synchronization, merge_sync, empty_sync
 
 SOURCE = Path(__file__).resolve().parents[2] / 'backport/cpp26/execution/counting_scope.hpp'
 C = None
@@ -140,38 +141,6 @@ def state(k):
     return w
 
 
-def put(seq, i, value):
-    return seq[:i] + (value,) + seq[i + 1:]
-
-
-def change(w, field, i, value):
-    setattr(w, field, put(getattr(w, field), i, value))
-
-
-def merge(a, b):
-    return tuple(max(x, y) for x, y in zip(a, b))
-
-
-def synchronization(w, t):
-    """HB publication carries clocks and observed MO bounds independently."""
-    return w.vc[t], w.views[t]
-
-
-def merge_sync(a, b):
-    return merge(a[0], b[0]), merge(a[1], b[1])
-
-
-def empty_sync(w):
-    return (0,) * len(w.vc), (0, 0, 0, 0)
-
-
-def acquire(w, t, publication):
-    if C.hb or C.stale:
-        clock, observed = publication
-        change(w, 'vc', t, merge(w.vc[t], clock))
-        change(w, 'views', t, merge(w.views[t], observed))
-
-
 def error(w, message):
     w.errors += (message,)
 
@@ -182,23 +151,6 @@ def detect(w, message):
         COV.add('strict.' + message)
     else:
         error(w, message)
-
-
-def access(w, t, name, write=False):
-    """Vector-clock race checks, including lifetime end as a conflicting write."""
-    if not C.hb:
-        return
-    records = dict(w.accesses)
-    old = records.get(name, ())
-    for u, clock, written in old:
-        if u != t and (write or written) and any(x > y for x, y in zip(clock, w.vc[t])):
-            detect(w, 'HB: unordered access to ' + name)
-    records[name] = ((t, w.vc[t], write),) if write else old + ((t, w.vc[t], False),)
-    # Keep only the last read per thread, without discarding the last writer.
-    if not write:
-        records[name] = tuple(v for i, v in enumerate(records[name])
-                              if v[2] or not any(x[0] == v[0] and not x[2] for x in records[name][i+1:]))
-    w.accesses = tuple(sorted(records.items()))
 
 
 def scope_access(w, t):
@@ -229,40 +181,6 @@ def mutex_enter(w, t, action):
         w.owner = t
     scope_access(w, t)
     return outside
-
-
-def publish(w, t, obj, value, order='release', rmw=False):
-    """A real atomic modification: MO clock and release-sequence clock differ."""
-    previous = w.hist[obj][-1][2]
-    if rmw and order == 'acq_rel':
-        acquire(w, t, previous)
-    release = synchronization(w, t) if order in ('release', 'acq_rel') else empty_sync(w)
-    if rmw:
-        release = merge_sync(previous, release)
-    entry = (value, w.vc[t], release)
-    hist = list(w.hist)
-    hist[obj] = hist[obj] + (entry,) if C.stale else (entry,)
-    w.hist = tuple(hist)
-    change(w, 'views', t, put(w.views[t], obj, len(hist[obj]) - 1))
-
-
-def load_choices(w, t, obj):
-    if not C.stale:
-        return (len(w.hist[obj]) - 1,)
-    floor = w.views[t][obj]
-    # Write-read coherence includes writes by other threads that happen-before.
-    for i, (_, clock, _) in enumerate(w.hist[obj]):
-        if all(x <= y for x, y in zip(clock, w.vc[t])):
-            floor = max(floor, i)
-    return tuple(range(floor, len(w.hist[obj])))
-
-
-def load(w, t, obj, alternative, order='acquire'):
-    value, _, release = w.hist[obj][alternative]
-    change(w, 'views', t, put(w.views[t], obj, alternative))
-    if order == 'acquire':
-        acquire(w, t, release)
-    return value
 
 
 def prepend(w, t, *ops):
@@ -935,6 +853,9 @@ def check_duplicates(text):
 
 
 def configure(cfg):
-    global C
+    global C, acquire, access, publish, load_choices, load
     C = cfg
+    memory = Memory(cfg, detect)
+    acquire, access, publish = memory.acquire, memory.access, memory.publish
+    load_choices, load = memory.load_choices, memory.load
     COV.clear()

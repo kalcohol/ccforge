@@ -704,6 +704,10 @@ def transaction_tests(root, source, package):
 
 def run(root):
     lexical_tests(root)
+    spawn_subset_tests()
+    qualified_template_tests()
+    from .memory_self_tests import run as memory_tests
+    memory_tests()
     counting_subset_tests()
     subset_tests()
     allowlist_tests()
@@ -748,3 +752,38 @@ def counting_subset_tests():
     for text in ('namespace N {} class N::A { void f() {} };',
                  'class Unknown::B { void f() {} };'):
         refused(lambda: source_lock.analyze(text))
+
+
+def spawn_subset_tests():
+    """Target-required extensions retain exact scope and nested exclusion."""
+    primary = 'template<class T> struct X; '
+    for arg in ('int', 'F(T...)', 'Box<T...>', 'F(std::decay_t<T>)'):
+        text = primary + 'template<class T> struct X<' + arg + '> { void f() { target(); } };'
+        assert source_lock.locate(text, 'X::f', 'target();') == 1
+    for text in ('struct X<int> { void f() {} };',
+                 'struct X; struct X<int> { void f() {} };',
+                 primary + 'void g() { struct X<int> { void f() {} }; }',
+                 primary + 'struct X<N << 1> { void f() {} };',
+                 primary + 'struct X<int>> { void f() {} };'):
+        refused(lambda: source_lock.analyze(text))
+    for expr in ('requires { result.__values; }',
+                 '!requires(Env& e) { N::get(e); } && requires(const decltype(wrapped)& w) { N::get(N::env(w)); }'):
+        text = 'void A::f() { if constexpr (' + expr + ') { target(); } }'
+        assert source_lock.locate(text, 'A::f', 'target();') == 1
+    for expr in ('requires { typename T::type; }', 'requires { { x() } -> C; }',
+                 'requires { requires C<T>; }', 'requires { x }', 'requires {}',
+                 'requires { x(); } + 1', 'requires(int n = 1) { f(n); }'):
+        refused(lambda: source_lock.analyze('void f() { if constexpr (' + expr + ') {} }'))
+    text = 'void A::f() { return Box<int, decltype([](int* p) noexcept { hidden(); })>{}; target(); }'
+    assert source_lock.locate(text, 'A::f', 'target();') == 1
+    refused(lambda: source_lock.locate(text, 'A::f', 'hidden();'))
+    for suffix in ('static', 'requires C<int>', '[[nodiscard]]'):
+        refused(lambda: source_lock.analyze('void f() { Box<decltype([]() ' + suffix + ' {})> x; }'))
+
+
+def qualified_template_tests():
+    text = 'template<class S, class R> struct C { void f(); }; template<class S, class R> void C<S, R>::f() { target(); }'
+    assert source_lock.locate(text, 'C::f', 'target();') == 1
+    refused(lambda: source_lock.locate(text, 'D::C::f', 'target();'))
+    for qualifier in ('C<int>>', 'C<N << 1>', 'C<int>::'):
+        refused(lambda: source_lock.locate('void ' + qualifier + '::f() { target(); }', 'C::f', 'target();'))
