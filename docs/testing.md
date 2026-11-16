@@ -680,3 +680,23 @@ source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule 
 两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
 `ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
 此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。
+
+## Protocol model check（协议模型检验）
+
+[formal/](../formal/README.md) 保存不进入 CMake test build 的协议模型。
+Python explicit-state checker 要求 **Python 3.9+**，标准库即可；此要求独立于既有 helper 的 Python 3.6+ 要求。
+
+```bash
+python3 -B formal/stop_token/check.py --check-source
+python3 -B formal/stop_token/check.py --tier quick
+python3 -B formal/stop_token/check.py --tier full --jobs 8
+```
+
+文档审计检查 source lock；verification floor 默认运行每个模型的 quick tier，
+可用 `FORGE_VERIFY_FLOOR_SKIP_FORMAL=1` 跳过。lock 只检测变更；更新前必须审查
+C++ 与模型的对应关系。C++ 变化不需要修改模型时可用 quick，assessment 必须说明模型为何不变。
+任何 checker 文件（包括 CLI）或 expected 数据变化都要求 full。quick 必须沿用上次 full 的 checker 和 expected-data digests；
+lock 同时保留最近资格运行和上次 full 的日期、配置数与结果摘要。
+Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正保障是 assessment 中的对应关系审查，tier 本身不能证明 fidelity。
+头文件的每次编辑（包括注释和空白）都要求刷新 source lock；source digest 是仅将 CRLF 转成 LF 后的字节 SHA-256。纯注释或纯空白改动可用 quick 重新确认，assessment 必须明确改动类型并说明模型为何不受影响。
+维护命令及 assessment 规则见 [stop_token 模型说明](../formal/stop_token/README.md)。

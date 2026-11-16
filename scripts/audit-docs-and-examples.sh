@@ -29,7 +29,7 @@ fail() {
 check_no_private_paths() {
     log "check private host/path leaks"
     if rg -n 'px13|D:\\Program|/data/projects|/home/|C:\\Users' \
-        docs README* scripts test \
+        docs formal README* scripts test \
         --glob '!scripts/audit-docs-and-examples.sh' \
         >"${audit_tmp}/private-paths"; then
         cat "${audit_tmp}/private-paths" >&2
@@ -73,7 +73,7 @@ check_markdown_links() {
     log "check local markdown links"
     local links
     links="${audit_tmp}/markdown-links"
-    rg -n -o '\[[^]]+\]\(([^)#][^)]*)\)' docs README*.md ROADMAP.md containers/README.md test --glob '*.md' --glob '*.txt' >"${links}" || true
+    rg -n -o '\[[^]]+\]\(([^)#][^)]*)\)' docs formal README*.md ROADMAP.md containers/README.md test --glob '*.md' --glob '*.txt' >"${links}" || true
     while IFS=: read -r file line match; do
         [[ -z "${match:-}" ]] && continue
         local target
@@ -433,6 +433,9 @@ for name, positive, negative in pairs:
     require(positive and not negative, name + ': self-test failed')
     print('[doc-audit] self-test ' + name + ': positive PASS, negative PASS')
 
+require(path_ok('[model](stop_token/README.md)', {'formal/stop_token/README.md'}, page='formal/README.md'), 'formal path positive fixture')
+require(not path_ok('[model](missing/README.md)', {'formal/stop_token/README.md'}, page='formal/README.md'), 'formal path negative fixture')
+
 # Additional regression fixtures cover generated outputs versus private files,
 # both bulk overloads, multiline arguments and nested preprocessor branches.
 for text, expected in [
@@ -521,7 +524,7 @@ for p in Path('backport').rglob('*'):
 cmake=Path('example/CMakeLists.txt').read_text()
 for suffix, target, src in re.findall(r'forge_add_standard_example\((\w+) (\w+) ([\w.]+)', cmake):
     require(example_ok(src,pages[suffix]), src+': missing backport-page link')
-for p in Path('docs').rglob('*.md'):
+for p in list(Path('docs').rglob('*.md')) + list(Path('formal').rglob('*.md')):
     require(path_ok(p.read_text(), page=str(p)), str(p)+': private/untracked path')
 index=Path('docs/roadmap/README.md').read_text()
 for p in Path('docs/roadmap').glob('*.md'):
@@ -537,7 +540,7 @@ for p in Path('example').iterdir():
     if p.name!='unique_resource_example.cpp':
         require(header_ok(p.read_text()),str(p)+': missing purpose header')
 # Same link predicate covers ROADMAP, containers, test text and non-.cpp sources.
-files=list(Path('docs').rglob('*.md'))+list(Path('.').glob('README*.md'))+[Path('ROADMAP.md'),Path('containers/README.md')]+list(Path('test').rglob('*.txt'))
+files=list(Path('formal').rglob('*.md'))+list(Path('docs').rglob('*.md'))+list(Path('.').glob('README*.md'))+[Path('ROADMAP.md'),Path('containers/README.md')]+list(Path('test').rglob('*.txt'))
 for p in files:
     for target in re.findall(r'\[[^]]+\]\(([^)]+)\)',p.read_text()):
         target=target.split('#')[0]
@@ -553,7 +556,26 @@ PYGUARDS
     fi
 }
 
+check_formal_sources() {
+    log "check formal source locks (fail-closed discovery)"
+    if ! python3 -B formal/engine/discover.py --self-test; then
+        fail "formal model discovery self-test failed"
+        return
+    fi
+    local models
+    if ! models="$(python3 -B formal/engine/discover.py)"; then
+        fail "formal model discovery failed"
+        return
+    fi
+    while IFS= read -r checker; do
+        if ! python3 -B "${checker}" --check-source; then
+            fail "${checker}: source lock failed"
+        fi
+    done <<<"${models}"
+}
+
 check_no_private_paths
+check_formal_sources
 check_example_refs_exist
 check_all_examples_are_indexed
 check_markdown_links

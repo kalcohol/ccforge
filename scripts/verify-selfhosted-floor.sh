@@ -18,6 +18,8 @@
 # Environment:
 #   FORGE_VERIFY_FLOOR_NATIVE_LANES
 #       Space-separated native lanes used when no positional lanes are passed.
+#   FORGE_VERIFY_FLOOR_SKIP_FORMAL=1
+#       Skip the quick protocol model tier.
 #   FORGE_VERIFY_FLOOR_SKIP_INSTALL=1
 #       Skip scripts/verify-install-package.sh.
 #   FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1
@@ -68,6 +70,17 @@ if [[ "${FORGE_VERIFY_FLOOR_SKIP_DOC_AUDIT:-0}" != "1" ]]; then
     log "ok docs/examples audit"
 else
     log "skip docs/examples audit"
+fi
+
+if [[ "${FORGE_VERIFY_FLOOR_SKIP_FORMAL:-0}" != "1" ]]; then
+    log "start formal quick tiers"
+    formal_models="$(python3 -B formal/engine/discover.py)"
+    while IFS= read -r checker; do
+        python3 -B "${checker}" --tier quick
+    done <<<"${formal_models}"
+    log "ok formal quick tiers"
+else
+    log "skip formal quick tiers"
 fi
 
 for lane in "${native_lanes[@]}"; do
