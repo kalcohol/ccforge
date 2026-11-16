@@ -264,6 +264,7 @@ struct __resource_allocator {
     }
 };
 
+// Protocol model: formal/spawn_future; every edit, comments included, requires a source-lock refresh.
 template<class S, class Env, class Association>
 struct __shared_state : std::enable_shared_from_this<__shared_state<S, Env, Association>> {
     using source_t = S;

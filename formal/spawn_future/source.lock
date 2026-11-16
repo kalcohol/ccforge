@@ -1,0 +1,31 @@
+{
+  "assessment": "The whole header corresponds to eager launch, active-winner single-consumer arbitration, inner-receiver and caller ownership, and separate state/owner/operation mutexes. Strong/weak control blocks retain relaxed increments, acq_rel decrements and separate object/storage ends; local consumer_cb outlives keepalive, consume parameters die before caller delivery, and callback members die before consumer state. Two producer inputs use the abstract counting_scope stop contract with inline-only pre-stopped invocation, invocation owners, cross-thread waits, self-deregistration and committed fused dispatch. Child registration is modeled both during connect before association and during start. Pre-start Fn entry preserves notification as child state; completion is gated on start, and each constructed producer input registration must be removed before its containing state storage ends, including closed launches without start. Per-input and Fn callback entries access that state storage; removal may complete on the invoking thread before its stack return, and inline-only removal does not access the borrowed input source. Contract outcomes are independent of the taken/done guards and delivery kind: already-consumed requires stopped even on the first invocation; installation/consume failures require error. Independent receiver, producer, stop and pre-start notification obligations remain checked. Scope/operation accesses participate in HB lifetime checks. Finite scripts include all five child modes, competing scope/consumer stop, four failures, inline destruction and started-operation robustness destruction. C1 uses active arbitration; destructor-entry exclusion remains a failing specification control. Seven bounded single-change survivors retain checked covering invariants and failing combined controls; I2 bounds invocation count separately from defensive C2. SC, SC-HB and HB-coherent stale stop queries assume the declared library contracts and are not a complete C++ weak-memory proof.",
+  "checker_digest": "af465145d37df6ab8f8527bb830200c127008b574f6b126325d2ad86fa715dd9",
+  "configuration_count": 1666,
+  "date": "2026-11-16",
+  "expected_digest": "e64fd8cf082ca202f149d0a14a37430f7e50bb986641467461d3ffe68dbe082b",
+  "last_full_qualification": {
+    "assessment": "The whole header corresponds to eager launch, active-winner single-consumer arbitration, inner-receiver and caller ownership, and separate state/owner/operation mutexes. Strong/weak control blocks retain relaxed increments, acq_rel decrements and separate object/storage ends; local consumer_cb outlives keepalive, consume parameters die before caller delivery, and callback members die before consumer state. Two producer inputs use the abstract counting_scope stop contract with inline-only pre-stopped invocation, invocation owners, cross-thread waits, self-deregistration and committed fused dispatch. Child registration is modeled both during connect before association and during start. Pre-start Fn entry preserves notification as child state; completion is gated on start, and each constructed producer input registration must be removed before its containing state storage ends, including closed launches without start. Per-input and Fn callback entries access that state storage; removal may complete on the invoking thread before its stack return, and inline-only removal does not access the borrowed input source. Contract outcomes are independent of the taken/done guards and delivery kind: already-consumed requires stopped even on the first invocation; installation/consume failures require error. Independent receiver, producer, stop and pre-start notification obligations remain checked. Scope/operation accesses participate in HB lifetime checks. Finite scripts include all five child modes, competing scope/consumer stop, four failures, inline destruction and started-operation robustness destruction. C1 uses active arbitration; destructor-entry exclusion remains a failing specification control. Seven bounded single-change survivors retain checked covering invariants and failing combined controls; I2 bounds invocation count separately from defensive C2. SC, SC-HB and HB-coherent stale stop queries assume the declared library contracts and are not a complete C++ weak-memory proof.",
+    "checker_digest": "af465145d37df6ab8f8527bb830200c127008b574f6b126325d2ad86fa715dd9",
+    "configuration_count": 1666,
+    "date": "2026-11-16",
+    "expected_digest": "e64fd8cf082ca202f149d0a14a37430f7e50bb986641467461d3ffe68dbe082b",
+    "outcome_summary": {
+      "fail": 377,
+      "pass": 1289
+    },
+    "python": "3.13.13",
+    "source_digest": "454667fd6453e4145c429cab3d486413f639b4dc118440b269b125155cd166b5",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 377,
+    "pass": 1289
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/spawn_future.hpp",
+  "source_digest": "454667fd6453e4145c429cab3d486413f639b4dc118440b269b125155cd166b5",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "full"
+}
