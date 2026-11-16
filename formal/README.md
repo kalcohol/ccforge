@@ -23,6 +23,7 @@ python3 -B formal/stop_token/check.py --steps
 |---|---|---|
 | [when_all](when_all/README.md) | child completion credit、结果仲裁、取消与 HB | 2026-11-16：480 配置 |
 | [run_loop](run_loop/README.md) | mutex/CV queue、execute/count 与 teardown | 2026-11-16：177 配置 |
+| [sync_wait](sync_wait/README.md) | result publication、run_loop 契约与 stack teardown | 2026-11-16：82 配置 |
 | [spawn](spawn/README.md) | detached state 双 reference、allocator/association 顺序、stop registration 与 HB | 2026-11-16：539 配置 |
 | [associate](associate/README.md) | sender association 转移、conditional holder、receiver 自毁与 HB | 2026-11-16：601 配置 |
 | [spawn_future](spawn_future/README.md) | eager producer、single consumer、取消、shared ownership、allocator/association 顺序与 HB | 2026-11-16：1,666 配置 |

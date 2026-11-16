@@ -1,0 +1,36 @@
+# Hand-maintained, reviewed per-configuration failures; unlisted configurations pass.
+# Payload destruction borrows the loop; reversing stack order violates its lifetime.
+after_finish_loop.own_value.sc_hb
+after_finish_op.own_value.sc_hb
+after_finish_state.own_value.sc_hb
+double_store.own_value.sc_hb
+drop_finish.own_value.sc_hb
+drop_store.own_value.sc_hb
+finish_before_store.own_error.sc
+finish_before_store.own_error.sc_hb
+finish_before_store.own_stopped.sc
+finish_before_store.own_stopped.sc_hb
+finish_before_store.own_value.sc
+finish_before_store.own_value.sc_hb
+loop_after_state.value_destructor.sc
+loop_after_state.value_destructor.sc_hb
+no_finish_handoff.own_value.sc_hb
+read_before_run.inline_error.sc
+read_before_run.inline_error.sc_hb
+read_before_run.inline_stopped.sc
+read_before_run.inline_stopped.sc_hb
+read_before_run.inline_value.sc
+read_before_run.inline_value.sc_hb
+read_before_run.own_error.sc
+read_before_run.own_error.sc_hb
+read_before_run.own_stopped.sc
+read_before_run.own_stopped.sc_hb
+read_before_run.own_value.sc
+read_before_run.own_value.sc_hb
+read_before_run.scheduled_value.sc
+read_before_run.scheduled_value.sc_hb
+read_before_run.value_destructor.sc
+read_before_run.value_destructor.sc_hb
+skip_loop_end.own_value.sc_hb
+skip_op_end.own_value.sc_hb
+skip_state_end.own_value.sc_hb
