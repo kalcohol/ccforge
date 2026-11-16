@@ -22,6 +22,8 @@
 
 #pragma once
 
+// Protocol model: formal/when_all; every edit, comments included, requires a source-lock refresh.
+
 #include "concepts.hpp"
 #include "detail/value_result.hpp"
 #include "detail/op_holder.hpp"

@@ -1,0 +1,31 @@
+{
+  "assessment": "Whole-header correspondence covers child completion, seq_cst pending decrements and disposition RMWs, acq_rel weak callback credit CAS with no-write failures, result mutex, unlocked delivery reads and callback/child/source member teardown. Shared finite child readiness and stop contracts abstract library internals. Outer stop forwarding requires successful nonzero credit acquisition; unconditional forwarding is outside that boundary.",
+  "checker_digest": "c19e0a23b37e2a7d681ab18b0c1923237bff432daf1f3f052f83c31bcf68b81a",
+  "configuration_count": 480,
+  "date": "2026-11-16",
+  "expected_digest": "e9694fca66c56d9aa755811422849426e94d84b6a5533f4112f0aade6c3480ad",
+  "last_full_qualification": {
+    "assessment": "Whole-header correspondence covers child completion, seq_cst pending decrements and disposition RMWs, acq_rel weak callback credit CAS with no-write failures, result mutex, unlocked delivery reads and callback/child/source member teardown. Shared finite child readiness and stop contracts abstract library internals. Outer stop forwarding requires successful nonzero credit acquisition; unconditional forwarding is outside that boundary.",
+    "checker_digest": "c19e0a23b37e2a7d681ab18b0c1923237bff432daf1f3f052f83c31bcf68b81a",
+    "configuration_count": 480,
+    "date": "2026-11-16",
+    "expected_digest": "e9694fca66c56d9aa755811422849426e94d84b6a5533f4112f0aade6c3480ad",
+    "outcome_summary": {
+      "fail": 138,
+      "pass": 342
+    },
+    "python": "3.13.13",
+    "source_digest": "e3763e083c46dc3525a3edd833c6d5fcf10cd9ef758e1c7bac2f5e08e8e3ee3c",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 138,
+    "pass": 342
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/when_all.hpp",
+  "source_digest": "e3763e083c46dc3525a3edd833c6d5fcf10cd9ef758e1c7bac2f5e08e8e3ee3c",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "full"
+}
