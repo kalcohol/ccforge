@@ -228,6 +228,8 @@ spawn_future、erased callable 与 IO aggregate 的保护只复制已有 shared 
 
 ## 严格测试模式与验证表面
 
+[协议模型检验](../../formal/stop_token/README.md) 在有限线程、回调和操作边界内穷举交错、等待库行为及抽象内存模型，补充动态测试难以稳定触发的调度；它不代替真实平台和 sanitizer 验证。
+
 `FORGE_EXECUTION_TEST_STRICT_STOP_LIFETIME` 仍只由专用 test executable 的 PRIVATE
 定义开启。每次 invocation 返回都先 volatile 读取 source atomic，即使 callback 已自毁；
 取得 source lock 后，仅当 stack 上的状态不是 `destroyed_on_requester` 时 volatile 读取

@@ -30,6 +30,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 ## 集成与验证
 
+- [协议模型检验](../formal/README.md)：独立于 CMake 的有限状态协议验证与变更检测。
 - [Native handoff 与无感注入](native-handoff.md)
 - [测试与验证](testing.md)
 - [安装与 CMake 选项](install-options.md)

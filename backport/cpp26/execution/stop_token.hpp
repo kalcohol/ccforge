@@ -104,6 +104,7 @@ struct callback_base {
 
 } // namespace __forge_stop_detail
 
+// Protocol model: formal/stop_token; every edit, comments included, requires a source-lock refresh.
 class inplace_stop_source {
 public:
     constexpr inplace_stop_source() noexcept = default;
