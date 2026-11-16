@@ -220,9 +220,12 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   consumer；需要此能力时应单独验证 coroutine operation 的 ownership、异常、stopped
   和 completion 内自毁契约，再实现这条独立路径。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
-  向每个订阅者广播缓存值；内部订阅者 callback 入链分配失败时以
-  `set_error(std::exception_ptr)` 完成。它没有实现完整
+  向每个订阅者广播缓存值；订阅者在 `connect` 时分配，分配失败向调用者抛出。它没有实现完整
   stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
+  已启动 operation 在完成前析构超出标准 operation-state 契约；本实现扩展允许 abandonment，
+  不停止 source，destructor 的 active store 在 modification order 中先于 delivery exchange
+  时抑制调用，若 exchange 已先赢得调用则仍可进入 receiver。
+  [split 协议模型](../../formal/split/README.md) 在有限边界内检验广播与共享生命周期。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是
   当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应
   使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留
