@@ -1,0 +1,31 @@
+{
+  "assessment": "Reviewed counting_scope.hpp correspondence with F3 committed delivery: successful stop-publishing requests independently snapshot registrations and deregistration cancels only the matching entry. Every winning exchange records callback identity and winning thread independently of Fn dispatch. Successful-request return requires actual Fn entry or an outstanding commitment whose winner's next step is Fn with no protocol wait; independent state and terminal checks reject abandoned commitments and require exactly one entry. Both inputs may request stop and the losing trampoline's request may return before Fn entry; waiting would cycle with Fn-driven callback destruction, so that return does not synchronize Fn effects and requesters needing completion synchronize with child completion. All baselines pass. The skip-retained, dropped-dispatch, literal-F3 and strong entry-before-return specification controls independently fail. Synchronization publications carry observed MO lower bounds separately from HB clocks across mutex, queue, signals, waits, stop-source handoffs and join completion. Individual join waits acquire only their own completion publication; wait_all aggregates all join completions. Two-join regressions check independent HB clocks and observation bounds. Cross-thread read-read coherence regressions pass, while negative tests retain the rule that relaxed RMWs publish neither their writer's preceding actions nor its observed bounds. When either join or decrement is unlocked, both list read/write pairs split; their SC and HB killers remain valid. Observable atomic modifications and unlocks stay separate, actual release/relaxed/acq_rel writes and release sequences are preserved, and same-value stores remain modifications. Constructor/member order, inline-only registrations, borrowed inplace ownership, arbitrary callback selection, observer teardown and multi-holder completion remain covered. All 15 mutants have killers with independent F2/F4 evidence. Ten duplicated routines compare token spelling including literals and directives; shared matcher keyword and unchanged stop-token analysis fixtures remain intact. Finite scripts and HB-coherent stale loads are not a complete C++ weak-memory proof.",
+  "checker_digest": "ae053e00e173c9b2b3bb92fbbd155cacdb5f7de70eb1feee0376b5578f77e486",
+  "configuration_count": 455,
+  "date": "2026-11-16",
+  "expected_digest": "5c2050159ac7bc9876265967bcdb24c3a0368bb32057bee2460344cd6832b0a4",
+  "last_full_qualification": {
+    "assessment": "Reviewed counting_scope.hpp correspondence with F3 committed delivery: successful stop-publishing requests independently snapshot registrations and deregistration cancels only the matching entry. Every winning exchange records callback identity and winning thread independently of Fn dispatch. Successful-request return requires actual Fn entry or an outstanding commitment whose winner's next step is Fn with no protocol wait; independent state and terminal checks reject abandoned commitments and require exactly one entry. Both inputs may request stop and the losing trampoline's request may return before Fn entry; waiting would cycle with Fn-driven callback destruction, so that return does not synchronize Fn effects and requesters needing completion synchronize with child completion. All baselines pass. The skip-retained, dropped-dispatch, literal-F3 and strong entry-before-return specification controls independently fail. Synchronization publications carry observed MO lower bounds separately from HB clocks across mutex, queue, signals, waits, stop-source handoffs and join completion. Individual join waits acquire only their own completion publication; wait_all aggregates all join completions. Two-join regressions check independent HB clocks and observation bounds. Cross-thread read-read coherence regressions pass, while negative tests retain the rule that relaxed RMWs publish neither their writer's preceding actions nor its observed bounds. When either join or decrement is unlocked, both list read/write pairs split; their SC and HB killers remain valid. Observable atomic modifications and unlocks stay separate, actual release/relaxed/acq_rel writes and release sequences are preserved, and same-value stores remain modifications. Constructor/member order, inline-only registrations, borrowed inplace ownership, arbitrary callback selection, observer teardown and multi-holder completion remain covered. All 15 mutants have killers with independent F2/F4 evidence. Ten duplicated routines compare token spelling including literals and directives; shared matcher keyword and unchanged stop-token analysis fixtures remain intact. Finite scripts and HB-coherent stale loads are not a complete C++ weak-memory proof.",
+    "checker_digest": "ae053e00e173c9b2b3bb92fbbd155cacdb5f7de70eb1feee0376b5578f77e486",
+    "configuration_count": 455,
+    "date": "2026-11-16",
+    "expected_digest": "5c2050159ac7bc9876265967bcdb24c3a0368bb32057bee2460344cd6832b0a4",
+    "outcome_summary": {
+      "fail": 36,
+      "pass": 419
+    },
+    "python": "3.13.13",
+    "source_digest": "11c53bad10fb758b3cc31a3310273b704cac72b7df20605479a52faece64d7b6",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 36,
+    "pass": 419
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/counting_scope.hpp",
+  "source_digest": "11c53bad10fb758b3cc31a3310273b704cac72b7df20605479a52faece64d7b6",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "full"
+}

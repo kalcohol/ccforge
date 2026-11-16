@@ -174,6 +174,7 @@ concept scope_token =
 // completes when all currently associated work drains.
 // ──────────────────────────────────────────────────────────────────────────
 
+// Protocol model: formal/counting_scope; every edit, comments included, requires a source-lock refresh.
 class simple_counting_scope {
 public:
     class scope_token;
