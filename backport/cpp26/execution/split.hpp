@@ -20,6 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Protocol model: formal/split; every edit, comments included, requires a source-lock refresh.
+
 #pragma once
 
 #include "concepts.hpp"

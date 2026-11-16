@@ -1,0 +1,1 @@
+"""Bounded split protocol model."""

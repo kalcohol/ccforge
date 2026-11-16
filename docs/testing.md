@@ -684,10 +684,13 @@ source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule 
 ## Protocol model check（协议模型检验）
 
 [formal/](../formal/README.md) 保存不进入 CMake test build 的协议模型。
-[when_all](../formal/when_all/README.md) 覆盖 child credit、取消与结果仲裁；[run_loop](../formal/run_loop/README.md) 覆盖 queue/wait 与 teardown；[sync_wait](../formal/sync_wait/README.md) 覆盖 result publication 与 stack lifetime；[spawn](../formal/spawn/README.md) 覆盖 detached state 与 allocator/association 顺序；[associate](../formal/associate/README.md) 覆盖 sender/operation association 与 receiver 自毁；[spawn_future](../formal/spawn_future/README.md) 覆盖 future 的完成、取消及所有权；[counting_scope](../formal/counting_scope/README.md) 覆盖 join、scope stop 和 fused callback；[stop_token](../formal/stop_token/README.md) 覆盖底层 stop 协议。
+[split](../formal/split/README.md) 覆盖惰性缓存广播、共享所有权与 abandonment；[when_all](../formal/when_all/README.md) 覆盖 child credit、取消与结果仲裁；[run_loop](../formal/run_loop/README.md) 覆盖 queue/wait 与 teardown；[sync_wait](../formal/sync_wait/README.md) 覆盖 result publication 与 stack lifetime；[spawn](../formal/spawn/README.md) 覆盖 detached state 与 allocator/association 顺序；[associate](../formal/associate/README.md) 覆盖 sender/operation association 与 receiver 自毁；[spawn_future](../formal/spawn_future/README.md) 覆盖 future 的完成、取消及所有权；[counting_scope](../formal/counting_scope/README.md) 覆盖 join、scope stop 和 fused callback；[stop_token](../formal/stop_token/README.md) 覆盖底层 stop 协议。
 Python explicit-state checker 要求 **Python 3.9+**，标准库即可；此要求独立于既有 helper 的 Python 3.6+ 要求。
 
 ```bash
+python3 -B formal/split/check.py --check-source
+python3 -B formal/split/check.py --tier quick
+python3 -B formal/split/check.py --tier full --jobs 8
 python3 -B formal/when_all/check.py --check-source
 python3 -B formal/when_all/check.py --tier quick
 python3 -B formal/when_all/check.py --tier full --jobs 8
