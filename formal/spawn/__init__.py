@@ -1,0 +1,1 @@
+"""Maintained bounded protocol model."""

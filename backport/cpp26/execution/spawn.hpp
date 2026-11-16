@@ -22,6 +22,8 @@
 
 #pragma once
 
+// Protocol model: formal/spawn; every edit, comments included, requires a source-lock refresh.
+
 #include "concepts.hpp"
 #include "counting_scope.hpp"
 #include "env.hpp"
