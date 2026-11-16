@@ -22,6 +22,8 @@
 
 #pragma once
 
+// Protocol model: formal/associate; every edit, comments included, requires a source-lock refresh.
+
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "counting_scope.hpp"

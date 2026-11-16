@@ -1,0 +1,31 @@
+{
+  "assessment": "The whole header maps to fresh sender/copy and const-connect associations, move transfer, conditional union-holder construction, connect exception unwind, stopped completion without association, receiver self-destruction and inner then receiver then association destruction. Member-order and completion-release variants carry their initializer, destructor guard and unwind consequences. Stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed stop sources and receiver resources have explicit caller lifetime assumptions.",
+  "checker_digest": "047592276e6a6fec42823064cd7aab1fd8121129d62a4138437d6f6036a0ec24",
+  "configuration_count": 601,
+  "date": "2026-11-16",
+  "expected_digest": "6ff39069110b8bfe17e9a2ab64d76f76a9133344d19b213704113177965f76ab",
+  "last_full_qualification": {
+    "assessment": "The whole header maps to fresh sender/copy and const-connect associations, move transfer, conditional union-holder construction, connect exception unwind, stopped completion without association, receiver self-destruction and inner then receiver then association destruction. Member-order and completion-release variants carry their initializer, destructor guard and unwind consequences. Stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed stop sources and receiver resources have explicit caller lifetime assumptions.",
+    "checker_digest": "047592276e6a6fec42823064cd7aab1fd8121129d62a4138437d6f6036a0ec24",
+    "configuration_count": 601,
+    "date": "2026-11-16",
+    "expected_digest": "6ff39069110b8bfe17e9a2ab64d76f76a9133344d19b213704113177965f76ab",
+    "outcome_summary": {
+      "fail": 225,
+      "pass": 376
+    },
+    "python": "3.13.13",
+    "source_digest": "6d3c65d6d7b07e94c4e1a96fc5b93467dd1fe27fc645fcbe0968b0d7cde7c406",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 225,
+    "pass": 376
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/associate.hpp",
+  "source_digest": "6d3c65d6d7b07e94c4e1a96fc5b93467dd1fe27fc645fcbe0968b0d7cde7c406",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "full"
+}
