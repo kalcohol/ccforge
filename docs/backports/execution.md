@@ -364,7 +364,9 @@ over-aligned 以及空的 immovable operation states；空间与对齐需求计�
 所有 adaptor 均使用 concrete operation type 的原位存储，已移除 `__op_storage`
 小缓冲及其按大小、对齐触发的全局 `new` 回退。`associate` 只在 association 成功时
 构造 union 中的 typed holder；holder 内的 operation 是普通成员，不依赖向
-potentially-overlapping subobject 的 copy elision。`join()` 的 schedule operation、
+potentially-overlapping subobject 的 copy elision。`associate` 在 operation 析构时先销毁 inner operation，
+再销毁 receiver，最后释放 association；完成本身不释放 association。
+[associate 协议模型](../../formal/associate/README.md) 在有限边界内检验这些生命周期与 sender association 转移。`join()` 的 schedule operation、
 `split` shared state 的 child operation、`spawn` / `spawn_future` state 的 spawned
 operation 均为普通成员，支持 immovable、超过 4 KiB 及 over-aligned operation。
 
@@ -372,7 +374,8 @@ operation 均为普通成员，支持 immovable、超过 4 KiB 及 over-aligned 
 `get_allocator(env)`、`token.wrap(sndr)` 的 sender attributes 中的 allocator、
 `std::allocator<void>`。第二种情况还向 spawned environment 注入所选 allocator；
 缺省情况不额外添加 allocator query。`spawn` 用 rebound allocator 分配一个 state，
-其 operation 无独立分配。`spawn_future` 用同一所选 allocator 分别分配生命周期 resource、
+其 operation 无独立分配。
+[spawn 协议模型](../../formal/spawn/README.md) 在有限边界内检验双 reference、stop registration 与 deallocate 后释放 association 的顺序。`spawn_future` 用同一所选 allocator 分别分配生命周期 resource、
 state 和 state 的 `shared_ptr` control block；连接 consumer 时用 `allocate_shared`
 分配合并的 consumer record/control block。resource 持有 association，所有内部 allocator
 副本共同保持其存活；consumer 在完成前解除与外层 operation 的存储所有权。
