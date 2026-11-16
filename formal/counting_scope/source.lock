@@ -1,12 +1,12 @@
 {
-  "assessment": "Engine memory extraction preserves the counting_scope vector clocks, independent MO/release-sequence publications, coherent observed bounds and race checks. The matcher accepts conservative template and requires forms while complete reference-header analysis structures and step resolutions remain identical. counting_scope source, mutex/atomic boundaries, J/S/F obligations and all expected records are unchanged.",
-  "checker_digest": "a2e45d5d2473ea49eb0cb945f42dc8cf3fb8d88d35b6ba110374e8f116083464",
+  "assessment": "Engine-only qualification: anonymous data-member union matching and shared library contracts leave counting_scope transitions, atomic publications, source fragments and abstraction boundaries unchanged; complete lexical analyses and resolutions of all previous headers are identical. Full semantic expected records remain byte-identical.",
+  "checker_digest": "59c62a03d45be44057b5d439e6fba39443efd89d0527feace0727907ad6dc0ef",
   "configuration_count": 455,
   "date": "2026-11-16",
   "expected_digest": "5c2050159ac7bc9876265967bcdb24c3a0368bb32057bee2460344cd6832b0a4",
   "last_full_qualification": {
-    "assessment": "Engine memory extraction preserves the counting_scope vector clocks, independent MO/release-sequence publications, coherent observed bounds and race checks. The matcher accepts conservative template and requires forms while complete reference-header analysis structures and step resolutions remain identical. counting_scope source, mutex/atomic boundaries, J/S/F obligations and all expected records are unchanged.",
-    "checker_digest": "a2e45d5d2473ea49eb0cb945f42dc8cf3fb8d88d35b6ba110374e8f116083464",
+    "assessment": "Engine-only qualification: anonymous data-member union matching and shared library contracts leave counting_scope transitions, atomic publications, source fragments and abstraction boundaries unchanged; complete lexical analyses and resolutions of all previous headers are identical. Full semantic expected records remain byte-identical.",
+    "checker_digest": "59c62a03d45be44057b5d439e6fba39443efd89d0527feace0727907ad6dc0ef",
     "configuration_count": 455,
     "date": "2026-11-16",
     "expected_digest": "5c2050159ac7bc9876265967bcdb24c3a0368bb32057bee2460344cd6832b0a4",

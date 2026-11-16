@@ -704,10 +704,13 @@ def transaction_tests(root, source, package):
 
 def run(root):
     lexical_tests(root)
+    anonymous_union_tests()
     spawn_subset_tests()
     qualified_template_tests()
     from .memory_self_tests import run as memory_tests
     memory_tests()
+    from .library_contracts_self_tests import run as library_tests
+    library_tests()
     counting_subset_tests()
     subset_tests()
     allowlist_tests()
@@ -787,3 +790,18 @@ def qualified_template_tests():
     refused(lambda: source_lock.locate(text, 'D::C::f', 'target();'))
     for qualifier in ('C<int>>', 'C<N << 1>', 'C<int>::'):
         refused(lambda: source_lock.locate('void ' + qualifier + '::f() { target(); }', 'C::f', 'target();'))
+
+
+def anonymous_union_tests():
+    for member in ('holder_t inner;', 'N::Holder<T> inner;', 'Value x; T y;'):
+        text = 'struct A { union { ' + member + ' }; void f() { target(); } };'
+        assert source_lock.locate(text, 'A::f', 'target();') == 1
+    for text in ('union { T x; };', 'void f() { union { T x; }; }',
+                 'struct A { struct { T x; }; };', 'struct A { class { T x; }; };',
+                 'struct A { union { T x; } instance; };',
+                 'struct A { union { void f() { target(); } }; };',
+                 'struct A { union { struct B { T x; }; }; };',
+                 'struct A { union { T x = factory(); }; };',
+                 'struct A { union {}; };', 'struct A { union { T x, y; }; };',
+                 'struct A { union { private: T x; }; };'):
+        refused(lambda: source_lock.analyze(text))

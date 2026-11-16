@@ -4,7 +4,7 @@
 
 ## 目录与约定
 
-`engine/` 是标准库实现的小型内部搜索工具，提供 BFS、全图 completion reachability、trace、并行 runner、source lock 和通用 memory machinery。模型目录保存状态与转移、场景、mutant catalog、tier manifests、逐配置 expected records 和 source lock。搜索器不解释协议字段或 step id；memory client 通过约定的 clocks、histories、observed bounds 和 access records 保存同步状态。
+`engine/` 是标准库实现的小型内部搜索工具，提供 BFS、全图 completion reachability、trace、并行 runner、source lock、通用 memory machinery 及 stop/scope 共享库契约。模型目录保存状态与转移、场景、mutant catalog、tier manifests、逐配置 expected records 和 source lock。搜索器不解释协议字段或 step id；memory client 通过约定的 clocks、histories、observed bounds 和 access records 保存同步状态。
 
 Python 模型要求 Python 3.9+，统一提供以下 CLI：
 

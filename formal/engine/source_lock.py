@@ -22,7 +22,9 @@ in code (including directives), honoring the standard <:: lexical exception.
 Unsupported constructs fail closed with their physical line.
 Class heads accept class/struct/union, validated attributes, one plain ASCII
 identifier, optional final and an allowlisted base list before the body. Namespace-level specializations require a previously declared primary. Other
-body-introducing heads fail closed; namespace-level qualified nested heads are supported. Include header-names are opaque tokens.
+body-introducing heads fail closed; namespace-level qualified nested heads are supported.
+Anonymous unions are limited to data members with named types inside a nonlocal
+class body; no instance declarator, methods, nested types or initializers. Include header-names are opaque tokens.
 References omit namespaces and require the exact complete class path, whether
 explicitly qualified or implied by nesting. Any enclosing function/block body
 excludes a candidate, including local classes. Exact class paths in different
@@ -241,6 +243,27 @@ def class_bodies(values, pairs, parents):
         if value not in ("class", "struct", "union") or (i and values[i - 1] == "enum"):
             continue
         j = i + 1
+        if value == "union" and values[j:j + 1] == ["{"]:
+            # Only anonymous data-member unions in a class declaration. No
+            # local/namespace unions, instances, methods or nested types.
+            parent = parents[i]
+            ancestor = parent
+            while ancestor in bodies:
+                ancestor = parents[ancestor]
+            if parent not in bodies or ancestor is not None and ancestor not in namespace_bodies(values):
+                raise Unsupported("anonymous union member scope", i)
+            finish = pairs[j]
+            k = j + 1
+            if k == finish or values[finish + 1:finish + 2] != [";"]:
+                raise Unsupported("anonymous union member declaration", i)
+            while k < finish:
+                k = qualified_name_end(values, pairs, k, concept=True)
+                if (k >= finish or not re.fullmatch(IDENTIFIER, values[k])
+                        or values[k] in KEYWORDS or values[k + 1:k + 2] != [";"]):
+                    raise Unsupported("anonymous union data member", i)
+                k += 2
+            bodies[j] = ("(anonymous union)", finish)
+            continue
         while values[j:j + 2] == ["[", "["]:
             j = attribute_end(values, pairs, j)
         if j == len(values) or not re.fullmatch(IDENTIFIER, values[j]) or values[j] in KEYWORDS:

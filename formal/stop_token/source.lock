@@ -1,12 +1,12 @@
 {
-  "assessment": "Engine-only change: narrow matcher support for namespace-block class template specializations, if-constexpr simple requires-expressions and template-id out-of-class qualifiers, with fail-closed positive and negative fixtures. The complete stop_token.hpp analysis structures and every step resolution are identical to the prior matcher. Shared memory machinery was extracted into the engine for the other models and is not imported by the stop_token protocol model. stop_token.hpp, model behaviour, expected records and sensitivity are unchanged; the full records match without regeneration.",
-  "checker_digest": "bd66a4e806e3ce3bedff3ce7652826b49391eae6d2d1dd28062daa3f4b2b6cdb",
+  "assessment": "Engine-only change: narrow matching of anonymous data-member unions inside nonlocal class bodies, plus shared abstract stop, scope and child-operation contract modules used by other models. The stop_token model, its transitions, atomic histories, library assumptions and fragments are unchanged; the complete stop_token.hpp analysis and every step resolution are identical to the prior matcher. The full records match the unchanged expected data and sensitivity.",
+  "checker_digest": "ec85bd9158c2875c00cd703e91f5488fc925a4efdcc678b8690098c972cfb267",
   "configuration_count": 7577,
   "date": "2026-11-16",
   "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",
   "last_full_qualification": {
-    "assessment": "Engine-only change: narrow matcher support for namespace-block class template specializations, if-constexpr simple requires-expressions and template-id out-of-class qualifiers, with fail-closed positive and negative fixtures. The complete stop_token.hpp analysis structures and every step resolution are identical to the prior matcher. Shared memory machinery was extracted into the engine for the other models and is not imported by the stop_token protocol model. stop_token.hpp, model behaviour, expected records and sensitivity are unchanged; the full records match without regeneration.",
-    "checker_digest": "bd66a4e806e3ce3bedff3ce7652826b49391eae6d2d1dd28062daa3f4b2b6cdb",
+    "assessment": "Engine-only change: narrow matching of anonymous data-member unions inside nonlocal class bodies, plus shared abstract stop, scope and child-operation contract modules used by other models. The stop_token model, its transitions, atomic histories, library assumptions and fragments are unchanged; the complete stop_token.hpp analysis and every step resolution are identical to the prior matcher. The full records match the unchanged expected data and sensitivity.",
+    "checker_digest": "ec85bd9158c2875c00cd703e91f5488fc925a4efdcc678b8690098c972cfb267",
     "configuration_count": 7577,
     "date": "2026-11-16",
     "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",
