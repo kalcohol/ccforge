@@ -15,7 +15,9 @@ return, a supported requires-clause and validated attributes, then body, ctor
 initializers or try. Other tokens never establish a definition. Constraints are
 unparenthesized qualified concept names (optional template arguments), or
 requires-expressions, joined by &&/||; declaration-level requires-expressions
-are supported. A parenthesized conjunction beginning with a negated concept is also supported.
+are supported. Parenthesized constraints also accept a conjunction beginning
+with a negated concept, a unary concept-id fold with &&/||, or exactly
+sizeof...(identifier) > 0. Other parenthesized expressions are rejected.
 Attributes accept a comma-separated list of identifiers, optional ::identifier, and optional arguments
 of identifiers/literals/commas/balanced parentheses only. Digraphs are rejected
 in code (including directives), honoring the standard <:: lexical exception.
@@ -456,8 +458,23 @@ def requires_end(values, pairs, start):
             # Calls, arithmetic, nested expressions and other constraints reject.
             finish = pairs[j]
             k = j + 1
+            if values[k:k + 3] == ["sizeof", "...", "("]:
+                # Exactly a nonempty plain pack; no other comparison or operand.
+                operand = values[k + 3:k + 4]
+                if (len(operand) != 1 or not re.fullmatch(IDENTIFIER, operand[0])
+                        or operand[0] in KEYWORDS
+                        or values[k + 4:finish] != [")", ">", "0"]):
+                    raise Unsupported("nonempty pack constraint", j)
+                return finish + 1
             if values[k:k + 1] != ["!"]:
-                raise Unsupported("ambiguous trailing requires parentheses", j)
+                # Unary right fold of exactly one concept-id. No binary fold,
+                # call, bare name, arithmetic operand or nested parentheses.
+                end = qualified_name_end(values, pairs, k, concept=True)
+                if ("<" not in values[k:end] or values[end - 1:end] not in ([">"], [">>"])
+                        or values[end:end + 1] not in (["&&"], ["||"])
+                        or values[end + 1:finish] != ["..."]):
+                    raise Unsupported("ambiguous trailing requires parentheses", j)
+                return finish + 1
             k = qualified_name_end(values, pairs, k + 1, concept=True)
             while values[k:k + 1] == ["&&"]:
                 k = qualified_name_end(values, pairs, k + 1, concept=True)

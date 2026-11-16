@@ -23,6 +23,7 @@ def setup(hb=False, stale=False):
 
 
 def run():
+    single_input_inner_test()
     w,l,m=setup(stale=True)
     assert not l.register(w,0,0,0)
     l.deregister(w,0,0)
@@ -82,3 +83,19 @@ def run():
     protected=('child_started','completion_obligation','prestart')
     fixtures(protected)
     check(ast.parse(Path(inner_operation.__file__).read_text()), protected)
+
+
+def single_input_inner_test():
+    from .inner_operation import Inner
+    w,l,m=setup()
+    l.initialize(w,1)
+    w.child_ready=False; w.child_started=False; w.notice=False
+    cfg=SimpleNamespace(control='',mode='sync',registration='start')
+    queue=[]
+    child=Inner(cfg,m,l,lambda w,e: None,set(),lambda w,t,*ops: queue.extend(ops),lambda *a:None,lambda *a:None)
+    child.execute(w,0,('query',0),0)
+    assert queue==[('register',0)]
+    queue.clear()
+    m.publish(w,0,1,True)
+    child.execute(w,0,('query',0),0)
+    assert queue==[('invoke',-1),('register',0)]

@@ -704,6 +704,8 @@ def transaction_tests(root, source, package):
 
 def run(root):
     lexical_tests(root)
+    unary_concept_fold_tests()
+    nonempty_pack_tests()
     anonymous_union_tests()
     spawn_subset_tests()
     qualified_template_tests()
@@ -805,3 +807,36 @@ def anonymous_union_tests():
                  'struct A { union {}; };', 'struct A { union { T x, y; }; };',
                  'struct A { union { private: T x; }; };'):
         refused(lambda: source_lock.analyze(text))
+
+
+def unary_concept_fold_tests():
+    for operand in ('C<T>', 'std::copy_constructible<Senders>', '::N::C<Box<T>>'):
+        for operator in ('&&','||'):
+            for head in ('template<class... T> requires (%s %s ...) void A::f()',
+                         'void A::f() requires (%s %s ...)'):
+                text=(head % (operand,operator))+' { target(); }'
+                assert source_lock.locate(text,'A::f','target();')==1
+    for constraint in ('(C<T>)','(C && ...)','(true && ...)','(f<T>() && ...)',
+                       '(C<T> + ...)','(C<T> && ... && D<T>)','(... && C<T>)',
+                       '(C<T>::D && ...)', 'C<T> && ...',
+                       '((C<T>) && ...)','(C<T> || ... || false)',
+                       '(N::false<T> && ...)'):
+        refused(lambda: source_lock.analyze('void A::f() requires '+constraint+' { target(); }'))
+
+
+def nonempty_pack_tests():
+    for pack in ('T', 'Senders', '_pack_2'):
+        for head in ('template<class... T> requires %s void A::f()',
+                     'void A::f() requires %s'):
+            text = (head % ('(sizeof...(' + pack + ') > 0)')) + ' { target(); }'
+            assert source_lock.locate(text, 'A::f', 'target();') == 1
+    for constraint in ('(sizeof...(T) >= 0)', '(sizeof...(T) != 0)',
+                       '(sizeof...(T) > 1)', '(sizeof...(T) > 0u)',
+                       '(sizeof...(T) > false)', '(sizeof...(T::U) > 0)',
+                       '(sizeof...(T<U>) > 0)', '(sizeof...(true) > 0)',
+                       '(sizeof...(class) > 0)', '(sizeof...((T)) > 0)',
+                       '(sizeof...(T + U) > 0)', '(sizeof...(T) + 1 > 0)',
+                       'sizeof...(T) > 0', '((sizeof...(T) > 0))',
+                       '(sizeof...(T) > (0))', '(0 < sizeof...(T))',
+                       '(sizeof...(T) > 0 && C<T>)', '(sizeof(T) > 0)'):
+        refused(lambda: source_lock.analyze('void A::f() requires ' + constraint + ' { target(); }'))

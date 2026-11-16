@@ -1,12 +1,12 @@
 {
-  "assessment": "The whole header maps to fresh sender/copy and const-connect associations, move transfer, conditional union-holder construction, connect exception unwind, stopped completion without association, receiver self-destruction and inner then receiver then association destruction. Member-order and completion-release variants carry their initializer, destructor guard and unwind consequences. Stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed stop sources and receiver resources have explicit caller lifetime assumptions.",
-  "checker_digest": "047592276e6a6fec42823064cd7aab1fd8121129d62a4138437d6f6036a0ec24",
+  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+  "checker_digest": "a82e66d38c09be139476883629bb979797b08e1f1bfacb645ad9c4ce9517b145",
   "configuration_count": 601,
   "date": "2026-11-16",
   "expected_digest": "6ff39069110b8bfe17e9a2ab64d76f76a9133344d19b213704113177965f76ab",
   "last_full_qualification": {
-    "assessment": "The whole header maps to fresh sender/copy and const-connect associations, move transfer, conditional union-holder construction, connect exception unwind, stopped completion without association, receiver self-destruction and inner then receiver then association destruction. Member-order and completion-release variants carry their initializer, destructor guard and unwind consequences. Stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed stop sources and receiver resources have explicit caller lifetime assumptions.",
-    "checker_digest": "047592276e6a6fec42823064cd7aab1fd8121129d62a4138437d6f6036a0ec24",
+    "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+    "checker_digest": "a82e66d38c09be139476883629bb979797b08e1f1bfacb645ad9c4ce9517b145",
     "configuration_count": 601,
     "date": "2026-11-16",
     "expected_digest": "6ff39069110b8bfe17e9a2ab64d76f76a9133344d19b213704113177965f76ab",

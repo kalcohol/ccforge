@@ -1,12 +1,12 @@
 {
-  "assessment": "Engine-only qualification: anonymous data-member union matching and shared library contracts leave spawn_future local callback implementation, ownership graph, atomic histories, fragments and abstraction boundaries unchanged. Complete lexical analyses and resolutions of all previous headers are identical; full semantic expected records remain byte-identical.",
-  "checker_digest": "fd18310ca3930dab4eec3f1023bce0b254307cb41610d2afe5b20a9cb1b19acb",
+  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+  "checker_digest": "013a678399a58b70794fbf4833a6ae8d2bb74821e81525181cb7f2142ed05b62",
   "configuration_count": 1666,
   "date": "2026-11-16",
   "expected_digest": "e64fd8cf082ca202f149d0a14a37430f7e50bb986641467461d3ffe68dbe082b",
   "last_full_qualification": {
-    "assessment": "Engine-only qualification: anonymous data-member union matching and shared library contracts leave spawn_future local callback implementation, ownership graph, atomic histories, fragments and abstraction boundaries unchanged. Complete lexical analyses and resolutions of all previous headers are identical; full semantic expected records remain byte-identical.",
-    "checker_digest": "fd18310ca3930dab4eec3f1023bce0b254307cb41610d2afe5b20a9cb1b19acb",
+    "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+    "checker_digest": "013a678399a58b70794fbf4833a6ae8d2bb74821e81525181cb7f2142ed05b62",
     "configuration_count": 1666,
     "date": "2026-11-16",
     "expected_digest": "e64fd8cf082ca202f149d0a14a37430f7e50bb986641467461d3ffe68dbe082b",

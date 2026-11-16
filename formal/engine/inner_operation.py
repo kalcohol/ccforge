@@ -44,11 +44,11 @@ class Inner:
             stopped=mem.load(w,t,1+slot,alt)
             if stopped:
                 lib.pre_stopped(w)
-                self.prepend(w,t,('invoke',-1),('register',0),('register',1))
-            elif slot==0:
-                self.prepend(w,t,('query',1))
+                self.prepend(w,t,('invoke',-1),*(('register',i) for i in range(len(w.callbacks.status))))
+            elif slot+1 < len(w.callbacks.status):
+                self.prepend(w,t,('query',slot+1))
             else:
-                self.prepend(w,t,('register',0),('register',1))
+                self.prepend(w,t,*(('register',i) for i in range(len(w.callbacks.status))))
         elif a == 'register':
             slot=args[0]
             if lib.register(w,t,slot,1+slot):

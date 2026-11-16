@@ -34,3 +34,5 @@ python3 -B formal/stop_token/check.py --steps
 创建独立模型目录及 README，声明边界、内存与库假设、性质、mutants 和 negative controls。Python 模型采用相同 CLI，并提供 configure、initial、key/state、successors、state/terminal violations、blocked/aborted、describe、describe_initial、metrics 与 coverage callbacks（initial rendering 未提供时采用中性默认值）。保持 successor 顺序确定，worker 自行初始化配置；一个 expected record 对应一个完整配置。
 
 镜像仓库代码的任何 artifact 均须提供等价的 drift detection 和 fidelity review 记录；其他形式的模型可采用自己的 runner，无需套用 Python 引擎。加入模型后检查 fail-closed discovery、审计和 floor，并给出可复现命令及资源边界。
+
+constraint matcher 另接受严格括号形式的 concept-id unary fold（`&&` 或 `||`）及 `sizeof...(identifier) > 0`；不接受其他比较、keyword operands 或嵌套表达式。扩展带正负 self-tests，五个既有 headers 的完整 analysis structures 与全部 step resolutions 保持一致。共享 inner script 支持一或两个 stop inputs，原有双 input 行为不变。

@@ -1,12 +1,12 @@
 {
-  "assessment": "The whole header maps to connect-before-association construction, exception unwind, separate launch/completion reference owners, relaxed increment and acq_rel decrements, moved-out association ownership, state and registration destruction, deallocation and local allocator destruction before association release. Shared stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed request_stop sources cover request return, and resources used by outer call-stack allocator destructors have independent caller lifetimes.",
-  "checker_digest": "538a2cb8e8344d9f4ec7f89a6bfa0eb2bfa67946483e0780a97ed8c446e4c9f8",
+  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+  "checker_digest": "2b7696e9415cb30ca404fb48c490d88c6ebce4b1a3cce5313b0bfad8d3961f79",
   "configuration_count": 539,
   "date": "2026-11-16",
   "expected_digest": "cd749ff43935f57e6a122b4a02fbd77c7092a798d3d69861f982a2ad9adccee6",
   "last_full_qualification": {
-    "assessment": "The whole header maps to connect-before-association construction, exception unwind, separate launch/completion reference owners, relaxed increment and acq_rel decrements, moved-out association ownership, state and registration destruction, deallocation and local allocator destruction before association release. Shared stop/scope internals and child synchronization are abstract library contracts; query observations are coverage-only ghost state. Borrowed request_stop sources cover request return, and resources used by outer call-stack allocator destructors have independent caller lifetimes.",
-    "checker_digest": "538a2cb8e8344d9f4ec7f89a6bfa0eb2bfa67946483e0780a97ed8c446e4c9f8",
+    "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+    "checker_digest": "2b7696e9415cb30ca404fb48c490d88c6ebce4b1a3cce5313b0bfad8d3961f79",
     "configuration_count": 539,
     "date": "2026-11-16",
     "expected_digest": "cd749ff43935f57e6a122b4a02fbd77c7092a798d3d69861f982a2ad9adccee6",
