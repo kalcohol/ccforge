@@ -684,9 +684,13 @@ source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule 
 ## Protocol model check（协议模型检验）
 
 [formal/](../formal/README.md) 保存不进入 CMake test build 的协议模型。
+[counting_scope](../formal/counting_scope/README.md) 覆盖 join、scope stop 和 fused callback；[stop_token](../formal/stop_token/README.md) 覆盖底层 stop 协议。
 Python explicit-state checker 要求 **Python 3.9+**，标准库即可；此要求独立于既有 helper 的 Python 3.6+ 要求。
 
 ```bash
+python3 -B formal/counting_scope/check.py --check-source
+python3 -B formal/counting_scope/check.py --tier quick
+python3 -B formal/counting_scope/check.py --tier full --jobs 8
 python3 -B formal/stop_token/check.py --check-source
 python3 -B formal/stop_token/check.py --tier quick
 python3 -B formal/stop_token/check.py --tier full --jobs 8

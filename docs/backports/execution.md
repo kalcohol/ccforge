@@ -272,6 +272,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `joined`、`unused` 或 `unused-and-closed` state，否则调用 `terminate`，包括
   count 已自然 drain 到零但未消费 `join()` 的情况。Destructor 在 mutex 下检查
   state，与最后一次 association decrement 的 critical section 同步。
+  [counting_scope 协议模型](../../formal/counting_scope/README.md) 在有限边界内检验 join、scope stop 和 fused callback 的生命周期及同步。
 - `forge::task` 的完成与取消契约见[工具参考](../forge-utilities.md#两种协程任务)。
 
 Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成员式定制（如
@@ -389,7 +390,10 @@ token；其他情况的融合 token 只保存 scope token 和 receiver token 的
 在发布 registration 前于构造线程调用，exchange 保证两个输入并发
 停止时也只调用一次。调用 `Fn` 后不再访问 callback storage，允许同线程 self-deregistration。
 析构先注销两个输入 registration，再销毁 `Fn`；注销等待另一线程正在执行的 invocation，
-输掉 exchange 的 trampoline 直接返回，不形成等待环。
+输掉 exchange 的 trampoline 直接返回；两个输入并发请求停止时，输掉 exchange 的输入请求
+可在赢家线程进入 `Fn` 前返回，`Fn` 的 effects 与该返回之间没有 happens-before。
+不能在此等待赢家：赢家的 `Fn` 可能析构 callback，而析构又等待输家的 invocation 返回，
+从而形成等待环。请求方若需要完成保证，须与 child completion 同步。
 child 负责其 callback 的注册、注销和注册失败处理；stop-when 按原 channel 和原参数引用
 直接转发，不保存参数、不增加分配，也不合成 stopped completion 或额外 signature。
 receiver 可在同线程 stop completion 中销毁 operation，输入 source 的 owner 仍须覆盖
