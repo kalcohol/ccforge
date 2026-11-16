@@ -285,14 +285,37 @@ constexpr bool none_of(const basic_mask<Bytes, Abi>& value) noexcept {
     return !std::simd::any_of(value);
 }
 
+#if defined(__clang__) && __clang_major__ >= 19 && defined(__AVX2__) && defined(__POPCNT__)
+namespace __detail {
+
+// A lane is zero or all ones, so its sign bit is its value. Clang lowers the
+// boolean vector of sign tests to one load, movemask and popcnt, with no
+// compare. Boolean vector conversions were only tested with Clang 19.
+template<size_t Bytes, class Abi>
+__simd_size_type mask_sign_count(const basic_mask<Bytes, Abi>& value) noexcept {
+    using lane_type = make_signed_t<mask_lane_t<Bytes>>;
+    constexpr __simd_size_type size = basic_mask<Bytes, Abi>::size;
+    using lanes_type = lane_type __attribute__((vector_size(sizeof(lane_type) * size)));
+    using bits_type = bool __attribute__((ext_vector_type(size)));
+    static_assert(sizeof(bits_type) == 1 && size <= 8);
+    lanes_type lanes;
+    __builtin_memcpy(&lanes, mask_access::data(value), sizeof(lanes));
+    const bits_type bits = __builtin_convertvector(lanes < 0, bits_type);
+    // Bits past the last lane are padding; mask them off.
+    return __builtin_popcount(__builtin_bit_cast(unsigned char, bits) & ((1u << size) - 1u));
+}
+
+} // namespace __detail
+#endif
+
 template<size_t Bytes, class Abi>
 constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noexcept {
     // Every loop works unchanged in constant evaluation.
     using lane_type = __detail::mask_lane_t<Bytes>;
     constexpr __simd_size_type size = basic_mask<Bytes, Abi>::size;
 #if defined(__clang__) && defined(__AVX2__) && defined(__POPCNT__)
-    // One 16/32-byte compare with all ones, movemask and popcnt: measured
-    // faster than the add tree for Clang AVX2 at these widths only.
+    // One 16/32-byte movemask and popcnt: measured faster than the add tree
+    // for Clang AVX2 at these widths only.
     constexpr bool compare_count = (sizeof(lane_type) == 4 && (size == 4 || size == 8)) ||
                                    (sizeof(lane_type) == 8 && size == 4);
 #else
@@ -308,6 +331,18 @@ constexpr __simd_size_type reduce_count(const basic_mask<Bytes, Abi>& value) noe
         static_cast<unsigned long long>(size) <=
             static_cast<unsigned long long>(numeric_limits<lane_type>::max());
     if constexpr (compare_count) {
+#if defined(__clang__) && __clang_major__ >= 19 && defined(__AVX2__) && defined(__POPCNT__)
+        // 16-byte masks keep the compare: with Clang 19 -O3 a comparison result
+        // consumed directly reached the vector form rebuilt from 64-bit halves,
+        // which split the single vector compare in two.
+        if constexpr (size * sizeof(lane_type) == 32) {
+            if !consteval {
+                return __detail::mask_sign_count(value);
+            }
+        }
+#endif
+        // Constant evaluation, 16-byte masks and older Clang compare each lane
+        // with all ones, which lowers to one vector compare, movemask and popcnt.
         __simd_size_type result = 0;
         for (__simd_size_type i = 0; i < size; ++i) {
             result += static_cast<__simd_size_type>(

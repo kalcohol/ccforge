@@ -593,6 +593,12 @@ struct mask_access {
         return value.data_[i];
     }
 
+    // Contiguous lane storage, for whole-mask loads outside constant evaluation.
+    template<size_t Bytes, class Abi>
+    static constexpr const mask_lane_t<Bytes>* data(const basic_mask<Bytes, Abi>& value) noexcept {
+        return value.data_.data();
+    }
+
     template<size_t Bytes, class Abi>
     static constexpr void set(basic_mask<Bytes, Abi>& value, __simd_size_type i, bool lane) noexcept {
         value.data_[i] = mask_bits<Bytes>(lane);
