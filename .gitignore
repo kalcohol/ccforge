@@ -46,3 +46,5 @@ Thumbs.db
 IMPLEMENTATION_SUMMARY.md
 .sisyphus/
 CLAUDE.md
+
+__pycache__/
