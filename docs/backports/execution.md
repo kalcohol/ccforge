@@ -288,6 +288,7 @@ Forge 自带 sender/receiver/scheduler 已优先采用当前 C++26 draft 的成�
 `env` 的旧 `tag_invoke` 接口继续保留。
 `sync_wait` env 与 `let` / `when_all` helper env 提供 const member
 `query`；`when_all` 只转发一参数 forwarding query。
+[sync_wait 协议模型](../../formal/sync_wait/README.md) 检查 result 经 finish/run 的 HB 发布与 op、state、loop 的逆序析构。
 [`write_env`](https://eel.is/c++draft/exec.write.env) 的 child env 提供一参数 const member
 `query`：先查询 overlay，未命中时仅转发 receiver env 中满足 `forwarding_query` 的查询。
 因此 base 的本地查询不可见，overlay 提供的本地查询仍可见；结果引用与条件 `noexcept` 保留。
@@ -302,6 +303,7 @@ completion-domain 分支，默认模式仍可通过 unary 回退选择 inline sc
 error completion scheduler 或 unary completion-domain 成员。带环境参数时，attrs 的
 completion-domain 成员转发到 scheduler CPO，两侧均得到 `default_domain`；
 该 CPO 的 error-tag fallback 可用性不代表 schedule sender 提供 error completion。
+[run_loop 协议模型](../../formal/run_loop/README.md) 检查 queue/wait 与最后 unlock 后的 teardown；调用者须在最终空队列观察前关闭提交，finish 本身不拒绝后续 push。
 两个 scheduler 的 progress 查询也有成员入口。Completion-scheduler CPO 支持带环境参数的
 直接查询，未命中时按
 `TRY-QUERY` 回退至一参数查询；原有一参数 dispatch 顺序不变。该入口未实现草案完整的
@@ -340,6 +342,7 @@ values 以 decayed tuple 的 `optional<variant<...>>` 保存（保留多 value s
 errors、stop source 和具体类型的 `optional` stop callback 均在 operation state 内存储。
 stop callback 在启动任何 child 前注册，并在向下游发送 completion 前注销；
 child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析构。
+[when_all 协议模型](../../formal/when_all/README.md) 检查结果仲裁、completion credit 与生命周期；外层 stop callback 成功取得非零 credit 时向内部 source 转发，最后 child 先归零时允许不再转发。
 上述 `let_*` / `when_all` 的 operation-state storage 本身不再分配，
 不依赖固定容量或 `std::max_align_t` 对齐上限，也不会因 operation state 或 callback
 对象的大小、对齐要求而回退到全局分配；所需空间计入具体 operation state 的大小与对齐要求。
