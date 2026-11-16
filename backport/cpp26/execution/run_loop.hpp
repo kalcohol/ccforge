@@ -22,6 +22,8 @@
 
 #pragma once
 
+// Protocol model: formal/run_loop; every edit, comments included, requires a source-lock refresh.
+
 #include "concepts.hpp"
 #include "env.hpp"
 
