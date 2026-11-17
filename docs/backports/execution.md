@@ -134,9 +134,11 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   会等待 invocation 返回。source 必须活过全部注册和 `request_stop()`，包括 callback
   返回后的 source 访问。协议见
   [`inplace-stop-callback-design.md`](../roadmap/inplace-stop-callback-design.md)。
-- Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和 copyable lvalue 拷贝路径；
-  non-copyable lvalue sender 需要显式传入 `std::move(sndr)`，以保持 native C++26
-  handoff 时的源码形态一致。const non-copyable lvalue 仍不可连接。
+- Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和要求 sender 可复制的 lvalue 路径。
+  `then`、`upon_*`、bulk、`into_variant`、`write_env` 与 `schedule_from` 的 const-lvalue
+  连接直接将 child 作为 const lvalue 连接，不预先复制整个 child；data 按对应类别构造，
+  有 allocator 时在 child 自身的 get-state 内重建。non-copyable lvalue sender 需要显式
+  `std::move(sndr)`，以保持 native C++26 handoff 时的源码形态一致；const non-copyable lvalue 不可连接。
 - Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start
   domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段
   recursive `transform_sender`；public `transform_sender(sender, env)`、`connect_t` 与
@@ -172,10 +174,13 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `affine(sender)` / `sender | affine` 从 receiver environment 的 `get_start_scheduler`
   取得目标 scheduler，通过 unstoppable schedule sender 复用同一 transfer 路径，
   因而也保留多种 value shapes，并采用相同的条件 `exception_ptr` 规则。
-  [`continues_on`](https://eel.is/c++draft/exec.continues.on) 的 attributes 通过成员
-  `query` 为 value 和 stopped completion 发布 destination scheduler。调度失败的
-  error completion 允许发生在 unspecified agent，因此不为 error disposition
-  声称唯一 completion scheduler 或 domain。value / stopped 及默认 tag 的
+  `affine` 要求 receiver 的 start scheduler 在该环境满足 infallible-scheduler；即使 child
+  提供 `.affine()` 也执行此检查。有效时优先调用按 child 值类别选择的 `.affine()`，否则
+  才插入 hop；unstoppable scheduler wrapper 原样转发 scheduler 的所有 query。
+  [`continues_on`](https://eel.is/c++draft/exec.continues.on) 的 attributes 仅为实际存在的
+  completion tag 发布 destination scheduler/domain，使用所传 receiver environment 的签名；
+  unary 查询使用空环境。若目标 schedule sender 不声明 error，则源 error 和缓存构造 error
+  也在目标 agent 交付，可发布 error scheduler/domain；目标可调度失败时不作该声明。
   completion-domain 成员优先查询 destination schedule sender attributes，未命中时
   查询 destination scheduler；默认模式保留 member-first / tag-invoke fallback。
   所有 completion-scheduler / completion-domain tags 均从 child 转发入口排除；
@@ -186,14 +191,15 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   [`FWD-ENV`](https://eel.is/c++draft/exec.snd.expos) 的过滤视图。receiver 的按值环境
   由视图持有，借用环境保留引用。过滤视图的具体类型无需等于原环境类型，forwarding query 的
   引用返回类型与对象身份保持不变。
-- `starts_on` 和 `associate` 在 `connect` 阶段构造 child operation；构造失败由
-  `connect` 抛出，不会扩大 sender 的 completion signatures。`let_*` 在收到上游
-  completion 后选择并构造 successor operation，因此仍为 late-connect 失败保留
-  `set_error(std::exception_ptr)` 通道。`starts_on` 的 source child environment 以
-  目标 scheduler 覆盖 `get_scheduler` 和 `get_start_scheduler`；目标 scheduler 有
-  直接 `get_domain` 定制时优先使用它，否则保留 outer environment 的 domain 查询及
-  现有 scheduler-derived domain 选取，不额外插入会遮蔽这些路径的 `default_domain`。
-  其余 forwarding query 继续来自 outer receiver environment。
+- `associate` 在 `connect` 阶段构造 child operation，失败由 `connect` 抛出。
+  `starts_on` 则在目标 scheduler hop 成功后才移动、连接并启动 child；child 的移动或
+  late-connect 失败在目标 agent 上报告 `set_error(std::exception_ptr)`。scheduler 自身的
+  连接失败仍可从 outer `connect` 抛出。只有 lowering 中的参数保存、函数调用或 child
+  连接可能抛出时才声明 `exception_ptr`；移动函数的 `noexcept` 按整个 starts_on sender
+  （包括 scheduler）计算，遵循 `[exec.starts.on]/4`。
+  `starts_on` child environment 保留目标 `get_scheduler` / `get_start_scheduler` 答案及
+  目标派生的 domain，其余 receiver 查询经过 FWD-ENV；这是等待 SCHED-ENV 与 inline-attrs
+  措辞协调的有意偏差，详见一致性台账。
 - [`let_value`、`let_error`、`let_stopped`](https://eel.is/c++draft/exec.let) 的 child
   environment 按对应 completion tag 依次选择：从 predecessor attributes 与 receiver 的
   `FWD-ENV` 查询 completion scheduler，并构造 `SCHED-ENV`；若该查询不可用，则以相同的
@@ -204,7 +210,10 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   scheduler，run-loop predecessor 则保留其所属 loop 的 scheduler。receiver env 缺少
   `get_scheduler` 时，inline predecessor 在默认与 strict 模式均选择 inline scheduler。Child 查询优先访问选中的
   环境，未命中时仅从 receiver environment 转发 forwarding queries。
-- `schedule_from` 是 current-WD 的单参数 departure marker sender，`continues_on`
+- `on(scheduler, sender)` 转发 child 的非 completion forwarding attributes，并屏蔽 child
+  completion scheduler/domain，避免泄漏错误的返回资源。现有非 closure callable 扩展继续保留。
+- `schedule_from` 是 current-WD 的单参数 departure marker sender，child attributes 与 child
+  receiver environment 均经 FWD-ENV；借用查询的引用身份不变。`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - Live draft 已包含 `std::execution::task`、`task_scheduler` 和 `with_error`，但 Forge
@@ -307,6 +316,9 @@ completion-scheduler CPO 的 scheduler 默认分支取得同一答案。两者�
 unary completion-domain 成员。带环境参数时，attrs 的 completion-domain 成员转发到
 scheduler CPO。Forge 线程池、strand、any scheduler 和 task 的 fallback scheduler 采用
 相同的成员查询模式，仅对 schedule sender 实际声明的 completion tags 保证 parity。
+Forge pool/strand 的 schedule signatures 在所有环境都包含 value 和 stopped，关闭、拒绝或资源
+失败仍以 stopped 完成。它们仅在提供 stoppable token 的环境满足 affine 的 infallible-scheduler
+要求；在无 stop token 或 never_stop_token 环境，affine 的 sender_in 为 false。
 [run_loop 协议模型](../../formal/run_loop/README.md) 检查 queue/wait 与最后 unlock 后的 teardown；调用者须在最终空队列观察前关闭提交，finish 本身不拒绝后续 push。
 Completion-scheduler CPO 限制 completion tag 为 value / error / stopped，先执行
 `TRY-QUERY`，再递归解析 scheduler 的 value completion scheduler，直到查询不可用或
@@ -337,14 +349,35 @@ holder 删除拷贝与移动赋值，即使 tag 自身支持 const 赋值也保�
 
 ### 分配与可移植性边界
 
-`let_value` / `let_error` / `let_stopped` 将 predecessor operation state 直接内联存储，
-分别以去重后的 `variant` 保存 decayed 参数 tuples 和所有可能的 successor operation state
-的 typed holders，两个 `variant` 均以 `monostate` 初始化。holder 以普通数据成员保存 operation state，
+`let_value` / `let_error` / `let_stopped` 以去重的 `variant` 保存 decayed 参数 tuples，
+另一个去重 `variant` 保存 predecessor 与所有可能的 successor operation state 的 typed holders。
+参数 variant 初始为 `monostate`，operation variant 初始为 predecessor。holder 以普通数据成员保存 operation state，
 由 factory prvalue 直接初始化，避免空且不可移动的类型作为潜在重叠子对象时失去 guaranteed copy elision。
 参数与 successor 在对应 completion 到达后原位构造；
-successor 和参数先于 predecessor 析构，保证同步完成路径中的引用生命周期。
+先 decay-copy 参数，再销毁 predecessor，然后调用 successor 函数并连接新 operation。
+`[exec.async.ops]/7–8` 对所有 sender 都允许 receiver completion 内销毁 operation state；
+完成函数调用后的返回路径不能再访问该 operation 或已随之销毁的存储。successor 只可依赖保存后的参数，
+不可再依赖 predecessor operation 的存储。
 参数 decay-copy、函数调用和 successor `connect` 的潜在异常通过
-`set_error(std::exception_ptr)` 报告；现有 completion signatures 保留该通道。
+`set_error(std::exception_ptr)` 报告；签名与运行时使用同一 nothrow 公式，仅在可能抛出时保留该通道。
+
+默认 get-state 的算法在 receiver environment 提供 `get_allocator` 时以 uses-allocator
+构造重新创建 sender data：`just` 的各值、`just_error` 的 error、`read_env` 的 query、
+`then` / `upon_*` 的 callable、serial bulk 的 callable 及 `write_env` 的 overlay。
+无 allocator 时按 sender 的值类别直接复制或移动 data。自有 get-state 的 `let`、`continues_on`、
+`into_variant`、`when_all` 和 scope/future 算法不直接重建其 data；它们所包裹的默认算法
+仍可观察到传入的 allocator。重建发生在草案 /37 的 noexcept get-state 内，失败会 terminate。
+按 /28，allocator 路径的 get-state 返回同类型 prvalue，因此不额外计入 data 的复制或移动异常；
+无 allocator 时返回引用，计入对应 data 构造异常。两条路径均计入 receiver 移动及 child connect；有效 receiver 按 `[exec.recv.concepts]` 总是 nothrow-movable，
+故 receiver-move 项恒为 true。allocator 的存在本身不会给 let 或 starts_on 增加 exception_ptr。分配与 noexcept 的措辞问题列入台账。
+
+`just*`、`read_env`、`then`、`upon_*`、`bulk_chunked`、`bulk_unchunked` 和 `into_variant`
+的 `connect` 根据 receiver/data 构造及 child 连接条件声明 `noexcept`；发生 tag lowering 的
+`bulk`、`let_*`、`starts_on`、`on` 等保持 potentially throwing。
+`then`、`upon_*`、bulk、`into_variant` 和 `stopped_as_optional` 的 child 与签名均使用
+FWD-ENV；`let` predecessor 与 `stopped_as_error` child 按 `[exec.let]/10` 使用未过滤环境。
+无效 callable、无法保存的结果或缺少查询在 signature / connect 的约束中拒绝，
+使 `sender_in` 可得到 false，而非实例化函数体时产生硬错误。锁定的组合算法尚未全面采用该形状。
 
 `when_all` 在静态类型的 `tuple` 中保存各 child 的 typed holder，
 child operation state 在 holder 的构造函数中直接初始化为普通数据成员，
@@ -363,11 +396,15 @@ child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析�
 自定义 stop token 的 callback 构造若自行分配，须单独计入。intrusive 协议见
 [`inplace_stop_callback` 设计记录](../roadmap/inplace-stop-callback-design.md)。
 
+`starts_on` 与 `continues_on` 的调度签名、连接约束、operation 类型及实际调用统一采用
+保存的非 const scheduler 左值。ref-qualified `schedule` 可返回不同 sender；affine 的
+infallible 检查仍按草案调度 prvalue，实际 hop 则调度 wrapper 的非 const 左值。措辞冲突见台账。
+
 `continues_on` 将 scheduler operation 和 predecessor operation 作为普通成员直接构造，
 结果用 tagged decayed tuples 的 `variant` 原位保存；`schedule_from` 只转发 departure
-marker 的 child，不增加独立缓冲。`starts_on` 以普通成员保存 scheduler operation 和
-child operation，仍在 outer `connect` 中预连接 child；这保留现有异常传播方式，
-与 working draft 的 `let_value` 展开在 child 连接时机上仍有差异。
+marker 的 child，不增加独立缓冲。`starts_on` 使用 typed holder variant 在 hop 后以 child
+operation 替换 scheduler operation；连接时机与 working draft 的 lowering 一致，保留上述 child
+environment 偏差。
 `on` 的两种形式将其组合 sender 的 operation 作为普通成员从 factory prvalue
 直接初始化。这些路径不再使用大小或对齐不足时分配的缓冲，支持大于固定缓冲容量、
 over-aligned 以及空的 immovable operation states；空间与对齐需求计入外层 operation。
@@ -534,3 +571,6 @@ Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execu
 计数 scope 的观察入口是诊断快照，不提供跨字段一致性或额外同步保证。旧成员保留至少一个带 `[[deprecated]]` 的发布版本，移除版本由维护者决定；reserved observer 仅用于实现与白盒测试，不属于公共 API。Forge 观察入口只接受 backport 的两种 scope 类型，原生让位时不提供。依据为 [counting scopes](https://eel.is/c++draft/exec.counting.scopes) 的成员列表及 [sync_wait](https://eel.is/c++draft/exec.sync.wait) 的恰好一种 value completion 要求。
 
 `std::this_thread::sync_wait_with_variant` 不受上述恰好一种 value completion 的限制；其 [Mandates](https://eel.is/c++draft/exec.sync.wait.var) 要求 `into_variant(sndr)` 满足对应环境中的 sender 与结果类型要求。[结果类型别名](https://eel.is/c++draft/exec.sync.wait) 使用允许空集合的 `value_types_of_t`。backport 保留零种 value completion 的既有行为：stopped 返回空 optional，error 抛出异常；这些调用不产生弃用诊断。
+
+`unstoppable(sndr)` 的结果类型与 `write_env(sndr, prop(get_stop_token, never_stop_token{}))`
+相同；`unstoppable()` 的 nullary closure 作为兼容扩展继续保留。

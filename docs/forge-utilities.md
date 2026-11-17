@@ -95,6 +95,14 @@ terminal completion 尾部释放；容量通知回调也持有共享 state，因
 
 ## 调度与上下文
 
+`static_thread_pool` 和 `strand` 的 schedule sender 在所有 receiver environment 中都声明
+`set_value_t()` 与 `set_stopped_t()`，关闭、拒绝和资源失败的 stopped 契约不受 token 类型影响。
+`std::execution::affine` 要求 start scheduler 在该环境满足 infallible-scheduler，因此只有提供
+stoppable token（例如 `inplace_stop_token`）时才能使用这两种 scheduler。无 stop token 或显式
+`never_stop_token` 的环境会使该 affine sender 不满足 `sender_in`；`env<>` 还缺少 start scheduler。
+普通 `sync_wait(schedule(sch))` 关闭后仍能取得 stopped，不需要额外注入 stop token。
+
+
 - `forge::static_thread_pool`：固定大小线程池，提供 `scheduler`，可通过
   `std::execution::schedule(pool.get_scheduler())` 产生 sender。默认构造路径保持无界队列；
   需要有界 ingress 时可传入 `static_thread_pool_options{.queue_capacity = N}`，需要控制

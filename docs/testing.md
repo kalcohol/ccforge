@@ -791,3 +791,38 @@ libc++ 默认缺少 policy 对象时，CMake 另探测 per-target `-fexperimenta
 `FORGE_TEST_ENABLE_LINALG=ON` 才运行这些目标，CMake 会通过 `FORGE_MSVC_EXECUTION_HEADER`
 加载原生 policies。可在已配置的 binary directory 中运行
 `ctest -R '^linalg_' --output-on-failure` 聚焦该组；policy skip 必须结合 configure 记录解释。
+
+`execution_default_adaptor_conformance_compile` / `execution_strict_adaptor_conformance_compile`
+检查条件 connect noexcept、let/starts_on 的 exception_ptr 集合、无效 callable/结果/查询的
+sender_in 与 connectability、FWD-ENV 的本地查询拒绝和 forwarding 查询保留。
+配套 runtime 测试 `execution_default_adaptor_conformance` / `execution_strict_adaptor_conformance`
+覆盖 starts_on 在目标 agent 连接 child、late-connect error、associate predecessor 先释放再 join、
+locked predecessor 的 completion 内替换、PMR values/errors 与 then/bulk callable 的 receiver allocator，
+以及无 allocator 的移动/复制计数；嵌套 const-lvalue child 覆盖普通复制抛出与 allocator 重建成功，所有相关 adaptor 的 signature、connect 类别及 noexcept 一致。配置期 `FORGE_EXECUTION_ADAPTOR_CONTROL_*` 与
+`FORGE_EXECUTION_ADAPTOR_REJECT_*` 逐项配对 creation constraint 的正反例，失败不依赖链接。
+既有 static-opstate 测试同时固定 predecessor 在 successor 函数前销毁、参数复制失败时 predecessor
+仍保留，以及 starts_on/on 的 child connect 失败改走 runtime error channel。
+
+`execution_default_scheduling_conformance_compile` / `execution_strict_scheduling_conformance_compile`
+覆盖 continues_on 按环境/实际 completion tag 的 query 参与条件、infallible destination 的 error
+scheduler、不能保存的 payload、schedule_from/on 的 attribute 过滤、unstoppable 的精确结果类型，
+以及 affine 的 infallible scheduler、member customization 与 scheduler query 转发。
+mutable-only start scheduler 的正例由环境按值返回；`prop` 返回 const 引用，用作
+[exec.get.start.scheduler]/2 与 [exec.affine]/7 的拒绝控制。删除 `operator&` 的环境仍须选择
+scheduler-derived domain，并使 source 的 int 签名转换为 long，连接后交付转换所得的值。
+同名 runtime 目标去掉 `_compile` 后缀，覆盖 affine 的四种 cv/ref member customization、
+mutable-only scheduler 的实际调度及 wrapper 的类别转发，`&` / `&&` 返回不同 sender、不同 completion 集合及不同 connectability 的调度控制，Forge pool/strand 在无 stop token
+环境的正常完成与拒绝 stopped。`FORGE_AFFINE_FORGE_CONTROL_*` / `FORGE_AFFINE_FORGE_REJECT_*`
+逐一配对 pool/strand 的 stoppable 正例与无 token、never_stop_token 负例；另有 env<> 的
+sender_in 拒绝控制。既有 pool/strand fixture 保持原有环境与 stopped 结果。
+allocator 控制按 /28 检查有无 allocator 的 get-state prvalue/reference 构造；有效 receiver 的移动项恒为 true，throwing-move receiver 用负例检查概念与连接拒绝；
+不执行会在 noexcept get-state 内 terminate 的重建。带有效 signatures 却无法连接的 child，
+以及仅接受 signature receiver 的 successor，均检查 connect 的软拒绝。
+
+`execution_default_forge_predecessor_lifetime` / `execution_strict_forge_predecessor_lifetime`
+将 pool、strand、timer、channel recv、`forge::task` 和 `erased_sender` 直接接入 `let_value`，
+在同步可用路径和其他线程完成路径中销毁 predecessor；另有 pool/timer 的同步 stopped 与 task
+的同步/跨线程 error 控制。Pool 和 timer 的 value completion 始终由 worker 发出；strand 以
+inline scheduler 提供同步 value 对照。Channel 在启动 pending recv 后由另一线程发送，task 在
+final_suspend 完成，erased sender 覆盖同步与 pool 来源。两个 sanitizer lane 的
+`execution|forge` 选择器均包含此测试，不依赖额外 Forge test group 开关。
