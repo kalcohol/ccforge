@@ -22,25 +22,7 @@
 
 #pragma once
 
-// Include standard library <execution> (execution policies) when available.
-//
-// Graceful fallback: if the toolchain doesn't ship <execution>, still provide
-// the Forge P2300 sender/receiver subset so users can `#include <execution>`.
-#if defined(_MSC_VER)
-#ifndef FORGE_MSVC_EXECUTION_HEADER
-#error "FORGE_MSVC_EXECUTION_HEADER is required when Forge backport is enabled on MSVC"
-#endif
-#include FORGE_MSVC_EXECUTION_HEADER
-#define FORGE_HAS_NATIVE_EXECUTION_POLICIES 1
-#elif defined(__has_include_next)
-#if __has_include_next(<execution>)
-#include_next <execution>
-#define FORGE_HAS_NATIVE_EXECUTION_POLICIES 1
-#endif
-// else: toolchain has neither MSVC nor __has_include_next — skip the standard
-//       <execution> header silently; only the Forge P2300 sender/receiver subset
-//       below will be available (C++17 execution policies will not be present).
-#endif
+#include <forge_native_execution.hpp>
 
 // C++26 backports (P2300 senders/receivers are expected to land under <execution>).
 // Use a future-facing feature test macro when it exists. FORGE_HAS_NATIVE_SENDERS
