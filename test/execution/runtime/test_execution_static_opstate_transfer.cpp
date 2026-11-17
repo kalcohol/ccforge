@@ -245,11 +245,38 @@ struct failing_child {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
     template<class R>
-    auto connect(R) const -> multi_sender::op<R> {
+    struct op {
+        using operation_state_concept = ex::operation_state_t;
+        R receiver;
+        void start() & noexcept { ex::set_value(std::move(receiver), 42); }
+    };
+    template<class R>
+    auto connect(R) const -> op<R> {
         throw std::runtime_error("child connect");
     }
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
+
+TEST(ExecutionStaticOpstateTransfer, SharedChildAndSchedulerCompletionTuples) {
+    for (auto completion : {disposition::value, disposition::error, disposition::stopped}) {
+        schedule_state source;
+        schedule_state destination;
+        destination.completion = completion;
+        result out;
+        auto sender = ex::continues_on(ex::schedule(test_scheduler<>{&source}),
+            test_scheduler<>{&destination});
+        auto op = ex::connect(std::move(sender), receiver<>{&out});
+        ex::start(op);
+        EXPECT_EQ(source.starts, 1);
+        EXPECT_EQ(destination.starts, 1);
+        EXPECT_EQ(out.values, completion == disposition::value ? 1 : 0);
+        EXPECT_EQ(out.errors, completion == disposition::error ? 1 : 0);
+        EXPECT_EQ(out.stopped, completion == disposition::stopped ? 1 : 0);
+    }
+    using results = ex::__forge_continues_on::__results<ex::completion_signatures<
+        ex::set_value_t(int), ex::set_value_t(const int&)>>;
+    static_assert(std::variant_size_v<typename results::variant> == 2);
+}
 
 TEST(ExecutionStaticOpstateTransfer, EarlyConnectFailuresUnwindConcreteMembers) {
     result out;
@@ -263,14 +290,22 @@ TEST(ExecutionStaticOpstateTransfer, EarlyConnectFailuresUnwindConcreteMembers) 
     EXPECT_THROW((void)ex::connect(ex::continues_on(failing_child{}, test_scheduler<>{&state}),
         receiver<>{&out}), std::runtime_error);
     EXPECT_EQ(state.live, 0);
-    EXPECT_THROW((void)ex::connect(ex::starts_on(test_scheduler<>{&state}, failing_child{}),
-        receiver<>{&out}), std::runtime_error);
+    {
+        auto op = ex::connect(ex::starts_on(test_scheduler<>{&state}, failing_child{}),
+            receiver<>{&out});
+        EXPECT_EQ(out.errors, 0);
+        ex::start(op);
+        EXPECT_EQ(out.errors, 1);
+    }
     EXPECT_EQ(state.live, 0);
-    EXPECT_THROW((void)ex::connect(ex::on(test_scheduler<>{&state}, failing_child{}),
-        receiver<>{&out}), std::runtime_error);
+    {
+        auto op = ex::connect(ex::on(test_scheduler<>{&state}, failing_child{}), receiver<>{&out});
+        ex::start(op);
+        EXPECT_EQ(out.errors, 2);
+    }
     EXPECT_EQ(state.live, 0);
-    EXPECT_EQ(state.starts, 0);
-    EXPECT_EQ(out.values + out.errors + out.stopped, 0);
+    EXPECT_EQ(state.starts, 2);
+    EXPECT_EQ(out.values + out.stopped, 0);
 }
 
 struct destroying_receiver : receiver<> {

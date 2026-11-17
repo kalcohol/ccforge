@@ -25,6 +25,9 @@
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
+#include "detail/adaptor.hpp"
+#include "just.hpp"
+#include "let.hpp"
 
 #include <memory>
 #include <optional>
@@ -46,7 +49,8 @@ struct __optional_value_shape {
 template<class... Vs>
 struct __optional_value_shape<set_value_t(Vs...)> {
     static constexpr int count = 1;
-    static constexpr bool nonempty = sizeof...(Vs) != 0;
+    static constexpr bool nonempty = sizeof...(Vs) != 0 &&
+        (std::is_constructible_v<std::decay_t<Vs>, Vs> && ...);
 };
 
 template<class CS>
@@ -191,42 +195,45 @@ struct __error_cs<completion_signatures<Sigs...>, Err> {
         typename __error_stopped_sig<std::decay_t<Err>, __forge_meta::has_stopped_v<Sigs...>>::type>;
 };
 
+template<class R, class OptionalT>
+struct __optional_recv {
+    using receiver_concept = receiver_t;
+    R* __rcvr;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        if constexpr (noexcept(
+                          __make_optional_value(static_cast<Vs&&>(vs)...))) {
+            auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
+            std::execution::set_value(std::move(*__rcvr), std::move(value));
+        } else {
+            try {
+                auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
+                std::execution::set_value(
+                    std::move(*__rcvr), std::move(value));
+            } catch (...) {
+                std::execution::set_error(
+                    std::move(*__rcvr), std::current_exception());
+            }
+        }
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_value(std::move(*__rcvr), OptionalT{std::nullopt});
+    }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*__rcvr)};
+    }
+};
+
 template<class S, class R, class OptionalT>
 struct __optional_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
-    struct __recv {
-        using receiver_concept = receiver_t;
-        R* __rcvr;
-
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            if constexpr (noexcept(
-                              __make_optional_value(static_cast<Vs&&>(vs)...))) {
-                auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
-                std::execution::set_value(std::move(*__rcvr), std::move(value));
-            } else {
-                try {
-                    auto value = __make_optional_value(static_cast<Vs&&>(vs)...);
-                    std::execution::set_value(
-                        std::move(*__rcvr), std::move(value));
-                } catch (...) {
-                    std::execution::set_error(
-                        std::move(*__rcvr), std::current_exception());
-                }
-            }
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_value(std::move(*__rcvr), OptionalT{std::nullopt});
-        }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(*__rcvr);
-        }
-    };
+    using __recv = __optional_recv<R, OptionalT>;
 
     using inner_op_t = connect_result_t<S, __recv>;
 
@@ -251,32 +258,38 @@ struct __optional_sender {
     S __sndr;
 
     template<receiver R>
-        requires __optional_source_in<S, env_of_t<R>>
+        requires __optional_source_in<S, __forge_detail::__fwd_env_t<env_of_t<R>>> &&
+                 requires { typename connect_result_t<S, __optional_recv<R,
+                     typename __optional_cs<completion_signatures_of_t<S,
+                         __forge_detail::__fwd_env_t<env_of_t<R>>>>::optional_t>>; }
     auto connect(R r) &&
         -> __optional_op<S, R,
-            typename __optional_cs<completion_signatures_of_t<S, env_of_t<R>>>::optional_t>
+            typename __optional_cs<completion_signatures_of_t<S, __forge_detail::__fwd_env_t<env_of_t<R>>>>::optional_t>
     {
-        using cs_t = completion_signatures_of_t<S, env_of_t<R>>;
+        using cs_t = completion_signatures_of_t<S, __forge_detail::__fwd_env_t<env_of_t<R>>>;
         using optional_t = typename __optional_cs<cs_t>::optional_t;
         return __optional_op<S, R, optional_t>(std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
-        requires std::copy_constructible<S> && __optional_source_in<S, env_of_t<R>>
+        requires std::copy_constructible<S> && __optional_source_in<S, __forge_detail::__fwd_env_t<env_of_t<R>>> &&
+                 requires { typename connect_result_t<S, __optional_recv<R,
+                     typename __optional_cs<completion_signatures_of_t<S,
+                         __forge_detail::__fwd_env_t<env_of_t<R>>>>::optional_t>>; }
     auto connect(R r) const&
         -> __optional_op<S, R,
-            typename __optional_cs<completion_signatures_of_t<S, env_of_t<R>>>::optional_t>
+            typename __optional_cs<completion_signatures_of_t<S, __forge_detail::__fwd_env_t<env_of_t<R>>>>::optional_t>
     {
-        using cs_t = completion_signatures_of_t<S, env_of_t<R>>;
+        using cs_t = completion_signatures_of_t<S, __forge_detail::__fwd_env_t<env_of_t<R>>>;
         using optional_t = typename __optional_cs<cs_t>::optional_t;
         return __optional_op<S, R, optional_t>(__sndr, std::move(r));
     }
 
     template<class Self, class Env>
-        requires __optional_source_in<typename std::remove_cvref_t<Self>::source_t, Env>
+        requires __optional_source_in<typename std::remove_cvref_t<Self>::source_t, __forge_detail::__fwd_env_t<Env>>
     static auto get_completion_signatures() noexcept
         -> typename __optional_cs<completion_signatures_of_t<
-            typename std::remove_cvref_t<Self>::source_t, Env>>::type {
+            typename std::remove_cvref_t<Self>::source_t, __forge_detail::__fwd_env_t<Env>>>::type {
         return {};
     }
 
@@ -286,30 +299,33 @@ struct __optional_sender {
     }
 };
 
+template<class Err, class R>
+struct __error_recv {
+    using receiver_concept = receiver_t;
+    R* __rcvr;
+    Err* __err;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_error(std::move(*__rcvr), std::move(*__err));
+    }
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(*__rcvr);
+    }
+};
+
 template<class S, class Err, class R>
 struct __error_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
-    struct __recv {
-        using receiver_concept = receiver_t;
-        R* __rcvr;
-        Err* __err;
-
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            std::execution::set_value(std::move(*__rcvr), static_cast<Vs&&>(vs)...);
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_error(std::move(*__rcvr), std::move(*__err));
-        }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(*__rcvr);
-        }
-    };
+    using __recv = __error_recv<Err, R>;
 
     using inner_op_t = connect_result_t<S, __recv>;
 
@@ -340,6 +356,8 @@ struct __error_sender {
     Err __err;
 
     template<receiver R>
+        requires sender_in<S, env_of_t<R>> &&
+                 requires { typename connect_result_t<S, __error_recv<Err, R>>; }
     auto connect(R r) && -> __error_op<S, Err, R>
     {
         return __error_op<S, Err, R>(
@@ -347,21 +365,19 @@ struct __error_sender {
     }
 
     template<receiver R>
-        requires std::copy_constructible<S> && std::copy_constructible<Err>
+        requires std::copy_constructible<S> && std::copy_constructible<Err> && sender_in<S, env_of_t<R>> &&
+                 requires { typename connect_result_t<S, __error_recv<Err, R>>; }
     auto connect(R r) const& -> __error_op<S, Err, R>
     {
         return __error_op<S, Err, R>(
             __sndr, __err, std::move(r));
     }
 
+    template<class Env>
+    using __cs = typename __error_cs<completion_signatures_of_t<S, Env>, Err>::type;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        return typename __error_cs<up_cs_t, typename self_t::err_t>::type{};
-    }
+    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     auto get_env() const noexcept {
         return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
@@ -406,6 +422,7 @@ struct __error_closure : sender_adaptor_closure<__error_closure<Err>> {
     }
 
     template<sender S>
+        requires std::move_constructible<Err>
     [[nodiscard]] auto operator()(S&& sndr) && {
         return __error_sender<std::decay_t<S>, Err>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
@@ -415,6 +432,7 @@ struct __error_closure : sender_adaptor_closure<__error_closure<Err>> {
 
 struct __error_t {
     template<sender S, class Err>
+        requires __forge_detail::__movable_value<Err>
     [[nodiscard]] auto operator()(S&& sndr, Err&& err) const {
         return __error_sender<std::decay_t<S>, std::decay_t<Err>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
@@ -422,6 +440,7 @@ struct __error_t {
     }
 
     template<class Err>
+        requires std::constructible_from<std::decay_t<Err>, Err>
     [[nodiscard]] auto operator()(Err&& err) const {
         return __error_closure<std::decay_t<Err>>{{}, std::forward<Err>(err)};
     }

@@ -21,11 +21,13 @@ enum class adaptor_kind {
 enum class completion_kind { value, error, stopped };
 
 struct move_failure {};
+struct copy_failure {};
 struct connect_failure {};
 struct invocation_failure {};
 
 struct probe {
     int moves_before_throw = -1;
+    bool throw_on_copy = false;
     bool throw_on_connect = false;
     bool throw_on_call = false;
     int live_payloads = 0;
@@ -67,6 +69,7 @@ struct tracked_payload {
     tracked_payload(const tracked_payload& other)
         : state(other.state), value(other.value) {
         ++state->copies;
+        if (state->throw_on_copy) throw copy_failure{};
         ++state->live_payloads;
         state->latest_payload = this;
     }
@@ -130,8 +133,16 @@ struct payload : tracked_payload {
     }
 };
 
+struct inspect_environment : std::forwarding_query_t {
+    template<class Env>
+        requires requires(const Env& env) { env.query(std::declval<inspect_environment>()); }
+    auto operator()(const Env& env) const noexcept -> decltype(env.query(*this)) {
+        return env.query(*this);
+    }
+};
 struct receiver_env {
     probe* state;
+    auto query(inspect_environment) const noexcept -> const receiver_env& { return *this; }
 };
 
 struct observing_receiver {
@@ -223,7 +234,7 @@ struct synchronous_sender {
             state->inner_saw_live_payload = state->payload_alive;
             state->inner_saw_live_outer = state->outer_alive;
             if (state->outer_alive) {
-                state->inner_saw_same_env = &ex::get_env(rcvr) == state->connected_env;
+                state->inner_saw_same_env = &inspect_environment{}(ex::get_env(rcvr)) == state->connected_env;
             }
         }
 
@@ -243,9 +254,8 @@ struct synchronous_sender {
     template<ex::receiver R>
     auto connect(R r) const -> op<R> {
         static_assert(std::is_nothrow_move_constructible_v<R>);
-        static_assert(std::is_same_v<ex::env_of_t<R>, const receiver_env&>);
         static_assert(noexcept(ex::get_env(r)));
-        const auto& env = ex::get_env(r);
+        const auto& env = inspect_environment{}(ex::get_env(r));
         EXPECT_EQ(env.state, state);
         ++state->connects;
         state->connected_payload = state->latest_payload;
@@ -371,8 +381,11 @@ TYPED_TEST(ThrowingMoveAdaptors, RvalueAndCopyableLvalueConnect) {
 TYPED_TEST(ThrowingMoveAdaptors, RealMoveFailuresEscapeConnect) {
     constexpr auto kind = TypeParam::value;
     for (bool copy_lvalue : {false, true}) {
-        for (int move_before_throw = 0; move_before_throw < (copy_lvalue ? 1 : 2);
-             ++move_before_throw) {
+        // Default data is initialized directly from the forwarded capture:
+        // one rvalue move or one lvalue copy. stopped_as_error owns custom state.
+        const int moves = kind == adaptor_kind::stopped_as_error ? (copy_lvalue ? 1 : 2) :
+            (copy_lvalue ? 0 : 1);
+        for (int move_before_throw = 0; move_before_throw < moves; ++move_before_throw) {
             SCOPED_TRACE(copy_lvalue);
             SCOPED_TRACE(move_before_throw);
             probe state;
@@ -397,18 +410,35 @@ TYPED_TEST(ThrowingMoveAdaptors, RealMoveFailuresEscapeConnect) {
     }
 }
 
+TYPED_TEST(ThrowingMoveAdaptors, RealCopyFailuresEscapeLvalueConnect) {
+    constexpr auto kind = TypeParam::value;
+    probe state;
+    {
+        auto sndr = make_sender<kind>(state);
+        const int live_before = state.live_payloads;
+        state.throw_on_copy = true;
+        EXPECT_THROW((void)ex::connect(std::as_const(sndr), observing_receiver{{&state}}), copy_failure);
+        EXPECT_EQ(state.live_payloads, live_before);
+        EXPECT_EQ(state.connects, 0);
+        EXPECT_EQ(state.starts, 0);
+        EXPECT_EQ(state.values + state.errors + state.stopped, 0);
+    }
+    EXPECT_EQ(state.live_payloads, 0);
+}
+
 TYPED_TEST(ThrowingMoveAdaptors, SenderCanDieBeforeStart) {
     constexpr auto kind = TypeParam::value;
-    for (bool copy_lvalue : {false, true}) {
-        SCOPED_TRACE(copy_lvalue);
+    const auto run = []<bool CopyLvalue>() {
+        SCOPED_TRACE(CopyLvalue);
         probe state;
         {
             auto make_operation = [&] {
                 auto sndr = make_sender<kind>(state);
-                if (copy_lvalue) {
+                if constexpr (CopyLvalue) {
                     return ex::connect(std::as_const(sndr), observing_receiver{{&state}});
+                } else {
+                    return ex::connect(std::move(sndr), observing_receiver{{&state}});
                 }
-                return ex::connect(std::move(sndr), observing_receiver{{&state}});
             };
             auto op = make_operation();
             EXPECT_EQ(state.live_payloads, 1);
@@ -419,7 +449,9 @@ TYPED_TEST(ThrowingMoveAdaptors, SenderCanDieBeforeStart) {
         }
         expect_inner_first(state);
         EXPECT_EQ(state.live_payloads, 0);
-    }
+    };
+    run.template operator()<false>();
+    run.template operator()<true>();
 }
 
 TYPED_TEST(ThrowingMoveAdaptors, UpstreamConnectFailureReleasesOwnedState) {

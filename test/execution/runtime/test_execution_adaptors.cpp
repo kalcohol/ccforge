@@ -1018,7 +1018,7 @@ TEST(OnTest, FirstFormDoesNotAdvertiseChildErrorSchedulerOrDomain) {
     SUCCEED();
 }
 
-TEST(OnTest, FirstFormDoesNotReadOrCopyBorrowedChildAttributes) {
+TEST(OnTest, FirstFormReadsBorrowedChildAttributesOnceWithoutCopying) {
     borrowed_on_attributes child_attrs;
     int reads = 0;
     auto sndr = std::execution::on(
@@ -1026,7 +1026,7 @@ TEST(OnTest, FirstFormDoesNotReadOrCopyBorrowedChildAttributes) {
     auto attrs = std::execution::get_env(sndr);
     static_assert(!has_on_completion_scheduler<std::execution::set_value_t,
         decltype(attrs)>);
-    EXPECT_EQ(reads, 0);
+    EXPECT_EQ(reads, 1);
 }
 
 TEST(OnTest, FirstFormLetInnerEnvironmentMatchesActualReturnScheduler) {

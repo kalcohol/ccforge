@@ -19,9 +19,13 @@ struct signature_sender {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
+struct completion_query : std::forwarding_query_t {};
+struct local_query {};
+
 template<class CS>
 struct environment {
-    using optional_completions = CS;
+    auto query(completion_query) const noexcept -> CS { return {}; }
+    int query(local_query) const noexcept { return 42; }
 };
 
 using value_env = environment<ex::completion_signatures<
@@ -36,9 +40,9 @@ struct dependent_sender {
     using sender_concept = ex::sender_t;
 
     template<class Self, class Env>
-        requires requires { typename Env::optional_completions; }
+        requires requires(const Env& env) { env.query(completion_query{}); }
     static auto get_completion_signatures() noexcept
-        -> typename Env::optional_completions { return {}; }
+        -> decltype(std::declval<const Env&>().query(completion_query{})) { return {}; }
 
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 

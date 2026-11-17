@@ -269,11 +269,8 @@ void check_continues_destination() {
     auto source = let_predecessor<Tag, transfer_child_attrs>{{source_loop.get_scheduler()}};
     auto transfer = ex::continues_on(std::move(source), destination);
     auto attrs = ex::get_env(transfer);
-    EXPECT_EQ(attrs.query(ex::get_completion_scheduler<ex::set_value_t>), destination);
-    EXPECT_EQ(attrs.query(ex::get_completion_scheduler<ex::set_stopped_t>), destination);
-    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
-        attrs, probe_env{})), transfer_destination_domain>);
-    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_stopped_t>(
+    EXPECT_EQ(attrs.query(ex::get_completion_scheduler<Tag>), destination);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<Tag>(
         attrs, probe_env{})), transfer_destination_domain>);
     (void)attrs.query(ex::get_completion_domain<>, probe_env{});
     auto child = [destination, &active_resource](auto&...) {

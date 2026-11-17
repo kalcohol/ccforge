@@ -162,8 +162,12 @@ static_assert(member_connectable<scheduler_optional, scheduler_env>);
 static_assert(member_connectable<const scheduler_optional&, scheduler_env>);
 
 struct empty_void_query {
-    void operator()(forge::empty_env) const noexcept {}
-    int operator()(value_env) const noexcept { return 42; }
+    template<class Env>
+    auto operator()(const Env&) const noexcept {
+        if constexpr (requires(const Env& env) { env.query(completion_query{}); }) {
+            return 42;
+        }
+    }
 };
 
 static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, forge::empty_env>>);
@@ -176,6 +180,14 @@ static_assert(std::same_as<ex::completion_signatures_of_t<empty_void_optional, v
     ex::completion_signatures<ex::set_value_t(std::optional<int>)>>);
 static_assert(member_connectable<empty_void_optional, value_env>);
 static_assert(member_connectable<const empty_void_optional&, value_env>);
+
+template<class Env>
+concept sees_local_query = requires(const Env& env) { env.query(local_query{}); };
+static_assert(sees_local_query<value_env>);
+static_assert(!sees_local_query<ex::__forge_detail::__fwd_env_t<value_env>>);
+static_assert(std::same_as<ex::completion_signatures_of_t<dependent_sender,
+    ex::__forge_detail::__fwd_env_t<value_env>>,
+    ex::completion_signatures<ex::set_value_t(int), ex::set_stopped_t()>>);
 
 int main() {
     auto direct = ex::stopped_as_optional(ex::just(42));

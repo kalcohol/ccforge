@@ -923,37 +923,42 @@ private:
     template<class Attrs, class... Envs>
     static consteval auto __domain_type() {
         using namespace __forge_domain;
-        using direct_t = typename decltype(__completion_query_type<
-            get_completion_domain_t, Attrs, Envs...>())::type;
-        if constexpr (!std::same_as<direct_t, __no_completion_query>) {
-            return std::type_identity<direct_t>{};
-        } else if constexpr (std::same_as<CPO, void>) {
-            return get_completion_domain_t<set_value_t>
-                ::template __domain_type<Attrs, Envs...>();
+        if constexpr (!__forge_env_detail::__completion_query_allowed<
+                          std::remove_cvref_t<Attrs>, CPO, Envs...>::value) {
+            return std::type_identity<void>{};
         } else {
-            using scheduler_t = typename decltype([] {
-                if constexpr (requires {
-                    std::execution::get_completion_scheduler<CPO>(
-                        std::declval<Attrs>(), std::declval<Envs>()...);
-                }) {
-                    return std::type_identity<decltype(std::execution::get_completion_scheduler<CPO>(
-                        std::declval<Attrs>(), std::declval<Envs>()...))>{};
-                } else {
-                    return std::type_identity<__no_completion_query>{};
-                }
-            }())::type;
-            using scheduler_domain_t = typename decltype(__completion_query_type<
-                get_completion_domain_t<set_value_t>, scheduler_t,
-                typename __completion_domain_env<
-                    std::remove_cvref_t<Attrs>, Envs>::type...>())::type;
-            if constexpr (!std::same_as<scheduler_t, __no_completion_query> &&
-                          !std::same_as<scheduler_domain_t, __no_completion_query>) {
-                return std::type_identity<scheduler_domain_t>{};
-            } else if constexpr (sizeof...(Envs) != 0 &&
-                                 __scheduler_attributes<Attrs>()) {
-                return std::type_identity<default_domain>{};
+            using direct_t = typename decltype(__completion_query_type<
+                get_completion_domain_t, Attrs, Envs...>())::type;
+            if constexpr (!std::same_as<direct_t, __no_completion_query>) {
+                return std::type_identity<direct_t>{};
+            } else if constexpr (std::same_as<CPO, void>) {
+                return get_completion_domain_t<set_value_t>
+                    ::template __domain_type<Attrs, Envs...>();
             } else {
-                return std::type_identity<void>{};
+                using scheduler_t = typename decltype([] {
+                    if constexpr (requires {
+                        std::execution::get_completion_scheduler<CPO>(
+                            std::declval<Attrs>(), std::declval<Envs>()...);
+                    }) {
+                        return std::type_identity<decltype(std::execution::get_completion_scheduler<CPO>(
+                            std::declval<Attrs>(), std::declval<Envs>()...))>{};
+                    } else {
+                        return std::type_identity<__no_completion_query>{};
+                    }
+                }())::type;
+                using scheduler_domain_t = typename decltype(__completion_query_type<
+                    get_completion_domain_t<set_value_t>, scheduler_t,
+                    typename __completion_domain_env<
+                        std::remove_cvref_t<Attrs>, Envs>::type...>())::type;
+                if constexpr (!std::same_as<scheduler_t, __no_completion_query> &&
+                              !std::same_as<scheduler_domain_t, __no_completion_query>) {
+                    return std::type_identity<scheduler_domain_t>{};
+                } else if constexpr (sizeof...(Envs) != 0 &&
+                                     __scheduler_attributes<Attrs>()) {
+                    return std::type_identity<default_domain>{};
+                } else {
+                    return std::type_identity<void>{};
+                }
             }
         }
     }
@@ -994,7 +999,7 @@ using __hide_scheduler = __forge_env_detail::__hide_scheduler<Env>;
 
 template<class Env>
 concept __scheduler_completion_domain = requires(const Env& env) {
-    std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), __hide_scheduler<Env>{&env});
+    std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), __hide_scheduler<Env>{std::addressof(env)});
 };
 
 } // namespace __forge_domain
@@ -1573,9 +1578,8 @@ consteval bool __connect_noexcept() {
     if constexpr (__default_connect_domains<S, R>) {
         return __direct_noexcept<S, R>();
     } else {
-        // Non-default domains can perform arbitrary transformations. Keep this
-        // conservative rather than declaring noexcept incorrectly.
-        return false;
+        return __transform_sender_for_connect_noexcept<S, __receiver_env_t<R>>() &&
+               __direct_noexcept<__transformed_sender_for_t<S, R>, R>();
     }
 }
 
@@ -1590,7 +1594,8 @@ decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
 }
 
 template<class S, class R>
-decltype(auto) __domain_connect(const connect_t& tag, S&& s, R&& r) {
+decltype(auto) __domain_connect(const connect_t& tag, S&& s, R&& r)
+    noexcept(__connect_noexcept<S, R>()) {
     decltype(auto) env = std::execution::get_env(r);
     decltype(auto) ts = __transform_sender_for_connect(static_cast<S&&>(s), env);
     return __direct_connect(

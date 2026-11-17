@@ -36,9 +36,8 @@ namespace __forge_unstoppable {
 struct __closure : sender_adaptor_closure<__closure> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
-        auto env = std::execution::make_env(
-            std::execution::prop(
-                std::execution::get_stop_token_t{}, std::never_stop_token{}));
+        auto env = std::execution::prop(
+            std::execution::get_stop_token_t{}, std::never_stop_token{});
         return std::execution::write_env(
             __forge_detail::__forward_as_given(std::forward<S>(sndr)), env);
     }

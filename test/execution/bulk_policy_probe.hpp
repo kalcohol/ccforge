@@ -135,10 +135,18 @@ struct callback<true> {
     }
 };
 
-// Implementation probes, not user specializations of is_execution_policy.
+// Rebind only the policy capture of the public closure's type, so these
+// implementation-policy controls need no std trait specializations and do not
+// name the outer implementation template (whose parameters may change).
+template<class Bound, class Policy>
+struct rebind_policy;
+template<template<class, class> class Bound, class OldPolicy, class Shape, class Policy>
+struct rebind_policy<Bound<OldPolicy, Shape>, Policy> { using type = Bound<Policy, Shape>; };
+template<bool Chunked>
+using public_bound_t = decltype(std::conditional_t<Chunked, ex::bulk_chunked_t, ex::bulk_unchunked_t>{}(
+    int{}, callback<Chunked>{}));
 template<bool Chunked, class Policy>
-using bound_t = typename ex::__forge_bulk::__bulk_closure<Chunked, callback<Chunked>>
-    ::template __with_shape<Policy, int>;
+using bound_t = typename rebind_policy<public_bound_t<Chunked>, Policy>::type;
 
 using source_t = decltype(ex::just(10));
 

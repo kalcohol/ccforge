@@ -24,6 +24,7 @@
 
 #include "concepts.hpp"
 #include "env.hpp"
+#include "detail/adaptor.hpp"
 
 #include <exception>
 
@@ -35,13 +36,33 @@ namespace __forge_read_env {
 template<class Env>
 Env __environment() noexcept;
 
+template<class Tag, class Env>
+concept __valid_query = requires(Env& env, Tag& query) {
+    Tag()(env);
+    requires (!std::is_void_v<decltype(Tag()(env))>);
+    query(__environment<Env>());
+    requires (!std::is_void_v<decltype(query(__environment<Env>()))>);
+};
+
+template<class Tag, class Env>
+    requires __valid_query<Tag, Env>
+using __cs = std::conditional_t<noexcept(std::declval<Tag&>()(__environment<Env>())),
+    completion_signatures<set_value_t(decltype(std::declval<Tag&>()(__environment<Env>())))>,
+    completion_signatures<set_value_t(decltype(std::declval<Tag&>()(__environment<Env>()))),
+                          set_error_t(std::exception_ptr)>>;
+
 template<class Tag, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     R __rcvr;
     Tag __tag;
 
-    __op(Tag t, R r) : __rcvr(std::move(r)), __tag(std::move(t)) {}
+    template<class Data>
+    __op(Data&& t, R r)
+        noexcept(std::is_nothrow_move_constructible_v<R> && noexcept(Tag(
+            __forge_detail::__allocator_aware_forward(static_cast<Data&&>(t), r))))
+        : __rcvr(std::move(r)), __tag(__forge_detail::__allocator_aware_forward(
+              static_cast<Data&&>(t), __rcvr)) {}
 
     void start() & noexcept {
         if constexpr (noexcept(__tag(std::execution::get_env(__rcvr)))) {
@@ -66,33 +87,19 @@ struct __sender {
     Tag __tag;
 
     template<class Env>
-        requires requires(Env& env, Tag& query) {
-            Tag()(env);
-            requires (!std::is_void_v<decltype(Tag()(env))>);
-            query(__environment<Env>());
-            requires (!std::is_void_v<decltype(query(__environment<Env>()))>);
-        }
-    auto get_completion_signatures(Env&&) const noexcept {
-        // The check uses Q()(env); start invokes the stored query as an lvalue
-        // with the receiver's exact environment value category.
-        using result_t = decltype(std::declval<Tag&>()(__environment<Env>()));
-        if constexpr (noexcept(std::declval<Tag&>()(__environment<Env>()))) {
-            return completion_signatures<set_value_t(result_t)>{};
-        } else {
-            return completion_signatures<
-                set_value_t(result_t),
-                set_error_t(std::exception_ptr)>{};
-        }
-    }
+    auto get_completion_signatures(Env&&) const noexcept -> __cs<Tag, Env> { return {}; }
 
     template<receiver R>
-    auto connect(R r) && {
+        requires __valid_query<Tag, env_of_t<R>>
+    auto connect(R r) &&
+        noexcept(noexcept(__op<Tag, R>{std::move(__tag), std::move(r)})) -> __op<Tag, R> {
         return __op<Tag, R>{std::move(__tag), std::move(r)};
     }
 
     template<receiver R>
-        requires std::copy_constructible<Tag>
-    auto connect(R r) const& {
+        requires std::copy_constructible<Tag> && __valid_query<Tag, env_of_t<R>>
+    auto connect(R r) const&
+        noexcept(noexcept(__op<Tag, R>{__tag, std::move(r)})) -> __op<Tag, R> {
         return __op<Tag, R>{__tag, std::move(r)};
     }
 

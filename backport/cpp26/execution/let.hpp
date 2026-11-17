@@ -25,6 +25,7 @@
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "detail/op_holder.hpp"
+#include "detail/adaptor.hpp"
 #include "env.hpp"
 
 #include <exception>
@@ -191,23 +192,23 @@ auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
     if constexpr (requires {
         std::execution::get_completion_scheduler<cpo_t>(
             child_env,
-            __forwarding_env<OuterEnv>{&outer_env});
+            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
     }) {
         // Own the result: the query can refer into the temporary view or attrs.
         auto scheduler =
             std::execution::get_completion_scheduler<cpo_t>(
                 child_env,
-                __forwarding_env<OuterEnv>{&outer_env});
+                __forwarding_env<OuterEnv>{std::addressof(outer_env)});
         return __scheduler_env<std::decay_t<decltype(scheduler)>>{
             std::move(scheduler)};
     } else if constexpr (requires {
         std::execution::get_completion_domain<cpo_t>(
             child_env,
-            __forwarding_env<OuterEnv>{&outer_env});
+            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
     }) {
         auto domain = std::execution::get_completion_domain<cpo_t>(
             child_env,
-            __forwarding_env<OuterEnv>{&outer_env});
+            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
         return std::execution::prop(
             get_domain_t{},
             std::move(domain));
@@ -255,48 +256,65 @@ struct __maybe_eptr_cs<true> {
     using type = completion_signatures<set_error_t(std::exception_ptr)>;
 };
 
+// The probe has the same nonthrowing construction and environment as receiver2.
+// Only its environment participates in a conforming sender's connect contract.
+template<class Env>
+struct __signature_receiver {
+    using receiver_concept = receiver_t;
+    const Env* __environment = nullptr;
+    template<class... As> void set_value(As&&...) && noexcept {}
+    template<class E> void set_error(E&&) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> Env { return *__environment; }
+};
+
+template<class Fn, class Recv, class... As>
+inline constexpr bool __nothrow =
+    std::is_nothrow_constructible_v<std::tuple<std::decay_t<As>...>, As...> &&
+    std::is_nothrow_invocable_v<Fn, std::decay_t<As>&...> &&
+    noexcept(std::execution::connect(
+        std::declval<std::invoke_result_t<Fn, std::decay_t<As>&...>>(),
+        std::declval<Recv>()));
+
+template<class S, class Fn, class Which, class Env, class Sig,
+         bool = __matches_which<Which, Sig>::value, class = void>
+struct __let_sig {};
+
 template<class S, class Fn, class Which, class Env, class Sig>
-struct __let_sig {
+struct __let_sig<S, Fn, Which, Env, Sig, false, void> {
     using type = completion_signatures<Sig>;
 };
 
-template<class S, class Fn, class Env, class... Vs>
-struct __let_sig<S, Fn, __value_tag, Env, set_value_t(Vs...)> {
-    using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
-    using let_env_t = __let_env_t<__value_tag, S, std::decay_t<Env>>;
-    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
-    using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
+template<class S, class Fn, class Which, class Env>
+using __successor_env_t = __inner_env<__let_env_t<Which, S, std::decay_t<Env>>,
+                                    std::decay_t<Env>>;
+
+template<class S, class Fn, class Which, class Env, class Tag, class... As>
+    requires (std::constructible_from<std::decay_t<As>, As> && ...) &&
+             std::invocable<Fn, std::decay_t<As>&...> &&
+             sender_in<std::invoke_result_t<Fn, std::decay_t<As>&...>,
+                       __successor_env_t<S, Fn, Which, Env>> &&
+             requires {
+                 typename connect_result_t<std::invoke_result_t<Fn, std::decay_t<As>&...>,
+                     __signature_receiver<__successor_env_t<S, Fn, Which, Env>>>;
+             }
+struct __let_sig<S, Fn, Which, Env, Tag(As...), true, void> {
+    using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<As>&...>;
+    using inner_env_t = __successor_env_t<S, Fn, Which, Env>;
+    static constexpr bool nothrow = __nothrow<Fn, __signature_receiver<inner_env_t>, As...>;
+    using type = __forge_meta::__concat_unique_cs_t<
+        completion_signatures_of_t<inner_sender_t, inner_env_t>,
+        typename __maybe_eptr_cs<!nothrow>::type>;
 };
 
-template<class S, class Fn, class Env, class E>
-struct __let_sig<S, Fn, __error_tag, Env, set_error_t(E)> {
-    using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<E>&>;
-    using let_env_t = __let_env_t<__error_tag, S, std::decay_t<Env>>;
-    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
-    using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
-};
-
-template<class S, class Fn, class Env>
-struct __let_sig<S, Fn, __stopped_tag, Env, set_stopped_t()> {
-    using inner_sender_t = std::invoke_result_t<Fn>;
-    using let_env_t = __let_env_t<__stopped_tag, S, std::decay_t<Env>>;
-    using inner_env_t = __inner_env<let_env_t, std::decay_t<Env>>;
-    using type = decltype(std::execution::get_completion_signatures(
-        std::declval<inner_sender_t>(), std::declval<inner_env_t>()));
-};
-
-template<class S, class Fn, class Which, class Env, class CS>
-struct __let_cs;
+template<class S, class Fn, class Which, class Env, class CS, class = void>
+struct __let_cs {};
 
 template<class S, class Fn, class Which, class Env, class... Sigs>
-struct __let_cs<S, Fn, Which, Env, completion_signatures<Sigs...>> {
-    static constexpr bool handles_completion = (__matches_which<Which, Sigs>::value || ...);
-
+struct __let_cs<S, Fn, Which, Env, completion_signatures<Sigs...>,
+    std::void_t<typename __let_sig<S, Fn, Which, Env, Sigs>::type...>> {
     using type = __forge_meta::__concat_unique_cs_t<
-        typename __let_sig<S, Fn, Which, Env, Sigs>::type...,
-        typename __maybe_eptr_cs<handles_completion>::type>;
+        typename __let_sig<S, Fn, Which, Env, Sigs>::type...>;
 };
 
 template<class List>
@@ -332,19 +350,103 @@ template<class List, class... Ts, class... Rest>
 struct __merge_types<List, __forge_meta::type_list<Ts...>, Rest...>
     : __merge_types<__forge_meta::list_push_unique_all_t<List, Ts...>, Rest...> {};
 
-template<class Fn, class Recv, class Which, class CS>
+template<class Fn, class Recv, class Which, class Predecessor, class CS>
 struct __state_types;
 
-template<class Fn, class Recv, class Which, class... Sigs>
-struct __state_types<Fn, Recv, Which, completion_signatures<Sigs...>> {
+template<class Fn, class Recv, class Which, class Predecessor, class... Sigs>
+struct __state_types<Fn, Recv, Which, Predecessor, completion_signatures<Sigs...>> {
     template<class Sig>
     using __types = __inner_types<Fn, Recv, Sig, __matches_which<Which, Sig>::value>;
 
     using args = typename __as_variant<typename __merge_types<
         __forge_meta::type_list<std::monostate>, typename __types<Sigs>::args...>::type>::type;
     using ops = typename __as_variant<typename __merge_types<
-        __forge_meta::type_list<std::monostate>, typename __types<Sigs>::ops...>::type>::type;
+        __forge_meta::type_list<std::monostate, __forge_detail::__op_holder<Predecessor>>,
+        typename __types<Sigs>::ops...>::type>::type;
 };
+
+template<class S, class Fn, class R, class Which>
+struct __op;
+
+template<class R, class LetEnv, class OuterEnv>
+struct __inner_recv {
+    using receiver_concept = receiver_t;
+    R* __outer;
+    const LetEnv* __primary;
+    const OuterEnv* __environment;
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
+    }
+    auto get_env() const noexcept -> __inner_env<LetEnv, OuterEnv> {
+        return {__primary, __environment};
+    }
+};
+
+template<class S, class Fn, class R, class Which>
+struct __outer_recv {
+    using receiver_concept = receiver_t;
+    __op<S, Fn, R, Which>* __self;
+    R* __outer;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        if constexpr (std::is_same_v<Which, __value_tag>) {
+            __self->__start_inner(static_cast<Vs&&>(vs)...);
+        } else {
+            std::execution::set_value(std::move(__self->__outer_recv_), static_cast<Vs&&>(vs)...);
+        }
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        if constexpr (std::is_same_v<Which, __error_tag>) {
+            __self->__start_inner(static_cast<E&&>(e));
+        } else {
+            std::execution::set_error(std::move(__self->__outer_recv_), static_cast<E&&>(e));
+        }
+    }
+    void set_stopped() && noexcept {
+        if constexpr (std::is_same_v<Which, __stopped_tag>) {
+            __self->__start_inner();
+        } else {
+            std::execution::set_stopped(std::move(__self->__outer_recv_));
+        }
+    }
+    auto get_env() const noexcept -> env_of_t<R> {
+        return std::execution::get_env(*__outer);
+    }
+};
+
+template<class Fn, class Recv, class Which, class Sig>
+struct __successor_connectable : std::true_type {};
+
+template<class Fn, class Recv, class Which, class Tag, class... As>
+    requires __matches_which<Which, Tag(As...)>::value
+struct __successor_connectable<Fn, Recv, Which, Tag(As...)>
+    : std::bool_constant<requires {
+        typename connect_result_t<std::invoke_result_t<Fn, std::decay_t<As>&...>, Recv>;
+    }> {};
+
+template<class Fn, class Recv, class Which, class CS>
+struct __successors_connectable : std::false_type {};
+
+template<class Fn, class Recv, class Which, class... Sigs>
+struct __successors_connectable<Fn, Recv, Which, completion_signatures<Sigs...>>
+    : std::bool_constant<(__successor_connectable<Fn, Recv, Which, Sigs>::value && ...)> {};
+
+template<class S, class Fn, class R, class Which>
+concept __connectable = requires {
+    typename connect_result_t<S, __outer_recv<S, Fn, R, Which>>;
+} && __successors_connectable<Fn,
+    __inner_recv<R, __let_env_t<Which, S, env_of_t<R>>, std::remove_cvref_t<env_of_t<R>>>,
+    Which, completion_signatures_of_t<S, env_of_t<R>>>::value;
 
 template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
@@ -359,92 +461,41 @@ struct __op : __forge_detail::__immovable {
     let_env_t __let_env_;
     Fn __fn_;
 
-    struct __inner_recv {
-        using receiver_concept = receiver_t;
-        __op* __self;
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            std::execution::set_value(std::move(__self->__outer_recv_), static_cast<Vs&&>(vs)...);
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(__self->__outer_recv_), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(__self->__outer_recv_));
-        }
-        auto get_env() const noexcept -> inner_env_t {
-            return {&__self->__let_env_, &__self->__outer_env_};
-        }
-    };
+    using __inner_recv = __forge_let::__inner_recv<R, let_env_t, std::remove_cvref_t<outer_env_t>>;
 
     template<class... Vs>
     void __start_inner(Vs&&... vs) noexcept {
         try {
             using args_t = std::tuple<std::decay_t<Vs>...>;
             auto& args = __args_.template emplace<args_t>(static_cast<Vs&&>(vs)...);
+            __inner_ops_.template emplace<std::monostate>();
             auto&& inner_sndr = std::apply(std::move(__fn_), args);
             using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
             using inner_op_t = connect_result_t<inner_sender_t, __inner_recv>;
             auto& holder = __inner_ops_.template emplace<__forge_detail::__op_holder<inner_op_t>>(
                 [&]() -> inner_op_t {
                     return std::execution::connect(
-                        static_cast<inner_sender_t&&>(inner_sndr), __inner_recv{this});
+                        static_cast<inner_sender_t&&>(inner_sndr), __inner_recv{std::addressof(__outer_recv_), std::addressof(__let_env_), std::addressof(__outer_env_)});
                 });
             std::execution::start(holder.__op);
         } catch (...) {
             using args_t = std::tuple<std::decay_t<Vs>...>;
             using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
-            constexpr bool nothrow =
-                std::is_nothrow_constructible_v<args_t, Vs...> &&
-                std::is_nothrow_invocable_v<Fn, std::decay_t<Vs>&...> &&
-                noexcept(std::execution::connect(
-                    std::declval<inner_sender_t>(), __inner_recv{this}));
+            constexpr bool nothrow = __nothrow<Fn, __inner_recv, Vs...>;
             if constexpr (!nothrow) {
                 std::execution::set_error(std::move(__outer_recv_), std::current_exception());
             }
         }
     }
 
-    struct __outer_recv {
-        using receiver_concept = receiver_t;
-        __op* __self;
-
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            if constexpr (std::is_same_v<Which, __value_tag>) {
-                __self->__start_inner(static_cast<Vs&&>(vs)...);
-            } else {
-                std::execution::set_value(std::move(__self->__outer_recv_), static_cast<Vs&&>(vs)...);
-            }
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            if constexpr (std::is_same_v<Which, __error_tag>) {
-                __self->__start_inner(static_cast<E&&>(e));
-            } else {
-                std::execution::set_error(std::move(__self->__outer_recv_), static_cast<E&&>(e));
-            }
-        }
-        void set_stopped() && noexcept {
-            if constexpr (std::is_same_v<Which, __stopped_tag>) {
-                __self->__start_inner();
-            } else {
-                std::execution::set_stopped(std::move(__self->__outer_recv_));
-            }
-        }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer_recv_);
-        }
-    };
+    using __outer_recv = __forge_let::__outer_recv<S, Fn, R, Which>;
 
     using __outer_op_t = connect_result_t<S, __outer_recv>;
-    using __types = __state_types<Fn, __inner_recv, Which,
+    using __types = __state_types<Fn, __inner_recv, Which, __outer_op_t,
         completion_signatures_of_t<S, outer_env_t>>;
 
-    // Keep the predecessor alive while the arguments and inner operation can
-    // still refer to it. Destroy the inner operation first.
-    __outer_op_t __outer_op_;
+    // Decay-copy the arguments, then replace the predecessor before invoking
+    // the successor function. The same variant owns either operation.
     typename __types::args __args_;
     typename __types::ops __inner_ops_;
 
@@ -453,11 +504,14 @@ struct __op : __forge_detail::__immovable {
         , __outer_env_(std::execution::get_env(__outer_recv_))
         , __let_env_(__make_let_env<Which>(sndr, __outer_env_))
         , __fn_(std::move(fn))
-        , __outer_op_(std::execution::connect(std::move(sndr), __outer_recv{this}))
+        , __inner_ops_(std::in_place_type<__forge_detail::__op_holder<__outer_op_t>>,
+              [&]() -> __outer_op_t {
+                  return std::execution::connect(std::move(sndr), __outer_recv{this, std::addressof(__outer_recv_)});
+              })
     {}
 
     void start() & noexcept {
-        std::execution::start(__outer_op_);
+        std::execution::start(std::get<__forge_detail::__op_holder<__outer_op_t>>(__inner_ops_).__op);
     }
 };
 
@@ -471,33 +525,25 @@ struct __sender {
     S __sndr;
     Fn __fn;
 
+    template<class Env>
+    using __cs = typename __let_cs<S, Fn, Which, Env,
+        completion_signatures_of_t<S, Env>>::type;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        return typename __let_cs<
-            typename self_t::source_t,
-            typename self_t::fn_t,
-            typename self_t::which_t,
-            Env,
-            up_cs_t>::type{};
-    }
+    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     template<receiver R>
-    auto connect(R r) && -> __op<S, Fn, R, Which>
-    {
+        requires requires { typename __cs<env_of_t<R>>; } && __connectable<S, Fn, R, Which>
+    auto connect(R r) && -> __op<S, Fn, R, Which> {
         return __op<S, Fn, R, Which>(
             std::move(__sndr), std::move(__fn), std::move(r));
     }
 
     template<receiver R>
-        requires std::copy_constructible<S> && std::copy_constructible<Fn>
-    auto connect(R r) const& -> __op<S, Fn, R, Which>
-    {
-        return __op<S, Fn, R, Which>(
-            __sndr, __fn, std::move(r));
+        requires std::copy_constructible<S> && std::copy_constructible<Fn> &&
+                 requires { typename __cs<env_of_t<R>>; } && __connectable<S, Fn, R, Which>
+    auto connect(R r) const& -> __op<S, Fn, R, Which> {
+        return __op<S, Fn, R, Which>(__sndr, __fn, std::move(r));
     }
 
     auto get_env() const noexcept {
@@ -510,25 +556,29 @@ template<class Fn, class Which>
 struct __let_closure : sender_adaptor_closure<__let_closure<Fn, Which>> {
     Fn __fn;
     template<sender S>
-        requires std::constructible_from<Fn, Fn&>
+        requires std::constructible_from<Fn, Fn&> && std::move_constructible<Fn> &&
+                 (!std::same_as<Which, __stopped_tag> || std::invocable<Fn>)
     [[nodiscard]] auto operator()(S&& s) & {
         return __sender<std::decay_t<S>, Fn, Which>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(__fn)};
     }
     template<sender S>
-        requires std::constructible_from<Fn, const Fn&>
+        requires std::constructible_from<Fn, const Fn&> && std::move_constructible<Fn> &&
+                 (!std::same_as<Which, __stopped_tag> || std::invocable<Fn>)
     [[nodiscard]] auto operator()(S&& s) const & {
         return __sender<std::decay_t<S>, Fn, Which>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(__fn)};
     }
     template<sender S>
-        requires std::constructible_from<Fn, Fn&&>
+        requires std::constructible_from<Fn, Fn&&> && std::move_constructible<Fn> &&
+                 (!std::same_as<Which, __stopped_tag> || std::invocable<Fn>)
     [[nodiscard]] auto operator()(S&& s) && {
         return __sender<std::decay_t<S>, Fn, Which>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(__fn))};
     }
     template<sender S>
-        requires std::constructible_from<Fn, const Fn&&>
+        requires std::constructible_from<Fn, const Fn&&> && std::move_constructible<Fn> &&
+                 (!std::same_as<Which, __stopped_tag> || std::invocable<Fn>)
     [[nodiscard]] auto operator()(S&& s) const && {
         return __sender<std::decay_t<S>, Fn, Which>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(__fn))};
@@ -544,7 +594,8 @@ struct __let_closure : sender_adaptor_closure<__let_closure<Fn, Which>> {
 template<class Which>
 struct __let_t {
     template<sender S, class Fn>
-        requires std::constructible_from<std::decay_t<Fn>, Fn>
+        requires __forge_detail::__movable_value<Fn> &&
+                 (!std::same_as<Which, __stopped_tag> || std::invocable<std::decay_t<Fn>>)
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return __sender<std::decay_t<S>, std::decay_t<Fn>, Which>{
             std::decay_t<S>(std::forward<S>(s)),

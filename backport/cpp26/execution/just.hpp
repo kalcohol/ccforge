@@ -23,16 +23,13 @@
 #pragma once
 
 #include "concepts.hpp"
+#include "detail/adaptor.hpp"
 
 namespace std::execution {
 
 namespace __forge_just {
 
-template<class T>
-concept __movable_value =
-    std::move_constructible<std::decay_t<T>> &&
-    std::constructible_from<std::decay_t<T>, T> &&
-    !std::is_array_v<std::remove_reference_t<T>>;
+using __forge_detail::__movable_value;
 
 template<class R, class... Vs>
 struct operation : __forge_detail::__immovable {
@@ -40,8 +37,13 @@ struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
     std::tuple<Vs...> values_;
 
-    operation(R rcvr, std::tuple<Vs...> vals)
-        : rcvr_(std::move(rcvr)), values_(std::move(vals)) {}
+    template<class Tuple>
+    operation(R rcvr, Tuple&& vals)
+        noexcept(std::is_nothrow_move_constructible_v<R> && noexcept(std::tuple<Vs...>(
+            __forge_detail::__allocator_aware_product(
+                static_cast<Tuple&&>(vals), rcvr, std::index_sequence_for<Vs...>{}))))
+        : rcvr_(std::move(rcvr)), values_(__forge_detail::__allocator_aware_product(
+              static_cast<Tuple&&>(vals), rcvr_, std::index_sequence_for<Vs...>{})) {}
 
     void start() & noexcept {
         std::apply(
@@ -64,13 +66,15 @@ struct sender {
     }
 
     template<receiver R>
-    auto connect(R rcvr) && -> operation<R, Vs...> {
+    auto connect(R rcvr) &&
+        noexcept(noexcept(operation<R, Vs...>(std::move(rcvr), std::move(values_)))) -> operation<R, Vs...> {
         return operation<R, Vs...>(std::move(rcvr), std::move(values_));
     }
 
     template<receiver R>
         requires (std::copy_constructible<Vs> && ...)
-    auto connect(R rcvr) const& -> operation<R, Vs...> {
+    auto connect(R rcvr) const&
+        noexcept(noexcept(operation<R, Vs...>(std::move(rcvr), values_))) -> operation<R, Vs...> {
         return operation<R, Vs...>(std::move(rcvr), values_);
     }
 
@@ -99,8 +103,12 @@ struct operation : __forge_detail::__immovable {
     [[no_unique_address]] R rcvr_;
     E error_;
 
-    operation(R rcvr, E err)
-        : rcvr_(std::move(rcvr)), error_(std::move(err)) {}
+    template<class Error>
+    operation(R rcvr, Error&& err)
+        noexcept(std::is_nothrow_move_constructible_v<R> && noexcept(E(
+            __forge_detail::__allocator_aware_forward(static_cast<Error&&>(err), rcvr))))
+        : rcvr_(std::move(rcvr)), error_(__forge_detail::__allocator_aware_forward(
+              static_cast<Error&&>(err), rcvr_)) {}
 
     void start() & noexcept {
         std::execution::set_error(std::move(rcvr_), std::move(error_));
@@ -119,13 +127,15 @@ struct sender {
     }
 
     template<receiver R>
-    auto connect(R rcvr) && -> operation<R, E> {
+    auto connect(R rcvr) &&
+        noexcept(noexcept(operation<R, E>(std::move(rcvr), std::move(error_)))) -> operation<R, E> {
         return operation<R, E>(std::move(rcvr), std::move(error_));
     }
 
     template<receiver R>
         requires std::copy_constructible<E>
-    auto connect(R rcvr) const& -> operation<R, E> {
+    auto connect(R rcvr) const&
+        noexcept(noexcept(operation<R, E>(std::move(rcvr), error_))) -> operation<R, E> {
         return operation<R, E>(std::move(rcvr), error_);
     }
 
@@ -153,7 +163,7 @@ struct operation : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     [[no_unique_address]] R rcvr_;
 
-    explicit operation(R rcvr) : rcvr_(std::move(rcvr)) {}
+    explicit operation(R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>) : rcvr_(std::move(rcvr)) {}
 
     void start() & noexcept { std::execution::set_stopped(std::move(rcvr_)); }
 };
@@ -168,12 +178,15 @@ struct sender {
     }
 
     template<receiver R>
-    auto connect(R rcvr) && -> operation<R> {
+    auto connect(R rcvr) &&
+        noexcept(std::is_nothrow_move_constructible_v<sender> &&
+                 noexcept(operation<R>(std::move(rcvr)))) -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 
     template<receiver R>
-    auto connect(R rcvr) const& -> operation<R> {
+    auto connect(R rcvr) const&
+        noexcept(noexcept(operation<R>(std::move(rcvr)))) -> operation<R> {
         return operation<R>(std::move(rcvr));
     }
 

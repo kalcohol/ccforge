@@ -19,11 +19,20 @@ namespace ex = std::execution;
 
 enum class completion { value, error, stopped };
 
-struct optional_env { using optional_values = void; };
+struct optional_query : std::forwarding_query_t {};
+struct local_optional_query {};
+struct optional_env {
+    int query(optional_query) const noexcept { return 42; }
+    int query(local_optional_query) const noexcept { return 99; }
+};
 
 struct empty_void_query {
-    void operator()(forge::empty_env) const noexcept {}
-    int operator()(optional_env) const noexcept { return 42; }
+    template<class Env>
+    auto operator()(const Env& env) const noexcept {
+        if constexpr (requires { env.query(optional_query{}); }) {
+            return env.query(optional_query{});
+        }
+    }
 };
 
 template<bool Multi = false, bool Dependent = false>
@@ -35,7 +44,7 @@ struct typed_sender {
         ex::completion_signatures<ex::set_value_t(int), ex::set_error_t(int), ex::set_stopped_t()>>;
 
     template<class Self, class Env>
-        requires (!Dependent || requires { typename Env::optional_values; })
+        requires (!Dependent || requires(const Env& env) { env.query(optional_query{}); })
     static auto get_completion_signatures() noexcept -> signatures { return {}; }
 
     auto get_env() const noexcept -> forge::empty_env { return {}; }
@@ -49,6 +58,11 @@ struct typed_sender {
         operation(R r, completion c) : receiver(std::move(r)), outcome(c) {}
 
         void start() & noexcept {
+            if constexpr (Dependent) {
+                const auto env = ex::get_env(receiver);
+                static_assert(requires { env.query(optional_query{}); });
+                static_assert(!requires { env.query(local_optional_query{}); });
+            }
             if (outcome == completion::stopped) {
                 ex::set_stopped(std::move(receiver));
             } else if (outcome == completion::error) {

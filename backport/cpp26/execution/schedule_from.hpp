@@ -24,6 +24,7 @@
 
 #include "concepts.hpp"
 #include "detail.hpp"
+#include "detail/adaptor.hpp"
 
 #include <cstddef>
 #include <tuple>
@@ -43,6 +44,22 @@ namespace __forge_schedule_from {
 
 struct __data {};
 
+template<class R>
+struct __recv {
+    using receiver_concept = receiver_t;
+    R __outer;
+    template<class... As> void set_value(As&&... as) && noexcept {
+        std::execution::set_value(std::move(__outer), static_cast<As&&>(as)...);
+    }
+    template<class E> void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(__outer), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept { std::execution::set_stopped(std::move(__outer)); }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(__outer)};
+    }
+};
+
 template<class S>
 struct __sender {
     using sender_concept = sender_t;
@@ -54,31 +71,33 @@ struct __sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> decltype(std::execution::get_completion_signatures(
-            std::declval<typename std::remove_cvref_t<Self>::source_t>(),
-            std::declval<Env>())) {
+            std::declval<__forge_detail::__child_category_t<Self, S>>(),
+            std::declval<__forge_detail::__fwd_env_t<Env>>())) {
         return {};
     }
 
-    auto get_env() const noexcept -> env_of_t<S> {
-        return std::execution::get_env(__sndr_);
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<S>> {
+        return {std::execution::get_env(__sndr_)};
     }
 
     template<receiver R>
+        requires sender_in<S, __forge_detail::__fwd_env_t<env_of_t<R>>>
     auto connect(R rcvr) &&
-        noexcept(noexcept(std::execution::connect(
-            std::move(__sndr_), std::move(rcvr)))) {
-        return std::execution::connect(
-            std::move(__sndr_), std::move(rcvr));
+        noexcept(noexcept(std::execution::connect(std::move(__sndr_), __recv<R>{std::move(rcvr)})))
+        -> connect_result_t<S, __recv<R>> {
+        return std::execution::connect(std::move(__sndr_), __recv<R>{std::move(rcvr)});
     }
 
     template<receiver R>
-        requires std::copy_constructible<S>
+        requires std::copy_constructible<S> && sender_in<const S&, __forge_detail::__fwd_env_t<env_of_t<R>>>
     auto connect(R rcvr) const&
-        noexcept(noexcept(std::execution::connect(
-            S(__sndr_), std::move(rcvr)))) {
-        return std::execution::connect(
-            S(__sndr_), std::move(rcvr));
+        noexcept(noexcept(std::execution::connect(__sndr_, __recv<R>{std::move(rcvr)})))
+        -> connect_result_t<const S&, __recv<R>> {
+        return std::execution::connect(__sndr_, __recv<R>{std::move(rcvr)});
     }
+
+    // An invalid rvalue child connection must not retry the const-lvalue path.
+    template<class R> void connect(R) && = delete;
 
     template<std::size_t I>
     constexpr decltype(auto) get() & noexcept {

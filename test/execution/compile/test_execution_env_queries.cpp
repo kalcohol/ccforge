@@ -744,7 +744,14 @@ static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, forge::em
 static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, stop_prop>,
                            ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
 
-using attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, answer>;
+// Direct attribute-helper tests supply an independent source signature oracle.
+struct attribute_source {
+    using sender_concept = ex::sender_tag;
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()> { return {}; }
+};
+using attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, answer, attribute_source>;
 static_assert(nothrow_answer<attrs, key, const int&>);
 static_assert(!answers<attrs, local_key>);
 static_assert(!answers<attrs, missing>);
@@ -764,15 +771,15 @@ constexpr bool transfer_attribute_values() {
 }
 static_assert(transfer_attribute_values());
 using throwing_attrs = ex::__forge_continues_on::__completion_attrs<
-    ex::inline_scheduler, throwing_answer>;
+    ex::inline_scheduler, throwing_answer, attribute_source>;
 static_assert(!noexcept(std::declval<const throwing_attrs&>().query(key{})));
-using legacy_attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, legacy>;
+using legacy_attrs = ex::__forge_continues_on::__completion_attrs<ex::inline_scheduler, legacy, attribute_source>;
 #if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
 static_assert(!answers<legacy_attrs, key>);
 #else
 static_assert(nothrow_answer<legacy_attrs, key, int>);
 #endif
-using domain_attrs = ex::__forge_continues_on::__completion_attrs<domain_scheduler, answer>;
+using domain_attrs = ex::__forge_continues_on::__completion_attrs<domain_scheduler, answer, attribute_source>;
 static_assert(answers<domain_attrs, value_domain_query, const answer&>);
 
 struct child_domain {};
@@ -831,6 +838,7 @@ using blocked_sender_for = decltype(ex::continues_on(
     transfer_source<completion_child_attrs, Tag>{}, unavailable_scheduler{}));
 using blocked_sender = blocked_sender_for<ex::set_value_t>;
 using blocked_attrs = ex::env_of_t<blocked_sender>;
+using blocked_stopped_attrs = ex::env_of_t<blocked_sender_for<ex::set_stopped_t>>;
 // The child really answers every tag and arity; neither member nor legacy
 // forwarding may supply a completion answer when the destination has none.
 template<class Q, class E = blocked_attrs>
@@ -851,13 +859,13 @@ static_assert(blocks_child_domain<ex::get_completion_domain_t<>>);
 static_assert(!answers<blocked_attrs, error_scheduler_query, answer>);
 static_assert(!cpo_answers<blocked_attrs, error_scheduler_query, answer>);
 static_assert(nothrow_answer<blocked_attrs, value_scheduler_query, unavailable_scheduler>);
-static_assert(nothrow_answer<blocked_attrs, stopped_scheduler_query, unavailable_scheduler>);
+static_assert(nothrow_answer<blocked_stopped_attrs, stopped_scheduler_query, unavailable_scheduler>);
 static_assert(std::same_as<decltype(value_scheduler_query{}(
     std::declval<const blocked_attrs&>(), answer{}, answer{})), unavailable_scheduler>);
 static_assert(std::same_as<decltype(stopped_scheduler_query{}(
-    std::declval<const blocked_attrs&>(), answer{})), unavailable_scheduler>);
+    std::declval<const blocked_stopped_attrs&>(), answer{})), unavailable_scheduler>);
 static_assert(noexcept(value_scheduler_query{}(std::declval<const blocked_attrs&>(), answer{})));
-static_assert(noexcept(stopped_scheduler_query{}(std::declval<const blocked_attrs&>(), answer{})));
+static_assert(noexcept(stopped_scheduler_query{}(std::declval<const blocked_stopped_attrs&>(), answer{})));
 static_assert(nothrow_answer<blocked_attrs, key, const int&>);
 static_assert(!answers<blocked_attrs, local_key>);
 static_assert(answers<completion_child_attrs, local_key, int&, int>);
@@ -884,9 +892,9 @@ struct scheduler_only_domain : unavailable_scheduler {
     domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
 };
 using destination_wins = ex::__forge_continues_on::__completion_attrs<
-    scheduler_domain_fallback, completion_child_attrs>;
+    scheduler_domain_fallback, completion_child_attrs, attribute_source>;
 using scheduler_fallback = ex::__forge_continues_on::__completion_attrs<
-    scheduler_only_domain, completion_child_attrs>;
+    scheduler_only_domain, completion_child_attrs, attribute_source>;
 template<class Q>
 constexpr bool destination_domain_selection =
     nothrow_answer<destination_wins, Q, destination_domain> &&
@@ -901,7 +909,7 @@ static_assert(destination_domain_selection<ex::get_completion_domain_t<>>);
 static_assert(!answers<destination_wins, error_domain_query, answer>);
 static_assert(!cpo_answers<destination_wins, error_domain_query, answer>);
 using throwing_schedule_attrs = ex::__forge_continues_on::__completion_attrs<
-    transfer_scheduler<destination_attrs, false>, answer>;
+    transfer_scheduler<destination_attrs, false>, answer, attribute_source>;
 static_assert(!noexcept(std::declval<const throwing_schedule_attrs&>().query(
     value_domain_query{}, answer{})));
 
@@ -943,21 +951,21 @@ struct environment_schedule_scheduler : transfer_scheduler<Attrs> {
     domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
 };
 using environment_destination = ex::__forge_continues_on::__completion_attrs<
-    transfer_scheduler<environment_domain_attrs<>>, completion_child_attrs>;
+    transfer_scheduler<environment_domain_attrs<>>, completion_child_attrs, attribute_source>;
 using environment_scheduler = ex::__forge_continues_on::__completion_attrs<
-    environment_domain_scheduler<environment_domain_attrs<>>, completion_child_attrs>;
+    environment_domain_scheduler<environment_domain_attrs<>>, completion_child_attrs, attribute_source>;
 using filtered_destination = ex::__forge_continues_on::__completion_attrs<
-    environment_schedule_scheduler<filtered_only_domain_attrs>, completion_child_attrs>;
+    environment_schedule_scheduler<filtered_only_domain_attrs>, completion_child_attrs, attribute_source>;
 using filtered_scheduler = ex::__forge_continues_on::__completion_attrs<
-    environment_domain_scheduler<filtered_only_domain_attrs>, completion_child_attrs>;
+    environment_domain_scheduler<filtered_only_domain_attrs>, completion_child_attrs, attribute_source>;
 using local_destination = ex::__forge_continues_on::__completion_attrs<
-    environment_schedule_scheduler<local_only_domain_attrs>, completion_child_attrs>;
+    environment_schedule_scheduler<local_only_domain_attrs>, completion_child_attrs, attribute_source>;
 using local_scheduler = ex::__forge_continues_on::__completion_attrs<
-    environment_domain_scheduler<local_only_domain_attrs>, completion_child_attrs>;
+    environment_domain_scheduler<local_only_domain_attrs>, completion_child_attrs, attribute_source>;
 using throwing_filtered_destination = ex::__forge_continues_on::__completion_attrs<
-    transfer_scheduler<environment_domain_attrs<false>>, completion_child_attrs>;
+    transfer_scheduler<environment_domain_attrs<false>>, completion_child_attrs, attribute_source>;
 using throwing_filtered_scheduler = ex::__forge_continues_on::__completion_attrs<
-    environment_domain_scheduler<environment_domain_attrs<false>>, completion_child_attrs>;
+    environment_domain_scheduler<environment_domain_attrs<false>>, completion_child_attrs, attribute_source>;
 
 // Ordinary sender attributes must still expose the original environments to
 // the CPO's scheduler-domain fallback, even with continues_on in this TU.
@@ -978,7 +986,7 @@ struct value_only_domain_attrs {
                               destination_domain> { return {}; }
 };
 using value_only_scheduler = ex::__forge_continues_on::__completion_attrs<
-    environment_domain_scheduler<value_only_domain_attrs>, completion_child_attrs>;
+    environment_domain_scheduler<value_only_domain_attrs>, completion_child_attrs, attribute_source>;
 static_assert(!answers<value_only_scheduler, stopped_domain_query>);
 static_assert(!answers<value_only_scheduler, stopped_domain_query, answer>);
 static_assert(!cpo_answers<value_only_scheduler, stopped_domain_query>);
@@ -1042,13 +1050,13 @@ static_assert(filtered_domain_selection<stopped_domain_query>);
 static_assert(filtered_domain_selection<ex::get_completion_domain_t<>>);
 
 // Scheduler queries keep the destination identity at every CPO arity; the
-// member surface is unary. Error queries cannot fall through to the child.
+// member surface also accepts receiver environments. Error queries cannot fall through to the child.
 using local_destination_scheduler = environment_domain_scheduler<local_only_domain_attrs>;
 template<class Q>
 constexpr bool local_scheduler_selection =
     nothrow_answer<local_scheduler, Q, local_destination_scheduler> &&
-    !answers<local_scheduler, Q, answer> &&
-    !answers<local_scheduler, Q, answer&, const answer&> &&
+    answers<local_scheduler, Q, answer> &&
+    answers<local_scheduler, Q, answer&, const answer&> &&
     std::same_as<decltype(Q{}(std::declval<const local_scheduler&>())),
                  local_destination_scheduler> &&
     std::same_as<decltype(Q{}(std::declval<const local_scheduler&>(), answer{})),

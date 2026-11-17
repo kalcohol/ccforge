@@ -58,7 +58,8 @@ struct __as_variant;
 
 template<class... Ts>
 struct __as_variant<__forge_meta::type_list<Ts...>> {
-    using type = std::variant<Ts...>;
+    using type = __forge_meta::list_to_variant_t<std::variant,
+        __forge_meta::list_push_unique_all_t<__forge_meta::type_list<>, Ts...>>;
 };
 
 template<class CS>
@@ -78,39 +79,110 @@ struct __results<completion_signatures<Sigs...>> {
     using variant = typename __as_variant<with_exception>::type;
 };
 
+template<class Scheduler, class S, class Env, class = void>
+struct __completion_sigs {};
+
+template<class Scheduler, class S, class Env>
+    requires sender_in<S, __forge_detail::__fwd_env_t<Env>> &&
+             sender_in<schedule_result_t<Scheduler&>, __forge_detail::__fwd_env_t<Env>> &&
+             __forge_detail::__decay_copyable_cs<
+                 completion_signatures_of_t<S, __forge_detail::__fwd_env_t<Env>>>::value
+struct __completion_sigs<Scheduler, S, Env, void> {
+    using source = __results<completion_signatures_of_t<S, __forge_detail::__fwd_env_t<Env>>>;
+    using scheduled = completion_signatures_of_t<schedule_result_t<Scheduler&>,
+                                                __forge_detail::__fwd_env_t<Env>>;
+    using type = __forge_meta::__concat_unique_cs_t<typename source::source_completions,
+        __forge_meta::__non_value_completion_signatures_t<scheduled>, typename source::exception_completion>;
+};
+
+template<class Tag, class Sig>
+struct __has_tag : std::false_type {};
+
+template<class Tag, class... As>
+struct __has_tag<Tag, Tag(As...)> : std::true_type {};
+
+template<class Tag, class CS>
+struct __has_completion : std::false_type {};
+
+template<class Tag, class... Sigs>
+struct __has_completion<Tag, completion_signatures<Sigs...>>
+    : std::bool_constant<(__has_tag<Tag, Sigs>::value || ...)> {};
+
+template<class... Envs>
+struct __first_env { using type = env<>; };
+
+template<class Env, class... Rest>
+struct __first_env<Env, Rest...> { using type = Env; };
+
+template<class Scheduler, class S, class R>
+struct __op;
+
+template<class Scheduler, class S, class R>
+struct __sched_recv {
+    using receiver_concept = receiver_t;
+    __op<Scheduler, S, R>* __self;
+    R* __outer;
+
+    void set_value() && noexcept {
+        // The receiver can destroy the entire operation during this call.
+        // Neither visitor nor caller may inspect the state afterwards.
+        std::visit([outer = std::addressof(__self->__outer)](auto& result) noexcept {
+            using tuple_t = std::remove_cvref_t<decltype(result)>;
+            if constexpr (!std::same_as<tuple_t, std::monostate>) {
+                std::apply([outer](auto tag, auto&... args) noexcept {
+                    tag(std::move(*outer), std::move(args)...);
+                }, result);
+            }
+        }, __self->__result);
+    }
+    template<class E>
+    void set_error(E&& error) && noexcept {
+        std::execution::set_error(std::move(__self->__outer), static_cast<E&&>(error));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(__self->__outer));
+    }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*__outer)};
+    }
+};
+
+template<class Scheduler, class S, class R>
+struct __up_recv {
+    using receiver_concept = receiver_t;
+    __op<Scheduler, S, R>* __self;
+    R* __outer;
+
+    template<class... As>
+    void set_value(As&&... args) && noexcept {
+        __self->__save_and_schedule(set_value_t{}, static_cast<As&&>(args)...);
+    }
+    template<class E>
+    void set_error(E&& error) && noexcept {
+        __self->__save_and_schedule(set_error_t{}, static_cast<E&&>(error));
+    }
+    void set_stopped() && noexcept {
+        __self->__save_and_schedule(set_stopped_t{});
+    }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*__outer)};
+    }
+};
+
+template<class Scheduler, class S, class R>
+concept __connectable = requires {
+    typename connect_result_t<S, __up_recv<Scheduler, S, R>>;
+    typename connect_result_t<decltype(std::execution::schedule(std::declval<Scheduler&>())),
+        __sched_recv<Scheduler, S, R>>;
+};
+
 template<class Scheduler, class S, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     using __env_t = __forge_env_detail::__forwarding_attrs<env_of_t<R>>;
     using __results_t = __results<completion_signatures_of_t<S, __env_t>>;
 
-    struct __sched_recv {
-        using receiver_concept = receiver_t;
-        __op* __self;
-
-        void set_value() && noexcept {
-            // The receiver can destroy the entire operation during this call.
-            // Neither visitor nor caller may inspect the state afterwards.
-            std::visit([outer = std::addressof(__self->__outer)](auto& result) noexcept {
-                using tuple_t = std::remove_cvref_t<decltype(result)>;
-                if constexpr (!std::same_as<tuple_t, std::monostate>) {
-                    std::apply([outer](auto tag, auto&... args) noexcept {
-                        tag(std::move(*outer), std::move(args)...);
-                    }, result);
-                }
-            }, __self->__result);
-        }
-        template<class E>
-        void set_error(E&& error) && noexcept {
-            std::execution::set_error(std::move(__self->__outer), static_cast<E&&>(error));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(__self->__outer));
-        }
-        auto get_env() const noexcept -> __env_t {
-            return {std::execution::get_env(__self->__outer)};
-        }
-    };
+    using __sched_recv = __forge_continues_on::__sched_recv<Scheduler, S, R>;
 
     template<class Tag, class... As>
     void __save_and_schedule(Tag tag, As&&... args) noexcept {
@@ -130,25 +202,7 @@ struct __op : __forge_detail::__immovable {
         std::execution::start(__sched_op);
     }
 
-    struct __up_recv {
-        using receiver_concept = receiver_t;
-        __op* __self;
-
-        template<class... As>
-        void set_value(As&&... args) && noexcept {
-            __self->__save_and_schedule(set_value_t{}, static_cast<As&&>(args)...);
-        }
-        template<class E>
-        void set_error(E&& error) && noexcept {
-            __self->__save_and_schedule(set_error_t{}, static_cast<E&&>(error));
-        }
-        void set_stopped() && noexcept {
-            __self->__save_and_schedule(set_stopped_t{});
-        }
-        auto get_env() const noexcept -> __env_t {
-            return {std::execution::get_env(__self->__outer)};
-        }
-    };
+    using __up_recv = __forge_continues_on::__up_recv<Scheduler, S, R>;
 
     using __sched_op_t = connect_result_t<decltype(
         std::execution::schedule(std::declval<Scheduler&>())), __sched_recv>;
@@ -162,8 +216,8 @@ struct __op : __forge_detail::__immovable {
 
     __op(Scheduler sch, S sndr, R recv)
         : __outer(std::move(recv))
-        , __sched_op(std::execution::connect(std::execution::schedule(sch), __sched_recv{this}))
-        , __up_op(std::execution::connect(std::move(sndr), __up_recv{this}))
+        , __sched_op(std::execution::connect(std::execution::schedule(sch), __sched_recv{this, std::addressof(__outer)}))
+        , __up_op(std::execution::connect(std::move(sndr), __up_recv{this, std::addressof(__outer)}))
     {}
 
     void start() & noexcept {
@@ -185,7 +239,7 @@ inline constexpr bool __completion_query_v<get_completion_domain_t<CPO>> = true;
 template<class Env>
 using __query_env_t = __forge_env_detail::__forwarding_attrs<Env&&>;
 
-template<class Scheduler, class ChildEnv>
+template<class Scheduler, class ChildEnv, class Source>
 struct __completion_attrs;
 
 } // namespace __forge_continues_on
@@ -194,16 +248,16 @@ namespace __forge_domain {
 
 // An unavailable domain member must not let the public CPO retry the
 // destination scheduler with queries hidden from the schedule receiver.
-template<class Scheduler, class ChildEnv, class Env>
+template<class Scheduler, class ChildEnv, class Source, class Env>
 struct __completion_domain_env<
-    __forge_continues_on::__completion_attrs<Scheduler, ChildEnv>, Env>
+    __forge_continues_on::__completion_attrs<Scheduler, ChildEnv, Source>, Env>
     : std::type_identity<__forge_continues_on::__query_env_t<Env>> {};
 
 } // namespace __forge_domain
 
 namespace __forge_continues_on {
 
-template<class Scheduler, class ChildEnv>
+template<class Scheduler, class ChildEnv, class Source>
 struct __completion_attrs {
     using __schedule_sender_t = decltype(
         std::execution::schedule(std::declval<Scheduler&>()));
@@ -235,19 +289,26 @@ struct __completion_attrs {
     [[no_unique_address]] Scheduler __sch;
     [[no_unique_address]] ChildEnv __child;
 
-    auto query(get_completion_scheduler_t<set_value_t>) const noexcept -> Scheduler {
-        return __sch;
-    }
-
-    auto query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> Scheduler {
-        return __sch;
-    }
-
-    // Scheduling errors may run on an unspecified agent. Do not claim a
-    // unique error scheduler or domain, including via child forwarding.
     template<class CPO, class... Envs>
-        requires (std::same_as<CPO, void> || std::same_as<CPO, set_value_t> ||
-                  std::same_as<CPO, set_stopped_t>) &&
+    static consteval bool __can_query() {
+        using environment = typename __first_env<Envs...>::type;
+        if constexpr (requires { typename __completion_sigs<Scheduler, Source, environment>::type; }) {
+            using signatures = typename __completion_sigs<Scheduler, Source, environment>::type;
+            using scheduled = typename __completion_sigs<Scheduler, Source, environment>::scheduled;
+            if constexpr (std::same_as<CPO, void>) return true;
+            else return __has_completion<CPO, signatures>::value &&
+                (!std::same_as<CPO, set_error_t> || !__has_completion<set_error_t, scheduled>::value);
+        } else return false;
+    }
+
+    template<class CPO, class... Envs>
+        requires (__can_query<CPO, Envs...>())
+    constexpr auto query(get_completion_scheduler_t<CPO>, Envs&&...) const noexcept -> Scheduler {
+        return __sch;
+    }
+
+    template<class CPO, class... Envs>
+        requires (__can_query<CPO, Envs...>()) &&
                  (__forge_env_detail::__queryable<
                       get_completion_domain_t<CPO>,
                       const __schedule_attrs_t&,
@@ -298,6 +359,18 @@ struct __completion_attrs {
     }
 };
 
+// Keep the public CPO fallback in agreement with the environment-specific
+// member constraints, including through ordinary forwarding attributes.
+} // namespace __forge_continues_on
+namespace __forge_env_detail {
+template<class Scheduler, class ChildEnv, class Source, class Tag, class... Envs>
+struct __completion_query_allowed<
+    __forge_continues_on::__completion_attrs<Scheduler, ChildEnv, Source>, Tag, Envs...>
+    : std::bool_constant<__forge_continues_on::__completion_attrs<
+          Scheduler, ChildEnv, Source>::template __can_query<Tag, Envs...>()> {};
+} // namespace __forge_env_detail
+namespace __forge_continues_on {
+
 template<class Scheduler, class S>
 struct __sender {
     using sender_concept = sender_t;
@@ -306,45 +379,27 @@ struct __sender {
     Scheduler __sch;
     S __sndr;
 
+    template<class Env>
+    using __cs = typename __completion_sigs<Scheduler, S, Env>::type;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using env_t = __forge_env_detail::__forwarding_attrs<Env>;
-        using source_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<env_t>()));
-        using results_t = __results<source_cs_t>;
-        using sched_sndr_t = decltype(std::execution::schedule(
-            std::declval<Scheduler&>()));
-        using sched_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<sched_sndr_t>(),
-            std::declval<env_t>()));
-        using sched_non_value_cs_t =
-            __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
-        return __forge_meta::__concat_unique_cs_t<
-            typename __results<source_cs_t>::source_completions,
-            sched_non_value_cs_t, typename results_t::exception_completion>{};
+    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
+
+    template<receiver R>
+        requires requires { typename __cs<env_of_t<R>>; } && __connectable<Scheduler, S, R>
+    auto connect(R r) && -> __op<Scheduler, S, R> {
+        return __op<Scheduler, S, R>(std::move(__sch), std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
-    auto connect(R r) &&
-        -> __op<Scheduler, S, R>
-    {
-        return __op<Scheduler, S, R>(
-            std::move(__sch), std::move(__sndr), std::move(r));
-    }
-
-    template<receiver R>
-        requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
-    auto connect(R r) const&
-        -> __op<Scheduler, S, R>
-    {
-        return __op<Scheduler, S, R>(
-            __sch, __sndr, std::move(r));
+        requires std::copy_constructible<Scheduler> && std::copy_constructible<S> &&
+                 requires { typename __cs<env_of_t<R>>; } && __connectable<Scheduler, S, R>
+    auto connect(R r) const& -> __op<Scheduler, S, R> {
+        return __op<Scheduler, S, R>(__sch, __sndr, std::move(r));
     }
 
     auto get_env() const noexcept {
-        return __completion_attrs<Scheduler, env_of_t<S>>{
+        return __completion_attrs<Scheduler, env_of_t<S>, S>{
             __sch,
             std::execution::get_env(__sndr)};
     }

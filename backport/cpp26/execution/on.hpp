@@ -26,6 +26,7 @@
 #include "concepts.hpp"
 #include "continues_on.hpp"
 #include "env.hpp"
+#include "let.hpp"
 #include "run_loop.hpp"
 
 namespace std::execution {
@@ -34,15 +35,16 @@ namespace __forge_on {
 
 template<class Scheduler, class OuterEnv>
 auto __make_starts_on_env(Scheduler& scheduler, const OuterEnv& outer) {
+    auto forwarding = __forge_detail::__fwd_env_t<const OuterEnv&>{outer};
     auto scheduler_prop = std::execution::prop(
         std::execution::get_scheduler, std::cref(scheduler));
     auto start_prop = std::execution::prop(
         std::execution::get_start_scheduler, std::cref(scheduler));
     // The operation owns value environments; this view has a stable shape.
     auto child_env = std::execution::env<
-        decltype(scheduler_prop), decltype(start_prop), const OuterEnv&>{
+        decltype(scheduler_prop), decltype(start_prop), decltype(forwarding)>{
         std::move(scheduler_prop), std::move(start_prop),
-        outer};
+        std::move(forwarding)};
     // SCHED-ENV exposes only a direct domain query, not a synthesized fallback.
     if constexpr (__forge_env_detail::__queryable<get_domain_t, const Scheduler&>) {
         return std::execution::make_env(
@@ -59,75 +61,142 @@ template<class Scheduler, class OuterEnv>
 using __starts_on_env_t = decltype(__make_starts_on_env(
     std::declval<Scheduler&>(), std::declval<OuterEnv>()));
 
+template<class Scheduler, class S>
+struct __starts_on_sender;
+
+template<class Scheduler, class S>
+struct __move_child {
+    S* __child;
+    auto operator()() const
+        noexcept(std::is_nothrow_move_constructible_v<__starts_on_sender<Scheduler, S>>) -> S {
+        return std::move(*__child);
+    }
+};
+
+template<class Scheduler, class S, class Env, class = void>
+struct __starts_cs {};
+
+template<class Scheduler, class S, class Env>
+    requires sender_in<S, __starts_on_env_t<Scheduler, Env>> &&
+             sender_in<schedule_result_t<Scheduler&>, __forge_detail::__fwd_env_t<Env>> &&
+             requires { typename connect_result_t<S,
+                 __forge_let::__signature_receiver<__starts_on_env_t<Scheduler, Env>>>; }
+struct __starts_cs<Scheduler, S, Env, void> {
+    using source_env = __starts_on_env_t<Scheduler, Env>;
+    static constexpr bool nothrow =
+        __forge_let::__nothrow<__move_child<Scheduler, S>,
+            __forge_let::__signature_receiver<source_env>>;
+    using type = __forge_meta::__concat_unique_cs_t<
+        completion_signatures_of_t<S, source_env>,
+        __forge_meta::__non_value_completion_signatures_t<completion_signatures_of_t<
+            schedule_result_t<Scheduler&>, __forge_detail::__fwd_env_t<Env>>>,
+        typename __forge_let::__maybe_eptr_cs<!nothrow>::type>;
+};
+
+template<class Scheduler, class S, class R>
+struct __starts_on_op;
+
+template<class Scheduler, class R>
+struct __sndr_recv {
+    using receiver_concept = receiver_t;
+    R* __outer;
+    Scheduler* __scheduler;
+    const std::remove_reference_t<env_of_t<R>>* __environment;
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
+    }
+    auto get_env() const noexcept -> __starts_on_env_t<Scheduler, env_of_t<R>> {
+        return __make_starts_on_env(*__scheduler, *__environment);
+    }
+};
+
+template<class Scheduler, class S, class R>
+struct __sched_recv {
+    using receiver_concept = receiver_t;
+    __starts_on_op<Scheduler, S, R>* __self;
+    R* __outer;
+    void set_value() && noexcept { __self->__start_child(); }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(__self->__outer_recv), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(__self->__outer_recv));
+    }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*__outer)};
+    }
+};
+
+template<class Scheduler, class S, class R>
+concept __starts_connectable = requires {
+    typename connect_result_t<S, __sndr_recv<Scheduler, R>>;
+    typename connect_result_t<decltype(std::execution::schedule(std::declval<Scheduler&>())),
+        __sched_recv<Scheduler, S, R>>;
+};
+
 template<class Scheduler, class S, class R>
 struct __starts_on_op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
     using __source_env_t = __starts_on_env_t<Scheduler, env_of_t<R>>;
+    using __schedule_env_t = __forge_detail::__fwd_env_t<env_of_t<R>>;
 
     R __outer_recv;
     Scheduler __sch;
+    S __sndr;
     env_of_t<R> __outer_env;
 
-    struct __sndr_recv {
-        using receiver_concept = receiver_t;
-        __starts_on_op* __self;
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            std::execution::set_value(std::move(__self->__outer_recv), static_cast<Vs&&>(vs)...);
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(__self->__outer_recv), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(__self->__outer_recv));
-        }
-        auto get_env() const noexcept -> __source_env_t {
-            return __make_starts_on_env(
-                __self->__sch,
-                __self->__outer_env);
-        }
-    };
+    using __sndr_recv = __forge_on::__sndr_recv<Scheduler, R>;
 
     using __sndr_op_t = connect_result_t<S, __sndr_recv>;
 
-    struct __sched_recv {
-        using receiver_concept = receiver_t;
-        __starts_on_op* __self;
+    void __start_child() noexcept {
+        try {
+            __ops.template emplace<std::monostate>();
+            // This is the move-returning lambda of [exec.starts.on]/4. Its
+            // exception specification includes the scheduler in OutSndr.
+            auto child = __move_child<Scheduler, S>{std::addressof(__sndr)}();
+            auto& holder = __ops.template emplace<__forge_detail::__op_holder<__sndr_op_t>>(
+                [&]() -> __sndr_op_t {
+                    return std::execution::connect(std::move(child), __sndr_recv{std::addressof(__outer_recv), std::addressof(__sch), std::addressof(__outer_env)});
+                });
+            std::execution::start(holder.__op);
+        } catch (...) {
+            constexpr bool nothrow = __forge_let::__nothrow<
+                __move_child<Scheduler, S>, __sndr_recv>;
+            if constexpr (!nothrow) {
+                std::execution::set_error(std::move(__outer_recv), std::current_exception());
+            }
+        }
+    }
 
-        void set_value() && noexcept {
-            std::execution::start(
-                __self->__sndr_op);
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(__self->__outer_recv), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(__self->__outer_recv));
-        }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(__self->__outer_recv);
-        }
-    };
+    using __sched_recv = __forge_on::__sched_recv<Scheduler, S, R>;
 
-    using __sched_op_t = connect_result_t<
-        decltype(std::execution::schedule(std::declval<Scheduler&>())), __sched_recv>;
-
-    // Ordinary members preserve guaranteed elision, including empty states.
-    __sched_op_t __sched_op;
-    __sndr_op_t __sndr_op;
+    using __sched_op_t = connect_result_t<schedule_result_t<Scheduler&>, __sched_recv>;
+    using __ops_t = typename __forge_let::__as_variant<
+        __forge_meta::list_push_unique_t<__forge_meta::type_list<std::monostate,
+            __forge_detail::__op_holder<__sched_op_t>>,
+            __forge_detail::__op_holder<__sndr_op_t>>>::type;
+    __ops_t __ops;
 
     __starts_on_op(Scheduler sch, S sndr, R recv)
-        : __outer_recv(std::move(recv))
-        , __sch(std::move(sch))
+        : __outer_recv(std::move(recv)), __sch(std::move(sch)), __sndr(std::move(sndr))
         , __outer_env(std::execution::get_env(__outer_recv))
-        , __sched_op(std::execution::connect(std::execution::schedule(__sch), __sched_recv{this}))
-        , __sndr_op(std::execution::connect(std::move(sndr), __sndr_recv{this}))
-    {}
+        , __ops(std::in_place_type<__forge_detail::__op_holder<__sched_op_t>>,
+              [&]() -> __sched_op_t {
+                  return std::execution::connect(std::execution::schedule(__sch), __sched_recv{this, std::addressof(__outer_recv)});
+              }) {}
 
     void start() & noexcept {
-        std::execution::start(__sched_op);
+        std::execution::start(std::get<__forge_detail::__op_holder<__sched_op_t>>(__ops).__op);
     }
 };
 
@@ -136,48 +205,28 @@ struct __starts_on_sender {
     using sender_concept = sender_t;
     using scheduler_t = Scheduler;
     using source_t = S;
-
     Scheduler __sch;
     S __sndr;
 
+    template<class Env>
+    using __cs = typename __starts_cs<Scheduler, S, Env>::type;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using child_env_t = __starts_on_env_t<
-            typename self_t::scheduler_t,
-            Env>;
-        using source_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<child_env_t>()));
-        using sched_sndr_t = decltype(std::execution::schedule(
-            std::declval<Scheduler&>()));
-        using sched_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<sched_sndr_t>(),
-            std::declval<Env>()));
-        using sched_non_value_cs_t =
-            __forge_meta::__non_value_completion_signatures_t<sched_cs_t>;
-        return __forge_meta::__concat_unique_cs_t<
-            source_cs_t,
-            sched_non_value_cs_t>{};
-    }
+    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     template<receiver R>
-    auto connect(R r) && -> __starts_on_op<Scheduler, S, R>
-    {
-        return __starts_on_op<Scheduler, S, R>(
-            std::move(__sch), std::move(__sndr), std::move(r));
+        requires requires { typename __cs<env_of_t<R>>; } && __starts_connectable<Scheduler, S, R>
+    auto connect(R r) && -> __starts_on_op<Scheduler, S, R> {
+        return __starts_on_op<Scheduler, S, R>(std::move(__sch), std::move(__sndr), std::move(r));
     }
-
     template<receiver R>
-        requires std::copy_constructible<Scheduler> && std::copy_constructible<S>
-    auto connect(R r) const& -> __starts_on_op<Scheduler, S, R>
-    {
-        return __starts_on_op<Scheduler, S, R>(
-            __sch, __sndr, std::move(r));
+        requires std::copy_constructible<Scheduler> && std::copy_constructible<S> &&
+                 requires { typename __cs<env_of_t<R>>; } && __starts_connectable<Scheduler, S, R>
+    auto connect(R r) const& -> __starts_on_op<Scheduler, S, R> {
+        return __starts_on_op<Scheduler, S, R>(__sch, __sndr, std::move(r));
     }
-
     auto get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{std::execution::get_env(__sndr)};
     }
 };
 
@@ -251,6 +300,25 @@ struct __op : __forge_detail::__immovable {
     }
 };
 
+template<class ChildEnv>
+struct __attrs {
+    ChildEnv __child;
+    template<class Query, class... As>
+        requires (!__forge_continues_on::__completion_query_v<std::remove_cvref_t<Query>>) &&
+                 __forge_env_detail::__fwd_env_query<Query> &&
+                 __forge_env_detail::__queryable<Query, const ChildEnv&, As...>
+    constexpr decltype(auto) query(Query q, As&&... as) const
+        noexcept(__forge_env_detail::__nothrow_query<Query, const ChildEnv&, As...>) {
+        return __forge_env_detail::__query(q, __child, static_cast<As&&>(as)...);
+    }
+    template<class Query, class... As>
+        requires requires(const __attrs& self, Query q, As&&... as) { self.query(q, static_cast<As&&>(as)...); }
+    friend decltype(auto) tag_invoke(Query q, const __attrs& self, As&&... as)
+        noexcept(noexcept(self.query(q, static_cast<As&&>(as)...))) {
+        return self.query(q, static_cast<As&&>(as)...);
+    }
+};
+
 template<class Scheduler, class S>
 struct __sender {
     using sender_concept = sender_t;
@@ -260,17 +328,12 @@ struct __sender {
     Scheduler __sch;
     S __sndr;
 
+    template<class Env>
+    using __cs = completion_signatures_of_t<__composed_sender_t<Scheduler, S,
+        decltype(std::execution::get_start_scheduler(std::declval<Env>()))>, Env>;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using scheduler_t = typename self_t::scheduler_t;
-        using source_t = typename self_t::source_t;
-        using orig_scheduler_t = decltype(std::execution::get_start_scheduler(std::declval<Env>()));
-        using composed_t =
-            __composed_sender_t<scheduler_t, source_t, orig_scheduler_t>;
-        return decltype(std::execution::get_completion_signatures(
-            std::declval<composed_t>(), std::declval<Env>())){};
-    }
+    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     template<receiver R>
         requires __first_form_connectable<Scheduler, S, R>
@@ -286,9 +349,8 @@ struct __sender {
         return __op<Scheduler, S, R>{__sch, __sndr, std::move(r)};
     }
 
-    auto get_env() const noexcept -> __empty_env {
-        // Completion returns to the receiver's start scheduler, not the child's.
-        return {};
+    auto get_env() const noexcept -> __attrs<env_of_t<S>> {
+        return {std::execution::get_env(__sndr)};
     }
 };
 

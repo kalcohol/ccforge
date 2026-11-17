@@ -727,7 +727,7 @@ TEST(OnTest, SupportsMutableLvalueSchedule) {
     EXPECT_EQ(observed_starts, 1);
 }
 
-TEST(StartsOnTest, SourceConnectFailurePropagatesFromConnect) {
+TEST(StartsOnTest, SourceConnectFailureIsAnErrorCompletionAfterStart) {
     std::execution::inline_scheduler sch;
     auto sndr = std::execution::starts_on(sch, throwing_connect_sender{});
     using cs_t = std::execution::completion_signatures_of_t<
@@ -736,7 +736,8 @@ TEST(StartsOnTest, SourceConnectFailurePropagatesFromConnect) {
     static_assert(std::is_same_v<
         cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t()>>);
+            std::execution::set_value_t(),
+            std::execution::set_error_t(std::exception_ptr)>>);
 
     EXPECT_THROW(
         (void)forge::sync_wait(std::move(sndr)),
@@ -807,10 +808,12 @@ TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions)
     static_assert(!std::execution::__forge_detail::tag_invocable<
         std::execution::get_completion_scheduler_t<std::execution::set_error_t>,
         const decltype(env)&>);
-    EXPECT_TRUE(
-        std::execution::get_completion_scheduler<
-            std::execution::set_stopped_t>(env)
-        == destination);
+    static_assert(!std::invocable<
+        std::execution::get_completion_scheduler_t<std::execution::set_stopped_t>,
+        const decltype(env)&>);
+    auto stoppable = std::execution::prop{std::get_stop_token, std::inplace_stop_token{}};
+    EXPECT_TRUE(std::execution::get_completion_scheduler<std::execution::set_stopped_t>(
+        env, stoppable) == destination);
 }
 
 TEST(ContinuesOnTest, PreservesMemberQueriedChildAttributes) {
@@ -1000,25 +1003,11 @@ TEST(ContinuesOnTest, DeclaresSchedulerErrorsWithoutSetupError) {
     }
 }
 
-TEST(AffineTest, DeclaresSchedulerErrorsWithoutSetupError) {
-    auto sndr = std::execution::affine(std::execution::just(7));
-    affine_error_receiver receiver{nullptr};
-    using env_t = decltype(receiver.get_env());
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, std::declval<env_t>()));
-
-    static_assert(std::is_same_v<cs_t,
-        std::execution::completion_signatures<
-            std::execution::set_value_t(int),
-            std::execution::set_error_t(int),
-            std::execution::set_stopped_t()>>);
-
-    int error = 0;
-    auto op = std::execution::connect(
-        std::move(sndr), affine_error_receiver{&error});
-    std::execution::start(op);
-
-    EXPECT_EQ(error, 17);
+TEST(AffineTest, RejectsFallibleScheduler) {
+    using sender_t = decltype(std::execution::affine(std::execution::just(7)));
+    using env_t = decltype(std::declval<affine_error_receiver>().get_env());
+    static_assert(!std::execution::sender_in<sender_t, env_t>);
+    SUCCEED();
 }
 
 TEST(UnstoppableTest, WrappedSchedulerErrorStillPropagates) {

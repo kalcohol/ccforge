@@ -918,6 +918,19 @@ TEST(CompletionDomainTest, FallbackDoesNotEvaluateQueriesOrOverrideDirectVoidTag
         invalid_void_completion_attrs, forge::empty_env>));
 }
 
+struct throwing_connect_domain_source {
+    using sender_concept = std::execution::sender_tag;
+    using source = decltype(std::execution::read_env(std::execution::get_domain));
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures_of_t<source, Env> { return {}; }
+    template<class R>
+    auto connect(R receiver) const noexcept(false) -> std::execution::connect_result_t<source, R> {
+        return std::execution::connect(std::execution::read_env(std::execution::get_domain),
+            std::move(receiver));
+    }
+};
+
 TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
     value_completion_attrs::calls = 0;
     static_assert(std::same_as<decltype(std::execution::get_domain(
@@ -931,6 +944,12 @@ TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
     static_assert(std::same_as<signatures,
         std::execution::completion_signatures<
             std::execution::set_value_t(queried_domain)>>);
+
+    using throwing = decltype(std::execution::starts_on(
+        completion_domain_scheduler{}, throwing_connect_domain_source{}));
+    static_assert(std::same_as<std::execution::completion_signatures_of_t<throwing, forge::empty_env>,
+        std::execution::completion_signatures<std::execution::set_value_t(queried_domain),
+            std::execution::set_error_t(std::exception_ptr)>>);
 
     int value = 0;
     bool completed = false;

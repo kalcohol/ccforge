@@ -25,6 +25,7 @@
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
+#include "detail/adaptor.hpp"
 
 #include <exception>
 #include <memory>
@@ -53,10 +54,22 @@ struct __value_may_throw<true, Shape, Fn, set_value_t(Vs...)>
     : std::bool_constant<
           !std::is_nothrow_invocable_v<Fn&, Shape, Shape, Vs&...>> {};
 
+template<bool Chunked, class Shape, class Fn, class Sig>
+struct __valid_sig : std::true_type {};
+
+template<class Shape, class Fn, class... Vs>
+struct __valid_sig<false, Shape, Fn, set_value_t(Vs...)>
+    : std::bool_constant<std::is_invocable_v<Fn&, Shape, Vs&...>> {};
+
+template<class Shape, class Fn, class... Vs>
+struct __valid_sig<true, Shape, Fn, set_value_t(Vs...)>
+    : std::bool_constant<std::is_invocable_v<Fn&, Shape, Shape, Vs&...>> {};
+
 template<bool Chunked, class Shape, class Fn, class CS>
-struct __completion_signatures;
+struct __completion_signatures {};
 
 template<bool Chunked, class Shape, class Fn, class... Sigs>
+    requires (__valid_sig<Chunked, Shape, Fn, Sigs>::value && ...)
 struct __completion_signatures<
     Chunked, Shape, Fn, completion_signatures<Sigs...>> {
     static constexpr bool may_throw =
@@ -69,55 +82,58 @@ struct __completion_signatures<
         completion_signatures<Sigs...>>;
 };
 
+template<bool Chunked, class Shape, class Fn, class R>
+struct __recv {
+    using receiver_concept = receiver_t;
+    R* __outer;
+    Shape __shape;
+    Fn* __fn;
+
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        constexpr bool nothrow = Chunked
+            ? std::is_nothrow_invocable_v<Fn&, Shape, Shape, Vs&...>
+            : std::is_nothrow_invocable_v<Fn&, Shape, Vs&...>;
+        auto run = [&]() noexcept(nothrow) {
+            if constexpr (Chunked) {
+                if (Shape{} < __shape) {
+                    (*__fn)(Shape{}, Shape(__shape), vs...);
+                }
+            } else {
+                for (Shape i = Shape{}; i < __shape; ++i) {
+                    (*__fn)(Shape(i), vs...);
+                }
+            }
+            std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
+        };
+        if constexpr (nothrow) {
+            run();
+        } else {
+            try {
+                run();
+            } catch (...) {
+                std::execution::set_error(
+                    std::move(*__outer), std::current_exception());
+            }
+        }
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
+    }
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*__outer)};
+    }
+};
+
 template<bool Chunked, class S, class Shape, class Fn, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
 
-    struct __recv {
-        using receiver_concept = receiver_t;
-        R* __outer;
-        Shape __shape;
-        Fn* __fn;
-
-        template<class... Vs>
-        void set_value(Vs&&... vs) && noexcept {
-            constexpr bool nothrow = Chunked
-                ? std::is_nothrow_invocable_v<Fn&, Shape, Shape, Vs&...>
-                : std::is_nothrow_invocable_v<Fn&, Shape, Vs&...>;
-            auto run = [&]() noexcept(nothrow) {
-                if constexpr (Chunked) {
-                    if (Shape{} < __shape) {
-                        (*__fn)(Shape{}, Shape(__shape), vs...);
-                    }
-                } else {
-                    for (Shape i = Shape{}; i < __shape; ++i) {
-                        (*__fn)(Shape(i), vs...);
-                    }
-                }
-                std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
-            };
-            if constexpr (nothrow) {
-                run();
-            } else {
-                try {
-                    run();
-                } catch (...) {
-                    std::execution::set_error(
-                        std::move(*__outer), std::current_exception());
-                }
-            }
-        }
-        template<class E>
-        void set_error(E&& e) && noexcept {
-            std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
-        }
-        void set_stopped() && noexcept {
-            std::execution::set_stopped(std::move(*__outer));
-        }
-        auto get_env() const noexcept -> env_of_t<R> {
-            return std::execution::get_env(*__outer);
-        }
-    };
+    using __recv = __forge_bulk::__recv<Chunked, Shape, Fn, R>;
 
     using __inner_op_t = connect_result_t<S, __recv>;
 
@@ -126,11 +142,16 @@ struct __op : __forge_detail::__immovable {
     // Destroy the inner operation before the state borrowed by its receiver.
     __inner_op_t __inner;
 
-    __op(S sndr, Shape shape, Fn fn, R recv)
+    template<class Data>
+    __op(S&& sndr, Shape shape, Data&& fn, R recv)
+        noexcept(std::is_nothrow_move_constructible_v<R> && noexcept(Fn(
+            __forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), recv))) &&
+            noexcept(std::execution::connect(static_cast<S&&>(sndr),
+                __recv{nullptr, Shape{}, nullptr})))
         : __outer(std::move(recv))
-        , __fn(std::move(fn))
+        , __fn(__forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), __outer))
         , __inner(std::execution::connect(
-            std::move(sndr), __recv{std::addressof(__outer), std::move(shape), std::addressof(__fn)}))
+            static_cast<S&&>(sndr), __recv{std::addressof(__outer), std::move(shape), std::addressof(__fn)}))
     {}
 
     void start() & noexcept {
@@ -138,7 +159,7 @@ struct __op : __forge_detail::__immovable {
     }
 };
 
-template<bool Chunked, class S, class Policy, class Shape, class Fn>
+template<bool Chunked, class S, class Policy, class Shape, class Fn, bool Transformed = false>
 struct __sender {
     using sender_concept = sender_t;
     using source_t = S;
@@ -148,32 +169,36 @@ struct __sender {
     Shape __shape;
     Fn __fn;
 
+    template<class Child, class Env>
+    using __cs = typename __completion_signatures<Chunked, Shape, Fn,
+        completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>>::type;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        using out_cs = typename __completion_signatures<
-            Chunked, Shape, Fn, up_cs>::type;
-        return out_cs{};
+    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+
+    template<receiver R>
+        requires requires { typename __cs<S, env_of_t<R>>;
+                     typename connect_result_t<S, __recv<Chunked, Shape, Fn, R>>; }
+    auto connect(R r) &&
+        noexcept(!Transformed && noexcept(
+            __op<Chunked, S, Shape, Fn, R>(std::move(__sndr), __shape, std::move(__fn), std::move(r))))
+        -> __op<Chunked, S, Shape, Fn, R> {
+        return __op<Chunked, S, Shape, Fn, R>(
+            std::move(__sndr), __shape, std::move(__fn), std::move(r));
     }
 
     template<receiver R>
-    auto connect(R r) && -> __op<Chunked, S, Shape, Fn, R>
-    {
-        return __op<Chunked, S, Shape, Fn, R>(
-            std::move(__sndr), std::move(__shape),
-            std::move(__fn), std::move(r));
+        requires std::copy_constructible<S> && std::copy_constructible<Shape> &&
+                 std::copy_constructible<Fn> && requires { typename __cs<const S&, env_of_t<R>>;
+                     typename connect_result_t<const S&, __recv<Chunked, Shape, Fn, R>>; }
+    auto connect(R r) const&
+        noexcept(!Transformed && noexcept(__op<Chunked, const S&, Shape, Fn, R>(
+            __sndr, __shape, __fn, std::move(r)))) -> __op<Chunked, const S&, Shape, Fn, R> {
+        return __op<Chunked, const S&, Shape, Fn, R>(__sndr, __shape, __fn, std::move(r));
     }
 
-    template<receiver R>
-        requires std::copy_constructible<S> && std::copy_constructible<Shape> && std::copy_constructible<Fn>
-    auto connect(R r) const& -> __op<Chunked, S, Shape, Fn, R>
-    {
-        return __op<Chunked, S, Shape, Fn, R>(
-            __sndr, __shape, __fn, std::move(r));
-    }
+    // An invalid rvalue child connection must not retry the const-lvalue path.
+    template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
         return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
@@ -181,7 +206,7 @@ struct __sender {
     }
 };
 
-template<bool Chunked, class Fn>
+template<bool Chunked, class Fn, bool Transformed>
 struct __bulk_closure {
     std::decay_t<Fn> __fn_;
 
@@ -200,7 +225,7 @@ struct __bulk_closure {
                      std::constructible_from<Shape, Shape&> &&
                      std::constructible_from<fn_t, fn_t&>
         [[nodiscard]] auto operator()(S&& s) & {
-            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t, Transformed>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
                 sender_policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
         }
@@ -210,7 +235,7 @@ struct __bulk_closure {
                      std::constructible_from<Shape, const Shape&> &&
                      std::constructible_from<fn_t, const fn_t&>
         [[nodiscard]] auto operator()(S&& s) const & {
-            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t, Transformed>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
                 sender_policy_t(__policy_), Shape(__shape_), fn_t(__fn_)};
         }
@@ -220,7 +245,7 @@ struct __bulk_closure {
                      std::constructible_from<Shape, Shape&&> &&
                      std::constructible_from<fn_t, fn_t&&>
         [[nodiscard]] auto operator()(S&& s) && {
-            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t, Transformed>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
                 sender_policy_t(std::move(__policy_)),
                 Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
@@ -231,7 +256,7 @@ struct __bulk_closure {
                      std::constructible_from<Shape, const Shape&&> &&
                      std::constructible_from<fn_t, const fn_t&&>
         [[nodiscard]] auto operator()(S&& s) const && {
-            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t>{
+            return __sender<Chunked, std::decay_t<S>, sender_policy_t, Shape, fn_t, Transformed>{
                 __forge_detail::__forward_as_given(std::forward<S>(s)),
                 sender_policy_t(std::move(__policy_)),
                 Shape(std::move(__shape_)), fn_t(std::move(__fn_))};
@@ -245,7 +270,7 @@ struct __bulk_closure {
     };
 };
 
-template<bool Chunked>
+template<bool Chunked, bool Transformed = false>
 struct __bulk_t {
 #if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
     template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
@@ -254,7 +279,7 @@ struct __bulk_t {
                  std::constructible_from<std::decay_t<Fn>, Fn> &&
                  std::constructible_from<__policy_t<Policy>, Policy>
     [[nodiscard]] auto operator()(S&& s, Policy&& policy, Shape shape, Fn&& fn) const {
-        return __sender<Chunked, std::decay_t<S>, __policy_t<Policy>, Shape, std::decay_t<Fn>>{
+        return __sender<Chunked, std::decay_t<S>, __policy_t<Policy>, Shape, std::decay_t<Fn>, Transformed>{
             std::decay_t<S>(std::forward<S>(s)),
             __policy_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
@@ -265,7 +290,7 @@ struct __bulk_t {
         requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
                  std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
-        return __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>>{
+        return __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>, Transformed>{
             std::decay_t<S>(std::forward<S>(s)),
             __serial_policy{},
             std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
@@ -279,7 +304,7 @@ struct __bulk_t {
                  std::constructible_from<std::decay_t<Fn>, Fn> &&
                  std::constructible_from<std::decay_t<Policy>, Policy>
     [[nodiscard]] auto operator()(Policy&& policy, Shape shape, Fn&& fn) const {
-        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
+        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>, Transformed>
             ::template __with_shape<std::decay_t<Policy>, Shape>;
         return closure_t{
             {}, std::decay_t<Policy>(std::forward<Policy>(policy)),
@@ -292,7 +317,7 @@ struct __bulk_t {
         requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
                  std::constructible_from<std::decay_t<Fn>, Fn>
     [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const {
-        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>>
+        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>, Transformed>
             ::template __with_shape<__serial_policy, Shape>;
         return closure_t{
             {}, __serial_policy{},
@@ -301,7 +326,7 @@ struct __bulk_t {
     }
 };
 
-struct bulk_t : __bulk_t<false> {};
+struct bulk_t : __bulk_t<false, true> {};
 struct bulk_unchunked_t : __bulk_t<false> {};
 struct bulk_chunked_t : __bulk_t<true> {};
 

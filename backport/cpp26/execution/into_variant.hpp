@@ -25,6 +25,7 @@
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
+#include "detail/adaptor.hpp"
 #include "sync_wait.hpp"
 
 #include <exception>
@@ -41,9 +42,10 @@ namespace __forge_into_variant {
 // error and stopped pass through unchanged.
 
 template<class CS>
-struct __iv_cs;
+struct __iv_cs {};
 
 template<class... Sigs>
+    requires __forge_detail::__decay_copyable_cs<completion_signatures<Sigs...>>::value
 struct __iv_cs<completion_signatures<Sigs...>> {
 private:
     // Collect all tuple types from set_value sigs
@@ -254,8 +256,8 @@ struct __into_variant_recv {
         std::execution::set_stopped(std::move(__rcvr));
     }
 
-    auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(__rcvr);
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(__rcvr)};
     }
 };
 
@@ -266,37 +268,35 @@ struct __into_variant_sender {
 
     S __sndr;
 
+    template<class Child, class Env>
+    using __cs = __iv_cs_t<completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>>;
+    template<class Child, class R>
+    using __recv = __into_variant_recv<R, __variant_type_of_t<
+        completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<env_of_t<R>>>>>;
+
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        return __iv_cs_t<up_cs_t>{};
+    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+
+    template<receiver R>
+        requires requires { typename __cs<S, env_of_t<R>>;
+                     typename connect_result_t<S, __recv<S, R>>; }
+    auto connect(R r) &&
+        noexcept(noexcept(std::execution::connect(
+            std::move(__sndr), __recv<S, R>{std::move(r)}))) -> connect_result_t<S, __recv<S, R>> {
+        return std::execution::connect(std::move(__sndr), __recv<S, R>{std::move(r)});
     }
 
     template<receiver R>
-    auto connect(R r) && {
-        using env_t = env_of_t<R>;
-        using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), std::declval<env_t>()));
-        using var_t = __variant_type_of_t<cs_t>;
-        return std::execution::connect(
-            std::move(__sndr),
-            __into_variant_recv<R, var_t>{std::move(r)});
+        requires std::copy_constructible<S> && requires { typename __cs<const S&, env_of_t<R>>;
+                     typename connect_result_t<const S&, __recv<const S&, R>>; }
+    auto connect(R r) const&
+        noexcept(noexcept(std::execution::connect(__sndr, __recv<const S&, R>{std::move(r)})))
+        -> connect_result_t<const S&, __recv<const S&, R>> {
+        return std::execution::connect(__sndr, __recv<const S&, R>{std::move(r)});
     }
 
-    template<receiver R>
-        requires std::copy_constructible<S>
-    auto connect(R r) const& {
-        using env_t = env_of_t<R>;
-        using cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), std::declval<env_t>()));
-        using var_t = __variant_type_of_t<cs_t>;
-        return std::execution::connect(
-            S(__sndr),
-            __into_variant_recv<R, var_t>{std::move(r)});
-    }
+    // An invalid rvalue child connection must not retry the const-lvalue path.
+    template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
         return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{

@@ -86,7 +86,7 @@ TEST(ExecutionStaticOpstateExceptions, LetEmptyNonFinalImmovableOperationsComple
         EXPECT_EQ(out.errors, 0);
         EXPECT_EQ(out.stopped, 0);
     };
-    // Cover the ordinary predecessor member and each successor variant path.
+    // Cover the predecessor and each successor variant alternative.
     check(ex::let_value(empty_immovable_sender{}, [] { return empty_immovable_sender{}; }));
     check(ex::let_error(ex::just_error(1), [](int&) { return empty_immovable_sender{}; }));
     check(ex::let_stopped(ex::just_stopped(), [] { return empty_immovable_sender{}; }));
@@ -380,10 +380,10 @@ struct lifetime_sender {
         op(lifetime_state* s, R r) : state(s), recv(std::move(r)) { state->predecessor_alive = true; }
         ~op() { state->predecessor_alive = false; }
         void start() & noexcept {
+            auto* observation = state;
             ex::set_value(std::move(recv), 42);
-            // A predecessor is allowed to access its state after an inline
-            // completion. Replacing it while starting the successor is unsafe.
-            state->returned_from_completion = state->predecessor_alive;
+            // Only external storage is accessible after receiver completion.
+            observation->returned_from_completion = true;
         }
     };
     template<class R>
@@ -411,21 +411,21 @@ struct lifetime_inner_sender {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 
-TEST(ExecutionStaticOpstateExceptions, InlineSuccessKeepsPredecessorThroughInnerDestruction) {
+TEST(ExecutionStaticOpstateExceptions, InlineSuccessDestroysPredecessorBeforeSuccessor) {
     lifetime_state state;
     result out;
     {
         auto sender = ex::let_value(lifetime_sender{&state}, [&](int&) {
-            EXPECT_TRUE(state.predecessor_alive);
+            EXPECT_FALSE(state.predecessor_alive);
             return lifetime_inner_sender{&state};
         });
         auto op = ex::connect(std::move(sender), receiver{&out});
         ex::start(op);
         EXPECT_EQ(out.values, 1);
         EXPECT_TRUE(state.returned_from_completion);
-        EXPECT_TRUE(state.predecessor_alive);
+        EXPECT_FALSE(state.predecessor_alive);
     }
-    EXPECT_TRUE(state.inner_destroyed_while_predecessor_alive);
+    EXPECT_FALSE(state.inner_destroyed_while_predecessor_alive);
     EXPECT_FALSE(state.predecessor_alive);
 }
 } // namespace

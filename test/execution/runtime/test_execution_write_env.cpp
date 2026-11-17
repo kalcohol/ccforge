@@ -153,7 +153,7 @@ struct member_stop_query_env {
     }
 };
 
-struct overlay_value_query_t {
+struct overlay_value_query_t : std::forwarding_query_t {
     template<class Env>
         requires std::execution::__forge_env_detail::__queryable<
             overlay_value_query_t,

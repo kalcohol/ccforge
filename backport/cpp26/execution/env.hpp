@@ -560,6 +560,15 @@ template<class Tag>
 concept __completion_tag = std::same_as<Tag, set_value_t> ||
     std::same_as<Tag, set_error_t> || std::same_as<Tag, set_stopped_t>;
 
+// Sender attributes can rule out a completion in a supplied environment.
+// Such an answer must not be resurrected by TRY-QUERY's unary fallback.
+template<class Attrs, class Tag, class... Envs>
+struct __completion_query_allowed : std::true_type {};
+
+template<class Env, class Tag, class... Envs>
+struct __completion_query_allowed<__forwarding_attrs<Env>, Tag, Envs...>
+    : __completion_query_allowed<std::remove_cvref_t<Env>, Tag, Envs...> {};
+
 template<class Q, class S, class... Envs>
 concept __try_queryable = __queryable<Q, S, Envs...> || __queryable<Q, S>;
 
@@ -624,6 +633,8 @@ template<class CPO>
 struct get_completion_scheduler_t {
     template<class Attrs, class... Envs>
         requires __forge_env_detail::__completion_tag<CPO> &&
+                 __forge_env_detail::__completion_query_allowed<
+                     std::remove_cvref_t<Attrs>, CPO, Envs...>::value &&
                  (__forge_env_detail::__try_queryable<get_completion_scheduler_t, Attrs, Envs...> ||
                   (sizeof...(Envs) != 0 && __forge_env_detail::__scheduler<Attrs>() &&
                    requires(Attrs&& a) { auto(static_cast<Attrs&&>(a)); }))

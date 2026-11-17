@@ -24,6 +24,7 @@
 
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
+#include "detail/adaptor.hpp"
 
 #include <exception>
 #include <memory>
@@ -102,9 +103,11 @@ struct transform_sig<Fn, set_stopped_t()> {
 };
 
 template<class Fn, class UpCompletionSignatures>
-struct transform_completion_signatures;
+struct transform_completion_signatures {};
 
 template<class Fn, class... UpSigs>
+    requires __forge_detail::__accepts_completions<
+        Fn, set_value_t, completion_signatures<UpSigs...>>::value
 struct transform_completion_signatures<Fn, completion_signatures<UpSigs...>> {
 private:
     template<class List, class Sig>
@@ -188,8 +191,8 @@ struct then_receiver {
         std::execution::set_stopped(std::move(*rcvr_));
     }
 
-    auto get_env() const noexcept -> env_of_t<R> {
-        return std::execution::get_env(*rcvr_);
+    auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
+        return {std::execution::get_env(*rcvr_)};
     }
 };
 
@@ -203,11 +206,16 @@ struct then_op : __forge_detail::__immovable {
     // Destroy the inner operation before the state borrowed by its receiver.
     inner_op_t inner_;
 
-    then_op(S sndr, Fn fn, R rcvr)
+    template<class Data>
+    then_op(S&& sndr, Data&& fn, R rcvr)
+        noexcept(std::is_nothrow_move_constructible_v<R> && noexcept(Fn(
+            __forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), rcvr))) &&
+            noexcept(std::execution::connect(static_cast<S&&>(sndr),
+                then_receiver<R, Fn>{nullptr, nullptr})))
         : rcvr_(std::move(rcvr))
-        , fn_(std::move(fn))
+        , fn_(__forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), rcvr_))
         , inner_(std::execution::connect(
-            std::move(sndr), then_receiver<R, Fn>{std::addressof(rcvr_), std::addressof(fn_)}))
+            static_cast<S&&>(sndr), then_receiver<R, Fn>{std::addressof(rcvr_), std::addressof(fn_)}))
     {}
 
     void start() & noexcept {
@@ -224,26 +232,34 @@ struct then_sender {
     [[no_unique_address]] S sndr_;
     [[no_unique_address]] Fn fn_;
 
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using self_t = std::remove_cvref_t<Self>;
-        using up_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
-        using out_cs_t = transform_completion_signatures_t<typename self_t::fn_t, up_cs_t>;
-        return out_cs_t{};
-    }
+    template<class Child, class Env>
+    using __cs = transform_completion_signatures_t<Fn,
+        completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>>;
 
-    template<std::execution::receiver R>
-    auto connect(R rcvr) && {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+
+    template<receiver R>
+        requires requires { typename __cs<S, env_of_t<R>>;
+                     typename connect_result_t<S, then_receiver<R, Fn>>; }
+    auto connect(R rcvr) &&
+        noexcept(noexcept(then_op<S, Fn, R>(std::move(sndr_), std::move(fn_), std::move(rcvr))))
+        -> then_op<S, Fn, R> {
         return then_op<S, Fn, R>(std::move(sndr_), std::move(fn_), std::move(rcvr));
     }
 
-    template<std::execution::receiver R>
-        requires std::copy_constructible<S> && std::copy_constructible<Fn>
-    auto connect(R rcvr) const& {
-        return then_op<S, Fn, R>(sndr_, fn_, std::move(rcvr));
+    template<receiver R>
+        requires std::copy_constructible<S> && std::copy_constructible<Fn> &&
+                 requires { typename __cs<const S&, env_of_t<R>>;
+                     typename connect_result_t<const S&, then_receiver<R, Fn>>; }
+    auto connect(R rcvr) const&
+        noexcept(noexcept(then_op<const S&, Fn, R>(sndr_, fn_, std::move(rcvr))))
+        -> then_op<const S&, Fn, R> {
+        return then_op<const S&, Fn, R>(sndr_, fn_, std::move(rcvr));
     }
+
+    // An invalid rvalue child connection must not retry the const-lvalue path.
+    template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
         return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
@@ -256,28 +272,28 @@ struct then_closure : sender_adaptor_closure<then_closure<Fn>> {
     [[no_unique_address]] Fn fn_;
 
     template<std::execution::sender S>
-        requires std::constructible_from<Fn, Fn&>
+        requires std::constructible_from<Fn, Fn&> && std::move_constructible<Fn>
     [[nodiscard]] auto operator()(S&& s) & {
         return then_sender<std::decay_t<S>, Fn>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(fn_)};
     }
 
     template<std::execution::sender S>
-        requires std::constructible_from<Fn, const Fn&>
+        requires std::constructible_from<Fn, const Fn&> && std::move_constructible<Fn>
     [[nodiscard]] auto operator()(S&& s) const & {
         return then_sender<std::decay_t<S>, Fn>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(fn_)};
     }
 
     template<std::execution::sender S>
-        requires std::constructible_from<Fn, Fn&&>
+        requires std::constructible_from<Fn, Fn&&> && std::move_constructible<Fn>
     [[nodiscard]] auto operator()(S&& s) && {
         return then_sender<std::decay_t<S>, Fn>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(fn_))};
     }
 
     template<std::execution::sender S>
-        requires std::constructible_from<Fn, const Fn&&>
+        requires std::constructible_from<Fn, const Fn&&> && std::move_constructible<Fn>
     [[nodiscard]] auto operator()(S&& s) const && {
         return then_sender<std::decay_t<S>, Fn>{
             __forge_detail::__forward_as_given(std::forward<S>(s)), Fn(std::move(fn_))};
@@ -292,7 +308,7 @@ struct then_closure : sender_adaptor_closure<then_closure<Fn>> {
 
 struct then_t {
     template<std::execution::sender S, class Fn>
-        requires std::constructible_from<std::decay_t<Fn>, Fn>
+        requires __forge_detail::__movable_value<Fn>
     [[nodiscard]] auto operator()(S&& s, Fn&& fn) const {
         return then_sender<std::decay_t<S>, std::decay_t<Fn>>{
             std::decay_t<S>(std::forward<S>(s)),
