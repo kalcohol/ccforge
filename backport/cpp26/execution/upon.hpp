@@ -375,7 +375,9 @@ struct __upon_stopped_t {
 
 } // namespace __forge_upon
 
-inline constexpr __forge_upon::__upon_error_t upon_error{};
-inline constexpr __forge_upon::__upon_stopped_t upon_stopped{};
+using upon_error_t = __forge_upon::__upon_error_t;
+inline constexpr upon_error_t upon_error{};
+using upon_stopped_t = __forge_upon::__upon_stopped_t;
+inline constexpr upon_stopped_t upon_stopped{};
 
 } // namespace std::execution

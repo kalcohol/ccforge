@@ -330,7 +330,8 @@ struct __into_variant_t : sender_adaptor_closure<__into_variant_t> {
 
 } // namespace __forge_into_variant
 
-inline constexpr __forge_into_variant::__into_variant_t into_variant{};
+using into_variant_t = __forge_into_variant::__into_variant_t;
+inline constexpr into_variant_t into_variant{};
 
 } // namespace std::execution
 

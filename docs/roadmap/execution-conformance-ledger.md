@@ -92,6 +92,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `get_stop_token` | Implemented subset | 标准实体位于 std，execution using 保持同一实体；缺失查询返回 never_stop_token，提供 std::stop_token_of_t。选中 member / tag 查询要求 noexcept 与去 cv/ref 后的 stoppable_token，支持 constexpr。 |
 | `get_forward_progress_guarantee` | Implemented subset | 按 scheduler 表达式类别、copyable、queryable、sender schedule result 与 progress atom 检查。内部 scheduler shape 打破定义循环，公开 schedule_result_t；schedule CPO 检查 sender 结果，start 检查左值与 void。所有仓库 scheduler 均显式提供 progress 成员。weakly_parallel 默认保留为待弃用的非标准扩展；结果/noexcept Mandates 在两种 dispatch 均适用。 |
 | `completion_signatures`, `completion_signatures_of_t`, value/error utilities | Implemented utility subset | 有效完成签名约束；选中 signatures 查询须返回 completion_signatures specialization，alias 要求 sender_in。引用、固定参数个数的 Tuple / Variant 与 stopped 收集由编译探针固定；dependent-sender 诊断另列。 |
+| Algorithm `_t` names | Implemented names | then / upon / let / bulk family、on、into_variant、stopped utilities 及 spawn_t / associate_t 暴露 WD 类型别名；未加入 native COMPLETE probe 集合。结构化 sender tag 匹配仍依赖独立 product surface。 |
 | Completion receiver value categories | Implemented | set_value / set_error / set_stopped 拒绝左值和 const 右值；两条 dispatch 均执行 void / noexcept Mandates。 |
 
 ### 未实现 / 暂不纳入的 current-draft surface

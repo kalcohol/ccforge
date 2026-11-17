@@ -559,8 +559,11 @@ struct __let_t {
 
 } // namespace __forge_let
 
-inline constexpr __forge_let::__let_t<__forge_let::__value_tag>   let_value{};
-inline constexpr __forge_let::__let_t<__forge_let::__error_tag>   let_error{};
-inline constexpr __forge_let::__let_t<__forge_let::__stopped_tag> let_stopped{};
+using let_value_t = __forge_let::__let_t<__forge_let::__value_tag>;
+inline constexpr let_value_t let_value{};
+using let_error_t = __forge_let::__let_t<__forge_let::__error_tag>;
+inline constexpr let_error_t let_error{};
+using let_stopped_t = __forge_let::__let_t<__forge_let::__stopped_tag>;
+inline constexpr let_stopped_t let_stopped{};
 
 } // namespace std::execution

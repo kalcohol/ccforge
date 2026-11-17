@@ -307,8 +307,11 @@ struct bulk_chunked_t : __bulk_t<true> {};
 
 } // namespace __forge_bulk
 
-inline constexpr __forge_bulk::bulk_t bulk{};
-inline constexpr __forge_bulk::bulk_chunked_t bulk_chunked{};
-inline constexpr __forge_bulk::bulk_unchunked_t bulk_unchunked{};
+using bulk_t = __forge_bulk::bulk_t;
+inline constexpr bulk_t bulk{};
+using bulk_chunked_t = __forge_bulk::bulk_chunked_t;
+inline constexpr bulk_chunked_t bulk_chunked{};
+using bulk_unchunked_t = __forge_bulk::bulk_unchunked_t;
+inline constexpr bulk_unchunked_t bulk_unchunked{};
 
 } // namespace std::execution

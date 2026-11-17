@@ -520,6 +520,7 @@ struct on_t {
 
 } // namespace __forge_on_adaptor
 
-inline constexpr __forge_on_adaptor::on_t on{};
+using on_t = __forge_on_adaptor::on_t;
+inline constexpr on_t on{};
 
 } // namespace std::execution

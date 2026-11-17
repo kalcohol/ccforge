@@ -308,6 +308,7 @@ struct then_t {
 
 } // namespace __forge_then
 
-inline constexpr __forge_then::then_t then{};
+using then_t = __forge_then::then_t;
+inline constexpr then_t then{};
 
 } // namespace std::execution

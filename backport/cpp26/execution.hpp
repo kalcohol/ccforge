@@ -159,3 +159,8 @@
 #include "execution/spawn.hpp"
 #include "execution/spawn_future.hpp"
 #include "execution/sender_adaptor_closure.hpp"
+
+namespace std::execution {
+using spawn_t = __forge_spawn::__spawn_t;
+using associate_t = __forge_associate::__associate_t;
+} // namespace std::execution

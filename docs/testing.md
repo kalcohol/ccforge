@@ -684,7 +684,7 @@ source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule 
 `execution_default_query_conformance_compile` / `execution_strict_query_conformance_compile`
 检查空环境类型、env/prop 不可赋值、read_env 的左值 check-types 与实际调用的值类别/异常规格、标准查询命名空间、
 constexpr、prop 两种括号形式的 CTAD（含函数模板内非依赖表达式）、const 可赋值 tag 的拷贝/移动赋值拒绝、默认构造与空 tag 大小、
-env 的 ref/cref 解包、混合参数、模板内 CTAD 与拷贝推导、scheduler 表达式类别、receiver 类别、domain 函数模板、
+env 的 ref/cref 解包、混合参数、模板内 CTAD 与拷贝推导、scheduler 表达式类别、receiver 类别、公开算法类型名、domain 函数模板、
 indeterminate domain 与 completion-signature utilities。对应的
 `execution_default_query_conformance` / `execution_strict_query_conformance` 运行类型/值
 scheduler 递归、环境单次求值、prop 的 move-only value 移动、借用结果身份与 Forge scheduler/attrs parity；复制/移动未声明

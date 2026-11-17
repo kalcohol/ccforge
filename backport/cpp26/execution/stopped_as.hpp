@@ -261,7 +261,6 @@ struct __optional_sender {
         return __optional_op<S, R, optional_t>(std::move(__sndr), std::move(r));
     }
 
-
     template<receiver R>
         requires std::copy_constructible<S> && __optional_source_in<S, env_of_t<R>>
     auto connect(R r) const&
@@ -430,7 +429,9 @@ struct __error_t {
 
 } // namespace __forge_stopped
 
-inline constexpr __forge_stopped::__optional_t stopped_as_optional{};
-inline constexpr __forge_stopped::__error_t stopped_as_error{};
+using stopped_as_optional_t = __forge_stopped::__optional_t;
+inline constexpr stopped_as_optional_t stopped_as_optional{};
+using stopped_as_error_t = __forge_stopped::__error_t;
+inline constexpr stopped_as_error_t stopped_as_error{};
 
 } // namespace std::execution

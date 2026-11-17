@@ -470,6 +470,7 @@ stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates �
 合并去重后的候选类型。交换两个 indeterminate operands 保持候选集合与 transform 行为，
 不保证 specialization 类型相同；与通用 common_type 对称要求的措辞冲突见台账。
 COMMON-DOMAIN 检查完整的 common type 默认构造表达式，不可构造时选择 indeterminate。
+算法提供对应的公开 `_t` 类型名，包含 `spawn_t` 与 `associate_t`。
 `completion_signatures` 限制为有效完成签名，查询结果必须为该模板的 specialization；
 `completion_signatures_of_t` 要求 `sender_in`，value/error 收集保留引用并接受固定参数个数的模板。
 

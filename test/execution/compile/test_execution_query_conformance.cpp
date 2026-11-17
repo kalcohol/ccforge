@@ -440,4 +440,28 @@ template<class S, class Tag> concept public_apply = requires(S&& s) {
 };
 static_assert(public_apply<just, apply_tag>);
 static_assert(!public_apply<int, apply_tag> && !public_apply<just, domain_a>);
+static_assert(!std::same_as<ex::let_value_t, ex::let_error_t> &&
+              !std::same_as<ex::let_value_t, ex::let_stopped_t> &&
+              !std::same_as<ex::let_error_t, ex::let_stopped_t>);
+static_assert(!std::same_as<ex::bulk_t, ex::bulk_chunked_t> &&
+              !std::same_as<ex::bulk_t, ex::bulk_unchunked_t> &&
+              !std::same_as<ex::bulk_chunked_t, ex::bulk_unchunked_t>);
+
+#define FORGE_CHECK_TAG(name) static_assert(std::same_as<ex::name##_t, std::remove_cv_t<decltype(ex::name)>>)
+FORGE_CHECK_TAG(then);
+FORGE_CHECK_TAG(upon_error);
+FORGE_CHECK_TAG(upon_stopped);
+FORGE_CHECK_TAG(let_value);
+FORGE_CHECK_TAG(let_error);
+FORGE_CHECK_TAG(let_stopped);
+FORGE_CHECK_TAG(bulk);
+FORGE_CHECK_TAG(bulk_chunked);
+FORGE_CHECK_TAG(bulk_unchunked);
+FORGE_CHECK_TAG(on);
+FORGE_CHECK_TAG(into_variant);
+FORGE_CHECK_TAG(stopped_as_optional);
+FORGE_CHECK_TAG(stopped_as_error);
+FORGE_CHECK_TAG(spawn);
+FORGE_CHECK_TAG(associate);
+#undef FORGE_CHECK_TAG
 int main() {}
