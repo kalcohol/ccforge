@@ -35,7 +35,7 @@ namespace std::linalg {
 template<class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
-    requires (__detail::__always_unique_mapping_v<YExtents, YLayout> &&
+    requires (__detail::__writable_output_v<YExtents, YLayout, YAccessor> &&
               AExtents::rank() == 2 &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
@@ -89,7 +89,7 @@ template<class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
-    requires (__detail::__always_unique_mapping_v<ZExtents, ZLayout> &&
+    requires (__detail::__writable_output_v<ZExtents, ZLayout, ZAccessor> &&
               AExtents::rank() == 2 &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
@@ -117,7 +117,7 @@ void matrix_vector_product(
 template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor>
-    requires (__detail::__always_unique_mapping_v<XExtents, XLayout> &&
+    requires (__detail::__writable_output_v<XExtents, XLayout, XAccessor> &&
               __detail::__is_diagonal_storage_v<DiagonalStorage> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
@@ -160,7 +160,7 @@ template<class Triangle, class DiagonalStorage,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
-    requires (__detail::__always_unique_mapping_v<YExtents, YLayout> &&
+    requires (__detail::__writable_output_v<YExtents, YLayout, YAccessor> &&
               __detail::__is_diagonal_storage_v<DiagonalStorage> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
@@ -198,47 +198,12 @@ void triangular_matrix_vector_product(
     }
 }
 
-// triangular_matrix_vector_solve — in-place x = A^{-1} * x  [linalg.algs.blas2.trsv]
-template<class Triangle, class DiagonalStorage,
-         class AExtents, class ALayout, class AAccessor,
-         class XExtents, class XLayout, class XAccessor>
-    requires (__detail::__always_unique_mapping_v<XExtents, XLayout> &&
-              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
-              __detail::__square_static_extents_v<AExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
-              XExtents::rank() == 1 &&
-              __detail::__compatible_static_extent_v<AExtents, 0, XExtents, 0> &&
-              __detail::__compatible_static_extent_v<AExtents, 1, XExtents, 0>)
-void triangular_matrix_vector_solve(
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    Triangle, DiagonalStorage,
-    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x)
-{
-    using idx_t = typename AExtents::index_type;
-    const idx_t n = A.extent(0);
-    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    constexpr bool is_unit  = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
-    if constexpr (is_upper) {
-        for (idx_t i = n; i-- > 0; ) {
-            for (idx_t j = i + 1; j < n; ++j)
-                x[i] -= A[i, j] * x[j];
-            if constexpr (!is_unit) x[i] /= A[i, i];
-        }
-    } else {
-        for (idx_t i = 0; i < n; ++i) {
-            for (idx_t j = 0; j < i; ++j)
-                x[i] -= A[i, j] * x[j];
-            if constexpr (!is_unit) x[i] /= A[i, i];
-        }
-    }
-}
-
 // symmetric_matrix_vector_product — y = A*x (symmetric A)  [linalg.algs.blas2.symv]
 template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
-    requires (__detail::__always_unique_mapping_v<YExtents, YLayout> &&
+    requires (__detail::__writable_output_v<YExtents, YLayout, YAccessor> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
@@ -257,17 +222,18 @@ void symmetric_matrix_vector_product(
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < n; ++i) y[i] = typename YAccessor::element_type{};
     for (idx_t i = 0; i < n; ++i) {
-        y[i] += A[i, i] * x[i];
-        for (idx_t j = i + 1; j < n; ++j) {
-            auto aij = [&]() -> decltype(auto) {
-                if constexpr (is_upper) return A[i, j];
-                else return A[j, i];
-            }();
-            y[i] += aij * x[j];
-            y[j] += aij * x[i];
+        __detail::__accessor_value_t<YAccessor> sum{};
+        for (idx_t j = 0; j < n; ++j) {
+            if constexpr (is_upper) {
+                if (i <= j) sum += A[i, j] * x[j];
+                else sum += A[j, i] * x[j];
+            } else {
+                if (i >= j) sum += A[i, j] * x[j];
+                else sum += A[j, i] * x[j];
+            }
         }
+        y[i] = sum;
     }
 }
 
@@ -277,7 +243,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
-    requires (__detail::__always_unique_mapping_v<ZExtents, ZLayout> &&
+    requires (__detail::__writable_output_v<ZExtents, ZLayout, ZAccessor> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
@@ -322,7 +288,7 @@ template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor>
-    requires (__detail::__always_unique_mapping_v<YExtents, YLayout> &&
+    requires (__detail::__writable_output_v<YExtents, YLayout, YAccessor> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
@@ -341,18 +307,18 @@ void hermitian_matrix_vector_product(
     using idx_t = typename AExtents::index_type;
     const idx_t n = A.extent(0);
     constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < n; ++i) y[i] = typename YAccessor::element_type{};
     for (idx_t i = 0; i < n; ++i) {
-        y[i] += __detail::__real_if_needed(A[i, i]) * x[i];
-        for (idx_t j = i + 1; j < n; ++j) {
-            if constexpr (is_upper) {
-                y[i] += A[i, j] * x[j];
-                y[j] += __detail::__conj_if_needed(A[i, j]) * x[i];
+        __detail::__accessor_value_t<YAccessor> sum{};
+        for (idx_t j = 0; j < n; ++j) {
+            if (i == j) {
+                sum += __detail::__real_if_needed(__detail::__accessor_value_t<AAccessor>(A[i, i])) * x[j];
+            } else if ((is_upper && i < j) || (!is_upper && i > j)) {
+                sum += A[i, j] * x[j];
             } else {
-                y[i] += __detail::__conj_if_needed(A[j, i]) * x[j];
-                y[j] += A[j, i] * x[i];
+                sum += __detail::__conj_if_needed(__detail::__accessor_value_t<AAccessor>(A[j, i])) * x[j];
             }
         }
+        y[i] = sum;
     }
 }
 
@@ -362,7 +328,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class ZExtents, class ZLayout, class ZAccessor>
-    requires (__detail::__always_unique_mapping_v<ZExtents, ZLayout> &&
+    requires (__detail::__writable_output_v<ZExtents, ZLayout, ZAccessor> &&
               __detail::__square_static_extents_v<AExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
               XExtents::rank() == 1 &&
@@ -391,14 +357,14 @@ void hermitian_matrix_vector_product(
         __detail::__accessor_value_t<ZAccessor> sum{};
         for (idx_t j = 0; j < n; ++j) {
             if (i == j) {
-                sum += __detail::__real_if_needed(A[i, i]) * x[j];
+                sum += __detail::__real_if_needed(__detail::__accessor_value_t<AAccessor>(A[i, i])) * x[j];
             } else if constexpr (is_upper) {
                 sum += (i < j
                     ? A[i, j]
-                    : __detail::__conj_if_needed(A[j, i])) * x[j];
+                    : __detail::__conj_if_needed(__detail::__accessor_value_t<AAccessor>(A[j, i]))) * x[j];
             } else {
                 sum += (i < j
-                    ? __detail::__conj_if_needed(A[j, i])
+                    ? __detail::__conj_if_needed(__detail::__accessor_value_t<AAccessor>(A[j, i]))
                     : A[i, j]) * x[j];
             }
         }
@@ -410,7 +376,7 @@ void hermitian_matrix_vector_product(
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__always_unique_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__writable_output_v<AExtents, ALayout, AAccessor> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               AExtents::rank() == 2 &&
@@ -432,7 +398,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__always_unique_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__writable_output_v<AExtents, ALayout, AAccessor> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               EExtents::rank() == 2 &&
@@ -458,7 +424,7 @@ void matrix_rank_1_update(
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__always_unique_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__writable_output_v<AExtents, ALayout, AAccessor> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               AExtents::rank() == 2 &&
@@ -472,7 +438,7 @@ void matrix_rank_1_update_c(
     using idx_t = typename AExtents::index_type;
     for (idx_t i = 0; i < A.extent(0); ++i)
         for (idx_t j = 0; j < A.extent(1); ++j)
-            A[i, j] = x[i] * __detail::__conj_if_needed(y[j]);
+            A[i, j] = x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j]));
 }
 
 // matrix_rank_1_update_c — A = E + x * conj(y^T)
@@ -480,7 +446,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__always_unique_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__writable_output_v<AExtents, ALayout, AAccessor> &&
               XExtents::rank() == 1 &&
               YExtents::rank() == 1 &&
               EExtents::rank() == 2 &&
@@ -499,15 +465,16 @@ void matrix_rank_1_update_c(
     using idx_t = typename AExtents::index_type;
     for (idx_t i = 0; i < A.extent(0); ++i)
         for (idx_t j = 0; j < A.extent(1); ++j)
-            A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]);
+            A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j]));
 }
 
-// symmetric_matrix_rank_1_update — A = alpha * x * x^T  [linalg.algs.blas2.syr]
+// symmetric_matrix_rank_1_update — A = alpha * x * x^T  [linalg.algs.blas2.symherrank1]
 template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
@@ -536,11 +503,11 @@ template<class ScalingFactor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__compatible_static_extents_v<EExtents, AExtents> &&
-              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
     ScalingFactor alpha,
@@ -566,7 +533,8 @@ void symmetric_matrix_rank_1_update(
 template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_1_update(
@@ -577,12 +545,12 @@ void symmetric_matrix_rank_1_update(
     symmetric_matrix_rank_1_update(alpha, x, A, t);
 }
 
-// symmetric_matrix_rank_2_update — A = x*y^T + y*x^T  [linalg.algs.blas2.syr2]
+// symmetric_matrix_rank_2_update — A = x*y^T + y*x^T  [linalg.algs.blas2.rank2]
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_2_update(
@@ -611,7 +579,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__compatible_static_extents_v<EExtents, AExtents> &&
@@ -642,7 +610,8 @@ template<class ScalingFactor, class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void symmetric_matrix_rank_2_update(
@@ -665,12 +634,13 @@ void symmetric_matrix_rank_2_update(
     }
 }
 
-// hermitian_matrix_rank_1_update — A = alpha * x * x^H  [linalg.algs.blas2.rank1]
+// hermitian_matrix_rank_1_update — A = alpha * x * x^H  [linalg.algs.blas2.symherrank1]
 template<class ScalingFactor,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_1_update(
@@ -686,13 +656,15 @@ void hermitian_matrix_rank_1_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = scaling * x[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                auto value = scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                if (i == j) A[i, j] = __detail::__real_if_needed(value);
+                else A[i, j] = value;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = scaling * x[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                auto value = scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                if (i == j) A[i, j] = __detail::__real_if_needed(value);
+                else A[i, j] = value;
             }
         }
     }
@@ -704,11 +676,11 @@ template<class ScalingFactor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__scalar<ScalingFactor> &&
+              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<EExtents, XExtents> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__compatible_static_extents_v<EExtents, AExtents> &&
-              __detail::__packed_triangle_matches_v<ELayout, Triangle> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_1_update(
     ScalingFactor alpha,
@@ -724,13 +696,21 @@ void hermitian_matrix_rank_1_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                if (i == j) {
+                    auto value = __detail::__real_if_needed(__detail::__accessor_value_t<EAccessor>(E[i, j])) + scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                    A[i, j] = __detail::__real_if_needed(value);
+                } else {
+                    A[i, j] = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                }
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                if (i == j) {
+                    auto value = __detail::__real_if_needed(__detail::__accessor_value_t<EAccessor>(E[i, j])) + scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                    A[i, j] = __detail::__real_if_needed(value);
+                } else {
+                    A[i, j] = E[i, j] + scaling * x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                }
             }
         }
     }
@@ -739,7 +719,7 @@ void hermitian_matrix_rank_1_update(
 template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 [[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
@@ -756,7 +736,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 void hermitian_matrix_rank_2_update(
@@ -771,15 +751,17 @@ void hermitian_matrix_rank_2_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = x[i] * __detail::__conj_if_needed(y[j]) +
-                             y[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                auto value = x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                if (i == j) A[i, j] = __detail::__real_if_needed(value);
+                else A[i, j] = value;
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = x[i] * __detail::__conj_if_needed(y[j]) +
-                             y[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                auto value = x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                if (i == j) A[i, j] = __detail::__real_if_needed(value);
+                else A[i, j] = value;
             }
         }
     }
@@ -791,7 +773,7 @@ template<class XExtents, class XLayout, class XAccessor,
          class EExtents, class ELayout, class EAccessor,
          class AExtents, class ALayout, class AAccessor,
          class Triangle>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<EExtents, XExtents, YExtents> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__compatible_static_extents_v<EExtents, AExtents> &&
@@ -810,15 +792,25 @@ void hermitian_matrix_rank_2_update(
     for (idx_t i = 0; i < n; ++i) {
         if constexpr (is_upper) {
             for (idx_t j = i; j < n; ++j) {
-                auto value = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
-                             y[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                if (i == j) {
+                    auto value = __detail::__real_if_needed(__detail::__accessor_value_t<EAccessor>(E[i, j])) + x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                    A[i, j] = __detail::__real_if_needed(value);
+                } else {
+                    A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                }
             }
         } else {
             for (idx_t j = 0; j <= i; ++j) {
-                auto value = E[i, j] + x[i] * __detail::__conj_if_needed(y[j]) +
-                             y[i] * __detail::__conj_if_needed(x[j]);
-                A[i, j] = (i == j) ? __detail::__real_if_needed(value) : value;
+                if (i == j) {
+                    auto value = __detail::__real_if_needed(__detail::__accessor_value_t<EAccessor>(E[i, j])) + x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                    A[i, j] = __detail::__real_if_needed(value);
+                } else {
+                    A[i, j] = E[i, j] + x[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<YAccessor>(y[j])) +
+                             y[i] * __detail::__conj_if_needed(__detail::__accessor_value_t<XAccessor>(x[j]));
+                }
             }
         }
     }
@@ -828,7 +820,7 @@ template<class Triangle,
          class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
          class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_mapping_v<AExtents, ALayout> &&
+    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
               __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
               __detail::__packed_triangle_matches_v<ALayout, Triangle>)
 [[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
@@ -839,6 +831,168 @@ void hermitian_matrix_rank_2_update(
     std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
 {
     hermitian_matrix_rank_2_update(x, y, A, t);
+}
+
+namespace __detail {
+
+// Substitution preserves factor order. The divide receives (numerator,
+// diagonal); left solves need a left-inverse divide for noncommutative values.
+// Only local values use compound assignment; output references only use =.
+template<bool Right, class A, class B, class X, class Triangle,
+         class DiagonalStorage, class BinaryDivideOp>
+void __triangular_solve(A a, B b, X x, Triangle, DiagonalStorage,
+                        BinaryDivideOp& divide) {
+    using index_type = std::common_type_t<typename A::index_type,
+        typename B::index_type, typename X::index_type>;
+    using value_type = typename X::value_type;
+    constexpr bool upper = std::is_same_v<Triangle, upper_triangle_t>;
+    constexpr bool unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    const index_type n = a.extent(0);
+    const index_type nrhs = [&] {
+        if constexpr (B::rank() == 1) return index_type{1};
+        else return static_cast<index_type>(b.extent(Right ? 0 : 1));
+    }();
+    for (index_type rhs = 0; rhs < nrhs; ++rhs) {
+        auto read_b = [&](index_type i) -> value_type {
+            if constexpr (B::rank() == 1) return typename B::value_type(b[i]);
+            else if constexpr (Right) return typename B::value_type(b[rhs, i]);
+            else return typename B::value_type(b[i, rhs]);
+        };
+        auto read_x = [&](index_type i) -> value_type {
+            if constexpr (X::rank() == 1) return x[i];
+            else if constexpr (Right) return x[rhs, i];
+            else return x[i, rhs];
+        };
+        auto store = [&](index_type i, const value_type& value) {
+            if constexpr (X::rank() == 1) x[i] = value;
+            else if constexpr (Right) x[rhs, i] = value;
+            else x[i, rhs] = value;
+        };
+        for (index_type step = 0; step < n; ++step) {
+            constexpr bool reverse = Right ? !upper : upper;
+            const index_type i = reverse ? n - 1 - step : step;
+            value_type residual(read_b(i));
+            const index_type first = reverse ? i + 1 : 0;
+            const index_type last = reverse ? n : i;
+            for (index_type k = first; k < last; ++k) {
+                if constexpr (Right) residual -= read_x(k) * a[k, i];
+                else residual -= a[i, k] * read_x(k);
+            }
+            if constexpr (!unit) {
+                residual = divide(residual, typename A::value_type(a[i, i]));
+            }
+            store(i, residual);
+        }
+    }
+}
+
+} // namespace __detail
+
+
+// triangular_matrix_vector_solve — [linalg.algs.blas2.trsv]
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class XExtents, class XLayout, class XAccessor,
+         class BinaryDivideOp>
+    requires (__detail::__writable_output_v<XExtents, XLayout, XAccessor> &&
+              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
+              __detail::__square_matrix_vectors_static_extents_v<AExtents, BExtents, XExtents>)
+void triangular_matrix_vector_solve(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle t, DiagonalStorage d,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> b,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    BinaryDivideOp divide)
+{
+    __detail::__triangular_solve<false>(A, b, x, t, d, divide);
+}
+
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class XExtents, class XLayout, class XAccessor>
+    requires (__detail::__writable_output_v<XExtents, XLayout, XAccessor> &&
+              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
+              __detail::__square_matrix_vectors_static_extents_v<AExtents, BExtents, XExtents>)
+void triangular_matrix_vector_solve(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle t, DiagonalStorage d,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> b,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x)
+{
+    std::linalg::triangular_matrix_vector_solve(A, t, d, b, x, std::divides<void>{});
+}
+
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor,
+         class BinaryDivideOp>
+    requires (__detail::__writable_output_v<BExtents, BLayout, BAccessor> &&
+              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
+              __detail::__square_matrix_vector_static_extents_v<AExtents, BExtents>)
+void triangular_matrix_vector_solve(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle t, DiagonalStorage d,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> b,
+    BinaryDivideOp divide)
+{
+    __detail::__triangular_solve<false>(A, b, b, t, d, divide);
+}
+
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class BExtents, class BLayout, class BAccessor>
+    requires (__detail::__writable_output_v<BExtents, BLayout, BAccessor> &&
+              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
+              __detail::__square_matrix_vector_static_extents_v<AExtents, BExtents>)
+void triangular_matrix_vector_solve(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle t, DiagonalStorage d,
+    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> b)
+{
+    std::linalg::triangular_matrix_vector_solve(A, t, d, b, std::divides<void>{});
+}
+
+
+// Updating triangular product; z may alias y — [linalg.algs.blas2.trmv].
+template<class Triangle, class DiagonalStorage,
+         class AExtents, class ALayout, class AAccessor,
+         class XExtents, class XLayout, class XAccessor,
+         class YExtents, class YLayout, class YAccessor,
+         class ZExtents, class ZLayout, class ZAccessor>
+    requires (__detail::__writable_output_v<ZExtents, ZLayout, ZAccessor> &&
+              __detail::__is_diagonal_storage_v<DiagonalStorage> &&
+              __detail::__packed_triangle_matches_v<ALayout, Triangle> &&
+              __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
+              __detail::__square_matrix_vector_static_extents_v<AExtents, ZExtents> &&
+              __detail::__compatible_static_extents_v<YExtents, ZExtents>)
+void triangular_matrix_vector_product(
+    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
+    Triangle, DiagonalStorage,
+    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
+    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
+    std::mdspan<typename ZAccessor::element_type, ZExtents, ZLayout, ZAccessor> z)
+{
+    using idx_t = typename AExtents::index_type;
+    constexpr bool upper = std::is_same_v<Triangle, upper_triangle_t>;
+    constexpr bool unit = std::is_same_v<DiagonalStorage, implicit_unit_diagonal_t>;
+    for (idx_t i = 0; i < A.extent(0); ++i) {
+        __detail::__accessor_value_t<ZAccessor> sum{};
+        const idx_t first = upper ? i : idx_t{0};
+        const idx_t last = upper ? A.extent(0) : i + 1;
+        for (idx_t j = first; j < last; ++j) {
+            if constexpr (unit) {
+                if (i == j) { sum += x[j]; continue; }
+            }
+            sum += A[i, j] * x[j];
+        }
+        z[i] = y[i] + sum;
+    }
 }
 
 } // namespace std::linalg

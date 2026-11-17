@@ -1,3 +1,4 @@
+#include "../proxy_cases.hpp"
 #include <gtest/gtest.h>
 #include <linalg>
 #include <mdspan>
@@ -284,7 +285,8 @@ TEST(LinalgDotMixedSum, NoncopyableNumericProxyUsesEachAccessAndProductOnce) {
         EXPECT_EQ(right.products, 0);
         EXPECT_EQ(left.conversions, 0);
         EXPECT_EQ(right.conversions, 0);
-        EXPECT_EQ(left.conjugations, conjugate ? 2 : 0);
+        // Arithmetic element types make conjugated(x) a no-op, even with proxy ADL conj.
+        EXPECT_EQ(left.conjugations, 0);
         EXPECT_EQ(left.live_proxies, 0);
         EXPECT_EQ(right.live_proxies, 0);
     }
@@ -310,7 +312,8 @@ TEST(LinalgDotMixedSum, ProxyValueTypeKeepsLA02WideningBeforeMultiply) {
         EXPECT_EQ(left.products, 0);
         EXPECT_EQ(left.conversions, 1);
         EXPECT_EQ(right.conversions, 1);
-        EXPECT_EQ(left.conjugations, conjugate ? 1 : 0);
+        // Conjugation dispatch follows the element type rather than the proxy type.
+        EXPECT_EQ(left.conjugations, 0);
         EXPECT_EQ(left.live_proxies, 0);
         EXPECT_EQ(right.live_proxies, 0);
     }
@@ -340,7 +343,8 @@ TEST(LinalgDotMixedSum, GenericBorrowedProductRetainsLifetimeAndOperators) {
         EXPECT_EQ(left.additions, 0);
         EXPECT_EQ(left.conversions, 0);
         EXPECT_EQ(right.conversions, 0);
-        EXPECT_EQ(left.conjugations, conjugate ? 2 : 0);
+        // Arithmetic element types make conjugated(x) a no-op, even with proxy ADL conj.
+        EXPECT_EQ(left.conjugations, 0);
         EXPECT_EQ(left.live_proxies, 0);
         EXPECT_EQ(right.live_proxies, 0);
     }
@@ -385,4 +389,8 @@ TEST(LinalgDotMixedSum, StridedInputsAndSingleTermIncludeInitOnce) {
     std::mdspan one_x(x_data, std::extents<int, 1>{});
     std::mdspan one_y(y_data, std::extents<int, 1>{});
     expect_both_dots(one_x, one_y, 7.0, 7.25);
+}
+
+TEST(LinalgDotMixedSum, ComplexProxyConjugatesItsElementValue) {
+    linalg_conformance::complex_proxy_dotc(linalg_conformance::sequential_calls{});
 }

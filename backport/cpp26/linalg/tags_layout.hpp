@@ -121,7 +121,7 @@ struct layout_blas_packed {
             requires std::is_constructible_v<Extents, OtherExtents>
         constexpr explicit(!std::is_convertible_v<OtherExtents, Extents>)
         mapping(
-            const typename layout_blas_packed::template mapping<OtherExtents>&
+            const mapping<OtherExtents>&
                 other) noexcept
             : extents_(other.extents()) {}
 
@@ -134,7 +134,14 @@ struct layout_blas_packed {
             return n * (n + 1) / 2;
         }
 
-        [[nodiscard]] constexpr index_type operator()(index_type i, index_type j) const noexcept {
+        template<class Index0, class Index1>
+            requires (std::is_convertible_v<Index0, index_type> &&
+                      std::is_convertible_v<Index1, index_type> &&
+                      std::is_nothrow_constructible_v<index_type, Index0> &&
+                      std::is_nothrow_constructible_v<index_type, Index1>)
+        [[nodiscard]] constexpr index_type operator()(Index0 ind0, Index1 ind1) const noexcept {
+            auto i = static_cast<index_type>(ind0);
+            auto j = static_cast<index_type>(ind1);
             if constexpr (std::is_same_v<StorageOrder, column_major_t>) {
                 if constexpr (std::is_same_v<Triangle, upper_triangle_t>) {
                     if (j < i) std::swap(i, j);
@@ -178,7 +185,7 @@ struct layout_blas_packed {
         template<class OtherExtents>
         friend constexpr bool operator==(
             const mapping& x,
-            const typename layout_blas_packed::template mapping<OtherExtents>&
+            const mapping<OtherExtents>&
                 y) noexcept {
             return x.extents() == y.extents();
         }
@@ -232,6 +239,16 @@ template<class Extents, class Layout>
 inline constexpr bool __possibly_packed_output_mapping_v =
     __always_unique_mapping_v<Extents, Layout> ||
     __is_blas_packed_layout_v<Layout>;
+
+template<class Extents, class Layout, class Accessor>
+inline constexpr bool __writable_output_v =
+    std::is_assignable_v<typename Accessor::reference, typename Accessor::element_type> &&
+    __always_unique_mapping_v<Extents, Layout>;
+
+template<class Extents, class Layout, class Accessor>
+inline constexpr bool __possibly_packed_output_v =
+    std::is_assignable_v<typename Accessor::reference, typename Accessor::element_type> &&
+    __possibly_packed_output_mapping_v<Extents, Layout>;
 
 } // namespace __detail
 

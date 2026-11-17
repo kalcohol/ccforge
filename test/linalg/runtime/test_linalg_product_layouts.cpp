@@ -239,7 +239,11 @@ void structured(A a, B b, C c, Triangle triangle) {
                     const bool stored = upper ? i <= k : i >= k;
                     T v = stored ? a[i, k] : a[k, i];
                     if constexpr (std::is_same_v<T, std::complex<double>>) {
-                        if (hermitian) v = i == k ? T(v.real()) : (stored ? v : std::conj(v));
+                        if (hermitian && i == k) {
+                            sum += v.real() * b[k, j];
+                            continue;
+                        }
+                        if (hermitian && !stored) v = std::conj(v);
                     }
                     sum += v * b[k, j];
                 }

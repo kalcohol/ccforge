@@ -602,18 +602,20 @@ TEST(LinalgLevel1DotProducts, DefaultDotcUsesConjugatedValueType) {
     EXPECT_EQ(std::linalg::dot(x, y), 23.0);
     EXPECT_EQ(products, 2);
     EXPECT_EQ(conversions, 0);
-    products = 0;
+    // dotc is dot(conjugated(v1), v2, init): the conjugated accessor converts
+    // each v1 reference to its element type before conj-if-needed.
+    products = conversions = 0;
     EXPECT_EQ(std::linalg::dotc(x, y), 23.0L);
     EXPECT_EQ(products, 2);
-    EXPECT_EQ(conversions, 0);
-    products = 0;
+    EXPECT_EQ(conversions, 2);
+    products = conversions = 0;
     EXPECT_EQ(std::linalg::dot(x, y, 7.0L), 30.0L);
     EXPECT_EQ(products, 2);
     EXPECT_EQ(conversions, 0);
-    products = 0;
+    products = conversions = 0;
     EXPECT_EQ(std::linalg::dotc(x, y, 7.0), 30.0);
     EXPECT_EQ(products, 2);
-    EXPECT_EQ(conversions, 0);
+    EXPECT_EQ(conversions, 2);
     EXPECT_EQ(std::linalg::dot(dense_x, dense_y), 23.0);
     EXPECT_EQ(std::linalg::dotc(dense_x, dense_y), 23.0L);
 }

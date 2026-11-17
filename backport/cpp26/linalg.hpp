@@ -28,7 +28,7 @@
 
 // This macro is a test marker for backport injection, not a standard feature
 // macro. Forge intentionally does not define __cpp_lib_linalg for this
-// experimental subset.
+// experimental implementation.
 #ifndef FORGE_BACKPORT_LINALG_HPP_INCLUDED
 #define FORGE_BACKPORT_LINALG_HPP_INCLUDED 1
 #endif
@@ -44,3 +44,4 @@
 #include "linalg/level1.hpp"
 #include "linalg/level2.hpp"
 #include "linalg/level3.hpp"
+#include "linalg/policy.hpp"

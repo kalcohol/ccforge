@@ -26,6 +26,8 @@
 #include <version>
 #endif
 
+#include <forge_native_execution.hpp>
+#include <concepts>
 #include <complex>
 #include <cmath>
 #include <cstddef>
@@ -56,6 +58,18 @@
 namespace std::linalg {
 
 namespace __detail {
+
+template<class T>
+inline constexpr bool __is_mdspan_v = false;
+template<class T, class E, class L, class A>
+inline constexpr bool __is_mdspan_v<std::mdspan<T, E, L, A>> = true;
+
+template<class T>
+concept __scalar = std::semiregular<T> && (!__is_mdspan_v<T>)
+#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
+    && (!std::is_execution_policy_v<T>)
+#endif
+    ;
 
 template<class T>
 struct __is_complex : std::false_type {};

@@ -37,7 +37,8 @@ namespace std::linalg {
 // copy — [linalg.algs.blas1.copy]
 template<class InExtents, class InLayout, class InAccessor,
          class OutExtents, class OutLayout, class OutAccessor>
-    requires (__detail::__always_unique_mapping_v<OutExtents, OutLayout> &&
+    requires ((OutExtents::rank() == 1 || OutExtents::rank() == 2) &&
+              __detail::__writable_output_v<OutExtents, OutLayout, OutAccessor> &&
               __detail::__compatible_static_extents_v<InExtents, OutExtents>)
 void copy(
     std::mdspan<typename InAccessor::element_type, InExtents, InLayout, InAccessor> from,
@@ -74,10 +75,12 @@ void copy(
     }
 }
 
-// scale — [linalg.algs.blas1.scale]
+// scale — [linalg.algs.blas1.scal]
 template<class ScalingFactor,
          class Extents, class Layout, class Accessor>
-    requires (__detail::__always_unique_mapping_v<Extents, Layout>)
+    requires (__detail::__scalar<ScalingFactor> &&
+              (Extents::rank() == 1 || Extents::rank() == 2) &&
+              __detail::__writable_output_v<Extents, Layout, Accessor>)
 void scale(
     ScalingFactor alpha,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
@@ -120,21 +123,29 @@ void scale(
 // swap_elements — [linalg.algs.blas1.swap]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2>
-    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
-              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+    requires ((Extents1::rank() == 1 || Extents1::rank() == 2) &&
+              __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
+              __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void swap_elements(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y)
 {
-    using std::swap;
     if constexpr (Extents1::rank() == 1) {
-        for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
-            swap(x[i], y[i]);
+        for (typename Extents1::index_type i = 0; i < x.extent(0); ++i) {
+            __detail::__accessor_value_t<Accessor1> xi(std::move(x[i]));
+            __detail::__accessor_value_t<Accessor2> yi(std::move(y[i]));
+            x[i] = std::move(yi);
+            y[i] = std::move(xi);
+        }
     } else {
         for (typename Extents1::index_type i = 0; i < x.extent(0); ++i)
-            for (typename Extents1::index_type j = 0; j < x.extent(1); ++j)
-                swap(x[i, j], y[i, j]);
+            for (typename Extents1::index_type j = 0; j < x.extent(1); ++j) {
+                __detail::__accessor_value_t<Accessor1> xi(std::move(x[i, j]));
+                __detail::__accessor_value_t<Accessor2> yi(std::move(y[i, j]));
+                x[i, j] = std::move(yi);
+                y[i, j] = std::move(xi);
+            }
     }
 }
 
@@ -142,7 +153,8 @@ void swap_elements(
 template<class InExtents1, class InLayout1, class InAccessor1,
          class InExtents2, class InLayout2, class InAccessor2,
          class OutExtents, class OutLayout, class OutAccessor>
-    requires (__detail::__always_unique_mapping_v<OutExtents, OutLayout> &&
+    requires ((OutExtents::rank() == 1 || OutExtents::rank() == 2) &&
+              __detail::__writable_output_v<OutExtents, OutLayout, OutAccessor> &&
               __detail::__compatible_static_extents_v<InExtents1, InExtents2> &&
              __detail::__compatible_static_extents_v<InExtents1, OutExtents> &&
              __detail::__compatible_static_extents_v<InExtents2, OutExtents>)
@@ -165,7 +177,7 @@ void add(
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
-    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+    requires (__detail::__scalar<T> && Extents1::rank() == 1 && Extents2::rank() == 1 &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 T dot(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
@@ -233,38 +245,18 @@ auto dot(
     return dot(x, y, T{});
 }
 
-// dotc — [linalg.algs.blas1.dotc] (conjugate dot)
+// dotc — [linalg.algs.blas1.dot] (conjugate dot)
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2,
          class T>
-    requires (Extents1::rank() == 1 && Extents2::rank() == 1 &&
+    requires (__detail::__scalar<T> && Extents1::rank() == 1 && Extents2::rank() == 1 &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 T dotc(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
     std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     T init)
 {
-    const auto n = x.extent(0);
-    if (n == 0) return init;
-    using index_type = typename Extents1::index_type;
-    auto with_product = [&](index_type i, auto&& consume) -> decltype(auto) {
-        auto xi = x[i];
-        return consume(__detail::__dot_product<T,
-            typename decltype(x)::value_type, typename decltype(y)::value_type>(
-                __detail::__conj_if_needed(xi), y[i]));
-    };
-    using product_type = typename decltype(with_product(
-        std::declval<index_type>(), __detail::__dot_product_type{}))::type;
-    if constexpr (__detail::__use_numeric_dot_sum_v<T, product_type>) {
-        return __detail::__dot_numeric_sum(init, n, with_product);
-    } else {
-        for (index_type i = 0; i < n; ++i) {
-            with_product(i, [&](auto&& product) {
-                init += std::forward<decltype(product)>(product);
-            });
-        }
-        return init;
-    }
+    return std::linalg::dot(std::linalg::conjugated(x), y, init);
 }
 
 template<class Extents1, class Layout1, class Accessor1,
@@ -341,7 +333,7 @@ auto __vector_two_norm(
 }
 
 template<class Extents, class Layout, class Accessor, class T>
-    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
+    requires (Extents::rank() == 1 && __detail::__scalar<T> && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
 T vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
@@ -350,7 +342,7 @@ T vector_two_norm(
 }
 
 template<class Extents, class Layout, class Accessor, class T, bool = true>
-    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
+    requires (Extents::rank() == 1 && __detail::__scalar<T> && (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
 [[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
 T vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
@@ -360,7 +352,7 @@ T vector_two_norm(
 }
 
 template<class Extents, class Layout, class Accessor>
-    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
+    requires (Extents::rank() == 1 && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
 auto vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
@@ -368,7 +360,7 @@ auto vector_two_norm(
 }
 
 template<class Extents, class Layout, class Accessor, bool = true>
-    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
+    requires (Extents::rank() == 1 && std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
 [[deprecated("integer vector_two_norm is outside current draft Mandates (LWG 4315); use forge::vector_two_norm")]]
 auto vector_two_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
@@ -378,6 +370,7 @@ auto vector_two_norm(
 
 // vector_abs_sum — [linalg.algs.blas1.asum]
 template<class Extents, class Layout, class Accessor, class T>
+    requires (Extents::rank() == 1 && __detail::__scalar<T>)
 T vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
     T init)
@@ -410,6 +403,7 @@ T vector_abs_sum(
 }
 
 template<class Extents, class Layout, class Accessor>
+    requires (Extents::rank() == 1)
 auto vector_abs_sum(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
@@ -442,6 +436,7 @@ auto vector_abs_sum(
 
 // vector_idx_abs_max — [linalg.algs.blas1.iamax]
 template<class Extents, class Layout, class Accessor>
+    requires (Extents::rank() == 1)
 typename Extents::size_type vector_idx_abs_max(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
 {
@@ -458,7 +453,7 @@ typename Extents::size_type vector_idx_abs_max(
     return static_cast<size_type>(best);
 }
 
-// sum_of_squares helper struct — [linalg.algs.blas1.ssq]
+// sum_of_squares helper struct — historical Forge compatibility
 template<class T>
 struct sum_of_squares_result {
     T scaling_factor;
@@ -587,8 +582,8 @@ setup_givens_rotation(std::complex<Real> a, std::complex<Real> b) noexcept {
 // apply_givens_rotation — [linalg.algs.blas1.givens]
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
-    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
-              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+    requires (__detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
+              __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void __apply_givens_rotation(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1>& x,
@@ -605,8 +600,8 @@ void __apply_givens_rotation(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T, bool = true>
-    requires (std::is_integral_v<T> && __detail::__always_unique_mapping_v<Extents1, Layout1> &&
-              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+    requires (std::is_integral_v<T> && __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
+              __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 [[deprecated("integer Givens Real is a Forge extension; use forge::apply_givens_rotation")]]
 void apply_givens_rotation(
@@ -619,8 +614,9 @@ void apply_givens_rotation(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
-    requires (!std::is_integral_v<T> && __detail::__always_unique_mapping_v<Extents1, Layout1> &&
-              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+    requires (std::is_floating_point_v<T> && Extents1::rank() == 1 &&
+              Extents2::rank() == 1 && __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
+              __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void apply_givens_rotation(
     std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
@@ -632,12 +628,13 @@ void apply_givens_rotation(
 
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class Real>
-    requires (__detail::__always_unique_mapping_v<Extents1, Layout1> &&
-              __detail::__always_unique_mapping_v<Extents2, Layout2> &&
+    requires (std::is_floating_point_v<Real> && Extents1::rank() == 1 &&
+              Extents2::rank() == 1 && __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
+              __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>)
 void apply_givens_rotation(
-    std::mdspan<std::complex<Real>, Extents1, Layout1, Accessor1> x,
-    std::mdspan<std::complex<Real>, Extents2, Layout2, Accessor2> y,
+    std::mdspan<typename Accessor1::element_type, Extents1, Layout1, Accessor1> x,
+    std::mdspan<typename Accessor2::element_type, Extents2, Layout2, Accessor2> y,
     Real c, std::complex<Real> s)
 {
     using std::conj;
@@ -711,26 +708,26 @@ auto __matrix_frob_norm(
 
 // Public wrappers borrow their parameters in the shared implementation.
 template<class Extents, class Layout, class Accessor, class T>
-    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
+    requires (Extents::rank() == 2 && __detail::__scalar<T> && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
 T matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, T init) {
     return std::linalg::__matrix_frob_norm(x, init);
 }
 
 template<class Extents, class Layout, class Accessor, class T, bool = true>
-    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)
+    requires (Extents::rank() == 2 && __detail::__scalar<T> && (std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>))
 [[deprecated("integer matrix_frob_norm is a Forge extension; use forge::matrix_frob_norm")]]
 T matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x, T init) {
     return std::linalg::__matrix_frob_norm(x, init);
 }
 
 template<class Extents, class Layout, class Accessor>
-    requires (!(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
+    requires (Extents::rank() == 2 && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>>))
 auto matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x) {
     return std::linalg::__matrix_frob_norm(x);
 }
 
 template<class Extents, class Layout, class Accessor, bool = true>
-    requires (std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
+    requires (Extents::rank() == 2 && std::is_integral_v<__detail::__accessor_value_t<Accessor>>)
 [[deprecated("integer matrix_frob_norm is a Forge extension; use forge::matrix_frob_norm")]]
 auto matrix_frob_norm(std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x) {
     return std::linalg::__matrix_frob_norm(x);
@@ -751,6 +748,7 @@ sum_of_squares_result<T> vector_sum_of_squares(std::mdspan<typename Accessor::el
 
 // matrix_one_norm — [linalg.algs.blas1.matonenorm]
 template<class Extents, class Layout, class Accessor, class T>
+    requires (Extents::rank() == 2 && __detail::__scalar<T>)
 T matrix_one_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
@@ -796,6 +794,7 @@ T matrix_one_norm(
 }
 
 template<class Extents, class Layout, class Accessor>
+    requires (Extents::rank() == 2)
 auto matrix_one_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {
@@ -805,6 +804,7 @@ auto matrix_one_norm(
 
 // matrix_inf_norm — [linalg.algs.blas1.matinfnorm]
 template<class Extents, class Layout, class Accessor, class T>
+    requires (Extents::rank() == 2 && __detail::__scalar<T>)
 T matrix_inf_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A,
     T init)
@@ -850,6 +850,7 @@ T matrix_inf_norm(
 }
 
 template<class Extents, class Layout, class Accessor>
+    requires (Extents::rank() == 2)
 auto matrix_inf_norm(
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> A)
 {

@@ -35,7 +35,7 @@ template<class Layout>
 class layout_transpose;
 
 // ──────────────────────────────────────────────────────────────────────────
-// scaled_accessor — [linalg.scaled.accessor]
+// scaled_accessor — [linalg.scaled.scaledaccessor]
 // ──────────────────────────────────────────────────────────────────────────
 
 template<class ScalingFactor, class NestedAccessor>
@@ -66,13 +66,13 @@ public:
         : scaling_factor_(s), nested_(a) {}
 
     [[nodiscard]] constexpr reference
-    access(data_handle_type p, std::ptrdiff_t i) const {
+    access(data_handle_type p, std::size_t i) const {
         return scaling_factor_ *
                typename NestedAccessor::element_type(nested_.access(p, i));
     }
 
     [[nodiscard]] constexpr typename offset_policy::data_handle_type
-    offset(data_handle_type p, std::ptrdiff_t i) const {
+    offset(data_handle_type p, std::size_t i) const {
         return nested_.offset(p, i);
     }
 
@@ -91,7 +91,7 @@ private:
 };
 
 // ──────────────────────────────────────────────────────────────────────────
-// conjugated_accessor — [linalg.conj.accessor]
+// conjugated_accessor — [linalg.conj.conjugatedaccessor]
 // ──────────────────────────────────────────────────────────────────────────
 
 namespace __detail {
@@ -195,13 +195,13 @@ public:
         : nested_(other.nested_accessor()) {}
 
     [[nodiscard]] constexpr reference
-    access(data_handle_type p, std::ptrdiff_t i) const {
+    access(data_handle_type p, std::size_t i) const {
         return __detail::__conj_if_needed(
             typename NestedAccessor::element_type(nested_.access(p, i)));
     }
 
     [[nodiscard]] constexpr typename offset_policy::data_handle_type
-    offset(data_handle_type p, std::ptrdiff_t i) const {
+    offset(data_handle_type p, std::size_t i) const {
         return nested_.offset(p, i);
     }
 
@@ -215,7 +215,7 @@ private:
 };
 
 // ──────────────────────────────────────────────────────────────────────────
-// layout_transpose — [linalg.layout.transpose]
+// layout_transpose — [linalg.transp.layout.transpose]
 // ──────────────────────────────────────────────────────────────────────────
 
 template<class Layout>
@@ -254,7 +254,8 @@ public:
             return nested_.required_span_size();
         }
 
-        [[nodiscard]] constexpr index_type operator()(index_type i, index_type j) const noexcept {
+        template<class Index0, class Index1>
+        [[nodiscard]] constexpr index_type operator()(Index0 i, Index1 j) const {
             return nested_(j, i);
         }
 
@@ -265,7 +266,7 @@ public:
         [[nodiscard]] static constexpr bool is_always_exhaustive() noexcept { return __nested_mapping_type::is_always_exhaustive(); }
         [[nodiscard]] static constexpr bool is_always_strided()    noexcept { return __nested_mapping_type::is_always_strided();    }
 
-        [[nodiscard]] constexpr index_type stride(rank_type r) const {
+        [[nodiscard]] constexpr index_type stride(std::size_t r) const {
             return nested_.stride(r == 0 ? 1 : 0);
         }
 
@@ -274,8 +275,15 @@ public:
             return nested_;
         }
 
-        friend constexpr bool
-        operator==(const mapping&, const mapping&) noexcept = default;
+        template<class OtherExtents>
+            requires requires(const __nested_mapping_type& x,
+                const typename mapping<OtherExtents>::__nested_mapping_type& y) {
+                { x == y } -> std::convertible_to<bool>;
+            }
+        friend constexpr bool operator==(
+            const mapping& x, const mapping<OtherExtents>& y) {
+            return x.nested_mapping() == y.nested_mapping();
+        }
 
     private:
         __nested_mapping_type nested_{};
@@ -284,7 +292,8 @@ public:
 };
 
 // ──────────────────────────────────────────────────────────────────────────
-// Utility view functions — [linalg.helpers]
+// Utility view functions — [linalg.scaled.scaled], [linalg.conj.conjugated],
+// [linalg.transp.transposed], [linalg.conjtransposed]
 // ──────────────────────────────────────────────────────────────────────────
 
 template<class ScalingFactor,
