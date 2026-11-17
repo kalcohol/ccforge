@@ -41,7 +41,7 @@ public:
     template<class Scheduler>
         requires (!std::is_same_v<std::remove_cvref_t<Scheduler>, executor_ref>)
               && (!std::is_same_v<std::remove_cvref_t<Scheduler>, forge::any_scheduler>)
-              && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
+              && std::execution::scheduler<Scheduler>
     executor_ref(Scheduler&& scheduler)
         : scheduler_(static_cast<Scheduler&&>(scheduler))
     {}

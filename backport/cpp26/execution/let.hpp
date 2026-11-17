@@ -78,7 +78,7 @@ struct __forwarding_env {
     const Env* __env;
 
     template<class Query, class... Args>
-        requires (__is_forwarding_query<Query>() &&
+        requires (__forge_env_detail::__fwd_env_query<Query> &&
                   __forge_env_detail::__queryable<Query, const Env&, Args...>)
     decltype(auto) query(
         Query query, Args&&... args) const
@@ -87,7 +87,7 @@ struct __forwarding_env {
     }
 
     template<class Query>
-        requires (__is_forwarding_query<Query>() &&
+        requires (__forge_env_detail::__fwd_env_query<Query> &&
                   __forge_env_detail::__queryable<Query, const Env&>)
     friend decltype(auto) tag_invoke(
         Query query,

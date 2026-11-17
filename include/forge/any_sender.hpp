@@ -67,25 +67,27 @@ class any_sender_of {
         // sync_wait path: run the sender, get the value tuple
         using value_tuple_t = value_tuple_of_t<CompletionSignatures>;
         std::optional<value_tuple_t> (*do_sync_wait)(void* p);
+        bool consuming;
     };
 
     template<class S>
     struct __stored_sender_ref {
         using sender_concept = std::execution::sender_t;
+        using source_t = std::conditional_t<std::is_copy_constructible_v<S>, S&, S>;
 
         S* sender;
 
         template<class Self, class Env>
         static auto get_completion_signatures() noexcept
-            -> std::execution::completion_signatures_of_t<S&, Env> {
+            -> std::execution::completion_signatures_of_t<source_t, Env> {
             return {};
         }
 
         template<std::execution::receiver R>
         auto connect(R receiver) &&
-            -> std::execution::connect_result_t<S&, R> {
+            -> std::execution::connect_result_t<source_t, R> {
             return std::execution::connect(
-                *sender,
+                static_cast<source_t&&>(*sender),
                 std::move(receiver));
         }
 
@@ -147,6 +149,7 @@ class any_sender_of {
                 static_assert(std::same_as<decltype(result), std::optional<VT>>);
                 return result;
             },
+            .consuming = !std::is_copy_constructible_v<S>,
         };
         return &vt;
     }
@@ -238,6 +241,11 @@ public:
     // Convenience: run sync_wait on the stored sender
     [[nodiscard]] std::optional<value_tuple_t> sync_wait() {
         if (!__ptr) throw std::runtime_error("any_sender_of: empty");
+        // A consuming attempt empties storage even if connect or wait throws.
+        struct reset_after_wait {
+            any_sender_of* self;
+            ~reset_after_wait() { if (self) self->reset(); }
+        } guard{__vt->consuming ? this : nullptr};
         return __vt->do_sync_wait(__ptr);
     }
 

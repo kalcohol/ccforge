@@ -175,6 +175,10 @@ struct delayed_sender {
 
 struct delayed_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     std::shared_ptr<delayed_scheduler_state> state;
 
@@ -230,6 +234,10 @@ struct inline_depth_sender {
 
 struct inline_depth_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     std::shared_ptr<inline_depth_state> state;
 

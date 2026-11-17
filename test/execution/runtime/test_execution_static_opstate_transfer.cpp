@@ -25,6 +25,11 @@ struct test_schedule_sender;
 template<std::size_t Bytes = 1, std::size_t Alignment = alignof(std::max_align_t)>
 struct test_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     schedule_state* state = nullptr;
     auto schedule() const noexcept -> test_schedule_sender<Bytes, Alignment> { return {*this}; }
     bool operator==(const test_scheduler&) const noexcept = default;

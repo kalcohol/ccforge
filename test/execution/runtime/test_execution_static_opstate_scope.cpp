@@ -134,6 +134,11 @@ struct receiver {
 struct large_schedule_sender;
 struct large_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     observations* observed;
     auto schedule() const noexcept -> large_schedule_sender;
     bool operator==(const large_scheduler&) const noexcept = default;

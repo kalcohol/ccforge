@@ -70,6 +70,11 @@ struct error_schedule_sender : signature_sender<std::execution::set_value_t(),
 };
 struct error_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
+
     auto schedule() const noexcept -> error_schedule_sender { return {}; }
     bool operator==(const error_scheduler&) const noexcept = default;
 };

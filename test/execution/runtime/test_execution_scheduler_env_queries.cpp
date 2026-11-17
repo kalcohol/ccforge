@@ -121,6 +121,11 @@ struct transfer_schedule_sender {
 };
 struct transfer_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     int* connections;
     int* active_resource;
     int destination;
@@ -160,15 +165,9 @@ struct missing_scheduler_receiver {
     using receiver_concept = ex::receiver_t;
     domain_only_env environment;
     bool* matched;
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-    void set_value(ex::run_loop::scheduler scheduler) && noexcept {
-        *matched = scheduler == environment.scheduler;
-    }
-#else
     void set_value(ex::inline_scheduler scheduler) && noexcept {
         *matched = scheduler == ex::inline_scheduler{};
     }
-#endif
     void set_error(std::exception_ptr) && noexcept { *matched = false; }
     domain_only_env get_env() const noexcept { return environment; }
 };
@@ -278,17 +277,23 @@ void check_continues_destination() {
         attrs, probe_env{})), transfer_destination_domain>);
     (void)attrs.query(ex::get_completion_domain<>, probe_env{});
     auto child = [destination, &active_resource](auto&...) {
-        return ex::read_env([destination, &active_resource](const auto& env) noexcept {
+        return ex::read_env([](const auto& env) noexcept {
             static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
-            bool matched = env.query(forwarding_key{}) == 10 &&
-                           active_resource == destination.destination;
             if constexpr (!std::same_as<Tag, ex::set_error_t>) {
                 static_assert(std::same_as<decltype(ex::get_domain(env)),
                                            transfer_destination_domain>);
                 (void)ex::get_domain(env);
-                matched = matched && ex::get_start_scheduler(env) == destination;
+                return std::pair{env.query(forwarding_key{}), ex::get_start_scheduler(env)};
+            } else {
+                return env.query(forwarding_key{});
             }
-            return matched;
+        }) | ex::then([destination, &active_resource](auto observed) noexcept {
+            bool matched = active_resource == destination.destination;
+            if constexpr (!std::same_as<Tag, ex::set_error_t>) {
+                return matched && observed.first == 10 && observed.second == destination;
+            } else {
+                return matched && observed == 10;
+            }
         });
     };
     auto sender = [&transfer, &child] {
@@ -504,21 +509,15 @@ TEST(SchedulerEnvQueriesTest, InlineScheduleLetAndWriteEnvReachTheChildEnvironme
     EXPECT_EQ(std::get<0>(*result), scheduler);
 }
 
-TEST(SchedulerEnvQueriesTest, InlineLetWithoutReceiverSchedulerUsesTheModeFallback) {
+TEST(SchedulerEnvQueriesTest, InlineLetWithoutReceiverSchedulerUsesInlineScheduler) {
     ex::run_loop loop;
     domain_only_env environment{loop.get_scheduler()};
     auto predecessor = ex::schedule(ex::inline_scheduler{});
     auto selected = ex::__forge_let::__make_let_env<ex::__forge_let::__value_tag>(
         predecessor, environment);
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-    // Missing get_scheduler selects the domain alternative, not SCHED-ENV.
-    static_assert(std::same_as<decltype(selected), ex::prop<ex::get_domain_t, domain>>);
-    static_assert(std::same_as<decltype(ex::get_domain(selected)), domain>);
-#else
     static_assert(std::same_as<decltype(selected),
                                ex::__forge_let::__scheduler_env<ex::inline_scheduler>>);
     EXPECT_EQ(ex::get_start_scheduler(selected), ex::inline_scheduler{});
-#endif
     auto sender = ex::let_value(predecessor, [] {
         return ex::read_env(ex::get_start_scheduler);
     });
@@ -588,21 +587,24 @@ TEST(SchedulerEnvQueriesTest, RunLoopScheduleLetAndWriteEnvReachTheChildEnvironm
 TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopToken) {
     ex::counting_scope scope;
     std::inplace_stop_source downstream;
-    auto inspect = [token = downstream.get_token()](const auto& env) noexcept {
+    auto inspect = ex::read_env([](const auto& env) noexcept {
         static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
         auto actual = ex::get_stop_token(env);
         static_assert(std::stoppable_token<decltype(actual)>);
+        return std::pair{env.query(forwarding_key{}), actual};
+    }) | ex::then([token = downstream.get_token()](auto observed) noexcept {
+        auto actual = observed.second;
         if constexpr (std::same_as<decltype(actual), decltype(token)>) {
-            return env.query(forwarding_key{}) == 10 && actual != token;
+            return observed.first == 10 && actual != token;
         } else {
             static_assert(std::same_as<decltype(actual),
                 ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>>);
-            return env.query(forwarding_key{}) == 10 && actual.stop_possible() && !actual.stop_requested();
+            return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
-    };
+    });
     auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
     auto result = forge::sync_wait(ex::write_env(
-        scope.get_token().wrap(ex::read_env(inspect)), base));
+        scope.get_token().wrap(std::move(inspect)), base));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
     (void)forge::sync_wait(scope.join());
@@ -611,20 +613,23 @@ TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopTok
 TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopToken) {
     ex::simple_counting_scope scope;
     std::inplace_stop_source downstream;
-    auto inspect = [token = downstream.get_token()](const auto& env) noexcept {
+    auto inspect = ex::read_env([](const auto& env) noexcept {
         static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
         auto actual = ex::get_stop_token(env);
         static_assert(std::stoppable_token<decltype(actual)>);
+        return std::pair{env.query(forwarding_key{}), actual};
+    }) | ex::then([token = downstream.get_token()](auto observed) noexcept {
+        auto actual = observed.second;
         if constexpr (std::same_as<decltype(actual), decltype(token)>) {
-            return env.query(forwarding_key{}) == 10 && actual != token;
+            return observed.first == 10 && actual != token;
         } else {
             static_assert(std::same_as<decltype(actual),
                 ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>>);
-            return env.query(forwarding_key{}) == 10 && actual.stop_possible() && !actual.stop_requested();
+            return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
-    };
+    });
     auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
-    auto future = ex::spawn_future(ex::read_env(inspect), scope.get_token(), base);
+    auto future = ex::spawn_future(std::move(inspect), scope.get_token(), base);
     auto result = forge::sync_wait(std::move(future));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));

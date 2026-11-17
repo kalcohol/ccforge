@@ -140,6 +140,10 @@ struct starts_on_domain {
 
 struct domain_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     int identity = 0;
 
@@ -522,6 +526,11 @@ struct continues_schedule_sender;
 
 struct continues_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
+
     continues_hop_state* state;
 
     auto schedule() const noexcept -> continues_schedule_sender;

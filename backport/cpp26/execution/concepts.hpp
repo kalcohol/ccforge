@@ -29,10 +29,7 @@
 
 namespace std::execution {
 
-// Forge limitation: receiver completion callbacks are required to be noexcept,
-// including set_value. User-code exceptions should be translated by senders or
-// adaptors into set_error(std::exception_ptr); throwing completion callbacks are
-// not supported by this backport.
+// Completion functions enforce the working draft's void and nothrow Mandates.
 namespace __forge_cpo_detail {
 
 template<class R, class... Vs>
@@ -69,7 +66,9 @@ concept __nothrow_member_set_stopped = requires(R&& r) {
 
 struct set_value_t {
     template<class R, class... Vs>
-        requires (__forge_cpo_detail::__member_set_value<R, Vs...> ||
+        requires (!std::is_lvalue_reference_v<R> &&
+                  !std::is_const_v<std::remove_reference_t<R>>) &&
+                 (__forge_cpo_detail::__member_set_value<R, Vs...> ||
                   __forge_detail::tag_invocable<set_value_t, R, Vs...>)
     void operator()(R&& r, Vs&&... vs) const noexcept {
         if constexpr (__forge_cpo_detail::__member_set_value<R, Vs...>) {
@@ -79,6 +78,7 @@ struct set_value_t {
         } else {
             static_assert(__forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>,
                           "set_value(receiver, ...) must be noexcept");
+            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_value_t, R, Vs...>, void>);
             __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<Vs&&>(vs)...);
         }
     }
@@ -86,7 +86,9 @@ struct set_value_t {
 
 struct set_error_t {
     template<class R, class E>
-        requires (__forge_cpo_detail::__member_set_error<R, E> ||
+        requires (!std::is_lvalue_reference_v<R> &&
+                  !std::is_const_v<std::remove_reference_t<R>>) &&
+                 (__forge_cpo_detail::__member_set_error<R, E> ||
                   __forge_detail::tag_invocable<set_error_t, R, E>)
     void operator()(R&& r, E&& e) const noexcept {
         if constexpr (__forge_cpo_detail::__member_set_error<R, E>) {
@@ -96,6 +98,7 @@ struct set_error_t {
         } else {
             static_assert(__forge_detail::nothrow_tag_invocable<set_error_t, R, E>,
                           "set_error(receiver, error) must be noexcept");
+            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_error_t, R, E>, void>);
             __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<E&&>(e));
         }
     }
@@ -103,7 +106,9 @@ struct set_error_t {
 
 struct set_stopped_t {
     template<class R>
-        requires (__forge_cpo_detail::__member_set_stopped<R> ||
+        requires (!std::is_lvalue_reference_v<R> &&
+                  !std::is_const_v<std::remove_reference_t<R>>) &&
+                 (__forge_cpo_detail::__member_set_stopped<R> ||
                   __forge_detail::tag_invocable<set_stopped_t, R>)
     void operator()(R&& r) const noexcept {
         if constexpr (__forge_cpo_detail::__member_set_stopped<R>) {
@@ -113,6 +118,7 @@ struct set_stopped_t {
         } else {
             static_assert(__forge_detail::nothrow_tag_invocable<set_stopped_t, R>,
                           "set_stopped(receiver) must be noexcept");
+            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_stopped_t, R>, void>);
             __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r));
         }
     }
@@ -122,8 +128,29 @@ inline constexpr set_value_t set_value{};
 inline constexpr set_error_t set_error{};
 inline constexpr set_stopped_t set_stopped{};
 
+namespace __forge_cpo_detail {
+template<class Sig>
+inline constexpr bool __completion_signature = false;
+template<class... Vs>
+inline constexpr bool __completion_signature<set_value_t(Vs...)> =
+    ((std::is_object_v<Vs> || std::is_reference_v<Vs>) && ...);
+template<class E>
+inline constexpr bool __completion_signature<set_error_t(E)> =
+    std::is_object_v<E> || std::is_reference_v<E>;
+template<>
+inline constexpr bool __completion_signature<set_stopped_t()> = true;
+} // namespace __forge_cpo_detail
+
 template<class... Sigs>
+    requires (__forge_cpo_detail::__completion_signature<Sigs> && ...)
 struct completion_signatures {};
+
+namespace __forge_cpo_detail {
+template<class T>
+inline constexpr bool __valid_completion_signatures = false;
+template<class... Sigs>
+inline constexpr bool __valid_completion_signatures<completion_signatures<Sigs...>> = true;
+} // namespace __forge_cpo_detail
 
 struct get_completion_signatures_t;
 
@@ -162,10 +189,23 @@ concept __nothrow_instance_completion_signatures = requires(S&& s, Env&& env) {
 };
 
 template<class S, class Env>
-concept __raw_completion_signatures_available =
-    __static_completion_signatures<S, Env> ||
-    __instance_completion_signatures<S, Env> ||
-    __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>;
+consteval bool __valid_raw_completion_signatures() {
+    if constexpr (__static_completion_signatures<S, Env>) {
+        return __valid_completion_signatures<decltype(std::remove_cvref_t<S>
+            ::template get_completion_signatures<S, std::remove_cvref_t<Env>>())>;
+    } else if constexpr (__instance_completion_signatures<S, Env>) {
+        return __valid_completion_signatures<decltype(std::declval<S>()
+            .get_completion_signatures(std::declval<Env>()))>;
+    } else if constexpr (__forge_detail::tag_invocable<get_completion_signatures_t, S, Env>) {
+        return __valid_completion_signatures<__forge_detail::tag_invoke_result_t<
+            get_completion_signatures_t, S, Env>>;
+    } else {
+        return false;
+    }
+}
+
+template<class S, class Env>
+concept __raw_completion_signatures_available = __valid_raw_completion_signatures<S, Env>();
 
 template<class S, class Env>
 consteval bool __completion_signatures_noexcept() {
@@ -267,13 +307,6 @@ decltype(auto) __transformed_completion_signatures(S&& s, Env&& env) {
 }
 
 } // namespace __forge_cpo_detail
-
-template<class S, class... Env>
-    requires (sizeof...(Env) <= 1)
-using completion_signatures_of_t = decltype(
-    std::execution::get_completion_signatures(
-        std::declval<S>(),
-        std::declval<Env>()...));
 
 namespace __forge_meta {
 
@@ -687,15 +720,6 @@ inline constexpr bool sends_stopped_v =
     __forge_meta::sends_stopped_from<decltype(std::execution::get_completion_signatures(
         std::declval<Sender>(), std::declval<Env>()))>::value;
 
-// ──────────────────────────────────────────────────────────────────────────
-// queryable concept — [exec.queryable]
-// ──────────────────────────────────────────────────────────────────────────
-
-// A type is queryable if it is a destructible object type.
-// This is the foundation for env, sender, and receiver constraints.
-template<class T>
-concept queryable = std::destructible<T>;
-
 // Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
 struct receiver_tag {};
 struct sender_tag {};
@@ -706,6 +730,22 @@ using receiver_t = receiver_tag;
 using sender_t = sender_tag;
 using operation_state_t = operation_state_tag;
 using scheduler_t = scheduler_tag;
+
+// enable_sender trait — [exec.snd]
+// Defaults to checking the sender_concept marker.
+template<class T>
+inline constexpr bool enable_sender =
+    requires { typename T::sender_concept; } &&
+    requires { requires std::derived_from<typename T::sender_concept, sender_t>; };
+
+template<class S>
+concept sender =
+    enable_sender<std::remove_cvref_t<S>> &&
+    std::move_constructible<std::remove_cvref_t<S>> &&
+    std::constructible_from<std::remove_cvref_t<S>, S> &&
+    requires(const std::remove_cvref_t<S>& s) {
+        { std::execution::get_env(s) } -> queryable;
+    };
 
 // ──────────────────────────────────────────────────────────────────────────
 // default_domain / get_domain — [exec.domain.default], [exec.get.domain]
@@ -730,36 +770,41 @@ concept __tag_apply_sender = requires(Sender&& sndr, Args&&... args) {
         static_cast<Sender&&>(sndr), static_cast<Args&&>(args)...);
 };
 
+// Internal dispatch also serves connect's borrowed, non-movable source extension.
+template<class Tag, class Sender, class Env>
+    requires __sender_tag_transformable<Tag, Sender, Env>
+constexpr decltype(auto) __default_transform_sender(Sender&& sndr, const Env& env)
+    noexcept(noexcept(__tag_of_t<Sender>{}.transform_sender(
+        Tag{}, static_cast<Sender&&>(sndr), env))) {
+    return __tag_of_t<Sender>{}.transform_sender(
+        Tag{}, static_cast<Sender&&>(sndr), env);
+}
+
+template<class Tag, class Sender, class Env>
+    requires (!__sender_tag_transformable<Tag, Sender, Env>)
+constexpr decltype(auto) __default_transform_sender(Sender&& sndr, const Env&)
+    noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr)))) {
+    return static_cast<Sender>(static_cast<Sender&&>(sndr));
+}
+
 } // namespace __forge_domain
 
 struct default_domain {
-    template<class Tag, class Sender, class Env>
-        requires __forge_domain::__sender_tag_transformable<Tag, Sender, Env>
-    static constexpr decltype(auto) transform_sender(
-        Tag,
-        Sender&& sndr,
-        const Env& env)
-        noexcept(noexcept(__forge_domain::__tag_of_t<Sender>{}.transform_sender(
-            Tag{}, static_cast<Sender&&>(sndr), env))) {
-        return __forge_domain::__tag_of_t<Sender>{}.transform_sender(
-            Tag{}, static_cast<Sender&&>(sndr), env);
+    template<class Tag, sender Sender, queryable Env>
+    static constexpr decltype(auto) transform_sender(Tag, Sender&& sndr, const Env& env)
+        noexcept(noexcept(__forge_domain::__default_transform_sender<Tag>(
+            static_cast<Sender&&>(sndr), env))) {
+        return __forge_domain::__default_transform_sender<Tag>(
+            static_cast<Sender&&>(sndr), env);
     }
 
-    template<class Tag, class Sender, class Env>
-    static constexpr auto transform_sender(Tag, Sender&& sndr, const Env&)
-        noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr))))
-            -> Sender {
+    template<sender Sender, queryable Env>
+    static constexpr decltype(auto) transform_sender(Sender&& sndr, const Env&)
+        noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr)))) {
         return static_cast<Sender>(static_cast<Sender&&>(sndr));
     }
 
-    template<class Sender, class Env>
-    static constexpr auto transform_sender(Sender&& sndr, const Env&)
-        noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr))))
-            -> Sender {
-        return static_cast<Sender>(static_cast<Sender&&>(sndr));
-    }
-
-    template<class Tag, class Sender, class... Args>
+    template<class Tag, sender Sender, class... Args>
         requires __forge_domain::__tag_apply_sender<Tag, Sender, Args...>
     static constexpr decltype(auto) apply_sender(
         Tag,
@@ -771,7 +816,34 @@ struct default_domain {
             static_cast<Sender&&>(sndr), static_cast<Args&&>(args)...);
     }
 
-    bool operator==(const default_domain&) const noexcept = default;
+};
+
+template<class... Domains>
+struct indeterminate_domain {
+    indeterminate_domain() = default;
+    constexpr indeterminate_domain(auto&&) noexcept {}
+
+private:
+    template<class D, class Tag, class S, class Env>
+    static consteval bool __compatible() {
+        if constexpr (requires { D().transform_sender(Tag(), std::declval<S>(), std::declval<const Env&>()); }) {
+            return std::same_as<std::decay_t<decltype(D().transform_sender(
+                Tag(), std::declval<S>(), std::declval<const Env&>()))>,
+                std::decay_t<decltype(default_domain().transform_sender(
+                    Tag(), std::declval<S>(), std::declval<const Env&>()))>>;
+        } else {
+            return true;
+        }
+    }
+
+public:
+    template<class Tag, sender S, queryable Env>
+    static constexpr decltype(auto) transform_sender(Tag tag, S&& sndr, const Env& env)
+        noexcept(noexcept(default_domain().transform_sender(tag, static_cast<S&&>(sndr), env))) {
+        static_assert((__compatible<Domains, Tag, S, Env>() && ...),
+                      "indeterminate domain transformations must agree with default_domain");
+        return default_domain().transform_sender(tag, static_cast<S&&>(sndr), env);
+    }
 };
 
 struct get_domain_t;
@@ -859,8 +931,17 @@ private:
             return get_completion_domain_t<set_value_t>
                 ::template __domain_type<Attrs, Envs...>();
         } else {
-            using scheduler_t = typename decltype(__completion_query_type<
-                get_completion_scheduler_t<CPO>, Attrs, Envs...>())::type;
+            using scheduler_t = typename decltype([] {
+                if constexpr (requires {
+                    std::execution::get_completion_scheduler<CPO>(
+                        std::declval<Attrs>(), std::declval<Envs>()...);
+                }) {
+                    return std::type_identity<decltype(std::execution::get_completion_scheduler<CPO>(
+                        std::declval<Attrs>(), std::declval<Envs>()...))>{};
+                } else {
+                    return std::type_identity<__no_completion_query>{};
+                }
+            }())::type;
             using scheduler_domain_t = typename decltype(__completion_query_type<
                 get_completion_domain_t<set_value_t>, scheduler_t,
                 typename __completion_domain_env<
@@ -881,10 +962,12 @@ public:
     template<class Attrs, class... Envs>
         requires (std::same_as<CPO, void> || std::same_as<CPO, set_value_t> ||
                   std::same_as<CPO, set_error_t> || std::same_as<CPO, set_stopped_t>) &&
-                 std::is_nothrow_default_constructible_v<
+                 std::is_default_constructible_v<
                      typename decltype(__domain_type<Attrs, Envs...>())::type>
     constexpr auto operator()(Attrs&&, Envs&&...) const noexcept
         -> typename decltype(__domain_type<Attrs, Envs...>())::type {
+        static_assert(std::is_nothrow_default_constructible_v<
+            typename decltype(__domain_type<Attrs, Envs...>())::type>);
         return {};
     }
 
@@ -906,56 +989,12 @@ template<class Env>
 concept __valid_env_domain =
     __nothrow_default_domain_query<get_domain_t, const Env&>;
 
-// Inline completion domains use HIDE-SCHED when deriving an environment's
-// domain. Keep this view out of the public compatibility overload selection.
 template<class Env>
-struct __hide_scheduler {
-    const Env* __env;
-
-    template<class Query, class... Args>
-        requires (!std::same_as<Query, get_scheduler_t> &&
-                  !std::same_as<Query, get_domain_t> &&
-                  __forge_env_detail::__queryable<Query, const Env&, Args...>)
-    decltype(auto) query(Query q, Args&&... args) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&, Args...>) {
-        return __forge_env_detail::__query(q, *__env, static_cast<Args&&>(args)...);
-    }
-};
-
-template<class Env>
-consteval auto __hidden_scheduler_domain_type() {
-    if constexpr (__env_domain<Env>) {
-        return std::type_identity<__queried_domain_t<get_domain_t, const Env&>>{};
-    } else if constexpr (requires {
-        std::execution::get_completion_domain<set_value_t>(
-            std::execution::get_scheduler(std::declval<const Env&>()),
-            std::declval<__hide_scheduler<Env>>());
-    }) {
-        return std::type_identity<decltype(std::execution::get_completion_domain<set_value_t>(
-            std::execution::get_scheduler(std::declval<const Env&>()),
-            std::declval<__hide_scheduler<Env>>()))>{};
-    } else {
-        return std::type_identity<default_domain>{};
-    }
-}
-
-template<class Env>
-using __hidden_scheduler_domain_t =
-    typename decltype(__hidden_scheduler_domain_type<Env>())::type;
-
-// Apply the draft get_domain alternatives inside inline attributes. Performing
-// the hidden lookup here terminates recursion even through forwarding schedulers,
-// without replacing the environment seen by existing member or ADL overloads.
-template<class Env>
-    requires std::is_nothrow_default_constructible_v<__hidden_scheduler_domain_t<Env>>
-auto __get_domain_with_hidden_scheduler(const Env&) noexcept
-    -> __hidden_scheduler_domain_t<Env> {
-    return {};
-}
+using __hide_scheduler = __forge_env_detail::__hide_scheduler<Env>;
 
 template<class Env>
 concept __scheduler_completion_domain = requires(const Env& env) {
-    std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), env);
+    std::execution::get_completion_domain<set_value_t>(std::execution::get_scheduler(env), __hide_scheduler<Env>{&env});
 };
 
 } // namespace __forge_domain
@@ -963,30 +1002,34 @@ concept __scheduler_completion_domain = requires(const Env& env) {
 struct get_domain_t {
     template<class Env>
         requires __forge_domain::__env_domain<Env> &&
-                 __forge_domain::__valid_env_domain<Env>
-    auto operator()(const Env&) const noexcept
+                 std::is_default_constructible_v<
+                     __forge_domain::__queried_domain_t<get_domain_t, const Env&>>
+    constexpr auto operator()(const Env&) const noexcept
         -> __forge_domain::__queried_domain_t<get_domain_t, const Env&> {
+        static_assert(__forge_domain::__valid_env_domain<Env>);
         return {};
     }
 
     template<class Env>
         requires (!__forge_domain::__env_domain<Env> &&
                   __forge_domain::__scheduler_completion_domain<Env>)
-    auto operator()(const Env&) const noexcept
+    constexpr auto operator()(const Env&) const noexcept
             -> decltype(std::execution::get_completion_domain<set_value_t>(
                 std::execution::get_scheduler(std::declval<const Env&>()),
-                std::declval<const Env&>())) {
+                std::declval<__forge_domain::__hide_scheduler<Env>>())) {
         using domain_t = std::remove_cvref_t<decltype(
             std::execution::get_completion_domain<set_value_t>(
                 std::execution::get_scheduler(std::declval<const Env&>()),
-                std::declval<const Env&>()))>;
+                std::declval<__forge_domain::__hide_scheduler<Env>>()))>;
+        static_assert(std::is_nothrow_default_constructible_v<domain_t>,
+                      "domain construction must be noexcept");
         return domain_t{};
     }
 
     template<class Env>
         requires (!__forge_domain::__env_domain<Env> &&
                   !__forge_domain::__scheduler_completion_domain<Env>)
-    default_domain operator()(const Env&) const noexcept {
+    constexpr default_domain operator()(const Env&) const noexcept {
         return {};
     }
 
@@ -999,14 +1042,17 @@ inline constexpr get_domain_t get_domain{};
 
 struct start_t {
     template<class O>
-        requires (requires(O& op) { op.start(); } ||
-                  __forge_detail::tag_invocable<start_t, O&>)
-    void operator()(O& op) const noexcept {
+        requires std::is_lvalue_reference_v<O> &&
+                 (requires(O&& op) { op.start(); } ||
+                  __forge_detail::tag_invocable<start_t, O>)
+    void operator()(O&& op) const noexcept {
         if constexpr (requires { op.start(); }) {
             static_assert(noexcept(op.start()), "start() must be noexcept");
+            static_assert(std::same_as<decltype(op.start()), void>, "start() must return void");
             op.start();
         } else {
             static_assert(__forge_detail::nothrow_tag_invocable<start_t, O&>, "start() must be noexcept");
+            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<start_t, O>, void>);
             __forge_detail::tag_invoke_fn(*this, op);
         }
     }
@@ -1029,6 +1075,12 @@ concept receiver =
     std::move_constructible<std::remove_cvref_t<R>> &&
     std::constructible_from<std::remove_cvref_t<R>, R> &&
     std::is_nothrow_move_constructible_v<std::remove_cvref_t<R>>;
+
+template<class R, class ChildOp>
+concept inlinable_receiver = receiver<R> && requires(ChildOp* child) {
+    { std::remove_cvref_t<R>::make_receiver_for(child) } noexcept
+        -> std::same_as<std::remove_cvref_t<R>>;
+};
 
 namespace __forge_concepts {
 
@@ -1068,22 +1120,6 @@ struct receiver_of_impl<R, completion_signatures<Sigs...>>
 template<class R, class Completions>
 concept receiver_of = __forge_concepts::receiver_of_impl<R, Completions>::value;
 
-// enable_sender trait — [exec.snd]
-// Defaults to checking the sender_concept marker.
-template<class T>
-inline constexpr bool enable_sender =
-    requires { typename T::sender_concept; } &&
-    requires { requires std::derived_from<typename T::sender_concept, sender_t>; };
-
-template<class S>
-concept sender =
-    enable_sender<std::remove_cvref_t<S>> &&
-    std::move_constructible<std::remove_cvref_t<S>> &&
-    std::constructible_from<std::remove_cvref_t<S>, S> &&
-    requires(const std::remove_cvref_t<S>& s) {
-        { std::execution::get_env(s) } -> queryable;
-    };
-
 template<sender Sndr>
 using tag_of_t = __forge_domain::__tag_of_t<Sndr>;
 
@@ -1093,8 +1129,15 @@ concept sender_in =
     (sizeof...(Env) <= 1) &&
     (queryable<Env> && ...) &&
     requires {
-        typename completion_signatures_of_t<S, Env...>;
+        std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()...);
     };
+
+template<class S, class... Env>
+    requires sender_in<S, Env...>
+using completion_signatures_of_t = decltype(
+    std::execution::get_completion_signatures(
+        std::declval<S>(),
+        std::declval<Env>()...));
 
 template<class S,
          class Env = env<>,
@@ -1174,8 +1217,8 @@ consteval bool __transform_sender_once_noexcept() {
         return noexcept(std::declval<D&>().transform_sender(
             std::declval<S>(), std::declval<const Env&>()));
     } else {
-        return noexcept(default_domain{}.transform_sender(
-            Tag{}, std::declval<S>(), std::declval<const Env&>()));
+        return noexcept(__default_transform_sender<Tag>(
+            std::declval<S>(), std::declval<const Env&>()));
     }
 }
 
@@ -1191,7 +1234,7 @@ constexpr decltype(auto) __transform_sender_once(
     } else if constexpr (__legacy_transform_sender<D, S, Env>) {
         return domain.transform_sender(static_cast<S&&>(sndr), env);
     } else {
-        return default_domain{}.transform_sender(tag, static_cast<S&&>(sndr), env);
+        return __default_transform_sender<Tag>(static_cast<S&&>(sndr), env);
     }
 }
 
@@ -1224,6 +1267,8 @@ constexpr auto __completion_domain_for(S&&, const Env&)
             std::execution::get_completion_domain<>(
                 std::execution::get_env(std::declval<S&>()),
                 std::declval<const Env&>()))>;
+        static_assert(std::is_nothrow_default_constructible_v<domain_t>,
+                      "domain construction must be noexcept");
         return domain_t{};
     } else {
         return default_domain{};
@@ -1251,6 +1296,8 @@ constexpr auto __start_domain_for(const Env&)
                   }) {
         using domain_t = std::remove_cvref_t<decltype(
             std::execution::get_domain(std::declval<const Env&>()))>;
+        static_assert(std::is_nothrow_default_constructible_v<domain_t>,
+                      "domain construction must be noexcept");
         return domain_t{};
     } else {
         return default_domain{};
@@ -1428,22 +1475,18 @@ using __sender_completion_domain_for_t =
 
 } // namespace __forge_domain
 
-struct transform_sender_t {
-    template<class S, class Env>
-        requires sender<S> && queryable<Env> &&
-                 requires(S&& sndr, const Env& env) {
-                     __forge_domain::__transform_sender_for_connect(
-                         static_cast<S&&>(sndr), env);
-                 }
-    constexpr decltype(auto) operator()(S&& sndr, const Env& env) const
-        noexcept(noexcept(__forge_domain::__transform_sender_for_connect(
-            static_cast<S&&>(sndr), env))) {
-        return __forge_domain::__transform_sender_for_connect(
-            static_cast<S&&>(sndr), env);
-    }
-};
-
-inline constexpr transform_sender_t transform_sender{};
+template<class S, class Env>
+    requires sender<S> && queryable<Env> &&
+             requires(S&& sndr, const Env& env) {
+                 __forge_domain::__transform_sender_for_connect(
+                     static_cast<S&&>(sndr), env);
+             }
+constexpr decltype(auto) transform_sender(S&& sndr, const Env& env)
+    noexcept(noexcept(__forge_domain::__transform_sender_for_connect(
+        static_cast<S&&>(sndr), env))) {
+    return __forge_domain::__transform_sender_for_connect(
+        static_cast<S&&>(sndr), env);
+}
 
 namespace __forge_domain {
 
@@ -1471,36 +1514,32 @@ consteval bool __apply_sender_noexcept() {
 
 } // namespace __forge_domain
 
-struct apply_sender_t {
-    template<class Domain, class Tag, class S, class... Args>
-        requires sender<S> &&
-                 (__forge_domain::__domain_apply_sender<
-                      Domain, Tag, S, Args...> ||
-                  __forge_domain::__domain_apply_sender<
-                      default_domain, Tag, S, Args...>)
-    constexpr decltype(auto) operator()(
-        Domain domain,
-        Tag,
-        S&& sndr,
-        Args&&... args) const
-        noexcept(__forge_domain::__apply_sender_noexcept<
-            Domain, Tag, S, Args...>()) {
-        if constexpr (__forge_domain::__domain_apply_sender<
-                          Domain, Tag, S, Args...>) {
-            return domain.apply_sender(
-                Tag{},
-                static_cast<S&&>(sndr),
-                static_cast<Args&&>(args)...);
-        } else {
-            return default_domain{}.apply_sender(
-                Tag{},
-                static_cast<S&&>(sndr),
-                static_cast<Args&&>(args)...);
-        }
+template<class Domain, class Tag, class S, class... Args>
+    requires sender<S> &&
+             (__forge_domain::__domain_apply_sender<
+                  Domain, Tag, S, Args...> ||
+              __forge_domain::__domain_apply_sender<
+                  default_domain, Tag, S, Args...>)
+constexpr decltype(auto) apply_sender(
+    Domain domain,
+    Tag,
+    S&& sndr,
+    Args&&... args)
+    noexcept(__forge_domain::__apply_sender_noexcept<
+        Domain, Tag, S, Args...>()) {
+    if constexpr (__forge_domain::__domain_apply_sender<
+                      Domain, Tag, S, Args...>) {
+        return domain.apply_sender(
+            Tag{},
+            static_cast<S&&>(sndr),
+            static_cast<Args&&>(args)...);
+    } else {
+        return default_domain{}.apply_sender(
+            Tag{},
+            static_cast<S&&>(sndr),
+            static_cast<Args&&>(args)...);
     }
-};
-
-inline constexpr apply_sender_t apply_sender{};
+}
 
 namespace __forge_domain {
 
@@ -1615,12 +1654,25 @@ consteval bool __schedule_noexcept() {
 
 } // namespace __forge_cpo_detail
 
+namespace __forge_cpo_detail {
+template<class S>
+    requires __member_schedule<S>
+auto __schedule_type() -> std::type_identity<decltype(std::declval<S>().schedule())>;
+
+template<class S>
+    requires (!__member_schedule<S>) && __forge_detail::tag_invocable<schedule_t, S>
+auto __schedule_type() -> std::type_identity<__forge_detail::tag_invoke_result_t<schedule_t, S>>;
+} // namespace __forge_cpo_detail
+
 struct schedule_t {
     template<class S>
         requires (__forge_cpo_detail::__member_schedule<S> ||
                   __forge_detail::tag_invocable<schedule_t, S>)
-    auto operator()(S&& s) const
-        noexcept(__forge_cpo_detail::__schedule_noexcept<S>()) {
+    constexpr auto operator()(S&& s) const
+        noexcept(__forge_cpo_detail::__schedule_noexcept<S>())
+        -> typename decltype(__forge_cpo_detail::__schedule_type<S>())::type {
+        using result_t = typename decltype(__forge_cpo_detail::__schedule_type<S>())::type;
+        static_assert(sender<result_t>, "schedule must return a sender");
         if constexpr (__forge_cpo_detail::__member_schedule<S>) {
             return static_cast<S&&>(s).schedule();
         } else {
@@ -1630,14 +1682,32 @@ struct schedule_t {
 };
 inline constexpr schedule_t schedule{};
 
+namespace __forge_env_detail {
+
 template<class S>
-concept scheduler =
-    std::copy_constructible<std::remove_cvref_t<S>> &&
-    std::equality_comparable<std::remove_cvref_t<S>> &&
-    queryable<std::remove_cvref_t<S>> &&
-    requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
-    std::derived_from<typename std::remove_cvref_t<S>::scheduler_concept, scheduler_t> &&
-    requires(std::remove_cvref_t<S>& s) { { std::execution::schedule(s) } -> sender; };
+consteval bool __scheduler_shape() {
+    return requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
+        requires { requires std::derived_from<
+            typename std::remove_cvref_t<S>::scheduler_concept, scheduler_tag>; } &&
+        queryable<S> && std::copyable<std::remove_cvref_t<S>> &&
+        std::equality_comparable<std::remove_cvref_t<S>> &&
+        requires(S&& s) { { std::execution::schedule(static_cast<S&&>(s)) } -> sender; };
+}
+
+} // namespace __forge_env_detail
+
+template<class S>
+concept scheduler = __forge_env_detail::__scheduler_shape<S>() && requires(S&& s) {
+    { std::execution::get_forward_progress_guarantee(s) } -> std::same_as<forward_progress_guarantee>;
+};
+
+namespace __forge_env_detail {
+template<class S>
+consteval bool __scheduler() { return scheduler<S>; }
+} // namespace __forge_env_detail
+
+template<scheduler Sch>
+using schedule_result_t = decltype(std::execution::schedule(std::declval<Sch>()));
 
 namespace __forge_domain {
 
@@ -1649,3 +1719,56 @@ consteval bool __scheduler_attributes() {
 } // namespace __forge_domain
 
 } // namespace std::execution
+
+namespace std {
+
+template<class... Ds, class... Es>
+struct common_type<execution::indeterminate_domain<Ds...>, execution::indeterminate_domain<Es...>> {
+    using type = execution::__forge_meta::list_to_variant_t<execution::indeterminate_domain,
+        execution::__forge_meta::list_push_unique_all_t<execution::__forge_meta::type_list<>, Ds..., Es...>>;
+};
+
+template<class... Ds, class D>
+struct common_type<execution::indeterminate_domain<Ds...>, D>
+    : conditional_t<sizeof...(Ds) == 0, type_identity<D>,
+                    common_type<execution::indeterminate_domain<Ds...>, execution::indeterminate_domain<D>>> {};
+
+template<class D, class... Ds>
+struct common_type<D, execution::indeterminate_domain<Ds...>>
+    : common_type<execution::indeterminate_domain<Ds...>, D> {};
+
+} // namespace std
+
+namespace std::execution::__forge_domain {
+
+template<class... Ds>
+consteval auto __common_domain_type() {
+    if constexpr (requires { std::common_type_t<Ds...>(); }) {
+        return std::type_identity<std::common_type_t<Ds...>>{};
+    } else {
+        return std::type_identity<__forge_meta::list_to_variant_t<indeterminate_domain,
+            __forge_meta::list_push_unique_all_t<__forge_meta::type_list<>, Ds...>>>{};
+    }
+}
+template<class... Ds>
+using __common_domain_t = typename decltype(__common_domain_type<Ds...>())::type;
+
+template<class Tag, class S, class... Envs>
+    requires (sizeof...(Envs) != 0 || requires {
+        std::execution::get_completion_domain<Tag>(std::execution::get_env(std::declval<S>()));
+    })
+consteval auto __compl_domain_type() {
+    if constexpr (requires {
+        std::execution::get_completion_domain<Tag>(
+            std::execution::get_env(std::declval<S>()), std::declval<Envs>()...);
+    }) {
+        return std::type_identity<decltype(std::execution::get_completion_domain<Tag>(
+            std::execution::get_env(std::declval<S>()), std::declval<Envs>()...))>{};
+    } else {
+        return std::type_identity<indeterminate_domain<>>{};
+    }
+}
+template<class Tag, class S, class... Envs>
+using __compl_domain_t = typename decltype(__compl_domain_type<Tag, S, Envs...>())::type;
+
+} // namespace std::execution::__forge_domain

@@ -41,6 +41,11 @@ struct __unstoppable_scheduler {
 
     Scheduler __scheduler;
 
+    constexpr auto query(get_forward_progress_guarantee_t) const noexcept
+        -> forward_progress_guarantee {
+        return std::execution::get_forward_progress_guarantee(__scheduler);
+    }
+
     [[nodiscard]] auto schedule()
         noexcept(noexcept(std::execution::unstoppable(
             std::execution::schedule(__scheduler)))) {

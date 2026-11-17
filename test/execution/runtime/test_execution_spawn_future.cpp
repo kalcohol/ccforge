@@ -1136,11 +1136,13 @@ TEST(SpawnFutureTest, SenderAllocatorFallbackPreservesMoveOnlyPayloadAndEnvironm
     auto counts = std::make_shared<allocation_counts>();
 
     {
-        auto source = std::execution::read_env(
-            [value = std::make_unique<int>(42)](const auto& env) mutable noexcept {
-                auto allocator = std::execution::get_allocator(env);
-                auto scheduler = std::execution::get_scheduler(env);
-                return std::tuple{std::move(value), allocator.counts, scheduler};
+        auto source = std::execution::read_env([](const auto& env) noexcept {
+            auto allocator = std::execution::get_allocator(env);
+            auto scheduler = std::execution::get_scheduler(env);
+            return std::pair{allocator.counts, scheduler};
+        }) | std::execution::then(
+            [value = std::make_unique<int>(42)](auto observed) mutable noexcept {
+                return std::tuple{std::move(value), observed.first, observed.second};
             });
         static_assert(!std::is_copy_constructible_v<decltype(source)>);
         auto sender = allocator_attrs_sender{

@@ -26,14 +26,11 @@
 
 namespace std::execution {
 
-namespace __forge_inline {
-
 class inline_scheduler;
 
-struct env {
-    friend auto tag_invoke(get_scheduler_t, const env& self) noexcept -> inline_scheduler;
-    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env& self) noexcept -> inline_scheduler;
+namespace __forge_inline {
 
+struct __attrs {
     constexpr auto query(get_forward_progress_guarantee_t) const noexcept
         -> forward_progress_guarantee {
         return forward_progress_guarantee::weakly_parallel;
@@ -47,11 +44,19 @@ struct env {
     }
 
     template<class Env>
-    auto query(get_completion_domain_t<set_value_t>, Env&& e) const
-        noexcept(noexcept(__forge_domain::__get_domain_with_hidden_scheduler(static_cast<Env&&>(e))))
-        -> decltype(__forge_domain::__get_domain_with_hidden_scheduler(static_cast<Env&&>(e))) {
-        return __forge_domain::__get_domain_with_hidden_scheduler(static_cast<Env&&>(e));
+    constexpr auto query(get_completion_domain_t<set_value_t>, Env&& e) const
+        noexcept(noexcept(std::execution::get_domain(static_cast<Env&&>(e))))
+        -> decltype(std::execution::get_domain(static_cast<Env&&>(e))) {
+        return std::execution::get_domain(static_cast<Env&&>(e));
     }
+};
+
+struct env : __attrs {
+    using __attrs::query;
+    template<class Env>
+        requires (!requires(Env&& e) { std::execution::get_scheduler(static_cast<Env&&>(e)); })
+    constexpr auto query(get_completion_scheduler_t<set_value_t>, Env&&) const noexcept
+        -> inline_scheduler;
 };
 
 template<class R>
@@ -84,48 +89,37 @@ struct sender {
         return operation<R>(std::move(rcvr));
     }
 
-    auto get_env() const noexcept -> env { return {}; }
+    constexpr auto get_env() const noexcept -> env { return {}; }
 };
 
 } // namespace __forge_inline
 
-class __forge_inline::inline_scheduler {
+class inline_scheduler {
 public:
     using scheduler_concept = scheduler_t;
 
     inline_scheduler() noexcept = default;
 
-    [[nodiscard]] __forge_inline::sender schedule() const noexcept { return {}; }
+    [[nodiscard]] constexpr __forge_inline::sender schedule() const noexcept { return {}; }
 
     template<class Query, class... Args>
-        requires requires(const __forge_inline::env& attrs, Query q, Args&&... args) {
+        requires requires(const __forge_inline::__attrs& attrs, Query q, Args&&... args) {
             attrs.query(q, static_cast<Args&&>(args)...);
         }
     constexpr decltype(auto) query(Query q, Args&&... args) const
-        noexcept(noexcept(__forge_inline::env{}.query(q, static_cast<Args&&>(args)...))) {
-        return __forge_inline::env{}.query(q, static_cast<Args&&>(args)...);
+        noexcept(noexcept(__forge_inline::__attrs{}.query(q, static_cast<Args&&>(args)...))) {
+        return __forge_inline::__attrs{}.query(q, static_cast<Args&&>(args)...);
     }
 
-    bool operator==(const inline_scheduler&) const noexcept = default;
+    constexpr bool operator==(const inline_scheduler&) const noexcept = default;
 
-    // Keep unary self-answers in compatibility dispatch, outside the draft
-    // member surface used by strict queries and environment-dependent let.
-    friend auto tag_invoke(get_scheduler_t, const inline_scheduler&) noexcept
-        -> inline_scheduler { return {}; }
-    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const inline_scheduler&) noexcept
-        -> inline_scheduler { return {}; }
 };
 
 namespace __forge_inline {
-inline auto tag_invoke(get_scheduler_t, const env&) noexcept -> inline_scheduler { return {}; }
-inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const env&) noexcept -> inline_scheduler { return {}; }
-inline constexpr auto tag_invoke(get_forward_progress_guarantee_t, const inline_scheduler&) noexcept
-    -> forward_progress_guarantee {
-    return forward_progress_guarantee::weakly_parallel;
-}
+template<class Env>
+    requires (!requires(Env&& e) { std::execution::get_scheduler(static_cast<Env&&>(e)); })
+constexpr auto env::query(get_completion_scheduler_t<set_value_t>, Env&&) const noexcept
+    -> inline_scheduler { return {}; }
 } // namespace __forge_inline
-
-using inline_scheduler = __forge_inline::inline_scheduler;
-
 
 } // namespace std::execution

@@ -280,7 +280,7 @@ struct __completion_attrs {
     // unavailable. FWD-ENV alone would also forward the child's domain tags.
     template<class Query, class... Args>
         requires (!__completion_query_v<std::remove_cvref_t<Query>>) &&
-                 __forge_env_detail::__forwarding_query<Query> &&
+                 __forge_env_detail::__fwd_env_query<Query> &&
                  __forge_env_detail::__queryable<Query, const ChildEnv&, Args...>
     constexpr decltype(auto) query(Query q, Args&&... args) const
         noexcept(__forge_env_detail::__nothrow_query<Query, const ChildEnv&, Args...>) {
@@ -366,7 +366,7 @@ struct __closure : sender_adaptor_closure<__closure<Scheduler>> {
 
 struct continues_on_t {
     template<sender S, class Scheduler>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
+        requires scheduler<Scheduler>
     [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch) const {
         auto departure = std::execution::schedule_from(
             std::forward<S>(sndr));
@@ -377,7 +377,7 @@ struct continues_on_t {
     }
 
     template<class Scheduler>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
+        requires scheduler<Scheduler>
     [[nodiscard]] auto operator()(Scheduler&& sch) const {
         return __forge_continues_on::__closure<std::remove_cvref_t<Scheduler>>{
             {}, __forge_detail::__forward_as_given(std::forward<Scheduler>(sch))};

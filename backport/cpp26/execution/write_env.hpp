@@ -41,7 +41,7 @@ struct __joined_env {
 
     template<class Tag>
         requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
-                  (__forge_env_detail::__forwarding_query<Tag> &&
+                  (__forge_env_detail::__fwd_env_query<Tag> &&
                    __forge_env_detail::__queryable<Tag, const BaseEnv&>))
     constexpr decltype(auto) query(Tag tag) const
         noexcept((__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
@@ -57,7 +57,7 @@ struct __joined_env {
 
     template<class Tag>
         requires (__forge_env_detail::__queryable<Tag, const OverrideEnv&> ||
-                  (__forge_env_detail::__forwarding_query<Tag> &&
+                  (__forge_env_detail::__fwd_env_query<Tag> &&
                    __forge_env_detail::__queryable<Tag, const BaseEnv&>))
     friend decltype(auto) tag_invoke(Tag tag, const __joined_env& self)
         noexcept((__forge_env_detail::__queryable<Tag, const OverrideEnv&> &&
@@ -179,13 +179,13 @@ struct __closure : sender_adaptor_closure<__closure<OverrideEnv>> {
 
     template<sender S>
         requires std::copy_constructible<OverrideEnv>
-    [[nodiscard]] auto operator()(S&& sndr) const & {
+    [[nodiscard]] constexpr auto operator()(S&& sndr) const & {
         return __sender<std::decay_t<S>, OverrideEnv>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)), __env};
     }
 
     template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) && {
+    [[nodiscard]] constexpr auto operator()(S&& sndr) && {
         return __sender<std::decay_t<S>, OverrideEnv>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::move(__env)};
@@ -194,14 +194,14 @@ struct __closure : sender_adaptor_closure<__closure<OverrideEnv>> {
 
 struct __write_env_t {
     template<sender S, queryable Env>
-    [[nodiscard]] auto operator()(S&& sndr, Env&& env) const {
+    [[nodiscard]] constexpr auto operator()(S&& sndr, Env&& env) const {
         return __sender<std::decay_t<S>, std::decay_t<Env>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::forward<Env>(env)};
     }
 
     template<queryable Env>
-    [[nodiscard]] auto operator()(Env&& env) const {
+    [[nodiscard]] constexpr auto operator()(Env&& env) const {
         return __closure<std::decay_t<Env>>{{}, std::forward<Env>(env)};
     }
 };

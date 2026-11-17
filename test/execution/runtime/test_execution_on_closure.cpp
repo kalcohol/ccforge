@@ -61,6 +61,11 @@ struct tracked_schedule_sender {
 
 struct tracked_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     capture_state* state;
 
     explicit tracked_scheduler(capture_state& s) noexcept : state(&s) {}
@@ -76,6 +81,9 @@ struct tracked_scheduler {
     tracked_scheduler(const tracked_scheduler&& other) noexcept : state(other.state) {
         ++state->scheduler_constructions[3];
     }
+
+    tracked_scheduler& operator=(const tracked_scheduler&) noexcept = default;
+    tracked_scheduler& operator=(tracked_scheduler&&) noexcept = default;
 
     auto schedule() const noexcept -> tracked_schedule_sender { return {state}; }
     bool operator==(const tracked_scheduler&) const noexcept = default;
@@ -159,7 +167,7 @@ void check_category() {
     }
     EXPECT_EQ(state.applications, 0);
     EXPECT_EQ(state.callbacks, 0);
-    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(ex::get_env(sender)),
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(ex::get_env(sender), forge::empty_env{}),
         ex::inline_scheduler{});
 
     using cs_t = ex::completion_signatures_of_t<decltype(sender), forge::empty_env>;

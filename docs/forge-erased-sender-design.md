@@ -60,7 +60,11 @@ v1 是 heap-first 实现：
 - operation 额外持有 source state，避免 concrete operation 引用 source sender 时悬垂；
 - `start()` 只转发到 concrete operation state。
 
-`erased_sender` 本身是 move-only。具体 source sender 需要能以存储后的 lvalue 形式连接到 erased receiver；move-only source sender 可以工作，只要它的 `connect` 支持这种用法。
+`erased_sender` 本身是 move-only。可拷贝 source sender 按 `S&` 查询签名，并以存储后的
+lvalue 形式连接到 erased receiver；move-only source 按 `S` 查询签名并以右值连接。
+move-only source 只允许一次连接尝试，即使该尝试抛异常，后续连接也抛
+`std::runtime_error`。已消费的 source state 仍由 operation 持有，保证 concrete
+operation 借用 source 时的清理顺序。
 
 ## Value dispatch（值分发）
 
@@ -109,4 +113,8 @@ query 不在 v1 范围内。
 - move-only source sender；
 - sanitizer gate 下的 erased operation/receiver 生命周期。
 
-当前 v1 是 move-only、heap-first 的 connectable 擦除，仍受固定环境模型限制。lvalue 与 const lvalue 可重复 connect，共享 source state；rvalue connect 会移空 sender。
+当前 v1 是 move-only、heap-first 的 connectable 擦除，仍受固定环境模型限制。
+通过标准 `std::execution::connect` 连接时应使用 `std::move(sender)`；rvalue connect
+会移空 sender。直接调用 lvalue / const lvalue 的成员 `connect` 是保留的 Forge 扩展，
+共享 source state；仅当底层 source 可拷贝时可重复连接。该扩展不表示 move-only
+wrapper 满足标准 `sender<S&>`。

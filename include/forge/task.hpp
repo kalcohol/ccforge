@@ -59,13 +59,16 @@ class __inline_fallback_scheduler;
 namespace __inline_fallback {
 
 struct __env {
-    auto query(std::execution::get_completion_scheduler_t<
-                   std::execution::set_value_t>) const noexcept
-        -> __inline_fallback_scheduler;
+    template<class Tag>
+        requires (std::same_as<Tag, std::execution::set_value_t>)
+    auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __inline_fallback_scheduler;
 
-    friend auto tag_invoke(
-        std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
-        const __env&) noexcept -> __inline_fallback_scheduler;
+    template<class Tag, class Env, class... Envs>
+        requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t>)
+    auto query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept
+        -> decltype(std::execution::get_completion_domain<Tag>(
+            std::declval<__inline_fallback_scheduler>(), static_cast<Env&&>(env), static_cast<Envs&&>(envs)...));
+
 };
 
 template<class R>
@@ -106,6 +109,16 @@ struct __schedule_sender {
 class __inline_fallback_scheduler {
 public:
     using scheduler_concept = std::execution::scheduler_t;
+    template<class Tag>
+        requires (std::same_as<Tag, std::execution::set_value_t>)
+    auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __inline_fallback_scheduler {
+        return *this;
+    }
+
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     __inline_fallback_scheduler() noexcept = default;
 
@@ -118,17 +131,19 @@ public:
 };
 
 namespace __inline_fallback {
-inline auto __env::query(std::execution::get_completion_scheduler_t<
-                            std::execution::set_value_t>) const noexcept
-    -> __inline_fallback_scheduler {
-    return {};
+template<class Tag>
+    requires (std::same_as<Tag, std::execution::set_value_t>)
+auto __env::query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __inline_fallback_scheduler {
+    return __inline_fallback_scheduler{};
 }
 
-inline auto tag_invoke(
-    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
-    const __env& self) noexcept -> __inline_fallback_scheduler {
-    return self.query(std::execution::get_completion_scheduler<
-        std::execution::set_value_t>);
+template<class Tag, class Env, class... Envs>
+    requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t>)
+auto __env::query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept
+    -> decltype(std::execution::get_completion_domain<Tag>(
+        std::declval<__inline_fallback_scheduler>(), static_cast<Env&&>(env), static_cast<Envs&&>(envs)...)) {
+    return std::execution::get_completion_domain<Tag>(
+        __inline_fallback_scheduler{}, static_cast<Env&&>(env), static_cast<Envs&&>(envs)...);
 }
 } // namespace __inline_fallback
 

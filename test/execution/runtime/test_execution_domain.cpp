@@ -195,7 +195,13 @@ struct completion_domain_schedule_sender {
 };
 
 struct completion_domain_scheduler : value_completion_attrs {
+    using value_completion_attrs::query;
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
+
     auto schedule() const noexcept -> completion_domain_schedule_sender { return {}; }
     bool operator==(const completion_domain_scheduler&) const noexcept { return true; }
 };
@@ -281,7 +287,6 @@ concept has_completion_domain_query = requires(const Attrs& attrs) {
 };
 
 static_assert(!has_domain_query<non_default_domain_env>);
-static_assert(!has_completion_domain_query<throwing_default_completion_attrs>);
 
 struct receiver_domain_env {
     friend auto tag_invoke(std::execution::get_domain_t, const receiver_domain_env&) noexcept
@@ -550,6 +555,10 @@ struct env_transform_domain_env {
 
 struct late_domain_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     bool operator==(const late_domain_scheduler&) const noexcept = default;
 
@@ -574,8 +583,9 @@ struct scheduler_domain_env {
         return {};
     }
 
+    template<class Env>
     friend auto tag_invoke(std::execution::get_completion_domain_t<std::execution::set_value_t>,
-                           late_domain_scheduler, const scheduler_domain_env&) noexcept
+                           late_domain_scheduler, const Env&) noexcept
         -> scheduler_domain {
         return {};
     }
@@ -1057,8 +1067,10 @@ TEST(DefaultDomainTest, TransformSenderIsIdentity) {
         decltype(std::execution::transform_sender(sndr, env)),
         decltype(sndr)&>);
     static_assert(noexcept(std::execution::transform_sender(sndr, env)));
-    (void)result;
-    SUCCEED();
+    EXPECT_EQ(std::addressof(result), std::addressof(sndr));
+    auto& tagged_result = domain.transform_sender(std::execution::start, sndr, env);
+    static_assert(std::same_as<decltype(tagged_result), decltype(sndr)&>);
+    EXPECT_EQ(std::addressof(tagged_result), std::addressof(sndr));
 }
 
 TEST(DefaultDomainTest, PublicTransformUsesSenderTagCustomization) {
@@ -1111,6 +1123,15 @@ TEST(DefaultDomainTest, ConnectUsesStartTagCustomization) {
 TEST(DefaultDomainTest, IdentityTagTransformPreservesBorrowedObjects) {
     noncopyable_env environment;
     noncopyable_tagged_sender sender;
+    // connect retains its borrowed-source extension; the constrained public
+    // default_domain entry does not classify this immovable source as a sender.
+    static_assert(!std::execution::sender<noncopyable_tagged_sender&>);
+    static_assert(std::same_as<decltype(
+        std::execution::__forge_domain::__default_transform_sender<std::execution::start_t>(
+            sender, environment)), noncopyable_tagged_sender&>);
+    static_assert(std::same_as<decltype(
+        std::execution::__forge_domain::__default_transform_sender<std::execution::start_t>(
+            std::declval<direct_value_sender&>(), environment)), direct_value_sender&>);
     identity_transform_tag::calls = 0;
     int value = 0;
     bool completed = false;

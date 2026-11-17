@@ -225,7 +225,7 @@ struct borrowed_operation_sender {
     };
 
     template<class R>
-    auto connect(R receiver) & -> operation<R> {
+    auto connect(R receiver) && -> operation<R> {
         return {sender_destroyed, operation_destroyed,
                 operation_outlived_sender, std::move(receiver)};
     }
@@ -549,6 +549,7 @@ struct move_only_sender {
     move_only_sender& operator=(const move_only_sender&) = delete;
 
     template<class Self, class Env>
+        requires (!std::is_lvalue_reference_v<Self>)
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
         return {};
@@ -572,8 +573,29 @@ struct move_only_sender {
     };
 
     template<class R>
+    auto connect(R rcvr) && -> op<R> {
+        return op<R>{std::move(rcvr), *value};
+    }
+};
+
+struct lvalue_only_move_sender : move_only_sender {
+    using move_only_sender::move_only_sender;
+
+    template<class R>
     auto connect(R rcvr) & -> op<R> {
         return op<R>{std::move(rcvr), *value};
+    }
+};
+
+struct throwing_connect_move_sender : move_only_sender {
+    int* connections;
+    explicit throwing_connect_move_sender(int* count)
+        : move_only_sender(0), connections(count) {}
+
+    template<class R>
+    auto connect(R) && -> op<R> {
+        ++*connections;
+        throw std::runtime_error("move-only connect");
     }
 };
 
@@ -771,7 +793,7 @@ struct reentrant_connect_sender {
         if (self != nullptr && *self != nullptr && reentered != nullptr && !*reentered) {
             *reentered = true;
             auto nested_state = std::make_shared<observed_state>();
-            auto nested = std::execution::connect(**self, zero_receiver{nested_state});
+            auto nested = (*self)->connect(zero_receiver{nested_state});
             (void)nested;
         }
         return op<R>{std::move(rcvr)};
@@ -783,6 +805,7 @@ static_assert(!std::copy_constructible<forge::erased_sender<int_cs>>);
 static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_sender>);
 static_assert(!std::constructible_from<forge::erased_sender<int_cs>, move_only_sender&>);
 static_assert(!std::constructible_from<forge::erased_sender<int_cs>, const move_only_sender&>);
+static_assert(!std::constructible_from<forge::erased_sender<int_cs>, lvalue_only_move_sender>);
 static_assert(std::execution::receiver_of<int_only_receiver, int_cs>);
 static_assert(std::execution::sender_to<
               forge::erased_sender<int_cs>,
@@ -914,7 +937,8 @@ TEST(ErasedSenderTest, DeliversZeroValueShape) {
 TEST(ErasedSenderTest, ConstSenderRemainsConnectable) {
     const forge::erased_sender<zero_cs> sender{zero_sender{}};
     auto state = std::make_shared<observed_state>();
-    auto op = std::execution::connect(sender, zero_receiver{state});
+    // Direct member connection is a Forge extension for this move-only wrapper.
+    auto op = sender.connect(zero_receiver{state});
 
     std::execution::start(op);
 
@@ -1038,6 +1062,25 @@ TEST(ErasedSenderTest, AcceptsMoveOnlySourceSender) {
     EXPECT_EQ(state->int_value, 7);
 }
 
+TEST(ErasedSenderTest, MoveOnlySourceRejectsRepeatedConnection) {
+    forge::erased_sender<int_cs> sender{move_only_sender{11}};
+    auto state = std::make_shared<observed_state>();
+    auto op = sender.connect(observing_receiver{state});
+    EXPECT_THROW((void)sender.connect(observing_receiver{state}), std::runtime_error);
+    std::execution::start(op);
+    EXPECT_EQ(state->int_values, 1);
+    EXPECT_EQ(state->int_value, 11);
+}
+
+TEST(ErasedSenderTest, MoveOnlyConnectFailureStillConsumesSource) {
+    int connections = 0;
+    forge::erased_sender<int_cs> sender{throwing_connect_move_sender{&connections}};
+    auto state = std::make_shared<observed_state>();
+    EXPECT_THROW((void)sender.connect(observing_receiver{state}), std::runtime_error);
+    EXPECT_THROW((void)sender.connect(observing_receiver{state}), std::runtime_error);
+    EXPECT_EQ(connections, 1);
+}
+
 TEST(ErasedSenderTest, SourceConnectCanReenterSameErasedSender) {
     forge::erased_sender<zero_cs>* self = nullptr;
     bool reentered = false;
@@ -1045,7 +1088,7 @@ TEST(ErasedSenderTest, SourceConnectCanReenterSameErasedSender) {
     self = &sender;
     auto state = std::make_shared<observed_state>();
 
-    auto op = std::execution::connect(sender, zero_receiver{state});
+    auto op = sender.connect(zero_receiver{state});
     std::execution::start(op);
 
     EXPECT_TRUE(reentered);

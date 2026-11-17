@@ -78,6 +78,10 @@ struct member_sender {
 
 struct member_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     auto schedule() const noexcept -> member_sender {
         return member_sender{21};

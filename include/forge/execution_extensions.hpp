@@ -27,12 +27,7 @@
 
 namespace forge {
 
-// The historical empty environment keeps its type identity in the backport.
-#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
-using empty_env = std::execution::__empty_env;
-#else
 using empty_env = std::execution::env<>;
-#endif
 
 template<std::execution::scheduler Scheduler, class... Vs>
     requires (std::move_constructible<std::decay_t<Vs>> && ...)

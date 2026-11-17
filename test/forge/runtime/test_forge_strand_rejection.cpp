@@ -214,6 +214,11 @@ struct rejecting_sender {
 template<bool HasQuery = true>
 struct rejecting_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
+
     std::shared_ptr<rejection_state> state;
     bool closed() const noexcept requires HasQuery { return state->closed; }
     auto schedule() const noexcept -> rejecting_sender { return {state}; }

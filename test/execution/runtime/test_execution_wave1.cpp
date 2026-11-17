@@ -187,6 +187,10 @@ struct throwing_connect_sender {
 
 struct throwing_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     auto schedule() const noexcept -> throwing_connect_sender {
         return {};
@@ -203,10 +207,14 @@ struct mutable_schedule_sender;
 
 struct mutable_schedule_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     int* started = nullptr;
 
-    auto schedule() & noexcept -> mutable_schedule_sender;
+    auto schedule() noexcept -> mutable_schedule_sender;
 
     friend bool operator==(
         const mutable_schedule_scheduler&,
@@ -261,7 +269,7 @@ struct mutable_schedule_sender {
     }
 };
 
-auto mutable_schedule_scheduler::schedule() & noexcept -> mutable_schedule_sender {
+auto mutable_schedule_scheduler::schedule() noexcept -> mutable_schedule_sender {
     return {*this};
 }
 
@@ -280,7 +288,7 @@ concept rvalue_schedule_callable =
     requires(Scheduler&& scheduler) { std::execution::schedule(std::move(scheduler)); };
 
 static_assert(!const_schedule_callable<mutable_schedule_scheduler>);
-static_assert(!rvalue_schedule_callable<mutable_schedule_scheduler>);
+static_assert(rvalue_schedule_callable<mutable_schedule_scheduler>);
 
 template<class R>
 struct error_stopped_schedule_op {
@@ -320,6 +328,10 @@ struct error_stopped_schedule_sender {
 
 struct error_stopped_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     auto schedule() const noexcept -> error_stopped_schedule_sender {
         return {};
@@ -449,6 +461,10 @@ struct rvalue_only_let_fn {
 
 struct domain_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     int identity = 0;
 
@@ -472,6 +488,10 @@ static_assert(std::execution::scheduler<domain_scheduler>);
 
 struct member_domain_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     int identity = 0;
 

@@ -398,6 +398,9 @@ struct __sender_state_base {
     virtual auto connect(__receiver<CS> rcvr) -> std::shared_ptr<__operation_base> = 0;
 };
 
+template<class S>
+using __stored_source_t = std::conditional_t<std::is_copy_constructible_v<S>, S&, S>;
+
 template<class CS, class S>
 struct __sender_state_model final : __sender_state_base<CS> {
     template<class Sender>
@@ -405,23 +408,31 @@ struct __sender_state_model final : __sender_state_base<CS> {
         : sender_(static_cast<Sender&&>(sender)) {}
 
     auto connect(__receiver<CS> rcvr) -> std::shared_ptr<__operation_base> override {
-        using op_t = decltype(std::execution::connect(
-            std::declval<S&>(),
-            std::declval<__receiver<CS>>()));
+        using source_t = __stored_source_t<S>;
+        using op_t = std::execution::connect_result_t<source_t, __receiver<CS>>;
+        // Operations may borrow the source, so retain its storage and gate reuse.
+        if constexpr (!std::is_copy_constructible_v<S>) {
+            if (std::exchange(consumed_, true)) {
+                throw std::runtime_error("erased_sender: source consumed");
+            }
+        }
         return std::make_shared<__operation_model<op_t>>(
             typename __operation_model<op_t>::__factory_tag{},
             [this, rcvr = std::move(rcvr)]() mutable -> op_t {
-                return std::execution::connect(sender_, std::move(rcvr));
+                return std::execution::connect(
+                    static_cast<source_t&&>(sender_), std::move(rcvr));
             });
     }
 
     S sender_;
+    bool consumed_ = false;
 };
 
 template<class S, class CS>
 concept __connectable_to_erased_receiver =
     requires(S& sender, __receiver<CS> rcvr) {
-        std::execution::connect(sender, std::move(rcvr));
+        std::execution::connect(
+            static_cast<__stored_source_t<S>&&>(sender), std::move(rcvr));
     };
 
 template<class CS>
@@ -429,15 +440,15 @@ using __receiver_env_t = std::execution::env_of_t<__receiver<CS>>;
 
 template<class S, class CS>
 concept __acceptable_source_sender =
-    std::execution::sender_in<S, __receiver_env_t<CS>> &&
+    std::execution::sender_in<__stored_source_t<S>, __receiver_env_t<CS>> &&
     __valid_completion_signatures<CS>::value &&
     __valid_completion_signatures<
         std::execution::completion_signatures_of_t<
-            S,
+            __stored_source_t<S>,
             __receiver_env_t<CS>>>::value &&
     __source_is_subset<
         std::execution::completion_signatures_of_t<
-            S,
+            __stored_source_t<S>,
             __receiver_env_t<CS>>,
         CS>::value &&
     __connectable_to_erased_receiver<std::remove_cvref_t<S>, CS>;

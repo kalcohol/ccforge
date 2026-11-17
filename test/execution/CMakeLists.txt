@@ -53,6 +53,61 @@ function(forge_expect_execution_cxx_source_compiles result_var source_name shoul
     unset(_forge_target_definitions)
 endfunction()
 
+# Query and domain rules are checked in both supported dispatch modes.
+set(_forge_query_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+foreach(_mode IN ITEMS default strict)
+    forge_add_execution_compile_probe(test_execution_${_mode}_query_conformance
+        test_execution_query_conformance.cpp execution_${_mode}_query_conformance_compile)
+    forge_add_execution_runtime_test(test_execution_${_mode}_query_conformance_runtime
+        test_execution_query_conformance.cpp execution_${_mode}_query_conformance)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs})
+    if(_mode STREQUAL "strict")
+        target_compile_definitions(test_execution_${_mode}_query_conformance PRIVATE
+            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+        target_compile_definitions(test_execution_${_mode}_query_conformance_runtime PRIVATE
+            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+    endif()
+    if(MSVC)
+        target_compile_options(test_execution_${_mode}_query_conformance PRIVATE /bigobj)
+        target_compile_options(test_execution_${_mode}_query_conformance_runtime PRIVATE /bigobj)
+    endif()
+    set(_forge_query_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_POSITIVE_${_mode}
+        test_execution_reject_query_mandates.cpp ON "Conforming query control must compile")
+    foreach(_case IN ITEMS 21 23 30 32 33 34 35)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_mode_defs}
+            -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_POSITIVE=1)
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_CONTROL_${_mode}_${_case}
+            test_execution_reject_query_mandates.cpp ON "Query Mandate positive control must compile and link")
+    endforeach()
+    foreach(_case RANGE 1 35)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_mode_defs} -DFORGE_QUERY_CASE=${_case})
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MANDATE_${_mode}_${_case}
+            test_execution_reject_query_mandates.cpp OFF "Query and core CPO Mandates must reject this case")
+    endforeach()
+endforeach()
+# Compatibility dispatch is subject to the same Mandates as member dispatch.
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs} -DFORGE_QUERY_LEGACY=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_POSITIVE_legacy
+    test_execution_reject_query_mandates.cpp ON "Conforming legacy query control must compile")
+foreach(_case IN ITEMS 21 23 30 32 33 34 35)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs}
+        -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_LEGACY=1 -DFORGE_QUERY_POSITIVE=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_CONTROL_legacy_${_case}
+        test_execution_reject_query_mandates.cpp ON "Legacy Mandate positive control must compile and link")
+endforeach()
+foreach(_case RANGE 1 35)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs}
+        -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_LEGACY=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MANDATE_legacy_${_case}
+        test_execution_reject_query_mandates.cpp OFF "Legacy dispatch must enforce query and CPO Mandates")
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_query_probe_defs}")
+unset(_forge_query_probe_defs)
+unset(_forge_query_mode_defs)
+unset(_case)
+
 forge_add_execution_compile_probe(
     test_execution_env_queries
     test_execution_env_queries.cpp

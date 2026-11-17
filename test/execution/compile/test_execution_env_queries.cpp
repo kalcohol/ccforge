@@ -18,6 +18,11 @@ namespace ex = std::execution;
 namespace {
 struct missing {};
 struct key {
+    template<class E>
+        requires requires(const E& e) { e.query(std::declval<key>()); }
+    constexpr decltype(auto) operator()(const E& e) const noexcept(noexcept(e.query(*this))) {
+        return e.query(*this);
+    }
     constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
 };
 struct local_key {};
@@ -149,7 +154,7 @@ static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mixed_
 // Ordinary CPO calls must retain the earlier tag-only scheduler and stop token.
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const ex::env<legacy_queries>&>())),
                            ex::inline_scheduler>);
-static_assert(!noexcept(ex::get_scheduler(std::declval<const throwing_mixed_queries&>())));
+// A selected throwing ADL query is rejected by the negative query probes.
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const mixed_queries&>())),
                            ex::inline_scheduler>);
 static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mixed_queries&>())),
@@ -182,7 +187,7 @@ static_assert(borrowed_member_selection());
 
 struct mutable_member_queries {
     ex::inline_scheduler query(ex::get_scheduler_t) & noexcept;
-    std::inplace_stop_token query(ex::get_stop_token_t) &;
+    std::inplace_stop_token query(ex::get_stop_token_t) & noexcept;
 };
 template<bool Nothrow>
 struct mutable_legacy_queries {
@@ -199,7 +204,8 @@ static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const mutable
 static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())),
                            std::inplace_stop_token>);
 static_assert(noexcept(ex::get_scheduler(std::declval<const mutable_borrowed_env&>())));
-static_assert(!noexcept(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())));
+static_assert(noexcept(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())));
+// A selected throwing borrowed query is rejected by the negative query probes.
 #else
 using mutable_borrowed_env = ex::env<mutable_legacy_queries<true>&, member_queries>;
 using throwing_borrowed_env = ex::env<mutable_legacy_queries<false>&, member_queries>;
@@ -209,10 +215,7 @@ static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mutabl
                            std::inplace_stop_token>);
 static_assert(noexcept(ex::get_scheduler(std::declval<const mutable_borrowed_env&>())));
 static_assert(noexcept(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())));
-static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const throwing_borrowed_env&>())),
-                           ex::inline_scheduler>);
-static_assert(!noexcept(ex::get_scheduler(std::declval<const throwing_borrowed_env&>())));
-static_assert(!noexcept(ex::get_stop_token(std::declval<const throwing_borrowed_env&>())));
+
 #endif
 using stop_prop = ex::prop<ex::get_stop_token_t, std::inplace_stop_token>;
 using alloc_prop = ex::prop<ex::get_allocator_t, std::allocator<int>>;
@@ -306,6 +309,9 @@ static_assert(answers<inner_env, variadic_key, int&, int>);
 static_assert(!answers<spawn_env, variadic_key, int&, int>);
 struct domain {};
 struct domain_scheduler : ex::inline_scheduler {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     domain query(ex::get_domain_t) const noexcept { return {}; }
     template<class CPO>
     domain query(ex::get_completion_domain_t<CPO>, const answer&) const noexcept {
@@ -408,7 +414,6 @@ constexpr bool loop_domain_parity =
     noexcept(Q{}(std::declval<const loop_scheduler&>(), std::declval<Envs>()...));
 static_assert(loop_domain_parity<value_domain_query, forge::empty_env>);
 static_assert(loop_domain_parity<stopped_domain_query, forge::empty_env>);
-static_assert(loop_domain_parity<error_domain_query, forge::empty_env>);
 static_assert(loop_domain_parity<ex::get_completion_domain_t<>, forge::empty_env>);
 static_assert(loop_domain_parity<value_domain_query, ex::prop<ex::get_domain_t, domain>>);
 static_assert(loop_domain_parity<value_domain_query, const answer&, forge::empty_env>);
@@ -423,9 +428,9 @@ using explicit_domain_env = ex::prop<ex::get_domain_t, domain>;
 template<class E>
 constexpr bool inline_queries =
     std::same_as<decltype(std::declval<const E&>().query(value_scheduler_query{},
-                     std::declval<sched_env&>())), const loop_scheduler&> &&
+                     std::declval<sched_env&>())), loop_scheduler> &&
     std::same_as<decltype(std::declval<E&&>().query(value_scheduler_query{},
-                     std::declval<const sched_env&&>())), const loop_scheduler&> &&
+                     std::declval<const sched_env&&>())), loop_scheduler> &&
     noexcept(std::declval<const E&>().query(value_scheduler_query{}, std::declval<sched_env&>())) &&
     std::same_as<decltype(std::declval<const E&>().query(value_domain_query{},
                      std::declval<explicit_domain_env&>())), domain> &&
@@ -435,31 +440,15 @@ static_assert(inline_queries<ex::inline_scheduler>);
 struct throwing_scheduler_env {
     loop_scheduler query(ex::get_scheduler_t) const noexcept(false);
 };
-static_assert(!noexcept(std::declval<const inline_attrs&>().query(
-    value_scheduler_query{}, std::declval<throwing_scheduler_env&>())));
-static_assert(!noexcept(std::declval<const ex::inline_scheduler&>().query(
-    value_scheduler_query{}, std::declval<throwing_scheduler_env&&>())));
-static_assert(!noexcept(ex::get_completion_scheduler<ex::set_value_t>(
-    std::declval<const inline_attrs&>(), std::declval<throwing_scheduler_env&>())));
-static_assert(!noexcept(ex::get_completion_scheduler<ex::set_value_t>(
-    std::declval<const ex::inline_scheduler&>(), std::declval<throwing_scheduler_env&&>())));
+// Throwing scheduler environments are hard-error compile probes.
 static_assert(!answers<inline_attrs, ex::get_scheduler_t>);
 static_assert(!answers<ex::inline_scheduler, ex::get_scheduler_t>);
 static_assert(!answers<inline_attrs, value_scheduler_query>);
 static_assert(!answers<ex::inline_scheduler, value_scheduler_query>);
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
 static_assert(!cpo_answers<inline_attrs, value_scheduler_query>);
 static_assert(!cpo_answers<ex::inline_scheduler, value_scheduler_query>);
-static_assert(!cpo_answers<inline_attrs, value_scheduler_query, forge::empty_env>);
-static_assert(!cpo_answers<ex::inline_scheduler, value_scheduler_query, forge::empty_env>);
-#else
-static_assert(cpo_answers<inline_attrs, value_scheduler_query>);
-static_assert(cpo_answers<ex::inline_scheduler, value_scheduler_query>);
-static_assert(std::same_as<decltype(value_scheduler_query{}(
-    std::declval<const inline_attrs&>(), forge::empty_env{})), ex::inline_scheduler>);
-static_assert(std::same_as<decltype(value_scheduler_query{}(
-    ex::inline_scheduler{}, forge::empty_env{})), ex::inline_scheduler>);
-#endif
+static_assert(cpo_answers<inline_attrs, value_scheduler_query, forge::empty_env>);
+static_assert(cpo_answers<ex::inline_scheduler, value_scheduler_query, forge::empty_env>);
 static_assert(nothrow_answer<inline_attrs, ex::get_forward_progress_guarantee_t,
                              ex::forward_progress_guarantee>);
 static_assert(nothrow_answer<ex::inline_scheduler, ex::get_forward_progress_guarantee_t,
@@ -470,7 +459,7 @@ static_assert(!answers<inline_attrs, error_scheduler_query, sched_env>);
 static_assert(!answers<ex::inline_scheduler, error_scheduler_query, sched_env>);
 static_assert(!answers<inline_attrs, stopped_scheduler_query, sched_env>);
 static_assert(!answers<ex::inline_scheduler, stopped_scheduler_query, sched_env>);
-static_assert(!answers<inline_attrs, value_scheduler_query, forge::empty_env>);
+static_assert(answers<inline_attrs, value_scheduler_query, forge::empty_env>);
 static_assert(!answers<ex::inline_scheduler, value_scheduler_query, forge::empty_env>);
 static_assert(!answers<inline_attrs, value_scheduler_query, sched_env, sched_env>);
 static_assert(!answers<ex::inline_scheduler, value_scheduler_query, sched_env, sched_env>);
@@ -481,9 +470,9 @@ static_assert(!answers<ex::inline_scheduler, stopped_domain_query, sched_env>);
 static_assert(!answers<inline_attrs, missing>);
 static_assert(!answers<ex::inline_scheduler, missing>);
 static_assert(std::same_as<decltype(ex::get_completion_scheduler<ex::set_value_t>(
-    std::declval<const inline_attrs&>(), std::declval<sched_env&>())), const loop_scheduler&>);
+    std::declval<const inline_attrs&>(), std::declval<sched_env&>())), loop_scheduler>);
 static_assert(std::same_as<decltype(ex::get_completion_scheduler<ex::set_value_t>(
-    std::declval<const ex::inline_scheduler&>(), std::declval<sched_env&>())), const loop_scheduler&>);
+    std::declval<const ex::inline_scheduler&>(), std::declval<sched_env&>())), loop_scheduler>);
 static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
     std::declval<const inline_attrs&>(), std::declval<explicit_domain_env&>())), domain>);
 static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
@@ -492,9 +481,12 @@ static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
 using inline_sched_env = ex::prop<ex::get_scheduler_t, ex::inline_scheduler>;
 static_assert(std::same_as<decltype(ex::get_domain(std::declval<const inline_sched_env&>())),
                            ex::default_domain>);
-// Existing exact-environment domain customizations retain their compatible type.
+// HIDE-SCHED excludes exact-environment customizations from derived domains.
 struct exact_domain_env;
 struct exact_domain_scheduler : ex::inline_scheduler {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     domain query(value_domain_query, const exact_domain_env&) const noexcept { return {}; }
     template<class Env>
     friend ex::default_domain tag_invoke(value_domain_query, exact_domain_scheduler,
@@ -503,12 +495,17 @@ struct exact_domain_scheduler : ex::inline_scheduler {
 struct exact_domain_env {
     exact_domain_scheduler query(ex::get_scheduler_t) const noexcept { return {}; }
 };
-static_assert(std::same_as<decltype(ex::get_domain(std::declval<const exact_domain_env&>())), domain>);
-// An exact legacy overload must beat a generic fallback even when that
-// fallback accepts HIDE-SCHED. The strict surface ignores both legacy hooks.
+static_assert(std::same_as<decltype(ex::get_domain(std::declval<const exact_domain_env&>())), ex::default_domain>);
+// Exact legacy overloads remain available to direct completion-domain queries;
+// get_domain passes a hidden view and selects the generic fallback.
 struct competing_domain_env;
 struct competing_domain_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     auto schedule() const noexcept { return ex::schedule(ex::inline_scheduler{}); }
     bool operator==(const competing_domain_scheduler&) const noexcept = default;
     template<class Env>
@@ -529,12 +526,17 @@ static_assert(std::same_as<decltype(value_domain_query{}(
 static_assert(std::same_as<decltype(value_domain_query{}(
     competing_domain_scheduler{},
     std::declval<ex::__forge_domain::__hide_scheduler<competing_domain_env>>())), ex::default_domain>);
-static_assert(std::same_as<decltype(ex::get_domain(std::declval<const competing_domain_env&>())), domain>);
+static_assert(std::same_as<decltype(ex::get_domain(std::declval<const competing_domain_env&>())), ex::default_domain>);
 #endif
-// The same competition must preserve the exact member without any ADL hook.
+// The same hidden lookup applies to member-only overload competition.
 struct competing_member_domain_env;
 struct competing_member_domain_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     auto schedule() const noexcept { return ex::schedule(ex::inline_scheduler{}); }
     bool operator==(const competing_member_domain_scheduler&) const noexcept = default;
     domain query(value_domain_query, const competing_member_domain_env&) const noexcept { return {}; }
@@ -552,7 +554,7 @@ static_assert(std::same_as<decltype(value_domain_query{}(competing_member_domain
     std::declval<ex::__forge_domain::__hide_scheduler<competing_member_domain_env>>())),
     ex::default_domain>);
 static_assert(std::same_as<decltype(ex::get_domain(
-    std::declval<const competing_member_domain_env&>())), domain>);
+    std::declval<const competing_member_domain_env&>())), ex::default_domain>);
 
 // Recursion must also terminate when another scheduler inherits inline queries.
 struct forwarding_inline_scheduler : ex::inline_scheduler {};
@@ -566,11 +568,12 @@ struct invalid_domain_env {
     invalid_domain query(ex::get_domain_t) const noexcept;
 };
 // An invalid direct domain must not silently select a later default alternative.
+// D() must be well-formed; deleted construction stays a soft failure.
 static_assert(!cpo_answers<invalid_domain_env, ex::get_domain_t>);
 static_assert(!answers<inline_attrs, value_domain_query, invalid_domain_env>);
 static_assert(!answers<ex::inline_scheduler, value_domain_query, invalid_domain_env>);
-// Inline attributes apply the draft's hidden scheduler lookup internally;
-// the outer compatibility get_domain keeps the original overload set above.
+
+// Inline attributes use the same public hidden-scheduler lookup.
 static_assert(std::same_as<decltype(value_domain_query{}(inline_attrs{},
     std::declval<const competing_member_domain_env&>())), ex::default_domain>);
 static_assert(std::same_as<decltype(value_domain_query{}(ex::inline_scheduler{},
@@ -583,23 +586,23 @@ template<class Q, class Exact, class Fallback>
 struct competing_query_members {
     Exact query(Q, const selection_env&) const noexcept { return {}; }
     template<class Env>
-    Fallback query(Q, const Env&) const noexcept(false) { return {}; }
-    Fallback query(Q) const noexcept(false) { return {}; }
+    Fallback query(Q, const Env&) const noexcept { return {}; }
+    Fallback query(Q) const noexcept { return {}; }
 };
 template<class Q, class Exact, class Fallback>
 struct competing_query_adl {
     friend Exact tag_invoke(Q, const competing_query_adl&, const selection_env&) noexcept { return {}; }
     template<class Env>
-    friend Fallback tag_invoke(Q, const competing_query_adl&, const Env&) noexcept(false) { return {}; }
-    friend Fallback tag_invoke(Q, const competing_query_adl&) noexcept(false) { return {}; }
+    friend Fallback tag_invoke(Q, const competing_query_adl&, const Env&) noexcept { return {}; }
+    friend Fallback tag_invoke(Q, const competing_query_adl&) noexcept { return {}; }
 };
 template<class Q, class Member, class Legacy>
 struct generic_member_exact_adl {
     Member query(Q) const noexcept { return {}; }
     template<class Env>
     Member query(Q, const Env&) const noexcept { return {}; }
-    friend Legacy tag_invoke(Q, const generic_member_exact_adl&) noexcept(false) { return {}; }
-    friend Legacy tag_invoke(Q, const generic_member_exact_adl&, const selection_env&) noexcept(false) {
+    friend Legacy tag_invoke(Q, const generic_member_exact_adl&) noexcept { return {}; }
+    friend Legacy tag_invoke(Q, const generic_member_exact_adl&, const selection_env&) noexcept {
         return {};
     }
 };
@@ -607,15 +610,15 @@ template<class Q, class Member, class Legacy>
 struct exact_member_generic_adl {
     Member query(Q) const noexcept { return {}; }
     Member query(Q, const selection_env&) const noexcept { return {}; }
-    friend Legacy tag_invoke(Q, const exact_member_generic_adl&) noexcept(false) { return {}; }
+    friend Legacy tag_invoke(Q, const exact_member_generic_adl&) noexcept { return {}; }
     template<class Env>
-    friend Legacy tag_invoke(Q, const exact_member_generic_adl&, const Env&) noexcept(false) { return {}; }
+    friend Legacy tag_invoke(Q, const exact_member_generic_adl&, const Env&) noexcept { return {}; }
 };
 template<class Q, class Unary, class Dependent>
 struct unary_member_dependent_adl {
     Unary query(Q) const noexcept { return {}; }
     friend Dependent tag_invoke(Q, const unary_member_dependent_adl&,
-                                const selection_env&) noexcept(false) { return {}; }
+                                const selection_env&) noexcept { return {}; }
 };
 template<class Q, class Unary>
 struct unary_query_member {
@@ -678,7 +681,7 @@ static_assert(std::same_as<decltype(value_domain_query{}(
 // including when the environment-dependent hook is ADL and the unary is a member.
 static_assert(std::same_as<decltype(value_scheduler_query{}(
     dependent_scheduler_adl{}, selection_env{})), ex::inline_scheduler>);
-static_assert(!noexcept(value_scheduler_query{}(dependent_scheduler_adl{}, selection_env{})));
+static_assert(noexcept(value_scheduler_query{}(dependent_scheduler_adl{}, selection_env{})));
 static_assert(std::same_as<decltype(value_domain_query{}(
     dependent_domain_adl{}, selection_env{})), ex::default_domain>);
 #endif
@@ -728,13 +731,8 @@ static_assert(schedule_noexcept<written_loop>);
 
 using missing_scheduler_let_env = ex::__forge_let::__let_env_t<
     ex::__forge_let::__value_tag, inline_sender, explicit_domain_env>;
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-static_assert(std::same_as<missing_scheduler_let_env, ex::prop<ex::get_domain_t, domain>>);
-static_assert(!answers<missing_scheduler_let_env, ex::get_start_scheduler_t>);
-#else
 static_assert(std::same_as<missing_scheduler_let_env,
                            ex::__forge_let::__scheduler_env<ex::inline_scheduler>>);
-#endif
 static_assert(noexcept(ex::get_env(std::declval<const inline_sender&>())));
 static_assert(noexcept(ex::get_env(std::declval<const loop_sender&>())));
 static_assert(noexcept(ex::schedule(std::declval<const ex::inline_scheduler&>())));
@@ -819,6 +817,11 @@ struct transfer_source {
 template<class Attrs, bool Nothrow = true>
 struct transfer_scheduler {
     using scheduler_concept = ex::scheduler_t;
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
     auto schedule() const noexcept(Nothrow) { return transfer_source<Attrs>{}; }
     bool operator==(const transfer_scheduler&) const noexcept = default;
 };
@@ -867,10 +870,16 @@ struct destination_attrs {
     }
 };
 struct scheduler_domain_fallback : transfer_scheduler<destination_attrs> {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     template<class Tag, class... Envs>
     domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
 };
 struct scheduler_only_domain : unavailable_scheduler {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     template<class Tag, class... Envs>
     domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
 };
@@ -920,10 +929,16 @@ struct local_only_domain_attrs {
 };
 template<class Attrs>
 struct environment_domain_scheduler : unavailable_scheduler, Attrs {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     using Attrs::query;
 };
 template<class Attrs>
 struct environment_schedule_scheduler : transfer_scheduler<Attrs> {
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
+        -> ex::forward_progress_guarantee { return ex::forward_progress_guarantee::weakly_parallel; }
+
     template<class Tag, class... Envs>
     domain query(ex::get_completion_domain_t<Tag>, Envs&&...) const noexcept { return {}; }
 };

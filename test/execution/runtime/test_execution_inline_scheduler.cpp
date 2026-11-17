@@ -55,7 +55,7 @@ TEST(ExecutionInlineSchedulerTest, ScheduleEnvRoundtrip) {
     std::execution::inline_scheduler sch{};
     auto sndr = std::execution::schedule(sch);
     auto env = std::execution::get_env(sndr);
-    auto sch2 = std::execution::get_scheduler(env);
+    auto sch2 = std::execution::get_completion_scheduler<std::execution::set_value_t>(env, forge::empty_env{});
     EXPECT_EQ(sch, sch2);
 }
 

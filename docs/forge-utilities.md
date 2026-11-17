@@ -257,7 +257,11 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
   折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，
   并提供 `sync_wait()` 直接运行存储的 sender。底层 sender 的单一 value tuple 必须与
-  `CompletionSignatures` 精确一致。
+  `CompletionSignatures` 精确一致。可拷贝的底层 sender 保留左值连接的拷贝路径，
+  可以重复 `sync_wait()`；move-only 底层 sender 的签名按 `S` 查询，并以右值连接。
+  move-only 的一次同步消费尝试后对象即为空，包括 stopped、error 和连接抛异常的情况。
+  `sync_wait()` 要求对象非空；此条件由 `std::runtime_error` 检查，所以消费后的第二次
+  调用与默认空对象一样抛异常，不会再次运行已移动的 sender。
 - `forge::any_scheduler`：窄 scheduler 类型擦除，面向 `schedule()` 这一种常见形状。它按
   共享 erased state 做 identity equality；拷贝出的 `any_scheduler` 相等，两个分别擦除
   同一个 concrete scheduler 的对象也会因为 state 不同而不相等。内部 erased receiver
@@ -268,7 +272,9 @@ Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，�
   `CompletionSignatures` 声明的引用类别；reference payload 只在同步 completion call
   stack 内借用。构造约束按实际 erased receiver env（含 downstream stop token）推导，
   因而会拒绝在该 env 下新增未声明 completion 的 source sender。allocator-aware storage、
-  语义 equality 和任意自定义 receiver env 查询不属于当前范围。
+  语义 equality 和任意自定义 receiver env 查询不属于当前范围。可拷贝 source 保留左值
+  连接路径；move-only source 按 `S` 查询签名并以右值连接，只允许一次连接尝试，
+  后续尝试抛 `std::runtime_error`。source state 仍由 operation 持有至清理结束。
 - `forge::wait_result(sender)`：同步运行 sender 并返回一个小 result 对象，保留 value、
   closed-set typed error 和 stopped。它是 Forge 便利设施，不改变
   `std::this_thread::sync_wait`；`set_error(E)` 保留声明的 error 类型，value materialization
@@ -353,7 +359,7 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 | 弃用入口 | 替代入口 |
 | --- | --- |
 | `std::execution::split(s)` | `forge::split(s)` |
-| `std::execution::empty_env` | 新代码使用 `std::execution::env<>`；需要旧类型身份时使用 `forge::empty_env` |
+| `std::execution::empty_env` | `std::execution::env<>` 或 `forge::empty_env`（同一类型） |
 | `std::execution::transfer_just(sch, values...)` | `forge::transfer_just(sch, values...)` 或 `std::execution::continues_on(std::execution::just(values...), sch)` |
 | `std::execution::make_prop(q, value)` | `std::execution::prop(q, value)` |
 | `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
@@ -362,7 +368,7 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 
 Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execution.hpp>` 汇总。`forge::split` 与原入口共用缓存实现，保持惰性启动、单次执行和 `const&` 重放语义。它依赖 backport 的共享状态，仅在 `FORGE_EXECUTION_BACKPORT_ACTIVE` 已定义时提供；原生 execution 让位时不注入此算法。
 
-`forge::transfer_just` 仅组合标准 `just` 与 `continues_on`，完整原生实现下也可用。`forge::empty_env` 在 backport 下保留旧类型身份，在完整原生实现下等同于 `std::execution::env<>`。`forge::sync_wait` 在 backport 下保留旧的 tuple-or-variant 行为，在完整原生实现下转用标准单一 value completion 的 `std::this_thread::sync_wait`；跨实现消费多种 value completion 应使用标准 `sync_wait_with_variant`。零种 value completion 的既有扩展暂时保留，本次未增加弃用诊断。
+`forge::transfer_just` 仅组合标准 `just` 与 `continues_on`，完整原生实现下也可用。`forge::empty_env` 在 backport 与完整原生实现下均为 `std::execution::env<>`，不再保留旧空环境的独立类型身份。`forge::sync_wait` 在 backport 下保留旧的 tuple-or-variant 行为，在完整原生实现下转用标准单一 value completion 的 `std::this_thread::sync_wait`；跨实现消费多种 value completion 应使用标准 `sync_wait_with_variant`。零种 value completion 的既有扩展暂时保留，本次未增加弃用诊断。
 
 依据为 2026-11-13 查阅的 [execution synopsis](https://eel.is/c++draft/execution.syn)、[env](https://eel.is/c++draft/exec.env)、[prop](https://eel.is/c++draft/exec.prop) 与 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
 

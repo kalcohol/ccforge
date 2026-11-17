@@ -3,6 +3,7 @@
 #include <forge/any_sender.hpp>
 #include <execution>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -118,7 +119,7 @@ struct tracking_sender {
     };
 
     template<std::execution::receiver R>
-    auto connect(R rcvr) & -> op<R> {
+    auto connect(R rcvr) && -> op<R> {
         return op<R>{value, std::move(rcvr)};
     }
 };
@@ -167,7 +168,7 @@ struct throwing_move_sender {
     };
 
     template<std::execution::receiver R>
-    auto connect(R rcvr) & -> op<R> {
+    auto connect(R rcvr) && -> op<R> {
         return op<R>{value, std::move(rcvr)};
     }
 };
@@ -219,12 +220,69 @@ struct alignas(64) over_aligned_sender {
     };
 
     template<std::execution::receiver R>
-    auto connect(R rcvr) & -> op<R> {
+    auto connect(R rcvr) && -> op<R> {
         return op<R>{value, std::move(rcvr)};
     }
 };
 
 static_assert(alignof(over_aligned_sender) > alignof(std::max_align_t));
+
+enum class consuming_completion { value, error, stopped, connect_error };
+
+template<consuming_completion Completion>
+struct consuming_sender {
+    using sender_concept = std::execution::sender_t;
+
+    std::unique_ptr<int> value = std::make_unique<int>(47);
+    int* connections;
+
+    explicit consuming_sender(int* count) : connections(count) {}
+    consuming_sender(consuming_sender&&) = default;
+    consuming_sender(const consuming_sender&) = delete;
+
+    // An lvalue signature query would hide this sender from erasure.
+    template<class Self, class Env>
+        requires (!std::is_lvalue_reference_v<Self>)
+    static auto get_completion_signatures() noexcept -> cs_int { return {}; }
+
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
+
+    template<std::execution::receiver R>
+    struct op {
+        using operation_state_concept = std::execution::operation_state_t;
+        std::unique_ptr<int> value;
+        R rcvr;
+
+        void start() & noexcept {
+            if constexpr (Completion == consuming_completion::error) {
+                std::execution::set_error(std::move(rcvr),
+                    std::make_exception_ptr(std::runtime_error("consuming sender")));
+            } else if constexpr (Completion == consuming_completion::stopped) {
+                std::execution::set_stopped(std::move(rcvr));
+            } else {
+                std::execution::set_value(std::move(rcvr), int(*value));
+            }
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R rcvr) && -> op<R> {
+        ++*connections;
+        if constexpr (Completion == consuming_completion::connect_error) {
+            throw std::runtime_error("consuming connect");
+        }
+        return {std::move(value), std::move(rcvr)};
+    }
+};
+
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>, tracking_sender>);
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>, throwing_move_sender>);
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>, over_aligned_sender>);
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>,
+    consuming_sender<consuming_completion::value>>);
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>, tracking_sender&>);
+static_assert(std::execution::sender_in<tracking_sender, forge::empty_env>);
+static_assert(!std::execution::sender_in<tracking_sender&, forge::empty_env>);
 
 TEST(AnySenderTest, DefaultEmptyThrowsOnSyncWait) {
     forge::any_sender_of<cs_int> erased;
@@ -240,6 +298,49 @@ TEST(AnySenderTest, SyncWaitRunsStoredSender) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
+    EXPECT_TRUE(bool(erased));
+    auto repeated = erased.sync_wait();
+    ASSERT_TRUE(repeated.has_value());
+    EXPECT_EQ(std::get<0>(*repeated), 42);
+}
+
+TEST(AnySenderTest, MoveOnlySyncWaitConsumesStorageOnce) {
+    int connections = 0;
+    forge::any_sender_of<cs_int> erased =
+        consuming_sender<consuming_completion::value>{&connections};
+    auto result = erased.sync_wait();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(*result), 47);
+    EXPECT_FALSE(bool(erased));
+    EXPECT_THROW((void)erased.sync_wait(), std::runtime_error);
+    EXPECT_EQ(connections, 1);
+}
+
+TEST(AnySenderTest, MoveOnlyStoppedWaitEmptiesStorage) {
+    int connections = 0;
+    forge::any_sender_of<cs_int> erased =
+        consuming_sender<consuming_completion::stopped>{&connections};
+    EXPECT_FALSE(erased.sync_wait().has_value());
+    EXPECT_FALSE(bool(erased));
+    EXPECT_THROW((void)erased.sync_wait(), std::runtime_error);
+    EXPECT_EQ(connections, 1);
+}
+
+TEST(AnySenderTest, MoveOnlyErrorAndConnectFailureEmptyStorage) {
+    int connections = 0;
+    forge::any_sender_of<cs_int> error =
+        consuming_sender<consuming_completion::error>{&connections};
+    EXPECT_THROW((void)error.sync_wait(), std::runtime_error);
+    EXPECT_FALSE(bool(error));
+    EXPECT_THROW((void)error.sync_wait(), std::runtime_error);
+    EXPECT_EQ(connections, 1);
+
+    forge::any_sender_of<cs_int> connect_error =
+        consuming_sender<consuming_completion::connect_error>{&connections};
+    EXPECT_THROW((void)connect_error.sync_wait(), std::runtime_error);
+    EXPECT_FALSE(bool(connect_error));
+    EXPECT_THROW((void)connect_error.sync_wait(), std::runtime_error);
+    EXPECT_EQ(connections, 2);
 }
 
 #if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
@@ -283,6 +384,9 @@ TEST(AnySenderTest, MoveConstructsSmallObjectStorageSender) {
         auto result = moved.sync_wait();
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 17);
+        EXPECT_FALSE(bool(moved));
+        EXPECT_EQ(counts.moves, 2);
+        EXPECT_EQ(counts.destroyed, 3);
     }
 
     EXPECT_GE(counts.destroyed, 3);
@@ -301,6 +405,7 @@ TEST(AnySenderTest, MoveAssignsSmallObjectStorageSender) {
         auto result = second.sync_wait();
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 21);
+        EXPECT_FALSE(bool(second));
     }
 
     EXPECT_GE(counts.destroyed, 3);
@@ -322,6 +427,9 @@ TEST(AnySenderTest, ThrowingMoveSmallSenderUsesHeapFallback) {
         auto result = moved.sync_wait();
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 29);
+        EXPECT_FALSE(bool(moved));
+        EXPECT_EQ(counts.moves, 1);
+        EXPECT_EQ(counts.destroyed, 2);
     }
 
     EXPECT_GE(counts.destroyed, 2);
@@ -336,6 +444,9 @@ TEST(AnySenderTest, DestroysOverAlignedHeapFallbackSender) {
         auto result = erased.sync_wait();
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 33);
+        EXPECT_FALSE(bool(erased));
+        EXPECT_EQ(counts.moves, 1);
+        EXPECT_EQ(counts.destroyed, 2);
     }
 
     EXPECT_GE(counts.destroyed, 2);

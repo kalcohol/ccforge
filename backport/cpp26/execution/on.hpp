@@ -185,7 +185,7 @@ struct __starts_on_sender {
 
 struct starts_on_t {
     template<class Scheduler, sender S>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
+        requires scheduler<Scheduler>
     [[nodiscard]] auto operator()(Scheduler&& sch, S&& sndr) const {
         return __forge_on::__starts_on_sender<
             std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
@@ -292,9 +292,10 @@ struct __sender {
     }
 };
 
-template<class S>
+template<class S, class Env>
 using __completion_scheduler_t = decltype(
-    std::execution::get_completion_scheduler<set_value_t>(std::execution::get_env(std::declval<const S&>())));
+    std::execution::get_completion_scheduler<set_value_t>(
+        std::execution::get_env(std::declval<const S&>()), std::declval<Env>()));
 
 template<class S, class Scheduler>
 using __shifted_sender_t = decltype(std::execution::continues_on(
@@ -308,15 +309,23 @@ using __closure_composed_sender_t = decltype(std::execution::continues_on(
     std::declval<__closure_result_t<Closure, __shifted_sender_t<S, Scheduler>>>(),
     std::declval<OrigScheduler>()));
 
+template<class S, class Scheduler, class Closure, class Env>
+concept __closure_signatures_available = requires {
+    typename __completion_scheduler_t<S, Env>;
+    typename __closure_composed_sender_t<
+        S, Scheduler, Closure, __completion_scheduler_t<S, Env>>;
+} && sender_in<__closure_composed_sender_t<
+        S, Scheduler, Closure, __completion_scheduler_t<S, Env>>, Env>;
+
 template<class S, class Scheduler, class Closure, class R>
 using __closure_inner_op_t = connect_result_t<
     __closure_composed_sender_t<
-        S, Scheduler, Closure, __completion_scheduler_t<S>>, R>;
+        S, Scheduler, Closure, __completion_scheduler_t<S, env_of_t<R>>>, R>;
 
 template<class S, class Scheduler, class Closure, class R>
 concept __closure_form_connectable =
     requires {
-        typename __completion_scheduler_t<S>;
+        typename __completion_scheduler_t<S, env_of_t<R>>;
         typename __closure_inner_op_t<S, Scheduler, Closure, R>;
     } &&
     requires(S&& sndr, Scheduler&& sch, Closure&& closure, R&& r) {
@@ -327,7 +336,7 @@ concept __closure_form_connectable =
                         static_cast<S&&>(sndr),
                         static_cast<Scheduler&&>(sch))),
                 std::execution::get_completion_scheduler<set_value_t>(
-                    std::execution::get_env(sndr))),
+                    std::execution::get_env(sndr), std::execution::get_env(r))),
             static_cast<R&&>(r));
     };
 
@@ -340,7 +349,7 @@ struct __closure_op : __forge_detail::__immovable {
 
     static auto __connect(S sndr, Scheduler sch, Closure closure, R rcvr) -> inner_op_t {
         auto orig_sch = std::execution::get_completion_scheduler<set_value_t>(
-            std::execution::get_env(sndr));
+            std::execution::get_env(sndr), std::execution::get_env(rcvr));
         auto shifted = std::execution::continues_on(std::move(sndr), std::move(sch));
         auto adapted = std::move(closure)(std::move(shifted));
         auto composed = std::execution::continues_on(std::move(adapted), std::move(orig_sch));
@@ -369,12 +378,16 @@ struct __closure_sender {
     Closure __closure;
 
     template<class Self, class Env>
+        requires __closure_signatures_available<
+            typename std::remove_cvref_t<Self>::source_t,
+            typename std::remove_cvref_t<Self>::scheduler_t,
+            typename std::remove_cvref_t<Self>::closure_t, Env>
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using source_t = typename self_t::source_t;
         using scheduler_t = typename self_t::scheduler_t;
         using closure_t = typename self_t::closure_t;
-        using orig_scheduler_t = __completion_scheduler_t<source_t>;
+        using orig_scheduler_t = __completion_scheduler_t<source_t, Env>;
         using composed_t = __closure_composed_sender_t<
             source_t, scheduler_t, closure_t, orig_scheduler_t>;
         return decltype(std::execution::get_completion_signatures(
@@ -473,7 +486,7 @@ struct __bound_closure : sender_adaptor_closure<__bound_closure<Scheduler, Closu
 
 struct on_t {
     template<class Scheduler, sender S>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
+        requires scheduler<Scheduler>
     [[nodiscard]] auto operator()(Scheduler&& sch, S&& sndr) const {
         return __sender<std::remove_cvref_t<Scheduler>, std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
@@ -481,7 +494,7 @@ struct on_t {
     }
 
     template<class Scheduler, class Closure>
-        requires scheduler<std::remove_cvref_t<Scheduler>> &&
+        requires scheduler<Scheduler> &&
                  (!sender<std::decay_t<Closure>>) &&
                  std::constructible_from<std::remove_cvref_t<Scheduler>, Scheduler> &&
                  std::constructible_from<std::decay_t<Closure>, Closure>
@@ -495,7 +508,7 @@ struct on_t {
     }
 
     template<sender S, class Scheduler, class Closure>
-        requires scheduler<std::remove_cvref_t<Scheduler>>
+        requires scheduler<Scheduler>
     [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const {
         return __closure_sender<
             std::decay_t<S>, std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>{

@@ -67,8 +67,13 @@ inline void test_reset_thread_launch_failure() noexcept {
 struct __env {
     static_thread_pool* pool;
 
-    auto query(std::execution::get_completion_scheduler_t<
-                   std::execution::set_value_t>) const noexcept;
+    template<class Tag>
+        requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+    auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept;
+
+    template<class Tag, class Env, class... Envs>
+        requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+    auto query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept;
 };
 
 class __task {
@@ -391,6 +396,12 @@ public:
 
     struct scheduler {
         using scheduler_concept = std::execution::scheduler_t;
+        template<class Tag>
+            requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+        auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> static_thread_pool::scheduler {
+            return *this;
+        }
+
         bool operator==(const scheduler&) const noexcept = default;
 
         auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
@@ -526,16 +537,17 @@ private:
 
 namespace __pool_detail {
 
-inline auto __env::query(std::execution::get_completion_scheduler_t<
-                            std::execution::set_value_t>) const noexcept {
+template<class Tag>
+    requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+auto __env::query(std::execution::get_completion_scheduler_t<Tag>) const noexcept {
     return static_thread_pool::scheduler{pool};
 }
 
-inline auto tag_invoke(
-    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
-    const __env& self) noexcept -> static_thread_pool::scheduler {
-    return self.query(std::execution::get_completion_scheduler<
-        std::execution::set_value_t>);
+template<class Tag, class Env, class... Envs>
+    requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+auto __env::query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept {
+    return std::execution::get_completion_domain<Tag>(
+        static_thread_pool::scheduler{pool}, static_cast<Env&&>(env), static_cast<Envs&&>(envs)...);
 }
 
 } // namespace __pool_detail

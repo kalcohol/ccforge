@@ -31,6 +31,10 @@ namespace std::execution {
 
 namespace __forge_read_env {
 
+// Unevaluated stand-in for get_env: preserve prvalues as well as references.
+template<class Env>
+Env __environment() noexcept;
+
 template<class Tag, class R>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_t;
@@ -40,8 +44,7 @@ struct __op : __forge_detail::__immovable {
     __op(Tag t, R r) : __rcvr(std::move(r)), __tag(std::move(t)) {}
 
     void start() & noexcept {
-        using env_t = env_of_t<R>;
-        if constexpr (std::is_nothrow_invocable_v<Tag&, env_t>) {
+        if constexpr (noexcept(__tag(std::execution::get_env(__rcvr)))) {
             set_value(std::move(__rcvr),
                       __tag(std::execution::get_env(__rcvr)));
         } else {
@@ -62,11 +65,18 @@ struct __sender {
 
     Tag __tag;
 
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using tag_t = typename std::remove_cvref_t<Self>::tag_t;
-        using result_t = std::invoke_result_t<tag_t&, Env>;
-        if constexpr (std::is_nothrow_invocable_v<tag_t&, Env>) {
+    template<class Env>
+        requires requires(Env& env, Tag& query) {
+            Tag()(env);
+            requires (!std::is_void_v<decltype(Tag()(env))>);
+            query(__environment<Env>());
+            requires (!std::is_void_v<decltype(query(__environment<Env>()))>);
+        }
+    auto get_completion_signatures(Env&&) const noexcept {
+        // The check uses Q()(env); start invokes the stored query as an lvalue
+        // with the receiver's exact environment value category.
+        using result_t = decltype(std::declval<Tag&>()(__environment<Env>()));
+        if constexpr (noexcept(std::declval<Tag&>()(__environment<Env>()))) {
             return completion_signatures<set_value_t(result_t)>{};
         } else {
             return completion_signatures<
@@ -95,7 +105,7 @@ struct __sender {
 
 struct read_env_t {
     template<class Tag>
-    [[nodiscard]] auto operator()(Tag tag) const {
+    [[nodiscard]] constexpr auto operator()(Tag tag) const {
         return __forge_read_env::__sender<Tag>{std::move(tag)};
     }
 };

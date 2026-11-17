@@ -644,8 +644,8 @@ strict 模式直接包含 backport headers，断言 `env` / `prop` 及内部 hel
 `write_env` 的 overlay 优先、本地 base 查询拒绝、本地 overlay 查询保留，以及
 `inline_scheduler` 的环境相关 value completion scheduler / domain 与 scheduler / attrs 一致性，
 `run_loop` 的 value / stopped completion scheduler 一致性、带环境参数的 completion-domain CPO
-一致性、unary domain 缺失与 progress 成员均在两种模式检查。精确环境类型的 completion-domain
-成员重载优先于通用成员回退，两种模式均有探针；默认模式另检查对应的 ADL 重载选择。
+一致性、unary domain 缺失与 progress 成员均在两种模式检查。completion-domain
+派生查询使用 HIDE-SCHED，两种模式均检查精确原环境重载不再匹配；直接查询仍检查成员与 ADL 选择。
 Completion scheduler / domain 探针还比较成员与 ADL 竞争、通用回退、带环境查询和 unary 回退，
 并检查 inline 及转发其查询的 scheduler 的 domain 递归终止。探针还使用满足 `receiver` 的非抛出移动类型，覆盖
 schedule sender 及其 `write_env` 包装的 `connect` / `start` 异常规格；rvalue receiver 移动
@@ -667,8 +667,8 @@ schedule / `let` / `write_env` 组合中的 child scheduler 传播，以及 run-
 从 receiver env 读取 stop token。三个 `let` adaptor 均检查 unary completion-scheduler 回退、
 环境相关查询优先、receiver 本地查询过滤、scheduler 优先于 completion domain，以及
 临时 attributes / 按值与借用 receiver environment 中引用答案的值保存。
-receiver env 缺少 scheduler 时，inline predecessor 在 strict 模式选择 completion domain，
-默认模式保留 legacy unary scheduler 回退；运行测试同时检查 child 的 start scheduler。
+receiver env 缺少 scheduler 时，inline predecessor 在默认和 strict 模式均选择 inline scheduler；
+运行测试同时检查 child 的 start scheduler。
 `continues_on` 用例检查 source 与 schedule sender 在 signatures、连接及执行阶段使用过滤环境，
 并检查 scheduler operation 在 `connect` 预连接。value / stopped 经 downstream `let` 取得
 destination scheduler / domain，error completion 经 destination hop 后到达 successor；
@@ -680,6 +680,27 @@ source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule 
 两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
 `ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
 此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。
+
+`execution_default_query_conformance_compile` / `execution_strict_query_conformance_compile`
+检查空环境类型、env/prop 不可赋值、read_env 的左值 check-types 与实际调用的值类别/异常规格、标准查询命名空间、
+constexpr、prop 两种括号形式的 CTAD（含函数模板内非依赖表达式）、const 可赋值 tag 的拷贝/移动赋值拒绝、默认构造与空 tag 大小、
+env 的 ref/cref 解包、混合参数、模板内 CTAD 与拷贝推导、scheduler 表达式类别、receiver 类别、domain 函数模板、
+indeterminate domain 与 completion-signature utilities。对应的
+`execution_default_query_conformance` / `execution_strict_query_conformance` 运行类型/值
+scheduler 递归、环境单次求值、prop 的 move-only value 移动、借用结果身份与 Forge scheduler/attrs parity；复制/移动未声明
+noexcept 的 scheduler 仍可解析。两种 indeterminate 合并顺序检查相同候选集合与 transform
+行为，COMMON-DOMAIN 覆盖 common type 存在但不可默认构造的回退。
+on closure 的 receiver-dependent 查询配有正控制及缺失/过滤关键查询时的 sender_in、connectability 负控制。
+配置期 `FORGE_EXECUTION_QUERY_MANDATE_*` 探针逐项拒绝 throwing / 错误结果查询、
+不可默认构造 domain、non-void start/completion、non-sender schedule、无效完成签名和
+不一致的 indeterminate-domain transform；默认与 strict 成员路径及默认 ADL 路径独立注册。
+这些探针检查 hard Mandates；普通编译探针中的正反 requires 控制检查软约束。
+`forge_any_sender` / `forge_strict_any_sender` 同时覆盖可拷贝 source 的重复等待与
+move-only source 的一次消费、空对象检查、stopped/error/连接失败后的清理，以及
+SBO、抛异常移动和过度对齐的存储计数。`forge_erased_sender` / `forge_strict_erased_sender`
+检查对应的 source 连接类别、一次消费与借用 source 的 operation 清理顺序。
+Domain 构造、scheduler lvalue-only 结果及候选 domain transform 的拒绝用例各有只改变目标条件的正控制，
+构造函数及所有可执行路径均有定义，使拒绝原因不依赖链接失败。
 
 ## Protocol model check（协议模型检验）
 

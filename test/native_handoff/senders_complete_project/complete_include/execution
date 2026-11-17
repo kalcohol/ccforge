@@ -252,8 +252,8 @@ struct schedule_t {
 struct get_forward_progress_guarantee_t {
     template<class Scheduler>
     [[nodiscard]] forward_progress_guarantee operator()(
-        const Scheduler&) const noexcept {
-        return forward_progress_guarantee::weakly_parallel;
+        const Scheduler& scheduler_value) const noexcept {
+        return scheduler_value.query(*this);
     }
 };
 
@@ -279,6 +279,10 @@ public:
     class scheduler {
     public:
         using scheduler_concept = scheduler_tag;
+        constexpr auto query(get_forward_progress_guarantee_t) const noexcept
+            -> forward_progress_guarantee {
+            return forward_progress_guarantee::weakly_parallel;
+        }
 
         friend bool operator==(
             const scheduler&,

@@ -289,7 +289,7 @@ TEST(ScheduleFromTest, ForwardsChildCompletionSchedulerAttribute) {
 
     EXPECT_EQ(
         std::execution::get_completion_scheduler<
-            std::execution::set_value_t>(attrs),
+            std::execution::set_value_t>(attrs, forge::empty_env{}),
         scheduler);
 }
 

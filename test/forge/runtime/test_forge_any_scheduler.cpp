@@ -20,6 +20,10 @@ struct scheduler_counts {
 
 struct tracking_scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     forge::static_thread_pool* pool;
     std::shared_ptr<scheduler_counts> counts;
@@ -40,6 +44,9 @@ struct tracking_scheduler {
             ++counts->moved;
         }
     }
+
+    tracking_scheduler& operator=(const tracking_scheduler&) noexcept = default;
+    tracking_scheduler& operator=(tracking_scheduler&&) noexcept = default;
 
     ~tracking_scheduler() {
         if (counts) {

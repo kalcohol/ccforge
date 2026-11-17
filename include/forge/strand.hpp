@@ -604,6 +604,16 @@ struct __op;
 
 struct __scheduler {
     using scheduler_concept = std::execution::scheduler_t;
+    template<class Tag>
+        requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+    auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __scheduler {
+        return *this;
+    }
+
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
 
     std::shared_ptr<__state> state;
 
@@ -615,10 +625,15 @@ struct __scheduler {
 struct __env {
     std::shared_ptr<__state> state;
 
-    auto query(std::execution::get_completion_scheduler_t<
-                   std::execution::set_value_t>) const noexcept -> __scheduler {
-        return __scheduler{state};
-    }
+    template<class Tag>
+        requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+    auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __scheduler;
+
+    template<class Tag, class Env, class... Envs>
+        requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+    auto query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept
+        -> decltype(std::execution::get_completion_domain<Tag>(
+            std::declval<__scheduler>(), static_cast<Env&&>(env), static_cast<Envs&&>(envs)...));
 };
 
 struct __sender {
@@ -698,11 +713,19 @@ auto __sender::connect(R rcvr) const& -> __op<R> {
     return __op<R>{state, std::move(rcvr)};
 }
 
-inline auto tag_invoke(
-    std::execution::get_completion_scheduler_t<std::execution::set_value_t>,
-    const __env& env) noexcept -> __scheduler {
-    return env.query(std::execution::get_completion_scheduler<
-        std::execution::set_value_t>);
+template<class Tag>
+    requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+auto __env::query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __scheduler {
+    return __scheduler{state};
+}
+
+template<class Tag, class Env, class... Envs>
+    requires (std::same_as<Tag, void> || std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
+auto __env::query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&&... envs) const noexcept
+    -> decltype(std::execution::get_completion_domain<Tag>(
+        std::declval<__scheduler>(), static_cast<Env&&>(env), static_cast<Envs&&>(envs)...)) {
+    return std::execution::get_completion_domain<Tag>(
+        __scheduler{state}, static_cast<Env&&>(env), static_cast<Envs&&>(envs)...);
 }
 
 inline auto __scheduler::schedule() const noexcept -> __sender {
@@ -726,7 +749,7 @@ public:
     template<class Scheduler>
         requires (!std::is_same_v<std::remove_cvref_t<Scheduler>, strand>)
               && (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
-              && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
+              && std::execution::scheduler<Scheduler>
     explicit strand(Scheduler&& scheduler)
         : strand(static_cast<Scheduler&&>(scheduler), strand_options{})
     {}
@@ -734,7 +757,7 @@ public:
     template<class Scheduler>
         requires (!std::is_same_v<std::remove_cvref_t<Scheduler>, strand>)
               && (!std::is_same_v<std::remove_cvref_t<Scheduler>, any_scheduler>)
-              && std::execution::scheduler<std::remove_cvref_t<Scheduler>>
+              && std::execution::scheduler<Scheduler>
     strand(Scheduler&& scheduler, strand_options options)
         : state_(__make_state(static_cast<Scheduler&&>(scheduler), options))
     {}

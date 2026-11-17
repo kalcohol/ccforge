@@ -597,15 +597,15 @@ TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {
     std::inplace_stop_source source;
     int value = -1;
     bool errored = false;
-    auto observes_child_token = [outer = source.get_token()](const auto& env) noexcept {
-        auto token = std::execution::get_stop_token(env);
+    auto observes_child_token = [outer = source.get_token()](auto token) noexcept {
         static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
         return int(token != outer);
     };
     using receiver_t = query_env_receiver<member_stop_env>;
 
     auto direct = std::execution::connect(
-        std::execution::read_env(observes_child_token),
+        (std::execution::read_env(std::execution::get_stop_token)
+            | std::execution::then(observes_child_token)),
         receiver_t{{&value, &errored}, {source.get_token()}});
     std::execution::start(direct);
     EXPECT_EQ(value, 0);
@@ -613,7 +613,8 @@ TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {
 
     value = -1;
     auto op = std::execution::connect(
-        std::execution::when_all(std::execution::read_env(observes_child_token)),
+        std::execution::when_all((std::execution::read_env(std::execution::get_stop_token)
+            | std::execution::then(observes_child_token))),
         receiver_t{{&value, &errored}, {source.get_token()}});
     std::execution::start(op);
     EXPECT_EQ(value, 1);

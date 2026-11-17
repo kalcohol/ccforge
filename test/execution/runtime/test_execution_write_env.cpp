@@ -292,14 +292,14 @@ static_assert(!std::forwarding_query(std::execution::set_value));
 
 TEST(WriteEnvTest, PropQueriesBorrowMoveOnlyValuesWithoutCopying) {
     auto property = std::execution::prop{
-        std::execution::get_allocator_t{},
+        overlay_value_query_t{},
         move_only_property_value{42}};
 
     static_assert(std::same_as<
-        decltype(std::execution::get_allocator(property)),
+        decltype(overlay_value_query(property)),
         const move_only_property_value&>);
-    static_assert(noexcept(std::execution::get_allocator(property)));
-    EXPECT_EQ(std::execution::get_allocator(property).value, 42);
+    static_assert(noexcept(overlay_value_query(property)));
+    EXPECT_EQ(overlay_value_query(property).value, 42);
 }
 
 TEST(EnvTest, ReferenceWrapperBorrowsMemberQueryEnvironment) {
@@ -345,13 +345,13 @@ TEST(WriteEnvTest, GetEnvPreservesTagReferenceWithoutCopying) {
 TEST(WriteEnvTest, PropUnwrapsReferenceWrappers) {
     int value = 42;
     auto property = std::execution::prop{
-        std::execution::get_allocator_t{},
+        overlay_value_query_t{},
         std::ref(value)};
 
     static_assert(std::same_as<
-        decltype(std::execution::get_allocator(property)),
+        decltype(overlay_value_query(property)),
         int&>);
-    EXPECT_EQ(&std::execution::get_allocator(property), &value);
+    EXPECT_EQ(&overlay_value_query(property), &value);
 }
 
 TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
@@ -365,7 +365,7 @@ TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
         sndr, forge::empty_env{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
-            std::execution::set_value_t(const std::execution::inline_scheduler&)>>);
+            std::execution::set_value_t(std::execution::inline_scheduler)>>);
 
     auto result = forge::sync_wait(std::move(sndr));
 
