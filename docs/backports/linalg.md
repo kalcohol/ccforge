@@ -1,6 +1,6 @@
 # `std::linalg` backport 说明
 
-当前为 P1673R13 风格的实验性 backport，提供一个不依赖外部 BLAS 库的实用 BLAS 子集。
+当前为不依赖外部 BLAS 库的实验性 backport，覆盖 2026-11-17 工作草案 synopsis 的算法与辅助接口；下文列出保留的语义差异和兼容扩展。
 
 ## 如何使用
 
@@ -16,7 +16,8 @@ auto sum = std::linalg::dot(v, v);
 
 ## 特性宏
 
-包含 `<linalg>` 后不定义 `__cpp_lib_linalg`，因为实现仍是工作草案子集。
+包含 `<linalg>` 后不定义 `__cpp_lib_linalg`；Forge 的实验性实现保留下述差异。
+`FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS` 为 `1` 时提供 policy 重载，为 `0` 时不声明它们。该标记只描述 backport；原生让位时不定义。
 
 ## Native 让位
 
@@ -24,9 +25,7 @@ auto sum = std::linalg::dot(v, v);
 
 ## 覆盖范围
 
-### 覆盖范围
-
-以下列出已实现的函数族，不表示包含当前 WD 的每个重载；具体缺口见下方限制。
+以下函数族包含当前 [synopsis](https://eel.is/c++draft/linalg.syn) 的 84 个非 policy 函数模板和 78 个 policy 函数模板；policy 入口受原生 policy 对象可用性门控。
 
 **BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、
 `vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、
@@ -45,9 +44,10 @@ auto sum = std::linalg::dot(v, v);
 `symmetric_matrix_rank_1/2_update`、`hermitian_matrix_rank_1/2_update`
 
 **BLAS Level 3：** `matrix_product`、`triangular_matrix_left_product`、
-`triangular_matrix_right_product`、`triangular_matrix_matrix_left_solve`、
+`triangular_matrix_right_product`、`triangular_matrix_product`、
+`triangular_matrix_matrix_left_solve` / `triangular_matrix_matrix_right_solve`、
 `symmetric_matrix_product`、`hermitian_matrix_product`、`symmetric_matrix_rank_k/2k_update`、
-`hermitian_matrix_rank_k_update`
+`hermitian_matrix_rank_k/2k_update`
 
 **辅助组件：** `scaled` / `conjugated` / `transposed` / `conjugate_transposed` 视图函数、
 `scaled_accessor`、`conjugated_accessor`、`layout_transpose`、`layout_blas_packed`、
@@ -74,9 +74,9 @@ auto sum = std::linalg::dot(v, v);
   [mdspan.layout.stride.cons](https://eel.is/c++draft/mdspan.layout.stride.cons)。
 - 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。
 - 当原生 `<linalg>` 可用时，backport 自动禁用。
-- Forge 当前不定义标准 feature-test macro `__cpp_lib_linalg`，因为这仍是实验性 draft
-  子集；下游不应把它当作完整 C++26 `<linalg>` 宣告。
-- 未实现 execution policy 重载，不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。
+- Forge 当前不定义标准 feature-test macro `__cpp_lib_linalg`，因为仍保留实验性差异；
+  下游不应把它当作完整 C++26 `<linalg>` 宣告。
+- 不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。policy 行为见下节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
 - 有意偏离（整型范数/SSQ）：当前 WD 的 `vector_two_norm` / `matrix_frob_norm`
@@ -96,17 +96,59 @@ auto sum = std::linalg::dot(v, v);
   `matrix_inf_norm` 在 `uintmax_t` 中精确累计 magnitude，并在超出结果类型表示域时
   饱和。显式 wider floating `Scalar` 的复数 magnitude 在该 `Scalar` 精度中计算，
   不先在较窄元素类型中溢出。
-- Level 2 的 `triangular_matrix_vector_product` 仅实现 in-place 和 out-of-place
-  版本，未实现带输入向量 `y` 的 updating 版本；`triangular_matrix_vector_solve`
-  仅实现 in-place 版本，未实现 out-of-place 或自定义 `BinaryDivideOp` 重载。
-- Level 3 的 in-place triangular product 使用
-  `triangular_matrix_left_product` / `triangular_matrix_right_product`；当前 WD
-  的 out-of-place `triangular_matrix_product` 左、右两侧版本及其 updating 重载均未实现。
-  旧的带 `Side` 参数的非标准 wrapper 不等同于这些标准重载，也不再暴露。
-- Level 3 的 symmetric / Hermitian matrix product 仅实现左侧 overwrite 版本；
-  右侧版本及带输入矩阵 `E` 的 updating 版本未实现。
-- Level 3 triangular solve 仅实现左侧 in-place 矩阵版本，未实现右侧、out-of-place
-  或自定义 `BinaryDivideOp` 重载；Hermitian rank-2k 仍未实现。
+- 草案的 Mandates 以 requires-clause 表达，违反时从候选集合移除，因此可由
+  requires-expression / SFINAE 检测。额外静态 extent 检查只拒绝必定违反运行期
+  Preconditions 的调用。参数按可推导的 `std::mdspan` specialization 拼写，因而也接受
+  mdspan 派生类并按基类值复制；草案的 exposition-only 概念要求精确 specialization。
+- 输出约束同时检查 reference 对 element_type 的可赋值性与 mapping 的静态唯一性；
+  structured rank-update 输出保留 packed layout 例外。所有 solve 支持仅可赋值、
+  可读为元素值的 proxy，不要求在 output reference 上提供 `-=` 或 `/=`。
+- triangular vector solve、左右 matrix solve 均有 in-place / out-of-place 和
+  自定义 `BinaryDivideOp` 版本。不提供 divide 的版本等效于使用 `std::divides<void>{}`。
+  草案的一般 divide 要求描述右逆，与 left-trsm note 要求的左逆在非交换类型上冲突。
+  本实现按该 note 选择：divide 的首参为分子，次参为对角元素；左侧非交换类型须提供
+  左逆语义，右侧须提供右逆语义，参见 [trsm](https://eel.is/c++draft/linalg.algs.blas3.trsm)。不保证 divide 的调用
+  顺序、次数或某一次分子的形式。implicit unit diagonal 不读取对角存储。
+- updating triangular vector product 允许 `z` alias `y`；左右 symmetric / Hermitian /
+  triangular matrix product 的 updating 版本均允许 `C` alias `E`；Hermitian rank-2k
+  updating 同样允许 `C` alias `E`。这些许可指草案定义的 alias；solve 不允许输出与其它
+  mdspan 参数重叠。仅访问指定 triangle，Hermitian 输入对角只使用实部。
+- Hermitian product 的混合类型 factor 先在自身类型中参与乘法，再转换输出；当前顺序
+  kernel 的特定浮点舍入回归标记为 Forge expectation，不作为草案要求。
+- Hermitian rank 输出仍写入严格实数对角。这是 Forge 在舍入结果上的 BLAS 兼容选择，
+  超出草案仅要求数学结果的措辞；通过独立赋值实现，不要求实部与元素值之间隐式转换。
+- `layout_transpose::mapping` 保留默认构造器、更泛化的 nested-mapping 构造器、公开的
+  reserved nested type alias，以及部分比草案更强的 `noexcept`。heterogeneous equality
+  比较 nested mappings；packed mapping 的索引模板检查可转换性与不抛出构造。
+- substitution 的实际复杂度是 `O(n² × nrhs)`。草案部分矩形 left-trsm、in-place
+  left/right-trsm 以及 left-trmm 的复杂度式使用了不对应的维度；实现不承诺这些式子在
+  任意矩形尺寸下都成立，参见 [inplacetrsm](https://eel.is/c++draft/linalg.algs.blas3.inplacetrsm)。
+
+范数的非整数入口与 `setup_givens_rotation` 仍保留历史上更宽的自定义数值类型域：
+部分范数仅排除整数，而非严格限制为草案要求的浮点或复数；setup 的非整数 `Real`
+也未收窄为浮点。仅在相应运算有效时这些实例化才可用，原生让位时不能依赖此扩展。
+本批不新增这些类型的弃用诊断；参见 [nrm2](https://eel.is/c++draft/linalg.algs.blas1.nrm2)、
+[matfrobnorm](https://eel.is/c++draft/linalg.algs.blas1.matfrobnorm) 与
+[Givens setup](https://eel.is/c++draft/linalg.algs.blas1.givens.lartg)。
+
+### Execution policies
+
+仅在原生 `<execution>` 提供 policy 对象时声明全部 78 个 policy 重载。共享的
+native-only header detection 从 backport include root 加载原生头，并在加载后检查
+`__cpp_lib_execution`，不会定义任何标准 feature-test macro，也不会因为包含 `<linalg>`
+而加载 Forge P2300 backport。`<execution>` 在 `<linalg>` 前后包含的结果一致；同一
+工具链配置的不同翻译单元具有相同入口集合。
+
+接受 `std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>>` 为真的原生
+标准或 implementation-defined policy。所有 policy 均在调用线程顺序执行，不分配
+并行工作存储；元素访问函数逸出的异常调用 `std::terminate`。公开函数不声明 `noexcept`，
+进入函数前参数复制产生的异常仍按调用方规则处理。整数范数、整数 Givens、历史 SSQ 和
+旧顺序扩展不增加 policy 版本；`setup_givens_rotation` 按草案没有 policy 版本。
+
+[linalg.algs.reqs](https://eel.is/c++draft/linalg.algs.reqs) 的字面措辞对未去引用的
+`ExecutionPolicy` 检查 trait，会拒绝 `std::execution::seq` 的 const lvalue。
+这里采用 [algorithms.parallel.overloads](https://eel.is/c++draft/algorithms.parallel.overloads)
+的去 cv/ref 规则，以接受这些标准 policy 对象。
 
 
 ### SIMD 加速
@@ -122,8 +164,7 @@ layout/default accessor。验证入口见[测试说明](../testing.md)；跨架�
 
 ### 性能特征
 
-Level 3 的 `matrix_product`（含 updating 重载）、已实现的 symmetric / Hermitian
-product 和 in-place triangular product 按操作数布局选择循环顺序。
+Level 3 的 `matrix_product`（含 updating 重载）、symmetric / Hermitian product 的左侧 overwrite 版本 和 in-place triangular product 按操作数布局选择循环顺序。
 `layout_right` / `layout_right_padded` 优先沿列方向遍历，
 `layout_left` / `layout_left_padded` 在适用时沿行方向遍历；混合布局选择可连续
 访问的操作数。小块独立累加器保持各输出元素的 `k` 递增顺序，updating 版本在
@@ -146,14 +187,26 @@ dot product 路径；`layout_stride`、packed layout 和非 default accessor 保
 
 ### OpenMP 并行
 
-无 execution policy 的 `std::linalg` overload 默认保持顺序执行；Forge 当前不再因为
-翻译单元带 `-fopenmp` 就隐式并行化 GEMM/GEMV。未来若补并行路径，会放在显式 opt-in
-或 execution policy overload 下。
+所有 `std::linalg` overload（包括 policy 版本）均保持顺序执行；翻译单元带
+`-fopenmp` 不会隐式并行化 GEMM/GEMV。
 
 
 ### 非标准重载
 
-`std::linalg` 下将 Triangle 放在第一个参数、以及带额外 alpha 的兼容重载不是工作草案形态，原生让位后可能无法编译。整数范数也属于非工作草案扩展，参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)，原生实现上无法依赖。上述 Triangle 首参入口、整数范数与整数 Givens 标量入口已弃用，迁移方法见下表。
+`std::linalg` 的兼容入口在原生让位后可能无法编译。以下四个 alpha-first、Triangle-second
+版本继续保留，本批不增加弃用：
+
+| 非标准入口 | 对应草案调用 |
+| --- | --- |
+| `symmetric_matrix_rank_1_update(alpha, t, x, A)` | `symmetric_matrix_rank_1_update(alpha, x, A, t)` |
+| `symmetric_matrix_rank_2_update(alpha, t, x, y, A)` | 草案没有同形的额外 alpha 版本 |
+| `symmetric_matrix_rank_k_update(alpha, t, A, C)` | `symmetric_matrix_rank_k_update(alpha, A, C, t)` |
+| `symmetric_matrix_rank_2k_update(alpha, t, A, B, C)` | 草案没有同形的额外 alpha 版本 |
+
+第二、四项覆盖输出而非隐式累计；alpha 保持在乘积最左侧。历史
+`sum_of_squares_result` / `vector_sum_of_squares` 也不属于当前草案。
+Triangle-first 的四个入口、整数范数、整数 SSQ 与整数 Givens 标量入口已弃用，
+迁移见下表；参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)。
 
 ## 示例
 

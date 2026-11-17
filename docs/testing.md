@@ -725,3 +725,48 @@ lock 同时保留最近资格运行和上次 full 的日期、配置数与结果
 Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正保障是 assessment 中的对应关系审查，tier 本身不能证明 fidelity。
 头文件的每次编辑（包括注释和空白）都要求刷新 source lock；source digest 是仅将 CRLF 转成 LF 后的字节 SHA-256。纯注释或纯空白改动可用 quick 重新确认，assessment 必须明确改动类型并说明模型为何不受影响。
 维护命令及 assessment 规则见 [stop_token 模型说明](../formal/stop_token/README.md)。
+
+
+### Linalg 完整重载回归
+
+`FORGE_TEST_ENABLE_LINALG=ON` 且 `<mdspan>` 可用时，`linalg_feature_macro_compile`
+对 backport 和原生（含 partial）均注册；`linalg_include_compile` 与
+`linalg_overload_scalars` 在 backport 注入或 complete native 时注册，后者用全部 78 个
+非 policy twin 的独立小整数期望验证标准入口。
+
+其余依赖 Forge 扩展、约束诊断、marker 或特定算术路径的测试及 configure probes，均要求
+实际 backport 注入：`FORGE_FORCE_LINALG_BACKPORT`，或 `FORGE_LINALG_FULL` 与
+`FORGE_LINALG_PARTIAL` 同时为假。原生 full/partial 让位时不注册这些测试，也不探测 policy
+variant；configure 明示跳过。该组包括既有 auxiliary / level1/2/3、proxy、布局/性能回归、
+静态约束与 packed negative probes，以及新增：
+
+- `linalg_missing_overloads`：23 个新增非 policy 入口，naive product / multiply-back
+  solve oracle，upper/lower × explicit/unit、静态/动态、左右布局、stride、两种 packed
+  storage order、lazy views 与每个 updating alias 许可；
+- `linalg_conformance` / `linalg_conformance_compile`：可写 proxy、非交换 divide、
+  conjugation 的元素转换、实数对角赋值、混合类型 Hermitian 乘法、scalar / assignability /
+  packed 约束、member signatures 与 solve 重载选择；mixed RHS proxy 的三种 solve、
+  assignment-only SYMV/HEMV/swap 和 complex proxy dotc 同时在可用的 policy 路径实例化；
+- `linalg_native_execution_only_compile`：包含 `<linalg>` 不加载 Forge P2300；
+- `linalg_policy_include_order_compile` / `linalg_policy_include_order`：两个翻译单元分别在
+  `<linalg>` 前后包含 `<execution>`，检查可用性一致、78 个返回类型、policy value
+  category 和弃用扩展隔离。
+
+上述注入 gate 内，configure 检查原生 policy 对象后才注册 `linalg_execution_policy`，覆盖每个标准
+policy 的独立结果、调用线程行为和异常 terminate（accessor 与算术异常，GoogleTest
+subprocess exit-code 检查）。`unseq` 要求 `__cpp_lib_execution >= 201902L`。
+没有 policy 对象时 configure 明示原因，并注册可见的 skipped
+`linalg_execution_policy_unavailable`；没有 death-test 支持的平台仅跳过 terminate cases。
+所有新测试启用 deprecation-as-error。TBB 可用时由 linalg helpers 链接。
+
+libc++ 默认缺少 policy 对象时，CMake 另探测 per-target `-fexperimental-library`
+能否编译并链接 policy；成功才增加 `linalg_execution_policy_experimental` 与
+`linalg_policy_selection_experimental_compile`，不修改 lane scripts 或 libc++ 私有宏。
+探测失败时 llvm / zig / macOS 仍检查无 policy 入口的路径，configure 说明 variant 缺失。
+
+完整 `scripts/verify-native.sh llvm`、`zig`、`gcc16` 运行新 linalg 组；`gcc16-slim`
+只配置，`gcc-exec`、`tsan`、`asan` 关闭 linalg。macOS 完整 lane 保留 linalg。
+当前 `verify-windows-msvc.ps1` 的主 smoke 及专用子组显式关闭 linalg；需要单独配置
+`FORGE_TEST_ENABLE_LINALG=ON` 才运行这些目标，CMake 会通过 `FORGE_MSVC_EXECUTION_HEADER`
+加载原生 policies。可在已配置的 binary directory 中运行
+`ctest -R '^linalg_' --output-on-failure` 聚焦该组；policy skip 必须结合 configure 记录解释。
