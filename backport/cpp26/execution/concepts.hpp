@@ -24,6 +24,7 @@
 
 #include "detail.hpp"
 #include "env.hpp"
+#include "detail/awaitable_helpers.hpp"
 
 #include <variant>
 
@@ -189,7 +190,7 @@ concept __nothrow_instance_completion_signatures = requires(S&& s, Env&& env) {
 };
 
 template<class S, class Env>
-consteval bool __valid_raw_completion_signatures() {
+consteval bool __valid_member_completion_signatures() {
     if constexpr (__static_completion_signatures<S, Env>) {
         return __valid_completion_signatures<decltype(std::remove_cvref_t<S>
             ::template get_completion_signatures<S, std::remove_cvref_t<Env>>())>;
@@ -204,8 +205,39 @@ consteval bool __valid_raw_completion_signatures() {
     }
 }
 
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+template<class V>
+struct __await_value_signature { using type = set_value_t(V); };
+template<> struct __await_value_signature<void> { using type = set_value_t(); };
+template<> struct __await_value_signature<const void> : __await_value_signature<void> {};
+template<> struct __await_value_signature<volatile void> : __await_value_signature<void> {};
+template<> struct __await_value_signature<const volatile void> : __await_value_signature<void> {};
+
+template<class S, class... Env>
+    requires __forge_awaitable::__is_awaitable<S, __forge_awaitable::__env_promise<Env>...>
+using __await_completion_signatures = completion_signatures<
+    typename __await_value_signature<__forge_awaitable::__await_result_t<
+        S, __forge_awaitable::__env_promise<Env>...>>::type,
+    set_error_t(std::exception_ptr), set_stopped_t()>;
+#endif
+
+template<class S, class... Env>
+concept __await_signatures_available =
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+    __forge_awaitable::__is_awaitable<S, __forge_awaitable::__env_promise<Env>...>;
+#else
+    false;
+#endif
+
 template<class S, class Env>
-concept __raw_completion_signatures_available = __valid_raw_completion_signatures<S, Env>();
+concept __member_signatures_selected = __static_completion_signatures<S, Env> ||
+    __instance_completion_signatures<S, Env> ||
+    __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>;
+
+template<class S, class Env>
+concept __raw_completion_signatures_available =
+    __valid_member_completion_signatures<S, Env>() ||
+    (!__member_signatures_selected<S, Env> && __await_signatures_available<S, Env>);
 
 template<class S, class Env>
 consteval bool __completion_signatures_noexcept() {
@@ -214,7 +246,8 @@ consteval bool __completion_signatures_noexcept() {
     } else if constexpr (__instance_completion_signatures<S, Env>) {
         return __nothrow_instance_completion_signatures<S, Env>;
     } else {
-        return __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>;
+        return !__forge_detail::tag_invocable<get_completion_signatures_t, S, Env> ||
+            __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>;
     }
 }
 
@@ -271,11 +304,19 @@ struct get_completion_signatures_t {
     }
 
     template<class S>
-        requires __forge_cpo_detail::__raw_completion_signatures_available<S, __empty_env>
+        requires (__forge_cpo_detail::__valid_member_completion_signatures<S, __empty_env>() ||
+                  (!__forge_cpo_detail::__member_signatures_selected<S, __empty_env> &&
+                   __forge_cpo_detail::__await_signatures_available<S>))
     auto operator()(S&& s) const
         noexcept(__forge_cpo_detail::__completion_signatures_noexcept<S, __empty_env>()) {
-        return __forge_cpo_detail::__raw_completion_signatures(
-            static_cast<S&&>(s), __empty_env{});
+        if constexpr (__forge_cpo_detail::__valid_member_completion_signatures<S, __empty_env>()) {
+            return __forge_cpo_detail::__raw_completion_signatures(
+                static_cast<S&&>(s), __empty_env{});
+        } else {
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+            return __forge_cpo_detail::__await_completion_signatures<S>{};
+#endif
+        }
     }
 };
 inline constexpr get_completion_signatures_t get_completion_signatures{};
@@ -290,9 +331,13 @@ decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
         return std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
     } else if constexpr (__instance_completion_signatures<S, Env>) {
         return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
-    } else {
+    } else if constexpr (__forge_detail::tag_invocable<get_completion_signatures_t, S, Env>) {
         return __forge_detail::tag_invoke_fn(
             get_completion_signatures_t{}, static_cast<S&&>(s), static_cast<Env&&>(env));
+    } else {
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+        return __await_completion_signatures<S, Env>{};
+#endif
     }
 }
 
@@ -732,11 +777,21 @@ using operation_state_t = operation_state_tag;
 using scheduler_t = scheduler_tag;
 
 // enable_sender trait — [exec.snd]
-// Defaults to checking the sender_concept marker.
-template<class T>
-inline constexpr bool enable_sender =
-    requires { typename T::sender_concept; } &&
-    requires { requires std::derived_from<typename T::sender_concept, sender_t>; };
+// The private concept short-circuits before probing a marked sender as awaitable.
+namespace __forge_concepts {
+template<class S>
+concept __marked_sender = requires { typename S::sender_concept; } &&
+    std::derived_from<typename S::sender_concept, sender_t>;
+template<class S>
+concept __enable_sender = __marked_sender<S>
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+    || __forge_awaitable::__is_awaitable<S, __forge_awaitable::__env_promise<env<>>>
+#endif
+    ;
+} // namespace __forge_concepts
+
+template<class S>
+inline constexpr bool enable_sender = __forge_concepts::__enable_sender<S>;
 
 template<class S>
 concept sender =
@@ -1163,6 +1218,10 @@ template<class S, class Env = env<>>
     requires sender_in<S, Env>
 inline constexpr bool sends_stopped = sends_stopped_v<S, Env>;
 
+} // namespace std::execution
+#include "detail/connect_awaitable.hpp"
+namespace std::execution {
+
 struct connect_t;
 
 namespace __forge_domain {
@@ -1179,14 +1238,20 @@ concept __nothrow_member_connect = requires(S&& s, R&& r) {
 
 template<class S, class R>
 concept __direct_connectable =
-    __member_connect<S, R> || __forge_detail::tag_invocable<connect_t, S, R>;
+    __member_connect<S, R> || __forge_detail::tag_invocable<connect_t, S, R>
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+    || __forge_awaitable::__connect_awaitable_available<S, R>
+#endif
+    ;
 
 template<class S, class R>
 consteval bool __direct_noexcept() {
     if constexpr (__member_connect<S, R>) {
         return __nothrow_member_connect<S, R>;
-    } else {
+    } else if constexpr (__forge_detail::tag_invocable<connect_t, S, R>) {
         return __forge_detail::nothrow_tag_invocable<connect_t, S, R>;
+    } else {
+        return false; // A coroutine frame uses the global allocator.
     }
 }
 
@@ -1588,8 +1653,13 @@ decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
     noexcept(__direct_noexcept<S, R>()) {
     if constexpr (__member_connect<S, R>) {
         return static_cast<S&&>(s).connect(static_cast<R&&>(r));
-    } else {
+    } else if constexpr (__forge_detail::tag_invocable<connect_t, S, R>) {
         return __forge_detail::tag_invoke_fn(tag, static_cast<S&&>(s), static_cast<R&&>(r));
+    } else {
+#if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
+        return __forge_awaitable::__connect_awaitable<std::decay_t<S>, std::decay_t<R>>(
+            static_cast<S&&>(s), static_cast<R&&>(r));
+#endif
     }
 }
 

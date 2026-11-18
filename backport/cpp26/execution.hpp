@@ -77,9 +77,11 @@
 //     await-completion adaptor before constructing the sender bridge. Senders
 //     with multiple value-completion alternatives fall back to the original
 //     expression and therefore do not become awaitable through this bridge.
-//   - The receiver concept additionally requires
-//     is_nothrow_move_constructible_v of the receiver type, which the
-//     working draft does not require.
+//   - Awaitables satisfy sender through a marker-first private concept. Their
+//     await-result signatures include exception_ptr and stopped. connect uses
+//     a globally allocated coroutine operation that owns its frame (a move
+//     transfers the handle); each completion runs inside await_suspend so
+//     receivers may destroy the operation there.
 //   - spawn_future returns a move-only single-consumer future sender. Its
 //     shared state and consumer record honor get_allocator(env); consumer
 //     cancellation registers the receiver's concrete stop-token type.
@@ -100,8 +102,6 @@
 //     draft and is intentionally not exposed.
 //
 // NOT IMPLEMENTED (Phase 4+):
-//   - Ordinary awaitables as senders: await-result completion signatures and
-//     the connect-awaitable fallback (distinct from sender-to-awaitable).
 //   - standard task/task_scheduler/with_error coroutine family; Forge task
 //     types are separate extensions and do not substitute for this surface.
 //   - standard type-erased sender surface.

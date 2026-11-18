@@ -41,7 +41,6 @@ namespace std::execution {
 
 namespace __forge_awaitable {
 
-struct __stopped_awaitable_exception {};
 struct __unit {};
 
 // Only completion on the starting thread needs deferral. The stack-owned
@@ -70,47 +69,19 @@ struct __start_scope {
     inline static thread_local __start_scope* __current = nullptr;
 };
 
-template<class T>
-struct __is_coroutine_handle : std::false_type {};
-
-template<class Promise>
-struct __is_coroutine_handle<std::coroutine_handle<Promise>> : std::true_type {};
-
-template<class T>
-concept __await_suspend_result =
-    std::same_as<T, void> ||
-    std::same_as<T, bool> ||
-    __is_coroutine_handle<std::remove_cvref_t<T>>::value;
-
-template<class Awaiter, class Promise>
-concept __awaiter_for = requires(
-    std::remove_reference_t<Awaiter>& awaiter,
-    std::coroutine_handle<Promise> continuation) {
-    awaiter.await_ready() ? 1 : 0;
-    requires __await_suspend_result<
-        decltype(awaiter.await_suspend(continuation))>;
-    awaiter.await_resume();
-};
-
-template<class T>
-decltype(auto) __get_awaiter(T&& value) {
-    if constexpr (requires {
-                      static_cast<T&&>(value).operator co_await();
-                  }) {
-        return static_cast<T&&>(value).operator co_await();
-    } else if constexpr (requires {
-                             operator co_await(static_cast<T&&>(value));
-                         }) {
-        return operator co_await(static_cast<T&&>(value));
-    } else {
-        return static_cast<T&&>(value);
-    }
-}
+// Preserve the bridge's member-first acceptance leniency. Unlike the sender
+// probe, this path deliberately does not apply the promise's await_transform.
+// Applying it here would re-enter with_awaitable_senders::await_transform.
+template<class T> requires __member_co_await<T>
+auto __ordinary_awaiter(T&& value) -> decltype(static_cast<T&&>(value).operator co_await());
+template<class T> requires (!__member_co_await<T> && __free_co_await<T>)
+auto __ordinary_awaiter(T&& value) -> decltype(operator co_await(static_cast<T&&>(value)));
+template<class T> requires (!__member_co_await<T> && !__free_co_await<T>)
+auto __ordinary_awaiter(T&& value) -> T&&;
 
 template<class T, class Promise>
-concept __ordinary_awaitable = requires(T&& value) {
-    requires __awaiter_for<
-        decltype(__get_awaiter(static_cast<T&&>(value))), Promise>;
+concept __ordinary_awaitable = requires {
+    requires __is_awaiter<decltype(__ordinary_awaiter(std::declval<T>())), Promise>;
 };
 
 template<class T, class Promise>
@@ -150,7 +121,7 @@ struct __single_sender_value<__forge_meta::type_list<Tuple>>
 
 template<class Promise>
 concept __has_unhandled_stopped = requires(Promise& p) {
-    { p.unhandled_stopped() } -> std::convertible_to<std::coroutine_handle<>>;
+    static_cast<std::coroutine_handle<>>(p.unhandled_stopped());
 };
 
 template<class Promise>
@@ -171,8 +142,13 @@ auto __get_promise_env(const Promise&) noexcept -> __empty_env {
     return {};
 }
 
+template<class S, class Promise, class = void>
+struct __sender_value {};
+
 template<class S, class Promise>
-struct __sender_value
+struct __sender_value<S, Promise, std::void_t<decltype(
+    std::execution::get_completion_signatures(std::declval<S>(),
+        std::declval<decltype(__get_promise_env(std::declval<const Promise&>()))>()))>>
     : __single_sender_value<__forge_meta::value_tuple_list_t<decltype(
           std::execution::get_completion_signatures(
               std::declval<S>(),
@@ -189,31 +165,34 @@ concept __single_sender = requires {
 };
 
 template<class S, class Promise>
-auto __transform_for_await(S&& sndr, Promise& promise) {
-    decltype(auto) env = __get_promise_env(promise);
+auto __transform_for_await(S&& sndr, Promise& promise)
+    noexcept(noexcept(std::execution::transform_sender(
+        static_cast<S&&>(sndr), __get_promise_env(promise))))
+    -> decltype(std::execution::transform_sender(
+        static_cast<S&&>(sndr), __get_promise_env(promise))) {
     return std::execution::transform_sender(
-        static_cast<S&&>(sndr), env);
+        static_cast<S&&>(sndr), __get_promise_env(promise));
 }
 
 template<class S>
-decltype(auto) __adapt_for_await_completion(S&& sndr) {
-    if constexpr (requires {
-                      std::execution::get_await_completion_adaptor(
-                          std::execution::get_env(sndr))(
-                              static_cast<S&&>(sndr));
-                  }) {
-        return std::execution::get_await_completion_adaptor(
-            std::execution::get_env(sndr))(static_cast<S&&>(sndr));
-    } else {
-        return static_cast<S&&>(sndr);
-    }
+concept __has_await_adaptor = requires(S&& sndr) {
+    std::execution::get_await_completion_adaptor(std::execution::get_env(sndr))(
+        static_cast<S&&>(sndr));
+};
+
+template<class S> requires __has_await_adaptor<S>
+auto __adapt_for_await_completion(S&& sndr)
+    noexcept(noexcept(std::execution::get_await_completion_adaptor(
+        std::execution::get_env(sndr))(static_cast<S&&>(sndr))))
+    -> decltype(std::execution::get_await_completion_adaptor(
+        std::execution::get_env(sndr))(static_cast<S&&>(sndr))) {
+    return std::execution::get_await_completion_adaptor(
+        std::execution::get_env(sndr))(static_cast<S&&>(sndr));
 }
 
-template<class S, class Promise>
-auto __prepare_sender_for_await(S&& sndr, Promise& promise) {
-    auto transformed = __transform_for_await(
-        static_cast<S&&>(sndr), promise);
-    return __adapt_for_await_completion(std::move(transformed));
+template<class S> requires (!__has_await_adaptor<S>)
+auto __adapt_for_await_completion(S&& sndr) noexcept -> S&& {
+    return static_cast<S&&>(sndr);
 }
 
 template<class S, class Promise>
@@ -221,14 +200,14 @@ concept __transformed_sender_has_as_awaitable =
     sender_in<S, decltype(__get_promise_env(std::declval<const Promise&>()))> &&
     __single_sender<std::decay_t<S>, Promise> &&
     requires(S&& sndr, Promise& promise) {
-        __prepare_sender_for_await(
-            static_cast<S&&>(sndr), promise).as_awaitable(promise);
+        __adapt_for_await_completion(__transform_for_await(
+            static_cast<S&&>(sndr), promise)).as_awaitable(promise);
     };
 
 template<class S, class Promise>
 using __prepared_sender_t = std::decay_t<decltype(
-    __prepare_sender_for_await(
-        std::declval<S>(), std::declval<Promise&>()))>;
+    __adapt_for_await_completion(__transform_for_await(
+        std::declval<S>(), std::declval<Promise&>())))>;
 
 template<class S, class Promise>
 concept __bridgeable_sender =
@@ -242,7 +221,9 @@ consteval bool __as_awaitable_nothrow() {
         return noexcept(std::declval<Value>().as_awaitable(
             std::declval<Promise&>()));
     } else if constexpr (__transformed_sender_has_as_awaitable<Value, Promise>) {
-        return false;
+        return noexcept(__adapt_for_await_completion(__transform_for_await(
+            std::declval<Value>(), std::declval<Promise&>())).as_awaitable(
+                std::declval<Promise&>()));
     } else if constexpr (__ordinary_awaitable<Value, Promise>) {
         return true;
     } else if constexpr (__bridgeable_sender<Value, Promise>) {
@@ -302,28 +283,27 @@ struct __awaitable {
             }
             __complete(__self, __self->__coro);
         }
-        void set_stopped() && noexcept {
-            __self->__stopped = true;
-            if constexpr (__has_unhandled_stopped<Promise>) {
-                auto* const key = __self;
-                auto* const promise = __self->__promise;
-                const auto next = static_cast<std::coroutine_handle<>>(
-                    promise->unhandled_stopped());
-                __complete(key, next);
-            } else {
-                __complete(__self, __self->__coro);
-            }
+        void set_stopped() && noexcept requires __has_unhandled_stopped<Promise> {
+            auto* const key = __self;
+            auto* const promise = __self->__promise;
+            const auto next = static_cast<std::coroutine_handle<>>(
+                promise->unhandled_stopped());
+            // Completion may already have destroyed the frame. Only stack
+            // values and the static deferral routine are used from here on.
+            __complete(key, next);
         }
         auto get_env() const noexcept -> env_t {
             return __get_promise_env(*__self->__promise);
         }
     };
 
+    // Check connect's receiver-of Mandate in the receiver's actual environment.
+    static_assert(receiver_of<__recv, completion_signatures_of_t<S, env_of_t<__recv>>>,
+                  "awaited sender completions require a compatible promise (including unhandled_stopped)");
     using op_t = connect_result_t<S, __recv>;
 
     result_t __result;
     std::exception_ptr __exc;
-    bool __stopped = false;
     std::coroutine_handle<> __coro;
 
     alignas(op_t) unsigned char __op_buf[sizeof(op_t)];
@@ -349,7 +329,6 @@ struct __awaitable {
 
     auto await_resume() -> value_t {
         if (__exc) std::rethrow_exception(__exc);
-        if (__stopped) throw __stopped_awaitable_exception{};
         if constexpr (!std::is_void_v<value_t>) {
             return std::move(*__result);
         }
@@ -373,19 +352,21 @@ struct as_awaitable_t {
         using namespace __forge_awaitable;
 
         if constexpr (__has_as_awaitable_member<Value, Promise>) {
+            using result_t = decltype(static_cast<Value&&>(value).as_awaitable(promise));
+            static_assert(__is_awaitable<result_t, Promise>,
+                          "as_awaitable member must return an awaitable for this promise");
             return static_cast<Value&&>(value).as_awaitable(promise);
         } else if constexpr (__transformed_sender_has_as_awaitable<Value, Promise>) {
-            auto prepared = __prepare_sender_for_await(
-                static_cast<Value&&>(value), promise);
-            return std::move(prepared).as_awaitable(promise);
+            return __adapt_for_await_completion(__transform_for_await(
+                static_cast<Value&&>(value), promise)).as_awaitable(promise);
         } else if constexpr (__ordinary_awaitable<Value, Promise>) {
             return static_cast<Value&&>(value);
         } else if constexpr (__bridgeable_sender<Value, Promise>) {
             using sender_t = __prepared_sender_t<Value, Promise>;
             return __awaitable<sender_t, Promise>{
-                __prepare_sender_for_await(
-                    static_cast<Value&&>(value), promise),
-                &promise};
+                __adapt_for_await_completion(__transform_for_await(
+                    static_cast<Value&&>(value), promise)),
+                std::addressof(promise)};
         } else {
             return static_cast<Value&&>(value);
         }
@@ -397,14 +378,14 @@ inline constexpr as_awaitable_t as_awaitable{};
 // with_awaitable_senders<Promise> — CRTP mixin — [exec.with.awaitable.senders]
 // Makes a coroutine promise_type support co_await on senders.
 template<class Promise>
+    requires (std::is_class_v<Promise> && std::same_as<Promise, std::decay_t<Promise>>)
 struct with_awaitable_senders {
     template<class OtherPromise>
         requires (!std::same_as<OtherPromise, void>)
     void set_continuation(std::coroutine_handle<OtherPromise> continuation) noexcept {
         __continuation = continuation;
         if constexpr (requires(OtherPromise& promise) {
-                          { promise.unhandled_stopped() }
-                              -> std::convertible_to<std::coroutine_handle<>>;
+                          promise.unhandled_stopped();
                       }) {
             __stopped_handler = [](void* address) noexcept
                 -> std::coroutine_handle<> {

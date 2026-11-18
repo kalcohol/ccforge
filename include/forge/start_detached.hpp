@@ -92,7 +92,13 @@ struct __state : __detached_recv::__state_base {
 
 } // namespace __start_detached
 
-template<std::execution::sender S>
+template<class S>
+    requires std::execution::sender_in<std::decay_t<S>, forge::empty_env> &&
+             std::constructible_from<std::decay_t<S>, S> &&
+             requires {
+                 std::execution::connect(std::declval<std::decay_t<S>>(),
+                     std::declval<__start_detached::__detached_recv>());
+             }
 void start_detached(S&& sndr) {
     using source_t = std::decay_t<S>;
     using state_t = __start_detached::__state<source_t>;

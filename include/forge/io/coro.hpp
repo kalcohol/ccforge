@@ -400,7 +400,10 @@ private:
 
 } // namespace __coro_detail
 
-template<std::execution::sender Sender>
+template<class Sender>
+    requires std::execution::sender_in<std::decay_t<Sender>,
+                 __coro_detail::await_sender_receiver_env> &&
+             std::constructible_from<std::decay_t<Sender>, Sender>
 [[nodiscard]] auto await_sender(Sender&& sender) {
     return __coro_detail::sender_awaitable<std::decay_t<Sender>>{
         static_cast<Sender&&>(sender)};

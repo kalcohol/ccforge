@@ -52,7 +52,16 @@ template<class Scope>
 }
 
 // split and the legacy tuple-or-variant wait rely on backport implementation types.
-template<std::execution::sender S>
+template<class S>
+    requires std::execution::sender_in<std::decay_t<S>, empty_env> &&
+             std::execution::sender_in<S, empty_env> &&
+             std::constructible_from<std::decay_t<S>, S> &&
+             requires {
+                 { std::execution::connect(std::declval<S>(),
+                     std::declval<std::execution::__forge_split::__inner_recv<std::decay_t<S>>>()) }
+                     -> std::same_as<std::execution::connect_result_t<std::decay_t<S>,
+                         std::execution::__forge_split::__inner_recv<std::decay_t<S>>>>;
+             }
 [[nodiscard]] auto split(S&& sndr) {
     return std::execution::__split(std::forward<S>(sndr));
 }

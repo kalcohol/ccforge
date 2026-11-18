@@ -99,7 +99,9 @@ public:
     }
 
     template<class S>
-        requires std::execution::sender<std::remove_cvref_t<S>>
+        requires requires(async_scope& scope, S&& sender) {
+            scope.spawn(static_cast<S&&>(sender));
+        }
     bool spawn(S&& sender) {
         return scope_.spawn(static_cast<S&&>(sender));
     }

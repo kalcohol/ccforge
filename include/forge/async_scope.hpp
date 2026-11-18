@@ -144,6 +144,18 @@ struct __env {
     }
 };
 
+// Probe without an operation-node template argument: ADL may instantiate every
+// associated class, and __op_node itself depends on this connection. It is only
+// used in constraints, but the members are defined because GCC emits the
+// completion CPO bodies it instantiates while checking them.
+struct __receiver_probe {
+    using receiver_concept = std::execution::receiver_t;
+    template<class... Vs> void set_value(Vs&&...) && noexcept {}
+    template<class Error> void set_error(Error&&) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept -> __env { return {}; }
+};
+
 template<class Node>
 struct __receiver {
     using receiver_concept = std::execution::receiver_t;
@@ -325,7 +337,13 @@ public:
     }
 
     template<class S>
-        requires std::execution::sender<std::remove_cvref_t<S>>
+        requires std::execution::sender_in<std::remove_cvref_t<S>, __async_scope_detail::__env> &&
+                 std::constructible_from<std::remove_cvref_t<S>,
+                     decltype(__async_scope_detail::__copy_or_move_lvalue(std::declval<S>()))> &&
+                 requires {
+                     std::execution::connect(std::declval<std::remove_cvref_t<S>>(),
+                         std::declval<__async_scope_detail::__receiver_probe>());
+                 }
     bool spawn(S&& sender) {
         using sender_t = std::remove_cvref_t<S>;
         using node_t = __async_scope_detail::__op_node<sender_t>;

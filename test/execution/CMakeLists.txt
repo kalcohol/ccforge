@@ -696,3 +696,38 @@ foreach(_mode IN ITEMS default strict)
         target_compile_options(test_execution_${_mode}_forge_predecessor_lifetime PRIVATE /bigobj)
     endif()
 endforeach()
+
+# Awaitable signatures, coroutine ownership and Mandates in both query modes.
+# The execution prefix includes the frame self-destruction tests in both sanitizer lanes.
+set(_forge_awaitable_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+foreach(_mode IN ITEMS default strict)
+    forge_add_execution_compile_probe(test_execution_${_mode}_awaitable_conformance
+        test_execution_awaitable_conformance.cpp execution_${_mode}_awaitable_conformance_compile)
+    forge_add_execution_runtime_test(test_execution_${_mode}_awaitable_conformance_runtime
+        test_execution_awaitable_conformance.cpp execution_${_mode}_awaitable_conformance)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs})
+    if(_mode STREQUAL "strict")
+        target_compile_definitions(test_execution_${_mode}_awaitable_conformance PRIVATE
+            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+        target_compile_definitions(test_execution_${_mode}_awaitable_conformance_runtime PRIVATE
+            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+    endif()
+    set(_forge_awaitable_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+    foreach(_case RANGE 1 9)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_mode_defs}
+            -DFORGE_AWAITABLE_CASE=${_case} -DFORGE_AWAITABLE_POSITIVE=1)
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_CONTROL_${_mode}_${_case}
+            test_execution_reject_awaitable.cpp ON "Awaitable positive control must compile and link")
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_mode_defs} -DFORGE_AWAITABLE_CASE=${_case})
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_${_mode}_${_case}
+            test_execution_reject_awaitable.cpp OFF "Awaitable Mandate or constraint must reject this case")
+    endforeach()
+    if(MSVC)
+        target_compile_options(test_execution_${_mode}_awaitable_conformance PRIVATE /bigobj)
+        target_compile_options(test_execution_${_mode}_awaitable_conformance_runtime PRIVATE /bigobj)
+    endif()
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_awaitable_saved_defs}")
+unset(_forge_awaitable_saved_defs)
+unset(_forge_awaitable_mode_defs)

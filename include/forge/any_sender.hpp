@@ -103,7 +103,9 @@ class any_sender_of {
      (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)))
         using stored_ref_t = __stored_sender_ref<S>;
         using env_t = std::execution::__forge_sync_wait::sync_wait_env;
-        if constexpr (std::execution::sender_in<stored_ref_t, env_t>) {
+        if constexpr (!std::execution::sender_in<typename stored_ref_t::source_t, env_t>) {
+            return false;
+        } else if constexpr (std::execution::sender_in<stored_ref_t, env_t>) {
             using cs_t =
                 std::execution::completion_signatures_of_t<stored_ref_t, env_t>;
             using value_t =
@@ -122,7 +124,7 @@ class any_sender_of {
 #else
         if constexpr (requires(S& sender) {
                           std::this_thread::sync_wait(
-                              __stored_sender_ref<S>{&sender});
+                              __stored_sender_ref<S>{std::addressof(sender)});
                       }) {
             return std::same_as<
                 decltype(std::this_thread::sync_wait(
