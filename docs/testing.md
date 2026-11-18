@@ -826,3 +826,27 @@ allocator 控制按 /28 检查有无 allocator 的 get-state prvalue/reference �
 inline scheduler 提供同步 value 对照。Channel 在启动 pending recv 后由另一线程发送，task 在
 final_suspend 完成，erased sender 覆盖同步与 pool 来源。两个 sanitizer lane 的
 `execution|forge` 选择器均包含此测试，不依赖额外 Forge test group 开关。
+
+### Awaitable 与 sender 双向桥接
+
+`execution_default_awaitable_conformance_compile` / `execution_strict_awaitable_conformance_compile`
+固定 marker short-circuit、enable_sender specialization、void / int / int& 的独立 signatures、
+member / ADL co_await、as_awaitable member、domain transform、noexcept 与 Forge 环境约束。
+配套 runtime `execution_default_awaitable_conformance` / `execution_strict_awaitable_conformance`
+覆盖 value / void / error / stopped completion 内销毁 coroutine operation、跨线程恢复后自毁、
+when_all 混合 awaitable / sender、scope wrap / associate / spawn_future、split 重放，以及
+Forge scope、resource_context、start_detached、any_sender_of、erased_sender、wait_result、task 与 IO bridge。
+两条 sanitizer lanes 的 execution 选择规则包含这些 runtime 测试。
+Round 2 控制另覆盖 completion / start 两种 domain transform、内部 completion awaiter 的
+receiver/value ADL 隔离、operation move 所有权、split 的 rvalue-only awaitable 类别，
+以及 any_sender_of 的 lvalue-only marked source 精确结果。Error / stopped 的 task
+控制检查 awaiting expression 后的代码没有执行。
+`forge_task` / `forge_strict_task` 保留原有注册（两条 sanitizer lanes 均选择），
+新增 just_stopped / closed channel / nested stopped task 的 value/void task 控制，
+每种均验证恰好一次 stopped、owner 保留 suspended frame，以及同步/另一线程 completion 内自毁。
+
+配置期 `FORGE_EXECUTION_AWAITABLE_CONTROL_*` / `FORGE_EXECUTION_AWAITABLE_REJECT_*`
+以同一 TU 的正反控制检查 member-result Mandate、无 stopped handler 的 promise、
+class-type（含 cv/ref）、continuation handler 返回类型、固定 exception_ptr 导致的 spawn 拒绝，
+以及缺少 error / stopped completion 的 receiver。失败必须发生在编译阶段，不能依赖未定义符号。
+原有 wave3 的零 / 多参数值、multi-alternative identity fallback 与完成时 frame 销毁覆盖继续保留。

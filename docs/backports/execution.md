@@ -98,6 +98,10 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   Mandate 延迟偏差，尚未实现 WD `make-sender` 的无环境 / 环境依赖分类。
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
+- 普通 awaitable 可满足 `sender`：优先 sender marker，保留 `enable_sender` specialization；
+  completion signatures 在 domain transform 与 member forms 后从 await-result 合成，
+  始终包含 `set_error_t(exception_ptr)` 与 `set_stopped_t()`。无环境查询不使用 promise
+  的 `await_transform`；有环境时使用只用于类型计算的 promise。
 - Coroutine 桥：`as_awaitable`、`with_awaitable_senders`（需要 C++20 coroutines；
   按 current WD 形状，单一 value completion 的零/一/多值分别产生
   `void` / `T` / `tuple<...>`，多组 value completion alternatives 不满足
@@ -222,12 +226,39 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   task family 的开放问题，并区分其中不能在发布后兼容修正的项目；在 wording、ownership、
   allocator、stop/error 和 native-handoff 模型形成独立任务书前，`forge::task` 与
   `forge::io::io_task` 都只是不同契约的 Forge extensions，不能冒充这组标准类型。
-- `as_awaitable` 是 sender-to-awaitable 方向的桥接，不代表反方向也已实现。普通 awaitable
-  当前不会自动满足 backport 的 `sender`，`get_completion_signatures` 不会从其
-  `await_resume` 合成 signatures，`connect` 也没有 current-WD 的
-  `connect-awaitable` fallback。不要直接将普通 awaitable 传给 `sync_wait` 等 sender
-  consumer；需要此能力时应单独验证 coroutine operation 的 ownership、异常、stopped
-  和 completion 内自毁契约，再实现这条独立路径。
+- `connect` 的 awaitable fallback 保存 sender 与 receiver 到全局分配的 coroutine frame，
+  operation 的 noexcept move 转移 handle 并清空源对象，析构仅销毁非空 frame，
+  `start` 恢复 frame。此连接路径可能抛出分配或参数构造异常，
+  不使用 receiver allocator；各完成函数都在 frame 已挂起后的 `await_suspend` 内调用，
+  receiver 可以在 value、error 或 stopped completion 内销毁 operation。Awaitable 即使
+  `await_resume` 不抛异常也声明 `exception_ptr`，因此标准 `spawn` 拒绝它；可用
+  `spawn_future` 或 Forge scope 消费。
+  内部 completion awaiter 是函数局部类；receiver / value / error 类型的 namespace
+  不参与该 await expression 的 ADL，用户 `operator co_await` 不会接管完成路径。
+- `as_awaitable` 的 direct member 结果须满足该 promise 的 awaitable Mandate；transformed /
+  adapted member 的 `noexcept` 来自实际 transform、adaptor 和 member 表达式。
+  Sender bridge 在 awaitable receiver 的实际环境检查 completion signatures：没有
+  `unhandled_stopped` 的 promise 仅能等待不会发送 stopped 的 prepared sender，
+  不再以私有异常恢复 coroutine。`with_awaitable_senders` 限制为无 cv/ref 的 class type，
+  continuation 只要存在 `unhandled_stopped()` 就安装 forwarding handler，错误返回类型
+  不会静默退回 terminate handler。
+- GET-AWAITER 使用受约束的 member / ADL call probes；同时可调用的竞争候选保守拒绝，
+  final promise 的不可调用 overloaded / template `await_transform` 也无法完整反射。
+  deleted、inaccessible 或 ambiguous 的 `operator co_await` call probe 失败时视作缺失：
+  若该类型另有有效 awaiter 方法，它仍可满足 `sender`，但实际 await 或 connect 时
+  program 为 ill-formed。无法在形成 await expression 前将这些情况与仅值类别不匹配
+  区分；保留这个 emulation 边界，避免拒绝 WD-valid awaiters。
+- Sender bridge 的 receiver 暴露 promise environment 本身；WD 只规定 forwarding queries
+  的行为，没有禁止其他查询，这项 latitude 保留。桥接继续在 `await_suspend` 中 connect，
+  用同线程 deferral 与 symmetric transfer 保持 stack safety；保留 decay 后去重的 value
+  alternatives、prepared sender 非单值时 identity fallback、lvalue decay-copy，以及
+  普通 awaiter 的 member-first 检测等 acceptance leniencies。
+- Forge `async_scope::spawn`、`resource_context::spawn`、`start_detached`、`any_sender_of`、
+  `split`、`sync_wait` 与 `io::await_sender` 接受满足各自环境和 value-shape 契约的 awaitable。
+  Scope / IO 入口按实际 stop-token 环境检查；`any_sender_of` 仍要求相同 wait 结果，
+  copyable source 仍按 lvalue 借用，只有 rvalue `operator co_await` 的 copyable 类型因此被约束拒绝。
+  `erased_sender` 也要求 source signatures 是声明 closed set 的子集；`wait_result` /
+  `wait_result_of` 保留其实际带 inplace stop token 的 wait 环境约束。
 - `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；订阅者在 `connect` 时分配，分配失败向调用者抛出。它没有实现完整
   stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
@@ -574,3 +605,13 @@ Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execu
 
 `unstoppable(sndr)` 的结果类型与 `write_env(sndr, prop(get_stop_token, never_stop_token{}))`
 相同；`unstoppable()` 的 nullary closure 作为兼容扩展继续保留。
+
+### Coroutine 桥的 WD 措辞问题
+
+`[exec.awaitable]/5` 的 `has-as-awaitable` 将 promise 写成 `Promise&`，但
+`coroutine_handle` 需要 promise 类型；实现使用无引用的 Promise。
+`[exec.as.awaitable]/1` 的 `awaitable-sender` 要求 `unhandled_stopped`，/7.4 却不再使用
+该 concept；停止的 ill-formedness 因此由 connect 的 receiver-of Mandate 决定。
+/7.4 的 class-template `Sndr&&` 不是 forwarding reference，lvalue CTAD 文字无法成立；
+保留 decay-copy。依赖 constexpr exceptions 的 completion-signature diagnostics
+仍以 SFINAE 表达，不宣称完整 C++26 consteval API。
