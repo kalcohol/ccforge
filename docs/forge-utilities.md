@@ -248,12 +248,15 @@ stoppable token 的 pending operation 仍由 value、`close()` 或 channel-level
 - `forge::task<T>`：协程返回类型，同时建模 sender。task body 可以 `co_await` 同步或
   异步 sender，外部可以用 `std::this_thread::sync_wait` 或其他 sender 组合器消费。
 
-`forge::task` 在 coroutine `final_suspend` 中同步发出 receiver completion。自定义
+`forge::task` 的 value / error 在 coroutine `final_suspend` 中同步发出 receiver completion；
+stopped 则直接从 promise 的 `unhandled_stopped` 完成。自定义
 receiver 在不再需要完成参数后，可以在 `set_value` / `set_error` / `set_stopped`
 回调内销毁连接的 task operation-state；销毁也会释放 coroutine frame 和其中的结果，
 此后不得访问 receiver 自身或指向该存储的参数引用。
-Stopped completion 通过 coroutine bridge 的内部异常回到 task frame，用户 `catch(...)`
-可以捕获它；一旦 promise 标记 stopped，后续异常不会改写最终 stopped completion。
+按 `[exec.as.awaitable]/4.3`，stopped 恢复的是 `unhandled_stopped` 返回的 handle，
+不会恢复正在等待的 coroutine。Task 完成 stopped 后返回 `noop_coroutine()`，body
+不再执行（包括 awaiting expression 后的代码和用户 `catch(...)`），frame 与局部对象
+保持在等待点，由拥有它的 operation 析构；该路径不经过 `final_suspend`。
 
 ## 类型擦除
 
@@ -343,7 +346,8 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 
 ### task 环境与结果
 
-- `forge::task` 从 coroutine `final_suspend` 发出 receiver completion。Custom receiver
+- `forge::task` 的 value / error 从 coroutine `final_suspend` 完成，stopped 从
+  `unhandled_stopped` 完成并放弃恢复 task body，frame 留待 owner 析构。Custom receiver
   可以在不再需要完成参数后，于 `set_value` / `set_error` / `set_stopped` callback
   内销毁连接的 task operation-state；销毁后不得再访问 receiver 或 frame 内的结果。
   连接时会把 downstream receiver 的 stop token 与

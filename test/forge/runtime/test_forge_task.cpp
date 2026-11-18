@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include "forge_completion_agent.hpp"
 #include <forge/task.hpp>
+#include <forge/channel.hpp>
 #include <forge/static_thread_pool.hpp>
 #include <execution>
 #include <atomic>
@@ -330,6 +331,7 @@ struct destroying_completion_state {
     int channel = 0;
     int value = 0;
     int live_results = 0;
+    bool after_await = false;
 };
 
 struct destruction_result {
@@ -383,10 +385,12 @@ forge::task<T> destroying_completion_task(
         co_await std::execution::schedule(scheduler);
     }
     if (channel == 2) {
-        throw task_marker_error{};
+        co_await std::execution::just_error(task_marker_error{});
+        state->after_await = true;
     }
     if (channel == 3) {
         co_await std::execution::just_stopped();
+        state->after_await = true;
     }
     if constexpr (std::is_void_v<T>) {
         co_return;
@@ -420,13 +424,122 @@ void check_destroying_completions(bool asynchronous) {
         EXPECT_EQ(state.completions, 1);
         EXPECT_EQ(state.channel, channel);
         EXPECT_EQ(state.live_results, 0);
+        EXPECT_FALSE(state.after_await);
         if constexpr (!std::is_void_v<T>) {
             if (channel == 1) EXPECT_EQ(state.value, 42);
         }
     }
 }
 
+struct stopped_task_state {
+    void* operation = nullptr;
+    void (*destroy)(void*) noexcept = nullptr;
+    int completions = 0;
+    int channel = 0;
+    int live_frames = 0;
+    int after_await = 0;
+};
+
+struct stopped_frame_guard {
+    stopped_task_state* state;
+    explicit stopped_frame_guard(stopped_task_state* state) : state(state) {
+        ++state->live_frames;
+    }
+    ~stopped_frame_guard() { --state->live_frames; }
+};
+
+struct stopped_task_receiver {
+    using receiver_concept = std::execution::receiver_t;
+    stopped_task_state* state;
+    void finish(int channel) noexcept {
+        auto* saved = state;
+        ++saved->completions;
+        saved->channel = channel;
+        if (auto destroy = saved->destroy) {
+            auto* operation = std::exchange(saved->operation, nullptr);
+            destroy(operation);
+        }
+    }
+    template<class... Vs> void set_value(Vs&&...) && noexcept { finish(1); }
+    void set_error(std::exception_ptr) && noexcept { finish(2); }
+    void set_stopped() && noexcept { finish(3); }
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
+};
+
+template<class T>
+forge::task<T> stopped_source_task(stopped_task_state* state, int source,
+    forge::bounded_channel<int>* channel,
+    std::execution::run_loop::scheduler scheduler, bool asynchronous) {
+    stopped_frame_guard guard{state};
+    if (asynchronous) co_await std::execution::schedule(scheduler);
+    if (source == 0) {
+        co_await std::execution::just_stopped();
+    } else if (source == 1) {
+        (void)co_await channel->async_recv();
+    } else {
+        co_await stopped_source_task<int>(state, 0, channel, scheduler, false);
+    }
+    ++state->after_await;
+    if constexpr (std::is_void_v<T>) {
+        co_return;
+    } else {
+        co_return 42;
+    }
+}
+
+template<class T>
+void check_stopped_sources() {
+    for (int source : {0, 1, 2}) {
+        for (bool asynchronous : {false, true}) {
+            for (bool destroy_in_completion : {false, true}) {
+                SCOPED_TRACE(source);
+                SCOPED_TRACE(asynchronous);
+                SCOPED_TRACE(destroy_in_completion);
+                forge::bounded_channel<int> channel{1};
+                channel.close();
+                std::execution::run_loop loop;
+                stopped_task_state state;
+                using operation = std::execution::connect_result_t<forge::task<T>, stopped_task_receiver>;
+                auto* op = new operation(std::execution::connect(
+                    stopped_source_task<T>(&state, source, &channel, loop.get_scheduler(), asynchronous),
+                    stopped_task_receiver{&state}));
+                state.operation = op;
+                if (destroy_in_completion) {
+                    state.destroy = [](void* p) noexcept { delete static_cast<operation*>(p); };
+                }
+                std::execution::start(*op);
+                if (asynchronous) {
+                    EXPECT_EQ(state.completions, 0);
+                    loop.finish();
+                    std::thread runner{[&loop] { loop.run(); }};
+                    runner.join();
+                }
+                EXPECT_EQ(state.completions, 1);
+                EXPECT_EQ(state.channel, 3);
+                EXPECT_EQ(state.after_await, 0);
+                if (destroy_in_completion) {
+                    EXPECT_EQ(state.operation, nullptr);
+                } else {
+                    // Stopped skips final_suspend: the owner still owns the
+                    // abandoned frame and all locals at the awaiting point.
+                    EXPECT_EQ(state.live_frames, source == 2 ? 2 : 1);
+                    delete op;
+                }
+                EXPECT_EQ(state.live_frames, 0);
+            }
+        }
+    }
+}
+
 } // namespace
+
+TEST(TaskTest, ValueTaskAbandonsStoppedAwaitAndCompletesExactlyOnce) {
+    check_stopped_sources<int>();
+}
+
+TEST(TaskTest, VoidTaskAbandonsStoppedAwaitAndCompletesExactlyOnce) {
+    check_stopped_sources<void>();
+}
 
 forge::task<int> simple_task() {
     co_return 42;
@@ -434,9 +547,10 @@ forge::task<int> simple_task() {
 
 forge::task<int> await_early_completion_task(
     forge_test::completion_agent_state* state,
-    forge_test::completion_kind kind) {
+    forge_test::completion_kind kind, bool* after_await) {
     try {
         co_await forge_test::early_completion_sender{state, kind};
+        *after_await = true;
     } catch (...) {
     }
     state->resumed_on = std::this_thread::get_id();
@@ -470,18 +584,22 @@ forge::task<int> await_run_loop_task(
     co_return 99;
 }
 
-forge::task<int> await_thread_pool_task(forge::static_thread_pool::scheduler scheduler) {
+forge::task<int> await_thread_pool_task(
+    forge::static_thread_pool::scheduler scheduler, bool* after_await = nullptr) {
     co_await std::execution::schedule(scheduler);
+    if (after_await) *after_await = true;
     co_return 123;
 }
 
-forge::task<int> await_error_task() {
+forge::task<int> await_error_task(bool* after_await) {
     co_await std::execution::just_error(task_marker_error{});
+    *after_await = true;
     co_return 1;
 }
 
-forge::task<int> await_stopped_task() {
+forge::task<int> await_stopped_task(bool* after_await) {
     co_await std::execution::just_stopped();
+    *after_await = true;
     co_return 1;
 }
 
@@ -494,8 +612,9 @@ forge::task<void> await_pending_task(std::shared_ptr<pending_state> state) {
     co_await pending_sender{std::move(state)};
 }
 
-forge::task<int> await_throwing_connect_task() {
+forge::task<int> await_throwing_connect_task(bool* after_await) {
     co_await throwing_connect_sender{};
+    *after_await = true;
     co_return 1;
 }
 
@@ -581,11 +700,17 @@ TEST(TaskTest, EarlyCrossThreadCompletionKeepsCompletionAgent) {
                       forge_test::completion_kind::error,
                       forge_test::completion_kind::stopped}) {
         forge_test::completion_agent_state state;
+        bool after_await = false;
         auto result = forge::sync_wait(
-            await_early_completion_task(&state, kind));
-        EXPECT_EQ(state.resumed_on, state.completed_on);
-        EXPECT_NE(state.resumed_on, std::this_thread::get_id());
-        EXPECT_EQ(state.resumptions, 1);
+            await_early_completion_task(&state, kind, &after_await));
+        EXPECT_EQ(after_await, kind == forge_test::completion_kind::value);
+        if (kind == forge_test::completion_kind::stopped) {
+            EXPECT_EQ(state.resumptions, 0);
+        } else {
+            EXPECT_EQ(state.resumed_on, state.completed_on);
+            EXPECT_NE(state.resumed_on, std::this_thread::get_id());
+            EXPECT_EQ(state.resumptions, 1);
+        }
         EXPECT_EQ(result.has_value(), kind != forge_test::completion_kind::stopped);
     }
 }
@@ -660,12 +785,14 @@ TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
         std::execution::prop(
             std::execution::get_stop_token_t{}, source.get_token()));
 
+    bool after_await = false;
     auto result = forge::sync_wait(
         std::execution::write_env(
-            await_thread_pool_task(pool.get_scheduler()), env));
+            await_thread_pool_task(pool.get_scheduler(), &after_await), env));
     pool.wait();
 
     EXPECT_FALSE(result.has_value());
+    EXPECT_FALSE(after_await);
 }
 
 TEST(TaskTest, ValueTaskCapturesBorrowedNoncopyableEnvironment) {
@@ -698,7 +825,9 @@ TEST(TaskTest, ConnectingMovedFromTaskThrows) {
 }
 
 TEST(TaskTest, CoAwaitErrorPropagates) {
-    EXPECT_THROW((void)forge::sync_wait(await_error_task()), task_marker_error);
+    bool after_await = false;
+    EXPECT_THROW((void)forge::sync_wait(await_error_task(&after_await)), task_marker_error);
+    EXPECT_FALSE(after_await);
 }
 
 TEST(TaskTest, ValueTaskDeliversStoredErrorAsRvalue) {
@@ -728,15 +857,19 @@ TEST(TaskTest, VoidTaskDeliversStoredErrorAsRvalue) {
 }
 
 TEST(TaskTest, CoAwaitStoppedPropagates) {
-    auto result = forge::sync_wait(await_stopped_task());
+    bool after_await = false;
+    auto result = forge::sync_wait(await_stopped_task(&after_await));
 
     EXPECT_FALSE(result.has_value());
+    EXPECT_FALSE(after_await);
 }
 
 TEST(TaskTest, CoAwaitThrowingConnectPropagatesException) {
+    bool after_await = false;
     EXPECT_THROW(
-        (void)forge::sync_wait(await_throwing_connect_task()),
+        (void)forge::sync_wait(await_throwing_connect_task(&after_await)),
         std::runtime_error);
+    EXPECT_FALSE(after_await);
 }
 
 TEST(TaskTest, CoAwaitDrainedScopeJoinCompletesInsideTask) {

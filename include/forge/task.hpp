@@ -278,7 +278,12 @@ public:
         }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
-            return std::coroutine_handle<promise_type>::from_promise(*this);
+            // The awaiting frame is abandoned, not resumed. As in final_suspend,
+            // completion may destroy this promise; access no members afterward.
+            if (auto* op = __op_) {
+                op->__complete();
+            }
+            return std::noop_coroutine();
         }
         auto get_env() const noexcept -> __task_detail::__env {
             return __task_detail::__env{__stop_token_, __start_scheduler_};
@@ -358,7 +363,12 @@ public:
         }
         std::coroutine_handle<> unhandled_stopped() noexcept {
             stopped_ = true;
-            return std::coroutine_handle<promise_type>::from_promise(*this);
+            // Match final_suspend's completion without resuming the task body.
+            // The receiver may destroy this promise during completion.
+            if (auto* op = __op_) {
+                op->__complete();
+            }
+            return std::noop_coroutine();
         }
         auto get_env() const noexcept -> __task_detail::__env {
             return __task_detail::__env{__stop_token_, __start_scheduler_};
