@@ -481,14 +481,30 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 
 ## 扩展弃用诊断检查
 
-`test_execution_extension_deprecations_strict` 与
+`test_execution_extension_deprecations_strict`、`test_forge_extension_deprecations_strict` 与
 `test_linalg_extension_deprecations_strict` 构建专用副本，以 `/we4996`（MSVC）或
 `-Werror=deprecated-declarations`（GCC、Clang、AppleClang）检查弃用诊断。
-覆盖范围包括 scope 观察、execution 组合与 future、`execution_wave1`、
-`execution_schedule_from`、Forge 的两种 `any_sender` 查询模式、linalg Level 1
-及兼容源文件的正向对照。专用副本不参与默认构建，不改变普通运行测试的警告选项；
+覆盖 scope 观察、execution 组合与 future、迁移后的 execution 和 Forge 运行测试、
+linalg Level 1 及兼容源文件的正向对照。专用副本不参与默认构建，不改变普通运行测试的警告选项；
 兼容测试仍只在旧拼写调用处局部抑制诊断。功能关闭或原生实现让位时，对应目标可能不注册。
+`test_execution_extension_deprecations_strict` 也构建已启用的 Forge 副本。
+`install_consumer_deprecation_strict_compile` 使用源码树头文件编译安装包消费者的同一份
+源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
 `test_extension_deprecations_strict` 汇总当前已注册的检查目标。
+
+`execution_d1_deprecation_compat` 运行旧入口与替代入口的对照。
+配置时逐项检查 25 个带编号的用例，均须通过局部抑制的正向编译检查。
+将弃用诊断视为错误时，Clang 和 MSVC 要求全部 25 个用例编译失败。
+GCC 跳过两个内部分支的失败检查（用例 17 和 25），其余 23 个仍须编译失败。
+`execution_d1_warning_free` 及
+`execution_d1_strict_warning_free` 检查标准调用和替代入口，分别使用默认与
+严格成员查询模式。`execution_forge_bulk` 覆盖三种串行算法的 direct 与 pipe 调用、
+索引顺序、chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
+文档审计在 Forge 头文件、示例与非兼容测试中检查旧 execution 标记别名的限定拼写。
+文档审计也在 Forge 头文件中检查 `make_env` 标识符，覆盖可能延迟查找的非限定调用。
+`forge_headers_without_legacy_execution_names_compile` 先载入标准头文件，
+再将旧标记别名及本批弃用的公开概念和类型工具重命名为未声明的标识符，
+最后编译各个公开 Forge 头文件。IO 后端与 SIMD 头文件沿用各自的可用性条件。
 
 每个运行测试副本均注册 `<原 CTest 名称>_deprecation_strict_compile`，
 使用当前构建配置单独构建副本，通过 `forge_main_build` 锁串行访问构建目录，

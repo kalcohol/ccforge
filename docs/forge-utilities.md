@@ -261,8 +261,10 @@ receiver 在不再需要完成参数后，可以在 `set_value` / `set_error` / 
 ## 类型擦除
 
 - `forge::any_receiver_of<CompletionSignatures>`：窄 receiver 类型擦除，使用 64B SBO +
-  堆回退。构造阶段按 `receiver_of` 的 call-expression 规则接受底层 receiver，因此其
-  handler 可以接受声明参数的隐式转换；value completion 的调用参数必须与声明的单一
+  堆回退。从底层 receiver 构造时，`CompletionSignatures` 必须是
+  `std::execution::completion_signatures<...>` 的特化。构造阶段按工作草案中 receiver
+  的 completion 调用规则接受底层 receiver，因此 handler 可以接受声明参数的隐式转换；
+  value completion 的调用参数必须与声明的单一
   value tuple 精确匹配，不做缺省补值。声明中的 `T` / `T&` / `const T&` 类别会原样保留，reference payload
   只在同步 completion call stack 内借用，不会在擦除边界物化副本；error completion
   折叠为 `std::exception_ptr`。
@@ -383,6 +385,21 @@ Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execu
 `forge::transfer_just` 仅组合标准 `just` 与 `continues_on`，完整原生实现下也可用。`forge::empty_env` 在 backport 与完整原生实现下均为 `std::execution::env<>`，不再保留旧空环境的独立类型身份。`forge::sync_wait` 在 backport 下保留旧的 tuple-or-variant 行为，在完整原生实现下转用标准单一 value completion 的 `std::this_thread::sync_wait`；跨实现消费多种 value completion 应使用标准 `sync_wait_with_variant`。零种 value completion 的既有扩展暂时保留，本次未增加弃用诊断。
 
 依据为 2026-11-13 查阅的 [execution synopsis](https://eel.is/c++draft/execution.syn)、[env](https://eel.is/c++draft/exec.env)、[prop](https://eel.is/c++draft/exec.prop) 与 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
+
+## 串行 bulk
+
+`<forge/bulk.hpp>` 提供 `forge::bulk`、`forge::bulk_chunked` 和
+`forge::bulk_unchunked`。三者支持 `adaptor(sndr, shape, f)` 与
+`sndr | adaptor(shape, f)`。Backport 复用原无策略重载的串行路径。
+在该路径中，`bulk` 与 `bulk_unchunked` 按顺序为每个索引调用
+`f(index, values...)`，`bulk_chunked` 对正整数 shape 调用一次
+`f(0, shape, values...)`。前序的 error 与 stopped completion 继续转发，
+callback 异常以 `std::exception_ptr` 传递。
+
+完整的原生 senders 实现提供 policy 对象时，这些入口调用对应的标准算法并传入
+`std::execution::seq`。未启用 backport 且原生实现不满足上述条件时，
+头文件不声明这些入口。旧的无策略 `std::execution` 重载已弃用，
+迁移见[执行库说明](backports/execution.md#扩展入口弃用与迁移)。
 
 ## 扩展重载弃用与迁移
 

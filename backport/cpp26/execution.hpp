@@ -94,7 +94,14 @@
 //     share completion-domain-then-start-domain recursive transformation.
 //     default_domain honors sender-tag transformation, and apply_sender uses
 //     explicit-domain-first then sender-tag fallback dispatch. Legacy
-//     two-argument domain transforms remain a source-compatibility extension.
+//     two-argument domain transforms are deprecated compatibility paths.
+//   - Extra write_env, unstoppable, into_variant, stopped_as_optional, on,
+//     and policy-less bulk forms are deprecated. Serial bulk without policy
+//     is available in <forge/bulk.hpp>. continues_on retains pipeability
+//     pending clarification of the working-draft wording.
+//   - Legacy marker aliases, make_env and exposition-only public concepts
+//     are deprecated in the documentation. The progress query's legacy
+//     weakly_parallel fallback and non-draft type utilities are deprecated.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
