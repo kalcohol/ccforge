@@ -136,7 +136,7 @@ using __spawn_env = __forge_counting_scope::__stop_env<Env>;
 
 template<class State>
 struct __inner_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
 
     // Shared ownership is established before start. Pin the state at each
     // completion entry so delivery may destroy the consumer operation.
@@ -188,12 +188,12 @@ struct __allocator_for_env {
 };
 
 template<class Env>
-    requires requires(Env& env) { std::execution::get_allocator(env); }
+    requires requires(Env& env) { std::get_allocator(env); }
 struct __allocator_for_env<Env> {
-    using type = std::decay_t<decltype(std::execution::get_allocator(std::declval<Env&>()))>;
+    using type = std::decay_t<decltype(std::get_allocator(std::declval<Env&>()))>;
 
     static type get(Env& env) {
-        return std::execution::get_allocator(env);
+        return std::get_allocator(env);
     }
 };
 
@@ -456,7 +456,7 @@ struct __consumer : __consumer_base<State> {
     };
 
     using stop_token_t = std::remove_cvref_t<decltype(
-        std::execution::get_stop_token(
+        std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())))>;
     using callback_t =
         std::stop_callback_for_t<stop_token_t, __stop_callback_fn>;
@@ -468,7 +468,7 @@ struct __consumer : __consumer_base<State> {
     [[nodiscard]] bool __install_stop_callback(const std::shared_ptr<State>& state) noexcept {
         __state = state;
         try {
-            auto token = std::execution::get_stop_token(
+            auto token = std::get_stop_token(
                 std::execution::get_env(__rcvr));
             if (token.stop_requested()) {
                 state->__try_cancel();
@@ -541,7 +541,7 @@ struct __consumer : __consumer_base<State> {
 
 template<class State, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using consumer_t = __consumer<State, R>;
 
     std::shared_ptr<State> __state;
@@ -607,7 +607,7 @@ void __consumer<State, R>::__release_owner() noexcept {
 
 template<class State>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using state_t = State;
 
     explicit __sender(std::shared_ptr<State> state) noexcept
@@ -717,7 +717,7 @@ template<class Association, class Alloc>
     })>{resource};
 }
 
-template<sender S, scope_token Token, queryable Env>
+template<sender S, scope_token Token, __forge_queryable Env>
 [[nodiscard]] auto __spawn_future(S sndr, Token token, Env env) {
     using association_t = decltype(token.try_associate());
     using state_t = __shared_state<S, Env, association_t>;
@@ -738,17 +738,18 @@ template<sender S, scope_token Token, queryable Env>
 } // namespace __forge_spawn_future
 
 struct spawn_future_t {
-    template<sender S, scope_token Token, queryable Env>
+    template<sender S, scope_token Token, __forge_queryable Env>
     [[nodiscard]] auto operator()(S&& sndr, Token token, Env env) const {
         auto wrapped = token.wrap(static_cast<S&&>(sndr));
-        if constexpr (!requires(Env& e) { std::execution::get_allocator(e); } &&
+        if constexpr (!requires(Env& e) { std::get_allocator(e); } &&
                       requires(const decltype(wrapped)& w) {
-                          std::execution::get_allocator(std::execution::get_env(w));
+                          std::get_allocator(std::execution::get_env(w));
                       }) {
-            auto alloc = std::execution::get_allocator(std::execution::get_env(wrapped));
-            auto joined_env = std::execution::make_env(
-                std::execution::prop(std::execution::get_allocator_t{}, std::move(alloc)),
-                std::move(env));
+            auto alloc = std::get_allocator(std::execution::get_env(wrapped));
+            // Preserve the move of the materialized allocator property into env.
+            auto joined_env = std::execution::env{
+                std::move(std::execution::prop(std::get_allocator_t{}, std::move(alloc))),
+                std::move(env)};
             return __forge_spawn_future::__spawn_future(
                 std::move(wrapped),
                 std::move(token),

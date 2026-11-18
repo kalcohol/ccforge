@@ -32,8 +32,8 @@ STEPS={a:SimpleNamespace(lines=REFS.get(a,'model-only: library contract / finite
 EXTRA_REFS=(
     '::__launch | state_traits_t::deallocate(state_alloc, state, 1);',
     '::__launch_with_env | auto started =',
-    '::__spawn_wrapped | auto alloc = std::execution::get_allocator(env);',
-    '::__spawn_wrapped | auto alloc = std::execution::get_allocator(source_env);',
+    '::__spawn_wrapped | auto alloc = std::get_allocator(env);',
+    '::__spawn_wrapped | auto alloc = std::get_allocator(source_env);',
     '__spawn_t::operator() | auto wrapped = token.wrap',
     '__state::__recv::set_value | __owner->__complete();',
     '__state::__recv::set_stopped | __owner->__complete();')

@@ -66,9 +66,6 @@ namespace std::execution {
 template<class T>
 concept __forge_queryable = std::destructible<T>;
 
-template<class T>
-concept queryable = __forge_queryable<T>;
-
 template<__forge_queryable... Envs>
 struct env;
 using __empty_env = env<>;
@@ -349,13 +346,6 @@ using stop_token_of_t = remove_cvref_t<decltype(std::get_stop_token(std::declval
 } // namespace std
 
 namespace std::execution {
-using std::forwarding_query_t;
-using std::forwarding_query;
-using std::get_stop_token_t;
-using std::get_stop_token;
-using std::get_allocator_t;
-using std::get_allocator;
-using std::stop_token_of_t;
 
 namespace __forge_env_detail {
 template<class Tag>
@@ -586,11 +576,6 @@ struct __fwd_attrs_view {
 };
 
 } // namespace __forge_env_detail
-
-template<class... Envs>
-[[nodiscard]] auto make_env(Envs&&... envs) {
-    return env{std::forward<Envs>(envs)...};
-}
 
 namespace __forge_env_detail {
 

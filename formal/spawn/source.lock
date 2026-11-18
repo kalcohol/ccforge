@@ -1,21 +1,21 @@
 {
-  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
-  "checker_digest": "2b7696e9415cb30ca404fb48c490d88c6ebce4b1a3cce5313b0bfad8d3961f79",
+  "assessment": "Marker and query spellings and the queryable constraint retain their types and meanings. Direct env CTAD preserves both forwarded xvalues and the materialized allocator property move. The two checker changes only retarget allocator-query source fragments. Association, allocator selection and the detached-state reference protocol are unaffected.",
+  "checker_digest": "bab26beef6f6c7963e71eb1dd47026527f9499c025b7612fd40c65a3c9e1231d",
   "configuration_count": 539,
-  "date": "2026-11-16",
+  "date": "2026-11-19",
   "expected_digest": "cd749ff43935f57e6a122b4a02fbd77c7092a798d3d69861f982a2ad9adccee6",
   "last_full_qualification": {
-    "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
-    "checker_digest": "2b7696e9415cb30ca404fb48c490d88c6ebce4b1a3cce5313b0bfad8d3961f79",
+    "assessment": "Marker and query spellings and the queryable constraint retain their types and meanings. Direct env CTAD preserves both forwarded xvalues and the materialized allocator property move. The two checker changes only retarget allocator-query source fragments. Association, allocator selection and the detached-state reference protocol are unaffected.",
+    "checker_digest": "bab26beef6f6c7963e71eb1dd47026527f9499c025b7612fd40c65a3c9e1231d",
     "configuration_count": 539,
-    "date": "2026-11-16",
+    "date": "2026-11-19",
     "expected_digest": "cd749ff43935f57e6a122b4a02fbd77c7092a798d3d69861f982a2ad9adccee6",
     "outcome_summary": {
       "fail": 260,
       "pass": 279
     },
     "python": "3.13.13",
-    "source_digest": "49c57d767a7a9e3349c0569ec5ecb2315dc29f04b533d830f1f60a0ceaf26bfd",
+    "source_digest": "85f47ef53b5cdcf5bf63b53a520fc0097328cb183592390185ff22fe9256a268",
     "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
     "tier": "full"
   },
@@ -25,7 +25,7 @@
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/spawn.hpp",
-  "source_digest": "49c57d767a7a9e3349c0569ec5ecb2315dc29f04b533d830f1f60a0ceaf26bfd",
+  "source_digest": "85f47ef53b5cdcf5bf63b53a520fc0097328cb183592390185ff22fe9256a268",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
   "tier": "full"
 }

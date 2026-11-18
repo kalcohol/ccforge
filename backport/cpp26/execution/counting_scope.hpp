@@ -142,7 +142,7 @@ concept scope_association =
 namespace __forge_scope_detail {
 
 struct __test_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -219,16 +219,10 @@ public:
 
     [[nodiscard]] auto join() noexcept;
 
-    [[nodiscard, deprecated("use forge::scope_is_closed (backport only)")]]
-    bool is_closed() const noexcept { return __is_closed(); }
-
     [[nodiscard]] bool __is_closed() const noexcept {
         return __forge_counting_scope::__scope_rejects_association(
             __state_.load(std::memory_order_acquire));
     }
-
-    [[nodiscard, deprecated("use forge::scope_count (backport only)")]]
-    std::size_t count() const noexcept { return __count(); }
 
     [[nodiscard]] std::size_t __count() const noexcept {
         return __count_.load(std::memory_order_acquire);
@@ -386,7 +380,7 @@ struct __stop_op;
 
 template<class R>
 struct __join_scheduler_receiver {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
 
     R* __rcvr;
 
@@ -422,13 +416,13 @@ using __join_schedule_op_t = connect_result_t<
 template<class R>
 concept __join_receiver =
     receiver<R> &&
-    sender_to<
+    __forge_sender_to<
         __join_schedule_sender_t<env_of_t<R>>,
         __join_scheduler_receiver<R>>;
 
 template<class Scope>
 struct __join_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
 
     Scope* __scope;
 
@@ -444,7 +438,7 @@ struct __join_sender {
 
     template<__join_receiver R>
     struct __op : __join_state_base, __forge_detail::__immovable {
-        using operation_state_concept = operation_state_t;
+        using operation_state_concept = operation_state_tag;
         using __schedule_op_t = __join_schedule_op_t<R>;
 
         Scope* __scope;
@@ -642,16 +636,10 @@ public:
 
     [[nodiscard]] auto join() noexcept;
 
-    [[nodiscard, deprecated("use forge::scope_is_closed (backport only)")]]
-    bool is_closed() const noexcept { return __is_closed(); }
-
     [[nodiscard]] bool __is_closed() const noexcept {
         return __forge_counting_scope::__scope_rejects_association(
             __state_.load(std::memory_order_acquire));
     }
-
-    [[nodiscard, deprecated("use forge::scope_count (backport only)")]]
-    std::size_t count() const noexcept { return __count(); }
 
     [[nodiscard]] std::size_t __count() const noexcept {
         return __count_.load(std::memory_order_acquire);
@@ -811,18 +799,18 @@ namespace __forge_counting_scope {
 
 template<class S, class R>
 struct __stop_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     using token_t = std::inplace_stop_token;
     using downstream_env_t = env_of_t<R>;
     using downstream_stop_token_t = std::remove_cvref_t<decltype(
-        std::execution::get_stop_token(std::declval<downstream_env_t>()))>;
+        std::get_stop_token(std::declval<downstream_env_t>()))>;
     using child_token_t = std::conditional_t<
         std::unstoppable_token<downstream_stop_token_t>, token_t,
         __fused_stop_token<downstream_stop_token_t>>;
 
     struct __recv {
-        using receiver_concept = receiver_t;
+        using receiver_concept = receiver_tag;
 
         __stop_op* __owner;
         child_token_t __token;
@@ -861,7 +849,7 @@ struct __stop_op : __forge_detail::__immovable {
 
     child_token_t __prepare_token(token_t token) {
         if constexpr (!std::unstoppable_token<downstream_stop_token_t>) {
-            auto downstream = std::execution::get_stop_token(std::execution::get_env(__rcvr));
+            auto downstream = std::get_stop_token(std::execution::get_env(__rcvr));
             return {token, std::move(downstream)};
         } else {
             return token;
@@ -875,7 +863,7 @@ struct __stop_op : __forge_detail::__immovable {
 
 template<class S>
 struct __stop_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     std::inplace_stop_token __token;
@@ -885,7 +873,7 @@ struct __stop_sender {
     static auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
         using downstream_token_t = std::remove_cvref_t<decltype(
-            std::execution::get_stop_token(std::declval<Env>()))>;
+            std::get_stop_token(std::declval<Env>()))>;
         using child_token_t = std::conditional_t<
             std::unstoppable_token<downstream_token_t>, std::inplace_stop_token,
             __fused_stop_token<downstream_token_t>>;

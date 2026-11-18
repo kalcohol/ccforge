@@ -1,8 +1,8 @@
 {
-  "assessment": "Engine-only change: two narrow matcher forms (a parenthesized unary concept fold and a nonempty-pack sizeof constraint) and optional single-input support in the shared child-operation module. The stop_token model, its transitions, memory orders, library assumptions and fragments are unchanged; the complete stop_token.hpp analysis and every step resolution are identical to the prior matcher.",
+  "assessment": "The callback-eligibility concept retains every constraint under a reserved name outside the feature guard. The optional standard header provides native declarations before the guard and lets older libraries use the fallback. The backport source lock, wait/notify, callback lifetime and memory-order operations in the modeled protocol are identical.",
   "checker_digest": "d498aee57dfaf2618d1656e6988a53155d682c074226653b0c56427e4556d8f6",
-  "configuration_count": 7577,
-  "date": "2026-11-16",
+  "configuration_count": 99,
+  "date": "2026-11-19",
   "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",
   "last_full_qualification": {
     "assessment": "Engine-only change: two narrow matcher forms (a parenthesized unary concept fold and a nonempty-pack sizeof constraint) and optional single-input support in the shared child-operation module. The stop_token model, its transitions, memory orders, library assumptions and fragments are unchanged; the complete stop_token.hpp analysis and every step resolution are identical to the prior matcher.",
@@ -20,12 +20,12 @@
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 3990,
-    "pass": 3587
+    "fail": 38,
+    "pass": 61
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/stop_token.hpp",
-  "source_digest": "b97fda09051ecc39625c5d9efe41bbb787fb512ddf47ea529f70420b58db1dac",
+  "source_digest": "69255793c2cc6be194354574773f45544e1a5ff6aa26be4c799757c02bcc743b",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

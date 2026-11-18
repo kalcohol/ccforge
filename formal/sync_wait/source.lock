@@ -1,8 +1,8 @@
 {
-  "assessment": "Whole-header correspondence covers result storage before finish, connect/start/run/read, op/state/loop reverse stack destruction and receiver final access. Run-loop internals are imported as the mutex, exactly-once dispatch, finish-and-empty return, HB and final-unlock contract with its submission boundary. Finite child and payload destruction scripts represent inline, cross-thread and scheduled completions; arbitrary user code and exception internals are abstracted.",
+  "assessment": "The receiver marker names the same type. Three dead ADL answers duplicate the member scheduler queries. The deleted public using-declaration aliased the same retained std::this_thread CPO. Connect/start/run ordering, result publication and destruction under the run_loop contract are unaffected.",
   "checker_digest": "ff6a64ee3fce60163fc2f246fc1eea2dbb414558f43ee34890d7640f277ac645",
-  "configuration_count": 82,
-  "date": "2026-11-16",
+  "configuration_count": 25,
+  "date": "2026-11-19",
   "expected_digest": "8a155b5f912ef349473ad58a347bd8f6e01183acc11991ac5e226de7fa85c748",
   "last_full_qualification": {
     "assessment": "Whole-header correspondence covers result storage before finish, connect/start/run/read, op/state/loop reverse stack destruction and receiver final access. Run-loop internals are imported as the mutex, exactly-once dispatch, finish-and-empty return, HB and final-unlock contract with its submission boundary. Finite child and payload destruction scripts represent inline, cross-thread and scheduled completions; arbitrary user code and exception internals are abstracted.",
@@ -20,12 +20,12 @@
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 34,
-    "pass": 48
+    "fail": 16,
+    "pass": 9
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/sync_wait.hpp",
-  "source_digest": "f2589cfa4cc62770cccc706453a38f784d5f555a20248be196f7263d035713bb",
+  "source_digest": "4f38c12153f23376d7de064ea8945b6a0d70e06288ba5da15f253629ad7dd004",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

@@ -60,11 +60,6 @@ struct __child_env {
         return this->__token;
     }
 
-    friend auto tag_invoke(get_stop_token_t, const __child_env& self) noexcept
-        -> inplace_stop_token {
-        return self.__token;
-    }
-
     template<class Query>
         requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
                   __forge_env_detail::__forwarding_query<Query> &&
@@ -73,16 +68,6 @@ struct __child_env {
         noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
         return __forge_env_detail::__query(
             std::move(query), static_cast<const base_t&>(this->__base));
-    }
-
-    template<class Query>
-        requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
-                  __forge_env_detail::__forwarding_query<Query> &&
-                  __forge_env_detail::__queryable<Query, const base_t&>)
-    friend decltype(auto) tag_invoke(Query query, const __child_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
-        return __forge_env_detail::__query(
-            std::move(query), static_cast<const base_t&>(self.__base));
     }
 };
 
@@ -280,7 +265,7 @@ template<class OuterRecv, class... Senders>
 struct __op;
 
 template<class Token, class Callback,
-         bool = std::stoppable_token_for<Token, Callback>>
+         bool = std::__forge_stop_detail::__stoppable_token_for<Token, Callback>>
 struct __callback_type {
     using type = std::monostate;
 };
@@ -292,7 +277,7 @@ struct __callback_type<Token, Callback, true> {
 
 template<std::size_t I, class OuterRecv, class... Senders>
 struct __child_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __op<OuterRecv, Senders...>* __self;
 
     template<class... Vs>
@@ -328,7 +313,7 @@ struct __child_recv {
 
 template<class OuterRecv, class... Senders>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     static constexpr std::size_t N = sizeof...(Senders);
 
     using child_env_t = __child_env_t<env_of_t<OuterRecv>>;
@@ -382,7 +367,7 @@ struct __op : __forge_detail::__immovable {
     };
 
     using __outer_token_t = std::remove_cvref_t<decltype(
-        std::execution::get_stop_token(std::declval<env_of_t<OuterRecv>>()))>;
+        std::get_stop_token(std::declval<env_of_t<OuterRecv>>()))>;
     using __callback_t = typename __callback_type<__outer_token_t, __outer_stop_callback>::type;
 
     template<std::size_t... Is>
@@ -407,11 +392,11 @@ struct __op : __forge_detail::__immovable {
     void register_outer_stop_callback() noexcept {
         using outer_env_t = env_of_t<OuterRecv>;
 
-        if constexpr (requires(outer_env_t env) { std::execution::get_stop_token(env); }) {
+        if constexpr (requires(outer_env_t env) { std::get_stop_token(env); }) {
             using outer_token_t = std::remove_cvref_t<decltype(
-                std::execution::get_stop_token(std::declval<outer_env_t>()))>;
-            if constexpr (std::stoppable_token_for<outer_token_t, __outer_stop_callback>) {
-                auto token = std::execution::get_stop_token(std::execution::get_env(__outer_recv));
+                std::get_stop_token(std::declval<outer_env_t>()))>;
+            if constexpr (std::__forge_stop_detail::__stoppable_token_for<outer_token_t, __outer_stop_callback>) {
+                auto token = std::get_stop_token(std::execution::get_env(__outer_recv));
                 if (!token.stop_possible()) { return; }
 
                 try {
@@ -526,7 +511,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class... Senders>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     std::tuple<Senders...> __sndrs;
 
     template<class Self, class Env>

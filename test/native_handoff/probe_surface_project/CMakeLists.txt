@@ -68,12 +68,8 @@ if(no_shadow_root)
     include("${FORGE_ROOT_DIR}/test/CompileProbe.cmake")
     forge_add_compile_probe(probe_surface_consumer no_shadow_root.cpp)
     if(SURFACE_CASE STREQUAL "no_shadow_root_no_mdspan")
-        target_sources(probe_surface_consumer PRIVATE
-            "${FORGE_ROOT_DIR}/test/forge/compile/test_forge_headers_without_legacy_execution_names.cpp")
         target_include_directories(probe_surface_consumer PRIVATE "${unavailable_include}")
-        target_compile_definitions(probe_surface_consumer PRIVATE
-            FORGE_TEST_EXPECT_NO_BASE_MDSPAN
-            FORGE_TEST_LINALG_PREINCLUDE_ONLY)
+        target_compile_definitions(probe_surface_consumer PRIVATE FORGE_TEST_EXPECT_NO_BASE_MDSPAN)
     endif()
     return()
 endif()

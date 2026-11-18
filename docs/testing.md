@@ -92,11 +92,7 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
 - 非 WD 的 `std::execution::ensure_started` / `std::execution::start_detached`
   是否只出现在“已移除”说明中；
 - 公开文档和 example 中带限定的 `sync_wait` 是否写作 `std::this_thread::sync_wait`
-  （Forge 扩展入口 `forge::sync_wait` 除外）；
-- C++ 源文件、头文件和内嵌 C++ 探针的脚本中，是否通过 `execution` 或 `ex` 限定
-  `get_stop_token`、`get_allocator`、`forwarding_query` 及其 `_t` 类型或
-  `stop_token_of_t`，是否用 using 指令引入 `std::execution`（或别名 `ex`），
-  或是否使用 `stoppable_token_for`（锁定头文件及专用兼容性测试除外）；
+  （Forge 扩展入口 `forge::sync_wait` 与列出迁移后拼写的对照表除外）；
 - 三语 README 的特性表、代码块和链接结构是否一致；
 - `test/CMakeLists.txt` 声明的 `FORGE_TEST_ENABLE_*` 和 `forge.cmake` 声明的
   `FORGE_ENABLE_FORGE_*` 是否与 `docs/testing.md` / `docs/install-options.md`
@@ -493,8 +489,10 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 `test_execution_extension_deprecations_strict` 与 `test_forge_extension_deprecations_strict`
 构建专用副本，以 `/we4996`（MSVC）或 `-Werror=deprecated-declarations`（GCC、Clang、
 AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 future、迁移后的 execution
-和 Forge 运行测试。专用副本不参与默认构建，沿用原有普通测试的警告选项；兼容测试只在旧
-拼写调用处局部抑制诊断。功能关闭或原生实现让位时，对应目标可能不注册。
+和 Forge 运行测试。专用副本不参与默认构建，沿用原有普通测试的警告选项。
+`execution_zero_wait_compat` 在局部抑制弃用诊断后，检查已弃用的 `sync_wait` 重载处理
+零种值完成签名（stopped、error）的行为，并比较具有两种值完成签名的 sender 在该重载和
+`forge::sync_wait` 中的结果。功能关闭或原生实现让位时，对应目标可能不注册。
 `test_execution_extension_deprecations_strict` 也构建已启用的 Forge 副本。
 `install_consumer_deprecation_strict_compile` 使用源码树头文件编译安装包消费者的同一份
 源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
@@ -503,14 +501,10 @@ AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 futu
 `execution_removed_forms_compile` 对移除的重载与 pipe 形式使用 requires-expression
 或概念作反例，逐项配对 `execution_standard_forms` 及同一源文件内的标准正控制。
 `execution_removed_forms` 运行两阶段 domain transform 的选择回归。
-配置时逐个拒绝 12 个已移除的限定名称，并用对应标准拼写编译正控制。
+配置时逐个检查 33 个已移除的名称或调用形式，每项配有标准拼写或 Forge 迁移入口的
+编译正控制。涉及原先已弃用声明的反例局部抑制弃用诊断，以检验名称确实消失。
 `execution_forge_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
 chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
-文档审计在 Forge 头文件、示例与非兼容测试中检查旧 execution 标记别名的限定拼写。
-文档审计也在 Forge 头文件中检查 `make_env` 标识符，覆盖可能延迟查找的非限定调用。
-`forge_headers_without_legacy_execution_names_compile` 先载入标准头文件，
-再将旧标记别名及本批弃用的公开概念和类型工具重命名为未声明的标识符，
-最后编译各个公开 Forge 头文件。IO 后端与 SIMD 头文件沿用各自的可用性条件。
 
 每个运行测试副本均注册 `<原 CTest 名称>_deprecation_strict_compile`，
 使用当前构建配置单独构建副本，通过 `forge_main_build` 锁串行访问构建目录，

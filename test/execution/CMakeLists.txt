@@ -463,52 +463,23 @@ if(MSVC)
 endif()
 forge_add_execution_runtime_test(test_execution_any_sender test_execution_any_sender.cpp execution_any_sender)
 
-forge_add_execution_compile_probe(
-    test_execution_extension_compat
-    test_execution_extension_compat.cpp
-    execution_extension_compat_compile)
 forge_add_execution_runtime_test(
     test_execution_extensions
     test_execution_extensions.cpp
     execution_extensions)
-add_test(NAME execution_extension_compat COMMAND test_execution_extension_compat)
-set_tests_properties(execution_extension_compat PROPERTIES
-    DEPENDS execution_extension_compat_compile
-    TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
-foreach(_forge_extension_test IN ITEMS
-        test_execution_extensions test_execution_extension_compat)
-    if(MSVC)
-        target_compile_options(${_forge_extension_test} PRIVATE /we4996)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${_forge_extension_test} PRIVATE -Werror=deprecated-declarations)
-    endif()
-endforeach()
+if(MSVC)
+    target_compile_options(test_execution_extensions PRIVATE /we4996)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_execution_extensions PRIVATE -Werror=deprecated-declarations)
+endif()
 
-# Deprecated extension calls remain usable and diagnose independently.
+# The deprecated sync_wait overload remains usable and diagnoses independently.
 set(_forge_extension_flags "${CMAKE_REQUIRED_FLAGS}")
 set(_forge_extension_defs "${CMAKE_REQUIRED_DEFINITIONS}")
 if(MSVC)
     string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
-endif()
-forge_add_execution_compile_probe(test_execution_scope_observer_compat test_execution_scope_observer_compat.cpp execution_scope_observer_compat_compile)
-add_test(NAME execution_scope_observer_compat COMMAND test_execution_scope_observer_compat)
-set_tests_properties(execution_scope_observer_compat PROPERTIES DEPENDS execution_scope_observer_compat_compile)
-if(MSVC)
-    target_compile_options(test_execution_scope_observer_compat PRIVATE /we4996)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_execution_scope_observer_compat PRIVATE -Werror=deprecated-declarations)
-endif()
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_SCOPE_OBSERVER_COMPAT
-        test_execution_scope_observer_compat.cpp ON "Suppressed legacy extensions and Forge replacements must compile")
-    foreach(_forge_case RANGE 1 4)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs} -DFORGE_DEPRECATION_CASE=${_forge_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_SCOPE_OBSERVER_DEPRECATED_${_forge_case}
-            test_execution_scope_observer_compat.cpp OFF "Each legacy extension must diagnose deprecation")
-    endforeach()
-    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 endif()
 forge_add_execution_compile_probe(test_execution_zero_wait_compat test_execution_zero_wait_compat.cpp execution_zero_wait_compat_compile)
 add_test(NAME execution_zero_wait_compat COMMAND test_execution_zero_wait_compat)
@@ -544,15 +515,15 @@ foreach(_target IN ITEMS test_execution_removed_forms test_execution_standard_fo
     set_tests_properties(${_test} PROPERTIES
         DEPENDS ${_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endforeach()
-foreach(_case RANGE 1 12)
+foreach(_case RANGE 1 33)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
         -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=1)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_CONTROL_${_case}
-        test_execution_reject_removed_names.cpp ON "Replacement for removed name ${_case} must compile")
+        test_execution_reject_removed_names.cpp ON "Control for removed execution name or form ${_case} must compile")
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
         -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=0)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_REJECT_${_case}
-        test_execution_reject_removed_names.cpp OFF "Removed name ${_case} must be absent")
+        test_execution_reject_removed_names.cpp OFF "Removed execution name or form ${_case} must be absent")
 endforeach()
 unset(_target)
 unset(_test)
@@ -579,8 +550,7 @@ foreach(_forge_target IN LISTS _forge_scope_strict_targets)
     list(APPEND _forge_scope_strict_copies ${_forge_target}_ds)
 endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
-    ${_forge_scope_strict_copies} test_execution_scope_observer_compat
-    test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions
+    ${_forge_scope_strict_copies} test_execution_zero_wait_compat test_execution_extensions
     test_execution_removed_forms test_execution_standard_forms)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)

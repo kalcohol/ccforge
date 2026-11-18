@@ -1,8 +1,8 @@
 {
-  "assessment": "Whole-header correspondence covers mutex-protected push/finish, predicate CV wait with spurious wakeups, logical FIFO enqueue/pop, execution stop query and completion, separate post-execute count decrement and destructor count checks. Head/tail/next pointer representation is abstracted by the logical queue. Unlock is the final loop access; submissions close before the final empty finishing pop, while finish may precede a remaining push. Task bodies and stop internals are finite abstract library contracts.",
+  "assessment": "Marker and stop-query spellings name the same entities. The dead ADL declarations and definitions duplicate the existing scheduler and progress query members. Queue submission and exit, stop checking, locking, completion and teardown are unaffected.",
   "checker_digest": "38b04b346bebda8069636e01ebd91f5ec10919f28997edf7daea65d3044c453b",
-  "configuration_count": 177,
-  "date": "2026-11-16",
+  "configuration_count": 42,
+  "date": "2026-11-19",
   "expected_digest": "69a6b2572b3fabb477255219a09795e70e05ea68e3ac6b5d92d8dc0bdb755c0e",
   "last_full_qualification": {
     "assessment": "Whole-header correspondence covers mutex-protected push/finish, predicate CV wait with spurious wakeups, logical FIFO enqueue/pop, execution stop query and completion, separate post-execute count decrement and destructor count checks. Head/tail/next pointer representation is abstracted by the logical queue. Unlock is the final loop access; submissions close before the final empty finishing pop, while finish may precede a remaining push. Task bodies and stop internals are finite abstract library contracts.",
@@ -20,12 +20,12 @@
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 97,
-    "pass": 80
+    "fail": 21,
+    "pass": 21
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/run_loop.hpp",
-  "source_digest": "32ce985aa18cd1d1b6d054c42c6b1b0b0bf6935728c92f539f1c10647d3a8603",
+  "source_digest": "a2720fb7edffafd5172e5e57ef7093de66ef7b89b1dd4b114e361c4ec6923af2",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

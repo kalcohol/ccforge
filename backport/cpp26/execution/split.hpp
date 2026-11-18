@@ -80,7 +80,7 @@ using __cached_completion_signatures_t =
 // rejects the failed call inside the latter instead of yielding false.
 template<class S>
 concept __source_has_allocator = requires(const S& s) {
-    std::execution::get_allocator(std::execution::get_env(s));
+    std::get_allocator(std::execution::get_env(s));
 };
 
 template<class S, bool = __source_has_allocator<S>>
@@ -91,10 +91,10 @@ struct __allocator_for_source {
 
 template<class S>
 struct __allocator_for_source<S, true> {
-    using type = std::decay_t<decltype(std::execution::get_allocator(
+    using type = std::decay_t<decltype(std::get_allocator(
         std::execution::get_env(std::declval<const S&>())))>;
     static type get(const S& s) {
-        return std::execution::get_allocator(std::execution::get_env(s));
+        return std::get_allocator(std::execution::get_env(s));
     }
 };
 
@@ -103,7 +103,7 @@ struct __shared_state;
 
 template<class S>
 struct __inner_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __shared_state<S>* __st;
 
     template<class... Vs> void set_value(Vs&&... vs) && noexcept;
@@ -261,7 +261,7 @@ void __inner_recv<S>::set_stopped() && noexcept {
 
 template<class S, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     std::shared_ptr<__shared_state<S>> __shared;
     std::shared_ptr<__subscriber<S, R>> __sub;
@@ -302,7 +302,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class S>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     std::shared_ptr<__shared_state<S>> __shared;
@@ -344,12 +344,6 @@ template<sender S>
         __forge_detail::__forward_as_given(std::forward<S>(sndr)), alloc);
 
     return __forge_split::__sender<source_t>{std::move(shared)};
-}
-
-template<sender S>
-[[deprecated("use forge::split")]]
-[[nodiscard]] auto split(S&& sndr) {
-    return std::execution::__split(std::forward<S>(sndr));
 }
 
 } // namespace std::execution

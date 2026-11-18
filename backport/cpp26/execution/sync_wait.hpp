@@ -50,24 +50,12 @@ struct sync_wait_env {
         return this->loop_->get_scheduler();
     }
 
-    friend auto tag_invoke(get_scheduler_t, const sync_wait_env& self) noexcept {
-        return self.loop_->get_scheduler();
-    }
-
     auto query(get_start_scheduler_t) const noexcept {
         return this->loop_->get_scheduler();
     }
 
-    friend auto tag_invoke(get_start_scheduler_t, const sync_wait_env& self) noexcept {
-        return self.loop_->get_scheduler();
-    }
-
     auto query(get_delegation_scheduler_t) const noexcept {
         return this->loop_->get_scheduler();
-    }
-
-    friend auto tag_invoke(get_delegation_scheduler_t, const sync_wait_env& self) noexcept {
-        return self.loop_->get_scheduler();
     }
 };
 
@@ -82,7 +70,7 @@ using value_t_for = __forge_meta::single_value_or_variant_t<CompletionSignatures
 
 template<class State>
 struct receiver {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     State* state_;
     run_loop* loop_;
 
@@ -192,11 +180,3 @@ struct sync_wait_t {
 inline constexpr sync_wait_t sync_wait{};
 
 } // namespace std::this_thread
-
-namespace std::execution {
-
-// Deprecated compatibility alias: retain identity and unqualified lookup.
-// A using-declaration cannot carry a separate deprecated attribute.
-using std::this_thread::sync_wait;
-
-} // namespace std::execution

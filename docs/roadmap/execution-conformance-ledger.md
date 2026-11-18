@@ -26,7 +26,7 @@ Execution backport 当前包含：
 - scheduler adaptors：`starts_on`、`continues_on`、`on`、`affine`、policy-shaped
   serial `bulk`、`bulk_chunked` 和 `bulk_unchunked`；
 - Forge extensions：`forge::transfer_just`、`forge::split`、`forge::bulk*`；
-- composition：`into_variant`、`when_all`、`when_all_with_variant`、`split`、
+- composition：`into_variant`、`when_all`、`when_all_with_variant`、
   `associate`、`spawn`、`spawn_future`；
 - consumers：`sync_wait`、`sync_wait_with_variant`；
 - stop-token support：`inplace_stop_source/token/callback`、`never_stop_token`；
@@ -67,8 +67,8 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `stopped_as_optional`, `stopped_as_error` | Implemented subset | `stopped_as.hpp`；提供 direct-call；`stopped_as_optional` 要求恰好一个非 `void` value signature，单签名多个参数形成 `optional<tuple<...>>`；该 shape 验证延迟到实际环境的 signature 查询 / `connect`，是已接受的 creation Mandate 延迟偏差，未实现 WD `make-sender` 的无环境 / 环境依赖分类；CPO 自身可直接 pipe，`stopped_as_error(error)` 返回标准 pipe closure。 Optional child/signatures 使用 FWD-ENV 并检查 value 保存；error child 保留未过滤环境。stopped_as_error binary 要求 movable-value，closure 要求可初始化 bound error；signature/connect 对无效 child 替换失败。 |
 | `into_variant` | Implemented subset | `into_variant.hpp`；CPO 自身支持 direct-call 和 bare pipe；`sync_wait` / `when_all` 复用单参数入口。 Child/signatures 经 FWD-ENV 及一致值类别，const-lvalue 不预先复制 child；全部 result datums 要求 decay-copyable，connect 条件 noexcept。通用 product/tag surface 仍未提供。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | `when_all` 按 WD 要求至少一个 child sender；typed tuple 保存各 child 的 typed holder，operation state 在 holder 内作为普通成员从 factory prvalue 直接初始化，支持空、non-final、immovable 类型；values、errors、stop source 和 optional stop callback 静态存储，operation-state storage 本身不再分配，无大小或对齐导致的堆回退。非分配 children / schedulers / receivers / environment queries / 用户函数 / 结果类型的组合无需全局分配；top-level 是否注册取决于 receiver token 的 `stop_possible()`，inner `when_all` 会在 parent 的 stop source 上注册，inplace registration 均零分配。自定义 token callback 的自行分配另计。Child `connect` 抛出时销毁已构造 children。保留 error 优先于 stopped、stop request 行为、child start 前注册 callback 和 completion 前注销 callback；child env 暴露 stop token 并转发一参数 forwarding queries。保留多 value shape 的 Cartesian signatures 扩展，区别于 WD 的单 value shape 约束；分配、异常和既有 lifecycle tests 覆盖。 兼容 awaitable child 经共享 CPO 连接，另含全局 frame allocation。 |
-| `split` | Implemented subset | 非 WD extension；shared state 内直接构造 concrete child operation，缓存单一 value completion shape 并以 `const&` 广播。shared state 与各 subscriber/control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`；入链不分配。无 operation 大小或对齐触发的全局回退；在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。未完成 source 的 abandonment stop 协议仍未实现。 可缓存兼容 awaitable；child frame 的全局分配另计。 |
-| `sync_wait`, `sync_wait_with_variant` | Implemented subset | env 通过 const member `query` 提供 scheduler、start scheduler 和 delegation scheduler；`sync_wait` 接受零种或多种 value completion 的标准拼写已弃用，改用 `forge::sync_wait`（仅 backport 保证扩展语义）；`sync_wait_with_variant` 保留零种 value completion 的 stopped/error 行为且不产生弃用诊断；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 接受实际 run_loop 环境兼容的 awaitable，包含其全局 frame allocation。 |
+| `forge::split` | Implemented subset | 非 WD extension；shared state 内直接构造 concrete child operation，缓存单一 value completion shape 并以 `const&` 广播。shared state 与各 subscriber/control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`；入链不分配。无 operation 大小或对齐触发的全局回退；在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。未完成 source 的 abandonment stop 协议仍未实现。 可缓存兼容 awaitable；child frame 的全局分配另计。 |
+| `std::this_thread::sync_wait`, `std::this_thread::sync_wait_with_variant` | Implemented subset | env 通过 const member `query` 提供 scheduler、start scheduler 和 delegation scheduler；`sync_wait` 接受零种或多种 value completion 的标准拼写已弃用，改用 `forge::sync_wait`（仅 backport 保证扩展语义）；`sync_wait_with_variant` 保留零种 value completion 的 stopped/error 行为且不产生弃用诊断；同步 typed-error consumption 保持为 Forge `wait_result` extension，而不是 `sync_wait`。 接受实际 run_loop 环境兼容的 awaitable，包含其全局 frame allocation。 |
 | `associate` | Implemented current-WD subset | association 成功后才在 typed manual-lifetime holder 中 connect wrapped sender；operation 不单独分配，connect failure 直接抛出。先销毁 child operation，再销毁 receiver，最后释放 association；child 使用 counting_scope wrapper 暴露的 token 注册 inplace callback 时不分配；sender、scheduler、receiver、environment queries、decayed 结果构造及自定义 stop-token callbacks 自行分配的内存另计。 接受兼容 awaitable，child frame 全局分配另计。 |
 | `spawn` | Implemented current-WD subset | 仅接受 `set_value()` / `set_stopped()`；operation 为 allocator-backed state 的普通成员。allocator 优先取显式 `get_allocator(env)`，其次取 wrapped sender attributes 的 allocator 并注入 spawned environment，否则取 `std::allocator<void>`；一个 rebound state allocation，销毁并 deallocate 后才释放 association。在 sender、scheduler、receiver、所选 allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。 awaitable 始终声明 exception_ptr，因此不满足 spawn 的 completion 限制。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future；operation 是 state 的普通成员，producer 使用 `write_env(stop-when(sndr, ssource token), env)`，stop-when 仅转发 `FWD-ENV` queries 并覆盖 stop token。allocator 优先取显式 env，其次取 wrapped sender attributes 并注入 env，否则为 `std::allocator<void>`；生命周期 resource、state、state control block、consumer 的合并 record/control block 均使用该 allocator；consumer 完成时解除外层 operation 的存储所有权。resource 持有 association，最后一个内部 allocator 副本消失时先销毁并 deallocate resource，再 disassociate，因此全部 state、consumer 和 control block 的回收均先于 join 完成。在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。value/error 按 decayed types 缓存并以 rvalue 交付，consumer stop 保留具体 token 行为；try-cancel 后 producer 未结束时仍保留 state 和 association。 可 eager 消费兼容 awaitable，producer child frame 的全局分配另计。 |
@@ -79,18 +79,18 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `schedule_from` | Implemented current-WD-shaped subset | 单参数 CPO 构造 departure marker，product access 暴露 schedule_from_t；attributes、child receiver 与 signatures 采用 FWD-ENV，保留引用身份与值所有权，const-lvalue 直接连接同类别 child；无独立结果缓冲。continues_on 经该 marker 允许 source domain 定制 departure；generic child operation immovability 仍依赖 child connect 契约。 |
 | `transform_sender`, `apply_sender` | Implemented current-WD-shaped subset | 公开入口为受约束函数模板，支持显式模板实参与 ADL；default_domain 标准成员限制 sender / queryable，默认左值结果保留引用；内部 connect 保留自定义 source 的借用连接扩展。transform 仍依次递归应用 completion / start domain；apply 采用 explicit-domain-first、algorithm-tag fallback。两个阶段均只识别带 tag 的 domain transform；缺失时调用默认变换。 |
 | `affine` | Implemented subset | `affine.hpp`；签名与 connect 要求环境提供 infallible start scheduler。有效时按 child 值类别优先选择 .affine()，否则以 continues_on 和转发全部 scheduler queries 的 unstoppable wrapper 保留多 value shapes；connect 仍 potentially throwing。未为 library senders 添加可选 .affine() 成员。Forge pool/strand 在所有环境声明 value/stopped；仅 stoppable token 环境满足 infallible-scheduler，env<>（无 start scheduler）及无 stop token / never_stop_token 的 start 环境均不满足 sender_in。Wrapper 按 &、const&、&& 转发 schedule 类别，mutable-only schedule 可用；签名与 connect 对四种 child cv/ref 选择相同定制。 |
-| `env`, `prop` | Implemented query surface subset | `prop` 的 const variadic query、tag holder 与 value 两元素 aggregate 形状及花括号/圆括号两参数 CTAD 保留，含函数模板内非依赖表达式与 reference_wrapper 解包；holder 删除拷贝/移动赋值，对 const 可赋值 tag 也生效，空 tag 不增加大小。callable Mandate 因 schedule attributes 使用 prop 时递归触发 scheduler concept 而暂缓；两模板均不可赋值，保留所需的拷贝/移动构造。`env` 参数约束 queryable；显式 guide 使用 `template<queryable... Envs>` 以保证 Clang 的 reference_wrapper 解包，WD 的 `template<class... Envs>` 与此写法无可观察差异，非 queryable 类型本就不能形成 env。借用 referent 的 cv/ref、查询返回引用及底层条件 noexcept 保留。子环境按声明顺序选首个能回答具名 query 的成员。 `make_env` 随锁定头文件迁移，普通调用改用 `env{...}`。 |
+| `env`, `prop` | Implemented query surface subset | `prop` 的 const variadic query、tag holder 与 value 两元素 aggregate 形状及花括号/圆括号两参数 CTAD 保留，含函数模板内非依赖表达式与 reference_wrapper 解包；holder 删除拷贝/移动赋值，对 const 可赋值 tag 也生效，空 tag 不增加大小。callable Mandate 因 schedule attributes 使用 prop 时递归触发 scheduler concept 而暂缓；两模板均不可赋值，保留所需的拷贝/移动构造。`env` 参数使用等价于 `std::destructible` 的内部 queryable 约束；显式 guide 使用 `template<__forge_queryable... Envs>` 以保证 Clang 的 reference_wrapper 解包，WD 的 `template<class... Envs>` 与此写法无可观察差异，非 queryable 类型本就不能形成 env。借用 referent 的 cv/ref、查询返回引用及底层条件 noexcept 保留。子环境按声明顺序选首个能回答具名 query 的成员。 |
 | `get_env` | Implemented subset | 调用 const `get_env()` 成员并检查 noexcept 与 queryable Mandates；缺失时返回 `env<>`。支持 constexpr。 |
-| `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 只有 `schedule_from` 提供结构化访问，其他库 sender 的 `tag_of_t` 无法成立；自定义 domain 无法按工作草案方式匹配这些库 sender。暴露 marker spelling；旧 `*_t` 标记别名仅文档弃用，属性留待锁定头文件迁移。 |
+| `sender_tag`, `receiver_tag`, `operation_state_tag`, `scheduler_tag`, `tag_of_t` | Implemented subset | 只有 `schedule_from` 提供结构化访问，其他库 sender 的 `tag_of_t` 无法成立；自定义 domain 无法按工作草案方式匹配这些库 sender。标记类型使用工作草案的 `*_tag` 拼写。 |
 | `get_scheduler` | Implemented subset | const 成员查询须 noexcept，再通过 value completion-scheduler CPO 与 HIDE-SCHED(env) 解析 scheduler。结果可能从借用引用变为 scheduler 值；inline_scheduler 的属性注入经 /5.2 的 auto(q) 返回值。 |
 | `get_start_scheduler` | Implemented subset | const 成员查询检查 noexcept 及去 cv/ref 后的 scheduler 类型，支持 constexpr。 |
 | `get_delegation_scheduler` | Implemented subset | const 成员查询检查 noexcept 及去 cv/ref 后的 scheduler 类型，支持 constexpr。 |
 | `get_completion_scheduler` | Implemented subset | 限制三个 completion tags；TRY-QUERY 后递归解析 value scheduler，直至无查询或同型且相等。非空环境且输入满足 scheduler、auto(q) 可构造时按 /5.2 返回输入副本；每个成功分支均检查去 cv/ref 后的 scheduler 结果 Mandate。仅在指定表达式上判断 MANDATE-NOTHROW，存储用的复制/移动无需声明 noexcept；终端借用答案保留引用。Inline scheduler / attrs 无 unary value 答案；环境缺少 scheduler 时两者均通过各自默认分支取得 inline scheduler，let 选择 SCHED-ENV(inline_scheduler)。Run-loop 与 Forge schedulers 对实际 completion tags 验证 scheduler / attrs parity；未诊断 signature consistency，见措辞问题。 |
-| `forwarding_query` | Implemented subset | 位于 std，兼容 execution using；先选成员并断言 noexcept / bool，其次是派生类型，最后是 false。直接调用与常量语境检查 constexpr；无法对所有非恒定实参诊断常量表达式 Mandate。FWD-ENV 的对象分类、`let` 连接环境的 `forwarding-query` 类型约束诊断与锁定的 when_all 分类边界见下文。 |
+| `forwarding_query` | Implemented subset | 位于 `std`；先选成员并断言 noexcept / bool，其次是派生类型，最后是 false。直接调用与常量语境检查 constexpr；无法对所有非恒定实参诊断常量表达式 Mandate。FWD-ENV 的对象分类、`let` 连接环境的 `forwarding-query` 类型约束诊断与锁定的 when_all 分类边界见下文。 |
 | `get_await_completion_adaptor` | Implemented subset | const 成员查询执行 nothrow Mandate，支持 constexpr。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | 成员查询及草案默认规则只选择 domain 类型，公开 CPO 按 MANDATE-NOTHROW(D()) 默认构造；D() 不可用时查询不参与；可用但抛出的构造违反硬 Mandate。get_domain 的 scheduler 分支使用 HIDE-SCHED，以 addressof 取得环境地址，删除或重载 operator& 不影响 domain 选择与后续 transformation；精确原环境 overload 不再控制此选择。Completion-domain /2.3 经过完整 completion-scheduler CPO，并保留 continues_on 的过滤环境映射。递归 connect / transformed completion signatures 共用 domain model。 |
-| `get_allocator` | Implemented subset | 标准实体位于 std，execution using 保持同一实体；无 default allocator。选中成员查询要求 noexcept 与去 cv/ref 后的 simple-allocator，支持 constexpr。用于 spawn / spawn_future / split 的 allocator 查询。 |
-| `get_stop_token` | Implemented subset | 标准实体位于 std，execution using 保持同一实体；缺失查询返回 never_stop_token，提供 std::stop_token_of_t。选中成员查询要求 noexcept 与去 cv/ref 后的 stoppable_token，支持 constexpr。 |
+| `get_allocator` | Implemented subset | 标准实体位于 `std`；无 default allocator。选中成员查询要求 noexcept 与去 cv/ref 后的 simple-allocator，支持 constexpr。用于 spawn / spawn_future / split 的 allocator 查询。 |
+| `get_stop_token` | Implemented subset | 标准实体位于 `std`；缺失查询返回 never_stop_token，提供 std::stop_token_of_t。选中成员查询要求 noexcept 与去 cv/ref 后的 stoppable_token，支持 constexpr。 |
 | `get_forward_progress_guarantee` | Implemented subset | 按 scheduler 表达式类别、copyable、queryable、sender schedule result 与 progress atom 检查。内部 scheduler shape 打破定义循环，公开 schedule_result_t；schedule CPO 检查 sender 结果，start 检查左值与 void。所有仓库 scheduler 均显式提供 progress 成员。progress 查询须由成员提供，检查结果类型及 noexcept。 |
 | `completion_signatures`, `completion_signatures_of_t`, value/error utilities | Implemented utility subset | awaitable 在有 / 无环境两种查询中合成 signatures，member forms 优先； 有效完成签名约束；选中 signatures 查询须返回 completion_signatures specialization，alias 要求 sender_in。引用、固定参数个数的 Tuple / Variant 与 stopped 收集由编译探针固定；dependent-sender 诊断另列。 标准接口为 `value_types_of_t`、`error_types_of_t` 与 `sends_stopped`。 |
 | Algorithm `_t` names | Implemented names | then / upon / let / bulk family、on、into_variant、stopped utilities 及 spawn_t / associate_t 暴露 WD 类型别名；未加入 native COMPLETE probe 集合。结构化 sender tag 匹配仍依赖独立 product surface。 |
@@ -162,7 +162,8 @@ receiver2 对 query 类型应用 `forwarding-query` concept：默认构造被删
 时不转发；`forwarding_query(Q{})` 良构但不是常量表达式时，按原子约束规则为 ill-formed 并
 给出约束诊断，不再静默视为缺失。let-env 自身的查询以实参的 cv/ref 调用。锁定的
 `when_all` 与 `counting_scope` 仍用替换失败形式的默认实例检查，并把按值取得的 tag 以
-具名的非 const 左值交给成员（8de815c 的行为，由未锁定的 `__query` 重载保留），批次 E 处理。
+具名的非 const 左值交给成员（8de815c 的行为，由 `__query` 重载保留）。
+`when_all` 的分类留待 E2，`counting_scope` 的分类留待后续环境一致性批次。
 未锁定的包装（`__hide_scheduler`、`affine` 的 scheduler 包装、全部转发视图）按实参的
 cv/ref 转交 query。
 所有 receiver environment 的转发视图（FWD-ENV 视图、let 的两个视图、`write_env` 的 joined
@@ -180,7 +181,7 @@ scheduler 的选择）在签名中使用去除 cv/ref 的类型的右值、在�
 敏感的 child 两者可以不同；8de815c 相同，归入批次 D3。`read_env` 自身的 signature 定制是
 带环境实参的实例成员，直接以 `E&` 查询时保留 `E&`；限定是在包住它的静态 adaptor 处丢失的
 （例如 `stopped_as_error(read_env(q), e)`）。锁定的 `when_all`、counting-scope 的 stop
-包装与 `split` 的同类差异归入批次 E。
+包装与 `split` 的同类差异分别归入 E2、后续环境一致性批次与 E3。
 第 6、7 轮引入的确切环境类型路径和各 sender 的内部标记已不为任何保留的要求所需，全部删除；
 `sender_in` 与 `completion_signatures_of_t` 恢复 8de815c 的定义，静态成员的 `Self` 仍由
 `[exec.getcomplsigs]/1` 的变换结果类型决定。视图类型相同后，`declval<Env>()` 参与视图与
@@ -286,15 +287,15 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 
 这是 2026-08-23 快照，之后的提交未复审；下一次工作草案快照审计时需重新核对整个台账，需负责人另行决定。
 
-两种 counting scope 的 `count()` 和 `is_closed()` 是已弃用的 Forge 诊断扩展，改用 `forge::scope_count` 与 `forge::scope_is_closed`（仅 backport）。`spawn_future` 的 allocator 只覆盖 shared state 和 consumer record，不覆盖溢出子 op 或 callback 控制块。
+两种 counting scope 的诊断快照由 `forge::scope_count` 与 `forge::scope_is_closed` 提供（仅 backport）。`spawn_future` 的 allocator 只覆盖 shared state 和 consumer record，不覆盖溢出子 op 或 callback 控制块。
 
 ## 已移除的 execution 扩展
 
-成员定制、移除的调用形式及仍随锁定头文件保留的别名与概念列于
+成员定制及已移除的名称与调用形式列于
 [执行库迁移表](../backports/execution.md#已移除扩展与迁移)。
 `get_completion_signatures_t` 等现有 CPO 类型名另随接口形状调整。
 
-计数 scope 的观察入口是诊断快照，不提供跨字段一致性或额外同步保证。锁定头文件中的旧成员随 batch E 移除。内部 observer 仅用于实现与白盒测试，不属于公共 API。Forge 观察入口只接受 backport 的两种 scope 类型，原生让位时不提供。依据为 [counting scopes](https://eel.is/c++draft/exec.counting.scopes) 的成员列表及 [sync_wait](https://eel.is/c++draft/exec.sync.wait) 的恰好一种 value completion 要求。
+计数 scope 的观察入口是诊断快照，不提供跨字段一致性或额外同步保证。内部 observer 仅用于实现与白盒测试，不属于公共 API。Forge 观察入口只接受 backport 的两种 scope 类型，原生让位时不提供。依据为 [counting scopes](https://eel.is/c++draft/exec.counting.scopes) 的成员列表及 [sync_wait](https://eel.is/c++draft/exec.sync.wait) 的恰好一种 value completion 要求。
 
 ## Linalg 与 mdspan 的草案对齐
 

@@ -61,7 +61,7 @@ inline constexpr bool __spawnable_completions_v =
 
 template<class Env>
 concept __has_allocator_query = requires(const Env& env) {
-    std::execution::get_allocator(env);
+    std::get_allocator(env);
 };
 
 template<class Alloc, class S, class Token>
@@ -70,7 +70,7 @@ struct __state {
     using association_t = decltype(std::declval<Token&>().try_associate());
 
     struct __recv {
-        using receiver_concept = receiver_t;
+        using receiver_concept = receiver_tag;
 
         state_t* __owner;
 
@@ -169,16 +169,17 @@ void __launch_with_env(S sndr, Token token, Env env, Alloc alloc) {
 template<class Wrapped, class Token, class Env>
 void __spawn_wrapped(Wrapped wrapped, Token token, Env env) {
     if constexpr (__has_allocator_query<Env>) {
-        auto alloc = std::execution::get_allocator(env);
+        auto alloc = std::get_allocator(env);
         __launch_with_env(std::move(wrapped), std::move(token), std::move(env), std::move(alloc));
     } else if constexpr (requires(const Wrapped& w) {
-        std::execution::get_allocator(std::execution::get_env(w));
+        std::get_allocator(std::execution::get_env(w));
     }) {
         decltype(auto) source_env = std::execution::get_env(wrapped);
-        auto alloc = std::execution::get_allocator(source_env);
-        auto joined_env = std::execution::make_env(
-            std::execution::prop(std::execution::get_allocator_t{}, alloc),
-            std::move(env));
+        auto alloc = std::get_allocator(source_env);
+        // Preserve the move of the materialized allocator property into env.
+        auto joined_env = std::execution::env{
+            std::move(std::execution::prop(std::get_allocator_t{}, alloc)),
+            std::move(env)};
         __launch_with_env(
             std::move(wrapped), std::move(token), std::move(joined_env), std::move(alloc));
     } else {
@@ -191,7 +192,7 @@ void __spawn_wrapped(Wrapped wrapped, Token token, Env env) {
 }
 
 struct __spawn_t {
-    template<sender S, scope_token Token, queryable Env>
+    template<sender S, scope_token Token, __forge_queryable Env>
     void operator()(S&& sndr, Token token, Env env) const {
         auto wrapped = token.wrap(static_cast<S&&>(sndr));
         __spawn_wrapped(std::move(wrapped), std::move(token), std::move(env));

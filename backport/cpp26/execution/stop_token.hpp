@@ -25,6 +25,9 @@
 #include <atomic>
 #include <concepts>
 #include <cstdint>
+#if __has_include(<stop_token>)
+#include <stop_token>
+#endif
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -514,14 +517,6 @@ concept stoppable_token =
         { token.stop_possible() } noexcept -> std::same_as<bool>;
     };
 
-template<class Token, class CallbackFn>
-concept stoppable_token_for =
-    stoppable_token<Token> &&
-    std::invocable<CallbackFn> &&
-    requires { typename stop_callback_for_t<Token, CallbackFn>; } &&
-    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token, CallbackFn> &&
-    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token&, CallbackFn>;
-
 template<class Token>
 concept unstoppable_token =
     stoppable_token<Token> &&
@@ -530,5 +525,17 @@ concept unstoppable_token =
     };
 
 #endif // !__cpp_lib_inplace_stop_token
+
+namespace __forge_stop_detail {
+
+template<class Token, class CallbackFn>
+concept __stoppable_token_for =
+    stoppable_token<Token> &&
+    std::invocable<CallbackFn> &&
+    requires { typename stop_callback_for_t<Token, CallbackFn>; } &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token, CallbackFn> &&
+    std::constructible_from<stop_callback_for_t<Token, CallbackFn>, Token&, CallbackFn>;
+
+} // namespace __forge_stop_detail
 
 } // namespace std

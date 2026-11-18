@@ -715,11 +715,6 @@ struct sender_tag {};
 struct operation_state_tag {};
 struct scheduler_tag {};
 
-using receiver_t = receiver_tag;
-using sender_t = sender_tag;
-using operation_state_t = operation_state_tag;
-using scheduler_t = scheduler_tag;
-
 // enable_sender trait — [exec.snd]
 // The private concept short-circuits before probing a marked sender as awaitable.
 namespace __forge_concepts {
@@ -1606,9 +1601,6 @@ concept __forge_sender_to =
             static_cast<S&&>(s),
             static_cast<R&&>(r));
     };
-
-template<class S, class R>
-concept sender_to = __forge_sender_to<S, R>;
 
 struct schedule_t;
 

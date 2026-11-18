@@ -1,8 +1,8 @@
 {
-  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+  "assessment": "The three marker spellings name the same tag types. Wrapping, association transfer, child connect and completion, destruction order and memory operations are identical.",
   "checker_digest": "a82e66d38c09be139476883629bb979797b08e1f1bfacb645ad9c4ce9517b145",
-  "configuration_count": 601,
-  "date": "2026-11-16",
+  "configuration_count": 79,
+  "date": "2026-11-19",
   "expected_digest": "6ff39069110b8bfe17e9a2ab64d76f76a9133344d19b213704113177965f76ab",
   "last_full_qualification": {
     "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
@@ -20,12 +20,12 @@
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 225,
-    "pass": 376
+    "fail": 27,
+    "pass": 52
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/associate.hpp",
-  "source_digest": "6d3c65d6d7b07e94c4e1a96fc5b93467dd1fe27fc645fcbe0968b0d7cde7c406",
+  "source_digest": "e16be68c45a65bc9ffebcd4fb3ba4fea11cac43073c30c13f7a936fcb8e2e7f6",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

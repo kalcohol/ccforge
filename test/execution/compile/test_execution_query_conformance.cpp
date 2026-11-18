@@ -136,18 +136,16 @@ constexpr bool env_deduction_controls() {
 static_assert(env_deduction_controls());
 // Instantiate the nondependent aggregate expression inside the adaptor template.
 static_assert(ex::sender_in<decltype(ex::unstoppable(ex::just())), ex::env<>>);
-static_assert(&std::get_allocator == &ex::get_allocator);
-static_assert(&std::get_stop_token == &ex::get_stop_token);
-static_assert(&std::forwarding_query == &ex::forwarding_query);
 static_assert(std::same_as<std::stop_token_of_t<stop_prop>, std::never_stop_token>);
 constexpr bool query_constants() {
-    using namespace std::execution;
-    auto e = env{prop{std::get_allocator, std::allocator<int>{}},
-                 prop{get_scheduler, inline_scheduler{}},
-                 prop{get_start_scheduler, inline_scheduler{}},
-                 prop{get_delegation_scheduler, inline_scheduler{}}};
-    return !std::get_stop_token(e).stop_possible() && get_scheduler(e) == inline_scheduler{} &&
-        get_start_scheduler(e) == inline_scheduler{} && get_delegation_scheduler(e) == inline_scheduler{} &&
+    auto e = ex::env{ex::prop{std::get_allocator, std::allocator<int>{}},
+                     ex::prop{ex::get_scheduler, ex::inline_scheduler{}},
+                     ex::prop{ex::get_start_scheduler, ex::inline_scheduler{}},
+                     ex::prop{ex::get_delegation_scheduler, ex::inline_scheduler{}}};
+    return !std::get_stop_token(e).stop_possible() &&
+        ex::get_scheduler(e) == ex::inline_scheduler{} &&
+        ex::get_start_scheduler(e) == ex::inline_scheduler{} &&
+        ex::get_delegation_scheduler(e) == ex::inline_scheduler{} &&
         std::get_allocator(e) == std::allocator<int>{};
 }
 static_assert(query_constants());

@@ -83,10 +83,8 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
 - Forge 扩展：`forge::transfer_just`、`forge::split` 及无策略串行 `forge::bulk*`
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
   `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
-- 消费者：`sync_wait`（单一 value completion 返回 `optional<tuple<...>>`，多组
-  value completions 返回 `optional<variant<tuple<...>, ...>>`，零组返回
-  `optional<tuple<>>`；WD 要求恰好一组 value completion signature，接受零/多组
-  是 Forge 扩展。结果类型按 run_loop 环境 `sync_wait_env` 推导，该 env 暴露
+- 消费者：`sync_wait`（WD 要求恰好一个 value completion signature，接受零个或多个
+  签名是 Forge 扩展。结果类型按 run_loop 环境 `sync_wait_env` 推导，该 env 暴露
   `get_scheduler` / `get_start_scheduler` / `get_delegation_scheduler`）、
   `sync_wait_with_variant`（均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
@@ -277,7 +275,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   copyable source 仍按 lvalue 借用，只有 rvalue `operator co_await` 的 copyable 类型因此被约束拒绝。
   `erased_sender` 也要求 source signatures 是声明 closed set 的子集；`wait_result` /
   `wait_result_of` 保留其实际带 inplace stop token 的 wait 环境约束。
-- `split` 是保留的非 WD extension。它缓存单一 value completion shape，并以 `const&`
+- `forge::split` 是非 WD extension。它缓存单一 value completion shape，并以 `const&`
   向每个订阅者广播缓存值；订阅者在 `connect` 时分配，分配失败向调用者抛出。它没有实现完整
   stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
   已启动 operation 在完成前析构超出标准 operation-state 契约；本实现扩展允许 abandonment，
@@ -294,8 +292,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   value / stopped / closed-set typed error 而不抛异常，使用 Forge 扩展层的
   `forge::wait_result(sender)`。
 - Current-WD 拼写是 `std::this_thread::sync_wait` 与
-  `std::this_thread::sync_wait_with_variant`。旧的 `std::execution::sync_wait`
-  别名随 batch E 的锁定头文件改动移除。
+  `std::this_thread::sync_wait_with_variant`。
 - `spawn_future` 当前返回 move-only single-consumer future sender；其 shared-state 和
   consumer record 分配会使用 `env` 中的 `get_allocator`。下游 stop-token callback
   直接按 receiver env 返回的具体 token 类型注册，不要求 native execution 提供额外的
@@ -519,15 +516,14 @@ decayed 结果构造及自定义 stop-token callbacks，这些路径除上述 al
 没有额外全局分配；inplace registration 不分配。上述用户代码自行分配的内存另计。使用缺省
 allocator 时，`spawn` / `spawn_future` / `split` 的上述共享或 detached 存储仍会分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
-`simple_counting_scope::count()` 和 `is_closed()` 是 Forge 诊断扩展，不可移植。
+`forge::scope_count` 和 `forge::scope_is_closed` 提供两种 backport scope 的诊断快照。
 
 
 ### 查询、scheduler 与类型工具
 
 默认 `get_env` 与无 attributes 的 sender 使用 `env<>`。
 `std::forwarding_query`、`std::get_allocator`、`std::get_stop_token` 及其 `_t` 类型和
-`std::stop_token_of_t` 位于 `std`。锁定头文件仍依赖 `std::execution` 中的兼容
-using 声明，专用断言验证别名与标准对象的同一性。其余调用和类型引用使用 `std::`。
+`std::stop_token_of_t` 均从 `std` 使用。
 选中的成员查询遵守 MANDATE-NOTHROW，并检查相应 allocator、
 stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates 按结果的
 `remove_cvref_t` 检查，以支持 `prop` 的借用答案；草案措辞问题见台账。
@@ -593,11 +589,19 @@ execution-only 路径。
 
 ## 已移除扩展与迁移
 
-仓库尚未发布，因此 backport 直接跟随工作草案与已采纳提案。以下宽于工作草案的
-`std::execution` 入口直接移除，未经过发布版弃用期。
+仓库尚未发布，因此 backport 直接跟随工作草案与已采纳提案。以下宽于工作草案的入口直接移除，未设置发布版弃用期。
 
 | 旧用法 | 迁移后的用法 |
 | --- | --- |
+| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
+| `std::execution::split(s)` | `forge::split(s)` |
+| 两种 counting scope 的 `scope.count()` / `scope.is_closed()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)`（仅 backport） |
+| `std::execution::receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t` | 使用 `std::execution::receiver_tag`、`sender_tag`、`operation_state_tag`、`scheduler_tag` |
+| `std::execution::forwarding_query`、`get_stop_token`、`get_allocator` 及各自的 `_t` 类型、`stop_token_of_t` | 使用 `std::forwarding_query`、`std::get_stop_token`、`std::get_allocator`、`std::forwarding_query_t`、`std::get_stop_token_t`、`std::get_allocator_t`、`std::stop_token_of_t` |
+| `std::execution::make_env(envs...)` | `std::execution::env{envs...}`；需要保留转发的值类别时显式传入相应的左值或右值引用表达式 |
+| `std::execution::queryable<E>` | `std::destructible<E>` |
+| `std::execution::sender_to<S, R>` | 用 `receiver<R>`、`sender_in<S, env_of_t<R>>`、各 completion signature 的接收要求与 `connect(s, r)` 的有效性表达所需约束 |
+| `std::stoppable_token_for<Token, Callback>` | 用 `std::stoppable_token<Token>`、`std::invocable<Callback>` 与 `std::stop_callback_for_t<Token, Callback>` 的所需构造约束表达兼容性 |
 | `std::execution::sync_wait_with_variant(s)` | `std::this_thread::sync_wait_with_variant(s)` |
 | `std::execution::empty_env` | `std::execution::env<>` 或 `forge::empty_env`（同一类型） |
 | `std::execution::transfer_just(sch, values...)` | `forge::transfer_just(sch, values...)` 或 `std::execution::continues_on(std::execution::just(values...), sch)` |
@@ -630,7 +634,7 @@ execution-only 路径。
 | `sndr \| continues_on(sch)` | `continues_on(sndr, sch)` |
 | `tag_invoke(get_env_t, const R&)` | `R::get_env() const noexcept` |
 | `tag_invoke(std::get_stop_token_t, const E&)`（其他环境查询同样迁移） | `E::query(std::get_stop_token_t) const noexcept` |
-| `tag_invoke(forwarding_query_t, Q)` | `Q::query(forwarding_query_t) const noexcept -> bool`，常量实参须产生常量结果 |
+| `tag_invoke(std::forwarding_query_t, Q)` | `Q::query(std::forwarding_query_t) const noexcept -> bool`，常量实参须产生常量结果 |
 | `tag_invoke(set_value_t, R&&, V)`（`set_error` / `set_stopped` 同理） | `R::set_value(V) && noexcept` |
 | `tag_invoke(start_t, O&)` | `O::start() & noexcept` |
 | `tag_invoke(connect_t, S, R)` | 按 sender 的调用类别提供 `S::connect(R)` |
@@ -647,32 +651,22 @@ backport 将随工作草案更新。`starts_on(sch, sndr)` 与 `schedule_from(sn
 policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `std::execution::seq`。
 `forge::transfer_just` 组合 `just` 与 `continues_on`，可用于完整原生实现。
 
-### 随锁定头文件迁移的入口
+### 仍待迁移的 sync_wait 扩展
 
-以下条目保留到对应头文件迁移时处理。旧 `sync_wait` 别名通过 using-declaration 引用
-`std::this_thread` 中的同一对象。具有弃用属性的旧入口继续由专用测试覆盖。
+`std::this_thread::sync_wait(s)` 接受零种或多种 value completion 的重载仍处于弃用状态。
+使用 `forge::sync_wait(s)` 可保留 backport 的 tuple-or-variant 结果。多种 value completion
+的标准形式为 `std::this_thread::sync_wait_with_variant(s)`。在 backport 中，两条路径都对
+value 参数类型做 decay 后生成 tuple，并对 tuple 类型去重。结果类型在有至少两个不同的
+tuple 类型时相同，有零个或一个时不同。
 
-| 保留的旧入口 | 迁移用法 |
-| --- | --- |
-| `std::execution::split(s)` | `forge::split(s)` |
-| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
-| `std::this_thread::sync_wait(s)` 接受多种 value completion 的扩展 | `forge::sync_wait(s)` 保持原 tuple-or-variant 结果；标准替代为 `std::this_thread::sync_wait_with_variant(s)`，其结果形态不同 |
-| `std::this_thread::sync_wait(s)` 接受零种 value completion 的扩展 | `forge::sync_wait(s)`（仅 backport 保证该行为） |
-| `simple_counting_scope::count()` / `counting_scope::count()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)`（仅 backport） |
-| `simple_counting_scope::is_closed()` / `counting_scope::is_closed()` | `forge::scope_is_closed(scope)`（仅 backport） |
-| `receiver_t` | `receiver_tag`，锁定头文件仍使用该别名。 |
-| `sender_t` | `sender_tag`，锁定头文件仍使用该别名。 |
-| `operation_state_t` | `operation_state_tag`，锁定头文件仍使用该别名。 |
-| `scheduler_t` | `scheduler_tag`，锁定头文件仍使用该别名。 |
-| `make_env(envs...)` | `env{envs...}`，锁定的 spawn 与 spawn_future 仍调用。 |
-| `sender_to` | 用 `sender_in`、`completion_signatures_of_t` 与 `connect` 的要求表达需要的约束。 |
-| `queryable` | `std::destructible` 对应其类型约束。锁定的 spawn 与 spawn_future 仍使用。 |
-| `stoppable_token_for<Token, Callback>` | 直接用所需的 token 与 callback 构造约束。 |
+| Sender 示例 | `forge::sync_wait(s)` 或弃用重载 | `std::this_thread::sync_wait_with_variant(s)` |
+| --- | --- | --- |
+| `just_stopped()`（零个 value tuple 类型） | `optional<tuple<>>` | `optional<__empty_variant>`（内部占位类型） |
+| `set_value_t(int&)` 与 `set_value_t(const int&)`（都得到 `tuple<int>`） | `optional<tuple<int>>` | `optional<variant<tuple<int>>>` |
+| `set_value_t(int)` 与 `set_value_t(double)`（得到两个不同的 tuple 类型） | `optional<variant<tuple<int>, tuple<double>>>` | `optional<variant<tuple<int>, tuple<double>>>` |
 
 `forge::split` 共用 backport 的惰性缓存和 `const&` 重放实现。`forge::empty_env`
-在两种模式下均为 `std::execution::env<>`。Backport 下 `forge::sync_wait` 支持零种或
-多种 value completion；标准单一 value completion 使用 `std::this_thread::sync_wait`，
-多种 value completion 可以使用结果形态不同的 `std::this_thread::sync_wait_with_variant`。
+在两种模式下均为 `std::execution::env<>`。
 Scope 观察函数只提供诊断快照。`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
 
 ### Coroutine 桥的 WD 措辞问题

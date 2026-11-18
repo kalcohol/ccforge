@@ -146,8 +146,9 @@ include path。与标准同名的包装头（如 `backport/linalg`）先包含�
 非 MSVC 的 `native_handoff_probe_surface_no_shadow_root` 用合成原生头覆盖全部让位
 的分支，并通过普通编译探测验证扩展头可用且 backport 目录未暴露。
 `native_handoff_probe_surface_no_shadow_root_no_mdspan` 还验证缺少可用的基础
-`<mdspan>` 时，同一路径可以包含 `<forge/linalg.hpp>`，且 Forge 头文件兼容性测试会跳过
-预先包含的可选 `<linalg>` 头。
+`<mdspan>` 时的消费方式。消费者首先包含 `<forge/linalg.hpp>`，在合成的 `<linalg>` 与
+`<mdspan>` 头可被找到且实际包含会报错的条件下，检查 `FORGE_NO_BASE_MDSPAN` 已传播到
+消费者，并确认 backport include root 仍不可见。
 
 受支持的消费方式是链接 `forge::std` / `forge::forge`（或使用安装包导出的同名
 target），让 `forge.cmake` 的探针宏与 include path 一起传播。仅手工添加

@@ -37,7 +37,7 @@
 //   Scheduler ops    : starts_on, schedule_from, continues_on, on, affine,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
 //   Forge extensions : forge::transfer_just, forge::split, forge::bulk*
-//   Combinators      : into_variant, when_all, when_all_with_variant, split,
+//   Combinators      : into_variant, when_all, when_all_with_variant,
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error, unstoppable
@@ -91,8 +91,6 @@
 //     explicit-domain-first then sender-tag fallback dispatch.
 //   - The bulk algorithms use a serial implementation. Forge provides
 //     policy-free serial adaptors in <forge/bulk.hpp>.
-//   - Locked execution headers still use legacy marker aliases, make_env
-//     and some exposition-only concepts.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.

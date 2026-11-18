@@ -88,11 +88,12 @@ Python 3.9+、仅标准库，workers 自行 configure，支持 spawn。quick 使
 
 ## 最近一次完整检验
 
-2026-11-16，Python 3.13.13，八 workers / spawn。baseline 全部通过；mutants 与 controls 的每项 outcome 均匹配人工 sensitivity。全部配置完成，未达到 state cap。
+2026-11-19，Python 3.13.13，四个 worker，`spawn` 启动方式。baseline 全部通过；mutants 与 controls 的每项 outcome 均匹配人工 sensitivity。全部配置完成，未达到 state cap。
 
 | Tier | 配置数 | Runner wall s | 最大 worker MiB | States | Transitions |
 |---|---:|---:|---:|---:|---:|
-| full | 539 | 6.744 | 40.76 | 156109 | 348594 |
-| quick | 75 | 1.142 | 39.98 | 29606 | 68837 |
+| full | 539 | 12.593 | 40.88 | 156109 | 348594 |
 
 full 包含 75 个 baseline、450 个 mutant 配置和 14 个 controls；279 项通过、260 项预期反例。最大配置 11828 states。上述 wall 包含 pool 启动；单 worker peak 不能当作 pool 总峰值，测量不能外推更大边界。
+
+历史 quick 测量于 2026-11-16 使用八个 worker 和 `spawn` 启动方式运行了 75 个配置，耗时 1.142 s，最大 worker RSS 为 39.98 MiB，共 29606 states 和 68837 transitions。

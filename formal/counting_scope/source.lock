@@ -1,8 +1,8 @@
 {
-  "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
+  "assessment": "Marker aliases, stop-query qualification and the join receiver constraint are spelling changes. The deleted public diagnostic observers only forwarded to __count and __is_closed. Both sets of modeled scope routines and reserved observers retain identical tokens, so registration, join, fused stop and ownership behavior are unaffected.",
   "checker_digest": "cc42533a5396cbb2b6107a345e0337502c115d55d9c0d3b861ed9a647514ef41",
-  "configuration_count": 455,
-  "date": "2026-11-16",
+  "configuration_count": 109,
+  "date": "2026-11-19",
   "expected_digest": "5c2050159ac7bc9876265967bcdb24c3a0368bb32057bee2460344cd6832b0a4",
   "last_full_qualification": {
     "assessment": "Engine-only change: the narrow matcher forms and optional single-input child support do not change this model's transitions, memory orders, abstraction boundaries or fragments; the complete header analysis and step resolutions are identical.",
@@ -21,11 +21,11 @@
   },
   "outcome_summary": {
     "fail": 36,
-    "pass": 419
+    "pass": 73
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/counting_scope.hpp",
-  "source_digest": "11c53bad10fb758b3cc31a3310273b704cac72b7df20605479a52faece64d7b6",
+  "source_digest": "b15e52fa6cc51d4485782d7ba0d52c6a1a1615fbaad26f3122c37c782f22596d",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

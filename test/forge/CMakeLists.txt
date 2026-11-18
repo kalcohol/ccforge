@@ -64,15 +64,6 @@ forge_add_forge_compile_probe(
     test_forge_linalg_header.cpp
     forge_linalg_header_compile)
 
-forge_add_forge_compile_probe(
-    test_forge_headers_without_legacy_execution_names
-    test_forge_headers_without_legacy_execution_names.cpp
-    forge_headers_without_legacy_execution_names_compile)
-if(TARGET test_simd_forge_aliases)
-    target_compile_definitions(test_forge_headers_without_legacy_execution_names PRIVATE
-        FORGE_TEST_D1_INCLUDE_SIMD=1)
-endif()
-
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)

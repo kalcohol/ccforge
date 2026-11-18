@@ -1,8 +1,8 @@
 {
-  "assessment": "\u6574\u4e2a split.hpp \u5bf9\u5e94\u4e09\u6bb5\u72ec\u7acb mutex \u4e34\u754c\u533a\u3001\u5177\u540d state/node \u5f15\u7528\u56fe\u3001relaxed copy \u4e0e\u9010\u6b21 acq_rel release\u3001active release store \u4e0e acq_rel exchange\u3002constructor \u521d\u59cb\u5316\u4e0e visit lambda \u4e3a model-only\uff0c\u7531\u5168\u6587\u4ef6\u5b57\u8282\u9501\u8986\u76d6\uff1b\u96f6 stop source \u91c7\u7528\u672c\u5730\u540c\u6b65\u6216\u81ea\u4e3b\u6709\u9650\u811a\u672c\u3002\u7ed3\u679c\u671f\u671b\u72ec\u7acb\u8bb0\u5f55\u4e8e source event\uff0csuppression \u4e49\u52a1\u72ec\u7acb\u8bb0\u5f55\u4e8e destructor store \u7684\u4f4d\u7f6e\u5e76\u5728 exchange \u6309 modification order \u68c0\u67e5\u3002notify walk \u4e0e receiver call \u8981\u6c42\u5b9e\u9645 state owner\uff0ccall \u53e6\u8981\u6c42\u5b9e\u9645 node owner\uff0coperation\u3001sender\u3001local \u4e0e keepalive \u5747\u8ba1\u5165\u5e76\u9010\u6b65\u6838\u5bf9\u5bff\u547d\u3002detach \u7684 done gate \u4e0e\u5171\u4eab\u5bff\u547d\u5404\u6709\u8986\u76d6\u4e0d\u53d8\u91cf\uff1bSC gate control \u68c0\u67e5\u5165\u94fe\u4e0d\u53d8\u91cf\uff0cHB control \u7684 phase race \u4e0d\u4ee3\u8868 detached-list race\u3002completion mutants \u4ec5\u6539\u53d8 set_value\uff0c\u4e0d\u8986\u76d6\u5206\u522b\u7f16\u5199\u7684 error/stopped completions\u3002\u8fb9\u754c\u4e3a\u4e24\u4e2a\u5e76\u53d1 starter \u52a0\u987a\u5e8f\u7b2c\u4e09\u4e2a operation\uff0c\u4ee5\u53ca gated \u4e94\u7ebf\u7a0b\u811a\u672c\uff0c\u4e0d\u662f\u4efb\u610f\u5e76\u53d1\u7684\u7b49\u4ef7\u8bc1\u660e\uff1b\u6c38\u4e0d\u5b8c\u6210 source \u4ecd\u7531 keepalive \u6301\u6709\u3002",
+  "assessment": "Marker and allocator-query spellings name the same entities. The deleted public wrapper only forwarded to the retained __split implementation. The shared allocations, node and state ownership, active flag and detach/notification protocol are unaffected.",
   "checker_digest": "4cd6bfbd51efcd4dcc78b735e4a59df6e46f198035b9e73c9122ad8d5ddfcee5",
-  "configuration_count": 903,
-  "date": "2026-11-17",
+  "configuration_count": 83,
+  "date": "2026-11-19",
   "expected_digest": "f80d92c41a002b79648b18d531468d906c29d609f00a78b8a96fa66e40a685f2",
   "last_full_qualification": {
     "assessment": "\u6574\u4e2a split.hpp \u5bf9\u5e94\u4e09\u6bb5\u72ec\u7acb mutex \u4e34\u754c\u533a\u3001\u5177\u540d state/node \u5f15\u7528\u56fe\u3001relaxed copy \u4e0e\u9010\u6b21 acq_rel release\u3001active release store \u4e0e acq_rel exchange\u3002constructor \u521d\u59cb\u5316\u4e0e visit lambda \u4e3a model-only\uff0c\u7531\u5168\u6587\u4ef6\u5b57\u8282\u9501\u8986\u76d6\uff1b\u96f6 stop source \u91c7\u7528\u672c\u5730\u540c\u6b65\u6216\u81ea\u4e3b\u6709\u9650\u811a\u672c\u3002\u7ed3\u679c\u671f\u671b\u72ec\u7acb\u8bb0\u5f55\u4e8e source event\uff0csuppression \u4e49\u52a1\u72ec\u7acb\u8bb0\u5f55\u4e8e destructor store \u7684\u4f4d\u7f6e\u5e76\u5728 exchange \u6309 modification order \u68c0\u67e5\u3002notify walk \u4e0e receiver call \u8981\u6c42\u5b9e\u9645 state owner\uff0ccall \u53e6\u8981\u6c42\u5b9e\u9645 node owner\uff0coperation\u3001sender\u3001local \u4e0e keepalive \u5747\u8ba1\u5165\u5e76\u9010\u6b65\u6838\u5bf9\u5bff\u547d\u3002detach \u7684 done gate \u4e0e\u5171\u4eab\u5bff\u547d\u5404\u6709\u8986\u76d6\u4e0d\u53d8\u91cf\uff1bSC gate control \u68c0\u67e5\u5165\u94fe\u4e0d\u53d8\u91cf\uff0cHB control \u7684 phase race \u4e0d\u4ee3\u8868 detached-list race\u3002completion mutants \u4ec5\u6539\u53d8 set_value\uff0c\u4e0d\u8986\u76d6\u5206\u522b\u7f16\u5199\u7684 error/stopped completions\u3002\u8fb9\u754c\u4e3a\u4e24\u4e2a\u5e76\u53d1 starter \u52a0\u987a\u5e8f\u7b2c\u4e09\u4e2a operation\uff0c\u4ee5\u53ca gated \u4e94\u7ebf\u7a0b\u811a\u672c\uff0c\u4e0d\u662f\u4efb\u610f\u5e76\u53d1\u7684\u7b49\u4ef7\u8bc1\u660e\uff1b\u6c38\u4e0d\u5b8c\u6210 source \u4ecd\u7531 keepalive \u6301\u6709\u3002",
@@ -20,12 +20,12 @@
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 205,
-    "pass": 698
+    "fail": 60,
+    "pass": 23
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/split.hpp",
-  "source_digest": "e6adaf5c96f41345a693d6d6cd25c6250b659a22f476836daad620653db2527a",
+  "source_digest": "b2c8dc4ed939bc9ccfb5e4d55b1f524c15e7af54b63ad244edd91fc7892f0777",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "full"
+  "tier": "quick"
 }

@@ -1,6 +1,8 @@
 #include <forge/execution_extensions.hpp>
 
 #include <concepts>
+#include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -12,6 +14,17 @@ struct receiver {
     using receiver_concept = ex::receiver_tag;
     void set_value(int) && noexcept {}
 };
+
+// A deprecated declaration must still make the old form compile in these probes.
+#if !FORGE_REMOVAL_CONTROL && FORGE_REMOVED_NAME >= 28 && FORGE_REMOVED_NAME <= 33
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+#endif
 
 int main() {
 #if FORGE_REMOVED_NAME == 1
@@ -101,7 +114,146 @@ int main() {
 #else
     using removed [[maybe_unused]] = decltype(ex::sync_wait_with_variant(ex::just(42)));
 #endif
+#elif FORGE_REMOVED_NAME == 13
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::forwarding_query(std::get_stop_token));
+#else
+    using removed [[maybe_unused]] = decltype(ex::forwarding_query);
+#endif
+#elif FORGE_REMOVED_NAME == 14
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<std::forwarding_query_t, std::remove_cv_t<decltype(std::forwarding_query)>>);
+#else
+    using removed [[maybe_unused]] = ex::forwarding_query_t;
+#endif
+#elif FORGE_REMOVED_NAME == 15
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<decltype(std::get_stop_token(ex::env<>{})), std::never_stop_token>);
+#else
+    using removed [[maybe_unused]] = decltype(ex::get_stop_token);
+#endif
+#elif FORGE_REMOVED_NAME == 16
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<std::get_stop_token_t, std::remove_cv_t<decltype(std::get_stop_token)>>);
+#else
+    using removed [[maybe_unused]] = ex::get_stop_token_t;
+#endif
+#elif FORGE_REMOVED_NAME == 17
+#if FORGE_REMOVAL_CONTROL
+    using allocator = std::allocator<int>;
+    using environment = decltype(ex::prop{std::get_allocator, allocator{}});
+    static_assert(std::same_as<std::remove_cvref_t<decltype(std::get_allocator(
+        std::declval<const environment&>()))>, allocator>);
+#else
+    using removed [[maybe_unused]] = decltype(ex::get_allocator);
+#endif
+#elif FORGE_REMOVED_NAME == 18
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<std::get_allocator_t, std::remove_cv_t<decltype(std::get_allocator)>>);
+#else
+    using removed [[maybe_unused]] = ex::get_allocator_t;
+#endif
+#elif FORGE_REMOVED_NAME == 19
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<std::stop_token_of_t<ex::env<>>, std::never_stop_token>);
+#else
+    using removed [[maybe_unused]] = ex::stop_token_of_t<ex::env<>>;
+#endif
+#elif FORGE_REMOVED_NAME == 20
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<ex::receiver_tag, receiver::receiver_concept>);
+#else
+    using removed [[maybe_unused]] = ex::receiver_t;
+#endif
+#elif FORGE_REMOVED_NAME == 21
+#if FORGE_REMOVAL_CONTROL
+    using source = decltype(ex::just(42));
+    static_assert(std::same_as<ex::sender_tag, source::sender_concept>);
+#else
+    using removed [[maybe_unused]] = ex::sender_t;
+#endif
+#elif FORGE_REMOVED_NAME == 22
+#if FORGE_REMOVAL_CONTROL
+    using operation = ex::connect_result_t<decltype(ex::just(42)), receiver>;
+    static_assert(std::same_as<ex::operation_state_tag, operation::operation_state_concept>);
+#else
+    using removed [[maybe_unused]] = ex::operation_state_t;
+#endif
+#elif FORGE_REMOVED_NAME == 23
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<ex::scheduler_tag, ex::inline_scheduler::scheduler_concept>);
+#else
+    using removed [[maybe_unused]] = ex::scheduler_t;
+#endif
+#elif FORGE_REMOVED_NAME == 24
+    using property = decltype(ex::prop{ex::get_scheduler, ex::inline_scheduler{}});
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::same_as<decltype(ex::env{std::declval<property>()}), ex::env<property>>);
+#else
+    using removed [[maybe_unused]] = decltype(ex::make_env(std::declval<property>()));
+#endif
+#elif FORGE_REMOVED_NAME == 25
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::destructible<ex::env<>>);
+#else
+    [[maybe_unused]] constexpr bool forms = ex::queryable<ex::env<>>;
+#endif
+#elif FORGE_REMOVED_NAME == 26
+    using source = decltype(ex::just(42));
+#if FORGE_REMOVAL_CONTROL
+    static_assert(ex::receiver<receiver> && ex::sender_in<source, ex::env_of_t<receiver>>);
+    static_assert(ex::operation_state<ex::connect_result_t<source, receiver>>);
+#else
+    [[maybe_unused]] constexpr bool forms = ex::sender_to<source, receiver>;
+#endif
+#elif FORGE_REMOVED_NAME == 27
+    using token = std::inplace_stop_token;
+    using callback = void(*)();
+#if FORGE_REMOVAL_CONTROL
+    static_assert(std::stoppable_token<token> && std::invocable<callback>);
+    static_assert(std::constructible_from<std::stop_callback_for_t<token, callback>, token, callback>);
+    static_assert(std::constructible_from<std::stop_callback_for_t<token, callback>, token&, callback>);
+#else
+    [[maybe_unused]] constexpr bool forms = std::stoppable_token_for<token, callback>;
+#endif
+#elif FORGE_REMOVED_NAME == 28
+#if FORGE_REMOVAL_CONTROL
+    static_assert(ex::sender<decltype(forge::split(ex::just(42)))>);
+#else
+    using removed [[maybe_unused]] = decltype(ex::split(ex::just(42)));
+#endif
+#elif FORGE_REMOVED_NAME == 29
+#if FORGE_REMOVAL_CONTROL
+    using result = decltype(std::this_thread::sync_wait(ex::just(42)));
+    static_assert(std::same_as<result, std::optional<std::tuple<int>>>);
+#else
+    using removed [[maybe_unused]] = decltype(ex::sync_wait(ex::just(42)));
+#endif
+#elif FORGE_REMOVED_NAME >= 30 && FORGE_REMOVED_NAME <= 33
+#if FORGE_REMOVED_NAME <= 31
+    using scope = ex::simple_counting_scope;
+#else
+    using scope = ex::counting_scope;
+#endif
+#if FORGE_REMOVAL_CONTROL
+    static_assert(requires(scope& s) {
+        { s.close() } noexcept -> std::same_as<void>;
+        { s.join() } -> ex::sender;
+    });
+#elif FORGE_REMOVED_NAME == 30 || FORGE_REMOVED_NAME == 32
+    using removed [[maybe_unused]] = decltype(std::declval<const scope&>().count());
+#else
+    using removed [[maybe_unused]] = decltype(std::declval<const scope&>().is_closed());
+#endif
 #else
 #error "Select a removed name"
 #endif
 }
+
+#if !FORGE_REMOVAL_CONTROL && FORGE_REMOVED_NAME >= 28 && FORGE_REMOVED_NAME <= 33
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+#endif

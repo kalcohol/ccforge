@@ -45,10 +45,10 @@ using __wrapped_sender_t = std::remove_cvref_t<decltype(
 
 template<class S, class R, class Association>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     struct __recv {
-        using receiver_concept = receiver_t;
+        using receiver_concept = receiver_tag;
 
         R* __rcvr;
 
@@ -108,7 +108,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class S, class Token>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using token_t = Token;
     using wrapped_sender_t = __wrapped_sender_t<Token, S>;

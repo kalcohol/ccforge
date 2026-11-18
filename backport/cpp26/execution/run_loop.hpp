@@ -127,17 +127,11 @@ struct __env {
         -> decltype(std::execution::get_completion_domain<CPO>(
             std::declval<run_loop::scheduler>(), static_cast<Env&&>(env),
             static_cast<Envs&&>(envs)...));
-    friend auto tag_invoke(get_scheduler_t, const __env& self) noexcept
-        -> run_loop::scheduler;
-    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
-        -> run_loop::scheduler;
-    friend auto tag_invoke(get_completion_scheduler_t<set_stopped_t>, const __env& self) noexcept
-        -> run_loop::scheduler;
 };
 
 template<class R>
 struct __op : run_loop::__task_base, __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     run_loop* __loop;
     R __rcvr;
@@ -146,7 +140,7 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
         : __loop(loop), __rcvr(std::move(rcvr)) {
         this->__execute = [](run_loop::__task_base* t) noexcept {
             auto* self = static_cast<__op*>(t);
-            auto token = std::execution::get_stop_token(
+            auto token = std::get_stop_token(
                 std::execution::get_env(self->__rcvr));
             using token_t = std::remove_cvref_t<decltype(token)>;
             if constexpr (!std::unstoppable_token<token_t>) {
@@ -165,13 +159,13 @@ struct __op : run_loop::__task_base, __forge_detail::__immovable {
 };
 
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     run_loop* __loop;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept {
         using token_t = std::remove_cvref_t<decltype(
-            std::execution::get_stop_token(std::declval<Env>()))>;
+            std::get_stop_token(std::declval<Env>()))>;
         if constexpr (std::unstoppable_token<token_t>) {
             return completion_signatures<set_value_t()>{};
         } else {
@@ -198,7 +192,7 @@ struct __sender {
 
 class run_loop::scheduler {
 public:
-    using scheduler_concept = scheduler_t;
+    using scheduler_concept = scheduler_tag;
 
     bool operator==(const scheduler&) const noexcept = default;
 
@@ -218,15 +212,6 @@ public:
 
 private:
     friend class run_loop;
-    friend auto tag_invoke(get_scheduler_t,
-                           const __forge_run_loop::__env& env) noexcept
-        -> scheduler;
-    friend auto tag_invoke(get_completion_scheduler_t<set_value_t>,
-                           const __forge_run_loop::__env& env) noexcept
-        -> scheduler;
-    friend auto tag_invoke(get_completion_scheduler_t<set_stopped_t>,
-                           const __forge_run_loop::__env& env) noexcept
-        -> scheduler;
     explicit scheduler(run_loop* loop) noexcept : __loop(loop) {}
     run_loop* __loop;
 };
@@ -254,23 +239,6 @@ inline auto __env::query(get_completion_scheduler_t<set_value_t>) const noexcept
 inline auto __env::query(get_completion_scheduler_t<set_stopped_t>) const noexcept -> run_loop::scheduler {
     return __loop->get_scheduler();
 }
-inline auto tag_invoke(get_scheduler_t, const __env& self) noexcept
-    -> run_loop::scheduler {
-    return self.__loop->get_scheduler();
-}
-inline auto tag_invoke(get_completion_scheduler_t<set_value_t>, const __env& self) noexcept
-    -> run_loop::scheduler {
-    return self.__loop->get_scheduler();
-}
-inline auto tag_invoke(get_completion_scheduler_t<set_stopped_t>, const __env& self) noexcept
-    -> run_loop::scheduler {
-    return self.__loop->get_scheduler();
-}
 } // namespace __forge_run_loop
-
-inline auto tag_invoke(get_forward_progress_guarantee_t, const run_loop::scheduler&) noexcept
-    -> forward_progress_guarantee {
-    return forward_progress_guarantee::weakly_parallel;
-}
 
 } // namespace std::execution

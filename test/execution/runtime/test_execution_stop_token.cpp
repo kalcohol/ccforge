@@ -278,9 +278,6 @@ static_assert(std::unstoppable_token<std::never_stop_token>,
 static_assert(!std::unstoppable_token<std::inplace_stop_token>,
               "inplace_stop_token must NOT satisfy unstoppable_token");
 
-static_assert(std::stoppable_token_for<std::inplace_stop_token, void(*)()>,
-              "inplace_stop_token must satisfy stoppable_token_for with function pointer");
-
 static_assert(!std::stoppable_token<int>,
               "int must not satisfy stoppable_token");
 
