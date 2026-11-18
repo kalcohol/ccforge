@@ -93,6 +93,10 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
   是否只出现在“已移除”说明中；
 - 公开文档和 example 中带限定的 `sync_wait` 是否写作 `std::this_thread::sync_wait`
   （Forge 扩展入口 `forge::sync_wait` 除外）；
+- C++ 源文件、头文件和内嵌 C++ 探针的脚本中，是否通过 `execution` 或 `ex` 限定
+  `get_stop_token`、`get_allocator`、`forwarding_query` 及其 `_t` 类型或
+  `stop_token_of_t`，是否用 using 指令引入 `std::execution`（或别名 `ex`），
+  或是否使用 `stoppable_token_for`（锁定头文件及专用兼容性测试除外）；
 - 三语 README 的特性表、代码块和链接结构是否一致；
 - `test/CMakeLists.txt` 声明的 `FORGE_TEST_ENABLE_*` 和 `forge.cmake` 声明的
   `FORGE_ENABLE_FORGE_*` 是否与 `docs/testing.md` / `docs/install-options.md`

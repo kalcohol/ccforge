@@ -36,7 +36,7 @@ TEST(ExecutionExtensions, TransferAndStandardWaitAgree) {
 
 TEST(ExecutionExtensions, StandardEnvironmentSpellings) {
     std::execution::env<> empty;
-    EXPECT_EQ(std::execution::get_stop_token(empty).stop_possible(), false);
+    EXPECT_EQ(std::get_stop_token(empty).stop_possible(), false);
     auto property = std::execution::prop(
         std::execution::get_scheduler, std::execution::inline_scheduler{});
     EXPECT_EQ(std::execution::get_scheduler(property), std::execution::inline_scheduler{});

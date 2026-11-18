@@ -44,7 +44,7 @@ struct counting_allocator {
 };
 
 auto allocator_env(allocation_counts& counts) {
-    return ex::prop(ex::get_allocator, counting_allocator<std::byte>{&counts});
+    return ex::prop(std::get_allocator, counting_allocator<std::byte>{&counts});
 }
 
 struct observations {
@@ -81,7 +81,7 @@ struct padded_sender {
             void operator()() const noexcept { self->complete_stopped(); }
         };
         using token_t = std::remove_cvref_t<decltype(
-            ex::get_stop_token(ex::get_env(std::declval<const R&>())))>;
+            std::get_stop_token(ex::get_env(std::declval<const R&>())))>;
         std::optional<std::stop_callback_for_t<token_t, stop_fn>> callback;
         op(R r, observations* o) : receiver(std::move(r)), observed(o) { ++observed->live; }
         ~op() { --observed->live; }
@@ -93,7 +93,7 @@ struct padded_sender {
             ++observed->starts;
             observed->aligned &= reinterpret_cast<std::uintptr_t>(this) % Alignment == 0;
             if (observed->deferred) {
-                auto token = ex::get_stop_token(ex::get_env(receiver));
+                auto token = std::get_stop_token(ex::get_env(receiver));
                 if (token.stop_requested()) { complete_stopped(); return; }
                 observed->pending = this;
                 observed->finish = [](void* p) noexcept {
@@ -126,7 +126,7 @@ struct receiver {
     template<class E> void set_error(E&&) && noexcept { std::terminate(); }
     void set_stopped() && noexcept { ++observed->stopped; }
     auto get_env() const noexcept {
-        return ex::env{ex::prop(ex::get_stop_token, token),
+        return ex::env{ex::prop(std::get_stop_token, token),
             ex::prop(ex::get_start_scheduler, ex::inline_scheduler{})};
     }
 };

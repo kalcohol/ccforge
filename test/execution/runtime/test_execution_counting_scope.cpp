@@ -501,7 +501,7 @@ struct manual_void_sender {
         };
 
         using env_t = std::execution::env_of_t<R>;
-        using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+        using token_t = decltype(std::get_stop_token(std::declval<env_t>()));
         using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
 
         R rcvr;
@@ -517,7 +517,7 @@ struct manual_void_sender {
         }
 
         void start() & noexcept {
-            auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+            auto token = std::get_stop_token(std::execution::get_env(rcvr));
             {
                 std::lock_guard lk{state->mtx};
                 state->started = true;
@@ -1107,7 +1107,7 @@ TEST(CountingScopeTest, RequestStopHasVoidNoexceptSignatureAndIsIdempotent) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
     auto observe_stop = [](const auto& env) noexcept {
-        auto stop = std::execution::get_stop_token(env);
+        auto stop = std::get_stop_token(env);
         return std::pair{stop.stop_possible(), stop.stop_requested()};
     };
     auto initial = forge::sync_wait(
@@ -1166,7 +1166,7 @@ struct immovable_wrap_env {
         EXPECT_GT(*alive, 0);
         return std::execution::inline_scheduler{};
     }
-    auto query(std::execution::get_stop_token_t) const noexcept {
+    auto query(std::get_stop_token_t) const noexcept {
         EXPECT_GT(*alive, 0);
         return token;
     }
@@ -1372,13 +1372,13 @@ struct registration_probe_sender {
         int channel;
         R receiver;
         struct notify { void operator()() const noexcept {} };
-        using token_t = std::remove_cvref_t<decltype(std::execution::get_stop_token(
+        using token_t = std::remove_cvref_t<decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())))>;
         std::optional<std::stop_callback_for_t<token_t, notify>> registration;
 
         operation(int* l, bool* registered, int c, R r)
             : live(l), registered_during_work(registered), channel(c), receiver(std::move(r)) {
-            registration.emplace(std::execution::get_stop_token(
+            registration.emplace(std::get_stop_token(
                 std::execution::get_env(receiver)), notify{});
         }
 
@@ -1428,7 +1428,7 @@ struct registration_probe_receiver {
     }
     auto get_env() const noexcept {
         return std::execution::env{std::execution::prop(
-            std::execution::get_stop_token_t{},
+            std::get_stop_token_t{},
             registration_probe_token{live, fail_registration})};
     }
 };
@@ -1464,17 +1464,17 @@ struct prestart_stop_sender {
                 ++observed->notifications;
             }
         };
-        using token_t = decltype(std::execution::get_stop_token(
+        using token_t = decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())));
         std::optional<std::stop_callback_for_t<token_t, notify>> callback;
         op(R r, prestart_stop_observation* o) : receiver(std::move(r)), observed(o) {
-            auto token = std::execution::get_stop_token(std::execution::get_env(receiver));
+            auto token = std::get_stop_token(std::execution::get_env(receiver));
             observed->requested_at_connect = token.stop_requested();
             observed->possible_at_connect = token.stop_possible();
             callback.emplace(token, notify{observed});
         }
         void start() & noexcept {
-            observed->requested_at_start = std::execution::get_stop_token(
+            observed->requested_at_start = std::get_stop_token(
                 std::execution::get_env(receiver)).stop_requested();
             callback.reset();
             std::execution::set_value(std::move(receiver));
@@ -1488,7 +1488,7 @@ struct prestart_stop_receiver {
     prestart_stop_observation* observed;
     void set_value() && noexcept { ++observed->completions; }
     void set_stopped() && noexcept { ++observed->completions; }
-    auto get_env() const noexcept { return std::execution::prop(std::execution::get_stop_token, token); }
+    auto get_env() const noexcept { return std::execution::prop(std::get_stop_token, token); }
 };
 
 struct stop_registration_gate {
@@ -1563,18 +1563,18 @@ struct stop_registration_sender {
                 observed->late_notifications.fetch_add(1);
             }
         };
-        using token_t = decltype(std::execution::get_stop_token(
+        using token_t = decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())));
         std::optional<std::stop_callback_for_t<token_t, early_notify>> early;
         std::optional<std::stop_callback_for_t<token_t, late_notify>> late;
 
         op(R r, stop_registration_observation* o) : receiver(std::move(r)), observed(o) {
-            auto token = std::execution::get_stop_token(std::execution::get_env(receiver));
+            auto token = std::get_stop_token(std::execution::get_env(receiver));
             early.emplace(token, early_notify{observed});
             observed->operation = this;
             observed->register_late = [](void* address) {
                 auto* self = static_cast<op*>(address);
-                auto token = std::execution::get_stop_token(std::execution::get_env(self->receiver));
+                auto token = std::get_stop_token(std::execution::get_env(self->receiver));
                 self->observed->requested_before_initialization = token.stop_requested();
                 self->late.emplace(token, self->observed);
                 self->observed->requested_after_registration = token.stop_requested();
@@ -1796,7 +1796,7 @@ TEST(CountingScopeTest, WrapExposesStoppableToken) {
     auto token = scope.get_token();
 
     auto result = forge::sync_wait(
-        token.wrap(std::execution::read_env(std::execution::get_stop_token)));
+        token.wrap(std::execution::read_env(std::get_stop_token)));
 
     ASSERT_TRUE(result.has_value());
     auto stop_token = std::get<0>(*result);
@@ -1814,11 +1814,11 @@ TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
     downstream_stop.request_stop();
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, downstream_stop.get_token())};
+            std::get_stop_token_t{}, downstream_stop.get_token())};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
-            token.wrap(std::execution::read_env(std::execution::get_stop_token)),
+            token.wrap(std::execution::read_env(std::get_stop_token)),
             env));
 
     ASSERT_TRUE(result.has_value());
@@ -1836,7 +1836,7 @@ TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
     std::inplace_stop_source downstream_stop;
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, downstream_stop.get_token())};
+            std::get_stop_token_t{}, downstream_stop.get_token())};
     auto state = std::make_shared<manual_state>();
 
     std::atomic<bool> sync_wait_returned{false};
@@ -1917,7 +1917,7 @@ TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
         std::inplace_stop_source downstream_stop;
         auto env = std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, downstream_stop.get_token())};
+                std::get_stop_token_t{}, downstream_stop.get_token())};
         auto state = std::make_shared<manual_state>();
         std::atomic<bool> sync_wait_stopped{false};
         std::atomic<bool> go{false};

@@ -182,6 +182,42 @@ check_execution_concept_tag_spelling() {
     fi
 }
 
+check_execution_query_and_stop_callback_spelling() {
+    log "check portable execution query and stop callback spelling"
+    local status
+    # E1 removes the pins, the two using-directives and this guard.
+    local pins=(
+        # Query re-export identity assertions and scheduler using-directive.
+        --glob '!/test/execution/compile/test_execution_query_conformance.cpp'
+        # Using-directive for the sync_wait compatibility probe.
+        --glob '!/test/execution/compile/test_execution_extension_compat.cpp'
+        # Assertion for the backport's public stop callback concept.
+        --glob '!/test/execution/runtime/test_execution_stop_token.cpp'
+    )
+    # The qualified-name search also covers using-declarations.
+    if rg -nU \
+        -e '\b(execution|ex)\s*::\s*((get_stop_token|get_allocator|forwarding_query)(_t)?|stop_token_of_t)\b' \
+        -e '\busing\s+namespace\b\s*(::\s*)?((std\s*::\s*)?execution|ex)\s*;' \
+        -e '\bstoppable_token_for\b' \
+        --glob '*.{cc,cpp,cxx,h,hh,hpp,hxx,ipp}' \
+        --glob '*.h.in' \
+        --glob '/backport/{execution,hive,linalg,mdspan,simd,utility}' \
+        --glob '/test/**/{execution,hive,linalg,mdspan,memory,simd,stop_token,utility,version}' \
+        --glob '{CMakeLists.txt,*.cmake,*.cmake.in}' \
+        --glob '/scripts/probe-*.sh' \
+        --glob '!/3rdparty/**' \
+        --glob '!/backport/cpp26/execution/{stop_token,counting_scope,spawn_future,spawn,associate,when_all,run_loop,sync_wait,split}.hpp' \
+        "${pins[@]}" . >"${audit_tmp}/legacy-execution-spellings"; then
+        cat "${audit_tmp}/legacy-execution-spellings" >&2
+        fail "use std:: for execution queries, avoid execution namespace using-directives, and use standard stop callback constraints"
+    else
+        status=$?
+        if [[ "${status}" -ne 1 ]]; then
+            fail "execution query and stop callback spelling search failed (rg exit ${status})"
+        fi
+    fi
+}
+
 check_forge_make_env_spelling() {
     log "check Forge headers for the legacy make_env identifier"
     # A dependent unqualified call through a using-directive can defer lookup
@@ -605,6 +641,7 @@ check_example_cmake_sources
 check_stale_execution_names
 check_portable_sync_wait_spelling
 check_execution_concept_tag_spelling
+check_execution_query_and_stop_callback_spelling
 check_forge_make_env_spelling
 check_readme_parity
 check_test_switch_docs

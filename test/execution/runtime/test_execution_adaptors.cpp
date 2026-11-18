@@ -658,7 +658,7 @@ void expect_continues_destruction(const continues_hop_state& state, bool schedul
 } // namespace
 
 TEST(ReadEnvTest, SenderExists) {
-    auto sndr = std::execution::read_env(std::execution::get_stop_token);
+    auto sndr = std::execution::read_env(std::get_stop_token);
     static_assert(std::execution::sender<decltype(sndr)>);
     using cs_t = decltype(std::execution::get_completion_signatures(
         sndr, forge::empty_env{}));

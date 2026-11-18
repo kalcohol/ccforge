@@ -18,7 +18,7 @@ struct allocation_receiver {
     void set_error(throwing_payload& value) && noexcept { *channel = 1; *received = &value; }
     void set_stopped() && noexcept { *channel = 2; }
     auto get_env() const noexcept {
-        return std::execution::prop(std::execution::get_stop_token, token);
+        return std::execution::prop(std::get_stop_token, token);
     }
 };
 
@@ -45,12 +45,12 @@ struct allocation_sender {
                 else std::execution::set_error(std::move(self->receiver), *self->value);
             }
         };
-        using token_t = std::remove_cvref_t<decltype(std::execution::get_stop_token(
+        using token_t = std::remove_cvref_t<decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())))>;
         std::optional<std::stop_callback_for_t<token_t, notify>> registration;
         op(R r, throwing_payload* v, int c) : receiver(std::move(r)), value(v), channel(c) {}
         void start() & noexcept {
-            registration.emplace(std::execution::get_stop_token(
+            registration.emplace(std::get_stop_token(
                 std::execution::get_env(receiver)), notify{this});
         }
     };

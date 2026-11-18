@@ -228,7 +228,7 @@ struct stop_env_probe_sender {
 
         void start() & noexcept {
             auto env = std::execution::get_env(rcvr);
-            auto token = std::execution::get_stop_token(env);
+            auto token = std::get_stop_token(env);
             std::execution::set_value(
                 static_cast<R&&>(rcvr),
                 token.stop_possible());

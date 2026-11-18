@@ -1,6 +1,5 @@
-// Standalone entry point used only by verify_hive_mutation.cmake.  Keeping it
-// independent of GoogleTest lets the script compile the exact same model
-// against a copied, text-mutated implementation without altering source files.
+// Entry point for the standalone Hive mutation checks. It runs the same model
+// against the normal and mutated overlays without a GoogleTest dependency.
 #include "hive_model.hpp"
 
 #include <exception>

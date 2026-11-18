@@ -1,8 +1,7 @@
 # Backport feature probes for forge.cmake.
 #
 # This file expects the standard-header target to already exist. Set
-# FORGE_BACKPORT_TARGET before including this file; it defaults to forge for
-# compatibility with older direct include patterns. It sets:
+# FORGE_BACKPORT_TARGET before including this file. It sets:
 #   FORGE_NEEDS_BACKPORT
 # and publishes FORGE_HAS_NATIVE_* / FORGE_FORCE_* definitions on that target.
 
@@ -12,7 +11,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/ForgeProbeFingerprint.cmake")
 set(FORGE_NEEDS_BACKPORT FALSE)
 
 if(NOT DEFINED FORGE_BACKPORT_TARGET)
-    set(FORGE_BACKPORT_TARGET forge)
+    message(FATAL_ERROR "CC Forge: set FORGE_BACKPORT_TARGET before including ForgeBackportProbes.cmake")
 endif()
 if(NOT TARGET ${FORGE_BACKPORT_TARGET})
     message(FATAL_ERROR "CC Forge: FORGE_BACKPORT_TARGET '${FORGE_BACKPORT_TARGET}' does not exist")

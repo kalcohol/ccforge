@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <concepts>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -44,9 +45,14 @@ struct non_stopping_state_token {
     bool operator==(const non_stopping_state_token&) const noexcept = default;
 };
 
+using probe_callback_t =
+    std::stop_callback_for_t<forge::any_stop_token, stop_callback_probe>;
 static_assert(std::stoppable_token<forge::any_stop_token>);
-static_assert(
-    std::stoppable_token_for<forge::any_stop_token, stop_callback_probe>);
+static_assert(std::invocable<stop_callback_probe>);
+static_assert(std::constructible_from<
+    probe_callback_t, forge::any_stop_token, stop_callback_probe>);
+static_assert(std::constructible_from<
+    probe_callback_t, forge::any_stop_token&, stop_callback_probe>);
 
 } // namespace
 

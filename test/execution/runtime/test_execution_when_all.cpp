@@ -146,7 +146,7 @@ template<class R>
 struct stop_observing_op {
     using operation_state_concept = std::execution::operation_state_tag;
     using env_t = std::execution::env_of_t<R>;
-    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using token_t = decltype(std::get_stop_token(std::declval<env_t>()));
 
     struct callback {
         stop_observing_op* self;
@@ -177,7 +177,7 @@ struct stop_observing_op {
 
     void start() & noexcept {
         ::new(static_cast<void*>(this->callback_buf)) callback_t(
-            std::execution::get_stop_token(std::execution::get_env(this->rcvr)),
+            std::get_stop_token(std::execution::get_env(this->rcvr)),
             callback{this});
         this->callback_alive = true;
     }
@@ -229,14 +229,14 @@ struct outer_stop_receiver {
 
     auto get_env() const noexcept {
         return std::execution::env{
-            std::execution::prop(std::execution::get_stop_token_t{}, this->source->get_token())};
+            std::execution::prop(std::get_stop_token_t{}, this->source->get_token())};
     }
 };
 
 struct member_stop_env {
     std::inplace_stop_token token;
 
-    auto query(std::execution::get_stop_token_t) const noexcept
+    auto query(std::get_stop_token_t) const noexcept
         -> std::inplace_stop_token {
         return token;
     }
@@ -584,7 +584,7 @@ TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {
     using receiver_t = query_env_receiver<member_stop_env>;
 
     auto direct = std::execution::connect(
-        (std::execution::read_env(std::execution::get_stop_token)
+        (std::execution::read_env(std::get_stop_token)
             | std::execution::then(observes_child_token)),
         receiver_t{{&value, &errored}, {source.get_token()}});
     std::execution::start(direct);
@@ -593,7 +593,7 @@ TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {
 
     value = -1;
     auto op = std::execution::connect(
-        std::execution::when_all((std::execution::read_env(std::execution::get_stop_token)
+        std::execution::when_all((std::execution::read_env(std::get_stop_token)
             | std::execution::then(observes_child_token))),
         receiver_t{{&value, &errored}, {source.get_token()}});
     std::execution::start(op);

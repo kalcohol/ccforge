@@ -73,7 +73,15 @@ struct request_fused_stop {
     }
 };
 
-template<class Token, bool = std::stoppable_token_for<Token, request_fused_stop>>
+template<class Token, class Fn>
+concept stop_callback_constructible =
+    std::stoppable_token<Token> &&
+    std::invocable<Fn> &&
+    requires { typename std::stop_callback_for_t<Token, Fn>; } &&
+    std::constructible_from<std::stop_callback_for_t<Token, Fn>, Token, Fn> &&
+    std::constructible_from<std::stop_callback_for_t<Token, Fn>, Token&, Fn>;
+
+template<class Token, bool = stop_callback_constructible<Token, request_fused_stop>>
 struct optional_stop_callback {
     auto install(Token token, std::inplace_stop_source& source,
                  std::shared_ptr<void> owner = {}, void* object = nullptr,

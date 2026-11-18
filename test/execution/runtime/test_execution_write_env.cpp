@@ -118,7 +118,7 @@ struct stop_token_receiver {
     auto get_env() const noexcept {
         return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token())};
+                std::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -151,7 +151,7 @@ struct await_completion_adaptor_env {
 struct member_stop_query_env {
     std::inplace_stop_token token;
 
-    auto query(std::execution::get_stop_token_t) const noexcept
+    auto query(std::get_stop_token_t) const noexcept
         -> std::inplace_stop_token {
         return token;
     }
@@ -285,8 +285,8 @@ TEST(ExecutionWriteEnvTest, EmptyEnvSupportsCopyListInitialization) {
     std::execution::env<> environment = {};
     auto returned = empty_composed_environment();
     static_assert(std::same_as<decltype(environment), decltype(returned)>);
-    EXPECT_FALSE(std::execution::get_stop_token(environment).stop_possible());
-    EXPECT_FALSE(std::execution::get_stop_token(returned).stop_possible());
+    EXPECT_FALSE(std::get_stop_token(environment).stop_possible());
+    EXPECT_FALSE(std::get_stop_token(returned).stop_possible());
 }
 
 template<class Query>
@@ -303,7 +303,7 @@ static_assert(has_only_forwarding_member(std::execution::get_start_scheduler));
 static_assert(has_only_forwarding_member(std::execution::get_delegation_scheduler));
 static_assert(has_only_forwarding_member(std::execution::get_forward_progress_guarantee));
 static_assert(has_only_forwarding_member(std::get_stop_token));
-static_assert(has_only_forwarding_member(std::execution::get_allocator));
+static_assert(has_only_forwarding_member(std::get_allocator));
 static_assert(has_only_forwarding_member(std::execution::get_completion_scheduler<std::execution::set_value_t>));
 static_assert(has_only_forwarding_member(std::execution::get_domain));
 static_assert(has_only_forwarding_member(std::execution::get_completion_domain<std::execution::set_value_t>));
@@ -335,16 +335,16 @@ TEST(EnvTest, ReferenceWrapperBorrowsMemberQueryEnvironment) {
     auto env = std::execution::env{std::ref(parent)};
     static_assert(std::same_as<decltype(env),
                               std::execution::env<member_stop_query_env&>>);
-    EXPECT_EQ(std::execution::get_stop_token(env), source.get_token());
+    EXPECT_EQ(std::get_stop_token(env), source.get_token());
 
     parent.token = {};
-    EXPECT_FALSE(std::execution::get_stop_token(env).stop_possible());
+    EXPECT_FALSE(std::get_stop_token(env).stop_possible());
 
     const member_stop_query_env const_parent{source.get_token()};
     auto const_env = std::execution::env{std::cref(const_parent)};
     static_assert(std::same_as<decltype(const_env),
         std::execution::env<const member_stop_query_env&>>);
-    EXPECT_EQ(std::execution::get_stop_token(const_env), source.get_token());
+    EXPECT_EQ(std::get_stop_token(const_env), source.get_token());
 }
 
 TEST(WriteEnvTest, GetEnvPreservesMemberReferenceWithoutCopying) {
@@ -526,7 +526,7 @@ TEST(WriteEnvTest, PreservesReceiverStopTokenWhenNotOverridden) {
 
     auto op = std::execution::connect(
         std::execution::write_env(
-            std::execution::read_env(std::execution::get_stop_token),
+            std::execution::read_env(std::get_stop_token),
             forge::empty_env{}),
         stop_token_receiver{&source, &stop_possible, &completed});
 
@@ -541,7 +541,7 @@ TEST(WriteEnvTest, ReadsMemberQueriedStopTokenFromInjectedEnv) {
     EXPECT_TRUE(source.request_stop());
 
     auto result = forge::sync_wait(std::execution::write_env(
-        std::execution::read_env(std::execution::get_stop_token),
+        std::execution::read_env(std::get_stop_token),
         member_stop_query_env{source.get_token()}));
 
     ASSERT_TRUE(result.has_value());
@@ -553,11 +553,11 @@ TEST(EnvTest, DuplicateQueriesUseTheLeftmostEnvironment) {
     std::inplace_stop_source second;
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, first.get_token()),
+            std::get_stop_token_t{}, first.get_token()),
         std::execution::prop(
-            std::execution::get_stop_token_t{}, second.get_token())};
+            std::get_stop_token_t{}, second.get_token())};
 
-    auto token = std::execution::get_stop_token(env);
+    auto token = std::get_stop_token(env);
     EXPECT_TRUE(token.stop_possible());
     EXPECT_FALSE(token.stop_requested());
 
@@ -579,11 +579,11 @@ TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
     source.request_stop();
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token())};
+            std::get_stop_token_t{}, source.get_token())};
 
     auto sndr = std::execution::write_env(
         std::execution::unstoppable(
-            std::execution::read_env(std::execution::get_stop_token)),
+            std::execution::read_env(std::get_stop_token)),
         env);
 
     using cs_t = decltype(std::execution::get_completion_signatures(
@@ -605,12 +605,12 @@ TEST(UnstoppableTest, OverridesStopTokenInsideWriteEnv) {
     std::inplace_stop_source source;
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token())};
+            std::get_stop_token_t{}, source.get_token())};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
             std::execution::unstoppable(
-                std::execution::read_env(std::execution::get_stop_token)),
+                std::execution::read_env(std::get_stop_token)),
             env));
 
     ASSERT_TRUE(result.has_value());

@@ -24,8 +24,6 @@ Mutation.cmake builds the independent model against normal and size-mutated
 Hive-only overlays with the same configured toolchain. CTest requires the
 normal model to pass and the mutant to fail through a model mismatch, not a
 crash or compilation failure. No original implementation file is changed.
-The supplied legacy verify_hive_mutation.cmake remains only as provenance;
-this harness does not invoke its direct compiler path.
 
 Optional cost probe: configure a Release build with
 -DFORGE_HIVE_BUILD_COST_PROBE=ON, build hive_cost_probe, then run it directly.

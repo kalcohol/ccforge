@@ -526,7 +526,8 @@ allocator 时，`spawn` / `spawn_future` / `split` 的上述共享或 detached �
 
 默认 `get_env` 与无 attributes 的 sender 使用 `env<>`。
 `std::forwarding_query`、`std::get_allocator`、`std::get_stop_token` 及其 `_t` 类型和
-`std::stop_token_of_t` 位于 `std`；`std::execution` 中保留指向同一实体的兼容 using 声明。
+`std::stop_token_of_t` 位于 `std`。锁定头文件仍依赖 `std::execution` 中的兼容
+using 声明，专用断言验证别名与标准对象的同一性。其余调用和类型引用使用 `std::`。
 选中的成员查询遵守 MANDATE-NOTHROW，并检查相应 allocator、
 stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates 按结果的
 `remove_cvref_t` 检查，以支持 `prop` 的借用答案；草案措辞问题见台账。

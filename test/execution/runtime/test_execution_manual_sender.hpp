@@ -38,7 +38,7 @@ struct manual_op {
     };
 
     using env_t = std::execution::env_of_t<R>;
-    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using token_t = decltype(std::get_stop_token(std::declval<env_t>()));
     using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
 
     R rcvr;
@@ -47,7 +47,7 @@ struct manual_op {
     std::atomic<bool> done{false};
 
     void start() & noexcept {
-        auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+        auto token = std::get_stop_token(std::execution::get_env(rcvr));
         {
             std::lock_guard lk{state->mtx};
             state->started = true;

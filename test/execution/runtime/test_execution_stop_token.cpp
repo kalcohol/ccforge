@@ -19,7 +19,7 @@ struct env_without_stop_query {};
 struct member_stop_env {
     std::inplace_stop_token token;
 
-    auto query(std::execution::get_stop_token_t) const noexcept
+    auto query(std::get_stop_token_t) const noexcept
         -> std::inplace_stop_token {
         return token;
     }
@@ -231,7 +231,7 @@ TEST(ExecutionStopTokenTest, NeverStopTokenBehavior) {
 }
 
 TEST(ExecutionStopTokenTest, MissingEnvStopQueryFallsBackToNeverStopToken) {
-    auto token = std::execution::get_stop_token(env_without_stop_query{});
+    auto token = std::get_stop_token(env_without_stop_query{});
 
     static_assert(std::is_same_v<decltype(token), std::never_stop_token>);
     EXPECT_FALSE(token.stop_requested());
@@ -243,7 +243,7 @@ TEST(ExecutionStopTokenTest, MemberStopQueryTakesPriority) {
     member_stop_env env{source.get_token()};
 
     EXPECT_TRUE(source.request_stop());
-    auto token = std::execution::get_stop_token(env);
+    auto token = std::get_stop_token(env);
 
     static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
     EXPECT_TRUE(token.stop_requested());
@@ -254,7 +254,7 @@ TEST(ExecutionStopTokenTest, ComposedEnvPreservesMemberQueryPriority) {
     auto env = std::execution::env{member_stop_env{source.get_token()}};
 
     EXPECT_TRUE(source.request_stop());
-    auto token = std::execution::get_stop_token(env);
+    auto token = std::get_stop_token(env);
 
     static_assert(std::is_same_v<decltype(token), std::inplace_stop_token>);
     EXPECT_TRUE(token.stop_requested());

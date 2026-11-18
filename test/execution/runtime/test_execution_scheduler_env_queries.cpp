@@ -378,7 +378,7 @@ void check_schedule_attributes(const Sender& sender, const Scheduler& scheduler)
 struct stop_env {
     std::inplace_stop_token token;
     int* queries;
-    auto query(ex::get_stop_token_t) const noexcept {
+    auto query(std::get_stop_token_t) const noexcept {
         ++*queries;
         return token;
     }
@@ -896,7 +896,7 @@ TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopTok
     std::inplace_stop_source downstream;
     auto inspect = ex::read_env([](const auto& env) noexcept {
         static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
-        auto actual = ex::get_stop_token(env);
+        auto actual = std::get_stop_token(env);
         static_assert(std::stoppable_token<decltype(actual)>);
         return std::pair{env.query(forwarding_key{}), actual};
     }) | ex::then([token = downstream.get_token()](auto observed) noexcept {
@@ -909,7 +909,7 @@ TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopTok
             return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
     });
-    auto base = ex::env{probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token())};
+    auto base = ex::env{probe_env{10, 20}, ex::prop(std::get_stop_token, downstream.get_token())};
     auto result = forge::sync_wait(ex::write_env(
         scope.get_token().wrap(std::move(inspect)), base));
     ASSERT_TRUE(result.has_value());
@@ -922,7 +922,7 @@ TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopTo
     std::inplace_stop_source downstream;
     auto inspect = ex::read_env([](const auto& env) noexcept {
         static_assert(!has_local<std::remove_cvref_t<decltype(env)>>);
-        auto actual = ex::get_stop_token(env);
+        auto actual = std::get_stop_token(env);
         static_assert(std::stoppable_token<decltype(actual)>);
         return std::pair{env.query(forwarding_key{}), actual};
     }) | ex::then([token = downstream.get_token()](auto observed) noexcept {
@@ -935,7 +935,7 @@ TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopTo
             return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
     });
-    auto base = ex::env{probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token())};
+    auto base = ex::env{probe_env{10, 20}, ex::prop(std::get_stop_token, downstream.get_token())};
     auto future = ex::spawn_future(std::move(inspect), scope.get_token(), base);
     auto result = forge::sync_wait(std::move(future));
     ASSERT_TRUE(result.has_value());

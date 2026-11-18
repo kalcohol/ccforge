@@ -32,13 +32,13 @@ struct borrowed_env {
     std::inplace_stop_token token;
     explicit borrowed_env(std::inplace_stop_token t) : token(t) {}
     borrowed_env(const borrowed_env&) = delete;
-    auto query(ex::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
     auto query(shape_query) const noexcept -> bool { return true; }
 };
 
 struct owned_env {
     std::inplace_stop_token token;
-    auto query(ex::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
 };
 
 template<class Token, class StartScheduler, bool HasShapeQuery>
@@ -277,7 +277,7 @@ void check_environment(S sender, const owned_env& env) {
 }
 
 auto inspect_environment(std::inplace_stop_token expected) {
-    return ex::read_env(ex::get_stop_token) | ex::then([expected](auto token) {
+    return ex::read_env(std::get_stop_token) | ex::then([expected](auto token) {
         return token == expected ? 42 : -3;
     });
 }

@@ -141,15 +141,14 @@ static_assert(&std::get_stop_token == &ex::get_stop_token);
 static_assert(&std::forwarding_query == &ex::forwarding_query);
 static_assert(std::same_as<std::stop_token_of_t<stop_prop>, std::never_stop_token>);
 constexpr bool query_constants() {
-    using namespace std;
     using namespace std::execution;
     auto e = env{prop{std::get_allocator, std::allocator<int>{}},
                  prop{get_scheduler, inline_scheduler{}},
                  prop{get_start_scheduler, inline_scheduler{}},
                  prop{get_delegation_scheduler, inline_scheduler{}}};
-    return !get_stop_token(e).stop_possible() && get_scheduler(e) == inline_scheduler{} &&
+    return !std::get_stop_token(e).stop_possible() && get_scheduler(e) == inline_scheduler{} &&
         get_start_scheduler(e) == inline_scheduler{} && get_delegation_scheduler(e) == inline_scheduler{} &&
-        get_allocator(e) == std::allocator<int>{};
+        std::get_allocator(e) == std::allocator<int>{};
 }
 static_assert(query_constants());
 static_assert(std::same_as<decltype(ex::get_domain(ex::env<>{})), ex::default_domain>);

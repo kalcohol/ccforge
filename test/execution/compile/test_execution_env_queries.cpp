@@ -130,12 +130,12 @@ static_assert(noexcept(std::declval<const lvalue_env&>().query(category_key{})))
 
 struct legacy_queries {
     friend ex::inline_scheduler tag_invoke(ex::get_scheduler_t, const legacy_queries&) noexcept;
-    friend std::inplace_stop_token tag_invoke(ex::get_stop_token_t, const legacy_queries&) noexcept;
+    friend std::inplace_stop_token tag_invoke(std::get_stop_token_t, const legacy_queries&) noexcept;
 };
 struct member_queries {
     ex::run_loop* loop;
     ex::run_loop::scheduler query(ex::get_scheduler_t) const noexcept { return loop->get_scheduler(); }
-    std::never_stop_token query(ex::get_stop_token_t) const noexcept { return {}; }
+    std::never_stop_token query(std::get_stop_token_t) const noexcept { return {}; }
 };
 struct dual_queries : member_queries {
     friend ex::inline_scheduler tag_invoke(ex::get_scheduler_t, const dual_queries&) noexcept;
@@ -157,14 +157,14 @@ using mixed_queries = ex::env<legacy_queries, member_queries>;
 using member_first_queries = ex::env<member_queries, legacy_queries>;
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const member_first_queries&>())),
                            ex::run_loop::scheduler>);
-static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const member_first_queries&>())),
+static_assert(std::same_as<decltype(std::get_stop_token(std::declval<const member_first_queries&>())),
                            std::never_stop_token>);
 static_assert(noexcept(ex::get_scheduler(std::declval<const mixed_queries&>())));
-static_assert(noexcept(ex::get_stop_token(std::declval<const mixed_queries&>())));
+static_assert(noexcept(std::get_stop_token(std::declval<const mixed_queries&>())));
 static_assert(noexcept(ex::get_scheduler(std::declval<const throwing_mixed_queries&>())));
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const mixed_queries&>())),
                            ex::run_loop::scheduler>);
-static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mixed_queries&>())),
+static_assert(std::same_as<decltype(std::get_stop_token(std::declval<const mixed_queries&>())),
                            std::never_stop_token>);
 // Borrowed children keep their referent qualification even in a const env.
 template<bool Nothrow>
@@ -189,22 +189,22 @@ static_assert(borrowed_member_selection());
 
 struct mutable_member_queries {
     ex::inline_scheduler query(ex::get_scheduler_t) & noexcept { return {}; }
-    std::inplace_stop_token query(ex::get_stop_token_t) & noexcept { return {}; }
+    std::inplace_stop_token query(std::get_stop_token_t) & noexcept { return {}; }
 };
 template<bool Nothrow>
 struct mutable_legacy_queries {
     friend ex::inline_scheduler tag_invoke(
         ex::get_scheduler_t, mutable_legacy_queries&) noexcept(Nothrow) { return {}; }
     friend std::inplace_stop_token tag_invoke(
-        ex::get_stop_token_t, mutable_legacy_queries&) noexcept(Nothrow) { return {}; }
+        std::get_stop_token_t, mutable_legacy_queries&) noexcept(Nothrow) { return {}; }
 };
 using mutable_borrowed_env = ex::env<mutable_member_queries&, member_queries>;
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const mutable_borrowed_env&>())),
                            ex::inline_scheduler>);
-static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())),
+static_assert(std::same_as<decltype(std::get_stop_token(std::declval<const mutable_borrowed_env&>())),
                            std::inplace_stop_token>);
 static_assert(noexcept(ex::get_scheduler(std::declval<const mutable_borrowed_env&>())));
-static_assert(noexcept(ex::get_stop_token(std::declval<const mutable_borrowed_env&>())));
+static_assert(noexcept(std::get_stop_token(std::declval<const mutable_borrowed_env&>())));
 // A selected throwing borrowed query is rejected by the negative query probes.
 // [exec.get.scheduler]/2 and [exec.get.stop.token]/2 use const member queries.
 template<class Env>
@@ -213,27 +213,27 @@ static_assert(!has_scheduler<const legacy_queries&>);
 static_assert(!has_scheduler<const ex::env<legacy_queries>&>);
 static_assert(!has_scheduler<mutable_legacy_queries<true>&>);
 static_assert(!has_scheduler<mutable_member_queries&>);
-static_assert(std::same_as<decltype(ex::get_stop_token(mutable_legacy_queries<true>{})),
+static_assert(std::same_as<decltype(std::get_stop_token(mutable_legacy_queries<true>{})),
                            std::never_stop_token>);
-static_assert(std::same_as<decltype(ex::get_stop_token(legacy_queries{})), std::never_stop_token>);
+static_assert(std::same_as<decltype(std::get_stop_token(legacy_queries{})), std::never_stop_token>);
 template<bool Nothrow>
 using legacy_borrowed_env = ex::env<mutable_legacy_queries<Nothrow>&, member_queries>;
 static_assert(std::same_as<decltype(ex::get_scheduler(std::declval<const legacy_borrowed_env<true>&>())),
                            ex::run_loop::scheduler>);
-static_assert(std::same_as<decltype(ex::get_stop_token(std::declval<const legacy_borrowed_env<true>&>())),
+static_assert(std::same_as<decltype(std::get_stop_token(std::declval<const legacy_borrowed_env<true>&>())),
                            std::never_stop_token>);
 static_assert(noexcept(ex::get_scheduler(std::declval<const legacy_borrowed_env<false>&>())));
-static_assert(noexcept(ex::get_stop_token(std::declval<const legacy_borrowed_env<false>&>())));
-using stop_prop = ex::prop<ex::get_stop_token_t, std::inplace_stop_token>;
-using alloc_prop = ex::prop<ex::get_allocator_t, std::allocator<int>>;
+static_assert(noexcept(std::get_stop_token(std::declval<const legacy_borrowed_env<false>&>())));
+using stop_prop = ex::prop<std::get_stop_token_t, std::inplace_stop_token>;
+using alloc_prop = ex::prop<std::get_allocator_t, std::allocator<int>>;
 using sched_prop = ex::prop<ex::get_start_scheduler_t, ex::inline_scheduler>;
-static_assert(std::same_as<decltype(std::declval<const stop_prop&>().query(ex::get_stop_token)),
+static_assert(std::same_as<decltype(std::declval<const stop_prop&>().query(std::get_stop_token)),
                            const std::inplace_stop_token&>);
-static_assert(noexcept(std::declval<const stop_prop&>().query(ex::get_stop_token)));
-static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, ex::get_stop_token_t>);
-static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, ex::get_allocator_t>);
+static_assert(noexcept(std::declval<const stop_prop&>().query(std::get_stop_token)));
+static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, std::get_stop_token_t>);
+static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, std::get_allocator_t>);
 static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, ex::get_start_scheduler_t>);
-static_assert(answers<alloc_prop, ex::get_allocator_t, int>);
+static_assert(answers<alloc_prop, std::get_allocator_t, int>);
 static_assert(!answers<alloc_prop, missing>);
 constexpr bool borrowed_prop() {
     int n = 1;
@@ -252,31 +252,31 @@ static_assert(nothrow_answer<sync_env, ex::get_scheduler_t, ex::run_loop::schedu
 static_assert(nothrow_answer<sync_env, ex::get_start_scheduler_t, ex::run_loop::scheduler>);
 static_assert(nothrow_answer<sync_env, ex::get_delegation_scheduler_t, ex::run_loop::scheduler>);
 static_assert(!answers<sync_env, missing>);
-static_assert(!answers<sync_env, ex::get_stop_token_t>);
+static_assert(!answers<sync_env, std::get_stop_token_t>);
 static_assert(!answers<sync_env, ex::get_scheduler_t, int>);
 using child_env = ex::__forge_when_all::__child_env<answer>;
-static_assert(nothrow_answer<child_env, ex::get_stop_token_t, std::inplace_stop_token>);
+static_assert(nothrow_answer<child_env, std::get_stop_token_t, std::inplace_stop_token>);
 static_assert(nothrow_answer<child_env, key, const int&>);
 static_assert(!answers<child_env, local_key>);
-static_assert(!answers<child_env, ex::get_stop_token_t, int>);
+static_assert(!answers<child_env, std::get_stop_token_t, int>);
 static_assert(!noexcept(std::declval<const ex::__forge_when_all::__child_env<throwing_answer>&>().query(key{})));
 using spawn_env = ex::__forge_spawn_future::__spawn_env<answer>;
-static_assert(nothrow_answer<spawn_env, ex::get_stop_token_t, std::inplace_stop_token>);
+static_assert(nothrow_answer<spawn_env, std::get_stop_token_t, std::inplace_stop_token>);
 static_assert(nothrow_answer<spawn_env, key, const int&>);
 static_assert(!answers<spawn_env, local_key>);
 static_assert(!answers<spawn_env, missing>);
-static_assert(!answers<spawn_env, ex::get_stop_token_t, int>);
+static_assert(!answers<spawn_env, std::get_stop_token_t, int>);
 static_assert(!noexcept(std::declval<const ex::__forge_spawn_future::__spawn_env<throwing_answer>&>().query(key{})));
 using scope_env = ex::__forge_counting_scope::__stop_env<answer>;
-static_assert(nothrow_answer<scope_env, ex::get_stop_token_t, std::inplace_stop_token>);
+static_assert(nothrow_answer<scope_env, std::get_stop_token_t, std::inplace_stop_token>);
 static_assert(nothrow_answer<scope_env, key, const int&>);
 static_assert(!answers<scope_env, local_key>);
 static_assert(!answers<scope_env, missing>);
-static_assert(!answers<scope_env, ex::get_stop_token_t, int>);
+static_assert(!answers<scope_env, std::get_stop_token_t, int>);
 static_assert(!noexcept(std::declval<const ex::__forge_counting_scope::__stop_env<throwing_answer>&>().query(key{})));
 using fused_token = ex::__forge_counting_scope::__fused_stop_token<std::inplace_stop_token>;
 using fused_env = ex::__forge_counting_scope::__stop_env<answer, fused_token>;
-static_assert(nothrow_answer<fused_env, ex::get_stop_token_t, fused_token>);
+static_assert(nothrow_answer<fused_env, std::get_stop_token_t, fused_token>);
 static_assert(nothrow_answer<fused_env, key, const int&>);
 static_assert(!answers<fused_env, local_key>);
 static_assert(std::stoppable_token<fused_token>);
@@ -285,10 +285,10 @@ template<class Overlay, class ExpectedToken>
 constexpr bool stop_when_write_env_signatures = std::same_as<
     ex::completion_signatures_of_t<decltype(ex::write_env(
         std::declval<ex::__forge_counting_scope::__stop_sender<
-            decltype(ex::read_env(ex::get_stop_token))>>(), std::declval<Overlay>())),
+            decltype(ex::read_env(std::get_stop_token))>>(), std::declval<Overlay>())),
         forge::empty_env>,
     ex::completion_signatures<ex::set_value_t(ExpectedToken)>>;
-using allocator_prop = ex::prop<ex::get_allocator_t, std::allocator<std::byte>>;
+using allocator_prop = ex::prop<std::get_allocator_t, std::allocator<std::byte>>;
 static_assert(stop_when_write_env_signatures<forge::empty_env, std::inplace_stop_token>);
 static_assert(stop_when_write_env_signatures<allocator_prop, std::inplace_stop_token>);
 static_assert(stop_when_write_env_signatures<stop_prop, fused_token>);

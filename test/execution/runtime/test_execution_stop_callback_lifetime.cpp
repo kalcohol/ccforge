@@ -58,7 +58,7 @@ struct lifetime_receiver {
         finish();
     }
     auto get_env() const noexcept {
-        return std::execution::prop(std::execution::get_stop_token, token);
+        return std::execution::prop(std::get_stop_token, token);
     }
 };
 
@@ -87,12 +87,12 @@ struct inline_stop_sender {
                 else std::execution::set_stopped(std::move(current->receiver));
             }
         };
-        using token_t = decltype(std::execution::get_stop_token(
+        using token_t = decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())));
         std::optional<std::stop_callback_for_t<token_t, notify>> registration;
         op(R r, int c) : receiver(std::move(r)), channel(c) {}
         void start() & noexcept {
-            registration.emplace(std::execution::get_stop_token(
+            registration.emplace(std::get_stop_token(
                 std::execution::get_env(receiver)), notify{this});
         }
     };
@@ -153,12 +153,12 @@ struct overlap_sender {
                 local->release.acquire();
             }
         };
-        using token_t = std::remove_cvref_t<decltype(std::execution::get_stop_token(
+        using token_t = std::remove_cvref_t<decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())))>;
         std::optional<std::stop_callback_for_t<token_t, block>> registration;
         op(R r, overlap_state* s) : receiver(std::move(r)), state(s) {}
         void start() & noexcept {
-            registration.emplace(std::execution::get_stop_token(
+            registration.emplace(std::get_stop_token(
                 std::execution::get_env(receiver)), block{state});
             state->operation = this;
             state->complete = [](void* ptr, int channel, reference_payload& value) noexcept {
@@ -192,7 +192,7 @@ struct reference_receiver {
     void set_error(reference_payload& value) && noexcept { finish(1, &value); }
     void set_stopped() && noexcept { finish(2, nullptr); }
     auto get_env() const noexcept {
-        return std::execution::prop(std::execution::get_stop_token, token);
+        return std::execution::prop(std::get_stop_token, token);
     }
 };
 

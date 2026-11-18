@@ -91,7 +91,7 @@ struct result {
 template<class Token = std::never_stop_token>
 struct receiver_env {
     Token token;
-    auto query(ex::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
     auto query(ex::get_start_scheduler_t) const noexcept -> ex::inline_scheduler { return {}; }
 };
 

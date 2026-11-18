@@ -91,7 +91,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
     std::inplace_stop_source source;
     source.request_stop();
     auto env = std::execution::env{std::execution::prop(
-        std::execution::get_stop_token_t{},
+        std::get_stop_token_t{},
         source.get_token())};
     auto sender = std::execution::write_env(
         std::execution::schedule(scheduler),

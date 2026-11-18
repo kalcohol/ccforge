@@ -105,7 +105,7 @@ struct scheduler_value_sender {
 };
 
 struct member_allocator_attrs {
-    auto query(std::execution::get_allocator_t) const noexcept
+    auto query(std::get_allocator_t) const noexcept
         -> std::allocator<std::byte> {
         return {};
     }
@@ -831,7 +831,7 @@ TEST(ContinuesOnTest, PreservesMemberQueriedChildAttributes) {
         std::execution::inline_scheduler{});
     auto attrs = std::execution::get_env(sndr);
 
-    auto allocator = std::execution::get_allocator(attrs);
+    auto allocator = std::get_allocator(attrs);
 
     static_assert(std::same_as<decltype(allocator), std::allocator<std::byte>>);
 }

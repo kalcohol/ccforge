@@ -90,7 +90,7 @@ struct large_stop_token {
 template<class Token>
 struct token_env {
     Token token;
-    auto query(ex::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
 };
 
 template<class Token>
@@ -244,7 +244,7 @@ TEST(ExecutionStaticOpstateAllocations, LargeOverAlignedStopCallbackBeforeChildS
     ASSERT_EQ(per_registration, 0u);
     auto observes_stop = [] {
         return ex::read_env([](const auto& env) noexcept {
-            return ex::get_stop_token(env).stop_requested() ? 1 : 0;
+            return std::get_stop_token(env).stop_requested() ? 1 : 0;
         });
     };
     auto sender = ex::when_all(observes_stop(), observes_stop());
