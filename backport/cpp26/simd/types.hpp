@@ -352,30 +352,6 @@ public:
         return result;
     }
 
-    // Preserve the original hidden-friend parameter forms, including braces.
-    [[deprecated("use std::simd::select")]]
-    friend constexpr basic_mask simd_select_impl(
-        const basic_mask& cond,
-        const basic_mask& when_true,
-        const basic_mask& when_false) noexcept {
-        return __simd_select_impl(cond, when_true, when_false);
-    }
-
-    [[deprecated("use std::simd::select")]]
-    friend constexpr basic_mask simd_select_impl(
-        const basic_mask& cond,
-        same_as<bool> auto when_true,
-        same_as<bool> auto when_false) noexcept {
-        return __simd_select_impl(cond, when_true, when_false);
-    }
-
-    template<class U, typename enable_if<__detail::is_supported_value<U>::value && sizeof(U) == Bytes, int>::type = 0>
-    [[deprecated("use std::simd::select")]]
-    friend constexpr basic_vec<U, __deduce_abi_t<U, __abi_lane_count<Abi>::value>>
-    simd_select_impl(const basic_mask& cond, const U& when_true, const U& when_false) noexcept {
-        return __simd_select_impl(cond, when_true, when_false);
-    }
-
     friend constexpr basic_mask __simd_select_impl(
         const basic_mask& cond,
         const basic_mask& when_true,
@@ -449,9 +425,6 @@ class basic_vec<T, Abi> {
 public:
     using value_type = T;
     using __real_type = __real_simd_t<T, basic_vec>;
-    // Member alias diagnostics are unreliable on GCC/Clang (even when named
-    // non-dependently); retain the attribute and document the limitation.
-    using real_type [[deprecated("use std::simd::rebind_t<typename T::value_type, basic_vec> for complex T")]] = __real_type;
     using mask_type = basic_mask<sizeof(T), Abi>;
     using abi_type = Abi;
     using iterator = __simd_iterator<basic_vec>;
@@ -896,14 +869,6 @@ public:
             __detail::mask_access::set(result, i, left[i] >= right[i]);
         }
         return result;
-    }
-
-    [[deprecated("use std::simd::select")]]
-    friend constexpr basic_vec simd_select_impl(
-        const mask_type& cond,
-        const basic_vec& when_true,
-        const basic_vec& when_false) noexcept {
-        return __simd_select_impl(cond, when_true, when_false);
     }
 
     friend constexpr basic_vec __simd_select_impl(

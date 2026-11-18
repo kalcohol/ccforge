@@ -354,8 +354,9 @@ template<
         declval<const U&>()))>
 constexpr Result select(const basic_mask<Bytes, Abi>& mask_value,
                         const T& true_value,
-                        const U& false_value) noexcept(
-    noexcept(__simd_select_impl(mask_value, true_value, false_value))) {
+                        const U& false_value) noexcept
+    requires requires { __simd_select_impl(mask_value, true_value, false_value); }
+{
     return __simd_select_impl(mask_value, true_value, false_value);
 }
 

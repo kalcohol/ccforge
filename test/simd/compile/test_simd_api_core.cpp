@@ -64,6 +64,11 @@ concept has_select = requires(
     std::simd::select(cond, when_true, when_false);
 };
 
+template<std::size_t Bytes, class Abi>
+concept has_int_select_with_explicit_result = requires(const std::simd::basic_mask<Bytes, Abi>& cond) {
+    std::simd::select<Bytes, Abi, int, int, int4>(cond, 7, 9);
+};
+
 using byte_mask4 = std::simd::mask<signed char, 4>;
 
 static_assert(std::is_same<typename int4::value_type, int>::value,
@@ -122,10 +127,27 @@ static_assert(std::is_same_v<
                       std::declval<const int4&>())),
                   int4>,
     "a scalar boolean condition should select whole data-parallel objects");
+static_assert(!noexcept(std::simd::select(true, 7, 9)),
+    "scalar-condition select should be potentially throwing");
 static_assert(has_select<byte_mask4, bool, bool>,
     "a mask should accept exact boolean scalar branches");
 static_assert(!has_select<byte_mask4, int, int>,
     "a byte mask should reject scalar branches whose element size does not match");
+static_assert(!has_int_select_with_explicit_result<sizeof(signed char), byte_mask4::abi_type>,
+    "an explicit result should not bypass the mask and branch element-size check");
+static_assert(noexcept(std::simd::select<sizeof(int), mask4::abi_type, int, int, int4>(mask4(true), 7, 9)),
+    "a matching mask and scalar branches should support an explicit result with noexcept");
+
+struct mask_with_throwing_conversion {
+    operator mask4() const noexcept(false);
+};
+
+static_assert(std::is_convertible_v<const mask_with_throwing_conversion&, mask4>);
+static_assert(!std::is_nothrow_convertible_v<const mask_with_throwing_conversion&, mask4>);
+static_assert(noexcept(std::simd::select(
+    std::declval<const mask4&>(),
+    std::declval<const mask_with_throwing_conversion&>(),
+    std::declval<const mask4&>())));
 
 constexpr bool core_values_are_preserved() {
     int input[4] = {1, 2, 3, 4};

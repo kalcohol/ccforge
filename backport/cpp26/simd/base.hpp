@@ -1416,36 +1416,3 @@ template<__simd_size_type N = 0, class V, class IndexMap,
          typename enable_if<!__detail::is_simd_index_vector<__detail::remove_cvref_t<IndexMap>>::value &&
              __detail::is_static_permute_index_map<IndexMap>::value, int>::type = 0>
 constexpr resize_t<(N == 0 ? static_cast<__simd_size_type>(V::size) : N), V> permute(const V& value, IndexMap&& index_map);
-
-// Compatibility spellings retained for at least one deprecated release.
-// Former class templates are aliases: naming/instantiation preserves identity,
-// but specialization and template-template deduction follow alias rules.
-// See the migration table for the source compatibility limitations.
-using simd_size_type [[deprecated("use decltype(std::simd::vec<int>::size())")]] = __simd_size_type;
-template<__simd_size_type N>
-using fixed_size_abi [[deprecated("use forge::simd_fixed_size_abi<N> in <forge/simd.hpp> (backport only)")]] = __fixed_size_abi<N>;
-template<class T>
-using native_abi [[deprecated("use forge::simd_native_abi<T> in <forge/simd.hpp>")]] = __native_abi<T>;
-template<class T, class Abi>
-using simd_size [[deprecated("use std::simd::basic_vec<T, Abi>::size() for enabled vectors")]] = __simd_size<T, Abi>;
-template<class Abi>
-using abi_lane_count [[deprecated("use the vector or mask size() member")]] = __abi_lane_count<Abi>;
-template<class T, __simd_size_type N = __simd_size<T, __native_abi<T>>::value>
-using deduce_abi_t [[deprecated("use forge::simd_abi<T, N> in <forge/simd.hpp>")]] = __deduce_abi_t<T, N>;
-template<class V>
-using simd_iterator [[deprecated("use decltype(std::declval<V&>().begin())")]] = __simd_iterator<V>;
-using convert_flag [[deprecated("use decltype(std::simd::flag_convert)")]] = __convert_flag;
-using aligned_flag [[deprecated("use decltype(std::simd::flag_aligned)")]] = __aligned_flag;
-template<size_t N>
-using overaligned_flag [[deprecated("use decltype(std::simd::flag_overaligned<N>)")]] = __overaligned_flag<N>;
-template<class T, class V, bool IsComplex = __detail::is_complex_value<__detail::remove_cvref_t<T>>::value>
-using real_simd_type [[deprecated("use std::simd::rebind<typename T::value_type, V> for complex T")]] = __real_simd_type<T, V, IsComplex>;
-template<class T, class V>
-using real_simd_t [[deprecated("use std::simd::rebind_t<typename T::value_type, V> for complex T")]] = __real_simd_t<T, V>;
-namespace __detail {
-template<class T, __simd_size_type N>
-using native_abi_tag [[deprecated("use forge::simd_native_abi_tag<T, N> in <forge/simd.hpp> (backport only)")]] = __native_abi_tag<T, N>;
-}
-// Namespace aliases cannot carry a standard deprecated attribute.
-// Retained as a documentation-deprecated compatibility bridge only.
-namespace detail = __detail;

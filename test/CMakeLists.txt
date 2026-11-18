@@ -216,11 +216,6 @@ if(FORGE_TEST_ENABLE_SIMD)
         add_executable(test_simd_forge_aliases EXCLUDE_FROM_ALL
             "${CMAKE_CURRENT_SOURCE_DIR}/simd/compile/test_simd_forge_aliases.cpp")
         target_link_libraries(test_simd_forge_aliases PRIVATE forge::forge)
-        if(MSVC)
-            target_compile_options(test_simd_forge_aliases PRIVATE /we4996)
-        else()
-            target_compile_options(test_simd_forge_aliases PRIVATE -Werror=deprecated-declarations)
-        endif()
         add_test(NAME simd_forge_aliases_compile
             COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS}
                 --target test_simd_forge_aliases)

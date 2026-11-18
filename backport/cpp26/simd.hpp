@@ -68,17 +68,6 @@
 #endif
 
 namespace std {
-
-// MSVC can retain its legacy __cplusplus value without /Zc:__cplusplus.
-// The library feature macro still identifies the existing C++20 sentinel.
-#if __cplusplus < 202002L && !defined(__cpp_lib_ranges)
-struct default_sentinel_t {
-    explicit constexpr default_sentinel_t() noexcept = default;
-};
-
-inline constexpr default_sentinel_t default_sentinel{};
-#endif
-
 namespace simd {
 
 #include "simd/base.hpp"

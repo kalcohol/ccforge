@@ -349,6 +349,44 @@ foreach(_forge_alignment_case RANGE 0 1)
         "reject_mask_alignment.cpp" FALSE
         "SIMD alignment must independently reject masks and unsupported bool scalar types")
 endforeach()
+# Check each removed spelling independently against a same-source WD control.
+foreach(_forge_legacy_name IN ITEMS
+        SIMD_SIZE_TYPE
+        FIXED_SIZE_ABI
+        NATIVE_ABI
+        SIMD_SIZE
+        ABI_LANE_COUNT
+        DEDUCE_ABI_T
+        SIMD_ITERATOR
+        CONVERT_FLAG
+        ALIGNED_FLAG
+        OVERALIGNED_FLAG
+        REAL_SIMD_TYPE
+        REAL_SIMD_T
+        NATIVE_ABI_TAG
+        DETAIL_NAMESPACE
+        SELECT_VEC
+        SELECT_MASK
+        SELECT_BOOL
+        SELECT_SCALAR
+        REAL_TYPE
+        FORGE_FIXED_SIZE_ABI
+        FORGE_NATIVE_ABI_TAG)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_pair_definitions}
+        -DFORGE_SIMD_LEGACY_${_forge_legacy_name}=1)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_REJECTS_LEGACY_${_forge_legacy_name}
+        "reject_legacy_compatibility_names.cpp"
+        FALSE
+        "Forge simd backport must reject the removed spelling ${_forge_legacy_name}")
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_SIMD_POSITIVE_CONTROL=1)
+    forge_add_simd_configure_probe(
+        FORGE_SIMD_POSITIVE_CONTROL_LEGACY_${_forge_legacy_name}
+        "reject_legacy_compatibility_names.cpp"
+        TRUE
+        "Removed SIMD spelling ${_forge_legacy_name} must have a compiling WD control")
+endforeach()
+unset(_forge_legacy_name)
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_pair_definitions}")
 unset(_forge_pair_definitions)
 unset(_forge_pair)
@@ -357,48 +395,3 @@ unset(_forge_last_operation)
 unset(_forge_operation)
 unset(_forge_accept)
 unset(_forge_alignment_case)
-
-# Check the same source both positively and negatively so a broken include or
-# assertion cannot masquerade as a successful deprecation diagnostic probe.
-set(_forge_simd_deprecation_flags "${CMAKE_REQUIRED_FLAGS}")
-set(_forge_simd_deprecation_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-if(MSVC)
-    string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
-else()
-    string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
-endif()
-forge_add_simd_configure_probe(FORGE_SIMD_COMPAT_ACCEPTED
-    "../compile/test_simd_extension_compat.cpp" TRUE
-    "SIMD compatibility aliases must remain equivalent with local suppression")
-# A member alias in a class template can lose its deprecation diagnostic on
-# GCC/Clang. Case 14 stays in the suppressed positive control, but is not a
-# portable expected failure. Keep the list explicit so case 15 still runs.
-foreach(_forge_simd_case IN ITEMS 1 2 3 4 5 6 7 8 9 10 11 12 13 15)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_simd_deprecation_defs}
-        -DFORGE_SIMD_DEPRECATION_CASE=${_forge_simd_case})
-    forge_add_simd_configure_probe(FORGE_SIMD_DEPRECATED_${_forge_simd_case}
-        "../compile/test_simd_extension_compat.cpp" FALSE
-        "Each old SIMD spelling must diagnose deprecation without suppression")
-endforeach()
-set(CMAKE_REQUIRED_FLAGS "${_forge_simd_deprecation_flags}")
-set(CMAKE_REQUIRED_DEFINITIONS "${_forge_simd_deprecation_defs}")
-unset(_forge_simd_deprecation_flags)
-unset(_forge_simd_case)
-
-# Former class-template names now follow alias-template specialization rules.
-foreach(_forge_simd_alias_case RANGE 0 2)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_simd_deprecation_defs}
-        -DFORGE_SIMD_ALIAS_SPECIALIZATION_CASE=${_forge_simd_alias_case})
-    if(_forge_simd_alias_case EQUAL 0)
-        set(_forge_simd_alias_accept TRUE)
-    else()
-        set(_forge_simd_alias_accept FALSE)
-    endif()
-    forge_add_simd_configure_probe(FORGE_SIMD_ALIAS_SPECIALIZATION_${_forge_simd_alias_case}
-        "reject_legacy_alias_specialization.cpp" ${_forge_simd_alias_accept}
-        "Legacy SIMD aliases must support template arguments but reject explicit and partial specialization")
-endforeach()
-set(CMAKE_REQUIRED_DEFINITIONS "${_forge_simd_deprecation_defs}")
-unset(_forge_simd_deprecation_defs)
-unset(_forge_simd_alias_case)
-unset(_forge_simd_alias_accept)
