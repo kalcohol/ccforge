@@ -675,7 +675,7 @@ bool __record<R>::install_stop_callback(
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using record_t = __record<R>;
 
     __op(
@@ -768,7 +768,7 @@ struct __op {
 };
 
 struct __byte_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state> state;
     HANDLE handle = INVALID_HANDLE_VALUE;

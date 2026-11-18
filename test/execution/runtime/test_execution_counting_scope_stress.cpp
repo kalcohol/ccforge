@@ -16,7 +16,7 @@ auto inline_join_env() noexcept {
 }
 
 struct counting_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<int>* completions = nullptr;
 
@@ -36,7 +36,7 @@ struct counting_receiver {
 
 template<class Scope>
 struct chained_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     Scope* scope = nullptr;
     std::atomic<int>* completions = nullptr;

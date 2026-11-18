@@ -500,7 +500,7 @@ static_assert(std::same_as<decltype(ex::get_domain(std::declval<const exact_doma
 // get_domain passes a hidden view and selects the generic fallback.
 struct competing_domain_env;
 struct competing_domain_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;
@@ -531,7 +531,7 @@ static_assert(std::same_as<decltype(ex::get_domain(std::declval<const competing_
 // The same hidden lookup applies to member-only overload competition.
 struct competing_member_domain_env;
 struct competing_member_domain_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;
@@ -693,7 +693,7 @@ static_assert(answers<hidden_env, local_key>);
 static_assert(answers<hidden_env, variadic_key, int&, int>);
 
 struct nothrow_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     void set_value() && noexcept {}
     void set_stopped() && noexcept {}
     forge::empty_env get_env() const noexcept { return {}; }
@@ -796,7 +796,7 @@ struct completion_child_attrs : answer {
 };
 template<class Attrs, class Tag = ex::set_value_t>
 struct transfer_source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     Attrs get_env() const noexcept { return {}; }
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
@@ -808,7 +808,7 @@ struct transfer_source {
     }
     template<class R>
     struct op {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         void start() & noexcept {
             if constexpr (std::same_as<Tag, ex::set_error_t>) {
@@ -823,7 +823,7 @@ struct transfer_source {
 };
 template<class Attrs, bool Nothrow = true>
 struct transfer_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;

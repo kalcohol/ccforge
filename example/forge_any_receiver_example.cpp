@@ -31,7 +31,7 @@
 #include <iostream>
 
 struct print_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* out{};
 

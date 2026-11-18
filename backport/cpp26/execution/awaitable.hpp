@@ -250,7 +250,7 @@ struct __awaitable {
     using result_t = std::optional<stored_value_t>;
 
     struct __recv {
-        using receiver_concept = receiver_t;
+        using receiver_concept = receiver_tag;
         __awaitable* __self;
 
         template<class... Vs>

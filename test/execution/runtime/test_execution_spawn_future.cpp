@@ -36,7 +36,7 @@ struct contains_completion_signature<
     : std::bool_constant<(std::same_as<Signatures, Signature> || ...)> {};
 
 struct reference_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int* value = nullptr;
 
@@ -53,7 +53,7 @@ struct reference_value_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         int* value;
@@ -70,7 +70,7 @@ struct reference_value_sender {
 };
 
 struct reference_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     const spawn_future_marker_error* error = nullptr;
 
@@ -87,7 +87,7 @@ struct reference_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         const spawn_future_marker_error* error;
@@ -183,7 +183,7 @@ static_assert(std::is_copy_constructible_v<nondefault_allocator<std::byte>>);
 
 template<class S, class Alloc>
 struct allocator_attrs_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     struct attrs {
         Alloc allocator;
@@ -318,7 +318,7 @@ struct retained_stop_state {
 
 // Keep the callback until operation destruction, including after completion.
 struct retained_stop_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     retained_stop_state* state;
     int inline_channel = -1;
     bool fail_connect = false;
@@ -331,7 +331,7 @@ struct retained_stop_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         retained_stop_state* state;
         int inline_channel;
@@ -387,7 +387,7 @@ struct retained_stop_sender {
 };
 
 struct retained_result_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* channel;
     std::inplace_stop_token token{};
     void set_value(int value) && noexcept { EXPECT_EQ(value, 42); *channel = 0; }
@@ -641,7 +641,7 @@ struct consumer_completion_observation {
 
 template<class StopToken>
 struct observed_consumer_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     StopToken token;
     consumer_completion_observation* observation;
@@ -677,7 +677,7 @@ void expect_registration_error(const consumer_completion_observation& observatio
 }
 
 struct spawn_future_stop_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source = nullptr;
     std::atomic<bool>* stopped = nullptr;
@@ -699,7 +699,7 @@ struct spawn_future_stop_receiver {
 };
 
 struct join_probe_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<bool>* completed = nullptr;
 
@@ -1807,7 +1807,7 @@ TEST(SpawnFutureTest, ConsumerAttachRacesWithProducerCompletion) {
 namespace {
 struct future_connect_error {};
 struct future_state_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using completion_signatures = std::execution::completion_signatures<std::execution::set_value_t()>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
@@ -1816,7 +1816,7 @@ struct future_state_probe_sender {
     bool* destroyed_while_associated;
     bool fail_connect;
     template<class R> struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         std::execution::simple_counting_scope* scope;
         int* live;
@@ -1835,7 +1835,7 @@ struct future_state_probe_sender {
     }
 };
 struct destroying_future_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     forge_test::destroy_context_base* context;
     int* result;
     void set_value(int value) && noexcept { *result = value; context->destroy(); }
@@ -1922,7 +1922,7 @@ TEST(SpawnTest, ConnectAndAllocationFailuresReleaseStateWithoutAssociation) {
 
 namespace {
 struct allocator_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     allocation_counts* counts;
     int* outstanding_at_join;
     bool* joined;
@@ -1938,14 +1938,14 @@ struct allocator_join_receiver {
     }
 };
 struct allocator_value_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* value;
     void set_value(int v) && noexcept { *value = v; }
     template<class E> void set_error(E&&) && noexcept { std::terminate(); }
     void set_stopped() && noexcept { *value = -1; }
 };
 struct allocator_channel_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* channel;
     void set_value() && noexcept { *channel = 1; }
     void set_error(int) && noexcept { *channel = 2; }

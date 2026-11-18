@@ -9,7 +9,7 @@
 namespace {
 
 struct multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
                            const multi_value_sender&, auto) noexcept
@@ -27,7 +27,7 @@ struct multi_value_sender {
 };
 
 struct other_multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
                            const other_multi_value_sender&, auto) noexcept
@@ -46,7 +46,7 @@ struct other_multi_value_sender {
 };
 
 struct scheduler_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::inline_scheduler expected;
     bool* got_scheduler;
@@ -119,7 +119,7 @@ static_assert(std::is_same_v<std::execution::env_of_t<owned_scheduler_receiver>,
                            immovable_scheduler_env>);
 
 struct int_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* got_int;
     bool* got_exception_ptr;
@@ -146,7 +146,7 @@ struct int_error_receiver {
 
 template<class R>
 struct stop_observing_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using env_t = std::execution::env_of_t<R>;
     using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
 
@@ -186,7 +186,7 @@ struct stop_observing_op {
 };
 
 struct stop_observing_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int* observed_stops;
 
@@ -209,7 +209,7 @@ struct stop_observing_sender {
 };
 
 struct outer_stop_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source;
     bool* stopped;
@@ -245,7 +245,7 @@ struct member_stop_env {
 };
 
 struct member_stop_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source;
     bool* errored;
@@ -266,7 +266,7 @@ struct member_stop_error_receiver {
 };
 
 struct value_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* value;
     bool* errored;

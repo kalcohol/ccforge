@@ -33,7 +33,7 @@ struct sender_move_counts {
 };
 
 struct rvalue_connect_only_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> cs_int {
@@ -46,7 +46,7 @@ struct rvalue_connect_only_sender {
 
     template<std::execution::receiver R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -76,7 +76,7 @@ static_assert(!std::constructible_from<
 static_assert(select_sender(rvalue_connect_only_sender{}) == 1);
 
 struct tracking_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     sender_move_counts* counts;
     int value;
@@ -108,7 +108,7 @@ struct tracking_sender {
 
     template<std::execution::receiver R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         int value;
         R rcvr;
@@ -125,7 +125,7 @@ struct tracking_sender {
 };
 
 struct throwing_move_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     sender_move_counts* counts;
     int value;
@@ -157,7 +157,7 @@ struct throwing_move_sender {
 
     template<std::execution::receiver R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         int value;
         R rcvr;
@@ -176,7 +176,7 @@ struct throwing_move_sender {
 static_assert(!std::is_nothrow_move_constructible_v<throwing_move_sender>);
 
 struct alignas(64) over_aligned_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     sender_move_counts* counts;
     int value;
@@ -209,7 +209,7 @@ struct alignas(64) over_aligned_sender {
 
     template<std::execution::receiver R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         int value;
         R rcvr;
@@ -231,7 +231,7 @@ enum class consuming_completion { value, error, stopped, connect_error };
 
 template<consuming_completion Completion>
 struct consuming_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::unique_ptr<int> value = std::make_unique<int>(47);
     int* connections;
@@ -249,7 +249,7 @@ struct consuming_sender {
 
     template<std::execution::receiver R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         std::unique_ptr<int> value;
         R rcvr;
 

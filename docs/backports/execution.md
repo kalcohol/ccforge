@@ -568,7 +568,7 @@ COMMON-DOMAIN 检查完整的 common type 默认构造表达式，不可构造�
 
 - [execution_unstoppable_example.cpp](../../example/execution_unstoppable_example.cpp)：execution unstoppable 的接口组合与完成结果。
 
-`sender_t`、`receiver_t`、`operation_state_t`、`scheduler_t` 是旧兼容别名；新代码使用对应的 `_tag` 名。`forge::any_stop_token` 是非标准擦除，分配不遵从 env allocator，不能用作标准 stop-token API 的替代承诺。
+标记类型使用 `sender_tag`、`receiver_tag`、`operation_state_tag`、`scheduler_tag`。`forge::any_stop_token` 是非标准擦除，分配不遵从 env allocator，不能用作标准 stop-token API 的替代承诺。
 
 ## 验证
 

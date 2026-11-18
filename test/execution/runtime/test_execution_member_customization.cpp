@@ -9,7 +9,7 @@
 namespace {
 
 struct member_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* value = nullptr;
     bool* errored = nullptr;
@@ -33,7 +33,7 @@ struct member_receiver {
 };
 
 struct member_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using completions = std::execution::completion_signatures<
         std::execution::set_value_t(int),
         std::execution::set_error_t(std::exception_ptr),
@@ -52,7 +52,7 @@ struct member_sender {
 
     template<class R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         int value;
@@ -77,7 +77,7 @@ struct member_sender {
 };
 
 struct member_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;

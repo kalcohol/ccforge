@@ -181,7 +181,7 @@ struct deleted_const_move : callback_body<ReturnsSender> {
 };
 
 struct tracked_source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     capture_state* state;
     int value = 7;
@@ -204,7 +204,7 @@ struct tracked_source {
 
     template<class R>
     struct operation {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         int value;
         void start() & noexcept { ex::set_value(std::move(receiver), value); }

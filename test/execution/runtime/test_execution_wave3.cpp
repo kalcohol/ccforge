@@ -115,7 +115,7 @@ struct immediate_runtime_value_awaiter {
 };
 
 struct sender_awaiter {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -131,7 +131,7 @@ struct sender_awaiter {
 };
 
 struct member_co_await_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -147,7 +147,7 @@ struct member_co_await_sender {
 };
 
 struct free_co_await_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -165,7 +165,7 @@ auto operator co_await(free_co_await_sender&&) noexcept
 }
 
 struct member_as_awaitable_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -208,7 +208,7 @@ struct completion_await_env {
 };
 
 struct completion_adapted_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -255,7 +255,7 @@ struct borrowed_completion_await_env {
 };
 
 struct borrowed_completion_adapted_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -323,7 +323,7 @@ SimpleTask run_multi_arg_coro() {
 
 template<class R>
 struct multi_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     bool use_double = false;
@@ -338,7 +338,7 @@ struct multi_value_op {
 };
 
 struct multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool use_double = false;
 
@@ -362,7 +362,7 @@ struct multi_value_sender {
 
 template<class R>
 struct empty_or_int_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     bool use_empty = false;
@@ -377,7 +377,7 @@ struct empty_or_int_op {
 };
 
 struct empty_or_int_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool use_empty = false;
 

@@ -24,7 +24,7 @@ struct test_schedule_sender;
 
 template<std::size_t Bytes = 1, std::size_t Alignment = alignof(std::max_align_t)>
 struct test_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;
@@ -37,7 +37,7 @@ struct test_scheduler {
 
 template<std::size_t Bytes, std::size_t Alignment>
 struct test_schedule_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<
         ex::set_value_t(), ex::set_error_t(int), ex::set_stopped_t()>;
     test_scheduler<Bytes, Alignment> scheduler;
@@ -50,7 +50,7 @@ struct test_schedule_sender {
 
     template<class R>
     struct alignas(Alignment) op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         schedule_state* state;
         std::array<std::byte, Bytes> padding;
@@ -97,7 +97,7 @@ struct receiver_env {
 
 template<class Token = std::never_stop_token>
 struct receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     result* out;
     Token token{};
     template<class... Vs>
@@ -131,7 +131,7 @@ void check(S sender, int sum, std::size_t registrations = 0, Token token = {}) {
 }
 
 struct multi_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     int shape;
     using completion_signatures = ex::completion_signatures<
         ex::set_value_t(), ex::set_value_t(int), ex::set_value_t(int, double),
@@ -141,7 +141,7 @@ struct multi_sender {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R recv;
         int shape;
         op(R r, int s) : recv(std::move(r)), shape(s) {}
@@ -240,13 +240,13 @@ TEST(ExecutionStaticOpstateTransfer, SyncWaitDrivesRunLoop) {
 }
 
 struct failing_child {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
     template<class R>
     struct op {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         void start() & noexcept { ex::set_value(std::move(receiver), 42); }
     };

@@ -348,7 +348,7 @@ private:
 template<class First, class Second>
 class when_all_sender {
 public:
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using payload_t = when_all_result<First, Second>;
     using aggregate_t = io_result<payload_t>;
 
@@ -375,7 +375,7 @@ public:
     class operation {
     public:
         using operation_state_concept =
-            std::execution::operation_state_t;
+            std::execution::operation_state_tag;
         using state_t = shared_state<First, Second, Receiver>;
         using first_receiver_t = child_receiver<0, state_t, First>;
         using second_receiver_t = child_receiver<1, state_t, Second>;

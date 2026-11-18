@@ -13,7 +13,7 @@ struct stop_completion_probe {
     std::binary_semaphore completed{0};
 
     struct receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
         stop_completion_probe* probe;
         std::inplace_stop_token token;
         void finish() noexcept {

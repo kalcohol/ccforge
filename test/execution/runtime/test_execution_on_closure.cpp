@@ -35,7 +35,7 @@ struct tracked_scheduler_attrs {
 
 template<class R>
 struct immediate_op {
-    using operation_state_concept = ex::operation_state_t;
+    using operation_state_concept = ex::operation_state_tag;
     R receiver;
 
     explicit immediate_op(R r) : receiver(std::move(r)) {}
@@ -46,7 +46,7 @@ struct immediate_op {
 };
 
 struct tracked_schedule_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     capture_state* state;
 
     template<class Self, class Env>
@@ -60,7 +60,7 @@ struct tracked_schedule_sender {
 };
 
 struct tracked_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;

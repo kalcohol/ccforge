@@ -10,7 +10,7 @@
 namespace {
 
 struct error_code_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -23,7 +23,7 @@ struct error_code_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -46,7 +46,7 @@ struct error_code_sender {
 };
 
 struct multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -60,7 +60,7 @@ struct multi_value_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -84,7 +84,7 @@ struct throwing_move_error {
 };
 
 struct throwing_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -97,7 +97,7 @@ struct throwing_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 

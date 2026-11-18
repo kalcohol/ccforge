@@ -34,7 +34,7 @@ namespace forge {
 namespace __start_detached {
 
 struct __detached_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct __state_base {
         void add_ref() noexcept {

@@ -46,7 +46,7 @@ struct __data {};
 
 template<class R>
 struct __recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R __outer;
     template<class... As> void set_value(As&&... as) && noexcept {
         std::execution::set_value(std::move(__outer), static_cast<As&&>(as)...);
@@ -62,7 +62,7 @@ struct __recv {
 
 template<class S>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     [[no_unique_address]] __data __data_;

@@ -31,7 +31,7 @@ concept has_local = requires(const E& e) { e.query(local_key{}); };
 
 template<bool OverlayLocal>
 struct probe_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         static_assert(has_local<Env> == OverlayLocal);
@@ -39,7 +39,7 @@ struct probe_sender {
     }
     template<class R>
     struct op {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         void start() & noexcept {
             auto e = ex::get_env(receiver);
@@ -55,7 +55,7 @@ struct probe_sender {
     auto connect(R r) const noexcept -> op<R> { return {std::move(r)}; }
 };
 struct probe_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     int* result;
     void set_value(int value) && noexcept { *result = value; }
     probe_env get_env() const noexcept { return {10, 20}; }
@@ -80,7 +80,7 @@ struct transfer_schedule_attrs {
                               transfer_destination_domain> { return {}; }
 };
 struct transfer_schedule_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     int* connections;
     int* active_resource;
     int destination;
@@ -94,7 +94,7 @@ struct transfer_schedule_sender {
     }
     template<class R>
     struct op {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         int* active_resource;
         int destination;
@@ -120,7 +120,7 @@ struct transfer_schedule_sender {
     }
 };
 struct transfer_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;
@@ -136,7 +136,7 @@ struct transfer_scheduler {
     bool operator==(const transfer_scheduler&) const noexcept = default;
 };
 struct transfer_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     probe_env environment;
     int* active_resource;
     int destination;
@@ -162,7 +162,7 @@ struct domain_only_env {
     auto query(ex::get_domain_t) const noexcept -> domain { return {}; }
 };
 struct missing_scheduler_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     domain_only_env environment;
     bool* matched;
     void set_value(ex::inline_scheduler scheduler) && noexcept {
@@ -188,7 +188,7 @@ struct stop_env {
     }
 };
 struct stop_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     stop_env environment;
     bool* stopped;
     void set_value() && noexcept { *stopped = false; }
@@ -231,7 +231,7 @@ struct dependent_let_attrs : unary_let_attrs<Tag> {
 
 template<class Tag, class Attrs>
 struct let_predecessor {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     Attrs attrs;
     // Returning attributes by value exercises a query result referring into
     // the temporary attributes, which let must copy before returning.
@@ -246,7 +246,7 @@ struct let_predecessor {
     }
     template<class R>
     struct op {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         void start() & noexcept {
             if constexpr (std::same_as<Tag, ex::set_error_t>) {
@@ -327,7 +327,7 @@ auto make_scheduler_let(Attrs attrs) {
 
 template<bool Borrow>
 struct let_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     const let_receiver_env* environment;
     ex::run_loop::scheduler expected;
     bool* matched;
@@ -567,7 +567,7 @@ TEST(SchedulerEnvQueriesTest, RunLoopScheduleLetAndWriteEnvReachTheChildEnvironm
     // Queue before run(); finish drains queued work without requiring a worker thread.
     bool got_scheduler = false;
     struct receiver {
-        using receiver_concept = ex::receiver_t;
+        using receiver_concept = ex::receiver_tag;
         ex::run_loop::scheduler expected;
         bool* result;
         void set_value(const ex::run_loop::scheduler& value) && noexcept { *result = value == expected; }

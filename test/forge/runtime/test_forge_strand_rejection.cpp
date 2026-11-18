@@ -26,7 +26,7 @@ struct results {
 };
 
 struct receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     results* output;
     int id;
 
@@ -183,7 +183,7 @@ struct rejection_state {
 };
 
 struct rejecting_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     std::shared_ptr<rejection_state> state;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -193,7 +193,7 @@ struct rejecting_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         std::shared_ptr<rejection_state> state;
         R rcvr;
         void start() & noexcept {
@@ -213,7 +213,7 @@ struct rejecting_sender {
 
 template<bool HasQuery = true>
 struct rejecting_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -436,7 +436,7 @@ TEST(StrandRejectionTest, ReentrantPoolShutdownHasBoundedCompletionDepth) {
     saturated_pool blocked;
     int depth = 0, maximum_depth = 0;
     struct shutdown_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
         forge::static_thread_pool* pool;
         receiver result;
         int* depth;

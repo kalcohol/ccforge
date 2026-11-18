@@ -14,7 +14,7 @@
 namespace {
 
 struct literal_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using completion_signatures = std::execution::completion_signatures<
         std::execution::set_value_t(int)>;
     int value;
@@ -122,7 +122,7 @@ struct departure_env {
 
 template<class R>
 struct departure_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
 
@@ -132,7 +132,7 @@ struct departure_op {
 };
 
 struct departure_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept

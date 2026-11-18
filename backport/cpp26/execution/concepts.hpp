@@ -781,7 +781,7 @@ using scheduler_t = scheduler_tag;
 namespace __forge_concepts {
 template<class S>
 concept __marked_sender = requires { typename S::sender_concept; } &&
-    std::derived_from<typename S::sender_concept, sender_t>;
+    std::derived_from<typename S::sender_concept, sender_tag>;
 template<class S>
 concept __enable_sender = __marked_sender<S>
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
@@ -1122,13 +1122,13 @@ inline constexpr start_t start{};
 template<class O>
 concept operation_state =
     requires { typename O::operation_state_concept; } &&
-    std::derived_from<typename O::operation_state_concept, operation_state_t> &&
+    std::derived_from<typename O::operation_state_concept, operation_state_tag> &&
     requires(O& op) { { std::execution::start(op) } noexcept; };
 
 template<class R>
 concept receiver =
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
-    std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_t> &&
+    std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_tag> &&
     requires(const std::remove_cvref_t<R>& r) {
         { std::execution::get_env(r) } -> queryable;
     } &&

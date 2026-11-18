@@ -922,7 +922,7 @@ bool __record<R>::install_stop_callback(
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using record_t = __record<R>;
 
     __op(std::shared_ptr<__state> state, int fd, readiness kind, R rcvr)
@@ -1013,7 +1013,7 @@ struct __op {
 };
 
 struct __sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state> state;
     int fd = -1;
@@ -1117,7 +1117,7 @@ struct __write_operation {
 
 template<class R, class Operation>
 struct __byte_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     __receiver_slot<R> rcvr;
     Operation operation;
@@ -1146,7 +1146,7 @@ struct __byte_receiver {
 
 template<class Operation>
 struct __byte_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state> state;
     int fd = -1;
@@ -1169,7 +1169,7 @@ struct __byte_sender {
     template<std::execution::receiver R>
     struct __op {
         using operation_state_concept =
-            std::execution::operation_state_t;
+            std::execution::operation_state_tag;
         using receiver_t = __byte_receiver<R, Operation>;
         using inner_op_t = std::execution::connect_result_t<__sender, receiver_t>;
         struct inner_state_t {

@@ -586,7 +586,7 @@ struct __recv_record final : __recv_base<T> {
 
 template<class T, class R>
 struct __send_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using state_t = __state<T>;
     using record_t = __send_record<T, R>;
 
@@ -622,7 +622,7 @@ struct __send_op {
 
 template<class T, class R>
 struct __recv_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using state_t = __state<T>;
     using record_t = __recv_record<T, R>;
 
@@ -657,7 +657,7 @@ struct __recv_op {
 
 template<class T>
 struct __send_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state<T>> state;
     std::optional<T> value;
@@ -681,7 +681,7 @@ struct __send_sender {
 
 template<class T>
 struct __recv_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state<T>> state;
 

@@ -61,7 +61,7 @@ struct env : __attrs {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>)
@@ -71,7 +71,7 @@ struct operation : __forge_detail::__immovable {
 };
 
 struct sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -96,7 +96,7 @@ struct sender {
 
 class inline_scheduler {
 public:
-    using scheduler_concept = scheduler_t;
+    using scheduler_concept = scheduler_tag;
 
     inline_scheduler() noexcept = default;
 

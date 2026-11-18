@@ -33,7 +33,7 @@ using __forge_detail::__movable_value;
 
 template<class R, class... Vs>
 struct operation : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     [[no_unique_address]] R rcvr_;
     std::tuple<Vs...> values_;
 
@@ -56,7 +56,7 @@ struct operation : __forge_detail::__immovable {
 
 template<class... Vs>
 struct sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     std::tuple<Vs...> values_;
 
     template<class Self, class Env>
@@ -99,7 +99,7 @@ namespace __forge_just_error {
 
 template<class R, class E>
 struct operation : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     [[no_unique_address]] R rcvr_;
     E error_;
 
@@ -117,7 +117,7 @@ struct operation : __forge_detail::__immovable {
 
 template<class E>
 struct sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     E error_;
 
     template<class Self, class Env>
@@ -160,7 +160,7 @@ namespace __forge_just_stopped {
 
 template<class R>
 struct operation : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     [[no_unique_address]] R rcvr_;
 
     explicit operation(R rcvr) noexcept(std::is_nothrow_move_constructible_v<R>) : rcvr_(std::move(rcvr)) {}
@@ -169,7 +169,7 @@ struct operation : __forge_detail::__immovable {
 };
 
 struct sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept

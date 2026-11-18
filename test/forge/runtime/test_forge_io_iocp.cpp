@@ -183,7 +183,7 @@ struct typed_io_state {
 };
 
 struct io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<io_state> state;
 
@@ -224,7 +224,7 @@ struct io_receiver {
 };
 
 struct typed_size_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<typed_io_state> state;
 
@@ -363,7 +363,7 @@ private:
 };
 
 struct blocking_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<blocking_completion_state> state;
 
@@ -418,7 +418,7 @@ void write_overlapped(HANDLE handle, std::span<const std::byte> bytes) {
 }
 
 struct self_destroying_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
 
@@ -434,7 +434,7 @@ struct stopping_destroying_io_receiver : self_destroying_io_receiver {
 };
 
 struct context_destroying_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::unique_ptr<forge::io::context>* owner = nullptr;
     std::shared_ptr<io_state> state;

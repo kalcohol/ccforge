@@ -63,7 +63,7 @@ struct connect_error {};
 
 template<std::size_t Bytes, std::size_t Alignment>
 struct padded_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
@@ -72,7 +72,7 @@ struct padded_sender {
 
     template<class R>
     struct alignas(Alignment) op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         observations* observed;
         std::array<std::byte, Bytes> padding;
@@ -119,7 +119,7 @@ using large_sender = padded_sender<8192, 64>;
 
 template<class Token = std::never_stop_token>
 struct receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     observations* observed;
     Token token{};
     void set_value() && noexcept { ++observed->values; }
@@ -133,7 +133,7 @@ struct receiver {
 
 struct large_schedule_sender;
 struct large_scheduler {
-    using scheduler_concept = ex::scheduler_t;
+    using scheduler_concept = ex::scheduler_tag;
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept
         -> ex::forward_progress_guarantee {
         return ex::forward_progress_guarantee::weakly_parallel;
@@ -214,7 +214,7 @@ void check_spawn(bool future, bool abandoned) {
 
 template<class S>
 struct attributed_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = typename S::completion_signatures;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }

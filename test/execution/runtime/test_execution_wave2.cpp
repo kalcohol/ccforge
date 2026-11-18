@@ -13,7 +13,7 @@
 namespace {
 
 struct counting_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<int>* count;
 
@@ -33,7 +33,7 @@ struct counting_receiver {
 };
 
 struct cached_value_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* result;
 
     void set_value(const int& value) && noexcept { *result = value; }
@@ -41,14 +41,14 @@ struct cached_value_only_receiver {
 };
 
 struct cached_error_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     bool* completed;
 
     void set_error(std::exception_ptr) && noexcept { *completed = true; }
 };
 
 struct cached_stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     bool* completed;
 
     void set_error(std::exception_ptr) && noexcept {}
@@ -56,13 +56,13 @@ struct cached_stopped_receiver {
 };
 
 struct oversized_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int value;
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         int value;
@@ -98,7 +98,7 @@ struct oversized_value_sender {
 };
 
 struct cached_string_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* received_mutable;
 

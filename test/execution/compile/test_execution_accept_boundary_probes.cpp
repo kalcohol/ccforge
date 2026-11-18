@@ -5,7 +5,7 @@
 #include <utility>
 
 struct noexcept_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value() && noexcept {}
     void set_error(std::exception_ptr) && noexcept {}
@@ -13,7 +13,7 @@ struct noexcept_receiver {
 };
 
 struct value_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value(int) && noexcept {}
     void set_error(std::exception_ptr) && noexcept {}

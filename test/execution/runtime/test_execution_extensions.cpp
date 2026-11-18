@@ -44,7 +44,7 @@ TEST(ExecutionExtensions, StandardEnvironmentSpellings) {
 
 namespace {
 struct destroying_split_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     forge_test::destroy_context_base* context;
     int* result;
     void set_value(const int& value) && noexcept {
@@ -75,7 +75,7 @@ TEST(ExecutionExtensions, SplitCompletionCanDestroySubscriberOperation) {
 
 namespace {
 struct split_channel_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* values;
     int* error;
     int* stopped;

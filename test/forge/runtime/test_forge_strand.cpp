@@ -27,7 +27,7 @@ struct stopped_state {
 };
 
 struct stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<stopped_state> state;
 
@@ -51,7 +51,7 @@ struct blocking_stopped_state {
 };
 
 struct blocking_stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<blocking_stopped_state> state;
 
@@ -73,7 +73,7 @@ struct blocking_stopped_receiver {
 };
 
 struct pre_stopped_blocking_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<blocking_stopped_state> state;
     std::inplace_stop_token token;
@@ -99,7 +99,7 @@ struct pre_stopped_blocking_receiver {
 };
 
 struct ordered_stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::mutex* mtx;
     std::vector<int>* order;
@@ -126,7 +126,7 @@ struct delayed_scheduler_state {
 };
 
 struct delayed_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<delayed_scheduler_state> state;
 
@@ -142,7 +142,7 @@ struct delayed_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         std::shared_ptr<delayed_scheduler_state> state;
         R rcvr;
@@ -174,7 +174,7 @@ struct delayed_sender {
 };
 
 struct delayed_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -196,7 +196,7 @@ struct inline_depth_state {
 };
 
 struct inline_depth_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<inline_depth_state> state;
 
@@ -212,7 +212,7 @@ struct inline_depth_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         std::shared_ptr<inline_depth_state> state;
         R rcvr;
@@ -233,7 +233,7 @@ struct inline_depth_sender {
 };
 
 struct inline_depth_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;

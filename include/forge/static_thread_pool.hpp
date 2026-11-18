@@ -351,7 +351,7 @@ template<class R>
 struct __op;
 
 struct __sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     static_thread_pool* pool;
 
     template<class Self, class Env>
@@ -375,7 +375,7 @@ struct __sender {
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     __op(__op&&) = delete;
     __op& operator=(__op&&) = delete;
     __op(const __op&) = delete;
@@ -392,10 +392,10 @@ struct __op {
 
 class static_thread_pool {
 public:
-    using scheduler_concept_tag = std::execution::scheduler_t;
+    using scheduler_concept_tag = std::execution::scheduler_tag;
 
     struct scheduler {
-        using scheduler_concept = std::execution::scheduler_t;
+        using scheduler_concept = std::execution::scheduler_tag;
         template<class Tag>
             requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
         auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> static_thread_pool::scheduler {

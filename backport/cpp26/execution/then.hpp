@@ -148,7 +148,7 @@ using transform_completion_signatures_t = typename transform_completion_signatur
 
 template<class R, class Fn>
 struct then_receiver {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
 
     R* rcvr_;
     Fn* fn_;
@@ -198,7 +198,7 @@ struct then_receiver {
 
 template<class S, class Fn, class R>
 struct then_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using inner_op_t = connect_result_t<S, then_receiver<R, Fn>>;
 
     [[no_unique_address]] R rcvr_;
@@ -225,7 +225,7 @@ struct then_op : __forge_detail::__immovable {
 
 template<class S, class Fn>
 struct then_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using fn_t = Fn;
 

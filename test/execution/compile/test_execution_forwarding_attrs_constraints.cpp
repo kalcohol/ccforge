@@ -147,7 +147,7 @@ struct constexpr_attributes {
 };
 
 struct constexpr_source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> ex::completion_signatures<ex::set_value_t(int)> {
         return {};

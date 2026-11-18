@@ -22,7 +22,7 @@ static_assert(!noexcept(forge::get_system_scheduler()));
 namespace {
 
 struct stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* stopped;
 
@@ -33,7 +33,7 @@ struct stopped_receiver {
 };
 
 struct pre_stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source;
     bool* value;

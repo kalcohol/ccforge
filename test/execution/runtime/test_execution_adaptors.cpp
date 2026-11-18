@@ -57,11 +57,11 @@ struct run_loop_workers_guard {
 };
 
 struct throwing_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<std::execution::receiver R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         throws_on_copy value;
 
@@ -92,7 +92,7 @@ struct throwing_value_sender {
 };
 
 struct stack_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -102,7 +102,7 @@ struct stack_value_sender {
 
     template<std::execution::receiver R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
 
         explicit op(R r) : rcvr(std::move(r)) {}
@@ -139,7 +139,7 @@ struct starts_on_domain {
 };
 
 struct domain_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -160,7 +160,7 @@ struct domain_scheduler {
 };
 
 struct int_start_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* value = nullptr;
     bool* completed = nullptr;
@@ -192,7 +192,7 @@ concept has_on_completion_scheduler = requires(const Attrs& attrs) {
 struct on_child_domain {};
 
 struct inline_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -240,7 +240,7 @@ struct borrowed_on_sender : stack_value_sender {
 
 template<class Completion>
 struct borrowed_let_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     const borrowed_on_attributes* attrs;
     int* reads;
 
@@ -390,7 +390,7 @@ struct continues_receiver_env {
 };
 
 struct continues_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     continues_receiver_env env;
 
     explicit continues_receiver(continues_hop_state& p) noexcept : env{&p} {}
@@ -457,7 +457,7 @@ static_assert(std::execution::receiver<continues_receiver>);
 
 template<bool Error, bool Reference = false, class T = continues_payload<>>
 struct continues_source {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     continues_hop_state* state;
 
     template<class Self, class Env>
@@ -472,7 +472,7 @@ struct continues_source {
 
     template<std::execution::receiver R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         continues_hop_state* state;
         R rcvr;
         T value;
@@ -525,7 +525,7 @@ struct continues_source {
 struct continues_schedule_sender;
 
 struct continues_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -538,7 +538,7 @@ struct continues_scheduler {
 };
 
 struct continues_schedule_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     continues_scheduler scheduler;
 
     struct attrs {
@@ -557,7 +557,7 @@ struct continues_schedule_sender {
 
     template<std::execution::receiver R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         continues_hop_state* state;
         R rcvr;
 
@@ -1630,7 +1630,7 @@ TEST(ContinuesOnTest, StoppedHopUsesTheRealAddressOfTheOuterReceiver) {
 }
 
 struct optional_stopped_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     bool stopped = true;
 
     template<class Self, class Env>
@@ -1642,7 +1642,7 @@ struct optional_stopped_sender {
 
     template<std::execution::receiver R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         bool stopped;
 

@@ -53,7 +53,7 @@ using __cs = std::conditional_t<noexcept(std::declval<Tag&>()(__environment<Env>
 
 template<class Tag, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     R __rcvr;
     Tag __tag;
 
@@ -81,7 +81,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class Tag>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using tag_t = Tag;
 
     Tag __tag;

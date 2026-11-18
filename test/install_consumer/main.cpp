@@ -11,7 +11,7 @@
 namespace {
 
 struct error_code_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* seen{};
 
@@ -27,7 +27,7 @@ struct error_code_receiver {
 };
 
 struct error_code_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -42,7 +42,7 @@ struct error_code_sender {
 
     template<class Receiver>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         Receiver rcvr;
 

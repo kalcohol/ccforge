@@ -15,7 +15,7 @@ struct result {
 };
 
 struct receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     result* out;
 
     template<class... Vs>
@@ -31,7 +31,7 @@ struct receiver {
 
 template<std::size_t Bytes, std::size_t Alignment = alignof(std::max_align_t)>
 struct padded_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
@@ -39,7 +39,7 @@ struct padded_sender {
 
     template<class R>
     struct alignas(Alignment) op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R recv;
         int value;
         std::byte padding[Bytes];

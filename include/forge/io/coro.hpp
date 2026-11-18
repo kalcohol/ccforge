@@ -267,7 +267,7 @@ public:
 
 private:
     struct receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         sender_awaitable* self = nullptr;
 
@@ -750,7 +750,7 @@ private:
 template<class T, class Receiver>
 class io_task_sender_op {
 public:
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using receiver_env_t = std::execution::env_of_t<Receiver>;
     using receiver_stop_token_t = std::remove_cvref_t<decltype(
         std::execution::get_stop_token(std::declval<receiver_env_t>()))>;
@@ -844,7 +844,7 @@ private:
 template<class T>
 class io_task_sender {
 public:
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     io_task_sender(io_task<T> task, io_env env)
         : task_(std::move(task))

@@ -45,7 +45,7 @@ struct pending_state {
 
 template<class R>
 struct pending_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     std::shared_ptr<pending_state> state;
@@ -60,7 +60,7 @@ struct pending_op {
 };
 
 struct pending_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<pending_state> state;
 
@@ -86,7 +86,7 @@ struct pending_sender {
 };
 
 struct recording_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<bool>* completed = nullptr;
 
@@ -116,7 +116,7 @@ struct error_category_state {
 };
 
 struct error_category_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     error_category_state* state;
 
@@ -259,12 +259,12 @@ forge::task<T> throwing_task() {
 
 template<class R>
 struct never_started_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     void start() & noexcept {}
 };
 
 struct throwing_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -291,7 +291,7 @@ struct inline_completion_state {
 
 template<class R>
 struct inline_completion_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     inline_completion_state* state = nullptr;
@@ -303,7 +303,7 @@ struct inline_completion_op {
 };
 
 struct inline_completion_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     inline_completion_state* state = nullptr;
 
@@ -349,7 +349,7 @@ struct destruction_result {
 };
 
 struct destroying_task_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     destroying_completion_state* state;
 
     void finish(int channel) && noexcept {
@@ -449,7 +449,7 @@ struct stopped_frame_guard {
 };
 
 struct stopped_task_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     stopped_task_state* state;
     void finish(int channel) noexcept {
         auto* saved = state;

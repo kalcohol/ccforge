@@ -24,7 +24,7 @@ struct stop_probe {
 };
 
 struct stop_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<stop_probe> probe;
 
@@ -38,7 +38,7 @@ struct stop_probe_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::shared_ptr<stop_probe> probe;
@@ -69,7 +69,7 @@ struct destroyed_state {
 };
 
 struct destruction_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<destroyed_state> state;
 
@@ -83,7 +83,7 @@ struct destruction_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::shared_ptr<destroyed_state> state;
@@ -111,7 +111,7 @@ struct destruction_sender {
 };
 
 struct teardown_env_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<stop_probe> probe;
 
@@ -126,7 +126,7 @@ struct teardown_env_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::shared_ptr<stop_probe> probe;
@@ -199,7 +199,7 @@ struct destruction_tail_callable {
 };
 
 struct move_only_lvalue_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<std::atomic<int>> starts;
 
@@ -220,7 +220,7 @@ struct move_only_lvalue_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::shared_ptr<std::atomic<int>> starts;
@@ -247,7 +247,7 @@ struct move_only_lvalue_sender {
 struct boom_error {};
 
 struct error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -259,7 +259,7 @@ struct error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -283,7 +283,7 @@ struct error_sender {
 struct connect_error {};
 
 struct throwing_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -295,7 +295,7 @@ struct throwing_connect_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         void start() & noexcept {}
     };

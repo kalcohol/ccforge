@@ -10,7 +10,7 @@ struct throwing_payload {
 };
 
 struct allocation_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     std::inplace_stop_token token;
     int* channel;
     throwing_payload** received;
@@ -23,7 +23,7 @@ struct allocation_receiver {
 };
 
 struct allocation_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     throwing_payload* value;
     int channel;
     template<class Self, class Env>
@@ -33,7 +33,7 @@ struct allocation_sender {
             std::execution::set_error_t(throwing_payload&),
             std::execution::set_stopped_t()> { return {}; }
     template<class R> struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         throwing_payload* value;
         int channel;

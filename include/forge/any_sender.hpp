@@ -72,7 +72,7 @@ class any_sender_of {
 
     template<class S>
     struct __stored_sender_ref {
-        using sender_concept = std::execution::sender_t;
+        using sender_concept = std::execution::sender_tag;
         using source_t = std::conditional_t<std::is_copy_constructible_v<S>, S&, S>;
 
         S* sender;
@@ -179,7 +179,7 @@ class any_sender_of {
     }
 
 public:
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using value_tuple_t  = value_tuple_of_t<CompletionSignatures>;
 
     any_sender_of() = default;

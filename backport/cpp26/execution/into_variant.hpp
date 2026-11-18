@@ -223,7 +223,7 @@ using __variant_type_of_t = typename __variant_type_of<CS>::type;
 // Inner receiver: collects upstream values into the variant, then calls outer set_value
 template<class R, class VariantT>
 struct __into_variant_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R __rcvr;
 
     template<class... Vs>
@@ -263,7 +263,7 @@ struct __into_variant_recv {
 
 template<class S>
 struct __into_variant_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     S __sndr;

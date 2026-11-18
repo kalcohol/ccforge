@@ -19,7 +19,7 @@ struct scheduler_counts {
 };
 
 struct tracking_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -68,7 +68,7 @@ struct tracking_scheduler {
 static_assert(std::execution::scheduler<tracking_scheduler>);
 
 struct self_destroying_schedule_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     bool* completed = nullptr;
@@ -92,7 +92,7 @@ struct self_destroying_schedule_receiver {
 };
 
 struct stop_aware_schedule_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source = nullptr;
     bool* value = nullptr;
@@ -115,7 +115,7 @@ struct stop_aware_schedule_receiver {
 };
 
 struct error_category_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* selected_overload = nullptr;
 

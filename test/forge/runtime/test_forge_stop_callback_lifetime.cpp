@@ -28,7 +28,7 @@ struct heap_owner {
 };
 
 struct destroying_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     heap_owner* owner;
     int* completions;
     std::inplace_stop_token token;
@@ -50,12 +50,12 @@ static_assert(std::is_reference_v<decltype(std::execution::get_stop_token(
     std::execution::get_env(std::declval<const destroying_receiver&>())))>);
 
 struct stop_inline_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_stopped_t()> { return {}; }
     template<class R> struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         struct notify {
             op* self;

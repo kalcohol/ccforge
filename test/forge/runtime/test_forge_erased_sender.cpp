@@ -38,7 +38,7 @@ struct observed_state {
 };
 
 struct observing_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<observed_state> state;
 
@@ -80,7 +80,7 @@ struct observing_receiver {
 };
 
 struct reference_value_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* selected_overload = nullptr;
     std::string* observed = nullptr;
@@ -105,7 +105,7 @@ struct reference_value_receiver {
 };
 
 struct reference_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* selected_overload = nullptr;
     std::error_code* observed = nullptr;
@@ -126,7 +126,7 @@ struct reference_error_receiver {
 };
 
 struct zero_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<observed_state> state;
 
@@ -137,7 +137,7 @@ struct zero_receiver {
 };
 
 struct int_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* value = nullptr;
 
@@ -151,7 +151,7 @@ struct int_only_receiver {
 };
 
 struct self_destroying_zero_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     bool* completed = nullptr;
@@ -175,7 +175,7 @@ struct self_destroying_zero_receiver {
 };
 
 struct borrowed_operation_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool* sender_destroyed;
     bool* operation_destroyed;
@@ -207,7 +207,7 @@ struct borrowed_operation_sender {
 
     template<class R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         bool* sender_destroyed;
         bool* operation_destroyed;
@@ -232,7 +232,7 @@ struct borrowed_operation_sender {
 };
 
 struct stop_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<observed_state> state;
     std::inplace_stop_source* source;
@@ -265,7 +265,7 @@ struct borrowed_stop_receiver : stop_receiver {
 };
 
 struct multi_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool use_string = false;
 
@@ -278,7 +278,7 @@ struct multi_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         bool use_string;
@@ -305,7 +305,7 @@ struct multi_sender {
 };
 
 struct zero_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -317,7 +317,7 @@ struct zero_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -334,7 +334,7 @@ struct zero_sender {
 };
 
 struct error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -347,7 +347,7 @@ struct error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -368,7 +368,7 @@ struct error_sender {
 };
 
 struct reference_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::error_code error = std::make_error_code(std::errc::timed_out);
 
@@ -385,7 +385,7 @@ struct reference_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         const std::error_code* error;
@@ -402,7 +402,7 @@ struct reference_error_sender {
 };
 
 struct rvalue_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::string value{"rvalue"};
 
@@ -419,7 +419,7 @@ struct rvalue_value_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::string value;
@@ -438,7 +438,7 @@ struct rvalue_value_sender {
 };
 
 struct rvalue_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -453,7 +453,7 @@ struct rvalue_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::error_code error =
@@ -473,7 +473,7 @@ struct rvalue_error_sender {
 };
 
 struct stopped_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -485,7 +485,7 @@ struct stopped_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -502,7 +502,7 @@ struct stopped_sender {
 };
 
 struct stop_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -515,7 +515,7 @@ struct stop_probe_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -538,7 +538,7 @@ struct stop_probe_sender {
 };
 
 struct move_only_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::unique_ptr<int> value;
 
@@ -559,7 +559,7 @@ struct move_only_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         int value;
         op(R r, int v) : rcvr(std::move(r)), value(v) {}
@@ -600,7 +600,7 @@ struct throwing_connect_move_sender : move_only_sender {
 };
 
 struct typed_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -612,7 +612,7 @@ struct typed_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -629,7 +629,7 @@ struct typed_error_sender {
 };
 
 struct error_code_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -642,7 +642,7 @@ struct error_code_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -665,7 +665,7 @@ struct error_code_sender {
 using status = observing_receiver::status;
 
 struct status_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -677,7 +677,7 @@ struct status_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R rcvr;
         explicit op(R r) : rcvr(std::move(r)) {}
         op(op&&) = delete;
@@ -717,7 +717,7 @@ using rvalue_error_cs =
         std::execution::set_error_t(std::error_code&&)>;
 
 struct env_pruned_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
@@ -739,7 +739,7 @@ struct env_pruned_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -761,7 +761,7 @@ struct env_pruned_sender {
 };
 
 struct reentrant_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     forge::erased_sender<zero_cs>** self = nullptr;
     bool* reentered = nullptr;
@@ -775,7 +775,7 @@ struct reentrant_connect_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 

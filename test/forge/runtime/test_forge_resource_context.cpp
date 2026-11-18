@@ -23,7 +23,7 @@ struct stop_probe {
 };
 
 struct stop_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<stop_probe> probe;
 
@@ -37,7 +37,7 @@ struct stop_probe_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::shared_ptr<stop_probe> probe;
@@ -71,7 +71,7 @@ struct resource_timer_state {
 };
 
 struct resource_timer_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     resource_timer_state* state;
 

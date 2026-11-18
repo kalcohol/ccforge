@@ -98,7 +98,7 @@ struct __starts_on_op;
 
 template<class Scheduler, class R>
 struct __sndr_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __outer;
     Scheduler* __scheduler;
     const std::remove_reference_t<env_of_t<R>>* __environment;
@@ -120,7 +120,7 @@ struct __sndr_recv {
 
 template<class Scheduler, class S, class R>
 struct __sched_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __starts_on_op<Scheduler, S, R>* __self;
     R* __outer;
     void set_value() && noexcept { __self->__start_child(); }
@@ -145,7 +145,7 @@ concept __starts_connectable = requires {
 
 template<class Scheduler, class S, class R>
 struct __starts_on_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using __source_env_t = __starts_on_env_t<Scheduler, env_of_t<R>>;
     using __schedule_env_t = __forge_detail::__fwd_env_t<env_of_t<R>>;
 
@@ -202,7 +202,7 @@ struct __starts_on_op : __forge_detail::__immovable {
 
 template<class Scheduler, class S>
 struct __starts_on_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using scheduler_t = Scheduler;
     using source_t = S;
     Scheduler __sch;
@@ -278,7 +278,7 @@ concept __first_form_connectable =
 
 template<class Scheduler, class S, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using inner_op_t = __inner_op_t<Scheduler, S, R>;
 
     inner_op_t __inner_op;
@@ -321,7 +321,7 @@ struct __attrs {
 
 template<class Scheduler, class S>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using scheduler_t = Scheduler;
     using source_t = S;
 
@@ -404,7 +404,7 @@ concept __closure_form_connectable =
 
 template<class S, class Scheduler, class Closure, class R>
 struct __closure_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using inner_op_t = __closure_inner_op_t<S, Scheduler, Closure, R>;
 
     inner_op_t __inner_op;
@@ -430,7 +430,7 @@ struct __closure_op : __forge_detail::__immovable {
 
 template<class S, class Scheduler, class Closure>
 struct __closure_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using scheduler_t = Scheduler;
     using closure_t = Closure;

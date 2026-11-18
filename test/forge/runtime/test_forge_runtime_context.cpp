@@ -16,7 +16,7 @@ namespace {
 using namespace std::chrono_literals;
 
 struct stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* stopped;
 
@@ -38,7 +38,7 @@ struct timer_state {
 };
 
 struct timer_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     timer_state* state;
 

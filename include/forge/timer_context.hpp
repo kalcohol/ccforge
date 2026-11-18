@@ -344,7 +344,7 @@ struct __op_data {
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     __op(__op&&) = delete;
     __op& operator=(__op&&) = delete;
@@ -371,7 +371,7 @@ struct __op {
 };
 
 struct __sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state> state;
     __when when;

@@ -72,7 +72,7 @@ struct throwing_aggregate_state {
 };
 
 struct throwing_aggregate_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<throwing_aggregate_state> state;
 
@@ -262,7 +262,7 @@ struct controlled_delivery {
 
 template<class R>
 struct controlled_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     std::shared_ptr<controlled_delivery<R>> delivery;
 
@@ -361,7 +361,7 @@ struct controlled_op {
 };
 
 struct controlled_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<controlled_state> state;
 
@@ -407,7 +407,7 @@ struct aggregate_state {
 };
 
 struct aggregate_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct env {
         std::inplace_stop_source* stop = nullptr;
@@ -473,7 +473,7 @@ struct any_aggregate_state {
 };
 
 struct any_aggregate_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct env {
         std::inplace_stop_source* stop = nullptr;
@@ -529,7 +529,7 @@ struct any_aggregate_receiver {
 };
 
 struct self_destroying_aggregate_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     std::shared_ptr<aggregate_state> state;

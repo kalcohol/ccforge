@@ -162,7 +162,7 @@ auto __error_if(const Error& error) noexcept -> const E* {
 
 template<class State>
 struct __receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     State* state;
     std::execution::run_loop* loop;

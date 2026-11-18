@@ -47,7 +47,7 @@ inline constexpr bool is_io_result_v = is_io_result<T>::value;
 
 template<std::size_t I, class State, class Result>
 struct child_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct env {
         std::shared_ptr<State> state;

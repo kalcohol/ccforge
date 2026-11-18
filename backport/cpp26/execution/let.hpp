@@ -260,7 +260,7 @@ struct __maybe_eptr_cs<true> {
 // Only its environment participates in a conforming sender's connect contract.
 template<class Env>
 struct __signature_receiver {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     const Env* __environment = nullptr;
     template<class... As> void set_value(As&&...) && noexcept {}
     template<class E> void set_error(E&&) && noexcept {}
@@ -370,7 +370,7 @@ struct __op;
 
 template<class R, class LetEnv, class OuterEnv>
 struct __inner_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __outer;
     const LetEnv* __primary;
     const OuterEnv* __environment;
@@ -392,7 +392,7 @@ struct __inner_recv {
 
 template<class S, class Fn, class R, class Which>
 struct __outer_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __op<S, Fn, R, Which>* __self;
     R* __outer;
 
@@ -450,7 +450,7 @@ concept __connectable = requires {
 
 template<class S, class Fn, class R, class Which>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using outer_env_t = env_of_t<R>;
     using let_env_t = __let_env_t<Which, S, outer_env_t>;
     using inner_env_t = __inner_env<let_env_t, std::remove_cvref_t<outer_env_t>>;
@@ -517,7 +517,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class S, class Fn, class Which>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using fn_t = Fn;
     using which_t = Which;

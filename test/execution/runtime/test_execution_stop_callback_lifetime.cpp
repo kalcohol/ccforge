@@ -34,7 +34,7 @@ struct heap_operation {
 };
 
 struct lifetime_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     heap_operation* owner;
     int* completions;
     std::inplace_stop_token token;
@@ -63,7 +63,7 @@ struct lifetime_receiver {
 };
 
 struct inline_stop_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     int channel = 2;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -72,7 +72,7 @@ struct inline_stop_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         int channel;
         struct notify {
@@ -133,7 +133,7 @@ struct overlap_state {
 };
 
 struct overlap_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     overlap_state* state;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -142,7 +142,7 @@ struct overlap_sender {
             std::execution::set_error_t(reference_payload&),
             std::execution::set_stopped_t()> { return {}; }
     template<class R> struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         overlap_state* state;
         struct block {
@@ -176,7 +176,7 @@ struct overlap_sender {
 };
 
 struct reference_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     heap_operation* owner;
     overlap_state* state;
     observed_token token;

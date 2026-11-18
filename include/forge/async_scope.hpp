@@ -149,7 +149,7 @@ struct __env {
 // used in constraints, but the members are defined because GCC emits the
 // completion CPO bodies it instantiates while checking them.
 struct __receiver_probe {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     template<class... Vs> void set_value(Vs&&...) && noexcept {}
     template<class Error> void set_error(Error&&) && noexcept {}
     void set_stopped() && noexcept {}
@@ -158,7 +158,7 @@ struct __receiver_probe {
 
 template<class Node>
 struct __receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     Node* node;
 

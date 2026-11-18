@@ -91,7 +91,7 @@ struct capture_handler {
 };
 
 struct literal_source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     int value;
     constexpr forge::empty_env get_env() const noexcept { return {}; }

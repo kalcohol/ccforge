@@ -146,7 +146,7 @@ struct receiver_env {
 };
 
 struct observing_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     receiver_env env;
 
     explicit observing_receiver(receiver_env e) noexcept : env(e) {}
@@ -207,7 +207,7 @@ static_assert(ex::receiver<observing_receiver>);
 
 template<completion_kind Completion>
 struct synchronous_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     probe* state;
 
     template<class Self, class Env>
@@ -223,7 +223,7 @@ struct synchronous_sender {
 
     template<ex::receiver R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         probe* state;
         R rcvr;
 

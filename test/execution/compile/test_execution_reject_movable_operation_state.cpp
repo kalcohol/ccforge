@@ -4,7 +4,7 @@
 #include <utility>
 
 struct receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value() && noexcept {}
     void set_error(std::exception_ptr) && noexcept {}

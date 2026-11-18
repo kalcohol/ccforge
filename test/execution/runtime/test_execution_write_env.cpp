@@ -18,7 +18,7 @@ static_assert(std::same_as<decltype(empty_composed_environment()),
                            std::execution::env<>>);
 
 struct scheduler_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::inline_scheduler expected;
     bool* got_expected;
@@ -44,7 +44,7 @@ struct scheduler_receiver {
 };
 
 struct start_scheduler_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::inline_scheduler expected;
     bool* got_expected;
@@ -70,7 +70,7 @@ struct start_scheduler_receiver {
 };
 
 struct delegation_scheduler_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::inline_scheduler expected;
     bool* got_expected;
@@ -96,7 +96,7 @@ struct delegation_scheduler_receiver {
 };
 
 struct stop_token_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source;
     bool* stop_possible;
@@ -232,7 +232,7 @@ struct borrowed_sender_attrs {
 };
 
 struct borrowed_attrs_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     const borrowed_sender_attrs* attributes;
 
     template<class Self, class Env>

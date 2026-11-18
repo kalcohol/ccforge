@@ -56,7 +56,7 @@ struct throwing_copy_error {
 };
 
 struct borrowed_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     const throwing_copy_error* error;
 
     template<class Self, class Env>
@@ -68,7 +68,7 @@ struct borrowed_error_sender {
 
     template<class R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         const throwing_copy_error* error;
         void start() & noexcept {
@@ -219,12 +219,12 @@ struct bridge_slot_observer {
 
 template<class Receiver>
 struct throwing_connect_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     auto start() & noexcept -> void {}
 };
 
 struct throwing_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -298,7 +298,7 @@ struct receiver_lifetime_state {
 };
 
 struct lifetime_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     receiver_lifetime_state* state = nullptr;
     bool owns_lifetime = true;
@@ -352,7 +352,7 @@ struct self_destroying_task_state {
 };
 
 struct self_destroying_task_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     self_destroying_task_state* state = nullptr;
@@ -391,7 +391,7 @@ struct task_result_state {
 
 template<class T>
 struct task_result_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct env {
         std::inplace_stop_source* source = nullptr;
@@ -478,7 +478,7 @@ auto wait_stop_wait_started(const std::shared_ptr<stop_wait_state>& state)
 
 template<class R>
 struct stop_wait_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     struct stop_callback {
         stop_wait_op* self = nullptr;
@@ -545,7 +545,7 @@ struct stop_wait_op {
 };
 
 struct stop_wait_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<stop_wait_state> state;
 
@@ -584,7 +584,7 @@ struct gated_async_delivery {
 
 template<class R>
 struct gated_async_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     std::shared_ptr<gated_async_delivery<R>> delivery;
 
@@ -650,7 +650,7 @@ struct gated_async_op {
 };
 
 struct gated_async_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<gated_async_state> state;
     gated_completion completion = gated_completion::value;
@@ -685,7 +685,7 @@ struct inline_probe_state {
 
 template<class R>
 struct inline_probe_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R receiver;
     inline_probe_state* state = nullptr;
@@ -697,7 +697,7 @@ struct inline_probe_op {
 };
 
 struct inline_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     inline_probe_state* state = nullptr;
 
@@ -720,7 +720,7 @@ struct inline_probe_sender {
 
 template<class R>
 struct stop_probe_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R receiver;
 
@@ -736,7 +736,7 @@ struct stop_probe_op {
 };
 
 struct stop_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept

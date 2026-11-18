@@ -11,7 +11,7 @@
 namespace {
 
 struct join_observer {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<int>* completion;
 

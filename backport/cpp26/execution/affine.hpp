@@ -37,7 +37,7 @@ namespace __forge_affine {
 
 template<class Scheduler>
 struct __unstoppable_scheduler {
-    using scheduler_concept = scheduler_t;
+    using scheduler_concept = scheduler_tag;
 
     Scheduler __scheduler;
 
@@ -131,7 +131,7 @@ auto __lower(S&& source, const Env& environment) -> __result_t<S, Env> {
 
 template<class S>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     S __source;
 

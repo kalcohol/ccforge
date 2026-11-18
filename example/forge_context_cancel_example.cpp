@@ -94,7 +94,7 @@ struct cancellation_state {
 };
 
 struct cancellation_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     cancellation_state* state;
 

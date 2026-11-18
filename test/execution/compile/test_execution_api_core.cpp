@@ -36,7 +36,7 @@ static_assert(std::execution::get_forward_progress_guarantee(std::execution::inl
               std::execution::forward_progress_guarantee::weakly_parallel);
 
 struct explicit_progress_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -54,7 +54,7 @@ static_assert(std::execution::get_forward_progress_guarantee(explicit_progress_s
               std::execution::forward_progress_guarantee::weakly_parallel);
 
 struct value_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value(int) && noexcept {}
     void set_error(std::exception_ptr) && noexcept {}

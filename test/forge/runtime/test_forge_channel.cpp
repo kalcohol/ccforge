@@ -22,7 +22,7 @@ struct send_state {
 };
 
 struct send_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<send_state> state;
 
@@ -41,7 +41,7 @@ struct recv_state {
 
 template<class T>
 struct recv_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<recv_state<T>> state;
 
@@ -64,7 +64,7 @@ struct stop_env {
 
 template<class T>
 struct stopped_recv_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<recv_state<T>> state;
     std::inplace_stop_source* source;
@@ -77,7 +77,7 @@ struct stopped_recv_receiver {
 };
 
 struct stopped_send_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<send_state> state;
     std::inplace_stop_source* source;
@@ -95,7 +95,7 @@ struct reenter_state {
 };
 
 struct reenter_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge::bounded_channel<int>* channel;
     std::shared_ptr<reenter_state> state;
@@ -112,7 +112,7 @@ struct reenter_receiver {
 };
 
 struct self_destroying_recv_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source = nullptr;
     forge_test::destroy_context_base* context = nullptr;
@@ -125,7 +125,7 @@ struct self_destroying_recv_receiver {
 };
 
 struct retiring_recv_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context;
     std::shared_ptr<void> owned;
@@ -141,7 +141,7 @@ struct retiring_recv_receiver {
 };
 
 struct retirement_observing_send_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge::bounded_channel<int>* channel;
     const bool* retired;

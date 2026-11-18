@@ -170,7 +170,7 @@ enum class completion { value, error, stopped };
 
 template<class Attrs = attributes, bool Borrowed = false, bool ConstBorrow = true>
 struct source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     attribute_state* state;
     Attrs* borrowed = nullptr;
     completion outcome = completion::value;
@@ -193,7 +193,7 @@ struct source {
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         completion outcome;
 

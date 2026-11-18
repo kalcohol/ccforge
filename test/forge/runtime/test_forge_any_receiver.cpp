@@ -27,7 +27,7 @@ struct converting_error {
 };
 
 struct exception_capture_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     std::exception_ptr* error;
     void set_error(std::exception_ptr ep) && noexcept { *error = std::move(ep); }
     auto get_env() const noexcept -> forge::empty_env { return {}; }
@@ -68,7 +68,7 @@ using cs_mutable_reference = std::execution::completion_signatures<
     std::execution::set_value_t(int&)>;
 
 struct test_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* out;
     friend void tag_invoke(std::execution::set_value_t, test_recv&& r, int v) noexcept {
         *r.out = v;
@@ -81,7 +81,7 @@ struct test_recv {
 };
 
 struct value_only_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* out;
 
@@ -95,7 +95,7 @@ struct value_only_recv {
 };
 
 struct error_stopped_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* error;
     bool* stopped;
@@ -114,7 +114,7 @@ struct error_stopped_recv {
 };
 
 struct stop_token_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     struct env {
         std::inplace_stop_token token;
@@ -149,7 +149,7 @@ struct counted_payload {
 };
 
 struct reference_category_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* selected;
     const counted_payload** observed;
@@ -170,7 +170,7 @@ struct reference_category_recv {
 };
 
 struct mutable_reference_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value(int& value) && noexcept {
         value = 41;
@@ -192,7 +192,7 @@ struct receiver_move_counts {
 };
 
 struct tracking_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     receiver_move_counts* counts;
     int* out;
@@ -223,7 +223,7 @@ struct tracking_recv {
 };
 
 struct alignas(64) over_aligned_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     receiver_move_counts* counts;
     int* out;

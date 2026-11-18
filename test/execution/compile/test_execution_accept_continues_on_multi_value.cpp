@@ -6,7 +6,7 @@
 #include <utility>
 
 struct multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -21,7 +21,7 @@ struct multi_value_sender {
 
 template<class... Sigs>
 struct signature_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<Sigs...> { return {}; }
@@ -69,7 +69,7 @@ struct error_schedule_sender : signature_sender<std::execution::set_value_t(),
     auto get_env() const noexcept -> schedule_attributes { return {}; }
 };
 struct error_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;

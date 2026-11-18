@@ -19,7 +19,7 @@ struct result_state {
 };
 
 struct receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     result_state* result;
 
     template<class... Args>

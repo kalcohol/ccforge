@@ -41,16 +41,16 @@ static_assert(!std::execution::scheduler<int>);
 static_assert(!std::execution::operation_state<int>);
 
 static_assert(std::same_as<
-    std::execution::sender_t,
+    std::execution::sender_tag,
     std::execution::sender_tag>);
 static_assert(std::same_as<
-    std::execution::receiver_t,
+    std::execution::receiver_tag,
     std::execution::receiver_tag>);
 static_assert(std::same_as<
-    std::execution::operation_state_t,
+    std::execution::operation_state_tag,
     std::execution::operation_state_tag>);
 static_assert(std::same_as<
-    std::execution::scheduler_t,
+    std::execution::scheduler_tag,
     std::execution::scheduler_tag>);
 
 // ── T-5: receiver concept requires nothrow move but permits final types ──
@@ -78,7 +78,7 @@ static_assert(std::same_as<
     probe_sender_tag>);
 
 struct throwing_move_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     throwing_move_receiver() = default;
     throwing_move_receiver(throwing_move_receiver&&) noexcept(false) {}
     throwing_move_receiver& operator=(throwing_move_receiver&&) = default;
@@ -89,7 +89,7 @@ static_assert(!std::execution::receiver<throwing_move_receiver>,
               "receiver with throwing move ctor must be rejected");
 
 struct final_receiver final {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     friend auto tag_invoke(std::execution::get_env_t, const final_receiver&) noexcept
         -> forge::empty_env { return {}; }
 };
@@ -107,7 +107,7 @@ static_assert(!std::execution::operation_state<no_marker_opstate>,
               "operation_state without concept marker must be rejected");
 
 struct movable_opstate {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     movable_opstate() = default;
     movable_opstate(movable_opstate&&) = default;
@@ -118,7 +118,7 @@ static_assert(std::execution::operation_state<movable_opstate>,
               "operation_state permits movable types");
 
 struct potentially_throwing_destructor_opstate {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     ~potentially_throwing_destructor_opstate() noexcept(false) {}
 
@@ -144,7 +144,7 @@ using just_error_types_t = std::execution::error_types_of_t<
     decltype(std::execution::just_error(std::string{"error"}))>;
 
 struct reference_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     friend auto tag_invoke(
         std::execution::get_env_t,
@@ -166,7 +166,7 @@ template<class... Ts>
 struct type_pack {};
 
 struct mixed_completion_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -186,7 +186,7 @@ struct mixed_completion_sender {
 };
 
 struct rvalue_only_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     explicit rvalue_only_sender(int value) noexcept
         : value(value) {}
@@ -208,7 +208,7 @@ struct rvalue_only_sender {
 
     template<std::execution::receiver R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R receiver;
         int value;
@@ -262,7 +262,7 @@ struct observe_bulk_value {
 };
 
 struct stopped_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_stopped() && noexcept {}
 
@@ -272,7 +272,7 @@ struct stopped_only_receiver {
 };
 
 struct move_only_stopped_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     move_only_stopped_receiver() = default;
     move_only_stopped_receiver(move_only_stopped_receiver&&) noexcept = default;
@@ -434,7 +434,7 @@ struct deref_unique {
 };
 
 struct int_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     friend void tag_invoke(std::execution::set_value_t, int_receiver&&, int) noexcept {}
     friend void tag_invoke(std::execution::set_error_t, int_receiver&&, std::exception_ptr) noexcept {}
@@ -445,7 +445,7 @@ struct int_receiver {
 
 template<class R>
 struct sync_wait_multi_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     bool use_double = false;
@@ -465,7 +465,7 @@ struct sync_wait_multi_value_op {
 };
 
 struct sync_wait_multi_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool use_double = false;
 
@@ -487,7 +487,7 @@ struct sync_wait_multi_value_sender {
 
 template<class R>
 struct sync_wait_empty_or_int_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     bool use_empty = false;
@@ -507,7 +507,7 @@ struct sync_wait_empty_or_int_op {
 };
 
 struct sync_wait_empty_or_int_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool use_empty = false;
 
@@ -529,7 +529,7 @@ struct sync_wait_empty_or_int_sender {
 
 template<class R>
 struct sync_wait_duplicate_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
 
@@ -543,7 +543,7 @@ struct sync_wait_duplicate_value_op {
 };
 
 struct sync_wait_duplicate_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -571,7 +571,7 @@ struct sync_wait_throwing_value {
 
 template<class R>
 struct sync_wait_throwing_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
 
@@ -585,7 +585,7 @@ struct sync_wait_throwing_value_op {
 };
 
 struct sync_wait_throwing_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept

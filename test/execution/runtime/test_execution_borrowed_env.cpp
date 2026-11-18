@@ -27,14 +27,14 @@ template<class Env>
 struct environment_shape {};
 
 struct shape_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> ex::completion_signatures<ex::set_value_t(environment_shape<Env>)> { return {}; }
     auto get_env() const noexcept -> forge::empty_env { return {}; }
     template<class R>
     struct operation {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         void start() & noexcept {
             using env = std::remove_cvref_t<ex::env_of_t<R>>;
@@ -47,7 +47,7 @@ struct shape_sender {
 
 template<class Value>
 struct exact_shape_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     const borrowed_env* env;
     bool* completed;
     auto get_env() const noexcept -> const borrowed_env& { return *env; }
@@ -70,7 +70,7 @@ void check_advertised_shape(S sender) {
 
 template<class Env, bool Borrow>
 struct env_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     const Env* env;
     int* result;
     decltype(auto) get_env() const noexcept {

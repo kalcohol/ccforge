@@ -35,7 +35,7 @@ struct timer_state {
 };
 
 struct timer_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     timer_state* state;
 
@@ -72,7 +72,7 @@ struct timer_receiver {
 // The final operation teardown must then run on the thread calling spawn().
 template<class S>
 struct finish_before_start_returns {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     S sender;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -80,9 +80,9 @@ struct finish_before_start_returns {
             std::declval<S>(), std::declval<Env>())) { return {}; }
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         struct receiver {
-            using receiver_concept = std::execution::receiver_t;
+            using receiver_concept = std::execution::receiver_tag;
             R downstream;
             std::binary_semaphore* finished;
             void set_value() && noexcept {
@@ -164,7 +164,7 @@ TEST(TimerContextTest, NoncopyableBorrowedEnvironmentPreservesCancellation) {
 }
 
 struct self_destroying_timer_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::inplace_stop_source* source = nullptr;
     forge_test::destroy_context_base* context = nullptr;
@@ -513,7 +513,7 @@ TEST(TimerContextTest, MultipleTimersCompleteInDeadlineOrder) {
     std::vector<int> order;
 
     struct order_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         std::mutex* mtx;
         std::condition_variable* cv;
@@ -773,7 +773,7 @@ TEST(TimerContextTest, WaitObservesActiveCallbackCompletion) {
     bool wait_returned = false;
 
     struct blocking_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         std::mutex* mtx;
         std::condition_variable* cv;
@@ -945,7 +945,7 @@ TEST(TimerContextTest, DestroyingContextInsideTimerCallbackIsSafe) {
     timer_state state;
 
     struct deleting_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         std::unique_ptr<forge::timer_context>* context;
         timer_state* state;

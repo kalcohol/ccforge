@@ -166,7 +166,7 @@ struct abandon_state {
 };
 
 struct abandon_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<abandon_state> state;
 

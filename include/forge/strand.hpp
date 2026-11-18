@@ -160,7 +160,7 @@ private:
 };
 
 struct __runner_recv {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<__state> state;
     __runner_base* node;
@@ -203,7 +203,7 @@ struct __runner final : __runner_base {
 // Use the pool state directly, before erasure, to distinguish full-queue
 // rejection from closure/allocation failure. Only the former can be parked.
 struct __pool_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     std::shared_ptr<__pool_detail::__pool_state> pool;
 
     template<class Self, class Env>
@@ -213,7 +213,7 @@ struct __pool_sender {
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 
     struct __op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         std::shared_ptr<__pool_detail::__pool_state> pool;
         __runner_recv rcvr;
 
@@ -603,7 +603,7 @@ template<class R>
 struct __op;
 
 struct __scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     template<class Tag>
         requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t>)
     auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __scheduler {
@@ -637,7 +637,7 @@ struct __env {
 };
 
 struct __sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state> state;
 
@@ -661,7 +661,7 @@ struct __sender {
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     using record_t = __record<R>;
 
     __op(std::shared_ptr<__state> state, R rcvr)

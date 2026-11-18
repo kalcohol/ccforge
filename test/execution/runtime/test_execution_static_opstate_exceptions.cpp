@@ -23,7 +23,7 @@ struct result {
 };
 
 struct receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     result* out;
     template<class... Vs>
     void set_value(Vs&&...) && noexcept { ++out->values; }
@@ -33,14 +33,14 @@ struct receiver {
 };
 
 struct empty_immovable_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t()>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
 
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         // These synchronous tests have one operation per receiver type in
         // flight. Keep the receiver outside the operation so the type is empty.
         static inline std::optional<R> recv;
@@ -116,7 +116,7 @@ struct connections {
 };
 
 struct tracked_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
@@ -124,7 +124,7 @@ struct tracked_sender {
 
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         connections* counts;
         R recv;
 
@@ -246,7 +246,7 @@ TEST(ExecutionStaticOpstateExceptions, StoredArgumentsReleasedAfterFunctionOrCon
 }
 
 struct choice_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<
         ex::set_value_t(int), ex::set_value_t(const int&), ex::set_value_t(double)>;
     template<class Self, class Env>
@@ -255,7 +255,7 @@ struct choice_sender {
 
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         int choice;
         R recv;
         op(int c, R r) : choice(c), recv(std::move(r)) {}
@@ -320,7 +320,7 @@ struct throwing_argument {
 };
 
 struct argument_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<
         ex::set_value_t(const throwing_argument&)>;
     template<class Self, class Env>
@@ -329,7 +329,7 @@ struct argument_sender {
 
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         throwing_argument arg;
         R recv;
         op(argument_counts* c, R r) : arg(c), recv(std::move(r)) {}
@@ -366,7 +366,7 @@ struct lifetime_state {
 };
 
 struct lifetime_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t(int)>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
@@ -374,7 +374,7 @@ struct lifetime_sender {
 
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         lifetime_state* state;
         R recv;
         op(lifetime_state* s, R r) : state(s), recv(std::move(r)) { state->predecessor_alive = true; }
@@ -392,14 +392,14 @@ struct lifetime_sender {
 };
 
 struct lifetime_inner_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<ex::set_value_t()>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
     lifetime_state* state;
     template<class R>
     struct op : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         lifetime_state* state;
         R recv;
         op(lifetime_state* s, R r) : state(s), recv(std::move(r)) {}

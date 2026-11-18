@@ -76,7 +76,7 @@ concept __scheduler_candidate =
     requires { typename std::remove_cvref_t<Scheduler>::scheduler_concept; } &&
     std::derived_from<
         typename std::remove_cvref_t<Scheduler>::scheduler_concept,
-        std::execution::scheduler_t>;
+        std::execution::scheduler_tag>;
 
 template<class Scheduler>
 struct __state_model final : __state_base {
@@ -99,7 +99,7 @@ struct __state_model final : __state_base {
 
 template<class R>
 struct __op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     __op(__op&&) = delete;
     __op& operator=(__op&&) = delete;
@@ -138,7 +138,7 @@ struct __op {
 };
 
 struct __sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<__state_base> state;
 
@@ -186,7 +186,7 @@ struct __sender {
 
 class any_scheduler {
 public:
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     template<class Tag>
         requires (std::same_as<Tag, std::execution::set_value_t> || std::same_as<Tag, std::execution::set_stopped_t> || std::same_as<Tag, std::execution::set_error_t>)
     auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> forge::any_scheduler {

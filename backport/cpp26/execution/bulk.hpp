@@ -84,7 +84,7 @@ struct __completion_signatures<
 
 template<bool Chunked, class Shape, class Fn, class R>
 struct __recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __outer;
     Shape __shape;
     Fn* __fn;
@@ -131,7 +131,7 @@ struct __recv {
 
 template<bool Chunked, class S, class Shape, class Fn, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     using __recv = __forge_bulk::__recv<Chunked, Shape, Fn, R>;
 
@@ -161,7 +161,7 @@ struct __op : __forge_detail::__immovable {
 
 template<bool Chunked, class S, class Policy, class Shape, class Fn, bool Transformed = false>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     S __sndr;

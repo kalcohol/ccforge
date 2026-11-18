@@ -92,7 +92,7 @@ struct io_state {
 };
 
 struct io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<io_state> state;
 
@@ -140,7 +140,7 @@ struct typed_io_state {
 };
 
 struct typed_void_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<typed_io_state> state;
 
@@ -188,7 +188,7 @@ struct typed_size_receiver : typed_void_receiver {
 // Receiver for the untyped byte senders, whose error channel carries
 // std::exception_ptr instead of forge::io::error.
 struct byte_size_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<typed_io_state> state;
 
@@ -223,7 +223,7 @@ struct byte_size_receiver {
 };
 
 struct self_destroying_typed_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
 
@@ -253,7 +253,7 @@ struct stopped_receiver : io_receiver {
 };
 
 struct self_destroying_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
 
@@ -270,7 +270,7 @@ struct stopping_destroying_io_receiver : self_destroying_io_receiver {
 };
 
 struct self_destroying_size_io_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     std::shared_ptr<typed_io_state> state;
@@ -311,7 +311,7 @@ struct self_destroying_size_io_receiver {
 };
 
 struct context_destroying_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::unique_ptr<forge::io::context>* owner = nullptr;
     std::shared_ptr<io_state> state;
@@ -1204,7 +1204,7 @@ TEST(IoContextTest, WaitBlocksUntilRequestStopCallbackReturns) {
     bool wait_returned = false;
 
     struct blocking_stopped_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         std::mutex* mtx;
         std::condition_variable* cv;
@@ -1291,7 +1291,7 @@ TEST(IoContextTest, PollerWaitDoesNotConsumeExternalJoinBarrier) {
     bool external_wait_returned = false;
 
     struct poller_wait_receiver {
-        using receiver_concept = std::execution::receiver_t;
+        using receiver_concept = std::execution::receiver_tag;
 
         forge::io::context* context;
         std::mutex* mtx;

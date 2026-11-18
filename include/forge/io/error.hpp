@@ -91,7 +91,7 @@ namespace typed_detail {
 
 template<class R>
 struct void_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     R rcvr;
 
@@ -115,7 +115,7 @@ struct void_receiver {
 
 template<class R>
 struct size_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     R rcvr;
 
@@ -139,7 +139,7 @@ struct size_receiver {
 
 template<class Sender, bool Sized>
 struct typed_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using completion_signatures = std::conditional_t<
         Sized,
         std::execution::completion_signatures<
@@ -166,7 +166,7 @@ struct typed_sender {
         requires std::execution::receiver_of<R, completion_signatures>
     struct typed_op {
         using operation_state_concept =
-            std::execution::operation_state_t;
+            std::execution::operation_state_tag;
         using receiver_t =
             std::conditional_t<Sized, size_receiver<R>, void_receiver<R>>;
         using op_t = std::execution::connect_result_t<Sender, receiver_t>;

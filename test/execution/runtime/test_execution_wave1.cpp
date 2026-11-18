@@ -26,7 +26,7 @@ struct throwing_move_value {
 
 template<class R>
 struct throwing_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     explicit throwing_value_op(R r) : rcvr(std::move(r)) {}
     throwing_value_op(const throwing_value_op&) = delete;
@@ -42,7 +42,7 @@ struct throwing_value_op {
 };
 
 struct throwing_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
                            const throwing_value_sender&, auto) noexcept
@@ -65,7 +65,7 @@ struct throwing_value_sender {
 
 template<class R>
 struct scheduler_value_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     explicit scheduler_value_op(R r) : rcvr(std::move(r)) {}
     scheduler_value_op(const scheduler_value_op&) = delete;
@@ -80,7 +80,7 @@ struct scheduler_value_op {
 };
 
 struct scheduler_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Env>
     friend auto tag_invoke(std::execution::get_completion_signatures_t,
@@ -110,7 +110,7 @@ struct member_allocator_attrs {
 };
 
 struct member_allocator_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -129,7 +129,7 @@ struct member_allocator_sender {
 };
 
 struct scheduler_value_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::inline_scheduler expected;
     bool* matched;
@@ -158,12 +158,12 @@ struct scheduler_value_receiver {
 
 template<class R>
 struct never_started_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     void start() & noexcept {}
 };
 
 struct throwing_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -186,7 +186,7 @@ struct throwing_connect_sender {
 };
 
 struct throwing_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -206,7 +206,7 @@ static_assert(std::execution::scheduler<throwing_scheduler>);
 struct mutable_schedule_sender;
 
 struct mutable_schedule_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -223,7 +223,7 @@ struct mutable_schedule_scheduler {
 
 template<class R>
 struct mutable_schedule_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     mutable_schedule_op(R r, int* count) : rcvr(std::move(r)), started(count) {}
     mutable_schedule_op(const mutable_schedule_op&) = delete;
@@ -241,7 +241,7 @@ struct mutable_schedule_op {
 };
 
 struct mutable_schedule_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     mutable_schedule_scheduler scheduler;
 
@@ -292,7 +292,7 @@ static_assert(rvalue_schedule_callable<mutable_schedule_scheduler>);
 
 template<class R>
 struct error_stopped_schedule_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
 
@@ -302,7 +302,7 @@ struct error_stopped_schedule_op {
 };
 
 struct error_stopped_schedule_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -327,7 +327,7 @@ struct error_stopped_schedule_sender {
 };
 
 struct error_stopped_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -345,7 +345,7 @@ struct error_stopped_scheduler {
 static_assert(std::execution::scheduler<error_stopped_scheduler>);
 
 struct affine_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* error;
 
@@ -421,7 +421,7 @@ struct member_domain_env {
 };
 
 struct child_domain_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int identity = 0;
 
@@ -460,7 +460,7 @@ struct rvalue_only_let_fn {
 };
 
 struct domain_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -487,7 +487,7 @@ struct domain_scheduler {
 static_assert(std::execution::scheduler<domain_scheduler>);
 
 struct member_domain_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -514,7 +514,7 @@ struct member_domain_scheduler {
 static_assert(std::execution::scheduler<member_domain_scheduler>);
 
 struct run_loop_value_only_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::execution::run_loop* loop;
     bool* completed;

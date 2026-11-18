@@ -37,7 +37,7 @@ struct empty_void_query {
 
 template<bool Multi = false, bool Dependent = false>
 struct typed_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     completion outcome = completion::stopped;
     using signatures = std::conditional_t<Multi,
         ex::completion_signatures<ex::set_value_t(int, int), ex::set_error_t(int), ex::set_stopped_t()>,
@@ -51,7 +51,7 @@ struct typed_sender {
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         completion outcome;
 
@@ -89,7 +89,7 @@ struct observed_result {
 };
 
 struct optional_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     observed_result* result;
 
     void set_value(std::optional<int>&& value) && noexcept {
@@ -114,7 +114,7 @@ struct guarded_optional_receiver : optional_receiver {
 };
 
 struct self_destroying_optional_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     forge_test::destroy_context_base* context;
     observed_result* result;
 
@@ -162,7 +162,7 @@ struct throwing_copy {
 };
 
 struct reference_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     const throwing_copy* value;
 
     template<class Self, class Env>
@@ -173,7 +173,7 @@ struct reference_sender {
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         const throwing_copy* value;
 

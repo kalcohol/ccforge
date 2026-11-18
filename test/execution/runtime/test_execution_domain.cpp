@@ -30,7 +30,7 @@ inline constexpr transformed_env_query_t transformed_env_query{};
 
 template<class Env = forge::empty_env>
 struct int_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     int* value = nullptr;
     bool* completed = nullptr;
@@ -53,7 +53,7 @@ struct int_receiver {
 
 template<class R>
 struct int_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     R rcvr;
     int value;
@@ -68,7 +68,7 @@ struct int_op {
 };
 
 struct direct_value_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int value = 42;
 
@@ -165,7 +165,7 @@ struct invalid_void_completion_attrs : value_completion_attrs {
 struct completion_domain_scheduler;
 
 struct completion_domain_schedule_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
@@ -183,7 +183,7 @@ struct completion_domain_schedule_sender {
 
     template<class R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         void start() & noexcept { std::execution::set_value(std::move(receiver)); }
     };
@@ -196,7 +196,7 @@ struct completion_domain_schedule_sender {
 
 struct completion_domain_scheduler : value_completion_attrs {
     using value_completion_attrs::query;
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -319,7 +319,7 @@ struct sender_domain_sender : direct_value_sender {
 };
 
 struct transform_only_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -339,7 +339,7 @@ struct transformed_sender : direct_value_sender {
 };
 
 struct signature_source_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -353,7 +353,7 @@ struct signature_source_sender {
 };
 
 struct signature_transformed_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -382,7 +382,7 @@ struct signature_domain_env {
 };
 
 struct rawless_signature_source_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     auto get_env() const noexcept -> forge::empty_env {
         return {};
@@ -390,7 +390,7 @@ struct rawless_signature_source_sender {
 };
 
 struct rawless_signature_transformed_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -446,7 +446,7 @@ struct explicit_empty_signature_attributes {
 };
 
 struct explicit_empty_signature_source {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -509,7 +509,7 @@ struct injected_env {
 };
 
 struct env_observing_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -523,7 +523,7 @@ struct env_observing_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -554,7 +554,7 @@ struct env_transform_domain_env {
 };
 
 struct late_domain_scheduler {
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
         -> std::execution::forward_progress_guarantee {
         return std::execution::forward_progress_guarantee::weakly_parallel;
@@ -680,7 +680,7 @@ struct recursive_start_domain_env {
 };
 
 struct exact_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* completed = nullptr;
 

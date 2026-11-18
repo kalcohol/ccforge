@@ -197,7 +197,7 @@ struct __error_cs<completion_signatures<Sigs...>, Err> {
 
 template<class R, class OptionalT>
 struct __optional_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __rcvr;
 
     template<class... Vs>
@@ -231,7 +231,7 @@ struct __optional_recv {
 
 template<class S, class R, class OptionalT>
 struct __optional_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     using __recv = __optional_recv<R, OptionalT>;
 
@@ -252,7 +252,7 @@ struct __optional_op : __forge_detail::__immovable {
 
 template<class S>
 struct __optional_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     S __sndr;
@@ -301,7 +301,7 @@ struct __optional_sender {
 
 template<class Err, class R>
 struct __error_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __rcvr;
     Err* __err;
 
@@ -323,7 +323,7 @@ struct __error_recv {
 
 template<class S, class Err, class R>
 struct __error_op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
 
     using __recv = __error_recv<Err, R>;
 
@@ -348,7 +348,7 @@ struct __error_op : __forge_detail::__immovable {
 
 template<class S, class Err>
 struct __error_sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using err_t = Err;
 

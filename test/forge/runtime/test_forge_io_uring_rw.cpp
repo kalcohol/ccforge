@@ -189,7 +189,7 @@ struct completion_state {
 };
 
 struct completion_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::shared_ptr<completion_state> state;
 

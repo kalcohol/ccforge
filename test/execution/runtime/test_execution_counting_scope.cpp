@@ -43,7 +43,7 @@ auto inline_join_env() noexcept {
 }
 
 struct scope_probe_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     bool* completed = nullptr;
 
@@ -62,7 +62,7 @@ struct scope_probe_receiver {
 };
 
 struct self_destroying_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     forge_test::destroy_context_base* context = nullptr;
     bool* completed = nullptr;
@@ -87,7 +87,7 @@ struct self_destroying_join_receiver {
 };
 
 struct destruction_order_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     std::atomic<bool>* operation_destroyed = nullptr;
     std::atomic<bool>* observed_destroyed = nullptr;
@@ -116,7 +116,7 @@ struct destruction_order_join_receiver {
 
 template<class Scheduler>
 struct scheduled_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     Scheduler scheduler;
     std::thread::id* completion_thread = nullptr;
@@ -143,7 +143,7 @@ struct scheduled_join_receiver {
 };
 
 struct unscheduled_join_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_value() && noexcept {}
 
@@ -327,7 +327,7 @@ void expect_join_receiver_may_destroy_operation_on_completion() {
 }
 
 struct pending_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     bool* started = nullptr;
 
@@ -345,7 +345,7 @@ struct pending_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         bool* started;
@@ -369,7 +369,7 @@ struct pending_sender {
 struct throwing_connect_error {};
 
 struct throwing_connect_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -384,7 +384,7 @@ struct throwing_connect_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         void start() & noexcept {}
     };
@@ -396,7 +396,7 @@ struct throwing_connect_sender {
 };
 
 struct increment_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::atomic<int>* counter = nullptr;
 
@@ -412,7 +412,7 @@ struct increment_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::atomic<int>* counter;
@@ -435,7 +435,7 @@ struct increment_sender {
 };
 
 struct move_only_increment_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::unique_ptr<int> value;
     int* observed = nullptr;
@@ -452,7 +452,7 @@ struct move_only_increment_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
         std::unique_ptr<int> value;
@@ -471,7 +471,7 @@ struct move_only_increment_sender {
 };
 
 struct manual_void_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<manual_state> state;
     std::atomic<bool>* operation_destroyed = nullptr;
@@ -490,7 +490,7 @@ struct manual_void_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         struct stop_callback {
             op* self;
@@ -1173,7 +1173,7 @@ struct immovable_wrap_env {
 };
 
 struct wrap_env_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* result;
 
     template<class... Vs>
@@ -1349,7 +1349,7 @@ struct registration_probe_token {
 };
 
 struct registration_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     int* live;
     bool* registered_during_work;
@@ -1366,7 +1366,7 @@ struct registration_probe_sender {
 
     template<class R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         int* live;
         bool* registered_during_work;
         int channel;
@@ -1402,7 +1402,7 @@ struct registration_probe_sender {
 };
 
 struct registration_probe_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     int* live;
     int* live_at_completion;
     int* completions;
@@ -1446,14 +1446,14 @@ struct prestart_stop_observation {
     int completions = 0;
 };
 struct prestart_stop_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     prestart_stop_observation* observed;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t()> { return {}; }
     template<class R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         prestart_stop_observation* observed;
         struct notify {
@@ -1483,7 +1483,7 @@ struct prestart_stop_sender {
     template<class R> auto connect(R r) const -> op<R> { return {std::move(r), observed}; }
 };
 struct prestart_stop_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     std::inplace_stop_token token;
     prestart_stop_observation* observed;
     void set_value() && noexcept { ++observed->completions; }
@@ -1534,7 +1534,7 @@ struct stop_registration_observation {
 };
 
 struct stop_registration_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     stop_registration_observation* observed;
 
     template<class Self, class Env>
@@ -1543,7 +1543,7 @@ struct stop_registration_sender {
 
     template<class R>
     struct op : std::execution::__forge_detail::__immovable {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         stop_registration_observation* observed;
         struct early_notify {
@@ -2026,13 +2026,13 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
 
 namespace {
 struct counted_connection_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     using completion_signatures = std::execution::completion_signatures<std::execution::set_value_t()>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
     int* connects;
     template<class R> struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
         R receiver;
         void start() & noexcept { std::execution::set_value(std::move(receiver)); }
     };
@@ -2093,7 +2093,7 @@ TEST(CountingScopeTest, AssociateCompletionCanDestroyOperation) {
 namespace {
 template<class Scope>
 struct association_receiver_teardown {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     Scope* scope;
     bool* destroyed_while_associated;
     association_receiver_teardown(Scope* s, bool* d) : scope(s), destroyed_while_associated(d) {}

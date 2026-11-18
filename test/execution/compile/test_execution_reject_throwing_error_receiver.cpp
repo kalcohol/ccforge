@@ -2,7 +2,7 @@
 #include <execution>
 
 struct throwing_error_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     void set_error(std::exception_ptr) && {}
 };

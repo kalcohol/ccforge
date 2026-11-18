@@ -120,7 +120,7 @@ struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
 
 template<class R, class Fn>
 struct __recv_error {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __rcvr;
     Fn* __fn;
 
@@ -170,7 +170,7 @@ struct __recv_error {
 
 template<class R, class Fn>
 struct __recv_stopped {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     R* __rcvr;
     Fn* __fn;
 
@@ -216,7 +216,7 @@ struct __recv_stopped {
 
 template<class S, class Fn, class R, bool IsError>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using __recv = std::conditional_t<IsError, __recv_error<R, Fn>, __recv_stopped<R, Fn>>;
     using __inner_op_t = connect_result_t<S, __recv>;
 
@@ -243,7 +243,7 @@ struct __op : __forge_detail::__immovable {
 
 template<class S, class Fn, bool IsError>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
     using fn_t = Fn;
 

@@ -83,7 +83,7 @@ int payload_value(decltype(&sample_function) value) noexcept { return value(10);
 
 template<class T>
 struct observing_receiver {
-    using receiver_concept = ex::receiver_t;
+    using receiver_concept = ex::receiver_tag;
     completion_result* result;
 
     void set_value(T&& value) && noexcept {

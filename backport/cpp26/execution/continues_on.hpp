@@ -119,7 +119,7 @@ struct __op;
 
 template<class Scheduler, class S, class R>
 struct __sched_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __op<Scheduler, S, R>* __self;
     R* __outer;
 
@@ -149,7 +149,7 @@ struct __sched_recv {
 
 template<class Scheduler, class S, class R>
 struct __up_recv {
-    using receiver_concept = receiver_t;
+    using receiver_concept = receiver_tag;
     __op<Scheduler, S, R>* __self;
     R* __outer;
 
@@ -178,7 +178,7 @@ concept __connectable = requires {
 
 template<class Scheduler, class S, class R>
 struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_t;
+    using operation_state_concept = operation_state_tag;
     using __env_t = __forge_env_detail::__forwarding_attrs<env_of_t<R>>;
     using __results_t = __results<completion_signatures_of_t<S, __env_t>>;
 
@@ -373,7 +373,7 @@ namespace __forge_continues_on {
 
 template<class Scheduler, class S>
 struct __sender {
-    using sender_concept = sender_t;
+    using sender_concept = sender_tag;
     using source_t = S;
 
     Scheduler __sch;

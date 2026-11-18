@@ -50,7 +50,7 @@ struct recv_race_state {
 };
 
 struct recv_race_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     recv_race_state* state = nullptr;
     std::inplace_stop_source* source = nullptr;
@@ -77,7 +77,7 @@ struct send_race_state {
 };
 
 struct send_race_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     send_race_state* state = nullptr;
     std::inplace_stop_source* source = nullptr;
@@ -110,7 +110,7 @@ struct timer_race_state {
 };
 
 struct timer_race_receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     timer_race_state* state = nullptr;
     std::inplace_stop_source* source = nullptr;

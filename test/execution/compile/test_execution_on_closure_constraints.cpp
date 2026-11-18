@@ -165,7 +165,7 @@ static_assert(!noexcept(ex::on(ex::inline_scheduler{},
     std::declval<throwing_move_adaptor>())));
 
 struct constexpr_source {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 };
 

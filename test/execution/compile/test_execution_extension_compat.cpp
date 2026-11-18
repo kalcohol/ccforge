@@ -6,12 +6,12 @@
 namespace ex = std::execution;
 
 struct multi_sender {
-    using sender_concept = ex::sender_t;
+    using sender_concept = ex::sender_tag;
     using completion_signatures = ex::completion_signatures<
         ex::set_value_t(int), ex::set_value_t(double)>;
     auto get_completion_signatures(auto&&) const noexcept -> completion_signatures { return {}; }
     template<class R> struct operation {
-        using operation_state_concept = ex::operation_state_t;
+        using operation_state_concept = ex::operation_state_tag;
         R receiver;
         explicit operation(R r) : receiver(std::move(r)) {}
         operation(const operation&) = delete;

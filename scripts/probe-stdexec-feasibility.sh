@@ -90,7 +90,7 @@ struct typed_error {
 };
 
 struct typed_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
@@ -106,7 +106,7 @@ struct typed_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -139,7 +139,7 @@ struct typed_error {
 };
 
 struct typed_error_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
@@ -155,7 +155,7 @@ struct typed_error_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 
@@ -208,7 +208,7 @@ cat > "${BUILD_ROOT}/forge_receiver_stop_env.cpp" <<'CPP'
 #include <tuple>
 
 struct stop_env_probe_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
@@ -222,7 +222,7 @@ struct stop_env_probe_sender {
 
     template<class R>
     struct op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R rcvr;
 

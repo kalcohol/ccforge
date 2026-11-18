@@ -163,7 +163,7 @@ class any_receiver_of {
     any_stop_token __stop_token{};
 
 public:
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
 
     any_receiver_of() = default;
 

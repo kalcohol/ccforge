@@ -39,7 +39,7 @@ struct completion_agent_state {
 struct early_completion_error {};
 
 struct early_completion_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     completion_agent_state* state;
     completion_kind kind;
@@ -55,7 +55,7 @@ struct early_completion_sender {
 
     template<class R>
     struct operation {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         R receiver;
         completion_agent_state* state;

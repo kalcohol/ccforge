@@ -27,7 +27,7 @@ struct manual_state {
 
 template<class R>
 struct manual_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     struct stop_callback {
         manual_op* self;
@@ -102,7 +102,7 @@ struct manual_op {
 };
 
 struct manual_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     std::shared_ptr<manual_state> state;
 

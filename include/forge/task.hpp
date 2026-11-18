@@ -73,7 +73,7 @@ struct __env {
 
 template<class R>
 struct __schedule_op {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
 
     __schedule_op(__schedule_op&&) = delete;
     __schedule_op& operator=(__schedule_op&&) = delete;
@@ -88,7 +88,7 @@ struct __schedule_op {
 };
 
 struct __schedule_sender {
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
@@ -108,7 +108,7 @@ struct __schedule_sender {
 
 class __inline_fallback_scheduler {
 public:
-    using scheduler_concept = std::execution::scheduler_t;
+    using scheduler_concept = std::execution::scheduler_tag;
     template<class Tag>
         requires (std::same_as<Tag, std::execution::set_value_t>)
     auto query(std::execution::get_completion_scheduler_t<Tag>) const noexcept -> __inline_fallback_scheduler {
@@ -194,7 +194,7 @@ struct __final_awaiter {
 
 template<class T, class R>
 struct __op : __op_base {
-    using operation_state_concept = std::execution::operation_state_t;
+    using operation_state_concept = std::execution::operation_state_tag;
     __op(__op&&) = delete;
     __op(const __op&) = delete;
     __op(std::coroutine_handle<typename task<T>::promise_type> coro, R r)
@@ -290,7 +290,7 @@ public:
         }
     };
 
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     task(task&& other) noexcept : __coro_(std::exchange(other.__coro_, {})) {}
     task(const task&) = delete;
     task& operator=(task&& other) noexcept {
@@ -376,7 +376,7 @@ public:
         bool stopped_ = false;
     };
 
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
     task(task&& other) noexcept : __coro_(std::exchange(other.__coro_, {})) {}
     task(const task&) = delete;
     task& operator=(task&& other) noexcept {

@@ -247,7 +247,7 @@ struct __receiver_state_base {
 
 template<class CS>
 struct __receiver {
-    using receiver_concept = std::execution::receiver_t;
+    using receiver_concept = std::execution::receiver_tag;
     using value_list = __value_list_t<CS>;
     using error_list = __error_list_t<CS>;
 
@@ -470,7 +470,7 @@ class erased_sender {
         "forge::erased_sender supports set_value, closed-set set_error(E), and set_stopped signatures");
 
 public:
-    using sender_concept = std::execution::sender_t;
+    using sender_concept = std::execution::sender_tag;
 
     erased_sender() = default;
 
@@ -508,7 +508,7 @@ public:
 
     template<class R>
     struct __op {
-        using operation_state_concept = std::execution::operation_state_t;
+        using operation_state_concept = std::execution::operation_state_tag;
 
         __op(std::shared_ptr<
                  __erased_sender_detail::__sender_state_base<CompletionSignatures>> state,
