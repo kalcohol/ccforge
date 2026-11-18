@@ -70,12 +70,12 @@ using cs_mutable_reference = std::execution::completion_signatures<
 struct test_recv {
     using receiver_concept = std::execution::receiver_tag;
     int* out;
-    friend void tag_invoke(std::execution::set_value_t, test_recv&& r, int v) noexcept {
-        *r.out = v;
+    void set_value(int v) && noexcept {
+        *this->out = v;
     }
-    friend void tag_invoke(std::execution::set_error_t, test_recv&&, std::exception_ptr) noexcept {}
-    friend void tag_invoke(std::execution::set_stopped_t, test_recv&&) noexcept {}
-    friend forge::empty_env tag_invoke(std::execution::get_env_t, const test_recv&) noexcept {
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    forge::empty_env get_env() const noexcept {
         return {};
     }
 };
@@ -138,7 +138,7 @@ struct stop_token_recv {
     struct env {
         std::inplace_stop_token token;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> std::inplace_stop_token {
             return token;
         }
@@ -312,7 +312,7 @@ static_assert(std::constructible_from<
 using any_receiver_env_t = std::execution::env_of_t<
     forge::any_receiver_of<cs_int>>;
 static_assert(requires(const any_receiver_env_t& env) {
-    { env.query(std::execution::get_stop_token) }
+    { env.query(std::get_stop_token) }
         -> std::same_as<forge::any_stop_token>;
 });
 
@@ -328,7 +328,7 @@ TEST(AnyReceiverTest, MemberQueryPreservesStopToken) {
     source.request_stop();
 
     auto token = std::execution::get_env(receiver).query(
-        std::execution::get_stop_token);
+        std::get_stop_token);
 
     EXPECT_TRUE(token.stop_possible());
     EXPECT_TRUE(token.stop_requested());

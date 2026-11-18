@@ -234,7 +234,7 @@ struct completion_receiver {
 struct stoppable_completion_env {
     std::inplace_stop_token token;
 
-    auto query(std::execution::get_stop_token_t) const noexcept {
+    auto query(std::get_stop_token_t) const noexcept {
         return token;
     }
 };

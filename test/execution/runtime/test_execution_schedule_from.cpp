@@ -112,10 +112,7 @@ struct departure_domain {
 
 struct departure_env {
     template<class Env>
-    friend auto tag_invoke(
-        std::execution::get_completion_domain_t<>,
-        const departure_env&,
-        const Env&) noexcept -> departure_domain {
+    auto query(std::execution::get_completion_domain_t<>, const Env&) const noexcept -> departure_domain {
         return {};
     }
 };

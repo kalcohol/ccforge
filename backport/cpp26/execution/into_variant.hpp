@@ -224,7 +224,9 @@ using __variant_type_of_t = typename __variant_type_of<CS>::type;
 template<class R, class VariantT>
 struct __into_variant_recv {
     using receiver_concept = receiver_tag;
-    R __rcvr;
+    R* __rcvr;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* __env = nullptr;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -234,30 +236,30 @@ struct __into_variant_recv {
         if constexpr (nothrow) {
             VariantT var(
                 std::in_place_type<tup_t>, static_cast<Vs&&>(vs)...);
-            std::execution::set_value(std::move(__rcvr), std::move(var));
+            std::execution::set_value(std::move(*__rcvr), std::move(var));
         } else {
             try {
                 VariantT var(
                     std::in_place_type<tup_t>, static_cast<Vs&&>(vs)...);
-                std::execution::set_value(std::move(__rcvr), std::move(var));
+                std::execution::set_value(std::move(*__rcvr), std::move(var));
             } catch (...) {
                 std::execution::set_error(
-                    std::move(__rcvr), std::current_exception());
+                    std::move(*__rcvr), std::current_exception());
             }
         }
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(__rcvr), static_cast<E&&>(e));
+        std::execution::set_error(std::move(*__rcvr), static_cast<E&&>(e));
     }
 
     void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(__rcvr));
+        std::execution::set_stopped(std::move(*__rcvr));
     }
 
     auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
-        return {std::execution::get_env(__rcvr)};
+        return __env->__view();
     }
 };
 
@@ -275,32 +277,33 @@ struct __into_variant_sender {
         completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<env_of_t<R>>>>>;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+    static constexpr auto get_completion_signatures() noexcept
+        -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+
+    template<class Child, class R>
+    using __op = __forge_detail::__receiver_op<Child, R, __recv<Child, R>>;
 
     template<receiver R>
         requires requires { typename __cs<S, env_of_t<R>>;
                      typename connect_result_t<S, __recv<S, R>>; }
     auto connect(R r) &&
-        noexcept(noexcept(std::execution::connect(
-            std::move(__sndr), __recv<S, R>{std::move(r)}))) -> connect_result_t<S, __recv<S, R>> {
-        return std::execution::connect(std::move(__sndr), __recv<S, R>{std::move(r)});
+        noexcept(noexcept(__op<S, R>(std::move(__sndr), std::move(r)))) -> __op<S, R> {
+        return __op<S, R>(std::move(__sndr), std::move(r));
     }
 
     template<receiver R>
         requires std::copy_constructible<S> && requires { typename __cs<const S&, env_of_t<R>>;
                      typename connect_result_t<const S&, __recv<const S&, R>>; }
     auto connect(R r) const&
-        noexcept(noexcept(std::execution::connect(__sndr, __recv<const S&, R>{std::move(r)})))
-        -> connect_result_t<const S&, __recv<const S&, R>> {
-        return std::execution::connect(__sndr, __recv<const S&, R>{std::move(r)});
+        noexcept(noexcept(__op<const S&, R>(__sndr, std::move(r)))) -> __op<const S&, R> {
+        return __op<const S&, R>(__sndr, std::move(r));
     }
 
     // An invalid rvalue child connection must not retry the const-lvalue path.
     template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(__sndr)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
     }
 };
 

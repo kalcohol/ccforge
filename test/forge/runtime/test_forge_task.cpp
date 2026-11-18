@@ -162,7 +162,7 @@ struct task_receiver_env {
 
     ~task_receiver_env() { --*live; }
 
-    auto query(std::execution::get_stop_token_t) const noexcept {
+    auto query(std::get_stop_token_t) const noexcept {
         return token;
     }
 
@@ -196,7 +196,7 @@ static_assert(std::is_same_v<
 template<class T>
 forge::task<T> observe_receiver_environment(
     bool* stop_requested, forge::any_scheduler* scheduler) {
-    auto token = co_await std::execution::read_env(std::execution::get_stop_token);
+    auto token = co_await std::execution::read_env(std::get_stop_token);
     *stop_requested = token.stop_requested();
     *scheduler = co_await std::execution::read_env(
         std::execution::get_start_scheduler);
@@ -783,7 +783,7 @@ TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
     source.request_stop();
     auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token())};
+            std::get_stop_token_t{}, source.get_token())};
 
     bool after_await = false;
     auto result = forge::sync_wait(

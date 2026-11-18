@@ -50,10 +50,10 @@ namespace __channel_detail {
 template<class R>
 bool __stop_requested(const R& rcvr) noexcept {
     if constexpr (requires {
-                      std::execution::get_stop_token(
+                      std::get_stop_token(
                           std::execution::get_env(rcvr));
                   }) {
-        return std::execution::get_stop_token(
+        return std::get_stop_token(
             std::execution::get_env(rcvr)).stop_requested();
     } else {
         return false;
@@ -477,12 +477,12 @@ struct __send_record final : __send_base<T> {
         }
         if constexpr (requires {
                           any_stop_token{
-                              std::execution::get_stop_token(
+                              std::get_stop_token(
                                   std::execution::get_env(rcvr))};
                       }) {
             try {
                 auto token = any_stop_token{
-                    std::execution::get_stop_token(std::execution::get_env(rcvr))};
+                    std::get_stop_token(std::execution::get_env(rcvr))};
                 if (token.stop_possible()) {
                     stop_callback.emplace(
                         std::move(token),
@@ -564,12 +564,12 @@ struct __recv_record final : __recv_base<T> {
         }
         if constexpr (requires {
                           any_stop_token{
-                              std::execution::get_stop_token(
+                              std::get_stop_token(
                                   std::execution::get_env(rcvr))};
                       }) {
             try {
                 auto token = any_stop_token{
-                    std::execution::get_stop_token(std::execution::get_env(rcvr))};
+                    std::get_stop_token(std::execution::get_env(rcvr))};
                 if (token.stop_possible()) {
                     stop_callback.emplace(
                         std::move(token),

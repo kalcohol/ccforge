@@ -64,151 +64,128 @@ struct __set_cpo<__stopped_tag> {
 template<class Which>
 using __set_cpo_t = typename __set_cpo<Which>::type;
 
-template<class Query>
-consteval bool __is_forwarding_query() {
-    using query_t = std::remove_cvref_t<Query>;
-    if constexpr (std::default_initializable<query_t>) {
-        return std::forwarding_query(query_t{});
-    } else {
-        return false;
-    }
-}
-
+// FWD-ENV(get_env(rcvr)), the second argument of the completion queries
+// in let-env ([exec.let]/2).
 template<class Env>
-struct __forwarding_env {
-    const Env* __env;
+using __forwarding_env = __forge_env_detail::__fwd_env_view<Env>;
 
-    template<class Query, class... Args>
-        requires (__forge_env_detail::__fwd_env_query<Query> &&
-                  __forge_env_detail::__queryable<Query, const Env&, Args...>)
-    decltype(auto) query(
-        Query query, Args&&... args) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&, Args...>) {
-        return __forge_env_detail::__query(std::move(query), *this->__env, static_cast<Args&&>(args)...);
-    }
-
-    template<class Query>
-        requires (__forge_env_detail::__fwd_env_query<Query> &&
-                  __forge_env_detail::__queryable<Query, const Env&>)
-    friend decltype(auto) tag_invoke(
-        Query query,
-        const __forwarding_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Query, const Env&>) {
-        return __forge_env_detail::__query(std::move(query), *self.__env);
-    }
-};
-
+// SCHED-ENV(sch) of [exec.snd.expos]/10. The view owns a copy of the selected
+// scheduler and queries it as a const lvalue, like every forwarded
+// environment: a repeated query sees the same intact scheduler, and an
+// answer that refers into it stays valid as long as the view.
 template<class Scheduler>
 struct __scheduler_env {
     [[no_unique_address]] Scheduler __scheduler;
 
-    auto query(
-        get_start_scheduler_t) const noexcept(
-            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
-        return this->__scheduler;
+    // The answer is a prvalue copy. [exec.sched]/3 forbids a scheduler copy
+    // from exiting via an exception whatever its exception specification
+    // says, so this meets MANDATE-NOTHROW of [exec.get.start.scheduler]/2.
+    constexpr auto query(get_start_scheduler_t) const noexcept -> Scheduler {
+        return __scheduler;
     }
 
-    friend auto tag_invoke(
-        get_start_scheduler_t,
-        const __scheduler_env& self) noexcept(
-            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
-        return self.__scheduler;
-    }
-
-    // get_scheduler is retained by this focused backport as the legacy spelling
-    // for the current execution resource.
-    friend auto tag_invoke(
-        get_scheduler_t,
-        const __scheduler_env& self) noexcept(
-            std::is_nothrow_copy_constructible_v<Scheduler>) -> Scheduler {
-        return self.__scheduler;
-    }
-
-    decltype(auto) query(
-        get_domain_t query) const noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Scheduler&>)
-        requires __forge_env_detail::__queryable<get_domain_t, const Scheduler&> {
-        return __forge_env_detail::__query(query, this->__scheduler);
-    }
-
-    friend decltype(auto) tag_invoke(
-        get_domain_t query,
-        const __scheduler_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<get_domain_t, const Scheduler&>)
-        requires __forge_env_detail::__queryable<get_domain_t, const Scheduler&> {
-        return __forge_env_detail::__query(query, self.__scheduler);
+    constexpr decltype(auto) query(get_domain_t) const
+        noexcept(noexcept(std::declval<const Scheduler&>().query(std::execution::get_domain)))
+        requires requires(const Scheduler& sch) { sch.query(std::execution::get_domain); } {
+        return __scheduler.query(std::execution::get_domain);
     }
 };
 
-template<class PrimaryEnv, class OuterEnv>
-struct __inner_env {
+// Model the outer receiver for type-only signature and connect probes.
+template<class Env>
+struct __signature_receiver {
+    using receiver_concept = receiver_tag;
+    template<class... As> void set_value(As&&...) && noexcept {}
+    template<class E> void set_error(E&&) && noexcept {}
+    void set_stopped() && noexcept {}
+    // A reference, so that no function returns an array or abstract type.
+    auto get_env() const noexcept -> const std::remove_reference_t<Env>& { std::terminate(); }
+};
+
+// let-env answers with the supplied query's own qualification.
+template<class Query, class PrimaryEnv, class... Args>
+concept __from_primary = requires(const PrimaryEnv& primary, Query&& q, Args&&... args) {
+    primary.query(static_cast<Query&&>(q), static_cast<Args&&>(args)...);
+};
+
+template<class Query, class PrimaryEnv, class... Args>
+concept __nothrow_from_primary = requires(const PrimaryEnv& primary, Query&& q, Args&&... args) {
+    { primary.query(static_cast<Query&&>(q), static_cast<Args&&>(args)...) } noexcept;
+};
+
+// receiver2 applies the forwarding-query type concept ([exec.let]/8.2); the
+// signature view applies FWD-ENV to the supplied object (/9.4).
+template<class Query, bool ClassifyObject>
+concept __forwards =
+    (ClassifyObject && __forge_env_detail::__qualified_fwd_env_query<Query>) ||
+    (!ClassifyObject &&
+     __forge_env_detail::__forwarding_query_type<std::remove_cvref_t<Query>>);
+
+// The successor environment has two roles. Both types depend only on the
+// let-env type and on the type of the outer environment without reference and
+// const, never on the receiver type or on whether that environment is borrowed.
+//
+// Connected (ClassifyObject == false) is the environment of receiver2 in
+// [exec.let]/8.2: let-env answers first, then the environment of the outer
+// receiver for a query type that satisfies forwarding-query.
+//
+// Signature (ClassifyObject == true) is JOIN-ENV(let-env, FWD-ENV(env)) of
+// [exec.let]/9.4, whose FWD-ENV classifies the supplied query object.
+//
+// The outer environment is queried as a const lvalue in both.
+template<class PrimaryEnv, class OuterEnv, bool ClassifyObject>
+struct __successor_env {
+    template<class Query, class... Args>
+    static consteval bool __query_nothrow() {
+        if constexpr (__from_primary<Query, PrimaryEnv, Args...>) {
+            return __nothrow_from_primary<Query, PrimaryEnv, Args...>;
+        } else {
+            return __forge_env_detail::__nothrow_raw_queryable<Query, OuterEnv, Args...>;
+        }
+    }
+
     const PrimaryEnv* __primary;
+    // Points into the operation state, like __primary.
     const OuterEnv* __outer;
 
     template<class Query, class... Args>
-        requires __forge_env_detail::__queryable<Query, const PrimaryEnv&, Args...>
-    decltype(auto) query(
-        Query query, Args&&... args) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const PrimaryEnv&, Args...>) {
-        return __forge_env_detail::__query(std::move(query), *this->__primary,
-            static_cast<Args&&>(args)...);
-    }
-
-    template<class Query>
-        requires __forge_env_detail::__queryable<Query, const PrimaryEnv&>
-    friend decltype(auto) tag_invoke(
-        Query query,
-        const __inner_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Query, const PrimaryEnv&>) {
-        return __forge_env_detail::__query(std::move(query), *self.__primary);
-    }
-
-    template<class Query, class... Args>
-        requires (!__forge_env_detail::__queryable<Query, const PrimaryEnv&, Args...> &&
-                  __is_forwarding_query<Query>() &&
-                  __forge_env_detail::__queryable<Query, const OuterEnv&, Args...>)
-    decltype(auto) query(
-        Query query, Args&&... args) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const OuterEnv&, Args...>) {
-        return __forge_env_detail::__query(std::move(query), *this->__outer,
-            static_cast<Args&&>(args)...);
-    }
-
-    template<class Query>
-        requires (!__forge_env_detail::__queryable<Query, const PrimaryEnv&> &&
-                  __is_forwarding_query<Query>() &&
-                  __forge_env_detail::__queryable<Query, const OuterEnv&>)
-    friend decltype(auto) tag_invoke(
-        Query query,
-        const __inner_env& self)
-        noexcept(__forge_env_detail::__nothrow_query<Query, const OuterEnv&>) {
-        return __forge_env_detail::__query(std::move(query), *self.__outer);
+        requires __from_primary<Query, PrimaryEnv, Args...> ||
+                 (__forwards<Query, ClassifyObject> &&
+                  __forge_env_detail::__raw_queryable<Query, OuterEnv, Args...>)
+    constexpr decltype(auto) query(Query&& query, Args&&... args) const
+        noexcept(__query_nothrow<Query, Args...>()) {
+        if constexpr (__from_primary<Query, PrimaryEnv, Args...>) {
+            return this->__primary->query(
+                static_cast<Query&&>(query), static_cast<Args&&>(args)...);
+        } else {
+            return this->__outer->query(
+                static_cast<Query&&>(query), static_cast<Args&&>(args)...);
+        }
     }
 };
 
+template<class PrimaryEnv, class OuterEnv, bool ClassifyObject = false>
+using __inner_env = __successor_env<
+    PrimaryEnv, __forge_env_detail::__normalized_env_t<OuterEnv>, ClassifyObject>;
+
+// env is the receiver environment that the operation state keeps.
 template<class Which, class S, class OuterEnv>
-auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
+auto __make_let_env(const S& sndr, const OuterEnv& env) {
     using cpo_t = __set_cpo_t<Which>;
+    using fwd_t = __forwarding_env<OuterEnv>;
     decltype(auto) child_env = std::execution::get_env(sndr);
     if constexpr (requires {
-        std::execution::get_completion_scheduler<cpo_t>(
-            child_env,
-            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
+        std::execution::get_completion_scheduler<cpo_t>(child_env, fwd_t::__borrow(env));
     }) {
         // Own the result: the query can refer into the temporary view or attrs.
-        auto scheduler =
-            std::execution::get_completion_scheduler<cpo_t>(
-                child_env,
-                __forwarding_env<OuterEnv>{std::addressof(outer_env)});
-        return __scheduler_env<std::decay_t<decltype(scheduler)>>{
-            std::move(scheduler)};
+        return __scheduler_env<std::remove_cvref_t<decltype(
+            std::execution::get_completion_scheduler<cpo_t>(child_env, fwd_t::__borrow(env)))>>{
+            std::execution::get_completion_scheduler<cpo_t>(child_env, fwd_t::__borrow(env))};
     } else if constexpr (requires {
-        std::execution::get_completion_domain<cpo_t>(
-            child_env,
-            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
+        std::execution::get_completion_domain<cpo_t>(child_env, fwd_t::__borrow(env));
     }) {
         auto domain = std::execution::get_completion_domain<cpo_t>(
-            child_env,
-            __forwarding_env<OuterEnv>{std::addressof(outer_env)});
+            child_env, fwd_t::__borrow(env));
         return std::execution::prop(
             get_domain_t{},
             std::move(domain));
@@ -217,10 +194,11 @@ auto __make_let_env(const S& sndr, const OuterEnv& outer_env) {
     }
 }
 
+// let-env depends on the environment type without reference and const.
 template<class Which, class S, class OuterEnv>
 using __let_env_t = decltype(__make_let_env<Which>(
     std::declval<const S&>(),
-    std::declval<const OuterEnv&>()));
+    std::declval<const __forge_env_detail::__normalized_env_t<OuterEnv>&>()));
 
 template<class Sig>
 struct __is_value_sig : std::false_type {};
@@ -256,17 +234,46 @@ struct __maybe_eptr_cs<true> {
     using type = completion_signatures<set_error_t(std::exception_ptr)>;
 };
 
-// The probe has the same nonthrowing construction and environment as receiver2.
-// Only its environment participates in a conforming sender's connect contract.
-template<class Env>
-struct __signature_receiver {
+template<class R, class LetEnv>
+struct __inner_recv {
     using receiver_concept = receiver_tag;
-    const Env* __environment = nullptr;
-    template<class... As> void set_value(As&&...) && noexcept {}
-    template<class E> void set_error(E&&) && noexcept {}
-    void set_stopped() && noexcept {}
-    auto get_env() const noexcept -> Env { return *__environment; }
+    R* __outer;
+    const LetEnv* __primary;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* __env = nullptr;
+    template<class... Vs>
+    void set_value(Vs&&... vs) && noexcept {
+        std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
+    }
+    template<class E>
+    void set_error(E&& e) && noexcept {
+        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
+    }
+    void set_stopped() && noexcept {
+        std::execution::set_stopped(std::move(*__outer));
+    }
+    auto get_env() const noexcept -> __inner_env<LetEnv, env_of_t<R>> {
+        return {__primary, std::addressof(__env->__get())};
+    }
 };
+
+// [exec.let]/9.4 checks sender_in against
+// JOIN-ENV(let-env(declval<child>(), declval<Env>()), FWD-ENV(declval<Env>())).
+template<class Which, class S, class Env>
+using __signature_env_t = __inner_env<__let_env_t<Which, S, Env>, Env, true>;
+
+// The environment of every receiver2 whose outer receiver has an environment
+// of type Env. The successor's reported completions come from this view, so
+// they are the completions of the connection that start() runs
+// ([exec.snd.expos]/47.1, [exec.getcomplsigs]/5).
+template<class PrimaryEnv, class Env>
+using __connected_env_t = __inner_env<PrimaryEnv, Env, false>;
+
+// Type-only stand-in for receiver2 in exception-specification and
+// connectability probes. Its environment is __connected_env_t.
+template<class PrimaryEnv, class Env>
+using __connect_probe_t = __inner_recv<
+    __signature_receiver<__forge_env_detail::__normalized_env_t<Env>>, PrimaryEnv>;
 
 template<class Fn, class Recv, class... As>
 inline constexpr bool __nothrow =
@@ -285,25 +292,23 @@ struct __let_sig<S, Fn, Which, Env, Sig, false, void> {
     using type = completion_signatures<Sig>;
 };
 
-template<class S, class Fn, class Which, class Env>
-using __successor_env_t = __inner_env<__let_env_t<Which, S, std::decay_t<Env>>,
-                                    std::decay_t<Env>>;
-
 template<class S, class Fn, class Which, class Env, class Tag, class... As>
     requires (std::constructible_from<std::decay_t<As>, As> && ...) &&
              std::invocable<Fn, std::decay_t<As>&...> &&
              sender_in<std::invoke_result_t<Fn, std::decay_t<As>&...>,
-                       __successor_env_t<S, Fn, Which, Env>> &&
+                       __signature_env_t<Which, S, Env>> &&
+             sender_in<std::invoke_result_t<Fn, std::decay_t<As>&...>,
+                       __connected_env_t<__let_env_t<Which, S, Env>, Env>> &&
              requires {
                  typename connect_result_t<std::invoke_result_t<Fn, std::decay_t<As>&...>,
-                     __signature_receiver<__successor_env_t<S, Fn, Which, Env>>>;
+                     __connect_probe_t<__let_env_t<Which, S, Env>, Env>>;
              }
 struct __let_sig<S, Fn, Which, Env, Tag(As...), true, void> {
     using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<As>&...>;
-    using inner_env_t = __successor_env_t<S, Fn, Which, Env>;
-    static constexpr bool nothrow = __nothrow<Fn, __signature_receiver<inner_env_t>, As...>;
+    using primary_env = __let_env_t<Which, S, Env>;
+    static constexpr bool nothrow = __nothrow<Fn, __connect_probe_t<primary_env, Env>, As...>;
     using type = __forge_meta::__concat_unique_cs_t<
-        completion_signatures_of_t<inner_sender_t, inner_env_t>,
+        completion_signatures_of_t<inner_sender_t, __connected_env_t<primary_env, Env>>,
         typename __maybe_eptr_cs<!nothrow>::type>;
 };
 
@@ -368,28 +373,6 @@ struct __state_types<Fn, Recv, Which, Predecessor, completion_signatures<Sigs...
 template<class S, class Fn, class R, class Which>
 struct __op;
 
-template<class R, class LetEnv, class OuterEnv>
-struct __inner_recv {
-    using receiver_concept = receiver_tag;
-    R* __outer;
-    const LetEnv* __primary;
-    const OuterEnv* __environment;
-    template<class... Vs>
-    void set_value(Vs&&... vs) && noexcept {
-        std::execution::set_value(std::move(*__outer), static_cast<Vs&&>(vs)...);
-    }
-    template<class E>
-    void set_error(E&& e) && noexcept {
-        std::execution::set_error(std::move(*__outer), static_cast<E&&>(e));
-    }
-    void set_stopped() && noexcept {
-        std::execution::set_stopped(std::move(*__outer));
-    }
-    auto get_env() const noexcept -> __inner_env<LetEnv, OuterEnv> {
-        return {__primary, __environment};
-    }
-};
-
 template<class S, class Fn, class R, class Which>
 struct __outer_recv {
     using receiver_concept = receiver_tag;
@@ -445,7 +428,7 @@ template<class S, class Fn, class R, class Which>
 concept __connectable = requires {
     typename connect_result_t<S, __outer_recv<S, Fn, R, Which>>;
 } && __successors_connectable<Fn,
-    __inner_recv<R, __let_env_t<Which, S, env_of_t<R>>, std::remove_cvref_t<env_of_t<R>>>,
+    __inner_recv<R, __let_env_t<Which, S, env_of_t<R>>>,
     Which, completion_signatures_of_t<S, env_of_t<R>>>::value;
 
 template<class S, class Fn, class R, class Which>
@@ -453,15 +436,15 @@ struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_tag;
     using outer_env_t = env_of_t<R>;
     using let_env_t = __let_env_t<Which, S, outer_env_t>;
-    using inner_env_t = __inner_env<let_env_t, std::remove_cvref_t<outer_env_t>>;
-
     R __outer_recv_;
-    // The forwarding view used to select __let_env_ borrows this environment.
-    outer_env_t __outer_env_;
+    // Outlives every view of the successor's receiver environment.
+    __forge_env_detail::__receiver_env<R> __outer_env_;
     let_env_t __let_env_;
     Fn __fn_;
 
-    using __inner_recv = __forge_let::__inner_recv<R, let_env_t, std::remove_cvref_t<outer_env_t>>;
+    using __inner_recv = __forge_let::__inner_recv<R, let_env_t>;
+    static_assert(std::same_as<env_of_t<__inner_recv>,
+                               __connected_env_t<let_env_t, outer_env_t>>);
 
     template<class... Vs>
     void __start_inner(Vs&&... vs) noexcept {
@@ -475,7 +458,9 @@ struct __op : __forge_detail::__immovable {
             auto& holder = __inner_ops_.template emplace<__forge_detail::__op_holder<inner_op_t>>(
                 [&]() -> inner_op_t {
                     return std::execution::connect(
-                        static_cast<inner_sender_t&&>(inner_sndr), __inner_recv{std::addressof(__outer_recv_), std::addressof(__let_env_), std::addressof(__outer_env_)});
+                        static_cast<inner_sender_t&&>(inner_sndr), __inner_recv{
+                            std::addressof(__outer_recv_), std::addressof(__let_env_),
+                            std::addressof(__outer_env_)});
                 });
             std::execution::start(holder.__op);
         } catch (...) {
@@ -501,8 +486,8 @@ struct __op : __forge_detail::__immovable {
 
     __op(S sndr, Fn fn, R r)
         : __outer_recv_(std::move(r))
-        , __outer_env_(std::execution::get_env(__outer_recv_))
-        , __let_env_(__make_let_env<Which>(sndr, __outer_env_))
+        , __outer_env_(__outer_recv_)
+        , __let_env_(__make_let_env<Which>(sndr, __outer_env_.__get()))
         , __fn_(std::move(fn))
         , __inner_ops_(std::in_place_type<__forge_detail::__op_holder<__outer_op_t>>,
               [&]() -> __outer_op_t {
@@ -530,7 +515,7 @@ struct __sender {
         completion_signatures_of_t<S, Env>>::type;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
+    static constexpr auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     template<receiver R>
         requires requires { typename __cs<env_of_t<R>>; } && __connectable<S, Fn, R, Which>
@@ -547,8 +532,7 @@ struct __sender {
     }
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(__sndr)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
     }
 };
 

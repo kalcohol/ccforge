@@ -11,8 +11,8 @@ namespace {
 struct multi_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const multi_value_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(int),
             std::execution::set_value_t(double),
@@ -20,7 +20,7 @@ struct multi_value_sender {
         return {};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const multi_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -29,8 +29,8 @@ struct multi_value_sender {
 struct other_multi_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const other_multi_value_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(char),
             std::execution::set_value_t(bool),
@@ -39,7 +39,7 @@ struct other_multi_value_sender {
         return {};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const other_multi_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -52,24 +52,23 @@ struct scheduler_receiver {
     bool* got_scheduler;
     bool* completed;
 
-    friend void tag_invoke(std::execution::set_value_t, scheduler_receiver&& self,
-                           std::execution::inline_scheduler sch) noexcept {
-        *self.got_scheduler = (sch == self.expected);
-        *self.completed = true;
+    void set_value(std::execution::inline_scheduler sch) && noexcept {
+        *this->got_scheduler = (sch == this->expected);
+        *this->completed = true;
     }
 
     template<class E>
-    friend void tag_invoke(std::execution::set_error_t, scheduler_receiver&& self, E&&) noexcept {
-        *self.completed = false;
+    void set_error(E&&) && noexcept {
+        *this->completed = false;
     }
 
-    friend void tag_invoke(std::execution::set_stopped_t, scheduler_receiver&& self) noexcept {
-        *self.completed = false;
+    void set_stopped() && noexcept {
+        *this->completed = false;
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const scheduler_receiver& self) noexcept {
+    auto get_env() const noexcept {
         return std::execution::env{
-            std::execution::prop(std::execution::get_scheduler_t{}, self.expected)};
+            std::execution::prop(std::execution::get_scheduler_t{}, this->expected)};
     }
 };
 
@@ -125,20 +124,19 @@ struct int_error_receiver {
     bool* got_exception_ptr;
 
     template<class... Vs>
-    friend void tag_invoke(std::execution::set_value_t, int_error_receiver&&, Vs&&...) noexcept {}
+    void set_value(Vs&&...) && noexcept {}
 
-    friend void tag_invoke(std::execution::set_error_t, int_error_receiver&& self, int) noexcept {
-        *self.got_int = true;
+    void set_error(int) && noexcept {
+        *this->got_int = true;
     }
 
-    friend void tag_invoke(std::execution::set_error_t, int_error_receiver&& self,
-                           std::exception_ptr) noexcept {
-        *self.got_exception_ptr = true;
+    void set_error(std::exception_ptr) && noexcept {
+        *this->got_exception_ptr = true;
     }
 
-    friend void tag_invoke(std::execution::set_stopped_t, int_error_receiver&&) noexcept {}
+    void set_stopped() && noexcept {}
 
-    friend auto tag_invoke(std::execution::get_env_t, const int_error_receiver&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -177,11 +175,11 @@ struct stop_observing_op {
         }
     }
 
-    friend void tag_invoke(std::execution::start_t, stop_observing_op& self) noexcept {
-        ::new(static_cast<void*>(self.callback_buf)) callback_t(
-            std::execution::get_stop_token(std::execution::get_env(self.rcvr)),
-            callback{&self});
-        self.callback_alive = true;
+    void start() & noexcept {
+        ::new(static_cast<void*>(this->callback_buf)) callback_t(
+            std::execution::get_stop_token(std::execution::get_env(this->rcvr)),
+            callback{this});
+        this->callback_alive = true;
     }
 };
 
@@ -190,19 +188,19 @@ struct stop_observing_sender {
 
     int* observed_stops;
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const stop_observing_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_stopped_t()> {
         return {};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, stop_observing_sender self, R r)
+    auto connect(R r) const
         -> stop_observing_op<R> {
-        return stop_observing_op<R>{std::move(r), self.observed_stops};
+        return stop_observing_op<R>{std::move(r), observed_stops};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const stop_observing_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -216,22 +214,22 @@ struct outer_stop_receiver {
     bool* errored;
 
     template<class... Vs>
-    friend void tag_invoke(std::execution::set_value_t, outer_stop_receiver&& self, Vs&&...) noexcept {
-        *self.errored = true;
+    void set_value(Vs&&...) && noexcept {
+        *this->errored = true;
     }
 
     template<class E>
-    friend void tag_invoke(std::execution::set_error_t, outer_stop_receiver&& self, E&&) noexcept {
-        *self.errored = true;
+    void set_error(E&&) && noexcept {
+        *this->errored = true;
     }
 
-    friend void tag_invoke(std::execution::set_stopped_t, outer_stop_receiver&& self) noexcept {
-        *self.stopped = true;
+    void set_stopped() && noexcept {
+        *this->stopped = true;
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const outer_stop_receiver& self) noexcept {
+    auto get_env() const noexcept {
         return std::execution::env{
-            std::execution::prop(std::execution::get_stop_token_t{}, self.source->get_token())};
+            std::execution::prop(std::execution::get_stop_token_t{}, this->source->get_token())};
     }
 };
 
@@ -271,23 +269,15 @@ struct value_error_receiver {
     int* value;
     bool* errored;
 
-    friend void tag_invoke(
-        std::execution::set_value_t,
-        value_error_receiver&& self,
-        int result) noexcept {
-        *self.value = result;
+    void set_value(int result) && noexcept {
+        *this->value = result;
     }
 
-    friend void tag_invoke(
-        std::execution::set_error_t,
-        value_error_receiver&& self,
-        std::exception_ptr) noexcept {
-        *self.errored = true;
+    void set_error(std::exception_ptr) && noexcept {
+        *this->errored = true;
     }
 
-    friend auto tag_invoke(
-        std::execution::get_env_t,
-        const value_error_receiver&) noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 };
@@ -299,14 +289,9 @@ struct child_query {
     }
 
     template<class Env>
-        requires (requires(const Env& env) { env.query(std::declval<child_query>()); } ||
-                  requires(const Env& env) { tag_invoke(std::declval<child_query>(), env); })
+        requires requires(const Env& env, const child_query& query) { env.query(query); }
     int operator()(const Env& env) const noexcept {
-        if constexpr (requires { env.query(*this); }) {
-            return env.query(*this);
-        } else {
-            return tag_invoke(*this, env);
-        }
+        return env.query(*this);
     }
 };
 
@@ -316,11 +301,6 @@ struct member_child_query_env {
         return 7;
     }
 
-    template<bool Forwarding>
-    friend int tag_invoke(child_query<Forwarding>,
-                          const member_child_query_env&) noexcept {
-        return -7;
-    }
 };
 
 struct tag_child_query_env {
@@ -357,7 +337,7 @@ static_assert(std::is_empty_v<child_query<false>>);
 static_assert(std::forwarding_query(child_query<true>{}));
 static_assert(!std::forwarding_query(child_query<false>{}));
 
-template<bool Forwarding, class Env>
+template<bool Forwarding, class Env, bool HasMember = true>
 void check_child_query_filter() {
     int value = -1;
     bool errored = false;
@@ -368,11 +348,11 @@ void check_child_query_filter() {
     using direct_cs_t = decltype(std::execution::get_completion_signatures(
         direct_sender, std::declval<Env>()));
     static_assert(std::is_same_v<direct_cs_t, std::execution::completion_signatures<
-        std::execution::set_value_t(int)>>);
+        std::execution::set_value_t(std::conditional_t<HasMember, int, bool>)>>);
     auto direct = std::execution::connect(
         std::move(direct_sender), receiver_t{{&value, &errored}, {}});
     std::execution::start(direct);
-    EXPECT_EQ(value, 7);
+    EXPECT_EQ(value, HasMember ? 7 : 0);
     EXPECT_FALSE(errored);
 
     value = -1;
@@ -380,13 +360,13 @@ void check_child_query_filter() {
         std::execution::read_env(observe_child_query<Forwarding>{}));
     using cs_t = decltype(std::execution::get_completion_signatures(
         sndr, std::declval<Env>()));
-    using result_t = std::conditional_t<Forwarding, int, bool>;
+    using result_t = std::conditional_t<Forwarding && HasMember, int, bool>;
     static_assert(std::is_same_v<cs_t, std::execution::completion_signatures<
         std::execution::set_value_t(result_t)>>);
     auto op = std::execution::connect(
         std::move(sndr), receiver_t{{&value, &errored}, {}});
     std::execution::start(op);
-    EXPECT_EQ(value, Forwarding ? 7 : 0);
+    EXPECT_EQ(value, Forwarding && HasMember ? 7 : 0);
     EXPECT_FALSE(errored);
 }
 
@@ -588,9 +568,9 @@ TEST(WhenAllTest, ChildEnvFiltersNonforwardingMemberQueries) {
     check_child_query_filter<false, member_child_query_env>();
 }
 
-TEST(WhenAllTest, ChildEnvFiltersNonforwardingTagQueries) {
-    check_child_query_filter<true, tag_child_query_env>();
-    check_child_query_filter<false, tag_child_query_env>();
+TEST(WhenAllTest, ChildEnvIgnoresTagOnlyQueries) {
+    check_child_query_filter<true, tag_child_query_env, false>();
+    check_child_query_filter<false, tag_child_query_env, false>();
 }
 
 TEST(WhenAllTest, ChildEnvOverridesOuterStopToken) {

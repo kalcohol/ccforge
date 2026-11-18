@@ -25,7 +25,7 @@ struct stop_completion_probe {
         template<class E> void set_error(E&&) && noexcept { finish(); }
         void set_stopped() && noexcept { finish(); }
         auto get_env() const noexcept {
-            return std::execution::prop(std::execution::get_stop_token, token);
+            return std::execution::prop(std::get_stop_token, token);
         }
     };
 

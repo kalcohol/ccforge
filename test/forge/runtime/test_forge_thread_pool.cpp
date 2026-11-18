@@ -45,7 +45,7 @@ struct pre_stopped_receiver {
 
     auto get_env() const noexcept {
         return std::execution::env{std::execution::prop{
-            std::execution::get_stop_token, source->get_token()}};
+            std::get_stop_token, source->get_token()}};
     }
 };
 

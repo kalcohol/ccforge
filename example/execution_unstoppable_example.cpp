@@ -21,7 +21,7 @@
 // SOFTWARE.
 
 // Demonstrates: execution unstoppable
-// Key APIs: std::execution::env, std::execution::prop, std::execution::get_stop_token_t, std::execution::write_env
+// Key APIs: std::execution::env, std::execution::prop, std::get_stop_token_t, std::execution::write_env
 // Requires: SENDERS: injected backport or complete native ; C++23
 // See also: docs/backports/execution.md
 
@@ -36,7 +36,7 @@ namespace {
 
 auto stop_env(std::inplace_stop_token token) {
     return std::execution::env(
-        std::execution::prop(std::execution::get_stop_token_t{}, token));
+        std::execution::prop(std::get_stop_token_t{}, token));
 }
 
 } // namespace
@@ -46,7 +46,7 @@ int main() {
     source.request_stop();
 
     auto observes_outer_stop = std::execution::write_env(
-        std::execution::read_env(std::execution::get_stop_token)
+        std::execution::read_env(std::get_stop_token)
             | std::execution::then([](auto token) {
                   return token.stop_requested();
               }),
@@ -54,7 +54,7 @@ int main() {
 
     auto shielded = std::execution::write_env(
         std::execution::unstoppable(
-            std::execution::read_env(std::execution::get_stop_token)
+            std::execution::read_env(std::get_stop_token)
                 | std::execution::then([](auto token) {
                       return token.stop_possible();
                   })),

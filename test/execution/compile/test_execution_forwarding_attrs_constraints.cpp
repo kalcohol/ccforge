@@ -39,7 +39,6 @@ static_assert(std::is_invocable_v<const actual_query<true>&, const attributes&>)
 static_assert(std::is_invocable_v<actual_query<true>, const attributes&>);
 static_assert(std::is_invocable_v<const actual_query<true>, const attributes&>);
 static_assert(std::is_invocable_v<const actual_query<false>&, const attributes&>);
-static_assert(ex::__forge_detail::tag_invocable<actual_query<false>, const attributes&>);
 static_assert(std::same_as<std::invoke_result_t<const actual_query<true>&, const attributes&>,
     const int&>);
 static_assert(std::is_nothrow_invocable_v<const actual_query<true>&, const attributes&>);
@@ -56,29 +55,50 @@ concept member_queryable = requires(const Env& env, Query query, Args&&... args)
 };
 
 template<class Env, class Query, class... Args>
-constexpr bool queryable_both = member_queryable<Env, Query, Args...> &&
-    ex::__forge_detail::tag_invocable<Query, const Env&, Args...>;
+concept adl_queryable = requires(Env&& env, Query&& query, Args&&... args) {
+    tag_invoke(static_cast<Query&&>(query), static_cast<Env&&>(env),
+        static_cast<Args&&>(args)...);
+};
 
 template<class Env, class Query, class... Args>
-constexpr bool unavailable_both = !member_queryable<Env, Query, Args...> &&
-    !ex::__forge_detail::tag_invocable<Query, const Env&, Args...>;
+constexpr bool member_without_adl =
+    member_queryable<Env, Query, Args...> &&
+    !adl_queryable<Env&, Query, Args...> &&
+    !adl_queryable<const Env&, Query, Args...> &&
+    !adl_queryable<Env, Query, Args...> &&
+    !adl_queryable<const Env, Query, Args...>;
+
+// Neither the member nor an unqualified ADL call answers.
+template<class Env, class Query, class... Args>
+constexpr bool unavailable_both =
+    !member_queryable<Env, Query, Args...> &&
+    !adl_queryable<Env&, Query, Args...> &&
+    !adl_queryable<const Env&, Query, Args...> &&
+    !adl_queryable<Env, Query, Args...> &&
+    !adl_queryable<const Env, Query, Args...>;
 
 template<class Env>
 void check_queries() {
     static_assert(unavailable_both<Env, local_query>);
     static_assert(unavailable_both<Env, blocked_query>);
     static_assert(unavailable_both<Env, missing_query>);
-    // Legal actual queries outside the default-instance gate remain a documented boundary.
-    static_assert(unavailable_both<Env, actual_query<true>>);
+    // FWD-ENV classifies the supplied query; no default instance is needed
+    // ([exec.snd.expos]/4, [exec.fwd.env]/2.1).
+    static_assert(member_without_adl<Env, actual_query<true>>);
     static_assert(unavailable_both<Env, actual_query<false>>);
-    static_assert(unavailable_both<Env, actual_query<true>, argument&>);
-    static_assert(queryable_both<Env, value_query>);
-    static_assert(queryable_both<Env, reference_query>);
-    static_assert(queryable_both<Env, marked_query>);
+    static_assert(member_without_adl<Env, actual_query<true>, argument&>);
+    static_assert(std::same_as<decltype(std::declval<const Env&>().query(actual_forwarding)),
+        const int&>);
+    static_assert(noexcept(std::declval<const Env&>().query(actual_forwarding)));
+    static_assert(!noexcept(std::declval<const Env&>().query(
+        actual_forwarding, std::declval<argument&>())));
+    static_assert(member_without_adl<Env, value_query>);
+    static_assert(member_without_adl<Env, reference_query>);
+    static_assert(member_without_adl<Env, marked_query>);
     static_assert(!std::is_invocable_v<local_query, const Env&>);
     static_assert(!std::is_invocable_v<blocked_query, const Env&>);
     static_assert(!std::is_invocable_v<missing_query, const Env&>);
-    static_assert(!std::is_invocable_v<const actual_query<true>&, const Env&>);
+    static_assert(std::is_invocable_v<const actual_query<true>&, const Env&>);
     static_assert(!std::is_invocable_v<const actual_query<false>&, const Env&>);
 
     static_assert(std::same_as<decltype(std::declval<const Env&>().query(reference_query{})),
@@ -87,22 +107,20 @@ void check_queries() {
     static_assert(noexcept(std::declval<const Env&>().query(value_query{})));
     static_assert(std::is_nothrow_invocable_v<reference_query, const Env&>);
 
-    static_assert(queryable_both<Env, argument_query, argument&, int>);
-    static_assert(queryable_both<Env, argument_query, argument, int>);
+    static_assert(member_without_adl<Env, argument_query, argument&, int>);
+    static_assert(member_without_adl<Env, argument_query, argument, int>);
     static_assert(unavailable_both<Env, argument_query>);
     static_assert(unavailable_both<Env, argument_query, const argument&, int>);
     static_assert(std::is_nothrow_invocable_v<argument_query, const Env&, argument&, int>);
     static_assert(!std::is_nothrow_invocable_v<argument_query, const Env&, argument, int>);
 
     using domain_query = ex::get_completion_domain_t<>;
-    static_assert(queryable_both<Env, domain_query, receiver_env>);
+    static_assert(member_without_adl<Env, domain_query, receiver_env>);
     static_assert(unavailable_both<Env, domain_query>);
     static_assert(unavailable_both<Env, domain_query, forge::empty_env>);
     static_assert(std::same_as<decltype(std::declval<const Env&>().query(
         domain_query{}, receiver_env{})), member_domain>);
     static_assert(!noexcept(std::declval<const Env&>().query(domain_query{}, receiver_env{})));
-    static_assert(!ex::__forge_detail::nothrow_tag_invocable<
-        domain_query, const Env&, receiver_env>);
     static_assert(std::same_as<std::invoke_result_t<domain_query, const Env&, receiver_env>,
         member_domain>);
     static_assert(std::is_nothrow_invocable_v<domain_query, const Env&, receiver_env>);
@@ -110,14 +128,12 @@ void check_queries() {
     static_assert(!std::is_invocable_v<domain_query, const Env&, forge::empty_env>);
 
     using value_domain_query = ex::get_completion_domain_t<ex::set_value_t>;
-    static_assert(queryable_both<Env, value_domain_query, receiver_env>);
+    static_assert(member_without_adl<Env, value_domain_query, receiver_env>);
     static_assert(unavailable_both<Env, value_domain_query>);
     static_assert(unavailable_both<Env, value_domain_query, forge::empty_env>);
     static_assert(std::same_as<decltype(std::declval<const Env&>().query(
         value_domain_query{}, receiver_env{})), tag_domain>);
     static_assert(noexcept(std::declval<const Env&>().query(value_domain_query{}, receiver_env{})));
-    static_assert(ex::__forge_detail::nothrow_tag_invocable<
-        value_domain_query, const Env&, receiver_env>);
     static_assert(std::same_as<std::invoke_result_t<value_domain_query, const Env&, receiver_env>,
         tag_domain>);
 }
@@ -156,15 +172,16 @@ struct constexpr_source {
 };
 
 using constexpr_env = ex::env_of_t<decltype(ex::then(constexpr_source{}, value_callback{}))>;
-constexpr constexpr_env constexpr_attrs{{21}};
+constexpr constexpr_source constexpr_origin{};
+constexpr constexpr_env constexpr_attrs = constexpr_env::__of(constexpr_origin);
 static_assert(constexpr_attrs.query(value_query{}) == 21);
 static_assert(value_query{}(constexpr_attrs) == 21);
-static_assert(ex::__forge_detail::tag_invoke_fn(value_query{}, constexpr_attrs) == 21);
 constexpr constexpr_attributes constexpr_raw_attrs{21};
 static_assert(actual_forwarding(constexpr_raw_attrs) == 21);
 static_assert(std::addressof(actual_forwarding(constexpr_raw_attrs)) ==
     std::addressof(constexpr_raw_attrs.value));
-static_assert(!std::is_invocable_v<const actual_query<true>&, const constexpr_env&>);
+static_assert(std::is_invocable_v<const actual_query<true>&, const constexpr_env&>);
+static_assert(actual_forwarding(constexpr_attrs) == 21);
 
 int main() {
     attribute_state state;

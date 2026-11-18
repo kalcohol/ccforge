@@ -42,11 +42,11 @@ struct destroying_receiver {
     template<class E> void set_error(E&&) && noexcept { finish(); }
     void set_stopped() && noexcept { finish(); }
     auto get_env() const noexcept {
-        return std::execution::prop(std::execution::get_stop_token, token);
+        return std::execution::prop(std::get_stop_token, token);
     }
 };
 
-static_assert(std::is_reference_v<decltype(std::execution::get_stop_token(
+static_assert(std::is_reference_v<decltype(std::get_stop_token(
     std::execution::get_env(std::declval<const destroying_receiver&>())))>);
 
 struct stop_inline_sender {
@@ -65,12 +65,12 @@ struct stop_inline_sender {
                 std::execution::set_stopped(std::move(current->receiver));
             }
         };
-        using token_t = decltype(std::execution::get_stop_token(
+        using token_t = decltype(std::get_stop_token(
             std::execution::get_env(std::declval<const R&>())));
         std::optional<std::stop_callback_for_t<token_t, notify>> registration;
         explicit op(R r) : receiver(std::move(r)) {}
         void start() & noexcept {
-            registration.emplace(std::execution::get_stop_token(
+            registration.emplace(std::get_stop_token(
                 std::execution::get_env(receiver)), notify{this});
         }
     };

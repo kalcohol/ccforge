@@ -69,19 +69,11 @@ struct set_value_t {
     template<class R, class... Vs>
         requires (!std::is_lvalue_reference_v<R> &&
                   !std::is_const_v<std::remove_reference_t<R>>) &&
-                 (__forge_cpo_detail::__member_set_value<R, Vs...> ||
-                  __forge_detail::tag_invocable<set_value_t, R, Vs...>)
+                 __forge_cpo_detail::__member_set_value<R, Vs...>
     void operator()(R&& r, Vs&&... vs) const noexcept {
-        if constexpr (__forge_cpo_detail::__member_set_value<R, Vs...>) {
-            static_assert(__forge_cpo_detail::__nothrow_member_set_value<R, Vs...>,
-                          "set_value(receiver, ...) must be noexcept and return void");
-            static_cast<R&&>(r).set_value(static_cast<Vs&&>(vs)...);
-        } else {
-            static_assert(__forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>,
-                          "set_value(receiver, ...) must be noexcept");
-            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_value_t, R, Vs...>, void>);
-            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<Vs&&>(vs)...);
-        }
+        static_assert(__forge_cpo_detail::__nothrow_member_set_value<R, Vs...>,
+                      "set_value(receiver, ...) must be noexcept and return void");
+        static_cast<R&&>(r).set_value(static_cast<Vs&&>(vs)...);
     }
 };
 
@@ -89,19 +81,11 @@ struct set_error_t {
     template<class R, class E>
         requires (!std::is_lvalue_reference_v<R> &&
                   !std::is_const_v<std::remove_reference_t<R>>) &&
-                 (__forge_cpo_detail::__member_set_error<R, E> ||
-                  __forge_detail::tag_invocable<set_error_t, R, E>)
+                 __forge_cpo_detail::__member_set_error<R, E>
     void operator()(R&& r, E&& e) const noexcept {
-        if constexpr (__forge_cpo_detail::__member_set_error<R, E>) {
-            static_assert(__forge_cpo_detail::__nothrow_member_set_error<R, E>,
-                          "set_error(receiver, error) must be noexcept and return void");
-            static_cast<R&&>(r).set_error(static_cast<E&&>(e));
-        } else {
-            static_assert(__forge_detail::nothrow_tag_invocable<set_error_t, R, E>,
-                          "set_error(receiver, error) must be noexcept");
-            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_error_t, R, E>, void>);
-            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r), static_cast<E&&>(e));
-        }
+        static_assert(__forge_cpo_detail::__nothrow_member_set_error<R, E>,
+                      "set_error(receiver, error) must be noexcept and return void");
+        static_cast<R&&>(r).set_error(static_cast<E&&>(e));
     }
 };
 
@@ -109,19 +93,11 @@ struct set_stopped_t {
     template<class R>
         requires (!std::is_lvalue_reference_v<R> &&
                   !std::is_const_v<std::remove_reference_t<R>>) &&
-                 (__forge_cpo_detail::__member_set_stopped<R> ||
-                  __forge_detail::tag_invocable<set_stopped_t, R>)
+                 __forge_cpo_detail::__member_set_stopped<R>
     void operator()(R&& r) const noexcept {
-        if constexpr (__forge_cpo_detail::__member_set_stopped<R>) {
-            static_assert(__forge_cpo_detail::__nothrow_member_set_stopped<R>,
-                          "set_stopped(receiver) must be noexcept and return void");
-            static_cast<R&&>(r).set_stopped();
-        } else {
-            static_assert(__forge_detail::nothrow_tag_invocable<set_stopped_t, R>,
-                          "set_stopped(receiver) must be noexcept");
-            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<set_stopped_t, R>, void>);
-            __forge_detail::tag_invoke_fn(*this, static_cast<R&&>(r));
-        }
+        static_assert(__forge_cpo_detail::__nothrow_member_set_stopped<R>,
+                      "set_stopped(receiver) must be noexcept and return void");
+        static_cast<R&&>(r).set_stopped();
     }
 };
 
@@ -197,9 +173,6 @@ consteval bool __valid_member_completion_signatures() {
     } else if constexpr (__instance_completion_signatures<S, Env>) {
         return __valid_completion_signatures<decltype(std::declval<S>()
             .get_completion_signatures(std::declval<Env>()))>;
-    } else if constexpr (__forge_detail::tag_invocable<get_completion_signatures_t, S, Env>) {
-        return __valid_completion_signatures<__forge_detail::tag_invoke_result_t<
-            get_completion_signatures_t, S, Env>>;
     } else {
         return false;
     }
@@ -231,8 +204,7 @@ concept __await_signatures_available =
 
 template<class S, class Env>
 concept __member_signatures_selected = __static_completion_signatures<S, Env> ||
-    __instance_completion_signatures<S, Env> ||
-    __forge_detail::tag_invocable<get_completion_signatures_t, S, Env>;
+    __instance_completion_signatures<S, Env>;
 
 template<class S, class Env>
 concept __raw_completion_signatures_available =
@@ -246,8 +218,7 @@ consteval bool __completion_signatures_noexcept() {
     } else if constexpr (__instance_completion_signatures<S, Env>) {
         return __nothrow_instance_completion_signatures<S, Env>;
     } else {
-        return !__forge_detail::tag_invocable<get_completion_signatures_t, S, Env> ||
-            __forge_detail::nothrow_tag_invocable<get_completion_signatures_t, S, Env>;
+        return true;
     }
 }
 
@@ -331,9 +302,6 @@ decltype(auto) __raw_completion_signatures(S&& s, Env&& env)
         return std::remove_cvref_t<S>::template get_completion_signatures<S, std::remove_cvref_t<Env>>();
     } else if constexpr (__instance_completion_signatures<S, Env>) {
         return static_cast<S&&>(s).get_completion_signatures(static_cast<Env&&>(env));
-    } else if constexpr (__forge_detail::tag_invocable<get_completion_signatures_t, S, Env>) {
-        return __forge_detail::tag_invoke_fn(
-            get_completion_signatures_t{}, static_cast<S&&>(s), static_cast<Env&&>(env));
     } else {
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
         return __await_completion_signatures<S, Env>{};
@@ -886,7 +854,6 @@ struct default_domain {
         return Tag{}.apply_sender(
             static_cast<Sender&&>(sndr), static_cast<Args&&>(args)...);
     }
-
 };
 
 template<class... Domains>
@@ -931,16 +898,6 @@ struct __queried_domain<Query, Env, Args...> {
         std::declval<const std::remove_reference_t<Env>&>().query(
             std::declval<const Query&>(), std::declval<Args>()...))>;
 };
-
-#if !defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) || !FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-template<class Query, class Env, class... Args>
-    requires (!__forge_env_detail::__member_query<Query, Env, Args...>) &&
-             __forge_detail::tag_invocable<Query, Env, Args...>
-struct __queried_domain<Query, Env, Args...> {
-    using type = std::remove_cvref_t<
-        __forge_detail::tag_invoke_result_t<Query, Env, Args...>>;
-};
-#endif
 
 template<class Query, class Env, class... Args>
 using __queried_domain_t =
@@ -1047,7 +1004,7 @@ public:
         return {};
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_domain_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -1109,7 +1066,7 @@ struct get_domain_t {
         return {};
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_domain_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -1119,18 +1076,11 @@ inline constexpr get_domain_t get_domain{};
 struct start_t {
     template<class O>
         requires std::is_lvalue_reference_v<O> &&
-                 (requires(O&& op) { op.start(); } ||
-                  __forge_detail::tag_invocable<start_t, O>)
+                 requires(O&& op) { op.start(); }
     void operator()(O&& op) const noexcept {
-        if constexpr (requires { op.start(); }) {
-            static_assert(noexcept(op.start()), "start() must be noexcept");
-            static_assert(std::same_as<decltype(op.start()), void>, "start() must return void");
-            op.start();
-        } else {
-            static_assert(__forge_detail::nothrow_tag_invocable<start_t, O&>, "start() must be noexcept");
-            static_assert(std::same_as<__forge_detail::tag_invoke_result_t<start_t, O>, void>);
-            __forge_detail::tag_invoke_fn(*this, op);
-        }
+        static_assert(noexcept(op.start()), "start() must be noexcept");
+        static_assert(std::same_as<decltype(op.start()), void>, "start() must return void");
+        op.start();
     }
 };
 inline constexpr start_t start{};
@@ -1166,20 +1116,17 @@ struct receiver_accepts : std::false_type {};
 template<class R, class... Vs>
 struct receiver_accepts<R, set_value_t(Vs...)>
     : std::bool_constant<
-          __forge_cpo_detail::__nothrow_member_set_value<R, Vs...> ||
-          __forge_detail::nothrow_tag_invocable<set_value_t, R, Vs...>> {};
+          __forge_cpo_detail::__nothrow_member_set_value<R, Vs...>> {};
 
 template<class R, class E>
 struct receiver_accepts<R, set_error_t(E)>
     : std::bool_constant<
-          __forge_cpo_detail::__nothrow_member_set_error<R, E> ||
-          __forge_detail::nothrow_tag_invocable<set_error_t, R, E>> {};
+          __forge_cpo_detail::__nothrow_member_set_error<R, E>> {};
 
 template<class R>
 struct receiver_accepts<R, set_stopped_t()>
     : std::bool_constant<
-          __forge_cpo_detail::__nothrow_member_set_stopped<R> ||
-          __forge_detail::nothrow_tag_invocable<set_stopped_t, R>> {};
+          __forge_cpo_detail::__nothrow_member_set_stopped<R>> {};
 
 template<class R, class Sig>
 inline constexpr bool receiver_accepts_v = receiver_accepts<R, Sig>::value;
@@ -1223,19 +1170,20 @@ template<class S,
          template<class...> class Tuple = __forge_meta::__decayed_tuple,
          template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
-using value_types_of_t =
-    typename __forge_meta::__value_types_of<S, Env, Tuple, Variant>::type;
+using value_types_of_t = typename __forge_meta::value_types_from<
+    completion_signatures_of_t<S, Env>, Tuple, Variant>::type;
 
 template<class S,
          class Env = env<>,
          template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
-using error_types_of_t =
-    typename __forge_meta::__error_types_of<S, Env, Variant>::type;
+using error_types_of_t = typename __forge_meta::error_types_from<
+    completion_signatures_of_t<S, Env>, Variant>::type;
 
 template<class S, class Env = env<>>
     requires sender_in<S, Env>
-inline constexpr bool sends_stopped = __forge_meta::__sends_stopped_v<S, Env>;
+inline constexpr bool sends_stopped =
+    __forge_meta::sends_stopped_from<completion_signatures_of_t<S, Env>>::value;
 
 } // namespace std::execution
 #include "detail/connect_awaitable.hpp"
@@ -1257,7 +1205,7 @@ concept __nothrow_member_connect = requires(S&& s, R&& r) {
 
 template<class S, class R>
 concept __direct_connectable =
-    __member_connect<S, R> || __forge_detail::tag_invocable<connect_t, S, R>
+    __member_connect<S, R>
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
     || __forge_awaitable::__connect_awaitable_available<S, R>
 #endif
@@ -1267,8 +1215,6 @@ template<class S, class R>
 consteval bool __direct_noexcept() {
     if constexpr (__member_connect<S, R>) {
         return __nothrow_member_connect<S, R>;
-    } else if constexpr (__forge_detail::tag_invocable<connect_t, S, R>) {
-        return __forge_detail::nothrow_tag_invocable<connect_t, S, R>;
     } else {
         return false; // A coroutine frame uses the global allocator.
     }
@@ -1681,12 +1627,10 @@ consteval bool __connect_noexcept() {
 }
 
 template<class S, class R>
-decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
+decltype(auto) __direct_connect(S&& s, R&& r)
     noexcept(__direct_noexcept<S, R>()) {
     if constexpr (__member_connect<S, R>) {
         return static_cast<S&&>(s).connect(static_cast<R&&>(r));
-    } else if constexpr (__forge_detail::tag_invocable<connect_t, S, R>) {
-        return __forge_detail::tag_invoke_fn(tag, static_cast<S&&>(s), static_cast<R&&>(r));
     } else {
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
         return __forge_awaitable::__connect_awaitable<std::decay_t<S>, std::decay_t<R>>(
@@ -1696,12 +1640,11 @@ decltype(auto) __direct_connect(const connect_t& tag, S&& s, R&& r)
 }
 
 template<class S, class R>
-decltype(auto) __domain_connect(const connect_t& tag, S&& s, R&& r)
+decltype(auto) __domain_connect(S&& s, R&& r)
     noexcept(__connect_noexcept<S, R>()) {
     decltype(auto) env = std::execution::get_env(r);
     decltype(auto) ts = __transform_sender_for_connect(static_cast<S&&>(s), env);
     return __direct_connect(
-        tag,
         static_cast<decltype(ts)&&>(ts),
         static_cast<R&&>(r));
 }
@@ -1714,9 +1657,9 @@ struct connect_t {
     auto operator()(S&& s, R&& r) const
         noexcept(__forge_domain::__connect_noexcept<S, R>()) {
         if constexpr (__forge_domain::__default_connect_domains<S, R>) {
-            return __forge_domain::__direct_connect(*this, static_cast<S&&>(s), static_cast<R&&>(r));
+            return __forge_domain::__direct_connect(static_cast<S&&>(s), static_cast<R&&>(r));
         } else {
-            return __forge_domain::__domain_connect(*this, static_cast<S&&>(s), static_cast<R&&>(r));
+            return __forge_domain::__domain_connect(static_cast<S&&>(s), static_cast<R&&>(r));
         }
     }
 };
@@ -1753,41 +1696,17 @@ concept __nothrow_member_schedule = requires(S&& s) {
     { static_cast<S&&>(s).schedule() } noexcept;
 };
 
-template<class S>
-consteval bool __schedule_noexcept() {
-    if constexpr (__member_schedule<S>) {
-        return __nothrow_member_schedule<S>;
-    } else {
-        return __forge_detail::nothrow_tag_invocable<schedule_t, S>;
-    }
-}
-
-} // namespace __forge_cpo_detail
-
-namespace __forge_cpo_detail {
-template<class S>
-    requires __member_schedule<S>
-auto __schedule_type() -> std::type_identity<decltype(std::declval<S>().schedule())>;
-
-template<class S>
-    requires (!__member_schedule<S>) && __forge_detail::tag_invocable<schedule_t, S>
-auto __schedule_type() -> std::type_identity<__forge_detail::tag_invoke_result_t<schedule_t, S>>;
 } // namespace __forge_cpo_detail
 
 struct schedule_t {
     template<class S>
-        requires (__forge_cpo_detail::__member_schedule<S> ||
-                  __forge_detail::tag_invocable<schedule_t, S>)
+        requires __forge_cpo_detail::__member_schedule<S>
     constexpr auto operator()(S&& s) const
-        noexcept(__forge_cpo_detail::__schedule_noexcept<S>())
-        -> typename decltype(__forge_cpo_detail::__schedule_type<S>())::type {
-        using result_t = typename decltype(__forge_cpo_detail::__schedule_type<S>())::type;
+        noexcept(__forge_cpo_detail::__nothrow_member_schedule<S>)
+        -> decltype(static_cast<S&&>(s).schedule()) {
+        using result_t = decltype(static_cast<S&&>(s).schedule());
         static_assert(sender<result_t>, "schedule must return a sender");
-        if constexpr (__forge_cpo_detail::__member_schedule<S>) {
-            return static_cast<S&&>(s).schedule();
-        } else {
-            return __forge_detail::tag_invoke_fn(*this, static_cast<S&&>(s));
-        }
+        return static_cast<S&&>(s).schedule();
     }
 };
 inline constexpr schedule_t schedule{};

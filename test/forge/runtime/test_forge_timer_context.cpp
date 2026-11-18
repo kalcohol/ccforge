@@ -119,7 +119,7 @@ struct pre_stopped_timer_receiver : timer_receiver {
     auto get_env() const noexcept {
         return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token())};
+                std::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -129,7 +129,7 @@ struct stopped_timer_receiver : timer_receiver {
     auto get_env() const noexcept {
         return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token())};
+                std::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -137,7 +137,7 @@ struct noncopyable_timer_env {
     std::inplace_stop_token token;
     explicit noncopyable_timer_env(std::inplace_stop_token t) : token(t) {}
     noncopyable_timer_env(const noncopyable_timer_env&) = delete;
-    auto query(std::execution::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
 };
 
 struct borrowed_timer_receiver : timer_receiver {
@@ -176,7 +176,7 @@ struct self_destroying_timer_receiver {
     auto get_env() const noexcept {
         return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token())};
+                std::get_stop_token_t{}, source->get_token())};
     }
 };
 

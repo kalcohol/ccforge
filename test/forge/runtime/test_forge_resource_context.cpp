@@ -50,7 +50,7 @@ struct stop_probe_sender {
         op& operator=(const op&) = delete;
 
         void start() & noexcept {
-            auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+            auto token = std::get_stop_token(std::execution::get_env(rcvr));
             probe->possible = token.stop_possible();
             probe->requested = token.stop_requested();
             std::execution::set_value(std::move(rcvr));

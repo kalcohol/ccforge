@@ -240,8 +240,9 @@ using bad_successor = decltype(ex::let_value(ex::just(1), disconnected_successor
 static_assert(!ex::sender_in<bad_successor> && !connectable<bad_successor>);
 // A successor may accept the signature oracle but reject the actual receiver2.
 template<class R> struct signature_oracle : std::false_type {};
-template<class Env>
-struct signature_oracle<ex::__forge_let::__signature_receiver<Env>> : std::true_type {};
+template<class Env, class PrimaryEnv>
+struct signature_oracle<ex::__forge_let::__inner_recv<
+    ex::__forge_let::__signature_receiver<Env>, PrimaryEnv>> : std::true_type {};
 struct oracle_only_sender : value_only {
     template<class R> requires signature_oracle<R>::value
     auto connect(R r) const noexcept -> ex::connect_result_t<j, R> {

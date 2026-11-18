@@ -51,7 +51,7 @@ struct stop_probe_sender {
         op& operator=(const op&) = delete;
 
         void start() & noexcept {
-            auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+            auto token = std::get_stop_token(std::execution::get_env(rcvr));
             probe->possible = token.stop_possible();
             probe->requested = token.stop_requested();
             std::execution::set_value(std::move(rcvr));
@@ -139,7 +139,7 @@ struct teardown_env_sender {
         op& operator=(const op&) = delete;
 
         ~op() {
-            auto token = std::execution::get_stop_token(
+            auto token = std::get_stop_token(
                 std::execution::get_env(rcvr));
             probe->possible = token.stop_possible();
             probe->requested = token.stop_requested();
@@ -398,7 +398,7 @@ TEST(AsyncScopeTest, StopRequestReturnsBeforeSpawnedOperationRetires) {
     forge::async_scope scope;
     int calls = 0;
     ASSERT_TRUE(scope.spawn(std::execution::then(
-        std::execution::read_env(std::execution::get_stop_token),
+        std::execution::read_env(std::get_stop_token),
         [&scope, &calls](auto token) {
             std::inplace_stop_callback registration(token, [&calls]() noexcept { ++calls; });
             scope.request_stop();

@@ -25,7 +25,10 @@
 #include "detail.hpp"
 #include "stop_token.hpp"
 
+#include <array>
+#include <bit>
 #include <concepts>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <tuple>
@@ -36,28 +39,25 @@ namespace std {
 
 struct forwarding_query_t {
     template<class Query>
-    constexpr bool operator()(Query query) const noexcept {
-        if constexpr (requires { query.query(*this); }) {
-            static_assert(noexcept(query.query(*this)), "forwarding query must be noexcept");
-            static_assert(std::same_as<decltype(query.query(*this)), bool>,
-                          "forwarding query must return bool");
-            return query.query(*this);
-        } else if constexpr (std::execution::__forge_detail::tag_invocable<
-                                 forwarding_query_t, Query>) {
-            static_assert(std::execution::__forge_detail::nothrow_tag_invocable<
-                              forwarding_query_t, Query>);
-            static_assert(std::same_as<std::execution::__forge_detail::tag_invoke_result_t<
-                              forwarding_query_t, Query>, bool>);
-            return std::execution::__forge_detail::tag_invoke_fn(*this, query);
-        } else if constexpr (std::derived_from<std::remove_cvref_t<Query>, forwarding_query_t>) {
-            return true;
-        } else {
-            return false;
-        }
-    }
+    constexpr bool operator()(Query&& query) const noexcept;
 };
 
 inline constexpr forwarding_query_t forwarding_query{};
+
+template<class Query>
+constexpr bool forwarding_query_t::operator()(Query&& query) const noexcept {
+    if constexpr (requires { static_cast<Query&&>(query).query(std::forwarding_query); }) {
+        static_assert(noexcept(static_cast<Query&&>(query).query(std::forwarding_query)),
+                      "forwarding query must be noexcept");
+        static_assert(std::same_as<decltype(static_cast<Query&&>(query).query(std::forwarding_query)), bool>,
+                      "forwarding query must return bool");
+        return static_cast<Query&&>(query).query(std::forwarding_query);
+    } else if constexpr (std::derived_from<std::remove_cvref_t<Query>, forwarding_query_t>) {
+        return true;
+    } else {
+        return false;
+    }
+}
 
 } // namespace std
 
@@ -116,42 +116,31 @@ concept __nothrow_member_query = requires(
     { env.query(query, static_cast<Args&&>(args)...) } noexcept;
 };
 
-// Test-only: define consistently in every translation unit of a test executable.
-// Keep default constraint expressions unchanged: extra true atoms affect subsumption.
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
 template<class Query, class Env, class... Args>
 concept __queryable = __member_query<Query, Env, Args...>;
 
 template<class Query, class Env, class... Args>
 inline constexpr bool __nothrow_query =
     __nothrow_member_query<Query, Env, Args...>;
-#else
-template<class Query, class Env, class... Args>
-concept __queryable =
-    __member_query<Query, Env, Args...> ||
-    __forge_detail::tag_invocable<Query, Env, Args...>;
-
-template<class Query, class Env, class... Args>
-inline constexpr bool __nothrow_query =
-    (__member_query<Query, Env, Args...> &&
-     __nothrow_member_query<Query, Env, Args...>) ||
-    (!__member_query<Query, Env, Args...> &&
-     __forge_detail::nothrow_tag_invocable<Query, Env, Args...>);
-#endif
 
 template<class Query, class Env, class... Args>
     requires __queryable<Query, Env, Args...>
-constexpr decltype(auto) __query(Query query, Env&& env, Args&&... args)
+constexpr decltype(auto) __query(const Query& query, Env&& env, Args&&... args)
     noexcept(__nothrow_query<Query, Env, Args...>) {
-    if constexpr (__member_query<Query, Env, Args...>) {
-        return static_cast<const std::remove_reference_t<Env>&>(env)
-            .query(query, static_cast<Args&&>(args)...);
-    } else {
-        return __forge_detail::tag_invoke_fn(
-            std::move(query),
-            static_cast<Env&&>(env),
-            static_cast<Args&&>(args)...);
-    }
+    return static_cast<const std::remove_reference_t<Env>&>(env)
+        .query(query, static_cast<Args&&>(args)...);
+}
+
+// The locked when_all and counting_scope environments hand over a tag that
+// they took by value. As at 8de815c, the member then sees that named, mutable
+// tag; batch E replaces those callers.
+template<class Query, class Env, class... Args>
+    requires (!std::is_reference_v<Query>) && (!std::is_const_v<Query>) &&
+             __queryable<Query, Env, Args...>
+constexpr decltype(auto) __query(Query&& query, Env&& env, Args&&... args)
+    noexcept(__nothrow_query<Query, Env, Args...>) {
+    return static_cast<const std::remove_reference_t<Env>&>(env)
+        .query(query, static_cast<Args&&>(args)...);
 }
 
 template<class Query>
@@ -161,38 +150,66 @@ concept __forwarding_query = requires {
         std::forwarding_query(std::remove_cvref_t<Query>{})>;
 };
 
-// FWD-ENV classifies the query object; derived tags need no construction.
+// The forwarding-query concept of [execution.syn], which [exec.let]/8.2 applies
+// to the type of q. A deleted or missing default constructor and a constant
+// false leave it unsatisfied. A well-formed forwarding_query(Q{}) that is not a
+// constant expression is ill-formed, as for any atomic constraint.
 template<class Query>
-concept __fwd_env_query =
-    (std::derived_from<std::remove_cvref_t<Query>, std::forwarding_query_t> &&
-     !requires(std::remove_cvref_t<Query>& q) { q.query(std::forwarding_query); } &&
-     !__forge_detail::tag_invocable<std::forwarding_query_t, std::remove_cvref_t<Query>>) ||
-    __forwarding_query<Query>;
+concept __forwarding_query_type = std::forwarding_query(Query{});
 
-// Env is the exact get_env result: own values, but retain borrowed references.
-template<class Env>
-struct __forwarding_attrs {
-    using __env_t = std::remove_reference_t<Env>;
-    // Keep prvalue ownership portable when attributes cannot be moved.
-    Env __env;
+// FWD-ENV classifies the supplied query object with its own qualification
+// ([exec.snd.expos]/4, [exec.fwd.env]/2). Participation is decided from the
+// type, where the object's value is unavailable, so a classifier member is
+// evaluated on a stand-in instance that carries the supplied qualification.
+// An empty trivially copyable type has no state to read and needs no
+// constructor. Any other type is value-initialized, which gives the answer of
+// every object whose classification is an invariant of its type.
+template<class Query>
+concept __fwd_env_stateless_instance =
+    std::is_empty_v<Query> && std::is_trivially_copyable_v<Query>;
 
-    template<class Query, class... Args>
-        requires __fwd_env_query<Query> &&
-                 __queryable<Query, const __env_t&, Args...>
-    constexpr decltype(auto) query(Query q, Args&&... args) const
-        noexcept(__nothrow_query<Query, const __env_t&, Args...>) {
-        return __query(std::move(q), static_cast<const __env_t&>(__env),
-                       static_cast<Args&&>(args)...);
+template<class Query>
+    requires __fwd_env_stateless_instance<std::remove_cvref_t<Query>> ||
+             requires { std::remove_cvref_t<Query>{}; }
+constexpr bool __classify_fwd_env_instance() {
+    using query_t = std::remove_cvref_t<Query>;
+    if constexpr (__fwd_env_stateless_instance<query_t>) {
+        query_t instance = std::bit_cast<query_t>(std::array<std::byte, sizeof(query_t)>{});
+        return std::forwarding_query(static_cast<Query&&>(instance));
+    } else {
+        query_t instance{};
+        return std::forwarding_query(static_cast<Query&&>(instance));
     }
+}
 
-    template<class Query, class... Args>
-        requires __fwd_env_query<Query> &&
-                 __queryable<Query, const __env_t&, Args...>
-    friend constexpr decltype(auto) tag_invoke(
-        Query q, const __forwarding_attrs& self, Args&&... args)
-        noexcept(__nothrow_query<Query, const __env_t&, Args...>) {
-        return self.query(std::move(q), static_cast<Args&&>(args)...);
-    }
+template<class Query>
+concept __fwd_env_classifier_member = requires(Query&& q) {
+    static_cast<Query&&>(q).query(std::forwarding_query);
+};
+
+// Without a classifier member the base-class rule of [exec.fwd.env]/2.2-2.3
+// decides from the type alone. A classifier member that cannot be evaluated
+// in a constant expression stays in the type-substitution failure path.
+template<class Query>
+concept __qualified_fwd_env_query =
+    (!__fwd_env_classifier_member<Query> &&
+     std::derived_from<std::remove_cvref_t<Query>, std::forwarding_query_t>) ||
+    (__fwd_env_classifier_member<Query> &&
+     requires { typename std::enable_if_t<__classify_fwd_env_instance<Query>()>; });
+
+// A forwarded environment is queried as a const lvalue, whatever the value
+// category of the expression that produced it. Env is the type of that
+// expression.
+template<class Query, class Env, class... Args>
+concept __raw_queryable = requires(
+    const std::remove_reference_t<Env>& env, Query&& q, Args&&... args) {
+    env.query(static_cast<Query&&>(q), static_cast<Args&&>(args)...);
+};
+
+template<class Query, class Env, class... Args>
+concept __nothrow_raw_queryable = requires(
+    const std::remove_reference_t<Env>& env, Query&& q, Args&&... args) {
+    { env.query(static_cast<Query&&>(q), static_cast<Args&&>(args)...) } noexcept;
 };
 
 } // namespace __forge_env_detail
@@ -202,7 +219,7 @@ struct get_scheduler_t {
         requires (__forge_env_detail::__composed_scheduler_query<Env>())
     constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_scheduler_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -221,7 +238,7 @@ struct get_start_scheduler_t {
         return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_start_scheduler_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -240,7 +257,7 @@ struct get_delegation_scheduler_t {
         return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_delegation_scheduler_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -288,7 +305,7 @@ struct get_forward_progress_guarantee_t {
         return __forge_env_detail::__progress_fallback<Scheduler>::__get();
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_forward_progress_guarantee_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -326,7 +343,7 @@ struct get_stop_token_t {
         requires (!execution::__forge_env_detail::__queryable<get_stop_token_t, Env>)
     constexpr std::never_stop_token operator()(Env&&) const noexcept { return {}; }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_stop_token_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -345,7 +362,7 @@ struct get_allocator_t {
         return execution::__forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_allocator_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -418,44 +435,12 @@ struct env {
     {}
 
 private:
-    template<class Query>
-    static constexpr bool __query_available =
-        (__forge_env_detail::__queryable<Query, const Envs&> || ...);
-
-    template<std::size_t I, class Query>
-    static constexpr decltype(auto) __query(Query query, const env& self) {
-        static_assert(I < sizeof...(Envs));
-        using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
-        if constexpr (__forge_env_detail::__queryable<Query, const current_env_t&>) {
-            return __forge_env_detail::__query(
-                std::move(query), std::get<I>(self.__envs));
-        } else {
-            return __query<I + 1>(std::move(query), self);
-        }
-    }
-
-    template<std::size_t I, class Query>
-    static consteval bool __query_nothrow() {
-        if constexpr (I == sizeof...(Envs)) {
-            return true;
-        } else {
-            using current_env_t = std::tuple_element_t<I, std::tuple<Envs...>>;
-            if constexpr (__forge_env_detail::__queryable<Query, const current_env_t&>) {
-                return __forge_env_detail::__nothrow_query<Query, const current_env_t&>;
-            } else {
-                return __query_nothrow<I + 1, Query>();
-            }
-        }
-    }
-
-    // [exec.env] uses a temporary tag for participation, but a named lvalue
-    // for selection and invocation. Default mode retains compatibility dispatch.
+    // [exec.env] uses a temporary tag for participation and the named tag for selection.
     template<class E, class Q, class... Args>
     static constexpr bool __has_query = requires(const E& e, Args&&... args) {
         e.query(Q(), static_cast<Args&&>(args)...);
     };
 
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
     template<class E, class Q, class... Args>
         requires requires(const E& e, Q& q, Args&&... args) {
             e.query(q, static_cast<Args&&>(args)...);
@@ -464,27 +449,6 @@ private:
         noexcept(noexcept(e.query(q, static_cast<Args&&>(args)...))) {
         return e.query(q, static_cast<Args&&>(args)...);
     }
-#else
-    template<class E, class Q, class... Args>
-        requires __forge_env_detail::__member_query<Q, const E&, Args...> &&
-                 requires(const E& e, Q& q, Args&&... args) {
-                     e.query(q, static_cast<Args&&>(args)...);
-                 }
-    static constexpr decltype(auto) __child_query(const E& e, Q& q, Args&&... args)
-        noexcept(noexcept(e.query(q, static_cast<Args&&>(args)...))) {
-        return e.query(q, static_cast<Args&&>(args)...);
-    }
-
-    template<class E, class Q, class... Args>
-        requires (!__forge_env_detail::__member_query<Q, const E&, Args...>) &&
-                 __forge_detail::tag_invocable<Q, const E&, Args...>
-    static constexpr decltype(auto) __child_query(const E& e, Q& q, Args&&... args)
-        noexcept(noexcept(__forge_detail::tag_invoke_fn(
-            std::move(q), e, static_cast<Args&&>(args)...))) {
-        return __forge_detail::tag_invoke_fn(
-            std::move(q), e, static_cast<Args&&>(args)...);
-    }
-#endif
 
     // Specify the stored E explicitly: deduction through const E& would add
     // const to borrowed referents instead of preserving reference collapsing.
@@ -528,13 +492,6 @@ public:
     }
 
 private:
-    template<class Query>
-        requires __query_available<Query>
-    friend constexpr decltype(auto) tag_invoke(Query query, const env& self)
-        noexcept(__query_nothrow<0, Query>()) {
-        return __query<0>(std::move(query), self);
-    }
-
     [[no_unique_address]] std::tuple<Envs...> __envs;
 };
 
@@ -549,11 +506,6 @@ struct get_env_t {
             static_assert(noexcept(obj.get_env()), "get_env must be noexcept");
             static_assert(__forge_queryable<std::remove_cvref_t<decltype(obj.get_env())>>);
             return obj.get_env();
-        } else if constexpr (__forge_detail::tag_invocable<get_env_t, const T&>) {
-            static_assert(__forge_detail::nothrow_tag_invocable<get_env_t, const T&>);
-            static_assert(__forge_queryable<std::remove_cvref_t<
-                __forge_detail::tag_invoke_result_t<get_env_t, const T&>>>);
-            return __forge_detail::tag_invoke_fn(*this, obj);
         } else {
             return __empty_env{};
         }
@@ -563,6 +515,107 @@ inline constexpr get_env_t get_env{};
 
 template<class T>
 using env_of_t = decltype(std::execution::get_env(std::declval<const T&>()));
+
+namespace __forge_env_detail {
+
+template<class Env>
+using __normalized_env_t = std::remove_const_t<std::remove_reference_t<Env>>;
+
+// FWD-ENV(get_env(rcvr)) of [exec.snd.expos]/4 for a receiver environment.
+// Env is the environment type without reference and const, so the type of a
+// view does not say whether get_env returned a reference or a prvalue;
+// volatile stays, because it changes which members answer. The view never
+// owns: it points at an environment that the receiver, or the operation state
+// that holds the receiver, keeps alive, and it is copied like a pointer.
+// Every query is made on the environment as a const lvalue, with the supplied
+// query's own qualification.
+template<class Env>
+struct __fwd_view {
+    const Env* __env;
+
+    static constexpr __fwd_view __borrow(const Env& env) noexcept {
+        return __fwd_view{std::addressof(env)};
+    }
+
+    template<class Query, class... Args>
+        requires __qualified_fwd_env_query<Query> && __raw_queryable<Query, Env, Args...>
+    constexpr decltype(auto) query(Query&& q, Args&&... args) const
+        noexcept(__nothrow_raw_queryable<Query, Env, Args...>) {
+        return __env->query(static_cast<Query&&>(q), static_cast<Args&&>(args)...);
+    }
+};
+
+// The view type depends on the environment type without reference and const.
+template<class Env>
+using __fwd_env_view = __fwd_view<__normalized_env_t<Env>>;
+
+// The environment of the receiver that an operation state holds. A reference
+// result of get_env is kept as that reference. A prvalue result is
+// materialized here once, by direct initialization from the prvalue, so no
+// constructor of the environment type takes part. The operation state
+// outlives every view that a child can obtain from the receivers it creates
+// ([exec.get.env]/2, [exec.queryable.general]/6).
+template<class R>
+struct __receiver_env {
+    env_of_t<R> __env;
+
+    constexpr explicit __receiver_env(const R& rcvr)
+        noexcept(noexcept(std::execution::get_env(rcvr)))
+        : __env(std::execution::get_env(rcvr)) {}
+
+    __receiver_env(const __receiver_env&) = delete;
+    __receiver_env& operator=(const __receiver_env&) = delete;
+
+    // A named reference is an lvalue, whatever get_env returned.
+    constexpr auto __get() const noexcept -> const __normalized_env_t<env_of_t<R>>& {
+        return __env;
+    }
+
+    constexpr auto __view() const noexcept -> __fwd_env_view<env_of_t<R>> {
+        return __fwd_env_view<env_of_t<R>>::__borrow(__env);
+    }
+};
+
+// The attributes of a sender keep the exact type of get_env(sndr), as at
+// 8de815c: a reference stays a reference, so lvalue-reference attributes that
+// cannot be copied leave the view copyable, and a prvalue is owned. They are queried
+// as a const lvalue as well.
+template<class Env>
+struct __attrs_operand {
+    Env __env;
+
+    template<class Source>
+    constexpr explicit __attrs_operand(const Source& src) noexcept
+        : __env(std::execution::get_env(src)) {}
+
+    template<class Query, class... Args>
+        requires __raw_queryable<Query, Env, Args...>
+    constexpr decltype(auto) __call(Query&& q, Args&&... args) const
+        noexcept(__nothrow_raw_queryable<Query, Env, Args...>) {
+        return static_cast<const std::remove_reference_t<Env>&>(__env).query(
+            static_cast<Query&&>(q), static_cast<Args&&>(args)...);
+    }
+};
+
+// FWD-ENV(get_env(sndr)) for the attributes of an adaptor sender.
+template<class Env>
+struct __fwd_attrs_view {
+    __attrs_operand<Env> __operand;
+
+    template<class Source>
+    static constexpr __fwd_attrs_view __of(const Source& src) noexcept {
+        return __fwd_attrs_view{__attrs_operand<Env>(src)};
+    }
+
+    template<class Query, class... Args>
+        requires __qualified_fwd_env_query<Query> && __raw_queryable<Query, Env, Args...>
+    constexpr decltype(auto) query(Query&& q, Args&&... args) const
+        noexcept(__nothrow_raw_queryable<Query, Env, Args...>) {
+        return __operand.__call(static_cast<Query&&>(q), static_cast<Args&&>(args)...);
+    }
+};
+
+} // namespace __forge_env_detail
 
 template<class... Envs>
 [[nodiscard]] auto make_env(Envs&&... envs) {
@@ -581,7 +634,11 @@ template<class Attrs, class Tag, class... Envs>
 struct __completion_query_allowed : std::true_type {};
 
 template<class Env, class Tag, class... Envs>
-struct __completion_query_allowed<__forwarding_attrs<Env>, Tag, Envs...>
+struct __completion_query_allowed<__fwd_view<Env>, Tag, Envs...>
+    : __completion_query_allowed<std::remove_cv_t<Env>, Tag, Envs...> {};
+
+template<class Env, class Tag, class... Envs>
+struct __completion_query_allowed<__fwd_attrs_view<Env>, Tag, Envs...>
     : __completion_query_allowed<std::remove_cvref_t<Env>, Tag, Envs...> {};
 
 template<class Q, class S, class... Envs>
@@ -672,7 +729,7 @@ struct get_completion_scheduler_t {
         }
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_completion_scheduler_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
@@ -683,13 +740,14 @@ template<class Env>
 struct __hide_scheduler {
     const Env* __env;
 
+    // The supplied query keeps its qualification.
     template<class Query, class... Args>
-        requires (!std::same_as<Query, get_scheduler_t> &&
-                  !std::same_as<Query, get_domain_t> &&
-                  __queryable<Query, const Env&, Args...>)
-    constexpr decltype(auto) query(Query q, Args&&... args) const
-        noexcept(__nothrow_query<Query, const Env&, Args...>) {
-        return __query(q, *__env, static_cast<Args&&>(args)...);
+        requires (!std::same_as<std::remove_cvref_t<Query>, get_scheduler_t> &&
+                  !std::same_as<std::remove_cvref_t<Query>, get_domain_t> &&
+                  __raw_queryable<Query, Env, Args...>)
+    constexpr decltype(auto) query(Query&& q, Args&&... args) const
+        noexcept(__nothrow_raw_queryable<Query, Env, Args...>) {
+        return __env->query(static_cast<Query&&>(q), static_cast<Args&&>(args)...);
     }
 };
 
@@ -698,7 +756,7 @@ consteval bool __composed_scheduler_query() {
     if constexpr (__queryable<get_scheduler_t, Env>) {
         return requires(Env&& env) {
             get_completion_scheduler<set_value_t>(
-                __query(get_scheduler_t{}, static_cast<Env&&>(env)),
+                __query(std::execution::get_scheduler, static_cast<Env&&>(env)),
                 __hide_scheduler<std::remove_reference_t<Env>>{std::addressof(env)});
         };
     } else {
@@ -733,7 +791,7 @@ struct get_await_completion_adaptor_t {
         return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
     }
 
-    friend constexpr bool tag_invoke(std::forwarding_query_t, get_await_completion_adaptor_t) noexcept {
+    constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };

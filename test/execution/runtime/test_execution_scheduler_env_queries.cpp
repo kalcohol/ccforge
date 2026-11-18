@@ -8,11 +8,18 @@
 #include "cpp26/execution/continues_on.hpp"
 #include <gtest/gtest.h>
 
+#include "../scheduler_fixture.hpp"
+
+#include <algorithm>
 #include <exception>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace ex = std::execution;
 namespace {
@@ -171,6 +178,195 @@ struct missing_scheduler_receiver {
     void set_error(std::exception_ptr) && noexcept { *matched = false; }
     domain_only_env get_env() const noexcept { return environment; }
 };
+
+// A conforming scheduler with a direct domain answer: every value category
+// gives the nonthrowing prvalue that the public get_domain reports
+// ([exec.get.domain]/2, [exec.queryable.general]/2). The public controls use it.
+struct rvalue_domain {};
+struct rvalue_domain_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    constexpr auto schedule() const noexcept -> scheduler_fixture::schedule_sender<rvalue_domain_scheduler> {
+        return {*this};
+    }
+    constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    constexpr auto query(ex::get_domain_t) && noexcept -> rvalue_domain { return {}; }
+    constexpr auto query(ex::get_domain_t) const& noexcept -> rvalue_domain { return {}; }
+    bool operator==(const rvalue_domain_scheduler&) const noexcept = default;
+};
+static_assert(ex::scheduler<rvalue_domain_scheduler>);
+static_assert(scheduler_fixture::agrees_with_schedule(rvalue_domain_scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(rvalue_domain_scheduler{}, forge::empty_env{}));
+static_assert(std::same_as<decltype(ex::get_domain(rvalue_domain_scheduler{})), rvalue_domain>);
+static_assert(std::same_as<decltype(ex::get_domain(
+    std::declval<const rvalue_domain_scheduler&>())), rvalue_domain>);
+static_assert(noexcept(rvalue_domain_scheduler{}.query(ex::get_domain)) &&
+              noexcept(std::declval<const rvalue_domain_scheduler&>().query(ex::get_domain)));
+
+// Implementation fixtures. They are used only on __scheduler_env itself, to
+// observe that it queries the stored scheduler as a const lvalue and where
+// the answer lives; they are not offered as conforming schedulers.
+struct raw_category_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    auto schedule() const noexcept { return ex::just(); }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    // The exception specification tells the selected overload apart.
+    auto query(ex::get_domain_t) && noexcept -> rvalue_domain { return {}; }
+    auto query(ex::get_domain_t) const& noexcept(false) -> rvalue_domain { return {}; }
+    bool operator==(const raw_category_scheduler&) const noexcept = default;
+};
+struct stored_domain {};
+struct borrowing_domain_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    stored_domain domain_tag;
+    auto schedule() const noexcept { return ex::just(); }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    auto query(ex::get_domain_t) && noexcept -> const stored_domain& { return domain_tag; }
+    auto query(ex::get_domain_t) const& noexcept -> const stored_domain& { return domain_tag; }
+    bool operator==(const borrowing_domain_scheduler&) const noexcept { return true; }
+};
+
+// A schedule sender whose attributes are a borrowed, noncopyable object with
+// static storage duration.
+struct borrowed_attrs_domain {};
+struct borrowed_attrs_scheduler;
+struct noncopyable_schedule_attrs {
+    noncopyable_schedule_attrs() = default;
+    noncopyable_schedule_attrs(const noncopyable_schedule_attrs&) = delete;
+    // With an environment the scheduler itself is the answer on the scheduler
+    // side ([exec.get.compl.sched]/5.2), so the attributes give it too.
+    template<class Env>
+    auto query(ex::get_completion_scheduler_t<ex::set_value_t>, const Env&) const noexcept
+        -> borrowed_attrs_scheduler;
+    template<class... Envs>
+    auto query(ex::get_completion_domain_t<ex::set_value_t>, Envs&&...) const noexcept
+        -> borrowed_attrs_domain { return {}; }
+};
+inline const noncopyable_schedule_attrs shared_schedule_attrs;
+struct borrowed_attrs_sender {
+    using sender_concept = ex::sender_tag;
+    template<class Self, class... Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t()> { return {}; }
+    auto get_env() const noexcept -> const noncopyable_schedule_attrs& {
+        return shared_schedule_attrs;
+    }
+    template<ex::receiver R>
+    auto connect(R receiver) const
+        noexcept(noexcept(ex::connect(ex::just(), std::move(receiver))))
+        -> ex::connect_result_t<decltype(ex::just()), R> {
+        return ex::connect(ex::just(), std::move(receiver));
+    }
+};
+struct borrowed_attrs_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    auto schedule() const noexcept -> borrowed_attrs_sender { return {}; }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    template<class... Envs>
+    auto query(ex::get_completion_domain_t<ex::set_value_t>, Envs&&...) const noexcept
+        -> borrowed_attrs_domain { return {}; }
+    bool operator==(const borrowed_attrs_scheduler&) const noexcept = default;
+};
+template<class Env>
+auto noncopyable_schedule_attrs::query(
+    ex::get_completion_scheduler_t<ex::set_value_t>, const Env&) const noexcept
+    -> borrowed_attrs_scheduler { return {}; }
+static_assert(ex::scheduler<borrowed_attrs_scheduler>);
+
+#if defined(__cpp_explicit_this_parameter) && __cpp_explicit_this_parameter >= 202110L
+// A domain member that takes the scheduler by value, on a scheduler whose
+// nonthrowing move leaves an observable mark on its source.
+struct state_domain {
+    int state = 0;
+};
+struct consumable_scheduler {
+    int state = 7;
+    consumable_scheduler() = default;
+    consumable_scheduler(const consumable_scheduler&) = default;
+    consumable_scheduler(consumable_scheduler&& other) noexcept : state(other.state) {
+        other.state = -1;
+    }
+    auto query(this consumable_scheduler self, ex::get_domain_t) noexcept -> state_domain {
+        return {self.state};
+    }
+};
+#endif
+
+// A predecessor whose attributes publish the scheduler as a const lvalue.
+struct lvalue_scheduler_attrs {
+    rvalue_domain_scheduler scheduler;
+    auto query(ex::get_completion_scheduler_t<ex::set_value_t>) const noexcept
+        -> const rvalue_domain_scheduler& { return scheduler; }
+};
+struct lvalue_scheduler_sender {
+    using sender_concept = ex::sender_tag;
+    template<class Self, class... Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t()> { return {}; }
+    auto get_env() const noexcept -> lvalue_scheduler_attrs { return {}; }
+    template<ex::receiver R>
+    auto connect(R receiver) const
+        noexcept(noexcept(ex::connect(ex::just(), std::move(receiver))))
+        -> ex::connect_result_t<decltype(ex::just()), R> {
+        return ex::connect(ex::just(), std::move(receiver));
+    }
+};
+
+// [exec.sched]/3: a scheduler copy does not exit via an exception, whatever
+// its exception specification says.
+struct throwing_copy_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    int resource = 0;
+    explicit throwing_copy_scheduler(int id) noexcept : resource(id) {}
+    throwing_copy_scheduler(const throwing_copy_scheduler& other) noexcept(false)
+        : resource(other.resource) {}
+    throwing_copy_scheduler& operator=(const throwing_copy_scheduler& other) noexcept(false) {
+        resource = other.resource;
+        return *this;
+    }
+    auto schedule() const noexcept -> scheduler_fixture::schedule_sender<throwing_copy_scheduler> {
+        return {*this};
+    }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    bool operator==(const throwing_copy_scheduler&) const noexcept = default;
+};
+static_assert(ex::scheduler<throwing_copy_scheduler>);
+static_assert(!std::is_nothrow_copy_constructible_v<throwing_copy_scheduler>);
+
+template<class Value>
+struct let_env_receiver {
+    using receiver_concept = ex::receiver_tag;
+    domain_only_env environment;
+    std::optional<Value>* result;
+    void set_value(Value&& value) && noexcept { result->emplace(std::move(value)); }
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    domain_only_env get_env() const noexcept { return environment; }
+};
+
+template<class Env>
+concept answers_domain = requires(const Env& env) { env.query(ex::get_domain); };
+
+template<class Value, class Sender>
+auto run_in_let_env(Sender sender, ex::run_loop::scheduler scheduler) {
+    static_assert(std::same_as<
+        ex::value_types_of_t<Sender, domain_only_env, std::type_identity_t, std::type_identity_t>,
+        Value>);
+    std::optional<Value> result;
+    auto operation = ex::connect(std::move(sender),
+        let_env_receiver<Value>{domain_only_env{scheduler}, &result});
+    ex::start(operation);
+    return result;
+}
 
 template<class Sender, class Scheduler>
 void check_schedule_attributes(const Sender& sender, const Scheduler& scheduler) {
@@ -510,8 +706,10 @@ TEST(SchedulerEnvQueriesTest, InlineLetWithoutReceiverSchedulerUsesInlineSchedul
     ex::run_loop loop;
     domain_only_env environment{loop.get_scheduler()};
     auto predecessor = ex::schedule(ex::inline_scheduler{});
+    bool unused = false;
+    missing_scheduler_receiver probe{environment, &unused};
     auto selected = ex::__forge_let::__make_let_env<ex::__forge_let::__value_tag>(
-        predecessor, environment);
+        predecessor, probe);
     static_assert(std::same_as<decltype(selected),
                                ex::__forge_let::__scheduler_env<ex::inline_scheduler>>);
     EXPECT_EQ(ex::get_start_scheduler(selected), ex::inline_scheduler{});
@@ -522,6 +720,118 @@ TEST(SchedulerEnvQueriesTest, InlineLetWithoutReceiverSchedulerUsesInlineSchedul
     auto operation = ex::connect(std::move(sender), missing_scheduler_receiver{environment, &matched});
     ex::start(operation);
     EXPECT_TRUE(matched);
+}
+
+TEST(SchedulerEnvQueriesTest, LetEnvQueriesTheDomainOfASelectedPrvalueScheduler) {
+    ex::run_loop loop;
+    auto sender = ex::let_value(ex::schedule(rvalue_domain_scheduler{}), [] {
+        return ex::read_env(ex::get_domain);
+    });
+    using selected = ex::__forge_let::__let_env_t<ex::__forge_let::__value_tag,
+        decltype(ex::schedule(rvalue_domain_scheduler{})), domain_only_env>;
+    static_assert(std::same_as<selected, ex::__forge_let::__scheduler_env<rvalue_domain_scheduler>>);
+    static_assert(answers_domain<selected>);
+    // The scheduler's own domain, not the receiver's ([exec.snd.expos]/10).
+    EXPECT_TRUE(run_in_let_env<rvalue_domain>(std::move(sender), loop.get_scheduler()).has_value());
+
+    auto started = ex::starts_on(rvalue_domain_scheduler{}, ex::read_env(ex::get_domain));
+    EXPECT_TRUE(run_in_let_env<rvalue_domain>(std::move(started), loop.get_scheduler()).has_value());
+}
+
+TEST(SchedulerEnvQueriesTest, LetEnvQueriesTheDomainOfASelectedLvalueScheduler) {
+    ex::run_loop loop;
+    using selected = ex::__forge_let::__let_env_t<ex::__forge_let::__value_tag,
+        lvalue_scheduler_sender, domain_only_env>;
+    static_assert(std::same_as<selected,
+        ex::__forge_let::__scheduler_env<rvalue_domain_scheduler>>);
+    static_assert(answers_domain<selected>);
+    auto sender = ex::let_value(lvalue_scheduler_sender{}, [] {
+        return ex::read_env(ex::get_domain);
+    });
+    EXPECT_TRUE(run_in_let_env<rvalue_domain>(std::move(sender), loop.get_scheduler()).has_value());
+    auto start = ex::let_value(lvalue_scheduler_sender{}, [] {
+        return ex::read_env(ex::get_start_scheduler);
+    });
+    static_assert(std::same_as<decltype(std::declval<const selected&>().query(
+        ex::get_start_scheduler)), rvalue_domain_scheduler>);
+    EXPECT_EQ(run_in_let_env<rvalue_domain_scheduler>(std::move(start), loop.get_scheduler()),
+              rvalue_domain_scheduler{});
+}
+
+// Implementation test: __scheduler_env queries the stored scheduler as a
+// const lvalue, whatever the category of the selected scheduler expression.
+TEST(SchedulerEnvQueriesTest, SchedulerEnvQueriesTheDomainOnAConstLvalue) {
+    using selected = ex::__forge_let::__scheduler_env<raw_category_scheduler>;
+    static_assert(answers_domain<selected>);
+    static_assert(!noexcept(std::declval<const selected&>().query(ex::get_domain)));
+    selected environment{raw_category_scheduler{}};
+    (void)environment.query(ex::get_domain);
+    SUCCEED();
+}
+
+// Implementation test: a domain answer that refers into the scheduler refers
+// into the scheduler that the environment owns ([exec.queryable.general]/6).
+TEST(SchedulerEnvQueriesTest, SchedulerEnvKeepsStorageForABorrowingDomainAnswer) {
+    using selected = ex::__forge_let::__scheduler_env<borrowing_domain_scheduler>;
+    selected environment{borrowing_domain_scheduler{}};
+    const stored_domain& answer = environment.query(ex::get_domain);
+    EXPECT_EQ(std::addressof(answer), std::addressof(environment.__scheduler.domain_tag));
+    EXPECT_EQ(std::addressof(answer), std::addressof(environment.query(ex::get_domain)));
+}
+
+#if defined(__cpp_explicit_this_parameter) && __cpp_explicit_this_parameter >= 202110L
+// Implementation test: a member that takes the scheduler by value receives an
+// intact scheduler on every query, and the stored one is never moved from.
+TEST(SchedulerEnvQueriesTest, SchedulerEnvRepeatsAConsumingDomainQuery) {
+    using selected = ex::__forge_let::__scheduler_env<consumable_scheduler>;
+    const selected environment{consumable_scheduler{}};
+    EXPECT_EQ(environment.query(ex::get_domain).state, 7);
+    EXPECT_EQ(environment.query(ex::get_domain).state, 7);
+    EXPECT_EQ(environment.query(ex::get_start_scheduler).state, 7);
+    EXPECT_EQ(environment.__scheduler.state, 7);
+}
+#endif
+
+// The completion-domain member of continues_on's attributes queries the
+// attributes of schedule(sch) without copying them ([exec.sched]/6).
+TEST(SchedulerEnvQueriesTest, ContinuesOnQueriesBorrowedNoncopyableScheduleAttributes) {
+    ex::run_loop loop;
+    domain_only_env environment{loop.get_scheduler()};
+    auto sender = ex::continues_on(ex::just(), borrowed_attrs_scheduler{});
+    auto attrs = ex::get_env(sender);
+    using query = ex::get_completion_domain_t<ex::set_value_t>;
+    static_assert(std::same_as<decltype(attrs.query(query{}, environment)), borrowed_attrs_domain>);
+    static_assert(noexcept(attrs.query(query{}, environment)));
+    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+        attrs, environment)), borrowed_attrs_domain>);
+    static_assert(noexcept(ex::get_completion_domain<ex::set_value_t>(attrs, environment)));
+    // [exec.sched]/5-6 for the fixture, in the environment of this test.
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(borrowed_attrs_scheduler{}));
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(borrowed_attrs_scheduler{}, environment));
+    (void)attrs.query(query{}, environment);
+    SUCCEED();
+}
+
+TEST(SchedulerEnvQueriesTest, LetEnvStartSchedulerIsNonthrowingForAnyConformingScheduler) {
+    ex::run_loop loop;
+    using selected = ex::__forge_let::__scheduler_env<throwing_copy_scheduler>;
+    // MANDATE-NOTHROW of [exec.get.start.scheduler]/2 on the prvalue answer
+    // of [exec.snd.expos]/10.
+    static_assert(noexcept(std::declval<const selected&>().query(ex::get_start_scheduler)));
+    static_assert(std::same_as<decltype(ex::get_start_scheduler(std::declval<const selected&>())),
+                               throwing_copy_scheduler>);
+    auto sender = ex::let_value(ex::schedule(throwing_copy_scheduler{7}), [] {
+        return ex::read_env(ex::get_start_scheduler);
+    });
+    auto result = run_in_let_env<throwing_copy_scheduler>(std::move(sender), loop.get_scheduler());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->resource, 7);
+
+    auto started = ex::starts_on(throwing_copy_scheduler{9}, ex::read_env(ex::get_start_scheduler));
+    auto start_result = run_in_let_env<throwing_copy_scheduler>(
+        std::move(started), loop.get_scheduler());
+    ASSERT_TRUE(start_result.has_value());
+    EXPECT_EQ(start_result->resource, 9);
 }
 
 TEST(SchedulerEnvQueriesTest, LetValueKeepsUnaryCompletionScheduler) {

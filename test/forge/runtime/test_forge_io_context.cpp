@@ -237,10 +237,8 @@ struct self_destroying_typed_io_receiver {
 struct stop_env {
     std::inplace_stop_source* source;
 
-    friend auto tag_invoke(
-        std::execution::get_stop_token_t,
-        const stop_env& self) noexcept -> std::inplace_stop_token {
-        return self.source->get_token();
+    auto query(std::get_stop_token_t) const noexcept -> std::inplace_stop_token {
+        return this->source->get_token();
     }
 };
 

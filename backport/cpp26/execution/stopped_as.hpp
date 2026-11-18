@@ -199,6 +199,8 @@ template<class R, class OptionalT>
 struct __optional_recv {
     using receiver_concept = receiver_tag;
     R* __rcvr;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* __env = nullptr;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -225,7 +227,7 @@ struct __optional_recv {
         std::execution::set_value(std::move(*__rcvr), OptionalT{std::nullopt});
     }
     auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
-        return {std::execution::get_env(*__rcvr)};
+        return __env->__view();
     }
 };
 
@@ -238,11 +240,14 @@ struct __optional_op : __forge_detail::__immovable {
     using inner_op_t = connect_result_t<S, __recv>;
 
     R __rcvr;
+    __forge_env_detail::__receiver_env<R> __env;
     inner_op_t __op;
 
     __optional_op(S sndr, R r)
         : __rcvr(std::move(r))
-        , __op(std::execution::connect(std::move(sndr), __recv{std::addressof(__rcvr)}))
+        , __env(__rcvr)
+        , __op(std::execution::connect(
+              std::move(sndr), __recv{std::addressof(__rcvr), std::addressof(__env)}))
     {}
 
     void start() & noexcept {
@@ -287,15 +292,14 @@ struct __optional_sender {
 
     template<class Self, class Env>
         requires __optional_source_in<typename std::remove_cvref_t<Self>::source_t, __forge_detail::__fwd_env_t<Env>>
-    static auto get_completion_signatures() noexcept
+    static constexpr auto get_completion_signatures() noexcept
         -> typename __optional_cs<completion_signatures_of_t<
             typename std::remove_cvref_t<Self>::source_t, __forge_detail::__fwd_env_t<Env>>>::type {
         return {};
     }
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(__sndr)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
     }
 };
 
@@ -377,11 +381,10 @@ struct __error_sender {
     using __cs = typename __error_cs<completion_signatures_of_t<S, Env>, Err>::type;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
+    static constexpr auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(__sndr)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
     }
 };
 

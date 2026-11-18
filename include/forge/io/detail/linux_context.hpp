@@ -79,10 +79,10 @@ namespace __detail {
 template<class R>
 bool __stop_requested(const R& rcvr) noexcept {
     if constexpr (requires {
-                      std::execution::get_stop_token(
+                      std::get_stop_token(
                           std::execution::get_env(rcvr));
                   }) {
-        return std::execution::get_stop_token(
+        return std::get_stop_token(
             std::execution::get_env(rcvr)).stop_requested();
     } else {
         return false;
@@ -897,12 +897,12 @@ bool __record<R>::install_stop_callback(
     }
     if constexpr (requires {
                       forge::any_stop_token{
-                          std::execution::get_stop_token(
+                          std::get_stop_token(
                               std::execution::get_env(rcvr))};
                   }) {
         try {
             auto token = forge::any_stop_token{
-                std::execution::get_stop_token(
+                std::get_stop_token(
                     std::execution::get_env(rcvr))};
             if (token.stop_possible()) {
                 stop_callback.emplace(

@@ -396,15 +396,9 @@ struct task_result_receiver {
     struct env {
         std::inplace_stop_source* source = nullptr;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> std::inplace_stop_token {
             return source ? source->get_token() : std::inplace_stop_token{};
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const env& self) noexcept -> std::inplace_stop_token {
-            return self.source ? self.source->get_token() : std::inplace_stop_token{};
         }
     };
 
@@ -489,7 +483,7 @@ struct stop_wait_op {
     };
 
     using env_t = std::execution::env_of_t<R>;
-    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using token_t = decltype(std::get_stop_token(std::declval<env_t>()));
     using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
 
     R receiver;
@@ -508,7 +502,7 @@ struct stop_wait_op {
     auto operator=(const stop_wait_op&) -> stop_wait_op& = delete;
 
     auto start() & noexcept -> void {
-        auto token = std::execution::get_stop_token(
+        auto token = std::get_stop_token(
             std::execution::get_env(receiver));
         {
             std::lock_guard lock{state->mtx};
@@ -725,7 +719,7 @@ struct stop_probe_op {
     R receiver;
 
     auto start() & noexcept -> void {
-        auto token = std::execution::get_stop_token(
+        auto token = std::get_stop_token(
             std::execution::get_env(receiver));
         if (token.stop_requested()) {
             std::execution::set_stopped(std::move(receiver));

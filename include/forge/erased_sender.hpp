@@ -229,8 +229,8 @@ struct __error_index<Error, meta::type_list<>> {
 template<class R>
 auto __make_stop_token(const R& rcvr) {
     decltype(auto) env = std::execution::get_env(rcvr);
-    if constexpr (requires { std::execution::get_stop_token(env); }) {
-        auto token = std::execution::get_stop_token(env);
+    if constexpr (requires { std::get_stop_token(env); }) {
+        auto token = std::get_stop_token(env);
         if (token.stop_possible()) {
             return any_stop_token{std::move(token)};
         }
@@ -256,18 +256,12 @@ struct __receiver {
     struct __env {
         std::shared_ptr<__receiver_state_base<CS>> state;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> any_stop_token {
             if (!state) {
                 return {};
             }
             return state->stop_token();
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const __env& self) noexcept -> any_stop_token {
-            return self.query(std::execution::get_stop_token);
         }
     };
 

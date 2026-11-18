@@ -248,7 +248,7 @@ struct stop_receiver {
     auto get_env() const noexcept {
         return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token())};
+                std::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -256,7 +256,7 @@ struct noncopyable_stop_env {
     std::inplace_stop_token token;
     explicit noncopyable_stop_env(std::inplace_stop_token t) : token(t) {}
     noncopyable_stop_env(const noncopyable_stop_env&) = delete;
-    auto query(std::execution::get_stop_token_t) const noexcept { return token; }
+    auto query(std::get_stop_token_t) const noexcept { return token; }
 };
 
 struct borrowed_stop_receiver : stop_receiver {
@@ -523,7 +523,7 @@ struct stop_probe_sender {
         op(const op&) = delete;
         op& operator=(const op&) = delete;
         void start() & noexcept {
-            auto token = std::execution::get_stop_token(std::execution::get_env(rcvr));
+            auto token = std::get_stop_token(std::execution::get_env(rcvr));
             std::execution::set_value(
                 std::move(rcvr),
                 token.stop_possible(),
@@ -722,7 +722,7 @@ struct env_pruned_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept {
         using token_t = std::remove_cvref_t<decltype(
-            std::execution::get_stop_token(std::declval<const Env&>()))>;
+            std::get_stop_token(std::declval<const Env&>()))>;
         if constexpr (std::unstoppable_token<token_t>) {
             return std::execution::completion_signatures<
                 std::execution::set_value_t(int)>{};
@@ -745,7 +745,7 @@ struct env_pruned_sender {
 
         void start() & noexcept {
             auto token =
-                std::execution::get_stop_token(std::execution::get_env(rcvr));
+                std::get_stop_token(std::execution::get_env(rcvr));
             if (token.stop_possible()) {
                 std::execution::set_stopped(std::move(rcvr));
             } else {
@@ -846,7 +846,7 @@ static_assert(std::constructible_from<
 using erased_receiver_env_t = std::execution::env_of_t<
     forge::__erased_sender_detail::__receiver<stop_probe_cs>>;
 static_assert(requires(const erased_receiver_env_t& env) {
-    { env.query(std::execution::get_stop_token) }
+    { env.query(std::get_stop_token) }
         -> std::same_as<forge::any_stop_token>;
 });
 

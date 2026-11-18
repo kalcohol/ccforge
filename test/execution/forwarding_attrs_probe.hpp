@@ -25,17 +25,8 @@ struct value_query : query_cpo<value_query> {
     constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
 };
 
-struct reference_query {
-    friend constexpr bool tag_invoke(std::forwarding_query_t, reference_query) noexcept {
-        return true;
-    }
-
-    template<class Env>
-        requires ex::__forge_detail::tag_invocable<reference_query, const Env&>
-    constexpr decltype(auto) operator()(const Env& env) const
-        noexcept(ex::__forge_detail::nothrow_tag_invocable<reference_query, const Env&>) {
-        return ex::__forge_detail::tag_invoke_fn(*this, env);
-    }
+struct reference_query : query_cpo<reference_query> {
+    constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
 };
 
 struct marked_query : std::forwarding_query_t, query_cpo<marked_query> {
@@ -47,9 +38,6 @@ struct local_query : query_cpo<local_query> {};
 struct blocked_query : std::forwarding_query_t, query_cpo<blocked_query> {
     using query_cpo<blocked_query>::operator();
     constexpr bool query(std::forwarding_query_t) const noexcept { return false; }
-    friend constexpr bool tag_invoke(std::forwarding_query_t, blocked_query) noexcept {
-        return true;
-    }
 };
 
 struct argument_query : query_cpo<argument_query> {
@@ -113,23 +101,13 @@ struct attributes {
     ~attributes() { --state->alive; }
 
     int query(value_query) const noexcept { return value; }
-    friend int tag_invoke(value_query, const attributes& self) noexcept {
-        return self.value + 1000;
-    }
-    friend const int& tag_invoke(reference_query, const attributes& self) noexcept {
-        return self.value;
-    }
+    const int& query(reference_query) const noexcept { return value; }
     int query(marked_query) const noexcept { return value; }
     int query(local_query) const noexcept { return value; }
-    friend int tag_invoke(local_query, const attributes& self) noexcept { return self.value; }
     int query(blocked_query) const noexcept { return value; }
-    friend int tag_invoke(blocked_query, const attributes& self) noexcept { return self.value; }
 
     const int& query(actual_query<true>) const noexcept { return value; }
     const int& query(actual_query<false>) const noexcept { return value; }
-    friend const int& tag_invoke(actual_query<false>, const attributes& self) noexcept {
-        return self.value;
-    }
     const int& query(actual_query<true>, argument& arg) const {
         if (arg.value < 0) {
             throw actual_query_failure{};
@@ -148,15 +126,8 @@ struct attributes {
         ++state->raw_domain_calls;
         throw domain_failure{};
     }
-    friend tag_domain tag_invoke(
-        ex::get_completion_domain_t<>, const attributes& self, const receiver_env&) noexcept {
-        ++self.state->raw_domain_calls;
-        return {};
-    }
-    friend tag_domain tag_invoke(
-        ex::get_completion_domain_t<ex::set_value_t>,
-        const attributes& self, const receiver_env&) noexcept {
-        ++self.state->raw_domain_calls;
+    tag_domain query(ex::get_completion_domain_t<ex::set_value_t>, const receiver_env&) const noexcept {
+        ++state->raw_domain_calls;
         return {};
     }
 };

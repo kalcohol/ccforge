@@ -17,7 +17,7 @@ namespace {
 struct no_marker_scheduler {
     no_marker_scheduler() = default;
     bool operator==(const no_marker_scheduler&) const noexcept = default;
-    friend auto tag_invoke(std::execution::schedule_t, const no_marker_scheduler&) noexcept {
+    auto schedule() const noexcept {
         return std::execution::schedule(std::execution::inline_scheduler{});
     }
 };

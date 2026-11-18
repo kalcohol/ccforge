@@ -83,7 +83,7 @@ struct throwing_move_receiver {
     throwing_move_receiver() = default;
     throwing_move_receiver(throwing_move_receiver&&) noexcept(false) {}
     throwing_move_receiver& operator=(throwing_move_receiver&&) = default;
-    friend auto tag_invoke(std::execution::get_env_t, const throwing_move_receiver&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env { return {}; }
 };
 static_assert(!std::execution::receiver<throwing_move_receiver>,
@@ -91,7 +91,7 @@ static_assert(!std::execution::receiver<throwing_move_receiver>,
 
 struct final_receiver final {
     using receiver_concept = std::execution::receiver_tag;
-    friend auto tag_invoke(std::execution::get_env_t, const final_receiver&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env { return {}; }
 };
 static_assert(std::execution::receiver<final_receiver>,
@@ -102,7 +102,7 @@ static_assert(std::execution::receiver<final_receiver>,
 struct no_marker_opstate {
     no_marker_opstate() = default;
     no_marker_opstate(no_marker_opstate&&) = delete;
-    friend void tag_invoke(std::execution::start_t, no_marker_opstate&) noexcept {}
+    void start() & noexcept {}
 };
 static_assert(!std::execution::operation_state<no_marker_opstate>,
               "operation_state without concept marker must be rejected");
@@ -147,16 +147,12 @@ using just_error_types_t = std::execution::error_types_of_t<
 struct reference_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    friend auto tag_invoke(
-        std::execution::get_env_t,
-        const reference_value_sender&) noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> forge::empty_env {
         return {};
     }
 
-    friend auto tag_invoke(
-        std::execution::get_completion_signatures_t,
-        reference_value_sender,
-        auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(const std::string&)> {
         return {};
@@ -437,10 +433,10 @@ struct deref_unique {
 struct int_receiver {
     using receiver_concept = std::execution::receiver_tag;
 
-    friend void tag_invoke(std::execution::set_value_t, int_receiver&&, int) noexcept {}
-    friend void tag_invoke(std::execution::set_error_t, int_receiver&&, std::exception_ptr) noexcept {}
-    friend void tag_invoke(std::execution::set_stopped_t, int_receiver&&) noexcept {}
-    friend auto tag_invoke(std::execution::get_env_t, const int_receiver&) noexcept
+    void set_value(int) && noexcept {}
+    void set_error(std::exception_ptr) && noexcept {}
+    void set_stopped() && noexcept {}
+    auto get_env() const noexcept
         -> forge::empty_env { return {}; }
 };
 

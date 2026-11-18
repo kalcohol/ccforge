@@ -53,87 +53,41 @@ function(forge_expect_execution_cxx_source_compiles result_var source_name shoul
     unset(_forge_target_definitions)
 endfunction()
 
-# Query and domain rules are checked in both supported dispatch modes.
+# Query and domain constraints, including forwarding_query's two hard Mandates.
+forge_add_execution_compile_probe(test_execution_query_conformance
+    test_execution_query_conformance.cpp execution_query_conformance_compile)
+forge_add_execution_runtime_test(test_execution_query_conformance_runtime
+    test_execution_query_conformance.cpp execution_query_conformance)
+forge_add_execution_compile_probe(test_execution_env_queries
+    test_execution_env_queries.cpp execution_env_queries_compile)
+forge_add_execution_runtime_test(test_execution_scheduler_env_queries
+    test_execution_scheduler_env_queries.cpp execution_scheduler_env_queries)
+forge_add_execution_compile_probe(test_execution_member_dispatch
+    test_execution_member_dispatch.cpp execution_member_dispatch_compile)
+if(MSVC)
+    foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
+            test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
+        target_compile_options(${_target} PRIVATE /bigobj)
+    endforeach()
+endif()
+
 set(_forge_query_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-foreach(_mode IN ITEMS default strict)
-    forge_add_execution_compile_probe(test_execution_${_mode}_query_conformance
-        test_execution_query_conformance.cpp execution_${_mode}_query_conformance_compile)
-    forge_add_execution_runtime_test(test_execution_${_mode}_query_conformance_runtime
-        test_execution_query_conformance.cpp execution_${_mode}_query_conformance)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs})
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(test_execution_${_mode}_query_conformance PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        target_compile_definitions(test_execution_${_mode}_query_conformance_runtime PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    if(MSVC)
-        target_compile_options(test_execution_${_mode}_query_conformance PRIVATE /bigobj)
-        target_compile_options(test_execution_${_mode}_query_conformance_runtime PRIVATE /bigobj)
-    endif()
-    set(_forge_query_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_POSITIVE_${_mode}
-        test_execution_reject_query_mandates.cpp ON "Conforming query control must compile")
-    foreach(_case IN ITEMS 21 23 30 32 33 34 35)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_mode_defs}
-            -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_POSITIVE=1)
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_CONTROL_${_mode}_${_case}
-            test_execution_reject_query_mandates.cpp ON "Query Mandate positive control must compile and link")
-    endforeach()
-    foreach(_case RANGE 1 35)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_mode_defs} -DFORGE_QUERY_CASE=${_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MANDATE_${_mode}_${_case}
-            test_execution_reject_query_mandates.cpp OFF "Query and core CPO Mandates must reject this case")
-    endforeach()
-endforeach()
-# Compatibility dispatch is subject to the same Mandates as member dispatch.
-set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs} -DFORGE_QUERY_LEGACY=1)
-forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_POSITIVE_legacy
-    test_execution_reject_query_mandates.cpp ON "Conforming legacy query control must compile")
-foreach(_case IN ITEMS 21 23 30 32 33 34 35)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_POSITIVE
+    test_execution_reject_query_mandates.cpp ON "Conforming query control must compile")
+foreach(_case IN ITEMS 10 11 21 23 30 32 33 34 35 36)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs}
-        -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_LEGACY=1 -DFORGE_QUERY_POSITIVE=1)
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_CONTROL_legacy_${_case}
-        test_execution_reject_query_mandates.cpp ON "Legacy Mandate positive control must compile and link")
+        -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_POSITIVE=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_CONTROL_${_case}
+        test_execution_reject_query_mandates.cpp ON "Query Mandate positive control must compile and link")
 endforeach()
-foreach(_case RANGE 1 35)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs}
-        -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_LEGACY=1)
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MANDATE_legacy_${_case}
-        test_execution_reject_query_mandates.cpp OFF "Legacy dispatch must enforce query and CPO Mandates")
+foreach(_case RANGE 1 36)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs} -DFORGE_QUERY_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_MANDATE_${_case}
+        test_execution_reject_query_mandates.cpp OFF "Query and core CPO Mandates must reject this case")
 endforeach()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_query_probe_defs}")
 unset(_forge_query_probe_defs)
-unset(_forge_query_mode_defs)
 unset(_case)
-
-forge_add_execution_compile_probe(
-    test_execution_env_queries
-    test_execution_env_queries.cpp
-    execution_env_queries_compile)
-forge_add_execution_compile_probe(
-    test_execution_strict_env_queries
-    test_execution_env_queries.cpp
-    execution_strict_env_queries_compile)
-target_compile_definitions(test_execution_strict_env_queries PRIVATE
-    FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-if(MSVC)
-    target_compile_options(test_execution_env_queries PRIVATE /bigobj)
-    target_compile_options(test_execution_strict_env_queries PRIVATE /bigobj)
-endif()
-
-foreach(_mode IN ITEMS default strict)
-    set(_query_target test_execution_${_mode}_scheduler_env_queries)
-    forge_add_execution_runtime_test(${_query_target}
-        test_execution_scheduler_env_queries.cpp execution_${_mode}_scheduler_env_queries)
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(${_query_target} PRIVATE FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    if(MSVC)
-        target_compile_options(${_query_target} PRIVATE /bigobj)
-    endif()
-endforeach()
 
 forge_add_execution_compile_probe(
     test_execution_api_core
@@ -579,13 +533,8 @@ forge_add_execution_compile_probe(test_execution_d1_deprecation_compat
     test_execution_d1_deprecation_compat.cpp execution_d1_deprecation_compat_compile)
 forge_add_execution_compile_probe(test_execution_d1_warning_free
     test_execution_d1_warning_free.cpp execution_d1_warning_free_compile)
-forge_add_execution_compile_probe(test_execution_d1_strict_warning_free
-    test_execution_d1_warning_free.cpp execution_d1_strict_warning_free_compile)
-target_compile_definitions(test_execution_d1_strict_warning_free PRIVATE
-    FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
 foreach(_forge_d1_target IN ITEMS
-        test_execution_d1_deprecation_compat test_execution_d1_warning_free
-        test_execution_d1_strict_warning_free)
+        test_execution_d1_deprecation_compat test_execution_d1_warning_free)
     if(MSVC)
         target_compile_options(${_forge_d1_target} PRIVATE /we4996 /bigobj)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -600,9 +549,6 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs})
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_WARNING_FREE
         test_execution_d1_warning_free.cpp ON "D1 replacements must compile without warnings")
-    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_STRICT_WARNING_FREE
-        test_execution_d1_warning_free.cpp ON "D1 replacements must compile with strict member queries")
     # Pass an include through CheckCXXSourceCompiles to preserve the fixture's directives.
     foreach(_forge_case RANGE 1 25)
         set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
@@ -646,137 +592,96 @@ endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
     ${_forge_scope_strict_copies} test_execution_scope_observer_compat
     test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions
-    test_execution_d1_deprecation_compat test_execution_d1_warning_free
-    test_execution_d1_strict_warning_free)
+    test_execution_d1_deprecation_compat test_execution_d1_warning_free)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)
 unset(_forge_target)
 unset(_forge_source_test)
 
-# Adaptor signatures, constraints and allocator queries in both dispatch modes.
+# Adaptor signatures, constraints and allocator queries.
 set(_forge_adaptor_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-foreach(_mode IN ITEMS default strict)
-    forge_add_execution_compile_probe(test_execution_${_mode}_adaptor_conformance
-        test_execution_adaptor_conformance.cpp execution_${_mode}_adaptor_conformance_compile)
-    forge_add_execution_runtime_test(test_execution_${_mode}_adaptor_conformance_runtime
-        test_execution_adaptor_conformance.cpp execution_${_mode}_adaptor_conformance)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_saved_defs})
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(test_execution_${_mode}_adaptor_conformance PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        target_compile_definitions(test_execution_${_mode}_adaptor_conformance_runtime PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    set(_forge_adaptor_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-    foreach(_case RANGE 1 9)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_mode_defs}
-            -DFORGE_ADAPTOR_CASE=${_case} -DFORGE_ADAPTOR_POSITIVE=1)
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ADAPTOR_CONTROL_${_mode}_${_case}
-            test_execution_reject_adaptor_constraints.cpp ON "Adaptor positive control must compile and link")
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_mode_defs} -DFORGE_ADAPTOR_CASE=${_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ADAPTOR_REJECT_${_mode}_${_case}
-            test_execution_reject_adaptor_constraints.cpp OFF "Adaptor creation constraint must reject this case")
-    endforeach()
-    if(MSVC)
-        target_compile_options(test_execution_${_mode}_adaptor_conformance PRIVATE /bigobj)
-        target_compile_options(test_execution_${_mode}_adaptor_conformance_runtime PRIVATE /bigobj)
-    endif()
+forge_add_execution_compile_probe(test_execution_adaptor_conformance
+    test_execution_adaptor_conformance.cpp execution_adaptor_conformance_compile)
+forge_add_execution_runtime_test(test_execution_adaptor_conformance_runtime
+    test_execution_adaptor_conformance.cpp execution_adaptor_conformance)
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_saved_defs})
+foreach(_case RANGE 1 9)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_saved_defs}
+        -DFORGE_ADAPTOR_CASE=${_case} -DFORGE_ADAPTOR_POSITIVE=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ADAPTOR_CONTROL_MEMBER_${_case}
+        test_execution_reject_adaptor_constraints.cpp ON "Adaptor positive control must compile and link")
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_adaptor_saved_defs} -DFORGE_ADAPTOR_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ADAPTOR_REJECT_MEMBER_${_case}
+        test_execution_reject_adaptor_constraints.cpp OFF "Adaptor creation constraint must reject this case")
 endforeach()
+if(MSVC)
+    target_compile_options(test_execution_adaptor_conformance PRIVATE /bigobj)
+    target_compile_options(test_execution_adaptor_conformance_runtime PRIVATE /bigobj)
+endif()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_adaptor_saved_defs}")
 unset(_forge_adaptor_saved_defs)
-unset(_forge_adaptor_mode_defs)
 
 # Scheduling attributes and affine use receiver-dependent query contracts.
 set(_forge_scheduling_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-foreach(_mode IN ITEMS default strict)
-    forge_add_execution_compile_probe(test_execution_${_mode}_scheduling_conformance
-        test_execution_scheduling_conformance.cpp execution_${_mode}_scheduling_conformance_compile)
-    forge_add_execution_runtime_test(test_execution_${_mode}_scheduling_conformance_runtime
-        test_execution_scheduling_conformance.cpp execution_${_mode}_scheduling_conformance)
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(test_execution_${_mode}_scheduling_conformance PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        target_compile_definitions(test_execution_${_mode}_scheduling_conformance_runtime PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs})
-    if(_mode STREQUAL "strict")
-        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    set(_forge_scheduling_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-    foreach(_scheduler RANGE 0 1)
-        foreach(_token RANGE 0 1)
-            set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_mode_defs}
-                -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token}
-                -DFORGE_ADAPTOR_POSITIVE=1)
-            forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_CONTROL_${_mode}_${_scheduler}_${_token}
-                test_execution_reject_affine_forge.cpp ON "Stoppable Forge affine control must compile and link")
-            set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_mode_defs}
-                -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token})
-            forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_REJECT_${_mode}_${_scheduler}_${_token}
-                test_execution_reject_affine_forge.cpp OFF "Unstoppable Forge affine connection must be unavailable")
-        endforeach()
+forge_add_execution_compile_probe(test_execution_scheduling_conformance
+    test_execution_scheduling_conformance.cpp execution_scheduling_conformance_compile)
+forge_add_execution_runtime_test(test_execution_scheduling_conformance_runtime
+    test_execution_scheduling_conformance.cpp execution_scheduling_conformance)
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs})
+foreach(_scheduler RANGE 0 1)
+    foreach(_token RANGE 0 1)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs}
+            -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token}
+            -DFORGE_ADAPTOR_POSITIVE=1)
+        forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_CONTROL_MEMBER_${_scheduler}_${_token}
+            test_execution_reject_affine_forge.cpp ON "Stoppable Forge affine control must compile and link")
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs}
+            -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token})
+        forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_REJECT_MEMBER_${_scheduler}_${_token}
+            test_execution_reject_affine_forge.cpp OFF "Unstoppable Forge affine connection must be unavailable")
     endforeach()
-    if(MSVC)
-        target_compile_options(test_execution_${_mode}_scheduling_conformance PRIVATE /bigobj)
-        target_compile_options(test_execution_${_mode}_scheduling_conformance_runtime PRIVATE /bigobj)
-    endif()
 endforeach()
+if(MSVC)
+    target_compile_options(test_execution_scheduling_conformance PRIVATE /bigobj)
+    target_compile_options(test_execution_scheduling_conformance_runtime PRIVATE /bigobj)
+endif()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_scheduling_saved_defs}")
 unset(_forge_scheduling_saved_defs)
-unset(_forge_scheduling_mode_defs)
 unset(_scheduler)
 unset(_token)
 
 # Replacing a Forge predecessor in let destroys it during its own completion.
 # Both sanitizer lanes build execution tests and select the execution prefix.
-foreach(_mode IN ITEMS default strict)
-    forge_add_execution_runtime_test(test_execution_${_mode}_forge_predecessor_lifetime
-        test_execution_forge_predecessor_lifetime.cpp execution_${_mode}_forge_predecessor_lifetime)
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(test_execution_${_mode}_forge_predecessor_lifetime PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    if(MSVC)
-        target_compile_options(test_execution_${_mode}_forge_predecessor_lifetime PRIVATE /bigobj)
-    endif()
-endforeach()
+forge_add_execution_runtime_test(test_execution_forge_predecessor_lifetime
+    test_execution_forge_predecessor_lifetime.cpp execution_forge_predecessor_lifetime)
+if(MSVC)
+    target_compile_options(test_execution_forge_predecessor_lifetime PRIVATE /bigobj)
+endif()
 
-# Awaitable signatures, coroutine ownership and Mandates in both query modes.
+# Awaitable signatures, coroutine ownership and Mandates.
 # The execution prefix includes the frame self-destruction tests in both sanitizer lanes.
 set(_forge_awaitable_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-foreach(_mode IN ITEMS default strict)
-    forge_add_execution_compile_probe(test_execution_${_mode}_awaitable_conformance
-        test_execution_awaitable_conformance.cpp execution_${_mode}_awaitable_conformance_compile)
-    forge_add_execution_runtime_test(test_execution_${_mode}_awaitable_conformance_runtime
-        test_execution_awaitable_conformance.cpp execution_${_mode}_awaitable_conformance)
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs})
-    if(_mode STREQUAL "strict")
-        target_compile_definitions(test_execution_${_mode}_awaitable_conformance PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        target_compile_definitions(test_execution_${_mode}_awaitable_conformance_runtime PRIVATE
-            FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    endif()
-    set(_forge_awaitable_mode_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-    foreach(_case RANGE 1 9)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_mode_defs}
-            -DFORGE_AWAITABLE_CASE=${_case} -DFORGE_AWAITABLE_POSITIVE=1)
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_CONTROL_${_mode}_${_case}
-            test_execution_reject_awaitable.cpp ON "Awaitable positive control must compile and link")
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_mode_defs} -DFORGE_AWAITABLE_CASE=${_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_${_mode}_${_case}
-            test_execution_reject_awaitable.cpp OFF "Awaitable Mandate or constraint must reject this case")
-    endforeach()
-    if(MSVC)
-        target_compile_options(test_execution_${_mode}_awaitable_conformance PRIVATE /bigobj)
-        target_compile_options(test_execution_${_mode}_awaitable_conformance_runtime PRIVATE /bigobj)
-    endif()
+forge_add_execution_compile_probe(test_execution_awaitable_conformance
+    test_execution_awaitable_conformance.cpp execution_awaitable_conformance_compile)
+forge_add_execution_runtime_test(test_execution_awaitable_conformance_runtime
+    test_execution_awaitable_conformance.cpp execution_awaitable_conformance)
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs})
+foreach(_case RANGE 1 9)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
+        -DFORGE_AWAITABLE_CASE=${_case} -DFORGE_AWAITABLE_POSITIVE=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_CONTROL_MEMBER_${_case}
+        test_execution_reject_awaitable.cpp ON "Awaitable positive control must compile and link")
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_MEMBER_${_case}
+        test_execution_reject_awaitable.cpp OFF "Awaitable Mandate or constraint must reject this case")
 endforeach()
+if(MSVC)
+    target_compile_options(test_execution_awaitable_conformance PRIVATE /bigobj)
+    target_compile_options(test_execution_awaitable_conformance_runtime PRIVATE /bigobj)
+endif()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_awaitable_saved_defs}")
 unset(_forge_awaitable_saved_defs)
-unset(_forge_awaitable_mode_defs)
+
 
 # The execution prefix selects this runtime test in both sanitizer lanes.
 forge_add_execution_runtime_test(test_execution_forge_bulk
@@ -786,9 +691,9 @@ forge_add_execution_runtime_test(test_execution_forge_bulk
 foreach(_forge_target IN ITEMS
     test_execution_adaptors test_execution_borrowed_env
     test_execution_bulk test_execution_bulk_policy test_execution_closure_cvref
-    test_execution_default_adaptor_conformance_runtime
-    test_execution_default_query_conformance_runtime
-    test_execution_default_scheduler_env_queries test_execution_domain
+    test_execution_adaptor_conformance_runtime
+    test_execution_query_conformance_runtime
+    test_execution_scheduler_env_queries test_execution_domain
     test_execution_extensions test_execution_forge_bulk test_execution_forwarding_attrs
     test_execution_initial_capture test_execution_inline_scheduler test_execution_just
     test_execution_member_customization test_execution_mvp test_execution_on_closure
@@ -797,8 +702,6 @@ foreach(_forge_target IN ITEMS
     test_execution_static_opstate_transfer test_execution_stop_callback_allocations
     test_execution_stop_callback_lifetime test_execution_stop_callback_strict_lifetime
     test_execution_stop_token test_execution_stopped_optional
-    test_execution_strict_adaptor_conformance_runtime
-    test_execution_strict_query_conformance_runtime test_execution_strict_scheduler_env_queries
     test_execution_throwing_move_adaptors test_execution_wave2 test_execution_wave3
     test_execution_when_all test_execution_write_env)
     string(REGEX REPLACE "^test_|_runtime$" "" _forge_source_test "${_forge_target}")

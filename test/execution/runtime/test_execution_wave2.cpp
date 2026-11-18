@@ -17,16 +17,16 @@ struct counting_receiver {
 
     std::atomic<int>* count;
 
-    friend void tag_invoke(std::execution::set_value_t, counting_receiver&& self) noexcept {
-        self.count->fetch_add(1, std::memory_order_relaxed);
+    void set_value() && noexcept {
+        this->count->fetch_add(1, std::memory_order_relaxed);
     }
 
     template<class E>
-    friend void tag_invoke(std::execution::set_error_t, counting_receiver&&, E&&) noexcept {}
+    void set_error(E&&) && noexcept {}
 
-    friend void tag_invoke(std::execution::set_stopped_t, counting_receiver&&) noexcept {}
+    void set_stopped() && noexcept {}
 
-    friend auto tag_invoke(std::execution::get_env_t, const counting_receiver&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -74,24 +74,24 @@ struct oversized_value_sender {
         op& operator=(const op&) = delete;
         op& operator=(op&&) = delete;
 
-        friend void tag_invoke(std::execution::start_t, op& self) noexcept {
-            std::execution::set_value(std::move(self.rcvr), self.value);
+        void start() & noexcept {
+            std::execution::set_value(std::move(this->rcvr), this->value);
         }
     };
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const oversized_value_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
         return {};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, oversized_value_sender self, R r)
+    auto connect(R r) const
         -> op<R> {
-        return op<R>{std::move(r), self.value};
+        return op<R>{std::move(r), value};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const oversized_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }

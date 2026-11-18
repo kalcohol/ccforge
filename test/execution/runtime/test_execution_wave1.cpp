@@ -1,3 +1,5 @@
+#include "../scheduler_fixture.hpp"
+
 #include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
@@ -37,28 +39,28 @@ struct throwing_value_op {
 
     R rcvr;
 
-    friend void tag_invoke(std::execution::start_t, throwing_value_op& self) noexcept {
-        std::execution::set_value(std::move(self.rcvr), throwing_move_value{});
+    void start() & noexcept {
+        std::execution::set_value(std::move(this->rcvr), throwing_move_value{});
     }
 };
 
 struct throwing_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const throwing_value_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(throwing_move_value)> {
         return {};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, throwing_value_sender, R r)
+    auto connect(R r) const
         -> throwing_value_op<R> {
         return throwing_value_op<R>{std::move(r)};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const throwing_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -74,30 +76,29 @@ struct scheduler_value_op {
 
     R rcvr;
 
-    friend void tag_invoke(std::execution::start_t, scheduler_value_op& self) noexcept {
-        std::execution::set_value(std::move(self.rcvr),
-            std::execution::get_scheduler(std::execution::get_env(self.rcvr)));
+    void start() & noexcept {
+        std::execution::set_value(std::move(this->rcvr),
+            std::execution::get_scheduler(std::execution::get_env(this->rcvr)));
     }
 };
 
 struct scheduler_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    template<class Env>
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const scheduler_value_sender&, Env&&) noexcept
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t(
             decltype(std::execution::get_scheduler(std::declval<Env>())))> {
         return {};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, scheduler_value_sender, R r)
+    auto connect(R r) const
         -> scheduler_value_op<R> {
         return scheduler_value_op<R>{std::move(r)};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -136,24 +137,23 @@ struct scheduler_value_receiver {
     bool* matched;
     bool* completed;
 
-    friend void tag_invoke(std::execution::set_value_t, scheduler_value_receiver&& self,
-                           std::execution::inline_scheduler sch) noexcept {
-        *self.matched = (sch == self.expected);
-        *self.completed = true;
+    void set_value(std::execution::inline_scheduler sch) && noexcept {
+        *this->matched = (sch == this->expected);
+        *this->completed = true;
     }
 
     template<class E>
-    friend void tag_invoke(std::execution::set_error_t, scheduler_value_receiver&& self, E&&) noexcept {
-        *self.completed = false;
+    void set_error(E&&) && noexcept {
+        *this->completed = false;
     }
 
-    friend void tag_invoke(std::execution::set_stopped_t, scheduler_value_receiver&& self) noexcept {
-        *self.completed = false;
+    void set_stopped() && noexcept {
+        *this->completed = false;
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_receiver& self) noexcept {
+    auto get_env() const noexcept {
         return std::execution::env{
-            std::execution::prop(std::execution::get_scheduler_t{}, self.expected)};
+            std::execution::prop(std::execution::get_scheduler_t{}, this->expected)};
     }
 };
 
@@ -302,11 +302,13 @@ struct error_stopped_schedule_op {
     }
 };
 
+struct error_stopped_scheduler;
+
 struct error_stopped_schedule_sender {
     using sender_concept = std::execution::sender_tag;
 
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept
+    template<class Self, class... Envs>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(),
             std::execution::set_error_t(int),
@@ -314,7 +316,7 @@ struct error_stopped_schedule_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    constexpr auto get_env() const noexcept -> error_stopped_scheduler;
 
     template<std::execution::receiver R>
     auto connect(R r) && -> error_stopped_schedule_op<R> {
@@ -334,16 +336,22 @@ struct error_stopped_scheduler {
         return std::execution::forward_progress_guarantee::weakly_parallel;
     }
 
-    auto schedule() const noexcept -> error_stopped_schedule_sender {
+    constexpr auto schedule() const noexcept -> error_stopped_schedule_sender {
         return {};
     }
 
-    friend bool operator==(error_stopped_scheduler, error_stopped_scheduler) noexcept {
-        return true;
-    }
+    constexpr bool operator==(const error_stopped_scheduler&) const noexcept = default;
 };
 
+constexpr auto error_stopped_schedule_sender::get_env() const noexcept -> error_stopped_scheduler {
+    return {};
+}
+
 static_assert(std::execution::scheduler<error_stopped_scheduler>);
+[[maybe_unused]] constexpr auto envless_schedule_signatures =
+    error_stopped_schedule_sender::get_completion_signatures<error_stopped_schedule_sender>();
+static_assert(scheduler_fixture::agrees_with_schedule(error_stopped_scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(error_stopped_scheduler{}, forge::empty_env{}));
 
 struct affine_error_receiver {
     using receiver_concept = std::execution::receiver_tag;
@@ -387,17 +395,12 @@ struct child_domain_env {
     int identity = 0;
 
     template<class CPO, class Env>
-    friend auto tag_invoke(
-        std::execution::get_completion_domain_t<CPO>,
-        const child_domain_env& self,
-        const Env&) noexcept -> child_completion_domain {
-        return {self.identity};
+    auto query(std::execution::get_completion_domain_t<CPO>, const Env&) const noexcept -> child_completion_domain {
+        return {this->identity};
     }
 
-    friend auto tag_invoke(
-        non_forwarding_child_query,
-        const child_domain_env& self) noexcept -> int {
-        return self.identity;
+    auto query(non_forwarding_child_query) const noexcept -> int {
+        return this->identity;
     }
 };
 
@@ -469,23 +472,26 @@ struct domain_scheduler {
 
     int identity = 0;
 
-    auto schedule() const noexcept {
-        return std::execution::just();
-    }
+    constexpr auto schedule() const noexcept
+        -> scheduler_fixture::schedule_sender<domain_scheduler> { return {*this}; }
+
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> domain_scheduler { return *this; }
 
     template<class CPO, class Env>
-    friend auto tag_invoke(
-        std::execution::get_completion_domain_t<CPO>,
-        domain_scheduler self,
-        const Env&) noexcept -> destination_completion_domain {
-        return {self.identity};
+    auto query(std::execution::get_completion_domain_t<CPO>, const Env&) const noexcept -> destination_completion_domain {
+        return {this->identity};
     }
 
-    friend bool operator==(domain_scheduler, domain_scheduler) noexcept =
+    friend constexpr bool operator==(domain_scheduler, domain_scheduler) noexcept =
         default;
 };
 
 static_assert(std::execution::scheduler<domain_scheduler>);
+static_assert(scheduler_fixture::agrees_with_schedule(domain_scheduler{37}));
+static_assert(scheduler_fixture::agrees_with_schedule(domain_scheduler{37}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(domain_scheduler{37},
+    std::execution::__forge_detail::__fwd_env_t<forge::empty_env>::__borrow(forge::empty_env{})));
 
 struct member_domain_scheduler {
     using scheduler_concept = std::execution::scheduler_tag;
@@ -496,9 +502,11 @@ struct member_domain_scheduler {
 
     int identity = 0;
 
-    auto schedule() const noexcept {
-        return std::execution::just();
-    }
+    constexpr auto schedule() const noexcept
+        -> scheduler_fixture::schedule_sender<member_domain_scheduler> { return {*this}; }
+
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> member_domain_scheduler { return *this; }
 
     template<class CPO, class Env>
     auto query(
@@ -507,7 +515,7 @@ struct member_domain_scheduler {
         return {identity};
     }
 
-    friend bool operator==(
+    friend constexpr bool operator==(
         member_domain_scheduler,
         member_domain_scheduler) noexcept = default;
 };
@@ -806,7 +814,7 @@ TEST(ContinuesOnTest, ReportsDestinationSchedulerOnlyForTransferredDispositions)
     EXPECT_TRUE(
         std::execution::get_completion_scheduler<std::execution::set_value_t>(env)
         == destination);
-    static_assert(!std::execution::__forge_detail::tag_invocable<
+    static_assert(!std::invocable<
         std::execution::get_completion_scheduler_t<std::execution::set_error_t>,
         const decltype(env)&>);
     static_assert(!std::invocable<
@@ -850,10 +858,9 @@ TEST(ContinuesOnTest, ReportsDestinationCompletionDomain) {
         forge::empty_env{});
 
     EXPECT_EQ(domain.identity, 0);
-    static_assert(!std::execution::__forge_detail::tag_invocable<
+    static_assert(!std::execution::__forge_env_detail::__member_query<
         std::execution::get_completion_domain_t<std::execution::set_error_t>,
-        const decltype(attrs)&,
-        forge::empty_env>);
+        const decltype(attrs)&, forge::empty_env>);
 }
 
 TEST(ContinuesOnTest, ReportsDestinationStoppedScheduler) {
@@ -899,9 +906,12 @@ TEST(CompletionDomainTest, GetDomainSupportsMemberQueryProtocol) {
 }
 
 TEST(ContinuesOnTest, UsesMemberQueriedDestinationDomain) {
-    auto sndr = std::execution::continues_on(
-        std::execution::just(),
-        member_domain_scheduler{53});
+    constexpr member_domain_scheduler target{53};
+    static_assert(scheduler_fixture::agrees_with_schedule(target));
+    static_assert(scheduler_fixture::agrees_with_schedule(target, forge::empty_env{}));
+    static_assert(scheduler_fixture::agrees_with_schedule(target,
+        std::execution::__forge_detail::__fwd_env_t<forge::empty_env>::__borrow(forge::empty_env{})));
+    auto sndr = std::execution::continues_on(std::execution::just(), target);
     auto attrs = std::execution::get_env(sndr);
 
     auto domain = std::execution::get_completion_domain<>(
@@ -917,10 +927,9 @@ TEST(ContinuesOnTest, DoesNotLeakChildDomainWhenDestinationHasNone) {
         std::execution::inline_scheduler{});
     auto attrs = std::execution::get_env(sndr);
 
-    static_assert(!std::execution::__forge_detail::tag_invocable<
+    static_assert(!std::execution::__forge_env_detail::__member_query<
         std::execution::get_completion_domain_t<>,
-        const decltype(attrs)&,
-        forge::empty_env>);
+        const decltype(attrs)&, forge::empty_env>);
 }
 
 TEST(ContinuesOnTest, ScheduleConnectFailurePropagates) {
@@ -946,20 +955,25 @@ TEST(LetValueTest, InnerSenderSeesChildCompletionScheduler) {
         });
     auto result = forge::sync_wait(std::move(sender));
 
-    auto legacy_sender = std::execution::let_value(
+    std::execution::run_loop receiver_loop;
+    auto receiver_scheduler = receiver_loop.get_scheduler();
+    // [exec.let]/8.2 forwards the receiver's get_scheduler after SCHED-ENV.
+    auto forwarding_sender = std::execution::let_value(
         std::execution::schedule(child_scheduler),
         []() noexcept {
             return std::execution::read_env(std::execution::get_scheduler);
         });
-    auto legacy_result = forge::sync_wait(std::move(legacy_sender));
+    auto forwarding_result = forge::sync_wait(std::execution::write_env(
+        std::move(forwarding_sender),
+        std::execution::prop{std::execution::get_scheduler, receiver_scheduler}));
 
     child_loop.finish();
     child_worker.join();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), child_scheduler);
-    ASSERT_TRUE(legacy_result.has_value());
-    EXPECT_EQ(std::get<0>(*legacy_result), child_scheduler);
+    ASSERT_TRUE(forwarding_result.has_value());
+    EXPECT_EQ(std::get<0>(*forwarding_result), receiver_scheduler);
 }
 
 TEST(LetValueTest, InnerSenderSeesDefaultConstructedChildCompletionDomain) {

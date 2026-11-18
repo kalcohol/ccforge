@@ -123,12 +123,18 @@ struct stop_token_receiver {
 };
 
 struct member_forwarding_query {
-    constexpr bool query(std::forwarding_query_t) const noexcept {
-        return true;
-    }
+    constexpr int operator()(const std::execution::env<>&) const noexcept { return 42; }
+    constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
+};
+
+struct ref_qualified_forwarding_query : member_forwarding_query {
+    constexpr bool query(std::forwarding_query_t) & noexcept { return false; }
+    constexpr bool query(std::forwarding_query_t) && noexcept { return false; }
+    constexpr bool query(std::forwarding_query_t) const& noexcept { return true; }
 };
 
 struct tag_forwarding_query {
+    constexpr int operator()(const std::execution::env<>&) const noexcept { return 42; }
     friend constexpr bool tag_invoke(std::forwarding_query_t, tag_forwarding_query) noexcept {
         return true;
     }
@@ -137,10 +143,8 @@ struct tag_forwarding_query {
 struct await_completion_adaptor_env {
     int value = 0;
 
-    friend int tag_invoke(
-        std::execution::get_await_completion_adaptor_t,
-        const await_completion_adaptor_env& self) noexcept {
-        return self.value;
+    int query(std::execution::get_await_completion_adaptor_t) const noexcept {
+        return this->value;
     }
 };
 
@@ -184,10 +188,8 @@ struct throwing_copy_env {
 
     throwing_copy_env& operator=(const throwing_copy_env&) = delete;
 
-    friend int tag_invoke(
-        overlay_value_query_t,
-        const throwing_copy_env& self) noexcept {
-        return self.value;
+    int query(overlay_value_query_t) const noexcept {
+        return this->value;
     }
 };
 
@@ -208,12 +210,22 @@ struct member_reference_env_holder {
 };
 
 struct tag_reference_env_holder {
-    throwing_copy_env env{53};
+    struct env_type : throwing_copy_env {
+        std::inplace_stop_token token;
+
+        explicit env_type(std::inplace_stop_token stop_token) noexcept
+            : throwing_copy_env(53), token(stop_token) {}
+
+        using throwing_copy_env::query;
+        std::inplace_stop_token query(std::get_stop_token_t) const noexcept { return token; }
+    };
+
+    env_type env;
 
     friend auto tag_invoke(
         std::execution::get_env_t,
         const tag_reference_env_holder& self) noexcept
-        -> const throwing_copy_env& {
+        -> const env_type& {
         return self.env;
     }
 };
@@ -277,18 +289,33 @@ TEST(ExecutionWriteEnvTest, EmptyEnvSupportsCopyListInitialization) {
     EXPECT_FALSE(std::execution::get_stop_token(returned).stop_possible());
 }
 
-static_assert(std::forwarding_query(std::execution::get_scheduler));
-static_assert(std::forwarding_query(std::execution::get_start_scheduler));
-static_assert(std::forwarding_query(std::execution::get_delegation_scheduler));
-static_assert(std::forwarding_query(std::execution::get_stop_token));
-static_assert(std::forwarding_query(std::execution::get_allocator));
-static_assert(std::forwarding_query(std::execution::get_completion_scheduler<std::execution::set_value_t>));
-static_assert(std::forwarding_query(std::execution::get_domain));
-static_assert(std::forwarding_query(std::execution::get_completion_domain<std::execution::set_value_t>));
-static_assert(std::forwarding_query(std::execution::get_await_completion_adaptor));
+template<class Query>
+concept has_forwarding_friend = requires(const Query& q) { tag_invoke(std::forwarding_query, q); };
+
+template<class Query>
+constexpr bool has_only_forwarding_member(const Query& q) {
+    static_assert(!has_forwarding_friend<Query>);
+    return q.query(std::forwarding_query) && std::forwarding_query(q);
+}
+
+static_assert(has_only_forwarding_member(std::execution::get_scheduler));
+static_assert(has_only_forwarding_member(std::execution::get_start_scheduler));
+static_assert(has_only_forwarding_member(std::execution::get_delegation_scheduler));
+static_assert(has_only_forwarding_member(std::execution::get_forward_progress_guarantee));
+static_assert(has_only_forwarding_member(std::get_stop_token));
+static_assert(has_only_forwarding_member(std::execution::get_allocator));
+static_assert(has_only_forwarding_member(std::execution::get_completion_scheduler<std::execution::set_value_t>));
+static_assert(has_only_forwarding_member(std::execution::get_domain));
+static_assert(has_only_forwarding_member(std::execution::get_completion_domain<std::execution::set_value_t>));
+static_assert(has_only_forwarding_member(std::execution::get_await_completion_adaptor));
 static_assert(std::forwarding_query(member_forwarding_query{}));
-static_assert(std::forwarding_query(tag_forwarding_query{}));
+static_assert(!std::forwarding_query(tag_forwarding_query{}));
 static_assert(!std::forwarding_query(std::execution::set_value));
+
+TEST(WriteEnvTest, ForwardingQueryUsesOriginalConstLvalue) {
+    const ref_qualified_forwarding_query query;
+    EXPECT_TRUE(std::forwarding_query(query));
+}
 
 TEST(WriteEnvTest, PropQueriesBorrowMoveOnlyValuesWithoutCopying) {
     auto property = std::execution::prop{
@@ -331,15 +358,17 @@ TEST(WriteEnvTest, GetEnvPreservesMemberReferenceWithoutCopying) {
     EXPECT_EQ(overlay_value_query(env), 42);
 }
 
-TEST(WriteEnvTest, GetEnvPreservesTagReferenceWithoutCopying) {
-    tag_reference_env_holder holder;
-    static_assert(std::same_as<
-        std::execution::env_of_t<tag_reference_env_holder>,
-        const throwing_copy_env&>);
+TEST(WriteEnvTest, GetEnvUsesEmptyEnvironmentForTagOnlyObject) {
+    std::inplace_stop_source source;
+    ASSERT_TRUE(source.request_stop());
+    tag_reference_env_holder holder{tag_reference_env_holder::env_type(source.get_token())};
+    EXPECT_EQ(overlay_value_query(holder.env), 53);
+    EXPECT_TRUE(std::get_stop_token(holder.env).stop_requested());
+    // [exec.get.env]/1.2 ignores the ADL overload, even when it returns a reference.
+    static_assert(std::same_as<std::execution::env_of_t<tag_reference_env_holder>,
+                               std::execution::env<>>);
     static_assert(noexcept(std::execution::get_env(holder)));
-    const auto& env = std::execution::get_env(holder);
-    EXPECT_EQ(&env, &holder.env);
-    EXPECT_EQ(overlay_value_query(env), 53);
+    EXPECT_FALSE(std::get_stop_token(std::execution::get_env(holder)).stop_possible());
 }
 
 TEST(WriteEnvTest, PropUnwrapsReferenceWrappers) {

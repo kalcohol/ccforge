@@ -149,7 +149,7 @@ namespace __coro_detail {
 struct await_sender_receiver_env {
     const io_env* env = nullptr;
 
-    auto query(std::execution::get_stop_token_t) const noexcept
+    auto query(std::get_stop_token_t) const noexcept
         -> std::inplace_stop_token {
         return env ? env->stop_token : std::inplace_stop_token{};
     }
@@ -157,18 +157,6 @@ struct await_sender_receiver_env {
     auto query(std::execution::get_scheduler_t) const noexcept
         -> forge::any_scheduler {
         return env ? env->executor.scheduler() : forge::any_scheduler{};
-    }
-
-    friend auto tag_invoke(
-        std::execution::get_stop_token_t,
-        const await_sender_receiver_env& self) noexcept -> std::inplace_stop_token {
-        return self.query(std::execution::get_stop_token);
-    }
-
-    friend auto tag_invoke(
-        std::execution::get_scheduler_t,
-        const await_sender_receiver_env& self) noexcept -> forge::any_scheduler {
-        return self.query(std::execution::get_scheduler);
     }
 };
 
@@ -753,7 +741,7 @@ public:
     using operation_state_concept = std::execution::operation_state_tag;
     using receiver_env_t = std::execution::env_of_t<Receiver>;
     using receiver_stop_token_t = std::remove_cvref_t<decltype(
-        std::execution::get_stop_token(std::declval<receiver_env_t>()))>;
+        std::get_stop_token(std::declval<receiver_env_t>()))>;
 
     io_task_sender_op(io_task<T> task, io_env env, Receiver receiver)
         : env_(std::move(env))
@@ -771,7 +759,7 @@ public:
         try {
             env_stop_.install(env_.stop_token, fused_stop_, {}, this, &request_stop_callback);
             receiver_stop_.install(
-                std::execution::get_stop_token(
+                std::get_stop_token(
                     std::execution::get_env(receiver_)),
                 fused_stop_, {}, this, &request_stop_callback);
             effective_env_.stop_token = fused_stop_.get_token();

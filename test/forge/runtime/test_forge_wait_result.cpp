@@ -147,7 +147,7 @@ TEST(ForgeWaitResultTest, CapturesStopped) {
 TEST(ForgeWaitResultTest, StopRegistrationEndsBeforeStackSourceDestruction) {
     bool called = false;
     auto result = forge::wait_result(std::execution::then(
-        std::execution::read_env(std::execution::get_stop_token),
+        std::execution::read_env(std::get_stop_token),
         [&called](auto token) {
             std::inplace_stop_callback registration(token, [&called]() noexcept { called = true; });
             return token.stop_possible() && !token.stop_requested();

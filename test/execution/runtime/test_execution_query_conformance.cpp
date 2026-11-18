@@ -349,7 +349,7 @@ TEST(QueryConformanceTest, OnClosureUsesTheReceiverEnvironmentForTheOriginalSche
     using sender_t = decltype(sender);
     using receiver_t = on_test_receiver<on_environment>;
     using missing_receiver_t = on_test_receiver<ex::env<>>;
-    using filtered_environment = ex::__forge_env_detail::__forwarding_attrs<on_environment>;
+    using filtered_environment = ex::__forge_env_detail::__fwd_env_view<on_environment>;
     using filtered_receiver_t = on_test_receiver<filtered_environment>;
     static_assert(ex::sender_in<sender_t, on_environment>);
     static_assert(!ex::sender_in<sender_t, ex::env<>>);

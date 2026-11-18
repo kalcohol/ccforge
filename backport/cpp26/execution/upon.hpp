@@ -123,6 +123,8 @@ struct __recv_error {
     using receiver_concept = receiver_tag;
     R* __rcvr;
     Fn* __fn;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* __env = nullptr;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -164,7 +166,7 @@ struct __recv_error {
     }
 
     auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
-        return {std::execution::get_env(*__rcvr)};
+        return __env->__view();
     }
 };
 
@@ -173,6 +175,8 @@ struct __recv_stopped {
     using receiver_concept = receiver_tag;
     R* __rcvr;
     Fn* __fn;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* __env = nullptr;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -210,7 +214,7 @@ struct __recv_stopped {
     }
 
     auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
-        return {std::execution::get_env(*__rcvr)};
+        return __env->__view();
     }
 };
 
@@ -222,6 +226,8 @@ struct __op : __forge_detail::__immovable {
 
     R __rcvr;
     Fn __fn;
+    // Captured after the callable; outlives every view of the receiver.
+    __forge_env_detail::__receiver_env<R> __env;
     // Destroy the inner operation before the state borrowed by its receiver.
     __inner_op_t __inner;
 
@@ -232,8 +238,10 @@ struct __op : __forge_detail::__immovable {
             noexcept(std::execution::connect(static_cast<S&&>(sndr), __recv{nullptr, nullptr})))
         : __rcvr(std::move(r))
         , __fn(__forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), __rcvr))
+        , __env(__rcvr)
         , __inner(std::execution::connect(
-            static_cast<S&&>(sndr), __recv{std::addressof(__rcvr), std::addressof(__fn)}))
+            static_cast<S&&>(sndr), __recv{
+                std::addressof(__rcvr), std::addressof(__fn), std::addressof(__env)}))
     {}
 
     void start() & noexcept {
@@ -255,7 +263,7 @@ struct __sender {
         completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>>::type;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+    static constexpr auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
 
     template<receiver R>
         requires requires { typename __cs<S, env_of_t<R>>;
@@ -281,8 +289,7 @@ struct __sender {
     template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(__sndr)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
     }
 };
 

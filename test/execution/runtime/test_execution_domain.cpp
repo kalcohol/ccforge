@@ -1,8 +1,11 @@
+#include "../scheduler_fixture.hpp"
+
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <cstddef>
 #include <concepts>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -11,8 +14,8 @@ namespace {
 struct domain_probe_query_t {
     template<class Env>
     auto operator()(const Env& env) const noexcept
-        -> decltype(tag_invoke(*this, env)) {
-        return tag_invoke(*this, env);
+        -> decltype(env.query(*this)) {
+        return env.query(*this);
     }
 };
 
@@ -21,8 +24,8 @@ inline constexpr domain_probe_query_t domain_probe_query{};
 struct transformed_env_query_t {
     template<class Env>
     auto operator()(const Env& env) const noexcept
-        -> decltype(tag_invoke(*this, env)) {
-        return tag_invoke(*this, env);
+        -> decltype(env.query(*this)) {
+        return env.query(*this);
     }
 };
 
@@ -162,38 +165,6 @@ struct invalid_void_completion_attrs : value_completion_attrs {
                const forge::empty_env&) const noexcept {}
 };
 
-struct completion_domain_scheduler;
-
-struct completion_domain_schedule_sender {
-    using sender_concept = std::execution::sender_tag;
-
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept
-        -> std::execution::completion_signatures<std::execution::set_value_t()> {
-        return {};
-    }
-
-    struct attributes {
-        auto query(std::execution::get_completion_scheduler_t<
-                   std::execution::set_value_t>) const noexcept
-            -> completion_domain_scheduler;
-    };
-
-    auto get_env() const noexcept -> attributes { return {}; }
-
-    template<class R>
-    struct operation {
-        using operation_state_concept = std::execution::operation_state_tag;
-        R receiver;
-        void start() & noexcept { std::execution::set_value(std::move(receiver)); }
-    };
-
-    template<std::execution::receiver R>
-    auto connect(R receiver) const -> operation<R> {
-        return {std::move(receiver)};
-    }
-};
-
 struct completion_domain_scheduler : value_completion_attrs {
     using value_completion_attrs::query;
     using scheduler_concept = std::execution::scheduler_tag;
@@ -202,27 +173,21 @@ struct completion_domain_scheduler : value_completion_attrs {
         return std::execution::forward_progress_guarantee::weakly_parallel;
     }
 
-    auto schedule() const noexcept -> completion_domain_schedule_sender { return {}; }
-    bool operator==(const completion_domain_scheduler&) const noexcept { return true; }
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> completion_domain_scheduler { return *this; }
+
+    constexpr auto schedule() const noexcept
+        -> scheduler_fixture::schedule_sender<completion_domain_scheduler> { return {*this}; }
+    constexpr bool operator==(const completion_domain_scheduler&) const noexcept { return true; }
 };
 
-inline auto completion_domain_schedule_sender::attributes::query(
-    std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
-    const noexcept -> completion_domain_scheduler { return {}; }
+// Exercise the completion-domain fallback through a scheduler on plain attributes.
+struct completion_scheduler_attrs {
+    auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> completion_domain_scheduler { return {}; }
+};
 
 struct explicit_scheduler_domain {};
-struct explicit_domain_scheduler;
-
-struct explicit_domain_schedule_sender : completion_domain_schedule_sender {
-    struct attributes {
-        auto query(std::execution::get_completion_scheduler_t<
-                   std::execution::set_value_t>) const noexcept
-            -> explicit_domain_scheduler;
-    };
-
-    auto get_env() const noexcept -> attributes { return {}; }
-};
-
 struct explicit_domain_scheduler : completion_domain_scheduler {
     using completion_domain_scheduler::query;
     static inline int domain_queries = 0;
@@ -232,13 +197,18 @@ struct explicit_domain_scheduler : completion_domain_scheduler {
         throw 42;
     }
 
-    auto schedule() const noexcept -> explicit_domain_schedule_sender { return {}; }
-    bool operator==(const explicit_domain_scheduler&) const noexcept = default;
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> explicit_domain_scheduler { return *this; }
+
+    constexpr auto schedule() const noexcept
+        -> scheduler_fixture::schedule_sender<explicit_domain_scheduler> { return {*this}; }
+    constexpr bool operator==(const explicit_domain_scheduler&) const noexcept = default;
 };
 
-inline auto explicit_domain_schedule_sender::attributes::query(
-    std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
-    const noexcept -> explicit_domain_scheduler { return {}; }
+static_assert(scheduler_fixture::agrees_with_schedule(completion_domain_scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(completion_domain_scheduler{}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(explicit_domain_scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(explicit_domain_scheduler{}, forge::empty_env{}));
 
 template<class ExpectedDomain>
 struct domain_type_query {
@@ -289,7 +259,7 @@ concept has_completion_domain_query = requires(const Attrs& attrs) {
 static_assert(!has_domain_query<non_default_domain_env>);
 
 struct receiver_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const receiver_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> tracking_domain {
         return {};
     }
@@ -306,7 +276,7 @@ struct sender_tracking_domain {
 };
 
 struct sender_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const sender_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> sender_tracking_domain {
         return {};
     }
@@ -375,7 +345,7 @@ struct signature_transform_domain {
 };
 
 struct signature_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const signature_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> signature_transform_domain {
         return {};
     }
@@ -415,10 +385,8 @@ struct rawless_signature_transform_domain {
 };
 
 struct rawless_signature_domain_env {
-    friend auto tag_invoke(
-        std::execution::get_domain_t,
-        const rawless_signature_domain_env&) noexcept
-            -> rawless_signature_transform_domain {
+    auto query(std::execution::get_domain_t) const noexcept
+        -> rawless_signature_transform_domain {
         return {};
     }
 };
@@ -437,10 +405,7 @@ struct explicit_empty_signature_domain {
 
 struct explicit_empty_signature_attributes {
     template<class Env>
-    friend auto tag_invoke(
-        std::execution::get_completion_domain_t<>,
-        const explicit_empty_signature_attributes&,
-        const Env&) noexcept -> explicit_empty_signature_domain {
+    auto query(std::execution::get_completion_domain_t<>, const Env&) const noexcept -> explicit_empty_signature_domain {
         return {};
     }
 };
@@ -471,7 +436,7 @@ struct rescue_domain {
 };
 
 struct rescue_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const rescue_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> rescue_domain {
         return {};
     }
@@ -490,21 +455,21 @@ struct receiver_env_probe_domain {
 struct receiver_env_probe {
     int marker = 0;
 
-    friend auto tag_invoke(std::execution::get_domain_t, const receiver_env_probe&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> receiver_env_probe_domain {
         return {};
     }
 
-    friend int tag_invoke(domain_probe_query_t, const receiver_env_probe& self) noexcept {
-        return self.marker;
+    int query(domain_probe_query_t) const noexcept {
+        return this->marker;
     }
 };
 
 struct injected_env {
     int value = 0;
 
-    friend int tag_invoke(transformed_env_query_t, const injected_env& self) noexcept {
-        return self.value;
+    int query(transformed_env_query_t) const noexcept {
+        return this->value;
     }
 };
 
@@ -547,23 +512,9 @@ struct env_transform_domain {
 };
 
 struct env_transform_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const env_transform_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> env_transform_domain {
         return {};
-    }
-};
-
-struct late_domain_scheduler {
-    using scheduler_concept = std::execution::scheduler_tag;
-    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
-        -> std::execution::forward_progress_guarantee {
-        return std::execution::forward_progress_guarantee::weakly_parallel;
-    }
-
-    bool operator==(const late_domain_scheduler&) const noexcept = default;
-
-    auto schedule() const noexcept {
-        return std::execution::just();
     }
 };
 
@@ -577,19 +528,39 @@ struct scheduler_domain {
     }
 };
 
+struct late_domain_scheduler {
+    using scheduler_concept = std::execution::scheduler_tag;
+    constexpr auto query(std::execution::get_forward_progress_guarantee_t) const noexcept
+        -> std::execution::forward_progress_guarantee {
+        return std::execution::forward_progress_guarantee::weakly_parallel;
+    }
+
+    constexpr bool operator==(const late_domain_scheduler&) const noexcept = default;
+
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> late_domain_scheduler { return *this; }
+
+    template<class Env>
+    auto query(std::execution::get_completion_domain_t<std::execution::set_value_t>, const Env&) const noexcept
+        -> scheduler_domain { return {}; }
+
+    constexpr auto schedule() const noexcept
+        -> scheduler_fixture::schedule_sender<late_domain_scheduler> { return {*this}; }
+};
+
 struct scheduler_domain_env {
-    friend auto tag_invoke(std::execution::get_scheduler_t, const scheduler_domain_env&) noexcept
+    auto query(std::execution::get_scheduler_t) const noexcept
         -> late_domain_scheduler {
         return {};
     }
 
-    template<class Env>
-    friend auto tag_invoke(std::execution::get_completion_domain_t<std::execution::set_value_t>,
-                           late_domain_scheduler, const Env&) noexcept
-        -> scheduler_domain {
-        return {};
-    }
+
 };
+
+static_assert(scheduler_fixture::agrees_with_schedule(late_domain_scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(late_domain_scheduler{}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(late_domain_scheduler{},
+    std::execution::__forge_domain::__hide_scheduler<scheduler_domain_env>{nullptr}));
 
 struct completion_domain_two_env;
 
@@ -606,8 +577,7 @@ struct second_completion_domain {
 
 struct completion_domain_two_env {
     template<class Env>
-    friend auto tag_invoke(std::execution::get_completion_domain_t<>,
-                           const completion_domain_two_env&, const Env&) noexcept
+    auto query(std::execution::get_completion_domain_t<>, const Env&) const noexcept
         -> second_completion_domain {
         return {};
     }
@@ -634,8 +604,7 @@ struct first_completion_domain {
 
 struct completion_domain_one_env {
     template<class Env>
-    friend auto tag_invoke(std::execution::get_completion_domain_t<>,
-                           const completion_domain_one_env&, const Env&) noexcept
+    auto query(std::execution::get_completion_domain_t<>, const Env&) const noexcept
         -> first_completion_domain {
         return {};
     }
@@ -673,7 +642,7 @@ struct recursive_start_domain {
 };
 
 struct recursive_start_domain_env {
-    friend auto tag_invoke(std::execution::get_domain_t, const recursive_start_domain_env&) noexcept
+    auto query(std::execution::get_domain_t) const noexcept
         -> recursive_start_domain {
         return {};
     }
@@ -884,7 +853,7 @@ TEST(CompletionDomainTest, SupportsEnvlessQueriesAndTheirFallback) {
 
 TEST(CompletionDomainTest, FallsBackThroughCompletionScheduler) {
     EXPECT_TRUE((completion_domain_is<void, queried_domain,
-        completion_domain_schedule_sender::attributes,
+        completion_scheduler_attrs,
         forge::empty_env>));
 }
 
@@ -931,66 +900,98 @@ struct throwing_connect_domain_source {
     }
 };
 
-TEST(CompletionDomainTest, StartsOnChildUsesSchedulerCompletionDomain) {
+namespace {
+struct starts_on_outer_env {
+    std::execution::run_loop::scheduler scheduler;
+
+    auto query(std::execution::get_scheduler_t) const noexcept { return scheduler; }
+    auto query(std::execution::get_start_scheduler_t) const noexcept {
+        return std::execution::inline_scheduler{};
+    }
+    auto query(std::execution::get_domain_t) const noexcept { return queried_domain{}; }
+};
+
+struct inspect_starts_on_env {
+    template<class Env>
+        requires requires(const Env& env) { std::execution::get_scheduler(env); }
+    auto operator()(const Env& env) const noexcept {
+        return std::tuple<decltype(std::execution::get_scheduler(env)),
+                          decltype(env.query(std::execution::get_start_scheduler)),
+                          decltype(std::execution::get_domain(env))>{
+            std::execution::get_scheduler(env), env.query(std::execution::get_start_scheduler),
+            std::execution::get_domain(env)};
+    }
+};
+
+using observed_starts_on_env = std::tuple<std::execution::run_loop::scheduler,
+    completion_domain_scheduler, queried_domain>;
+} // namespace
+
+TEST(CompletionDomainTest, StartsOnChildForwardsReceiverSchedulerAndDomain) {
     value_completion_attrs::calls = 0;
-    static_assert(std::same_as<decltype(std::execution::get_domain(
-        completion_domain_scheduler{})), std::execution::default_domain>);
+    const completion_domain_scheduler target;
+    static_assert(std::same_as<decltype(std::execution::get_domain(target)),
+        std::execution::default_domain>);
 
-    auto sndr = std::execution::starts_on(
-        completion_domain_scheduler{},
-        std::execution::read_env(std::execution::get_domain));
-    using signatures = std::execution::completion_signatures_of_t<
-        decltype(sndr), forge::empty_env>;
-    static_assert(std::same_as<signatures,
-        std::execution::completion_signatures<
-            std::execution::set_value_t(queried_domain)>>);
+    // [exec.let]/8.2 can forward get_scheduler only when the outer env answers it.
+    // SCHED-ENV supplies get_start_scheduler and a direct get_domain, per [exec.snd.expos]/10.
+    auto inspect = std::execution::starts_on(target, std::execution::read_env(inspect_starts_on_env{}));
+    static_assert(!std::execution::sender_in<decltype(inspect), forge::empty_env>);
+    static_assert(std::same_as<std::execution::completion_signatures_of_t<decltype(inspect), starts_on_outer_env>,
+        std::execution::completion_signatures<std::execution::set_value_t(observed_starts_on_env)>>);
 
-    using throwing = decltype(std::execution::starts_on(
-        completion_domain_scheduler{}, throwing_connect_domain_source{}));
+    auto sndr = std::execution::starts_on(target, std::execution::read_env(std::execution::get_domain));
+    static_assert(std::same_as<std::execution::completion_signatures_of_t<decltype(sndr), forge::empty_env>,
+        std::execution::completion_signatures<std::execution::set_value_t(std::execution::default_domain)>>);
+    static_assert(std::same_as<std::execution::completion_signatures_of_t<decltype(sndr), starts_on_outer_env>,
+        std::execution::completion_signatures<std::execution::set_value_t(queried_domain)>>);
+
+    using throwing = decltype(std::execution::starts_on(target, throwing_connect_domain_source{}));
     static_assert(std::same_as<std::execution::completion_signatures_of_t<throwing, forge::empty_env>,
+        std::execution::completion_signatures<std::execution::set_value_t(std::execution::default_domain),
+            std::execution::set_error_t(std::exception_ptr)>>);
+    static_assert(std::same_as<std::execution::completion_signatures_of_t<throwing, starts_on_outer_env>,
         std::execution::completion_signatures<std::execution::set_value_t(queried_domain),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    int value = 0;
-    bool completed = false;
-    auto op = std::execution::connect(
-        std::execution::starts_on(
-            completion_domain_scheduler{},
-            std::execution::read_env(domain_type_query<queried_domain>{})),
-        int_receiver<>{&value, &completed});
-    std::execution::start(op);
-
-    EXPECT_TRUE(completed);
-    EXPECT_EQ(value, 1);
+    std::execution::run_loop loop;
+    const starts_on_outer_env outer{loop.get_scheduler()};
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(target, outer));
+    const auto result = forge::sync_wait(std::execution::write_env(
+        std::move(inspect), outer));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(std::get<0>(*result)), loop.get_scheduler());
+    EXPECT_EQ(std::get<1>(std::get<0>(*result)), target);
     EXPECT_EQ(value_completion_attrs::calls, 0);
 }
 
-TEST(CompletionDomainTest, FirstFormOnChildUsesSchedulerCompletionDomain) {
+TEST(CompletionDomainTest, FirstFormOnUsesStartsOnChildEnvironment) {
     value_completion_attrs::calls = 0;
-    auto env = std::execution::prop(
-        std::execution::get_start_scheduler, std::execution::inline_scheduler{});
-    int value = 0;
-    bool completed = false;
-    auto op = std::execution::connect(
-        std::execution::on(
-            completion_domain_scheduler{},
-            std::execution::read_env(domain_type_query<queried_domain>{})),
-        int_receiver<decltype(env)>{&value, &completed, env});
-    std::execution::start(op);
-
-    EXPECT_TRUE(completed);
-    EXPECT_EQ(value, 1);
+    std::execution::run_loop loop;
+    const starts_on_outer_env outer{loop.get_scheduler()};
+    const completion_domain_scheduler target;
+    // [exec.on]/6's first form wraps starts_on in the return hop.
+    const auto result = forge::sync_wait(std::execution::write_env(
+        std::execution::on(target, std::execution::read_env(inspect_starts_on_env{})),
+        outer));
+    static_assert(std::same_as<typename decltype(result)::value_type,
+        std::tuple<observed_starts_on_env>>);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(std::get<0>(std::get<0>(*result)), loop.get_scheduler());
+    EXPECT_EQ(std::get<1>(std::get<0>(*result)), target);
     EXPECT_EQ(value_completion_attrs::calls, 0);
 }
 
-TEST(CompletionDomainTest, NestedLetInheritsStartsOnCompletionDomain) {
+TEST(CompletionDomainTest, NestedLetForwardsStartsOnReceiverDomain) {
     value_completion_attrs::calls = 0;
-    auto check = [](auto child) {
+    std::execution::run_loop loop;
+    const starts_on_outer_env outer{loop.get_scheduler()};
+    auto check = [&outer](auto child) {
         int value = 0;
         bool completed = false;
         auto op = std::execution::connect(
             std::execution::starts_on(completion_domain_scheduler{}, std::move(child)),
-            int_receiver<>{&value, &completed});
+            int_receiver<starts_on_outer_env>{&value, &completed, outer});
         std::execution::start(op);
         EXPECT_TRUE(completed);
         EXPECT_EQ(value, 1);
@@ -1006,16 +1007,20 @@ TEST(CompletionDomainTest, NestedLetInheritsStartsOnCompletionDomain) {
     EXPECT_EQ(value_completion_attrs::calls, 0);
 }
 
-TEST(CompletionDomainTest, NestedLetUsesItsOwnCompletionSchedulerDomain) {
+TEST(CompletionDomainTest, NestedLetWithSchedulerWithoutDirectDomainUsesDefaultDomain) {
     value_completion_attrs::calls = 0;
     int value = 0;
     bool completed = false;
+    // [exec.let]/2.1 selects SCHED-ENV. Its scheduler only answers a
+    // completion-domain query, so [exec.let]/8.2 and [exec.snd.expos]/10
+    // leave get_domain to the forwarded receiver environment.
     auto op = std::execution::connect(
         std::execution::starts_on(
             std::execution::inline_scheduler{},
             std::execution::let_value(
                 std::execution::schedule(completion_domain_scheduler{}), [] {
-                    return std::execution::read_env(domain_type_query<queried_domain>{});
+                    return std::execution::read_env(
+                        domain_type_query<std::execution::default_domain>{});
                 })),
         int_receiver<>{&value, &completed});
     std::execution::start(op);

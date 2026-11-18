@@ -94,7 +94,7 @@ struct pre_stopped_blocking_receiver {
 
     auto get_env() const noexcept {
         return std::execution::env{std::execution::prop{
-            std::execution::get_stop_token, token}};
+            std::get_stop_token, token}};
     }
 };
 

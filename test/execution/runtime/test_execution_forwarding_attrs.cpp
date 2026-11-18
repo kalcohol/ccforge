@@ -42,7 +42,6 @@ void check_query_values(const Sender& sender, attribute_state& state) {
     EXPECT_EQ(state.moves, moves);
     EXPECT_EQ(attrs.query(value_query{}), 17);
     EXPECT_EQ(value_query{}(attrs), 17);
-    EXPECT_EQ(ex::__forge_detail::tag_invoke_fn(value_query{}, attrs), 17);
     EXPECT_EQ(attrs.query(marked_query{}), 17);
     EXPECT_EQ(marked_query{}(attrs), 17);
     EXPECT_EQ(attrs.query(reference_query{}), 17);
@@ -147,8 +146,12 @@ TEST(ExecutionForwardingAttrs, ActualQueriesOutsideDefaultGateRemainRawValid) {
         EXPECT_EQ(actual_query<false>::default_constructions, 0);
         auto attrs = ex::get_env(sender);
         using env_t = decltype(attrs);
-        static_assert(!std::is_invocable_v<const actual_query<true>&, const env_t&>);
+        // The classifier answers true on the supplied object; the view
+        // constructs no query ([exec.snd.expos]/4).
+        static_assert(std::is_invocable_v<const actual_query<true>&, const env_t&>);
         static_assert(!std::is_invocable_v<const actual_query<false>&, const env_t&>);
+        EXPECT_EQ(std::addressof(actual_forwarding(attrs)), std::addressof(borrowed.value));
+        EXPECT_EQ(actual_query<true>::default_constructions, 0);
         EXPECT_EQ(std::addressof(reference_query{}(attrs)), std::addressof(borrowed.value));
         EXPECT_EQ(state.copies, 0);
         EXPECT_EQ(state.moves, 0);
@@ -166,18 +169,15 @@ TEST(ExecutionForwardingAttrs, RawDomainQueryPreservesThrowingMemberAndNoexceptB
 
     EXPECT_THROW((void)attrs.query(ex::get_completion_domain<>, receiver_env{}), domain_failure);
     EXPECT_EQ(state.raw_domain_calls, 1);
-    EXPECT_THROW((void)ex::__forge_detail::tag_invoke_fn(
-        ex::get_completion_domain<>, attrs, receiver_env{}), domain_failure);
-    EXPECT_EQ(state.raw_domain_calls, 2);
     (void)ex::get_completion_domain<>(attrs, receiver_env{});
-    EXPECT_EQ(state.raw_domain_calls, 2);
+    EXPECT_EQ(state.raw_domain_calls, 1);
 
     auto raw_value_domain = attrs.query(ex::get_completion_domain<ex::set_value_t>, receiver_env{});
     static_assert(std::is_same_v<decltype(raw_value_domain), tag_domain>);
     static_assert(noexcept(attrs.query(ex::get_completion_domain<ex::set_value_t>, receiver_env{})));
-    EXPECT_EQ(state.raw_domain_calls, 3);
+    EXPECT_EQ(state.raw_domain_calls, 2);
     (void)ex::get_completion_domain<ex::set_value_t>(attrs, receiver_env{});
-    EXPECT_EQ(state.raw_domain_calls, 3);
+    EXPECT_EQ(state.raw_domain_calls, 2);
 }
 
 TEST(ExecutionForwardingAttrs, NestedFiltersPreserveBorrowedReferenceAndCompletion) {

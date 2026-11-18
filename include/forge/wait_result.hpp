@@ -56,7 +56,7 @@ struct __env {
         return loop->get_scheduler();
     }
 
-    auto query(std::execution::get_stop_token_t) const noexcept {
+    auto query(std::get_stop_token_t) const noexcept {
         return stop_token;
     }
 };

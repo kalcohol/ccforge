@@ -739,7 +739,7 @@ inline void __op<R>::start() & noexcept {
             [data] noexcept { data->complete_stopped(); });
 
         decltype(auto) env = std::execution::get_env(data->rcvr_);
-        auto token = std::execution::get_stop_token(env);
+        auto token = std::get_stop_token(env);
         if (token.stop_requested()) {
             complete_inline_stopped();
             return;

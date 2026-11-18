@@ -552,23 +552,16 @@ auto __env::query(std::execution::get_completion_domain_t<Tag>, Env&& env, Envs&
 
 } // namespace __pool_detail
 
-inline auto tag_invoke(
-    std::execution::get_forward_progress_guarantee_t,
-    const static_thread_pool::scheduler& self) noexcept
-    -> std::execution::forward_progress_guarantee {
-    return self.query(std::execution::get_forward_progress_guarantee);
-}
-
 // Define __op start after static_thread_pool is complete
 namespace __pool_detail {
 
 template<class R>
 bool __stop_requested(const R& rcvr) noexcept {
     if constexpr (requires {
-                      std::execution::get_stop_token(
+                      std::get_stop_token(
                           std::execution::get_env(rcvr));
                   }) {
-        return std::execution::get_stop_token(
+        return std::get_stop_token(
             std::execution::get_env(rcvr)).stop_requested();
     } else {
         return false;

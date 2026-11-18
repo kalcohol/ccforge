@@ -155,7 +155,7 @@ struct __env {
     any_stop_token __token;
     forge::any_scheduler __scheduler;
 
-    [[nodiscard]] auto query(std::execution::get_stop_token_t) const noexcept
+    [[nodiscard]] auto query(std::get_stop_token_t) const noexcept
         -> any_stop_token {
         return __token;
     }
@@ -322,7 +322,7 @@ public:
             throw std::logic_error{"task: empty"};
         }
         decltype(auto) env = std::execution::get_env(r);
-        auto token = std::execution::get_stop_token(env);
+        auto token = std::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
             erased_token = any_stop_token{std::move(token)};
@@ -407,7 +407,7 @@ public:
             throw std::logic_error{"task: empty"};
         }
         decltype(auto) env = std::execution::get_env(r);
-        auto token = std::execution::get_stop_token(env);
+        auto token = std::get_stop_token(env);
         any_stop_token erased_token;
         if constexpr (!std::unstoppable_token<std::remove_cvref_t<decltype(token)>>) {
             erased_token = any_stop_token{std::move(token)};

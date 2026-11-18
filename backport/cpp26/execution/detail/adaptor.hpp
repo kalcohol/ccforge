@@ -46,7 +46,36 @@ using __child_category_t = std::conditional_t<
     !std::is_const_v<std::remove_reference_t<Self>>, Child, const Child&>;
 
 template<class Env>
-using __fwd_env_t = __forge_env_detail::__forwarding_attrs<Env>;
+using __fwd_env_t = __forge_env_detail::__fwd_env_view<Env>;
+
+// The operation state of an adaptor that only wraps the receiver. It owns the
+// receiver, the environment that the wrapping receiver forwards, and the
+// child operation. Recv is an aggregate of a receiver pointer and a pointer
+// to that environment.
+template<class Child, class R, class Recv>
+struct __receiver_op : __immovable {
+    using operation_state_concept = operation_state_tag;
+
+    R __rcvr;
+    __forge_env_detail::__receiver_env<R> __env;
+    // Destroy the child operation before the state borrowed by its receiver.
+    connect_result_t<Child, Recv> __inner;
+
+    // The receiver arrives by reference and is moved once, into __rcvr.
+    __receiver_op(Child&& child, R&& rcvr)
+        noexcept(std::is_nothrow_move_constructible_v<R> &&
+                 noexcept(std::execution::connect(
+                     static_cast<Child&&>(child), Recv{nullptr, nullptr})))
+        : __rcvr(std::move(rcvr))
+        , __env(__rcvr)
+        , __inner(std::execution::connect(static_cast<Child&&>(child),
+              Recv{std::addressof(__rcvr), std::addressof(__env)}))
+    {}
+
+    void start() & noexcept {
+        std::execution::start(__inner);
+    }
+};
 
 template<class Fn, class Tag, class Sig>
 struct __accepts_completion : std::true_type {};

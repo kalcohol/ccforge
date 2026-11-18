@@ -1,3 +1,5 @@
+#include "../scheduler_fixture.hpp"
+
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
@@ -67,25 +69,25 @@ struct throwing_value_sender {
 
         explicit op(R r) : rcvr(std::move(r)) {}
 
-        friend void tag_invoke(std::execution::start_t, op& self) noexcept {
-            std::execution::set_value(std::move(self.rcvr), self.value);
+        void start() & noexcept {
+            std::execution::set_value(std::move(this->rcvr), this->value);
         }
     };
 
-    friend auto tag_invoke(std::execution::get_completion_signatures_t,
-                           const throwing_value_sender&, auto) noexcept
+    template<class Self, class Env = forge::empty_env>
+    static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(const throws_on_copy&)> {
         return {};
     }
 
     template<std::execution::receiver R>
-    friend auto tag_invoke(std::execution::connect_t, throwing_value_sender, R r)
+    auto connect(R r) const
         -> op<R> {
         return op<R>{std::move(r)};
     }
 
-    friend auto tag_invoke(std::execution::get_env_t, const throwing_value_sender&) noexcept
+    auto get_env() const noexcept
         -> forge::empty_env {
         return {};
     }
@@ -147,16 +149,19 @@ struct domain_scheduler {
 
     int identity = 0;
 
-    auto schedule() const noexcept {
-        return std::execution::schedule(std::execution::inline_scheduler{});
+    constexpr auto schedule() const noexcept -> scheduler_fixture::schedule_sender<domain_scheduler> {
+        return {*this};
     }
+
+    constexpr auto query(std::execution::get_completion_scheduler_t<std::execution::set_value_t>)
+        const noexcept -> domain_scheduler { return *this; }
 
     auto query(std::execution::get_domain_t) const noexcept
         -> starts_on_domain {
         return {identity};
     }
 
-    bool operator==(const domain_scheduler&) const noexcept = default;
+    constexpr bool operator==(const domain_scheduler&) const noexcept = default;
 };
 
 struct int_start_receiver {
@@ -922,13 +927,17 @@ TEST(StartsOnTest, RunsOnScheduler) {
     EXPECT_EQ(result, 42);
 }
 
-TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
-    const std::execution::inline_scheduler target;
+TEST(StartsOnTest, ChildEnvironmentSeparatesReceiverAndTargetSchedulers) {
+    const domain_scheduler target{47};
+    std::execution::run_loop receiver_loop;
+    auto receiver_scheduler = receiver_loop.get_scheduler();
 
-    auto scheduler_result = forge::sync_wait(
+    // [exec.starts.on]/4 and [exec.let]/8.2 forward the receiver's get_scheduler.
+    auto scheduler_result = forge::sync_wait(std::execution::write_env(
         std::execution::starts_on(
             target,
-            std::execution::read_env(std::execution::get_scheduler)));
+            std::execution::read_env(std::execution::get_scheduler)),
+        std::execution::prop{std::execution::get_scheduler, receiver_scheduler}));
     auto start_scheduler_result = forge::sync_wait(
         std::execution::starts_on(
             target,
@@ -937,18 +946,32 @@ TEST(StartsOnTest, ChildEnvironmentReportsTheTargetScheduler) {
 
     static_assert(std::is_same_v<
         decltype(scheduler_result),
-        std::optional<std::tuple<std::execution::inline_scheduler>>>);
+        std::optional<std::tuple<std::execution::run_loop::scheduler>>>);
     static_assert(std::is_same_v<
         decltype(start_scheduler_result),
-        std::optional<std::tuple<std::execution::inline_scheduler>>>);
+        std::optional<std::tuple<domain_scheduler>>>);
     ASSERT_TRUE(scheduler_result.has_value());
     ASSERT_TRUE(start_scheduler_result.has_value());
-    EXPECT_EQ(std::get<0>(*scheduler_result), target);
+    EXPECT_EQ(std::get<0>(*scheduler_result), receiver_scheduler);
     EXPECT_EQ(std::get<0>(*start_scheduler_result), target);
+}
+
+TEST(StartsOnTest, InlineTargetSelectsReceiverCompletionScheduler) {
+    auto result = forge::sync_wait(std::execution::starts_on(
+        std::execution::inline_scheduler{}, std::execution::read_env(std::execution::get_start_scheduler)));
+    // [exec.let]/2.1 uses the completion scheduler resolved in the outer environment.
+    static_assert(std::same_as<decltype(result),
+        std::optional<std::tuple<std::execution::run_loop::scheduler>>>);
+    EXPECT_TRUE(result.has_value());
 }
 
 TEST(StartsOnTest, ChildEnvironmentReportsDefaultConstructedTargetDomain) {
     const domain_scheduler target{47};
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(target));
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(target, forge::empty_env{}));
+    std::execution::run_loop loop;
+    EXPECT_TRUE(scheduler_fixture::agrees_with_schedule(
+        target, std::execution::__forge_sync_wait::sync_wait_env{&loop}));
 
     auto result = forge::sync_wait(
         std::execution::starts_on(
@@ -1183,10 +1206,9 @@ TEST(AffineTest, PipeFormCompletesOnRequestedScheduler) {
     EXPECT_EQ(std::get<0>(*result), 6);
 }
 
-TEST(ContinuesOnTest, SupportsStandardPipeForm) {
+TEST(ContinuesOnTest, SupportsBinaryCpoForm) {
     auto result = forge::sync_wait(
-        std::execution::just(7)
-        | std::execution::continues_on(std::execution::inline_scheduler{}));
+        std::execution::continues_on(std::execution::just(7), std::execution::inline_scheduler{}));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 7);

@@ -238,47 +238,19 @@ if(FORGE_TEST_ENABLE_FORGE_ERASURE)
     forge_add_forge_test(test_forge_any_receiver test_forge_any_receiver.cpp forge_any_receiver)
 endif()
 
-# Compile each executable consistently in member-only query mode. No definition
-# is exported by forge::forge.
-add_custom_target(test_forge_strict_member_queries)
-function(forge_add_strict_test stem)
-    set(_strict_target "test_forge_strict_${stem}")
-    forge_add_forge_test(${_strict_target} "test_forge_${stem}.cpp" "forge_strict_${stem}")
-    target_compile_definitions(${_strict_target} PRIVATE
-        FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
-    add_dependencies(test_forge_strict_member_queries ${_strict_target})
-endfunction()
-
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
-    foreach(_stem IN ITEMS runtime_context async_scope strand strand_rejection thread_pool task task_member_queries)
-        forge_add_strict_test(${_stem})
-    endforeach()
-    target_compile_definitions(test_forge_strict_thread_pool PRIVATE
-        FORGE_STATIC_THREAD_POOL_ENABLE_TEST_HOOKS)
-    if(MSVC)
-        target_compile_options(test_forge_strict_task PRIVATE /bigobj)
-    endif()
+    forge_add_forge_test(test_forge_task_member_queries
+        test_forge_task_member_queries.cpp forge_task_member_queries)
 endif()
-if(FORGE_TEST_ENABLE_FORGE_ERASURE)
-    foreach(_stem IN ITEMS any_scheduler any_receiver any_sender erased_sender)
-        forge_add_strict_test(${_stem})
-    endforeach()
-endif()
-if(FORGE_TEST_ENABLE_FORGE_IO)
-    foreach(_stem IN ITEMS coro_io coro_interop coro_combinators)
-        forge_add_strict_test(${_stem})
-    endforeach()
-endif()
+
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME OR FORGE_TEST_ENABLE_FORGE_ERASURE
         OR FORGE_TEST_ENABLE_FORGE_IO)
     forge_add_forge_compile_probe(test_forge_member_queries
         test_forge_member_queries.cpp forge_member_queries)
     target_compile_definitions(test_forge_member_queries PRIVATE
-        FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1
         FORGE_TEST_QUERY_RUNTIME=$<BOOL:${FORGE_TEST_ENABLE_FORGE_RUNTIME}>
         FORGE_TEST_QUERY_ERASURE=$<BOOL:${FORGE_TEST_ENABLE_FORGE_ERASURE}>
         FORGE_TEST_QUERY_IO=$<BOOL:${FORGE_TEST_ENABLE_FORGE_IO}>)
-    add_dependencies(test_forge_strict_member_queries test_forge_member_queries)
 endif()
 
 if(FORGE_SENDERS_FULL AND NOT FORGE_FORCE_SENDERS_BACKPORT)
@@ -355,11 +327,7 @@ foreach(_forge_target IN ITEMS
     test_forge_stop_lifetime_io_iocp test_forge_stop_lifetime_io_uring_rw
     test_forge_stop_lifetime_stop_callback_lifetime test_forge_stop_lifetime_strand
     test_forge_stop_lifetime_timer_context test_forge_stop_lifetime_wait_result
-    test_forge_strand test_forge_strand_rejection test_forge_strict_any_receiver
-    test_forge_strict_any_scheduler test_forge_strict_any_sender test_forge_strict_async_scope
-    test_forge_strict_coro_combinators test_forge_strict_coro_interop
-    test_forge_strict_erased_sender test_forge_strict_runtime_context test_forge_strict_strand
-    test_forge_strict_strand_rejection test_forge_strict_task test_forge_strict_thread_pool
+    test_forge_strand test_forge_strand_rejection
     test_forge_task test_forge_thread_pool test_forge_timer_await test_forge_timer_context
     test_forge_wait_result)
     if(TARGET ${_forge_target})

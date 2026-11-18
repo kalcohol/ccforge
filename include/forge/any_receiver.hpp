@@ -147,21 +147,15 @@ class any_receiver_of {
     template<class R>
     static auto __make_stop_token(const R& receiver) -> any_stop_token {
         return any_stop_token{
-            std::execution::get_stop_token(std::execution::get_env(receiver))};
+            std::get_stop_token(std::execution::get_env(receiver))};
     }
 
     struct __env {
         any_stop_token token;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> any_stop_token {
             return token;
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const __env& self) noexcept -> any_stop_token {
-            return self.query(std::execution::get_stop_token);
         }
     };
 

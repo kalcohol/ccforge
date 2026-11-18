@@ -23,12 +23,6 @@ struct member_stop_env {
         -> std::inplace_stop_token {
         return token;
     }
-
-    friend auto tag_invoke(
-        std::execution::get_stop_token_t,
-        const member_stop_env&) noexcept -> std::never_stop_token {
-        return {};
-    }
 };
 
 struct qualified_stop_callback {

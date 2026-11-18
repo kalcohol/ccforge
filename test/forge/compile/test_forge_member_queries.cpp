@@ -5,11 +5,17 @@
 
 // Check direct members as well as CPO dispatch: defaults can silently hide a
 // missing stop-token answer in a native implementation.
+template<class Env, class Query>
+concept adl_answer = requires(Env&& e, Query q) {
+    tag_invoke(q, static_cast<Env&&>(e));
+};
+
 template<class Env, class Query, class Result>
 concept member_answer = requires(const Env& e) {
     { e.query(Query{}) } noexcept -> std::same_as<Result>;
-};
-using stop_query = std::execution::get_stop_token_t;
+} && !adl_answer<Env&, Query> && !adl_answer<const Env&, Query> &&
+     !adl_answer<Env, Query> && !adl_answer<const Env, Query>;
+using stop_query = std::get_stop_token_t;
 using completion_query = std::execution::get_completion_scheduler_t<
     std::execution::set_value_t>;
 
@@ -68,14 +74,11 @@ static_assert(member_answer<await_env, std::execution::get_scheduler_t,
 #endif
 #endif
 
-#if defined(FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES) && FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES
-// This check also proves the backport's test switch disables fallback rather
-// than merely preferring members. Native get_stop_token has the same default.
+// [exec.get.stop.token]/2.2 gives the same default in both implementations.
 struct legacy_env {
     friend auto tag_invoke(stop_query, const legacy_env&) noexcept
         -> std::inplace_stop_token { return {}; }
 };
-static_assert(std::same_as<decltype(std::execution::get_stop_token(legacy_env{})),
+static_assert(std::same_as<decltype(std::get_stop_token(legacy_env{})),
     std::never_stop_token>);
-#endif
 int main() {}

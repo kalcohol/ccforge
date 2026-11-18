@@ -689,10 +689,10 @@ struct __op {
 
     static bool stop_requested(const R& rcvr) noexcept {
         if constexpr (requires {
-                          std::execution::get_stop_token(
+                          std::get_stop_token(
                               std::execution::get_env(rcvr));
                       }) {
-            return std::execution::get_stop_token(
+            return std::get_stop_token(
                 std::execution::get_env(rcvr)).stop_requested();
         } else {
             return false;

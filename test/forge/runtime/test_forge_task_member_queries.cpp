@@ -15,7 +15,7 @@ auto stopped_task() -> forge::task<int> {
     co_return 42;
 }
 }
-TEST(TaskMemberQueriesTest, ValueAndStoppedSurviveStrictDispatch) {
+TEST(TaskMemberQueriesTest, ValueAndStoppedUseMemberDispatch) {
     auto value = forge::sync_wait(value_task());
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(std::get<0>(*value), 42);

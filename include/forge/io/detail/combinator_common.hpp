@@ -52,15 +52,9 @@ struct child_receiver {
     struct env {
         std::shared_ptr<State> state;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> std::inplace_stop_token {
             return state->stop_token();
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const env& self) noexcept -> std::inplace_stop_token {
-            return self.query(std::execution::get_stop_token);
         }
     };
 

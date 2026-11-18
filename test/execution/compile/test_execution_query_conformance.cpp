@@ -2,6 +2,7 @@
 // [exec.cmplsig], [exec.envs] and [exec.domain.indeterminate].
 #include <forge/execution_extensions.hpp>
 #include "cpp26/execution.hpp"
+#include "../scheduler_fixture.hpp"
 #include <memory>
 
 namespace ex = std::execution;
@@ -248,13 +249,58 @@ static_assert(!std::invocable<ex::start_t, const operation>);
 
 struct scheduler {
     using scheduler_concept = ex::scheduler_tag;
-    constexpr auto schedule() const noexcept { return ex::inline_scheduler{}.schedule(); }
+    // The schedule sender's attributes are this scheduler ([exec.sched]/5-6).
+    constexpr auto schedule() const noexcept -> scheduler_fixture::schedule_sender<scheduler> {
+        return {*this};
+    }
     constexpr auto query(ex::get_forward_progress_guarantee_t) const noexcept {
         return ex::forward_progress_guarantee::weakly_parallel;
     }
     bool operator==(const scheduler&) const noexcept = default;
 };
-struct lvalue_scheduler : scheduler { auto schedule() & noexcept { return ex::just(); } };
+// The lvalue-only schedule sender owns a copy of the scheduler, and its
+// attributes are that copy, so they live as long as the sender and every
+// query agrees with the scheduler ([exec.sched]/5-6).
+template<class Scheduler>
+struct lvalue_schedule_sender_for {
+    using sender_concept = ex::sender_tag;
+    mutable Scheduler scheduler;
+    constexpr auto get_env() const noexcept -> Scheduler& { return scheduler; }
+    template<class Self, class... Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t()> { return {}; }
+    template<ex::receiver R>
+    auto connect(R receiver) const
+        noexcept(noexcept(ex::connect(ex::just(), std::move(receiver))))
+        -> ex::connect_result_t<decltype(ex::just()), R> {
+        return ex::connect(ex::just(), std::move(receiver));
+    }
+};
+struct lvalue_scheduler : scheduler {
+    constexpr auto schedule() & noexcept -> lvalue_schedule_sender_for<lvalue_scheduler> {
+        return {*this};
+    }
+};
+using lvalue_schedule_sender = lvalue_schedule_sender_for<lvalue_scheduler>;
+constexpr bool lvalue_schedule_attributes_are_the_scheduler() {
+    lvalue_scheduler sch;
+    auto sender = ex::schedule(sch);
+    return std::addressof(ex::get_env(sender)) == std::addressof(sender.scheduler) &&
+           ex::get_env(sender) == sch;
+}
+static_assert(lvalue_schedule_attributes_are_the_scheduler());
+static_assert(std::same_as<ex::schedule_result_t<lvalue_scheduler&>, lvalue_schedule_sender>);
+static_assert(std::same_as<ex::env_of_t<lvalue_schedule_sender>, lvalue_scheduler&>);
+template<class Query, class... Envs>
+constexpr bool lvalue_schedule_agrees =
+    requires(lvalue_scheduler& sch, Envs&&... envs) { Query{}(sch, static_cast<Envs&&>(envs)...); } ==
+    requires(lvalue_schedule_sender& sender, Envs&&... envs) {
+        Query{}(ex::get_env(sender), static_cast<Envs&&>(envs)...); };
+// With an environment, auto(sch) is not a scheduler type and the Mandate of
+// [exec.get.compl.sched]/5 rejects both sides, also through the scheduler
+// fallback of the completion-domain query; the Mandate probes cover it.
+static_assert(lvalue_schedule_agrees<ex::get_completion_scheduler_t<ex::set_value_t>>);
+static_assert(lvalue_schedule_agrees<ex::get_completion_domain_t<ex::set_value_t>>);
 struct nonassignable_scheduler : scheduler {
     nonassignable_scheduler& operator=(const nonassignable_scheduler&) = delete;
 };
@@ -270,6 +316,10 @@ static_assert(!ex::scheduler<decltype(ex::just())>);
 static_assert(!std::invocable<ex::schedule_t, ex::env<>> && !std::invocable<ex::schedule_t, int>);
 static_assert(!std::invocable<ex::get_completion_scheduler_t<ex::set_value_t>, ex::env<>, ex::env<>>);
 static_assert(ex::scheduler<scheduler>);
+static_assert(scheduler_fixture::agrees_with_schedule(scheduler{}));
+static_assert(scheduler_fixture::agrees_with_schedule(scheduler{}, ex::env<>{}));
+static_assert(std::same_as<decltype(ex::get_completion_scheduler<ex::set_value_t>(
+    ex::get_env(ex::schedule(scheduler{})), ex::env<>{})), scheduler>);
 static_assert(!ex::scheduler<lvalue_scheduler> && ex::scheduler<lvalue_scheduler&>);
 static_assert(!ex::scheduler<const lvalue_scheduler&>);
 static_assert(!ex::scheduler<nonassignable_scheduler>);
@@ -297,7 +347,7 @@ struct derived_query : std::forwarding_query_t {
 };
 struct query_environment { int query(derived_query) const noexcept; };
 template<class E> concept answers_derived = requires(const E& e, derived_query q) { e.query(q); };
-static_assert(answers_derived<ex::__forge_env_detail::__forwarding_attrs<query_environment>>);
+static_assert(answers_derived<ex::__forge_env_detail::__fwd_env_view<query_environment>>);
 static_assert(answers_derived<ex::__forge_let::__forwarding_env<query_environment>>);
 static_assert(!ex::__forge_env_detail::__forwarding_query<derived_query>);
 
@@ -312,21 +362,260 @@ struct nondefault_false_query : std::forwarding_query_t {
     explicit constexpr nondefault_false_query(int) {}
     friend constexpr bool tag_invoke(std::forwarding_query_t, nondefault_false_query) noexcept { return false; }
 };
-struct false_query_environment {
-    int query(legacy_false_query) const noexcept;
-    int query(member_false_query) const noexcept;
-    int query(nondefault_false_query) const noexcept;
+struct ref_qualified_forwarding_query {
+    constexpr bool query(std::forwarding_query_t) & noexcept { return false; }
+    constexpr bool query(std::forwarding_query_t) && noexcept { return false; }
+    constexpr bool query(std::forwarding_query_t) const& noexcept { return true; }
+
+    template<class Env>
+    constexpr auto operator()(const Env& env) const noexcept(noexcept(env.query(*this)))
+        -> decltype(env.query(*this)) {
+        return env.query(*this);
+    }
 };
-template<class E, class Q> concept answers_query = requires(const E& e, Q q) { e.query(q); };
-static_assert(!std::forwarding_query(legacy_false_query{}));
+struct false_query_environment {
+    int query(legacy_false_query) const noexcept { return 5; }
+    int query(member_false_query) const noexcept { return 5; }
+    int query(nondefault_false_query) const noexcept { return 5; }
+    int query(ref_qualified_forwarding_query) const noexcept { return 5; }
+};
+template<class E, class Q>
+concept answers_query = requires(const E& e, Q&& q) { e.query(static_cast<Q&&>(q)); };
+// [exec.fwd.env]/2.2 takes the base-class fallback when there is no member.
+static_assert(std::forwarding_query(legacy_false_query{}));
+static_assert(std::forwarding_query(nondefault_false_query{0}));
 static_assert(!std::forwarding_query(member_false_query{}));
-static_assert(!answers_query<ex::__forge_env_detail::__forwarding_attrs<false_query_environment>, legacy_false_query>);
-static_assert(!answers_query<ex::__forge_env_detail::__forwarding_attrs<false_query_environment>, member_false_query>);
-static_assert(!answers_query<ex::__forge_let::__forwarding_env<false_query_environment>, legacy_false_query>);
+static_assert(answers_query<ex::__forge_env_detail::__fwd_env_view<false_query_environment>, legacy_false_query>);
+static_assert(!answers_query<ex::__forge_env_detail::__fwd_env_view<false_query_environment>, member_false_query>);
+static_assert(answers_query<ex::__forge_let::__forwarding_env<false_query_environment>, legacy_false_query>);
 static_assert(!answers_query<ex::__forge_let::__forwarding_env<false_query_environment>, member_false_query>);
 
-static_assert(!answers_query<ex::__forge_env_detail::__forwarding_attrs<false_query_environment>, nondefault_false_query>);
-static_assert(!answers_query<ex::__forge_let::__forwarding_env<false_query_environment>, nondefault_false_query>);
+static_assert(answers_query<ex::__forge_env_detail::__fwd_env_view<false_query_environment>, nondefault_false_query>);
+static_assert(answers_query<ex::__forge_let::__forwarding_env<false_query_environment>, nondefault_false_query>);
+
+struct forwarding_receiver {
+    using receiver_concept = ex::receiver_tag;
+    false_query_environment get_env() const noexcept { return {}; }
+    void set_value(int) && noexcept {}
+    void set_error(std::exception_ptr) && noexcept {}
+};
+
+using inner_forwarding = ex::__forge_let::__inner_env<ex::env<>, ex::env_of_t<forwarding_receiver>>;
+static_assert(answers_query<inner_forwarding, legacy_false_query>);
+static_assert(!answers_query<inner_forwarding, nondefault_false_query>);
+static_assert(!answers_query<inner_forwarding, member_false_query>);
+static_assert(!answers_query<inner_forwarding, const ref_qualified_forwarding_query&>);
+
+template<bool AcceptsSignatureView>
+struct checks_forwarding_rules {
+    using sender_concept = ex::sender_tag;
+
+    // [exec.let]/9.4 classifies the supplied query object, even when Q{} is invalid.
+    template<class Self, class Env>
+        requires (!answers_query<Env, ref_qualified_forwarding_query&>) &&
+                 (!answers_query<Env, ref_qualified_forwarding_query>) &&
+                 ((answers_query<Env, nondefault_false_query> &&
+                   answers_query<Env, const ref_qualified_forwarding_query&> && AcceptsSignatureView) ||
+                  (!answers_query<Env, nondefault_false_query> &&
+                   !answers_query<Env, const ref_qualified_forwarding_query&>))
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(int)> { return {}; }
+
+    // [exec.let]/8.2 requires the type to satisfy forwarding-query.
+    template<class R>
+        requires (!answers_query<ex::env_of_t<R>, nondefault_false_query>) &&
+                 answers_query<ex::env_of_t<R>, legacy_false_query> &&
+                 (!answers_query<ex::env_of_t<R>, member_false_query>) &&
+                 (!answers_query<ex::env_of_t<R>, const ref_qualified_forwarding_query&>)
+    auto connect(R r) const noexcept -> ex::connect_result_t<decltype(ex::just(5)), R> {
+        return ex::connect(ex::just(5), std::move(r));
+    }
+};
+
+template<bool AcceptsSignatureView>
+struct make_forwarding_successor {
+    auto operator()() const noexcept -> checks_forwarding_rules<AcceptsSignatureView> { return {}; }
+};
+template<bool AcceptsSignatureView>
+using let_forwarding = decltype(ex::let_value(ex::just(), make_forwarding_successor<AcceptsSignatureView>{}));
+template<bool AcceptsSignatureView>
+using starts_forwarding = decltype(ex::starts_on(
+    ex::inline_scheduler{}, checks_forwarding_rules<AcceptsSignatureView>{}));
+template<class S>
+constexpr bool uses_both_forwarding_rules =
+    std::same_as<ex::completion_signatures_of_t<S, false_query_environment>,
+                 ex::completion_signatures<ex::set_value_t(int)>> &&
+    requires(S&& s) { ex::connect(std::move(s), forwarding_receiver{}); };
+static_assert(uses_both_forwarding_rules<let_forwarding<true>>);
+static_assert(uses_both_forwarding_rules<starts_forwarding<true>>);
+static_assert(!ex::sender_in<let_forwarding<false>, false_query_environment>);
+static_assert(!ex::sender_in<starts_forwarding<false>, false_query_environment>);
+
+// [exec.snd.expos]/4 forwards q when forwarding_query(q) is true, and
+// [exec.fwd.env]/2.1 lets the classifier read the query object. The signature
+// view of [exec.let]/9.4 evaluates such a classifier on a value-initialized
+// instance with the supplied qualification.
+struct stateful_forwarding_query {
+    bool forwards = true;
+    constexpr bool query(std::forwarding_query_t) const noexcept { return forwards; }
+
+    template<class Env>
+    constexpr auto operator()(const Env& env) const noexcept(noexcept(env.query(*this)))
+        -> decltype(env.query(*this)) {
+        return env.query(*this);
+    }
+};
+struct stateful_local_query {
+    bool forwards = false;
+    constexpr bool query(std::forwarding_query_t) const noexcept { return forwards; }
+
+    template<class Env>
+    constexpr auto operator()(const Env& env) const noexcept(noexcept(env.query(*this)))
+        -> decltype(env.query(*this)) {
+        return env.query(*this);
+    }
+};
+// A classifier member that reads nothing needs no constructor.
+struct nondefault_member_query {
+    nondefault_member_query() = delete;
+    explicit constexpr nondefault_member_query(int) noexcept {}
+    constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
+};
+// Recorded residual: the value of a function argument is not a constant
+// expression, so state without a constant value-initialized instance cannot
+// be classified from the type and the query is conservatively not forwarded.
+struct nondefault_stateful_query {
+    bool forwards;
+    explicit constexpr nondefault_stateful_query(bool value) noexcept : forwards(value) {}
+    constexpr bool query(std::forwarding_query_t) const noexcept { return forwards; }
+};
+static_assert(std::forwarding_query(stateful_forwarding_query{}));
+static_assert(!std::forwarding_query(stateful_local_query{}));
+static_assert(std::forwarding_query(nondefault_member_query{0}));
+static_assert(std::forwarding_query(nondefault_stateful_query{true}));
+template<class Q>
+constexpr bool fwd_env_forwards = ex::__forge_env_detail::__qualified_fwd_env_query<Q>;
+static_assert(fwd_env_forwards<stateful_forwarding_query>);
+static_assert(fwd_env_forwards<stateful_forwarding_query&>);
+static_assert(fwd_env_forwards<const stateful_forwarding_query&>);
+static_assert(!fwd_env_forwards<stateful_local_query>);
+static_assert(!fwd_env_forwards<const stateful_local_query&>);
+static_assert(fwd_env_forwards<const ref_qualified_forwarding_query&>);
+static_assert(!fwd_env_forwards<ref_qualified_forwarding_query&>);
+static_assert(!fwd_env_forwards<ref_qualified_forwarding_query>);
+static_assert(fwd_env_forwards<derived_query> && fwd_env_forwards<const derived_query&>);
+static_assert(fwd_env_forwards<nondefault_false_query>);
+static_assert(!fwd_env_forwards<member_false_query>);
+static_assert(fwd_env_forwards<nondefault_member_query>);
+static_assert(!fwd_env_forwards<nondefault_stateful_query>);
+static_assert(fwd_env_forwards<ex::get_scheduler_t> && !fwd_env_forwards<int>);
+// An empty query type needs no constructor whatever its size.
+struct alignas(16) overaligned_member_query {
+    overaligned_member_query() = delete;
+    explicit constexpr overaligned_member_query(int) noexcept {}
+    constexpr bool query(std::forwarding_query_t) const noexcept { return true; }
+};
+static_assert(sizeof(overaligned_member_query) == 16);
+static_assert(fwd_env_forwards<overaligned_member_query>);
+static_assert(fwd_env_forwards<const overaligned_member_query&>);
+// No classifier member and no forwarding_query_t base: false from the type
+// alone ([exec.fwd.env]/2.3), with no stand-in instance.
+struct plain_nondefault_query {
+    int state;
+    plain_nondefault_query() = delete;
+};
+static_assert(!fwd_env_forwards<plain_nondefault_query>);
+static_assert(!fwd_env_forwards<const plain_nondefault_query&>);
+
+struct stateful_query_environment {
+    int query(stateful_forwarding_query) const noexcept { return 7; }
+    int query(stateful_local_query) const noexcept { return 7; }
+};
+struct stateful_receiver {
+    using receiver_concept = ex::receiver_tag;
+    stateful_query_environment get_env() const noexcept { return {}; }
+    void set_value(int) && noexcept {}
+    void set_error(std::exception_ptr) && noexcept {}
+};
+template<class Env>
+concept forwards_stateful_classifier =
+    answers_query<Env, stateful_forwarding_query> &&
+    answers_query<Env, stateful_forwarding_query&> &&
+    answers_query<Env, const stateful_forwarding_query&> &&
+    !answers_query<Env, stateful_local_query> &&
+    !answers_query<Env, const stateful_local_query&>;
+static_assert(forwards_stateful_classifier<
+    ex::__forge_env_detail::__fwd_env_view<stateful_query_environment>>);
+static_assert(forwards_stateful_classifier<
+    ex::__forge_env_detail::__fwd_env_view<const stateful_query_environment&>>);
+
+// Both let views forward it: /9.4 by the object rule above and /8.2 because
+// forwarding_query(Q{}) is true. A sender without signatures in either view
+// is not a sender in the environment.
+struct checks_stateful_classifier {
+    using sender_concept = ex::sender_tag;
+
+    template<class Self, forwards_stateful_classifier Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(int)> { return {}; }
+
+    template<class R>
+        requires forwards_stateful_classifier<ex::env_of_t<R>>
+    auto connect(R r) const noexcept -> ex::connect_result_t<decltype(ex::just(5)), R> {
+        return ex::connect(ex::just(5), std::move(r));
+    }
+};
+struct make_stateful_successor {
+    auto operator()() const noexcept -> checks_stateful_classifier { return {}; }
+};
+template<class S>
+constexpr bool forwards_stateful_classifier_through =
+    std::same_as<ex::completion_signatures_of_t<S, stateful_query_environment>,
+                 ex::completion_signatures<ex::set_value_t(int)>> &&
+    std::same_as<ex::completion_signatures_of_t<S, const stateful_query_environment&>,
+                 ex::completion_signatures<ex::set_value_t(int)>> &&
+    requires(S&& s) { ex::connect(std::move(s), stateful_receiver{}); };
+static_assert(forwards_stateful_classifier_through<
+    decltype(ex::let_value(ex::just(), make_stateful_successor{}))>);
+static_assert(forwards_stateful_classifier_through<
+    decltype(ex::starts_on(ex::inline_scheduler{}, checks_stateful_classifier{}))>);
+static_assert(!ex::sender_in<checks_stateful_classifier, stateful_query_environment>);
+
+// write_env's joined environment forwards through the same FWD-ENV view
+// ([exec.write.env]/3-5): the supplied query is classified, and no default
+// instance is required.
+struct member_query_environment {
+    int query(nondefault_member_query) const noexcept { return 3; }
+    int query(member_false_query) const noexcept { return 3; }
+};
+template<class Base>
+using written_environment = ex::__forge_write_env::__joined_env<ex::env<>, Base>;
+static_assert(answers_query<written_environment<member_query_environment>, nondefault_member_query>);
+static_assert(answers_query<written_environment<const member_query_environment&>,
+                            const nondefault_member_query&>);
+static_assert(!answers_query<written_environment<member_query_environment>, member_false_query>);
+static_assert(forwards_stateful_classifier<written_environment<stateful_query_environment>>);
+static_assert(forwards_stateful_classifier_through<
+    decltype(ex::write_env(checks_stateful_classifier{}, ex::env<>{}))>);
+
+// get_completion_signatures<NewSndr, Env>() names the sender type that the
+// transform yields, which for an rvalue is the object type
+// ([exec.getcomplsigs]/1), and a static member receives the cv-unqualified
+// environment type however the caller spelled it.
+struct self_sensitive_sender {
+    using sender_concept = ex::sender_tag;
+    template<class Self, class Env>
+        requires (!std::is_reference_v<Self>) && (!std::is_reference_v<Env>)
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t()> { return {}; }
+};
+struct plain_environment {};
+static_assert(ex::sender_in<self_sensitive_sender, plain_environment>);
+static_assert(ex::sender_in<self_sensitive_sender&&, plain_environment&&>);
+static_assert(ex::sender_in<self_sensitive_sender&&, const plain_environment&>);
+static_assert(ex::sender_in<self_sensitive_sender, plain_environment&>);
+static_assert(!ex::sender_in<self_sensitive_sender&, plain_environment>);
+static_assert(!ex::sender_in<const self_sensitive_sender&, plain_environment&&>);
 
 struct domain_a {};
 struct domain_b {};
@@ -374,8 +663,6 @@ static_assert(std::same_as<decltype(ex::default_domain::transform_sender(
     ex::start, std::declval<const just&>(), ex::env<>{})), const just&>);
 static_assert(std::same_as<decltype(ex::default_domain::transform_sender(
     ex::start, std::declval<just>(), ex::env<>{})), just>);
-static_assert(std::same_as<decltype(ex::default_domain::transform_sender(
-    std::declval<just&>(), ex::env<>{})), just&>);
 static_assert(!default_transform<int, ex::env<>> && !default_transform<just&, bad_destructor>);
 static_assert(std::same_as<decltype(ex::transform_sender<just&, ex::env<>>(std::declval<just&>(), ex::env<>{})), just&>);
 template<class S, class E> decltype(auto) adl_transform(S&& s, const E& e) {

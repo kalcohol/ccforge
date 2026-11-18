@@ -184,7 +184,7 @@ struct controlled_delivery {
     };
 
     using env_t = std::execution::env_of_t<R>;
-    using token_t = decltype(std::execution::get_stop_token(std::declval<env_t>()));
+    using token_t = decltype(std::get_stop_token(std::declval<env_t>()));
     using callback_t = std::stop_callback_for_t<token_t, stop_callback>;
 
     R receiver;
@@ -291,7 +291,7 @@ struct controlled_op {
         // Completion can destroy the operation while start still owns delivery.
         auto shared = delivery;
         try {
-            auto token = std::execution::get_stop_token(
+            auto token = std::get_stop_token(
                 std::execution::get_env(shared->receiver));
             {
                 std::lock_guard lock{shared->state->mtx};
@@ -412,15 +412,9 @@ struct aggregate_receiver {
     struct env {
         std::inplace_stop_source* stop = nullptr;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> std::inplace_stop_token {
             return stop ? stop->get_token() : std::inplace_stop_token{};
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const env& self) noexcept -> std::inplace_stop_token {
-            return self.stop ? self.stop->get_token() : std::inplace_stop_token{};
         }
     };
 
@@ -478,15 +472,9 @@ struct any_aggregate_receiver {
     struct env {
         std::inplace_stop_source* stop = nullptr;
 
-        auto query(std::execution::get_stop_token_t) const noexcept
+        auto query(std::get_stop_token_t) const noexcept
             -> std::inplace_stop_token {
             return stop ? stop->get_token() : std::inplace_stop_token{};
-        }
-
-        friend auto tag_invoke(
-            std::execution::get_stop_token_t,
-            const env& self) noexcept -> std::inplace_stop_token {
-            return self.stop ? self.stop->get_token() : std::inplace_stop_token{};
         }
     };
 

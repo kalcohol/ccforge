@@ -45,46 +45,6 @@ constexpr decltype(auto) __forward_as_given(T&& value) noexcept {
     return static_cast<T&&>(value);
 }
 
-// tag_invoke protocol (internal).
-namespace __tag_invoke {
-
-void tag_invoke() = delete;
-
-struct fn {
-    template<class Tag, class... Args>
-        requires requires(Tag&& tag, Args&&... args) {
-            tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...);
-        }
-    constexpr auto operator()(Tag&& tag, Args&&... args) const
-        noexcept(noexcept(tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...)))
-            -> decltype(tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...)) {
-        return tag_invoke(static_cast<Tag&&>(tag), static_cast<Args&&>(args)...);
-    }
-};
-
-} // namespace __tag_invoke
-
-inline constexpr __tag_invoke::fn tag_invoke_fn{};
-
-template<class Tag, class... Args>
-concept tag_invocable =
-    requires(Tag&& tag, Args&&... args) {
-        std::execution::__forge_detail::tag_invoke_fn(
-            static_cast<Tag&&>(tag), static_cast<Args&&>(args)...);
-    };
-
-template<class Tag, class... Args>
-concept nothrow_tag_invocable =
-    tag_invocable<Tag, Args...> &&
-    noexcept(std::execution::__forge_detail::tag_invoke_fn(
-        std::declval<Tag>(), std::declval<Args>()...));
-
-template<class Tag, class... Args>
-    requires tag_invocable<Tag, Args...>
-using tag_invoke_result_t =
-    decltype(std::execution::__forge_detail::tag_invoke_fn(
-        std::declval<Tag>(), std::declval<Args>()...));
-
 } // namespace __forge_detail
 
 } // namespace std::execution

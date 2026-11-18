@@ -41,19 +41,12 @@ struct __unstoppable_scheduler {
 
     Scheduler __scheduler;
 
+    // The supplied query keeps its qualification.
     template<class Query, class... As>
-        requires __forge_env_detail::__queryable<Query, const Scheduler&, As...>
-    constexpr auto query(Query q, As&&... as) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const Scheduler&, As...>)
-        -> decltype(__forge_env_detail::__query(q, __scheduler, static_cast<As&&>(as)...)) {
-        return __forge_env_detail::__query(q, __scheduler, static_cast<As&&>(as)...);
-    }
-    template<class Query, class... As>
-        requires __forge_env_detail::__queryable<Query, const Scheduler&, As...>
-    friend constexpr auto tag_invoke(Query q, const __unstoppable_scheduler& self, As&&... as)
-        noexcept(noexcept(self.query(q, static_cast<As&&>(as)...)))
-        -> decltype(self.query(q, static_cast<As&&>(as)...)) {
-        return self.query(q, static_cast<As&&>(as)...);
+        requires __forge_env_detail::__raw_queryable<Query, Scheduler, As...>
+    constexpr decltype(auto) query(Query&& q, As&&... as) const
+        noexcept(__forge_env_detail::__nothrow_raw_queryable<Query, Scheduler, As...>) {
+        return __scheduler.query(static_cast<Query&&>(q), static_cast<As&&>(as)...);
     }
 
     template<class Sch = Scheduler>

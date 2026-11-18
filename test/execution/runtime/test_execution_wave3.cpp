@@ -73,7 +73,7 @@ struct EnvTask {
         void return_void() noexcept {}
         void unhandled_exception() noexcept {}
 
-        friend auto tag_invoke(std::execution::get_env_t, const promise_type&) noexcept
+        auto get_env() const noexcept
             -> await_env {
             return {};
         }

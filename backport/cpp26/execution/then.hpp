@@ -152,6 +152,8 @@ struct then_receiver {
 
     R* rcvr_;
     Fn* fn_;
+    // The environment that the operation state keeps for this receiver.
+    const __forge_env_detail::__receiver_env<R>* env_ = nullptr;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
@@ -192,7 +194,7 @@ struct then_receiver {
     }
 
     auto get_env() const noexcept -> __forge_detail::__fwd_env_t<env_of_t<R>> {
-        return {std::execution::get_env(*rcvr_)};
+        return env_->__view();
     }
 };
 
@@ -203,6 +205,8 @@ struct then_op : __forge_detail::__immovable {
 
     [[no_unique_address]] R rcvr_;
     [[no_unique_address]] Fn fn_;
+    // Captured after the callable; outlives every view of the receiver.
+    __forge_env_detail::__receiver_env<R> env_;
     // Destroy the inner operation before the state borrowed by its receiver.
     inner_op_t inner_;
 
@@ -214,8 +218,10 @@ struct then_op : __forge_detail::__immovable {
                 then_receiver<R, Fn>{nullptr, nullptr})))
         : rcvr_(std::move(rcvr))
         , fn_(__forge_detail::__allocator_aware_forward(static_cast<Data&&>(fn), rcvr_))
+        , env_(rcvr_)
         , inner_(std::execution::connect(
-            static_cast<S&&>(sndr), then_receiver<R, Fn>{std::addressof(rcvr_), std::addressof(fn_)}))
+            static_cast<S&&>(sndr), then_receiver<R, Fn>{
+                std::addressof(rcvr_), std::addressof(fn_), std::addressof(env_)}))
     {}
 
     void start() & noexcept {
@@ -237,7 +243,7 @@ struct then_sender {
         completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>>;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
+    static constexpr auto get_completion_signatures() noexcept -> __cs<__forge_detail::__child_category_t<Self, S>, Env> { return {}; }
 
     template<receiver R>
         requires requires { typename __cs<S, env_of_t<R>>;
@@ -262,8 +268,7 @@ struct then_sender {
     template<class R> void connect(R) && = delete;
 
     auto get_env() const noexcept {
-        return __forge_env_detail::__forwarding_attrs<env_of_t<S>>{
-            std::execution::get_env(sndr_)};
+        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(sndr_);
     }
 };
 
