@@ -5,6 +5,8 @@
 ## 如何使用
 
 包含 `<simd>` 并链接 `forge::std`（需要扩展时使用 `forge::forge`），采用 C++23 或更新模式。
+MSVC 通过 CMake 使用时由 `forge.cmake` 添加 `/Zc:__cplusplus`。
+直接包含 backport 的 MSVC 构建必须自行启用 `/Zc:__cplusplus`。
 
 ```cpp
 #include <simd>
@@ -245,52 +247,40 @@ const V result = std::simd::select(selector, values, V(0.0f));
 
 存储对齐不等同于 ISA 向量对齐，调用者应遵守实际 load/store 的对齐要求。
 
-## 扩展入口弃用与迁移
+## 已移除的兼容名称
 
-以下旧入口保留至少一个弃用发布版本（除下述诊断限制外均带 `[[deprecated]]`）；计划在后续版本移除，具体版本由维护者决定。
-依据 [simd.syn](https://eel.is/c++draft/simd.syn)、[simd.expos](https://eel.is/c++draft/simd.expos)
-及类 synopsis，exposition-only 名称不作为标准公开 API。实现改用 `__` 前缀，旧类型拼写通过别名引用相同类型；
-flag 对象、标准别名的 ABI 选择规则、constexpr 与 noexcept 保持不变。
+仓库尚未发布版本，这些兼容入口直接移除，未设弃用期。替代写法依据
+[simd.syn](https://eel.is/c++draft/simd.syn)、[simd.expos](https://eel.is/c++draft/simd.expos)、
+[simd.overview](https://eel.is/c++draft/simd.overview) 和 [simd.alg](https://eel.is/c++draft/simd.alg)。
 
-| 旧拼写 | 替代入口 | 原生让位 |
-| --- | --- | --- |
-| `std::simd::native_abi<T>` | `<forge/simd.hpp>` 的 `forge::simd_native_abi<T>`，等于 `typename std::simd::vec<T>::abi_type` | 支持 |
-| `std::simd::deduce_abi_t<T, N>` | `forge::simd_abi<T, N>`，等于 `typename std::simd::vec<T, N>::abi_type` | 支持有效的 `T, N` |
-| `std::simd::fixed_size_abi<N>` | `forge::simd_fixed_size_abi<N>`；原 class template 变为 alias template，适用下述特化与匹配限制 | 仅 backport |
-| `std::simd::detail::native_abi_tag<T, N>` | `forge::simd_native_abi_tag<T, N>`；原 class template 变为 alias template，适用下述限制 | 仅 backport |
-| `std::simd::simd_size<T, Abi>` | 有效向量的 `std::simd::basic_vec<T, Abi>::size()`；原 class template 变为 alias template，适用下述限制 | 支持 |
-| `std::simd::abi_lane_count<Abi>` | 对应向量或 mask 的 `size()`；原 class template 变为 alias template，适用下述限制 | 支持 |
-| `std::simd::simd_size_type` | `decltype(std::simd::vec<int>::size())` | 支持 |
-| `std::simd::simd_iterator<V>` | `decltype(std::declval<V&>().begin())`；原 class template 变为 alias template，适用下述限制 | 支持 |
-| `std::simd::convert_flag` | 从 `decltype(std::simd::flag_convert)` 获取 flags 类型；通常直接使用对象 | 支持 |
-| `std::simd::aligned_flag` | 从 `decltype(std::simd::flag_aligned)` 获取 flags 类型；通常直接使用对象 | 支持 |
-| `std::simd::overaligned_flag<N>` | 从 `decltype(std::simd::flag_overaligned<N>)` 获取 flags 类型；原 class template 变为 alias template，适用下述限制 | 支持 |
-| `std::simd::real_simd_type<T, V>` | complex `T` 使用 `std::simd::rebind<typename T::value_type, V>`；原 class template 变为 alias template，适用下述限制 | 支持 |
-| `std::simd::real_simd_t<T, V>`、`V::real_type` | complex `T` 使用 `std::simd::rebind_t<typename T::value_type, V>`；成员别名 `real_type` 的弃用诊断不可靠 | 支持 |
-| ADL `simd_select_impl(mask, a, b)` | `std::simd::select(mask, a, b)` | 支持 |
-| `std::simd::detail` | 内部及白盒测试使用 `std::simd::__detail`；应用使用标准 API | 仅 backport |
+| 旧写法 | 工作草案中的替代写法 |
+| --- | --- |
+| `std::simd::simd_size_type` | `decltype(std::simd::vec<int>::size())` |
+| `std::simd::fixed_size_abi<N>` | 用 `std::simd::vec<T, N>` 指定宽度，或用其 `abi_type` 获取实现选定的 ABI |
+| `std::simd::native_abi<T>` | `typename std::simd::vec<T>::abi_type` |
+| `std::simd::simd_size<T, Abi>` | 对启用的向量使用 `std::simd::basic_vec<T, Abi>::size()` |
+| `std::simd::abi_lane_count<Abi>` | 对应向量或 mask 的 `size()` |
+| `std::simd::deduce_abi_t<T, N>` | `typename std::simd::vec<T, N>::abi_type` |
+| `std::simd::simd_iterator<V>` | `decltype(std::declval<V&>().begin())` |
+| `std::simd::convert_flag` | 传入 `std::simd::flag_convert` |
+| `std::simd::aligned_flag` | 传入 `std::simd::flag_aligned` |
+| `std::simd::overaligned_flag<N>` | 传入 `std::simd::flag_overaligned<N>` |
+| `std::simd::real_simd_type<T, V>` | 对 complex 元素类型 `T` 使用 `std::simd::rebind<typename T::value_type, V>` |
+| `std::simd::real_simd_t<T, V>` | 对 complex 元素类型 `T` 使用 `std::simd::rebind_t<typename T::value_type, V>` |
+| `std::simd::__detail::native_abi_tag<T, N>`（旧路径 `std::simd::detail::native_abi_tag<T, N>`） | 用 `std::simd::vec<T, N>` 指定宽度，由实现选择 ABI |
+| `std::simd::detail` | 使用 `std::simd` 的公开 API，例如 `std::simd::vec<T, N>` |
+| ADL 调用 `simd_select_impl(mask, a, b)` | `std::simd::select(mask, a, b)`。裸 `{}` 分支无法推导类型，向量分支写成 `std::simd::select(mask, value, V{})`，mask 分支则使用 `M{}`。条件使用花括号时，`std::simd::select(M{}, a, b)` 保留 mask 分派和 `noexcept` 保证。`std::simd::select({}, a, b)` 会选中以标量 `bool` 为条件的重载。 |
+| complex 向量的 `V::real_type` | `std::simd::rebind_t<typename V::value_type::value_type, V>` |
+| backport 自行声明的 `std::default_sentinel_t` 和 `std::default_sentinel` | 使用标准库 [`<iterator>`](https://eel.is/c++draft/iterator.synopsis) 提供的同名类型和对象 |
+| `forge::simd_fixed_size_abi<N>` | 用 `std::simd::vec<T, N>` 指定宽度，由实现选择 ABI |
+| `forge::simd_native_abi_tag<T, N>` | 用 `std::simd::vec<T, N>` 指定宽度。若需要当前目标的默认 native ABI，使用 `typename std::simd::vec<T>::abi_type` |
 
-上述七个原 class template 的旧名称现在是 alias template，不再允许显式特化或偏特化；
-既有特化声明需要迁移到应用自己的适配层，不能依靠特化这些扩展定制标准 SIMD 行为。
-匹配 template-template parameter 时，显式传入旧别名仍可实例化对应类型，但别名模板本身不会从实例类型中推导出来；
-推导及依赖模板身份的匹配会看到保留名称的底层 class template，原先针对旧模板身份的匹配可能改变。
-旧名称也不能再用 class template 前置声明或 elaborated-type-specifier 声明。
-这些是源兼容性限制；类型命名、已有成员及值的使用仍保持兼容。
+需要命名完整 flags 类型时，可用 `std::remove_cv_t<decltype(std::simd::flag_convert)>` 等写法。
+`<forge/simd.hpp>` 继续提供从标准 `vec` 提取 ABI 的
+`forge::simd_native_abi<T>` 和 `forge::simd_abi<T, N>`。
 
-`V::real_type` 保留标准位置的 `[[deprecated]]` 属性，但 GCC/Clang 对 class template 成员别名的引用
-可能不发出诊断，不能将此诊断作为可移植保证；MSVC 是否诊断同样不作保证。迁移时应主动替换该拼写。
-
-`detail` 只保留为兼容 namespace alias。标准属性不能标注 namespace alias，因此该路径仅在文档中弃用；
-其中原 `native_abi_tag` 类型别名仍带弃用诊断。`__detail` 及其他保留名称均不承诺为应用接口。
-标志类型的替代项是整个 flags pack，不能把 `decltype(flag_convert)` 当作原 tag 再嵌入 `flags<...>`。
-原 tag 可通过已有对象的类型推导避免直接命名。
-
-`forge::simd_abi<T, N>` 按标准 `vec` 规则选择 ABI；当 `N` 等于 native 宽度时，不保证获得显式 fixed-size tag。
-需要固定 tag 身份或显式 native 宽度时才使用两个仅 backport 的 Forge 入口；它们在原生让位时不声明。
-其他 Forge 别名依赖原生库提供标准 `vec` 及其 `abi_type`，不要求原生库实现完整 math/bit 表面。
-旧 `simd_size` 对禁用类型的零值行为及 `real_simd_type` 的非 complex 占位类型仍由兼容别名保留；
-替代表中的公开标准入口仅用于有效类型。
-
+按 [simd.alg](https://eel.is/c++draft/simd.alg)，以 mask 为条件的 `select` 无条件声明为 `noexcept`。
+若分支在函数内部隐式转换时抛出异常，现在会调用 `std::terminate`，此前该异常会向调用方传播。
 
 ## 示例
 
