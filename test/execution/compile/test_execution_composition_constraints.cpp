@@ -47,7 +47,6 @@ static_assert(copyable_matrix<decltype(ex::stopped_as_error(17))>());
 static_assert(copyable_matrix<decltype(ex::stopped_as_optional)>());
 static_assert(copyable_matrix<decltype(ex::into_variant)>());
 static_assert(copyable_matrix<decltype(ex::affine)>());
-static_assert(copyable_matrix<decltype(ex::continues_on(ex::inline_scheduler{}))>());
 static_assert(copyable_matrix<decltype(ex::on(ex::inline_scheduler{}, std::declval<value_closure>()))>());
 static_assert(copyable_matrix<decltype(ex::associate(
     std::declval<ex::simple_counting_scope::scope_token>()))>());

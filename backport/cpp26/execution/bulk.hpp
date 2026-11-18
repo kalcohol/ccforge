@@ -329,26 +329,6 @@ struct __bulk_t {
             std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
 #endif
-
-    template<std::execution::sender S, std::integral Shape, class Fn>
-        requires std::copy_constructible<std::decay_t<Fn>> &&
-                 std::constructible_from<std::decay_t<Fn>, Fn>
-    [[deprecated("use forge::bulk, forge::bulk_chunked or forge::bulk_unchunked, or pass an execution policy")]]
-    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const
-        -> __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>, Transformed> {
-        return __serial_bulk_t<Chunked, Transformed>{}.template operator()<S, Shape, Fn>(
-            std::forward<S>(s), std::move(shape), std::forward<Fn>(fn));
-    }
-
-    template<std::integral Shape, class Fn>
-        requires std::copy_constructible<std::decay_t<Fn>> &&
-                 std::constructible_from<std::decay_t<Fn>, Fn>
-    [[deprecated("use forge::bulk, forge::bulk_chunked or forge::bulk_unchunked, or pass an execution policy")]]
-    [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const
-        -> typename __serial_bulk_t<Chunked, Transformed>::template __closure_t<Shape, Fn> {
-        return __serial_bulk_t<Chunked, Transformed>{}.template operator()<Shape, Fn>(
-            std::move(shape), std::forward<Fn>(fn));
-    }
 };
 
 struct bulk_t : __bulk_t<false, true> {};

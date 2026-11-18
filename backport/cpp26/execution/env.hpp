@@ -85,9 +85,6 @@ consteval bool __scheduler();
 template<class Env>
 consteval bool __composed_scheduler_query();
 } // namespace __forge_env_detail
-// Deprecate the compatibility spelling without deprecating the underlying type.
-using empty_env [[deprecated("use std::execution::env<> or forge::empty_env")]] = __empty_env;
-
 namespace __forge_env_detail {
 
 template<class T>
@@ -269,18 +266,6 @@ enum class forward_progress_guarantee {
     weakly_parallel
 };
 
-namespace __forge_env_detail {
-
-template<class Scheduler>
-struct __progress_fallback {
-    [[deprecated("provide scheduler.query(get_forward_progress_guarantee) const noexcept")]]
-    static constexpr forward_progress_guarantee __get() noexcept {
-        return forward_progress_guarantee::weakly_parallel;
-    }
-};
-
-} // namespace __forge_env_detail
-
 struct get_forward_progress_guarantee_t {
     template<class Scheduler>
         requires (__forge_env_detail::__scheduler_shape<Scheduler>()) &&
@@ -294,15 +279,6 @@ struct get_forward_progress_guarantee_t {
             *this, static_cast<Scheduler&&>(scheduler)))>, forward_progress_guarantee>);
         return __forge_env_detail::__query(
             *this, static_cast<Scheduler&&>(scheduler));
-    }
-
-    template<class Scheduler>
-        requires (__forge_env_detail::__scheduler_shape<Scheduler>()) &&
-                 (!__forge_env_detail::__queryable<
-                      get_forward_progress_guarantee_t, Scheduler> &&
-                  requires { typename std::remove_cvref_t<Scheduler>::scheduler_concept; })
-    constexpr forward_progress_guarantee operator()(Scheduler&&) const noexcept {
-        return __forge_env_detail::__progress_fallback<Scheduler>::__get();
     }
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
@@ -417,12 +393,6 @@ struct prop {
 
 template<class Tag, class Value>
 prop(Tag, Value) -> prop<Tag, std::unwrap_reference_t<Value>>;
-
-template<class Tag, class Value>
-[[deprecated("use std::execution::prop")]]
-[[nodiscard]] auto make_prop(Tag tag, Value&& val) {
-    return prop{tag, std::forward<Value>(val)};
-}
 
 template<__forge_queryable... Envs>
 struct env {

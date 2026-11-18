@@ -547,34 +547,9 @@ struct on_t {
         return {static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
     }
 
-    template<class Scheduler, class Closure>
-        requires scheduler<Scheduler> &&
-                 (!sender<std::decay_t<Closure>>) &&
-                 (!__forge_adaptor::__closure<Closure>) &&
-                 std::constructible_from<std::remove_cvref_t<Scheduler>, Scheduler> &&
-                 std::constructible_from<std::decay_t<Closure>, Closure>
-    [[deprecated("pass a sender_adaptor_closure to std::execution::on")]]
-    [[nodiscard]] constexpr auto operator()(Scheduler&& sch, Closure&& closure) const
-        noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<Scheduler>, Scheduler> &&
-                 std::is_nothrow_constructible_v<std::decay_t<Closure>, Closure>)
-        -> __bound_closure<std::remove_cvref_t<Scheduler>, std::decay_t<Closure>> {
-        return {static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
-    }
-
     template<sender S, class Scheduler, class Closure>
         requires scheduler<Scheduler> && __forge_adaptor::__closure<Closure> &&
                  __on_closure_constructible<S, Scheduler, Closure>
-    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const
-        -> __on_closure_sender_t<S, Scheduler, Closure> {
-        return {__forge_detail::__forward_as_given(std::forward<S>(sndr)),
-                __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
-                __forge_detail::__forward_as_given(std::forward<Closure>(closure))};
-    }
-
-    template<sender S, class Scheduler, class Closure>
-        requires scheduler<Scheduler> && (!__forge_adaptor::__closure<Closure>) &&
-                 __on_closure_constructible<S, Scheduler, Closure>
-    [[deprecated("pass a sender_adaptor_closure to std::execution::on")]]
     [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const
         -> __on_closure_sender_t<S, Scheduler, Closure> {
         return {__forge_detail::__forward_as_given(std::forward<S>(sndr)),

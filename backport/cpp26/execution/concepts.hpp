@@ -707,46 +707,7 @@ struct sends_stopped_from;
 template<class... Sigs>
 struct sends_stopped_from<completion_signatures<Sigs...>> : std::bool_constant<has_stopped_v<Sigs...>> {};
 
-template<
-    class Sender,
-    class Env,
-    template<class...> class Tuple = __forge_meta::__decayed_tuple,
-    template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct __value_types_of {
-    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
-    using type = typename __forge_meta::value_types_from<cs_t, Tuple, Variant>::type;
-};
-
-template<
-    class Sender,
-    class Env,
-    template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct __error_types_of {
-    using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
-    using type = typename __forge_meta::error_types_from<cs_t, Variant>::type;
-};
-
-template<class Sender, class Env>
-inline constexpr bool __sends_stopped_v =
-    __forge_meta::sends_stopped_from<decltype(std::execution::get_completion_signatures(
-        std::declval<Sender>(), std::declval<Env>()))>::value;
-
 } // namespace __forge_meta
-
-template<class Sender, class Env,
-         template<class...> class Tuple = __forge_meta::__decayed_tuple,
-         template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct [[deprecated("use std::execution::value_types_of_t")]] value_types_of
-    : __forge_meta::__value_types_of<Sender, Env, Tuple, Variant> {};
-
-template<class Sender, class Env,
-         template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct [[deprecated("use std::execution::error_types_of_t")]] error_types_of
-    : __forge_meta::__error_types_of<Sender, Env, Variant> {};
-
-template<class Sender, class Env>
-inline constexpr bool sends_stopped_v [[deprecated("use std::execution::sends_stopped")]] =
-    __forge_meta::__sends_stopped_v<Sender, Env>;
 
 // Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
 struct receiver_tag {};
@@ -834,13 +795,6 @@ struct default_domain {
             static_cast<Sender&&>(sndr), env))) {
         return __forge_domain::__default_transform_sender<Tag>(
             static_cast<Sender&&>(sndr), env);
-    }
-
-    template<sender Sender, __forge_queryable Env>
-    [[deprecated("use default_domain::transform_sender(tag, sender, env)")]]
-    static constexpr decltype(auto) transform_sender(Sender&& sndr, const Env&)
-        noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr)))) {
-        return static_cast<Sender>(static_cast<Sender&&>(sndr));
     }
 
     template<class Tag, sender Sender, class... Args>
@@ -1143,9 +1097,6 @@ struct receiver_of_impl<R, completion_signatures<Sigs...>>
 template<class R, class Completions>
 concept __forge_receiver_of = __forge_concepts::receiver_of_impl<R, Completions>::value;
 
-template<class R, class Completions>
-concept receiver_of = __forge_receiver_of<R, Completions>;
-
 template<sender Sndr>
 using tag_of_t = __forge_domain::__tag_of_t<Sndr>;
 
@@ -1238,32 +1189,11 @@ concept __tagged_transform_sender = requires(D& domain, Tag tag, S&& sndr, const
     { domain.transform_sender(tag, static_cast<S&&>(sndr), env) };
 };
 
-template<class D, class S, class Env>
-concept __legacy_transform_sender =
-    (!std::same_as<D, default_domain>) &&
-    requires(D& domain, S&& sndr, const Env& env) {
-        domain.transform_sender(static_cast<S&&>(sndr), env);
-    };
-
-template<class D>
-struct __legacy_domain_transform {
-    template<class S, class Env>
-    [[deprecated("provide domain.transform_sender(tag, sender, env)")]]
-    static constexpr auto __call(D& domain, S&& sndr, const Env& env)
-        noexcept(noexcept(domain.transform_sender(static_cast<S&&>(sndr), env)))
-        -> decltype(domain.transform_sender(static_cast<S&&>(sndr), env)) {
-        return domain.transform_sender(static_cast<S&&>(sndr), env);
-    }
-};
-
 template<class D, class Tag, class S, class Env>
 consteval bool __transform_sender_once_noexcept() {
     if constexpr (__tagged_transform_sender<D, Tag, S, Env>) {
         return noexcept(std::declval<D&>().transform_sender(
             Tag{}, std::declval<S>(), std::declval<const Env&>()));
-    } else if constexpr (__legacy_transform_sender<D, S, Env>) {
-        return noexcept(std::declval<D&>().transform_sender(
-            std::declval<S>(), std::declval<const Env&>()));
     } else {
         return noexcept(__default_transform_sender<Tag>(
             std::declval<S>(), std::declval<const Env&>()));
@@ -1279,8 +1209,6 @@ constexpr decltype(auto) __transform_sender_once(
     noexcept(__transform_sender_once_noexcept<D, Tag, S, Env>()) {
     if constexpr (__tagged_transform_sender<D, Tag, S, Env>) {
         return domain.transform_sender(tag, static_cast<S&&>(sndr), env);
-    } else if constexpr (__legacy_transform_sender<D, S, Env>) {
-        return __legacy_domain_transform<D>::__call(domain, static_cast<S&&>(sndr), env);
     } else {
         return __default_transform_sender<Tag>(static_cast<S&&>(sndr), env);
     }

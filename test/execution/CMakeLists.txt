@@ -528,45 +528,34 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endforeach()
     set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 endif()
-# Pair every deprecated expression with the identical, locally suppressed control.
-forge_add_execution_compile_probe(test_execution_d1_deprecation_compat
-    test_execution_d1_deprecation_compat.cpp execution_d1_deprecation_compat_compile)
-forge_add_execution_compile_probe(test_execution_d1_warning_free
-    test_execution_d1_warning_free.cpp execution_d1_warning_free_compile)
-foreach(_forge_d1_target IN ITEMS
-        test_execution_d1_deprecation_compat test_execution_d1_warning_free)
+set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
+forge_add_execution_compile_probe(test_execution_removed_forms
+    test_execution_removed_forms.cpp execution_removed_forms_compile)
+forge_add_execution_compile_probe(test_execution_standard_forms
+    test_execution_standard_forms.cpp execution_standard_forms_compile)
+foreach(_target IN ITEMS test_execution_removed_forms test_execution_standard_forms)
     if(MSVC)
-        target_compile_options(${_forge_d1_target} PRIVATE /we4996 /bigobj)
+        target_compile_options(${_target} PRIVATE /we4996 /bigobj)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${_forge_d1_target} PRIVATE -Werror=deprecated-declarations)
+        target_compile_options(${_target} PRIVATE -Werror=deprecated-declarations)
     endif()
-    string(REGEX REPLACE "^test_" "" _forge_d1_test "${_forge_d1_target}")
-    add_test(NAME ${_forge_d1_test} COMMAND ${_forge_d1_target})
-    set_tests_properties(${_forge_d1_test} PROPERTIES
-        DEPENDS ${_forge_d1_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    string(REGEX REPLACE "^test_" "" _test "${_target}")
+    add_test(NAME ${_test} COMMAND ${_target})
+    set_tests_properties(${_test} PROPERTIES
+        DEPENDS ${_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endforeach()
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs})
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_WARNING_FREE
-        test_execution_d1_warning_free.cpp ON "D1 replacements must compile without warnings")
-    # Pass an include through CheckCXXSourceCompiles to preserve the fixture's directives.
-    foreach(_forge_case RANGE 1 25)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
-            -DFORGE_DEPRECATION_CASE=${_forge_case} -DFORGE_SUPPRESS_DEPRECATION=1)
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_COMPAT_${_forge_case}
-            test_execution_d1_deprecation_probe.cpp ON "Suppressed D1 case ${_forge_case} must compile")
-        # GCC 16 instantiates the dispatch helpers without diagnosing their deprecation.
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND (_forge_case EQUAL 17 OR _forge_case EQUAL 25))
-            continue()
-        endif()
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
-            -DFORGE_DEPRECATION_CASE=${_forge_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_DEPRECATED_${_forge_case}
-            test_execution_d1_deprecation_probe.cpp OFF "D1 case ${_forge_case} must diagnose deprecation")
-    endforeach()
-endif()
-unset(_forge_d1_target)
-unset(_forge_d1_test)
+foreach(_case RANGE 1 12)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
+        -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_CONTROL_${_case}
+        test_execution_reject_removed_names.cpp ON "Replacement for removed name ${_case} must compile")
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
+        -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=0)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_REJECT_${_case}
+        test_execution_reject_removed_names.cpp OFF "Removed name ${_case} must be absent")
+endforeach()
+unset(_target)
+unset(_test)
 set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 unset(_forge_extension_flags)
@@ -592,7 +581,7 @@ endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
     ${_forge_scope_strict_copies} test_execution_scope_observer_compat
     test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions
-    test_execution_d1_deprecation_compat test_execution_d1_warning_free)
+    test_execution_removed_forms test_execution_standard_forms)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)
 unset(_forge_target)

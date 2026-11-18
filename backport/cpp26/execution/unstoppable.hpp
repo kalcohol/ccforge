@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "write_env.hpp"
@@ -33,25 +32,13 @@ namespace std::execution {
 
 namespace __forge_unstoppable {
 
-struct __closure : sender_adaptor_closure<__closure> {
+struct __unstoppable_t {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         auto env = std::execution::prop(
-            std::execution::get_stop_token_t{}, std::never_stop_token{});
+            std::get_stop_token, std::never_stop_token{});
         return std::execution::write_env(
             __forge_detail::__forward_as_given(std::forward<S>(sndr)), env);
-    }
-};
-
-struct __unstoppable_t : sender_adaptor_closure<__unstoppable_t> {
-    template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) const {
-        return __closure{}(std::forward<S>(sndr));
-    }
-
-    [[deprecated("use std::execution::unstoppable(sender)")]]
-    [[nodiscard]] auto operator()() const noexcept {
-        return __closure{};
     }
 };
 

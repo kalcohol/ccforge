@@ -223,7 +223,6 @@ static_assert(public_base<decltype(ex::stopped_as_error(1))>);
 static_assert(public_base<decltype(ex::stopped_as_optional)>);
 static_assert(public_base<decltype(ex::into_variant)>);
 static_assert(public_base<decltype(ex::affine)>);
-static_assert(public_base<decltype(ex::continues_on(ex::inline_scheduler{}))>);
 static_assert(public_base<decltype(ex::on(ex::inline_scheduler{}, identity{}))>);
 static_assert(public_base<decltype(ex::associate(
     std::declval<ex::simple_counting_scope::scope_token>()))>);

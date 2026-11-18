@@ -393,24 +393,11 @@ struct __error_sender {
 namespace __forge_stopped {
 
 // Do not infer receiver-environment completion shapes while forming the adaptor.
-struct __optional_closure : sender_adaptor_closure<__optional_closure> {
-    template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) const {
-        return __optional_sender<std::decay_t<S>>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-    }
-};
-
 struct __optional_t : sender_adaptor_closure<__optional_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __optional_sender<std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-    }
-
-    [[deprecated("pipe into std::execution::stopped_as_optional directly")]]
-    [[nodiscard]] auto operator()() const noexcept {
-        return __optional_closure{};
     }
 };
 

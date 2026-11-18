@@ -311,24 +311,11 @@ struct __into_variant_sender {
 
 namespace __forge_into_variant {
 
-struct __into_variant_closure : sender_adaptor_closure<__into_variant_closure> {
-    template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) const {
-        return __into_variant_sender<std::decay_t<S>>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-    }
-};
-
 struct __into_variant_t : sender_adaptor_closure<__into_variant_t> {
     template<sender S>
     [[nodiscard]] auto operator()(S&& sndr) const {
         return __into_variant_sender<std::decay_t<S>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
-    }
-
-    [[deprecated("pipe into std::execution::into_variant directly")]]
-    [[nodiscard]] auto operator()() const noexcept {
-        return __into_variant_closure{};
     }
 };
 
@@ -369,11 +356,3 @@ struct sync_wait_with_variant_t {
 inline constexpr sync_wait_with_variant_t sync_wait_with_variant{};
 
 } // namespace std::this_thread
-
-namespace std::execution {
-
-// Deprecated compatibility alias: retain identity and unqualified lookup.
-// A using-declaration cannot carry a separate deprecated attribute.
-using std::this_thread::sync_wait_with_variant;
-
-} // namespace std::execution

@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "just.hpp"
@@ -409,18 +408,6 @@ struct __sender {
     }
 };
 
-template<class Scheduler>
-struct __closure : sender_adaptor_closure<__closure<Scheduler>> {
-    Scheduler __scheduler;
-
-    template<sender S>
-        requires std::copy_constructible<Scheduler>
-    [[nodiscard]] auto operator()(S&& sndr) const&;
-
-    template<sender S>
-    [[nodiscard]] auto operator()(S&& sndr) &&;
-};
-
 } // namespace __forge_continues_on
 
 struct continues_on_t {
@@ -434,39 +421,8 @@ struct continues_on_t {
             __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
             std::move(departure)};
     }
-
-    template<class Scheduler>
-        requires scheduler<Scheduler>
-    [[nodiscard]] auto operator()(Scheduler&& sch) const {
-        return __forge_continues_on::__closure<std::remove_cvref_t<Scheduler>>{
-            {}, __forge_detail::__forward_as_given(std::forward<Scheduler>(sch))};
-    }
 };
 
 inline constexpr continues_on_t continues_on{};
-
-template<class Scheduler>
-template<sender S>
-    requires std::copy_constructible<Scheduler>
-[[nodiscard]] auto __forge_continues_on::__closure<Scheduler>::operator()(
-    S&& sndr) const& {
-    return std::execution::continues_on(std::forward<S>(sndr), __scheduler);
-}
-
-template<class Scheduler>
-template<sender S>
-[[nodiscard]] auto __forge_continues_on::__closure<Scheduler>::operator()(
-    S&& sndr) && {
-    return std::execution::continues_on(
-        std::forward<S>(sndr), std::move(__scheduler));
-}
-
-template<scheduler Scheduler, class... Vs>
-    requires (std::move_constructible<std::decay_t<Vs>> && ...)
-[[deprecated("use forge::transfer_just or continues_on(just(...), scheduler)")]]
-[[nodiscard]] auto transfer_just(Scheduler sch, Vs&&... vs) {
-    return std::execution::continues_on(
-        std::execution::just(std::forward<Vs>(vs)...), std::move(sch));
-}
 
 } // namespace std::execution

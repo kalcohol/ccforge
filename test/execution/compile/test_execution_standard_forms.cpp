@@ -103,7 +103,23 @@ int main() {
                   ex::forward_progress_guarantee::weakly_parallel);
 
     auto read = ex::write_env(ex::read_env(ex::get_scheduler), environment);
-    return forge::sync_wait(std::move(write)) &&
+    auto read_stop_in_successor = [] {
+        return ex::let_value(ex::just(), [] { return ex::read_env(std::get_stop_token); });
+    };
+    auto stop_flags = ex::then([](auto token) noexcept {
+        return std::pair{token.stop_possible(), token.stop_requested()};
+    });
+    std::inplace_stop_source stop_source;
+    stop_source.request_stop();
+    auto stop_env = ex::prop{std::get_stop_token, stop_source.get_token()};
+    const auto with_stop = forge::sync_wait(ex::write_env(
+        read_stop_in_successor() | stop_flags, stop_env));
+    const auto without_stop = forge::sync_wait(ex::write_env(
+        ex::unstoppable(read_stop_in_successor()) | stop_flags, stop_env));
+
+    return with_stop == std::optional{std::make_tuple(std::pair{true, true})} &&
+           without_stop == std::optional{std::make_tuple(std::pair{false, false})} &&
+           forge::sync_wait(std::move(write)) &&
            forge::sync_wait(std::move(read)) &&
            forge::sync_wait(std::move(unstoppable)) &&
            forge::sync_wait(std::move(variant)) &&

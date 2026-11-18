@@ -22,7 +22,6 @@
 
 #pragma once
 
-#include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
 #include "detail/adaptor.hpp"
@@ -188,37 +187,12 @@ struct __sender {
     }
 };
 
-template<class OverrideEnv>
-struct __closure : sender_adaptor_closure<__closure<OverrideEnv>> {
-    OverrideEnv __env;
-
-    template<sender S>
-        requires std::copy_constructible<OverrideEnv>
-    [[nodiscard]] constexpr auto operator()(S&& sndr) const & {
-        return __sender<std::decay_t<S>, OverrideEnv>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)), __env};
-    }
-
-    template<sender S>
-    [[nodiscard]] constexpr auto operator()(S&& sndr) && {
-        return __sender<std::decay_t<S>, OverrideEnv>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-            std::move(__env)};
-    }
-};
-
 struct __write_env_t {
     template<sender S, __forge_queryable Env>
     [[nodiscard]] constexpr auto operator()(S&& sndr, Env&& env) const {
         return __sender<std::decay_t<S>, std::decay_t<Env>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::forward<Env>(env)};
-    }
-
-    template<__forge_queryable Env>
-    [[deprecated("use std::execution::write_env(sender, env)")]]
-    [[nodiscard]] constexpr auto operator()(Env&& env) const {
-        return __closure<std::decay_t<Env>>{{}, std::forward<Env>(env)};
     }
 };
 

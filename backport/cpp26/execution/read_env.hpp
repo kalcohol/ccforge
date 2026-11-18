@@ -117,8 +117,6 @@ struct __read_env_t {
 
 } // namespace __forge_read_env
 
-using read_env_t [[deprecated("use decltype(std::execution::read_env) without cv-qualifiers")]] =
-    __forge_read_env::__read_env_t;
 inline constexpr __forge_read_env::__read_env_t read_env{};
 
 } // namespace std::execution

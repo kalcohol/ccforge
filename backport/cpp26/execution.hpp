@@ -36,7 +36,7 @@
 //   Sender adaptors  : let_value, let_error, let_stopped, write_env
 //   Scheduler ops    : starts_on, schedule_from, continues_on, on, affine,
 //                      bulk, bulk_chunked, bulk_unchunked (serial subset)
-//   Forge extensions : transfer_just, split
+//   Forge extensions : forge::transfer_just, forge::split, forge::bulk*
 //   Combinators      : into_variant, when_all, when_all_with_variant, split,
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
@@ -88,15 +88,11 @@
 //     transform_sender, connect, and get_completion_signatures(sender, env)
 //     share completion-domain-then-start-domain recursive transformation.
 //     default_domain honors sender-tag transformation, and apply_sender uses
-//     explicit-domain-first then sender-tag fallback dispatch. Legacy
-//     two-argument domain transforms are deprecated compatibility paths.
-//   - Extra write_env, unstoppable, into_variant, stopped_as_optional, on,
-//     and policy-less bulk forms are deprecated. Serial bulk without policy
-//     is available in <forge/bulk.hpp>. continues_on retains pipeability
-//     pending clarification of the working-draft wording.
-//   - Legacy marker aliases, make_env and exposition-only public concepts
-//     are deprecated in the documentation. The progress query's legacy
-//     weakly_parallel fallback and non-draft type utilities are deprecated.
+//     explicit-domain-first then sender-tag fallback dispatch.
+//   - The bulk algorithms use a serial implementation. Forge provides
+//     policy-free serial adaptors in <forge/bulk.hpp>.
+//   - Locked execution headers still use legacy marker aliases, make_env
+//     and some exposition-only concepts.
 //   - Receiver completion callbacks, including set_value, must be noexcept.
 //   - Non-copyable lvalue senders require explicit std::move(sndr) on
 //     standard-shaped paths, matching native handoff expectations.
@@ -155,7 +151,6 @@
 #include "execution/split.hpp"
 #include "execution/when_all.hpp"
 #include "execution/awaitable.hpp"
-#include "execution/domain.hpp"
 #include "execution/counting_scope.hpp"
 #include "execution/associate.hpp"
 #include "execution/spawn.hpp"
