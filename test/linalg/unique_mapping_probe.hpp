@@ -170,9 +170,6 @@ constexpr auto matrix_writes = std::array{
     requires(dense_for<Out> a, Out c) {
         la::hermitian_matrix_product(a, la::upper_triangle, a, c);
     },
-    requires(dense_for<Out> a, Out c) {
-        la::hermitian_matrix_product(a, la::upper_triangle, a, c);
-    },
 };
 
 template<class Out>
@@ -232,16 +229,10 @@ constexpr auto structured_writes = std::array{
         la::symmetric_matrix_rank_1_update(1.0, x, e, c, t);
     },
     requires(vector_for<Out> x, Out c, Triangle t) {
-        la::symmetric_matrix_rank_1_update(1.0, t, x, c);
-    },
-    requires(vector_for<Out> x, Out c, Triangle t) {
         la::hermitian_matrix_rank_1_update(1.0, x, c, t);
     },
     requires(vector_for<Out> x, weak_for<Out> e, Out c, Triangle t) {
         la::hermitian_matrix_rank_1_update(1.0, x, e, c, t);
-    },
-    requires(vector_for<Out> x, Out c, Triangle t) {
-        la::hermitian_matrix_rank_1_update(1.0, x, c, t);
     },
     requires(vector_for<Out> x, Out c, Triangle t) {
         la::symmetric_matrix_rank_2_update(x, x, c, t);
@@ -250,16 +241,10 @@ constexpr auto structured_writes = std::array{
         la::symmetric_matrix_rank_2_update(x, x, e, c, t);
     },
     requires(vector_for<Out> x, Out c, Triangle t) {
-        la::symmetric_matrix_rank_2_update(1.0, t, x, x, c);
-    },
-    requires(vector_for<Out> x, Out c, Triangle t) {
         la::hermitian_matrix_rank_2_update(x, x, c, t);
     },
     requires(vector_for<Out> x, weak_for<Out> e, Out c, Triangle t) {
         la::hermitian_matrix_rank_2_update(x, x, e, c, t);
-    },
-    requires(vector_for<Out> x, Out c, Triangle t) {
-        la::hermitian_matrix_rank_2_update(x, x, c, t);
     },
     requires(dense_for<Out> a, Out c, Triangle t) {
         la::symmetric_matrix_rank_k_update(1.0, a, c, t);
@@ -268,25 +253,16 @@ constexpr auto structured_writes = std::array{
         la::symmetric_matrix_rank_k_update(1.0, a, e, c, t);
     },
     requires(dense_for<Out> a, Out c, Triangle t) {
-        la::symmetric_matrix_rank_k_update(1.0, t, a, c);
-    },
-    requires(dense_for<Out> a, Out c, Triangle t) {
         la::hermitian_matrix_rank_k_update(1.0, a, c, t);
     },
     requires(dense_for<Out> a, weak_for<Out> e, Out c, Triangle t) {
         la::hermitian_matrix_rank_k_update(1.0, a, e, c, t);
     },
     requires(dense_for<Out> a, Out c, Triangle t) {
-        la::hermitian_matrix_rank_k_update(1.0, a, c, t);
-    },
-    requires(dense_for<Out> a, Out c, Triangle t) {
         la::symmetric_matrix_rank_2k_update(a, a, c, t);
     },
     requires(dense_for<Out> a, weak_for<Out> e, Out c, Triangle t) {
         la::symmetric_matrix_rank_2k_update(a, a, e, c, t);
-    },
-    requires(dense_for<Out> a, Out c, Triangle t) {
-        la::symmetric_matrix_rank_2k_update(1.0, t, a, a, c);
     },
 };
 

@@ -1,0 +1,8 @@
+#pragma once
+
+#undef __cpp_lib_linalg
+#define __cpp_lib_linalg 202311L
+
+#if defined(FORGE_TEST_LINALG_FORCE_OLDER_MACRO)
+#define FORGE_TEST_LINALG_OLDER_MACRO_SEEN 1
+#endif

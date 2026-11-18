@@ -1,6 +1,4 @@
-// Compile probe: current Forge std::linalg baseline before conformance slices.
-// This intentionally records APIs that later linalg taskbooks are expected to
-// tighten.
+// Compile probe: baseline std::linalg names and call forms.
 
 #include <complex>
 #include <linalg>
@@ -39,8 +37,6 @@ static void check_level1_and_helpers()
     (void)std::linalg::vector_two_norm(x);
     (void)std::linalg::vector_abs_sum(x);
     (void)std::linalg::vector_idx_abs_max(x);
-    (void)std::linalg::vector_sum_of_squares(
-        x, std::linalg::sum_of_squares_result<double>{});
     (void)std::linalg::matrix_frob_norm(matrix);
     (void)std::linalg::matrix_one_norm(matrix);
     (void)std::linalg::matrix_inf_norm(matrix);

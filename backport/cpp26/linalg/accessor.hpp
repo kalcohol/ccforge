@@ -237,11 +237,7 @@ public:
             index_type, Extents::static_extent(1), Extents::static_extent(0)>;
         using __nested_mapping_type = typename Layout::template mapping<__transposed_extents_type>;
 
-        mapping() noexcept = default;
-
-        template<class OtherExtents>
-        constexpr explicit mapping(
-            const typename Layout::template mapping<OtherExtents>& m)
+        constexpr explicit mapping(const __nested_mapping_type& m)
             : nested_(m)
             , extents_(m.extents().extent(1), m.extents().extent(0))
         {}
@@ -286,8 +282,8 @@ public:
         }
 
     private:
-        __nested_mapping_type nested_{};
-        Extents extents_{};
+        __nested_mapping_type nested_;
+        Extents extents_;
     };
 };
 
@@ -395,8 +391,8 @@ template<class ElementType, class Extents, class Layout, class Accessor>
         return result_t(
             x.data_handle(), x.mapping().nested_mapping(), x.accessor());
     } else {
-        return result_t(
-            x.data_handle(), mapping_t(x.mapping()), x.accessor());
+        const mapping_t mapping(x.mapping());
+        return result_t(x.data_handle(), mapping, x.accessor());
     }
 }
 

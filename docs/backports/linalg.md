@@ -1,6 +1,6 @@
 # `std::linalg` backport 说明
 
-当前为不依赖外部 BLAS 库的实验性 backport，覆盖 2026-11-17 工作草案 synopsis 的算法与辅助接口；下文列出保留的语义差异和兼容扩展。
+Forge 的 backport 不依赖外部 BLAS 库，覆盖工作草案 synopsis 的算法与辅助接口。
 
 ## 如何使用
 
@@ -16,12 +16,12 @@ auto sum = std::linalg::dot(v, v);
 
 ## 特性宏
 
-包含 `<linalg>` 后不定义 `__cpp_lib_linalg`；Forge 的实验性实现保留下述差异。
+注入 backport 时，`<linalg>` 按工作草案定义 `__cpp_lib_linalg = 202511L`。强制注入时也使用该值，包括原生头已公布旧值的情况。原生探测先于 backport 注入，让位时由标准库提供宏。[version.syn](https://eel.is/c++draft/version.syn)
 `FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS` 为 `1` 时提供 policy 重载，为 `0` 时不声明它们。该标记只描述 backport；原生让位时不定义。
 
 ## Native 让位
 
-统一策略见 [native handoff](../native-handoff.md)。`FORGE_FORCE_LINALG_BACKPORT` 只用于诊断，具有 ODR 风险。
+原生探测使用特性宏和实际 API 声明作为让位依据。没有特性宏且仅声明空 `std::linalg` 命名空间时仍注入 backport。`FORGE_FORCE_LINALG_BACKPORT` 只用于诊断，具有 ODR 风险。[native handoff](../native-handoff.md)
 
 ## 覆盖范围
 
@@ -30,11 +30,6 @@ auto sum = std::linalg::dot(v, v);
 **BLAS Level 1：** `copy`、`scale`、`swap_elements`、`add`、`dot`、`dotc`、
 `vector_two_norm`、`vector_abs_sum`、`vector_idx_abs_max`、
 `setup_givens_rotation`、`apply_givens_rotation`
-
-**历史草案兼容接口：** `sum_of_squares_result` / `vector_sum_of_squares`。
-它们已由 [LWG 4302](https://cplusplus.github.io/LWG/issue4302) 从标准草案移除。
-本 backport 仍提供旧接口，但它们不属于当前 WD 的标准接口；不能依赖它们切换到原生
-`<linalg>`。整数实例化已弃用并提供 Forge 迁移入口；浮点历史入口继续保留。
 
 **矩阵范数：** `matrix_frob_norm`、`matrix_one_norm`、`matrix_inf_norm`。
 
@@ -74,23 +69,11 @@ auto sum = std::linalg::dot(v, v);
   [mdspan.layout.stride.cons](https://eel.is/c++draft/mdspan.layout.stride.cons)。
 - 依赖 C++23 `<mdspan>`，在无 `<mdspan>` 的工具链上（如 GCC 13）优雅跳过。
 - 当原生 `<linalg>` 可用时，backport 自动禁用。
-- Forge 当前不定义标准 feature-test macro `__cpp_lib_linalg`，因为仍保留实验性差异；
-  下游不应把它当作完整 C++26 `<linalg>` 宣告。
 - 不链接系统 BLAS；SIMD 是 Forge 自身的可选实现细节。policy 行为见下节。
 - Level 1、Level 2、Level 3 与辅助视图有直接回归测试。
 - Level 2/3 rank-update 采用当前 draft 的 overwrite/update 分离：不带输入矩阵 `E` 的重载覆盖输出矩阵，带 `E` 的重载计算 `A = E + update`。
-- 有意偏离（整型范数/SSQ）：当前 WD 的 `vector_two_norm` / `matrix_frob_norm`
-  要求浮点或复数元素与 `Scalar`；本 backport 额外接受整型实例化，切换到原生
-  `std::linalg` 的代码不应依赖这一扩展。对实数整型元素及整型访问值、整型 init，
-  两个范数入口在平方和（包含 `|init|²`）不超过 2^53 时精确累计整数平方和，
-  然后在 double 中开方；超出预算时保留原 double scaled sum-of-squares 递推。
-  该预算只保证平方和精确，不承诺任意非平方数的数学精确整数平方根；最终仍对
-  浮点平方根结果向零截断，并在超出结果类型表示域时饱和，不做四舍五入或误差补偿。
-  浮点/复数访问值或非整型 init 不使用此精确路径。`vector_sum_of_squares` 的
-  整型结果仍在 double 中累计原始平方和，以 `scaling_factor == 1` 报告，并在
-  回转超范围时饱和；平方项或累计和超过 2^53 后允许 double 舍入，并非任意精度精确。
-- 有符号整型的 magnitude（`vector_abs_sum`、`vector_idx_abs_max`、范数与 SSQ
-  的逐项绝对值）在对应无符号类型中计算，最小负值（如 `INT_MIN`）有良定义的
+- 有符号整型的 magnitude（`vector_abs_sum`、`vector_idx_abs_max`、`matrix_one_norm`、
+  `matrix_inf_norm` 的逐项绝对值）在对应无符号类型中计算，最小负值（如 `INT_MIN`）有良定义的
   幅值 2^31 而不是 `abs()` 未定义行为。无 init 的 `vector_abs_sum` 按当前 WD
   返回输入 `value_type`；标准整型元素的 `vector_abs_sum`、`matrix_one_norm` 与
   `matrix_inf_norm` 在 `uintmax_t` 中精确累计 magnitude，并在超出结果类型表示域时
@@ -117,19 +100,12 @@ auto sum = std::linalg::dot(v, v);
   kernel 的特定浮点舍入回归标记为 Forge expectation，不作为草案要求。
 - Hermitian rank 输出仍写入严格实数对角。这是 Forge 在舍入结果上的 BLAS 兼容选择，
   超出草案仅要求数学结果的措辞；通过独立赋值实现，不要求实部与元素值之间隐式转换。
-- `layout_transpose::mapping` 保留默认构造器、更泛化的 nested-mapping 构造器、公开的
-  reserved nested type alias，以及部分比草案更强的 `noexcept`。heterogeneous equality
+- `layout_transpose::mapping` 保留公开的 reserved nested type alias，以及部分比草案
+  更强的 `noexcept`。heterogeneous equality
   比较 nested mappings；packed mapping 的索引模板检查可转换性与不抛出构造。
 - substitution 的实际复杂度是 `O(n² × nrhs)`。草案部分矩形 left-trsm、in-place
   left/right-trsm 以及 left-trmm 的复杂度式使用了不对应的维度；实现不承诺这些式子在
   任意矩形尺寸下都成立，参见 [inplacetrsm](https://eel.is/c++draft/linalg.algs.blas3.inplacetrsm)。
-
-范数的非整数入口与 `setup_givens_rotation` 仍保留历史上更宽的自定义数值类型域：
-部分范数仅排除整数，而非严格限制为草案要求的浮点或复数；setup 的非整数 `Real`
-也未收窄为浮点。仅在相应运算有效时这些实例化才可用，原生让位时不能依赖此扩展。
-本批不新增这些类型的弃用诊断；参见 [nrm2](https://eel.is/c++draft/linalg.algs.blas1.nrm2)、
-[matfrobnorm](https://eel.is/c++draft/linalg.algs.blas1.matfrobnorm) 与
-[Givens setup](https://eel.is/c++draft/linalg.algs.blas1.givens.lartg)。
 
 ### Execution policies
 
@@ -142,8 +118,8 @@ native-only header detection 从 backport include root 加载原生头，并在�
 接受 `std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>>` 为真的原生
 标准或 implementation-defined policy。所有 policy 均在调用线程顺序执行，不分配
 并行工作存储；元素访问函数逸出的异常调用 `std::terminate`。公开函数不声明 `noexcept`，
-进入函数前参数复制产生的异常仍按调用方规则处理。整数范数、整数 Givens、历史 SSQ 和
-旧顺序扩展不增加 policy 版本；`setup_givens_rotation` 按草案没有 policy 版本。
+进入函数前参数复制产生的异常仍按调用方规则处理。`setup_givens_rotation` 按草案没有
+policy 版本。
 
 [linalg.algs.reqs](https://eel.is/c++draft/linalg.algs.reqs) 的字面措辞对未去引用的
 `ExecutionPolicy` 检查 trait，会拒绝 `std::execution::seq` 的 const lvalue。
@@ -191,22 +167,40 @@ dot product 路径；`layout_stride`、packed layout 和非 default accessor 保
 `-fopenmp` 不会隐式并行化 GEMM/GEMV。
 
 
-### 非标准重载
+## 已移除的非草案形式
 
-`std::linalg` 的兼容入口在原生让位后可能无法编译。以下四个 alpha-first、Triangle-second
-版本继续保留，本批不增加弃用：
+项目尚未发布，以下入口直接移除，未设弃用期。表中的矩阵算法位于 `std::linalg`，
+`Scalar{1}` 使用输出元素对应的标量类型。
 
-| 非标准入口 | 对应草案调用 |
+| 移除的形式 | 草案调用或 Forge 迁移入口 |
 | --- | --- |
+| `vector_two_norm(v[, init])` 的整数或自定义元素、`Scalar` | 整数元素或整数初值调用 `forge::vector_two_norm(v[, init])`；自定义类型转换为浮点或复数后调用标准入口 |
+| `matrix_frob_norm(A[, init])` 的整数或自定义元素、`Scalar` | 整数元素或整数初值调用 `forge::matrix_frob_norm(A[, init])`；自定义类型转换为浮点或复数后调用标准入口 |
+| `setup_givens_rotation(a, b)` 的整数或自定义 `Real` | 有符号整数调用 `forge::setup_givens_rotation(a, b)`；无符号整数和自定义 `Real` 转换为浮点后调用标准入口 |
+| `apply_givens_rotation(x, y, c, s)` 的整数系数 | 有符号整数系数使用 `forge::apply_givens_rotation(x, y, c, s)`；无符号整数系数转换为浮点后调用标准入口 |
+| Givens setup 或 application（含 policy application）显式指定带 cv 限定的系数类型，例如 `const double` | 省略显式模板实参，由调用推导 `double`，或显式指定不带 cv 限定的 `double` |
+| `std::linalg::vector_sum_of_squares(v, init)` | `forge::vector_sum_of_squares(v, init)`；初值对平方和的贡献为零、只需范数且类型符合草案时，可用 `std::linalg::vector_two_norm(v)` |
+| `std::linalg::sum_of_squares_result<T>` | `forge::sum_of_squares_result<T>` |
+| `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
+| `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
+| `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
+| `hermitian_matrix_rank_k_update(t, A, C)` | `hermitian_matrix_rank_k_update(Scalar{1}, A, C, t)` |
 | `symmetric_matrix_rank_1_update(alpha, t, x, A)` | `symmetric_matrix_rank_1_update(alpha, x, A, t)` |
-| `symmetric_matrix_rank_2_update(alpha, t, x, y, A)` | 草案没有同形的额外 alpha 版本 |
 | `symmetric_matrix_rank_k_update(alpha, t, A, C)` | `symmetric_matrix_rank_k_update(alpha, A, C, t)` |
-| `symmetric_matrix_rank_2k_update(alpha, t, A, B, C)` | 草案没有同形的额外 alpha 版本 |
+| `symmetric_matrix_rank_2_update(alpha, t, x, y, A)` | `symmetric_matrix_rank_2_update(x, y, A, t)`；需要原缩放语义时，按原乘法顺序显式计算 `alpha * (x[i] * y[j] + y[i] * x[j])` |
+| `symmetric_matrix_rank_2k_update(alpha, t, A, B, C)` | `symmetric_matrix_rank_2k_update(A, B, C, t)`；需要原缩放语义时，用输出元素类型累计每项 `A[i, k] * B[j, k] + B[i, k] * A[j, k]`，再乘以 `alpha` 后赋值 |
+| `layout_transpose<Layout>::mapping<Extents>` 的默认构造 | 先构造具有转置前 extents 的 nested mapping，再显式传入 |
+| `layout_transpose<Layout>::mapping<Extents>` 从只能显式转换为精确 nested mapping 类型的其他 extents mapping 直接构造 | 先显式转换为精确的 nested mapping 类型，再传入 |
 
-第二、四项覆盖输出而非隐式累计；alpha 保持在乘积最左侧。历史
-`sum_of_squares_result` / `vector_sum_of_squares` 也不属于当前草案。
-Triangle-first 的四个入口、整数范数、整数 SSQ 与整数 Givens 标量入口已弃用，
-迁移见下表；参见 [LWG 4315](https://cplusplus.github.io/LWG/issue4315)。
+范数与 Givens 的类型域见 [nrm2](https://eel.is/c++draft/linalg.algs.blas1.nrm2)、
+[matfrobnorm](https://eel.is/c++draft/linalg.algs.blas1.matfrobnorm) 与
+[linalg.algs.reqs](https://eel.is/c++draft/linalg.algs.reqs)。矩阵重载顺序见
+[linalg synopsis](https://eel.is/c++draft/linalg.syn)，转置 mapping 构造见
+[linalg.transp.layout.transpose](https://eel.is/c++draft/linalg.transp.layout.transpose)。
+
+[Forge linalg 扩展](../forge-utilities.md#线性代数扩展)在 backport 注入时提供整数入口与 SSQ。
+[LWG 4302](https://cplusplus.github.io/LWG/issue4302)
+从工作草案移除了 SSQ 函数及结果类型。
 
 ## 示例
 
@@ -223,25 +217,3 @@ Triangle-first 的四个入口、整数范数、整数 SSQ 与整数 Givens 标�
 ## 验证
 
 验证流程见[测试说明](../testing.md)，使用对应测试组及 `ctest -R '^example_'` 运行示例。
-
-## 扩展重载弃用与迁移
-
-以下旧入口保留至少一个带 `[[deprecated]]` 的发布版本；计划在后续版本移除，具体版本由维护者决定。旧入口的计算结果保持不变。
-
-| 弃用入口 | 替代入口 |
-| --- | --- |
-| `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
-| `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
-| `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
-| `hermitian_matrix_rank_k_update(t, A, C)` | `hermitian_matrix_rank_k_update(Scalar{1}, A, C, t)` |
-| `std::linalg::vector_two_norm(v[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 中的 `forge::vector_two_norm(v[, init])`，或显式转换为符合草案的浮点/复数输入及 `Scalar` |
-| `std::linalg::matrix_frob_norm(A[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 的 `forge::matrix_frob_norm(A[, init])` |
-| `std::linalg::vector_sum_of_squares(v, init)` 的整数元素或整数结果标量实例化 | `forge::vector_sum_of_squares(v, init)`；结果类型可用 `forge::sum_of_squares_result<T>` |
-| `std::linalg::setup_givens_rotation(a, b)` 的整数 `Real` 实例化 | `forge::setup_givens_rotation(a, b)` |
-| `std::linalg::apply_givens_rotation(x, y, c, s)` 的整数 `Real` 实例化 | `forge::apply_givens_rotation(x, y, c, s)` |
-
-上表矩阵算法位于 `std::linalg`；`Scalar{1}` 应采用原输出元素对应的标量类型。浮点和复数的标准范数调用不产生弃用诊断。`forge::vector_two_norm` 共用原范数实现，整数结果仍向零截断并饱和；原生 linalg 让位时转用标准入口，整数扩展仅在 `FORGE_LINALG_BACKPORT_ACTIVE` 已定义时受支持。上述整数入口均已弃用，保留至少一个弃用发布版本，移除版本由维护者决定。Forge 入口共用原计算体，保持截断、饱和、累计顺序及返回类型。`forge::matrix_frob_norm` 与 Givens 入口在原生让位时转用标准入口，仅 backport 保证整数扩展；`forge::vector_sum_of_squares` 与结果别名仅在 backport 下提供。
-
-依据为 2026-11-13 查阅的 [linalg synopsis](https://eel.is/c++draft/linalg.syn) 与 [vector_two_norm Mandates](https://eel.is/c++draft/linalg.algs.blas1.nrm2)。整数实例化超出当前草案要求；[LWG 4315](https://cplusplus.github.io/LWG/issue4315) 仅作为相关问题线索，不将未来可能的修改视为当前标准保证。
-
-[矩阵 Frobenius 范数 Mandates](https://eel.is/c++draft/linalg.algs.blas1.matfrobnorm) 要求元素与 `Scalar` 为浮点或复数；[按参数名规定的算法要求](https://eel.is/c++draft/linalg.algs.reqs) 还限制 Givens 的 `Real`。`matrix_one_norm`、`matrix_inf_norm`、`vector_abs_sum` 与 `dot` 没有相同的类型限制，其整数调用保持标准入口。`vector_sum_of_squares` 已从当前草案移除，本次只对整数兼容实例化增加弃用诊断；浮点历史入口仍按既有兼容策略保留。

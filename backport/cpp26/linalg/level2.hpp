@@ -530,21 +530,6 @@ void symmetric_matrix_rank_1_update(
     }
 }
 
-template<class ScalingFactor, class Triangle,
-         class XExtents, class XLayout, class XAccessor,
-         class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__scalar<ScalingFactor> &&
-              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
-              __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
-void symmetric_matrix_rank_1_update(
-    ScalingFactor alpha, Triangle t,
-    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
-{
-    symmetric_matrix_rank_1_update(alpha, x, A, t);
-}
-
 // symmetric_matrix_rank_2_update — A = x*y^T + y*x^T  [linalg.algs.blas2.rank2]
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
@@ -602,34 +587,6 @@ void symmetric_matrix_rank_2_update(
         } else {
             for (idx_t j = 0; j <= i; ++j)
                 A[i, j] = E[i, j] + x[i] * y[j] + y[i] * x[j];
-        }
-    }
-}
-
-template<class ScalingFactor, class Triangle,
-         class XExtents, class XLayout, class XAccessor,
-         class YExtents, class YLayout, class YAccessor,
-         class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__scalar<ScalingFactor> &&
-              __detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
-              __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
-void symmetric_matrix_rank_2_update(
-    ScalingFactor alpha, Triangle,
-    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
-    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
-{
-    using idx_t = typename AExtents::index_type;
-    const idx_t n = A.extent(0);
-    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < n; ++i) {
-        if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j)
-                A[i, j] = alpha * (x[i] * y[j] + y[i] * x[j]);
-        } else {
-            for (idx_t j = 0; j <= i; ++j)
-                A[i, j] = alpha * (x[i] * y[j] + y[i] * x[j]);
         }
     }
 }
@@ -716,21 +673,6 @@ void hermitian_matrix_rank_1_update(
     }
 }
 
-template<class Triangle,
-         class XExtents, class XLayout, class XAccessor,
-         class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
-              __detail::__square_matrix_vector_static_extents_v<AExtents, XExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
-[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
-void hermitian_matrix_rank_1_update(
-    Triangle t,
-    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
-{
-    hermitian_matrix_rank_1_update(typename AAccessor::element_type{1}, x, A, t);
-}
-
 // hermitian_matrix_rank_2_update — A = x*y^H + y*x^H  [linalg.algs.blas2.rank2]
 template<class XExtents, class XLayout, class XAccessor,
          class YExtents, class YLayout, class YAccessor,
@@ -814,23 +756,6 @@ void hermitian_matrix_rank_2_update(
             }
         }
     }
-}
-
-template<class Triangle,
-         class XExtents, class XLayout, class XAccessor,
-         class YExtents, class YLayout, class YAccessor,
-         class AExtents, class ALayout, class AAccessor>
-    requires (__detail::__possibly_packed_output_v<AExtents, ALayout, AAccessor> &&
-              __detail::__square_matrix_vectors_static_extents_v<AExtents, XExtents, YExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
-[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
-void hermitian_matrix_rank_2_update(
-    Triangle t,
-    std::mdspan<typename XAccessor::element_type, XExtents, XLayout, XAccessor> x,
-    std::mdspan<typename YAccessor::element_type, YExtents, YLayout, YAccessor> y,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A)
-{
-    hermitian_matrix_rank_2_update(x, y, A, t);
 }
 
 namespace __detail {

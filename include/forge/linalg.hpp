@@ -54,7 +54,7 @@ template<class Extents, class Layout, class Accessor>
     return std::linalg::__matrix_frob_norm(x);
 }
 template<class T>
-using sum_of_squares_result = std::linalg::sum_of_squares_result<T>;
+using sum_of_squares_result = std::linalg::__sum_of_squares_result<T>;
 
 template<class Extents, class Layout, class Accessor, class T>
 [[nodiscard]] auto vector_sum_of_squares(
@@ -63,15 +63,19 @@ template<class Extents, class Layout, class Accessor, class T>
     return std::linalg::__vector_sum_of_squares(x, init);
 }
 template<class T>
+    requires (!std::is_integral_v<std::remove_cvref_t<T>> ||
+              std::is_signed_v<std::remove_cvref_t<T>>)
 [[nodiscard]] auto setup_givens_rotation(T a, T b) noexcept {
     if constexpr (std::linalg::__detail::__is_complex_v<T>)
-        return std::linalg::setup_givens_rotation(a, b);
+        return std::linalg::__setup_givens_rotation_complex(a, b);
     else
         return std::linalg::__setup_givens_rotation(a, b);
 }
 template<class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
-    requires (std::linalg::__detail::__always_unique_mapping_v<Extents1, Layout1> &&
+    requires ((!std::is_integral_v<std::remove_cvref_t<T>> ||
+               std::is_signed_v<std::remove_cvref_t<T>>) &&
+              std::linalg::__detail::__always_unique_mapping_v<Extents1, Layout1> &&
               std::linalg::__detail::__always_unique_mapping_v<Extents2, Layout2> &&
               std::linalg::__detail::__compatible_static_extents_v<Extents1, Extents2>)
 void apply_givens_rotation(

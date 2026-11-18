@@ -74,16 +74,10 @@ constexpr auto symmetric_hermitian_calls = std::array{
         la::symmetric_matrix_rank_1_update(1.0, x, e, a, t);
     },
     requires(vector x, matrix a, Triangle t) {
-        la::symmetric_matrix_rank_1_update(1.0, t, x, a);
-    },
-    requires(vector x, matrix a, Triangle t) {
         la::hermitian_matrix_rank_1_update(1.0, x, a, t);
     },
     requires(vector x, matrix e, matrix a, Triangle t) {
         la::hermitian_matrix_rank_1_update(1.0, x, e, a, t);
-    },
-    requires(vector x, matrix a, Triangle t) {
-        la::hermitian_matrix_rank_1_update(1.0, x, a, t);
     },
     requires(vector x, vector y, matrix a, Triangle t) {
         la::symmetric_matrix_rank_2_update(x, y, a, t);
@@ -92,22 +86,13 @@ constexpr auto symmetric_hermitian_calls = std::array{
         la::symmetric_matrix_rank_2_update(x, y, e, a, t);
     },
     requires(vector x, vector y, matrix a, Triangle t) {
-        la::symmetric_matrix_rank_2_update(1.0, t, x, y, a);
-    },
-    requires(vector x, vector y, matrix a, Triangle t) {
         la::hermitian_matrix_rank_2_update(x, y, a, t);
     },
     requires(vector x, vector y, matrix e, matrix a, Triangle t) {
         la::hermitian_matrix_rank_2_update(x, y, e, a, t);
     },
-    requires(vector x, vector y, matrix a, Triangle t) {
-        la::hermitian_matrix_rank_2_update(x, y, a, t);
-    },
     requires(matrix a, matrix b, matrix c, Triangle t) {
         la::symmetric_matrix_product(a, t, b, c);
-    },
-    requires(matrix a, matrix b, matrix c, Triangle t) {
-        la::hermitian_matrix_product(a, t, b, c);
     },
     requires(matrix a, matrix b, matrix c, Triangle t) {
         la::hermitian_matrix_product(a, t, b, c);
@@ -119,25 +104,16 @@ constexpr auto symmetric_hermitian_calls = std::array{
         la::symmetric_matrix_rank_k_update(1.0, a, e, c, t);
     },
     requires(matrix a, matrix c, Triangle t) {
-        la::symmetric_matrix_rank_k_update(1.0, t, a, c);
-    },
-    requires(matrix a, matrix c, Triangle t) {
         la::hermitian_matrix_rank_k_update(1.0, a, c, t);
     },
     requires(matrix a, matrix e, matrix c, Triangle t) {
         la::hermitian_matrix_rank_k_update(1.0, a, e, c, t);
-    },
-    requires(matrix a, matrix c, Triangle t) {
-        la::hermitian_matrix_rank_k_update(1.0, a, c, t);
     },
     requires(matrix a, matrix b, matrix c, Triangle t) {
         la::symmetric_matrix_rank_2k_update(a, b, c, t);
     },
     requires(matrix a, matrix b, matrix e, matrix c, Triangle t) {
         la::symmetric_matrix_rank_2k_update(a, b, e, c, t);
-    },
-    requires(matrix a, matrix b, matrix c, Triangle t) {
-        la::symmetric_matrix_rank_2k_update(1.0, t, a, b, c);
     },
 };
 

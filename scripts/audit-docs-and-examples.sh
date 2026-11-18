@@ -538,7 +538,10 @@ for suffix in re.findall(r'option\(FORGE_FORCE_(\w+)_BACKPORT', Path('cmake/Forg
 for p in Path('backport').rglob('*'):
     if not p.is_file(): continue
     for macro in re.findall(r'^\s*#\s*define\s+(__cpp_lib_\w+)', p.read_text(), re.M):
-        suffix='SIMD' if 'simd' in macro else 'CONSTANT_WRAPPER' if 'constant_wrapper' in macro else 'SUBMDSPAN' if 'submdspan' in macro else 'HIVE'
+        if macro == '__cpp_lib_linalg':
+            suffix = 'LINALG'
+        else:
+            suffix='SIMD' if 'simd' in macro else 'CONSTANT_WRAPPER' if 'constant_wrapper' in macro else 'SUBMDSPAN' if 'submdspan' in macro else 'HIVE'
         require(macro_ok(macro,pages[suffix]), str(p)+': '+macro+' missing')
 # Example ownership comes from the public standard-example registrations.
 cmake=Path('example/CMakeLists.txt').read_text()

@@ -481,12 +481,11 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 
 ## 扩展弃用诊断检查
 
-`test_execution_extension_deprecations_strict`、`test_forge_extension_deprecations_strict` 与
-`test_linalg_extension_deprecations_strict` 构建专用副本，以 `/we4996`（MSVC）或
-`-Werror=deprecated-declarations`（GCC、Clang、AppleClang）检查弃用诊断。
-覆盖 scope 观察、execution 组合与 future、迁移后的 execution 和 Forge 运行测试、
-linalg Level 1 及兼容源文件的正向对照。专用副本不参与默认构建，不改变普通运行测试的警告选项；
-兼容测试仍只在旧拼写调用处局部抑制诊断。功能关闭或原生实现让位时，对应目标可能不注册。
+`test_execution_extension_deprecations_strict` 与 `test_forge_extension_deprecations_strict`
+构建专用副本，以 `/we4996`（MSVC）或 `-Werror=deprecated-declarations`（GCC、Clang、
+AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 future、迁移后的 execution
+和 Forge 运行测试。专用副本不参与默认构建，沿用原有普通测试的警告选项；兼容测试只在旧
+拼写调用处局部抑制诊断。功能关闭或原生实现让位时，对应目标可能不注册。
 `test_execution_extension_deprecations_strict` 也构建已启用的 Forge 副本。
 `install_consumer_deprecation_strict_compile` 使用源码树头文件编译安装包消费者的同一份
 源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
@@ -766,17 +765,28 @@ Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正�
 
 ### Linalg 完整重载回归
 
-`FORGE_TEST_ENABLE_LINALG=ON` 且 `<mdspan>` 可用时，`linalg_feature_macro_compile`
-对 backport 和原生（含 partial）均注册；`linalg_include_compile` 与
-`linalg_overload_scalars` 在 backport 注入或 complete native 时注册，后者用全部 78 个
-非 policy twin 的独立小整数期望验证标准入口。
+`FORGE_TEST_ENABLE_LINALG=ON` 且基础 `<mdspan>` 可用并定义 `__cpp_lib_mdspan` 时，`linalg_feature_macro_compile`
+检查注入时的特性宏。Backport 注入时注册 `linalg_forge_extensions`，覆盖整数范数、
+有符号整数 Givens、无符号系数的拒绝诊断、整数与浮点元素和初值组合下的 SSQ，以及访问代理的
+`abs` 定制。
+非 MSVC 模式下，基础 `<mdspan>` 可用且 native handoff 测试组启用时，
+`native_handoff_probe_surface_linalg_empty_namespace` 通过正式配置探测验证空 `std::linalg`
+命名空间且无特性宏时会注入 backport。
+`linalg_forced_feature_macro_compile` 在 GNU、Clang、AppleClang 及 Zig 的非 MSVC 模式下
+通过 `#include_next` 加载只定义旧特性宏的测试头，再验证强制注入后的特性宏。MSVC 模式由
+配置时解析的 `FORGE_MSVC_LINALG_HEADER` 选择原生头，因此该测试夹具只注册在 `#include_next` 路径上。
+`linalg_include_compile` 与 `linalg_overload_scalars` 在 backport 注入或 complete native 时注册。
+前者在注入时检查 Forge 范数和旋转的显式模板调用，在完整原生实现中检查可用的策略转发。
+后者用全部 78 个非 policy twin 的独立小整数期望验证标准入口。
 
-其余依赖 Forge 扩展、约束诊断、marker 或特定算术路径的测试及 configure probes，均要求
+其余依赖 backport 约束诊断、marker 或特定算术路径的测试及 configure probes，均要求
 实际 backport 注入：`FORGE_FORCE_LINALG_BACKPORT`，或 `FORGE_LINALG_FULL` 与
 `FORGE_LINALG_PARTIAL` 同时为假。原生 full/partial 让位时不注册这些测试，也不探测 policy
 variant；configure 明示跳过。该组包括既有 auxiliary / level1/2/3、proxy、布局/性能回归、
 静态约束与 packed negative probes，以及新增：
 
+- `linalg_draft_surface_compile`：用正向草案调用对照，检查旧重载和较宽类型域已移除；
+  configure 单独验证 SSQ 的两个标准命名空间入口均不存在；
 - `linalg_missing_overloads`：23 个新增非 policy 入口，naive product / multiply-back
   solve oracle，upper/lower × explicit/unit、静态/动态、左右布局、stride、两种 packed
   storage order、lazy views 与每个 updating alias 许可；
@@ -787,14 +797,14 @@ variant；configure 明示跳过。该组包括既有 auxiliary / level1/2/3、p
 - `linalg_native_execution_only_compile`：包含 `<linalg>` 不加载 Forge P2300；
 - `linalg_policy_include_order_compile` / `linalg_policy_include_order`：两个翻译单元分别在
   `<linalg>` 前后包含 `<execution>`，检查可用性一致、78 个返回类型、policy value
-  category 和弃用扩展隔离。
+  category 和 policy 类型约束。
 
 上述注入 gate 内，configure 检查原生 policy 对象后才注册 `linalg_execution_policy`，覆盖每个标准
 policy 的独立结果、调用线程行为和异常 terminate（accessor 与算术异常，GoogleTest
 subprocess exit-code 检查）。`unseq` 要求 `__cpp_lib_execution >= 201902L`。
 没有 policy 对象时 configure 明示原因，并注册可见的 skipped
 `linalg_execution_policy_unavailable`；没有 death-test 支持的平台仅跳过 terminate cases。
-所有新测试启用 deprecation-as-error。TBB 可用时由 linalg helpers 链接。
+TBB 可用时由 linalg helpers 链接。
 
 libc++ 默认缺少 policy 对象时，CMake 另探测 per-target `-fexperimental-library`
 能否编译并链接 policy；成功才增加 `linalg_execution_policy_experimental` 与

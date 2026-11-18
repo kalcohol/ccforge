@@ -401,18 +401,21 @@ callback 异常以 `std::exception_ptr` 传递。
 头文件不声明这些入口。旧的无策略 `std::execution` 重载已弃用，
 迁移见[执行库说明](backports/execution.md#扩展入口弃用与迁移)。
 
-## 扩展重载弃用与迁移
+## 线性代数扩展
 
-以下旧入口保留至少一个带 `[[deprecated]]` 的发布版本；计划在后续版本移除，具体版本由维护者决定。旧入口的计算结果保持不变。
+`<forge/linalg.hpp>` 提供 `forge::vector_two_norm`、`forge::matrix_frob_norm`、
+`forge::setup_givens_rotation` 和 `forge::apply_givens_rotation`。
+当注入 `<linalg>` backport 时，这些入口提供顺序调用及整数扩展，头文件还提供
+`forge::vector_sum_of_squares`（SSQ）与 `forge::sum_of_squares_result<T>`。
+原生 `<linalg>` 定义 `__cpp_lib_linalg` 时，两个范数和两个 Givens 入口按原生重载转发。
+Forge 的整数扩展与 SSQ 只在 backport 注入时提供。
 
-| 弃用入口 | 替代入口 |
-| --- | --- |
-| `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
-| `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
-| `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
-| `hermitian_matrix_rank_k_update(t, A, C)` | `hermitian_matrix_rank_k_update(Scalar{1}, A, C, t)` |
-| `std::linalg::vector_two_norm(v[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 中的 `forge::vector_two_norm(v[, init])`，或显式转换为符合草案的浮点/复数输入及 `Scalar` |
+当元素、访问值及初值均为整数时，两个范数在包含初值的平方和不超过 2^53 时精确累计，
+再以 double 开方。超出此范围时采用 double scaled sum-of-squares 递推。整数结果
+向零截断并在超出表示域时饱和。SSQ 的整数结果用 double 累计原始平方和，返回单位
+缩放因子，结果超出整数表示域时饱和。平方项或累计和超过 2^53 后允许 double 舍入。
+整数 Givens 的构造和应用都要求有符号整数系数。构造返回
+`std::linalg::setup_givens_rotation_result<T>`，系数保留整数运算。
+应用时先读取两个元素值，再分别赋值，支持可读取和赋值的代理引用。
 
-上表矩阵算法位于 `std::linalg`；`Scalar{1}` 应采用原输出元素对应的标量类型。浮点和复数的标准范数调用不产生弃用诊断。`forge::vector_two_norm` 共用原范数实现，整数结果仍向零截断并饱和；原生 linalg 让位时转用标准入口，整数扩展仅在 `FORGE_LINALG_BACKPORT_ACTIVE` 已定义时受支持。`matrix_frob_norm` 与 `vector_sum_of_squares` 的整数支持不在此次弃用范围内。
-
-依据为 2026-11-13 查阅的 [linalg synopsis](https://eel.is/c++draft/linalg.syn) 与 [vector_two_norm Mandates](https://eel.is/c++draft/linalg.algs.blas1.nrm2)。整数实例化超出当前草案要求；[LWG 4315](https://cplusplus.github.io/LWG/issue4315) 仅作为相关问题线索，不将未来可能的修改视为当前标准保证。
+旧标准命名空间入口的逐项迁移见 [linalg 说明](backports/linalg.md#已移除的非草案形式)。

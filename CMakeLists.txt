@@ -126,7 +126,6 @@ endif()
 if(FORGE_IS_TOP_LEVEL AND FORGE_BUILD_TESTS)
     add_custom_target(test_extension_deprecations_strict)
     foreach(_target IN ITEMS test_execution_extension_deprecations_strict
-            test_linalg_extension_deprecations_strict
             test_forge_extension_deprecations_strict
             test_install_consumer_ds)
         if(TARGET ${_target})

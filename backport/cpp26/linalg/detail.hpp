@@ -405,6 +405,22 @@ constexpr Accum __abs_if_needed_as(T&& value) {
     }
 }
 
+template<class T>
+concept __norm_scalar = std::is_floating_point_v<T> || __is_complex_v<T>;
+
+template<class Real>
+concept __givens_real =
+    std::is_floating_point_v<Real> && std::same_as<Real, std::remove_cv_t<Real>>;
+
+template<class Value, class Scalar>
+concept __norm_arguments = __scalar<Scalar> && __norm_scalar<Value> &&
+    __norm_scalar<Scalar> &&
+    requires {
+        { __abs_if_needed(std::declval<Scalar&>()) * __abs_if_needed(std::declval<Scalar&>()) +
+          __abs_if_needed(std::declval<Value>()) * __abs_if_needed(std::declval<Value>()) }
+            -> std::convertible_to<Scalar>;
+    };
+
 template<class Accum, class Value = void, class T>
 constexpr Accum __abs_sum_term_as(T&& value) {
     if constexpr (!std::is_arithmetic_v<Accum> && !__is_complex_v<Accum>) {

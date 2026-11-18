@@ -51,9 +51,17 @@ TEST(LinalgLevel1Reductions, VectorTwoNormPreservesAccessorCopyCount) {
     copies = 0;
     EXPECT_DOUBLE_EQ(forge::vector_two_norm(x), 5.0);
     EXPECT_EQ(copies, 2);
+    using extents = span::extents_type;
+    using layout = span::layout_type;
+    copies = 0;
+    EXPECT_DOUBLE_EQ((forge::vector_two_norm<extents, layout, counting_norm_accessor, double>(x, 0.0)), 5.0);
+    EXPECT_EQ(copies, 1);
+    copies = 0;
+    EXPECT_DOUBLE_EQ((forge::vector_two_norm<extents, layout, counting_norm_accessor>(x)), 5.0);
+    EXPECT_EQ(copies, 2);
 }
 
-TEST(LinalgLevel1Reductions, ExtensionForwardersPreserveAccessorCopyCount) {
+TEST(LinalgLevel1Reductions, NormsAndRotationsPreserveAccessorCopyCount) {
     using vector = std::mdspan<double, std::extents<int, 2>,
                                std::layout_right, counting_norm_accessor>;
     using matrix = std::mdspan<double, std::extents<int, 1, 2>,
@@ -74,10 +82,14 @@ TEST(LinalgLevel1Reductions, ExtensionForwardersPreserveAccessorCopyCount) {
     copies = 0;
     EXPECT_DOUBLE_EQ(forge::matrix_frob_norm(a), 5.0);
     EXPECT_EQ(copies, 2);
+    using extents = matrix::extents_type;
+    using layout = matrix::layout_type;
     copies = 0;
-    (void)std::linalg::vector_sum_of_squares(v,
-        std::linalg::sum_of_squares_result<double>{0, 1});
+    EXPECT_DOUBLE_EQ((forge::matrix_frob_norm<extents, layout, counting_norm_accessor, double>(a, 0.0)), 5.0);
     EXPECT_EQ(copies, 1);
+    copies = 0;
+    EXPECT_DOUBLE_EQ((forge::matrix_frob_norm<extents, layout, counting_norm_accessor>(a)), 5.0);
+    EXPECT_EQ(copies, 2);
     copies = 0;
     (void)forge::vector_sum_of_squares(v, forge::sum_of_squares_result<double>{0, 1});
     EXPECT_EQ(copies, 1);
@@ -121,6 +133,9 @@ TEST(LinalgLevel1Givens, ProxyAccessorsSnapshotBothInputs) {
     std::linalg::apply_givens_rotation(x, y, 0.0, 1.0);
     EXPECT_DOUBLE_EQ(x_data, 4.0);
     EXPECT_DOUBLE_EQ(y_data, -3.0);
+    forge::apply_givens_rotation(x, y, 0.0, -1.0);
+    EXPECT_DOUBLE_EQ(x_data, 3.0);
+    EXPECT_DOUBLE_EQ(y_data, 4.0);
 
     using complex = std::complex<double>;
     using complex_span = std::mdspan<complex, extents, std::layout_right, rotation_accessor<complex>>;
@@ -133,6 +148,9 @@ TEST(LinalgLevel1Givens, ProxyAccessorsSnapshotBothInputs) {
     std::linalg::apply_givens_rotation(cx, cy, 0.0, complex{0.0, 1.0});
     EXPECT_EQ(cx_data, expected_x);
     EXPECT_EQ(cy_data, expected_y);
+    forge::apply_givens_rotation(cx, cy, 0.0, complex{0.0, -1.0});
+    EXPECT_EQ(cx_data, (complex{3.0, 2.0}));
+    EXPECT_EQ(cy_data, (complex{4.0, 1.0}));
 }
 
 struct adl_dot_number {
@@ -719,8 +737,10 @@ TEST(LinalgLevel1Reductions, ExplicitInitControlsReturnType) {
 
     static_assert(std::is_same_v<decltype(std::linalg::dot(x, y, 0.0f)), float>);
     static_assert(std::is_same_v<decltype(std::linalg::dotc(x, y, 0.0)), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::vector_two_norm(x, 0.0f)), float>);
     static_assert(std::is_same_v<decltype(forge::vector_two_norm(x, 0.0f)), float>);
     static_assert(std::is_same_v<decltype(std::linalg::vector_abs_sum(x, 0.0)), double>);
+    static_assert(std::is_same_v<decltype(std::linalg::matrix_frob_norm(matrix, 0.0f)), float>);
     static_assert(std::is_same_v<decltype(forge::matrix_frob_norm(matrix, 0.0f)), float>);
     static_assert(std::is_same_v<decltype(std::linalg::matrix_one_norm(matrix, 0.0)), double>);
     static_assert(std::is_same_v<decltype(std::linalg::matrix_inf_norm(matrix, 0.0)), double>);
@@ -730,6 +750,7 @@ TEST(LinalgLevel1Reductions, VectorTwoNormCombinesInitEuclideanly) {
     double x_data[] = {4.0};
     std::mdspan x(x_data, std::extents<int, 1>{});
 
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(x, 3.0), 5.0);
     EXPECT_DOUBLE_EQ(forge::vector_two_norm(x, 3.0), 5.0);
 }
 
@@ -737,9 +758,9 @@ TEST(LinalgLevel1Reductions, VectorTwoNormAvoidsIntermediateOverflow) {
     double x_data[] = {1.0e200, 1.0e200};
     std::mdspan x(x_data, std::extents<int, 2>{});
 
-    const double result = forge::vector_two_norm(x);
-    EXPECT_TRUE(std::isfinite(result));
-    EXPECT_NEAR(result, std::sqrt(2.0) * 1.0e200, 1.0e185);
+    const double expected = std::sqrt(2.0) * 1.0e200;
+    EXPECT_NEAR(std::linalg::vector_two_norm(x), expected, 1.0e185);
+    EXPECT_NEAR(forge::vector_two_norm(x), expected, 1.0e185);
 }
 
 // The scaled-sum recurrence divides magnitudes; integral element types used
@@ -973,13 +994,13 @@ TEST(LinalgLevel1Reductions, VectorSumOfSquaresIntegerElementsAvoidTruncation) {
     std::mdspan x(x_data, std::extents<int, 2>{});
 
     auto result = forge::vector_sum_of_squares(
-        x, std::linalg::sum_of_squares_result<int>{1, 0});
+        x, forge::sum_of_squares_result<int>{1, 0});
     EXPECT_EQ(result.scaling_factor, 1);
     EXPECT_EQ(result.scaled_sum_of_squares, 25);
 
     // A non-trivial init folds in as scaling_factor^2 * scaled_sum.
     auto combined = forge::vector_sum_of_squares(
-        x, std::linalg::sum_of_squares_result<int>{2, 3});
+        x, forge::sum_of_squares_result<int>{2, 3});
     EXPECT_EQ(combined.scaling_factor, 1);
     EXPECT_EQ(combined.scaled_sum_of_squares, 37);
 }
@@ -995,7 +1016,7 @@ TEST(LinalgLevel1Reductions, IntegerNormsOutOfRangeSaturate) {
         std::numeric_limits<std::int8_t>::max());
 
     auto ssq = forge::vector_sum_of_squares(
-        x, std::linalg::sum_of_squares_result<std::int8_t>{1, 0});
+        x, forge::sum_of_squares_result<std::int8_t>{1, 0});
     EXPECT_EQ(ssq.scaling_factor, 1);
     EXPECT_EQ(
         ssq.scaled_sum_of_squares,
@@ -1153,7 +1174,9 @@ TEST(LinalgLevel1Reductions, WiderScalarControlsComplexMagnitudePrecision) {
     EXPECT_DOUBLE_EQ(
         std::linalg::vector_abs_sum(vector, 0.0),
         2.0 * static_cast<double>(largest));
+    EXPECT_DOUBLE_EQ(std::linalg::vector_two_norm(vector, 0.0), magnitude);
     EXPECT_DOUBLE_EQ(forge::vector_two_norm(vector, 0.0), magnitude);
+    EXPECT_DOUBLE_EQ(std::linalg::matrix_frob_norm(matrix, 0.0), magnitude);
     EXPECT_DOUBLE_EQ(forge::matrix_frob_norm(matrix, 0.0), magnitude);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_one_norm(matrix, 0.0), magnitude);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_inf_norm(matrix, 0.0), magnitude);
@@ -1163,9 +1186,10 @@ TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     double x_data[] = {4.0};
     std::mdspan x(x_data, std::extents<int, 1>{});
-    EXPECT_EQ(
-        forge::vector_two_norm(x, complex{0.0, 3.0}),
-        (complex{5.0, 0.0}));
+    const complex init{0.0, 3.0};
+    const complex expected{5.0, 0.0};
+    EXPECT_EQ(std::linalg::vector_two_norm(x, init), expected);
+    EXPECT_EQ(forge::vector_two_norm(x, init), expected);
 }
 
 TEST(LinalgLevel1Norm, DoubleEquivalence) {
@@ -1173,8 +1197,9 @@ TEST(LinalgLevel1Norm, DoubleEquivalence) {
     static double x[N];
     for (int i = 0; i < N; ++i) x[i] = 1.0;
     std::mdspan xv(x, std::extents<int, N>{});
-    double nrm = forge::vector_two_norm(xv);
-    EXPECT_NEAR(nrm, std::sqrt(static_cast<double>(N)), 1e-10);
+    const double expected = std::sqrt(static_cast<double>(N));
+    EXPECT_NEAR(std::linalg::vector_two_norm(xv), expected, 1e-10);
+    EXPECT_NEAR(forge::vector_two_norm(xv), expected, 1e-10);
 }
 
 TEST(LinalgLevel1AsumSIMD, DoubleEquivalence) {
@@ -1250,12 +1275,12 @@ TEST(LinalgLevel1SumOfSquares, CombinesScaleAndScaledSum) {
     std::mdspan v(data, std::extents<int, 2>{});
 
     auto result = forge::vector_sum_of_squares(
-        v, std::linalg::sum_of_squares_result<double>{});
+        v, forge::sum_of_squares_result<double>{});
     EXPECT_DOUBLE_EQ(result.scaling_factor, 4.0);
     EXPECT_DOUBLE_EQ(result.scaled_sum_of_squares, 1.5625);
 
     auto combined = forge::vector_sum_of_squares(
-        v, std::linalg::sum_of_squares_result<double>{2.0, 1.0});
+        v, forge::sum_of_squares_result<double>{2.0, 1.0});
     EXPECT_DOUBLE_EQ(combined.scaling_factor, 4.0);
     EXPECT_DOUBLE_EQ(combined.scaled_sum_of_squares, 1.8125);
 }
@@ -1264,6 +1289,7 @@ TEST(LinalgLevel1MatrixNorms, RectangularRealMatrix) {
     double data[] = {1.0, -2.0, 3.0, -4.0, 5.0, -6.0};
     std::mdspan matrix(data, std::extents<int, 2, 3>{});
 
+    EXPECT_NEAR(std::linalg::matrix_frob_norm(matrix), std::sqrt(91.0), 1e-12);
     EXPECT_NEAR(forge::matrix_frob_norm(matrix), std::sqrt(91.0), 1e-12);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_one_norm(matrix), 9.0);
     EXPECT_DOUBLE_EQ(std::linalg::matrix_inf_norm(matrix), 15.0);
@@ -1288,9 +1314,11 @@ TEST(LinalgLevel1MatrixNorms, ComplexMatrixUsesMagnitude) {
     complex data[] = {{3.0, 4.0}, {0.0, 0.0}, {1.0, -1.0}, {-2.0, 0.0}};
     std::mdspan matrix(data, std::extents<int, 2, 2>{});
 
+    static_assert(std::is_same_v<decltype(std::linalg::matrix_frob_norm(matrix)), double>);
     static_assert(std::is_same_v<decltype(forge::matrix_frob_norm(matrix)), double>);
     static_assert(std::is_same_v<decltype(std::linalg::matrix_one_norm(matrix)), double>);
     static_assert(std::is_same_v<decltype(std::linalg::matrix_inf_norm(matrix)), double>);
+    EXPECT_NEAR(std::linalg::matrix_frob_norm(matrix), std::sqrt(31.0), 1e-12);
     EXPECT_NEAR(forge::matrix_frob_norm(matrix), std::sqrt(31.0), 1e-12);
     EXPECT_NEAR(std::linalg::matrix_one_norm(matrix), 5.0 + std::sqrt(2.0), 1e-12);
     EXPECT_NEAR(std::linalg::matrix_inf_norm(matrix), 5.0, 1e-12);
@@ -1315,27 +1343,27 @@ TEST(LinalgLevel1MatrixNorms, FrobeniusInitUsesMagnitudeSquared) {
     complex data[] = {{4.0, 0.0}};
     std::mdspan matrix(data, std::extents<int, 1, 1>{});
 
-    EXPECT_EQ(
-        forge::matrix_frob_norm(matrix, complex{0.0, 3.0}),
-        (complex{5.0, 0.0}));
+    const complex init{0.0, 3.0};
+    const complex expected{5.0, 0.0};
+    EXPECT_EQ(std::linalg::matrix_frob_norm(matrix, init), expected);
+    EXPECT_EQ(forge::matrix_frob_norm(matrix, init), expected);
 }
 
 TEST(LinalgLevel1MatrixNorms, FrobeniusSquaresElementsInAccumulationType) {
     float data[] = {1.0e20f};
     std::mdspan matrix(data, std::extents<int, 1, 1>{});
 
-    const double result = forge::matrix_frob_norm(matrix, 0.0);
-    EXPECT_TRUE(std::isfinite(result));
-    EXPECT_NEAR(result, 1.0e20, 1.0e14);
+    EXPECT_NEAR(std::linalg::matrix_frob_norm(matrix, 0.0), 1.0e20, 1.0e14);
+    EXPECT_NEAR(forge::matrix_frob_norm(matrix, 0.0), 1.0e20, 1.0e14);
 }
 
 TEST(LinalgLevel1MatrixNorms, FrobeniusNormAvoidsIntermediateOverflow) {
     double data[] = {1.0e200, 1.0e200};
     std::mdspan matrix(data, std::extents<int, 1, 2>{});
 
-    const double result = forge::matrix_frob_norm(matrix);
-    EXPECT_TRUE(std::isfinite(result));
-    EXPECT_NEAR(result, std::sqrt(2.0) * 1.0e200, 1.0e185);
+    const double expected = std::sqrt(2.0) * 1.0e200;
+    EXPECT_NEAR(std::linalg::matrix_frob_norm(matrix), expected, 1.0e185);
+    EXPECT_NEAR(forge::matrix_frob_norm(matrix), expected, 1.0e185);
 }
 
 TEST(LinalgLevel1Givens, SetupAndApplyRotation) {

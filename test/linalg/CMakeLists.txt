@@ -7,7 +7,9 @@ function(forge_add_linalg_runtime_test target_name source_name test_name)
         ${target_name}
         "${FORGE_LINALG_RUNTIME_DIR}/${source_name}"
         ${test_name})
-    target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+    if(_forge_linalg_backport_injected)
+        target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+    endif()
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -18,7 +20,9 @@ function(forge_add_linalg_compile_probe target_name source_name test_name)
         ${target_name}
         "${FORGE_LINALG_COMPILE_DIR}/${source_name}"
         ${test_name})
-    target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+    if(_forge_linalg_backport_injected)
+        target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
+    endif()
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -54,29 +58,48 @@ function(forge_expect_linalg_cxx_source_compiles result_var source_name should_c
 endfunction()
 
 include(CheckCXXSourceCompiles)
-unset(FORGE_LINALG_HAS_MDSPAN_HEADER CACHE)
-unset(FORGE_LINALG_HAS_MDSPAN_HEADER)
-check_cxx_source_compiles("
-    #include <mdspan>
-    int main() { return 0; }
-" FORGE_LINALG_HAS_MDSPAN_HEADER)
 
-if(FORGE_LINALG_HAS_MDSPAN_HEADER)
-    # Mirror forge.cmake's force/full/partial injection decision. All probes
-    # that assume Forge constraints, extensions, markers, or arithmetic paths
-    # belong inside this gate, including configure-time negative probes.
+if(FORGE_BASE_MDSPAN_AVAILABLE)
+    # Backport activation also requires the mdspan feature macro.
+    unset(FORGE_LINALG_HAS_MDSPAN_FEATURE CACHE)
+    check_cxx_source_compiles("
+        #include <mdspan>
+        #if !defined(__cpp_lib_mdspan)
+        #error Forge linalg requires the mdspan feature macro
+        #endif
+        int main() {}
+    " FORGE_LINALG_HAS_MDSPAN_FEATURE)
+endif()
+
+if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
+    # Mirror forge.cmake's force/full/partial injection decision for tests
+    # and configure probes that assume the standard backport is injected.
     set(_forge_linalg_backport_injected OFF)
     if(FORGE_FORCE_LINALG_BACKPORT
             OR (NOT FORGE_LINALG_FULL AND NOT FORGE_LINALG_PARTIAL))
         set(_forge_linalg_backport_injected ON)
     endif()
 
-    # These probes also apply to native <linalg>. A partial implementation only
-    # gets the feature-macro check; the full synopsis is needed by the others.
+    # These tests also apply to partial native <linalg>.
     forge_add_linalg_compile_probe(
         test_linalg_feature_macro
         test_linalg_feature_macro.cpp
         linalg_feature_macro_compile)
+    if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|Zig)$")
+        # Let the wrapper's include_next find the declaration-free fixture.
+        forge_add_compile_probe(
+            test_linalg_forced_feature_macro
+            "${FORGE_LINALG_COMPILE_DIR}/test_linalg_feature_macro.cpp"
+            linalg_forced_feature_macro_compile)
+        target_include_directories(test_linalg_forced_feature_macro BEFORE PRIVATE
+            "${CMAKE_SOURCE_DIR}/backport"
+            "${FORGE_LINALG_TEST_ROOT}/fixtures/macro_only")
+        target_compile_definitions(test_linalg_forced_feature_macro PRIVATE
+            FORGE_FORCE_LINALG_BACKPORT=1 FORGE_TEST_LINALG_FORCE_OLDER_MACRO=1)
+        if(FORGE_TEST_TBB_LIBRARY)
+            target_link_libraries(test_linalg_forced_feature_macro PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+        endif()
+    endif()
     if(_forge_linalg_backport_injected OR FORGE_LINALG_FULL)
         forge_add_linalg_compile_probe(
             test_linalg_include
@@ -91,19 +114,32 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
     endif()
 
     if(_forge_linalg_backport_injected)
+        forge_add_linalg_runtime_test(
+            test_forge_linalg_extensions
+            test_forge_linalg_extensions.cpp
+            linalg_forge_extensions)
         forge_add_linalg_compile_probe(
-            test_linalg_extension_compat
-            test_linalg_extension_compat.cpp
-            linalg_extension_compat_compile)
-        add_test(NAME linalg_extension_compat COMMAND test_linalg_extension_compat)
-        set_tests_properties(linalg_extension_compat PROPERTIES
-            DEPENDS linalg_extension_compat_compile
-            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
-        if(MSVC)
-            target_compile_options(test_linalg_extension_compat PRIVATE /we4996)
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_linalg_extension_compat PRIVATE -Werror=deprecated-declarations)
-        endif()
+            test_linalg_draft_surface
+            test_linalg_draft_surface.cpp
+            linalg_draft_surface_compile)
+        forge_expect_linalg_cxx_source_compiles(
+            FORGE_LINALG_SSQ_CONTROL
+            test_linalg_removed_ssq.cpp
+            ON
+            "The standard norm and Forge sum-of-squares controls must compile")
+        set(_forge_linalg_ssq_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+        foreach(_forge_case IN ITEMS FUNCTION TYPE)
+            set(CMAKE_REQUIRED_DEFINITIONS ${_forge_linalg_ssq_definitions}
+                -DFORGE_TEST_LINALG_SSQ_${_forge_case}=1)
+            forge_expect_linalg_cxx_source_compiles(
+                FORGE_LINALG_REMOVED_SSQ_${_forge_case}
+                test_linalg_removed_ssq.cpp
+                OFF
+                "std::linalg must reject the removed SSQ ${_forge_case}")
+        endforeach()
+        set(CMAKE_REQUIRED_DEFINITIONS "${_forge_linalg_ssq_definitions}")
+        unset(_forge_linalg_ssq_definitions)
+        unset(_forge_case)
         forge_add_linalg_runtime_test(test_linalg_auxiliary test_linalg_auxiliary.cpp linalg_auxiliary)
         forge_add_linalg_runtime_test(test_linalg_level1 test_linalg_level1.cpp linalg_level1)
         forge_add_linalg_runtime_test(test_linalg_adl_helpers test_linalg_adl_helpers.cpp linalg_adl_helpers)
@@ -197,6 +233,8 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
                 forge_linalg_check_policy_objects(FORGE_LINALG_TEST_HAS_EXPERIMENTAL_POLICIES "-fexperimental-library")
                 if(FORGE_LINALG_TEST_HAS_EXPERIMENTAL_POLICIES)
                     forge_linalg_policy_target(test_linalg_execution_policy_experimental _experimental "-fexperimental-library")
+                    target_compile_options(test_linalg_draft_surface PRIVATE -fexperimental-library)
+                    target_link_options(test_linalg_draft_surface PRIVATE -fexperimental-library)
                 else()
                     message(STATUS "Forge: libc++ linalg policy variant unavailable with -fexperimental-library")
                 endif()
@@ -265,46 +303,5 @@ if(FORGE_LINALG_HAS_MDSPAN_HEADER)
         message(STATUS "Forge: backport-specific linalg tests/probes skipped (native linalg stand-aside)")
     endif()
 else()
-    message(STATUS "Forge: linalg tests skipped (toolchain has no <mdspan>)")
-endif()
-
-if(FORGE_LINALG_HAS_MDSPAN_HEADER AND (FORGE_FORCE_LINALG_BACKPORT OR (NOT FORGE_LINALG_FULL AND NOT FORGE_LINALG_PARTIAL)))
-
-# Deprecated extension calls remain usable and diagnose independently.
-set(_forge_extension_flags "${CMAKE_REQUIRED_FLAGS}")
-set(_forge_extension_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-if(MSVC)
-    string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
-endif()
-forge_add_linalg_compile_probe(test_linalg_integer_compat test_linalg_integer_compat.cpp linalg_integer_compat_compile)
-add_test(NAME linalg_integer_compat COMMAND test_linalg_integer_compat)
-set_tests_properties(linalg_integer_compat PROPERTIES DEPENDS linalg_integer_compat_compile)
-if(MSVC)
-    target_compile_options(test_linalg_integer_compat PRIVATE /we4996)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_linalg_integer_compat PRIVATE -Werror=deprecated-declarations)
-endif()
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    forge_expect_linalg_cxx_source_compiles(FORGE_LINALG_INTEGER_COMPAT
-        test_linalg_integer_compat.cpp ON "Suppressed legacy extensions and Forge replacements must compile")
-    foreach(_forge_case RANGE 1 12)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs} -DFORGE_DEPRECATION_CASE=${_forge_case})
-        forge_expect_linalg_cxx_source_compiles(FORGE_LINALG_INTEGER_DEPRECATED_${_forge_case}
-            test_linalg_integer_compat.cpp OFF "Each legacy extension must diagnose deprecation")
-    endforeach()
-    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
-endif()
-set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
-set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
-unset(_forge_extension_flags)
-unset(_forge_extension_defs)
-unset(_forge_case)
-endif()
-
-if(TARGET test_linalg_integer_compat)
-    forge_add_deprecation_strict_copy(test_linalg_level1 linalg_level1)
-    add_custom_target(test_linalg_extension_deprecations_strict DEPENDS
-        test_linalg_level1_ds test_linalg_integer_compat test_linalg_extension_compat)
+    message(STATUS "Forge: mdspan-dependent linalg tests skipped (base <mdspan> unavailable or missing its feature macro)")
 endif()

@@ -1,0 +1,8 @@
+#pragma once
+
+#include <version>
+
+#undef __cpp_lib_linalg
+#define FORGE_TEST_LINALG_EMPTY_NAMESPACE_INCLUDED 1
+
+namespace std::linalg {}

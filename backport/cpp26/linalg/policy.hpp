@@ -186,7 +186,8 @@ auto dotc(
 // vector_two_norm — policy twin of level1.hpp.
 template<class ExecutionPolicy, class Extents, class Layout, class Accessor, class T>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (Extents::rank() == 1 && __detail::__scalar<T> && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)))
+              Extents::rank() == 1 &&
+              __detail::__norm_arguments<__detail::__accessor_value_t<Accessor>, T>)
 T vector_two_norm(
     ExecutionPolicy&& exec,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
@@ -201,7 +202,8 @@ T vector_two_norm(
 // vector_two_norm — policy twin of level1.hpp.
 template<class ExecutionPolicy, class Extents, class Layout, class Accessor>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (Extents::rank() == 1 && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>>)))
+              Extents::rank() == 1 &&
+              __detail::__norm_scalar<__detail::__accessor_value_t<Accessor>>)
 auto vector_two_norm(
     ExecutionPolicy&& exec,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)
@@ -259,7 +261,7 @@ typename Extents::size_type vector_idx_abs_max(
 template<class ExecutionPolicy, class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class T>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (std::is_floating_point_v<T> && Extents1::rank() == 1 &&
+              (__detail::__givens_real<T> && Extents1::rank() == 1 &&
               Extents2::rank() == 1 && __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
               __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>))
@@ -280,7 +282,7 @@ void apply_givens_rotation(
 template<class ExecutionPolicy, class Extents1, class Layout1, class Accessor1,
          class Extents2, class Layout2, class Accessor2, class Real>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (std::is_floating_point_v<Real> && Extents1::rank() == 1 &&
+              (__detail::__givens_real<Real> && Extents1::rank() == 1 &&
               Extents2::rank() == 1 && __detail::__writable_output_v<Extents1, Layout1, Accessor1> &&
               __detail::__writable_output_v<Extents2, Layout2, Accessor2> &&
               __detail::__compatible_static_extents_v<Extents1, Extents2>))
@@ -300,7 +302,8 @@ void apply_givens_rotation(
 // matrix_frob_norm — policy twin of level1.hpp.
 template<class ExecutionPolicy, class Extents, class Layout, class Accessor, class T>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (Extents::rank() == 2 && __detail::__scalar<T> && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>> || std::is_integral_v<T>)))
+              Extents::rank() == 2 &&
+              __detail::__norm_arguments<__detail::__accessor_value_t<Accessor>, T>)
 T matrix_frob_norm(
     ExecutionPolicy&& exec,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x,
@@ -315,7 +318,8 @@ T matrix_frob_norm(
 // matrix_frob_norm — policy twin of level1.hpp.
 template<class ExecutionPolicy, class Extents, class Layout, class Accessor>
     requires (std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>> &&
-              (Extents::rank() == 2 && !(std::is_integral_v<__detail::__accessor_value_t<Accessor>>)))
+              Extents::rank() == 2 &&
+              __detail::__norm_scalar<__detail::__accessor_value_t<Accessor>>)
 auto matrix_frob_norm(
     ExecutionPolicy&& exec,
     std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor> x)

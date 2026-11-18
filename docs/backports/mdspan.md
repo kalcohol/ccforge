@@ -53,10 +53,7 @@ Forge 的 `<mdspan>` backport 扩展覆盖：
 
 Portable code 应优先调用 `std::submdspan(...)`。需要直接检查 mapping customization
 时，按 working draft 的 hidden-friend 模型使用不限定名
-`submdspan_mapping(mapping, slices...)`，让 ADL 找到实现；不要写
-`std::submdspan_mapping(...)`。Forge backport 当前保留 namespace-scope overload
-作为内部 dispatch extension，但 qualified spelling 不是 native-handoff contract，
-原生标准库可以只提供 hidden friends。
+`submdspan_mapping(mapping, slices...)`，让 ADL 找到实现。
 
 Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdspan layouts
 作为 `submdspan` foundation。这些 foundation 由 `forge.cmake` 单独探测，检测到原生或
@@ -110,13 +107,7 @@ slice stride；若后续 wording 修正该冲突，再按新的标准结果收�
 
 ## 限制与偏差
 
-### 旧拼写
-
-Forge 不保留早期 P2630-era 的 `strided_slice` / `submdspan_extents` 兼容拼写；新代码应
-直接使用当前 draft 的 `extent_slice` / `range_slice` 与 `subextents`。
-
-`forge.cmake` 仍保留 legacy `strided_slice` probe，仅用于检测旧式 partial-native stdlib
-并让位；这不是 Forge 公开 API。
+`forge.cmake` 通过旧式 `strided_slice` probe 检测 partial-native 实现并让位。
 
 ## 示例
 

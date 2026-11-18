@@ -418,7 +418,8 @@ TEST(LinalgLevel3RankUpdate, SymmetricRank2KInnerExtentDoesNotNarrowToOutputInde
             std::linalg::symmetric_matrix_rank_2k_update(A, B, C, triangle);
             expect_result(1.0, false, false);
             c_data.fill(-99.0);
-            std::linalg::symmetric_matrix_rank_2k_update(2.0, triangle, A, B, C);
+            std::linalg::symmetric_matrix_rank_2k_update(
+                std::linalg::scaled(2.0, A), B, C, triangle);
             expect_result(2.0, false, false);
             for (bool alias : {false, true}) {
                 SCOPED_TRACE(alias ? "E==C" : "separate E/C");

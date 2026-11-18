@@ -18,7 +18,7 @@ using dynamic_row_major_mapping =
 template<class Slice>
 concept directly_sliceable_mapping = requires(
     dynamic_row_major_mapping mapping, Slice slice) {
-    std::submdspan_mapping(mapping, slice);
+    submdspan_mapping(mapping, slice);
 };
 
 using static_extent_4 = std::extents<std::size_t, 4>;
@@ -28,7 +28,7 @@ using static_mdspan = std::mdspan<int, static_extent_4>;
 template<class Slice>
 concept statically_sliceable_mapping = requires(
     static_row_major_mapping mapping, Slice slice) {
-    std::submdspan_mapping(mapping, slice);
+    submdspan_mapping(mapping, slice);
 };
 
 template<class Slice>

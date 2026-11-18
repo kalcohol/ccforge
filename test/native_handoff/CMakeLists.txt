@@ -118,6 +118,27 @@ if(NOT MSVC)
             PROPERTIES
             TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
     endforeach()
+
+    if(FORGE_BASE_MDSPAN_AVAILABLE)
+        add_test(
+            NAME native_handoff_probe_surface_linalg_empty_namespace
+            COMMAND ${CMAKE_COMMAND}
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/probe_surface_project
+                -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/probe_surface_linalg_empty_namespace
+                -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+                -DSURFACE_CASE=linalg_empty_namespace
+                -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+                "-DPARENT_CACHE=${CMAKE_CURRENT_BINARY_DIR}/hive_parent_$<CONFIG>.cmake"
+                "-DTEST_CONFIG=$<CONFIG>"
+                "-DGENERATOR=${CMAKE_GENERATOR}"
+                "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+                "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+                "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_probe_surface.cmake)
+        set_tests_properties(native_handoff_probe_surface_linalg_empty_namespace PROPERTIES
+            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    endif()
 endif()
 
 # Configuration contracts run with the native-handoff group in existing lanes.

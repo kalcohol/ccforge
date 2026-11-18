@@ -1,5 +1,5 @@
 foreach(required_var IN ITEMS
-        SOURCE_DIR BINARY_DIR FORGE_ROOT_DIR SURFACE_CASE EXECUTION_CASE)
+        SOURCE_DIR BINARY_DIR FORGE_ROOT_DIR SURFACE_CASE)
     if(NOT DEFINED ${required_var} OR "${${required_var}}" STREQUAL "")
         message(FATAL_ERROR "${required_var} is required")
     endif()
@@ -18,8 +18,26 @@ set(configure_args
     -B "${BINARY_DIR}"
     -DCMAKE_CXX_STANDARD=${CXX_STANDARD}
     -DFORGE_ROOT_DIR=${FORGE_ROOT_DIR}
-    -DSURFACE_CASE=${SURFACE_CASE}
-    -DEXECUTION_CASE=${EXECUTION_CASE})
+    -DSURFACE_CASE=${SURFACE_CASE})
+if(SURFACE_CASE STREQUAL "linalg_empty_namespace")
+    set(expected_probes LINALG=BACKPORT)
+else()
+    if(NOT DEFINED EXECUTION_CASE OR EXECUTION_CASE STREQUAL "")
+        message(FATAL_ERROR "EXECUTION_CASE is required")
+    endif()
+    list(APPEND configure_args "-DEXECUTION_CASE=${EXECUTION_CASE}")
+    set(expected_probes SENDERS=PARTIAL SIMD=PARTIAL MDSPAN_PADDED_LAYOUTS=PARTIAL
+        SUBMDSPAN=PARTIAL LINALG=PARTIAL)
+endif()
+if(DEFINED PARENT_CACHE AND NOT PARENT_CACHE STREQUAL "")
+    list(APPEND configure_args -C "${PARENT_CACHE}")
+endif()
+if(DEFINED GENERATOR_PLATFORM AND NOT GENERATOR_PLATFORM STREQUAL "")
+    list(APPEND configure_args -A "${GENERATOR_PLATFORM}")
+endif()
+if(DEFINED GENERATOR_TOOLSET AND NOT GENERATOR_TOOLSET STREQUAL "")
+    list(APPEND configure_args -T "${GENERATOR_TOOLSET}")
+endif()
 if(DEFINED CXX_COMPILER AND NOT CXX_COMPILER STREQUAL "")
     list(APPEND configure_args "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}")
 endif()
@@ -35,24 +53,32 @@ execute_process(
     ERROR_VARIABLE configure_error)
 
 set(configure_log "${configure_output}\n${configure_error}")
+set(case_label "${SURFACE_CASE}")
+if(DEFINED EXECUTION_CASE AND NOT EXECUTION_CASE STREQUAL "")
+    string(APPEND case_label "/${EXECUTION_CASE}")
+endif()
 if(NOT configure_result EQUAL 0)
     message(FATAL_ERROR
-        "${SURFACE_CASE}/${EXECUTION_CASE} probe-surface configure failed:\n${configure_log}")
+        "${case_label} probe-surface configure failed:\n${configure_log}")
 endif()
 
-foreach(feature IN ITEMS SENDERS SIMD MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG)
-    if(NOT configure_log MATCHES "CC Forge probe: ${feature}=PARTIAL")
+foreach(expected_probe IN LISTS expected_probes)
+    if(NOT configure_log MATCHES "CC Forge probe: ${expected_probe}")
         message(FATAL_ERROR
-            "${SURFACE_CASE}/${EXECUTION_CASE} did not classify ${feature} as PARTIAL:\n${configure_log}")
+            "${case_label} did not report ${expected_probe}:\n${configure_log}")
     endif()
 endforeach()
 
+set(build_args --build "${BINARY_DIR}")
+if(DEFINED TEST_CONFIG AND NOT TEST_CONFIG STREQUAL "")
+    list(APPEND build_args --config "${TEST_CONFIG}")
+endif()
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${BINARY_DIR}"
+    COMMAND "${CMAKE_COMMAND}" ${build_args}
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_output
     ERROR_VARIABLE build_error)
 if(NOT build_result EQUAL 0)
     message(FATAL_ERROR
-        "${SURFACE_CASE}/${EXECUTION_CASE} probe-surface build failed:\n${build_output}\n${build_error}")
+        "${case_label} probe-surface build failed:\n${build_output}\n${build_error}")
 endif()

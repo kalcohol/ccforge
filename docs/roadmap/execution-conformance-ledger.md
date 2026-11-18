@@ -245,36 +245,17 @@ Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execu
 
 依据为 2026-11-13 查阅的 [execution synopsis](https://eel.is/c++draft/execution.syn)、[env](https://eel.is/c++draft/exec.env)、[prop](https://eel.is/c++draft/exec.prop) 与 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
 
-## 扩展重载弃用与迁移
-
-以下旧入口保留至少一个带 `[[deprecated]]` 的发布版本；计划在后续版本移除，具体版本由维护者决定。旧入口的计算结果保持不变。
-
-| 弃用入口 | 替代入口 |
-| --- | --- |
-| `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
-| `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
-| `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
-| `hermitian_matrix_rank_k_update(t, A, C)` | `hermitian_matrix_rank_k_update(Scalar{1}, A, C, t)` |
-| `std::linalg::vector_two_norm(v[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 中的 `forge::vector_two_norm(v[, init])`，或显式转换为符合草案的浮点/复数输入及 `Scalar` |
-| `std::linalg::matrix_frob_norm(A[, init])` 的整数元素或整数 `Scalar` 实例化 | `<forge/linalg.hpp>` 的 `forge::matrix_frob_norm(A[, init])` |
-| `std::linalg::vector_sum_of_squares(v, init)` 的整数元素或整数结果标量实例化 | `forge::vector_sum_of_squares(v, init)`；结果类型可用 `forge::sum_of_squares_result<T>` |
-| `std::linalg::setup_givens_rotation(a, b)` 的整数 `Real` 实例化 | `forge::setup_givens_rotation(a, b)` |
-| `std::linalg::apply_givens_rotation(x, y, c, s)` 的整数 `Real` 实例化 | `forge::apply_givens_rotation(x, y, c, s)` |
-
-上表矩阵算法位于 `std::linalg`；`Scalar{1}` 应采用原输出元素对应的标量类型。浮点和复数的标准范数调用不产生弃用诊断。`forge::vector_two_norm` 共用原范数实现，整数结果仍向零截断并饱和；原生 linalg 让位时转用标准入口，整数扩展仅在 `FORGE_LINALG_BACKPORT_ACTIVE` 已定义时受支持。上述整数入口均已弃用，保留至少一个弃用发布版本，移除版本由维护者决定。Forge 入口共用原计算体，保持截断、饱和、累计顺序及返回类型。`forge::matrix_frob_norm` 与 Givens 入口在原生让位时转用标准入口，仅 backport 保证整数扩展；`forge::vector_sum_of_squares` 与结果别名仅在 backport 下提供。
-
-依据为 2026-11-13 查阅的 [linalg synopsis](https://eel.is/c++draft/linalg.syn) 与 [vector_two_norm Mandates](https://eel.is/c++draft/linalg.algs.blas1.nrm2)。整数实例化超出当前草案要求；[LWG 4315](https://cplusplus.github.io/LWG/issue4315) 仅作为相关问题线索，不将未来可能的修改视为当前标准保证。
-
 计数 scope 的观察入口是诊断快照，不提供跨字段一致性或额外同步保证。旧成员保留至少一个带 `[[deprecated]]` 的发布版本，移除版本由维护者决定；reserved observer 仅用于实现与白盒测试，不属于公共 API。Forge 观察入口只接受 backport 的两种 scope 类型，原生让位时不提供。依据为 [counting scopes](https://eel.is/c++draft/exec.counting.scopes) 的成员列表及 [sync_wait](https://eel.is/c++draft/exec.sync.wait) 的恰好一种 value completion 要求。
 
-[矩阵 Frobenius 范数 Mandates](https://eel.is/c++draft/linalg.algs.blas1.matfrobnorm) 要求元素与 `Scalar` 为浮点或复数；[按参数名规定的算法要求](https://eel.is/c++draft/linalg.algs.reqs) 还限制 Givens 的 `Real`。`matrix_one_norm`、`matrix_inf_norm`、`vector_abs_sum` 与 `dot` 没有相同的类型限制，其整数调用保持标准入口。`vector_sum_of_squares` 已从当前草案移除，本次只对整数兼容实例化增加弃用诊断；浮点历史入口仍按既有兼容策略保留。
+## Linalg 与 mdspan 的草案对齐
 
-
-Linalg 的非 policy synopsis 入口现已补齐；原生 policy 对象可用时提供全部 78 个 policy
-入口，均在调用线程顺序运行并在元素访问异常时 terminate。可用性与 `<execution>` wrapper
-共用 native-only header detection，不从 `<linalg>` 加载 P2300。scalar / 输出约束与
-旧扩展隔离见 [linalg 说明](../backports/linalg.md)；仍保留表中既有弃用入口和四个未弃用的
-alpha-first、Triangle-second symmetric rank 兼容入口，本批没有新增弃用。
+| 范围 | 当前实现 |
+| --- | --- |
+| `std::linalg` 调用形式 | 移除旧 Triangle 顺序、额外的 rank-2 / rank-2k alpha 调用及历史 SSQ。项目尚未发布，未设弃用期。逐项迁移见 [linalg 说明](../backports/linalg.md#已移除的非草案形式)。 |
+| Norm 与 Givens 类型约束 | 两范数检查元素与 `Scalar` 的浮点或复数类型，Givens 检查浮点 `Real`；policy twin 使用相同约束。整数 `matrix_one_norm`、`matrix_inf_norm` 与 `vector_abs_sum` 保留饱和行为。 |
+| Forge 扩展 | backport 注入时提供整数范数、有符号整数 Givens 及 SSQ。原生 `<linalg>` 定义特性宏时，范数和 Givens 包装器转发到原生重载。迁移入口见 [Forge 线性代数扩展](../forge-utilities.md#线性代数扩展)。 |
+| Policy 重载 | 原生 policy 对象可用时提供 78 个重载。调用线程内顺序运行，元素访问异常触发 terminate；`<linalg>` 使用原生检测。 |
+| Mapping 与宏 | `layout_transpose::mapping` 从精确 nested mapping 显式构造；submdspan 测试通过 ADL 调用 mapping customization。注入的 `<linalg>` 定义 `__cpp_lib_linalg = 202511L`，原生探测先于注入。 |
 
 ### Adaptor 的 WD 措辞问题
 

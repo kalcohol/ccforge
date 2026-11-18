@@ -398,21 +398,6 @@ void symmetric_matrix_rank_k_update(
     }
 }
 
-template<class Triangle, class ScalingFactor,
-         class AExtents, class ALayout, class AAccessor,
-         class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__scalar<ScalingFactor> &&
-              __detail::__possibly_packed_output_v<CExtents, CLayout, CAccessor> &&
-              __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
-              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
-void symmetric_matrix_rank_k_update(
-    ScalingFactor alpha, Triangle t,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
-{
-    symmetric_matrix_rank_k_update(alpha, A, C, t);
-}
-
 // symmetric_matrix_rank_2k_update — C = A*B^T + B*A^T  [linalg.algs.blas3.rank2k]
 template<class AExtents, class ALayout, class AAccessor,
          class BExtents, class BLayout, class BAccessor,
@@ -492,43 +477,6 @@ void symmetric_matrix_rank_2k_update(
     }
 }
 
-template<class Triangle, class ScalingFactor,
-         class AExtents, class ALayout, class AAccessor,
-         class BExtents, class BLayout, class BAccessor,
-         class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__scalar<ScalingFactor> &&
-              __detail::__possibly_packed_output_v<CExtents, CLayout, CAccessor> &&
-              __detail::__matrix_rank_2k_static_extents_v<AExtents, BExtents, CExtents> &&
-              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
-void symmetric_matrix_rank_2k_update(
-    ScalingFactor alpha, Triangle,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
-    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
-{
-    using idx_t = typename CExtents::index_type;
-    const idx_t n = C.extent(0);
-    const auto k = A.extent(1);
-    constexpr bool is_upper = std::is_same_v<Triangle, upper_triangle_t>;
-    for (idx_t i = 0; i < n; ++i) {
-        if constexpr (is_upper) {
-            for (idx_t j = i; j < n; ++j) {
-                __detail::__accessor_value_t<CAccessor> sum{};
-                for (typename AExtents::index_type l = 0; l < k; ++l)
-                    sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
-                C[i, j] = alpha * sum;
-            }
-        } else {
-            for (idx_t j = 0; j <= i; ++j) {
-                __detail::__accessor_value_t<CAccessor> sum{};
-                for (typename AExtents::index_type l = 0; l < k; ++l)
-                    sum += A[i, l] * B[j, l] + B[i, l] * A[j, l];
-                C[i, j] = alpha * sum;
-            }
-        }
-    }
-}
-
 // hermitian_matrix_product — [linalg.algs.blas3.xxmm]
 template<class Triangle,
          class AExtents, class ALayout, class AAccessor,
@@ -561,23 +509,6 @@ void hermitian_matrix_product(
             }
         },
         [&](idx_t i, idx_t j, const auto& sum) { C[i, j] = sum; });
-}
-
-template<class Triangle,
-         class AExtents, class ALayout, class AAccessor,
-         class BExtents, class BLayout, class BAccessor,
-         class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__writable_output_v<CExtents, CLayout, CAccessor> &&
-              __detail::__square_matrix_product_static_extents_v<AExtents, BExtents, CExtents> &&
-              __detail::__packed_triangle_matches_v<ALayout, Triangle>)
-[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
-void hermitian_matrix_product(
-    Triangle t,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    std::mdspan<typename BAccessor::element_type, BExtents, BLayout, BAccessor> B,
-    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
-{
-    hermitian_matrix_product(A, t, B, C);
 }
 
 // hermitian_matrix_rank_k_update — C = alpha * A * A^H  [linalg.algs.blas3.rankk]
@@ -675,21 +606,6 @@ void hermitian_matrix_rank_k_update(
             }
         }
     }
-}
-
-template<class Triangle,
-         class AExtents, class ALayout, class AAccessor,
-         class CExtents, class CLayout, class CAccessor>
-    requires (__detail::__possibly_packed_output_v<CExtents, CLayout, CAccessor> &&
-              __detail::__matrix_rank_k_static_extents_v<AExtents, CExtents> &&
-              __detail::__packed_triangle_matches_v<CLayout, Triangle>)
-[[deprecated("use draft parameter order: matrix before Triangle; rank updates put Triangle last")]]
-void hermitian_matrix_rank_k_update(
-    Triangle t,
-    std::mdspan<typename AAccessor::element_type, AExtents, ALayout, AAccessor> A,
-    std::mdspan<typename CAccessor::element_type, CExtents, CLayout, CAccessor> C)
-{
-    hermitian_matrix_rank_k_update(typename CAccessor::element_type{1}, A, C, t);
 }
 
 // triangular_matrix_matrix_left_solve — [linalg.algs.blas3.trsm], [linalg.algs.blas3.inplacetrsm]
