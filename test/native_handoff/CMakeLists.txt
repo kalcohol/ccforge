@@ -119,6 +119,28 @@ if(NOT MSVC)
             TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
     endforeach()
 
+    foreach(surface_case IN ITEMS no_shadow_root no_shadow_root_no_mdspan)
+        add_test(
+            NAME native_handoff_probe_surface_${surface_case}
+            COMMAND ${CMAKE_COMMAND}
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/probe_surface_project
+                -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/probe_surface_${surface_case}
+                -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+                -DSURFACE_CASE=${surface_case}
+                -DEXECUTION_CASE=set_error
+                -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+                "-DPARENT_CACHE=${CMAKE_CURRENT_BINARY_DIR}/hive_parent_$<CONFIG>.cmake"
+                "-DTEST_CONFIG=$<CONFIG>"
+                "-DGENERATOR=${CMAKE_GENERATOR}"
+                "-DGENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+                "-DGENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+                "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_probe_surface.cmake)
+        set_tests_properties(native_handoff_probe_surface_${surface_case} PROPERTIES
+            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    endforeach()
+
     if(FORGE_BASE_MDSPAN_AVAILABLE)
         add_test(
             NAME native_handoff_probe_surface_linalg_empty_namespace

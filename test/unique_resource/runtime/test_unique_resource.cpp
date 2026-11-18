@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include <memory>
+#include <forge/unique_resource.hpp>
 
 namespace {
 
@@ -100,7 +100,7 @@ struct swap_tracked_deleter {
 TEST(UniqueResourceRuntimeTest, BasicUsage) {
     int cleanup_count = 0;
     {
-        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        forge::unique_resource resource(42, counting_deleter{&cleanup_count});
         EXPECT_EQ(resource.get(), 42);
     }
     EXPECT_EQ(cleanup_count, 1);
@@ -109,7 +109,7 @@ TEST(UniqueResourceRuntimeTest, BasicUsage) {
 TEST(UniqueResourceRuntimeTest, ResetRunsDeleterOnce) {
     int cleanup_count = 0;
 
-    std::unique_resource resource(42, counting_deleter{&cleanup_count});
+    forge::unique_resource resource(42, counting_deleter{&cleanup_count});
     resource.reset();
     resource.reset();
 
@@ -120,7 +120,7 @@ TEST(UniqueResourceRuntimeTest, DefaultConstructionDoesNotOwnResource) {
     static_counting_deleter::calls = 0;
 
     {
-        std::unique_resource<int, static_counting_deleter> resource;
+        forge::unique_resource<int, static_counting_deleter> resource;
         EXPECT_EQ(resource.get(), 0);
     }
 
@@ -131,7 +131,7 @@ TEST(UniqueResourceRuntimeTest, DefaultConstructedResourceCanBeActivatedWithRese
     static_counting_deleter::calls = 0;
 
     {
-        std::unique_resource<int, static_counting_deleter> resource;
+        forge::unique_resource<int, static_counting_deleter> resource;
         resource.reset(42);
         EXPECT_EQ(resource.get(), 42);
     }
@@ -142,7 +142,7 @@ TEST(UniqueResourceRuntimeTest, DefaultConstructedResourceCanBeActivatedWithRese
 TEST(UniqueResourceRuntimeTest, MoveTransfersOwnership) {
     int cleanup_count = 0;
     {
-        std::unique_resource original(42, counting_deleter{&cleanup_count});
+        forge::unique_resource original(42, counting_deleter{&cleanup_count});
         auto moved = std::move(original);
         EXPECT_EQ(moved.get(), 42);
     }
@@ -153,7 +153,7 @@ TEST(UniqueResourceRuntimeTest, SelfMoveAssignmentReleasesOwnership) {
     int cleanup_count = 0;
 
     {
-        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        forge::unique_resource resource(42, counting_deleter{&cleanup_count});
         resource = std::move(resource);
 
         EXPECT_EQ(resource.get(), 42);
@@ -169,8 +169,8 @@ TEST(UniqueResourceRuntimeTest, SwapExchangesResourceAndDeleter) {
     int cleanup_count2 = 0;
 
     {
-        std::unique_resource resource1(1, counting_deleter{&cleanup_count1});
-        std::unique_resource resource2(2, counting_deleter{&cleanup_count2});
+        forge::unique_resource resource1(1, counting_deleter{&cleanup_count1});
+        forge::unique_resource resource2(2, counting_deleter{&cleanup_count2});
 
         resource1.swap(resource2);
 
@@ -188,7 +188,7 @@ TEST(UniqueResourceRuntimeTest, SelfSwapIsNoOp) {
     int cleanup_count = 0;
 
     {
-        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        forge::unique_resource resource(42, counting_deleter{&cleanup_count});
         resource.swap(resource);
 
         EXPECT_EQ(resource.get(), 42);
@@ -202,7 +202,7 @@ TEST(UniqueResourceRuntimeTest, SelfSwapIsNoOp) {
 TEST(UniqueResourceRuntimeTest, ReleaseDisablesCleanup) {
     int cleanup_count = 0;
     {
-        std::unique_resource resource(42, counting_deleter{&cleanup_count});
+        forge::unique_resource resource(42, counting_deleter{&cleanup_count});
         resource.release();
     }
     EXPECT_EQ(cleanup_count, 0);
@@ -213,8 +213,8 @@ TEST(UniqueResourceRuntimeTest, MoveAssignmentTransfersOwnership) {
     int cleanup_count1 = 0;
     int cleanup_count2 = 0;
     {
-        std::unique_resource resource1(1, counting_deleter{&cleanup_count1});
-        std::unique_resource resource2(2, counting_deleter{&cleanup_count2});
+        forge::unique_resource resource1(1, counting_deleter{&cleanup_count1});
+        forge::unique_resource resource2(2, counting_deleter{&cleanup_count2});
         resource2 = std::move(resource1);
         EXPECT_EQ(resource2.get(), 1);
     }
@@ -226,7 +226,7 @@ TEST(UniqueResourceRuntimeTest, MoveAssignmentTransfersOwnership) {
 TEST(UniqueResourceRuntimeTest, ResetWithNewValueCleansOldAndHoldsNew) {
     std::vector<int> cleaned_values;
     {
-        std::unique_resource resource(10, recording_deleter{&cleaned_values});
+        forge::unique_resource resource(10, recording_deleter{&cleaned_values});
         resource.reset(20);
         // Old value 10 should have been cleaned
         ASSERT_EQ(cleaned_values.size(), 1u);
@@ -242,7 +242,7 @@ TEST(UniqueResourceRuntimeTest, ResetWithNewValueCleansOldAndHoldsNew) {
 TEST(UniqueResourceRuntimeTest, DereferenceAndArrowOperators) {
     int cleanup_count = 0;
     {
-        std::unique_resource resource(
+        forge::unique_resource resource(
             new simple_object{3, 7}, pointer_deleter{&cleanup_count});
         EXPECT_EQ((*resource).x, 3);
         EXPECT_EQ(resource->y, 7);
@@ -256,8 +256,8 @@ TEST(UniqueResourceRuntimeTest, AdlSwapWorks) {
     int cleanup_count2 = 0;
 
     {
-        std::unique_resource r1(1, counting_deleter{&cleanup_count1});
-        std::unique_resource r2(2, counting_deleter{&cleanup_count2});
+        forge::unique_resource r1(1, counting_deleter{&cleanup_count1});
+        forge::unique_resource r2(2, counting_deleter{&cleanup_count2});
 
         using std::swap;
         swap(r1, r2);
@@ -283,9 +283,9 @@ TEST(UniqueResourceRuntimeTest, NothrowAdlSwapPreservesOwnershipStates) {
             int deleter_swaps = 0;
             std::vector<std::pair<int, int>> cleaned;
             {
-                std::unique_resource left(
+                forge::unique_resource left(
                     handle_t{1, &resource_swaps}, deleter_t{1, &cleaned, &deleter_swaps});
-                std::unique_resource right(
+                forge::unique_resource right(
                     handle_t{2, &resource_swaps}, deleter_t{2, &cleaned, &deleter_swaps});
                 if (!left_owns) left.release();
                 if (!right_owns) right.release();
@@ -320,9 +320,9 @@ TEST(UniqueResourceRuntimeTest, NothrowAdlSwapWithDefaultEmptyResource) {
     int deleter_swaps = 0;
     std::vector<std::pair<int, int>> cleaned;
     {
-        std::unique_resource active(
+        forge::unique_resource active(
             handle_t{42, &resource_swaps}, deleter_t{42, &cleaned, &deleter_swaps});
-        std::unique_resource<handle_t, deleter_t> empty;
+        forge::unique_resource<handle_t, deleter_t> empty;
         using std::swap;
         swap(active, empty);
 
@@ -348,9 +348,9 @@ TEST(UniqueResourceRuntimeTest, ReferenceSwapRebindsWithoutSwappingThrowingRefer
     handle_t second{2, &resource_swaps};
     std::vector<std::pair<int, int>> cleaned;
     {
-        std::unique_resource<handle_t&, deleter_t> left(
+        forge::unique_resource<handle_t&, deleter_t> left(
             first, deleter_t{1, &cleaned, &deleter_swaps});
-        std::unique_resource<handle_t&, deleter_t> right(
+        forge::unique_resource<handle_t&, deleter_t> right(
             second, deleter_t{2, &cleaned, &deleter_swaps});
         using std::swap;
         swap(left, right);
@@ -374,13 +374,13 @@ TEST(UniqueResourceRuntimeTest, ThrowingComponentSwapsDoNotDisableOtherOperation
         int deleter_swaps = 0;
         std::vector<std::pair<int, int>> cleaned;
         {
-            std::unique_resource original(
+            forge::unique_resource original(
                 handle_t{1, &resource_swaps}, deleter_t{1, &cleaned, &deleter_swaps});
             auto moved = std::move(original);
             moved.reset(handle_t{3, &resource_swaps});
             moved.release();
 
-            std::unique_resource target(
+            forge::unique_resource target(
                 handle_t{2, &resource_swaps}, deleter_t{2, &cleaned, &deleter_swaps});
             target = std::move(moved);
             using std::swap;

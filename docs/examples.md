@@ -21,7 +21,6 @@
 | [simd_complete_example.cpp](../example/simd_complete_example.cpp) | SIMD 内存、mask 与排列（Forge 扩展拼写） | `simd_complete_example` / `example_simd_complete_example_smoke` | SIMD：强制 OR 完整 OR 非部分；NATIVE_INCOMPATIBLE，Forge 扩展 | [说明](backports/simd.md) |
 | [simd_example.cpp](../example/simd_example.cpp) | simd 的接口组合与完成结果 | `simd_example` / `example_simd_example_smoke` | SIMD：强制 OR 完整 OR 非部分 | [说明](backports/simd.md) |
 | [submdspan_example.cpp](../example/submdspan_example.cpp) | 行列、步长切片与边界单元 | `submdspan_example` / `example_submdspan_example_smoke` | SUBMDSPAN：强制 OR 完整 OR 非部分；需要 mdspan | [说明](backports/mdspan.md) |
-| [unique_resource_example.cpp](../example/unique_resource_example.cpp) | unique resource 的接口组合与完成结果 | `unique_resource_example` / `example_unique_resource_example_smoke` | 始终 | [说明](backports/unique_resource.md) |
 
 ## Execution
 
@@ -60,6 +59,12 @@
 | [forge_thread_pool_example.cpp](../example/forge_thread_pool_example.cpp) | forge thread pool 的接口组合与完成结果 | `forge_thread_pool` / `example_forge_thread_pool_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
 | [forge_timer_context_example.cpp](../example/forge_timer_context_example.cpp) | forge timer context 的接口组合与完成结果 | `forge_timer_context` / `example_forge_timer_context_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
 | [forge_type_erased_boundary_example.cpp](../example/forge_type_erased_boundary_example.cpp) | forge type erased boundary 的接口组合与完成结果 | `forge_type_erased_boundary` / `example_forge_type_erased_boundary_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
+
+## Forge 资源管理
+
+| 文件 | 演示内容 | target / 冒烟测试 | 门控 | 文档页 |
+| --- | --- | --- | --- | --- |
+| [unique_resource_example.cpp](../example/unique_resource_example.cpp) | 用 `forge::unique_resource` 管理文件句柄 | `unique_resource_example` / `example_unique_resource_example_smoke` | 始终 | [说明](forge-utilities.md#unique-resource) |
 
 ## OS IO sender 后端
 

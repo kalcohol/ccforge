@@ -3,7 +3,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <memory>
+#include <forge/unique_resource.hpp>
 
 namespace {
 
@@ -13,9 +13,9 @@ void cleanup_reference(int&) {}
 void cleanup_non_assignable(const struct non_assignable_resource&) {}
 void cleanup_throwing_assign_reference(struct throwing_assign_reference&) {}
 
-using value_resource = std::unique_resource<int, void(*)(int)>;
-using pointer_resource = std::unique_resource<int*, void(*)(int*)>;
-using reference_resource = std::unique_resource<int&, void(*)(int&)>;
+using value_resource = forge::unique_resource<int, void(*)(int)>;
+using pointer_resource = forge::unique_resource<int*, void(*)(int*)>;
+using reference_resource = forge::unique_resource<int&, void(*)(int&)>;
 using value_deleter = void(*)(int);
 
 struct non_assignable_resource {
@@ -102,24 +102,24 @@ concept member_swappable = requires(T& lhs, T& rhs) {
     lhs.swap(rhs);
 };
 
-// Explicit arguments distinguish the extension from the generic std::swap fallback.
+// Probe the Forge overload directly to exclude the generic std::swap fallback.
 template<class R, class D>
 concept resource_swap_available = requires(
-    std::unique_resource<R, D>& lhs, std::unique_resource<R, D>& rhs) {
-    std::swap<R, D>(lhs, rhs);
+    forge::unique_resource<R, D>& lhs, forge::unique_resource<R, D>& rhs) {
+    forge::swap<R, D>(lhs, rhs);
 };
 
 using non_assignable_value_resource =
-    std::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
+    forge::unique_resource<non_assignable_resource, void(*)(const non_assignable_resource&)>;
 using reference_move_assignment_resource =
-    std::unique_resource<throwing_assign_reference&, void(*)(throwing_assign_reference&)>;
+    forge::unique_resource<throwing_assign_reference&, void(*)(throwing_assign_reference&)>;
 using throwing_move_only_assignment_resource =
-    std::unique_resource<
+    forge::unique_resource<
         throwing_move_only_assignment,
         throwing_move_only_assignment_deleter>;
-using constexpr_value_resource = std::unique_resource<int, constexpr_noop_deleter>;
-using constexpr_pointer_resource = std::unique_resource<constexpr_pointer_object*, constexpr_pointer_deleter>;
-using non_default_deleter_resource = std::unique_resource<int, non_default_deleter>;
+using constexpr_value_resource = forge::unique_resource<int, constexpr_noop_deleter>;
+using constexpr_pointer_resource = forge::unique_resource<constexpr_pointer_object*, constexpr_pointer_deleter>;
+using non_default_deleter_resource = forge::unique_resource<int, non_default_deleter>;
 
 template<class T, class RR>
 concept resettable_from = requires(T& resource, RR&& value) {
@@ -130,7 +130,7 @@ template<bool ResourceNothrowSwap, bool DeleterNothrowSwap>
 constexpr bool swap_constraints_match() {
     using R = swap_probe_handle<ResourceNothrowSwap>;
     using D = swap_probe_deleter<DeleterNothrowSwap>;
-    using resource_t = std::unique_resource<R, D>;
+    using resource_t = forge::unique_resource<R, D>;
     constexpr bool enabled = ResourceNothrowSwap && DeleterNothrowSwap;
     return std::is_swappable_v<R> && std::is_swappable_v<D> &&
            std::is_nothrow_swappable_v<R> == ResourceNothrowSwap &&
@@ -186,7 +186,7 @@ constexpr bool constexpr_swap_and_factory() {
         return false;
     }
 
-    auto checked = std::make_unique_resource_checked(5, -1, constexpr_noop_deleter{});
+    auto checked = forge::make_unique_resource_checked(5, -1, constexpr_noop_deleter{});
     return checked.get() == 5;
 }
 
@@ -263,17 +263,17 @@ static_assert(swap_constraints_match<false, false>(),
     "two potentially throwing component swaps should disable only the swap extension");
 
 using nothrow_swap_resource =
-    std::unique_resource<swap_probe_handle<true>, swap_probe_deleter<true>>;
+    forge::unique_resource<swap_probe_handle<true>, swap_probe_deleter<true>>;
 static_assert(noexcept(std::declval<nothrow_swap_resource&>().swap(
                           std::declval<nothrow_swap_resource&>())),
     "the enabled member swap extension should be noexcept");
-static_assert(noexcept(std::swap<swap_probe_handle<true>, swap_probe_deleter<true>>(
+static_assert(noexcept(forge::swap<swap_probe_handle<true>, swap_probe_deleter<true>>(
                           std::declval<nothrow_swap_resource&>(),
                           std::declval<nothrow_swap_resource&>())),
     "the enabled non-member swap extension should be noexcept");
 
 using throwing_referent_swap_resource =
-    std::unique_resource<swap_probe_handle<false>&, swap_probe_deleter<true>>;
+    forge::unique_resource<swap_probe_handle<false>&, swap_probe_deleter<true>>;
 static_assert(member_swappable<throwing_referent_swap_resource> &&
               resource_swap_available<swap_probe_handle<false>&, swap_probe_deleter<true>>,
     "reference resources should swap their stored reference_wrapper, not their referents");
@@ -295,8 +295,8 @@ static_assert(constexpr_pointer_observers(),
 
 // T-7: CTAD deduction guide
 static_assert(std::is_same_v<
-    decltype(std::unique_resource(0, &cleanup_int)),
-    std::unique_resource<int, void(*)(int)>>,
+    decltype(forge::unique_resource(0, &cleanup_int)),
+    forge::unique_resource<int, void(*)(int)>>,
     "CTAD should deduce correct types");
 
 // T-11: unique_resource is not copyable

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <memory>
+#include <forge/unique_resource.hpp>
 
 namespace {
 
@@ -50,7 +50,7 @@ struct tracked_handle_deleter {
 TEST(UniqueResourceCheckedTest, ValidValueRunsDeleterOnScopeExit) {
     int cleanup_count = 0;
     {
-        auto resource = std::make_unique_resource_checked(42, -1, counting_deleter{&cleanup_count});
+        auto resource = forge::make_unique_resource_checked(42, -1, counting_deleter{&cleanup_count});
         EXPECT_EQ(resource.get(), 42);
     }
     EXPECT_EQ(cleanup_count, 1);
@@ -59,7 +59,7 @@ TEST(UniqueResourceCheckedTest, ValidValueRunsDeleterOnScopeExit) {
 TEST(UniqueResourceCheckedTest, InvalidValueDoesNotRunDeleter) {
     int cleanup_count = 0;
     {
-        auto resource = std::make_unique_resource_checked(-1, -1, counting_deleter{&cleanup_count});
+        auto resource = forge::make_unique_resource_checked(-1, -1, counting_deleter{&cleanup_count});
         EXPECT_EQ(resource.get(), -1);
     }
     EXPECT_EQ(cleanup_count, 0);
@@ -68,7 +68,7 @@ TEST(UniqueResourceCheckedTest, InvalidValueDoesNotRunDeleter) {
 TEST(UniqueResourceCheckedTest, InvalidValuePreservesSentinelState) {
     int cleanup_count = 0;
 
-    auto resource = std::make_unique_resource_checked(
+    auto resource = forge::make_unique_resource_checked(
         tracked_handle{0},
         tracked_handle{0},
         tracked_handle_deleter{&cleanup_count});
@@ -81,7 +81,7 @@ TEST(UniqueResourceCheckedTest, InvalidValuePreservesSentinelState) {
 TEST(UniqueResourceCheckedTest, ResetReactivatesInvalidResource) {
     int cleanup_count = 0;
     {
-        auto resource = std::make_unique_resource_checked(-1, -1, counting_deleter{&cleanup_count});
+        auto resource = forge::make_unique_resource_checked(-1, -1, counting_deleter{&cleanup_count});
         // Resource is inactive (invalid == sentinel)
         EXPECT_EQ(cleanup_count, 0);
 

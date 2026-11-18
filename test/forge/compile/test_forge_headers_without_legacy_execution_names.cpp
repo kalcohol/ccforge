@@ -1,3 +1,5 @@
+// The synthetic no-mdspan fixture exercises only the linalg pre-include.
+#if !defined(FORGE_TEST_LINALG_PREINCLUDE_ONLY)
 #include <execution>
 #include <algorithm>
 #include <atomic>
@@ -34,7 +36,13 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#endif
+
+#if !defined(FORGE_NO_BASE_MDSPAN) && __has_include(<linalg>)
 #include <linalg>
+#endif
+
+#if !defined(FORGE_TEST_LINALG_PREINCLUDE_ONLY)
 #if defined(FORGE_TEST_D1_INCLUDE_SIMD)
 #include <simd>
 #endif
@@ -103,3 +111,4 @@
 #include <forge/wait_result.hpp>
 
 int main() {}
+#endif

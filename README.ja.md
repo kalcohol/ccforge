@@ -9,7 +9,7 @@ backport と、構造化された非同期システムを作るための小さ�
 このプロジェクトは二つの層に分かれています。
 
 - `backport/`: `<execution>`、`<simd>`、`<mdspan>`、`<linalg>`、
-  `<memory>`、`<hive>`、`<utility>` など、標準ヘッダー名で公開される backport。
+  `<hive>`、`<utility>` など、標準ヘッダー名で公開される backport。
 - `include/forge/`: `namespace forge` に置かれる非標準の拡張。scheduler、
   scope、channel、strand、IO proof、coroutine task、型消去 helper
   などを含みます。
@@ -28,8 +28,8 @@ backport ヘッダーを注入します。
 | `std::hive` | `<hive>` | C++26 backport；[範囲と制限](docs/backports/hive.md) |
 | `std::submdspan` と padded layouts | `<mdspan>` | 現行 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 実用的な BLAS level 1/2/3 subset |
-| `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
+| `forge::unique_resource` | `<forge/unique_resource.hpp>` | スコープに基づくリソース管理。[使い方と移行](docs/forge-utilities.md#unique-resource) |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 構造化 async support：pool、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll と io_uring、Windows IOCP；macOS/BSD では OS readiness/completion backend を提供せず、portable byte-stream/coroutine targets は引き続きビルドする |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | コルーチン byte IO；個別ヘッダーを使用 |
@@ -106,6 +106,12 @@ submodule の初期化も不要です。
 インストールされた package config は consumer project 側で native-vs-backport probes
 を再実行します。そのため、一つの install prefix を異なる compiler、standard library、
 `CMAKE_CXX_STANDARD` に適応させられます。
+
+`unique_resource` の移行を含むアップグレードでは、既存のインストール先を事前に
+クリーンアップするか、新しいインストール先を使用してください。上書きインストールでは
+旧版 Forge の `memory` と `experimental/` のヘッダーが残ります。
+[インストールとオプション](docs/install-options.md)を参照してください。
+
 一つの configure 済み build tree では、標準形 wrapper を利用する target はその
 グローバル言語モードを使う必要があります。target 単位で `CXX_STANDARD` を変える場合は、
 別の build tree を使用してください。

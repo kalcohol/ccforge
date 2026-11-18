@@ -1,7 +1,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <memory>
+#include <forge/unique_resource.hpp>
 
 namespace {
 
@@ -16,7 +16,7 @@ void cleanup_checked(const comparison_may_throw&) noexcept {}
 
 } // namespace
 
-static_assert(noexcept(std::make_unique_resource_checked(
+static_assert(noexcept(forge::make_unique_resource_checked(
     std::declval<comparison_may_throw>(),
     std::declval<const comparison_may_throw&>(),
     &cleanup_checked)),

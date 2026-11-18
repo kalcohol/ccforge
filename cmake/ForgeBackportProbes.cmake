@@ -4,7 +4,6 @@
 # FORGE_BACKPORT_TARGET before including this file; it defaults to forge for
 # compatibility with older direct include patterns. It sets:
 #   FORGE_NEEDS_BACKPORT
-#   FORGE_NEEDS_EXPERIMENTAL
 # and publishes FORGE_HAS_NATIVE_* / FORGE_FORCE_* definitions on that target.
 
 include(CheckCXXSourceCompiles)
@@ -34,7 +33,6 @@ _forge_compute_probe_fingerprint(
     _forge_probe_fingerprint "${_forge_std}" ${_forge_modular_probe_sources})
 _forge_refresh_probe_cache(
     FORGE_BACKPORT_PROBE_FINGERPRINT "${_forge_probe_fingerprint}"
-    HAS_STD_UNIQUE_RESOURCE
     FORGE_SIMD_FULL
     FORGE_SIMD_PARTIAL_MACRO
     FORGE_SIMD_PARTIAL_VEC
@@ -144,21 +142,6 @@ option(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT "Force the std::mdspan padded-
 option(FORGE_FORCE_SUBMDSPAN_BACKPORT "Force the std::submdspan backport even if (partial) native support exists" OFF)
 option(FORGE_FORCE_LINALG_BACKPORT "Force the std::linalg backport even if (partial) native support exists" OFF)
 option(FORGE_FORCE_HIVE_BACKPORT "Force the std::hive backport even if (partial) native support exists" OFF)
-
-# std::unique_resource is TS v3, not C++26.
-check_cxx_source_compiles("
-    #include <version>
-    #if !defined(__cpp_lib_unique_resource) || __cpp_lib_unique_resource < 202311L
-    #error unique_resource not available
-    #endif
-    int main() { return 0; }
-" HAS_STD_UNIQUE_RESOURCE)
-
-set(FORGE_NEEDS_EXPERIMENTAL FALSE)
-if(NOT HAS_STD_UNIQUE_RESOURCE)
-    set(FORGE_NEEDS_EXPERIMENTAL TRUE)
-    message(STATUS "CC Forge: std::unique_resource backport enabled (TS v3)")
-endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/probes/ForgeProbeSimd.cmake")
 

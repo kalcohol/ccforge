@@ -3,9 +3,10 @@ set(FORGE_SUBMDSPAN_RUNTIME_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/runtime")
 set(FORGE_SUBMDSPAN_COMPILE_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/compile")
 
 function(forge_check_submdspan_cxx_source_compiles result_var source_file)
-    set(CMAKE_REQUIRED_INCLUDES
-        "${CMAKE_SOURCE_DIR}/backport"
-        "${CMAKE_SOURCE_DIR}/include")
+    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
+    if(FORGE_NEEDS_BACKPORT)
+        list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+    endif()
     foreach(_forge_required_target IN ITEMS forge_std forge)
         if(TARGET ${_forge_required_target})
             get_target_property(

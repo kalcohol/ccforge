@@ -9,9 +9,6 @@ function(forge_add_forge_test target_name source_name test_name)
         ${target_name}
         "${FORGE_RUNTIME_DIR}/${source_name}"
         ${test_name})
-    target_include_directories(${target_name} BEFORE PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
     target_link_libraries(${target_name} PRIVATE Threads::Threads)
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
@@ -23,9 +20,6 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
         ${target_name}
         "${FORGE_COMPILE_DIR}/${source_name}"
         ${test_name})
-    target_include_directories(${target_name} BEFORE PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
     target_link_libraries(${target_name} PRIVATE Threads::Threads)
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
@@ -35,9 +29,10 @@ endfunction()
 function(forge_expect_forge_cxx_source_compiles result_var source_name should_compile failure_message)
     set(_forge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
     set(_forge_saved_required_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(CMAKE_REQUIRED_INCLUDES
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
+    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
+    if(FORGE_NEEDS_BACKPORT)
+        list(APPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+    endif()
     foreach(_forge_required_target IN ITEMS forge_std forge)
         if(TARGET ${_forge_required_target})
             get_target_property(
@@ -85,9 +80,6 @@ if(FORGE_TEST_ENABLE_FORGE_RUNTIME
     add_executable(
         test_forge_execution_header
         "${FORGE_COMPILE_DIR}/test_forge_execution_header.cpp")
-    target_include_directories(test_forge_execution_header BEFORE PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
     target_link_libraries(test_forge_execution_header PRIVATE
         forge::forge
         Threads::Threads)
@@ -176,9 +168,6 @@ if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     add_executable(
         test_forge_io_uring_context
         "${FORGE_RUNTIME_DIR}/test_forge_io_uring_context.cpp")
-    target_include_directories(test_forge_io_uring_context BEFORE PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
     target_link_libraries(
         test_forge_io_uring_context
         PRIVATE forge::forge Threads::Threads)
@@ -196,9 +185,6 @@ if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     add_executable(
         test_forge_io_uring_rw
         "${FORGE_RUNTIME_DIR}/test_forge_io_uring_rw.cpp")
-    target_include_directories(test_forge_io_uring_rw BEFORE PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/backport")
     target_link_libraries(
         test_forge_io_uring_rw
         PRIVATE forge::forge Threads::Threads)
@@ -219,9 +205,6 @@ if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
         add_executable(
             test_forge_io_uring_fault
             "${FORGE_RUNTIME_DIR}/test_forge_io_uring_fault.cpp")
-        target_include_directories(test_forge_io_uring_fault BEFORE PRIVATE
-            "${CMAKE_SOURCE_DIR}/include"
-            "${CMAKE_SOURCE_DIR}/backport")
         target_link_libraries(
             test_forge_io_uring_fault
             PRIVATE forge::forge Threads::Threads)

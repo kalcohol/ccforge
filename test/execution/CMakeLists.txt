@@ -9,7 +9,6 @@ function(forge_add_execution_runtime_test target_name source_name test_name)
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
-    target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
 endfunction()
 
 function(forge_add_execution_compile_probe target_name source_name test_name)
@@ -17,7 +16,6 @@ function(forge_add_execution_compile_probe target_name source_name test_name)
         ${target_name}
         "${FORGE_EXECUTION_TEST_ROOT}/compile/${source_name}"
         ${test_name})
-    target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -27,9 +25,11 @@ function(forge_expect_execution_cxx_source_compiles result_var source_name shoul
     set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
     set(_FORGE_EXECUTION_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
     set(CMAKE_REQUIRED_INCLUDES
-        "${CMAKE_SOURCE_DIR}/backport"
-        "${CMAKE_SOURCE_DIR}/include"
+        "${FORGE_INCLUDE_DIR}"
         "${FORGE_EXECUTION_TEST_ROOT}/compile")
+    if(FORGE_NEEDS_BACKPORT)
+        list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+    endif()
     foreach(_forge_required_target IN ITEMS forge_std forge)
         if(TARGET ${_forge_required_target})
             get_target_property(
@@ -231,9 +231,6 @@ add_library(
 target_link_libraries(
     test_execution_fragment_includes PRIVATE
     forge::forge)
-target_include_directories(
-    test_execution_fragment_includes BEFORE PRIVATE
-    "${CMAKE_SOURCE_DIR}/backport")
 add_test(
     NAME execution_fragment_includes_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}

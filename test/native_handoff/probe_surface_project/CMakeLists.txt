@@ -11,8 +11,14 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(surface_fixture "${SURFACE_CASE}")
+set(no_shadow_root FALSE)
+if(SURFACE_CASE MATCHES "^no_shadow_root(_no_mdspan)?$")
+    set(surface_fixture independent_roots)
+    set(no_shadow_root TRUE)
+endif()
 set(surface_include
-    "${CMAKE_CURRENT_SOURCE_DIR}/partial_include/${SURFACE_CASE}")
+    "${CMAKE_CURRENT_SOURCE_DIR}/partial_include/${surface_fixture}")
 if(NOT IS_DIRECTORY "${surface_include}")
     message(FATAL_ERROR "unknown SURFACE_CASE: ${SURFACE_CASE}")
 endif()
@@ -28,9 +34,49 @@ if(NOT SURFACE_CASE STREQUAL "linalg_empty_namespace")
     endif()
     list(PREPEND CMAKE_REQUIRED_INCLUDES "${execution_include}")
 endif()
+if(no_shadow_root)
+    # Provide stand-aside surfaces for the two remaining standard probes.
+    include(CheckCXXSourceCompiles)
+    unset(fixture_has_native_constant_wrapper CACHE)
+    check_cxx_source_compiles("
+        #include <utility>
+        using probe = std::constant_wrapper<1zu>;
+        int main() { [[maybe_unused]] probe* value = nullptr; }
+    " fixture_has_native_constant_wrapper)
+    if(NOT fixture_has_native_constant_wrapper)
+        list(PREPEND CMAKE_REQUIRED_INCLUDES
+            "${CMAKE_CURRENT_SOURCE_DIR}/partial_include/constant_wrapper")
+    endif()
+    list(PREPEND CMAKE_REQUIRED_INCLUDES
+        "${CMAKE_CURRENT_SOURCE_DIR}/../hive_project/include")
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DHIVE_FIXTURE_CASE=1)
+endif()
+if(SURFACE_CASE STREQUAL "no_shadow_root_no_mdspan")
+    set(unavailable_include "${CMAKE_CURRENT_SOURCE_DIR}/partial_include/unavailable_mdspan")
+    list(PREPEND CMAKE_REQUIRED_INCLUDES "${unavailable_include}")
+endif()
 
 set(FORGE_ENABLE_FORGE_IO OFF CACHE STRING "" FORCE)
 include("${FORGE_ROOT_DIR}/forge.cmake")
+
+if(no_shadow_root)
+    if(FORGE_NEEDS_BACKPORT)
+        message(FATAL_ERROR "The no-shadow-root fixture must make every backport stand aside")
+    endif()
+    enable_testing()
+    set(FORGE_TEST_TIMEOUT_SECONDS 300)
+    include("${FORGE_ROOT_DIR}/test/CompileProbe.cmake")
+    forge_add_compile_probe(probe_surface_consumer no_shadow_root.cpp)
+    if(SURFACE_CASE STREQUAL "no_shadow_root_no_mdspan")
+        target_sources(probe_surface_consumer PRIVATE
+            "${FORGE_ROOT_DIR}/test/forge/compile/test_forge_headers_without_legacy_execution_names.cpp")
+        target_include_directories(probe_surface_consumer PRIVATE "${unavailable_include}")
+        target_compile_definitions(probe_surface_consumer PRIVATE
+            FORGE_TEST_EXPECT_NO_BASE_MDSPAN
+            FORGE_TEST_LINALG_PREINCLUDE_ONLY)
+    endif()
+    return()
+endif()
 
 if(SURFACE_CASE STREQUAL "linalg_empty_namespace")
     add_library(probe_surface_consumer OBJECT linalg_empty_namespace.cpp)

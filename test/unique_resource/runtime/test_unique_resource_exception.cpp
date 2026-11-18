@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include <memory>
+#include <forge/unique_resource.hpp>
 
 namespace {
 
@@ -97,7 +97,7 @@ TEST(UniqueResourceExceptionTest, ConstructorFailureCleansUpResource) {
     reset_resource_counters();
 
     try {
-        auto resource = std::unique_resource(acquire_resource(), constructor_throwing_deleter{});
+        auto resource = forge::unique_resource(acquire_resource(), constructor_throwing_deleter{});
         (void)resource;
         FAIL() << "expected constructor_throwing_deleter to throw";
     } catch (const std::runtime_error&) {
@@ -111,7 +111,7 @@ TEST(UniqueResourceExceptionTest, MoveFailureLeavesCopiedSourceOwning) {
     bool throw_on_copy = false;
 
     {
-        std::unique_resource<copy_fallback_handle, controlled_copy_deleter> original(
+        forge::unique_resource<copy_fallback_handle, controlled_copy_deleter> original(
             acquire_copy_fallback_handle(), controlled_copy_deleter{throw_on_copy});
         throw_on_copy = true;
 
@@ -226,12 +226,12 @@ TEST(UniqueResourceExceptionTest, ResetWithValueCallsDeleterOnNewResourceWhenAss
     int cleanup_count = 0;
     std::vector<int> cleaned_values;
 
-    std::unique_resource resource(
+    forge::unique_resource resource(
         throwing_on_assign_resource{1},
         throwing_resource_deleter{&cleanup_count, &cleaned_values});
 
     // reset(r) should try to assign r into the stored resource.
-    // When assignment throws, the standard requires d(r) to be called.
+    // When assignment throws, the TS wording calls for d(r).
     EXPECT_THROW(resource.reset(throwing_on_assign_resource{99}), std::runtime_error);
 
     // The new resource (99) should have been cleaned up by the deleter
@@ -244,10 +244,10 @@ TEST(UniqueResourceExceptionTest, MoveAssignmentDeleterFailureLeavesTargetReleas
     {
         auto source_deleter = throwing_copy_assign_deleter{&cleaned_values, true};
         auto target_deleter = throwing_copy_assign_deleter{&cleaned_values, false};
-        std::unique_resource source(
+        forge::unique_resource source(
             copy_fallback_assign_resource{42},
             source_deleter);
-        std::unique_resource target(
+        forge::unique_resource target(
             copy_fallback_assign_resource{7},
             target_deleter);
 

@@ -9,7 +9,7 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 项目分两层：
 
 - `backport/`：标准设施 backport，按标准头文件名暴露，例如 `<execution>`、
-  `<simd>`、`<mdspan>`、`<linalg>`、`<memory>`、`<hive>` 和 `<utility>`。
+  `<simd>`、`<mdspan>`、`<linalg>`、`<hive>` 和 `<utility>`。
 - `include/forge/`：非标准扩展，全部在 `namespace forge`，包括线程池、
   scope、channel、strand、IO proof、coroutine task 和类型擦除工具。
 
@@ -26,8 +26,8 @@ CC Forge 是一个 C++23 header-only 库，提供面向 C++26 的标准库 backp
 | `std::hive` | `<hive>` | C++26 backport；[范围与限制](docs/backports/hive.md) |
 | `std::submdspan` 与 padded layouts | `<mdspan>` | 当前 C++26 draft surface |
 | `std::linalg` | `<linalg>` | 实用 BLAS level 1/2/3 子集 |
-| `std::unique_resource` | `<memory>` | 实验性 TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
+| `forge::unique_resource` | `<forge/unique_resource.hpp>` | 按作用域管理资源所有权，[用法和迁移](docs/forge-utilities.md#unique-resource) |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | 结构化异步支撑层：线程池、scope、channel、strand、timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll 与 io_uring、Windows IOCP；macOS/BSD 无 OS readiness/completion backend；仍构建可移植 byte-stream/coroutine targets |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | 协程 byte IO；直接包含对应头文件 |
@@ -103,6 +103,10 @@ GoogleTest，也不要求初始化 `3rdparty/googletest` submodule。
 安装后的 package config 会在 consumer 项目里重新运行 native-vs-backport probes，
 不会固化打包机器的探测结果；同一个 install prefix 可以适配不同 compiler、standard
 library 和 `CMAKE_CXX_STANDARD`。
+
+跨越 `unique_resource` 迁移升级时，请先清理现有安装前缀，或使用新的安装前缀。
+覆盖安装会留下旧版 Forge 的 `memory` 和 `experimental/` 头文件。详见[安装与选项](docs/install-options.md)。
+
 同一个已配置 build tree 内，消费标准形态 wrapper 的 target 必须使用该全局语言模式；
 若要只为某个 target 改写 `CXX_STANDARD`，应使用独立 build tree。
 

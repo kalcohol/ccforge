@@ -256,12 +256,10 @@ set(FORGE_BACKPORT_TARGET ${_FORGE_STD_TARGET})
 include("${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake")
 unset(FORGE_BACKPORT_TARGET)
 
-# The shadowing backport root requires the real standard-header paths on
-# MSVC even when only an experimental TS header needs the root.
-if(FORGE_NEEDS_BACKPORT OR FORGE_NEEDS_EXPERIMENTAL)
+# The shadowing backport root requires the real standard-header paths on MSVC.
+if(FORGE_NEEDS_BACKPORT)
     if(MSVC)
         include("${FORGE_CMAKE_DIR}/ForgeMsvcHeaders.cmake")
-        _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_MEMORY_HEADER memory TRUE)
         _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_UTILITY_HEADER utility TRUE)
         _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_SIMD_HEADER simd FALSE)
         _forge_define_msvc_standard_header(${_FORGE_STD_TARGET} FORGE_MSVC_EXECUTION_HEADER execution TRUE)

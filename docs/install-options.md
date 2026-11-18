@@ -7,6 +7,10 @@ cmake -S . -B build/package -DCMAKE_CXX_STANDARD=26 -DFORGE_ENABLE_INSTALL=ON -D
 cmake --install build/package --prefix /tmp/ccforge-install
 ```
 
+从仍提供旧版 `unique_resource` 包装头的 Forge 版本升级时，请先清理现有安装前缀，
+或使用新的安装前缀。覆盖安装会留下旧版 Forge 的 `memory` 和 `experimental/` 头文件。
+迁移方式见 [Unique resource](forge-utilities.md#unique-resource)。
+
 ```cmake
 set(CMAKE_CXX_STANDARD 26)
 find_package(CCForge CONFIG REQUIRED)

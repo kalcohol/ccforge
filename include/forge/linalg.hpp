@@ -22,10 +22,10 @@
 
 #pragma once
 
+#if !defined(FORGE_NO_BASE_MDSPAN) && __has_include(<linalg>)
 #include <linalg>
 #include <utility>
 
-// The wrapper header can exist even when base mdspan is unavailable.
 #if defined(FORGE_LINALG_BACKPORT_ACTIVE)
 namespace forge {
 
@@ -125,4 +125,5 @@ decltype(auto) apply_givens_rotation(Args&&... args) noexcept(noexcept(
 }
 
 } // namespace forge
+#endif
 #endif

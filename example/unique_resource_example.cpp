@@ -20,16 +20,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <memory>  // Standard library header, CMake handles backport automatically
+// Demonstrates: Scoped cleanup of file handles.
+// Key APIs: forge::unique_resource and forge::make_unique_resource_checked.
+// Requires: C++23 and forge::forge.
+// See also: docs/forge-utilities.md
+
+#include <forge/unique_resource.hpp>
+
 #include <cstdio>
 #include <iostream>
 #include <vector>
 
 void example_unique_resource() {
-    std::cout << "=== std::unique_resource (zero-overhead) ===\n";
+    std::cout << "=== forge::unique_resource (zero-overhead) ===\n";
 
     // Using function pointer - zero overhead
-    auto file1 = std::make_unique_resource_checked(
+    auto file1 = forge::make_unique_resource_checked(
         std::tmpfile(),
         nullptr,
         &std::fclose
@@ -40,7 +46,7 @@ void example_unique_resource() {
     }
 
     // Using lambda - zero overhead (stateless lambda can be optimized to function pointer)
-    auto file2 = std::make_unique_resource_checked(
+    auto file2 = forge::make_unique_resource_checked(
         std::tmpfile(),
         nullptr,
         [](FILE* f) { if (f) std::fclose(f); }
@@ -50,7 +56,7 @@ void example_unique_resource() {
     // decltype(file1) != decltype(file2)
 
     // Managing multiple resources
-    auto files = std::unique_resource(
+    auto files = forge::unique_resource(
         std::vector<FILE*>{std::tmpfile(), std::tmpfile()},
         [](std::vector<FILE*>& vec) {
             for (auto* f : vec) {

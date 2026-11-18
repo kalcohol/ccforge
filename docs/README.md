@@ -25,6 +25,7 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 
 - [Forge runtime lifecycle contract](forge-runtime.md)
 - [`forge::` 扩展工具](forge-utilities.md)
+- [`forge::unique_resource`](forge-utilities.md#unique-resource)
 - [`forge::io` backend](forge-io.md)
 - [`forge::erased_sender` 设计与限制](forge-erased-sender-design.md)
 
@@ -42,7 +43,6 @@ headers 刻意保留 `.hpp` 入口，例如 `<forge/io.hpp>`。
 - [`std::linalg`](backports/linalg.md)
 - [`std::simd`](backports/simd.md)
 - [`std::submdspan` / `std::constant_wrapper`](backports/mdspan.md)
-- [`std::unique_resource`](backports/unique_resource.md)
 
 ## Roadmap 文档
 

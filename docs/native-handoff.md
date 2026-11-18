@@ -9,7 +9,7 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 
 ## 工具链原生进度（固定验证镜像，最后核对 2026-11-13）
 
-这些特性均已（除 `unique_resource` 外）并入或服务于 C++26，但主流标准库的原生落地进度差异很大，直接决定哪个 backport 会在你的工具链上自动退场：
+这些特性均已并入或服务于 C++26。主流标准库的原生实现进度决定各个 backport 是否让位。
 
 | 特性 | libstdc++ (GCC) | libc++ (Clang) | 含义 |
 |------|-----------------|----------------|------|
@@ -19,7 +19,6 @@ surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准�
 | `std::execution` (P2300) | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::linalg` | 未实现 | 未实现 | backport 仍是唯一路径 |
 | `std::hive` | 无原生，注入 | 无原生，注入 | 以配置 probe 为准 |
-| `std::unique_resource` | 无原生 | 无原生 | TS v3，具体入口见对应页面 |
 
 ## 三态探测
 
@@ -135,12 +134,20 @@ partial native 时，应等待工具链补全，或选择尚未暴露这些声�
 
 Forge backport 满足以下要素：
 
-- **标准入口不变**：下游写 `#include <memory>` / `#include <execution>` / `#include <linalg>`，而不是 `forge/...`
+- **标准入口不变**：下游继续使用 `#include <execution>`、`#include <linalg>` 等标准头名
 - **命名空间不变**：API 以 `std::` / `std::execution::` / `std::linalg::` 形式出现
 - **API 形状优先对齐标准**：公开接口优先跟随标准最终形态；少量实验性偏离或兼容 wrapper 会在对应特性章节明确说明
 - **自动开关（三态让位）**：完整原生和部分原生均让位，无原生才注入 backport
 
-实现方式：`forge.cmake` 将 `backport/` 前置到 include path；`backport/` 内提供与标准同名的包装头（如 `backport/memory`、`backport/linalg`），先包含真实标准库头，再条件注入 backport 实现。
+至少有一个标准 backport 需要注入时，`forge.cmake` 才将 `backport/` 前置到
+include path。与标准同名的包装头（如 `backport/linalg`）先包含可用的原生标准库头，
+再按探测结果注入实现。全部让位时，include path 不含该目录。
+`forge::forge` 始终提供 `<forge/unique_resource.hpp>` 等扩展头。
+非 MSVC 的 `native_handoff_probe_surface_no_shadow_root` 用合成原生头覆盖全部让位
+的分支，并通过普通编译探测验证扩展头可用且 backport 目录未暴露。
+`native_handoff_probe_surface_no_shadow_root_no_mdspan` 还验证缺少可用的基础
+`<mdspan>` 时，同一路径可以包含 `<forge/linalg.hpp>`，且 Forge 头文件兼容性测试会跳过
+预先包含的可选 `<linalg>` 头。
 
 受支持的消费方式是链接 `forge::std` / `forge::forge`（或使用安装包导出的同名
 target），让 `forge.cmake` 的探针宏与 include path 一起传播。仅手工添加

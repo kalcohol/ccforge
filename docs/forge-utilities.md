@@ -5,7 +5,7 @@
 让下游不必为基本线程池、单线程执行上下文、定时器和窄类型擦除再写一套本地胶水。
 
 头文件命名也按这两层区分：标准 backport 模仿标准库入口，使用 `<execution>`、
-`<memory>` 这类无扩展名头；非标准 `forge::` 扩展保持 `<forge/*.hpp>` 形式。
+`<utility>` 这类无扩展名头；非标准 `forge::` 扩展保持 `<forge/*.hpp>` 形式。
 
 运行时对象的 `close()` / `request_stop()` / `shutdown()` / `wait()` 语义见
 [forge runtime lifecycle contract](forge-runtime.md)。新增 `forge::` 运行时设施应先
@@ -41,6 +41,34 @@ IO backend umbrella 使用独立头：
 IO vocabulary、memory streams、coroutine bridge 和 combinators 使用
 `<forge/io/...>` direct headers，不受 OS backend gate 控制。详见
 [`forge::io`](forge-io.md)。
+
+## Unique resource
+
+`forge::unique_resource<R, D>` 将资源与清理函数一起保存在 RAII 对象中。
+`forge::make_unique_resource_checked` 接受一个表示无效资源的值，遇到该值时
+禁用自动清理。当资源的存储类型和清理函数都可无异常交换时，可以通过 ADL 调用
+`swap(a, b)`。链接 `forge::forge` 并包含 `<forge/unique_resource.hpp>` 即可使用，
+无需探测标准库或启用 backport。
+
+```cpp
+#include <cstdio>
+#include <forge/unique_resource.hpp>
+
+auto file = forge::make_unique_resource_checked(
+    std::fopen("data.txt", "r"),
+    nullptr,
+    &std::fclose);
+```
+
+### 迁移
+
+该接口源于 Library Fundamentals TS v3，尚未进入 C++ 工作草案。将
+`std::experimental::unique_resource` 或旧版 Forge 的 `std::unique_resource`
+改为 `forge::unique_resource`，并改用 `forge::make_unique_resource_checked`。
+将原来的 `<memory>` 或 `<experimental/memory>` 入口换成
+`<forge/unique_resource.hpp>`。Forge 此前没有发布版本，本次迁移直接生效，没有弃用期。
+跨越本次变更升级时，请先清理现有安装前缀，或使用新的安装前缀。覆盖安装会留下
+旧版 Forge 的 `memory` 和 `experimental/` 头文件。
 
 ## Resource policy（资源策略）
 

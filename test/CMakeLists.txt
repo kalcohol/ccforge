@@ -3,7 +3,7 @@
 option(FORGE_TEST_ENABLE_EXECUTION "Build Forge std::execution tests" ON)
 option(FORGE_TEST_ENABLE_SIMD "Build Forge std::simd tests" ON)
 option(FORGE_TEST_ENABLE_CONSTANT_WRAPPER "Build Forge std::constant_wrapper tests" ON)
-option(FORGE_TEST_ENABLE_UNIQUE_RESOURCE "Build Forge std::unique_resource tests" ON)
+option(FORGE_TEST_ENABLE_UNIQUE_RESOURCE "Build forge::unique_resource tests" ON)
 option(FORGE_TEST_ENABLE_SUBMDSPAN "Build Forge std::submdspan tests" ON)
 option(FORGE_TEST_ENABLE_LINALG "Build Forge std::linalg tests" ON)
 option(FORGE_TEST_ENABLE_HIVE "Build Forge std::hive tests" ON)
@@ -117,7 +117,6 @@ set(FORGE_TEST_ENABLE_STD_TARGET OFF)
 if(FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_SIMD
         OR FORGE_TEST_ENABLE_CONSTANT_WRAPPER
-        OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
         OR FORGE_TEST_ENABLE_HIVE
@@ -172,21 +171,7 @@ function(forge_add_runtime_test target_name source_file)
     set_tests_properties(${test_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
-function(forge_add_compile_probe target_name source_file)
-    set(test_name "${target_name}_compile")
-    if(ARGC GREATER 2)
-        set(test_name "${ARGV2}")
-    endif()
-
-    add_executable(${target_name} EXCLUDE_FROM_ALL ${source_file})
-    target_link_libraries(${target_name} PRIVATE forge::forge)
-    add_test(
-        NAME ${test_name}
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} ${FORGE_TEST_BUILD_CONFIG_ARGS} --target ${target_name})
-    set_tests_properties(${test_name} PROPERTIES
-        RESOURCE_LOCK forge_main_build
-        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
-endfunction()
+include("${CMAKE_CURRENT_SOURCE_DIR}/CompileProbe.cmake")
 
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
 

@@ -1,5 +1,5 @@
 # MSVC wrapper headers need the real standard-library header path because the
-# backport headers shadow names such as <memory>, <utility>, and <execution>.
+# backport headers shadow names such as <utility> and <execution>.
 
 function(_forge_find_msvc_standard_header out_var header_name)
     set(_forge_msvc_include_candidates ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})

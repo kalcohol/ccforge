@@ -40,9 +40,10 @@ endfunction()
 
 set(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
 set(_FORGE_SIMD_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
-set(CMAKE_REQUIRED_INCLUDES
-    "${CMAKE_SOURCE_DIR}/backport"
-    "${CMAKE_SOURCE_DIR}/include")
+set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
+if(FORGE_NEEDS_BACKPORT)
+    list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+endif()
 foreach(_forge_required_target IN ITEMS forge_std forge)
     if(TARGET ${_forge_required_target})
         get_target_property(

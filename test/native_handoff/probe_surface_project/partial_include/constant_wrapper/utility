@@ -1,0 +1,9 @@
+#pragma once
+
+#include_next <utility>
+
+// This fixture is added only after lookup in the vendor header fails.
+namespace std {
+template<auto Value>
+struct constant_wrapper;
+}

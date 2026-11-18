@@ -99,7 +99,7 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
   记载的集合完全一致；
 - 治理守卫：`FORGE_FORCE_*_BACKPORT` 与 backport 定义的 `__cpp_lib_*` 宏有文档；
   标准 example 被对应的 backport 页面链接；`docs/roadmap/` 下各文档的状态行与索引一致；
-  example 带用途头注释（冻结的 `unique_resource_example.cpp` 除外）且 env / bulk 写法
+  example 带用途头注释，且 env / bulk 写法
   可移植。每个守卫谓词都有一对正反自测样例。
 
 该脚本不编译代码，也不证明 API correctness；它只负责文档和 example registry 的
@@ -209,7 +209,7 @@ FORGE_VERIFY_FLOOR_MACOS=1 FORGE_MACOS_HOST=<macos-host> scripts/verify-selfhost
 
 Windows 验证是可选的本机或 self-hosted smoke gate。它不替代 Linux/podman 全量矩阵；
 当前目标是确认 MSVC 能 configure/build/test `std::execution` backport、
-`std::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend，
+`forge::unique_resource`、`forge::` runtime utility 子集和 Windows IOCP backend，
 以及独立 C++23 SIMD-only builds 的默认 x64 ISA 和 `/arch:AVX2` 路径。
 这条 lane 的定位是可移植的 self-hosted floor：脚本不依赖 GitHub hosted CI，也不写入
 私有主机名或工具链路径。Jenkins、Buildkite、GitHub self-hosted runner 或人工 SSH
@@ -272,7 +272,8 @@ scripts/verify-windows-msvc-ssh.sh
 ```
 
 `FORGE_WINDOWS_CTEST_REGEX` 用于 focused smoke，例如只跑 `forge_io_iocp`。省略时使用
-PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`。`FORGE_WINDOWS_KEEP=1`
+PowerShell 脚本默认的 `execution|unique_resource|std_target|forge`，其中
+`unique_resource` 匹配 Forge 扩展的 CTest 名称。`FORGE_WINDOWS_KEEP=1`
 可保留远端临时源码/clone 以便调试；不要把具体主机名、用户目录或工具链安装路径写进
 仓库文档。
 
@@ -399,6 +400,10 @@ focused stress case，再把该 audit 视为 closed。
 - `FORGE_TEST_ENABLE_FORGE_IO`
 - `FORGE_TEST_ENABLE_FORGE_ERASURE`
 - `FORGE_TEST_ENABLE_NATIVE_HANDOFF`
+
+`FORGE_TEST_ENABLE_UNIQUE_RESOURCE` 独立控制 `forge::unique_resource` 的 runtime
+测试、编译探测及配置阶段的旧接口移除检查。配置探测验证 Forge 入口，并分别检查
+旧的实验性命名空间和标准命名空间中均无法查找到类模板与工厂函数。
 
 `FORGE_TEST_ENABLE_CONSTANT_WRAPPER` 覆盖 P2781/P3978/P4206 的专用 compile-time
 与 runtime matrix。检测到 pre-P4206 partial-native 声明时该组会跳过，因为 Forge

@@ -7,9 +7,6 @@ function(forge_add_linalg_runtime_test target_name source_name test_name)
         ${target_name}
         "${FORGE_LINALG_RUNTIME_DIR}/${source_name}"
         ${test_name})
-    if(_forge_linalg_backport_injected)
-        target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
-    endif()
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -20,9 +17,6 @@ function(forge_add_linalg_compile_probe target_name source_name test_name)
         ${target_name}
         "${FORGE_LINALG_COMPILE_DIR}/${source_name}"
         ${test_name})
-    if(_forge_linalg_backport_injected)
-        target_include_directories(${target_name} BEFORE PRIVATE "${CMAKE_SOURCE_DIR}/backport")
-    endif()
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -31,9 +25,10 @@ endfunction()
 function(forge_expect_linalg_cxx_source_compiles result_var source_name should_compile failure_message)
     set(_FORGE_LINALG_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
     set(_FORGE_LINALG_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(CMAKE_REQUIRED_INCLUDES
-        "${CMAKE_SOURCE_DIR}/backport"
-        "${CMAKE_SOURCE_DIR}/include")
+    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
+    if(FORGE_NEEDS_BACKPORT)
+        list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+    endif()
     foreach(_forge_required_target IN ITEMS forge_std forge)
         if(TARGET ${_forge_required_target})
             get_target_property(
@@ -166,7 +161,9 @@ if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
         # Check actual native policy objects with the same include root and MSVC
         # native-header definition as consumers. A header/trait alone is insufficient.
         function(forge_linalg_check_policy_objects result extra_flags)
-            set(CMAKE_REQUIRED_INCLUDES "${CMAKE_SOURCE_DIR}/backport")
+            if(FORGE_NEEDS_BACKPORT)
+                set(CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+            endif()
             set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${extra_flags}")
             if(FORGE_TEST_TBB_LIBRARY)
                 list(APPEND CMAKE_REQUIRED_LIBRARIES ${FORGE_TEST_TBB_LIBRARY})

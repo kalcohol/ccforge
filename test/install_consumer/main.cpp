@@ -2,6 +2,7 @@
 #include <forge/erased_sender.hpp>
 #include <forge/execution.hpp>
 #include <forge/static_thread_pool.hpp>
+#include <forge/unique_resource.hpp>
 
 #include <execution>
 #include <exception>
@@ -87,6 +88,18 @@ int main() {
     std::execution::start(op);
     if (!typed_error_seen) {
         return 3;
+    }
+
+    int cleanup_count = 0;
+    {
+        auto resource = forge::make_unique_resource_checked(
+            9, -1, [&cleanup_count](int) noexcept { ++cleanup_count; });
+        if (resource.get() != 9) {
+            return 4;
+        }
+    }
+    if (cleanup_count != 1) {
+        return 5;
     }
 
     return 0;

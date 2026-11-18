@@ -1,0 +1,4 @@
+#pragma once
+
+// Stand in for a vendor header without unique_resource.
+namespace std::experimental {}

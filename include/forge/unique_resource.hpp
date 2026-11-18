@@ -26,66 +26,66 @@
 #include <type_traits>
 #include <utility>
 
-namespace std {
+namespace forge {
 
 template<class R, class D>
 class unique_resource;
 
-template<class R, class D, class S = decay_t<R>>
+template<class R, class D, class S = std::decay_t<R>>
 constexpr
-unique_resource<decay_t<R>, decay_t<D>>
+unique_resource<std::decay_t<R>, std::decay_t<D>>
 make_unique_resource_checked(R&& r, const S& invalid, D&& d)
-    noexcept(is_nothrow_constructible_v<decay_t<R>, R> &&
-             is_nothrow_constructible_v<decay_t<D>, D>);
+    noexcept(std::is_nothrow_constructible_v<std::decay_t<R>, R> &&
+             std::is_nothrow_constructible_v<std::decay_t<D>, D>);
 
 template<class R, class D>
 class unique_resource {
-    using resource_storage = conditional_t<
-        is_reference_v<R>,
-        reference_wrapper<remove_reference_t<R>>,
+    using resource_storage = std::conditional_t<
+        std::is_reference_v<R>,
+        std::reference_wrapper<std::remove_reference_t<R>>,
         R>;
 
     struct construct_tag {};
 
 public:
     constexpr unique_resource()
-        requires (is_default_constructible_v<R> &&
-                  is_default_constructible_v<D>)
+        requires (std::is_default_constructible_v<R> &&
+                  std::is_default_constructible_v<D>)
         : resource_()
         , deleter_()
         , execute_on_reset_(false) {}
 
     template<class RR, class DD>
-        requires (is_constructible_v<resource_storage, RR> &&
-                  is_constructible_v<D, DD> &&
-                  (is_nothrow_constructible_v<resource_storage, RR> ||
-                   is_constructible_v<resource_storage, RR&>) &&
-                  (is_nothrow_constructible_v<D, DD> ||
-                   is_constructible_v<D, DD&>))
+        requires (std::is_constructible_v<resource_storage, RR> &&
+                  std::is_constructible_v<D, DD> &&
+                  (std::is_nothrow_constructible_v<resource_storage, RR> ||
+                   std::is_constructible_v<resource_storage, RR&>) &&
+                  (std::is_nothrow_constructible_v<D, DD> ||
+                   std::is_constructible_v<D, DD&>))
     constexpr unique_resource(RR&& r, DD&& d) noexcept(
-        (is_nothrow_constructible_v<resource_storage, RR> ||
-         is_nothrow_constructible_v<resource_storage, RR&>) &&
-        (is_nothrow_constructible_v<D, DD> ||
-         is_nothrow_constructible_v<D, DD&>))
+        (std::is_nothrow_constructible_v<resource_storage, RR> ||
+         std::is_nothrow_constructible_v<resource_storage, RR&>) &&
+        (std::is_nothrow_constructible_v<D, DD> ||
+         std::is_nothrow_constructible_v<D, DD&>))
         : unique_resource(construct_tag{}, std::forward<RR>(r), std::forward<DD>(d), true) {}
 
     unique_resource(const unique_resource&) = delete;
     unique_resource& operator=(const unique_resource&) = delete;
 
     constexpr unique_resource(unique_resource&& other) noexcept(
-        is_nothrow_move_constructible_v<resource_storage> &&
-        is_nothrow_move_constructible_v<D>)
+        std::is_nothrow_move_constructible_v<resource_storage> &&
+        std::is_nothrow_move_constructible_v<D>)
         : resource_(construct_resource_from_other(other))
         , deleter_(construct_deleter_from_other(other, resource_))
         , execute_on_reset_(std::exchange(other.execute_on_reset_, false)) {}
 
     constexpr unique_resource& operator=(unique_resource&& other) noexcept(
-        is_nothrow_move_assignable_v<resource_storage> &&
-        is_nothrow_move_assignable_v<D>) {
+        std::is_nothrow_move_assignable_v<resource_storage> &&
+        std::is_nothrow_move_assignable_v<D>) {
         reset();
 
-        if constexpr (is_nothrow_move_assignable_v<resource_storage>) {
-            if constexpr (is_nothrow_move_assignable_v<D>) {
+        if constexpr (std::is_nothrow_move_assignable_v<resource_storage>) {
+            if constexpr (std::is_nothrow_move_assignable_v<D>) {
                 resource_ = std::move(other.resource_);
                 deleter_ = std::move(other.deleter_);
             } else {
@@ -93,7 +93,7 @@ public:
                 resource_ = std::move(other.resource_);
             }
         } else {
-            if constexpr (is_nothrow_move_assignable_v<D>) {
+            if constexpr (std::is_nothrow_move_assignable_v<D>) {
                 resource_ = other.resource_;
                 deleter_ = std::move(other.deleter_);
             } else {
@@ -118,13 +118,13 @@ public:
     }
 
     template<class RR>
-        requires (is_nothrow_assignable_v<resource_storage&, RR> ||
-                  is_assignable_v<resource_storage&, const remove_reference_t<RR>&>)
+        requires (std::is_nothrow_assignable_v<resource_storage&, RR> ||
+                  std::is_assignable_v<resource_storage&, const std::remove_reference_t<RR>&>)
     constexpr void reset(RR&& r) {
         reset();
 
         try {
-            if constexpr (is_nothrow_assignable_v<resource_storage&, RR>) {
+            if constexpr (std::is_nothrow_assignable_v<resource_storage&, RR>) {
                 resource_ = std::forward<RR>(r);
             } else {
                 resource_ = std::as_const(r);
@@ -150,21 +150,21 @@ public:
     }
 
     template<class T = R>
-        requires (is_pointer_v<T> && !is_void_v<remove_pointer_t<T>>)
-    constexpr add_lvalue_reference_t<remove_pointer_t<T>> operator*() const noexcept {
+        requires (std::is_pointer_v<T> && !std::is_void_v<std::remove_pointer_t<T>>)
+    constexpr std::add_lvalue_reference_t<std::remove_pointer_t<T>> operator*() const noexcept {
         return *get();
     }
 
     template<class T = R>
-        requires (is_pointer_v<T>)
+        requires (std::is_pointer_v<T>)
     constexpr T operator->() const noexcept {
         return get();
     }
 
     // Forge extension: neither swap may throw and split resource/deleter ownership.
     constexpr void swap(unique_resource& other)
-        noexcept(is_nothrow_swappable_v<resource_storage> && is_nothrow_swappable_v<D>)
-        requires (is_nothrow_swappable_v<resource_storage> && is_nothrow_swappable_v<D>) {
+        noexcept(std::is_nothrow_swappable_v<resource_storage> && std::is_nothrow_swappable_v<D>)
+        requires (std::is_nothrow_swappable_v<resource_storage> && std::is_nothrow_swappable_v<D>) {
         using std::swap;
         swap(resource_, other.resource_);
         swap(deleter_, other.deleter_);
@@ -173,7 +173,7 @@ public:
 
 private:
     static constexpr R& resource_value(resource_storage& resource) noexcept {
-        if constexpr (is_reference_v<R>) {
+        if constexpr (std::is_reference_v<R>) {
             return resource.get();
         } else {
             return resource;
@@ -181,7 +181,7 @@ private:
     }
 
     static constexpr const R& resource_value(const resource_storage& resource) noexcept {
-        if constexpr (is_reference_v<R>) {
+        if constexpr (std::is_reference_v<R>) {
             return resource.get();
         } else {
             return resource;
@@ -190,8 +190,8 @@ private:
 
     template<class RR, class DD>
     static constexpr resource_storage construct_resource_from_input(RR&& r, DD& d, bool execute_on_reset) {
-        if constexpr (is_nothrow_constructible_v<resource_storage, RR> ||
-                      !is_constructible_v<resource_storage, RR&>) {
+        if constexpr (std::is_nothrow_constructible_v<resource_storage, RR> ||
+                      !std::is_constructible_v<resource_storage, RR&>) {
             // By the constructor constraints, this path is noexcept.
             return resource_storage(std::forward<RR>(r));
         } else {
@@ -209,8 +209,8 @@ private:
 
     template<class DD>
     static constexpr D construct_deleter_from_input(DD&& d, resource_storage& resource, bool execute_on_reset) {
-        if constexpr (is_nothrow_constructible_v<D, DD> ||
-                      !is_constructible_v<D, DD&>) {
+        if constexpr (std::is_nothrow_constructible_v<D, DD> ||
+                      !std::is_constructible_v<D, DD&>) {
             // By the constructor constraints, this path is noexcept.
             return D(std::forward<DD>(d));
         } else {
@@ -227,7 +227,7 @@ private:
     }
 
     static constexpr resource_storage construct_resource_from_other(unique_resource& other) {
-        if constexpr (is_nothrow_move_constructible_v<resource_storage>) {
+        if constexpr (std::is_nothrow_move_constructible_v<resource_storage>) {
             return resource_storage(std::move(other.resource_));
         } else {
             return resource_storage(other.resource_);
@@ -236,13 +236,13 @@ private:
 
     static constexpr D construct_deleter_from_other(unique_resource& other, resource_storage& resource) {
         try {
-            if constexpr (is_nothrow_move_constructible_v<D>) {
+            if constexpr (std::is_nothrow_move_constructible_v<D>) {
                 return D(std::move(other.deleter_));
             } else {
                 return D(other.deleter_);
             }
         } catch (...) {
-            if constexpr (is_nothrow_move_constructible_v<resource_storage>) {
+            if constexpr (std::is_nothrow_move_constructible_v<resource_storage>) {
                 if (other.execute_on_reset_) {
                     std::invoke(other.deleter_, resource_value(resource));
                     other.release();
@@ -254,20 +254,20 @@ private:
 
     template<class RR, class DD>
     constexpr unique_resource(construct_tag, RR&& r, DD&& d, bool execute_on_reset) noexcept(
-        (is_nothrow_constructible_v<resource_storage, RR> ||
-         is_nothrow_constructible_v<resource_storage, RR&>) &&
-        (is_nothrow_constructible_v<D, DD> ||
-         is_nothrow_constructible_v<D, DD&>))
+        (std::is_nothrow_constructible_v<resource_storage, RR> ||
+         std::is_nothrow_constructible_v<resource_storage, RR&>) &&
+        (std::is_nothrow_constructible_v<D, DD> ||
+         std::is_nothrow_constructible_v<D, DD&>))
         : resource_(construct_resource_from_input(std::forward<RR>(r), d, execute_on_reset))
         , deleter_(construct_deleter_from_input(std::forward<DD>(d), resource_, execute_on_reset))
         , execute_on_reset_(execute_on_reset) {}
 
     template<class RR, class DD, class S>
-    friend unique_resource<decay_t<RR>, decay_t<DD>>
+    friend unique_resource<std::decay_t<RR>, std::decay_t<DD>>
     constexpr
     make_unique_resource_checked(RR&& r, const S& invalid, DD&& d)
-        noexcept(is_nothrow_constructible_v<decay_t<RR>, RR> &&
-                 is_nothrow_constructible_v<decay_t<DD>, DD>);
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<RR>, RR> &&
+                 std::is_nothrow_constructible_v<std::decay_t<DD>, DD>);
 
     resource_storage resource_;
     D deleter_;
@@ -276,10 +276,10 @@ private:
 
 template<class R, class D>
 constexpr void swap(unique_resource<R, D>& lhs, unique_resource<R, D>& rhs)
-    noexcept(is_nothrow_swappable_v<conditional_t<is_reference_v<R>, reference_wrapper<remove_reference_t<R>>, R>> &&
-             is_nothrow_swappable_v<D>)
-    requires (is_nothrow_swappable_v<conditional_t<is_reference_v<R>, reference_wrapper<remove_reference_t<R>>, R>> &&
-              is_nothrow_swappable_v<D>) {
+    noexcept(std::is_nothrow_swappable_v<std::conditional_t<std::is_reference_v<R>, std::reference_wrapper<std::remove_reference_t<R>>, R>> &&
+             std::is_nothrow_swappable_v<D>)
+    requires (std::is_nothrow_swappable_v<std::conditional_t<std::is_reference_v<R>, std::reference_wrapper<std::remove_reference_t<R>>, R>> &&
+              std::is_nothrow_swappable_v<D>) {
     lhs.swap(rhs);
 }
 
@@ -288,13 +288,13 @@ unique_resource(R, D) -> unique_resource<R, D>;
 
 template<class R, class D, class S>
 constexpr
-unique_resource<decay_t<R>, decay_t<D>>
+unique_resource<std::decay_t<R>, std::decay_t<D>>
 make_unique_resource_checked(R&& r, const S& invalid, D&& d)
-    noexcept(is_nothrow_constructible_v<decay_t<R>, R> &&
-             is_nothrow_constructible_v<decay_t<D>, D>) {
-    using result_type = unique_resource<decay_t<R>, decay_t<D>>;
+    noexcept(std::is_nothrow_constructible_v<std::decay_t<R>, R> &&
+             std::is_nothrow_constructible_v<std::decay_t<D>, D>) {
+    using result_type = unique_resource<std::decay_t<R>, std::decay_t<D>>;
     const bool execute_on_reset = !static_cast<bool>(r == invalid);
     return result_type(typename result_type::construct_tag{}, std::forward<R>(r), std::forward<D>(d), execute_on_reset);
 }
 
-} // namespace std
+} // namespace forge

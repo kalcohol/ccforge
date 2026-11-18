@@ -2,7 +2,7 @@
 //
 // This translation unit pulls in every Forge backport wrapper that injects into
 // namespace std (<simd>, <execution>, <mdspan>, <linalg>, <hive>) through forge::forge
-// include path, and exercises each public API. Its purpose is to catch ODR /
+// when available, and exercises each public API. Its purpose is to catch ODR /
 // redefinition regressions in the "seamless injection" handshake:
 //
 //   * On a toolchain WITHOUT native support, forge.cmake injects the backports
@@ -16,7 +16,6 @@
 
 #include <simd>
 #include <execution>
-#include <mdspan>
 #include <concepts>
 #include <tuple>
 #include <type_traits>
@@ -25,11 +24,11 @@
 #  include <hive>
 #endif
 
-#include <gtest/gtest.h>
-
-#if defined(__cpp_lib_mdspan)
-#  include <linalg>
+#if !defined(FORGE_NO_BASE_MDSPAN) && __has_include(<mdspan>)
+#  include <mdspan>
 #endif
+
+#include <gtest/gtest.h>
 
 template<class Left, class Right>
 concept native_handoff_mapping_equality = requires(
@@ -60,7 +59,7 @@ TEST(NativeHandoff, HiveBackport) {
 }
 #endif
 
-#if defined(__cpp_lib_mdspan)
+#if !defined(FORGE_NO_BASE_MDSPAN) && defined(__cpp_lib_mdspan)
 TEST(NativeHandoff, Submdspan) {
     int data[12]{};
     std::mdspan<int, std::extents<int, 3, 4>> m(data);
@@ -88,7 +87,10 @@ TEST(NativeHandoff, Submdspan) {
     (void)sizeof(extent_slice_t);
     (void)sizeof(range_slice_t);
 }
+#endif
 
+#if !defined(FORGE_NO_BASE_MDSPAN) && defined(__cpp_lib_mdspan) && __has_include(<linalg>)
+#  include <linalg>
 TEST(NativeHandoff, Linalg) {
     double data[3] = {3.0, 4.0, 0.0};
     std::mdspan<double, std::extents<int, 3>> v(data);

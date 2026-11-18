@@ -9,7 +9,7 @@ systems.
 The project has two layers:
 
 - `backport/`: standard-header backports such as `<execution>`, `<simd>`,
-  `<mdspan>`, `<linalg>`, `<memory>`, `<hive>`, and `<utility>`.
+  `<mdspan>`, `<linalg>`, `<hive>`, and `<utility>`.
 - `include/forge/`: non-standard utilities in `namespace forge`, including
   schedulers, scopes, channels, IO proofs, coroutine tasks, and type erasure
   helpers.
@@ -27,8 +27,8 @@ missing native support injects Forge's backport headers.
 | `std::hive` | `<hive>` | C++26 backport; [scope and limitations](docs/backports/hive.md) |
 | `std::submdspan` and padded layouts | `<mdspan>` | current C++26 draft surface |
 | `std::linalg` | `<linalg>` | practical BLAS level 1/2/3 subset |
-| `std::unique_resource` | `<memory>` | experimental TS v3 backport |
 | `std::constant_wrapper` | `<utility>` | C++26 + P4206 DR backport |
+| `forge::unique_resource` | `<forge/unique_resource.hpp>` | scoped resource ownership; [usage and migration](docs/forge-utilities.md#unique-resource) |
 | `forge::` runtime utilities | `<forge/execution.hpp>` | structured async support layer: pool, scope, channel, strand, timer |
 | `forge::io` | `<forge/io.hpp>` | Linux epoll and io_uring, Windows IOCP; no OS readiness/completion backend on macOS/BSD (portable byte-stream/coroutine targets still build) |
 | `forge::io` byte IO | `<forge/io/coro.hpp>`, `<forge/io/memory_stream.hpp>` | Coroutine-native byte IO; include direct headers |
@@ -106,6 +106,12 @@ consumption neither configure nor install GoogleTest, and do not require the
 The installed package config reruns native-vs-backport probes in the consumer
 project, so one install prefix can adapt to different compilers, standard
 libraries, and `CMAKE_CXX_STANDARD` values.
+
+When upgrading across the `unique_resource` move, clean the existing install
+prefix or use a fresh one. Installing over the old prefix leaves Forge's old
+`memory` and `experimental/` headers in place.
+[Installation and options](docs/install-options.md)
+
 Within one configured build tree, targets consuming the standard-shaped
 wrappers must use that configured language mode; target-only `CXX_STANDARD`
 overrides require a separate build tree.

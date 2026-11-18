@@ -559,9 +559,7 @@ for p in Path('docs/roadmap').glob('*.md'):
 for p in Path('example').iterdir():
     if p.suffix not in {'.cpp','.cc','.cxx'}: continue
     require(spelling_ok(p.read_text()),str(p)+': nonportable env/bulk')
-    # unique_resource is explicitly frozen by the owner, including its example.
-    if p.name!='unique_resource_example.cpp':
-        require(header_ok(p.read_text()),str(p)+': missing purpose header')
+    require(header_ok(p.read_text()),str(p)+': missing purpose header')
 # Same link predicate covers ROADMAP, containers, test text and non-.cpp sources.
 files=list(Path('formal').rglob('*.md'))+list(Path('docs').rglob('*.md'))+list(Path('.').glob('README*.md'))+[Path('ROADMAP.md'),Path('containers/README.md')]+list(Path('test').rglob('*.txt'))
 for p in files:
