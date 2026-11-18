@@ -496,14 +496,12 @@ AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 futu
 源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
 `test_extension_deprecations_strict` 汇总当前已注册的检查目标。
 
-`execution_d1_deprecation_compat` 运行旧入口与替代入口的对照。
-配置时逐项检查 25 个带编号的用例，均须通过局部抑制的正向编译检查。
-将弃用诊断视为错误时，Clang 和 MSVC 要求全部 25 个用例编译失败。
-GCC 跳过两个内部分支的失败检查（用例 17 和 25），其余 23 个仍须编译失败。
-`execution_d1_warning_free` 及
-`execution_d1_strict_warning_free` 检查标准调用和替代入口，分别使用默认与
-严格成员查询模式。`execution_forge_bulk` 覆盖三种串行算法的 direct 与 pipe 调用、
-索引顺序、chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
+`execution_removed_forms_compile` 对移除的重载与 pipe 形式使用 requires-expression
+或概念作反例，逐项配对 `execution_standard_forms` 及同一源文件内的标准正控制。
+`execution_removed_forms` 运行两阶段 domain transform 的选择回归。
+配置时逐个拒绝 12 个已移除的限定名称，并用对应标准拼写编译正控制。
+`execution_forge_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
+chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
 文档审计在 Forge 头文件、示例与非兼容测试中检查旧 execution 标记别名的限定拼写。
 文档审计也在 Forge 头文件中检查 `make_env` 标识符，覆盖可能延迟查找的非限定调用。
 `forge_headers_without_legacy_execution_names_compile` 先载入标准头文件，
@@ -639,88 +637,47 @@ gcc16 的示例流程启用 `FORGE_BUILD_TESTS=ON`、关闭全部 `FORGE_TEST_EN
 
 `FORGE_ENABLE_FORGE_RUNTIME` 只控制 runtime 示例；runtime 测试由 `FORGE_TEST_ENABLE_FORGE_RUNTIME` 独立控制，公共头文件始终可包含。文档审计还覆盖三语 README 一致性、测试开关文档、路线图状态、特性宏、用途头与扩展拼写，并逐项运行正反自测。
 
-## Forge member query dispatch（strict member query 测试）
+## Execution 成员定制测试
 
-`test_forge_strict_member_queries` 构建代表性的 runtime、async scope、strand、线程池、
-task、擦除和无需 io_uring 的 IO coroutine/combinator 测试，以及 `forge_member_queries`
-编译探针。运行 `ctest --test-dir build/llvm -R '^forge_(strict_|member_queries$)' --output-on-failure`。
-它们随 `FORGE_TEST_ENABLE_FORGE_RUNTIME`、`FORGE_TEST_ENABLE_FORGE_ERASURE` 和
-`FORGE_TEST_ENABLE_FORGE_IO` 开关注册。
+`execution_member_dispatch_compile` 检查 ADL-only 的 completion、start、connect、
+schedule、signatures 及环境查询不可作为定制，并配对成员形式。一个同时是
+awaitable 的旧 sender 走 awaitable fallback。普通环境测试检查 ADL-only
+`get_env` 返回 `env<>`、stop token 使用 `never_stop_token`、缺失 scheduler
+及 domain 默认规则。配置期 `FORGE_EXECUTION_QUERY_MEMBER_MANDATE_*` 检查
+throwing / 错误结果查询、无效完成签名等硬错误。用例 10、11 分别拒绝可能抛出的
+forwarding member 和返回 `int` 的 forwarding member，各自有只修改目标条件的正控制。
 
-这些独立可执行文件私有定义测试专用宏
-`FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1`，使 backport 的 environment/scheduler
-query dispatch 只接受 const member `query`。默认关闭，不传播到 `forge::forge`；同一
-可执行文件的所有 translation unit 必须一致定义。该开关不改变 receiver completion、
-`get_env` 或 forwarding-query 分类的兼容 dispatch，也不影响 native stand-aside 实现。
-`forge_strict_erased_sender` 套件包含依赖 backport `let` env 的 `starts_on` 用例；
-完整 task suite 以 `forge_strict_task` 注册，包含经 `write_env` 传播 receiver stop token 的用例，
-同时保留独立 `task_member_queries` 测试。线程池、strand、
-any scheduler 的 stop-token fixtures 通过 `env{prop{...}}` 组合查询。
-`execution_env_queries_compile` 与 `execution_strict_env_queries_compile` 分别在默认和
-strict 模式直接包含 backport headers，断言 `env` / `prop` 及内部 helper 的成员查询、
-默认模式的 member / tag 混合选择、strict 模式的成员选择、具名左值 query、
-借用子环境的 cv/ref 限定、引用类型、variadic forwarding、缺失查询和条件 `noexcept`；
-`when_all` 拒绝额外参数，`spawn_future` 尚无成员查询。
-`write_env` 的 overlay 优先、本地 base 查询拒绝、本地 overlay 查询保留，以及
-`inline_scheduler` 的环境相关 value completion scheduler / domain 与 scheduler / attrs 一致性，
-`run_loop` 的 value / stopped completion scheduler 一致性、带环境参数的 completion-domain CPO
-一致性、unary domain 缺失与 progress 成员均在两种模式检查。completion-domain
-派生查询使用 HIDE-SCHED，两种模式均检查精确原环境重载不再匹配；直接查询仍检查成员与 ADL 选择。
-Completion scheduler / domain 探针还比较成员与 ADL 竞争、通用回退、带环境查询和 unary 回退，
-并检查 inline 及转发其查询的 scheduler 的 domain 递归终止。探针还使用满足 `receiver` 的非抛出移动类型，覆盖
-schedule sender 及其 `write_env` 包装的 `connect` / `start` 异常规格；rvalue receiver 移动
-不抛出，lvalue receiver 的复制可以抛出，并检查 receiver / query 结果的值类别。
-`continues_on` 的直接成员探针在两种模式均启用，覆盖 destination completion scheduler / domain、
-schedule sender attributes 优先于 scheduler 的 domain 选择、forwarding 与本地 child attributes、
-variadic 参数与引用答案、查询和 `connect` / `start` 异常规格，以及两条 receiver environment 的
-成员查询过滤与引用身份。环境相关 destination 会根据本地 query 是否可见改变 domain
-类型、参与条件与 `noexcept`，检查 schedule sender 分支与 scheduler 回退均使用过滤环境。
-直接 domain 成员不可用时，公开 CPO 的 completion-scheduler 回退仍使用过滤环境；
-value / stopped / 默认 tag 的探针覆盖无环境、单环境与多个环境参数、不同值类别和
-兼容接口，并以 stopped 回退到 scheduler 的 value domain 作为正例。
-其他 sender attributes 的对照探针保留原始环境参数的可见性。
-负例为 child 提供 value / stopped / error / 默认 tag 的 completion domain，
-同时使 destination 查询不可用，检查 unary 与多个环境参数下的成员、CPO 和兼容接口均不泄漏 child domain。
-`execution_default_scheduler_env_queries` 与 `execution_strict_scheduler_env_queries` 运行相同的
-针对性测试，覆盖 `write_env` child 查询过滤、不同 loop 的 scheduler identity、inline 环境相关查询、
-schedule / `let` / `write_env` 组合中的 child scheduler 传播，以及 run-loop schedule sender
-从 receiver env 读取 stop token。三个 `let` adaptor 均检查 unary completion-scheduler 回退、
-环境相关查询优先、receiver 本地查询过滤、scheduler 优先于 completion domain，以及
-临时 attributes / 按值与借用 receiver environment 中引用答案的值保存。
-receiver env 缺少 scheduler 时，inline predecessor 在默认和 strict 模式均选择 inline scheduler；
-运行测试同时检查 child 的 start scheduler。
-`continues_on` 用例检查 source 与 schedule sender 在 signatures、连接及执行阶段使用过滤环境，
-并检查 scheduler operation 在 `connect` 预连接。value / stopped 经 downstream `let` 取得
-destination scheduler / domain，error completion 经 destination hop 后到达 successor；
-source scheduler 和 domain 使用不同答案以识别泄漏。目标 schedule sender 的 domain
-答案区分原始与过滤环境，并与 signatures、连接及执行阶段的 receiver environment 比较。
-`execution_adaptors` 通过 forwarding query 检查借用 receiver environment 的引用身份与
-析构期间的可用性，不依赖过滤视图的具体类型或直接访问其非查询成员。
-两项运行测试随 `FORGE_TEST_ENABLE_EXECUTION` 注册。
-两项编译探针随 `FORGE_TEST_ENABLE_EXECUTION` 注册，可用
-`ctest --test-dir build/llvm -R '^execution_(strict_)?env_queries_compile$' --output-on-failure` 运行。
-此模式检验 Forge query 的可移植性，不代表 backport 已完整符合工作草案。
+`execution_env_queries_compile` 固定环境的具名 query、借用子环境的 cv/ref、引用结果、
+variadic 参数、条件 `noexcept` 及成员选择。Completion scheduler / domain 探针覆盖
+TRY-QUERY、递归终止、HIDE-SCHED 以及 `continues_on` destination attributes 优先于
+scheduler 的 domain 选择。为 child 提供各 completion domain 并使 destination 查询缺失，
+以检查 child domain 不经转发泄漏。Schedule sender 及其 `write_env` 包装还覆盖
+`connect` / `start` 对 receiver 复制与移动的异常规格。
 
-`execution_default_query_conformance_compile` / `execution_strict_query_conformance_compile`
-检查空环境类型、env/prop 不可赋值、read_env 的左值 check-types 与实际调用的值类别/异常规格、标准查询命名空间、
-constexpr、prop 两种括号形式的 CTAD（含函数模板内非依赖表达式）、const 可赋值 tag 的拷贝/移动赋值拒绝、默认构造与空 tag 大小、
-env 的 ref/cref 解包、混合参数、模板内 CTAD 与拷贝推导、scheduler 表达式类别、receiver 类别、公开算法类型名、domain 函数模板、
-indeterminate domain 与 completion-signature utilities。对应的
-`execution_default_query_conformance` / `execution_strict_query_conformance` 运行类型/值
-scheduler 递归、环境单次求值、prop 的 move-only value 移动、借用结果身份与 Forge scheduler/attrs parity；复制/移动未声明
-noexcept 的 scheduler 仍可解析。两种 indeterminate 合并顺序检查相同候选集合与 transform
-行为，COMMON-DOMAIN 覆盖 common type 存在但不可默认构造的回退。
-on closure 的 receiver-dependent 查询配有正控制及缺失/过滤关键查询时的 sender_in、connectability 负控制。
-配置期 `FORGE_EXECUTION_QUERY_MANDATE_*` 探针逐项拒绝 throwing / 错误结果查询、
-不可默认构造 domain、non-void start/completion、non-sender schedule、无效完成签名和
-不一致的 indeterminate-domain transform；默认与 strict 成员路径及默认 ADL 路径独立注册。
-这些探针检查 hard Mandates；普通编译探针中的正反 requires 控制检查软约束。
-`forge_any_sender` / `forge_strict_any_sender` 同时覆盖可拷贝 source 的重复等待与
-move-only source 的一次消费、空对象检查、stopped/error/连接失败后的清理，以及
-SBO、抛异常移动和过度对齐的存储计数。`forge_erased_sender` / `forge_strict_erased_sender`
-检查对应的 source 连接类别、一次消费与借用 source 的 operation 清理顺序。
-Domain 构造、scheduler lvalue-only 结果及候选 domain transform 的拒绝用例各有只改变目标条件的正控制，
-构造函数及所有可执行路径均有定义，使拒绝原因不依赖链接失败。
+`execution_scheduler_env_queries` 覆盖不同 loop 的 scheduler identity、inline
+scheduler 和 attrs 的环境相关答案、stop token 传递及三个 `let` adaptor 的
+completion-scheduler 选择。在 receiver 缺少 scheduler 时，inline predecessor
+的 start scheduler 仍为 inline scheduler。SCHED-ENV 控制检查直接 `get_domain` 在保存的 scheduler 的 const 左值上查询、指向 scheduler
+内部的 domain 答案的生存期、重复的按值查询不消耗保存的 scheduler，以及复制构造声明为 `noexcept(false)` 的 scheduler 仍得到
+非抛出的 `get_start_scheduler` 答案。`execution_borrowed_env` 通过公开的 `let_*`、
+`starts_on`、两种形式的 `on`、`continues_on`、`write_env`、共享 adaptor、
+`stopped_as_error`、`affine`、锁定的 `associate` 与用户包装 sender 检查 successor / child
+环境类型只取决于去除引用与 const 的环境类型（借用、右值引用和按值的环境得到同一类型，签名与
+连接对非 volatile 的环境一致；volatile 环境的左值与右值引用被借用并以 const volatile 查询）、
+物化环境由 `get_env` 的纯右值直接初始化并归 operation state 所有（转发构造函数的环境与库的
+tag 类型）、视图副本在原视图销毁后仍有效且不调用环境的复制或移动、各 adaptor
+对 child 的参与检查、数组环境，以及静态 signature 成员的常量求值。配置期
+query Mandate 探针的第 36 例检查非常量 `forwarding_query(Q{})` 得到约束诊断。
+`execution_wave1` 使用不同的
+predecessor 与 receiver scheduler，分别检查 `get_start_scheduler` 和 `get_scheduler`。
+`execution_query_conformance_compile` 与 `execution_query_conformance` 检查 query
+命名空间、constexpr、env/prop 的 CTAD 与赋值约束、scheduler 和 receiver 类别、
+domain 函数及 utilities、scheduler 递归和环境单次求值。
+
+普通 Forge runtime、erasure 和 IO 测试使用成员定制。`forge_task_member_queries`
+涵盖 task promise 的查询。`forge_member_queries` 编译探针随
+`FORGE_TEST_ENABLE_FORGE_RUNTIME`、`FORGE_TEST_ENABLE_FORGE_ERASURE` 和
+`FORGE_TEST_ENABLE_FORGE_IO` 的任一组启用，并只检查已启用的组。
 
 ## Protocol model check（协议模型检验）
 
@@ -823,10 +780,10 @@ libc++ 默认缺少 policy 对象时，CMake 另探测 per-target `-fexperimenta
 加载原生 policies。可在已配置的 binary directory 中运行
 `ctest -R '^linalg_' --output-on-failure` 聚焦该组；policy skip 必须结合 configure 记录解释。
 
-`execution_default_adaptor_conformance_compile` / `execution_strict_adaptor_conformance_compile`
+`execution_adaptor_conformance_compile`
 检查条件 connect noexcept、let/starts_on 的 exception_ptr 集合、无效 callable/结果/查询的
 sender_in 与 connectability、FWD-ENV 的本地查询拒绝和 forwarding 查询保留。
-配套 runtime 测试 `execution_default_adaptor_conformance` / `execution_strict_adaptor_conformance`
+配套 runtime 测试 `execution_adaptor_conformance`
 覆盖 starts_on 在目标 agent 连接 child、late-connect error、associate predecessor 先释放再 join、
 locked predecessor 的 completion 内替换、PMR values/errors 与 then/bulk callable 的 receiver allocator，
 以及无 allocator 的移动/复制计数；嵌套 const-lvalue child 覆盖普通复制抛出与 allocator 重建成功，所有相关 adaptor 的 signature、connect 类别及 noexcept 一致。配置期 `FORGE_EXECUTION_ADAPTOR_CONTROL_*` 与
@@ -834,7 +791,7 @@ locked predecessor 的 completion 内替换、PMR values/errors 与 then/bulk ca
 既有 static-opstate 测试同时固定 predecessor 在 successor 函数前销毁、参数复制失败时 predecessor
 仍保留，以及 starts_on/on 的 child connect 失败改走 runtime error channel。
 
-`execution_default_scheduling_conformance_compile` / `execution_strict_scheduling_conformance_compile`
+`execution_scheduling_conformance_compile`
 覆盖 continues_on 按环境/实际 completion tag 的 query 参与条件、infallible destination 的 error
 scheduler、不能保存的 payload、schedule_from/on 的 attribute 过滤、unstoppable 的精确结果类型，
 以及 affine 的 infallible scheduler、member customization 与 scheduler query 转发。
@@ -850,7 +807,7 @@ allocator 控制按 /28 检查有无 allocator 的 get-state prvalue/reference �
 不执行会在 noexcept get-state 内 terminate 的重建。带有效 signatures 却无法连接的 child，
 以及仅接受 signature receiver 的 successor，均检查 connect 的软拒绝。
 
-`execution_default_forge_predecessor_lifetime` / `execution_strict_forge_predecessor_lifetime`
+`execution_forge_predecessor_lifetime`
 将 pool、strand、timer、channel recv、`forge::task` 和 `erased_sender` 直接接入 `let_value`，
 在同步可用路径和其他线程完成路径中销毁 predecessor；另有 pool/timer 的同步 stopped 与 task
 的同步/跨线程 error 控制。Pool 和 timer 的 value completion 始终由 worker 发出；strand 以
@@ -860,10 +817,10 @@ final_suspend 完成，erased sender 覆盖同步与 pool 来源。两个 saniti
 
 ### Awaitable 与 sender 双向桥接
 
-`execution_default_awaitable_conformance_compile` / `execution_strict_awaitable_conformance_compile`
+`execution_awaitable_conformance_compile`
 固定 marker short-circuit、enable_sender specialization、void / int / int& 的独立 signatures、
 member / ADL co_await、as_awaitable member、domain transform、noexcept 与 Forge 环境约束。
-配套 runtime `execution_default_awaitable_conformance` / `execution_strict_awaitable_conformance`
+配套 runtime `execution_awaitable_conformance`
 覆盖 value / void / error / stopped completion 内销毁 coroutine operation、跨线程恢复后自毁、
 when_all 混合 awaitable / sender、scope wrap / associate / spawn_future、split 重放，以及
 Forge scope、resource_context、start_detached、any_sender_of、erased_sender、wait_result、task 与 IO bridge。
@@ -872,7 +829,7 @@ Round 2 控制另覆盖 completion / start 两种 domain transform、内部 comp
 receiver/value ADL 隔离、operation move 所有权、split 的 rvalue-only awaitable 类别，
 以及 any_sender_of 的 lvalue-only marked source 精确结果。Error / stopped 的 task
 控制检查 awaiting expression 后的代码没有执行。
-`forge_task` / `forge_strict_task` 保留原有注册（两条 sanitizer lanes 均选择），
+`forge_task` 与 `forge_task_member_queries` 由两条 sanitizer lanes 选择，
 新增 just_stopped / closed channel / nested stopped task 的 value/void task 控制，
 每种均验证恰好一次 stopped、owner 保留 suspended frame，以及同步/另一线程 completion 内自毁。
 

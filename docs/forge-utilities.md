@@ -331,10 +331,9 @@ receiver 在不再需要完成参数后，可以在 `set_value` / `set_error` / 
 schedule 时以 `set_error` 完成；而空 `erased_sender`（默认构造）在 `connect` 时抛
 `std::runtime_error`。请仅在持有有效底层对象后再连接/调度。
 
-`any_scheduler` 建模的是 Forge 当前 backport 的本地 scheduler concept。Forge 公共
-scheduler 的 schedule sender env 已通过 backport 的 tag-invoke
-`get_completion_scheduler<set_value_t>` CPO 暴露 completion-scheduler roundtrip；原生
-C++26 member-query env 口径仍是 forward-compat caveat。
+`any_scheduler` 建模 Forge 本地 scheduler concept。Forge scheduler 与其
+schedule sender 的 attributes 通过成员查询公开 value completion scheduler，
+并保留调度资源的 identity。
 
 ## 示例与测试
 
@@ -394,31 +393,23 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
   `sync_wait`）在自己体内 try/catch 并把抛出路由到 error channel；`co_return`
   时 move 进 promise result variant 的异常落在 `unhandled_exception`。
 
-## 扩展入口弃用与迁移
+## Execution 工具
 
-以下旧入口保留至少一个弃用发布版本；可独立标注的入口使用 `[[deprecated]]`，计划在后续版本移除，具体版本由维护者决定。既有调用的完成行为、异常传播和结果类型保持不变。等待入口的两个 `std::execution` 别名继续通过 using-declaration 引用 `std::this_thread` 中的同一对象，以保留实体身份和同时导入两个命名空间时的非限定查找；它们仅在文档中弃用，不单独添加属性。
+`<forge/execution_extensions.hpp>` 提供 `forge::transfer_just(sch, values...)`，
+用 `continues_on(just(values...), sch)` 构造 sender，完整原生实现下也可用。
+`forge::empty_env` 是 `std::execution::env<>` 的便捷拼写。
 
-| 弃用入口 | 替代入口 |
-| --- | --- |
-| `std::execution::split(s)` | `forge::split(s)` |
-| `std::execution::empty_env` | `std::execution::env<>` 或 `forge::empty_env`（同一类型） |
-| `std::execution::transfer_just(sch, values...)` | `forge::transfer_just(sch, values...)` 或 `std::execution::continues_on(std::execution::just(values...), sch)` |
-| `std::execution::make_prop(q, value)` | `std::execution::prop(q, value)` |
-| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
-| `std::execution::sync_wait_with_variant(s)` | `std::this_thread::sync_wait_with_variant(s)` |
-| `std::this_thread::sync_wait(s)` 接受多种 value completion 的扩展 | `forge::sync_wait(s)` 保持原 tuple-or-variant 结果；标准替代为 `std::this_thread::sync_wait_with_variant(s)`，其结果形态不同 |
-
-Forge 入口由 `<forge/execution_extensions.hpp>` 提供，也由 `<forge/execution.hpp>` 汇总。`forge::split` 与原入口共用缓存实现，保持惰性启动、单次执行和 `const&` 重放语义。它依赖 backport 的共享状态，仅在 `FORGE_EXECUTION_BACKPORT_ACTIVE` 已定义时提供；原生 execution 让位时不注入此算法。
-
-`forge::transfer_just` 仅组合标准 `just` 与 `continues_on`，完整原生实现下也可用。`forge::empty_env` 在 backport 与完整原生实现下均为 `std::execution::env<>`，不再保留旧空环境的独立类型身份。`forge::sync_wait` 在 backport 下保留旧的 tuple-or-variant 行为，在完整原生实现下转用标准单一 value completion 的 `std::this_thread::sync_wait`；跨实现消费多种 value completion 应使用标准 `sync_wait_with_variant`。零种 value completion 的既有扩展暂时保留，本次未增加弃用诊断。
-
-依据为 2026-11-13 查阅的 [execution synopsis](https://eel.is/c++draft/execution.syn)、[env](https://eel.is/c++draft/exec.env)、[prop](https://eel.is/c++draft/exec.prop) 与 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
+`forge::split` 使用 backport 的共享缓存，保持惰性启动、单次执行和 `const&` 重放。
+Backport 下 `forge::sync_wait` 支持零种或多种 value completion，分别使用空 tuple 或
+tuple 的 variant。完整原生实现下由标准的单一 value completion `sync_wait` 消费；
+标准的多种 value completion 使用 `sync_wait_with_variant`。
+[执行库迁移表](backports/execution.md#已移除扩展与迁移)
 
 ## 串行 bulk
 
 `<forge/bulk.hpp>` 提供 `forge::bulk`、`forge::bulk_chunked` 和
 `forge::bulk_unchunked`。三者支持 `adaptor(sndr, shape, f)` 与
-`sndr | adaptor(shape, f)`。Backport 复用原无策略重载的串行路径。
+`sndr | adaptor(shape, f)`。Backport 在完成线程串行执行。
 在该路径中，`bulk` 与 `bulk_unchunked` 按顺序为每个索引调用
 `f(index, values...)`，`bulk_chunked` 对正整数 shape 调用一次
 `f(0, shape, values...)`。前序的 error 与 stopped completion 继续转发，
@@ -426,8 +417,7 @@ callback 异常以 `std::exception_ptr` 传递。
 
 完整的原生 senders 实现提供 policy 对象时，这些入口调用对应的标准算法并传入
 `std::execution::seq`。未启用 backport 且原生实现不满足上述条件时，
-头文件不声明这些入口。旧的无策略 `std::execution` 重载已弃用，
-迁移见[执行库说明](backports/execution.md#扩展入口弃用与迁移)。
+头文件不声明这些入口。
 
 ## 线性代数扩展
 
