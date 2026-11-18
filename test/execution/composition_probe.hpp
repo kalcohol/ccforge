@@ -34,6 +34,14 @@ concept composable = requires(First&& first, Second&& second) {
     static_cast<First&&>(first) | static_cast<Second&&>(second);
 };
 
+template<class C>
+consteval bool copyable_matrix() {
+    return composable<C&, value_closure&> && composable<const C&, value_closure&> &&
+        composable<C, value_closure&> && composable<const C, value_closure&> &&
+        composable<value_closure&, C&> && composable<value_closure&, const C&> &&
+        composable<value_closure&, C> && composable<value_closure&, const C>;
+}
+
 template<class C, class S = source_t>
 concept applicable = std::is_invocable_v<C, S> && requires(C&& closure, S&& source) {
     { static_cast<C&&>(closure)(static_cast<S&&>(source)) } -> ex::sender;

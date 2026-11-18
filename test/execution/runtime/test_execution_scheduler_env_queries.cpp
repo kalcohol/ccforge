@@ -599,7 +599,7 @@ TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopTok
             return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
     });
-    auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
+    auto base = ex::env{probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token())};
     auto result = forge::sync_wait(ex::write_env(
         scope.get_token().wrap(std::move(inspect)), base));
     ASSERT_TRUE(result.has_value());
@@ -625,7 +625,7 @@ TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopTo
             return observed.first == 10 && actual.stop_possible() && !actual.stop_requested();
         }
     });
-    auto base = ex::make_env(probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token()));
+    auto base = ex::env{probe_env{10, 20}, ex::prop(ex::get_stop_token, downstream.get_token())};
     auto future = ex::spawn_future(std::move(inspect), scope.get_token(), base);
     auto result = forge::sync_wait(std::move(future));
     ASSERT_TRUE(result.has_value());

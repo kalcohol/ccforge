@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
@@ -319,7 +320,7 @@ using upon_stopped_rvalue_only_sender_t = decltype(std::execution::upon_stopped(
 using let_rvalue_only_sender_t = decltype(std::execution::let_value(
     rvalue_only_sender{1},
     bind_next_sender{}));
-using bulk_rvalue_only_sender_t = decltype(std::execution::bulk(
+using bulk_rvalue_only_sender_t = decltype(forge::bulk(
     rvalue_only_sender{1},
     1,
     observe_bulk_value{}));
@@ -404,13 +405,13 @@ static_assert(std::execution::sender_in<stopped_error_rvalue_only_sender_t>);
 static_assert(std::execution::sender_in<scoped_rvalue_only_sender_t>);
 static_assert(std::execution::receiver<move_only_stopped_receiver>);
 static_assert(!std::execution::receiver<move_only_stopped_receiver&>);
-static_assert(std::execution::sender_to<
+static_assert(std::execution::__forge_sender_to<
     decltype(std::execution::just_stopped()),
     stopped_only_receiver>);
-static_assert(!std::execution::sender_to<
+static_assert(!std::execution::__forge_sender_to<
     decltype(std::execution::just(1)),
     stopped_only_receiver>);
-static_assert(!std::execution::sender_to<
+static_assert(!std::execution::__forge_sender_to<
     decltype(std::execution::just(1)),
     int>);
 static_assert(!std::execution::sends_stopped<decltype(std::execution::just(42))>);

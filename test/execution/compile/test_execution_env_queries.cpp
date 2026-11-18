@@ -708,7 +708,7 @@ static_assert(ex::receiver<nothrow_receiver>);
 static_assert(ex::receiver<throwing_copy_receiver>);
 static_assert(ex::receiver<throwing_copy_receiver&>);
 static_assert(ex::receiver<const throwing_copy_receiver&>);
-static_assert(ex::receiver_of<throwing_copy_receiver,
+static_assert(ex::__forge_receiver_of<throwing_copy_receiver,
     ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
 using inline_sender = decltype(ex::schedule(ex::inline_scheduler{}));
 using loop_sender = decltype(ex::schedule(std::declval<loop_scheduler>()));

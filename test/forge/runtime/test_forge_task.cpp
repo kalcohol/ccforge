@@ -781,9 +781,9 @@ TEST(TaskTest, ReceiverStopTokenReachesAwaitedSender) {
     forge::static_thread_pool pool{1};
     std::inplace_stop_source source;
     source.request_stop();
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token()));
+            std::execution::get_stop_token_t{}, source.get_token())};
 
     bool after_await = false;
     auto result = forge::sync_wait(

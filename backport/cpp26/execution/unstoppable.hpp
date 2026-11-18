@@ -49,6 +49,7 @@ struct __unstoppable_t : sender_adaptor_closure<__unstoppable_t> {
         return __closure{}(std::forward<S>(sndr));
     }
 
+    [[deprecated("use std::execution::unstoppable(sender)")]]
     [[nodiscard]] auto operator()() const noexcept {
         return __closure{};
     }

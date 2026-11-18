@@ -20,13 +20,8 @@ concept piped_optional = requires(S&& source) {
 };
 
 template<class S>
-concept closure_optional = requires(S&& source) {
-    static_cast<S&&>(source) | ex::stopped_as_optional();
-};
-
-template<class S>
 constexpr bool accepts_all_forms =
-    direct_optional<S> && piped_optional<S> && closure_optional<S>;
+    direct_optional<S> && piped_optional<S>;
 
 template<class S, class Env>
 concept direct_optional_in = requires(S&& source, Env&& env) {
@@ -41,35 +36,12 @@ concept piped_optional_in = requires(S&& source, Env&& env) {
 };
 
 template<class S, class Env>
-concept closure_optional_in = requires(S&& source, Env&& env) {
-    ex::get_completion_signatures(
-        static_cast<S&&>(source) | ex::stopped_as_optional(), static_cast<Env&&>(env));
-};
-
-template<class S, class Env>
 constexpr bool accepts_all_forms_in =
-    direct_optional_in<S, Env> && piped_optional_in<S, Env> && closure_optional_in<S, Env>;
+    direct_optional_in<S, Env> && piped_optional_in<S, Env>;
 
 template<class S, class Env>
 constexpr bool rejects_all_forms_in =
-    !direct_optional_in<S, Env> && !piped_optional_in<S, Env> && !closure_optional_in<S, Env>;
-
-using single_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(int), ex::set_error_t(long), ex::set_stopped_t()>>;
-using tuple_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(int, double), ex::set_stopped_t()>>;
-using empty_tuple_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(std::tuple<>), ex::set_stopped_t()>>;
-using zero_sender = signature_sender<ex::completion_signatures<>>;
-using void_sender = signature_sender<ex::completion_signatures<ex::set_value_t()>>;
-using error_sender = signature_sender<ex::completion_signatures<ex::set_error_t(int)>>;
-using stopped_sender = signature_sender<ex::completion_signatures<ex::set_stopped_t()>>;
-using multi_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(int), ex::set_value_t(double)>>;
-using same_decay_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(int), ex::set_value_t(const int&)>>;
-using mixed_void_sender = signature_sender<ex::completion_signatures<
-    ex::set_value_t(), ex::set_value_t(int)>>;
+    !direct_optional_in<S, Env> && !piped_optional_in<S, Env>;
 
 static_assert(accepts_all_forms<single_sender>);
 static_assert(accepts_all_forms<tuple_sender>);
@@ -140,17 +112,13 @@ concept member_connectable = requires(S&& source) {
 
 static_assert(member_connectable<dependent_optional, value_env>);
 static_assert(member_connectable<const dependent_optional&, value_env>);
-static_assert(ex::sender_to<dependent_optional, receiver<value_env>>);
+static_assert(ex::__forge_sender_to<dependent_optional, receiver<value_env>>);
 static_assert(!member_connectable<dependent_optional, void_env>);
 static_assert(!member_connectable<const dependent_optional&, void_env>);
 static_assert(!member_connectable<dependent_optional, no_value_env>);
 static_assert(!member_connectable<const dependent_optional&, no_value_env>);
 static_assert(!member_connectable<dependent_optional, multi_env>);
 static_assert(!member_connectable<const dependent_optional&, multi_env>);
-
-struct scheduler_env {
-    auto query(ex::get_scheduler_t) const noexcept -> ex::inline_scheduler { return {}; }
-};
 
 using scheduler_source = decltype(ex::read_env(ex::get_scheduler));
 static_assert(accepts_all_forms<scheduler_source>);
@@ -160,15 +128,6 @@ static_assert(std::same_as<ex::completion_signatures_of_t<scheduler_optional, sc
     ex::completion_signatures<ex::set_value_t(std::optional<ex::inline_scheduler>)>>);
 static_assert(member_connectable<scheduler_optional, scheduler_env>);
 static_assert(member_connectable<const scheduler_optional&, scheduler_env>);
-
-struct empty_void_query {
-    template<class Env>
-    auto operator()(const Env&) const noexcept {
-        if constexpr (requires(const Env& env) { env.query(completion_query{}); }) {
-            return 42;
-        }
-    }
-};
 
 static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, forge::empty_env>>);
 static_assert(std::same_as<std::invoke_result_t<empty_void_query&, value_env>, int>);
@@ -192,7 +151,7 @@ static_assert(std::same_as<ex::completion_signatures_of_t<dependent_sender,
 int main() {
     auto direct = ex::stopped_as_optional(ex::just(42));
     auto piped = ex::just(1, 2) | ex::stopped_as_optional;
-    auto closure = ex::just(std::tuple<>{}) | ex::stopped_as_optional();
+    auto closure = ex::just(std::tuple<>{}) | ex::stopped_as_optional;
     (void)direct;
     (void)piped;
     (void)closure;

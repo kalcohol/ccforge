@@ -108,15 +108,17 @@ struct __sender {
     }
 };
 
-} // namespace __forge_read_env
-
-struct read_env_t {
+struct __read_env_t {
     template<class Tag>
     [[nodiscard]] constexpr auto operator()(Tag tag) const {
         return __forge_read_env::__sender<Tag>{std::move(tag)};
     }
 };
 
-inline constexpr read_env_t read_env{};
+} // namespace __forge_read_env
+
+using read_env_t [[deprecated("use decltype(std::execution::read_env) without cv-qualifiers")]] =
+    __forge_read_env::__read_env_t;
+inline constexpr __forge_read_env::__read_env_t read_env{};
 
 } // namespace std::execution

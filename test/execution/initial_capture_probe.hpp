@@ -1,5 +1,7 @@
 #pragma once
 
+#include <forge/bulk.hpp>
+
 #include <forge/execution_extensions.hpp>
 #include <execution>
 
@@ -33,9 +35,9 @@ inline constexpr auto adaptor = [] {
     else if constexpr (Kind == kind::let_value) return ex::let_value;
     else if constexpr (Kind == kind::let_error) return ex::let_error;
     else if constexpr (Kind == kind::let_stopped) return ex::let_stopped;
-    else if constexpr (Kind == kind::bulk) return ex::bulk;
-    else if constexpr (Kind == kind::bulk_unchunked) return ex::bulk_unchunked;
-    else return ex::bulk_chunked;
+    else if constexpr (Kind == kind::bulk) return forge::bulk;
+    else if constexpr (Kind == kind::bulk_unchunked) return forge::bulk_unchunked;
+    else return forge::bulk_chunked;
 }();
 
 template<kind Kind>

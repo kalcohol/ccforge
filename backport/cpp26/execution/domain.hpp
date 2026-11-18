@@ -34,15 +34,25 @@ namespace std::execution {
 // connection.
 // ──────────────────────────────────────────────────────────────────────────
 
+namespace __forge_domain {
+
 template<class Env>
-using env_domain_t = decltype(get_domain(std::declval<Env>()));
+using __env_domain_t = decltype(get_domain(std::declval<Env>()));
+
+} // namespace __forge_domain
+
+template<class Env>
+using env_domain_t [[deprecated("use decltype(std::execution::get_domain(env))")]] =
+    __forge_domain::__env_domain_t<Env>;
 
 template<class Receiver>
-using receiver_domain_t = env_domain_t<
+using receiver_domain_t [[deprecated("use decltype(std::execution::get_domain(std::execution::get_env(receiver)))")]] =
+    __forge_domain::__env_domain_t<
     decltype(std::execution::get_env(std::declval<const Receiver&>()))>;
 
 template<class Sender, class Env = __empty_env>
-using sender_domain_t = decltype(get_domain(
+using sender_domain_t [[deprecated("use decltype(std::execution::get_domain(std::execution::get_env(sender)))")]] =
+    decltype(get_domain(
     std::execution::get_env(std::declval<Sender>())));
 
 } // namespace std::execution

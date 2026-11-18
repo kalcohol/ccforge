@@ -301,3 +301,9 @@ if(FORGE_SENDERS_PARTIAL_MACRO
     set(FORGE_SENDERS_PARTIAL TRUE)
 endif()
 _forge_decide("std::execution (P2300 senders/receivers)" SENDERS FORGE_SENDERS_FULL FORGE_SENDERS_PARTIAL)
+# The stand-aside macro covers partial natives too. Forge bulk needs the complete result.
+if(FORGE_SENDERS_FULL)
+    target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_NATIVE_SENDERS_COMPLETE=1)
+elseif(FORGE_SENDERS_PARTIAL)
+    target_compile_definitions(${FORGE_BACKPORT_TARGET} INTERFACE FORGE_NATIVE_SENDERS_COMPLETE=0)
+endif()

@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
@@ -182,7 +183,7 @@ TEST(ExecutionForwardingAttrs, RawDomainQueryPreservesThrowingMemberAndNoexceptB
 TEST(ExecutionForwardingAttrs, NestedFiltersPreserveBorrowedReferenceAndCompletion) {
     attribute_state state;
     immovable_attributes borrowed(state);
-    auto sender = ex::stopped_as_optional(ex::into_variant(ex::bulk(
+    auto sender = ex::stopped_as_optional(ex::into_variant(forge::bulk(
         ex::then(source<immovable_attributes, true>{&state, &borrowed}, value_callback{}),
         3, bulk_callback{})));
     auto attrs = ex::get_env(sender);
@@ -201,7 +202,7 @@ TEST(ExecutionForwardingAttrs, NestedFiltersPreserveBorrowedReferenceAndCompleti
 
 TEST(ExecutionForwardingAttrs, NestedFiltersOwnImmovablePrvalueAttributes) {
     attribute_state state;
-    auto sender = ex::into_variant(ex::bulk(
+    auto sender = ex::into_variant(forge::bulk(
         ex::then(source<immovable_attributes>{&state}, value_callback{}), 3, bulk_callback{}));
     {
         auto attrs = ex::get_env(sender);

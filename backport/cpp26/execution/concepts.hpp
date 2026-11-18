@@ -739,14 +739,12 @@ struct sends_stopped_from;
 template<class... Sigs>
 struct sends_stopped_from<completion_signatures<Sigs...>> : std::bool_constant<has_stopped_v<Sigs...>> {};
 
-} // namespace __forge_meta
-
 template<
     class Sender,
     class Env,
     template<class...> class Tuple = __forge_meta::__decayed_tuple,
     template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct value_types_of {
+struct __value_types_of {
     using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
     using type = typename __forge_meta::value_types_from<cs_t, Tuple, Variant>::type;
 };
@@ -755,15 +753,32 @@ template<
     class Sender,
     class Env,
     template<class...> class Variant = __forge_meta::__variant_or_empty>
-struct error_types_of {
+struct __error_types_of {
     using cs_t = decltype(std::execution::get_completion_signatures(std::declval<Sender>(), std::declval<Env>()));
     using type = typename __forge_meta::error_types_from<cs_t, Variant>::type;
 };
 
 template<class Sender, class Env>
-inline constexpr bool sends_stopped_v =
+inline constexpr bool __sends_stopped_v =
     __forge_meta::sends_stopped_from<decltype(std::execution::get_completion_signatures(
         std::declval<Sender>(), std::declval<Env>()))>::value;
+
+} // namespace __forge_meta
+
+template<class Sender, class Env,
+         template<class...> class Tuple = __forge_meta::__decayed_tuple,
+         template<class...> class Variant = __forge_meta::__variant_or_empty>
+struct [[deprecated("use std::execution::value_types_of_t")]] value_types_of
+    : __forge_meta::__value_types_of<Sender, Env, Tuple, Variant> {};
+
+template<class Sender, class Env,
+         template<class...> class Variant = __forge_meta::__variant_or_empty>
+struct [[deprecated("use std::execution::error_types_of_t")]] error_types_of
+    : __forge_meta::__error_types_of<Sender, Env, Variant> {};
+
+template<class Sender, class Env>
+inline constexpr bool sends_stopped_v [[deprecated("use std::execution::sends_stopped")]] =
+    __forge_meta::__sends_stopped_v<Sender, Env>;
 
 // Tag types for concept markers — [exec.snd], [exec.recv], [exec.opstate], [exec.sched]
 struct receiver_tag {};
@@ -799,7 +814,7 @@ concept sender =
     std::move_constructible<std::remove_cvref_t<S>> &&
     std::constructible_from<std::remove_cvref_t<S>, S> &&
     requires(const std::remove_cvref_t<S>& s) {
-        { std::execution::get_env(s) } -> queryable;
+        { std::execution::get_env(s) } -> __forge_queryable;
     };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -845,7 +860,7 @@ constexpr decltype(auto) __default_transform_sender(Sender&& sndr, const Env&)
 } // namespace __forge_domain
 
 struct default_domain {
-    template<class Tag, sender Sender, queryable Env>
+    template<class Tag, sender Sender, __forge_queryable Env>
     static constexpr decltype(auto) transform_sender(Tag, Sender&& sndr, const Env& env)
         noexcept(noexcept(__forge_domain::__default_transform_sender<Tag>(
             static_cast<Sender&&>(sndr), env))) {
@@ -853,7 +868,8 @@ struct default_domain {
             static_cast<Sender&&>(sndr), env);
     }
 
-    template<sender Sender, queryable Env>
+    template<sender Sender, __forge_queryable Env>
+    [[deprecated("use default_domain::transform_sender(tag, sender, env)")]]
     static constexpr decltype(auto) transform_sender(Sender&& sndr, const Env&)
         noexcept(noexcept(static_cast<Sender>(static_cast<Sender&&>(sndr)))) {
         return static_cast<Sender>(static_cast<Sender&&>(sndr));
@@ -892,7 +908,7 @@ private:
     }
 
 public:
-    template<class Tag, sender S, queryable Env>
+    template<class Tag, sender S, __forge_queryable Env>
     static constexpr decltype(auto) transform_sender(Tag tag, S&& sndr, const Env& env)
         noexcept(noexcept(default_domain().transform_sender(tag, static_cast<S&&>(sndr), env))) {
         static_assert((__compatible<Domains, Tag, S, Env>() && ...),
@@ -1130,7 +1146,7 @@ concept receiver =
     requires { typename std::remove_cvref_t<R>::receiver_concept; } &&
     std::derived_from<typename std::remove_cvref_t<R>::receiver_concept, receiver_tag> &&
     requires(const std::remove_cvref_t<R>& r) {
-        { std::execution::get_env(r) } -> queryable;
+        { std::execution::get_env(r) } -> __forge_queryable;
     } &&
     std::move_constructible<std::remove_cvref_t<R>> &&
     std::constructible_from<std::remove_cvref_t<R>, R> &&
@@ -1178,7 +1194,10 @@ struct receiver_of_impl<R, completion_signatures<Sigs...>>
 } // namespace __forge_concepts
 
 template<class R, class Completions>
-concept receiver_of = __forge_concepts::receiver_of_impl<R, Completions>::value;
+concept __forge_receiver_of = __forge_concepts::receiver_of_impl<R, Completions>::value;
+
+template<class R, class Completions>
+concept receiver_of = __forge_receiver_of<R, Completions>;
 
 template<sender Sndr>
 using tag_of_t = __forge_domain::__tag_of_t<Sndr>;
@@ -1187,7 +1206,7 @@ template<class S, class... Env>
 concept sender_in =
     sender<S> &&
     (sizeof...(Env) <= 1) &&
-    (queryable<Env> && ...) &&
+    (__forge_queryable<Env> && ...) &&
     requires {
         std::execution::get_completion_signatures(std::declval<S>(), std::declval<Env>()...);
     };
@@ -1205,18 +1224,18 @@ template<class S,
          template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
 using value_types_of_t =
-    typename value_types_of<S, Env, Tuple, Variant>::type;
+    typename __forge_meta::__value_types_of<S, Env, Tuple, Variant>::type;
 
 template<class S,
          class Env = env<>,
          template<class...> class Variant = __forge_meta::__variant_or_empty>
     requires sender_in<S, Env>
 using error_types_of_t =
-    typename error_types_of<S, Env, Variant>::type;
+    typename __forge_meta::__error_types_of<S, Env, Variant>::type;
 
 template<class S, class Env = env<>>
     requires sender_in<S, Env>
-inline constexpr bool sends_stopped = sends_stopped_v<S, Env>;
+inline constexpr bool sends_stopped = __forge_meta::__sends_stopped_v<S, Env>;
 
 } // namespace std::execution
 #include "detail/connect_awaitable.hpp"
@@ -1274,8 +1293,21 @@ concept __tagged_transform_sender = requires(D& domain, Tag tag, S&& sndr, const
 };
 
 template<class D, class S, class Env>
-concept __legacy_transform_sender = requires(D& domain, S&& sndr, const Env& env) {
-    { domain.transform_sender(static_cast<S&&>(sndr), env) };
+concept __legacy_transform_sender =
+    (!std::same_as<D, default_domain>) &&
+    requires(D& domain, S&& sndr, const Env& env) {
+        domain.transform_sender(static_cast<S&&>(sndr), env);
+    };
+
+template<class D>
+struct __legacy_domain_transform {
+    template<class S, class Env>
+    [[deprecated("provide domain.transform_sender(tag, sender, env)")]]
+    static constexpr auto __call(D& domain, S&& sndr, const Env& env)
+        noexcept(noexcept(domain.transform_sender(static_cast<S&&>(sndr), env)))
+        -> decltype(domain.transform_sender(static_cast<S&&>(sndr), env)) {
+        return domain.transform_sender(static_cast<S&&>(sndr), env);
+    }
 };
 
 template<class D, class Tag, class S, class Env>
@@ -1302,7 +1334,7 @@ constexpr decltype(auto) __transform_sender_once(
     if constexpr (__tagged_transform_sender<D, Tag, S, Env>) {
         return domain.transform_sender(tag, static_cast<S&&>(sndr), env);
     } else if constexpr (__legacy_transform_sender<D, S, Env>) {
-        return domain.transform_sender(static_cast<S&&>(sndr), env);
+        return __legacy_domain_transform<D>::__call(domain, static_cast<S&&>(sndr), env);
     } else {
         return __default_transform_sender<Tag>(static_cast<S&&>(sndr), env);
     }
@@ -1546,7 +1578,7 @@ using __sender_completion_domain_for_t =
 } // namespace __forge_domain
 
 template<class S, class Env>
-    requires sender<S> && queryable<Env> &&
+    requires sender<S> && __forge_queryable<Env> &&
              requires(S&& sndr, const Env& env) {
                  __forge_domain::__transform_sender_for_connect(
                      static_cast<S&&>(sndr), env);
@@ -1694,15 +1726,18 @@ template<class S, class R>
 using connect_result_t = decltype(connect_t{}(std::declval<S>(), std::declval<R>()));
 
 template<class S, class R>
-concept sender_to =
+concept __forge_sender_to =
     receiver<R> &&
     sender_in<S, env_of_t<R>> &&
-    receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
+    __forge_receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
     requires(S&& s, R&& r) {
         std::execution::connect(
             static_cast<S&&>(s),
             static_cast<R&&>(r));
     };
+
+template<class S, class R>
+concept sender_to = __forge_sender_to<S, R>;
 
 struct schedule_t;
 
@@ -1764,7 +1799,7 @@ consteval bool __scheduler_shape() {
     return requires { typename std::remove_cvref_t<S>::scheduler_concept; } &&
         requires { requires std::derived_from<
             typename std::remove_cvref_t<S>::scheduler_concept, scheduler_tag>; } &&
-        queryable<S> && std::copyable<std::remove_cvref_t<S>> &&
+        __forge_queryable<S> && std::copyable<std::remove_cvref_t<S>> &&
         std::equality_comparable<std::remove_cvref_t<S>> &&
         requires(S&& s) { { std::execution::schedule(static_cast<S&&>(s)) } -> sender; };
 }

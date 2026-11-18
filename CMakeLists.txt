@@ -127,14 +127,13 @@ if(FORGE_IS_TOP_LEVEL AND FORGE_BUILD_TESTS)
     add_custom_target(test_extension_deprecations_strict)
     foreach(_target IN ITEMS test_execution_extension_deprecations_strict
             test_linalg_extension_deprecations_strict
-            test_forge_any_sender_ds
-            test_forge_strict_any_sender_ds)
+            test_forge_extension_deprecations_strict
+            test_install_consumer_ds)
         if(TARGET ${_target})
             add_dependencies(test_extension_deprecations_strict ${_target})
         endif()
     endforeach()
-    foreach(_target IN ITEMS test_forge_any_sender_ds
-            test_forge_strict_any_sender_ds)
+    foreach(_target IN ITEMS test_forge_extension_deprecations_strict test_install_consumer_ds)
         if(TARGET ${_target} AND TARGET test_execution_extension_deprecations_strict)
             add_dependencies(test_execution_extension_deprecations_strict ${_target})
         endif()

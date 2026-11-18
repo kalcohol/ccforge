@@ -145,13 +145,10 @@ int main() {
     auto closure_form = std::execution::on(
         std::execution::schedule(source.scheduler()),
         destination.scheduler(),
-        [&](auto shifted) {
-            return std::move(shifted)
-                | std::execution::then([&] {
-                      closure_thread = std::this_thread::get_id();
-                      return 21;
-                  });
-        })
+        std::execution::then([&] {
+            closure_thread = std::this_thread::get_id();
+            return 21;
+        }))
         | std::execution::then([&](int value) {
               returned_thread = std::this_thread::get_id();
               return value;

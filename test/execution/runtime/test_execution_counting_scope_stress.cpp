@@ -10,9 +10,9 @@
 namespace {
 
 auto inline_join_env() noexcept {
-    return std::execution::make_env(std::execution::prop(
+    return std::execution::env{std::execution::prop(
         std::execution::get_start_scheduler_t{},
-        std::execution::inline_scheduler{}));
+        std::execution::inline_scheduler{})};
 }
 
 struct counting_receiver {

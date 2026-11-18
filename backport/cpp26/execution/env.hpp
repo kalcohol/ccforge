@@ -64,9 +64,12 @@ inline constexpr forwarding_query_t forwarding_query{};
 namespace std::execution {
 
 template<class T>
-concept queryable = std::destructible<T>;
+concept __forge_queryable = std::destructible<T>;
 
-template<queryable... Envs>
+template<class T>
+concept queryable = __forge_queryable<T>;
+
+template<__forge_queryable... Envs>
 struct env;
 using __empty_env = env<>;
 struct set_value_t;
@@ -249,6 +252,18 @@ enum class forward_progress_guarantee {
     weakly_parallel
 };
 
+namespace __forge_env_detail {
+
+template<class Scheduler>
+struct __progress_fallback {
+    [[deprecated("provide scheduler.query(get_forward_progress_guarantee) const noexcept")]]
+    static constexpr forward_progress_guarantee __get() noexcept {
+        return forward_progress_guarantee::weakly_parallel;
+    }
+};
+
+} // namespace __forge_env_detail
+
 struct get_forward_progress_guarantee_t {
     template<class Scheduler>
         requires (__forge_env_detail::__scheduler_shape<Scheduler>()) &&
@@ -270,7 +285,7 @@ struct get_forward_progress_guarantee_t {
                       get_forward_progress_guarantee_t, Scheduler> &&
                   requires { typename std::remove_cvref_t<Scheduler>::scheduler_concept; })
     constexpr forward_progress_guarantee operator()(Scheduler&&) const noexcept {
-        return forward_progress_guarantee::weakly_parallel;
+        return __forge_env_detail::__progress_fallback<Scheduler>::__get();
     }
 
     friend constexpr bool tag_invoke(std::forwarding_query_t, get_forward_progress_guarantee_t) noexcept {
@@ -392,7 +407,7 @@ template<class Tag, class Value>
     return prop{tag, std::forward<Value>(val)};
 }
 
-template<queryable... Envs>
+template<__forge_queryable... Envs>
 struct env {
     constexpr env(const env&) = default;
     constexpr env(env&&) = default;
@@ -524,7 +539,7 @@ private:
 };
 
 // Match the constructor's constraint so Clang prefers this unwrapping guide.
-template<queryable... Envs>
+template<__forge_queryable... Envs>
 env(Envs...) -> env<std::unwrap_reference_t<Envs>...>;
 
 struct get_env_t {
@@ -532,11 +547,11 @@ struct get_env_t {
     constexpr decltype(auto) operator()(const T& obj) const noexcept {
         if constexpr (__forge_env_detail::__member_get_env<T>) {
             static_assert(noexcept(obj.get_env()), "get_env must be noexcept");
-            static_assert(queryable<std::remove_cvref_t<decltype(obj.get_env())>>);
+            static_assert(__forge_queryable<std::remove_cvref_t<decltype(obj.get_env())>>);
             return obj.get_env();
         } else if constexpr (__forge_detail::tag_invocable<get_env_t, const T&>) {
             static_assert(__forge_detail::nothrow_tag_invocable<get_env_t, const T&>);
-            static_assert(queryable<std::remove_cvref_t<
+            static_assert(__forge_queryable<std::remove_cvref_t<
                 __forge_detail::tag_invoke_result_t<get_env_t, const T&>>>);
             return __forge_detail::tag_invoke_fn(*this, obj);
         } else {

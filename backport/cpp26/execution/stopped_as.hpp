@@ -405,6 +405,7 @@ struct __optional_t : sender_adaptor_closure<__optional_t> {
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
     }
 
+    [[deprecated("pipe into std::execution::stopped_as_optional directly")]]
     [[nodiscard]] auto operator()() const noexcept {
         return __optional_closure{};
     }

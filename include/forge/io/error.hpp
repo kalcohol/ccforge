@@ -23,6 +23,8 @@
 #pragma once
 
 #include <forge/execution_extensions.hpp>
+#include <forge/detail/execution_concepts.hpp>
+
 #include <execution>
 #include <cstddef>
 #include <exception>
@@ -163,7 +165,7 @@ struct typed_sender {
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, completion_signatures>
+        requires forge::__detail::__receiver_of<R, completion_signatures>
     struct typed_op {
         using operation_state_concept =
             std::execution::operation_state_tag;
@@ -200,13 +202,13 @@ struct typed_sender {
     };
 
     template<class R>
-        requires std::execution::receiver_of<R, completion_signatures>
+        requires forge::__detail::__receiver_of<R, completion_signatures>
     auto connect(R rcvr) && -> typed_op<R> {
         return typed_op<R>{std::move(source), std::move(rcvr)};
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, completion_signatures>
+        requires forge::__detail::__receiver_of<R, completion_signatures>
               && std::copy_constructible<Sender>
     auto connect(R rcvr) const& -> typed_op<R> {
         return typed_op<R>{Sender(source), std::move(rcvr)};

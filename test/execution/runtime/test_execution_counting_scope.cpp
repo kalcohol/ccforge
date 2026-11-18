@@ -37,9 +37,9 @@ struct completion_contains<
     : std::bool_constant<(std::is_same_v<Sig, Sigs> || ...)> {};
 
 auto inline_join_env() noexcept {
-    return std::execution::make_env(std::execution::prop(
+    return std::execution::env{std::execution::prop(
         std::execution::get_start_scheduler_t{},
-        std::execution::inline_scheduler{}));
+        std::execution::inline_scheduler{})};
 }
 
 struct scope_probe_receiver {
@@ -137,8 +137,8 @@ struct scheduled_join_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::prop(
-            std::execution::get_start_scheduler_t{}, scheduler));
+        return std::execution::env{std::execution::prop(
+            std::execution::get_start_scheduler_t{}, scheduler)};
     }
 };
 
@@ -1427,9 +1427,9 @@ struct registration_probe_receiver {
         observe();
     }
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::prop(
+        return std::execution::env{std::execution::prop(
             std::execution::get_stop_token_t{},
-            registration_probe_token{live, fail_registration}));
+            registration_probe_token{live, fail_registration})};
     }
 };
 
@@ -1812,9 +1812,9 @@ TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
     auto token = scope.get_token();
     std::inplace_stop_source downstream_stop;
     downstream_stop.request_stop();
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+            std::execution::get_stop_token_t{}, downstream_stop.get_token())};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
@@ -1834,9 +1834,9 @@ TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
     std::inplace_stop_source downstream_stop;
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+            std::execution::get_stop_token_t{}, downstream_stop.get_token())};
     auto state = std::make_shared<manual_state>();
 
     std::atomic<bool> sync_wait_returned{false};
@@ -1915,9 +1915,9 @@ TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
         std::execution::counting_scope scope;
         auto token = scope.get_token();
         std::inplace_stop_source downstream_stop;
-        auto env = std::execution::make_env(
+        auto env = std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, downstream_stop.get_token()));
+                std::execution::get_stop_token_t{}, downstream_stop.get_token())};
         auto state = std::make_shared<manual_state>();
         std::atomic<bool> sync_wait_stopped{false};
         std::atomic<bool> go{false};
@@ -1977,7 +1977,7 @@ TEST(CountingScopeTest, WrapConnectFailurePropagatesFromConnect) {
     static_assert(std::execution::sender_in<
         wrapped_t,
         forge::empty_env>);
-    static_assert(std::execution::receiver_of<
+    static_assert(std::execution::__forge_receiver_of<
         scope_probe_receiver,
         signatures_t>);
 

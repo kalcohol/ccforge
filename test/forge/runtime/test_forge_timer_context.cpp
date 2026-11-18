@@ -117,9 +117,9 @@ struct pre_stopped_timer_receiver : timer_receiver {
     std::inplace_stop_source* source;
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -127,9 +127,9 @@ struct stopped_timer_receiver : timer_receiver {
     std::inplace_stop_source* source;
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -174,9 +174,9 @@ struct self_destroying_timer_receiver {
     void set_stopped() && noexcept { context->destroy(); }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 

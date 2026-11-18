@@ -47,11 +47,11 @@ auto __make_starts_on_env(Scheduler& scheduler, const OuterEnv& outer) {
         std::move(forwarding)};
     // SCHED-ENV exposes only a direct domain query, not a synthesized fallback.
     if constexpr (__forge_env_detail::__queryable<get_domain_t, const Scheduler&>) {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
                 std::execution::get_domain,
                 std::execution::get_domain(scheduler)),
-            std::move(child_env));
+            std::move(child_env)};
     } else {
         return child_env;
     }
@@ -546,6 +546,16 @@ struct __bound_closure : sender_adaptor_closure<__bound_closure<Scheduler, Closu
     template<class S> void operator()(S&&) const&& = delete;
 };
 
+template<class S, class Scheduler, class Closure>
+using __on_closure_sender_t =
+    __closure_sender<std::decay_t<S>, std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>;
+
+template<class S, class Scheduler, class Closure>
+concept __on_closure_constructible = requires(S&& sndr, Scheduler&& sch, Closure&& closure) {
+    __on_closure_sender_t<S, Scheduler, Closure>{
+        std::forward<S>(sndr), std::forward<Scheduler>(sch), std::forward<Closure>(closure)};
+};
+
 struct on_t {
     template<class Scheduler, sender S>
         requires scheduler<Scheduler>
@@ -557,26 +567,49 @@ struct on_t {
 
     template<class Scheduler, class Closure>
         requires scheduler<Scheduler> &&
-                 (!sender<std::decay_t<Closure>>) &&
+                 __forge_adaptor::__closure<Closure> &&
                  std::constructible_from<std::remove_cvref_t<Scheduler>, Scheduler> &&
                  std::constructible_from<std::decay_t<Closure>, Closure>
     [[nodiscard]] constexpr auto operator()(Scheduler&& sch, Closure&& closure) const
-        noexcept(std::is_nothrow_constructible_v<
-                     std::remove_cvref_t<Scheduler>, Scheduler> &&
-                 std::is_nothrow_constructible_v<std::decay_t<Closure>, Closure>) {
-        return __bound_closure<
-            std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>{
-            static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
+        noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<Scheduler>, Scheduler> &&
+                 std::is_nothrow_constructible_v<std::decay_t<Closure>, Closure>)
+        -> __bound_closure<std::remove_cvref_t<Scheduler>, std::decay_t<Closure>> {
+        return {static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
+    }
+
+    template<class Scheduler, class Closure>
+        requires scheduler<Scheduler> &&
+                 (!sender<std::decay_t<Closure>>) &&
+                 (!__forge_adaptor::__closure<Closure>) &&
+                 std::constructible_from<std::remove_cvref_t<Scheduler>, Scheduler> &&
+                 std::constructible_from<std::decay_t<Closure>, Closure>
+    [[deprecated("pass a sender_adaptor_closure to std::execution::on")]]
+    [[nodiscard]] constexpr auto operator()(Scheduler&& sch, Closure&& closure) const
+        noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<Scheduler>, Scheduler> &&
+                 std::is_nothrow_constructible_v<std::decay_t<Closure>, Closure>)
+        -> __bound_closure<std::remove_cvref_t<Scheduler>, std::decay_t<Closure>> {
+        return {static_cast<Scheduler&&>(sch), static_cast<Closure&&>(closure)};
     }
 
     template<sender S, class Scheduler, class Closure>
-        requires scheduler<Scheduler>
-    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const {
-        return __closure_sender<
-            std::decay_t<S>, std::remove_cvref_t<Scheduler>, std::decay_t<Closure>>{
-            __forge_detail::__forward_as_given(std::forward<S>(sndr)),
-            __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
-            __forge_detail::__forward_as_given(std::forward<Closure>(closure))};
+        requires scheduler<Scheduler> && __forge_adaptor::__closure<Closure> &&
+                 __on_closure_constructible<S, Scheduler, Closure>
+    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const
+        -> __on_closure_sender_t<S, Scheduler, Closure> {
+        return {__forge_detail::__forward_as_given(std::forward<S>(sndr)),
+                __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
+                __forge_detail::__forward_as_given(std::forward<Closure>(closure))};
+    }
+
+    template<sender S, class Scheduler, class Closure>
+        requires scheduler<Scheduler> && (!__forge_adaptor::__closure<Closure>) &&
+                 __on_closure_constructible<S, Scheduler, Closure>
+    [[deprecated("pass a sender_adaptor_closure to std::execution::on")]]
+    [[nodiscard]] auto operator()(S&& sndr, Scheduler&& sch, Closure&& closure) const
+        -> __on_closure_sender_t<S, Scheduler, Closure> {
+        return {__forge_detail::__forward_as_given(std::forward<S>(sndr)),
+                __forge_detail::__forward_as_given(std::forward<Scheduler>(sch)),
+                __forge_detail::__forward_as_given(std::forward<Closure>(closure))};
     }
 };
 

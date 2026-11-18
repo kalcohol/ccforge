@@ -34,23 +34,15 @@ constexpr bool matches_cvref =
     (R ? accepts<C&&> : rejects<C&&>) &&
     (CR ? accepts<const C&&> : rejects<const C&&>);
 
-struct identity_adaptor {
+template<class Derived>
+struct identity_adaptor : ex::sender_adaptor_closure<Derived> {
     template<ex::sender S>
-    auto operator()(S&& source) && {
+    auto operator()(S&& source) && -> std::decay_t<S> {
         return static_cast<S&&>(source);
-    }
-
-    template<ex::sender S, class Self>
-        requires std::derived_from<std::remove_cvref_t<Self>, identity_adaptor> &&
-                 requires(Self&& self, S&& source) {
-                     static_cast<Self&&>(self)(static_cast<S&&>(source));
-                 }
-    friend auto operator|(S&& source, Self&& self) {
-        return static_cast<Self&&>(self)(static_cast<S&&>(source));
     }
 };
 
-struct copyable_adaptor : identity_adaptor {
+struct copyable_adaptor : identity_adaptor<copyable_adaptor> {
     constexpr copyable_adaptor() = default;
     constexpr copyable_adaptor(copyable_adaptor&) noexcept {}
     constexpr copyable_adaptor(const copyable_adaptor&) noexcept {}
@@ -58,47 +50,47 @@ struct copyable_adaptor : identity_adaptor {
     constexpr copyable_adaptor(const copyable_adaptor&&) noexcept {}
 };
 
-struct move_only_adaptor : identity_adaptor {
+struct move_only_adaptor : identity_adaptor<move_only_adaptor> {
     move_only_adaptor() = default;
     move_only_adaptor(move_only_adaptor&&) noexcept = default;
     move_only_adaptor(const move_only_adaptor&) = delete;
 };
 
-struct mutable_copy_adaptor : identity_adaptor {
+struct mutable_copy_adaptor : identity_adaptor<mutable_copy_adaptor> {
     mutable_copy_adaptor() = default;
     mutable_copy_adaptor(mutable_copy_adaptor&&) noexcept = default;
     mutable_copy_adaptor(mutable_copy_adaptor&) noexcept {}
     mutable_copy_adaptor(const mutable_copy_adaptor&) = delete;
 };
 
-struct const_move_adaptor : identity_adaptor {
+struct const_move_adaptor : identity_adaptor<const_move_adaptor> {
     const_move_adaptor() = default;
     const_move_adaptor(const_move_adaptor&&) noexcept = default;
     const_move_adaptor(const const_move_adaptor&&) noexcept {}
     const_move_adaptor(const const_move_adaptor&) = delete;
 };
 
-struct deleted_mutable_copy : identity_adaptor {
+struct deleted_mutable_copy : identity_adaptor<deleted_mutable_copy> {
     deleted_mutable_copy() = default;
     deleted_mutable_copy(deleted_mutable_copy&&) noexcept = default;
     deleted_mutable_copy(deleted_mutable_copy&) = delete;
     deleted_mutable_copy(const deleted_mutable_copy&) noexcept = default;
 };
 
-struct deleted_const_move : identity_adaptor {
+struct deleted_const_move : identity_adaptor<deleted_const_move> {
     deleted_const_move() = default;
     deleted_const_move(deleted_const_move&&) noexcept = default;
     deleted_const_move(const deleted_const_move&) noexcept = default;
     deleted_const_move(const deleted_const_move&&) = delete;
 };
 
-struct explicit_copy_adaptor : identity_adaptor {
+struct explicit_copy_adaptor : identity_adaptor<explicit_copy_adaptor> {
     explicit_copy_adaptor() = default;
     explicit_copy_adaptor(explicit_copy_adaptor&&) noexcept = default;
     explicit explicit_copy_adaptor(const explicit_copy_adaptor&) noexcept {}
 };
 
-struct throwing_move_adaptor : identity_adaptor {
+struct throwing_move_adaptor : identity_adaptor<throwing_move_adaptor> {
     throwing_move_adaptor() = default;
     throwing_move_adaptor(const throwing_move_adaptor&) noexcept = default;
     throwing_move_adaptor(throwing_move_adaptor&&) noexcept(false) {}

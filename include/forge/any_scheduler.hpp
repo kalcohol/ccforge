@@ -25,6 +25,8 @@
 #include "any_receiver.hpp"
 
 #include <concepts>
+#include <forge/detail/execution_concepts.hpp>
+
 #include <execution>
 #include <exception>
 #include <memory>
@@ -170,13 +172,13 @@ struct __sender {
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, __schedule_completions>
+        requires forge::__detail::__receiver_of<R, __schedule_completions>
     auto connect(R rcvr) && -> __op<R> {
         return __op<R>{std::move(state), std::move(rcvr)};
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, __schedule_completions>
+        requires forge::__detail::__receiver_of<R, __schedule_completions>
     auto connect(R rcvr) const& -> __op<R> {
         return __op<R>{state, std::move(rcvr)};
     }

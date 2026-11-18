@@ -282,6 +282,21 @@ endif()
 if(FORGE_TEST_ENABLE_ANY_FORGE)
     add_subdirectory(forge)
 endif()
+if(TARGET test_execution_extension_deprecations_strict OR TARGET test_forge_execution_header)
+    # The package verifier builds the original in a separate CMake project.
+    # Use the same source with non-system headers for strict diagnostics here.
+    forge_add_compile_probe(test_install_consumer_ds
+        "${CMAKE_CURRENT_SOURCE_DIR}/install_consumer/main.cpp"
+        install_consumer_deprecation_strict_compile)
+    if(MSVC)
+        target_compile_options(test_install_consumer_ds PRIVATE /we4996)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(test_install_consumer_ds PRIVATE -Werror=deprecated-declarations)
+    endif()
+    if(FORGE_TEST_TBB_LIBRARY)
+        target_link_libraries(test_install_consumer_ds PRIVATE ${FORGE_TEST_TBB_LIBRARY})
+    endif()
+endif()
 if(FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     add_subdirectory(native_handoff)
 endif()

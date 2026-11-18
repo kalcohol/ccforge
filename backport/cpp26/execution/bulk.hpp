@@ -271,6 +271,29 @@ struct __bulk_closure {
 };
 
 template<bool Chunked, bool Transformed = false>
+struct __serial_bulk_t {
+    template<class Shape, class Fn>
+    using __closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>, Transformed>
+        ::template __with_shape<__serial_policy, Shape>;
+
+    template<std::execution::sender S, std::integral Shape, class Fn>
+        requires std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn>
+    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const
+        -> __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>, Transformed> {
+        return {std::decay_t<S>(std::forward<S>(s)), __serial_policy{},
+                std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
+    }
+
+    template<std::integral Shape, class Fn>
+        requires std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn>
+    [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const -> __closure_t<Shape, Fn> {
+        return {{}, __serial_policy{}, std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
+    }
+};
+
+template<bool Chunked, bool Transformed = false>
 struct __bulk_t {
 #if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
     template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
@@ -284,19 +307,7 @@ struct __bulk_t {
             __policy_t<Policy>(std::forward<Policy>(policy)),
             std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
     }
-#endif
 
-    template<std::execution::sender S, class Shape, class Fn>
-        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
-                 std::constructible_from<std::decay_t<Fn>, Fn>
-    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const {
-        return __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>, Transformed>{
-            std::decay_t<S>(std::forward<S>(s)),
-            __serial_policy{},
-            std::move(shape), std::decay_t<Fn>(std::forward<Fn>(fn))};
-    }
-
-#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
     template<class Policy, class Shape, class Fn>
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
                  std::integral<Shape> &&
@@ -313,16 +324,24 @@ struct __bulk_t {
     }
 #endif
 
-    template<class Shape, class Fn>
-        requires std::integral<Shape> && std::copy_constructible<std::decay_t<Fn>> &&
+    template<std::execution::sender S, std::integral Shape, class Fn>
+        requires std::copy_constructible<std::decay_t<Fn>> &&
                  std::constructible_from<std::decay_t<Fn>, Fn>
-    [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const {
-        using closure_t = typename __bulk_closure<Chunked, std::decay_t<Fn>, Transformed>
-            ::template __with_shape<__serial_policy, Shape>;
-        return closure_t{
-            {}, __serial_policy{},
-            std::move(shape),
-            std::decay_t<Fn>(std::forward<Fn>(fn))};
+    [[deprecated("use forge::bulk, forge::bulk_chunked or forge::bulk_unchunked, or pass an execution policy")]]
+    [[nodiscard]] auto operator()(S&& s, Shape shape, Fn&& fn) const
+        -> __sender<Chunked, std::decay_t<S>, __serial_policy, Shape, std::decay_t<Fn>, Transformed> {
+        return __serial_bulk_t<Chunked, Transformed>{}.template operator()<S, Shape, Fn>(
+            std::forward<S>(s), std::move(shape), std::forward<Fn>(fn));
+    }
+
+    template<std::integral Shape, class Fn>
+        requires std::copy_constructible<std::decay_t<Fn>> &&
+                 std::constructible_from<std::decay_t<Fn>, Fn>
+    [[deprecated("use forge::bulk, forge::bulk_chunked or forge::bulk_unchunked, or pass an execution policy")]]
+    [[nodiscard]] auto operator()(Shape shape, Fn&& fn) const
+        -> typename __serial_bulk_t<Chunked, Transformed>::template __closure_t<Shape, Fn> {
+        return __serial_bulk_t<Chunked, Transformed>{}.template operator()<Shape, Fn>(
+            std::move(shape), std::forward<Fn>(fn));
     }
 };
 

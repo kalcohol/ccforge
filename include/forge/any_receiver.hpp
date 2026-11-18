@@ -24,6 +24,8 @@
 
 #include "any_stop_token.hpp"
 
+#include <forge/detail/execution_concepts.hpp>
+
 #include <execution>
 #include <cstddef>
 #include <memory>
@@ -32,6 +34,14 @@
 #include <utility>
 
 namespace forge {
+
+// Erased dispatch is keyed by exact completion_signatures specializations.
+template<class CompletionSignatures>
+inline constexpr bool __any_receiver_is_signature_pack_v = false;
+
+template<class... Sigs>
+inline constexpr bool __any_receiver_is_signature_pack_v<
+    std::execution::completion_signatures<Sigs...>> = true;
 
 template<class Sig, class CompletionSignatures>
 struct __any_receiver_contains_signature : std::false_type {};
@@ -174,7 +184,8 @@ public:
     // (libstdc++ tolerated it; libc++/clang-19 diagnoses it as a hard error.)
     template<class R>
         requires (!std::is_same_v<std::remove_cvref_t<R>, any_receiver_of>)
-              && std::execution::receiver_of<std::remove_cvref_t<R>, cs_t>
+              && __any_receiver_is_signature_pack_v<cs_t>
+              && forge::__detail::__receiver_of<std::remove_cvref_t<R>, cs_t>
               && std::constructible_from<std::remove_cvref_t<R>, R>
     any_receiver_of(R&& r) {
         using D = std::remove_cvref_t<R>;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <execution>
+#include <forge/bulk.hpp>
 
 #include <array>
 #include <concepts>
@@ -143,8 +144,12 @@ struct rebind_policy;
 template<template<class, class> class Bound, class OldPolicy, class Shape, class Policy>
 struct rebind_policy<Bound<OldPolicy, Shape>, Policy> { using type = Bound<Policy, Shape>; };
 template<bool Chunked>
-using public_bound_t = decltype(std::conditional_t<Chunked, ex::bulk_chunked_t, ex::bulk_unchunked_t>{}(
-    int{}, callback<Chunked>{}));
+inline constexpr auto serial_bulk = [] {
+    if constexpr (Chunked) return forge::bulk_chunked;
+    else return forge::bulk_unchunked;
+}();
+template<bool Chunked>
+using public_bound_t = decltype(serial_bulk<Chunked>(int{}, callback<Chunked>{}));
 template<bool Chunked, class Policy>
 using bound_t = typename rebind_policy<public_bound_t<Chunked>, Policy>::type;
 

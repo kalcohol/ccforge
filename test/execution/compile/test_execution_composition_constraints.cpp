@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <execution>
 #include <utility>
@@ -33,32 +34,19 @@ using expected = decltype(std::declval<value_closure&>()(
     std::declval<value_closure&>()(std::declval<source_t>())));
 static_assert(std::same_as<std::invoke_result_t<composed&, source_t>, expected>);
 
-template<class C>
-consteval bool copyable_matrix() {
-    return composable<C&, value_closure&> && composable<const C&, value_closure&> &&
-        composable<C, value_closure&> && composable<const C, value_closure&> &&
-        composable<value_closure&, C&> && composable<value_closure&, const C&> &&
-        composable<value_closure&, C> && composable<value_closure&, const C>;
-}
-
 static_assert(copyable_matrix<value_closure>());
 static_assert(copyable_matrix<decltype(ex::upon_error(value_callback{}))>());
 static_assert(copyable_matrix<decltype(ex::upon_stopped([] { return 1; }))>());
 static_assert(copyable_matrix<decltype(ex::let_value([](int value) { return ex::just(value); }))>());
 static_assert(copyable_matrix<decltype(ex::let_error([](int error) { return ex::just(error); }))>());
 static_assert(copyable_matrix<decltype(ex::let_stopped([] { return ex::just(1); }))>());
-static_assert(copyable_matrix<decltype(ex::bulk(3, [](int, int&) {}))>());
-static_assert(copyable_matrix<decltype(ex::bulk_unchunked(3, [](int, int&) {}))>());
-static_assert(copyable_matrix<decltype(ex::bulk_chunked(3, [](int, int, int&) {}))>());
+static_assert(copyable_matrix<decltype(forge::bulk(3, [](int, int&) {}))>());
+static_assert(copyable_matrix<decltype(forge::bulk_unchunked(3, [](int, int&) {}))>());
+static_assert(copyable_matrix<decltype(forge::bulk_chunked(3, [](int, int, int&) {}))>());
 static_assert(copyable_matrix<decltype(ex::stopped_as_error(17))>());
 static_assert(copyable_matrix<decltype(ex::stopped_as_optional)>());
-static_assert(copyable_matrix<decltype(ex::stopped_as_optional())>());
 static_assert(copyable_matrix<decltype(ex::into_variant)>());
-static_assert(copyable_matrix<decltype(ex::into_variant())>());
-static_assert(copyable_matrix<decltype(ex::unstoppable)>());
-static_assert(copyable_matrix<decltype(ex::unstoppable())>());
 static_assert(copyable_matrix<decltype(ex::affine)>());
-static_assert(copyable_matrix<decltype(ex::write_env(forge::empty_env{}))>());
 static_assert(copyable_matrix<decltype(ex::continues_on(ex::inline_scheduler{}))>());
 static_assert(copyable_matrix<decltype(ex::on(ex::inline_scheduler{}, std::declval<value_closure>()))>());
 static_assert(copyable_matrix<decltype(ex::associate(

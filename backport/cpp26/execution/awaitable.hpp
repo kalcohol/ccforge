@@ -298,7 +298,7 @@ struct __awaitable {
     };
 
     // Check connect's receiver-of Mandate in the receiver's actual environment.
-    static_assert(receiver_of<__recv, completion_signatures_of_t<S, env_of_t<__recv>>>,
+    static_assert(__forge_receiver_of<__recv, completion_signatures_of_t<S, env_of_t<__recv>>>,
                   "awaited sender completions require a compatible promise (including unhandled_stopped)");
     using op_t = connect_result_t<S, __recv>;
 

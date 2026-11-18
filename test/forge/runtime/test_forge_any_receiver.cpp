@@ -94,6 +94,25 @@ struct value_only_recv {
     }
 };
 
+struct derived_value_signatures : cs_value_only {};
+static_assert(forge::__detail::__receiver_of<value_only_recv, derived_value_signatures>);
+static_assert(!forge::__detail::__receiver_of<value_only_recv, int>);
+static_assert(!std::constructible_from<forge::any_receiver_of<derived_value_signatures>, value_only_recv>);
+static_assert(std::constructible_from<forge::any_receiver_of<cs_value_only>, value_only_recv>);
+
+struct incomplete_payload;
+
+struct incomplete_payload_recv {
+    using receiver_concept = std::execution::receiver_tag;
+
+    void set_value(incomplete_payload&&) && noexcept {}
+    auto get_env() const noexcept -> forge::empty_env { return {}; }
+};
+
+using cs_incomplete_payload = std::execution::completion_signatures<
+    std::execution::set_value_t(incomplete_payload)>;
+static_assert(forge::__detail::__receiver_of<incomplete_payload_recv, cs_incomplete_payload>);
+
 struct error_stopped_recv {
     using receiver_concept = std::execution::receiver_tag;
 
@@ -267,16 +286,16 @@ static_assert(!std::constructible_from<forge::any_receiver_of<cs_int>, const tra
 static_assert(!std::constructible_from<
               forge::any_receiver_of<cs_int>,
               value_only_recv>);
-static_assert(!std::execution::receiver_of<
+static_assert(!forge::__detail::__receiver_of<
               forge::any_receiver_of<cs_int>,
               cs_zero_value>);
-static_assert(std::execution::receiver_of<
+static_assert(forge::__detail::__receiver_of<
               forge::any_receiver_of<cs_value_only>,
               cs_value_only>);
 static_assert(std::constructible_from<
               forge::any_receiver_of<cs_value_only>,
               value_only_recv>);
-static_assert(std::execution::receiver_of<
+static_assert(forge::__detail::__receiver_of<
               forge::any_receiver_of<cs_error_stopped>,
               cs_error_stopped>);
 static_assert(std::constructible_from<

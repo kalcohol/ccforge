@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
@@ -177,7 +178,7 @@ TEST(ExecutionComposition, SingleArgumentCposComposeWithBoundClosures) {
 TEST(ExecutionComposition, BulkCompositionKeepsNonpositiveShapesEmpty) {
     for (int shape : {3, 0, -1}) {
         int calls = 0;
-        auto closure = ex::bulk(shape, [&calls](int index, int& value) noexcept { ++calls; value += index; })
+        auto closure = forge::bulk(shape, [&calls](int index, int& value) noexcept { ++calls; value += index; })
             | ex::then([](int value) noexcept { return value * 2; });
         auto result = forge::sync_wait(ex::just(7) | closure);
         ASSERT_TRUE(result.has_value());

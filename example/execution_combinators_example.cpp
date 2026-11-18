@@ -21,10 +21,11 @@
 // SOFTWARE.
 
 // Demonstrates: when_all, cached split, bulk and scoped spawn; backport-only spelling
-// Key APIs: std::execution::when_all, std::execution::just, forge::split, std::execution::then
+// Key APIs: std::execution::when_all, std::execution::just, forge::split, forge::bulk, std::execution::then
 // Requires: injected backport only; backport-only spelling; C++23
 // See also: docs/backports/execution.md
 
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <execution>
 #include "example_support.hpp"
@@ -52,13 +53,7 @@ int main() {
 
     // bulk: serial iteration
     int sum = 0;
-    auto bulk_work = ex::just(0) |
-#if FORGE_HAS_NATIVE_EXECUTION_POLICIES && defined(__cpp_lib_execution)
-        ex::bulk(ex::seq, 5, [&sum](int i, int&) { sum += i; });
-#else
-        // Some hosts ship <execution> without policies; retain the compatibility overload.
-        ex::bulk(5, [&sum](int i, int&) { sum += i; });
-#endif
+    auto bulk_work = ex::just(0) | forge::bulk(5, [&sum](int i, int&) { sum += i; });
     auto bulk_result = std::this_thread::sync_wait(std::move(bulk_work));
     forge_example::require(bulk_result.has_value());
     forge_example::require(sum == 0+1+2+3+4);

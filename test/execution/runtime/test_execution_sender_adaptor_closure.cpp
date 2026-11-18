@@ -106,8 +106,8 @@ TEST(ExecutionSenderAdaptorClosure, MoveOnlyClosuresAndSendersReachLibraryAdapto
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ExecutionSenderAdaptorClosure, BareUnstoppableUsesThePublicMechanism) {
-    auto result = forge::sync_wait(ex::just(42) | ex::unstoppable);
+TEST(ExecutionSenderAdaptorClosure, UnstoppableDirectCallPreservesValue) {
+    auto result = forge::sync_wait(ex::unstoppable(ex::just(42)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }

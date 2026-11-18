@@ -257,7 +257,7 @@ TEST(ExecutionStopTokenTest, MemberStopQueryTakesPriority) {
 
 TEST(ExecutionStopTokenTest, ComposedEnvPreservesMemberQueryPriority) {
     std::inplace_stop_source source;
-    auto env = std::execution::make_env(member_stop_env{source.get_token()});
+    auto env = std::execution::env{member_stop_env{source.get_token()}};
 
     EXPECT_TRUE(source.request_stop());
     auto token = std::execution::get_stop_token(env);

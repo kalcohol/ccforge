@@ -246,9 +246,9 @@ struct stop_receiver {
     void set_stopped() && noexcept { state->stopped = true; }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -806,8 +806,8 @@ static_assert(std::constructible_from<forge::erased_sender<int_cs>, move_only_se
 static_assert(!std::constructible_from<forge::erased_sender<int_cs>, move_only_sender&>);
 static_assert(!std::constructible_from<forge::erased_sender<int_cs>, const move_only_sender&>);
 static_assert(!std::constructible_from<forge::erased_sender<int_cs>, lvalue_only_move_sender>);
-static_assert(std::execution::receiver_of<int_only_receiver, int_cs>);
-static_assert(std::execution::sender_to<
+static_assert(forge::__detail::__receiver_of<int_only_receiver, int_cs>);
+static_assert(forge::__detail::__sender_to<
               forge::erased_sender<int_cs>,
               int_only_receiver>);
 static_assert(std::constructible_from<forge::erased_sender<
@@ -824,10 +824,10 @@ static_assert(std::constructible_from<
 static_assert(std::constructible_from<
               forge::erased_sender<rvalue_error_cs>,
               rvalue_error_sender>);
-static_assert(std::execution::receiver_of<
+static_assert(forge::__detail::__receiver_of<
               forge::__erased_sender_detail::__receiver<rvalue_value_cs>,
               rvalue_value_cs>);
-static_assert(std::execution::receiver_of<
+static_assert(forge::__detail::__receiver_of<
               forge::__erased_sender_detail::__receiver<rvalue_error_cs>,
               rvalue_error_cs>);
 static_assert(!std::constructible_from<forge::erased_sender<error_cs>, typed_error_sender>);

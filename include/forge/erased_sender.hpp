@@ -26,6 +26,8 @@
 #include "any_stop_token.hpp"
 #include "detail/completion_meta.hpp"
 
+#include <forge/detail/execution_concepts.hpp>
+
 #include <execution>
 #include <cstddef>
 #include <exception>
@@ -541,19 +543,19 @@ public:
     };
 
     template<class R>
-        requires std::execution::receiver_of<R, CompletionSignatures>
+        requires forge::__detail::__receiver_of<R, CompletionSignatures>
     auto connect(R rcvr) && -> __op<R> {
         return __op<R>{std::move(state_), std::move(rcvr)};
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, CompletionSignatures>
+        requires forge::__detail::__receiver_of<R, CompletionSignatures>
     auto connect(R rcvr) & -> __op<R> {
         return __op<R>{state_, std::move(rcvr)};
     }
 
     template<class R>
-        requires std::execution::receiver_of<R, CompletionSignatures>
+        requires forge::__detail::__receiver_of<R, CompletionSignatures>
     auto connect(R rcvr) const& -> __op<R> {
         return __op<R>{state_, std::move(rcvr)};
     }

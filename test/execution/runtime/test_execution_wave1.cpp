@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <forge/start_detached.hpp>
@@ -151,8 +152,8 @@ struct scheduler_value_receiver {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_value_receiver& self) noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_scheduler_t{}, self.expected));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_scheduler_t{}, self.expected)};
     }
 };
 
@@ -366,9 +367,9 @@ struct affine_error_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::prop(
+        return std::execution::env{std::execution::prop(
             std::execution::get_start_scheduler_t{},
-            error_stopped_scheduler{}));
+            error_stopped_scheduler{})};
     }
 };
 
@@ -539,7 +540,7 @@ TEST(RunLoopTest, UnstoppableEnvironmentOnlyRequiresValueCompletion) {
         decltype(sender), forge::empty_env>;
     static_assert(std::same_as<signatures_t,
         std::execution::completion_signatures<std::execution::set_value_t()>>);
-    static_assert(std::execution::sender_to<
+    static_assert(std::execution::__forge_sender_to<
         decltype(sender), run_loop_value_only_receiver>);
     auto op = std::execution::connect(
         std::move(sender), run_loop_value_only_receiver{&loop, &completed});
@@ -647,7 +648,7 @@ TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
 TEST(BulkTest, SerialExecution) {
     int sum = 0;
     auto sndr = std::execution::just(0)
-              | std::execution::bulk(5, [&sum](int idx, int& v) {
+              | forge::bulk(5, [&sum](int idx, int& v) {
                     sum += idx; v += idx;
                 });
     auto result = forge::sync_wait(std::move(sndr));

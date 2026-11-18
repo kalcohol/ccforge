@@ -149,7 +149,7 @@ TEST(QueryConformanceTest, IndeterminateDomainUsesDefaultTransformAtConnect) {
 namespace {
 struct hidden_domain {
     static inline int transforms = 0;
-    template<ex::sender S, ex::queryable E>
+    template<ex::sender S, std::destructible E>
     static auto transform_sender(ex::start_t, S&& sender, const E&) noexcept -> S {
         ++transforms;
         return static_cast<S&&>(sender);

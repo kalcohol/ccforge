@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
@@ -283,11 +284,11 @@ auto adapt(S sndr, probe& state) {
     } else if constexpr (Kind == adaptor_kind::upon_stopped) {
         return ex::upon_stopped(std::move(sndr), std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk) {
-        return ex::bulk(std::move(sndr), 3, std::move(fn));
+        return forge::bulk(std::move(sndr), 3, std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk_unchunked) {
-        return ex::bulk_unchunked(std::move(sndr), 3, std::move(fn));
+        return forge::bulk_unchunked(std::move(sndr), 3, std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk_chunked) {
-        return ex::bulk_chunked(std::move(sndr), 3, std::move(fn));
+        return forge::bulk_chunked(std::move(sndr), 3, std::move(fn));
     } else {
         return ex::stopped_as_error(std::move(sndr), std::move(fn));
     }

@@ -38,8 +38,8 @@ struct scheduler_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_scheduler_t{}, expected));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_scheduler_t{}, expected)};
     }
 };
 
@@ -64,8 +64,8 @@ struct start_scheduler_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_start_scheduler_t{}, expected));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_start_scheduler_t{}, expected)};
     }
 };
 
@@ -90,8 +90,8 @@ struct delegation_scheduler_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_delegation_scheduler_t{}, expected));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_delegation_scheduler_t{}, expected)};
     }
 };
 
@@ -116,9 +116,9 @@ struct stop_token_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -314,7 +314,7 @@ TEST(EnvTest, ReferenceWrapperBorrowsMemberQueryEnvironment) {
     EXPECT_FALSE(std::execution::get_stop_token(env).stop_possible());
 
     const member_stop_query_env const_parent{source.get_token()};
-    auto const_env = std::execution::make_env(std::cref(const_parent));
+    auto const_env = std::execution::env{std::cref(const_parent)};
     static_assert(std::same_as<decltype(const_env),
         std::execution::env<const member_stop_query_env&>>);
     EXPECT_EQ(std::execution::get_stop_token(const_env), source.get_token());
@@ -356,8 +356,8 @@ TEST(WriteEnvTest, PropUnwrapsReferenceWrappers) {
 
 TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
     std::execution::inline_scheduler injected;
-    auto env = std::execution::make_env(
-        std::execution::prop(std::execution::get_scheduler_t{}, injected));
+    auto env = std::execution::env{
+        std::execution::prop(std::execution::get_scheduler_t{}, injected)};
 
     auto sndr = std::execution::write_env(
         std::execution::read_env(std::execution::get_scheduler), env);
@@ -385,14 +385,13 @@ TEST(WriteEnvTest, DoesNotCopyOverlayWhileQueryingNestedAdaptorEnv) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(WriteEnvTest, PipeFormInjectsEnv) {
+TEST(WriteEnvTest, InjectsSchedulerProperty) {
     std::execution::inline_scheduler injected;
-    auto env = std::execution::make_env(
-        std::execution::prop(std::execution::get_scheduler_t{}, injected));
+    auto env = std::execution::env{
+        std::execution::prop(std::execution::get_scheduler_t{}, injected)};
 
-    auto result = forge::sync_wait(
-        std::execution::read_env(std::execution::get_scheduler)
-            | std::execution::write_env(env));
+    auto result = forge::sync_wait(std::execution::write_env(
+        std::execution::read_env(std::execution::get_scheduler), env));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result) == injected);
@@ -400,8 +399,8 @@ TEST(WriteEnvTest, PipeFormInjectsEnv) {
 
 TEST(WriteEnvTest, ReadsInjectedStartScheduler) {
     std::execution::inline_scheduler injected;
-    auto env = std::execution::make_env(
-        std::execution::prop(std::execution::get_start_scheduler_t{}, injected));
+    auto env = std::execution::env{
+        std::execution::prop(std::execution::get_start_scheduler_t{}, injected)};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
@@ -414,8 +413,8 @@ TEST(WriteEnvTest, ReadsInjectedStartScheduler) {
 
 TEST(WriteEnvTest, ReadsInjectedDelegationScheduler) {
     std::execution::inline_scheduler injected;
-    auto env = std::execution::make_env(
-        std::execution::prop(std::execution::get_delegation_scheduler_t{}, injected));
+    auto env = std::execution::env{
+        std::execution::prop(std::execution::get_delegation_scheduler_t{}, injected)};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
@@ -523,11 +522,11 @@ TEST(WriteEnvTest, ReadsMemberQueriedStopTokenFromInjectedEnv) {
 TEST(EnvTest, DuplicateQueriesUseTheLeftmostEnvironment) {
     std::inplace_stop_source first;
     std::inplace_stop_source second;
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
             std::execution::get_stop_token_t{}, first.get_token()),
         std::execution::prop(
-            std::execution::get_stop_token_t{}, second.get_token()));
+            std::execution::get_stop_token_t{}, second.get_token())};
 
     auto token = std::execution::get_stop_token(env);
     EXPECT_TRUE(token.stop_possible());
@@ -549,9 +548,9 @@ TEST(QueryCpoTest, ReadsAwaitCompletionAdaptorThroughBackportQueryModel) {
 TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
     std::inplace_stop_source source;
     source.request_stop();
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token()));
+            std::execution::get_stop_token_t{}, source.get_token())};
 
     auto sndr = std::execution::write_env(
         std::execution::unstoppable(
@@ -573,16 +572,16 @@ TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
     EXPECT_FALSE(token.stop_requested());
 }
 
-TEST(UnstoppableTest, PipeFormOverridesStopToken) {
+TEST(UnstoppableTest, OverridesStopTokenInsideWriteEnv) {
     std::inplace_stop_source source;
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token()));
+            std::execution::get_stop_token_t{}, source.get_token())};
 
     auto result = forge::sync_wait(
         std::execution::write_env(
-            std::execution::read_env(std::execution::get_stop_token)
-                | std::execution::unstoppable(),
+            std::execution::unstoppable(
+                std::execution::read_env(std::execution::get_stop_token)),
             env));
 
     ASSERT_TRUE(result.has_value());

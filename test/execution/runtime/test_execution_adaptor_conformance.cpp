@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
@@ -180,7 +181,7 @@ TEST(ExecutionAdaptorConformance, ReceiverAllocatorReconstructsThenAndBulkFuncti
     ex::start(op);
     EXPECT_EQ(observed, &memory);
     EXPECT_EQ(out.values, 7);
-    auto bulk = ex::connect(ex::bulk_unchunked(ex::just(0), 3, allocated_function{&observed}),
+    auto bulk = ex::connect(forge::bulk_unchunked(ex::just(0), 3, allocated_function{&observed}),
         allocated_receiver{{&memory}, &out});
     ex::start(bulk);
     EXPECT_EQ(observed, &memory);
@@ -269,8 +270,8 @@ TEST(ExecutionAdaptorConformance, NestedLvalueChildUsesAllocatorBeforeAnyOrdinar
     check(ex::then(child(), ignore_arguments{}));
     check(ex::upon_error(ex::just_error(nested_copy_data{&copies, &reconstructions, &reject}), ignore_arguments{}));
     check(ex::upon_stopped(child(), ignore_arguments{}));
-    check(ex::bulk_unchunked(child(), 1, ignore_arguments{}));
-    check(ex::bulk_chunked(child(), 1, ignore_arguments{}));
+    check(forge::bulk_unchunked(child(), 1, ignore_arguments{}));
+    check(forge::bulk_chunked(child(), 1, ignore_arguments{}));
     check(ex::into_variant(child()));
     check(ex::write_env(child(), ex::env<>{}));
     check(ex::schedule_from(child()));

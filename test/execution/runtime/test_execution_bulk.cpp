@@ -1,5 +1,8 @@
+#include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+
+#include "../bulk_policy_probe.hpp"
 
 #include <execution>
 
@@ -86,8 +89,8 @@ TEST(BulkTest, UnchunkedRvalueOnlyIndexIsACopy) {
         }
     };
 
-    check(std::execution::bulk);
-    check(std::execution::bulk_unchunked);
+    check(forge::bulk);
+    check(forge::bulk_unchunked);
 }
 
 TEST(BulkTest, ChunkedAcceptsRvalueOnlyBounds) {
@@ -97,7 +100,7 @@ TEST(BulkTest, ChunkedAcceptsRvalueOnlyBounds) {
         int begin_seen = -1;
         int end_seen = -1;
         auto sndr = std::execution::just(10)
-                  | std::execution::bulk_chunked(
+                  | forge::bulk_chunked(
                         shape,
                         [&calls, &begin_seen, &end_seen](
                             std::int8_t&& begin, std::int8_t&& end, int& value) noexcept {
@@ -124,7 +127,7 @@ TEST(BulkTest, ChunkedAcceptsRvalueOnlyBounds) {
 TEST(BulkTest, UnchunkedSelectsNothrowRvalueOverload) {
     int rvalue_calls = 0;
     int lvalue_calls = 0;
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::execution::just(10),
         4,
         unchunked_category_callback<true>{&rvalue_calls, &lvalue_calls});
@@ -144,7 +147,7 @@ TEST(BulkTest, UnchunkedSelectsNothrowRvalueOverload) {
 TEST(BulkTest, UnchunkedSelectsThrowingRvalueOverload) {
     int rvalue_calls = 0;
     int lvalue_calls = 0;
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::execution::just(10),
         4,
         unchunked_category_callback<false>{&rvalue_calls, &lvalue_calls});
@@ -163,7 +166,7 @@ TEST(BulkTest, UnchunkedSelectsThrowingRvalueOverload) {
 TEST(BulkTest, ChunkedSelectsNothrowRvalueOverload) {
     int rvalue_calls = 0;
     int lvalue_calls = 0;
-    auto sndr = std::execution::bulk_chunked(
+    auto sndr = forge::bulk_chunked(
         std::execution::just(10),
         4,
         chunked_category_callback<true>{&rvalue_calls, &lvalue_calls});
@@ -183,7 +186,7 @@ TEST(BulkTest, ChunkedSelectsNothrowRvalueOverload) {
 TEST(BulkTest, ChunkedSelectsThrowingRvalueOverload) {
     int rvalue_calls = 0;
     int lvalue_calls = 0;
-    auto sndr = std::execution::bulk_chunked(
+    auto sndr = forge::bulk_chunked(
         std::execution::just(10),
         4,
         chunked_category_callback<false>{&rvalue_calls, &lvalue_calls});
@@ -202,7 +205,7 @@ TEST(BulkTest, ChunkedSelectsThrowingRvalueOverload) {
 TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
     std::vector<int> indexes;
 
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::execution::just(10),
         4,
         [&indexes](int index, int& value) {
@@ -224,7 +227,7 @@ TEST(BulkTest, UnchunkedDirectVisitsEveryIndex) {
 }
 
 TEST(BulkTest, NothrowFunctionDoesNotAdvertiseExceptionPtr) {
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::execution::just(10),
         4,
         [](int index, int& value) noexcept {
@@ -241,7 +244,7 @@ TEST(BulkTest, NothrowFunctionDoesNotAdvertiseExceptionPtr) {
     EXPECT_EQ(std::get<0>(*result), 16);
 }
 
-#if defined(__GLIBCXX__) || defined(_MSC_VER)
+#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
 TEST(BulkTest, UnchunkedAcceptsStandardPolicyParameter) {
     static_assert(std::is_execution_policy_v<
                   std::remove_cvref_t<decltype(std::execution::seq)>>);
@@ -269,7 +272,7 @@ TEST(BulkTest, UnchunkedPipeVisitsEveryIndex) {
     int sum = 0;
 
     auto sndr = std::execution::just(1)
-              | std::execution::bulk_unchunked(5, [&sum](int index, int& value) {
+              | forge::bulk_unchunked(5, [&sum](int index, int& value) {
                     sum += index;
                     value += 2 * index;
                 });
@@ -280,7 +283,7 @@ TEST(BulkTest, UnchunkedPipeVisitsEveryIndex) {
     EXPECT_EQ(std::get<0>(*result), 1 + 2 * (0 + 1 + 2 + 3 + 4));
 }
 
-#if defined(__GLIBCXX__) || defined(_MSC_VER)
+#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
 TEST(BulkTest, ChunkedPipeAcceptsStandardPolicyParameter) {
     int calls = 0;
 
@@ -303,7 +306,7 @@ TEST(BulkTest, ChunkedPipeAcceptsStandardPolicyParameter) {
 TEST(BulkTest, ChunkedDirectUsesSingleSerialChunk) {
     std::vector<std::pair<int, int>> chunks;
 
-    auto sndr = std::execution::bulk_chunked(
+    auto sndr = forge::bulk_chunked(
         std::execution::just(3),
         6,
         [&chunks](int begin, int end, int& value) {
@@ -331,7 +334,7 @@ TEST(BulkTest, ChunkedPipeUsesSingleSerialChunk) {
     int calls = 0;
 
     auto sndr = std::execution::just(2)
-              | std::execution::bulk_chunked(4, [&calls](int begin, int end, int& value) {
+              | forge::bulk_chunked(4, [&calls](int begin, int end, int& value) {
                     ++calls;
                     value *= end - begin;
                 });
@@ -344,7 +347,7 @@ TEST(BulkTest, ChunkedPipeUsesSingleSerialChunk) {
 
 TEST(BulkTest, ZeroShapeDoesNotCallFunction) {
     int unchunked_calls = 0;
-    auto unchunked = std::execution::bulk_unchunked(
+    auto unchunked = forge::bulk_unchunked(
         std::execution::just(7),
         0,
         [&unchunked_calls](int, int&) {
@@ -352,7 +355,7 @@ TEST(BulkTest, ZeroShapeDoesNotCallFunction) {
         });
 
     int chunked_calls = 0;
-    auto chunked = std::execution::bulk_chunked(
+    auto chunked = forge::bulk_chunked(
         std::execution::just(9),
         0,
         [&chunked_calls](int, int, int&) {
@@ -374,7 +377,7 @@ TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
     constexpr auto negative_shape = std::int8_t{-1};
 
     int bulk_calls = 0;
-    auto bulk = std::execution::bulk(
+    auto bulk = forge::bulk(
         std::execution::just(5),
         negative_shape,
         [&bulk_calls](std::int8_t, int&) {
@@ -382,7 +385,7 @@ TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
         });
 
     int unchunked_calls = 0;
-    auto unchunked = std::execution::bulk_unchunked(
+    auto unchunked = forge::bulk_unchunked(
         std::execution::just(7),
         negative_shape,
         [&unchunked_calls](std::int8_t, int&) {
@@ -390,7 +393,7 @@ TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
         });
 
     int chunked_calls = 0;
-    auto chunked = std::execution::bulk_chunked(
+    auto chunked = forge::bulk_chunked(
         std::execution::just(9),
         negative_shape,
         [&chunked_calls](std::int8_t, std::int8_t, int&) {
@@ -413,7 +416,7 @@ TEST(BulkTest, NegativeShapeDoesNotCallFunction) {
 }
 
 TEST(BulkTest, UnchunkedFunctionExceptionBecomesExceptionPtrError) {
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::execution::just(0),
         3,
         [](int index, int&) {
@@ -426,7 +429,7 @@ TEST(BulkTest, UnchunkedFunctionExceptionBecomesExceptionPtrError) {
 }
 
 TEST(BulkTest, ChunkedFunctionExceptionBecomesExceptionPtrError) {
-    auto sndr = std::execution::bulk_chunked(
+    auto sndr = forge::bulk_chunked(
         std::execution::just(0),
         3,
         [](int, int, int&) {
@@ -443,7 +446,7 @@ TEST(BulkTest, MoveOnlySenderUsesExplicitMove) {
                              return value + *owned;
                          });
 
-    auto sndr = std::execution::bulk_unchunked(
+    auto sndr = forge::bulk_unchunked(
         std::move(move_only),
         2,
         [](int index, int& value) {

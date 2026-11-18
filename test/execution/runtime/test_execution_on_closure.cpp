@@ -3,6 +3,7 @@
 
 #include <execution>
 #include <array>
+#include <atomic>
 #include <concepts>
 #include <exception>
 #include <future>
@@ -18,7 +19,7 @@ namespace ex = std::execution;
 enum class category { lvalue, const_lvalue, rvalue, const_rvalue };
 
 struct capture_state {
-    std::array<int, 4> scheduler_constructions{};
+    std::array<std::atomic<int>, 4> scheduler_constructions{};
     std::array<int, 4> closure_constructions{};
     int applications = 0;
     int callbacks = 0;
@@ -31,6 +32,10 @@ struct tracked_scheduler_attrs {
 
     auto query(ex::get_completion_scheduler_t<ex::set_value_t>) const noexcept
         -> tracked_scheduler;
+
+    template<class Env, class... Envs>
+    auto query(ex::get_completion_domain_t<ex::set_value_t> tag, Env&& env,
+               Envs&&... envs) const noexcept -> ex::default_domain;
 };
 
 template<class R>
@@ -70,20 +75,25 @@ struct tracked_scheduler {
 
     explicit tracked_scheduler(capture_state& s) noexcept : state(&s) {}
     tracked_scheduler(tracked_scheduler& other) noexcept : state(other.state) {
-        ++state->scheduler_constructions[0];
+        state->scheduler_constructions[0].fetch_add(1, std::memory_order_relaxed);
     }
     tracked_scheduler(const tracked_scheduler& other) noexcept : state(other.state) {
-        ++state->scheduler_constructions[1];
+        state->scheduler_constructions[1].fetch_add(1, std::memory_order_relaxed);
     }
     tracked_scheduler(tracked_scheduler&& other) noexcept : state(other.state) {
-        ++state->scheduler_constructions[2];
+        state->scheduler_constructions[2].fetch_add(1, std::memory_order_relaxed);
     }
     tracked_scheduler(const tracked_scheduler&& other) noexcept : state(other.state) {
-        ++state->scheduler_constructions[3];
+        state->scheduler_constructions[3].fetch_add(1, std::memory_order_relaxed);
     }
 
     tracked_scheduler& operator=(const tracked_scheduler&) noexcept = default;
     tracked_scheduler& operator=(tracked_scheduler&&) noexcept = default;
+
+    auto query(ex::get_completion_scheduler_t<ex::set_value_t> tag) const noexcept
+        -> tracked_scheduler {
+        return tracked_scheduler_attrs{state}.query(tag);
+    }
 
     auto schedule() const noexcept -> tracked_schedule_sender { return {state}; }
     bool operator==(const tracked_scheduler&) const noexcept = default;
@@ -94,9 +104,28 @@ auto tracked_scheduler_attrs::query(
     return tracked_scheduler{*state};
 }
 
+template<class Env, class... Envs>
+auto tracked_scheduler_attrs::query(
+    ex::get_completion_domain_t<ex::set_value_t> tag, Env&& env,
+    Envs&&... envs) const noexcept -> ex::default_domain {
+    return tag(tracked_scheduler{*state}, std::forward<Env>(env), std::forward<Envs>(envs)...);
+}
+
 static_assert(ex::scheduler<tracked_scheduler>);
 
-struct tracked_adaptor {
+template<class Env>
+concept value_domain_query_parity = requires(const tracked_scheduler& scheduler, Env&& env) {
+    ex::get_completion_domain<ex::set_value_t>(scheduler, std::forward<Env>(env));
+    { ex::get_completion_domain<ex::set_value_t>(
+        ex::get_env(ex::schedule(scheduler)), std::forward<Env>(env)) }
+        -> std::same_as<decltype(ex::get_completion_domain<ex::set_value_t>(
+            scheduler, std::forward<Env>(env)))>;
+};
+
+static_assert(value_domain_query_parity<forge::empty_env>);
+static_assert(value_domain_query_parity<ex::__forge_sync_wait::sync_wait_env>);
+
+struct tracked_adaptor : ex::sender_adaptor_closure<tracked_adaptor> {
     capture_state* state;
 
     explicit tracked_adaptor(capture_state& s) noexcept : state(&s) {}
@@ -120,11 +149,6 @@ struct tracked_adaptor {
             ++s->callbacks;
             return 42;
         });
-    }
-
-    template<ex::sender S>
-    friend auto operator|(S&& source, tracked_adaptor&& self) {
-        return std::move(self)(static_cast<S&&>(source));
     }
 };
 
@@ -153,8 +177,18 @@ auto apply_category(C& closure, S&& source) {
 template<category Category, bool Pipe>
 void check_category() {
     capture_state state;
-    auto closure = ex::on(tracked_scheduler{state}, tracked_adaptor{state});
-    state.scheduler_constructions = {};
+    tracked_scheduler scheduler{state};
+    decltype(auto) from_scheduler = ex::get_completion_scheduler<ex::set_value_t>(scheduler);
+    decltype(auto) from_attrs = ex::get_completion_scheduler<ex::set_value_t>(
+        ex::get_env(ex::schedule(scheduler)));
+    static_assert(std::same_as<decltype(from_scheduler), decltype(from_attrs)>);
+    EXPECT_EQ(from_scheduler, scheduler);
+    EXPECT_EQ(from_attrs, from_scheduler);
+
+    auto closure = ex::on(std::move(scheduler), tracked_adaptor{state});
+    for (auto& count : state.scheduler_constructions) {
+        count.store(0, std::memory_order_relaxed);
+    }
     state.closure_constructions = {};
     auto sender = apply_category<Category, Pipe>(
         closure, ex::schedule(ex::inline_scheduler{}));
@@ -162,7 +196,7 @@ void check_category() {
     // Isolate application from the later moves needed to construct operation states.
     for (std::size_t i = 0; i != state.scheduler_constructions.size(); ++i) {
         const int expected = i == static_cast<std::size_t>(Category) ? 1 : 0;
-        EXPECT_EQ(state.scheduler_constructions[i], expected);
+        EXPECT_EQ(state.scheduler_constructions[i].load(std::memory_order_relaxed), expected);
         EXPECT_EQ(state.closure_constructions[i], expected);
     }
     EXPECT_EQ(state.applications, 0);
@@ -187,56 +221,51 @@ void expect_value(S sender, int expected = 42) {
     EXPECT_EQ(std::get<0>(*result), expected);
 }
 
-struct value_adaptor {
+template<class Derived>
+struct value_adaptor : ex::sender_adaptor_closure<Derived> {
+    value_adaptor() = default;
+    explicit value_adaptor(int v) noexcept : value(v) {}
+
     int value = 42;
 
     template<ex::sender S>
     auto operator()(S&& source) && {
         return ex::then(static_cast<S&&>(source), [v = value]() noexcept { return v; });
     }
-
-    template<ex::sender S, class Self>
-        requires std::derived_from<std::remove_cvref_t<Self>, value_adaptor> &&
-                 requires(Self&& self, S&& source) {
-                     static_cast<Self&&>(self)(static_cast<S&&>(source));
-                 }
-    friend auto operator|(S&& source, Self&& self) {
-        return static_cast<Self&&>(self)(static_cast<S&&>(source));
-    }
 };
 
-struct mutable_copy_adaptor : value_adaptor {
+struct mutable_copy_adaptor : value_adaptor<mutable_copy_adaptor> {
     mutable_copy_adaptor() = default;
     mutable_copy_adaptor(mutable_copy_adaptor&&) noexcept = default;
     mutable_copy_adaptor(mutable_copy_adaptor& other) noexcept
-        : value_adaptor{other.value} {}
+        : value_adaptor<mutable_copy_adaptor>{other.value} {}
     mutable_copy_adaptor(const mutable_copy_adaptor&) = delete;
 };
 
-struct const_move_adaptor : value_adaptor {
+struct const_move_adaptor : value_adaptor<const_move_adaptor> {
     const_move_adaptor() = default;
     const_move_adaptor(const_move_adaptor&&) noexcept = default;
     const_move_adaptor(const const_move_adaptor&& other) noexcept
-        : value_adaptor{other.value} {}
+        : value_adaptor<const_move_adaptor>{other.value} {}
     const_move_adaptor(const const_move_adaptor&) = delete;
 };
 
-struct explicit_copy_adaptor : value_adaptor {
+struct explicit_copy_adaptor : value_adaptor<explicit_copy_adaptor> {
     explicit_copy_adaptor() = default;
     explicit_copy_adaptor(explicit_copy_adaptor&&) noexcept = default;
     explicit explicit_copy_adaptor(const explicit_copy_adaptor& other) noexcept
-        : value_adaptor{other.value} {}
+        : value_adaptor<explicit_copy_adaptor>{other.value} {}
 };
 
 struct capture_failure {};
 
-struct throwing_move_adaptor : value_adaptor {
+struct throwing_move_adaptor : value_adaptor<throwing_move_adaptor> {
     bool* should_throw;
 
     explicit throwing_move_adaptor(bool& flag) noexcept : should_throw(&flag) {}
     throwing_move_adaptor(const throwing_move_adaptor&) noexcept = default;
     throwing_move_adaptor(throwing_move_adaptor&& other) noexcept(false)
-        : value_adaptor{other.value}, should_throw(other.should_throw) {
+        : value_adaptor<throwing_move_adaptor>{other.value}, should_throw(other.should_throw) {
         if (*should_throw) {
             throw capture_failure{};
         }

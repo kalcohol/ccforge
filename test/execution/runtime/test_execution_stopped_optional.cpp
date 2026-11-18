@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "../../forge/runtime/forge_operation_destroy.hpp"
+#include "../compile/stopped_optional_probe.hpp"
 
 #include <execution>
 #include <exception>
@@ -19,21 +20,7 @@ namespace ex = std::execution;
 
 enum class completion { value, error, stopped };
 
-struct optional_query : std::forwarding_query_t {};
-struct local_optional_query {};
-struct optional_env {
-    int query(optional_query) const noexcept { return 42; }
-    int query(local_optional_query) const noexcept { return 99; }
-};
-
-struct empty_void_query {
-    template<class Env>
-    auto operator()(const Env& env) const noexcept {
-        if constexpr (requires { env.query(optional_query{}); }) {
-            return env.query(optional_query{});
-        }
-    }
-};
+using namespace stopped_optional_probe::runtime;
 
 template<bool Multi = false, bool Dependent = false>
 struct typed_sender {
@@ -81,33 +68,6 @@ struct typed_sender {
     }
 };
 
-struct observed_result {
-    int values = 0;
-    int errors = 0;
-    int value = 0;
-    bool engaged = false;
-};
-
-struct optional_receiver {
-    using receiver_concept = ex::receiver_tag;
-    observed_result* result;
-
-    void set_value(std::optional<int>&& value) && noexcept {
-        ++result->values;
-        result->engaged = value.has_value();
-        if (value) {
-            result->value = *value;
-        }
-    }
-
-    void set_error(int value) && noexcept {
-        ++result->errors;
-        result->value = value;
-    }
-
-    auto get_env() const noexcept -> optional_env { return {}; }
-};
-
 struct guarded_optional_receiver : optional_receiver {
     auto operator&() & = delete;
     auto operator&() const& = delete;
@@ -145,7 +105,7 @@ using scalar_optional = decltype(ex::stopped_as_optional(typed_sender<>{}));
 static_assert(std::is_same_v<ex::completion_signatures_of_t<scalar_optional>,
     ex::completion_signatures<ex::set_value_t(std::optional<int>), ex::set_error_t(int)>>);
 static_assert(!ex::sends_stopped<scalar_optional>);
-static_assert(ex::receiver_of<optional_receiver, ex::completion_signatures_of_t<scalar_optional>>);
+static_assert(ex::__forge_receiver_of<optional_receiver, ex::completion_signatures_of_t<scalar_optional>>);
 
 struct copy_failure {};
 
@@ -187,16 +147,13 @@ struct reference_sender {
 
 } // namespace
 
-TEST(ExecutionStoppedOptional, TypedStoppedCompletesWithEmptyOptionalInAllForms) {
+TEST(ExecutionStoppedOptional, TypedStoppedCompletesWithEmptyOptionalInCallAndPipe) {
     auto direct = forge::sync_wait(ex::stopped_as_optional(typed_sender<>{}));
     auto piped = forge::sync_wait(typed_sender<>{} | ex::stopped_as_optional);
-    auto closure = forge::sync_wait(typed_sender<>{} | ex::stopped_as_optional());
     ASSERT_TRUE(direct.has_value());
     ASSERT_TRUE(piped.has_value());
-    ASSERT_TRUE(closure.has_value());
     EXPECT_FALSE(std::get<0>(*direct).has_value());
     EXPECT_FALSE(std::get<0>(*piped).has_value());
-    EXPECT_FALSE(std::get<0>(*closure).has_value());
 }
 
 TEST(ExecutionStoppedOptional, ValueCompletesWithAnRvalueOptional) {
@@ -350,7 +307,6 @@ TEST(ExecutionStoppedOptional, ReadSchedulerUsesTheActualSyncWaitEnvironment) {
 
     verify(ex::stopped_as_optional(ex::read_env(ex::get_scheduler)));
     verify(ex::read_env(ex::get_scheduler) | ex::stopped_as_optional);
-    verify(ex::read_env(ex::get_scheduler) | ex::stopped_as_optional());
 }
 
 TEST(ExecutionStoppedOptional, EmptyEnvironmentVoidDoesNotRejectActualIntValue) {
@@ -380,5 +336,4 @@ TEST(ExecutionStoppedOptional, EmptyEnvironmentVoidDoesNotRejectActualIntValue) 
 
     verify(ex::stopped_as_optional(ex::read_env(empty_void_query{})));
     verify(ex::read_env(empty_void_query{}) | ex::stopped_as_optional);
-    verify(ex::read_env(empty_void_query{}) | ex::stopped_as_optional());
 }

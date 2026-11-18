@@ -25,6 +25,8 @@
 #include <forge/execution_extensions.hpp>
 #include "detail/completion_meta.hpp"
 
+#include <forge/detail/execution_concepts.hpp>
+
 #include <execution>
 #include <cstddef>
 #include <functional>
@@ -114,7 +116,7 @@ class any_sender_of {
                 std::execution::__forge_sync_wait::shared_state<value_t>;
             using receiver_t =
                 std::execution::__forge_sync_wait::receiver<state_t>;
-            return std::execution::sender_to<stored_ref_t, receiver_t> &&
+            return forge::__detail::__sender_to<stored_ref_t, receiver_t> &&
                 std::same_as<
                     value_t,
                     value_tuple_of_t<CompletionSignatures>>;

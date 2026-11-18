@@ -96,8 +96,8 @@ struct direct_value_sender {
 struct tracking_domain {
     static inline bool transformed = false;
 
-    template<class Sender, class Env>
-    Sender&& transform_sender(Sender&& sndr, const Env&) const noexcept {
+    template<class Tag, class Sender, class Env>
+    Sender&& transform_sender(Tag, Sender&& sndr, const Env&) const noexcept {
         transformed = true;
         return static_cast<Sender&&>(sndr);
     }
@@ -298,8 +298,8 @@ struct receiver_domain_env {
 struct sender_tracking_domain {
     static inline bool transformed = false;
 
-    template<class Sender, class Env>
-    Sender&& transform_sender(Sender&& sndr, const Env&) const noexcept {
+    template<class Tag, class Sender, class Env>
+    Sender&& transform_sender(Tag, Sender&& sndr, const Env&) const noexcept {
         transformed = true;
         return static_cast<Sender&&>(sndr);
     }
@@ -463,8 +463,8 @@ struct explicit_empty_signature_source {
 struct rescue_domain {
     static inline bool transformed = false;
 
-    template<class Sender, class Env>
-    auto transform_sender(Sender&&, const Env&) const noexcept -> transformed_sender {
+    template<class Tag, class Sender, class Env>
+    auto transform_sender(Tag, Sender&&, const Env&) const noexcept -> transformed_sender {
         transformed = true;
         return transformed_sender{77};
     }
@@ -480,8 +480,8 @@ struct rescue_domain_env {
 struct receiver_env_probe_domain {
     static inline int observed = 0;
 
-    template<class Sender, class Env>
-    Sender&& transform_sender(Sender&& sndr, const Env& env) const noexcept {
+    template<class Tag, class Sender, class Env>
+    Sender&& transform_sender(Tag, Sender&& sndr, const Env& env) const noexcept {
         observed = domain_probe_query(env);
         return static_cast<Sender&&>(sndr);
     }
@@ -570,8 +570,8 @@ struct late_domain_scheduler {
 struct scheduler_domain {
     static inline bool transformed = false;
 
-    template<class Sender, class Env>
-    Sender&& transform_sender(Sender&& sndr, const Env&) const noexcept {
+    template<class Tag, class Sender, class Env>
+    Sender&& transform_sender(Tag, Sender&& sndr, const Env&) const noexcept {
         transformed = true;
         return static_cast<Sender&&>(sndr);
     }
@@ -1081,7 +1081,7 @@ TEST(DefaultDomainTest, TransformSenderIsIdentity) {
     auto sndr = std::execution::just(42);
     forge::empty_env env{};
     std::execution::default_domain domain{};
-    auto& result = domain.transform_sender(sndr, env);
+    auto& result = domain.transform_sender(std::execution::set_value, sndr, env);
     static_assert(std::same_as<
         decltype(std::execution::transform_sender(sndr, env)),
         decltype(sndr)&>);

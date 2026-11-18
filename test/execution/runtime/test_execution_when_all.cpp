@@ -68,8 +68,8 @@ struct scheduler_receiver {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const scheduler_receiver& self) noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_scheduler_t{}, self.expected));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_scheduler_t{}, self.expected)};
     }
 };
 
@@ -230,8 +230,8 @@ struct outer_stop_receiver {
     }
 
     friend auto tag_invoke(std::execution::get_env_t, const outer_stop_receiver& self) noexcept {
-        return std::execution::make_env(
-            std::execution::prop(std::execution::get_stop_token_t{}, self.source->get_token()));
+        return std::execution::env{
+            std::execution::prop(std::execution::get_stop_token_t{}, self.source->get_token())};
     }
 };
 

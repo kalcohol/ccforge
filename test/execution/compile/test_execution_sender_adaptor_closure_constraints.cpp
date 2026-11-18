@@ -1,3 +1,4 @@
+#include <forge/bulk.hpp>
 #include "../sender_adaptor_closure_probe.hpp"
 
 #include <functional>
@@ -126,7 +127,7 @@ static_assert(excluded<inherited_library>);
 static_assert(excluded<rederived_library>);
 
 // reference_wrapper conversion does not opt its own type into closure recognition.
-using library_closure = decltype(ex::into_variant());
+using library_closure = std::remove_cvref_t<decltype(ex::into_variant)>;
 using library_ref = decltype(std::ref(std::declval<library_closure&>()));
 using library_cref = decltype(std::cref(std::declval<library_closure&>()));
 static_assert(excluded<library_ref>);
@@ -215,23 +216,17 @@ static_assert(public_base<decltype(ex::upon_stopped([] { return 1; }))>);
 static_assert(public_base<decltype(ex::let_value([](int n) { return ex::just(n); }))>);
 static_assert(public_base<decltype(ex::let_error([](int n) { return ex::just(n); }))>);
 static_assert(public_base<decltype(ex::let_stopped([] { return ex::just(1); }))>);
-static_assert(public_base<decltype(ex::bulk(3, [](int, int&) {}))>);
-static_assert(public_base<decltype(ex::bulk_unchunked(3, [](int, int&) {}))>);
-static_assert(public_base<decltype(ex::bulk_chunked(3, [](int, int, int&) {}))>);
+static_assert(public_base<decltype(forge::bulk(3, [](int, int&) {}))>);
+static_assert(public_base<decltype(forge::bulk_unchunked(3, [](int, int&) {}))>);
+static_assert(public_base<decltype(forge::bulk_chunked(3, [](int, int, int&) {}))>);
 static_assert(public_base<decltype(ex::stopped_as_error(1))>);
 static_assert(public_base<decltype(ex::stopped_as_optional)>);
-static_assert(public_base<decltype(ex::stopped_as_optional())>);
 static_assert(public_base<decltype(ex::into_variant)>);
-static_assert(public_base<decltype(ex::into_variant())>);
-static_assert(public_base<decltype(ex::unstoppable)>);
-static_assert(public_base<decltype(ex::unstoppable())>);
 static_assert(public_base<decltype(ex::affine)>);
-static_assert(public_base<decltype(ex::write_env(ex::env<>{}))>);
 static_assert(public_base<decltype(ex::continues_on(ex::inline_scheduler{}))>);
 static_assert(public_base<decltype(ex::on(ex::inline_scheduler{}, identity{}))>);
 static_assert(public_base<decltype(ex::associate(
     std::declval<ex::simple_counting_scope::scope_token>()))>);
 static_assert(public_base<decltype(identity{} | identity{})>);
-static_assert(pipeable<decltype(ex::just(1)), decltype(ex::unstoppable)>);
 
 int main() {}

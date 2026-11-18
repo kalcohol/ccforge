@@ -91,10 +91,10 @@ struct member_scheduler {
 };
 
 static_assert(std::execution::receiver<member_receiver>);
-static_assert(std::execution::receiver_of<member_receiver, member_sender::completions>);
+static_assert(std::execution::__forge_receiver_of<member_receiver, member_sender::completions>);
 static_assert(std::execution::sender<member_sender>);
 static_assert(std::execution::sender_in<member_sender, forge::empty_env>);
-static_assert(std::execution::sender_to<member_sender, member_receiver>);
+static_assert(std::execution::__forge_sender_to<member_sender, member_receiver>);
 
 using member_cs_t = std::execution::completion_signatures_of_t<
     member_sender, forge::empty_env>;

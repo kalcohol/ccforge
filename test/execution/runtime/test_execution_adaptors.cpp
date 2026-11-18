@@ -201,13 +201,13 @@ struct inline_error_sender {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
                 std::execution::get_completion_scheduler<std::execution::set_error_t>,
                 std::execution::inline_scheduler{}),
             std::execution::prop(
                 std::execution::get_completion_domain<std::execution::set_error_t>,
-                on_child_domain{}));
+                on_child_domain{})};
     }
 
     template<std::execution::receiver R>

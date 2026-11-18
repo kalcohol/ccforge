@@ -577,6 +577,53 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endforeach()
     set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 endif()
+# Pair every deprecated expression with the identical, locally suppressed control.
+forge_add_execution_compile_probe(test_execution_d1_deprecation_compat
+    test_execution_d1_deprecation_compat.cpp execution_d1_deprecation_compat_compile)
+forge_add_execution_compile_probe(test_execution_d1_warning_free
+    test_execution_d1_warning_free.cpp execution_d1_warning_free_compile)
+forge_add_execution_compile_probe(test_execution_d1_strict_warning_free
+    test_execution_d1_warning_free.cpp execution_d1_strict_warning_free_compile)
+target_compile_definitions(test_execution_d1_strict_warning_free PRIVATE
+    FORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+foreach(_forge_d1_target IN ITEMS
+        test_execution_d1_deprecation_compat test_execution_d1_warning_free
+        test_execution_d1_strict_warning_free)
+    if(MSVC)
+        target_compile_options(${_forge_d1_target} PRIVATE /we4996 /bigobj)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${_forge_d1_target} PRIVATE -Werror=deprecated-declarations)
+    endif()
+    string(REGEX REPLACE "^test_" "" _forge_d1_test "${_forge_d1_target}")
+    add_test(NAME ${_forge_d1_test} COMMAND ${_forge_d1_target})
+    set_tests_properties(${_forge_d1_test} PROPERTIES
+        DEPENDS ${_forge_d1_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+endforeach()
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_WARNING_FREE
+        test_execution_d1_warning_free.cpp ON "D1 replacements must compile without warnings")
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_EXECUTION_TEST_STRICT_MEMBER_QUERIES=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_STRICT_WARNING_FREE
+        test_execution_d1_warning_free.cpp ON "D1 replacements must compile with strict member queries")
+    # Pass an include through CheckCXXSourceCompiles to preserve the fixture's directives.
+    foreach(_forge_case RANGE 1 25)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
+            -DFORGE_DEPRECATION_CASE=${_forge_case} -DFORGE_SUPPRESS_DEPRECATION=1)
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_COMPAT_${_forge_case}
+            test_execution_d1_deprecation_probe.cpp ON "Suppressed D1 case ${_forge_case} must compile")
+        # GCC 16 instantiates the dispatch helpers without diagnosing their deprecation.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND (_forge_case EQUAL 17 OR _forge_case EQUAL 25))
+            continue()
+        endif()
+        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
+            -DFORGE_DEPRECATION_CASE=${_forge_case})
+        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_D1_DEPRECATED_${_forge_case}
+            test_execution_d1_deprecation_probe.cpp OFF "D1 case ${_forge_case} must diagnose deprecation")
+    endforeach()
+endif()
+unset(_forge_d1_target)
+unset(_forge_d1_test)
 set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 unset(_forge_extension_flags)
@@ -601,7 +648,9 @@ foreach(_forge_target IN LISTS _forge_scope_strict_targets)
 endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
     ${_forge_scope_strict_copies} test_execution_scope_observer_compat
-    test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions)
+    test_execution_zero_wait_compat test_execution_extension_compat test_execution_extensions
+    test_execution_d1_deprecation_compat test_execution_d1_warning_free
+    test_execution_d1_strict_warning_free)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)
 unset(_forge_target)
@@ -731,3 +780,33 @@ endforeach()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_awaitable_saved_defs}")
 unset(_forge_awaitable_saved_defs)
 unset(_forge_awaitable_mode_defs)
+
+# The execution prefix selects this runtime test in both sanitizer lanes.
+forge_add_execution_runtime_test(test_execution_forge_bulk
+    test_execution_forge_bulk.cpp execution_forge_bulk)
+
+# Rebuild migrated sources and the policy/progress controls with deprecations as errors.
+foreach(_forge_target IN ITEMS
+    test_execution_adaptors test_execution_borrowed_env
+    test_execution_bulk test_execution_bulk_policy test_execution_closure_cvref
+    test_execution_default_adaptor_conformance_runtime
+    test_execution_default_query_conformance_runtime
+    test_execution_default_scheduler_env_queries test_execution_domain
+    test_execution_extensions test_execution_forge_bulk test_execution_forwarding_attrs
+    test_execution_initial_capture test_execution_inline_scheduler test_execution_just
+    test_execution_member_customization test_execution_mvp test_execution_on_closure
+    test_execution_run_loop test_execution_sender_adaptor_closure
+    test_execution_static_opstate_allocations test_execution_static_opstate_exceptions
+    test_execution_static_opstate_transfer test_execution_stop_callback_allocations
+    test_execution_stop_callback_lifetime test_execution_stop_callback_strict_lifetime
+    test_execution_stop_token test_execution_stopped_optional
+    test_execution_strict_adaptor_conformance_runtime
+    test_execution_strict_query_conformance_runtime test_execution_strict_scheduler_env_queries
+    test_execution_throwing_move_adaptors test_execution_wave2 test_execution_wave3
+    test_execution_when_all test_execution_write_env)
+    string(REGEX REPLACE "^test_|_runtime$" "" _forge_source_test "${_forge_target}")
+    forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
+    add_dependencies(test_execution_extension_deprecations_strict ${_forge_target}_ds)
+endforeach()
+unset(_forge_target)
+unset(_forge_source_test)

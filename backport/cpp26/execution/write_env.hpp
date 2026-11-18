@@ -199,14 +199,15 @@ struct __closure : sender_adaptor_closure<__closure<OverrideEnv>> {
 };
 
 struct __write_env_t {
-    template<sender S, queryable Env>
+    template<sender S, __forge_queryable Env>
     [[nodiscard]] constexpr auto operator()(S&& sndr, Env&& env) const {
         return __sender<std::decay_t<S>, std::decay_t<Env>>{
             __forge_detail::__forward_as_given(std::forward<S>(sndr)),
             std::forward<Env>(env)};
     }
 
-    template<queryable Env>
+    template<__forge_queryable Env>
+    [[deprecated("use std::execution::write_env(sender, env)")]]
     [[nodiscard]] constexpr auto operator()(Env&& env) const {
         return __closure<std::decay_t<Env>>{{}, std::forward<Env>(env)};
     }

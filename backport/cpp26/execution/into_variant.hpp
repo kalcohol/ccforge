@@ -323,6 +323,7 @@ struct __into_variant_t : sender_adaptor_closure<__into_variant_t> {
             __forge_detail::__forward_as_given(std::forward<S>(sndr))};
     }
 
+    [[deprecated("pipe into std::execution::into_variant directly")]]
     [[nodiscard]] auto operator()() const noexcept {
         return __into_variant_closure{};
     }

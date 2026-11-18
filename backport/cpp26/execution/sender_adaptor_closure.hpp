@@ -30,6 +30,8 @@
 
 namespace std::execution {
 
+namespace __forge_unstoppable { struct __unstoppable_t; }
+
 namespace __forge_adaptor {
 template<class T>
 concept __class_type = std::is_class_v<T> && std::same_as<T, std::decay_t<T>>;
@@ -123,6 +125,11 @@ concept __composable = __closure<First> && __closure<Second> &&
     std::is_constructible_v<std::decay_t<Second>, Second>;
 
 template<class Left, class Right>
+concept __legacy_pipe =
+    std::same_as<std::remove_cvref_t<Left>, __forge_unstoppable::__unstoppable_t> ||
+    std::same_as<std::remove_cvref_t<Right>, __forge_unstoppable::__unstoppable_t>;
+
+template<class Left, class Right>
 constexpr bool __pipe_nothrow() {
     if constexpr (__sender_pipe<Left, Right>) {
         return noexcept(std::declval<Right>()(std::declval<Left>()));
@@ -132,21 +139,39 @@ constexpr bool __pipe_nothrow() {
     }
 }
 
-} // namespace __forge_adaptor
-
-// A single namespace-scope template avoids per-specialization hidden friends.
-// ADL finds it through the public base even for closures in user namespaces.
+// Both public overloads check the terms of this dispatch before deducing its
+// result. In particular, closure composition must not probe the call body.
 template<class Left, class Right>
-    requires (__forge_adaptor::__sender_pipe<Left, Right> ||
-              __forge_adaptor::__composable<Left, Right>)
-[[nodiscard]] constexpr decltype(auto) operator|(Left&& left, Right&& right)
-    noexcept(__forge_adaptor::__pipe_nothrow<Left, Right>()) {
-    if constexpr (__forge_adaptor::__sender_pipe<Left, Right>) {
+constexpr decltype(auto) __pipe(Left&& left, Right&& right)
+    noexcept(__pipe_nothrow<Left, Right>()) {
+    if constexpr (__sender_pipe<Left, Right>) {
         return static_cast<Right&&>(right)(static_cast<Left&&>(left));
     } else {
-        return __forge_adaptor::__composed<std::decay_t<Left>, std::decay_t<Right>>{
+        return __composed<std::decay_t<Left>, std::decay_t<Right>>{
             static_cast<Left&&>(left), static_cast<Right&&>(right)};
     }
+}
+
+} // namespace __forge_adaptor
+
+// Namespace-scope overloads are found by ADL through the public closure base.
+template<class Left, class Right>
+    requires (__forge_adaptor::__sender_pipe<Left, Right> ||
+              __forge_adaptor::__composable<Left, Right>) &&
+             (!__forge_adaptor::__legacy_pipe<Left, Right>)
+[[nodiscard]] constexpr decltype(auto) operator|(Left&& left, Right&& right)
+    noexcept(__forge_adaptor::__pipe_nothrow<Left, Right>()) {
+    return __forge_adaptor::__pipe(static_cast<Left&&>(left), static_cast<Right&&>(right));
+}
+
+template<class Left, class Right>
+    requires (__forge_adaptor::__sender_pipe<Left, Right> ||
+              __forge_adaptor::__composable<Left, Right>) &&
+             __forge_adaptor::__legacy_pipe<Left, Right>
+[[deprecated("use std::execution::unstoppable(sender) or wrap that call in a sender_adaptor_closure")]]
+[[nodiscard]] constexpr decltype(auto) operator|(Left&& left, Right&& right)
+    noexcept(__forge_adaptor::__pipe_nothrow<Left, Right>()) {
+    return __forge_adaptor::__pipe(static_cast<Left&&>(left), static_cast<Right&&>(right));
 }
 
 } // namespace std::execution

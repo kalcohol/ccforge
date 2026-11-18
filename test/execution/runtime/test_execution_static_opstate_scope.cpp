@@ -126,8 +126,8 @@ struct receiver {
     template<class E> void set_error(E&&) && noexcept { std::terminate(); }
     void set_stopped() && noexcept { ++observed->stopped; }
     auto get_env() const noexcept {
-        return ex::make_env(ex::prop(ex::get_stop_token, token),
-            ex::prop(ex::get_start_scheduler, ex::inline_scheduler{}));
+        return ex::env{ex::prop(ex::get_stop_token, token),
+            ex::prop(ex::get_start_scheduler, ex::inline_scheduler{})};
     }
 };
 

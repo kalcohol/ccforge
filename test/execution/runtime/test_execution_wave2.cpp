@@ -154,7 +154,7 @@ TEST(SplitTest, HappyPath) {
 TEST(SplitTest, InstantiatesOnlyDeclaredCompletionChannels) {
     int value = 0;
     auto values = forge::split(std::execution::just(42));
-    static_assert(std::execution::sender_to<
+    static_assert(std::execution::__forge_sender_to<
         decltype(values), cached_value_only_receiver>);
     auto value_op = std::execution::connect(
         values, cached_value_only_receiver{&value});
@@ -163,7 +163,7 @@ TEST(SplitTest, InstantiatesOnlyDeclaredCompletionChannels) {
 
     bool error = false;
     auto errors = forge::split(std::execution::just_error(7));
-    static_assert(std::execution::sender_to<
+    static_assert(std::execution::__forge_sender_to<
         decltype(errors), cached_error_only_receiver>);
     auto error_op = std::execution::connect(
         errors, cached_error_only_receiver{&error});
@@ -172,7 +172,7 @@ TEST(SplitTest, InstantiatesOnlyDeclaredCompletionChannels) {
 
     bool stopped = false;
     auto stops = forge::split(std::execution::just_stopped());
-    static_assert(std::execution::sender_to<
+    static_assert(std::execution::__forge_sender_to<
         decltype(stops), cached_stopped_receiver>);
     auto stop_op = std::execution::connect(
         stops, cached_stopped_receiver{&stopped});

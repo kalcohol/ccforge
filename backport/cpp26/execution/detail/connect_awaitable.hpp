@@ -71,11 +71,11 @@ private:
 template<class S, class R>
 concept __connect_awaitable_available =
     sender_in<S, env_of_t<R>> &&
-    receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
+    __forge_receiver_of<R, completion_signatures_of_t<S, env_of_t<R>>> &&
     std::constructible_from<std::decay_t<S>, S> &&
     std::constructible_from<std::decay_t<R>, R> &&
     __is_awaitable<std::decay_t<S>, __connect_promise<std::decay_t<S>, std::decay_t<R>>> &&
-    receiver_of<std::decay_t<R>, completion_signatures<
+    __forge_receiver_of<std::decay_t<R>, completion_signatures<
         typename __forge_cpo_detail::__await_value_signature<__await_result_t<
             std::decay_t<S>, __connect_promise<std::decay_t<S>, std::decay_t<R>>>>::type,
         set_error_t(std::exception_ptr), set_stopped_t()>>;

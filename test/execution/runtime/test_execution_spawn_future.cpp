@@ -401,11 +401,11 @@ struct retained_result_receiver {
 
 auto retained_stop_env(std::inplace_stop_source& source, std::atomic<int>& registrations,
     const std::shared_ptr<allocation_counts>& counts) {
-    return std::execution::make_env(
+    return std::execution::env{
         std::execution::prop(std::execution::get_stop_token,
             observed_stop_token{source.get_token(), &registrations}),
         std::execution::prop(std::execution::get_allocator,
-            counting_allocator<std::byte>{counts}));
+            counting_allocator<std::byte>{counts})};
 }
 
 template<class Scope>
@@ -656,8 +656,8 @@ struct observed_consumer_receiver {
     void set_stopped() && noexcept { ++observation->stopped; }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::prop(
-            std::execution::get_stop_token_t{}, token));
+        return std::execution::env{std::execution::prop(
+            std::execution::get_stop_token_t{}, token)};
     }
 };
 
@@ -692,9 +692,9 @@ struct spawn_future_stop_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(
+        return std::execution::env{
             std::execution::prop(
-                std::execution::get_stop_token_t{}, source->get_token()));
+                std::execution::get_stop_token_t{}, source->get_token())};
     }
 };
 
@@ -717,9 +717,9 @@ struct join_probe_receiver {
     }
 
     auto get_env() const noexcept {
-        return std::execution::make_env(std::execution::prop(
+        return std::execution::env{std::execution::prop(
             std::execution::get_start_scheduler_t{},
-            std::execution::inline_scheduler{}));
+            std::execution::inline_scheduler{})};
     }
 };
 
@@ -985,10 +985,10 @@ TEST(SpawnFutureTest, UsesAllocatorFromEnvironmentForStateAndConsumerRecord) {
     auto counts = std::make_shared<allocation_counts>();
 
     {
-        auto env = std::execution::make_env(
+        auto env = std::execution::env{
             std::execution::prop(
                 std::execution::get_allocator_t{},
-                counting_allocator<std::byte>{counts}));
+                counting_allocator<std::byte>{counts})};
         auto future = std::execution::spawn_future(
             std::execution::just(42), token, env);
         auto result = forge::sync_wait(std::move(future));
@@ -1194,9 +1194,9 @@ TEST(SpawnFutureTest, FusesPrerequestedEnvironmentStopToken) {
     auto token = scope.get_token();
     std::inplace_stop_source source;
     source.request_stop();
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token()));
+            std::execution::get_stop_token_t{}, source.get_token())};
 
     auto future = std::execution::spawn_future(
         std::execution::read_env(std::execution::get_stop_token)
@@ -1217,9 +1217,9 @@ TEST(SpawnFutureTest, EnvironmentStopAfterStartCancelsSpawnedWork) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
     std::inplace_stop_source source;
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
-            std::execution::get_stop_token_t{}, source.get_token()));
+            std::execution::get_stop_token_t{}, source.get_token())};
     auto state = std::make_shared<manual_state>();
 
     auto future = std::execution::spawn_future(
@@ -1240,9 +1240,9 @@ TEST(SpawnFutureTest, InlineCompletionWithoutChildCallbackDoesNotRegisterOnEnvir
     std::execution::simple_counting_scope scope;
     std::inplace_stop_source source;
     std::atomic<int> registrations{0};
-    auto env = std::execution::make_env(std::execution::prop(
+    auto env = std::execution::env{std::execution::prop(
         std::execution::get_stop_token,
-        observed_stop_token{source.get_token(), &registrations}));
+        observed_stop_token{source.get_token(), &registrations})};
     auto check = [&](auto sender) {
         auto future = std::execution::spawn_future(
             std::move(sender), scope.get_token(), env);
@@ -1261,9 +1261,9 @@ TEST(SpawnFutureTest, DeferredCompletionReleasesEnvironmentRegistrationWhenConsu
         std::execution::simple_counting_scope scope;
         std::inplace_stop_source source;
         std::atomic<int> registrations{0};
-        auto env = std::execution::make_env(std::execution::prop(
+        auto env = std::execution::env{std::execution::prop(
             std::execution::get_stop_token,
-            observed_stop_token{source.get_token(), &registrations}));
+            observed_stop_token{source.get_token(), &registrations})};
         auto state = std::make_shared<manual_state>();
         auto future = std::execution::spawn_future(
             manual_sender{state}, scope.get_token(), env);
@@ -1355,11 +1355,11 @@ TEST(SpawnFutureTest, EnvironmentRegistrationFailureUnwindsPartialChildConstruct
         auto counts = std::make_shared<allocation_counts>();
         int attempts = 0;
         retained_stop_state state;
-        auto env = std::execution::make_env(
+        auto env = std::execution::env{
             std::execution::prop(std::execution::get_stop_token,
                 throwing_registration_stop_token{source.get_token(), &attempts, &registrations}),
             std::execution::prop(std::execution::get_allocator,
-                counting_allocator<std::byte>{counts}));
+                counting_allocator<std::byte>{counts})};
         EXPECT_THROW((void)std::execution::spawn_future(
             retained_stop_sender{&state}, scope.get_token(), env), callback_registration_error);
         EXPECT_EQ(attempts, 1);
@@ -1381,10 +1381,10 @@ TEST(SpawnFutureTest, ConsumerAllocationFailureAbandonsFuture) {
     auto source = std::make_shared<manual_state>();
     auto counts = std::make_shared<allocation_counts>();
     counts->fail_on_attempt.store(4, std::memory_order_relaxed);
-    auto env = std::execution::make_env(
+    auto env = std::execution::env{
         std::execution::prop(
             std::execution::get_allocator_t{},
-            counting_allocator<std::byte>{counts}));
+            counting_allocator<std::byte>{counts})};
     auto future = std::execution::spawn_future(
         manual_sender{source},
         token,
@@ -1546,9 +1546,9 @@ TEST(SpawnFutureTest, PrerequestedConsumerStopStillDeliversStoppedExactlyOnce) {
     consumer_completion_observation observation;
 
     {
-        auto env = std::execution::make_env(std::execution::prop(
+        auto env = std::execution::env{std::execution::prop(
             std::execution::get_stop_token,
-            observed_stop_token{environment_stop.get_token(), &environment_registrations}));
+            observed_stop_token{environment_stop.get_token(), &environment_registrations})};
         auto future = std::execution::spawn_future(manual_sender{source}, scope.get_token(), env);
         ASSERT_TRUE(wait_until_started(source));
         EXPECT_EQ(environment_registrations.load(), 1);

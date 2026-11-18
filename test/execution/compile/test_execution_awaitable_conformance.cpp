@@ -44,9 +44,9 @@ static_assert(std::is_nothrow_move_constructible_v<ex::connect_result_t<a::int_a
 static_assert(!std::is_copy_constructible_v<ex::connect_result_t<a::int_awaiter, a::receiver>>);
 static_assert(!noexcept(ex::connect(a::int_awaiter{}, a::receiver{})));
 static_assert(!noexcept(ex::connect(a::raw_sender{}, a::receiver{})));
-static_assert(ex::sender_to<a::start_sender, a::start_receiver>);
+static_assert(ex::__forge_sender_to<a::start_sender, a::start_receiver>);
 static_assert(!noexcept(ex::connect(a::start_sender{}, a::start_receiver{})));
-static_assert(ex::sender_to<a::adl_value_awaiter, awaitable_adl::receiver>);
+static_assert(ex::__forge_sender_to<a::adl_value_awaiter, awaitable_adl::receiver>);
 static_assert(ex::sender<forge::task<int>> && ex::sender<forge::task<void>>);
 static_assert(ex::sender<forge::__task_detail::__final_awaiter>);
 static_assert(!ex::sender<forge::io::read_env_awaitable>);

@@ -172,6 +172,26 @@ check_stale_execution_names() {
     fi
 }
 
+check_execution_concept_tag_spelling() {
+    log "check portable execution concept tag spelling"
+    if rg -nU '\bexecution\s*::\s*(receiver|sender|operation_state|scheduler)_t\b' \
+        include/forge example test --glob '!test/**/*_compat.*' \
+        >"${audit_tmp}/legacy-execution-tags"; then
+        cat "${audit_tmp}/legacy-execution-tags" >&2
+        fail "use the standard execution concept tag names"
+    fi
+}
+
+check_forge_make_env_spelling() {
+    log "check Forge headers for the legacy make_env identifier"
+    # A dependent unqualified call through a using-directive can defer lookup
+    # past the all-headers compile control.
+    if rg -n '\bmake_env\b' include/forge >"${audit_tmp}/legacy-make-env"; then
+        cat "${audit_tmp}/legacy-make-env" >&2
+        fail "use env{...} in Forge headers"
+    fi
+}
+
 check_portable_sync_wait_spelling() {
     log "check portable sync_wait spelling"
     : >"${audit_tmp}/sync-wait-spelling"
@@ -583,6 +603,8 @@ check_forge_header_refs_exist
 check_example_cmake_sources
 check_stale_execution_names
 check_portable_sync_wait_spelling
+check_execution_concept_tag_spelling
+check_forge_make_env_spelling
 check_readme_parity
 check_test_switch_docs
 check_feature_gate_docs
