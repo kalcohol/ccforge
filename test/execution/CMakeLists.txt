@@ -590,6 +590,20 @@ foreach(_case RANGE 1 9)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_MEMBER_${_case}
         test_execution_reject_awaitable.cpp OFF "Awaitable Mandate or constraint must reject this case")
 endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
+    -DFORGE_AWAITABLE_CASE=10 -DFORGE_AWAITABLE_POSITIVE=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_RVALUE_BRIDGE_CONTROL
+    test_execution_reject_awaitable.cpp ON "An rvalue sender must be accepted by the sender bridge")
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=10)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_LVALUE_BRIDGE
+    test_execution_reject_awaitable.cpp OFF "The sender bridge must not decay-copy an lvalue sender")
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
+    -DFORGE_AWAITABLE_CASE=11 -DFORGE_AWAITABLE_POSITIVE=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_ADAPTED_VALUE_BRIDGE_CONTROL
+    test_execution_reject_awaitable.cpp ON "The sender bridge must accept a single-value sender returned by value")
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=11)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_ADAPTED_LVALUE_BRIDGE
+    test_execution_reject_awaitable.cpp OFF "The sender bridge must reject a single-value sender returned by lvalue reference")
 if(MSVC)
     target_compile_options(test_execution_awaitable_conformance PRIVATE /bigobj)
     target_compile_options(test_execution_awaitable_conformance_runtime PRIVATE /bigobj)

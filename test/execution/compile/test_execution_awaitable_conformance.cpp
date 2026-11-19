@@ -64,6 +64,64 @@ static_assert(noexcept(ex::as_awaitable(a::int_awaiter{}, std::declval<a::mixin_
 static_assert(!noexcept(ex::as_awaitable(ex::just(1), std::declval<a::promise&>())));
 static_assert(noexcept(ex::as_awaitable(a::not_awaitable{}, std::declval<a::promise&>())));
 
+template<class... ValueSigs>
+struct bridge_source {
+    using sender_concept = ex::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ValueSigs...> { return {}; }
+
+    template<ex::receiver R>
+    auto connect(R r) && -> a::lvalue_sender::operation<R> { return {std::move(r)}; }
+};
+
+template<class S>
+using awaitable_result = decltype(ex::as_awaitable(
+    std::declval<S>(), std::declval<a::promise&>()));
+
+using reference_alternatives = bridge_source<ex::set_value_t(int), ex::set_value_t(int&)>;
+struct adapted_reference_alternatives : reference_alternatives {
+    auto get_env() const noexcept -> a::adaptor_env<true, true> { return {}; }
+};
+struct source_adapting_to_multiple_values : bridge_source<ex::set_value_t(int)> {
+    auto get_env() const noexcept {
+        return ex::prop(ex::get_await_completion_adaptor,
+            [](auto&&) noexcept { return reference_alternatives{}; });
+    }
+};
+struct lvalue_adapted_sender : a::lvalue_sender {
+    auto get_env() const noexcept -> a::adaptor_env<true, true> { return {}; }
+};
+
+// Distinct signatures stay distinct even when their decayed value types match.
+static_assert(std::same_as<awaitable_result<reference_alternatives>, reference_alternatives&&>);
+static_assert(std::same_as<awaitable_result<adapted_reference_alternatives>,
+    adapted_reference_alternatives&&>);
+static_assert(std::same_as<awaitable_result<a::adapted_sender<true, true>>, a::int_awaiter>);
+// A single-value source still falls back if completion adaptation adds an alternative.
+static_assert(std::same_as<awaitable_result<source_adapting_to_multiple_values>,
+    source_adapting_to_multiple_values&&>);
+// The transformed-member path uses the original sender expression's category.
+static_assert(std::same_as<awaitable_result<lvalue_adapted_sender&>, a::int_awaiter>);
+static_assert(std::same_as<awaitable_result<lvalue_adapted_sender>, lvalue_adapted_sender&&>);
+
+template<bool HasAdlOperator>
+struct member_co_await_sender : bridge_source<ex::set_value_t(int)> {
+    auto operator co_await() && noexcept -> a::int_awaiter { return {}; }
+};
+auto operator co_await(member_co_await_sender<true>&&) noexcept -> a::int_awaiter {
+    return {};
+}
+
+// Competing operators cannot win the ordinary-awaitable branch. A valid
+// sender still takes the sender bridge, while a sole member is passed through.
+using competing_bridge = awaitable_result<member_co_await_sender<true>>;
+static_assert(std::same_as<decltype(std::declval<competing_bridge&>().await_resume()), int>);
+static_assert(std::same_as<awaitable_result<member_co_await_sender<false>>,
+    member_co_await_sender<false>&&>);
+static_assert(std::same_as<awaitable_result<a::int_awaiter&>, a::int_awaiter&>);
+
 template<class S> concept scope_spawn = requires(forge::async_scope& scope, S&& s) {
     scope.spawn(static_cast<S&&>(s));
 };

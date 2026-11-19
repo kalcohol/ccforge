@@ -5,6 +5,7 @@
 #include <execution>
 #include <cstddef>
 #include <concepts>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -724,24 +725,39 @@ struct start_tag_transform_source : direct_value_sender {
 
 struct identity_transform_tag {
     static inline int calls = 0;
+    static inline const void* source_address = nullptr;
 
     template<class Tag, class Sender, class Env>
     auto transform_sender(Tag, Sender&& sender, const Env&) const noexcept
         -> Sender&& {
         ++calls;
+        source_address = std::addressof(sender);
         return static_cast<Sender&&>(sender);
     }
 };
 
-struct noncopyable_tagged_sender : direct_value_sender {
-    noncopyable_tagged_sender() = default;
-    noncopyable_tagged_sender(const noncopyable_tagged_sender&) = delete;
+struct identity_tagged_sender : direct_value_sender {
+    static inline int copy_or_move_count = 0;
+
+    identity_tagged_sender() = default;
+
+    identity_tagged_sender(const identity_tagged_sender& other)
+        : direct_value_sender(other) { ++copy_or_move_count; }
+
+    identity_tagged_sender(identity_tagged_sender&& other) noexcept
+        : direct_value_sender(std::move(other)) { ++copy_or_move_count; }
 
     template<std::size_t I>
     auto get() const noexcept -> identity_transform_tag {
         static_assert(I == 0);
         return {};
     }
+};
+
+template<class Base, bool Movable>
+struct noncopyable_sender : Base {
+    noncopyable_sender() = default;
+    noncopyable_sender(noncopyable_sender&&) requires Movable = default;
 };
 
 struct noncopyable_env {
@@ -756,6 +772,25 @@ struct borrowed_env_receiver : int_receiver<> {
         return *environment;
     }
 };
+
+// Member connect can borrow each source, but the CPO requires a sender.
+using immovable_sender = noncopyable_sender<direct_value_sender, false>;
+using immovable_tagged_sender = noncopyable_sender<identity_tagged_sender, false>;
+using move_only_tagged_sender = noncopyable_sender<identity_tagged_sender, true>;
+static_assert(!std::invocable<std::execution::connect_t,
+    immovable_sender&, int_receiver<>>);
+static_assert(!std::invocable<std::execution::connect_t,
+    immovable_tagged_sender&, borrowed_env_receiver>);
+static_assert(!std::invocable<std::execution::connect_t,
+    move_only_tagged_sender&, borrowed_env_receiver>);
+static_assert(std::invocable<std::execution::connect_t,
+    move_only_tagged_sender, borrowed_env_receiver>);
+static_assert(!std::invocable<std::execution::connect_t,
+    const move_only_tagged_sender&, borrowed_env_receiver>);
+static_assert(std::invocable<std::execution::connect_t,
+    direct_value_sender&, int_receiver<>>);
+static_assert(std::invocable<std::execution::connect_t,
+    identity_tagged_sender&, borrowed_env_receiver>);
 
 struct apply_probe_tag {
     static inline int tag_calls = 0;
@@ -1146,24 +1181,26 @@ TEST(DefaultDomainTest, ConnectUsesStartTagCustomization) {
 
 TEST(DefaultDomainTest, IdentityTagTransformPreservesBorrowedObjects) {
     noncopyable_env environment;
-    noncopyable_tagged_sender sender;
-    // connect retains its borrowed-source extension; the constrained public
-    // default_domain entry does not classify this immovable source as a sender.
-    static_assert(!std::execution::sender<noncopyable_tagged_sender&>);
+    identity_tagged_sender sender;
     static_assert(std::same_as<decltype(
-        std::execution::__forge_domain::__default_transform_sender<std::execution::start_t>(
-            sender, environment)), noncopyable_tagged_sender&>);
+        std::execution::default_domain::transform_sender(
+            std::execution::start_t{}, sender, environment)), identity_tagged_sender&>);
     static_assert(std::same_as<decltype(
-        std::execution::__forge_domain::__default_transform_sender<std::execution::start_t>(
-            std::declval<direct_value_sender&>(), environment)), direct_value_sender&>);
+        std::execution::default_domain::transform_sender(
+            std::execution::start_t{}, std::declval<direct_value_sender&>(),
+            environment)), direct_value_sender&>);
     identity_transform_tag::calls = 0;
+    identity_transform_tag::source_address = nullptr;
+    identity_tagged_sender::copy_or_move_count = 0;
     int value = 0;
     bool completed = false;
     auto operation = std::execution::connect(
         sender, borrowed_env_receiver{{&value, &completed}, &environment});
+    EXPECT_EQ(identity_tagged_sender::copy_or_move_count, 0);
     std::execution::start(operation);
 
     EXPECT_EQ(identity_transform_tag::calls, 2);
+    EXPECT_EQ(identity_transform_tag::source_address, std::addressof(sender));
     EXPECT_TRUE(completed);
     EXPECT_EQ(value, 42);
 }

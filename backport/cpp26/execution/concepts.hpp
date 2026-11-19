@@ -744,7 +744,6 @@ concept __tag_apply_sender = requires(Sender&& sndr, Args&&... args) {
         static_cast<Sender&&>(sndr), static_cast<Args&&>(args)...);
 };
 
-// Internal dispatch also serves connect's borrowed, non-movable source extension.
 template<class Tag, class Sender, class Env>
     requires __sender_tag_transformable<Tag, Sender, Env>
 constexpr decltype(auto) __default_transform_sender(Sender&& sndr, const Env& env)
@@ -1515,6 +1514,7 @@ concept __domain_connectable =
 
 template<class S, class R>
 concept __connectable =
+    sender<S> &&
     receiver<R> &&
     ((__default_connect_domains<S, R> && __direct_connectable<S, R>) ||
      __domain_connectable<S, R>);

@@ -62,44 +62,40 @@
 //     For a sender with no value signature, connect and start with a receiver.
 //   - when_all accepts at most one value completion signature per child.
 //     Use when_all_with_variant for children with multiple signatures.
+//   - The bulk algorithms run serially as permitted by [exec.bulk]/9.
+//     See "bulk" and "bulk_chunked, bulk_unchunked" in the ledger.
 //
 // DEVIATIONS from current working draft [exec]:
-//   - as_awaitable produces the working-draft result shape (void / T /
-//     tuple<...> for zero / one / many values of the single value-completion
-//     signature). Its dispatch honors direct/transformed as_awaitable members,
-//     ordinary awaiters (including member/free operator co_await), and the
-//     await-completion adaptor before constructing the sender bridge. Senders
-//     with multiple value-completion alternatives fall back to the original
-//     expression and therefore do not become awaitable through this bridge.
-//   - Awaitables satisfy sender through a marker-first private concept. Their
-//     await-result signatures include exception_ptr and stopped. connect uses
-//     a globally allocated coroutine operation that owns its frame (a move
-//     transfers the handle); each completion runs inside await_suspend so
-//     receivers may destroy the operation there.
-//   - spawn_future returns a move-only single-consumer future sender. Its
-//     shared state and consumer record honor get_allocator(env); consumer
-//     cancellation registers the receiver's concrete stop-token type.
-//   - associate/spawn, current-WD token wrap semantics, and async
-//     sender-returning simple/counting scope join() are implemented.
-//   - on(sender, scheduler, closure) requires the child sender attributes to
-//     expose get_completion_scheduler<set_value_t> in this subset.
-//   - Execution domains are still a focused draft subset: public
-//     transform_sender, connect, and get_completion_signatures(sender, env)
-//     share completion-domain-then-start-domain recursive transformation.
-//     default_domain honors sender-tag transformation, and apply_sender uses
-//     explicit-domain-first then sender-tag fallback dispatch.
-//   - The bulk algorithms use a serial implementation. Forge provides
-//     policy-free serial adaptors in <forge/bulk.hpp>.
-//   - Receiver completion callbacks, including set_value, must be noexcept.
-//   - Non-copyable lvalue senders require explicit std::move(sndr) on
-//     standard-shaped paths, matching native handoff expectations.
-//   - The older transform_env spelling is not present in the current working
-//     draft and is intentionally not exposed.
+// Entries below refer to docs/roadmap/execution-conformance-ledger.md.
+//   - Domain customization has limited sender decomposition. Member connect
+//     does not enforce all Mandates. See "sender_tag, receiver_tag,
+//     operation_state_tag, scheduler_tag, tag_of_t" and "Core CPO customization".
+//   - Completion-signature queries use a value-taking CPO with substitution
+//     failure in place of consteval diagnostics. See "completion_signatures,
+//     completion_signatures_of_t, value/error utilities". Senders can also
+//     customize signatures through an instance member taking an environment.
+//     See the instance-member entry under actual query classification.
+//   - prop defers its callable Mandate to avoid recursive scheduler checks.
+//     See "env, prop".
+//   - Forwarding views query the underlying environment as a const lvalue.
+//     State-dependent forwarding queries use a value-initialized stand-in
+//     when available in constant evaluation and are otherwise filtered out.
+//     See the "forwarding_query" row and the D3 forwarding-view operand entry.
+//     Some static adaptors use different environment value categories for
+//     signatures and connect. The counting_scope stop wrapper takes the query
+//     tag by value and forwards it as a non-const lvalue. See the D3 static
+//     adaptor and counting_scope entries under actual query classification.
+//   - stopped_as_optional defers its creation Mandate to the actual environment.
+//     See "stopped_as_optional, stopped_as_error".
+//   - GET-AWAITER is emulated, the awaitable connect operation is movable, and
+//     the sender bridge defers connect and uses symmetric transfer. A prepared
+//     sender with multiple value signatures falls back to the original
+//     expression. See the coroutine bridge entries.
+//   - spawn_future allocates a consumer record at connect. See "Other Residuals".
+//   - sync_wait and sync_wait_with_variant retain a completion-domain fallback.
+//     See the wait consumer entries.
 //
-// NOT IMPLEMENTED (Phase 4+):
-//   - standard task/task_scheduler/with_error coroutine family; Forge task
-//     types are separate extensions and do not substitute for this surface.
-//   - standard type-erased sender surface.
+// Missing standard facilities are listed in the ledger's coverage matrix.
 
 // Language version guard.
 #if __cplusplus < 202002L

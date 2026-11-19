@@ -69,19 +69,11 @@ struct __start_scope {
     inline static thread_local __start_scope* __current = nullptr;
 };
 
-// Preserve the bridge's member-first acceptance leniency. Unlike the sender
-// probe, this path deliberately does not apply the promise's await_transform.
-// Applying it here would re-enter with_awaitable_senders::await_transform.
-template<class T> requires __member_co_await<T>
-auto __ordinary_awaiter(T&& value) -> decltype(static_cast<T&&>(value).operator co_await());
-template<class T> requires (!__member_co_await<T> && __free_co_await<T>)
-auto __ordinary_awaiter(T&& value) -> decltype(operator co_await(static_cast<T&&>(value)));
-template<class T> requires (!__member_co_await<T> && !__free_co_await<T>)
-auto __ordinary_awaiter(T&& value) -> T&&;
-
+// [exec.as.awaitable]/7.3 uses GET-AWAITER(expr) without an await_transform.
 template<class T, class Promise>
 concept __ordinary_awaitable = requires {
-    requires __is_awaiter<decltype(__ordinary_awaiter(std::declval<T>())), Promise>;
+    requires __is_awaiter<
+        decltype(__forge_awaitable::__get_awaiter(std::declval<T>())), Promise>;
 };
 
 template<class T, class Promise>
@@ -107,18 +99,6 @@ struct __value_from_tuple<std::tuple<T, U, Rest...>> {
     using type = std::tuple<T, U, Rest...>;
 };
 
-template<class List>
-struct __single_sender_value {};
-
-template<>
-struct __single_sender_value<__forge_meta::type_list<>> {
-    using type = void;
-};
-
-template<class Tuple>
-struct __single_sender_value<__forge_meta::type_list<Tuple>>
-    : __value_from_tuple<Tuple> {};
-
 template<class Promise>
 concept __has_unhandled_stopped = requires(Promise& p) {
     static_cast<std::coroutine_handle<>>(p.unhandled_stopped());
@@ -142,26 +122,17 @@ auto __get_promise_env(const Promise&) noexcept -> __empty_env {
     return {};
 }
 
-template<class S, class Promise, class = void>
-struct __sender_value {};
+template<class Promise>
+using __promise_env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
 
 template<class S, class Promise>
-struct __sender_value<S, Promise, std::void_t<decltype(
-    std::execution::get_completion_signatures(std::declval<S>(),
-        std::declval<decltype(__get_promise_env(std::declval<const Promise&>()))>()))>>
-    : __single_sender_value<__forge_meta::value_tuple_list_t<decltype(
-          std::execution::get_completion_signatures(
-              std::declval<S>(),
-              std::declval<decltype(__get_promise_env(
-                  std::declval<const Promise&>()))>()))>> {
-    using env_t = decltype(__get_promise_env(std::declval<const Promise&>()));
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::declval<env_t>()));
-};
+using __sender_completions_t = completion_signatures_of_t<S, __promise_env_t<Promise>>;
 
 template<class S, class Promise>
 concept __single_sender = requires {
-    typename __sender_value<S, Promise>::type;
+    typename __sender_completions_t<S, Promise>;
+    // Count signatures before decaying the arguments of the selected signature.
+    requires (__forge_meta::__value_count<__sender_completions_t<S, Promise>> <= 1);
 };
 
 template<class S, class Promise>
@@ -197,23 +168,29 @@ auto __adapt_for_await_completion(S&& sndr) noexcept -> S&& {
 
 template<class S, class Promise>
 concept __transformed_sender_has_as_awaitable =
-    sender_in<S, decltype(__get_promise_env(std::declval<const Promise&>()))> &&
-    __single_sender<std::decay_t<S>, Promise> &&
+    __single_sender<S, Promise> &&
     requires(S&& sndr, Promise& promise) {
         __adapt_for_await_completion(__transform_for_await(
             static_cast<S&&>(sndr), promise)).as_awaitable(promise);
     };
 
 template<class S, class Promise>
-using __prepared_sender_t = std::decay_t<decltype(
+using __prepared_sender_t = __forge_domain::__forwarded_argument_t<decltype(
     __adapt_for_await_completion(__transform_for_await(
         std::declval<S>(), std::declval<Promise&>())))>;
 
 template<class S, class Promise>
+concept __prepared_sender_has_multiple_values = requires {
+    requires (__forge_meta::__value_count<
+        __sender_completions_t<__prepared_sender_t<S, Promise>, Promise>> > 1);
+};
+
+template<class S, class Promise>
 concept __bridgeable_sender =
-    sender_in<S, decltype(__get_promise_env(std::declval<const Promise&>()))> &&
-    __single_sender<std::decay_t<S>, Promise> &&
-    __single_sender<__prepared_sender_t<S, Promise>, Promise>;
+    __single_sender<S, Promise> &&
+    // [exec.as.awaitable]/7.4 selects the bridge from the source expression.
+    // Retain the identity fallback only for a known multi-value result.
+    (!__prepared_sender_has_multiple_values<S, Promise>);
 
 template<class Value, class Promise>
 consteval bool __as_awaitable_nothrow() {
@@ -238,13 +215,14 @@ struct __awaitable {
     S __sndr;
     Promise* __promise;
 
-    __awaitable(S sndr, Promise* promise)
+    // Class template deduction follows [exec.as.awaitable]/7.4: S&& is not a
+    // forwarding reference, so the prepared sender cannot be an lvalue.
+    __awaitable(S&& sndr, Promise* promise)
         : __sndr(std::move(sndr)), __promise(promise) {}
 
-    using env_t = typename __sender_value<S, Promise>::env_t;
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::declval<env_t>()));
-    using value_t = typename __sender_value<S, Promise>::type;
+    using env_t = __promise_env_t<Promise>;
+    using value_t = typename __value_from_tuple<__forge_meta::__single_value_tuple_t<
+        __sender_completions_t<S, Promise>>>::type;
     using stored_value_t = std::conditional_t<
         std::is_void_v<value_t>, __unit, value_t>;
     using result_t = std::optional<stored_value_t>;
@@ -362,8 +340,7 @@ struct as_awaitable_t {
         } else if constexpr (__ordinary_awaitable<Value, Promise>) {
             return static_cast<Value&&>(value);
         } else if constexpr (__bridgeable_sender<Value, Promise>) {
-            using sender_t = __prepared_sender_t<Value, Promise>;
-            return __awaitable<sender_t, Promise>{
+            return __awaitable{
                 __adapt_for_await_completion(__transform_for_await(
                     static_cast<Value&&>(value), promise)),
                 std::addressof(promise)};

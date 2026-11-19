@@ -1,5 +1,6 @@
 #include "awaitable_conformance_types.hpp"
 #include <forge/execution_extensions.hpp>
+#include <memory>
 namespace ex = std::execution;
 namespace a = awaitable_tests;
 #ifndef FORGE_AWAITABLE_CASE
@@ -31,6 +32,29 @@ struct limited_receiver {
     void set_stopped() && noexcept {}
 #endif
 };
+#if FORGE_AWAITABLE_CASE == 11
+using prepared_sender = decltype(ex::just(std::unique_ptr<int>{}));
+
+struct bridge_adaptor_source {
+    using sender_concept = ex::sender_tag;
+    prepared_sender* prepared;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(std::unique_ptr<int>)> { return {}; }
+
+    auto get_env() const noexcept {
+        auto adaptor = [prepared = prepared](auto&&) noexcept -> decltype(auto) {
+#ifdef FORGE_AWAITABLE_POSITIVE
+            return prepared_sender(std::move(*prepared));
+#else
+            return *prepared;
+#endif
+        };
+        return ex::prop(ex::get_await_completion_adaptor, adaptor);
+    }
+};
+#endif
 int main() {
 #if FORGE_AWAITABLE_CASE == 1
     a::promise promise;
@@ -73,6 +97,22 @@ int main() {
     ex::with_awaitable_senders<a::promise> result;
 #else
     ex::with_awaitable_senders<a::promise&> result;
+#endif
+#elif FORGE_AWAITABLE_CASE == 10
+    a::promise promise;
+    auto source = ex::just(1);
+#ifdef FORGE_AWAITABLE_POSITIVE
+    auto result = ex::as_awaitable(std::move(source), promise);
+    static_assert(std::same_as<decltype(result.await_resume()), int>);
+#else
+    auto result = ex::as_awaitable(source, promise);
+#endif
+#elif FORGE_AWAITABLE_CASE == 11
+    a::promise promise;
+    auto prepared = ex::just(std::make_unique<int>(1));
+    auto result = ex::as_awaitable(bridge_adaptor_source{&prepared}, promise);
+#ifdef FORGE_AWAITABLE_POSITIVE
+    static_assert(std::same_as<decltype(result.await_resume()), std::unique_ptr<int>>);
 #endif
 #endif
     (void)result;

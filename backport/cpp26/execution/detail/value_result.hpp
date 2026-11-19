@@ -30,42 +30,6 @@
 
 namespace std::execution::__forge_meta {
 
-template<class CS>
-struct value_tuple_list;
-
-template<class List, class Sig>
-struct push_value_tuple {
-    using type = List;
-};
-
-template<class... Tuples, class... Vs>
-struct push_value_tuple<type_list<Tuples...>, set_value_t(Vs...)> {
-    using tuple_t = std::tuple<std::decay_t<Vs>...>;
-    using type = list_push_unique_t<type_list<Tuples...>, tuple_t>;
-};
-
-template<class List, class... Sigs>
-struct collect_value_tuples;
-
-template<class List>
-struct collect_value_tuples<List> {
-    using type = List;
-};
-
-template<class List, class Sig, class... Rest>
-struct collect_value_tuples<List, Sig, Rest...> {
-    using next = typename push_value_tuple<List, Sig>::type;
-    using type = typename collect_value_tuples<next, Rest...>::type;
-};
-
-template<class... Sigs>
-struct value_tuple_list<completion_signatures<Sigs...>> {
-    using type = typename collect_value_tuples<type_list<>, Sigs...>::type;
-};
-
-template<class CS>
-using value_tuple_list_t = typename value_tuple_list<CS>::type;
-
 template<class List>
 struct type_list_empty;
 
