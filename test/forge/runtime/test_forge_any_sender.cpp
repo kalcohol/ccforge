@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 using cs_int = std::execution::completion_signatures<
     std::execution::set_value_t(int),
@@ -36,7 +37,7 @@ struct rvalue_connect_only_sender {
     using sender_concept = std::execution::sender_tag;
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> cs_int {
+    static constexpr auto get_completion_signatures() noexcept -> cs_int {
         return {};
     }
 
@@ -98,7 +99,7 @@ struct tracking_sender {
     }
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> cs_int {
+    static constexpr auto get_completion_signatures() noexcept -> cs_int {
         return {};
     }
 
@@ -147,7 +148,7 @@ struct throwing_move_sender {
     }
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> cs_int {
+    static constexpr auto get_completion_signatures() noexcept -> cs_int {
         return {};
     }
 
@@ -199,7 +200,7 @@ struct alignas(64) over_aligned_sender {
     }
 
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> cs_int {
+    static constexpr auto get_completion_signatures() noexcept -> cs_int {
         return {};
     }
 
@@ -243,7 +244,7 @@ struct consuming_sender {
     // An lvalue signature query would hide this sender from erasure.
     template<class Self, class Env>
         requires (!std::is_lvalue_reference_v<Self>)
-    static auto get_completion_signatures() noexcept -> cs_int { return {}; }
+    static constexpr auto get_completion_signatures() noexcept -> cs_int { return {}; }
 
     auto get_env() const noexcept -> forge::empty_env { return {}; }
 
@@ -343,22 +344,163 @@ TEST(AnySenderTest, MoveOnlyErrorAndConnectFailureEmptyStorage) {
     EXPECT_EQ(connections, 2);
 }
 
-#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
-// Zero-value erasure is supported by the backport wait implementation.
-TEST(AnySenderTest, SyncWaitPreservesStoppedWithoutValueCompletions) {
-    using signatures = std::execution::completion_signatures<
-        std::execution::set_stopped_t()>;
-    forge::any_sender_of<signatures> erased = std::execution::just_stopped();
+using cs_empty = std::execution::completion_signatures<
+    std::execution::set_value_t(),
+    std::execution::set_error_t(int),
+    std::execution::set_stopped_t()>;
 
+static_assert(&forge::sync_wait == &std::this_thread::sync_wait);
+static_assert(!std::constructible_from<forge::any_sender_of<cs_empty>,
+    decltype(std::execution::just_stopped())>);
+static_assert(!std::constructible_from<forge::any_sender_of<cs_empty>,
+    decltype(std::execution::just_error(42))>);
+
+struct multi_shape_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int),
+            std::execution::set_value_t(const int&)> { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const {
+        return std::execution::connect(std::execution::just(42), std::move(r));
+    }
+};
+
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>, multi_shape_sender>);
+
+template<class E>
+struct const_ref_error_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int), std::execution::set_error_t(const E&)> { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_tag;
+        R receiver;
+        E error{};
+
+        void start() & noexcept {
+            std::execution::set_error(std::move(receiver), std::as_const(error));
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> operation<R> { return {std::move(r)}; }
+};
+
+struct deleted_mutable_copy_error {
+    deleted_mutable_copy_error() = default;
+    deleted_mutable_copy_error(const deleted_mutable_copy_error&) = default;
+    deleted_mutable_copy_error(deleted_mutable_copy_error&) = delete;
+};
+
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>, const_ref_error_sender<int>>);
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>,
+    const_ref_error_sender<std::unique_ptr<int>>>);
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>,
+    const_ref_error_sender<deleted_mutable_copy_error>>);
+
+template<class E>
+struct mutable_ref_error_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(int), std::execution::set_error_t(E&)> { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_tag;
+        R receiver;
+        E error{};
+
+        void start() & noexcept {
+            std::execution::set_error(std::move(receiver), error);
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> operation<R> { return {std::move(r)}; }
+};
+
+struct deleted_const_copy_error {
+    deleted_const_copy_error() = default;
+    deleted_const_copy_error(deleted_const_copy_error&) = default;
+    deleted_const_copy_error(const deleted_const_copy_error&) = delete;
+};
+
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>,
+    mutable_ref_error_sender<deleted_const_copy_error>>);
+
+template<bool RequireEmptyReceiver>
+struct receiver_sensitive_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept -> cs_int { return {}; }
+
+    template<std::execution::receiver R>
+        requires (std::is_empty_v<R> == RequireEmptyReceiver)
+    auto connect(R receiver) const {
+        return std::execution::connect(std::execution::just(23), std::move(receiver));
+    }
+};
+
+static_assert(!std::constructible_from<forge::any_sender_of<cs_int>, receiver_sensitive_sender<true>>);
+static_assert(std::constructible_from<forge::any_sender_of<cs_int>, receiver_sensitive_sender<false>>);
+
+TEST(AnySenderTest, ProbesTheReceiverUsedForConsumption) {
+    forge::any_sender_of<cs_int> erased = receiver_sensitive_sender<false>{};
+    EXPECT_EQ(erased.sync_wait(), std::optional{std::tuple{23}});
+}
+
+template<bool Stop>
+struct empty_value_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept -> cs_empty { return {}; }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_tag;
+        R receiver;
+
+        operation(R r) : receiver(std::move(r)) {}
+        operation(const operation&) = delete;
+
+        void start() & noexcept {
+            if constexpr (Stop) {
+                std::execution::set_stopped(std::move(receiver));
+            } else {
+                std::execution::set_error(std::move(receiver), 42);
+            }
+        }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) const -> operation<R> { return operation<R>(std::move(r)); }
+};
+
+TEST(AnySenderTest, SyncWaitPreservesStopped) {
+    forge::any_sender_of<cs_empty> erased = empty_value_sender<true>{};
     auto result = erased.sync_wait();
+
     static_assert(std::is_same_v<decltype(result), std::optional<std::tuple<>>>);
     EXPECT_FALSE(result.has_value());
 }
 
-TEST(AnySenderTest, SyncWaitPreservesErrorWithoutValueCompletions) {
-    using signatures = std::execution::completion_signatures<
-        std::execution::set_error_t(int)>;
-    forge::any_sender_of<signatures> erased = std::execution::just_error(42);
+TEST(AnySenderTest, SyncWaitPreservesError) {
+    forge::any_sender_of<cs_empty> erased = empty_value_sender<false>{};
 
     try {
         (void)erased.sync_wait();
@@ -367,7 +509,6 @@ TEST(AnySenderTest, SyncWaitPreservesErrorWithoutValueCompletions) {
         EXPECT_EQ(error, 42);
     }
 }
-#endif
 
 TEST(AnySenderTest, MoveConstructsSmallObjectStorageSender) {
     sender_move_counts counts;

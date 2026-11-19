@@ -4,13 +4,13 @@
 
 ## 源码与状态
 
-整个 header 是唯一 locked source，包括 environment queries、结果类型选择、扩展 overload、forwarding 和注释。`model.py` 保存转移、独立 oracle 与 tombstones；`scenarios.py` 保存脚本；`tiers.py` 保存 quick/full；`mutants.py` 保存单点变更与全部 killers；`sensitivity.txt` 人工声明失败；`expected/results.tsv` 保存 semantic records。
+整个 header 是唯一 locked source，包括 environment queries、结果类型选择、Mandates、domain dispatch、forwarding 和注释。`model.py` 保存转移、独立 oracle 与 tombstones；`scenarios.py` 保存脚本；`tiers.py` 保存 quick/full；`mutants.py` 保存单点变更与全部 killers；`sensitivity.txt` 人工声明失败；`expected/results.tsv` 保存 semantic records。
 
 ```bash
 python3 -B formal/sync_wait/check.py --steps
 ```
 
-step table 以 enclosing function 内唯一 fragment 定位 receiver 三种 store/finish 和 driver connect/start/run/read。隐式 stack destruction、child 与 run_loop 库内部明确是 model-only。whole-file lock 覆盖无法独立引用的声明与成员；fragment 存在不能证明 fidelity。
+step table 以 enclosing function 内唯一 fragment 定位 receiver 的 value/error store 和三种 finish 和 driver connect/start/run/read。隐式 stack destruction、child 与 run_loop 库内部明确是 model-only。whole-file lock 覆盖无法独立引用的声明与成员；fragment 存在不能证明 fidelity。
 
 状态有 loop/state/op/child tombstones、result、store count、独立 expected payload、public-start obligation、finish publication、run-return flag、抽象 queued task、脚本、vector clocks 和 plain access records。expected 在 public start 入口记录，与改变 store/read 顺序的 mutant branches 无关。
 
@@ -22,17 +22,17 @@ step table 以 enclosing function 内唯一 fragment 定位 receiver 三种 stor
 
 child 使用 [共享 inner operation](../engine/inner_operation.py) 的 start/readiness/completion 脚本。sync_wait env 无 stoppable token，因此 registration 为 none；不构造虚假 callbacks。child 内部同步是合法 sender 的抽象契约，不模拟任意 sender 实现。start 可 inline 完成，或发布 readiness 后在另线程完成；producer 与 starter 的 handoff 仅覆盖 child startup，不能代替 receiver finish 的 result publication。
 
-set_value 的临时 value 在 try block 退出时先于 finish 析构，该单线程局部步骤合并于 store；driver 的返回值构造先于 op/state/loop teardown。receiver 先存 result，再从 receiver 读取 loop 指针并调用 finish；finish_unlock 以后只有 stack return，不再访问 receiver、state、op 或 loop。value 构造失败按 error outcome 约简，error 的 exception_ptr/error_code/其他 error 转换按相同最终 exception outcome 约简；不模拟任意用户构造、抛出 destructor 或重复完成的非法 sender。
+set_value 在 optional 中直接构造 tuple，set_error 存 exception_ptr；set_stopped 直接 finish，result 保持 disengaged。模型以单个结果状态表示这两个互斥的字段。driver 的返回值构造先于 teardown。receiver 经 state 指针调用其 loop 的 finish；finish_unlock 以后只执行 stack return。value 构造失败按 error outcome 约简，error 的 exception_ptr/error_code/其他 error 转换按相同最终 exception outcome 约简；不模拟任意用户构造、抛出 destructor 或重复完成的非法 sender。
 
-driver 构造 loop、state、op，执行 start/run/read，随后依次销毁 op、state、loop；error 的 rethrow 与 value/stopped 返回共享该 unwind 次序。construction 在尚未公开对象的 driver 上合并，loop_after_state mutant 同时改为 state/loop/op 初始化与 op/loop/state 析构。payload destructor 可借用 loop，value_destructor 保留这个有限合法行为，因此该声明次序 mutant 有实际 witness。op destructor 也可借用 state/loop。跨线程 receiver 的 finish call 还未从 stack 返回时，driver 已可完成全部析构。
+driver 构造含 loop、error、result 的 state，再构造 op，执行 start/run/read，随后依次销毁 op、result、error、loop；error 的 rethrow 与 value/stopped 返回共享该 unwind 次序。construction 在尚未公开对象的 driver 上合并，loop_after_state mutant 同时改为 state/loop/op 初始化与 op/loop/state 析构。payload destructor 可借用 loop，value_destructor 保留这个有限合法行为，因此该声明次序 mutant 有实际 witness。op destructor 也可借用 state/loop。跨线程 receiver 的 finish call 还未从 stack 返回时，driver 已可完成全部析构。
 
 ## 性质、场景与敏感性
 
 - SW1：result write HB 于 driver read，read 看到 public start 独立要求的 payload，且在 run-return 后。finish_before_store、read_before_run 与 no_finish_handoff 分别破坏顺序或 HB；正确 SC 值不能代替 HB。
 - SW2：state、loop、op、child 在 return/unwind destruction 后不再访问，receiver 的最后对象访问是 finish。loop_after_state、after_finish_state/op/loop 及逐 storage-end controls 各自提供反例。self-tests 还直接检查每个 lifetime end 的 conflicting write。
-- SW3：public start 有且只有一次 result store；drop_store 保留义务但跳过履约，double_store 重复写，独立 terminal/state predicates 均检测。drop_finish 保留 run 完成要求并导致 unfinished terminal。
+- SW3：public start 要求 value/error 完成恰好一次 result store，stopped 无 store；drop_store 保留义务但跳过履约，double_store 重复写，独立 terminal/state predicates 均检测。drop_finish 保留 run 完成要求并导致 unfinished terminal。
 
-八个场景覆盖 inline/另线程的 value、error、stopped，payload destructor 借用 loop，以及 run thread 上的抽象 scheduled completion。coverage 断言要求 inline/own completion、run-return 和 task dispatch。三种单点 mutants 全部对所有场景的 sc/sc_hb 做 sweep；每个都有 killer，没有 whole-sweep survivor。finish_before_store 在 inline completion 的配置仍可能通过，因为 driver 尚未进入 run；所有 passing 配置也必须匹配人工 sensitivity 和 expected。
+八个场景覆盖 inline/另线程的 value、error、stopped，payload destructor 借用 loop，以及 run thread 上的抽象 scheduled completion。coverage 断言要求 inline/own completion、run-return 和 task dispatch。三种单点 mutants 全部对所有场景的 sc/sc_hb 做 sweep；每个都有 killer，没有 whole-sweep survivor。finish_before_store 在 inline completion 的配置仍可能通过，因为 driver 尚未进入 run；stopped 的两个场景没有 store 可重排。所有 passing 配置也必须匹配人工 sensitivity 和 expected。
 
 ## 内存与维护
 
@@ -54,11 +54,6 @@ source digest 只转换 CRLF→LF，保留注释/空白。lock 是 drift detecti
 
 ## 最近一次完整检验
 
-2026-11-16，Python 3.13.13，八 workers / spawn。baseline 全部通过；所有 mutant/control outcomes 匹配人工 sensitivity。全部配置完成且未达到 state cap。expected update 与独立 full refresh 的 semantic records 完全一致。
-
-| Tier | 配置数 | Runner wall s | 最大 worker MiB | States | Transitions |
-|---|---:|---:|---:|---:|---:|
-| full | 82 | 1.118 | 25.75 | 1570 | 1675 |
-| quick | 25 | 0.309 | 25.77 | 518 | 578 |
-
-wall 包含 pool 启动，不含 CLI self-tests；worker peak 不是 pool peak，测量不能外推更大边界。
+2026-11-19，Python 3.13.13，四 workers / spawn，full 共 82 个配置、1,580 states 与
+1,697 transitions。50 个配置通过，32 个配置给出预期反例。所有配置完成且未达到 state cap。
+expected update 与独立 full refresh 的 semantic records 完全一致。

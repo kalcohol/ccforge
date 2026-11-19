@@ -490,13 +490,21 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 构建专用副本，以 `/we4996`（MSVC）或 `-Werror=deprecated-declarations`（GCC、Clang、
 AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 future、迁移后的 execution
 和 Forge 运行测试。专用副本不参与默认构建，沿用原有普通测试的警告选项。
-`execution_zero_wait_compat` 在局部抑制弃用诊断后，检查已弃用的 `sync_wait` 重载处理
-零种值完成签名（stopped、error）的行为，并比较具有两种值完成签名的 sender 在该重载和
-`forge::sync_wait` 中的结果。功能关闭或原生实现让位时，对应目标可能不注册。
 `test_execution_extension_deprecations_strict` 也构建已启用的 Forge 副本。
 `install_consumer_deprecation_strict_compile` 使用源码树头文件编译安装包消费者的同一份
 源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
 `test_extension_deprecations_strict` 汇总当前已注册的检查目标。
+
+配置阶段以实际调用检查 wait 消费者的 Mandates。一个 value completion signature
+的正控制必须编译，零个、多个及不是 sender 的调用必须编译失败。domain 正控制返回规定的
+optional tuple，错误返回类型必须编译失败。具有相同 decayed tuple
+的两个签名也属于多个签名。正控制还检查 `forge::sync_wait` 与标准对象地址相同。
+`sync_wait_with_variant` 的正控制覆盖默认调用和对原 sender 的 domain dispatch，
+错误返回类型以及 stopped-only 和 error-only sender 的默认调用必须编译失败。
+`execution_when_all` 检查多 value child 使 `when_all` 的 `sender_in` 为 false，
+并以 `when_all_with_variant` 为正控制；多形态 runtime 测试保留实际 variant 内容与
+静态 operation-state 分配检查。零 value 的 stopped、error 测试直接连接并启动
+operation，由 receiver 记录相应 completion channel。
 
 `execution_removed_forms_compile` 对移除的重载与 pipe 形式使用 requires-expression
 或概念作反例，逐项配对 `execution_standard_forms` 及同一源文件内的标准正控制。

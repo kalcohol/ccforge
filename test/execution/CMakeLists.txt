@@ -473,33 +473,22 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(test_execution_extensions PRIVATE -Werror=deprecated-declarations)
 endif()
 
-# The deprecated sync_wait overload remains usable and diagnoses independently.
-set(_forge_extension_flags "${CMAKE_REQUIRED_FLAGS}")
+# Call the consumer in its body so the Mandates are instantiated.
+set(_forge_sync_wait_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+forge_expect_execution_cxx_source_compiles(
+    FORGE_EXECUTION_ACCEPTS_SINGLE_VALUE_SYNC_WAIT
+    test_execution_sync_wait_mandates.cpp ON "A single value signature must work with sync_wait")
+foreach(_case RANGE 1 7)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_sync_wait_defs} -DFORGE_SYNC_WAIT_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(
+        FORGE_EXECUTION_SYNC_WAIT_MANDATE_${_case}
+        test_execution_sync_wait_mandates.cpp OFF "The wait consumer must diagnose Mandate case ${_case}")
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_sync_wait_defs}")
+unset(_forge_sync_wait_defs)
+unset(_case)
+
 set(_forge_extension_defs "${CMAKE_REQUIRED_DEFINITIONS}")
-if(MSVC)
-    string(APPEND CMAKE_REQUIRED_FLAGS " /we4996")
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    string(APPEND CMAKE_REQUIRED_FLAGS " -Werror=deprecated-declarations")
-endif()
-forge_add_execution_compile_probe(test_execution_zero_wait_compat test_execution_zero_wait_compat.cpp execution_zero_wait_compat_compile)
-add_test(NAME execution_zero_wait_compat COMMAND test_execution_zero_wait_compat)
-set_tests_properties(execution_zero_wait_compat PROPERTIES DEPENDS execution_zero_wait_compat_compile)
-if(MSVC)
-    target_compile_options(test_execution_zero_wait_compat PRIVATE /we4996)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_execution_zero_wait_compat PRIVATE -Werror=deprecated-declarations)
-endif()
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ZERO_WAIT_COMPAT
-        test_execution_zero_wait_compat.cpp ON "Suppressed legacy extensions and Forge replacements must compile")
-    foreach(_forge_case RANGE 1 2)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs} -DFORGE_DEPRECATION_CASE=${_forge_case})
-        forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_ZERO_WAIT_DEPRECATED_${_forge_case}
-            test_execution_zero_wait_compat.cpp OFF "Each legacy extension must diagnose deprecation")
-    endforeach()
-    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
-endif()
-set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
 forge_add_execution_compile_probe(test_execution_removed_forms
     test_execution_removed_forms.cpp execution_removed_forms_compile)
 forge_add_execution_compile_probe(test_execution_standard_forms
@@ -527,13 +516,11 @@ foreach(_case RANGE 1 33)
 endforeach()
 unset(_target)
 unset(_test)
-set(CMAKE_REQUIRED_FLAGS "${_forge_extension_flags}")
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
-unset(_forge_extension_flags)
 unset(_forge_extension_defs)
 unset(_forge_case)
 
-# Build separate strict copies of the migrated and zero-value runtime tests.
+# Build separate strict copies of the migrated runtime tests.
 set(_forge_scope_strict_targets
     test_execution_counting_scope test_execution_counting_scope_limits_runtime
     test_execution_counting_scope_stress test_execution_counting_scope_lifetime
@@ -550,7 +537,7 @@ foreach(_forge_target IN LISTS _forge_scope_strict_targets)
     list(APPEND _forge_scope_strict_copies ${_forge_target}_ds)
 endforeach()
 add_custom_target(test_execution_extension_deprecations_strict DEPENDS
-    ${_forge_scope_strict_copies} test_execution_zero_wait_compat test_execution_extensions
+    ${_forge_scope_strict_copies} test_execution_extensions
     test_execution_removed_forms test_execution_standard_forms)
 unset(_forge_scope_strict_targets)
 unset(_forge_scope_strict_copies)

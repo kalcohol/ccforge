@@ -1,6 +1,7 @@
 #include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 
 #include <forge/start_detached.hpp>
 #include <execution>
@@ -599,6 +600,30 @@ struct sync_wait_throwing_value_sender {
     }
 };
 
+struct sync_wait_error_code_sender {
+    using sender_concept = std::execution::sender_tag;
+    std::error_code error;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<
+            std::execution::set_value_t(), std::execution::set_error_t(std::error_code)> {
+        return {};
+    }
+
+    template<class R>
+    struct operation {
+        using operation_state_concept = std::execution::operation_state_tag;
+        R receiver;
+        std::error_code error;
+
+        void start() & noexcept { std::execution::set_error(std::move(receiver), std::move(error)); }
+    };
+
+    template<std::execution::receiver R>
+    auto connect(R r) && -> operation<R> { return {std::move(r), error}; }
+};
+
 using move_only_pipeline_t = decltype(
     std::execution::just(std::unique_ptr<int>{}) | std::execution::then(deref_unique{}));
 
@@ -759,42 +784,49 @@ TEST(ExecutionMvpTest, SyncWaitDecaysReferenceValueSignatures) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ExecutionMvpTest, SyncWaitMultiValueAlternativesReturnVariant) {
-    auto int_result = forge::sync_wait(sync_wait_multi_value_sender{false});
-    using expected_t = std::optional<std::variant<std::tuple<int>, std::tuple<double>>>;
+TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesMultipleValues) {
+    auto int_result = std::this_thread::sync_wait_with_variant(sync_wait_multi_value_sender{false});
+    using value_t = std::variant<std::tuple<int>, std::tuple<double>>;
+    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
     static_assert(std::is_same_v<decltype(int_result), expected_t>);
 
     ASSERT_TRUE(int_result.has_value());
-    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(*int_result));
-    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(*int_result)), 3);
+    const auto& int_value = std::get<0>(std::get<0>(*int_result));
+    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(int_value));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(int_value)), 3);
 
-    auto double_result = forge::sync_wait(sync_wait_multi_value_sender{true});
+    auto double_result = std::this_thread::sync_wait_with_variant(sync_wait_multi_value_sender{true});
     ASSERT_TRUE(double_result.has_value());
-    ASSERT_TRUE(std::holds_alternative<std::tuple<double>>(*double_result));
-    EXPECT_EQ(std::get<0>(std::get<std::tuple<double>>(*double_result)), 4.5);
+    const auto& double_value = std::get<0>(std::get<0>(*double_result));
+    ASSERT_TRUE(std::holds_alternative<std::tuple<double>>(double_value));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<double>>(double_value)), 4.5);
 }
 
-TEST(ExecutionMvpTest, SyncWaitEmptyValueAlternativeUsesEmptyTupleVariant) {
-    auto empty_result = forge::sync_wait(sync_wait_empty_or_int_sender{true});
-    using expected_t = std::optional<std::variant<std::tuple<>, std::tuple<int>>>;
+TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesEmptyTupleAlternative) {
+    auto empty_result = std::this_thread::sync_wait_with_variant(sync_wait_empty_or_int_sender{true});
+    using value_t = std::variant<std::tuple<>, std::tuple<int>>;
+    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
     static_assert(std::is_same_v<decltype(empty_result), expected_t>);
 
     ASSERT_TRUE(empty_result.has_value());
-    EXPECT_TRUE(std::holds_alternative<std::tuple<>>(*empty_result));
+    EXPECT_TRUE(std::holds_alternative<std::tuple<>>(std::get<0>(std::get<0>(*empty_result))));
 
-    auto int_result = forge::sync_wait(sync_wait_empty_or_int_sender{false});
+    auto int_result = std::this_thread::sync_wait_with_variant(sync_wait_empty_or_int_sender{false});
     ASSERT_TRUE(int_result.has_value());
-    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(*int_result));
-    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(*int_result)), 8);
+    const auto& int_value = std::get<0>(std::get<0>(*int_result));
+    ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(int_value));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(int_value)), 8);
 }
 
-TEST(ExecutionMvpTest, SyncWaitDuplicateValueAlternativesDeduplicate) {
-    auto result = forge::sync_wait(sync_wait_duplicate_value_sender{});
-    using expected_t = std::optional<std::tuple<int>>;
+TEST(ExecutionMvpTest, SyncWaitWithVariantDeduplicatesDecayedTuples) {
+    auto result = std::this_thread::sync_wait_with_variant(sync_wait_duplicate_value_sender{});
+    using value_t = std::variant<std::tuple<int>>;
+    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
     static_assert(std::is_same_v<decltype(result), expected_t>);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), 11);
+    const auto& value = std::get<0>(std::get<0>(*result));
+    EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(value)), 11);
 }
 
 TEST(ExecutionMvpTest, SyncWaitValueConstructionFailurePropagates) {
@@ -806,7 +838,7 @@ TEST(ExecutionMvpTest, SyncWaitMapsErrorCodeToSystemError) {
     const auto code = std::make_error_code(std::errc::permission_denied);
 
     try {
-        (void)forge::sync_wait(std::execution::just_error(code));
+        (void)std::this_thread::sync_wait(sync_wait_error_code_sender{code});
         FAIL() << "sync_wait did not throw";
     } catch (const std::system_error& error) {
         EXPECT_EQ(error.code(), code);
@@ -860,8 +892,10 @@ TEST(ExecutionMvpTest, ThenForwardsErrorAndDoesNotCallFn) {
             return 0;
         });
 
-    EXPECT_THROW((void)forge::sync_wait(std::move(sender)), std::runtime_error);
+    auto result = forge_test::observe_completion<std::runtime_error>(std::move(sender));
     EXPECT_FALSE(called);
+    ASSERT_TRUE(result.error);
+    EXPECT_STREQ(result.error->what(), "err");
 }
 
 TEST(ExecutionMvpTest, ThenForwardsStoppedAndDoesNotCallFn) {
@@ -873,8 +907,7 @@ TEST(ExecutionMvpTest, ThenForwardsStoppedAndDoesNotCallFn) {
             return 0;
         });
 
-    auto result = forge::sync_wait(std::move(sender));
-    EXPECT_FALSE(static_cast<bool>(result));
+    EXPECT_TRUE(forge_test::observe_completion(std::move(sender)).stopped);
     EXPECT_FALSE(called);
 }
 

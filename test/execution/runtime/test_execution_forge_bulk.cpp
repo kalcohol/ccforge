@@ -1,6 +1,7 @@
 #include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 
 #include <array>
 #include <concepts>
@@ -52,10 +53,14 @@ TEST(ForgeBulk, DirectAndPipeUseOneSerialChunk) {
 }
 
 TEST(ForgeBulk, ForwardsStoppedAndCallbackErrors) {
-    auto stopped = forge::bulk(ex::just_stopped(), 4, each_index());
-    EXPECT_FALSE(forge::sync_wait(std::move(stopped)));
+    bool called = false;
+    auto stopped = forge::bulk(ex::just_stopped(), 4, [&](int, int&) noexcept { called = true; });
+    EXPECT_TRUE(forge_test::observe_completion(std::move(stopped)).stopped);
+    EXPECT_FALSE(called);
     auto error = ex::just(1) | forge::bulk_unchunked(1, [](int, int&) {
         throw std::runtime_error("bulk callback");
     });
-    EXPECT_THROW((void)forge::sync_wait(std::move(error)), std::runtime_error);
+    auto result = forge_test::observe_completion(std::move(error));
+    ASSERT_TRUE(result.error);
+    EXPECT_THROW(std::rethrow_exception(*result.error), std::runtime_error);
 }

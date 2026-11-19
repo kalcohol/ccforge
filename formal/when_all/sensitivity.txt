@@ -17,10 +17,14 @@ deregister_after_deliver.b_error.sc
 deregister_after_deliver.b_error.sc_hb
 deregister_after_deliver.b_error_stop.sc
 deregister_after_deliver.b_error_stop.sc_hb
+deregister_after_deliver.b_no_value_slot.sc
+deregister_after_deliver.b_no_value_slot.sc_hb
 deregister_after_deliver.b_two_errors.sc
 deregister_after_deliver.b_two_errors.sc_hb
 deregister_after_deliver.c_stopped.sc
 deregister_after_deliver.c_stopped.sc_hb
+deregister_after_deliver.c_throwing_value.sc
+deregister_after_deliver.c_throwing_value.sc_hb
 deregister_after_deliver.d_ignore.sc
 deregister_after_deliver.d_ignore.sc_hb
 deregister_after_deliver.d_later.sc
@@ -58,10 +62,14 @@ no_deregister.b_error.sc
 no_deregister.b_error.sc_hb
 no_deregister.b_error_stop.sc
 no_deregister.b_error_stop.sc_hb
+no_deregister.b_no_value_slot.sc
+no_deregister.b_no_value_slot.sc_hb
 no_deregister.b_two_errors.sc
 no_deregister.b_two_errors.sc_hb
 no_deregister.c_stopped.sc
 no_deregister.c_stopped.sc_hb
+no_deregister.c_throwing_value.sc
+no_deregister.c_throwing_value.sc_hb
 no_deregister.d_ignore.sc
 no_deregister.d_ignore.sc_hb
 no_deregister.d_later.sc
@@ -76,6 +84,8 @@ no_deregister.d_pre.sc
 no_deregister.d_pre.sc_hb
 no_error_stop.b_error.sc
 no_error_stop.b_error.sc_hb
+no_error_stop.b_no_value_slot.sc
+no_error_stop.b_no_value_slot.sc_hb
 no_error_stop.b_two_errors.sc
 no_error_stop.b_two_errors.sc_hb
 no_error_stop.d_multi_cancel.sc
@@ -84,6 +94,8 @@ no_error_stop.d_nested.sc
 no_error_stop.d_nested.sc_hb
 no_stopped_stop.c_stopped.sc
 no_stopped_stop.c_stopped.sc_hb
+no_stopped_stop.c_throwing_value.sc
+no_stopped_stop.c_throwing_value.sc_hb
 overwrite_error.b_two_errors.sc
 overwrite_error.b_two_errors.sc_hb
 register_after_start.a_inline.sc
@@ -98,10 +110,14 @@ register_after_start.b_error.sc
 register_after_start.b_error.sc_hb
 register_after_start.b_error_stop.sc
 register_after_start.b_error_stop.sc_hb
+register_after_start.b_no_value_slot.sc
+register_after_start.b_no_value_slot.sc_hb
 register_after_start.b_two_errors.sc
 register_after_start.b_two_errors.sc_hb
 register_after_start.c_stopped.sc
 register_after_start.c_stopped.sc_hb
+register_after_start.c_throwing_value.sc
+register_after_start.c_throwing_value.sc_hb
 register_after_start.d_ignore.sc
 register_after_start.d_ignore.sc_hb
 register_after_start.d_multi_cancel.sc
@@ -119,6 +135,7 @@ relaxed_pending.b_error.sc_hb
 relaxed_pending.b_error_stop.sc_hb
 relaxed_pending.b_two_errors.sc_hb
 relaxed_pending.c_stopped.sc_hb
+relaxed_pending.c_throwing_value.sc_hb
 relaxed_pending.d_ignore.sc_hb
 relaxed_pending.d_later.sc_hb
 relaxed_pending.d_multi_cancel.sc_hb
@@ -138,3 +155,5 @@ skip_outer_remove.a_inline.sc_hb
 skip_receiver_end.a_values.sc_hb
 skip_source_end.a_values.sc_hb
 stop_without_result_guard.b_error_stop.sc_hb
+store_after_stopped.c_throwing_value.sc_hb
+store_without_slots.b_no_value_slot.sc_hb

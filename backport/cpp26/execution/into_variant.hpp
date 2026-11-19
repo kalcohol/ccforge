@@ -329,27 +329,45 @@ inline constexpr into_variant_t into_variant{};
 namespace std::this_thread {
 
 struct sync_wait_with_variant_t {
-    template<std::execution::sender S>
-    auto operator()(S&& sndr) const {
-        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
-        using source_cs_t = std::execution::completion_signatures_of_t<S, env_t>;
-        using variant_t =
-            std::execution::__forge_into_variant::__variant_type_of_t<source_cs_t>;
-        auto result = std::this_thread::__sync_wait_impl_t{}(
-            std::execution::into_variant(
-                std::execution::__forge_detail::__forward_as_given(
-                    std::forward<S>(sndr))));
+private:
+    using __env_t = std::execution::__forge_sync_wait::sync_wait_env;
 
-        if (!result) {
-            return std::optional<variant_t>{};
-        }
-        using tuple_t = typename decltype(result)::value_type;
-        if constexpr (std::tuple_size_v<tuple_t> == 0) {
-            return std::optional<variant_t>{};
+    template<class S>
+    using __adapted_t = decltype(std::execution::into_variant(std::declval<S>()));
+
+    template<class S>
+    using __result_t = std::optional<std::execution::value_types_of_t<S, __env_t>>;
+
+public:
+    template<class S>
+    auto operator()(S&& sndr) const {
+        namespace ex = std::execution;
+        using adapted_t = __adapted_t<S>;
+        if constexpr (!ex::sender_in<adapted_t, __env_t>) {
+            static_assert(ex::sender_in<adapted_t, __env_t>,
+                          "sync_wait_with_variant requires an adapted sender in its run_loop environment");
         } else {
-            return std::optional<variant_t>{
-                std::in_place, std::move(std::get<0>(*result))};
+            constexpr bool has_result = requires { typename __result_t<adapted_t>; };
+            static_assert(has_result, "sync_wait_with_variant requires a well-formed result type");
+            if constexpr (has_result) {
+                using domain_t = ex::__forge_domain::__compl_domain_t<ex::set_value_t, S, __env_t>;
+                using applied_t = decltype(ex::apply_sender(
+                    domain_t{}, *this, std::forward<S>(sndr)));
+                static_assert(std::same_as<applied_t, __result_t<adapted_t>>,
+                              "sync_wait_with_variant domain must return its prescribed optional variant");
+                return ex::apply_sender(domain_t{}, *this, std::forward<S>(sndr));
+            }
         }
+    }
+
+    template<class S>
+    auto apply_sender(S&& sndr) const -> __result_t<__adapted_t<S>> {
+        using result_t = __result_t<__adapted_t<S>>;
+        if (auto value = std::this_thread::sync_wait(
+                std::execution::into_variant(std::forward<S>(sndr)))) {
+            return result_t(std::move(std::get<0>(*value)));
+        }
+        return result_t(std::nullopt);
     }
 };
 

@@ -298,7 +298,9 @@ receiver 在不再需要完成参数后，可以在 `set_value` / `set_error` / 
   折叠为 `std::exception_ptr`。
 - `forge::any_sender_of<CompletionSignatures>`：窄 sender 存储工具，使用 64B SBO + 堆回退，
   并提供 `sync_wait()` 直接运行存储的 sender。底层 sender 的单一 value tuple 必须与
-  `CompletionSignatures` 精确一致。可拷贝的底层 sender 保留左值连接的拷贝路径，
+  `CompletionSignatures` 精确一致。构造时以实际连接使用的 Forge receiver 及其
+  run_loop scheduler 环境检查底层 sender；同步消费由该 loop 驱动。
+  可拷贝的底层 sender 保留左值连接的拷贝路径，
   可以重复 `sync_wait()`；move-only 底层 sender 的签名按 `S` 查询，并以右值连接。
   move-only 的一次同步消费尝试后对象即为空，包括 stopped、error 和连接抛异常的情况。
   `sync_wait()` 要求对象非空；此条件由 `std::runtime_error` 检查，所以消费后的第二次
@@ -400,9 +402,9 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 `forge::empty_env` 是 `std::execution::env<>` 的便捷拼写。
 
 `forge::split` 使用 backport 的共享缓存，保持惰性启动、单次执行和 `const&` 重放。
-Backport 下 `forge::sync_wait` 支持零种或多种 value completion，分别使用空 tuple 或
-tuple 的 variant。完整原生实现下由标准的单一 value completion `sync_wait` 消费；
-标准的多种 value completion 使用 `sync_wait_with_variant`。
+Backport 与完整原生实现中的 `forge::sync_wait` 都是 `std::this_thread::sync_wait`
+的别名，要求恰好一个 value completion signature。具有多个签名的 sender 使用
+`std::this_thread::sync_wait_with_variant`。
 [执行库迁移表](backports/execution.md#已移除扩展与迁移)
 
 ## 串行 bulk

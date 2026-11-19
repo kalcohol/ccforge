@@ -12,7 +12,7 @@ def run():
  m.configure(m.Cfg(threads=((),())))
  w=m.initial()
  w.receiver_obligation=True
- assert 'SW3: lost result store obligation' in m.terminal_violations(w)
+ assert 'SW3: wrong number of result stores' in m.terminal_violations(w)
  for a in m.STEPS: assert a in m.describe((0,(a,)),w)
  for which,end in (('op','op_end'),('state','state_end'),('loop','loop_end')):
   m.configure(m.Cfg(threads=((),()),hb=True))

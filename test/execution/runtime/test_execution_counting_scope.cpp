@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <execution>
 #include <forge/start_detached.hpp>
 #include <forge/static_thread_pool.hpp>
@@ -958,8 +959,9 @@ TEST(SimpleCountingScopeTest, AssociateDisassociatesOnError) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    EXPECT_THROW((void)forge::sync_wait(
-        std::execution::associate(std::execution::just_error(42), token)), int);
+    auto result = forge_test::observe_completion<int>(
+        std::execution::associate(std::execution::just_error(42), token));
+    EXPECT_EQ(result.error, 42);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
@@ -1138,12 +1140,12 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     EXPECT_EQ(std::get<0>(*value), 42);
     EXPECT_EQ(scope.__count(), 0u);
 
-    EXPECT_THROW((void)forge::sync_wait(
-        token.wrap(std::execution::just_error(42))), int);
+    auto error = forge_test::observe_completion<int>(token.wrap(std::execution::just_error(42)));
+    EXPECT_EQ(error.error, 42);
     EXPECT_EQ(scope.__count(), 0u);
 
-    auto stopped = forge::sync_wait(token.wrap(std::execution::just_stopped()));
-    EXPECT_FALSE(stopped.has_value());
+    auto stopped = forge_test::observe_completion(token.wrap(std::execution::just_stopped()));
+    EXPECT_TRUE(stopped.stopped);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }

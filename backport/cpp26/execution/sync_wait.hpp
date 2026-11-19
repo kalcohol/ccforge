@@ -35,13 +35,10 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace std::execution {
 
 namespace __forge_sync_wait {
-
-struct stopped_t {};
 
 struct sync_wait_env {
     run_loop* loop_;
@@ -61,53 +58,61 @@ struct sync_wait_env {
 
 template<class Value>
 struct shared_state {
-    using value_t = Value;
-    std::variant<std::monostate, value_t, std::exception_ptr, stopped_t> result_;
+    run_loop loop;
+    std::exception_ptr error;
+    std::optional<Value> result;
 };
 
-template<class CompletionSignatures>
-using value_t_for = __forge_meta::single_value_or_variant_t<CompletionSignatures>;
-
-template<class State>
+template<class Value>
 struct receiver {
     using receiver_concept = receiver_tag;
-    State* state_;
-    run_loop* loop_;
+    shared_state<Value>* state_;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
         try {
-            using value_t = typename State::value_t;
-            using tuple_t = std::tuple<std::decay_t<Vs>...>;
-            auto value = __forge_meta::value_from_tuple<value_t>(
-                tuple_t{std::forward<Vs>(vs)...});
-            state_->result_.template emplace<1>(std::move(value));
+            state_->result.emplace(std::forward<Vs>(vs)...);
         } catch (...) {
-            state_->result_.template emplace<2>(std::current_exception());
+            state_->error = std::current_exception();
         }
-        loop_->finish();
+        state_->loop.finish();
     }
 
     template<class E>
     void set_error(E&& e) && noexcept {
         if constexpr (std::is_same_v<std::decay_t<E>, std::exception_ptr>) {
-            state_->result_.template emplace<2>(std::forward<E>(e));
+            state_->error = std::forward<E>(e);
         } else if constexpr (std::is_same_v<std::decay_t<E>, std::error_code>) {
-            state_->result_.template emplace<2>(
-                std::make_exception_ptr(std::system_error(std::forward<E>(e))));
+            state_->error = std::make_exception_ptr(std::system_error(std::forward<E>(e)));
         } else {
-            state_->result_.template emplace<2>(std::make_exception_ptr(std::forward<E>(e)));
+            state_->error = std::make_exception_ptr(std::forward<E>(e));
         }
-        loop_->finish();
+        state_->loop.finish();
     }
 
     void set_stopped() && noexcept {
-        state_->result_.template emplace<3>();
-        loop_->finish();
+        state_->loop.finish();
     }
 
     auto get_env() const noexcept -> sync_wait_env {
-        return sync_wait_env{loop_};
+        return sync_wait_env{&state_->loop};
+    }
+};
+
+struct __driver {
+    template<class Value, class S>
+        requires __forge_sender_to<S, receiver<Value>>
+    static auto __run(S&& sndr) -> std::optional<Value> {
+        shared_state<Value> state;
+        auto op = std::execution::connect(
+            std::forward<S>(sndr), receiver<Value>{&state});
+        std::execution::start(op);
+        state.loop.run();
+
+        if (state.error) {
+            std::rethrow_exception(std::move(state.error));
+        }
+        return std::move(state.result);
     }
 };
 
@@ -117,63 +122,44 @@ struct receiver {
 
 namespace std::this_thread {
 
-struct __sync_wait_impl_t {
-    template<class S>
-        requires std::execution::sender_in<
-            S, std::execution::__forge_sync_wait::sync_wait_env>
-    auto operator()(S&& sndr) const {
-        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
-        using cs_t = std::execution::completion_signatures_of_t<S, env_t>;
-        using value_t = std::execution::__forge_sync_wait::value_t_for<cs_t>;
-        using state_t = std::execution::__forge_sync_wait::shared_state<value_t>;
-        using recv_t = std::execution::__forge_sync_wait::receiver<state_t>;
-
-        std::execution::run_loop loop;
-        state_t state;
-        auto op = std::execution::connect(
-            std::forward<S>(sndr), recv_t{&state, &loop});
-        std::execution::start(op);
-        loop.run();
-
-        if (state.result_.index() == 2) {
-            std::rethrow_exception(std::get<2>(state.result_));
-        }
-        if (state.result_.index() == 3) {
-            return std::optional<typename state_t::value_t>{std::nullopt};
-        }
-        return std::optional<typename state_t::value_t>{
-            std::move(std::get<1>(state.result_))};
-    }
-};
-
-namespace __forge_wait_detail {
-template<class Signature> struct __is_value : std::false_type {};
-template<class... Vs>
-struct __is_value<std::execution::set_value_t(Vs...)> : std::true_type {};
-template<class Signatures> struct __value_count;
-template<class... Sigs>
-struct __value_count<std::execution::completion_signatures<Sigs...>>
-    : std::integral_constant<std::size_t, (std::size_t{0} + ... + __is_value<Sigs>::value)> {};
-template<class S>
-inline constexpr bool __nonstandard_values = __value_count<
-    std::execution::completion_signatures_of_t<S,
-        std::execution::__forge_sync_wait::sync_wait_env>>::value != 1;
-}
-
 struct sync_wait_t {
     template<class S>
-        requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
-                 (!__forge_wait_detail::__nonstandard_values<S>)
     auto operator()(S&& sndr) const {
-        return __sync_wait_impl_t{}(std::forward<S>(sndr));
+        namespace ex = std::execution;
+        using env_t = ex::__forge_sync_wait::sync_wait_env;
+
+        if constexpr (!ex::sender_in<S, env_t>) {
+            static_assert(ex::sender_in<S, env_t>,
+                          "sync_wait requires a sender in its run_loop environment");
+        } else {
+            using cs_t = ex::completion_signatures_of_t<S, env_t>;
+            constexpr auto count = ex::__forge_meta::__value_count<cs_t>;
+            static_assert(count == 1,
+                          "sync_wait requires exactly one value completion signature");
+            if constexpr (count == 1) {
+                using result_t = std::optional<ex::__forge_meta::__exact_value_tuple_t<cs_t>>;
+                using domain_t = ex::__forge_domain::__compl_domain_t<ex::set_value_t, S, env_t>;
+                using applied_t = decltype(ex::apply_sender(
+                    domain_t{}, *this, std::forward<S>(sndr)));
+                static_assert(std::same_as<applied_t, result_t>,
+                              "sync_wait domain must return its prescribed optional tuple");
+                return ex::apply_sender(domain_t{}, *this, std::forward<S>(sndr));
+            }
+        }
     }
 
-    template<class S, bool = true>
-        requires std::execution::sender_in<S, std::execution::__forge_sync_wait::sync_wait_env> &&
-                 __forge_wait_detail::__nonstandard_values<S>
-    [[deprecated("sync_wait with zero or multiple value completions is a Forge extension; use forge::sync_wait or std::this_thread::sync_wait_with_variant")]]
-    auto operator()(S&& sndr) const {
-        return __sync_wait_impl_t{}(std::forward<S>(sndr));
+    template<class S>
+        requires requires {
+            std::execution::__forge_sync_wait::__driver::__run<
+                std::execution::__forge_meta::__exact_value_tuple_t<
+                    std::execution::completion_signatures_of_t<S,
+                        std::execution::__forge_sync_wait::sync_wait_env>>>(std::declval<S>());
+        }
+    auto apply_sender(S&& sndr) const {
+        using cs_t = std::execution::completion_signatures_of_t<S,
+            std::execution::__forge_sync_wait::sync_wait_env>;
+        using value_t = std::execution::__forge_meta::__exact_value_tuple_t<cs_t>;
+        return std::execution::__forge_sync_wait::__driver::__run<value_t>(std::forward<S>(sndr));
     }
 };
 

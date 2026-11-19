@@ -25,6 +25,7 @@
 // Protocol model: formal/when_all; every edit, comments included, requires a source-lock refresh.
 
 #include "concepts.hpp"
+#include "detail/adaptor.hpp"
 #include "detail/value_result.hpp"
 #include "detail/op_holder.hpp"
 #include "env.hpp"
@@ -49,87 +50,53 @@ struct __no_error {};
 
 template<class Env>
 struct __child_env {
-    using base_t = std::remove_reference_t<Env>;
-
-    // Own prvalues without moving them, and retain borrowed references.
-    Env __base;
+    const Env* __base;
     inplace_stop_token __token;
 
-    auto query(get_stop_token_t) const noexcept
-        -> inplace_stop_token {
+    auto query(get_stop_token_t) const noexcept -> inplace_stop_token {
         return this->__token;
     }
 
     template<class Query>
         requires (!std::same_as<std::remove_cvref_t<Query>, get_stop_token_t> &&
-                  __forge_env_detail::__forwarding_query<Query> &&
-                  __forge_env_detail::__queryable<Query, const base_t&>)
-    decltype(auto) query(Query query) const
-        noexcept(__forge_env_detail::__nothrow_query<Query, const base_t&>) {
-        return __forge_env_detail::__query(
-            std::move(query), static_cast<const base_t&>(this->__base));
+                  __forge_env_detail::__forwarding_query_type<std::remove_cvref_t<Query>> &&
+                  __forge_env_detail::__raw_queryable<Query, Env>)
+    decltype(auto) query(Query&& query) const
+        noexcept(__forge_env_detail::__nothrow_raw_queryable<Query, Env>) {
+        return __base->query(std::forward<Query>(query));
     }
 };
 
 template<class Env>
-using __child_env_t = __child_env<Env>;
+using __child_env_t = __child_env<__forge_env_detail::__normalized_env_t<Env>>;
 
-template<class CS>
-using __value_tuple_list_t = __forge_meta::value_tuple_list_t<CS>;
+template<class Child, class Env>
+using __child_cs_t = completion_signatures_of_t<Child, __child_env_t<Env>>;
 
-template<class List>
-using __type_list_empty = __forge_meta::type_list_empty<List>;
+template<class Env, class... Children>
+concept __valid_children =
+    (sender_in<Children, __child_env_t<Env>> && ...) &&
+    ((__forge_meta::__value_count<__child_cs_t<Children, Env>> < 2) && ...) &&
+    (__forge_detail::__decay_copyable_cs<__child_cs_t<Children, Env>>::value && ...);
 
-template<class... Lists>
-struct __concat_type_lists;
+template<class Child, class Env>
+using __fwd_cs_t = completion_signatures_of_t<Child, __forge_detail::__fwd_env_t<Env>>;
 
-template<>
-struct __concat_type_lists<> {
-    using type = __forge_meta::type_list<>;
+template<class Env, class... Children>
+struct __value_storage {
+    using type = std::tuple<>;
 };
 
-template<class... Ts>
-struct __concat_type_lists<__forge_meta::type_list<Ts...>> {
-    using type = __forge_meta::type_list<Ts...>;
+template<class Env, class... Children>
+    requires requires { typename std::tuple<__forge_meta::__exact_value_tuple_t<
+        __fwd_cs_t<Children, Env>>...>; }
+struct __value_storage<Env, Children...> {
+    using type = std::tuple<std::optional<
+        __forge_meta::__exact_value_tuple_t<__fwd_cs_t<Children, Env>>>...>;
 };
 
-template<class... Ts, class... Us, class... Rest>
-struct __concat_type_lists<__forge_meta::type_list<Ts...>, __forge_meta::type_list<Us...>, Rest...>
-    : __concat_type_lists<__forge_meta::type_list<Ts..., Us...>, Rest...> {};
-
-template<class... Lists>
-using __concat_type_lists_t = typename __concat_type_lists<Lists...>::type;
-
-template<class Prefix, class List>
-struct __append_tuple_to_each;
-
-template<class Prefix, class... Tuples>
-struct __append_tuple_to_each<Prefix, __forge_meta::type_list<Tuples...>> {
-    using type = __forge_meta::type_list<__forge_meta::__tuple_cat_t<Prefix, Tuples>...>;
-};
-
-template<class A, class B>
-struct __tuple_product;
-
-template<class... As, class... Bs>
-struct __tuple_product<__forge_meta::type_list<As...>, __forge_meta::type_list<Bs...>> {
-    using type = __concat_type_lists_t<
-        typename __append_tuple_to_each<As, __forge_meta::type_list<Bs...>>::type...>;
-};
-
-template<class... Lists>
-struct __cartesian_value_tuples;
-
-template<>
-struct __cartesian_value_tuples<> {
-    using type = __forge_meta::type_list<std::tuple<>>;
-};
-
-template<class First, class... Rest>
-struct __cartesian_value_tuples<First, Rest...> {
-    using tail = typename __cartesian_value_tuples<Rest...>::type;
-    using type = typename __tuple_product<First, tail>::type;
-};
+template<class Env, class... Children>
+using __values_tuple_t = typename __value_storage<Env, Children...>::type;
 
 template<class Tuple>
 struct __tuple_to_value_sig;
@@ -139,17 +106,18 @@ struct __tuple_to_value_sig<std::tuple<Vs...>> {
     using type = set_value_t(Vs...);
 };
 
-template<class List>
-struct __value_list_to_cs;
+template<class Values>
+struct __value_signature;
 
 template<class... Tuples>
-struct __value_list_to_cs<__forge_meta::type_list<Tuples...>> {
-    using type = completion_signatures<typename __tuple_to_value_sig<Tuples>::type...>;
+struct __value_signature<std::tuple<std::optional<Tuples>...>> {
+    using type = typename __tuple_to_value_sig<__forge_meta::__tuple_cat_t<Tuples...>>::type;
 };
 
-template<class... CSList>
-using __cartesian_value_cs_t = typename __value_list_to_cs<
-    typename __cartesian_value_tuples<__value_tuple_list_t<CSList>...>::type>::type;
+template<class Env, class... Children>
+inline constexpr bool __has_stopped_completion =
+    (__forge_meta::sends_stopped_from<__child_cs_t<Children, Env>>::value || ...);
+
 
 template<class List, class Sig>
 struct __push_error_type {
@@ -252,15 +220,6 @@ struct __error_variant_from_list<__forge_meta::type_list<Es...>> {
     using type = std::variant<__no_error, Es...>;
 };
 
-template<class S, class Env>
-using __sender_value_variant_t = __forge_meta::value_variant_or_empty_tuple_t<
-    __value_tuple_list_t<decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::declval<Env>()))>>;
-
-template<class Env, class... Senders>
-using __when_all_error_variant_t = typename __error_variant_from_list<__error_type_list_t<
-    decltype(std::execution::get_completion_signatures(std::declval<Senders>(), std::declval<Env>()))...>>::type;
-
 template<class OuterRecv, class... Senders>
 struct __op;
 
@@ -279,20 +238,25 @@ template<std::size_t I, class OuterRecv, class... Senders>
 struct __child_recv {
     using receiver_concept = receiver_tag;
     __op<OuterRecv, Senders...>* __self;
+    // A child can query its environment while its connection type is deduced.
+    __child_env_t<env_of_t<OuterRecv>> __env;
 
     template<class... Vs>
     void set_value(Vs&&... vs) && noexcept {
-        using tuple_t = std::tuple<std::decay_t<Vs>...>;
-        if constexpr (std::is_nothrow_constructible_v<tuple_t, Vs...>) {
-            std::get<I>(__self->__partial).emplace(
-                std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
-        } else {
-            try {
-                std::get<I>(__self->__partial).emplace(
-                    std::in_place_type<tuple_t>, static_cast<Vs&&>(vs)...);
-            } catch (...) {
-                __self->child_fail(std::current_exception());
-                return;
+        using op_t = __op<OuterRecv, Senders...>;
+        if constexpr (!std::same_as<typename op_t::values_tuple, std::tuple<>>) {
+            if (__self->__disp == op_t::__disposition::started) {
+                auto& slot = std::get<I>(__self->__values);
+                if constexpr (std::is_nothrow_constructible_v<std::tuple<std::decay_t<Vs>...>, Vs...>) {
+                    slot.emplace(std::forward<Vs>(vs)...);
+                } else {
+                    try {
+                        slot.emplace(std::forward<Vs>(vs)...);
+                    } catch (...) {
+                        __self->child_fail(std::current_exception());
+                        return;
+                    }
+                }
             }
         }
         __self->child_done();
@@ -305,33 +269,35 @@ struct __child_recv {
         __self->child_stop();
     }
     auto get_env() const noexcept -> __child_env_t<env_of_t<OuterRecv>> {
-        return __child_env_t<env_of_t<OuterRecv>>{
-            std::execution::get_env(__self->__outer_recv),
-            __self->__stop_src.get_token()};
+        return __env;
     }
 };
+
+// Form the exact child operations without instantiating the enclosing operation.
+template<class R, class... Children, std::size_t... Is>
+auto __child_ops_type(std::index_sequence<Is...>)
+    -> std::tuple<__forge_detail::__op_holder<
+        connect_result_t<Children, __child_recv<Is, R, Children...>>>...>;
+
+template<class R, class... Children>
+using __child_ops_t = decltype(__forge_when_all::__child_ops_type<R, Children...>(
+    std::index_sequence_for<Children...>{}));
+
+template<class R, class... Children>
+concept __connectable_children = __valid_children<env_of_t<R>, Children...> &&
+    requires { typename __child_ops_t<R, Children...>; };
 
 template<class OuterRecv, class... Senders>
 struct __op : __forge_detail::__immovable {
     using operation_state_concept = operation_state_tag;
     static constexpr std::size_t N = sizeof...(Senders);
 
-    using child_env_t = __child_env_t<env_of_t<OuterRecv>>;
-    using error_variant_t = __when_all_error_variant_t<child_env_t, Senders...>;
+    using outer_env_t = env_of_t<OuterRecv>;
+    using values_tuple = __values_tuple_t<outer_env_t, Senders...>;
+    using error_variant_t = typename __error_variant_from_list<
+        __error_type_list_t<__child_cs_t<Senders, outer_env_t>...>>::type;
 
-    template<class S>
-    static constexpr bool __sender_has_value = !__type_list_empty<__value_tuple_list_t<
-        decltype(std::execution::get_completion_signatures(
-            std::declval<S>(), std::declval<child_env_t>()))>>::value;
-
-    template<class S>
-    static constexpr bool __sender_sends_stopped =
-        __forge_meta::sends_stopped_from<decltype(
-            std::execution::get_completion_signatures(
-                std::declval<S>(), std::declval<child_env_t>()))>::value;
-
-    static constexpr bool __can_value_complete = (__sender_has_value<Senders> && ...);
-    static constexpr bool __sends_stopped = (__sender_sends_stopped<Senders> || ...);
+    static constexpr bool __sends_stopped = __has_stopped_completion<outer_env_t, Senders...>;
 
     enum class __disposition {
         started,
@@ -340,12 +306,13 @@ struct __op : __forge_detail::__immovable {
     };
 
     OuterRecv __outer_recv;
+    __forge_env_detail::__receiver_env<OuterRecv> __outer_env;
     inplace_stop_source __stop_src;
     std::atomic<std::size_t> __pending{N};
     std::atomic<__disposition> __disp{__disposition::started};
     std::mutex __mtx;
     std::variant<std::monostate, error_variant_t, __stopped_tag> __result;
-    std::tuple<std::optional<__sender_value_variant_t<Senders, child_env_t>>...> __partial;
+    values_tuple __values;
 
     struct __outer_stop_callback {
         __op* __self;
@@ -370,22 +337,18 @@ struct __op : __forge_detail::__immovable {
         std::get_stop_token(std::declval<env_of_t<OuterRecv>>()))>;
     using __callback_t = typename __callback_type<__outer_token_t, __outer_stop_callback>::type;
 
-    template<std::size_t... Is>
-    static auto __child_ops_type(std::index_sequence<Is...>)
-        -> std::tuple<__forge_detail::__op_holder<
-            connect_result_t<Senders, __child_recv<Is, OuterRecv, Senders...>>>...>;
-
-    using __child_ops_t = decltype(__child_ops_type(std::index_sequence_for<Senders...>{}));
-    __child_ops_t __children;
+    __child_ops_t<OuterRecv, Senders...> __children;
     // Unregister before destroying children, including an unstarted operation.
     std::optional<__callback_t> __stop_callback;
 
-    template<std::size_t... Is>
-    __op(OuterRecv r, std::tuple<Senders...> sndrs, std::index_sequence<Is...>)
+    template<class Tuple, std::size_t... Is>
+    __op(OuterRecv&& r, Tuple&& sndrs, std::index_sequence<Is...>)
         : __outer_recv(std::move(r))
+        , __outer_env(__outer_recv)
         , __children([&]() {
-            return std::execution::connect(std::get<Is>(std::move(sndrs)),
-                __child_recv<Is, OuterRecv, Senders...>{this});
+            return std::execution::connect(std::get<Is>(std::forward<Tuple>(sndrs)),
+                __child_recv<Is, OuterRecv, Senders...>{this,
+                    {std::addressof(__outer_env.__get()), __stop_src.get_token()}});
         }...)
     {}
 
@@ -468,34 +431,22 @@ struct __op : __forge_detail::__immovable {
                 std::terminate();
             }
         } else {
-            if constexpr (__can_value_complete) {
-                try_deliver_values(std::index_sequence_for<Senders...>{});
-            } else if constexpr (__sends_stopped) {
-                std::execution::set_stopped(std::move(__outer_recv));
-            } else {
-                std::terminate();
-            }
+            deliver_values();
         }
     }
 
-    template<std::size_t... Is>
-    void try_deliver_values(std::index_sequence<Is...>) noexcept {
-        std::visit([this](auto&... values) noexcept {
-            auto tuples = std::tie(values...);
-            deliver_flattened(tuples);
-        }, *std::get<Is>(__partial)...);
+    template<class... Ts>
+    static auto __tie_values(std::tuple<Ts...>& values) noexcept {
+        return std::apply([](auto&... values) noexcept { return std::tie(values...); }, values);
     }
 
-    template<std::size_t I = 0, class Tuples, class... Vs>
-    void deliver_flattened(Tuples& tuples, Vs&... values) noexcept {
-        if constexpr (I == std::tuple_size_v<Tuples>) {
-            std::execution::set_value(
-                std::move(__outer_recv), std::move(values)...);
-        } else {
-            std::apply([&](auto&... next) noexcept {
-                deliver_flattened<I + 1>(tuples, values..., next...);
-            }, std::get<I>(tuples));
-        }
+    void deliver_values() noexcept {
+        auto set = [this](auto&... values) noexcept {
+            std::execution::set_value(std::move(__outer_recv), std::move(values)...);
+        };
+        std::apply([&](auto&... slots) noexcept {
+            std::apply(set, std::tuple_cat(__tie_values(*slots)...));
+        }, __values);
     }
 
     template<std::size_t... Is>
@@ -514,44 +465,82 @@ struct __sender {
     using sender_concept = sender_tag;
     std::tuple<Senders...> __sndrs;
 
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
-        using child_env_t = __child_env_t<Env>;
-        using cart_t = __cartesian_value_cs_t<
-            decltype(std::execution::get_completion_signatures(
-                std::declval<Senders>(), std::declval<child_env_t>()))...>;
-        using err_cs = __error_cs_t<
-            decltype(std::execution::get_completion_signatures(
-                std::declval<Senders>(), std::declval<child_env_t>()))...>;
-        static constexpr bool sends_stopped = (
-            std::execution::__forge_meta::sends_stopped_from<
-                decltype(std::execution::get_completion_signatures(
-                    std::declval<Senders>(), std::declval<child_env_t>()))>::value || ...);
-        using stp_cs = std::conditional_t<sends_stopped,
-            completion_signatures<set_stopped_t()>,
-            completion_signatures<>>;
-        return std::execution::__forge_meta::__concat_unique_cs_t<cart_t, err_cs, stp_cs>{};
+    template<class Env>
+        requires __valid_children<Env, Senders&...>
+    constexpr auto get_completion_signatures(Env&&) & noexcept {
+        return __signatures<Env, Senders&...>();
+    }
+
+    template<class Env>
+        requires __valid_children<Env, Senders&&...>
+    constexpr auto get_completion_signatures(Env&&) && noexcept {
+        return __signatures<Env, Senders&&...>();
+    }
+
+    template<class Env>
+        requires __valid_children<Env, const Senders&...>
+    constexpr auto get_completion_signatures(Env&&) const& noexcept {
+        return __signatures<Env, const Senders&...>();
+    }
+
+    template<class Env>
+        requires __valid_children<Env, const Senders&&...>
+    constexpr auto get_completion_signatures(Env&&) const&& noexcept {
+        return __signatures<Env, const Senders&&...>();
+    }
+
+    // A rejected child category must not retry a const-lvalue query or connection.
+    template<class Env> void get_completion_signatures(Env&&) & = delete;
+    template<class Env> void get_completion_signatures(Env&&) && = delete;
+    template<class Env> void get_completion_signatures(Env&&) const&& = delete;
+
+    template<receiver R>
+        requires __connectable_children<R, Senders&...>
+    auto connect(R r) & {
+        return __connect(std::move(r), __sndrs, std::index_sequence_for<Senders...>{});
     }
 
     template<receiver R>
+        requires __connectable_children<R, Senders&&...>
     auto connect(R r) && {
-        return __op<R, Senders...>{
-            std::move(r),
-            std::move(__sndrs),
-            std::index_sequence_for<Senders...>{}};
+        return __connect(std::move(r), std::move(__sndrs), std::index_sequence_for<Senders...>{});
     }
 
     template<receiver R>
-        requires (std::copy_constructible<Senders> && ...)
+        requires __connectable_children<R, const Senders&...>
     auto connect(R r) const& {
-        return __op<R, Senders...>{
-            std::move(r),
-            __sndrs,
-            std::index_sequence_for<Senders...>{}};
+        return __connect(std::move(r), __sndrs, std::index_sequence_for<Senders...>{});
     }
+
+    template<receiver R>
+        requires __connectable_children<R, const Senders&&...>
+    auto connect(R r) const&& {
+        return __connect(std::move(r), std::move(__sndrs), std::index_sequence_for<Senders...>{});
+    }
+
+    template<class R> void connect(R) & = delete;
+    template<class R> void connect(R) && = delete;
+    template<class R> void connect(R) const&& = delete;
 
     auto get_env() const noexcept -> __empty_env {
         return {};
+    }
+
+private:
+    template<class R, class Tuple, std::size_t... Is>
+    static auto __connect(R&& r, Tuple&& sndrs, std::index_sequence<Is...> indices) {
+        return __op<R, decltype(std::get<Is>(std::forward<Tuple>(sndrs)))...>{
+            std::move(r), std::forward<Tuple>(sndrs), indices};
+    }
+
+    template<class Env, class... Children>
+    static constexpr auto __signatures() noexcept {
+        using values_tuple = __values_tuple_t<Env, Children...>;
+        using value_cs = completion_signatures<typename __value_signature<values_tuple>::type>;
+        using error_cs = __error_cs_t<__child_cs_t<Children, Env>...>;
+        using stopped_cs = std::conditional_t<__has_stopped_completion<Env, Children...>,
+            completion_signatures<set_stopped_t()>, completion_signatures<>>;
+        return __forge_meta::__concat_unique_cs_t<value_cs, error_cs, stopped_cs>{};
     }
 };
 

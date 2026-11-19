@@ -24,10 +24,9 @@
 
 #include "../concepts.hpp"
 
+#include <cstddef>
 #include <tuple>
 #include <type_traits>
-#include <utility>
-#include <variant>
 
 namespace std::execution::__forge_meta {
 
@@ -77,58 +76,21 @@ struct type_list_empty<type_list<Ts...>>
 template<class List>
 inline constexpr bool type_list_empty_v = type_list_empty<List>::value;
 
-template<class List>
-struct single_value_or_variant_from_list;
+template<class Sig>
+inline constexpr bool __is_value_signature = false;
 
-template<>
-struct single_value_or_variant_from_list<type_list<>> {
-    using type = std::tuple<>;
-};
-
-template<class Tuple>
-struct single_value_or_variant_from_list<type_list<Tuple>> {
-    using type = Tuple;
-};
-
-template<class... Tuples>
-struct single_value_or_variant_from_list<type_list<Tuples...>> {
-    using type = std::variant<Tuples...>;
-};
-
-template<class List>
-using single_value_or_variant_from_list_t =
-    typename single_value_or_variant_from_list<List>::type;
+template<class... Vs>
+inline constexpr bool __is_value_signature<set_value_t(Vs...)> = true;
 
 template<class CS>
-using single_value_or_variant_t =
-    single_value_or_variant_from_list_t<value_tuple_list_t<CS>>;
+inline constexpr std::size_t __value_count = 0;
 
-template<class List>
-struct value_variant_or_empty_tuple;
+template<class... Sigs>
+inline constexpr std::size_t __value_count<completion_signatures<Sigs...>> =
+    (std::size_t{0} + ... + __is_value_signature<Sigs>);
 
-template<>
-struct value_variant_or_empty_tuple<type_list<>> {
-    using type = std::variant<std::tuple<>>;
-};
-
-template<class... Tuples>
-struct value_variant_or_empty_tuple<type_list<Tuples...>> {
-    using type = std::variant<Tuples...>;
-};
-
-template<class List>
-using value_variant_or_empty_tuple_t =
-    typename value_variant_or_empty_tuple<List>::type;
-
-template<class Value, class Tuple>
-Value value_from_tuple(Tuple&& tuple) {
-    using tuple_t = std::remove_cvref_t<Tuple>;
-    if constexpr (std::is_same_v<Value, tuple_t>) {
-        return static_cast<Tuple&&>(tuple);
-    } else {
-        return Value{std::in_place_type<tuple_t>, static_cast<Tuple&&>(tuple)};
-    }
-}
+template<class CS>
+    requires (__value_count<CS> == 1)
+using __exact_value_tuple_t = __single_value_tuple_t<CS>;
 
 } // namespace std::execution::__forge_meta
-

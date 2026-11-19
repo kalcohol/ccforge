@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <execution>
 #include <forge/static_thread_pool.hpp>
 #include <atomic>
@@ -233,16 +234,21 @@ TEST(SplitTest, SubscribersCannotMutateCachedValues) {
 
 TEST(SplitTest, ErrorPath) {
     auto sndr = forge::split(std::execution::just_error(99));
-    EXPECT_THROW(forge::sync_wait(sndr), int);
-    EXPECT_THROW(forge::sync_wait(sndr), int);
+    for (int i = 0; i < 2; ++i) {
+        auto result = forge_test::observe_completion(sndr);
+        ASSERT_TRUE(result.error);
+        try {
+            std::rethrow_exception(*result.error);
+        } catch (int error) {
+            EXPECT_EQ(error, 99);
+        }
+    }
 }
 
 TEST(SplitTest, StoppedPath) {
     auto sndr = forge::split(std::execution::just_stopped());
-    auto r1 = forge::sync_wait(sndr);
-    auto r2 = forge::sync_wait(sndr);
-    EXPECT_FALSE(r1.has_value());
-    EXPECT_FALSE(r2.has_value());
+    EXPECT_TRUE(forge_test::observe_completion(sndr).stopped);
+    EXPECT_TRUE(forge_test::observe_completion(sndr).stopped);
 }
 
 TEST(SplitTest, ConcurrentStart) {

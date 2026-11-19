@@ -9,20 +9,19 @@ SOURCE=Path(__file__).resolve().parents[2]/'backport/cpp26/execution/sync_wait.h
 C=None
 COV=set()
 REFS={
- 'connect':'__sync_wait_impl_t::operator() | auto op = std::execution::connect(',
- 'start':'__sync_wait_impl_t::operator() | std::execution::start(op);',
- 'run':'__sync_wait_impl_t::operator() | loop.run();',
- 'read':'__sync_wait_impl_t::operator() | if (state.result_.index() == 2)',
- 'store':'receiver::set_stopped | state_->result_.template emplace<3>();',
- 'finish':'receiver::set_stopped | loop_->finish();',
- 'complete':'receiver::set_stopped | state_->result_.template emplace<3>();',
+ 'connect':'__driver::__run | auto op = std::execution::connect(',
+ 'start':'__driver::__run | std::execution::start(op);',
+ 'run':'__driver::__run | state.loop.run();',
+ 'read':'__driver::__run | if (state.error)',
+ 'store':'receiver::set_value | state_->result.emplace(std::forward<Vs>(vs)...);',
+ 'finish':'receiver::set_stopped | state_->loop.finish();',
 }
 ACTIONS='''connect start run read complete store finish finish_unlock finish_tail destroy_op child_end op_end state_end loop_end signal await result_probe op_probe loop_probe submit'''.split()+INNER_ACTIONS
 STEPS={a:SimpleNamespace(lines=REFS.get(a,'model-only: abstract run_loop/child contract or implicit stack destruction'),desc=a) for a in ACTIONS}
-EXTRA_REFS=('receiver::set_value | state_->result_.template emplace<1>(std::move(value));',
- 'receiver::set_value | loop_->finish();',
- 'receiver::set_error | state_->result_.template emplace<2>(std::forward<E>(e));',
- 'receiver::set_error | loop_->finish();')
+EXTRA_REFS=('receiver::set_value | state_->error = std::current_exception();',
+ 'receiver::set_value | state_->loop.finish();',
+ 'receiver::set_error | state_->error = std::forward<E>(e);',
+ 'receiver::set_error | state_->loop.finish();')
 FIELDS='''threads errors op_alive state_alive loop_alive result stores expected receiver_obligation finished finish_pub run_returned signals vc views hist accesses read_value queued push_pub'''.split()+INNER_FIELDS
 class Cfg:
  def __init__(self,**kw):
@@ -76,7 +75,7 @@ def execute(w,t,op,alt=0):
   prepend(w,t,*ops)
  elif a=='complete':
   child_touch(w,t); w.completed=True
-  ops=(('store',),('finish',))
+  ops=(('finish',),) if C.payload=='stopped' else (('store',),('finish',))
   if C.mut=='finish_before_store': ops=tuple(reversed(ops))
   if C.control=='double_store': ops=(('store',),)+ops
   prepend(w,t,*ops)
@@ -84,7 +83,7 @@ def execute(w,t,op,alt=0):
   touch(w,t,'state'); mem.access(w,t,'result',True)
   if C.control!='drop_store': w.result=C.payload; w.stores+=1
  elif a=='finish':
-  touch(w,t,'op') # Load receiver.loop_ before entering the library.
+  touch(w,t,'op') # Load the receiver's state pointer before entering the library.
   touch(w,t,'loop')
   if C.control!='drop_finish': prepend(w,t,('finish_unlock',),('finish_tail',))
  elif a=='finish_unlock':
@@ -109,8 +108,8 @@ def execute(w,t,op,alt=0):
  elif a=='read':
   touch(w,t,'state'); mem.access(w,t,'result')
   if not w.run_returned: error(w,'SW1: result read before run returned')
-  w.read_value=w.result
-  if w.read_value!=w.expected or w.read_value=='empty': error(w,'SW1: read did not see completion')
+  w.read_value='stopped' if w.result=='empty' else w.result
+  if w.read_value!=w.expected: error(w,'SW1: read did not see completion')
  elif a=='destroy_op':
   # The operation and receiver may borrow both state and loop until destruction.
   touch(w,t,'state'); touch(w,t,'loop'); touch(w,t,'op')
@@ -149,7 +148,7 @@ def state_violations(w):
 def terminal_violations(w):
  e=list(state_violations(w))+inner.errors(w,True)
  if any(w.threads): e.append('SW1: unfinished run contract')
- if w.receiver_obligation and w.stores!=1: e.append('SW3: lost result store obligation')
+ if w.receiver_obligation and w.stores!=int(C.payload!='stopped'): e.append('SW3: wrong number of result stores')
  if w.op_alive or w.state_alive or w.loop_alive or w.child_alive: e.append('SW2: storage leak')
  return tuple(e)
 def is_blocked(k):

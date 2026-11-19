@@ -3,6 +3,7 @@
 #include <forge/bulk.hpp>
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <forge/start_detached.hpp>
 #include <execution>
 #include <atomic>
@@ -598,15 +599,13 @@ TEST(IntoVariantTest, ReportsConstructionFailureAsError) {
 
 TEST(IntoVariantTest, StoppedOnlySenderDoesNotInstantiateEmptyVariant) {
     auto sndr = std::execution::into_variant(std::execution::just_stopped());
-    auto result = forge::sync_wait(std::move(sndr));
-
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(forge_test::observe_completion(std::move(sndr)).stopped);
 }
 
 TEST(IntoVariantTest, ErrorOnlySenderDoesNotInstantiateEmptyVariant) {
     auto sndr = std::execution::into_variant(std::execution::just_error(42));
 
-    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
 }
 
 TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
@@ -622,25 +621,12 @@ TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
 
 TEST(SyncWaitWithVariantTest, Works) {
     auto result = std::this_thread::sync_wait_with_variant(std::execution::just(42));
-    static_assert(std::is_same_v<
-        decltype(result),
-        std::optional<std::variant<std::tuple<int>>>>);
+    using value_t = std::variant<std::tuple<int>>;
+    using result_t = std::optional<std::variant<std::tuple<value_t>>>;
+    static_assert(std::is_same_v<decltype(result), result_t>);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
-}
-
-TEST(SyncWaitWithVariantTest, SupportsStoppedOnlySender) {
-    auto result = std::this_thread::sync_wait_with_variant(
-        std::execution::just_stopped());
-
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST(SyncWaitWithVariantTest, SupportsErrorOnlySender) {
-    EXPECT_THROW(
-        (void)std::this_thread::sync_wait_with_variant(
-            std::execution::just_error(42)),
-        int);
+    const auto& value = std::get<0>(std::get<0>(*result));
+    EXPECT_EQ(std::get<std::tuple<int>>(value), std::make_tuple(42));
 }
 
 TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
@@ -650,7 +636,8 @@ TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
             std::execution::just(42)));
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
+    const auto& value = std::get<0>(std::get<0>(*result));
+    EXPECT_EQ(std::get<std::tuple<int>>(value), std::make_tuple(42));
 }
 
 TEST(BulkTest, SerialExecution) {

@@ -1,31 +1,31 @@
 {
-  "assessment": "The receiver marker names the same type. Three dead ADL answers duplicate the member scheduler queries. The deleted public using-declaration aliased the same retained std::this_thread CPO. Connect/start/run ordering, result publication and destruction under the run_loop contract are unaffected.",
-  "checker_digest": "ff6a64ee3fce60163fc2f246fc1eea2dbb414558f43ee34890d7640f277ac645",
-  "configuration_count": 25,
+  "assessment": "E2 requalifies direct optional tuple emplacement, exception_ptr publication, and stopped completion without a state write. The model abstracts the optional and error fields as mutually exclusive result storage; finish/run publish each materialized result. The operation is destroyed before the result and error fields, and the loop member is destroyed last. The run_loop contract is unchanged. The sender and exact value-count Mandates plus domain selection and result validation are outside the protocol model and checked by source review and compile probes.",
+  "checker_digest": "26af2f3c7e80ba4b72307b1333bd002f94080cda5a6cb507109a10e0e0120cb1",
+  "configuration_count": 82,
   "date": "2026-11-19",
-  "expected_digest": "8a155b5f912ef349473ad58a347bd8f6e01183acc11991ac5e226de7fa85c748",
+  "expected_digest": "cd9d6b7ea724fffb9e74966972d53120c38b20784a1508b8284e9b99d2dcc7cb",
   "last_full_qualification": {
-    "assessment": "Whole-header correspondence covers result storage before finish, connect/start/run/read, op/state/loop reverse stack destruction and receiver final access. Run-loop internals are imported as the mutex, exactly-once dispatch, finish-and-empty return, HB and final-unlock contract with its submission boundary. Finite child and payload destruction scripts represent inline, cross-thread and scheduled completions; arbitrary user code and exception internals are abstracted.",
-    "checker_digest": "ff6a64ee3fce60163fc2f246fc1eea2dbb414558f43ee34890d7640f277ac645",
+    "assessment": "E2 requalifies direct optional tuple emplacement, exception_ptr publication, and stopped completion without a state write. The model abstracts the optional and error fields as mutually exclusive result storage; finish/run publish each materialized result. The operation is destroyed before the result and error fields, and the loop member is destroyed last. The run_loop contract is unchanged. The sender and exact value-count Mandates plus domain selection and result validation are outside the protocol model and checked by source review and compile probes.",
+    "checker_digest": "26af2f3c7e80ba4b72307b1333bd002f94080cda5a6cb507109a10e0e0120cb1",
     "configuration_count": 82,
-    "date": "2026-11-16",
-    "expected_digest": "8a155b5f912ef349473ad58a347bd8f6e01183acc11991ac5e226de7fa85c748",
+    "date": "2026-11-19",
+    "expected_digest": "cd9d6b7ea724fffb9e74966972d53120c38b20784a1508b8284e9b99d2dcc7cb",
     "outcome_summary": {
-      "fail": 34,
-      "pass": 48
+      "fail": 32,
+      "pass": 50
     },
     "python": "3.13.13",
-    "source_digest": "f2589cfa4cc62770cccc706453a38f784d5f555a20248be196f7263d035713bb",
+    "source_digest": "a2a407a52bfa04d08e4e64c4764387ce6f6635628cabccbd8b4a23f957303cdb",
     "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 16,
-    "pass": 9
+    "fail": 32,
+    "pass": 50
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/sync_wait.hpp",
-  "source_digest": "4f38c12153f23376d7de064ea8945b6a0d70e06288ba5da15f253629ad7dd004",
+  "source_digest": "a2a407a52bfa04d08e4e64c4764387ce6f6635628cabccbd8b4a23f957303cdb",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "quick"
+  "tier": "full"
 }

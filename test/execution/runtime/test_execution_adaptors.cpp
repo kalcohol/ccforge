@@ -2,6 +2,7 @@
 
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <execution>
 #include <array>
 #include <atomic>
@@ -825,7 +826,7 @@ TEST(LetValueTest, ErrorPassThrough) {
                     fn_called = true;
                     return std::execution::just(0);
                 });
-    EXPECT_THROW(forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
     EXPECT_FALSE(fn_called);
 }
 
@@ -850,8 +851,7 @@ TEST(LetErrorTest, HandleError) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    auto result = forge::sync_wait(std::move(sndr));
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(forge_test::observe_completion(std::move(sndr)).stopped);
     EXPECT_TRUE(fn_called);
 }
 
@@ -889,8 +889,7 @@ TEST(LetStoppedTest, HandleStopped) {
                     fn_called = true;
                     return std::execution::just_stopped();
                 });
-    auto result = forge::sync_wait(std::move(sndr));
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(forge_test::observe_completion(std::move(sndr)).stopped);
     EXPECT_TRUE(fn_called);
 }
 
@@ -1762,12 +1761,12 @@ TEST(StoppedAsErrorTest, ConvertsStoppedToError) {
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<std::execution::set_error_t(int)>>);
 
-    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
 }
 
 TEST(StoppedAsErrorTest, SupportsPipeForm) {
     auto sndr =
         std::execution::just_stopped() | std::execution::stopped_as_error(42);
 
-    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
 }

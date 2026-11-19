@@ -23,8 +23,7 @@ namespace {
 namespace ex = std::execution;
 using namespace std::chrono_literals;
 
-// sync_wait returns a tuple for one value shape and a variant of tuples for
-// several; let_stopped and let_error pass the predecessor's values through.
+// The variant wait also captures values passed through by let_stopped.
 template<class Result>
 const int* int_value(const Result& result) {
     if constexpr (std::is_same_v<Result, std::tuple<int>>) {
@@ -62,12 +61,12 @@ TEST(ExecutionForgePredecessorLifetime, PoolCompletesOnWorkerAndRejectsInline) {
     pool.wait();
     pool.shutdown();
     const auto caller = std::this_thread::get_id();
-    auto value = forge::sync_wait(ex::let_stopped(ex::schedule(pool.get_scheduler()), [&]() noexcept {
+    auto value = std::this_thread::sync_wait_with_variant(ex::let_stopped(ex::schedule(pool.get_scheduler()), [&]() noexcept {
         EXPECT_EQ(std::this_thread::get_id(), caller);
         return ex::just(42);
     }));
     ASSERT_TRUE(value);
-    const int* result = int_value(*value);
+    const int* result = int_value(std::get<0>(std::get<0>(*value)));
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(*result, 42);
 }
@@ -89,12 +88,12 @@ TEST(ExecutionForgePredecessorLifetime, TimerCompletesOnWorkerAndStopsInline) {
     timer.wait();
     timer.shutdown();
     const auto caller = std::this_thread::get_id();
-    auto value = forge::sync_wait(ex::let_stopped(timer.schedule_after(1h), [&]() noexcept {
+    auto value = std::this_thread::sync_wait_with_variant(ex::let_stopped(timer.schedule_after(1h), [&]() noexcept {
         EXPECT_EQ(std::this_thread::get_id(), caller);
         return ex::just(42);
     }));
     ASSERT_TRUE(value);
-    const int* result = int_value(*value);
+    const int* result = int_value(std::get<0>(std::get<0>(*value)));
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(*result, 42);
 }

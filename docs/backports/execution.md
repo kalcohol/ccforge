@@ -81,12 +81,12 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
 - 调度器适配器：`starts_on`、`continues_on`、`on`、`affine`、`bulk` /
   `bulk_chunked` / `bulk_unchunked`（串行 subset）
 - Forge 扩展：`forge::transfer_just`、`forge::split` 及无策略串行 `forge::bulk*`
-- 组合器：`into_variant`、`when_all`（至少一个 child sender；完整笛卡尔积签名、外层取消传播）、
+- 组合器：`into_variant`、`when_all`（至少一个 child sender；每个 child 至多一个 value completion signature、外层取消传播）、
   `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
-- 消费者：`sync_wait`（WD 要求恰好一个 value completion signature，接受零个或多个
-  签名是 Forge 扩展。结果类型按 run_loop 环境 `sync_wait_env` 推导，该 env 暴露
+- 消费者：`sync_wait`（Mandate 要求在其 run_loop 环境中恰好有一个 value completion
+  signature。结果类型按该环境推导，该 env 暴露
   `get_scheduler` / `get_start_scheduler` / `get_delegation_scheduler`）、
-  `sync_wait_with_variant`（均通过 `std::this_thread`）
+  `sync_wait_with_variant`（适配一个或多个 value completion signatures，均通过 `std::this_thread`）
 - Stopped 工具：`stopped_as_optional`、`stopped_as_error`
   `stopped_as_optional` 要求恰好一个非 `void` value completion signature；单一签名
   的多个参数形成 `optional<tuple<...>>`。无 value、零参数 value 或多个 value 候选
@@ -422,7 +422,8 @@ FWD-ENV；`let` predecessor 与 `stopped_as_error` child 按 `[exec.let]/10` 使
 
 `when_all` 在静态类型的 `tuple` 中保存各 child 的 typed holder，
 child operation state 在 holder 的构造函数中直接初始化为普通数据成员，
-values 以 decayed tuple 的 `optional<variant<...>>` 保存（保留多 value shape 扩展），
+values 按 `[exec.when.all]/13` 保存在由各 child 的 `optional<decayed-tuple<...>>`
+组成的 tuple 中，无法形成该类型时使用 `tuple<>`。
 errors、stop source 和具体类型的 `optional` stop callback 均在 operation state 内存储。
 stop callback 在启动任何 child 前注册，并在向下游发送 completion 前注销；
 child `connect` 抛出时，已构造的 children 随 tuple 构造展开而析构。
@@ -589,11 +590,14 @@ execution-only 路径。
 
 ## 已移除扩展与迁移
 
-仓库尚未发布，因此 backport 直接跟随工作草案与已采纳提案。以下宽于工作草案的入口直接移除，未设置发布版弃用期。
+仓库尚未发布，因此 backport 直接跟随工作草案与已采纳提案。以下宽于工作草案的入口直接移除，未经过弃用期。
 
 | 旧用法 | 迁移后的用法 |
 | --- | --- |
-| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)`；依赖扩展结果形态时使用 `forge::sync_wait(s)` |
+| `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)` |
+| `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 有多种 value completion） | `std::this_thread::sync_wait_with_variant(s)`；backport 返回 `optional<variant<tuple<V>>>`，其中 `V` 包含各 decayed tuple 备选项 |
+| `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 无 value completion） | 用 `auto op = connect(s, receiver)` 和 `start(op)`，由 receiver 处理 stopped 或 error |
+| `std::execution::when_all(a, b)`（child 有多种 value completion，结果为笛卡尔积） | `std::execution::when_all_with_variant(a, b)`；每个 child 的 value 以一个 variant 参数交付 |
 | `std::execution::split(s)` | `forge::split(s)` |
 | 两种 counting scope 的 `scope.count()` / `scope.is_closed()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)`（仅 backport） |
 | `std::execution::receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t` | 使用 `std::execution::receiver_tag`、`sender_tag`、`operation_state_tag`、`scheduler_tag` |
@@ -651,23 +655,31 @@ backport 将随工作草案更新。`starts_on(sch, sndr)` 与 `schedule_from(sn
 policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `std::execution::seq`。
 `forge::transfer_just` 组合 `just` 与 `continues_on`，可用于完整原生实现。
 
-### 仍待迁移的 sync_wait 扩展
-
-`std::this_thread::sync_wait(s)` 接受零种或多种 value completion 的重载仍处于弃用状态。
-使用 `forge::sync_wait(s)` 可保留 backport 的 tuple-or-variant 结果。多种 value completion
-的标准形式为 `std::this_thread::sync_wait_with_variant(s)`。在 backport 中，两条路径都对
-value 参数类型做 decay 后生成 tuple，并对 tuple 类型去重。结果类型在有至少两个不同的
-tuple 类型时相同，有零个或一个时不同。
-
-| Sender 示例 | `forge::sync_wait(s)` 或弃用重载 | `std::this_thread::sync_wait_with_variant(s)` |
-| --- | --- | --- |
-| `just_stopped()`（零个 value tuple 类型） | `optional<tuple<>>` | `optional<__empty_variant>`（内部占位类型） |
-| `set_value_t(int&)` 与 `set_value_t(const int&)`（都得到 `tuple<int>`） | `optional<tuple<int>>` | `optional<variant<tuple<int>>>` |
-| `set_value_t(int)` 与 `set_value_t(double)`（得到两个不同的 tuple 类型） | `optional<variant<tuple<int>, tuple<double>>>` | `optional<variant<tuple<int>, tuple<double>>>` |
+`forge::sync_wait` 与 `std::this_thread::sync_wait` 是同一个对象，原生与 backport
+均要求恰好一个 value completion signature。`set_value_t()` 是一个签名，结果值为
+`tuple<>`。`sync_wait_with_variant` 通过 `into_variant` 在 decay 后按 tuple 类型去重。
+无 value completion 的 sender 经 `into_variant` 后仍无 value completion，因此默认
+`sync_wait_with_variant` 的内部 `sync_wait` 调用违反单一签名的 Mandate。
 
 `forge::split` 共用 backport 的惰性缓存和 `const&` 重放实现。`forge::empty_env`
 在两种模式下均为 `std::execution::env<>`。
 Scope 观察函数只提供诊断快照。`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
+
+### when_all 的 WD 存储环境
+
+`[exec.when.all]/9` 与 /10 用带内部 stop token 的环境检查并连接 child，
+/13 则用外层 receiver 环境的 FWD-ENV 计算所有 value slots。若任何 child 在
+FWD-ENV 下无法形成单一 value tuple，整个存储类型为 `tuple<>`。
+依赖 stop-token 类型或 forwarding query 分类的 child 可能在两个环境中声明不同
+value 类型。实现采用 /13 的存储类型与 /15.1 的交付形式。即使某个 child 没有
+value completion，空存储下的 started 分支仍包含 `set_value(rcvr)`，因此签名包括 `set_value_t()`。
+
+### sync_wait_with_variant 的 WD 返回类型
+
+`[exec.sync.wait.var]/1` 将 `Sndr` 定义为 `decltype(into_variant(sndr))`。
+对其再应用 /2.2 与 /3 的 result type 计算后，若 `into_variant` 的 value 为 `V`，
+返回类型为 `optional<variant<tuple<V>>>`。参考实现直接返回扁平的
+`optional<V>`。Backport 逐字采用草案的嵌套类型，并会随 LWG 的解决方案更新。
 
 ### Coroutine 桥的 WD 措辞问题
 

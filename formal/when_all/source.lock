@@ -1,31 +1,31 @@
 {
-  "assessment": "Marker and stop-query spellings name the same entities. The reserved callback concept has the identical constraints and is applied at both original decision points. Two dead ADL answers duplicate the retained member queries. Child environment selection, pending credits, stop registration, result arbitration and delivery are unaffected.",
-  "checker_digest": "c19e0a23b37e2a7d681ab18b0c1923237bff432daf1f3f052f83c31bcf68b81a",
-  "configuration_count": 60,
+  "assessment": "E2 round 3 checks each exact child connection in its cv/ref category before instantiating the enclosing when_all operation. The child receiver carries the same borrowed environment and inplace stop token independently of the enclosing operation type. These connection and environment details are checked by source review. The model carries the actual seq_cst disposition observation to each emplacement, or records the absence of slots when no load occurs. The stopped and no-slot controls only enable emplacement. The independent W2 check still detects both, and every round 2 semantic record is unchanged. The started-then-stopped throw still enters child_fail and releases one child credit. Result publication, pending credits, cancellation and teardown retain the existing model bounds.",
+  "checker_digest": "6f9cb82a780429b9037ec40dba07f6b72877733ce7116586b012abb58be58557",
+  "configuration_count": 536,
   "date": "2026-11-19",
-  "expected_digest": "e9694fca66c56d9aa755811422849426e94d84b6a5533f4112f0aade6c3480ad",
+  "expected_digest": "fa090ccf10da28ef105bb6ead8f4fe842b426a84032593446495c468c5e869a1",
   "last_full_qualification": {
-    "assessment": "Whole-header correspondence covers child completion, seq_cst pending decrements and disposition RMWs, acq_rel weak callback credit CAS with no-write failures, result mutex, unlocked delivery reads and callback/child/source member teardown. Shared finite child readiness and stop contracts abstract library internals. Outer stop forwarding requires successful nonzero credit acquisition; unconditional forwarding is outside that boundary.",
-    "checker_digest": "c19e0a23b37e2a7d681ab18b0c1923237bff432daf1f3f052f83c31bcf68b81a",
-    "configuration_count": 480,
-    "date": "2026-11-16",
-    "expected_digest": "e9694fca66c56d9aa755811422849426e94d84b6a5533f4112f0aade6c3480ad",
+    "assessment": "E2 round 3 checks each exact child connection in its cv/ref category before instantiating the enclosing when_all operation. The child receiver carries the same borrowed environment and inplace stop token independently of the enclosing operation type. These connection and environment details are checked by source review. The model carries the actual seq_cst disposition observation to each emplacement, or records the absence of slots when no load occurs. The stopped and no-slot controls only enable emplacement. The independent W2 check still detects both, and every round 2 semantic record is unchanged. The started-then-stopped throw still enters child_fail and releases one child credit. Result publication, pending credits, cancellation and teardown retain the existing model bounds.",
+    "checker_digest": "6f9cb82a780429b9037ec40dba07f6b72877733ce7116586b012abb58be58557",
+    "configuration_count": 536,
+    "date": "2026-11-19",
+    "expected_digest": "fa090ccf10da28ef105bb6ead8f4fe842b426a84032593446495c468c5e869a1",
     "outcome_summary": {
-      "fail": 138,
-      "pass": 342
+      "fail": 157,
+      "pass": 379
     },
     "python": "3.13.13",
-    "source_digest": "e3763e083c46dc3525a3edd833c6d5fcf10cd9ef758e1c7bac2f5e08e8e3ee3c",
+    "source_digest": "a6fd28a57eda21433d1b03fda0e0b3079c9a2edf23d6fd6b89e4124704b22578",
     "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
     "tier": "full"
   },
   "outcome_summary": {
-    "fail": 38,
-    "pass": 22
+    "fail": 157,
+    "pass": 379
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/when_all.hpp",
-  "source_digest": "70a49c3b375a32e11ef6853542efd2823b5486bff31ba026c7f7f69916eaca9b",
+  "source_digest": "a6fd28a57eda21433d1b03fda0e0b3079c9a2edf23d6fd6b89e4124704b22578",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
-  "tier": "quick"
+  "tier": "full"
 }

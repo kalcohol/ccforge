@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <stdexcept>
+#include <variant>
 
 namespace {
 namespace ex = std::execution;
@@ -95,6 +96,20 @@ struct receiver_env {
     auto query(ex::get_start_scheduler_t) const noexcept -> ex::inline_scheduler { return {}; }
 };
 
+template<class V>
+int value_sum(V value) noexcept {
+    return static_cast<int>(value);
+}
+
+template<class... Tuples>
+int value_sum(const std::variant<Tuples...>& value) noexcept {
+    return std::visit([](const auto& tuple) noexcept {
+        return std::apply([](auto... args) noexcept {
+            return (0 + ... + static_cast<int>(args));
+        }, tuple);
+    }, value);
+}
+
 template<class Token = std::never_stop_token>
 struct receiver {
     using receiver_concept = ex::receiver_tag;
@@ -102,7 +117,7 @@ struct receiver {
     Token token{};
     template<class... Vs>
     void set_value(Vs... vs) && noexcept {
-        ((out->sum += static_cast<int>(vs)), ...);
+        ((out->sum += value_sum(vs)), ...);
         ++out->values;
     }
     template<class E>
@@ -180,9 +195,9 @@ TEST(ExecutionStaticOpstateTransfer, MultipleValueShapesAndDeduplicatedTuples) {
         const int expected = shape == 0 ? 0 : shape == 2 ? 7 : 3;
         check(ex::continues_on(multi_sender{shape}, ex::inline_scheduler{}),
             expected);
-        check(ex::when_all(ex::continues_on(multi_sender{shape}, ex::inline_scheduler{}),
+        check(ex::when_all_with_variant(ex::continues_on(multi_sender{shape}, ex::inline_scheduler{}),
             ex::just(1)), expected + 1);
-        check(ex::continues_on(ex::when_all(multi_sender{shape}, ex::just(1)),
+        check(ex::continues_on(ex::when_all_with_variant(multi_sender{shape}, ex::just(1)),
             ex::inline_scheduler{}), expected + 1);
         check(ex::starts_on(ex::inline_scheduler{}, multi_sender{shape}), expected);
         check(ex::on(ex::inline_scheduler{}, multi_sender{shape}), expected);

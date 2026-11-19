@@ -51,7 +51,6 @@ template<class Scope>
     return scope.__is_closed();
 }
 
-// split and the legacy tuple-or-variant wait rely on backport implementation types.
 template<class S>
     requires std::execution::sender_in<std::decay_t<S>, empty_env> &&
              std::execution::sender_in<S, empty_env> &&
@@ -65,10 +64,8 @@ template<class S>
 [[nodiscard]] auto split(S&& sndr) {
     return std::execution::__split(std::forward<S>(sndr));
 }
-inline constexpr std::this_thread::__sync_wait_impl_t sync_wait{};
-#else
-// Native implementations provide the standard single-value wait contract.
-inline constexpr auto& sync_wait = std::this_thread::sync_wait;
 #endif
+
+using std::this_thread::sync_wait;
 
 } // namespace forge

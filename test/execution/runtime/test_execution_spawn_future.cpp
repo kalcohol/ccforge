@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <execution>
 #include "test_execution_manual_sender.hpp"
 #include "../../forge/runtime/forge_operation_destroy.hpp"
@@ -809,16 +810,15 @@ TEST(SpawnFutureTest, ErrorAndStoppedResultsPropagate) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    EXPECT_THROW((void)forge::sync_wait(
+    auto error = forge_test::observe_completion<spawn_future_marker_error>(
         std::execution::spawn_future(
-            std::execution::just_error(spawn_future_marker_error{}), token)),
-        spawn_future_marker_error);
+            std::execution::just_error(spawn_future_marker_error{}), token));
+    EXPECT_TRUE(error.error);
     EXPECT_EQ(scope.__count(), 0u);
 
-    auto stopped = forge::sync_wait(
+    auto stopped = forge_test::observe_completion(
         std::execution::spawn_future(std::execution::just_stopped(), token));
-
-    EXPECT_FALSE(stopped.has_value());
+    EXPECT_TRUE(stopped.stopped);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
 }
@@ -871,9 +871,9 @@ TEST(SpawnFutureTest, AdvertisesStoredReferenceCompletionsAsDecayedValues) {
                   std::execution::set_error_t(
                       const spawn_future_marker_error&)>::value);
 
-    EXPECT_THROW(
-        (void)forge::sync_wait(std::move(error_future)),
-        spawn_future_marker_error);
+    auto error_result = forge_test::observe_completion<spawn_future_marker_error>(
+        std::move(error_future));
+    EXPECT_TRUE(error_result.error);
     EXPECT_EQ(scope.__count(), 0u);
 
     auto joined = forge::sync_wait(scope.join());

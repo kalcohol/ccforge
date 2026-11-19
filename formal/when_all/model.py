@@ -12,7 +12,8 @@ REFS={
  'register_outer':'__op::register_outer_stop_callback | __stop_callback.emplace(token, __outer_stop_callback{this});',
  'start':'__op::start | register_outer_stop_callback();',
  'start_children':'__op::__start_children | (std::execution::start(std::get<Is>(__children).__op), ...);',
- 'value':'__child_recv::set_value | __self->child_done();',
+ 'value':'__child_recv::set_value | __self->__disp == op_t::__disposition::started',
+ 'store_value':'__child_recv::set_value | __self->child_fail(std::current_exception());',
  'fail':'__op::child_fail | __disp.exchange(__disposition::error)',
  'store_error':'__op::child_fail | __result.template emplace<1>( std::in_place_type<std::decay_t<E>>, static_cast<E&&>(e));',
  'stopped':'__op::child_stop | __disp.compare_exchange_strong( expected, __disposition::stopped)',
@@ -27,13 +28,14 @@ REFS={
 }
 # The throwing and nonthrowing error paths have identical storage fragments.
 REFS['store_error']='model-only: child_fail stores selected error under __mtx; both construction paths'
-ACTIONS='''construct start register_outer start_children complete value fail stopped store_error store_stopped result_lock result_unlock request select request_end outer_stop outer_load outer_cas outer_request outer_return done deregister_outer deliver destroy deregister_child child_end source_end receiver_end op_end signal await'''.split()+['inner.'+a for a in INNER_ACTIONS+['complete']]
+ACTIONS='''construct start register_outer start_children complete value store_value fail stopped store_error store_stopped result_lock result_unlock request select request_end outer_stop outer_load outer_cas outer_request outer_return done deregister_outer deliver destroy deregister_child child_end source_end receiver_end op_end signal await'''.split()+['inner.'+a for a in INNER_ACTIONS+['complete']]
 STEPS={a:SimpleNamespace(lines=REFS.get(a,'model-only: library/child contract, script, member initialization/destruction'),desc=a) for a in ACTIONS}
 FIELDS='''threads errors children alive source_alive receiver_alive pending disp result partial expected_error expected_stopped child_events received required_stop outer_obligation throw_obligation literal_outer req_active signals local cas_spur mutex_owner mutex_pub vc views hist accesses destroy_started started first_stored_error'''.split()
 class Cfg:
+ throwing_values=()
  def __init__(self,**kw):
   self.name='cfg'; self.threads=(); self.payloads=('value','value'); self.modes=('own','own'); self.registrations=('start','start'); self.inline_destroy=True
-  self.stop_possible=True; self.registration_throw=False; self.hb=False; self.stale=False; self.mut=''; self.control=''; self.required_coverage=()
+  self.value_slots=True; self.stop_possible=True; self.registration_throw=False; self.hb=False; self.stale=False; self.mut=''; self.control=''; self.required_coverage=()
   self.__dict__.update(kw)
 class World: pass
 class Proxy:
@@ -81,7 +83,7 @@ def outer_touch(p,t): touch(p.w,t); mem.access(p,t,'outer callback lifetime')
 def initial():
  w=World(); n=len(C.threads); z=(0,)*n; b=(0,)*5; pub=(z,b); N=len(C.payloads)
  w.threads=C.threads; w.errors=(); w.alive=w.source_alive=w.receiver_alive=True
- w.pending=N; w.disp='started'; w.result='empty'; w.partial=(False,)*N
+ w.pending=N; w.disp='started'; w.result='empty'; w.partial=(False,)*N if C.value_slots else ()
  w.first_stored_error=-1; w.expected_error=-1; w.expected_stopped=False; w.child_events=(); w.received=(); w.required_stop=False; w.outer_obligation=False; w.throw_obligation=False; w.literal_outer=False
  w.req_active=(0,)*n; w.signals=(); w.local=(-1,)*n; w.cas_spur=(False,)*n
  w.mutex_owner=-1; w.mutex_pub=pub; w.accesses=(); w.destroy_started=w.started=False
@@ -147,7 +149,30 @@ def execute(w,t,op,alt=0):
   elif kind=='stopped': prepend(w,t,('stopped',i))
   else: prepend(w,t,('value',i))
  elif a=='value':
-  i=args[0]; touch(w,t); mem.access(w,t,'partial '+str(i),True); change(w,'partial',i,True)
+  i=args[0]; touch(w,t); observed_disp=None
+  if C.value_slots:
+   observed_disp=mem.load(w,t,3,len(w.hist[3])-1)
+  emplace=observed_disp=='started'
+  if observed_disp is None:
+   COV.add('value.skip_no_slots')
+   emplace=C.control=='store_without_slots'
+  elif not emplace:
+   COV.add('value.skip_disposition')
+   if observed_disp=='stopped' and i in C.throwing_values:
+    COV.add('value.skip_throw_after_stop')
+    emplace=C.control=='store_after_stopped'
+  prepend(w,t,('store_value',i,observed_disp) if emplace else ('done',))
+ elif a=='store_value':
+  i,observed_disp=args; touch(w,t)
+  if observed_disp is None:
+   error(w,'W2: value emplacement without slots')
+  else:
+   if observed_disp!='started':
+    error(w,'W2: value emplacement after observing '+observed_disp+' disposition')
+   if i in C.throwing_values:
+    COV.add('value.throw_from_'+w.disp)
+    prepend(w,t,('fail',i)); return
+   mem.access(w,t,'partial '+str(i),True); change(w,'partial',i,True)
   prepend(w,t,('done',))
  elif a=='fail':
   i=args[0]; touch(w,t); w.required_stop=True
@@ -242,9 +267,10 @@ def execute(w,t,op,alt=0):
   if len(set(w.child_events))!=N: error(w,'W1: delivery before every child completion')
   expected='error.'+str(w.expected_error) if w.expected_error!=-1 else 'stopped' if w.expected_stopped else 'values'
   actual=w.result if w.result!='empty' else 'values'
+  if C.throwing_values: COV.add('deliver.'+actual)
   if actual!=expected: error(w,'W2: disposition/outcome mismatch')
   if actual=='values':
-   for i in range(N):
+   for i in range(len(w.partial)):
     mem.access(w,t,'partial '+str(i))
     if not w.partial[i]: error(w,'W2: missing partial value')
   if C.control!='drop_receiver': w.received+=(actual,)
@@ -322,7 +348,12 @@ def metrics(): return {'max_store_buffer':0}
 def coverage():
  if not C.mut and not C.control: assert set(C.required_coverage)<=COV,set(C.required_coverage)-COV
  return sorted(COV)
-def step_table(): return [('protocol',a,s.lines,'atomic / plain / library / script',s.desc) for a,s in STEPS.items()]
+EXTRA_REFS=('__child_env::query | return __base->query(std::forward<Query>(query));',
+ '__child_recv::get_env | return __env;',
+ '__op::deliver_values | __values);')
+def step_table():
+ return [('protocol',a,s.lines,'atomic / plain / library / script',s.desc) for a,s in STEPS.items()]+[
+  ('storage/env',str(i),r,'plain',r) for i,r in enumerate(EXTRA_REFS)]
 def describe_initial(w): return repr(w.threads)
 def describe(meta,w):
  from engine.source_lock import resolve

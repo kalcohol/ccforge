@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 
 #include <execution>
 
@@ -262,20 +263,18 @@ TEST(ScheduleFromTest, DefaultDomainForwardsValues) {
 }
 
 TEST(ScheduleFromTest, DefaultDomainForwardsStopped) {
-    auto result = forge::sync_wait(
+    auto result = forge_test::observe_completion(
         std::execution::schedule_from(std::execution::just_stopped()));
-
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(result.stopped);
 }
 
 TEST(ScheduleFromTest, DefaultDomainForwardsErrors) {
-    auto sender = std::execution::schedule_from(
-        std::execution::just_error(std::make_exception_ptr(
-            std::runtime_error("schedule_from"))));
+    auto error = std::make_exception_ptr(std::runtime_error("schedule_from"));
+    auto sender = std::execution::schedule_from(std::execution::just_error(error));
 
-    EXPECT_THROW(
-        static_cast<void>(forge::sync_wait(std::move(sender))),
-        std::runtime_error);
+    auto result = forge_test::observe_completion(std::move(sender));
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(*result.error, error);
 }
 
 TEST(ScheduleFromTest, ForwardsChildCompletionSchedulerAttribute) {

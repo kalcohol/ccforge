@@ -12,7 +12,12 @@ python3 -B formal/when_all/check.py --steps
 
 可引用动作由 enclosing function 内唯一 fragment 定位。两个 error emplacement 路径具有相同 fragment，因此 storage step 明确标成 model-only；lambda body、隐式析构和库调用内部也不借用外层 fragment。全文件字节 lock 覆盖这些部分。fragment 存在不等于 fidelity proof。
 
-状态包含 pending、disposition、result、逐 child partial、独立结果 oracle、completion events、每个 registration 的身份/status/owner/publications、对象 tombstones、脚本、atomic histories、vector clocks 和 plain accesses。每次 decrement、callback load、CAS、result lock/unlock 都独立执行。partial 写在各自 child 的独立槽中，不使用 result mutex；error/stopped 的 result 写由 mutex 保护。deliver 不持该 mutex，其 reads 的 HB 依赖 pending 的 RMW release chain。
+状态包含 pending、disposition、result、逐 child partial、独立结果 oracle、completion events、每个 registration 的身份/status/owner/publications、对象 tombstones、脚本、atomic histories、vector clocks 和 plain accesses。每次 decrement、callback load、CAS、result lock/unlock 都独立执行。value storage 抽象为各 child 的 optional decayed tuple 槽，或整个空 tuple。
+只有提供槽且 seq_cst disposition load 观察到 started 时才排入 emplacement 步骤；
+该步骤保留 guard 的读取结果，以便独立检查是否允许 emplacement。负对照只改变是否排入步骤。
+判定与写入之间保留交错。槽写不使用 result mutex；error/stopped 的 result 写由 mutex 保护。deliver 不持该 mutex，其 reads 的 HB 依赖 pending 的 RMW release chain。
+指定会抛出的 value 在 emplacement 步骤转入 child_fail，由该路径取得 error disposition 并消耗一次 child credit。
+若 stopped 已在 guard 读取前胜出，则跳过 emplacement 和异常；若读取已观察到 started，随后抛出的异常仍能覆盖 stopped。
 
 ## child 与 stop 库契约
 
@@ -22,14 +27,14 @@ python3 -B formal/when_all/check.py --steps
 
 outer callback 在任何 child start 前注册，仅当 stop_possible；构造抛出则 request_stop 内部 source。已停止 token 内联调用，取得 pending credit，转发 stop，再独立 child_done。pending 已归零时不能取得新 credit，否则 deliver 的注销等待会形成等待环。每次弱 CAS 可无写入地伪失败；相邻无进展的重复失败约简为一次，其他线程所有交错仍保留。不证明无界伪失败下的必然终止。
 
-正常成员次序为 receiver、source、计数/结果、children、callback。析构先 reset callback，再逐 child 注销并结束 lifetime，然后 source、receiver、operation。tuple 子对象以逆身份顺序代表析构；本边界内各 child destructor 只触及自身和 source，互不借用 sibling，所以这些顺序可交换。member-order mutant 将空 optional 的初始化与析构一起移到 children 之前/之后；正常 delivery 已 reset 时，其空析构无共享访问。未 start operation 的注册也分别注销。receiver 可在 completion 内销毁整个 operation，之后只允许不访问 storage 的 stack return。child_fail/child_stop 的 lock_guard 先 unlock 再 child_done；callback 的 self/pending locals 和 values delivery 的引用 tuple 均按栈逆序销毁，其空析构无对象访问，合并为 stack continuation。
+正常成员次序为 receiver、receiver environment、source、计数/结果、children、callback。模型将 environment 归入 receiver 的 lifetime；签名与连接共用 stop overlay，类型约束及 query forwarding 在源码审查中核对。析构先 reset callback，再逐 child 注销并结束 lifetime，然后 source、receiver、operation。tuple 子对象以逆身份顺序代表析构；本边界内各 child destructor 只触及自身和 source，互不借用 sibling，所以这些顺序可交换。member-order mutant 将空 optional 的初始化与析构一起移到 children 之前/之后；正常 delivery 已 reset 时，其空析构无共享访问。未 start operation 的注册也分别注销。receiver 可在 completion 内销毁整个 operation，之后只允许不访问 storage 的 stack return。child_fail/child_stop 的 lock_guard 先 unlock 再 child_done；callback 的 self/pending locals 和 values delivery 的引用 tuple 均按栈逆序销毁，其空析构无对象访问，合并为 stack continuation。
 
 ## 场景、性质与负对照
 
-场景覆盖一至三个 children、同步/并发 values、两个 error 竞争、error 与 stopped、outer stop 在注册前和完成竞争中、callback 与最终 decrement/注销竞争、pre-start 通知、注册异常、不可停止 token、未 start 析构及三个 callback identities。内部 source 上的同步 child stop/completion 表示嵌套组合器的取消契约；不递归展开任意深度的 when_all。coverage 断言要求非零 credit、零 pending、伪失败、跨线程等待、inline registration、pre-start 通知和多个 identities 被选择。
+场景覆盖一至三个 children、同步/并发 values、空存储下先完成 value 的 child、两个 error 竞争、error 与 stopped、value emplacement 异常与 stopped 的竞争、outer stop 在注册前和完成竞争中、callback 与最终 decrement/注销竞争、pre-start 通知、注册异常、不可停止 token、未 start 析构及三个 callback identities。内部 source 上的同步 child stop/completion 表示嵌套组合器的取消契约；不递归展开任意深度的 when_all。coverage 断言要求非零 credit、零 pending、伪失败、跨线程等待、inline registration、pre-start 通知和多个 identities 被选择。emplacement 异常场景要求覆盖 guard 跳过、guard 通过后在 stopped 前后抛出，以及最终交付 stopped 与 error。
 
 - W1：started receiver 恰好一次，且在全部 child completion events 后；drop_done、drop_receiver、drop_completion 保留义务但省略履约。
-- W2：首次 error 仲裁决定 error identity，后续 error 不替换；无 error 时 stopped 优先于 values。oracle 在 child 的 disposition arbitration 或 value event 独立记录，不读取实现 result。first_stored_error 另检查已存 error 永不更换；overwrite_error 提供反例。error storage 的完成时刻可以晚于 exchange，因此不能以函数入口的全序代替仲裁顺序。
+- W2：首次 error 仲裁决定 error identity，后续 error 不替换；无 error 时 stopped 优先于 values。oracle 在 child 的 disposition arbitration 或 value event 独立记录，不读取实现 result。first_stored_error 另检查已存 error 永不更换；overwrite_error 提供反例；store_without_slots 和 store_after_stopped 分别检查空存储与 disposition guard。error storage 的完成时刻可以晚于 exchange，因此不能以函数入口的全序代替仲裁顺序。
 - W3：error、stopped、注册异常要求内部 stop；outer callback 成功取得非零 credit 后必须转发。no_error_stop、no_stopped_stop、drop_throw_request、drop_outer_forward 各自省略履约。drop_stop/drop_notice 检查 child 的 committed notification 与 pre-start 保存。
 - W4：delivery 前 outer registration 已注销；声明脚本内没有注销等待环。credit_without_check、no_deregister、deregister_after_deliver 提供反例。
 - W5：operation、逐 child、source、receiver 和 callback 的 entry/lifetime 不越过 destruction；每个 registration 在其 storage end、source end 与 terminal 独立检查。逐 child skip controls 和逐 storage end controls 保留要求，分别失败。
@@ -67,11 +72,6 @@ lock 是 drift detection。source digest 只规范 CRLF→LF，保留全部注�
 
 ## 最近一次完整检验
 
-2026-11-16，Python 3.13.13，八 workers / spawn。baseline 全部通过；所有 mutant/control outcomes 匹配人工 sensitivity。全部配置完成且未达到 state cap。expected update 与独立 full refresh 的 semantic records 完全一致。
-
-| Tier | 配置数 | Runner wall s | 最大 worker MiB | States | Transitions |
-|---|---:|---:|---:|---:|---:|
-| full | 480 | 8.606 | 55.76 | 416917 | 696272 |
-| quick | 60 | 1.060 | 37.28 | 47389 | 78515 |
-
-wall 包含 pool 启动，不含 CLI self-tests；worker peak 不是 pool peak，测量不能外推更大边界。
+2026-11-19，Python 3.13.13，四 workers / spawn，full 共 536 个配置、539,121 states 与
+903,875 transitions。379 个配置通过，157 个配置给出预期反例。所有配置完成且未达到 state cap。
+expected update 与独立 full refresh 的 semantic records 完全一致。

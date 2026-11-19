@@ -29,10 +29,12 @@
 
 #include <execution>
 #include <cstddef>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -47,7 +49,7 @@ namespace forge {
 // path.
 //
 // LIMITATION: this is not a general connectable any_sender. It supports a
-// single set_value shape, collapses errors through sync_wait's exception path,
+// single set_value shape, uses sync_wait's error-to-exception mapping,
 // and intentionally exposes sync_wait() instead of a receiver-type-erased
 // connect().
 // ──────────────────────────────────────────────────────────────────────────
@@ -61,14 +63,14 @@ template<class CompletionSignatures>
 class any_sender_of {
     static constexpr std::size_t kSBOSize  = 64;
     static constexpr std::size_t kSBOAlign = alignof(std::max_align_t);
+    using __value_t = value_tuple_of_t<CompletionSignatures>;
 
     struct __vtable {
         void (*destroy)(void* p) noexcept;
         void (*destroy_heap)(void* p) noexcept;
         void (*move_to)(void* src, void* dst) noexcept;
         // sync_wait path: run the sender, get the value tuple
-        using value_tuple_t = value_tuple_of_t<CompletionSignatures>;
-        std::optional<value_tuple_t> (*do_sync_wait)(void* p);
+        std::optional<__value_t> (*do_sync_wait)(void* p);
         bool consuming;
     };
 
@@ -80,7 +82,7 @@ class any_sender_of {
         S* sender;
 
         template<class Self, class Env>
-        static auto get_completion_signatures() noexcept
+        static constexpr auto get_completion_signatures() noexcept
             -> std::execution::completion_signatures_of_t<source_t, Env> {
             return {};
         }
@@ -92,66 +94,103 @@ class any_sender_of {
                 static_cast<source_t&&>(*sender),
                 std::move(receiver));
         }
+    };
 
-        auto get_env() const noexcept -> std::execution::env_of_t<S> {
-            return std::execution::get_env(*sender);
+    // Model the public queries of the standard's exposition-only wait environment.
+    struct __wait_env {
+        std::execution::run_loop* loop;
+
+        auto query(std::execution::get_scheduler_t) const noexcept {
+            return loop->get_scheduler();
+        }
+        auto query(std::execution::get_start_scheduler_t) const noexcept {
+            return loop->get_scheduler();
+        }
+        auto query(std::execution::get_delegation_scheduler_t) const noexcept {
+            return loop->get_scheduler();
         }
     };
 
+    struct __wait_state {
+        std::execution::run_loop loop;
+        std::exception_ptr error;
+        std::optional<__value_t> result;
+    };
+
+    // Both admission and execution use this receiver, including its environment type.
+    struct __wait_receiver {
+        using receiver_concept = std::execution::receiver_tag;
+
+        __wait_state* state;
+
+        template<class... Vs>
+            requires std::constructible_from<__value_t, Vs...>
+        void set_value(Vs&&... values) && noexcept {
+            try {
+                state->result.emplace(std::forward<Vs>(values)...);
+            } catch (...) {
+                state->error = std::current_exception();
+            }
+            state->loop.finish();
+        }
+
+        // make_exception_ptr takes the error by value and can copy from its mutable parameter;
+        // the exception object must also be copy-initializable from a const lvalue.
+        template<class E>
+            requires (std::is_convertible_v<E, std::decay_t<E>> &&
+                      std::is_convertible_v<std::decay_t<E>&, std::decay_t<E>> &&
+                      std::is_convertible_v<const std::decay_t<E>&, std::decay_t<E>>)
+        void set_error(E&& error) && noexcept {
+            if constexpr (std::same_as<std::decay_t<E>, std::exception_ptr>) {
+                state->error = std::forward<E>(error);
+            } else if constexpr (std::same_as<std::decay_t<E>, std::error_code>) {
+                state->error = std::make_exception_ptr(std::system_error(std::forward<E>(error)));
+            } else {
+                state->error = std::make_exception_ptr(std::forward<E>(error));
+            }
+            state->loop.finish();
+        }
+
+        void set_stopped() && noexcept { state->loop.finish(); }
+
+        auto get_env() const noexcept -> __wait_env { return {&state->loop}; }
+    };
+
+    template<class... Vs>
+    using __decayed_tuple = std::tuple<std::decay_t<Vs>...>;
+
     template<class S>
     static consteval bool __has_exact_sync_wait_result() {
-#if defined(FORGE_FORCE_SENDERS_BACKPORT) || \
-    (!defined(FORGE_HAS_NATIVE_SENDERS) && \
-     (!defined(__cpp_lib_senders) || (__cpp_lib_senders < 202400L)))
         using stored_ref_t = __stored_sender_ref<S>;
-        using env_t = std::execution::__forge_sync_wait::sync_wait_env;
-        if constexpr (!std::execution::sender_in<typename stored_ref_t::source_t, env_t>) {
-            return false;
-        } else if constexpr (std::execution::sender_in<stored_ref_t, env_t>) {
-            using cs_t =
-                std::execution::completion_signatures_of_t<stored_ref_t, env_t>;
-            using value_t =
-                std::execution::__forge_sync_wait::value_t_for<cs_t>;
-            using state_t =
-                std::execution::__forge_sync_wait::shared_state<value_t>;
-            using receiver_t =
-                std::execution::__forge_sync_wait::receiver<state_t>;
-            return forge::__detail::__sender_to<stored_ref_t, receiver_t> &&
-                std::same_as<
-                    value_t,
-                    value_tuple_of_t<CompletionSignatures>>;
-        } else {
-            return false;
+        if constexpr (std::execution::sender_in<stored_ref_t, __wait_env>) {
+            using values = std::execution::value_types_of_t<stored_ref_t, __wait_env,
+                __decayed_tuple, forge::__detail::meta::type_list>;
+            if constexpr (std::same_as<values,
+                              forge::__detail::meta::type_list<__value_t>>) {
+                return forge::__detail::__sender_to<stored_ref_t, __wait_receiver>;
+            }
         }
-#else
-        if constexpr (requires(S& sender) {
-                          std::this_thread::sync_wait(
-                              __stored_sender_ref<S>{std::addressof(sender)});
-                      }) {
-            return std::same_as<
-                decltype(std::this_thread::sync_wait(
-                    __stored_sender_ref<S>{std::declval<S*>()})),
-                std::optional<value_tuple_of_t<CompletionSignatures>>>;
-        } else {
-            return false;
-        }
-#endif
+        return false;
     }
 
     template<class S>
     static const __vtable* __make_vtable() {
-        using VT = value_tuple_of_t<CompletionSignatures>;
         static const __vtable vt{
             .destroy  = [](void* p) noexcept { static_cast<S*>(p)->~S(); },
             .destroy_heap = [](void* p) noexcept { delete static_cast<S*>(p); },
             .move_to  = [](void* src, void* dst) noexcept {
                 ::new(dst) S(std::move(*static_cast<S*>(src)));
             },
-            .do_sync_wait = [](void* p) -> std::optional<VT> {
-                auto result = forge::sync_wait(
-                    __stored_sender_ref<S>{static_cast<S*>(p)});
-                static_assert(std::same_as<decltype(result), std::optional<VT>>);
-                return result;
+            .do_sync_wait = [](void* p) -> std::optional<__value_t> {
+                __wait_state state;
+                auto op = std::execution::connect(
+                    __stored_sender_ref<S>{static_cast<S*>(p)}, __wait_receiver{&state});
+                std::execution::start(op);
+                state.loop.run();
+                if (state.error) {
+                    std::rethrow_exception(std::move(state.error));
+                }
+                return std::move(state.result);
             },
             .consuming = !std::is_copy_constructible_v<S>,
         };
@@ -182,7 +221,7 @@ class any_sender_of {
 
 public:
     using sender_concept = std::execution::sender_tag;
-    using value_tuple_t  = value_tuple_of_t<CompletionSignatures>;
+    using value_tuple_t  = __value_t;
 
     any_sender_of() = default;
 
@@ -255,7 +294,7 @@ public:
 
     // forge:: extension sender interface
     template<class Self, class Env>
-    static auto get_completion_signatures() noexcept -> CompletionSignatures {
+    static constexpr auto get_completion_signatures() noexcept -> CompletionSignatures {
         return {};
     }
 

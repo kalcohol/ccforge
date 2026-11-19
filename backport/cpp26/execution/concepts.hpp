@@ -663,26 +663,6 @@ struct __tuple_cat_type<std::tuple<Ts...>, std::tuple<Us...>, Rest...>
 template<class... Tuples>
 using __tuple_cat_t = typename __tuple_cat_type<Tuples...>::type;
 
-template<class... CSList>
-struct __cartesian_product_value_sigs {
-private:
-    using combined_tuple = __tuple_cat_t<__single_value_tuple_t<CSList>...>;
-
-    template<class T>
-    struct __to_cs;
-
-    template<class... Vs>
-    struct __to_cs<std::tuple<Vs...>> {
-        using type = completion_signatures<set_value_t(Vs...)>;
-    };
-
-public:
-    using type = typename __to_cs<combined_tuple>::type;
-};
-
-template<class... CSList>
-using __cartesian_product_value_sigs_t = typename __cartesian_product_value_sigs<CSList...>::type;
-
 template<class CompletionSignatures, template<class...> class Tuple, template<class...> class Variant>
 struct value_types_from;
 

@@ -57,14 +57,13 @@
 //   Verification     : execution subset covered by dedicated ThreadSanitizer
 //                      and ASan+UBSan container configurations.
 //
+//   - sync_wait requires exactly one value completion signature in its
+//     run_loop environment. Use sync_wait_with_variant for multiple signatures.
+//     For a sender with no value signature, connect and start with a receiver.
+//   - when_all accepts at most one value completion signature per child.
+//     Use when_all_with_variant for children with multiple signatures.
+//
 // DEVIATIONS from current working draft [exec]:
-//   - sync_wait computes result types against its run_loop environment
-//     (sync_wait_env: get_scheduler / get_start_scheduler /
-//     get_delegation_scheduler). As an extension it also accepts senders
-//     with zero or multiple value-completion shapes: zero value alternatives
-//     yield tuple<> and multiple alternatives yield variant<tuple<...>, ...>,
-//     where the working draft mandates exactly one value completion
-//     signature.
 //   - as_awaitable produces the working-draft result shape (void / T /
 //     tuple<...> for zero / one / many values of the single value-completion
 //     signature). Its dispatch honors direct/transformed as_awaitable members,

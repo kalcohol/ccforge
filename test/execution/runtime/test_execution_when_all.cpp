@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include "test_execution_completion.hpp"
 #include <execution>
 #include <exception>
 #include <tuple>
@@ -406,25 +407,107 @@ TEST(WhenAllTest, ErrorPropagates) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just_error(42));
-    EXPECT_THROW(forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
 }
 
-TEST(WhenAllTest, ReportsCartesianValueAndChildErrorSignatures) {
-    auto sndr = std::execution::when_all(
-        multi_value_sender{},
-        other_multi_value_sender{});
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, forge::empty_env{}));
+TEST(WhenAllTest, RejectsMultipleValueSignaturesFromOneChild) {
+    namespace ex = std::execution;
+    using invalid = decltype(ex::when_all(multi_value_sender{}, ex::just(1)));
+    using valid = decltype(ex::when_all_with_variant(multi_value_sender{}, ex::just(1)));
+    static_assert(ex::sender<invalid>);
+    static_assert(!ex::sender_in<invalid, forge::empty_env>);
+    static_assert(ex::sender_in<valid, forge::empty_env>);
+}
 
-    static_assert(std::is_same_v<cs_t,
-        std::execution::completion_signatures<
-            std::execution::set_value_t(int, char),
-            std::execution::set_value_t(int, bool),
-            std::execution::set_value_t(double, char),
-            std::execution::set_value_t(double, bool),
-            std::execution::set_error_t(short),
-            std::execution::set_error_t(long),
-            std::execution::set_stopped_t()>>);
+template<bool RejectMutableLvalue = false>
+struct category_sensitive_when_all_child {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept {
+        namespace ex = std::execution;
+        if constexpr (std::is_const_v<std::remove_reference_t<Self>>) {
+            using value_t = std::conditional_t<std::is_lvalue_reference_v<Self>, long, long long>;
+            return ex::completion_signatures<ex::set_value_t(value_t)>{};
+        } else if constexpr (!std::is_lvalue_reference_v<Self>) {
+            return ex::completion_signatures<ex::set_value_t(short)>{};
+        } else if constexpr (RejectMutableLvalue) {
+            return ex::completion_signatures<ex::set_value_t(int), ex::set_value_t(double)>{};
+        } else {
+            return ex::completion_signatures<ex::set_value_t(int)>{};
+        }
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) & {
+        return std::execution::connect(std::execution::just(1), std::move(r));
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const& {
+        return std::execution::connect(std::execution::just(2L), std::move(r));
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) && {
+        return std::execution::connect(std::execution::just(short{3}), std::move(r));
+    }
+
+    template<std::execution::receiver R>
+    auto connect(R r) const&& {
+        return std::execution::connect(std::execution::just(4LL), std::move(r));
+    }
+};
+
+TEST(WhenAllTest, PreservesChildCategoryInSignaturesStorageAndConnection) {
+    namespace ex = std::execution;
+    using invalid = decltype(ex::when_all(category_sensitive_when_all_child<true>{}));
+    static_assert(!ex::sender_in<invalid&, forge::empty_env>);
+    static_assert(ex::sender_in<const invalid&, forge::empty_env>);
+
+    auto joined = ex::when_all(category_sensitive_when_all_child<>{});
+    auto lvalue = forge::sync_wait(joined);
+    auto const_lvalue = forge::sync_wait(std::as_const(joined));
+    auto rvalue = forge::sync_wait(std::move(joined));
+    auto const_rvalue = forge::sync_wait(std::move(std::as_const(joined)));
+
+    static_assert(std::same_as<decltype(lvalue), std::optional<std::tuple<int>>>);
+    static_assert(std::same_as<decltype(const_lvalue), std::optional<std::tuple<long>>>);
+    static_assert(std::same_as<decltype(rvalue), std::optional<std::tuple<short>>>);
+    static_assert(std::same_as<decltype(const_rvalue), std::optional<std::tuple<long long>>>);
+    EXPECT_EQ(lvalue, std::optional{std::tuple{1}});
+    EXPECT_EQ(const_lvalue, std::optional{std::tuple{2L}});
+    EXPECT_EQ(rvalue, std::optional{std::tuple{short{3}}});
+    EXPECT_EQ(const_rvalue, std::optional{std::tuple{4LL}});
+}
+
+struct rvalue_only_when_all_child {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> std::execution::completion_signatures<std::execution::set_value_t(int)> { return {}; }
+
+    template<std::execution::receiver R>
+    auto connect(R receiver) && {
+        return std::execution::connect(std::execution::just(42), std::move(receiver));
+    }
+};
+
+template<class S>
+concept connects_to_value_error_receiver = requires(S&& sender, value_error_receiver receiver) {
+    std::execution::connect(std::forward<S>(sender), std::move(receiver));
+};
+
+TEST(WhenAllTest, RejectsCategoriesWithoutAChildConnection) {
+    namespace ex = std::execution;
+    using joined = decltype(ex::when_all(ex::just(), rvalue_only_when_all_child{}));
+    static_assert(std::copy_constructible<rvalue_only_when_all_child>);
+    static_assert(ex::sender_in<joined&, forge::empty_env>);
+    static_assert(!connects_to_value_error_receiver<joined&>);
+    static_assert(!connects_to_value_error_receiver<const joined&>);
+    static_assert(!connects_to_value_error_receiver<const joined&&>);
+    static_assert(connects_to_value_error_receiver<joined&&>);
 }
 
 TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
@@ -459,7 +542,7 @@ TEST(WhenAllTest, WithVariantAggregatesRuntimeValues) {
     EXPECT_DOUBLE_EQ(std::get<0>(std::get<0>(second)), 2.0);
 }
 
-TEST(WhenAllTest, DropsValueSignatureWhenAChildCannotProduceValue) {
+TEST(WhenAllTest, AdvertisesEmptyValueSignatureWhenAChildCannotProduceValue) {
     auto sndr = std::execution::when_all(
         std::execution::just_error(42),
         std::execution::just(2));
@@ -468,6 +551,7 @@ TEST(WhenAllTest, DropsValueSignatureWhenAChildCannotProduceValue) {
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
+            std::execution::set_value_t(),
             std::execution::set_error_t(int)>>);
 }
 
@@ -554,12 +638,16 @@ TEST(WhenAllTest, ChildEnvOwnsImmovablePrvalueOuterEnv) {
         sndr, std::declval<immovable_scheduler_env>()));
     static_assert(std::is_same_v<cs_t, std::execution::completion_signatures<
         std::execution::set_value_t(std::execution::inline_scheduler)>>);
-    auto op = std::execution::connect(
-        std::move(sndr),
-        owned_scheduler_receiver{{sch, &got_scheduler, &completed}, &alive});
-    std::execution::start(op);
-    EXPECT_TRUE(completed);
-    EXPECT_TRUE(got_scheduler);
+    {
+        auto op = std::execution::connect(
+            std::move(sndr),
+            owned_scheduler_receiver{{sch, &got_scheduler, &completed}, &alive});
+        EXPECT_EQ(alive, 1);
+        std::execution::start(op);
+        EXPECT_TRUE(completed);
+        EXPECT_TRUE(got_scheduler);
+        EXPECT_EQ(alive, 1);
+    }
     EXPECT_EQ(alive, 0);
 }
 
@@ -620,15 +708,14 @@ TEST(WhenAllTest, StoppedPropagates) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just_stopped());
-    auto result = forge::sync_wait(std::move(sndr));
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(forge_test::observe_completion(std::move(sndr)).stopped);
 }
 
 TEST(WhenAllTest, ErrorOverridesPriorStopped) {
     auto sndr = std::execution::when_all(
         std::execution::just_stopped(),
         std::execution::just_error(42));
-    EXPECT_THROW((void)forge::sync_wait(std::move(sndr)), int);
+    EXPECT_EQ(forge_test::observe_completion<int>(std::move(sndr)).error, 42);
 }
 
 TEST(WhenAllTest, OuterStopRequestReachesChildren) {

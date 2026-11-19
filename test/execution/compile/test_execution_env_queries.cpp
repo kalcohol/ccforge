@@ -352,10 +352,8 @@ using domain_env = ex::__forge_let::__scheduler_env<domain_scheduler>;
 static_assert(nothrow_answer<domain_env, ex::get_domain_t, domain>);
 static_assert(member_without_adl<domain_env, ex::get_domain_t>);
 
-// The supplied query keeps its qualification through every unlocked wrapper
-// ([exec.snd.expos]/4): a mutable lvalue and a const lvalue can select
-// different answers. The locked when_all environment takes the tag by value
-// and hands the member that named, mutable tag, as at 8de815c.
+// Forwarded queries keep their qualification ([exec.snd.expos]/4 and
+// [exec.when.all]/6.3). A mutable or const tag can select a different answer.
 struct qualified_tag : std::forwarding_query_t {
     // q(env) is env.query(q) with q's own qualification ([exec.queryable.general]/5).
     template<class Env>
@@ -391,10 +389,7 @@ static_assert(keeps_query_qualification<
     ex::__forge_let::__inner_env<forge::empty_env, qualified_answers>>);
 static_assert(keeps_query_qualification<
     ex::__forge_write_env::__joined_env<forge::empty_env, qualified_answers>>);
-using locked_child_env = ex::__forge_when_all::__child_env<qualified_answers>;
-static_assert(std::same_as<qualified_answer<locked_child_env, qualified_tag&>, int>);
-static_assert(std::same_as<qualified_answer<locked_child_env, const qualified_tag&>, int>);
-static_assert(std::same_as<qualified_answer<locked_child_env, qualified_tag>, int>);
+static_assert(keeps_query_qualification<ex::__forge_when_all::__child_env<qualified_answers>>);
 
 // The public get_scheduler asks with its own const object, and so does its
 // participation probe: the mutable-tag member is never consulted.

@@ -22,9 +22,9 @@ python3 -B formal/stop_token/check.py --steps
 | 模型 | 范围 | 最近 full check |
 |---|---|---|
 | [split](split/README.md) | 惰性单次执行、const 引用广播、共享所有权与 abandonment | 2026-11-17：903 配置 |
-| [when_all](when_all/README.md) | child completion credit、结果仲裁、取消与 HB | 2026-11-16：480 配置 |
+| [when_all](when_all/README.md) | child completion credit、结果仲裁、取消与 HB | 2026-11-19：536 配置，四个 worker |
 | [run_loop](run_loop/README.md) | mutex/CV queue、execute/count 与 teardown | 2026-11-16：177 配置 |
-| [sync_wait](sync_wait/README.md) | result publication、run_loop 契约与 stack teardown | 2026-11-16：82 配置 |
+| [sync_wait](sync_wait/README.md) | result publication、run_loop 契约与 stack teardown | 2026-11-19：82 配置，四个 worker |
 | [spawn](spawn/README.md) | detached state 双 reference、allocator/association 顺序、stop registration 与 HB | 2026-11-19：539 配置，四个 worker |
 | [associate](associate/README.md) | sender association 转移、conditional holder、receiver 自毁与 HB | 2026-11-16：601 配置 |
 | [spawn_future](spawn_future/README.md) | eager producer、single consumer、取消、shared ownership、allocator/association 顺序与 HB | 2026-11-16：1,666 配置 |

@@ -8,8 +8,6 @@ drop_finish.own_value.sc_hb
 drop_store.own_value.sc_hb
 finish_before_store.own_error.sc
 finish_before_store.own_error.sc_hb
-finish_before_store.own_stopped.sc
-finish_before_store.own_stopped.sc_hb
 finish_before_store.own_value.sc
 finish_before_store.own_value.sc_hb
 loop_after_state.value_destructor.sc
