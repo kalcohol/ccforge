@@ -140,6 +140,8 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   连接直接将 child 作为 const lvalue 连接，不预先复制整个 child；data 按对应类别构造，
   有 allocator 时在 child 自身的 get-state 内重建。non-copyable lvalue sender 需要显式
   `std::move(sndr)`，以保持 native C++26 handoff 时的源码形态一致；const non-copyable lvalue 不可连接。
+  `connect` 对自定义 source 也检查原表达式类别是否满足 `sender`。即使自定义成员能借用
+  对象，immovable source 和不可复制的左值也不能经 CPO 连接。
 - Execution domain 支持仍是 draft 子集：`connect_t` 已按 receiver env 选取 start
   domain，并按 sender env 选取 completion domain，支持 start/completion 两阶段
   recursive `transform_sender`；public `transform_sender(sender, env)`、`connect_t` 与
@@ -258,7 +260,10 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   不再以私有异常恢复 coroutine。`with_awaitable_senders` 限制为无 cv/ref 的 class type，
   continuation 只要存在 `unhandled_stopped()` 就安装 forwarding handler，错误返回类型
   不会静默退回 terminate handler。
-- GET-AWAITER 使用受约束的 member / ADL call probes；同时可调用的竞争候选保守拒绝，
+- GET-AWAITER 使用受约束的 member / ADL call probes；member 与 ADL 的候选都可调用时，
+  模拟一律按歧义处理，即使语言的 overload resolution 能选出一个最佳候选。
+  `as_awaitable` 的普通 awaiter 分支使用同一探测且不执行 promise 的 `await_transform`；
+  若该类型也满足 sender bridge 的条件，就会进入 sender bridge。
   final promise 的不可调用 overloaded / template `await_transform` 也无法完整反射。
   deleted、inaccessible 或 ambiguous 的 `operator co_await` call probe 失败时视作缺失：
   若该类型另有有效 awaiter 方法，它仍可满足 `sender`，但实际 await 或 connect 时
@@ -266,9 +271,15 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   区分；保留这个 emulation 边界，避免拒绝 WD-valid awaiters。
 - Sender bridge 的 receiver 暴露 promise environment 本身；WD 只规定 forwarding queries
   的行为，没有禁止其他查询，这项 latitude 保留。桥接继续在 `await_suspend` 中 connect，
-  用同线程 deferral 与 symmetric transfer 保持 stack safety；保留 decay 后去重的 value
-  alternatives、prepared sender 非单值时 identity fallback、lvalue decay-copy，以及
-  普通 awaiter 的 member-first 检测等 acceptance leniencies。
+  用同线程 deferral 与 symmetric transfer 保持 stack safety。
+  Transformed/adapted member 与 sender bridge 都按原 sender 表达式类别检查 value
+  signatures。即使参数经 decay 后得到同一类型，两种 value signatures 仍是两个 alternatives。
+  无 value 或唯一零参数 value 返回 `void`，唯一单参数 value 返回 decayed 类型，
+  唯一多参数 value 返回 decayed `tuple<...>`。普通 awaiter 与直接定制仍可处理左值，
+  sender bridge 根据原表达式选择，并要求变换和适配后的 sender 是右值。
+  仅在 prepared sender 按其表达式类别声明多种 value signatures 时回退到原表达式。
+  Completion adaptor 返回单一 value signature 的 move-only sender 左值引用时，
+  仍选择 sender bridge，构造因 CTAD 无法绑定该左值而不成立。
 - Forge `async_scope::spawn`、`resource_context::spawn`、`start_detached`、`any_sender_of`、
   `forge::split`、`sync_wait` 与 `io::await_sender` 接受满足各自环境和 value-shape 契约的 awaitable。
   Scope / IO 入口按实际 stop-token 环境检查；`any_sender_of` 仍要求相同 wait 结果，
@@ -592,6 +603,10 @@ P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供�
 | `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 有多种 value completion） | `std::this_thread::sync_wait_with_variant(s)`；backport 返回 `optional<variant<tuple<V>>>`，其中 `V` 包含各 decayed tuple 备选项 |
 | `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 无 value completion） | 用 `auto op = connect(s, receiver)` 和 `start(op)`，由 receiver 处理 stopped 或 error |
 | `std::execution::when_all(a, b)`（child 有多种 value completion，结果为笛卡尔积） | `std::execution::when_all_with_variant(a, b)`；每个 child 的 value 以一个 variant 参数交付 |
+| `std::execution::connect(s, r)` 借用 immovable source 或不可复制的自定义左值 sender | 可移动的 source 用 `std::execution::connect(std::move(s), r)`。若 source 不能移动，用保存其指针或引用的可移动 sender 连接，并让被借用对象活到 operation 结束 |
+| `co_await std::move(s)`，依赖 `set_value_t(int)`、`set_value_t(int&)` 在 decay 后合并 | `co_await std::execution::into_variant(std::move(s))`，按 variant 结果消费。若两种完成本来就应交付同一类型，可令 sender 只声明并交付一种 value signature |
+| `co_await s`，依赖 sender bridge 隐式复制左值 | 可消费时用 `co_await std::move(s)`。需保留原对象时，先写 `auto copy = s` 再用 `co_await std::move(copy)`。若 completion adaptor 返回左值，将其改为返回可连接的右值 |
+| `as_awaitable(s, p)` 依赖可同时调用的 member 与 ADL `operator co_await` 优先选中 member 分支 | 为该值类别只提供一个可调用的 `operator co_await`，或明确调用所需的成员，例如 `co_await std::move(s).operator co_await()` |
 | `std::execution::split(s)` | 包含 `<forge/split.hpp>` 后调用 `forge::split(s)` |
 | 两种 counting scope 的 `scope.count()` / `scope.is_closed()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)`（仅 backport） |
 | `std::execution::receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t` | 使用 `std::execution::receiver_tag`、`sender_tag`、`operation_state_tag`、`scheduler_tag` |
@@ -680,6 +695,7 @@ value completion，空存储下的 started 分支仍包含 `set_value(rcvr)`，�
 `coroutine_handle` 需要 promise 类型；实现使用无引用的 Promise。
 `[exec.as.awaitable]/1` 的 `awaitable-sender` 要求 `unhandled_stopped`，/7.4 却不再使用
 该 concept；停止的 ill-formedness 因此由 connect 的 receiver-of Mandate 决定。
-/7.4 的 class-template `Sndr&&` 不是 forwarding reference，lvalue CTAD 文字无法成立；
-保留 decay-copy。依赖 constexpr exceptions 的 completion-signature diagnostics
+/7.4 的 class-template `Sndr&&` 在 CTAD 中不是 forwarding reference。
+适配后的左值无法构造 sender bridge，显式移入或先复制再移入可保留对应的意图。
+依赖 constexpr exceptions 的 completion-signature diagnostics
 仍以 SFINAE 表达，不宣称完整 C++26 consteval API。
