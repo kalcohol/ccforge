@@ -593,6 +593,9 @@ execution-only 路径。
 
 仓库尚未发布。Backport 跟随工作草案与已采纳提案，超出草案范围的接口直接移除，未设弃用期。
 Forge 扩展在 `forge::` 命名空间提供。
+若明显的起草错误改变返回类型或语义，以至于按字面措辞编写的代码无法在遵循参考实现的原生库上编译，
+backport 采用参考实现及草案的明确意图，在符合性台账与 DEVIATIONS 中记录该例外，直至 LWG 解决。
+仅使 backport 更严格的措辞问题仍按字面实现。
 
 P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供，execution backport
 已完全移除其实现。
@@ -600,7 +603,7 @@ P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供�
 | 旧用法 | 迁移后的用法 |
 | --- | --- |
 | `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)` |
-| `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 有多种 value completion） | `std::this_thread::sync_wait_with_variant(s)`；backport 返回 `optional<variant<tuple<V>>>`，其中 `V` 包含各 decayed tuple 备选项 |
+| `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 有多种 value completion） | `std::this_thread::sync_wait_with_variant(s)` 返回 `optional<V>`，其中 `V` 是以各 decayed tuple 为备选项的 variant |
 | `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 无 value completion） | 用 `auto op = connect(s, receiver)` 和 `start(op)`，由 receiver 处理 stopped 或 error |
 | `std::execution::when_all(a, b)`（child 有多种 value completion，结果为笛卡尔积） | `std::execution::when_all_with_variant(a, b)`；每个 child 的 value 以一个 variant 参数交付 |
 | `std::execution::connect(s, r)` 借用 immovable source 或不可复制的自定义左值 sender | 可移动的 source 用 `std::execution::connect(std::move(s), r)`。若 source 不能移动，用保存其指针或引用的可移动 sender 连接，并让被借用对象活到 operation 结束 |
@@ -667,8 +670,8 @@ policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `st
 `forge::sync_wait` 与 `std::this_thread::sync_wait` 是同一个对象，原生与 backport
 均要求恰好一个 value completion signature。`set_value_t()` 是一个签名，结果值为
 `tuple<>`。`sync_wait_with_variant` 通过 `into_variant` 在 decay 后按 tuple 类型去重。
-无 value completion 的 sender 经 `into_variant` 后仍无 value completion，因此默认
-`sync_wait_with_variant` 的内部 `sync_wait` 调用违反单一签名的 Mandate。
+无 value completion 的 sender 经 `into_variant` 后仍无 value completion，因此
+无法形成 `sync_wait_with_variant` 所需的结果类型，调用违反其结果类型的 Mandate。
 
 `forge::empty_env` 在两种模式下均为 `std::execution::env<>`。
 Scope 观察函数只提供诊断快照。`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
@@ -685,9 +688,13 @@ value completion，空存储下的 started 分支仍包含 `set_value(rcvr)`，�
 ### sync_wait_with_variant 的 WD 返回类型
 
 `[exec.sync.wait.var]/1` 将 `Sndr` 定义为 `decltype(into_variant(sndr))`。
-对其再应用 /2.2 与 /3 的 result type 计算后，若 `into_variant` 的 value 为 `V`，
-返回类型为 `optional<variant<tuple<V>>>`。参考实现直接返回扁平的
-`optional<V>`。Backport 逐字采用草案的嵌套类型，并会随 LWG 的解决方案更新。
+/2 与 /3 使用 `[exec.sync.wait]/3` 定义的结果类型。若适配后的 sender 在
+`sync-wait-env` 中唯一的 value 是 `V`，按字面计算得到 `optional<variant<tuple<V>>>`。
+Backport 采用参考实现 stdexec 的扁平类型 `optional<V>`，符合 /4.2.1
+直接交付 tuple 的 variant 的意图，也让调用代码在切换到遵循参考实现的原生库时保持源码兼容。
+该起草错误例外记录在符合性台账中，并随 LWG 的解决方案更新。
+[工作草案](https://eel.is/c++draft/exec.sync.wait.var)
+[stdexec 源码](https://github.com/NVIDIA/stdexec/blob/main/include/stdexec/__detail/__sync_wait.hpp)
 
 ### Coroutine 桥的 WD 措辞问题
 

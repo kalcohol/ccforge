@@ -491,7 +491,10 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 optional tuple，错误返回类型必须编译失败。具有相同 decayed tuple
 的两个签名也属于多个签名。正控制还检查 `forge::sync_wait` 与标准对象地址相同。
 `sync_wait_with_variant` 的正控制覆盖默认调用和对原 sender 的 domain dispatch，
-错误返回类型以及 stopped-only 和 error-only sender 的默认调用必须编译失败。
+并断言单签名得到 `optional<variant<tuple<int>>>`，两个 value 签名得到
+`optional<variant<tuple<int>, tuple<double>>>`，两种结果均排除草案字面规定的嵌套类型。
+domain 返回错误的 variant 类型或草案的嵌套类型时必须编译失败，stopped-only 和
+error-only sender 的默认调用也必须编译失败。
 `execution_when_all` 检查多 value child 使 `when_all` 的 `sender_in` 为 false，
 并以 `when_all_with_variant` 为正控制；多形态 runtime 测试保留实际 variant 内容与
 静态 operation-state 分配检查。零 value 的 stopped、error 测试直接连接并启动

@@ -68,7 +68,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `into_variant` | Implemented subset | `into_variant.hpp`；CPO 自身支持 direct-call 和 bare pipe；`sync_wait` / `when_all` 复用单参数入口。 Child/signatures 经 FWD-ENV 及一致值类别，const-lvalue 不预先复制 child；全部 result datums 要求 decay-copyable，connect 条件 noexcept。通用 product/tag surface 仍未提供。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | `when_all` 按 WD 要求至少一个 child sender；typed tuple 保存各 child 的 typed holder，operation state 在 holder 内作为普通成员从 factory prvalue 直接初始化，支持空、non-final、immovable 类型；values、errors、stop source 和 optional stop callback 静态存储，operation-state storage 本身不再分配，无大小或对齐导致的堆回退。非分配 children / schedulers / receivers / environment queries / 用户函数 / 结果类型的组合无需全局分配；top-level 是否注册取决于 receiver token 的 `stop_possible()`，inner `when_all` 会在 parent 的 stop source 上注册，inplace registration 均零分配。自定义 token callback 的自行分配另计。Child `connect` 抛出时销毁已构造 children。保留 error 优先于 stopped、stop request 行为、child start 前注册 callback 和 completion 前注销 callback；child env 暴露内部 stop token，以 forwarding-query 类型约束转发一参数查询；签名查询和连接共用其环境类型，签名、存储与连接均保留 child 的 cv/ref。两个以上 value signatures 的 child 使组合 sender 不满足 sender_in；多形态使用 when_all_with_variant。按 /13 以 receiver 的 FWD-ENV 生成 optional decayed tuples，类型不成立时用空 tuple，/15.1 此时声明 set_value_t()。分配、异常和 lifecycle tests 覆盖。 兼容 awaitable child 经共享 CPO 连接，另含全局 frame allocation。 |
 | `forge::split` | Forge extension | `<forge/split.hpp>` 支持完整原生 senders 与 backport。Shared source 在 `std::execution::env<>` 下按传入的 value category 调用 `std::execution::connect`。订阅者的签名使用同一环境和类别公布的 source signatures，要求它们与连接的实际交付一致。单一 value shape 经 decay 后缓存并以 `const&` 广播，error 转为 `std::exception_ptr`，保留 source 的 stopped channel。Shared state 内直接构造 concrete child operation；state 与各 subscriber/control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`；入链无需分配。支持兼容 awaitable，其 child frame 分配另计。已启动后放弃订阅者时 source 继续运行。 |
-| `std::this_thread::sync_wait`, `std::this_thread::sync_wait_with_variant` | Implemented subset | env 通过 const member `query` 提供 scheduler、start scheduler 和 delegation scheduler；`sync_wait` 对 sender_in 与恰好一个 value signature 检查 Mandates；`forge::sync_wait` 引用同一个对象。多签名使用 `sync_wait_with_variant`，在原 sender 上 dispatch；默认路径对 `into_variant` 的结果调用 `sync_wait`，因而拒绝零 value sender。同步 typed-error consumption 由 Forge `wait_result` 提供。接受实际 run_loop 环境兼容的 awaitable，包含其全局 frame allocation。返回类型措辞与 domain fallback 见下文。 |
+| `std::this_thread::sync_wait`, `std::this_thread::sync_wait_with_variant` | Implemented subset | env 通过 const member `query` 提供 scheduler、start scheduler 和 delegation scheduler；`sync_wait` 对 sender_in 与恰好一个 value signature 检查 Mandates；`forge::sync_wait` 引用同一个对象。多签名使用 `sync_wait_with_variant`，在原 sender 上 dispatch，默认路径对 `into_variant` 的结果调用 `sync_wait`。零 value sender 无法形成所需的结果类型。同步 typed-error consumption 由 Forge `wait_result` 提供。接受实际 run_loop 环境兼容的 awaitable，包含其全局 frame allocation。返回类型例外与 domain fallback 见下文。 |
 | `associate` | Implemented current-WD subset | association 成功后才在 typed manual-lifetime holder 中 connect wrapped sender；operation 不单独分配，connect failure 直接抛出。先销毁 child operation，再销毁 receiver，最后释放 association；child 使用 counting_scope wrapper 暴露的 token 注册 inplace callback 时不分配；sender、scheduler、receiver、environment queries、decayed 结果构造及自定义 stop-token callbacks 自行分配的内存另计。 接受兼容 awaitable，child frame 全局分配另计。 |
 | `spawn` | Implemented current-WD subset | 仅接受 `set_value()` / `set_stopped()`；operation 为 allocator-backed state 的普通成员。allocator 优先取显式 `get_allocator(env)`，其次取 wrapped sender attributes 的 allocator 并注入 spawned environment，否则取 `std::allocator<void>`；一个 rebound state allocation，销毁并 deallocate 后才释放 association。在 sender、scheduler、receiver、所选 allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。 awaitable 始终声明 exception_ptr，因此不满足 spawn 的 completion 限制。 |
 | `spawn_future` | Implemented subset | Eager single-consumer future；operation 是 state 的普通成员，producer 使用 `write_env(stop-when(sndr, ssource token), env)`，stop-when 仅转发 `FWD-ENV` queries 并覆盖 stop token。allocator 优先取显式 env，其次取 wrapped sender attributes 并注入 env，否则为 `std::allocator<void>`；生命周期 resource、state、state control block、consumer 的合并 record/control block 均使用该 allocator；consumer 完成时解除外层 operation 的存储所有权。resource 持有 association，最后一个内部 allocator 副本消失时先销毁并 deallocate resource，再 disassociate，因此全部 state、consumer 和 control block 的回收均先于 join 完成。在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。value/error 按 decayed types 缓存并以 rvalue 交付，consumer stop 保留具体 token 行为；try-cancel 后 producer 未结束时仍保留 state 和 association。 可 eager 消费兼容 awaitable，producer child frame 的全局分配另计。 |
@@ -295,6 +295,9 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 ## 已移除的 execution 扩展
 
 仓库尚未发布，超出工作草案范围的行为直接移除，未设弃用期。
+若明显的起草错误改变返回类型或语义，使按字面措辞编写的代码无法在遵循参考实现的原生库上编译，
+则采用参考实现与草案的明确意图，并在台账与 DEVIATIONS 中记录该例外，直至 LWG 解决
+（负责人决议，2026-11-19）。仅使 backport 更严格的措辞问题仍按字面实现。
 成员定制及已移除的名称与调用形式列于
 [执行库迁移表](../backports/execution.md#已移除扩展与迁移)。
 `get_completion_signatures_t` 等现有 CPO 类型名另随接口形状调整。
@@ -328,7 +331,14 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 ### when_all 与 wait 消费者的 WD 措辞和实现差异
 
 - `[exec.when.all]/9` 与 /10 使用内部 stop overlay，/13 却用 FWD-ENV 计算存储，环境敏感 child 可在两者中声明不同 value 类型。按 /15.1，存储回退为 `tuple<>` 时，started 分支仍调用 `set_value(rcvr)`，因此声明 `set_value_t()`。
-- `[exec.sync.wait.var]/1` 的 `Sndr` 已经是 `into_variant` 的结果。按 /2 与 /3 对它计算 result type 会为 `into_variant` 的 value 类型 `V` 外加一层，形成 `optional<variant<tuple<V>>>`。本实现逐字采用该类型；参考实现返回扁平的 `optional<V>`。后续跟随 LWG 解决方案。
+- `[exec.sync.wait.var]` 起草错误例外（负责人决议，2026-11-19）。/1 的 `Sndr` 已是
+  `decltype(into_variant(sndr))`。/2 与 /3 应用 `[exec.sync.wait]/3` 的
+  `sync-wait-with-variant-result-type<Sndr>` 后，若适配 sender 在 `sync-wait-env` 中的唯一
+  value 类型为 `V`，字面结果为 `optional<variant<tuple<V>>>`。本实现与参考实现 stdexec
+  均返回扁平的 `optional<V>`，符合 /4.2.1 的交付意图并保持切换到此类原生库时的源码兼容性。
+  domain 定制也须返回这一确切类型。当前未有已知的 LWG issue，后续跟随 LWG 解决方案。
+  [工作草案](https://eel.is/c++draft/exec.sync.wait.var)
+  [stdexec 源码](https://github.com/NVIDIA/stdexec/blob/main/include/stdexec/__detail/__sync_wait.hpp)
 - `[exec.sync.wait]/4` 与 `[exec.sync.wait.var]/1` 直接从 `get_completion_domain<set_value_t>(get_env(sndr), env)` 计算 domain 类型。当前 `just`、`just_error`、`just_stopped` 等 inline-completing sender 缺少 P3826 的 inline-attrs；直接采用该表达式将拒绝如 `sync_wait(just(42))` 的调用。E2 为两个消费者保留 `__compl_domain_t` fallback，待 D3 补齐 inline-attrs 后一并对齐。
 
 ### Coroutine 桥的 WD 措辞与实现边界
