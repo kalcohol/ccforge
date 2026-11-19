@@ -15,17 +15,6 @@ struct receiver {
     void set_value(int) && noexcept {}
 };
 
-// A deprecated declaration must still make the old form compile in these probes.
-#if !FORGE_REMOVAL_CONTROL && FORGE_REMOVED_NAME >= 28 && FORGE_REMOVED_NAME <= 33
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable: 4996)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#endif
-
 int main() {
 #if FORGE_REMOVED_NAME == 1
 #if FORGE_REMOVAL_CONTROL
@@ -250,11 +239,3 @@ int main() {
 #error "Select a removed name"
 #endif
 }
-
-#if !FORGE_REMOVAL_CONTROL && FORGE_REMOVED_NAME >= 28 && FORGE_REMOVED_NAME <= 33
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#endif

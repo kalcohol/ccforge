@@ -8,8 +8,11 @@ function(hive_compile_check name expect_success)
     target_link_libraries(${target} PRIVATE forge::std)
     if(NOT expect_success)
         # Rejections are built only by the existing CTest failure harness.
-        set_target_properties(${target} PROPERTIES
-            EXCLUDE_FROM_ALL TRUE FORGE_DEPRECATION_STRICT_SKIP TRUE)
+        set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+        get_target_property(target_type ${target} TYPE)
+        if(target_type STREQUAL "OBJECT_LIBRARY" AND _forge_rejection_compile_options)
+            target_compile_options(${target} PRIVATE ${_forge_rejection_compile_options})
+        endif()
     endif()
 
     add_test(NAME ${target}

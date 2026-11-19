@@ -8,17 +8,6 @@ using int4 = std::simd::vec<int, 4>;
 using mask4 = int4::mask_type;
 using complex4 = std::simd::vec<std::complex<float>, 4>;
 
-// A restored deprecated declaration must pass lookup even in a strict build.
-#if !defined(FORGE_SIMD_POSITIVE_CONTROL)
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable: 4996)
-#endif
-#endif
-
 #if defined(FORGE_SIMD_LEGACY_SIMD_SIZE_TYPE)
 #if defined(FORGE_SIMD_POSITIVE_CONTROL)
 using size_type = decltype(int4::size());
@@ -157,14 +146,6 @@ using abi = forge::simd_native_abi_tag<int, 4>;
 #endif
 #else
 #error Missing legacy SIMD probe selector
-#endif
-
-#if !defined(FORGE_SIMD_POSITIVE_CONTROL)
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#elif defined(_MSC_VER)
-#pragma warning(pop)
-#endif
 #endif
 
 int main() {}

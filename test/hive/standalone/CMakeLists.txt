@@ -55,6 +55,15 @@ configure_file("${FORGE_ROOT_DIR}/backport/cpp26/hive/detail/bounded_sort.hpp"
 
 function(hive_compile_check name expect_success)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(rejection_options)
+    if(NOT expect_success)
+        # Require a compilation error even when the caller promotes warnings.
+        if(MSVC)
+            set(rejection_options /WX- /w)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|Zig)$")
+            set(rejection_options -w)
+        endif()
+    endif()
     try_compile(result "${CMAKE_CURRENT_BINARY_DIR}/compile-checks/${name}"
         "${hive_compile_dir}/test_hive_${name}.cpp"
         CMAKE_FLAGS
@@ -62,6 +71,7 @@ function(hive_compile_check name expect_success)
             "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
             "-DCMAKE_CXX_EXTENSIONS=OFF"
             "-DINCLUDE_DIRECTORIES=${hive_include}"
+        COMPILE_DEFINITIONS ${rejection_options}
         OUTPUT_VARIABLE output)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/compile-checks/${name}.log" "${output}")
     if(expect_success AND NOT result)

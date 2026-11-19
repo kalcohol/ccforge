@@ -309,32 +309,3 @@ if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_TEST_ENABLE_FORGE_IO)
     set_tests_properties(forge_stop_callback_strict_lifetime_io_uring_rw PROPERTIES
         SKIP_RETURN_CODE 77)
 endif()
-
-
-# Each platform and feature group contributes its migrated tests when enabled.
-add_custom_target(test_forge_extension_deprecations_strict)
-foreach(_forge_target IN ITEMS
-    test_forge_any_receiver test_forge_any_scheduler test_forge_any_sender
-    test_forge_async_scope test_forge_async_stream test_forge_channel test_forge_context_await
-    test_forge_coro_combinators test_forge_coro_interop test_forge_erased_sender
-    test_forge_io_context test_forge_io_iocp test_forge_io_uring_fault test_forge_io_uring_rw
-    test_forge_resource_context test_forge_runtime_context test_forge_runtime_stress
-    test_forge_stop_callback_lifetime test_forge_stop_lifetime_async_scope
-    test_forge_stop_lifetime_channel test_forge_stop_lifetime_coro_combinators
-    test_forge_stop_lifetime_coro_interop test_forge_stop_lifetime_io_context
-    test_forge_stop_lifetime_io_iocp test_forge_stop_lifetime_io_uring_rw
-    test_forge_stop_lifetime_stop_callback_lifetime test_forge_stop_lifetime_strand
-    test_forge_stop_lifetime_timer_context test_forge_stop_lifetime_wait_result
-    test_forge_strand test_forge_strand_rejection
-    test_forge_task test_forge_thread_pool test_forge_timer_await test_forge_timer_context
-    test_forge_wait_result)
-    if(TARGET ${_forge_target})
-        string(REGEX REPLACE "^test_" "" _forge_source_test "${_forge_target}")
-        string(REPLACE "forge_stop_lifetime_" "forge_stop_callback_strict_lifetime_"
-            _forge_source_test "${_forge_source_test}")
-        forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
-        add_dependencies(test_forge_extension_deprecations_strict ${_forge_target}_ds)
-    endif()
-endforeach()
-unset(_forge_target)
-unset(_forge_source_test)

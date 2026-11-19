@@ -197,8 +197,7 @@ check_portable_sync_wait_spelling() {
     : >"${audit_tmp}/sync-wait-spelling"
     rg -n '[A-Za-z_][A-Za-z0-9_:]*::sync_wait(_with_variant)?' \
         docs README*.md example >>"${audit_tmp}/sync-wait-spelling" || true
-    # forge::sync_wait is the documented Forge extension entry point for the
-    # tuple-or-variant result shape, not a nonportable standard spelling.
+    # forge::sync_wait aliases std::this_thread::sync_wait.
     if rg -v '(std::this_thread|\bforge)::sync_wait(_with_variant)?' \
         "${audit_tmp}/sync-wait-spelling" \
         >"${audit_tmp}/nonportable-sync-wait"; then
@@ -372,49 +371,22 @@ def path_ok(text, tracked=None, page='docs/guide.md'):
     return True
 def status_ok(text, status):
     return bool(re.search(r'^> 状态：' + status + r'；最后核对：[^\n]+；取代关系：', text, re.M))
-# Conservative text guard: reject only obvious numeric shapes in policy-free
-# calls. Unknown expressions (including policy variables), template syntax and
-# sender variables can escape detection; this is not a C++ type/parser check.
+# A draft closure takes three arguments and a direct call takes four.
+# Recognize common sender factories in three-argument calls. The guard cannot
+# infer the type of an arbitrary first argument or parse template arguments.
 def spelling_ok(text):
-    def policy_guard(kind, expr):
-        macro = 'FORGE_HAS_NATIVE_EXECUTION_POLICIES'
-        if not re.search(r'\b' + macro + r'\b', expr): return None
-        compact = re.sub(r'\s+', '', expr)
-        if kind in {'ifdef', 'ifndef'} and compact == macro:
-            return kind == 'ifdef'
-        if kind == 'if':
-            if compact == '!' + macro: return False
-            native = r'(?:' + macro + r'|defined\(' + macro + r'\))'
-            if re.fullmatch(native + r'(?:&&defined\(__cpp_lib_execution\))?', compact):
-                return True
-        # Convergence rule: accept uncertain policy guards rather than reject
-        # legitimate compatibility calls. Unrelated guards grant no exemption.
-        return 'unknown'
-    # Preserve offsets and newlines while removing comments and string literals.
-    clean = re.sub(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"',
-                   lambda m: re.sub(r'[^\n]', ' ', m[0]), text, flags=re.S)
+    # The character literal must start at a token boundary to leave digit separators alone.
+    comments_and_literals = (
+        r'//[^\n]*|/\*.*?\*/'
+        r'|R"(?P<delimiter>[^ ()\\\t\v\f\r\n]{0,16})\(.*?\)(?P=delimiter)"'
+        r'|"(?:\\.|[^"\\])*"'
+        r"|(?<![\w'])(?:u8|[uUL])?'(?:\\.|[^'\\])*'"
+    )
+    clean = re.sub(comments_and_literals, lambda m: re.sub(r'[^\n]', ' ', m[0]), text, flags=re.S)
     if re.search(r'(?:std::execution|ex)::(?:empty_env|make_env|make_prop)\b', clean): return False
-    branches = []
-    allowed = [False] * (len(clean) + 1)
-    offset = 0
-    for line in clean.splitlines(True):
-        directive = re.match(r'\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)', line)
-        if directive:
-            kind, expr = directive.groups()
-            expr = expr.strip()
-            if kind in {'if', 'ifdef', 'ifndef'}:
-                branches.append(policy_guard(kind, expr))
-            elif kind == 'else' and branches:
-                if isinstance(branches[-1], bool): branches[-1] = not branches[-1]
-            elif kind == 'elif' and branches:
-                # Prior alternatives also constrain this branch; do not guess.
-                branches[-1] = 'unknown' if branches[-1] is not None or policy_guard('if', expr) is not None else None
-            elif kind == 'endif' and branches: branches.pop()
-        allowed[offset:offset+len(line)] = [False in branches or 'unknown' in branches] * len(line)
-        offset += len(line)
-    shape = re.compile(r'\s*[0-9]+[uUlL]*\s*$')
     for call in re.finditer(r'(?:ex|std::execution)::bulk\s*\(', clean):
         args, start, stack = [], call.end(), []
+        top_level_angles = False
         for i in range(start, len(clean)):
             ch = clean[i]
             if ch in '([{': stack.append(ch)
@@ -424,13 +396,40 @@ def spelling_ok(text):
                 stack.pop()
             elif ch == ',' and not stack:
                 args.append(clean[start:i]); start = i + 1
-        # Angle brackets can contain commas or comparisons: do not guess.
-        if any('<' in arg or '>' in arg for arg in args): continue
-        policy_free = (len(args) == 2 and shape.fullmatch(args[0])) or (
-            len(args) == 3 and re.fullmatch(r'\s*(?:ex|std::execution)::just\([^)]*\)\s*', args[0])
-            and shape.fullmatch(args[1]))
-        if policy_free and not allowed[call.start()]: return False
+            elif ch in '<>' and not stack and clean[i - 1:i + 1] != '->':
+                top_level_angles = True
+        else:
+            continue
+        # A template comma can only lower the actual arity, so two is invalid.
+        if len(args) == 2: return False
+        if top_level_angles: continue
+        if len(args) == 3 and re.match(
+                r'\s*(?:ex|std::execution)::(?:just(?:_error|_stopped)?|schedule)\s*\(', args[0]):
+            return False
     return True
+def markdown_spelling_ok(text):
+    fences = re.compile(r'^[ \t]*(`{3,}|~{3,})[ \t]*([^\n]*)\n(.*?)^[ \t]*\1[ \t]*$', re.M | re.S)
+    for fence in fences.finditer(text):
+        if fence[2].strip() in {'cpp', 'c++', 'cc', 'cxx'} and not spelling_ok(fence[3]):
+            return False
+
+    # Skip the old-spelling column of the migration tables only.
+    lines = []
+    migration = False
+    for line in fences.sub('\n', text).splitlines():
+        row = line.lstrip()
+        if row.startswith('|'):
+            cells = re.split(r'(?<!\\)\|', row[1:], maxsplit=1)
+            if len(cells) == 2:
+                if cells[0].strip() in {'旧用法', '旧写法', '移除的形式'}:
+                    migration = True
+                if migration:
+                    line = cells[1]
+        else:
+            migration = False
+        lines.append(line)
+    inline_code = re.finditer(r'(?<![\\`])(`+)(?!`)(.+?)(?<!`)\1(?!`)', '\n'.join(lines), re.S)
+    return all(spelling_ok(span[2]) for span in inline_code)
 def link_ok(target, inventory):
     return target in inventory
 def header_ok(text):
@@ -455,7 +454,7 @@ require(path_ok('[model](stop_token/README.md)', {'formal/stop_token/README.md'}
 require(not path_ok('[model](missing/README.md)', {'formal/stop_token/README.md'}, page='formal/README.md'), 'formal path negative fixture')
 
 # Additional regression fixtures cover generated outputs versus private files,
-# both bulk overloads, multiline arguments and nested preprocessor branches.
+# both bulk overloads, multiline arguments and the removed fallback.
 for text, expected in [
     ('`build/llvm/example/demo`', True),
     ('`build/review/log.txt`', False),
@@ -472,42 +471,35 @@ for text, expected in [
     ('ex::bulk(sender, policy, 5, fn)', True),
     ('ex::bulk(make_policy<A, B>(), 5, fn)', True),
     ('ex::bulk(sender, make_policy<A, B>(), 5, fn)', True),
-    ('ex::bulk(5, make_fn<A, B>())', True),
     ('ex::bulk(ex::just(1), 5, fn)', False),
-    ('ex::bulk(unknown_shape, fn)', True),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES && defined(__cpp_lib_execution)\nex::bulk(ex::seq, 5, fn);\n#else\nex::bulk(5, fn);\n#endif', True),
+    ('ex::bulk(ex::just(make_value<A, B>()), 5, fn)', False),
+    ('ex::bulk(ex::schedule(sch), 5, fn)', False),
+    ('ex::bulk(ex::schedule(sch), state->count, fn)', False),
+    ('ex::bulk(shape, fn)', False),
+    ('ex::bulk(shape, [](int i) { return i < limit; })', False),
+    ('ex::bulk(ex::seq, shape, [](int i) { return i > limit; })', True),
+    ("ex::bulk(ex::seq, count(')'), fn)", True),
     ('ex::bulk(\n ex::seq,\n 5, fn)', True),
     ('std::execution::bulk(\n ex::just(1),\n std::execution::par,\n 5, fn)', True),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\nex::bulk(ex::seq, 5, fn);\n#else\n#if OTHER\n#else\nex::bulk(5, fn);\n#endif\n#endif', True),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\n#endif\n#if OTHER\n#else\nex::bulk(5, fn);\n#endif', False),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\nex::bulk(5, fn);\n#endif', False),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\n#else\n#endif\nex::bulk(5, fn);', False),
+    ('std::execution::bulk(ex::schedule(sch), std::execution::par, 5, fn)', True),
+    ('forge::bulk(shape, fn)', True),
+    ('forge::bulk(ex::just(1), shape, fn)', True),
+    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\nex::bulk(ex::seq, 5, fn);\n#else\nex::bulk(5, fn);\n#endif', False),
 ]:
     require(spelling_ok(text) == expected, 'bulk regression: ' + text)
-# Equivalent compatibility guards, with unrelated nested levels on either side.
-for guard, compatibility_first in [
-    ('#ifndef FORGE_HAS_NATIVE_EXECUTION_POLICIES', True),
-    ('#if !FORGE_HAS_NATIVE_EXECUTION_POLICIES', True),
-    ('#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES) && defined(__cpp_lib_execution)', False),
-    ('#if FORGE_HAS_NATIVE_EXECUTION_POLICIES && defined(__cpp_lib_execution)', False),
+old_bulk = '`std::execution::bulk(shape, fn)`'
+forge_bulk = '`forge::bulk(shape, fn)`'
+migration_table = '| 旧用法 | 迁移后的用法 |\n| --- | --- |\n'
+for text, expected in [
+    ('Use ' + old_bulk + '.', False),
+    ('Use `ex::bulk(ex::seq, shape, fn)` or ' + forge_bulk + '.', True),
+    ('```cpp\nstd::execution::bulk(shape, fn);\n```', False),
+    (migration_table + f'| {old_bulk} | {forge_bulk} |', True),
+    (migration_table + f'| {old_bulk} | {old_bulk} |', False),
+    (f'| 示例 |\n| --- |\n| {old_bulk} |', False),
+    (migration_table + f'| {old_bulk} | {forge_bulk} |\n\nUse {old_bulk}.', False),
 ]:
-    for nested in (False, True):
-        compatibility = 'ex::bulk(5, fn);\nstd::execution::bulk(ex::just(1), 5, fn);'
-        if nested: compatibility = '#if INNER\n#else\n' + compatibility + '\n#endif'
-        native = 'ex::bulk(ex::seq, 5, fn);'
-        first, second = (compatibility, native) if compatibility_first else (native, compatibility)
-        text = guard + '\n' + first + '\n#else\n' + second + '\n#endif'
-        if nested: text = '#if OUTER\n' + text + '\n#endif'
-        require(spelling_ok(text), 'equivalent bulk fallback: ' + text)
-        # The opposite branch and calls after #endif must still be checked.
-        wrong = guard + '\n' + (native if compatibility_first else compatibility) + '\n#else\n' + (compatibility if compatibility_first else native) + '\n#endif'
-        require(not spelling_ok(wrong), 'native bulk branch must reject: ' + wrong)
-        require(not spelling_ok(text + '\nex::bulk(5, fn);'), 'bulk fallback scope leaked')
-for text in [
-    '#if (FORGE_HAS_NATIVE_EXECUTION_POLICIES && OTHER)\nex::bulk(5, fn);\n#else\nex::bulk(5, fn);\n#endif',
-    '#if FORGE_HAS_NATIVE_EXECUTION_POLICIES\n#elif OTHER\nex::bulk(5, fn);\n#else\nex::bulk(5, fn);\n#endif',
-]:
-    require(spelling_ok(text), 'uncertain policy guard must accept: ' + text)
+    require(markdown_spelling_ok(text) == expected, 'Markdown bulk regression: ' + text)
 print('[doc-audit] path and bulk regression fixtures checked')
 
 # Simulate ls-files output before staging: a new nonignored file is usable.
@@ -558,6 +550,8 @@ for p in Path('example').iterdir():
     if p.suffix not in {'.cpp','.cc','.cxx'}: continue
     require(spelling_ok(p.read_text()),str(p)+': nonportable env/bulk')
     require(header_ok(p.read_text()),str(p)+': missing purpose header')
+for p in list(Path('docs').rglob('*.md')) + list(Path('.').glob('README*.md')):
+    require(markdown_spelling_ok(p.read_text()), str(p)+': nonportable env/bulk in Markdown code')
 # Same link predicate covers ROADMAP, containers, test text and non-.cpp sources.
 files=list(Path('formal').rglob('*.md'))+list(Path('docs').rglob('*.md'))+list(Path('.').glob('README*.md'))+[Path('ROADMAP.md'),Path('containers/README.md')]+list(Path('test').rglob('*.txt'))
 for p in files:

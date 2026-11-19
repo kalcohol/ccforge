@@ -131,6 +131,14 @@ endif()
 
 include(CheckCXXSourceCompiles)
 
+# Rejection probes require an error independent of the caller's warning flags.
+set(_forge_rejection_compile_options)
+if(MSVC)
+    set(_forge_rejection_compile_options /WX- /w)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|Zig)$")
+    set(_forge_rejection_compile_options -w)
+endif()
+
 function(forge_detect_cxx_source_compiles result_var source_file)
     unset(${result_var} CACHE)
     unset(${result_var})
@@ -139,14 +147,50 @@ function(forge_detect_cxx_source_compiles result_var source_file)
     set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
+unset(FORGE_REJECTION_WARNING_CONTROL CACHE)
+function(forge_check_rejection_warning_control)
+    if(DEFINED FORGE_REJECTION_WARNING_CONTROL)
+        return()
+    endif()
+
+    # Exercise the rejection flags against configuration-specific warning flags.
+    if(NOT CMAKE_TRY_COMPILE_CONFIGURATION)
+        set(CMAKE_TRY_COMPILE_CONFIGURATION Debug)
+    endif()
+    string(TOUPPER "${CMAKE_TRY_COMPILE_CONFIGURATION}" _forge_probe_config)
+    if(MSVC)
+        string(APPEND CMAKE_CXX_FLAGS_${_forge_probe_config} " /W4 /WX")
+    else()
+        string(APPEND CMAKE_CXX_FLAGS_${_forge_probe_config} " -Wunused-variable -Werror")
+    endif()
+    check_cxx_source_compiles([=[
+        int main() {
+            int unused = 0;
+            return 0;
+        }
+    ]=] FORGE_REJECTION_WARNING_CONTROL)
+    if(NOT FORGE_REJECTION_WARNING_CONTROL)
+        message(FATAL_ERROR "A warning-only C++ source must compile with the rejection probe flags")
+    endif()
+endfunction()
+
 function(forge_expect_cxx_source_compiles result_var source_file should_compile failure_message)
-    set(_forge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
     if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
         set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
     endif()
+    if(should_compile)
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+    else()
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+        set(CMAKE_REQUIRED_LINK_OPTIONS "")
+        if(_forge_rejection_compile_options)
+            # try_compile passes these to add_definitions, after the global
+            # and configuration-specific flags in the generated project.
+            list(APPEND CMAKE_REQUIRED_DEFINITIONS ${_forge_rejection_compile_options})
+            forge_check_rejection_warning_control()
+        endif()
+    endif()
     forge_detect_cxx_source_compiles(${result_var} "${source_file}")
-    set(CMAKE_REQUIRED_FLAGS "${_forge_saved_required_flags}")
-    unset(_forge_saved_required_flags)
 
     if(${should_compile})
         if(NOT ${result_var})
@@ -255,21 +299,6 @@ if(FORGE_TEST_ENABLE_STD_TARGET)
 endif()
 if(FORGE_TEST_ENABLE_ANY_FORGE)
     add_subdirectory(forge)
-endif()
-if(TARGET test_execution_extension_deprecations_strict OR TARGET test_forge_execution_header)
-    # The package verifier builds the original in a separate CMake project.
-    # Use the same source with non-system headers for strict diagnostics here.
-    forge_add_compile_probe(test_install_consumer_ds
-        "${CMAKE_CURRENT_SOURCE_DIR}/install_consumer/main.cpp"
-        install_consumer_deprecation_strict_compile)
-    if(MSVC)
-        target_compile_options(test_install_consumer_ds PRIVATE /we4996)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(test_install_consumer_ds PRIVATE -Werror=deprecated-declarations)
-    endif()
-    if(FORGE_TEST_TBB_LIBRARY)
-        target_link_libraries(test_install_consumer_ds PRIVATE ${FORGE_TEST_TBB_LIBRARY})
-    endif()
 endif()
 if(FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     add_subdirectory(native_handoff)

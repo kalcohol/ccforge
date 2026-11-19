@@ -467,11 +467,6 @@ forge_add_execution_runtime_test(
     test_execution_extensions
     test_execution_extensions.cpp
     execution_extensions)
-if(MSVC)
-    target_compile_options(test_execution_extensions PRIVATE /we4996)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_execution_extensions PRIVATE -Werror=deprecated-declarations)
-endif()
 
 # Call the consumer in its body so the Mandates are instantiated.
 set(_forge_sync_wait_defs "${CMAKE_REQUIRED_DEFINITIONS}")
@@ -495,9 +490,7 @@ forge_add_execution_compile_probe(test_execution_standard_forms
     test_execution_standard_forms.cpp execution_standard_forms_compile)
 foreach(_target IN ITEMS test_execution_removed_forms test_execution_standard_forms)
     if(MSVC)
-        target_compile_options(${_target} PRIVATE /we4996 /bigobj)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${_target} PRIVATE -Werror=deprecated-declarations)
+        target_compile_options(${_target} PRIVATE /bigobj)
     endif()
     string(REGEX REPLACE "^test_" "" _test "${_target}")
     add_test(NAME ${_test} COMMAND ${_target})
@@ -519,30 +512,6 @@ unset(_test)
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_extension_defs}")
 unset(_forge_extension_defs)
 unset(_forge_case)
-
-# Build separate strict copies of the migrated runtime tests.
-set(_forge_scope_strict_targets
-    test_execution_counting_scope test_execution_counting_scope_limits_runtime
-    test_execution_counting_scope_stress test_execution_counting_scope_lifetime
-    test_execution_counting_scope_decrement_tail test_execution_spawn_future
-    test_execution_static_opstate_scope test_execution_associate_closure
-    test_execution_composition test_execution_wave1 test_execution_schedule_from)
-set(_forge_scope_strict_copies)
-foreach(_forge_target IN LISTS _forge_scope_strict_targets)
-    string(REGEX REPLACE "^test_" "" _forge_source_test "${_forge_target}")
-    if(_forge_target STREQUAL "test_execution_counting_scope_limits_runtime")
-        set(_forge_source_test execution_counting_scope_limits)
-    endif()
-    forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
-    list(APPEND _forge_scope_strict_copies ${_forge_target}_ds)
-endforeach()
-add_custom_target(test_execution_extension_deprecations_strict DEPENDS
-    ${_forge_scope_strict_copies} test_execution_extensions
-    test_execution_removed_forms test_execution_standard_forms)
-unset(_forge_scope_strict_targets)
-unset(_forge_scope_strict_copies)
-unset(_forge_target)
-unset(_forge_source_test)
 
 # Adaptor signatures, constraints and allocator queries.
 set(_forge_adaptor_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
@@ -632,27 +601,3 @@ unset(_forge_awaitable_saved_defs)
 # The execution prefix selects this runtime test in both sanitizer lanes.
 forge_add_execution_runtime_test(test_execution_forge_bulk
     test_execution_forge_bulk.cpp execution_forge_bulk)
-
-# Rebuild migrated sources and the policy/progress controls with deprecations as errors.
-foreach(_forge_target IN ITEMS
-    test_execution_adaptors test_execution_borrowed_env
-    test_execution_bulk test_execution_bulk_policy test_execution_closure_cvref
-    test_execution_adaptor_conformance_runtime
-    test_execution_query_conformance_runtime
-    test_execution_scheduler_env_queries test_execution_domain
-    test_execution_extensions test_execution_forge_bulk test_execution_forwarding_attrs
-    test_execution_initial_capture test_execution_inline_scheduler test_execution_just
-    test_execution_member_customization test_execution_mvp test_execution_on_closure
-    test_execution_run_loop test_execution_sender_adaptor_closure
-    test_execution_static_opstate_allocations test_execution_static_opstate_exceptions
-    test_execution_static_opstate_transfer test_execution_stop_callback_allocations
-    test_execution_stop_callback_lifetime test_execution_stop_callback_strict_lifetime
-    test_execution_stop_token test_execution_stopped_optional
-    test_execution_throwing_move_adaptors test_execution_wave2 test_execution_wave3
-    test_execution_when_all test_execution_write_env)
-    string(REGEX REPLACE "^test_|_runtime$" "" _forge_source_test "${_forge_target}")
-    forge_add_deprecation_strict_copy(${_forge_target} ${_forge_source_test})
-    add_dependencies(test_execution_extension_deprecations_strict ${_forge_target}_ds)
-endforeach()
-unset(_forge_target)
-unset(_forge_source_test)

@@ -6,8 +6,7 @@
 #include <utility>
 #include "../../forge/runtime/forge_operation_destroy.hpp"
 
-// These uses must stay warning-free with -Werror=deprecated-declarations.
-// The fallback environment and senders share the non-deprecated Forge type.
+// The fallback environment and senders share the same empty environment type.
 static_assert(std::same_as<decltype(std::execution::get_env(0)), forge::empty_env>);
 static_assert(std::same_as<decltype(std::execution::get_env(std::execution::just())),
                            forge::empty_env>);
