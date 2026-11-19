@@ -472,8 +472,8 @@ forge_add_execution_runtime_test(
 set(_forge_sync_wait_defs "${CMAKE_REQUIRED_DEFINITIONS}")
 forge_expect_execution_cxx_source_compiles(
     FORGE_EXECUTION_ACCEPTS_SINGLE_VALUE_SYNC_WAIT
-    test_execution_sync_wait_mandates.cpp ON "A single value signature must work with sync_wait")
-foreach(_case RANGE 1 7)
+    test_execution_sync_wait_mandates.cpp ON "The wait consumers must accept the prescribed forms")
+foreach(_case RANGE 1 8)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_sync_wait_defs} -DFORGE_SYNC_WAIT_CASE=${_case})
     forge_expect_execution_cxx_source_compiles(
         FORGE_EXECUTION_SYNC_WAIT_MANDATE_${_case}

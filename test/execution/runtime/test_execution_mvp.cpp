@@ -787,17 +787,17 @@ TEST(ExecutionMvpTest, SyncWaitDecaysReferenceValueSignatures) {
 TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesMultipleValues) {
     auto int_result = std::this_thread::sync_wait_with_variant(sync_wait_multi_value_sender{false});
     using value_t = std::variant<std::tuple<int>, std::tuple<double>>;
-    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
+    using expected_t = std::optional<value_t>;
     static_assert(std::is_same_v<decltype(int_result), expected_t>);
 
     ASSERT_TRUE(int_result.has_value());
-    const auto& int_value = std::get<0>(std::get<0>(*int_result));
+    const auto& int_value = *int_result;
     ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(int_value));
     EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(int_value)), 3);
 
     auto double_result = std::this_thread::sync_wait_with_variant(sync_wait_multi_value_sender{true});
     ASSERT_TRUE(double_result.has_value());
-    const auto& double_value = std::get<0>(std::get<0>(*double_result));
+    const auto& double_value = *double_result;
     ASSERT_TRUE(std::holds_alternative<std::tuple<double>>(double_value));
     EXPECT_EQ(std::get<0>(std::get<std::tuple<double>>(double_value)), 4.5);
 }
@@ -805,15 +805,15 @@ TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesMultipleValues) {
 TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesEmptyTupleAlternative) {
     auto empty_result = std::this_thread::sync_wait_with_variant(sync_wait_empty_or_int_sender{true});
     using value_t = std::variant<std::tuple<>, std::tuple<int>>;
-    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
+    using expected_t = std::optional<value_t>;
     static_assert(std::is_same_v<decltype(empty_result), expected_t>);
 
     ASSERT_TRUE(empty_result.has_value());
-    EXPECT_TRUE(std::holds_alternative<std::tuple<>>(std::get<0>(std::get<0>(*empty_result))));
+    EXPECT_TRUE(std::holds_alternative<std::tuple<>>(*empty_result));
 
     auto int_result = std::this_thread::sync_wait_with_variant(sync_wait_empty_or_int_sender{false});
     ASSERT_TRUE(int_result.has_value());
-    const auto& int_value = std::get<0>(std::get<0>(*int_result));
+    const auto& int_value = *int_result;
     ASSERT_TRUE(std::holds_alternative<std::tuple<int>>(int_value));
     EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(int_value)), 8);
 }
@@ -821,11 +821,11 @@ TEST(ExecutionMvpTest, SyncWaitWithVariantHandlesEmptyTupleAlternative) {
 TEST(ExecutionMvpTest, SyncWaitWithVariantDeduplicatesDecayedTuples) {
     auto result = std::this_thread::sync_wait_with_variant(sync_wait_duplicate_value_sender{});
     using value_t = std::variant<std::tuple<int>>;
-    using expected_t = std::optional<std::variant<std::tuple<value_t>>>;
+    using expected_t = std::optional<value_t>;
     static_assert(std::is_same_v<decltype(result), expected_t>);
 
     ASSERT_TRUE(result.has_value());
-    const auto& value = std::get<0>(std::get<0>(*result));
+    const auto& value = *result;
     EXPECT_EQ(std::get<0>(std::get<std::tuple<int>>(value)), 11);
 }
 

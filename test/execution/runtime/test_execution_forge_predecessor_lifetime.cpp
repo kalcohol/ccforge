@@ -66,7 +66,7 @@ TEST(ExecutionForgePredecessorLifetime, PoolCompletesOnWorkerAndRejectsInline) {
         return ex::just(42);
     }));
     ASSERT_TRUE(value);
-    const int* result = int_value(std::get<0>(std::get<0>(*value)));
+    const int* result = int_value(*value);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(*result, 42);
 }
@@ -93,7 +93,7 @@ TEST(ExecutionForgePredecessorLifetime, TimerCompletesOnWorkerAndStopsInline) {
         return ex::just(42);
     }));
     ASSERT_TRUE(value);
-    const int* result = int_value(std::get<0>(std::get<0>(*value)));
+    const int* result = int_value(*value);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(*result, 42);
 }

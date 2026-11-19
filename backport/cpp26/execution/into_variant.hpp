@@ -26,6 +26,7 @@
 #include "concepts.hpp"
 #include "env.hpp"
 #include "detail/adaptor.hpp"
+#include "detail/value_result.hpp"
 #include "sync_wait.hpp"
 
 #include <exception>
@@ -335,8 +336,12 @@ private:
     template<class S>
     using __adapted_t = decltype(std::execution::into_variant(std::declval<S>()));
 
+    // Drafting-error exception: use the adapted sender's single value.
+    // See the [exec.sync.wait.var] entry in the execution conformance ledger.
     template<class S>
-    using __result_t = std::optional<std::execution::value_types_of_t<S, __env_t>>;
+    using __result_t = std::optional<std::tuple_element_t<0,
+        std::execution::__forge_meta::__exact_value_tuple_t<
+            std::execution::completion_signatures_of_t<S, __env_t>>>>;
 
 public:
     template<class S>
@@ -367,7 +372,7 @@ public:
                 std::execution::into_variant(std::forward<S>(sndr)))) {
             return result_t(std::move(std::get<0>(*value)));
         }
-        return result_t(std::nullopt);
+        return std::nullopt;
     }
 };
 

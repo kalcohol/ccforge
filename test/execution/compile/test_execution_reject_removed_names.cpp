@@ -100,7 +100,7 @@ int main() {
 #if FORGE_REMOVAL_CONTROL
     using result = decltype(std::this_thread::sync_wait_with_variant(ex::just(42)));
     using value = std::variant<std::tuple<int>>;
-    static_assert(std::same_as<result::value_type, std::variant<std::tuple<value>>>);
+    static_assert(std::same_as<result, std::optional<value>>);
 #else
     using removed [[maybe_unused]] = decltype(ex::sync_wait_with_variant(ex::just(42)));
 #endif

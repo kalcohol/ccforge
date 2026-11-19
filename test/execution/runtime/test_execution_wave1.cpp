@@ -622,11 +622,10 @@ TEST(IntoVariantTest, DoesNotDuplicateExceptionPtrErrorSignature) {
 TEST(SyncWaitWithVariantTest, Works) {
     auto result = std::this_thread::sync_wait_with_variant(std::execution::just(42));
     using value_t = std::variant<std::tuple<int>>;
-    using result_t = std::optional<std::variant<std::tuple<value_t>>>;
+    using result_t = std::optional<value_t>;
     static_assert(std::is_same_v<decltype(result), result_t>);
     ASSERT_TRUE(result.has_value());
-    const auto& value = std::get<0>(std::get<0>(*result));
-    EXPECT_EQ(std::get<std::tuple<int>>(value), std::make_tuple(42));
+    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
 }
 
 TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
@@ -636,8 +635,7 @@ TEST(SyncWaitWithVariantTest, SuppliesTheStartScheduler) {
             std::execution::just(42)));
 
     ASSERT_TRUE(result.has_value());
-    const auto& value = std::get<0>(std::get<0>(*result));
-    EXPECT_EQ(std::get<std::tuple<int>>(value), std::make_tuple(42));
+    EXPECT_EQ(std::get<std::tuple<int>>(*result), std::make_tuple(42));
 }
 
 TEST(BulkTest, SerialExecution) {

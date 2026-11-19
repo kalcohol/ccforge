@@ -149,7 +149,7 @@ int main() {
 
     return scope_observers(simple_scope) && scope_observers(counting_scope) &&
            value == std::optional{std::tuple{42}} &&
-           variant_value && std::get<0>(std::get<0>(std::get<0>(std::get<0>(*variant_value)))) == 42 &&
+           variant_value && std::get<0>(std::get<0>(*variant_value)) == 42 &&
            with_stop == std::optional{std::make_tuple(std::pair{true, true})} &&
            without_stop == std::optional{std::make_tuple(std::pair{false, false})} &&
            forge::sync_wait(std::move(write)) &&

@@ -94,6 +94,8 @@
 //   - spawn_future allocates a consumer record at connect. See "Other Residuals".
 //   - sync_wait and sync_wait_with_variant retain a completion-domain fallback.
 //     See the wait consumer entries.
+//   - sync_wait_with_variant returns the reference implementation's flat
+//     optional as a drafting-error exception. See the [exec.sync.wait.var] entry.
 //
 // Missing standard facilities are listed in the ledger's coverage matrix.
 
