@@ -1,6 +1,6 @@
 # split 协议模型
 
-本模型对 [split.hpp](../../backport/cpp26/execution/split.hpp) 做有界显式状态穷举，检验惰性单次执行、缓存结果广播、共享引用计数和 receiver 内联自毁。结论限于声明的有限脚本与库契约，不是任意 sender 或完整 C++ weak-memory 证明。`forge::split` 共用该实现；模型只锁定此头文件。
+本模型对 [Forge 的 split.hpp](../../include/forge/split.hpp) 做有界显式状态穷举，检验惰性单次执行、缓存结果广播、共享引用计数和 receiver 内联自毁。完整原生 senders 与 execution backport 均使用此协议；模型只锁定此头文件。结论限于声明的有限脚本与库契约，不是任意 sender 或完整 C++ weak-memory 证明。
 
 ## 源码、状态与定位
 
@@ -34,7 +34,7 @@ allocate_shared 的合并 control block 与对象用一个 allocation identity �
 
 active 在两个 delivery 路径中都是 acq_rel exchange，destructor 中只有 release store。没有普通 atomic loads。mutex、脚本 signal/await 与 refcount release sequences 各自携带 clock 和 observed modification-order bounds；每次 acquire 只导入自己的 publication，不增加 synthetic atomic writes。
 
-inner receiver 的 environment 为空，source 没有 stop input。共享 inner helper 固定从 input 0 查询，所以这里使用本地零 stop 脚本，不修改 engine。有限 source 在 start 内同步完成，或 readiness handoff 后在自己的线程上完成；value/error/stopped 及 value caching 抛出均有实例。抛出时缓存 error。expected 在独立 source completion event 记录，不从实现 result 或 delivery branch 推导；drop_completion 仍保留该 event 和义务。source 调用 completion 后只允许 stack return，不能再访问其 operation storage；最后 state release 因而可以在 inner completion 内销毁 source operation。
+inner receiver 的 environment 为 `std::execution::env<>`，source 没有 stop input。订阅者公布的 completion signatures 也取自此空环境；签名的类型计算由 C++ 测试覆盖。共享 inner helper 固定从 input 0 查询，所以这里使用本地零 stop 脚本，不修改 engine。有限 source 在 start 内同步完成，或 readiness handoff 后在自己的线程上完成；value/error/stopped 及 value caching 抛出均有实例。抛出时缓存 error。expected 在独立 source completion event 记录，不从实现 result 或 delivery branch 推导；drop_completion 仍保留该 event 和义务。source 调用 completion 后只允许 stack return，不能再访问其 operation storage；最后 state release 因而可以在 inner completion 内销毁 source operation。
 
 receiver actions 包括在 notify、done replay 和同步 source 路径中内联销毁 operation；内联 connect/start 同一 state 的另一个 operation；丢弃最后 sender copy；或返回后由另一线程销毁 operation。completion call 的整个区间保留缓存 const 引用，并在入口、返回和 storage destruction 处检查 state/node/receiver 寿命。递归深度至多一层新订阅，不模拟任意 receiver 程序或重复 start/非法重复 source completion。
 
@@ -98,11 +98,10 @@ source digest 仅 CRLF→LF，保留所有注释/空白。lock 是 drift detecti
 
 ## 最近一次完整检验
 
-2026-11-17，Python 3.13.13，八 workers / spawn。54 个 baseline 全部通过；810 个 mutant 配置中 171 个反例，两个 whole-sweep survivors 均有失败的组合 control。39 个 controls 中 34 个失败，正常 reentry、两种模式的 benign late delivery 和正常 store interval 共五个通过。全部 903 配置完成且未达到 cap，698 个通过、205 个按声明失败；expected update 与独立 full refresh 的 semantic records 完全一致。
+2026-11-19，Python 3.13.13，八 workers / spawn。54 个 baseline 全部通过；810 个 mutant 配置中 171 个反例，两个 whole-sweep survivors 均有失败的组合 control。39 个 controls 中 34 个失败，正常 reentry、两种模式的 benign late delivery 和正常 store interval 共五个通过。全部 903 配置完成且未达到 cap，698 个通过、205 个按声明失败；full qualification 与独立 full refresh 都与现有 expected records 完全一致。
 
 | Tier | 配置数 | Runner wall s | 最大 worker MiB | States | Transitions |
 |---|---:|---:|---:|---:|---:|
-| full | 903 | 41.621 | 311.84 | 4820078 | 9664218 |
-| quick | 83 | 6.952 | 302.25 | 822540 | 1468144 |
+| full | 903 | 49.758 | 311.93 | 4820078 | 9664218 |
 
 最大配置 124,647 states。wall 含 pool 启动，不含 CLI self-tests；worker peak 不等于 pool peak，测量不能外推更大边界。

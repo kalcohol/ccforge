@@ -401,7 +401,26 @@ ctest --test-dir build/local -R '^forge_' --output-on-failure
 用 `continues_on(just(values...), sch)` 构造 sender，完整原生实现下也可用。
 `forge::empty_env` 是 `std::execution::env<>` 的便捷拼写。
 
-`forge::split` 使用 backport 的共享缓存，保持惰性启动、单次执行和 `const&` 重放。
+`<forge/split.hpp>` 提供 `forge::split(sndr)`，在启用 execution backport 或标准库
+提供完整原生 senders 时可用；`<forge/execution_extensions.hpp>` 也包含该头文件。
+第一个启动的订阅者惰性启动 source，source 只执行一次。共享 source 在 `std::execution::env<>`
+中通过 `std::execution::connect` 连接，保留调用方传入的 value category。所有订阅者的
+completion signatures 均由该类别在空环境下公布的 source signatures 推导。单一 value
+completion shape 的值经 decay 后缓存，以 `const&` 重放；error 统一为
+`std::exception_ptr`，source 声明 stopped 时保留该 channel。
+
+`forge::split` 要求 source 公布的 completion signatures 与其 `connect` 实际交付的结果一致。
+已知不支持的情形是以左值传入 awaitable，其左值和右值 `co_await` 的结果类型不同，且
+`connect` 走 coroutine fallback。签名查询得到左值的结果类型，fallback 则等待其持有的
+右值并交付右值的结果。
+
+Shared state 内直接构造 child operation。Shared state 与各 subscriber 连同各自的
+control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`。
+Subscriber 在 `connect` 时分配，分配失败向调用者抛出，入链无需分配。
+已启动的 operation 在完成前析构时，仅在 active store 在 modification order 中先于
+delivery exchange 时抑制调用。Source 继续运行，未完成时由 keepalive 持有。
+[Split 协议模型](../formal/split/README.md) 在有限边界内检验广播与共享生命周期。
+
 Backport 与完整原生实现中的 `forge::sync_wait` 都是 `std::this_thread::sync_wait`
 的别名，要求恰好一个 value completion signature。具有多个签名的 sender 使用
 `std::this_thread::sync_wait_with_variant`。

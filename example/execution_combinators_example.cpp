@@ -26,7 +26,7 @@
 // See also: docs/backports/execution.md
 
 #include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include <forge/split.hpp>
 #include <execution>
 #include "example_support.hpp"
 #include <tuple>

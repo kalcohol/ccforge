@@ -9,4 +9,4 @@ from engine.runner import main
 if __name__ == '__main__':
     from split.self_tests import run
     run()
-    raise SystemExit(main(ROOT, 'split', 'backport/cpp26/execution/split.hpp'))
+    raise SystemExit(main(ROOT, 'split', 'include/forge/split.hpp'))

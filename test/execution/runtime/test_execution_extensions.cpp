@@ -1,7 +1,9 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
-#include <tuple>
 #include <concepts>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include "../../forge/runtime/forge_operation_destroy.hpp"
 
 // These uses must stay warning-free with -Werror=deprecated-declarations.
@@ -24,6 +26,98 @@ TEST(ExecutionExtensions, SplitCachesAndReplays) {
     EXPECT_EQ(std::get<0>(*first), 42);
     EXPECT_EQ(first, second);
     EXPECT_EQ(invocations, 1);
+}
+
+namespace {
+struct split_env_query {
+    template<class Env>
+    auto operator()(const Env& env) const noexcept {
+        if constexpr (requires { std::execution::get_scheduler(env); }) {
+            return 3.5;
+        } else {
+            return 42;
+        }
+    }
+};
+
+template<class R, class Value>
+struct split_category_operation {
+    using operation_state_concept = std::execution::operation_state_tag;
+
+    R receiver;
+    Value value;
+
+    void start() & noexcept {
+        std::execution::set_value(std::move(receiver), std::move(value));
+    }
+};
+
+struct split_category_sender {
+    using sender_concept = std::execution::sender_tag;
+
+    template<class Self, class... Envs>
+    static constexpr auto get_completion_signatures() noexcept {
+        using value_t = std::conditional_t<std::is_lvalue_reference_v<Self>, long, int>;
+        return std::execution::completion_signatures<std::execution::set_value_t(value_t)>{};
+    }
+
+    template<class R>
+    auto connect(R receiver) & -> split_category_operation<R, long> {
+        return {std::move(receiver), 42L};
+    }
+
+    template<class R>
+    auto connect(R receiver) && -> split_category_operation<R, int> {
+        return {std::move(receiver), 21};
+    }
+};
+static_assert(std::copyable<split_category_sender>);
+} // namespace
+
+TEST(ExecutionExtensions, SplitSignaturesUseTheSourceEnvironment) {
+    namespace ex = std::execution;
+    using subscriber_env = decltype(ex::prop(ex::get_scheduler, ex::inline_scheduler{}));
+    auto source = ex::read_env(split_env_query{});
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(source), subscriber_env>,
+                               ex::completion_signatures<ex::set_value_t(double)>>);
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(source), ex::env<>>,
+                               ex::completion_signatures<ex::set_value_t(int)>>);
+
+    auto shared = forge::split(std::move(source));
+    using expected = ex::completion_signatures<
+        ex::set_value_t(const int&), ex::set_error_t(std::exception_ptr)>;
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(shared), subscriber_env>,
+                               expected>);
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(shared), ex::env<>>,
+                               expected>);
+    auto result = std::this_thread::sync_wait(shared);
+    ASSERT_TRUE(result);
+    EXPECT_EQ(std::get<0>(*result), 42);
+}
+
+TEST(ExecutionExtensions, SplitUsesTheLvalueSourceCategory) {
+    namespace ex = std::execution;
+    split_category_sender source;
+    auto shared = forge::split(source);
+    using expected = ex::completion_signatures<
+        ex::set_value_t(const long&), ex::set_error_t(std::exception_ptr)>;
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(shared), ex::env<>>,
+                               expected>);
+    auto result = std::this_thread::sync_wait(shared);
+    ASSERT_TRUE(result);
+    EXPECT_EQ(std::get<0>(*result), 42L);
+}
+
+TEST(ExecutionExtensions, SplitUsesTheRvalueSourceCategory) {
+    namespace ex = std::execution;
+    auto shared = forge::split(split_category_sender{});
+    using expected = ex::completion_signatures<
+        ex::set_value_t(const int&), ex::set_error_t(std::exception_ptr)>;
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(shared), ex::env<>>,
+                               expected>);
+    auto result = std::this_thread::sync_wait(shared);
+    ASSERT_TRUE(result);
+    EXPECT_EQ(std::get<0>(*result), 21);
 }
 
 TEST(ExecutionExtensions, TransferAndStandardWaitAgree) {

@@ -249,6 +249,13 @@ if(FORGE_SENDERS_FULL AND NOT FORGE_FORCE_SENDERS_BACKPORT)
         test_forge_execution_extensions_native
         test_forge_execution_extensions_native.cpp
         forge_execution_extensions_native_compile)
+    set_tests_properties(forge_execution_extensions_native_compile PROPERTIES
+        FIXTURES_SETUP forge_execution_extensions_native_build)
+    add_test(NAME forge_execution_extensions_native
+        COMMAND test_forge_execution_extensions_native)
+    set_tests_properties(forge_execution_extensions_native PROPERTIES
+        FIXTURES_REQUIRED forge_execution_extensions_native_build
+        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endif()
 
 # Rebuild lifetime-heavy suites with the source/node probes in every TU.

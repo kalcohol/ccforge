@@ -685,10 +685,18 @@ domain 函数及 utilities、scheduler 递归和环境单次求值。
 `FORGE_TEST_ENABLE_FORGE_RUNTIME`、`FORGE_TEST_ENABLE_FORGE_ERASURE` 和
 `FORGE_TEST_ENABLE_FORGE_IO` 的任一组启用，并只检查已启用的组。
 
+`execution_extensions` 使用依赖 scheduler 查询的 source，检查 `forge::split`
+在有无 scheduler 的订阅环境中都公布空环境下的缓存签名，并验证实际交付。
+它还检查同一 source 类型的左值和右值连接各自使用对应的 operation 类型与 completion signatures。
+`execution_awaitable_conformance_compile` 检查仅支持右值 `co_await` 的可复制 awaitable
+以左值传入时被 `forge::split` 拒绝，以右值传入时被接受。
+完整原生 senders 路径下，`forge_execution_extensions_native_compile` 构建原生探针，
+`forge_execution_extensions_native` 运行同一程序，检查惰性缓存、单次执行与重放。
+
 ## Protocol model check（协议模型检验）
 
 [formal/](../formal/README.md) 保存不进入 CMake test build 的协议模型。
-[split](../formal/split/README.md) 覆盖惰性缓存广播、共享所有权与 abandonment；[when_all](../formal/when_all/README.md) 覆盖 child credit、取消与结果仲裁；[run_loop](../formal/run_loop/README.md) 覆盖 queue/wait 与 teardown；[sync_wait](../formal/sync_wait/README.md) 覆盖 result publication 与 stack lifetime；[spawn](../formal/spawn/README.md) 覆盖 detached state 与 allocator/association 顺序；[associate](../formal/associate/README.md) 覆盖 sender/operation association 与 receiver 自毁；[spawn_future](../formal/spawn_future/README.md) 覆盖 future 的完成、取消及所有权；[counting_scope](../formal/counting_scope/README.md) 覆盖 join、scope stop 和 fused callback；[stop_token](../formal/stop_token/README.md) 覆盖底层 stop 协议。
+[split](../formal/split/README.md) 锁定 `<forge/split.hpp>`，覆盖惰性缓存广播、共享所有权与 abandonment；[when_all](../formal/when_all/README.md) 覆盖 child credit、取消与结果仲裁；[run_loop](../formal/run_loop/README.md) 覆盖 queue/wait 与 teardown；[sync_wait](../formal/sync_wait/README.md) 覆盖 result publication 与 stack lifetime；[spawn](../formal/spawn/README.md) 覆盖 detached state 与 allocator/association 顺序；[associate](../formal/associate/README.md) 覆盖 sender/operation association 与 receiver 自毁；[spawn_future](../formal/spawn_future/README.md) 覆盖 future 的完成、取消及所有权；[counting_scope](../formal/counting_scope/README.md) 覆盖 join、scope stop 和 fused callback；[stop_token](../formal/stop_token/README.md) 覆盖底层 stop 协议。
 Python explicit-state checker 要求 **Python 3.9+**，标准库即可；此要求独立于既有 helper 的 Python 3.6+ 要求。
 
 ```bash

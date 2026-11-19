@@ -172,6 +172,26 @@ check_stale_execution_names() {
     fi
 }
 
+check_split_uses_standard_execution() {
+    log "check that Forge split uses the public execution API"
+    local header="include/forge/split.hpp"
+    if [[ ! -f "${header}" ]]; then
+        fail "Forge split header is missing: ${header}"
+        return
+    fi
+    # Reject the declarations themselves so qualified aliases and unqualified
+    # imports cannot hide a backport member from the direct-name checks.
+    local trivia='(\s|//[^\n]*\n|/\*([^*]|\*+[^*/])*\*+/)'
+    if rg -n -U \
+        -e '\b(execution|this_thread|std)\s*::\s*__|\b__forge_[[:alnum:]_]*|\b(__empty_env|__concat_unique_cs_t|__single_value_tuple_t|__split)\b|backport/|detail/value_result\.hpp' \
+        -e "\bnamespace${trivia}+\w+${trivia}*=${trivia}*(::${trivia}*)?std\b" \
+        -e "\busing${trivia}+namespace${trivia}*(::${trivia}*)?std${trivia}*(;|::${trivia}*(execution|this_thread)\b)" \
+        "${header}" >"${audit_tmp}/split-execution-internals"; then
+        cat "${audit_tmp}/split-execution-internals" >&2
+        fail "Forge split must use the public execution API"
+    fi
+}
+
 check_portable_sync_wait_spelling() {
     log "check portable sync_wait spelling"
     : >"${audit_tmp}/sync-wait-spelling"
@@ -581,6 +601,7 @@ check_markdown_links
 check_forge_header_refs_exist
 check_example_cmake_sources
 check_stale_execution_names
+check_split_uses_standard_execution
 check_portable_sync_wait_spelling
 check_readme_parity
 check_test_switch_docs

@@ -25,7 +25,7 @@ Execution backport 当前包含：
   `let_stopped`、`write_env`、`unstoppable`；
 - scheduler adaptors：`starts_on`、`continues_on`、`on`、`affine`、policy-shaped
   serial `bulk`、`bulk_chunked` 和 `bulk_unchunked`；
-- Forge extensions：`forge::transfer_just`、`forge::split`、`forge::bulk*`；
+- Forge extensions：`forge::transfer_just`、`forge::bulk*`；
 - composition：`into_variant`、`when_all`、`when_all_with_variant`、
   `associate`、`spawn`、`spawn_future`；
 - consumers：`sync_wait`、`sync_wait_with_variant`；
@@ -67,7 +67,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `stopped_as_optional`, `stopped_as_error` | Implemented subset | `stopped_as.hpp`；提供 direct-call；`stopped_as_optional` 要求恰好一个非 `void` value signature，单签名多个参数形成 `optional<tuple<...>>`；该 shape 验证延迟到实际环境的 signature 查询 / `connect`，是已接受的 creation Mandate 延迟偏差，未实现 WD `make-sender` 的无环境 / 环境依赖分类；CPO 自身可直接 pipe，`stopped_as_error(error)` 返回标准 pipe closure。 Optional child/signatures 使用 FWD-ENV 并检查 value 保存；error child 保留未过滤环境。stopped_as_error binary 要求 movable-value，closure 要求可初始化 bound error；signature/connect 对无效 child 替换失败。 |
 | `into_variant` | Implemented subset | `into_variant.hpp`；CPO 自身支持 direct-call 和 bare pipe；`sync_wait` / `when_all` 复用单参数入口。 Child/signatures 经 FWD-ENV 及一致值类别，const-lvalue 不预先复制 child；全部 result datums 要求 decay-copyable，connect 条件 noexcept。通用 product/tag surface 仍未提供。 |
 | `when_all`, `when_all_with_variant` | Implemented subset | `when_all` 按 WD 要求至少一个 child sender；typed tuple 保存各 child 的 typed holder，operation state 在 holder 内作为普通成员从 factory prvalue 直接初始化，支持空、non-final、immovable 类型；values、errors、stop source 和 optional stop callback 静态存储，operation-state storage 本身不再分配，无大小或对齐导致的堆回退。非分配 children / schedulers / receivers / environment queries / 用户函数 / 结果类型的组合无需全局分配；top-level 是否注册取决于 receiver token 的 `stop_possible()`，inner `when_all` 会在 parent 的 stop source 上注册，inplace registration 均零分配。自定义 token callback 的自行分配另计。Child `connect` 抛出时销毁已构造 children。保留 error 优先于 stopped、stop request 行为、child start 前注册 callback 和 completion 前注销 callback；child env 暴露内部 stop token，以 forwarding-query 类型约束转发一参数查询；签名查询和连接共用其环境类型，签名、存储与连接均保留 child 的 cv/ref。两个以上 value signatures 的 child 使组合 sender 不满足 sender_in；多形态使用 when_all_with_variant。按 /13 以 receiver 的 FWD-ENV 生成 optional decayed tuples，类型不成立时用空 tuple，/15.1 此时声明 set_value_t()。分配、异常和 lifecycle tests 覆盖。 兼容 awaitable child 经共享 CPO 连接，另含全局 frame allocation。 |
-| `forge::split` | Implemented subset | 非 WD extension；shared state 内直接构造 concrete child operation，缓存单一 value completion shape 并以 `const&` 广播。shared state 与各 subscriber/control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`；入链不分配。无 operation 大小或对齐触发的全局回退；在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。未完成 source 的 abandonment stop 协议仍未实现。 可缓存兼容 awaitable；child frame 的全局分配另计。 |
+| `forge::split` | Forge extension | `<forge/split.hpp>` 支持完整原生 senders 与 backport。Shared source 在 `std::execution::env<>` 下按传入的 value category 调用 `std::execution::connect`。订阅者的签名使用同一环境和类别公布的 source signatures，要求它们与连接的实际交付一致。单一 value shape 经 decay 后缓存并以 `const&` 广播，error 转为 `std::exception_ptr`，保留 source 的 stopped channel。Shared state 内直接构造 concrete child operation；state 与各 subscriber/control block 使用 source attributes 的 allocator，缺省为 `std::allocator<void>`；入链无需分配。支持兼容 awaitable，其 child frame 分配另计。已启动后放弃订阅者时 source 继续运行。 |
 | `std::this_thread::sync_wait`, `std::this_thread::sync_wait_with_variant` | Implemented subset | env 通过 const member `query` 提供 scheduler、start scheduler 和 delegation scheduler；`sync_wait` 对 sender_in 与恰好一个 value signature 检查 Mandates；`forge::sync_wait` 引用同一个对象。多签名使用 `sync_wait_with_variant`，在原 sender 上 dispatch；默认路径对 `into_variant` 的结果调用 `sync_wait`，因而拒绝零 value sender。同步 typed-error consumption 由 Forge `wait_result` 提供。接受实际 run_loop 环境兼容的 awaitable，包含其全局 frame allocation。返回类型措辞与 domain fallback 见下文。 |
 | `associate` | Implemented current-WD subset | association 成功后才在 typed manual-lifetime holder 中 connect wrapped sender；operation 不单独分配，connect failure 直接抛出。先销毁 child operation，再销毁 receiver，最后释放 association；child 使用 counting_scope wrapper 暴露的 token 注册 inplace callback 时不分配；sender、scheduler、receiver、environment queries、decayed 结果构造及自定义 stop-token callbacks 自行分配的内存另计。 接受兼容 awaitable，child frame 全局分配另计。 |
 | `spawn` | Implemented current-WD subset | 仅接受 `set_value()` / `set_stopped()`；operation 为 allocator-backed state 的普通成员。allocator 优先取显式 `get_allocator(env)`，其次取 wrapped sender attributes 的 allocator 并注入 spawned environment，否则取 `std::allocator<void>`；一个 rebound state allocation，销毁并 deallocate 后才释放 association。在 sender、scheduler、receiver、所选 allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。 awaitable 始终声明 exception_ptr，因此不满足 spawn 的 completion 限制。 |
@@ -184,7 +184,8 @@ scheduler 的选择）在签名中使用去除 cv/ref 的类型的右值、在�
 共用规范化的 stop overlay 类型，对 borrowed 与 prvalue 环境一致，并保留 volatile。
 /13 的 FWD-ENV 用于值存储；若两种环境产生不同结果，遵循 /13 的类型与 /15.1 的交付。
 P3557 的失败常量求值在 backport 的表达式式签名 CPO 中以不可用的签名查询表示。
-counting-scope 的 stop 包装与 `split` 的环境差异分别留待后续环境一致性批次与 E3。
+counting-scope 的 stop 包装差异留待后续环境一致性批次；E3 已将 `forge::split`
+的签名查询与 shared source 的连接统一到 `std::execution::env<>`。
 第 6、7 轮引入的确切环境类型路径和各 sender 的内部标记已不为任何保留的要求所需，全部删除；
 `sender_in` 与 `completion_signatures_of_t` 恢复 8de815c 的定义，静态成员的 `Self` 仍由
 `[exec.getcomplsigs]/1` 的变换结果类型决定。视图类型相同后，`declval<Env>()` 参与视图与
@@ -322,7 +323,7 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 - `[exec.bulk]/6` 的 check-types 误用 unchunked arity；按 complete 的 requires-clause 与 /9.1.1.3 使用 chunked 的两个 Shape 参数。
 - `[exec.snd.expos]/37` 将默认 get-state 声明 noexcept，/54–55 的 uses-allocator 重建却可能抛出；本实现逐字遵循 noexcept get-state，分配或重建失败会 terminate。/28 中 allocator 路径返回同类型 prvalue，只计 receiver 移动与 child connect（有效 receiver 的移动项恒为 true）；无 allocator 时还计 data 的相应构造。allocator 存在本身不增加 let/starts_on 的 exception_ptr。
 
-默认 get-state 的 allocator-aware construction 已用于 factories、then/upon、bulk 与 write_env；拥有自有 get-state 的算法不直接套用。Locked associate、split 与 counting_scope 的 signature SFINAE 改造保留待后续处理。
+默认 get-state 的 allocator-aware construction 已用于 factories、then/upon、bulk 与 write_env；拥有自有 get-state 的算法不直接套用。Locked associate 与 counting_scope 的 signature SFINAE 改造保留待后续处理。
 
 ### when_all 与 wait 消费者的 WD 措辞和实现差异
 
@@ -335,6 +336,10 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 - `[exec.awaitable]/5` 的 `has-as-awaitable` 把 `Promise&` 用作 coroutine promise 类型；实现采用 Promise。
 - `[exec.as.awaitable]/1` 的 `awaitable-sender`（要求 unhandled_stopped）未被 /7.4 使用；本实现按 connect 的 receiver-of Mandate，在实际 awaitable receiver env 检查 stopped 能力。
 - /7.4 的 class-template Sndr&& 无法按字面从 lvalue CTAD，保留 decay-copy；receiver environment 只规定 forwarding queries 的答案，没有禁止其他查询。
+- WD 与 backport 均有一处 awaitable 值类别不一致。变换保留左值时，`[exec.getcomplsigs]`
+  用左值的 `co_await` 结果类型合成签名；`[exec.connect]` 选用 coroutine fallback 时，按值保存
+  source 并执行 `co_await std::move(sndr)`。若两个类别的 `co_await` 结果类型不同，公布与交付的
+  value 类型便不一致。`forge::split` 要求二者一致，WD 措辞和 backport 行为留待后续批次复查。
 - `connect` 的 coroutine frame 使用全局分配；when_all、split、associate、counting-scope wrap、spawn_future 与 sync_wait 间接接收 awaitable 时会包含这项 child allocation，原来针对不自行分配 children 的保证保持成立。spawn 仍拒绝 exception_ptr completion。
 - Forge start_detached、async_scope / resource_context、any_sender_of、split / sync_wait、io::await_sender 接受实际环境及结果契约兼容的 awaitable；any_sender_of 对 copyable source 的 lvalue 借用契约保持，环境不兼容的 scope / IO 调用由约束拒绝。
 - GET-AWAITER 的 emulation 保守拒绝同时存在 member / ADL 候选的情况；deleted、inaccessible 或 ambiguous operator call probe 视为缺失，若另有有效 awaiter 方法则满足 sender，而实际 await/connect 为 ill-formed；无法在形成 await expression 前区分它与仅值类别不匹配的 operator；final promise 上不可调用的 overloaded / template await_transform 无法用继承式 name probe 完整识别。普通 bridge 的既有 member-first acceptance leniency 保留。Constexpr-exception diagnostics 仍属独立未实现项。

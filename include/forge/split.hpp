@@ -24,20 +24,71 @@
 
 #pragma once
 
-#include "concepts.hpp"
-#include "detail/value_result.hpp"
-#include "env.hpp"
+#include <execution>
+
+#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE) || \
+    (defined(FORGE_NATIVE_SENDERS_COMPLETE) && FORGE_NATIVE_SENDERS_COMPLETE) || \
+    (!defined(FORGE_NATIVE_SENDERS_COMPLETE) && defined(__cpp_lib_senders) && __cpp_lib_senders >= 202506L)
+
+#include <forge/detail/completion_meta.hpp>
 
 #include <atomic>
 #include <cstddef>
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
-namespace std::execution {
+namespace forge {
 
-namespace __forge_split {
+namespace __split_detail {
+
+using std::execution::completion_signatures;
+using std::execution::set_error_t;
+using std::execution::set_stopped_t;
+using std::execution::set_value_t;
+
+namespace meta = forge::__detail::meta;
+
+template<class S>
+using source_signatures_t =
+    std::execution::completion_signatures_of_t<S, std::execution::env<>>;
+
+template<class CS>
+struct sends_stopped_from;
+
+template<class... Sigs>
+struct sends_stopped_from<completion_signatures<Sigs...>>
+    : std::bool_constant<(std::is_same_v<Sigs, set_stopped_t()> || ...)> {};
+
+// Each mapped input below contributes either zero signatures or one.
+template<class Accumulated, class... Inputs>
+struct concat_unique_signatures;
+
+template<class Accumulated>
+struct concat_unique_signatures<Accumulated> : std::type_identity<Accumulated> {};
+
+template<class Accumulated, class... Rest>
+struct concat_unique_signatures<Accumulated, completion_signatures<>, Rest...>
+    : concat_unique_signatures<Accumulated, Rest...> {};
+
+template<class... Out, class Sig, class... Rest>
+struct concat_unique_signatures<completion_signatures<Out...>, completion_signatures<Sig>, Rest...>
+    : concat_unique_signatures<std::conditional_t<(std::is_same_v<Sig, Out> || ...),
+          completion_signatures<Out...>, completion_signatures<Out..., Sig>>, Rest...> {};
+
+struct __immovable {
+    __immovable() = default;
+    __immovable(__immovable&&) = delete;
+};
+
+template<class T>
+constexpr decltype(auto) __forward_as_given(T&& value) noexcept {
+    return static_cast<T&&>(value);
+}
 
 struct __stopped_tag {};
 
@@ -67,9 +118,10 @@ struct __cached_completion_signatures<completion_signatures<Sigs...>> {
     static_assert(
         (std::size_t{0} + ... + __cached_completion<Sigs>::value_count) <= 1,
         "split supports at most one value completion shape");
-    using type = __forge_meta::__concat_unique_cs_t<
+    using type = typename concat_unique_signatures<
+        completion_signatures<>,
         typename __cached_completion<Sigs>::type...,
-        completion_signatures<set_error_t(std::exception_ptr)>>;
+        completion_signatures<set_error_t(std::exception_ptr)>>::type;
 };
 
 template<class CS>
@@ -103,13 +155,13 @@ struct __shared_state;
 
 template<class S>
 struct __inner_recv {
-    using receiver_concept = receiver_tag;
+    using receiver_concept = std::execution::receiver_tag;
     __shared_state<S>* __st;
 
     template<class... Vs> void set_value(Vs&&... vs) && noexcept;
     template<class E> void set_error(E&& e) && noexcept;
     void set_stopped() && noexcept;
-    auto get_env() const noexcept -> __empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 };
 
 template<class S>
@@ -121,9 +173,8 @@ struct __subscriber_base {
 
 template<class S>
 struct __shared_state : std::enable_shared_from_this<__shared_state<S>> {
-    using cs_t = decltype(std::execution::get_completion_signatures(
-        std::declval<S>(), std::execution::__empty_env{}));
-    using value_tuple_t = std::execution::__forge_meta::__single_value_tuple_t<cs_t>;
+    using cs_t = source_signatures_t<S>;
+    using value_tuple_t = meta::single_value_tuple_t<cs_t>;
 
     enum class Phase { idle, running, done };
 
@@ -133,16 +184,15 @@ struct __shared_state : std::enable_shared_from_this<__shared_state<S>> {
     std::shared_ptr<__subscriber_base<S>> on_done;
     __subscriber_base<S>* tail = nullptr;
     std::shared_ptr<__shared_state> keepalive;
-    using allocator_t = typename __allocator_for_source<S>::type;
+    using allocator_t = typename __allocator_for_source<std::decay_t<S>>::type;
     allocator_t allocator;
-    using op_t = connect_result_t<S, __inner_recv<S>>;
+    using op_t = std::execution::connect_result_t<S, __inner_recv<S>>;
     op_t op;
 
     template<class Source>
     explicit __shared_state(Source&& source, allocator_t alloc)
         : allocator(std::move(alloc))
-        , op(std::execution::connect(
-              static_cast<Source&&>(source), __inner_recv<S>{this}))
+        , op(std::execution::connect(static_cast<Source&&>(source), __inner_recv<S>{this}))
     {}
 
     void notify_all() noexcept {
@@ -171,8 +221,8 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
             // source operation stored value/error/stopped and marked done.
             std::terminate();
         } else if constexpr (std::is_same_v<V, typename __shared_state<S>::value_tuple_t>) {
-            if constexpr (!__forge_meta::type_list_empty_v<
-                              __forge_meta::value_tuple_list_t<
+            if constexpr (!meta::type_list_empty_v<
+                              meta::value_tuple_list_t<
                                   typename __shared_state<S>::cs_t>>) {
                 std::apply([&](const auto&... vs) {
                     std::execution::set_value(std::move(rcvr), vs...);
@@ -183,8 +233,7 @@ void deliver_result(__shared_state<S>& st, OuterRecv& rcvr) noexcept {
         } else if constexpr (std::is_same_v<V, std::exception_ptr>) {
             std::execution::set_error(std::move(rcvr), std::exception_ptr{v});
         } else {
-            if constexpr (__forge_meta::sends_stopped_from<
-                              typename __shared_state<S>::cs_t>::value) {
+            if constexpr (sends_stopped_from<typename __shared_state<S>::cs_t>::value) {
                 std::execution::set_stopped(std::move(rcvr));
             } else {
                 std::terminate();
@@ -260,8 +309,8 @@ void __inner_recv<S>::set_stopped() && noexcept {
 }
 
 template<class S, class R>
-struct __op : __forge_detail::__immovable {
-    using operation_state_concept = operation_state_tag;
+struct __op : __immovable {
+    using operation_state_concept = std::execution::operation_state_tag;
 
     std::shared_ptr<__shared_state<S>> __shared;
     std::shared_ptr<__subscriber<S, R>> __sub;
@@ -302,48 +351,53 @@ struct __op : __forge_detail::__immovable {
 
 template<class S>
 struct __sender {
-    using sender_concept = sender_tag;
+    using sender_concept = std::execution::sender_tag;
     using source_t = S;
 
     std::shared_ptr<__shared_state<S>> __shared;
 
-    template<class Self, class Env>
-    static auto get_completion_signatures() noexcept {
+    template<class Self, class... Envs>
+    static constexpr auto get_completion_signatures() noexcept {
         using self_t = std::remove_cvref_t<Self>;
-        using source_cs_t = decltype(std::execution::get_completion_signatures(
-            std::declval<typename self_t::source_t>(),
-            std::declval<Env>()));
+        using source_cs_t = source_signatures_t<typename self_t::source_t>;
         return __cached_completion_signatures_t<source_cs_t>{};
     }
 
-    template<receiver R>
+    template<std::execution::receiver R>
     auto connect(R r) && -> __op<S, R>
     {
         return __op<S, R>{std::move(__shared), std::move(r)};
     }
 
-    template<receiver R>
+    template<std::execution::receiver R>
     auto connect(R r) const& -> __op<S, R>
     {
         return __op<S, R>{__shared, std::move(r)};
     }
 
-    auto get_env() const noexcept -> __empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
 
-} // namespace __forge_split
+} // namespace __split_detail
 
-template<sender S>
-[[nodiscard]] auto __split(S&& sndr) {
+template<class S>
+    requires std::execution::sender_in<S, std::execution::env<>> &&
+             requires {
+                 std::execution::connect(std::declval<S>(),
+                     std::declval<__split_detail::__inner_recv<S>>());
+             }
+[[nodiscard]] auto split(S&& sndr) {
     using source_t = std::decay_t<S>;
-    using ST = __forge_split::__shared_state<source_t>;
-    auto alloc = __forge_split::__allocator_for_source<source_t>::get(sndr);
+    using ST = __split_detail::__shared_state<S>;
+    auto alloc = __split_detail::__allocator_for_source<source_t>::get(sndr);
     auto shared = std::allocate_shared<ST>(alloc,
-        __forge_detail::__forward_as_given(std::forward<S>(sndr)), alloc);
+        __split_detail::__forward_as_given(std::forward<S>(sndr)), alloc);
 
-    return __forge_split::__sender<source_t>{std::move(shared)};
+    return __split_detail::__sender<S>{std::move(shared)};
 }
 
-} // namespace std::execution
+} // namespace forge
+
+#endif

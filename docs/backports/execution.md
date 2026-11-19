@@ -80,7 +80,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `let_stopped`、`write_env`、`unstoppable`
 - 调度器适配器：`starts_on`、`continues_on`、`on`、`affine`、`bulk` /
   `bulk_chunked` / `bulk_unchunked`（串行 subset）
-- Forge 扩展：`forge::transfer_just`、`forge::split` 及无策略串行 `forge::bulk*`
+- Forge 扩展：`forge::transfer_just` 及无策略串行 `forge::bulk*`
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；每个 child 至多一个 value completion signature、外层取消传播）、
   `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（Mandate 要求在其 run_loop 环境中恰好有一个 value completion
@@ -270,18 +270,11 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   alternatives、prepared sender 非单值时 identity fallback、lvalue decay-copy，以及
   普通 awaiter 的 member-first 检测等 acceptance leniencies。
 - Forge `async_scope::spawn`、`resource_context::spawn`、`start_detached`、`any_sender_of`、
-  `split`、`sync_wait` 与 `io::await_sender` 接受满足各自环境和 value-shape 契约的 awaitable。
+  `forge::split`、`sync_wait` 与 `io::await_sender` 接受满足各自环境和 value-shape 契约的 awaitable。
   Scope / IO 入口按实际 stop-token 环境检查；`any_sender_of` 仍要求相同 wait 结果，
   copyable source 仍按 lvalue 借用，只有 rvalue `operator co_await` 的 copyable 类型因此被约束拒绝。
   `erased_sender` 也要求 source signatures 是声明 closed set 的子集；`wait_result` /
   `wait_result_of` 保留其实际带 inplace stop token 的 wait 环境约束。
-- `forge::split` 是非 WD extension。它缓存单一 value completion shape，并以 `const&`
-  向每个订阅者广播缓存值；订阅者在 `connect` 时分配，分配失败向调用者抛出。它没有实现完整
-  stop-source/on_done cycle，abandoned never-completing source 的取消不是当前保证。
-  已启动 operation 在完成前析构超出标准 operation-state 契约；本实现扩展允许 abandonment，
-  不停止 source，destructor 的 active store 在 modification order 中先于 delivery exchange
-  时抑制调用，若 exchange 已先赢得调用则仍可进入 receiver。
-  [split 协议模型](../../formal/split/README.md) 在有限边界内检验广播与共享生命周期。
 - `ensure_started` / `start_detached` 不再由 `<execution>` backport 暴露；这两个名字不是
   当前 working draft `[exec]` surface。需要 fire-and-forget 时，standard-shaped code 应
   使用 scope-token based `spawn(sender, token[, env])`；Forge runtime extension 侧保留
@@ -459,7 +452,7 @@ over-aligned 以及空的 immovable operation states；空间与对齐需求计�
 potentially-overlapping subobject 的 copy elision。`associate` 在 operation 析构时先销毁 inner operation，
 再销毁 receiver，最后释放 association；完成本身不释放 association。
 [associate 协议模型](../../formal/associate/README.md) 在有限边界内检验这些生命周期与 sender association 转移。`join()` 的 schedule operation、
-`split` shared state 的 child operation、`spawn` / `spawn_future` state 的 spawned
+`spawn` / `spawn_future` state 的 spawned
 operation 均为普通成员，支持 immovable、超过 4 KiB 及 over-aligned operation。
 
 `spawn` 和 `spawn_future` 的 allocator 均按以下顺序选择：显式 environment 的
@@ -509,13 +502,10 @@ pending producer 若忽略取消，future 放弃或 consumer 收到 stopped 后�
 consumer 取消路径与工作草案不完全相同：草案在停止已登记的 consumer 时调用 `destroy()`，
 本实现保留 producer keepalive，operation 的销毁和注册释放要等 producer 实际完成；
 其余时点遵循 [`[exec.spawn.future]`](https://eel.is/c++draft/exec.spawn.future) 的状态生命周期。
-`split` 为非 WD extension，shared state 和
-subscriber 的合并 control block 使用 source attributes 的 allocator，缺省为
-`std::allocator<void>`；subscriber 入链不再分配，缓存仍以 `const&` 重放。
 对于自身不分配的 sender、scheduler、receiver、所选 allocator、environment queries、
 decayed 结果构造及自定义 stop-token callbacks，这些路径除上述 allocator 管理的存储外
 没有额外全局分配；inplace registration 不分配。上述用户代码自行分配的内存另计。使用缺省
-allocator 时，`spawn` / `spawn_future` / `split` 的上述共享或 detached 存储仍会分配。
+allocator 时，`spawn` / `spawn_future` 的上述共享或 detached 存储仍会分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
 `forge::scope_count` 和 `forge::scope_is_closed` 提供两种 backport scope 的诊断快照。
 
@@ -592,13 +582,16 @@ execution-only 路径。
 
 仓库尚未发布，因此 backport 直接跟随工作草案与已采纳提案。以下宽于工作草案的入口直接移除，未经过弃用期。
 
+P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供，execution backport
+已完全移除其实现。
+
 | 旧用法 | 迁移后的用法 |
 | --- | --- |
 | `std::execution::sync_wait(s)` | `std::this_thread::sync_wait(s)` |
 | `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 有多种 value completion） | `std::this_thread::sync_wait_with_variant(s)`；backport 返回 `optional<variant<tuple<V>>>`，其中 `V` 包含各 decayed tuple 备选项 |
 | `std::this_thread::sync_wait(s)` 或 `forge::sync_wait(s)`（`s` 无 value completion） | 用 `auto op = connect(s, receiver)` 和 `start(op)`，由 receiver 处理 stopped 或 error |
 | `std::execution::when_all(a, b)`（child 有多种 value completion，结果为笛卡尔积） | `std::execution::when_all_with_variant(a, b)`；每个 child 的 value 以一个 variant 参数交付 |
-| `std::execution::split(s)` | `forge::split(s)` |
+| `std::execution::split(s)` | 包含 `<forge/split.hpp>` 后调用 `forge::split(s)` |
 | 两种 counting scope 的 `scope.count()` / `scope.is_closed()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)`（仅 backport） |
 | `std::execution::receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t` | 使用 `std::execution::receiver_tag`、`sender_tag`、`operation_state_tag`、`scheduler_tag` |
 | `std::execution::forwarding_query`、`get_stop_token`、`get_allocator` 及各自的 `_t` 类型、`stop_token_of_t` | 使用 `std::forwarding_query`、`std::get_stop_token`、`std::get_allocator`、`std::forwarding_query_t`、`std::get_stop_token_t`、`std::get_allocator_t`、`std::stop_token_of_t` |
@@ -661,8 +654,7 @@ policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `st
 无 value completion 的 sender 经 `into_variant` 后仍无 value completion，因此默认
 `sync_wait_with_variant` 的内部 `sync_wait` 调用违反单一签名的 Mandate。
 
-`forge::split` 共用 backport 的惰性缓存和 `const&` 重放实现。`forge::empty_env`
-在两种模式下均为 `std::execution::env<>`。
+`forge::empty_env` 在两种模式下均为 `std::execution::env<>`。
 Scope 观察函数只提供诊断快照。`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
 
 ### when_all 的 WD 存储环境

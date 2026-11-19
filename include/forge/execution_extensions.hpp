@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <forge/split.hpp>
 #include <execution>
 #include <utility>
 
@@ -51,19 +52,6 @@ template<class Scope>
     return scope.__is_closed();
 }
 
-template<class S>
-    requires std::execution::sender_in<std::decay_t<S>, empty_env> &&
-             std::execution::sender_in<S, empty_env> &&
-             std::constructible_from<std::decay_t<S>, S> &&
-             requires {
-                 { std::execution::connect(std::declval<S>(),
-                     std::declval<std::execution::__forge_split::__inner_recv<std::decay_t<S>>>()) }
-                     -> std::same_as<std::execution::connect_result_t<std::decay_t<S>,
-                         std::execution::__forge_split::__inner_recv<std::decay_t<S>>>>;
-             }
-[[nodiscard]] auto split(S&& sndr) {
-    return std::execution::__split(std::forward<S>(sndr));
-}
 #endif
 
 using std::this_thread::sync_wait;

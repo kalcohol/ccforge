@@ -4,11 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from engine.memory import Memory, put, change, synchronization, empty_sync
 
-SOURCE = Path(__file__).resolve().parents[2] / 'backport/cpp26/execution/split.hpp'
+SOURCE = Path(__file__).resolve().parents[2] / 'include/forge/split.hpp'
 C = None
 COV = set()
 REFS = {
-    'make': '::__split | auto shared = std::allocate_shared<ST>(alloc,',
+    'make': '::split | auto shared = std::allocate_shared<ST>(alloc,',
     'connect': '__sender::connect | return __op<S, R>{__shared, std::move(r)};',
     'copy_sh': '__op::start | auto sh = __shared;',
     'copy_sub': '__op::start | auto sub = __sub;',
@@ -45,7 +45,7 @@ EXTRA_REFS = (
     '__inner_recv::set_stopped | st->result.template emplace<3>(__stopped_tag{});',
     '__inner_recv::set_stopped | st->phase = __shared_state<S>::Phase::done;',
     '__sender::connect | return __op<S, R>{std::move(__shared), std::move(r)};',
-    '::__split | auto alloc = __forge_split::__allocator_for_source<source_t>::get(sndr);',
+    '::split | auto alloc = __split_detail::__allocator_for_source<source_t>::get(sndr);',
 )
 FIELDS = '''threads errors owners refs alive allocated made destroyed freed receiver_alive receiver_ends op_alive op_made op_ends phase result head tail next mutex mutex_pub signals started source_starts source_running source_events expected received abandoned dtor_entry suppress_required exchange_won suppressed calls walking linking link_target launch vc views hist accesses allocator_alive allocator_ends source_alive source_ends'''.split()
 

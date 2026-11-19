@@ -1,5 +1,7 @@
 #include <forge/execution_extensions.hpp>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 // A complete native execution implementation must not need backport internals.
 #if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
@@ -17,4 +19,14 @@ void check_transfer(Scheduler scheduler) {
 int main() {
     std::execution::run_loop loop;
     check_transfer(loop.get_scheduler());
+
+    int invocations = 0;
+    auto shared = forge::split(std::execution::then(std::execution::just(21),
+        [&invocations](int value) { ++invocations; return value * 2; }));
+    if (invocations != 0) {
+        return 1;
+    }
+    auto first = std::this_thread::sync_wait(shared);
+    auto replay = std::this_thread::sync_wait(std::move(shared));
+    return first && first == replay && std::get<0>(*first) == 42 && invocations == 1 ? 0 : 1;
 }
