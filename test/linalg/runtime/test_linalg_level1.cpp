@@ -1182,6 +1182,133 @@ TEST(LinalgLevel1Reductions, WiderScalarControlsComplexMagnitudePrecision) {
     EXPECT_DOUBLE_EQ(std::linalg::matrix_inf_norm(matrix, 0.0), magnitude);
 }
 
+template<class T>
+void expect_within_ulps(T actual, T expected, int ulps) {
+    ASSERT_TRUE(std::isfinite(actual));
+    T lower = expected;
+    T upper = expected;
+    const T infinity = std::numeric_limits<T>::infinity();
+    for (int i = 0; i < ulps; ++i) {
+        lower = std::nextafter(lower, -infinity);
+        upper = std::nextafter(upper, infinity);
+    }
+    EXPECT_GE(actual, lower);
+    EXPECT_LE(actual, upper);
+}
+
+struct complex_float_norm_accessor : rotation_accessor<std::complex<float>> {
+    using offset_policy = complex_float_norm_accessor;
+    struct reference : rotation_reference<std::complex<float>> {
+        friend float abs(reference value) noexcept { return std::abs(*value.pointer); }
+    };
+    reference access(data_handle_type p, std::size_t i) const noexcept { return {{p + i}}; }
+};
+
+struct wider_norm_accessor {
+    using element_type = const float;
+    using reference = double;
+    using data_handle_type = const double*;
+    using offset_policy = wider_norm_accessor;
+    reference access(data_handle_type p, std::size_t i) const noexcept { return p[i]; }
+    data_handle_type offset(data_handle_type p, std::size_t i) const noexcept { return p + i; }
+};
+
+struct wider_complex_norm_accessor : wider_norm_accessor {
+    using element_type = const std::complex<float>;
+    using offset_policy = wider_complex_norm_accessor;
+    struct reference {
+        double real;
+        operator std::complex<float>() const noexcept { return {static_cast<float>(real), 0.0f}; }
+        friend double abs(reference value) noexcept { return std::abs(value.real); }
+    };
+    reference access(data_handle_type p, std::size_t i) const noexcept { return {p[i]}; }
+};
+
+struct wider_real_norm_accessor {
+    using element_type = const double;
+    using offset_policy = wider_real_norm_accessor;
+    using data_handle_type = const long double*;
+    struct reference {
+        long double value;
+        operator double() const noexcept { return static_cast<double>(value); }
+        friend long double abs(reference x) noexcept { return std::abs(x.value); }
+    };
+    reference access(data_handle_type p, std::size_t i) const noexcept { return {p[i]}; }
+    data_handle_type offset(data_handle_type p, std::size_t i) const noexcept { return p + i; }
+};
+
+template<class Accessor>
+void check_proxy_norms(typename Accessor::data_handle_type data, double expected, int integer) {
+    using element_type = typename Accessor::element_type;
+    using vector = std::mdspan<element_type, std::extents<int, 1>, std::layout_right, Accessor>;
+    using matrix = std::mdspan<element_type, std::extents<int, 1, 1>, std::layout_right, Accessor>;
+    const vector v(data, typename vector::mapping_type{}, Accessor{});
+    const matrix m(data, typename matrix::mapping_type{}, Accessor{});
+    expect_within_ulps(std::linalg::vector_two_norm(v, 0.0), expected, 1);
+    expect_within_ulps(forge::vector_two_norm(v, 0.0), expected, 1);
+    expect_within_ulps(std::linalg::matrix_frob_norm(m, 0.0), expected, 1);
+    expect_within_ulps(forge::matrix_frob_norm(m, 0.0), expected, 1);
+    EXPECT_EQ(forge::vector_two_norm(v, 0), integer);
+    EXPECT_EQ(forge::matrix_frob_norm(m, 0), integer);
+}
+
+TEST(LinalgLevel1Reductions, ComplexProxyWidensBeforeMeasuringMagnitude) {
+    std::complex<float> data{1.0f, 1.0f};
+    check_proxy_norms<complex_float_norm_accessor>(&data, 0x1.6a09e667f3bcdp+0, 1);
+    data = {4.0f, std::nextafter(3.0f, 0.0f)};
+    check_proxy_norms<complex_float_norm_accessor>(&data, 0x1.3fffff666666ap+2, 4);
+}
+
+TEST(LinalgLevel1Reductions, ComplexProxyKeepsWiderAdlMagnitude) {
+    constexpr double data = 0x1.3fffffff00000p+2; // 5 - 2^-30
+    check_proxy_norms<wider_complex_norm_accessor>(&data, data, 4);
+}
+
+TEST(LinalgLevel1Reductions, RealProxyKeepsWiderAdlMagnitude) {
+    constexpr long double data = 5.0L - 0x1p-60L;
+    if constexpr (std::numeric_limits<long double>::digits >
+                  std::numeric_limits<double>::digits && data < 5.0L) {
+        check_proxy_norms<wider_real_norm_accessor>(&data, 5.0, 4);
+    }
+}
+
+TEST(LinalgLevel1Reductions, MixedPrecisionNormsKeepTheWiderAccessorRead) {
+    constexpr double data = 0x1.3fffffff00000p+2; // 5 - 2^-30
+    check_proxy_norms<wider_norm_accessor>(&data, data, 4);
+
+    using vector = std::mdspan<const float, std::extents<int, 1>,
+                               std::layout_right, wider_norm_accessor>;
+    using matrix = std::mdspan<const float, std::extents<int, 1, 1>,
+                               std::layout_right, wider_norm_accessor>;
+    const vector v(&data, vector::mapping_type{}, wider_norm_accessor{});
+    const matrix m(&data, matrix::mapping_type{}, wider_norm_accessor{});
+    static_assert(std::same_as<decltype(std::linalg::vector_two_norm(v)), float>);
+    static_assert(std::same_as<decltype(std::linalg::matrix_frob_norm(m)), float>);
+    static_assert(std::same_as<decltype(forge::vector_two_norm(v)), double>);
+    static_assert(std::same_as<decltype(forge::matrix_frob_norm(m)), double>);
+    EXPECT_EQ(std::linalg::vector_two_norm(v), 5.0f);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m), 5.0f);
+    EXPECT_EQ(forge::vector_two_norm(v), data);
+    EXPECT_EQ(forge::matrix_frob_norm(m), data);
+}
+
+TEST(LinalgLevel1Reductions, NormsReadProxiesWithoutAdlAbs) {
+    using accessor = rotation_accessor<double>;
+    using vector = std::mdspan<double, std::extents<int, 2>, std::layout_right, accessor>;
+    using matrix = std::mdspan<double, std::extents<int, 1, 2>, std::layout_right, accessor>;
+    double data[]{3.0, 4.0};
+    const vector v(data, vector::mapping_type{}, accessor{});
+    const matrix m(data, matrix::mapping_type{}, accessor{});
+    EXPECT_EQ(std::linalg::vector_two_norm(v), 5.0);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m), 5.0);
+    EXPECT_EQ(std::linalg::vector_two_norm(v, 0.0), 5.0);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m, 0.0), 5.0);
+    EXPECT_EQ(forge::vector_two_norm(v), 5.0);
+    EXPECT_EQ(forge::matrix_frob_norm(m), 5.0);
+    EXPECT_EQ(forge::vector_two_norm(v, 0.0), 5.0);
+    EXPECT_EQ(forge::matrix_frob_norm(m, 0.0), 5.0);
+}
+
 TEST(LinalgLevel1Reductions, ComplexInitUsesMagnitudeSquared) {
     using complex = std::complex<double>;
     double x_data[] = {4.0};
@@ -1530,4 +1657,345 @@ TEST(LinalgLevel1Givens, ComplexRotationAvoidsFiniteScaleOverflow) {
     EXPECT_NEAR(rotation.c, 1.0 / std::sqrt(2.0), 1e-12);
     EXPECT_NEAR(rotation.s.real(), 1.0 / std::sqrt(2.0), 1e-12);
     EXPECT_NEAR(rotation.r.real() / component, std::sqrt(2.0), 1e-12);
+}
+
+template<class T>
+class LinalgLevel1ExtremeNumbers : public testing::Test {};
+
+using extreme_number_types = testing::Types<float, double>;
+TYPED_TEST_SUITE(LinalgLevel1ExtremeNumbers, extreme_number_types);
+
+template<class T>
+constexpr T inverse_sqrt_two = static_cast<T>(0x1.6a09e667f3bcdp-1);
+
+template<class T>
+constexpr T large_component = T{0.625} * std::numeric_limits<T>::max();
+
+template<class T>
+constexpr T large_pair_norm = [] {
+    if constexpr (std::same_as<T, float>) {
+        return 0x1.c48c5ep+127f;
+    } else {
+        return 0x1.c48c6001f0abep+1023;
+    }
+}();
+
+template<class T>
+struct norm_boundary_case {
+    T finite_input;
+    T finite_norm;
+    T overflowing_input;
+};
+
+template<class T>
+constexpr auto norm_boundary = [] {
+    if constexpr (std::same_as<T, float>) {
+        return norm_boundary_case<T>{0x1.6a09cep+127f, 0x1.ffffdep+127f, 0x1.6a09fep+127f};
+    } else {
+        return norm_boundary_case<T>{0x1.6a09e667f3bc0p+1023, 0x1.fffffffffffeep+1023,
+                                     0x1.6a09e667f3bd9p+1023};
+    }
+}();
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, RealGivensScalesBeforeNormalizing) {
+    using T = TypeParam;
+    const T tiny = std::numeric_limits<T>::denorm_min();
+    const T normal = std::numeric_limits<T>::min();
+    const auto check = [](T a, T b, T c, T s, T r) {
+        const auto rotation = std::linalg::setup_givens_rotation(a, b);
+        expect_within_ulps(rotation.c, c, 2);
+        expect_within_ulps(rotation.s, s, 2);
+        expect_within_ulps(rotation.r, r, 1);
+    };
+    const auto subnormal = std::linalg::setup_givens_rotation(tiny, tiny);
+    expect_within_ulps(subnormal.c, inverse_sqrt_two<T>, 2);
+    expect_within_ulps(subnormal.s, inverse_sqrt_two<T>, 2);
+    EXPECT_EQ(subnormal.r, tiny);
+    check(T{0.75} * normal, normal, static_cast<T>(0.6), static_cast<T>(0.8), T{1.25} * normal);
+    check(large_component<T>, large_component<T>,
+          inverse_sqrt_two<T>, inverse_sqrt_two<T>, large_pair_norm<T>);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, RealGivensAtOverflowBoundary) {
+    using T = TypeParam;
+    const auto [finite_input, finite_norm, overflowing_input] = norm_boundary<T>;
+    const auto finite = std::linalg::setup_givens_rotation(finite_input, finite_input);
+    expect_within_ulps(finite.r, finite_norm, 1);
+    expect_within_ulps(finite.c, inverse_sqrt_two<T>, 2);
+    expect_within_ulps(finite.s, inverse_sqrt_two<T>, 2);
+    const auto overflow = std::linalg::setup_givens_rotation(overflowing_input, overflowing_input);
+    EXPECT_EQ(overflow.r, std::numeric_limits<T>::infinity());
+    expect_within_ulps(overflow.c, inverse_sqrt_two<T>, 2);
+    expect_within_ulps(overflow.s, inverse_sqrt_two<T>, 2);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, RealGivensKeepsInfiniteNormAndFiniteOperandCoefficient) {
+    using T = TypeParam;
+    const T infinity = std::numeric_limits<T>::infinity();
+    for (T infinite : {infinity, -infinity}) {
+        for (T finite : {T{3}, T{-3}}) {
+            const auto first = std::linalg::setup_givens_rotation(infinite, finite);
+            EXPECT_EQ(first.r, infinity);
+            EXPECT_TRUE(std::isnan(first.c));
+            EXPECT_EQ(first.s, T{});
+            EXPECT_EQ(std::signbit(first.s), std::signbit(finite));
+
+            const auto second = std::linalg::setup_givens_rotation(finite, infinite);
+            EXPECT_EQ(second.r, infinity);
+            EXPECT_EQ(second.c, T{});
+            EXPECT_EQ(std::signbit(second.c), std::signbit(finite));
+            EXPECT_TRUE(std::isnan(second.s));
+        }
+    }
+    const auto both = std::linalg::setup_givens_rotation(infinity, -infinity);
+    EXPECT_TRUE(std::isnan(both.c));
+    EXPECT_TRUE(std::isnan(both.s));
+    EXPECT_TRUE(std::isnan(both.r));
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, RealGivensKeepsSignedZeroAndNanConventions) {
+    using T = TypeParam;
+    const T zero = -T{};
+    const T nan = std::numeric_limits<T>::quiet_NaN();
+    const auto check = [](T a, T b, T c, T s, T r) {
+        const auto rotation = std::linalg::setup_givens_rotation(a, b);
+        EXPECT_EQ(rotation.c, c);
+        EXPECT_EQ(rotation.s, s);
+        if (std::isnan(r)) {
+            EXPECT_TRUE(std::isnan(rotation.r));
+        } else {
+            EXPECT_EQ(rotation.r, r);
+        }
+        EXPECT_FALSE(std::signbit(rotation.r) && rotation.r == T{});
+    };
+    check(zero, zero, T{1}, T{}, T{});
+    check(T{-3}, zero, T{-1}, T{}, T{3});
+    check(zero, T{-4}, T{}, T{-1}, T{4});
+    check(nan, zero, T{1}, T{}, nan);
+    check(zero, nan, T{}, T{1}, nan);
+    for (const auto rotation : {std::linalg::setup_givens_rotation(nan, T{3}),
+                                std::linalg::setup_givens_rotation(T{3}, nan)}) {
+        EXPECT_TRUE(std::isnan(rotation.c));
+        EXPECT_TRUE(std::isnan(rotation.s));
+        EXPECT_TRUE(std::isnan(rotation.r));
+    }
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, ComplexGivensNormalizesSubnormalPhase) {
+    using T = TypeParam;
+    using complex = std::complex<T>;
+    const T tiny = std::numeric_limits<T>::denorm_min();
+    const T inv_sqrt2 = inverse_sqrt_two<T>;
+    const auto check = [=](complex a, complex b, complex s, complex r) {
+        const auto rotation = std::linalg::setup_givens_rotation(a, b);
+        expect_within_ulps(rotation.c, inv_sqrt2, 2);
+        expect_within_ulps(rotation.s.real(), s.real(), 2);
+        expect_within_ulps(rotation.s.imag(), s.imag(), 2);
+        expect_within_ulps(rotation.c * rotation.c + std::norm(rotation.s), T{1}, 4);
+        EXPECT_EQ(rotation.r, r);
+
+        std::mdspan x(&a, std::extents<int, 1>{});
+        std::mdspan y(&b, std::extents<int, 1>{});
+        std::linalg::apply_givens_rotation(x, y, rotation.c, rotation.s);
+        // Each product can round by a fraction of denorm_min before addition.
+        expect_within_ulps(a.real(), r.real(), 1);
+        expect_within_ulps(a.imag(), r.imag(), 1);
+        EXPECT_EQ(b, complex{});
+    };
+    check({tiny, T{}}, {tiny, T{}}, {inv_sqrt2, T{}}, {tiny, T{}});
+    check({tiny, tiny}, {tiny, -tiny}, {T{}, inv_sqrt2}, {tiny, tiny});
+}
+
+TEST(LinalgLevel1Givens, ComplexRotationRoundsToMaximumWithNonzeroFirstInput) {
+    using complex = std::complex<double>;
+    const auto rotation = std::linalg::setup_givens_rotation(
+        complex{1.0, 0.0}, complex{1.7976931146382683e308, 2.696539671957402e304});
+    expect_within_ulps(rotation.c, 0x0.4p-1022, 1);
+    expect_within_ulps(rotation.s.real(), 0x1.ffffff9f5cfd2p-1, 2);
+    expect_within_ulps(rotation.s.imag(), -0x1.3a92a2c9f3801p-13, 2);
+    EXPECT_EQ(rotation.r.real(), std::numeric_limits<double>::max());
+    EXPECT_EQ(rotation.r.imag(), 0.0);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, ComplexGivensAtOverflowBoundary) {
+    using T = TypeParam;
+    using complex = std::complex<T>;
+    // With a = (3, 1), the exact imaginary component of r is one third of its real part.
+    const auto check = [](T finite_input, complex expected, T overflowing_input, T overflow_imag) {
+        const complex a{T{3}, T{1}};
+        const auto finite = std::linalg::setup_givens_rotation(a, complex{finite_input, finite_input});
+        expect_within_ulps(finite.r.real(), expected.real(), 2);
+        expect_within_ulps(finite.r.imag(), expected.imag(), 2);
+        const auto overflow = std::linalg::setup_givens_rotation(a, complex{overflowing_input, overflowing_input});
+        EXPECT_EQ(overflow.r.real(), std::numeric_limits<T>::infinity());
+        expect_within_ulps(overflow.r.imag(), overflow_imag, 2);
+    };
+    if constexpr (std::same_as<T, float>) {
+        check(0x1.7d9f32p+127f, {0x1.ffffdcp+127f, 0x1.55553ep+126f},
+              0x1.7d9f66p+127f, 0x1.55556cp+126f);
+    } else {
+        check(0x1.7d9f4cf754628p+1023, {0x1.fffffffffffefp+1023, 0x1.555555555554ap+1022},
+              0x1.7d9f4cf754642p+1023, 0x1.5555555555561p+1022);
+    }
+}
+
+TEST(LinalgLevel1Givens, ComplexRotationInsideOverflowBand) {
+    using complex = std::complex<double>;
+    constexpr double component = 0x1.6b4b27c8b7836p+1023;
+    const auto rotation =
+        std::linalg::setup_givens_rotation(complex{12.0, 1.0}, complex{component, component});
+    // The exact real component is 0.844 ulp above max(). Infinity and a
+    // finite result within a few ulps of the exact value are both allowed.
+    if (std::isinf(rotation.r.real())) {
+        EXPECT_EQ(rotation.r.real(), std::numeric_limits<double>::infinity());
+    } else {
+        expect_within_ulps(rotation.r.real(), std::numeric_limits<double>::max(), 2);
+    }
+    expect_within_ulps(rotation.r.imag(), 0x1.5555555555555p+1020, 2);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, ComplexGivensRescalesResultComponentsIndependently) {
+    using T = TypeParam;
+    using complex = std::complex<T>;
+    const complex a{large_component<T>, large_component<T>};
+    const auto rotation = std::linalg::setup_givens_rotation(a, a);
+    expect_within_ulps(rotation.c, inverse_sqrt_two<T>, 2);
+    expect_within_ulps(rotation.s.real(), inverse_sqrt_two<T>, 2);
+    // Measure the cancellation error at coefficient scale.
+    expect_within_ulps(T{1} + rotation.s.imag(), T{1}, 2);
+    expect_within_ulps(rotation.r.real(), large_pair_norm<T>, 2);
+    expect_within_ulps(rotation.r.imag(), large_pair_norm<T>, 2);
+}
+
+TEST(LinalgLevel1Givens, ComplexNonfiniteInputsHaveExplicitConventions) {
+    using complex = std::complex<double>;
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const auto first = std::linalg::setup_givens_rotation(complex{0.0, infinity}, complex{3.0, 4.0});
+    EXPECT_EQ(first.c, 1.0);
+    EXPECT_EQ(first.s, complex{});
+    EXPECT_EQ(first.r, (complex{0.0, infinity}));
+
+    const auto second = std::linalg::setup_givens_rotation(complex{0.0, 1.0}, complex{-infinity, 3.0});
+    EXPECT_EQ(second.c, 0.0);
+    EXPECT_EQ(second.s, (complex{0.0, -1.0}));
+    EXPECT_EQ(second.r, (complex{0.0, infinity}));
+
+    const auto identity = std::linalg::setup_givens_rotation(complex{nan, 2.0}, complex{});
+    EXPECT_EQ(identity.c, 1.0);
+    EXPECT_EQ(identity.s, complex{});
+    EXPECT_TRUE(std::isnan(identity.r.real()));
+    EXPECT_EQ(identity.r.imag(), 2.0);
+
+    for (const auto rotation : {
+             std::linalg::setup_givens_rotation(complex{}, complex{infinity, nan}),
+             std::linalg::setup_givens_rotation(complex{infinity}, complex{infinity})}) {
+        EXPECT_TRUE(std::isnan(rotation.c));
+        EXPECT_TRUE(std::isnan(rotation.s.real()));
+        EXPECT_TRUE(std::isnan(rotation.s.imag()));
+        EXPECT_TRUE(std::isnan(rotation.r.real()));
+        EXPECT_TRUE(std::isnan(rotation.r.imag()));
+    }
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, NormsScaleComplexComponentsAndIncludeInit) {
+    using T = TypeParam;
+    using complex = std::complex<T>;
+    const T tiny = std::numeric_limits<T>::denorm_min();
+    complex data[] = {{tiny, tiny}, {tiny, -tiny}};
+    std::mdspan v(data, std::extents<int, 2>{});
+    std::mdspan m(data, std::extents<int, 1, 2>{});
+    const T expected_subnormal = T{2} * tiny;
+    EXPECT_EQ(std::linalg::vector_two_norm(v), expected_subnormal);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m), expected_subnormal);
+    EXPECT_EQ(forge::vector_two_norm(v), expected_subnormal);
+    EXPECT_EQ(forge::matrix_frob_norm(m), expected_subnormal);
+
+    data[0] = {large_component<T>, T{}};
+    data[1] = complex{};
+    const T init = -large_component<T>;
+    const T expected_large = large_pair_norm<T>;
+    expect_within_ulps(std::linalg::vector_two_norm(v, init), expected_large, 1);
+    expect_within_ulps(std::linalg::matrix_frob_norm(m, init), expected_large, 1);
+    expect_within_ulps(forge::vector_two_norm(v, init), expected_large, 1);
+    expect_within_ulps(forge::matrix_frob_norm(m, init), expected_large, 1);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, NormsAtOverflowBoundary) {
+    using T = TypeParam;
+    const auto [finite_input, finite_norm, overflowing_input] = norm_boundary<T>;
+    T data[]{finite_input, finite_input};
+    std::mdspan v(data, std::extents<int, 2>{});
+    std::mdspan m(data, std::extents<int, 1, 2>{});
+    expect_within_ulps(std::linalg::vector_two_norm(v), finite_norm, 1);
+    expect_within_ulps(std::linalg::matrix_frob_norm(m), finite_norm, 1);
+    expect_within_ulps(forge::vector_two_norm(v), finite_norm, 1);
+    expect_within_ulps(forge::matrix_frob_norm(m), finite_norm, 1);
+
+    data[0] = overflowing_input;
+    data[1] = overflowing_input;
+    const T infinity = std::numeric_limits<T>::infinity();
+    EXPECT_EQ(std::linalg::vector_two_norm(v), infinity);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m), infinity);
+    EXPECT_EQ(forge::vector_two_norm(v), infinity);
+    EXPECT_EQ(forge::matrix_frob_norm(m), infinity);
+}
+
+TEST(LinalgLevel1Reductions, ScaledSquareSumRenormalizesCompensation) {
+    std::linalg::__detail::__linalg_norm_sum<double> sum;
+    sum.__add(0x1.fffffffffffffp+0);
+    for (int i = 0; i < 128; ++i) {
+        sum.__add(0x1p-28);
+    }
+    // With a fixed leading sum, the final root correction rounds one ulp high.
+    EXPECT_EQ(sum.__scaled_norm(), 0x1p+1);
+}
+
+TEST(LinalgLevel1Reductions, NormOverflowClassificationWithSmallSquares) {
+    std::array<double, 128> data;
+    data.fill(0x1p+997);
+    std::mdspan v(data.data(), std::extents<int, 128>{});
+    std::mdspan m(data.data(), std::extents<int, 1, 128>{});
+
+    constexpr double finite_init = 0x1.fffffffffffcep+1023;
+    constexpr double finite_norm = 0x1.fffffffffffeep+1023;
+    expect_within_ulps(std::linalg::vector_two_norm(v, finite_init), finite_norm, 1);
+    expect_within_ulps(std::linalg::matrix_frob_norm(m, finite_init), finite_norm, 1);
+    expect_within_ulps(forge::vector_two_norm(v, finite_init), finite_norm, 1);
+    expect_within_ulps(forge::matrix_frob_norm(m, finite_init), finite_norm, 1);
+
+    constexpr double overflow_init = 0x1.ffffffffffff1p+1023;
+    constexpr double infinity = std::numeric_limits<double>::infinity();
+    EXPECT_EQ(std::linalg::vector_two_norm(v, overflow_init), infinity);
+    EXPECT_EQ(std::linalg::matrix_frob_norm(m, overflow_init), infinity);
+    EXPECT_EQ(forge::vector_two_norm(v, overflow_init), infinity);
+    EXPECT_EQ(forge::matrix_frob_norm(m, overflow_init), infinity);
+}
+
+TYPED_TEST(LinalgLevel1ExtremeNumbers, NormsHandleInfinityNanAndZero) {
+    using T = TypeParam;
+    const T infinity = std::numeric_limits<T>::infinity();
+    const T nan = std::numeric_limits<T>::quiet_NaN();
+    T data[]{-T{}, T{}};
+    std::mdspan v(data, std::extents<int, 2>{});
+    std::mdspan m(data, std::extents<int, 1, 2>{});
+    const auto check = [&](T init, T expected) {
+        for (T result : {std::linalg::vector_two_norm(v, init), std::linalg::matrix_frob_norm(m, init),
+                         forge::vector_two_norm(v, init), forge::matrix_frob_norm(m, init)}) {
+            if (std::isnan(expected)) {
+                EXPECT_TRUE(std::isnan(result));
+            } else {
+                EXPECT_EQ(result, expected);
+                EXPECT_FALSE(std::signbit(result));
+            }
+        }
+    };
+    check(-T{}, T{});
+    check(-infinity, infinity);
+    data[0] = -infinity;
+    data[1] = infinity;
+    check(T{}, infinity);
+    check(nan, nan);
+    data[1] = nan;
+    check(T{}, nan);
 }
