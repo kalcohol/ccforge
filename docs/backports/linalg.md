@@ -169,7 +169,7 @@ dot product 路径；`layout_stride`、packed layout 和非 default accessor 保
 
 ## 已移除的非草案形式
 
-项目尚未发布，以下入口直接移除，未设弃用期。表中的矩阵算法位于 `std::linalg`，
+下表列出已移除的调用形式。表中的矩阵算法位于 `std::linalg`，
 `Scalar{1}` 使用输出元素对应的标量类型。
 
 | 移除的形式 | 草案调用或 Forge 迁移入口 |

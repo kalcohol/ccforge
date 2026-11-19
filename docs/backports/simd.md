@@ -249,7 +249,7 @@ const V result = std::simd::select(selector, values, V(0.0f));
 
 ## 已移除的兼容名称
 
-仓库尚未发布版本，这些兼容入口直接移除，未设弃用期。替代写法依据
+下表列出已移除的名称及其替代写法，依据为
 [simd.syn](https://eel.is/c++draft/simd.syn)、[simd.expos](https://eel.is/c++draft/simd.expos)、
 [simd.overview](https://eel.is/c++draft/simd.overview) 和 [simd.alg](https://eel.is/c++draft/simd.alg)。
 

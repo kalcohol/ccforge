@@ -47,3 +47,4 @@ fingerprint 同时记录 toolchain 与 probe 头文件内容摘要，路径不�
 ## 版本策略
 
 当前版本为 `0.1.0`，仍处于 1.0 之前的开发期；minor 版本变化可能破坏源码兼容性，不承诺跨 minor 兼容。生成的 package version 使用 `SameMinorVersion`：同 major、同 minor 且已安装版本不低于请求版本才兼容。项目尚无发布 tag，当前使用应固定提交。
+Backport 跟随 C++ 工作草案，在首次发布前可能直接移除名称而不另行通知。

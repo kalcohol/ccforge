@@ -66,7 +66,7 @@ auto file = forge::make_unique_resource_checked(
 `std::experimental::unique_resource` 或旧版 Forge 的 `std::unique_resource`
 改为 `forge::unique_resource`，并改用 `forge::make_unique_resource_checked`。
 将原来的 `<memory>` 或 `<experimental/memory>` 入口换成
-`<forge/unique_resource.hpp>`。Forge 此前没有发布版本，本次迁移直接生效，没有弃用期。
+`<forge/unique_resource.hpp>`。
 跨越本次变更升级时，请先清理现有安装前缀，或使用新的安装前缀。覆盖安装会留下
 旧版 Forge 的 `memory` 和 `experimental/` 头文件。
 

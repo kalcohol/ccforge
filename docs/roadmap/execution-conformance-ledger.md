@@ -305,7 +305,7 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 
 | 范围 | 当前实现 |
 | --- | --- |
-| `std::linalg` 调用形式 | 移除旧 Triangle 顺序、额外的 rank-2 / rank-2k alpha 调用及历史 SSQ。项目尚未发布，未设弃用期。逐项迁移见 [linalg 说明](../backports/linalg.md#已移除的非草案形式)。 |
+| `std::linalg` 调用形式 | 移除旧 Triangle 顺序、额外的 rank-2 / rank-2k alpha 调用及历史 SSQ。逐项迁移见 [linalg 说明](../backports/linalg.md#已移除的非草案形式)。 |
 | Norm 与 Givens 类型约束 | 两范数检查元素与 `Scalar` 的浮点或复数类型，Givens 检查浮点 `Real`；policy twin 使用相同约束。整数 `matrix_one_norm`、`matrix_inf_norm` 与 `vector_abs_sum` 保留饱和行为。 |
 | Forge 扩展 | backport 注入时提供整数范数、有符号整数 Givens 及 SSQ。原生 `<linalg>` 定义特性宏时，范数和 Givens 包装器转发到原生重载。迁移入口见 [Forge 线性代数扩展](../forge-utilities.md#线性代数扩展)。 |
 | Policy 重载 | 原生 policy 对象可用时提供 78 个重载。调用线程内顺序运行，元素访问异常触发 terminate；`<linalg>` 使用原生检测。 |

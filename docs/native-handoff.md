@@ -136,7 +136,7 @@ Forge backport 满足以下要素：
 
 - **标准入口不变**：下游继续使用 `#include <execution>`、`#include <linalg>` 等标准头名
 - **命名空间不变**：API 以 `std::` / `std::execution::` / `std::linalg::` 形式出现
-- **API 形状优先对齐标准**：公开接口优先跟随标准最终形态；少量实验性偏离或兼容 wrapper 会在对应特性章节明确说明
+- **API 形状优先对齐标准**：公开接口跟随工作草案，具体偏差见对应特性章节
 - **自动开关（三态让位）**：完整原生和部分原生均让位，无原生才注入 backport
 
 至少有一个标准 backport 需要注入时，`forge.cmake` 才将 `backport/` 前置到

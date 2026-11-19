@@ -484,16 +484,7 @@ submission mutex、生命周期唤醒链自愈，以及唤醒 NOP 无法发布�
 链接器不支持 `--wrap` 时该目标不注册（configure 输出提示），容器
 放行通道对缺失的该二进制打印说明而不失败。
 
-## 扩展弃用诊断检查
-
-`test_execution_extension_deprecations_strict` 与 `test_forge_extension_deprecations_strict`
-构建专用副本，以 `/we4996`（MSVC）或 `-Werror=deprecated-declarations`（GCC、Clang、
-AppleClang）检查弃用诊断。覆盖 scope 观察、execution 组合与 future、迁移后的 execution
-和 Forge 运行测试。专用副本不参与默认构建，沿用原有普通测试的警告选项。
-`test_execution_extension_deprecations_strict` 也构建已启用的 Forge 副本。
-`install_consumer_deprecation_strict_compile` 使用源码树头文件编译安装包消费者的同一份
-源文件，以检查弃用诊断。独立的安装包验证仍通过 `find_package` 构建并运行消费者。
-`test_extension_deprecations_strict` 汇总当前已注册的检查目标。
+## 已移除的 API 与标准形式检查
 
 配置阶段以实际调用检查 wait 消费者的 Mandates。一个 value completion signature
 的正控制必须编译，零个、多个及不是 sender 的调用必须编译失败。domain 正控制返回规定的
@@ -506,41 +497,18 @@ optional tuple，错误返回类型必须编译失败。具有相同 decayed tup
 静态 operation-state 分配检查。零 value 的 stopped、error 测试直接连接并启动
 operation，由 receiver 记录相应 completion channel。
 
-`execution_removed_forms_compile` 对移除的重载与 pipe 形式使用 requires-expression
-或概念作反例，逐项配对 `execution_standard_forms` 及同一源文件内的标准正控制。
-`execution_removed_forms` 运行两阶段 domain transform 的选择回归。
-配置时逐个检查 33 个已移除的名称或调用形式，每项配有标准拼写或 Forge 迁移入口的
-编译正控制。涉及原先已弃用声明的反例局部抑制弃用诊断，以检验名称确实消失。
+`execution_removed_forms_compile` 用 requires-expression 或概念检查已移除的重载与 pipe
+形式，同一源文件包含标准正控制。`execution_removed_forms` 运行两阶段 domain
+transform 的选择回归。`execution_standard_forms_compile` 构建标准调用示例，
+`execution_standard_forms` 运行这些调用。
+配置阶段逐个验证 33 个已移除的名称或调用形式均无法编译，每项配有标准拼写或
+Forge 迁移入口的正控制，要求编译并链接可执行文件。共享的配置期反例使用静态库目标，
+以编译错误判定拒绝。MSVC、GCC 和 Clang 系工具链在这些反例中禁用警告，同组选项下
+只有警告的控制代码必须能够编译。
+配置 MSVC 测试探针时，请勿在 `CL` 或 `_CL_` 环境变量中设置 `/WX`，因为 MSVC 会将
+`CL` 的选项加在命令行选项之前，将 `_CL_` 的选项加在命令行选项之后。
 `execution_forge_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
 chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
-
-每个运行测试副本均注册 `<原 CTest 名称>_deprecation_strict_compile`，
-使用当前构建配置单独构建副本，通过 `forge_main_build` 锁串行访问构建目录，
-并使用标准测试超时。副本仅用于检查弃用诊断，不注册额外的运行检查。
-运行断言由原 CTest 执行一次，其环境、跳过返回码、标签、超时及运行依赖等属性保持不变。
-默认构建后运行 CTest 即可执行这些检查，无需显式构建严格汇总目标。
-execution 与 Forge 副本名称分别保留 `execution` 和 `forge`，因此也会被
-现有 sanitizer 测试筛选表达式选中。
-
-需要扩大覆盖范围时，在独立构建目录启用默认关闭的
-`FORGE_VERIFY_EXTENSION_DEPRECATIONS`。该选项对已启用的正向测试和示例目标添加
-上述弃用错误选项，包含 `EXCLUDE_FROM_ALL` 正向编译探针；不包含第三方依赖、
-预期编译失败目标及可选 Hive 测量探针。预期失败检查继续通过原有 CTest harness
-运行。新建预期失败目标或测量探针时，应设置目标属性
-`FORGE_DEPRECATION_STRICT_SKIP=TRUE`，使其不加入严格汇总的依赖集合。
-
-```bash
-cmake -S . -B build/deprecation-checks \
-  -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=ON \
-  -DFORGE_VERIFY_EXTENSION_DEPRECATIONS=ON
-cmake --build build/deprecation-checks --target test_extension_deprecations_strict -j 4
-cmake --build build/deprecation-checks -j 4
-ctest --test-dir build/deprecation-checks --output-on-failure
-```
-
-该选项仅影响当前配置中实际注册的目标；关闭的测试组、未实例化的模板分支及独立
-配置的原生让位 fixture 需要分别验证。普通构建也会采用该配置已启用的严格警告选项，
-因此建议保留独立目录。运行完整 CTest 前还需构建默认目标，以生成汇总范围之外的程序。
 
 ## Example smoke tests（示例冒烟）
 
