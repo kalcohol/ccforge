@@ -157,9 +157,13 @@ concept __forwarding_query = requires {
 // The forwarding-query concept of [execution.syn], which [exec.let]/8.2 applies
 // to the type of q. A deleted or missing default constructor and a constant
 // false leave it unsatisfied. A well-formed forwarding_query(Q{}) that is not a
-// constant expression is ill-formed, as for any atomic constraint.
+// constant expression is ill-formed, as for any atomic constraint. The leading
+// requirement states the Q{} half on its own: MSVC reports a deleted default
+// constructor inside the atomic constraint as a non-constant expression (C7608)
+// instead of leaving the concept unsatisfied.
 template<class Query>
-concept __forwarding_query_type = std::forwarding_query(Query{});
+concept __forwarding_query_type =
+    requires { Query{}; } && std::forwarding_query(Query{});
 
 // FWD-ENV classifies the supplied query object with its own qualification
 // ([exec.snd.expos]/4, [exec.fwd.env]/2). Participation is decided from the
