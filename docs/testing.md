@@ -645,11 +645,18 @@ completion-scheduler 选择。在 receiver 缺少 scheduler 时，inline predece
 tag 类型）、视图副本在原视图销毁后仍有效且不调用环境的复制或移动、各 adaptor
 对 child 的参与检查、数组环境，以及静态 signature 成员的常量求值。配置期
 query Mandate 探针的第 36 例检查非常量 `forwarding_query(Q{})` 得到约束诊断。
+第 37–39 例各有配对的正控制，分别拒绝可能抛出的 `get_scheduler_allocator` 成员、
+经该 CPO 回退到可能抛出的 `get_allocator` 成员，以及不满足 `simple-allocator` 的结果。
+反例只在依赖的 `requires` 表达式允许调用时调用 CPO，以区分硬性 Mandate 与约束移除。
 `execution_wave1` 使用不同的
 predecessor 与 receiver scheduler，分别检查 `get_start_scheduler` 和 `get_scheduler`。
 `execution_query_conformance_compile` 与 `execution_query_conformance` 检查 query
 命名空间、constexpr、env/prop 的 CTAD 与赋值约束、scheduler 和 receiver 类别、
 domain 函数及 utilities、scheduler 递归和环境单次求值。
+Allocator 查询用例检查专用成员的优先级、普通 allocator 回退、缺失时不可调用、
+constexpr forwarding 分类、借用结果的引用身份，以及经 FWD-ENV 与 `then` 转发的
+`prop`/`env` overlay。`get_scheduler_allocator` 的两个分支还检查成员形参可通过 `consteval`
+转换取得所选全局 query object 的地址。两种 allocator 查询均接受 fancy pointer 和非 `void` deallocate。
 
 普通 Forge runtime、erasure 和 IO 测试使用成员定制。`forge_task_member_queries`
 涵盖 task promise 的查询。`forge_member_queries` 编译探针随

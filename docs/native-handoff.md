@@ -54,9 +54,13 @@ Native handoff 的回归应优先看“是否正确让位”和“是否正确�
   `202506L` 表面形状的 synthetic native `<execution>` / `<stop_token>` fixture，避免
   用 Forge backport 证明自身完整。FULL probe 必须命中 `env<>`、四个当前 protocol
   marker、`get_env` receiver query、`connect`/`start` operation protocol、完整 scheduler concept 所需的
-  `schedule`/forward-progress 表面、`get_await_completion_adaptor`、stop token、
+  `schedule`/forward-progress 表面、`get_await_completion_adaptor`、
+  `std::get_scheduler_allocator` 对象及其类型，以及对 allocator 环境的实际调用与精确结果类型、stop token、
   transfer/composition、精确 completion/result shape 和 `std::this_thread::sync_wait`，
   并能承载 Forge 自有的 `any_stop_token`。
+  `native_handoff_senders_missing_scheduler_allocator_configure` 验证仅缺少该查询的
+  fixture 降为 PARTIAL；仅提供该查询的类型、仅提供对象、或同时提供两者的独立 fixture
+  也都必须命中 PARTIAL。
 - `scripts/verify-native.sh llvm` / `zig` 覆盖 backport inject path。
 - `scripts/verify-native.sh gcc-exec` 单独覆盖 libstdc++ 上的 `std::execution` backport，因为主流标准库还没有稳定 native `std::execution` 实现。
 - `scripts/probe-stdexec-feasibility.sh` 只是可选 reference probe。它可以帮助比较 sender/receiver 语义，但 stdexec 使用 `stdexec::` surface，不能证明 Forge `<execution>` 已经完成 native handoff。

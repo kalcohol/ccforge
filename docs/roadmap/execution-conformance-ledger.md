@@ -30,6 +30,7 @@ Execution backport 当前包含：
   `associate`、`spawn`、`spawn_future`；
 - consumers：`sync_wait`、`sync_wait_with_variant`；
 - stop-token support：`inplace_stop_source/token/callback`、`never_stop_token`；
+- allocator queries：`std::get_allocator`、`std::get_scheduler_allocator`；
 - coroutine bridge：`as_awaitable`、`with_awaitable_senders`；
 - scopes：`simple_counting_scope`、stop-aware `counting_scope`；
 - domain dispatch：receiver-env start-domain selection，以及 `connect` 和
@@ -89,7 +90,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `forwarding_query` | Implemented subset | 位于 `std`；先选成员并断言 noexcept / bool，其次是派生类型，最后是 false。直接调用与常量语境检查 constexpr；无法对所有非恒定实参诊断常量表达式 Mandate。FWD-ENV 的对象分类、`let` 连接环境的 `forwarding-query` 类型约束诊断与 when_all 类型约束边界见下文。 |
 | `get_await_completion_adaptor` | Implemented subset | const 成员查询执行 nothrow Mandate，支持 constexpr。 |
 | `get_domain`, `get_completion_domain` | Implemented subset | 成员查询及草案默认规则只选择 domain 类型，公开 CPO 按 MANDATE-NOTHROW(D()) 默认构造；D() 不可用时查询不参与；可用但抛出的构造违反硬 Mandate。get_domain 的 scheduler 分支使用 HIDE-SCHED，以 addressof 取得环境地址，删除或重载 operator& 不影响 domain 选择与后续 transformation；精确原环境 overload 不再控制此选择。Completion-domain /2.3 经过完整 completion-scheduler CPO，并保留 continues_on 的过滤环境映射。递归 connect / transformed completion signatures 共用 domain model。 |
-| `get_allocator` | Implemented subset | 标准实体位于 `std`；无 default allocator。选中成员查询要求 noexcept 与去 cv/ref 后的 simple-allocator，支持 constexpr。用于 spawn / spawn_future / split 的 allocator 查询。 |
+| `get_allocator`, `get_scheduler_allocator` | Implemented subset | 标准实体位于 `std`；无 default allocator。两者均为 forwarding query，选中成员查询要求 noexcept 与去 cv/ref 后的 `simple-allocator`，保留结果值类别并支持 constexpr。`get_scheduler_allocator` 优先选专用成员，缺失时回退到普通 allocator 成员。spawn / spawn_future / split 仍使用 `get_allocator`。 |
 | `get_stop_token` | Implemented subset | 标准实体位于 `std`；缺失查询返回 never_stop_token，提供 std::stop_token_of_t。选中成员查询要求 noexcept 与去 cv/ref 后的 stoppable_token，支持 constexpr。 |
 | `get_forward_progress_guarantee` | Implemented subset | 按 scheduler 表达式类别、copyable、queryable、sender schedule result 与 progress atom 检查。内部 scheduler shape 打破定义循环，公开 schedule_result_t；schedule CPO 检查 sender 结果，start 检查左值与 void。所有仓库 scheduler 均显式提供 progress 成员。progress 查询须由成员提供，检查结果类型及 noexcept。 |
 | `completion_signatures`, `completion_signatures_of_t`, value/error utilities | Implemented utility subset | awaitable 在有 / 无环境两种查询中合成 signatures，member forms 优先。目前使用带值参数的 CPO，无法满足 WD 无值参数的 consteval 诊断形式。有效完成签名约束。选中 signatures 查询须返回 completion_signatures specialization，alias 要求 sender_in。引用、固定参数个数的 Tuple / Variant 与 stopped 收集由编译探针固定；dependent-sender 诊断另列。 标准接口为 `value_types_of_t`、`error_types_of_t` 与 `sends_stopped`。 |
@@ -107,6 +108,19 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `indeterminate_domain` | Implemented | 提供候选 transform 返回类型 Mandate、默认 transform、按首次出现顺序去重的 common_type 合并；交换 operands 保持候选集合与 transform 行为，不保证精确类型对称。COMMON-DOMAIN 仅在 common type 的完整默认构造表达式有效时选中该类型。 |
 | `inlinable_receiver` | Implemented concept | 检查 receiver 与 noexcept make_receiver_for，允许 incomplete ChildOp；不改变 operation-state 存储。 |
 | `sender_adaptor_closure` | Implemented | 按 [`[execution.syn]`](https://eel.is/c++draft/execution.syn) / [`[exec.adapt.obj]`](https://eel.is/c++draft/exec.adapt.obj) 暴露 class-type 约束的公开 CRTP base，允许 incomplete `D`。Pipe 识别要求公开且无歧义的自身 specialization、无其他 specialization base，并排除 sender；所有库内 closures 通过同一机制参与。支持用户 closure 与库 closure 双向组合、按原 cv/ref 类别初始化保存对象，以及四种非 volatile 调用类别的 perfect forwarding、条件 `noexcept` 和 `constexpr`；编译探测覆盖错误 / 多重 / 不可访问派生、非 sender 左操作数与 move-only capture。 |
+
+### Búzios 决议与批次 D3a
+
+- 2026-11-21 Búzios LWG Motion 1 将 [P4453R1](https://wg21.link/P4453R1)
+  同时纳入 C++26 re-DIS 与 C++29 working draft。D3a 按
+  [编辑 PR #9416](https://github.com/cplusplus/draft/pull/9416) 实现 `std::get_scheduler_allocator_t`
+  与查询对象，包含 PR 补入的对象定义。`[task.state]` 的 start scheduler 选择及查询结果的
+  生存期规则随尚未实现的标准 `task` family 一并延后。论文 §3 说明 `parallel_scheduler`
+  的 allocator 设计，没有规范性变更。
+- D3a 将 allocator 查询的 `simple-allocator` 修正为 `[allocator.requirements.general]`
+  的字面要求。分配结果的解引用须为 `value_type&`，deallocate 表达式只须良构，
+  并保留 `copy_constructible` 与 `equality_comparable` 两项要求。原先排除 fancy pointer
+  和非 `void` deallocate 的限制是 backport 偏差。结果类型仍按下文的去 cv/ref 解释。
 
 ## 兼容性分类
 
@@ -238,6 +252,12 @@ Sender attributes 的转发视图保留 `get_env(sndr)` 的确切类型（引用
 
 - 结果类型 Mandates 按 `remove_cvref_t` 解释；字面要求 allocator / token 的引用或 const
   类型满足 copyable 等约束会否定草案自身的 prop 示例。
+- 批次 D3b：`std::get_allocator`、`std::get_stop_token`、`get_scheduler`、
+  `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee` 与
+  `get_await_completion_adaptor` 仍通过 `__query(*this, ...)` 传递 tag；
+  `get_completion_scheduler` 的初次和递归查询也通过 `__try_query` / `__query` 传递 tag。
+  这些路径没有保留草案成员表达式中全局 query object 的常量地址，不能支持成员形参通过
+  `consteval` 转换构造函数取得该地址的运行期调用。D3a 只对齐新的 `get_scheduler_allocator`。
 - `[exec.sched]/1` 要求 progress 查询，而 `[exec.get.fwd.progress]/2` 又要求 scheduler；
   通过不含 progress 的内部 shape 打破循环。Inline 指定查询列表缺少 progress，仍保留显式成员。
 - `[exec.get.compl.sched]/5.2` 使带环境的 scheduler 对所有 completion tags 都可回答，
@@ -350,6 +370,15 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
   `[exec.as.awaitable]/7.2, /7.4` 和 `[execution.syn]/2` 按签名计数，移除了 decay 后去重。
   /7.4 的 class-template `Sndr&&` 不能从左值 CTAD，已移除隐式 lvalue decay-copy。
   /7.3 共用不含 promise `await_transform` 的 GET-AWAITER，已移除 member-first 路径。
+- Búzios Motion 3（[P4485R0](https://wg21.link/P4485R0)）将
+  [LWG 4357](https://cplusplus.github.io/LWG/issue4357) 和
+  [LWG 4547](https://cplusplus.github.io/LWG/issue4547) 纳入 C++29 working draft，
+  不属于 C++26 re-DIS。4357 已符合：
+  [`detail/connect_awaitable.hpp`](../../backport/cpp26/execution/detail/connect_awaitable.hpp)
+  用 `is_void_v` 为 cv-qualified void 结果选择零参数 completion。
+  4547 增加保留 cv/ref 的 deduction guide，解决 C1 记录的 `[exec.as.awaitable]/7.4`
+  CTAD 措辞问题。D3a 不实施 4547，保留当前右值限制；是否跟进纳入 C++29 的 LWG
+  决议由负责人在计划中的批次 D4 决定。
 - Receiver environment 只规定 forwarding queries 的答案，直接暴露 promise env 在此范围内。
   保留在 `await_suspend` 内连接 sender，以同线程 deferral 和 symmetric transfer 避免同步
   完成重入。若变换或适配后的 sender 按其表达式类别声明多个 value signatures，

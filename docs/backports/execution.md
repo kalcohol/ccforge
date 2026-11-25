@@ -95,6 +95,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   Mandate 延迟偏差，尚未实现 WD `make-sender` 的无环境 / 环境依赖分类。
 - 调度器：`inline_scheduler`、`run_loop`（mutex+cv，跨工具链可移植）
 - Stop tokens：`inplace_stop_source/token/callback`、`never_stop_token`、stoppable concepts
+- Allocator 查询：`std::get_allocator`、`std::get_scheduler_allocator`
 - 普通 awaitable 可满足 `sender`：优先 sender marker，保留 `enable_sender` specialization；
   completion signatures 在 domain transform 与 member forms 后从 await-result 合成，
   始终包含 `set_error_t(exception_ptr)` 与 `set_stopped_t()`。无环境查询不使用 promise
@@ -524,11 +525,18 @@ allocator 时，`spawn` / `spawn_future` 的上述共享或 detached 存储仍�
 ### 查询、scheduler 与类型工具
 
 默认 `get_env` 与无 attributes 的 sender 使用 `env<>`。
-`std::forwarding_query`、`std::get_allocator`、`std::get_stop_token` 及其 `_t` 类型和
-`std::stop_token_of_t` 均从 `std` 使用。
+`std::forwarding_query`、`std::get_allocator`、`std::get_scheduler_allocator`、
+`std::get_stop_token` 及其 `_t` 类型和 `std::stop_token_of_t` 均从 `std` 使用。
+P4453R1 的 `get_scheduler_allocator(env)` 优先选择 const 环境上的
+`query(std::get_scheduler_allocator)`，仅在该表达式不良构时回退到
+`query(std::get_allocator)`；两者均不良构时不可调用，没有默认分配器。
+该查询是 forwarding query，并保留所选成员结果的值类别。
 选中的成员查询遵守 MANDATE-NOTHROW，并检查相应 allocator、
 stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates 按结果的
 `remove_cvref_t` 检查，以支持 `prop` 的借用答案；草案措辞问题见台账。
+两种 allocator 查询均按草案字面检查 `simple-allocator`：`*alloc.allocate(n)` 须为
+`value_type&`，`alloc.deallocate(alloc.allocate(n), n)` 须良构，并要求可复制构造、可比较相等。
+不再要求 `allocate` 返回裸指针或 `deallocate` 返回 `void`。
 查询 CPO、`read_env` 与 `write_env` 支持底层表达式允许的常量求值。
 `read_env` 按 `Q()(env)` 的左值环境规则检查参与条件，缺失查询、void
 结果、不可默认构造的 query 均使 `sender_in` 不成立。实际 value 类型与条件 error channel
