@@ -276,7 +276,7 @@ using __connect_probe_t = __inner_recv<
     __signature_receiver<__forge_env_detail::__normalized_env_t<Env>>, PrimaryEnv>;
 
 template<class Fn, class Recv, class... As>
-inline constexpr bool __nothrow =
+inline constexpr bool __let_nothrow =
     std::is_nothrow_constructible_v<std::tuple<std::decay_t<As>...>, As...> &&
     std::is_nothrow_invocable_v<Fn, std::decay_t<As>&...> &&
     noexcept(std::execution::connect(
@@ -306,7 +306,7 @@ template<class S, class Fn, class Which, class Env, class Tag, class... As>
 struct __let_sig<S, Fn, Which, Env, Tag(As...), true, void> {
     using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<As>&...>;
     using primary_env = __let_env_t<Which, S, Env>;
-    static constexpr bool nothrow = __nothrow<Fn, __connect_probe_t<primary_env, Env>, As...>;
+    static constexpr bool nothrow = __let_nothrow<Fn, __connect_probe_t<primary_env, Env>, As...>;
     using type = __forge_meta::__concat_unique_cs_t<
         completion_signatures_of_t<inner_sender_t, __connected_env_t<primary_env, Env>>,
         typename __maybe_eptr_cs<!nothrow>::type>;
@@ -466,7 +466,7 @@ struct __op : __forge_detail::__immovable {
         } catch (...) {
             using args_t = std::tuple<std::decay_t<Vs>...>;
             using inner_sender_t = std::invoke_result_t<Fn, std::decay_t<Vs>&...>;
-            constexpr bool nothrow = __nothrow<Fn, __inner_recv, Vs...>;
+            constexpr bool nothrow = __let_nothrow<Fn, __inner_recv, Vs...>;
             if constexpr (!nothrow) {
                 std::execution::set_error(std::move(__outer_recv_), std::current_exception());
             }

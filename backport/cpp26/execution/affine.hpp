@@ -93,7 +93,11 @@ template<class Env>
 concept __valid_env = requires { std::execution::get_start_scheduler(std::declval<Env>()); } &&
     __infallible_scheduler<decltype(std::execution::get_start_scheduler(std::declval<Env>())), Env>;
 
-template<class S, class Env, bool = requires { std::declval<S>().affine(); }>
+// A named concept keeps MSVC from treating the failed member lookup as a hard error.
+template<class S>
+concept __has_affine_member = requires { std::declval<S>().affine(); };
+
+template<class S, class Env, bool = __has_affine_member<S>>
 struct __result {};
 
 template<class S, class Env>

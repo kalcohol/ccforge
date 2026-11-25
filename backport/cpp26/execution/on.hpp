@@ -67,7 +67,7 @@ template<class Scheduler, class S, class Env>
 struct __starts_cs<Scheduler, S, Env, void> {
     using primary_env = __starts_primary_env_t<Scheduler, Env>;
     static constexpr bool nothrow =
-        __forge_let::__nothrow<__move_child<Scheduler, S>,
+        __forge_let::__let_nothrow<__move_child<Scheduler, S>,
             __forge_let::__connect_probe_t<primary_env, Env>>;
     using type = __forge_meta::__concat_unique_cs_t<
         completion_signatures_of_t<S, __forge_let::__connected_env_t<primary_env, Env>>,
@@ -140,7 +140,7 @@ struct __starts_on_op : __forge_detail::__immovable {
                 });
             std::execution::start(holder.__op);
         } catch (...) {
-            constexpr bool nothrow = __forge_let::__nothrow<
+            constexpr bool nothrow = __forge_let::__let_nothrow<
                 __move_child<Scheduler, S>, __sndr_recv>;
             if constexpr (!nothrow) {
                 std::execution::set_error(std::move(__outer_recv), std::current_exception());
