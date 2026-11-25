@@ -274,13 +274,18 @@ struct __child_recv {
 };
 
 // Form the exact child operations without instantiating the enclosing operation.
-template<class R, class... Children, std::size_t... Is>
-auto __child_ops_type(std::index_sequence<Is...>)
-    -> std::tuple<__forge_detail::__op_holder<
-        connect_result_t<Children, __child_recv<Is, R, Children...>>>...>;
+// The index pack is the only pack of the function template: MSVC rejects explicit
+// arguments for one pack followed by a deduced pack expanded in the same pattern.
+template<class R, class... Children>
+struct __child_ops {
+    template<std::size_t... Is>
+    static auto __type(std::index_sequence<Is...>)
+        -> std::tuple<__forge_detail::__op_holder<
+            connect_result_t<Children, __child_recv<Is, R, Children...>>>...>;
+};
 
 template<class R, class... Children>
-using __child_ops_t = decltype(__forge_when_all::__child_ops_type<R, Children...>(
+using __child_ops_t = decltype(__child_ops<R, Children...>::__type(
     std::index_sequence_for<Children...>{}));
 
 template<class R, class... Children>
