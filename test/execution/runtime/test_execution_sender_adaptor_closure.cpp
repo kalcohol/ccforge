@@ -1,4 +1,4 @@
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include <gtest/gtest.h>
 
 #include "../sender_adaptor_closure_probe.hpp"
@@ -55,7 +55,7 @@ void check_capture() {
         auto closure = identity{} | composition_probe::as_category<Category>(original);
         EXPECT_EQ(state.alive, 2);
         EXPECT_EQ(state.constructions[static_cast<std::size_t>(Category)], 1);
-        auto result = forge::sync_wait(ex::just(7) | closure);
+        auto result = std::this_thread::sync_wait(ex::just(7) | closure);
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 7);
         EXPECT_EQ(state.calls, 1);
@@ -70,11 +70,11 @@ TEST(ExecutionSenderAdaptorClosure, UserClosurePipesAndComposesInBothOrders) {
     auto increment = ex::then([](int value) noexcept { return value + 1; });
     auto left = twice | increment;
     const auto right = increment | scale{};
-    auto first = forge::sync_wait(ex::just(3) | left);
-    auto second = forge::sync_wait(ex::just(3) | right);
-    auto third = forge::sync_wait(ex::just(3) | std::move(left));
-    auto fourth = forge::sync_wait(ex::just(3) | std::move(right));
-    auto fifth = forge::sync_wait(ex::just(3) | twice);
+    auto first = std::this_thread::sync_wait(ex::just(3) | left);
+    auto second = std::this_thread::sync_wait(ex::just(3) | right);
+    auto third = std::this_thread::sync_wait(ex::just(3) | std::move(left));
+    auto fourth = std::this_thread::sync_wait(ex::just(3) | std::move(right));
+    auto fifth = std::this_thread::sync_wait(ex::just(3) | twice);
     ASSERT_TRUE(first && second && third && fourth && fifth);
     EXPECT_EQ(std::get<0>(*first), 7);
     EXPECT_EQ(std::get<0>(*second), 8);
@@ -101,13 +101,13 @@ TEST(ExecutionSenderAdaptorClosure, MoveOnlyClosuresAndSendersReachLibraryAdapto
     auto closure = rvalue_only{} | ex::then([](std::unique_ptr<int> value) noexcept {
         return *value + 1;
     });
-    auto result = forge::sync_wait(ex::just(std::make_unique<int>(41)) | std::move(closure));
+    auto result = std::this_thread::sync_wait(ex::just(std::make_unique<int>(41)) | std::move(closure));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
 TEST(ExecutionSenderAdaptorClosure, UnstoppableDirectCallPreservesValue) {
-    auto result = forge::sync_wait(ex::unstoppable(ex::just(42)));
+    auto result = std::this_thread::sync_wait(ex::unstoppable(ex::just(42)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }

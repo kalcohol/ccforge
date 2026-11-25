@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <exception>
@@ -27,7 +26,7 @@ struct member_receiver {
         *stopped = true;
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -46,7 +45,7 @@ struct member_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -93,11 +92,11 @@ struct member_scheduler {
 static_assert(std::execution::receiver<member_receiver>);
 static_assert(std::execution::__forge_receiver_of<member_receiver, member_sender::completions>);
 static_assert(std::execution::sender<member_sender>);
-static_assert(std::execution::sender_in<member_sender, forge::empty_env>);
+static_assert(std::execution::sender_in<member_sender, std::execution::env<>>);
 static_assert(std::execution::__forge_sender_to<member_sender, member_receiver>);
 
 using member_cs_t = std::execution::completion_signatures_of_t<
-    member_sender, forge::empty_env>;
+    member_sender, std::execution::env<>>;
 static_assert(std::is_same_v<member_cs_t, member_sender::completions>);
 using member_envless_cs_t = decltype(std::execution::get_completion_signatures(
     std::declval<member_sender>()));
@@ -138,7 +137,7 @@ TEST(MemberCustomizationTest, SenderConnectMemberRuns) {
 }
 
 TEST(MemberCustomizationTest, SenderWorksThroughSyncWait) {
-    auto result = forge::sync_wait(member_sender{13});
+    auto result = std::this_thread::sync_wait(member_sender{13});
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
@@ -146,7 +145,7 @@ TEST(MemberCustomizationTest, SenderWorksThroughSyncWait) {
 
 TEST(MemberCustomizationTest, SchedulerScheduleMemberRuns) {
     member_scheduler sch;
-    auto result = forge::sync_wait(std::execution::schedule(sch));
+    auto result = std::this_thread::sync_wait(std::execution::schedule(sch));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 21);

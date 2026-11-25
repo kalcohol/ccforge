@@ -1,6 +1,5 @@
 #pragma once
 
-#include <forge/execution_extensions.hpp>
 #include <execution>
 #include <optional>
 #include <tuple>
@@ -17,7 +16,7 @@ struct signature_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> CS { return {}; }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 using single_sender = signature_sender<ex::completion_signatures<
@@ -62,7 +61,7 @@ struct dependent_sender {
     static auto get_completion_signatures() noexcept
         -> decltype(std::declval<const Env&>().query(completion_query{})) { return {}; }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 
     template<ex::receiver R>
     struct operation : ex::__forge_detail::__immovable {

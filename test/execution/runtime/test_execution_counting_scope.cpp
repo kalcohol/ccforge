@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
 #include <execution>
@@ -153,7 +152,7 @@ struct unscheduled_join_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -340,7 +339,7 @@ struct pending_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -379,7 +378,7 @@ struct throwing_connect_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -407,7 +406,7 @@ struct increment_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -447,7 +446,7 @@ struct move_only_increment_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -485,7 +484,7 @@ struct manual_void_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -580,7 +579,7 @@ void expect_empty_join_establishes_terminal_state() {
             scope.close();
         }
 
-        auto result = forge::sync_wait(scope.join());
+        auto result = std::this_thread::sync_wait(scope.join());
         ASSERT_TRUE(result.has_value());
 
         EXPECT_TRUE(scope.__is_closed());
@@ -590,7 +589,7 @@ void expect_empty_join_establishes_terminal_state() {
         std::execution::spawn(increment_sender{&counter}, token);
         EXPECT_EQ(counter.load(std::memory_order_relaxed), 0);
 
-        auto second_join = forge::sync_wait(scope.join());
+        auto second_join = std::this_thread::sync_wait(scope.join());
         EXPECT_TRUE(second_join.has_value());
     };
 
@@ -670,7 +669,7 @@ TEST(SimpleCountingScopeTest, AssociationLifecycle) {
 TEST(SimpleCountingScopeTest, JoinSenderCompletesWhenEmpty) {
     std::execution::simple_counting_scope scope;
 
-    auto result = forge::sync_wait(scope.join());
+    auto result = std::this_thread::sync_wait(scope.join());
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(scope.__count(), 0u);
@@ -801,7 +800,7 @@ TEST(SimpleCountingScopeTest, SpawnAndJoin) {
 
     // inline_scheduler runs synchronously, so counter is already 1
     EXPECT_EQ(counter.load(), 1);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
     EXPECT_EQ(scope.__count(), 0u);
 }
 
@@ -817,7 +816,7 @@ TEST(SimpleCountingScopeTest, SpawnAcceptsNothrowThenPipeline) {
               }),
         token);
 
-    auto joined = forge::sync_wait(scope.join());
+    auto joined = std::this_thread::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
 }
@@ -864,7 +863,7 @@ TEST(SimpleCountingScopeTest, SpawnNonCopyableLvaluePipeline) {
     std::execution::spawn(std::move(sndr), token);
 
     EXPECT_EQ(observed, 43);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
     EXPECT_EQ(scope.__count(), 0u);
 }
 
@@ -878,14 +877,14 @@ TEST(SimpleCountingScopeTest, ClosePreventsFurtherSpawns) {
     std::execution::spawn(increment_sender{&counter}, token);
     // spawn should silently ignore (scope closed)
     EXPECT_EQ(counter.load(), 0);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SimpleCountingScopeTest, AssociateCompletesAndDisassociates) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::associate(std::execution::just(42), token));
 
     ASSERT_TRUE(result.has_value());
@@ -921,7 +920,7 @@ TEST(SimpleCountingScopeTest, WrapCompletesAndDisassociates) {
     std::execution::simple_counting_scope scope;
     auto token = scope.get_token();
 
-    auto result = forge::sync_wait(token.wrap(std::execution::just(42)));
+    auto result = std::this_thread::sync_wait(token.wrap(std::execution::just(42)));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -934,7 +933,7 @@ TEST(SimpleCountingScopeTest, AssociateClosedScopeCompletesStopped) {
     auto token = scope.get_token();
     scope.close();
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::associate(std::execution::just(42), token));
 
     EXPECT_FALSE(result.has_value());
@@ -947,7 +946,7 @@ TEST(SimpleCountingScopeTest, WrapClosedScopeStillReturnsInputSender) {
     auto token = scope.get_token();
     scope.close();
 
-    auto result = forge::sync_wait(token.wrap(std::execution::just(42)));
+    auto result = std::this_thread::sync_wait(token.wrap(std::execution::just(42)));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -972,7 +971,7 @@ TEST(SimpleCountingScopeTest, SpawnDisassociatesOnStopped) {
 
     std::execution::spawn(std::execution::just_stopped(), token);
 
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
     EXPECT_EQ(scope.__count(), 0u);
 }
 
@@ -1039,7 +1038,7 @@ TEST(SimpleCountingScopeTest, MultipleSpawns) {
     }
     // inline_scheduler is synchronous
     EXPECT_EQ(counter.load(), 5);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
     EXPECT_EQ(scope.__count(), 0u);
 }
 
@@ -1112,7 +1111,7 @@ TEST(CountingScopeTest, RequestStopHasVoidNoexceptSignatureAndIsIdempotent) {
         auto stop = std::get_stop_token(env);
         return std::pair{stop.stop_possible(), stop.stop_requested()};
     };
-    auto initial = forge::sync_wait(
+    auto initial = std::this_thread::sync_wait(
         token.wrap(std::execution::read_env(observe_stop)));
     ASSERT_TRUE(initial.has_value());
     EXPECT_TRUE(std::get<0>(*initial).first);
@@ -1121,7 +1120,7 @@ TEST(CountingScopeTest, RequestStopHasVoidNoexceptSignatureAndIsIdempotent) {
     for (int attempt = 0; attempt < 2; ++attempt) {
         SCOPED_TRACE(attempt);
         scope.request_stop();
-        auto result = forge::sync_wait(
+        auto result = std::this_thread::sync_wait(
             token.wrap(std::execution::read_env(observe_stop)));
         ASSERT_TRUE(result.has_value());
         EXPECT_TRUE(std::get<0>(*result).first);
@@ -1135,7 +1134,7 @@ TEST(CountingScopeTest, WrapPreservesCompletionResults) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
 
-    auto value = forge::sync_wait(token.wrap(std::execution::just(42)));
+    auto value = std::this_thread::sync_wait(token.wrap(std::execution::just(42)));
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(std::get<0>(*value), 42);
     EXPECT_EQ(scope.__count(), 0u);
@@ -1364,7 +1363,7 @@ struct registration_probe_sender {
             std::execution::set_error_t(int),
             std::execution::set_stopped_t()> { return {}; }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 
     template<class R>
     struct operation {
@@ -1784,7 +1783,7 @@ TEST(CountingScopeTest, CloseRejectsNewAssociatedWork) {
     auto token = scope.get_token();
 
     scope.close();
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::associate(std::execution::just(42), token));
 
     EXPECT_FALSE(result.has_value());
@@ -1797,7 +1796,7 @@ TEST(CountingScopeTest, WrapExposesStoppableToken) {
     std::execution::counting_scope scope;
     auto token = scope.get_token();
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         token.wrap(std::execution::read_env(std::get_stop_token)));
 
     ASSERT_TRUE(result.has_value());
@@ -1818,7 +1817,7 @@ TEST(CountingScopeTest, WrapFusesPrerequestedReceiverStopToken) {
         std::execution::prop(
             std::get_stop_token_t{}, downstream_stop.get_token())};
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::write_env(
             token.wrap(std::execution::read_env(std::get_stop_token)),
             env));
@@ -1844,7 +1843,7 @@ TEST(CountingScopeTest, WrapFusesReceiverStopAfterStart) {
     std::atomic<bool> sync_wait_returned{false};
     std::atomic<bool> sync_wait_stopped{false};
     std::thread waiter([&] {
-        auto result = forge::sync_wait(
+        auto result = std::this_thread::sync_wait(
             std::execution::write_env(
                 token.wrap(manual_sender{state}),
                 env));
@@ -1882,7 +1881,7 @@ TEST(CountingScopeTest, WrapFusesScopeStopAfterStart) {
     std::atomic<bool> sync_wait_returned{false};
     std::atomic<bool> sync_wait_stopped{false};
     std::thread waiter([&] {
-        auto result = forge::sync_wait(
+        auto result = std::this_thread::sync_wait(
             token.wrap(manual_sender{state}));
         sync_wait_stopped.store(!result.has_value(), std::memory_order_release);
         sync_wait_returned.store(true, std::memory_order_release);
@@ -1925,7 +1924,7 @@ TEST(CountingScopeTest, WrapCompletesOnceWhenScopeAndReceiverStopRace) {
         std::atomic<bool> go{false};
 
         std::thread waiter([&] {
-            auto result = forge::sync_wait(
+            auto result = std::this_thread::sync_wait(
                 std::execution::write_env(
                     token.wrap(manual_sender{state}),
                     env));
@@ -1972,18 +1971,18 @@ TEST(CountingScopeTest, WrapConnectFailurePropagatesFromConnect) {
     using wrapped_t = decltype(token.wrap(throwing_connect_sender{}));
     using signatures_t = std::execution::completion_signatures_of_t<
         wrapped_t,
-        forge::empty_env>;
+        std::execution::env<>>;
     static_assert(!completion_contains<
         std::execution::set_error_t(std::exception_ptr),
         signatures_t>::value);
     static_assert(std::execution::sender_in<
         wrapped_t,
-        forge::empty_env>);
+        std::execution::env<>>);
     static_assert(std::execution::__forge_receiver_of<
         scope_probe_receiver,
         signatures_t>);
 
-    EXPECT_THROW((void)forge::sync_wait(
+    EXPECT_THROW((void)std::this_thread::sync_wait(
         token.wrap(throwing_connect_sender{})), throwing_connect_error);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
@@ -1996,12 +1995,12 @@ TEST(CountingScopeTest, AssociateConnectFailurePropagatesFromConnect) {
         throwing_connect_sender{}, token);
     using signatures_t = std::execution::completion_signatures_of_t<
         decltype(associated),
-        forge::empty_env>;
+        std::execution::env<>>;
     static_assert(!completion_contains<
         std::execution::set_error_t(std::exception_ptr),
         signatures_t>::value);
 
-    EXPECT_THROW((void)forge::sync_wait(
+    EXPECT_THROW((void)std::this_thread::sync_wait(
         std::move(associated)), throwing_connect_error);
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());
@@ -2022,7 +2021,7 @@ TEST(CountingScopeTest, RequestStopCancelsSpawnedWrappedWork) {
     EXPECT_TRUE(wait_until_stop_requested(state));
     EXPECT_TRUE(wait_until_completed(state));
 
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
     EXPECT_EQ(scope.__count(), 0u);
 }
 
@@ -2055,7 +2054,7 @@ void check_failed_association_does_not_connect() {
     std::execution::start(op);
     EXPECT_EQ(connects, 0);
     EXPECT_EQ(scope.__count(), 0u);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 template<class Scope>
@@ -2075,7 +2074,7 @@ void check_associate_completion_destroys_operation() {
     EXPECT_TRUE(completed);
     EXPECT_FALSE(context.has_value);
     EXPECT_EQ(scope.__count(), 0u);
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
 }
 } // namespace
 

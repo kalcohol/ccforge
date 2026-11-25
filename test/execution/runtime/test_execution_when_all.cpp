@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
 #include <execution>
@@ -12,7 +11,7 @@ namespace {
 struct multi_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    template<class Self, class Env = forge::empty_env>
+    template<class Self, class Env = std::execution::env<>>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(int),
@@ -22,7 +21,7 @@ struct multi_value_sender {
     }
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -30,7 +29,7 @@ struct multi_value_sender {
 struct other_multi_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    template<class Self, class Env = forge::empty_env>
+    template<class Self, class Env = std::execution::env<>>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(char),
@@ -41,7 +40,7 @@ struct other_multi_value_sender {
     }
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -138,7 +137,7 @@ struct int_error_receiver {
     void set_stopped() && noexcept {}
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -189,7 +188,7 @@ struct stop_observing_sender {
 
     int* observed_stops;
 
-    template<class Self, class Env = forge::empty_env>
+    template<class Self, class Env = std::execution::env<>>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_stopped_t()> {
         return {};
@@ -202,7 +201,7 @@ struct stop_observing_sender {
     }
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -278,7 +277,7 @@ struct value_error_receiver {
         *this->errored = true;
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -377,7 +376,7 @@ TEST(WhenAllTest, AggregatesMultipleValues) {
     auto sndr = std::execution::when_all(
         std::execution::just(1),
         std::execution::just(2.0));
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 1);
     EXPECT_DOUBLE_EQ(std::get<1>(*result), 2.0);
@@ -385,7 +384,7 @@ TEST(WhenAllTest, AggregatesMultipleValues) {
 
 TEST(WhenAllTest, SingleSender) {
     auto sndr = std::execution::when_all(std::execution::just(42));
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
@@ -415,8 +414,8 @@ TEST(WhenAllTest, RejectsMultipleValueSignaturesFromOneChild) {
     using invalid = decltype(ex::when_all(multi_value_sender{}, ex::just(1)));
     using valid = decltype(ex::when_all_with_variant(multi_value_sender{}, ex::just(1)));
     static_assert(ex::sender<invalid>);
-    static_assert(!ex::sender_in<invalid, forge::empty_env>);
-    static_assert(ex::sender_in<valid, forge::empty_env>);
+    static_assert(!ex::sender_in<invalid, ex::env<>>);
+    static_assert(ex::sender_in<valid, ex::env<>>);
 }
 
 template<bool RejectMutableLvalue = false>
@@ -462,14 +461,14 @@ struct category_sensitive_when_all_child {
 TEST(WhenAllTest, PreservesChildCategoryInSignaturesStorageAndConnection) {
     namespace ex = std::execution;
     using invalid = decltype(ex::when_all(category_sensitive_when_all_child<true>{}));
-    static_assert(!ex::sender_in<invalid&, forge::empty_env>);
-    static_assert(ex::sender_in<const invalid&, forge::empty_env>);
+    static_assert(!ex::sender_in<invalid&, ex::env<>>);
+    static_assert(ex::sender_in<const invalid&, ex::env<>>);
 
     auto joined = ex::when_all(category_sensitive_when_all_child<>{});
-    auto lvalue = forge::sync_wait(joined);
-    auto const_lvalue = forge::sync_wait(std::as_const(joined));
-    auto rvalue = forge::sync_wait(std::move(joined));
-    auto const_rvalue = forge::sync_wait(std::move(std::as_const(joined)));
+    auto lvalue = std::this_thread::sync_wait(joined);
+    auto const_lvalue = std::this_thread::sync_wait(std::as_const(joined));
+    auto rvalue = std::this_thread::sync_wait(std::move(joined));
+    auto const_rvalue = std::this_thread::sync_wait(std::move(std::as_const(joined)));
 
     static_assert(std::same_as<decltype(lvalue), std::optional<std::tuple<int>>>);
     static_assert(std::same_as<decltype(const_lvalue), std::optional<std::tuple<long>>>);
@@ -503,7 +502,7 @@ TEST(WhenAllTest, RejectsCategoriesWithoutAChildConnection) {
     namespace ex = std::execution;
     using joined = decltype(ex::when_all(ex::just(), rvalue_only_when_all_child{}));
     static_assert(std::copy_constructible<rvalue_only_when_all_child>);
-    static_assert(ex::sender_in<joined&, forge::empty_env>);
+    static_assert(ex::sender_in<joined&, ex::env<>>);
     static_assert(!connects_to_value_error_receiver<joined&>);
     static_assert(!connects_to_value_error_receiver<const joined&>);
     static_assert(!connects_to_value_error_receiver<const joined&&>);
@@ -515,7 +514,7 @@ TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
         multi_value_sender{},
         other_multi_value_sender{});
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, forge::empty_env{}));
+        sndr, std::execution::env<>{}));
     using first_variant_t = std::variant<std::tuple<int>, std::tuple<double>>;
     using second_variant_t = std::variant<std::tuple<char>, std::tuple<bool>>;
 
@@ -528,7 +527,7 @@ TEST(WhenAllTest, WithVariantReportsSingleVariantValuePerChild) {
 }
 
 TEST(WhenAllTest, WithVariantAggregatesRuntimeValues) {
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::when_all_with_variant(
             std::execution::just(1),
             std::execution::just(2.0)));
@@ -547,7 +546,7 @@ TEST(WhenAllTest, AdvertisesEmptyValueSignatureWhenAChildCannotProduceValue) {
         std::execution::just_error(42),
         std::execution::just(2));
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, forge::empty_env{}));
+        sndr, std::execution::env<>{}));
 
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<

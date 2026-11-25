@@ -1,4 +1,4 @@
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include "stopped_optional_probe.hpp"
 
 #include <concepts>
@@ -53,16 +53,16 @@ static_assert(accepts_all_forms<stopped_sender>);
 static_assert(accepts_all_forms<multi_sender>);
 static_assert(accepts_all_forms<same_decay_sender>);
 static_assert(accepts_all_forms<mixed_void_sender>);
-static_assert(accepts_all_forms_in<single_sender, forge::empty_env>);
-static_assert(accepts_all_forms_in<tuple_sender, forge::empty_env>);
-static_assert(accepts_all_forms_in<empty_tuple_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<zero_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<void_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<error_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<stopped_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<multi_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<same_decay_sender, forge::empty_env>);
-static_assert(rejects_all_forms_in<mixed_void_sender, forge::empty_env>);
+static_assert(accepts_all_forms_in<single_sender, ex::env<>>);
+static_assert(accepts_all_forms_in<tuple_sender, ex::env<>>);
+static_assert(accepts_all_forms_in<empty_tuple_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<zero_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<void_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<error_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<stopped_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<multi_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<same_decay_sender, ex::env<>>);
+static_assert(rejects_all_forms_in<mixed_void_sender, ex::env<>>);
 
 using single_optional = decltype(ex::stopped_as_optional(single_sender{}));
 using tuple_optional = decltype(ex::stopped_as_optional(tuple_sender{}));
@@ -129,7 +129,7 @@ static_assert(std::same_as<ex::completion_signatures_of_t<scheduler_optional, sc
 static_assert(member_connectable<scheduler_optional, scheduler_env>);
 static_assert(member_connectable<const scheduler_optional&, scheduler_env>);
 
-static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, forge::empty_env>>);
+static_assert(std::is_void_v<std::invoke_result_t<empty_void_query&, ex::env<>>>);
 static_assert(std::same_as<std::invoke_result_t<empty_void_query&, value_env>, int>);
 using empty_void_source = decltype(ex::read_env(empty_void_query{}));
 static_assert(accepts_all_forms<empty_void_source>);

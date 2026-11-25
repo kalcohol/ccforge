@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -31,7 +30,7 @@ TEST(RunLoopTest, BasicScheduleThenSyncWait) {
     auto sndr = std::execution::schedule(sch)
               | std::execution::then([&] { result = 42; });
 
-    forge::sync_wait(std::move(sndr));
+    std::this_thread::sync_wait(std::move(sndr));
     loop.finish();
     worker.join();
 
@@ -55,7 +54,7 @@ TEST(RunLoopTest, MultipleTasksExecuteInOrder) {
     for (int i = 0; i < 5; ++i) {
         auto sndr = std::execution::schedule(sch)
                   | std::execution::then([&order, i] { order.push_back(i); });
-        forge::sync_wait(std::move(sndr));
+        std::this_thread::sync_wait(std::move(sndr));
     }
 
     loop.finish();
@@ -98,7 +97,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
         std::move(env));
     using signatures_t = decltype(std::execution::get_completion_signatures(
         sender,
-        forge::empty_env{}));
+        std::execution::env<>{}));
     static_assert(std::is_same_v<
         signatures_t,
         std::execution::completion_signatures<
@@ -106,7 +105,7 @@ TEST(RunLoopTest, PrerequestedStopCompletesStoppedOnLoop) {
             std::execution::set_stopped_t()>>);
 
     std::thread worker([&] { loop.run(); });
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     loop.finish();
     worker.join();
@@ -134,7 +133,7 @@ TEST(RunLoopTest, ConcurrentPush) {
             for (int j = 0; j < kTasksPerThread; ++j) {
                 auto sndr = std::execution::schedule(sch)
                           | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); });
-                forge::sync_wait(std::move(sndr));
+                std::this_thread::sync_wait(std::move(sndr));
             }
         });
     }

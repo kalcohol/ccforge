@@ -1,6 +1,7 @@
 #include "static_opstate_allocation_probe.hpp"
 
 #if !defined(FORGE_TEST_STATIC_OPSTATE_TSAN)
+#include <forge/split.hpp>
 #include <array>
 #include <memory>
 #include <optional>
@@ -68,7 +69,7 @@ struct padded_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
     observations* observed;
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 
     template<class R>
     struct alignas(Alignment) op : ex::__forge_detail::__immovable {

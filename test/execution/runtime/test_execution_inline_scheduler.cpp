@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -29,7 +28,7 @@ static_assert(!std::execution::scheduler<no_marker_scheduler>,
 TEST(ExecutionInlineSchedulerTest, ScheduleRunsInline) {
     std::execution::inline_scheduler sch{};
 
-    auto result = forge::sync_wait(std::execution::schedule(sch));
+    auto result = std::this_thread::sync_wait(std::execution::schedule(sch));
 
     ASSERT_TRUE(static_cast<bool>(result));
     using tuple_t = std::remove_cvref_t<decltype(*result)>;
@@ -43,7 +42,7 @@ TEST(ExecutionInlineSchedulerTest, ScheduleThenChain) {
         std::execution::schedule(sch) |
         std::execution::then([] { return 123; });
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 123);
@@ -55,7 +54,7 @@ TEST(ExecutionInlineSchedulerTest, ScheduleEnvRoundtrip) {
     std::execution::inline_scheduler sch{};
     auto sndr = std::execution::schedule(sch);
     auto env = std::execution::get_env(sndr);
-    auto sch2 = std::execution::get_completion_scheduler<std::execution::set_value_t>(env, forge::empty_env{});
+    auto sch2 = std::execution::get_completion_scheduler<std::execution::set_value_t>(env, std::execution::env<>{});
     EXPECT_EQ(sch, sch2);
 }
 

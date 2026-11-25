@@ -1,5 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
+#include <execution>
 #include <concepts>
 #include <tuple>
 #include <type_traits>
@@ -7,9 +8,9 @@
 #include "../../forge/runtime/forge_operation_destroy.hpp"
 
 // The fallback environment and senders share the same empty environment type.
-static_assert(std::same_as<decltype(std::execution::get_env(0)), forge::empty_env>);
+static_assert(std::same_as<decltype(std::execution::get_env(0)), std::execution::env<>>);
 static_assert(std::same_as<decltype(std::execution::get_env(std::execution::just())),
-                           forge::empty_env>);
+                           std::execution::env<>>);
 static_assert(std::same_as<decltype(std::execution::get_completion_signatures(
                                std::execution::just(42))),
                            std::execution::completion_signatures<
@@ -19,8 +20,8 @@ TEST(ExecutionExtensions, SplitCachesAndReplays) {
     int invocations = 0;
     auto shared = forge::split(std::execution::just(21) |
         std::execution::then([&](int x) { ++invocations; return x * 2; }));
-    auto first = forge::sync_wait(shared);
-    auto second = forge::sync_wait(shared);
+    auto first = std::this_thread::sync_wait(shared);
+    auto second = std::this_thread::sync_wait(shared);
     ASSERT_TRUE(first);
     EXPECT_EQ(std::get<0>(*first), 42);
     EXPECT_EQ(first, second);
@@ -120,7 +121,7 @@ TEST(ExecutionExtensions, SplitUsesTheRvalueSourceCategory) {
 }
 
 TEST(ExecutionExtensions, TransferAndStandardWaitAgree) {
-    auto result = forge::sync_wait(forge::transfer_just(
+    auto result = std::this_thread::sync_wait(forge::transfer_just(
         std::execution::inline_scheduler{}, 42));
     auto expected = std::this_thread::sync_wait(std::execution::continues_on(
         std::execution::just(42), std::execution::inline_scheduler{}));
@@ -161,7 +162,7 @@ TEST(ExecutionExtensions, SplitCompletionCanDestroySubscriberOperation) {
     EXPECT_TRUE(destroyed);
     EXPECT_FALSE(context.has_value);
     EXPECT_EQ(result, 42);
-    auto replay = forge::sync_wait(shared);
+    auto replay = std::this_thread::sync_wait(shared);
     ASSERT_TRUE(replay.has_value());
     EXPECT_EQ(std::get<0>(*replay), 42);
 }

@@ -26,7 +26,7 @@ struct receiver {
     template<class E>
     void set_error(E&&) && noexcept { ++out->completions; ++out->errors; }
     void set_stopped() && noexcept { ++out->completions; ++out->stopped; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 template<std::size_t Bytes, std::size_t Alignment = alignof(std::max_align_t)>
@@ -56,7 +56,7 @@ struct padded_sender {
     auto connect(R r) const noexcept(std::is_nothrow_move_constructible_v<R>) -> op<R> {
         return op<R>{std::move(r), value};
     }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 static_assert(sizeof(padded_sender<8192>::op<receiver>) > 4096);
@@ -279,7 +279,7 @@ TEST(ExecutionStaticOpstateAllocations, SyncWaitDrivesRunLoopCompositions) {
     bool completed = false;
     int sum = 0;
     const auto calls = allocation_probe::measure([&] {
-        auto values = forge::sync_wait(std::move(sender));
+        auto values = std::this_thread::sync_wait(std::move(sender));
         completed = values.has_value();
         if (values) sum = std::get<0>(*values) + std::get<1>(*values);
     });
@@ -302,7 +302,7 @@ TEST(ExecutionStaticOpstateAllocations, SyncWaitDrivesNestedWhenAll) {
     bool completed = false;
     int sum = 0;
     const auto calls = allocation_probe::measure([&] {
-        auto values = forge::sync_wait(std::move(sender));
+        auto values = std::this_thread::sync_wait(std::move(sender));
         completed = values.has_value();
         if (values) sum = std::get<0>(*values) + std::get<1>(*values) + std::get<2>(*values);
     });

@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <atomic>
@@ -43,7 +42,7 @@ struct chained_join_receiver {
 
     void set_value() && noexcept {
         completions->fetch_add(1, std::memory_order_acq_rel);
-        auto result = forge::sync_wait(scope->join());
+        auto result = std::this_thread::sync_wait(scope->join());
         if (result.has_value()) {
             completions->fetch_add(1, std::memory_order_acq_rel);
         }

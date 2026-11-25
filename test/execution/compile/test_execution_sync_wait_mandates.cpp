@@ -1,5 +1,3 @@
-#include <forge/execution_extensions.hpp>
-
 #include <execution>
 #include <optional>
 #include <tuple>
@@ -87,8 +85,6 @@ struct custom_wait_sender : value_sender<ex::set_value_t(int)> {
 
     auto get_env() const noexcept -> attributes { return {}; }
 };
-
-static_assert(&forge::sync_wait == &std::this_thread::sync_wait);
 
 int main() {
 #if FORGE_SYNC_WAIT_CASE == 1

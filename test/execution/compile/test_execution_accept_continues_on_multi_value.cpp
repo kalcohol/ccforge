@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <execution>
 
 #include <exception>
@@ -16,7 +15,7 @@ struct multi_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 };
 
 template<class... Sigs>
@@ -25,7 +24,7 @@ struct signature_sender {
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<Sigs...> { return {}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 };
 
 struct throwing_copy {
@@ -36,7 +35,7 @@ struct throwing_copy {
 template<class S>
 using transferred = std::execution::completion_signatures_of_t<
     decltype(std::execution::continues_on(std::declval<S>(),
-        std::execution::inline_scheduler{})), forge::empty_env>;
+        std::execution::inline_scheduler{})), std::execution::env<>>;
 
 static_assert(std::same_as<transferred<signature_sender<
     std::execution::set_value_t(const int&), std::execution::set_error_t(int&),
@@ -84,7 +83,7 @@ inline auto schedule_attributes::query(
 static_assert(std::execution::scheduler<error_scheduler>);
 using scheduled_signatures = std::execution::completion_signatures_of_t<
     decltype(std::execution::continues_on(multi_value_sender{}, error_scheduler{})),
-    forge::empty_env>;
+    std::execution::env<>>;
 static_assert(std::same_as<scheduled_signatures, std::execution::completion_signatures<
     std::execution::set_value_t(int), std::execution::set_value_t(double),
     std::execution::set_error_t(long), std::execution::set_stopped_t()>>);
@@ -92,7 +91,7 @@ static_assert(std::same_as<scheduled_signatures, std::execution::completion_sign
 int main() {
     auto sender = std::execution::continues_on(
         multi_value_sender{}, std::execution::inline_scheduler{});
-    using cs = std::execution::completion_signatures_of_t<decltype(sender), forge::empty_env>;
+    using cs = std::execution::completion_signatures_of_t<decltype(sender), std::execution::env<>>;
     static_assert(std::same_as<cs, std::execution::completion_signatures<
         std::execution::set_value_t(int), std::execution::set_value_t(double)>>);
 }

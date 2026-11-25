@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <exception>
 #include <execution>
 #include <utility>
@@ -10,7 +9,7 @@ struct receiver {
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };

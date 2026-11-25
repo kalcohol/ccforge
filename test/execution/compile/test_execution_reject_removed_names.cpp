@@ -1,4 +1,8 @@
+#include <execution>
+
+#if FORGE_REMOVED_NAME == 34 || FORGE_REMOVED_NAME == 35
 #include <forge/execution_extensions.hpp>
+#endif
 
 #include <concepts>
 #include <memory>
@@ -18,7 +22,7 @@ struct receiver {
 int main() {
 #if FORGE_REMOVED_NAME == 1
 #if FORGE_REMOVAL_CONTROL
-    static_assert(std::same_as<ex::env<>, forge::empty_env>);
+    static_assert(std::same_as<decltype(ex::get_env(receiver{})), ex::env<>>);
 #else
     using removed [[maybe_unused]] = ex::empty_env;
 #endif
@@ -208,7 +212,7 @@ int main() {
 #endif
 #elif FORGE_REMOVED_NAME == 28
 #if FORGE_REMOVAL_CONTROL
-    static_assert(ex::sender<decltype(forge::split(ex::just(42)))>);
+    static_assert(ex::sender<decltype(ex::just(42))>);
 #else
     using removed [[maybe_unused]] = decltype(ex::split(ex::just(42)));
 #endif

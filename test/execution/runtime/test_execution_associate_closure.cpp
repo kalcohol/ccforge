@@ -1,4 +1,4 @@
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include <gtest/gtest.h>
 
 #include "../associate_closure_probe.hpp"
@@ -34,7 +34,7 @@ void check_application() {
     tracked_token direct_token{scope.get_token(), direct_state};
     auto direct_sender = ex::associate(ex::just(42), as_category<Category>(direct_token));
     const auto expected_constructions = direct_state.constructions;
-    auto direct_result = forge::sync_wait(std::move(direct_sender));
+    auto direct_result = std::this_thread::sync_wait(std::move(direct_sender));
     ASSERT_TRUE(direct_result.has_value());
     EXPECT_EQ(std::get<0>(*direct_result), 42);
     EXPECT_EQ(scope.__count(), 0u);
@@ -53,7 +53,7 @@ void check_application() {
     EXPECT_EQ(state.wraps, 1);
     EXPECT_EQ(state.attempts, 1);
     EXPECT_EQ(scope.__count(), 1u);
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(scope.__count(), 0u);
@@ -76,7 +76,7 @@ void check_scope() {
     {
         auto sender = apply<Category, Pipe>(closure, ex::just(23));
         EXPECT_EQ(scope.__count(), 1u);
-        auto result = forge::sync_wait(std::move(sender));
+        auto result = std::this_thread::sync_wait(std::move(sender));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(std::get<0>(*result), 23);
     }
@@ -125,7 +125,7 @@ TEST(ExecutionAssociateClosure, ClosingAfterBindingMakesApplicationCompleteStopp
     ex::simple_counting_scope scope;
     auto closure = ex::associate(scope.get_token());
     scope.close();
-    auto result = forge::sync_wait(ex::just(42) | closure);
+    auto result = std::this_thread::sync_wait(ex::just(42) | closure);
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(scope.__count(), 0u);
     (void)std::this_thread::sync_wait(scope.join());

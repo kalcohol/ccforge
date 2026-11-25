@@ -153,7 +153,7 @@ struct multi_sender {
         ex::set_value_t(const int&)>;
     template<class Self, class Env>
     static auto get_completion_signatures() noexcept -> completion_signatures { return {}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
     template<class R>
     struct op : ex::__forge_detail::__immovable {
         using operation_state_concept = ex::operation_state_tag;
@@ -245,7 +245,7 @@ TEST(ExecutionStaticOpstateTransfer, SyncWaitDrivesRunLoop) {
     bool completed = false;
     int value = 0;
     const auto calls = allocation_probe::measure([&] {
-        auto values = forge::sync_wait(std::move(sender));
+        auto values = std::this_thread::sync_wait(std::move(sender));
         completed = values.has_value();
         if (values) value = std::get<0>(*values);
     });
@@ -269,7 +269,7 @@ struct failing_child {
     auto connect(R) const -> op<R> {
         throw std::runtime_error("child connect");
     }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateTransfer, SharedChildAndSchedulerCompletionTuples) {

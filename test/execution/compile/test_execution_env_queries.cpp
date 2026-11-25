@@ -1,5 +1,5 @@
 // Include fragments directly so native stand-aside cannot hide regressions.
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include "cpp26/execution/sync_wait.hpp"
 #include "cpp26/execution/inline_scheduler.hpp"
 #include "cpp26/execution/let.hpp"
@@ -68,7 +68,7 @@ constexpr bool member_without_adl =
     !adl_answers<E, Q, Args...> &&
     !adl_answers<const E, Q, Args...>;
 
-using composed = ex::env<forge::empty_env, answer, throwing_answer>;
+using composed = ex::env<ex::env<>, answer, throwing_answer>;
 static_assert(member_without_adl<composed, key>);
 static_assert(member_without_adl<composed, variadic_key, int&, int>);
 static_assert(!answers<composed, missing>);
@@ -78,7 +78,7 @@ static_assert(!answers<ex::env<nondefault_answer>, nondefault_key>);
 static_assert(std::same_as<decltype(std::declval<const composed&>().query(key{})), const int&>);
 static_assert(noexcept(std::declval<const composed&>().query(key{})));
 static_assert(!noexcept(std::declval<const ex::env<throwing_answer, answer>&>().query(key{})));
-constexpr composed values{forge::empty_env{}, answer{42}, throwing_answer{}};
+constexpr composed values{ex::env<>{}, answer{42}, throwing_answer{}};
 static_assert(values.query(key{}) == 42);
 static_assert(&values.query(key{}) == &values.query(key{}));
 constexpr bool variadic_selection() {
@@ -301,10 +301,10 @@ constexpr bool stop_when_write_env_signatures = std::same_as<
     ex::completion_signatures_of_t<decltype(ex::write_env(
         std::declval<ex::__forge_counting_scope::__stop_sender<
             decltype(ex::read_env(std::get_stop_token))>>(), std::declval<Overlay>())),
-        forge::empty_env>,
+        ex::env<>>,
     ex::completion_signatures<ex::set_value_t(ExpectedToken)>>;
 using allocator_prop = ex::prop<std::get_allocator_t, std::allocator<std::byte>>;
-static_assert(stop_when_write_env_signatures<forge::empty_env, std::inplace_stop_token>);
+static_assert(stop_when_write_env_signatures<ex::env<>, std::inplace_stop_token>);
 static_assert(stop_when_write_env_signatures<allocator_prop, std::inplace_stop_token>);
 static_assert(stop_when_write_env_signatures<stop_prop, fused_token>);
 static_assert(stop_when_write_env_signatures<ex::env<allocator_prop, stop_prop>, fused_token>);
@@ -319,7 +319,7 @@ static_assert(!answers<scheduler_env, ex::get_domain_t>);
 using inner_env = ex::__forge_let::__inner_env<answer, const throwing_answer&>;
 static_assert(nothrow_answer<inner_env, key, const int&>);
 static_assert(answers<inner_env, local_key>);
-using outer_only_env = ex::__forge_let::__inner_env<forge::empty_env, const answer&>;
+using outer_only_env = ex::__forge_let::__inner_env<ex::env<>, const answer&>;
 static_assert(nothrow_answer<outer_only_env, key, const int&>);
 static_assert(!answers<outer_only_env, local_key>);
 static_assert(!answers<inner_env, missing>);
@@ -401,9 +401,9 @@ static_assert(keeps_query_qualification<ex::__forge_env_detail::__fwd_attrs_view
 static_assert(keeps_query_qualification<ex::__forge_env_detail::__hide_scheduler<qualified_answers>>);
 static_assert(keeps_query_qualification<ex::__forge_affine::__unstoppable_scheduler<qualified_answers>>);
 static_assert(keeps_query_qualification<
-    ex::__forge_let::__inner_env<forge::empty_env, qualified_answers>>);
+    ex::__forge_let::__inner_env<ex::env<>, qualified_answers>>);
 static_assert(keeps_query_qualification<
-    ex::__forge_write_env::__joined_env<forge::empty_env, qualified_answers>>);
+    ex::__forge_write_env::__joined_env<ex::env<>, qualified_answers>>);
 static_assert(keeps_query_qualification<ex::__forge_when_all::__child_env<qualified_answers>>);
 
 // The public get_scheduler asks with its own const object, and so does its
@@ -422,7 +422,7 @@ static_assert(!std::invocable<ex::get_scheduler_t, const mutable_tag_only_schedu
 
 // write_env joins the overlay to FWD-ENV(receiver-env), with unary lookup.
 using joined_env = ex::__forge_write_env::__joined_env<answer, const throwing_answer&>;
-using base_only_env = ex::__forge_write_env::__joined_env<forge::empty_env, const answer&>;
+using base_only_env = ex::__forge_write_env::__joined_env<ex::env<>, const answer&>;
 using throwing_join = ex::__forge_write_env::__joined_env<throwing_answer, const answer&>;
 static_assert(nothrow_answer<joined_env, key, const int&>);
 static_assert(nothrow_answer<base_only_env, key, const int&>);
@@ -440,7 +440,7 @@ constexpr bool joined_selection() {
     using base_view = ex::__forge_env_detail::__fwd_env_view<answer>;
     ex::__forge_write_env::__joined_env<answer, const answer&> both{
         &overlay, base_view::__borrow(base)};
-    forge::empty_env empty;
+    ex::env<> empty;
     base_only_env filtered{&empty, base_view::__borrow(base)};
     return &both.query(key{}) == &overlay.value && both.query(local_key{}) == 12 &&
            &filtered.query(key{}) == &base.value;
@@ -510,14 +510,14 @@ constexpr bool loop_domain_parity =
                  ex::default_domain> &&
     noexcept(Q{}(std::declval<const loop_env&>(), std::declval<Envs>()...)) &&
     noexcept(Q{}(std::declval<const loop_scheduler&>(), std::declval<Envs>()...));
-static_assert(loop_domain_parity<value_domain_query, forge::empty_env>);
-static_assert(loop_domain_parity<stopped_domain_query, forge::empty_env>);
-static_assert(loop_domain_parity<ex::get_completion_domain_t<>, forge::empty_env>);
+static_assert(loop_domain_parity<value_domain_query, ex::env<>>);
+static_assert(loop_domain_parity<stopped_domain_query, ex::env<>>);
+static_assert(loop_domain_parity<ex::get_completion_domain_t<>, ex::env<>>);
 static_assert(loop_domain_parity<value_domain_query, ex::prop<ex::get_domain_t, domain>>);
-static_assert(loop_domain_parity<value_domain_query, const answer&, forge::empty_env>);
-static_assert(loop_domain_parity<stopped_domain_query, const answer&, forge::empty_env>);
-static_assert(!cpo_answers<loop_env, ex::get_completion_domain_t<missing>, forge::empty_env>);
-static_assert(!cpo_answers<loop_scheduler, ex::get_completion_domain_t<missing>, forge::empty_env>);
+static_assert(loop_domain_parity<value_domain_query, const answer&, ex::env<>>);
+static_assert(loop_domain_parity<stopped_domain_query, const answer&, ex::env<>>);
+static_assert(!cpo_answers<loop_env, ex::get_completion_domain_t<missing>, ex::env<>>);
+static_assert(!cpo_answers<loop_scheduler, ex::get_completion_domain_t<missing>, ex::env<>>);
 
 // Probe the actual inline attributes, including a different scheduler type.
 using inline_attrs = ex::__forge_inline::env;
@@ -545,8 +545,8 @@ static_assert(!answers<inline_attrs, value_scheduler_query>);
 static_assert(!answers<ex::inline_scheduler, value_scheduler_query>);
 static_assert(!cpo_answers<inline_attrs, value_scheduler_query>);
 static_assert(!cpo_answers<ex::inline_scheduler, value_scheduler_query>);
-static_assert(cpo_answers<inline_attrs, value_scheduler_query, forge::empty_env>);
-static_assert(cpo_answers<ex::inline_scheduler, value_scheduler_query, forge::empty_env>);
+static_assert(cpo_answers<inline_attrs, value_scheduler_query, ex::env<>>);
+static_assert(cpo_answers<ex::inline_scheduler, value_scheduler_query, ex::env<>>);
 static_assert(nothrow_answer<inline_attrs, ex::get_forward_progress_guarantee_t,
                              ex::forward_progress_guarantee>);
 static_assert(nothrow_answer<ex::inline_scheduler, ex::get_forward_progress_guarantee_t,
@@ -557,8 +557,8 @@ static_assert(!answers<inline_attrs, error_scheduler_query, sched_env>);
 static_assert(!answers<ex::inline_scheduler, error_scheduler_query, sched_env>);
 static_assert(!answers<inline_attrs, stopped_scheduler_query, sched_env>);
 static_assert(!answers<ex::inline_scheduler, stopped_scheduler_query, sched_env>);
-static_assert(answers<inline_attrs, value_scheduler_query, forge::empty_env>);
-static_assert(!answers<ex::inline_scheduler, value_scheduler_query, forge::empty_env>);
+static_assert(answers<inline_attrs, value_scheduler_query, ex::env<>>);
+static_assert(!answers<ex::inline_scheduler, value_scheduler_query, ex::env<>>);
 static_assert(!answers<inline_attrs, value_scheduler_query, sched_env, sched_env>);
 static_assert(!answers<ex::inline_scheduler, value_scheduler_query, sched_env, sched_env>);
 static_assert(!answers<inline_attrs, value_domain_query>);
@@ -630,7 +630,7 @@ struct competing_domain_env {
                              const competing_domain_env&) noexcept { return {}; }
 };
 static_assert(scheduler_fixture::agrees_with_schedule(competing_domain_scheduler{}));
-static_assert(scheduler_fixture::agrees_with_schedule(competing_domain_scheduler{}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(competing_domain_scheduler{}, ex::env<>{}));
 static_assert(scheduler_fixture::agrees_with_schedule(competing_domain_scheduler{}, competing_domain_env{}));
 static_assert(scheduler_fixture::agrees_with_schedule(competing_domain_scheduler{},
     ex::__forge_domain::__hide_scheduler<competing_domain_env>{nullptr}));
@@ -661,7 +661,7 @@ struct competing_member_domain_env {
     competing_member_domain_scheduler query(ex::get_scheduler_t) const noexcept { return {}; }
 };
 static_assert(scheduler_fixture::agrees_with_schedule(competing_member_domain_scheduler{}));
-static_assert(scheduler_fixture::agrees_with_schedule(competing_member_domain_scheduler{}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(competing_member_domain_scheduler{}, ex::env<>{}));
 static_assert(scheduler_fixture::agrees_with_schedule(competing_member_domain_scheduler{}, competing_member_domain_env{}));
 static_assert(scheduler_fixture::agrees_with_schedule(competing_member_domain_scheduler{},
     ex::__forge_domain::__hide_scheduler<competing_member_domain_env>{nullptr}));
@@ -749,7 +749,7 @@ constexpr bool completion_query_selection() {
     using exact_mixed = exact_member_generic_adl<Q, Exact, Fallback>;
     using unary = unary_query_member<Q, Exact>;
     return std::same_as<decltype(Q{}(members{}, selection_env{})), Exact> &&
-           std::same_as<decltype(Q{}(members{}, forge::empty_env{})), Fallback> &&
+           std::same_as<decltype(Q{}(members{}, ex::env<>{})), Fallback> &&
            std::same_as<decltype(Q{}(members{})), Fallback> &&
            std::same_as<decltype(Q{}(mixed{}, selection_env{})), Exact> &&
            std::same_as<decltype(Q{}(mixed{})), Exact> &&
@@ -757,7 +757,7 @@ constexpr bool completion_query_selection() {
            std::same_as<decltype(Q{}(exact_mixed{})), Exact> &&
            std::same_as<decltype(Q{}(unary{})), Exact> &&
            std::same_as<decltype(Q{}(unary{}, selection_env{})), Exact> &&
-           std::same_as<decltype(Q{}(unary{}, selection_env{}, forge::empty_env{})), Exact>;
+           std::same_as<decltype(Q{}(unary{}, selection_env{}, ex::env<>{})), Exact>;
 }
 static_assert(completion_query_selection<value_scheduler_query, domain_scheduler, ex::inline_scheduler>());
 static_assert(completion_query_selection<value_domain_query, domain, ex::default_domain>());
@@ -780,10 +780,10 @@ static_assert(std::same_as<decltype(value_scheduler_query{}(
     dependent_scheduler_adl{}, selection_env{})), domain_scheduler>);
 static_assert(std::same_as<decltype(value_domain_query{}(
     dependent_domain_adl{}, selection_env{})), domain>);
-static_assert(!cpo_answers<scheduler_adl_pair, value_scheduler_query, forge::empty_env>);
-static_assert(!cpo_answers<scheduler_adl_pair, value_scheduler_query, selection_env, forge::empty_env>);
-static_assert(!cpo_answers<domain_adl_pair, value_domain_query, forge::empty_env>);
-static_assert(!cpo_answers<domain_adl_pair, value_domain_query, selection_env, forge::empty_env>);
+static_assert(!cpo_answers<scheduler_adl_pair, value_scheduler_query, ex::env<>>);
+static_assert(!cpo_answers<scheduler_adl_pair, value_scheduler_query, selection_env, ex::env<>>);
+static_assert(!cpo_answers<domain_adl_pair, value_domain_query, ex::env<>>);
+static_assert(!cpo_answers<domain_adl_pair, value_domain_query, selection_env, ex::env<>>);
 static_assert(noexcept(value_scheduler_query{}(dependent_scheduler_adl{}, selection_env{})));
 using hidden_env = ex::__forge_domain::__hide_scheduler<answer>;
 static_assert(!answers<hidden_env, ex::get_scheduler_t>);
@@ -796,7 +796,7 @@ struct nothrow_receiver {
     using receiver_concept = ex::receiver_tag;
     void set_value() && noexcept {}
     void set_stopped() && noexcept {}
-    forge::empty_env get_env() const noexcept { return {}; }
+    ex::env<> get_env() const noexcept { return {}; }
 };
 struct throwing_copy_receiver : nothrow_receiver {
     throwing_copy_receiver() = default;
@@ -824,9 +824,9 @@ constexpr bool schedule_noexcept =
     noexcept(ex::start(std::declval<ex::connect_result_t<const S&, throwing_copy_receiver&>&>()));
 static_assert(schedule_noexcept<inline_sender>);
 static_assert(schedule_noexcept<loop_sender>);
-using written_inline = decltype(ex::write_env(std::declval<inline_sender>(), forge::empty_env{}));
+using written_inline = decltype(ex::write_env(std::declval<inline_sender>(), ex::env<>{}));
 static_assert(schedule_noexcept<written_inline>);
-using written_loop = decltype(ex::write_env(std::declval<loop_sender>(), forge::empty_env{}));
+using written_loop = decltype(ex::write_env(std::declval<loop_sender>(), ex::env<>{}));
 static_assert(schedule_noexcept<written_loop>);
 
 using missing_scheduler_let_env = ex::__forge_let::__let_env_t<
@@ -837,9 +837,9 @@ static_assert(noexcept(ex::get_env(std::declval<const inline_sender&>())));
 static_assert(noexcept(ex::get_env(std::declval<const loop_sender&>())));
 static_assert(noexcept(ex::schedule(std::declval<const ex::inline_scheduler&>())));
 static_assert(noexcept(ex::schedule(std::declval<const loop_scheduler&>())));
-static_assert(std::same_as<ex::completion_signatures_of_t<inline_sender, forge::empty_env>,
+static_assert(std::same_as<ex::completion_signatures_of_t<inline_sender, ex::env<>>,
                            ex::completion_signatures<ex::set_value_t()>>);
-static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, forge::empty_env>,
+static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, ex::env<>>,
                            ex::completion_signatures<ex::set_value_t()>>);
 static_assert(std::same_as<ex::completion_signatures_of_t<loop_sender, stop_prop>,
                            ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
@@ -861,7 +861,7 @@ static_assert(nothrow_answer<attrs, value_scheduler_query, ex::inline_scheduler>
 static_assert(nothrow_answer<attrs, stopped_scheduler_query, ex::inline_scheduler>);
 static_assert(member_without_adl<attrs, key>);
 static_assert(member_without_adl<attrs, variadic_key, int&, int>);
-static_assert(member_without_adl<attrs, value_scheduler_query, forge::empty_env>);
+static_assert(member_without_adl<attrs, value_scheduler_query, ex::env<>>);
 using on_attrs = ex::__forge_on_adaptor::__attrs<answer>;
 static_assert(member_without_adl<on_attrs, key>);
 static_assert(member_without_adl<on_attrs, variadic_key, int&, int>);
@@ -938,7 +938,7 @@ struct transfer_scheduler {
     auto schedule() const noexcept(Nothrow) { return transfer_source<Attrs>{}; }
     bool operator==(const transfer_scheduler&) const noexcept = default;
 };
-using unavailable_scheduler = transfer_scheduler<forge::empty_env>;
+using unavailable_scheduler = transfer_scheduler<ex::env<>>;
 template<class Tag>
 using blocked_sender_for = decltype(ex::continues_on(
     transfer_source<completion_child_attrs, Tag>{}, unavailable_scheduler{}));

@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 
@@ -29,7 +28,7 @@ struct receiver {
     void set_value(Vs&&...) && noexcept { ++out->values; }
     void set_error(std::exception_ptr e) && noexcept { ++out->errors; out->error = std::move(e); }
     void set_stopped() && noexcept { ++out->stopped; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 struct empty_immovable_sender {
@@ -64,7 +63,7 @@ struct empty_immovable_sender {
         static_assert(!std::is_move_constructible_v<op<R>>);
         return op<R>{std::move(r)};
     }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateExceptions, WhenAllEmptyNonFinalImmovableChildrenComplete) {
@@ -141,7 +140,7 @@ struct tracked_sender {
         if (++counts->attempts == counts->throw_on) throw failure{17};
         return op<R>{counts, std::move(r)};
     }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateExceptions, WhenAllConnectUnwindsConstructedChildren) {
@@ -269,7 +268,7 @@ struct choice_sender {
     };
     template<class R>
     auto connect(R r) const -> op<R> { return op<R>{choice, std::move(r)}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateExceptions, LetVariantsDeduplicateArgsAndStoreDifferentOperations) {
@@ -278,7 +277,7 @@ TEST(ExecutionStaticOpstateExceptions, LetVariantsDeduplicateArgsAndStoreDiffere
             if constexpr (std::is_same_v<T, int>) return ex::just(value);
             else return ex::then(ex::just(static_cast<int>(value)), [](int v) { return v; });
         });
-        auto values = forge::sync_wait(std::move(sender));
+        auto values = std::this_thread::sync_wait(std::move(sender));
         ASSERT_TRUE(values);
         EXPECT_EQ(std::get<0>(*values), 42);
     }
@@ -337,7 +336,7 @@ struct argument_sender {
     };
     template<class R>
     auto connect(R r) const -> op<R> { return op<R>{counts, std::move(r)}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateExceptions, LetDecayCopyThrowsAndPredecessorSurvives) {
@@ -388,7 +387,7 @@ struct lifetime_sender {
     };
     template<class R>
     auto connect(R r) const -> op<R> { return op<R>{state, std::move(r)}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 struct lifetime_inner_sender {
@@ -408,7 +407,7 @@ struct lifetime_inner_sender {
     };
     template<class R>
     auto connect(R r) const -> op<R> { return op<R>{state, std::move(r)}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 TEST(ExecutionStaticOpstateExceptions, InlineSuccessDestroysPredecessorBeforeSuccessor) {

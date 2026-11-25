@@ -1,5 +1,5 @@
 // Include fragments directly so native stand-aside cannot hide regressions.
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include "cpp26/execution/inline_scheduler.hpp"
 #include "cpp26/execution/run_loop.hpp"
 #include "cpp26/execution/write_env.hpp"
@@ -197,7 +197,7 @@ struct rvalue_domain_scheduler {
 };
 static_assert(ex::scheduler<rvalue_domain_scheduler>);
 static_assert(scheduler_fixture::agrees_with_schedule(rvalue_domain_scheduler{}));
-static_assert(scheduler_fixture::agrees_with_schedule(rvalue_domain_scheduler{}, forge::empty_env{}));
+static_assert(scheduler_fixture::agrees_with_schedule(rvalue_domain_scheduler{}, ex::env<>{}));
 static_assert(std::same_as<decltype(ex::get_domain(rvalue_domain_scheduler{})), rvalue_domain>);
 static_assert(std::same_as<decltype(ex::get_domain(
     std::declval<const rvalue_domain_scheduler&>())), rvalue_domain>);
@@ -583,7 +583,7 @@ void check_dependent_let_scheduler() {
 
 TEST(SchedulerEnvQueriesTest, WriteEnvFiltersLocalBaseAndKeepsLocalOverlay) {
     int value = -1;
-    auto base_sender = ex::write_env(probe_sender<false>{}, forge::empty_env{});
+    auto base_sender = ex::write_env(probe_sender<false>{}, ex::env<>{});
     using base_signatures = ex::completion_signatures_of_t<decltype(base_sender), probe_env>;
     static_assert(std::same_as<base_signatures, ex::completion_signatures<ex::set_value_t(int)>>);
     auto base = ex::connect(std::move(base_sender), probe_receiver{&value});
@@ -684,10 +684,10 @@ TEST(SchedulerEnvQueriesTest, RunLoopSchedulerAndAttributesHaveValueAndStoppedPa
     EXPECT_EQ(ex::get_completion_scheduler<ex::set_stopped_t>(attrs), scheduler);
     EXPECT_NE(ex::get_completion_scheduler<ex::set_value_t>(scheduler), second.get_scheduler());
     // TRY-QUERY falls back to unary queries when environment arguments are supplied.
-    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(scheduler, forge::empty_env{}),
-              ex::get_completion_scheduler<ex::set_value_t>(attrs, forge::empty_env{}));
-    EXPECT_EQ(ex::get_completion_scheduler<ex::set_stopped_t>(scheduler, forge::empty_env{}),
-              ex::get_completion_scheduler<ex::set_stopped_t>(attrs, forge::empty_env{}));
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(scheduler, ex::env<>{}),
+              ex::get_completion_scheduler<ex::set_value_t>(attrs, ex::env<>{}));
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_stopped_t>(scheduler, ex::env<>{}),
+              ex::get_completion_scheduler<ex::set_stopped_t>(attrs, ex::env<>{}));
 }
 
 TEST(SchedulerEnvQueriesTest, InlineScheduleLetAndWriteEnvReachTheChildEnvironment) {
@@ -697,7 +697,7 @@ TEST(SchedulerEnvQueriesTest, InlineScheduleLetAndWriteEnvReachTheChildEnvironme
         ex::schedule(ex::inline_scheduler{}) | ex::let_value([] {
             return ex::read_env(ex::get_scheduler);
         }), ex::prop{ex::get_scheduler, scheduler});
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), scheduler);
 }
@@ -859,7 +859,7 @@ TEST(SchedulerEnvQueriesTest, RunLoopScheduleReadsTheReceiverStopEnvironment) {
     source.request_stop();
     int queries = 0;
     bool stopped = false;
-    auto operation = ex::connect(ex::write_env(ex::schedule(loop.get_scheduler()), forge::empty_env{}),
+    auto operation = ex::connect(ex::write_env(ex::schedule(loop.get_scheduler()), ex::env<>{}),
         stop_receiver{{source.get_token(), &queries}, &stopped});
     ex::start(operation);
     loop.finish();
@@ -910,11 +910,11 @@ TEST(SchedulerEnvQueriesTest, CountingScopeFiltersBaseQueriesAndOverridesStopTok
         }
     });
     auto base = ex::env{probe_env{10, 20}, ex::prop(std::get_stop_token, downstream.get_token())};
-    auto result = forge::sync_wait(ex::write_env(
+    auto result = std::this_thread::sync_wait(ex::write_env(
         scope.get_token().wrap(std::move(inspect)), base));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
 }
 
 TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopToken) {
@@ -937,8 +937,8 @@ TEST(SchedulerEnvQueriesTest, SpawnFutureFiltersOverlayQueriesAndOverridesStopTo
     });
     auto base = ex::env{probe_env{10, 20}, ex::prop(std::get_stop_token, downstream.get_token())};
     auto future = ex::spawn_future(std::move(inspect), scope.get_token(), base);
-    auto result = forge::sync_wait(std::move(future));
+    auto result = std::this_thread::sync_wait(std::move(future));
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result));
-    (void)forge::sync_wait(scope.join());
+    (void)std::this_thread::sync_wait(scope.join());
 }

@@ -8,6 +8,7 @@
 #include <forge/start_detached.hpp>
 #include <forge/task.hpp>
 #include <gtest/gtest.h>
+#include <execution>
 #include <atomic>
 #include <memory>
 #include <stdexcept>
@@ -129,13 +130,13 @@ TEST(AwaitableSender, EveryCompletionCanDestroyTheSuspendedFrame) {
 
 TEST(AwaitableSender, SyncWaitTranslatesExceptionAndStopped) {
     bool destroyed = false;
-    EXPECT_THROW(forge::sync_wait(owned_error{&destroyed}), std::runtime_error);
+    EXPECT_THROW(std::this_thread::sync_wait(owned_error{&destroyed}), std::runtime_error);
     EXPECT_TRUE(destroyed);
     destroyed = false;
-    EXPECT_THROW(forge::sync_wait(owned_suspend_error{&destroyed}), std::runtime_error);
+    EXPECT_THROW(std::this_thread::sync_wait(owned_suspend_error{&destroyed}), std::runtime_error);
     EXPECT_TRUE(destroyed);
     destroyed = false;
-    EXPECT_FALSE(forge::sync_wait(owned_stopped{&destroyed}));
+    EXPECT_FALSE(std::this_thread::sync_wait(owned_stopped{&destroyed}));
     EXPECT_TRUE(destroyed);
 }
 
@@ -181,9 +182,9 @@ TEST(AwaitableSender, ReferenceAndTransformedResultsUseTheFallback) {
     EXPECT_EQ(started.completion, 1);
     EXPECT_EQ(started.completions, 1);
     EXPECT_EQ(started.value, 17);
-    auto member = forge::sync_wait(a::member_awaitable{});
-    auto free = forge::sync_wait(a::free_awaitable{});
-    auto adapted = forge::sync_wait(a::member_adapted{});
+    auto member = std::this_thread::sync_wait(a::member_awaitable{});
+    auto free = std::this_thread::sync_wait(a::free_awaitable{});
+    auto adapted = std::this_thread::sync_wait(a::member_adapted{});
     ASSERT_TRUE(member && free && adapted);
     EXPECT_EQ(std::get<0>(*member), 17);
     EXPECT_EQ(std::get<0>(*free), 17);
@@ -224,49 +225,49 @@ forge::task<void> await_without_fallthrough(S source, bool* after_await) {
 TEST(AwaitableSender, ErrorAndStoppedNeverReachCodeAfterAwait) {
     bool destroyed = false;
     bool after_await = false;
-    EXPECT_THROW(forge::sync_wait(await_without_fallthrough(
+    EXPECT_THROW(std::this_thread::sync_wait(await_without_fallthrough(
         owned_error{&destroyed}, &after_await)), std::runtime_error);
     EXPECT_FALSE(after_await);
     EXPECT_TRUE(destroyed);
     destroyed = false;
-    EXPECT_THROW(forge::sync_wait(await_without_fallthrough(
+    EXPECT_THROW(std::this_thread::sync_wait(await_without_fallthrough(
         owned_suspend_error{&destroyed}, &after_await)), std::runtime_error);
     EXPECT_FALSE(after_await);
     EXPECT_TRUE(destroyed);
     destroyed = false;
-    EXPECT_FALSE(forge::sync_wait(await_without_fallthrough(
+    EXPECT_FALSE(std::this_thread::sync_wait(await_without_fallthrough(
         owned_stopped{&destroyed}, &after_await)));
     EXPECT_FALSE(after_await);
     EXPECT_TRUE(destroyed);
-    EXPECT_THROW(forge::sync_wait(await_without_fallthrough(
+    EXPECT_THROW(std::this_thread::sync_wait(await_without_fallthrough(
         a::adl_value_awaiter{true}, &after_await)), std::runtime_error);
     EXPECT_FALSE(after_await);
 }
 
 TEST(AwaitableSender, LockedAlgorithmsComposeThroughUnchangedCpos) {
-    auto combined = forge::sync_wait(ex::when_all(a::int_awaiter{}, ex::just(25)));
+    auto combined = std::this_thread::sync_wait(ex::when_all(a::int_awaiter{}, ex::just(25)));
     ASSERT_TRUE(combined);
     EXPECT_EQ(*combined, std::make_tuple(17, 25));
     auto cached = forge::split(a::int_awaiter{});
-    EXPECT_EQ(std::get<0>(*forge::sync_wait(cached)), 17);
+    EXPECT_EQ(std::get<0>(*std::this_thread::sync_wait(cached)), 17);
     auto rvalue_only = forge::split(a::member_awaitable{});
-    EXPECT_EQ(std::get<0>(*forge::sync_wait(rvalue_only)), 17);
-    EXPECT_EQ(std::get<0>(*forge::sync_wait(cached)), 17);
+    EXPECT_EQ(std::get<0>(*std::this_thread::sync_wait(rvalue_only)), 17);
+    EXPECT_EQ(std::get<0>(*std::this_thread::sync_wait(cached)), 17);
     ex::counting_scope scope;
-    auto wrapped = forge::sync_wait(scope.get_token().wrap(a::int_awaiter{}));
+    auto wrapped = std::this_thread::sync_wait(scope.get_token().wrap(a::int_awaiter{}));
     ASSERT_TRUE(wrapped);
     EXPECT_EQ(std::get<0>(*wrapped), 17);
     auto standard = std::this_thread::sync_wait(a::int_awaiter{});
     ASSERT_TRUE(standard);
     EXPECT_EQ(std::get<0>(*standard), 17);
-    auto associated = forge::sync_wait(ex::associate(a::int_awaiter{}, scope.get_token()));
+    auto associated = std::this_thread::sync_wait(ex::associate(a::int_awaiter{}, scope.get_token()));
     ASSERT_TRUE(associated);
     EXPECT_EQ(std::get<0>(*associated), 17);
     auto future = ex::spawn_future(a::int_awaiter{}, scope.get_token());
-    auto result = forge::sync_wait(std::move(future));
+    auto result = std::this_thread::sync_wait(std::move(future));
     ASSERT_TRUE(result);
     EXPECT_EQ(std::get<0>(*result), 17);
-    EXPECT_TRUE(forge::sync_wait(scope.join()));
+    EXPECT_TRUE(std::this_thread::sync_wait(scope.join()));
 }
 
 struct await_scheduler;
@@ -366,13 +367,13 @@ TEST(AwaitableSender, ForgeEntryPointsAcceptCompatibleAwaitables) {
     using erased_sigs = ex::completion_signatures<ex::set_value_t(int),
         ex::set_error_t(std::exception_ptr), ex::set_stopped_t()>;
     forge::erased_sender<erased_sigs> erased_source{a::int_awaiter{}};
-    auto erased_result = forge::sync_wait(std::move(erased_source));
+    auto erased_result = std::this_thread::sync_wait(std::move(erased_source));
     ASSERT_TRUE(erased_result);
     EXPECT_EQ(std::get<0>(*erased_result), 17);
-    auto task_result = forge::sync_wait(task_awaits_ordinary());
+    auto task_result = std::this_thread::sync_wait(task_awaits_ordinary());
     ASSERT_TRUE(task_result);
     EXPECT_EQ(std::get<0>(*task_result), 17);
-    auto io_result = forge::sync_wait(forge::io::as_sender(io_awaits_sender()));
+    auto io_result = std::this_thread::sync_wait(forge::io::as_sender(io_awaits_sender()));
     ASSERT_TRUE(io_result);
     EXPECT_EQ(std::get<0>(*io_result), 17);
 }

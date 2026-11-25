@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
 
@@ -35,7 +34,7 @@ using marked_multi_sender_t = decltype(std::execution::schedule_from(
     std::execution::just(1, 2)));
 using marked_multi_signatures_t = std::execution::completion_signatures_of_t<
     marked_multi_sender_t,
-    forge::empty_env>;
+    std::execution::env<>>;
 
 static_assert(std::same_as<
     std::execution::tag_of_t<marked_multi_sender_t>,
@@ -285,7 +284,7 @@ TEST(ScheduleFromTest, ForwardsChildCompletionSchedulerAttribute) {
 
     EXPECT_EQ(
         std::execution::get_completion_scheduler<
-            std::execution::set_value_t>(attrs, forge::empty_env{}),
+            std::execution::set_value_t>(attrs, std::execution::env<>{}),
         scheduler);
 }
 

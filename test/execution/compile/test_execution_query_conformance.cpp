@@ -1,6 +1,6 @@
 // Independent type and expression oracles from [exec.queries], [exec.sched],
 // [exec.cmplsig], [exec.envs] and [exec.domain.indeterminate].
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include "cpp26/execution.hpp"
 #include "../scheduler_fixture.hpp"
 #include <functional>
@@ -19,7 +19,6 @@ struct bad_destructor { ~bad_destructor() noexcept(false); };
 static_assert(can_env<int> && !can_env<bad_destructor>);
 static_assert(std::same_as<ex::env_of_t<int>, ex::env<>>);
 static_assert(std::same_as<ex::env_of_t<decltype(ex::just())>, ex::env<>>);
-static_assert(std::same_as<forge::empty_env, ex::env<>>);
 static_assert(!std::is_copy_assignable_v<ex::env<>>);
 static_assert(!std::is_move_assignable_v<ex::env<>>);
 static_assert(!std::is_copy_assignable_v<ex::env<int&>>);

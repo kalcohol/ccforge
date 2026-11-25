@@ -1,5 +1,5 @@
 #include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
 
@@ -18,7 +18,7 @@ using values = ex::completion_signatures<ex::set_value_t(int)>;
 template<class S>
 void expect_value(S sndr, int expected) {
     static_assert(std::same_as<ex::completion_signatures_of_t<S, ex::env<>>, values>);
-    const auto result = forge::sync_wait(std::move(sndr));
+    const auto result = std::this_thread::sync_wait(std::move(sndr));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected);
 }

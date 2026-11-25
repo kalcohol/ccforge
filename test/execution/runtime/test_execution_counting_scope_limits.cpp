@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -46,7 +45,7 @@ void expect_public_association_cleanup() {
         EXPECT_EQ(scope.__count(), 2u);
     }
     EXPECT_EQ(scope.__count(), 0u);
-    const auto joined = forge::sync_wait(scope.join());
+    const auto joined = std::this_thread::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
     EXPECT_EQ(scope.__count(), 0u);
@@ -60,7 +59,7 @@ void expect_unused_closed_scope_stays_empty() {
     EXPECT_TRUE(scope.__is_closed());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
     EXPECT_EQ(scope.__count(), 0u);
-    const auto joined = forge::sync_wait(scope.join());
+    const auto joined = std::this_thread::sync_wait(scope.join());
     EXPECT_TRUE(joined.has_value());
     EXPECT_FALSE(static_cast<bool>(token.try_associate()));
     EXPECT_EQ(scope.__count(), 0u);

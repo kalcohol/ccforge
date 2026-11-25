@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -122,7 +121,7 @@ concept value_domain_query_parity = requires(const tracked_scheduler& scheduler,
             scheduler, std::forward<Env>(env)))>;
 };
 
-static_assert(value_domain_query_parity<forge::empty_env>);
+static_assert(value_domain_query_parity<ex::env<>>);
 static_assert(value_domain_query_parity<ex::__forge_sync_wait::sync_wait_env>);
 
 struct tracked_adaptor : ex::sender_adaptor_closure<tracked_adaptor> {
@@ -201,13 +200,13 @@ void check_category() {
     }
     EXPECT_EQ(state.applications, 0);
     EXPECT_EQ(state.callbacks, 0);
-    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(ex::get_env(sender), forge::empty_env{}),
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(ex::get_env(sender), ex::env<>{}),
         ex::inline_scheduler{});
 
-    using cs_t = ex::completion_signatures_of_t<decltype(sender), forge::empty_env>;
+    using cs_t = ex::completion_signatures_of_t<decltype(sender), ex::env<>>;
     static_assert(std::same_as<cs_t, ex::completion_signatures<
         ex::set_value_t(int)>>);
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
     EXPECT_EQ(state.applications, 1);
@@ -216,7 +215,7 @@ void check_category() {
 
 template<class S>
 void expect_value(S sender, int expected = 42) {
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected);
 }

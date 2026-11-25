@@ -28,7 +28,7 @@ struct counting_receiver {
     void set_stopped() && noexcept {}
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -80,7 +80,7 @@ struct oversized_value_sender {
         }
     };
 
-    template<class Self, class Env = forge::empty_env>
+    template<class Self, class Env = std::execution::env<>>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<std::execution::set_value_t(int)> {
         return {};
@@ -93,7 +93,7 @@ struct oversized_value_sender {
     }
 
     auto get_env() const noexcept
-        -> forge::empty_env {
+        -> std::execution::env<> {
         return {};
     }
 };
@@ -121,7 +121,7 @@ struct cached_string_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -141,9 +141,9 @@ bool wait_until(Pred pred) {
 
 TEST(SplitTest, HappyPath) {
     auto sndr = forge::split(std::execution::just(42));
-    auto r1 = forge::sync_wait(sndr);
-    auto r2 = forge::sync_wait(sndr);
-    auto r3 = forge::sync_wait(sndr);
+    auto r1 = std::this_thread::sync_wait(sndr);
+    auto r2 = std::this_thread::sync_wait(sndr);
+    auto r3 = std::this_thread::sync_wait(sndr);
     ASSERT_TRUE(r1.has_value());
     ASSERT_TRUE(r2.has_value());
     ASSERT_TRUE(r3.has_value());
@@ -189,8 +189,8 @@ TEST(SplitTest, CachesMoveOnlyValueForMultipleSubscribers) {
             return value.get();
         });
 
-    auto first = forge::sync_wait(sender | read_cached);
-    auto second = forge::sync_wait(sender | read_cached);
+    auto first = std::this_thread::sync_wait(sender | read_cached);
+    auto second = std::this_thread::sync_wait(sender | read_cached);
 
     ASSERT_TRUE(first.has_value());
     ASSERT_TRUE(second.has_value());
@@ -205,14 +205,14 @@ TEST(SplitTest, ContinuesOnCopiesCachedReferenceValuesAcrossHop) {
         std::execution::inline_scheduler{});
     using signatures_t = decltype(std::execution::get_completion_signatures(
         sender,
-        forge::empty_env{}));
+        std::execution::env<>{}));
     static_assert(std::is_same_v<
         signatures_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(std::string),
             std::execution::set_error_t(std::exception_ptr)>>);
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), "cached");
@@ -227,7 +227,7 @@ TEST(SplitTest, SubscribersCannotMutateCachedValues) {
     std::execution::start(first);
 
     EXPECT_FALSE(received_mutable);
-    auto second = forge::sync_wait(sndr);
+    auto second = std::this_thread::sync_wait(sndr);
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(std::get<0>(*second), "cached");
 }
@@ -257,11 +257,11 @@ TEST(SplitTest, ConcurrentStart) {
 
     std::atomic<int> r1{-1}, r2{-1};
     std::thread t1([&] {
-        auto result = forge::sync_wait(sndr);
+        auto result = std::this_thread::sync_wait(sndr);
         if (result) r1.store(std::get<0>(*result));
     });
     std::thread t2([&] {
-        auto result = forge::sync_wait(sndr);
+        auto result = std::this_thread::sync_wait(sndr);
         if (result) r2.store(std::get<0>(*result));
     });
     t1.join();
@@ -289,7 +289,7 @@ TEST(SplitTest, DestroyedSubscriberIgnoredOnAsyncCompletion) {
 
 TEST(SplitTest, OversizedInnerOperationUsesHeapFallback) {
     auto sndr = forge::split(oversized_value_sender{42});
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -309,7 +309,7 @@ TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently)
                   });
         };
 
-        auto joined = forge::sync_wait(
+        auto joined = std::this_thread::sync_wait(
             std::execution::when_all(child(1), child(2), child(3), child(4)));
         ASSERT_TRUE(joined.has_value());
         EXPECT_EQ(std::get<0>(*joined) + std::get<1>(*joined)
@@ -317,7 +317,7 @@ TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently)
         EXPECT_EQ(when_all_ran.load(std::memory_order_relaxed), 4);
 
         std::atomic<int> continued{0};
-        auto continued_result = forge::sync_wait(
+        auto continued_result = std::this_thread::sync_wait(
             std::execution::continues_on(std::execution::just(5), scheduler)
                 | std::execution::then([&](int x) {
                       continued.fetch_add(1, std::memory_order_relaxed);
@@ -338,22 +338,22 @@ TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently)
         std::atomic<int> sum{0};
         std::atomic<int> failures{0};
         std::thread t1([&] {
-            auto result = forge::sync_wait(shared);
+            auto result = std::this_thread::sync_wait(shared);
             if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
             else failures.fetch_add(1, std::memory_order_relaxed);
         });
         std::thread t2([&] {
-            auto result = forge::sync_wait(shared);
+            auto result = std::this_thread::sync_wait(shared);
             if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
             else failures.fetch_add(1, std::memory_order_relaxed);
         });
         std::thread t3([&] {
-            auto result = forge::sync_wait(shared);
+            auto result = std::this_thread::sync_wait(shared);
             if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
             else failures.fetch_add(1, std::memory_order_relaxed);
         });
         std::thread t4([&] {
-            auto result = forge::sync_wait(shared);
+            auto result = std::this_thread::sync_wait(shared);
             if (result.has_value()) sum.fetch_add(std::get<0>(*result), std::memory_order_relaxed);
             else failures.fetch_add(1, std::memory_order_relaxed);
         });

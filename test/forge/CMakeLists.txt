@@ -36,6 +36,15 @@ function(forge_expect_forge_cxx_source_compiles result_var source_name should_co
         ${ARGN})
 endfunction()
 
+if(FORGE_FORCE_SENDERS_BACKPORT
+        OR (NOT FORGE_SENDERS_FULL AND NOT FORGE_SENDERS_PARTIAL))
+    forge_expect_forge_cxx_source_compiles(
+        FORGE_EXECUTION_EXTENSIONS_BACKPORT_CONTROL
+        test_forge_execution_extensions_backport.cpp ON
+        "Forge execution aliases, split and explicit bulk shapes must work with the execution backport"
+        OWNER FORGE)
+endif()
+
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)

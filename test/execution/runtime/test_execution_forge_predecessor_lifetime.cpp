@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <forge/channel.hpp>
 #include <forge/erased_sender.hpp>
 #include <forge/start_detached.hpp>
@@ -46,7 +45,7 @@ void check_value(S source, bool another_thread) {
         ++calls;
         return ex::just(42);
     });
-    auto value = forge::sync_wait(std::move(sender));
+    auto value = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(value);
     const int* result = int_value(*value);
     ASSERT_NE(result, nullptr);
@@ -153,7 +152,7 @@ TEST(ExecutionForgePredecessorLifetime, TaskCompletesAndErrorsInlineAndOnWorker)
         const auto caller = std::this_thread::get_id();
         std::thread::id agent;
         auto source = worker ? failing_worker_task(pool.get_scheduler()) : failing_task();
-        auto value = forge::sync_wait(ex::let_error(std::move(source), [&](std::exception_ptr& error) noexcept {
+        auto value = std::this_thread::sync_wait(ex::let_error(std::move(source), [&](std::exception_ptr& error) noexcept {
             agent = std::this_thread::get_id();
             EXPECT_THROW(std::rethrow_exception(error), std::runtime_error);
             return ex::just(42);

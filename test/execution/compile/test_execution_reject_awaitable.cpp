@@ -1,5 +1,5 @@
 #include "awaitable_conformance_types.hpp"
-#include <forge/execution_extensions.hpp>
+#include <execution>
 #include <memory>
 namespace ex = std::execution;
 namespace a = awaitable_tests;
@@ -82,7 +82,7 @@ int main() {
 #else
     ex::spawn(a::void_awaiter{}, scope.get_token());
 #endif
-    forge::sync_wait(scope.join());
+    std::this_thread::sync_wait(scope.join());
     int result = 0;
 #elif FORGE_AWAITABLE_CASE == 6 || FORGE_AWAITABLE_CASE == 7
     auto result = ex::connect(a::int_awaiter{}, limited_receiver{});

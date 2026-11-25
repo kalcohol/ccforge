@@ -19,7 +19,6 @@ int main() {
 }
 #else
 
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 

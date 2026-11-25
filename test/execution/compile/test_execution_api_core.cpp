@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <execution>
 
 static_assert(std::execution::sender<decltype(std::execution::just(42))>);
@@ -59,7 +58,7 @@ struct value_only_receiver {
     void set_value(int) && noexcept {}
     void set_error(std::exception_ptr) && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };

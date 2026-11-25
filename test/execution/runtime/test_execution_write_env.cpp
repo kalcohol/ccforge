@@ -1,4 +1,3 @@
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 #include <concepts>
@@ -268,7 +267,7 @@ struct borrowed_attrs_sender {
 TEST(WriteEnvTest, PreservesBorrowedNoncopyableSenderAttributes) {
     borrowed_sender_attrs attributes;
     auto sender = std::execution::write_env(
-        borrowed_attrs_sender{&attributes}, forge::empty_env{});
+        borrowed_attrs_sender{&attributes}, std::execution::env<>{});
     static_assert(std::same_as<std::execution::env_of_t<decltype(sender)>,
                                const borrowed_sender_attrs&>);
     static_assert(noexcept(std::execution::get_env(sender)));
@@ -276,7 +275,7 @@ TEST(WriteEnvTest, PreservesBorrowedNoncopyableSenderAttributes) {
     EXPECT_EQ(&observed, &attributes);
     EXPECT_EQ(std::execution::get_completion_scheduler<std::execution::set_value_t>(
                   observed), attributes.scheduler);
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
 }
@@ -391,12 +390,12 @@ TEST(WriteEnvTest, InjectedEnvOverridesReceiverEnv) {
     auto sndr = std::execution::write_env(
         std::execution::read_env(std::execution::get_scheduler), env);
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, forge::empty_env{}));
+        sndr, std::execution::env<>{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(std::execution::inline_scheduler)>>);
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::get<0>(*result) == injected);
@@ -408,7 +407,7 @@ TEST(WriteEnvTest, DoesNotCopyOverlayWhileQueryingNestedAdaptorEnv) {
             | std::execution::then([](int value) noexcept { return value; }),
         throwing_copy_env{42});
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -419,7 +418,7 @@ TEST(WriteEnvTest, InjectsSchedulerProperty) {
     auto env = std::execution::env{
         std::execution::prop(std::execution::get_scheduler_t{}, injected)};
 
-    auto result = forge::sync_wait(std::execution::write_env(
+    auto result = std::this_thread::sync_wait(std::execution::write_env(
         std::execution::read_env(std::execution::get_scheduler), env));
 
     ASSERT_TRUE(result.has_value());
@@ -431,7 +430,7 @@ TEST(WriteEnvTest, ReadsInjectedStartScheduler) {
     auto env = std::execution::env{
         std::execution::prop(std::execution::get_start_scheduler_t{}, injected)};
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::write_env(
             std::execution::read_env(std::execution::get_start_scheduler),
             env));
@@ -445,7 +444,7 @@ TEST(WriteEnvTest, ReadsInjectedDelegationScheduler) {
     auto env = std::execution::env{
         std::execution::prop(std::execution::get_delegation_scheduler_t{}, injected)};
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::write_env(
             std::execution::read_env(std::execution::get_delegation_scheduler),
             env));
@@ -455,7 +454,7 @@ TEST(WriteEnvTest, ReadsInjectedDelegationScheduler) {
 }
 
 TEST(SyncWaitEnvTest, ExposesTheSameRunLoopSchedulerForAllRoles) {
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::when_all(
             std::execution::read_env(std::execution::get_scheduler),
             std::execution::read_env(std::execution::get_start_scheduler),
@@ -476,7 +475,7 @@ TEST(WriteEnvTest, FallsBackToReceiverEnvForMissingQuery) {
     auto op = std::execution::connect(
         std::execution::write_env(
             std::execution::read_env(std::execution::get_scheduler),
-            forge::empty_env{}),
+            std::execution::env<>{}),
         scheduler_receiver{downstream, &got_expected, &completed});
 
     std::execution::start(op);
@@ -493,7 +492,7 @@ TEST(WriteEnvTest, FallsBackToReceiverStartSchedulerForMissingQuery) {
     auto op = std::execution::connect(
         std::execution::write_env(
             std::execution::read_env(std::execution::get_start_scheduler),
-            forge::empty_env{}),
+            std::execution::env<>{}),
         start_scheduler_receiver{downstream, &got_expected, &completed});
 
     std::execution::start(op);
@@ -510,7 +509,7 @@ TEST(WriteEnvTest, FallsBackToReceiverDelegationSchedulerForMissingQuery) {
     auto op = std::execution::connect(
         std::execution::write_env(
             std::execution::read_env(std::execution::get_delegation_scheduler),
-            forge::empty_env{}),
+            std::execution::env<>{}),
         delegation_scheduler_receiver{downstream, &got_expected, &completed});
 
     std::execution::start(op);
@@ -527,7 +526,7 @@ TEST(WriteEnvTest, PreservesReceiverStopTokenWhenNotOverridden) {
     auto op = std::execution::connect(
         std::execution::write_env(
             std::execution::read_env(std::get_stop_token),
-            forge::empty_env{}),
+            std::execution::env<>{}),
         stop_token_receiver{&source, &stop_possible, &completed});
 
     std::execution::start(op);
@@ -540,7 +539,7 @@ TEST(WriteEnvTest, ReadsMemberQueriedStopTokenFromInjectedEnv) {
     std::inplace_stop_source source;
     EXPECT_TRUE(source.request_stop());
 
-    auto result = forge::sync_wait(std::execution::write_env(
+    auto result = std::this_thread::sync_wait(std::execution::write_env(
         std::execution::read_env(std::get_stop_token),
         member_stop_query_env{source.get_token()}));
 
@@ -587,12 +586,12 @@ TEST(UnstoppableTest, OverridesReceiverStopTokenWithNeverStopToken) {
         env);
 
     using cs_t = decltype(std::execution::get_completion_signatures(
-        sndr, forge::empty_env{}));
+        sndr, std::execution::env<>{}));
     static_assert(std::is_same_v<cs_t,
         std::execution::completion_signatures<
             std::execution::set_value_t(const std::never_stop_token&)>>);
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     auto token = std::get<0>(*result);
@@ -607,7 +606,7 @@ TEST(UnstoppableTest, OverridesStopTokenInsideWriteEnv) {
         std::execution::prop(
             std::get_stop_token_t{}, source.get_token())};
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         std::execution::write_env(
             std::execution::unstoppable(
                 std::execution::read_env(std::get_stop_token)),
