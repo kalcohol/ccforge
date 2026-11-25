@@ -420,7 +420,8 @@ template<bool UseValueType, class Accessor>
 auto __norm_default_init() {
     using value_type = __accessor_value_t<Accessor>;
     using reference = typename Accessor::reference;
-    // The draft uses value_type. Forge also supports proxy-defined magnitudes.
+    // Standard callers derive the initial value from value_type. The private
+    // branch can derive it from the accessor reference's magnitude instead.
     if constexpr (!UseValueType && requires { __abs_if_needed(std::declval<reference>()); }) {
         using magnitude = decltype(__abs_if_needed(std::declval<reference>()));
         return decltype(std::declval<magnitude>() * std::declval<magnitude>()){};
@@ -470,26 +471,14 @@ T __vector_two_norm(
     T& init)
 {
     using value_type = __detail::__accessor_value_t<Accessor>;
-    if constexpr (
-        std::is_integral_v<value_type> &&
-        std::is_integral_v<std::remove_cvref_t<typename Accessor::reference>> &&
-        std::is_integral_v<T>) {
-        __detail::__integral_norm_accumulator accumulator;
-        accumulator.__add(init);
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            accumulator.__add(x[i]);
-        }
-        return __detail::__saturate_cast<T>(accumulator.__norm());
-    } else {
-        using magnitude_type = std::remove_cvref_t<decltype(__detail::__abs_if_needed(init))>;
-        using accum_type = __detail::__norm_accum_t<magnitude_type, value_type, typename Accessor::reference>;
-        __detail::__linalg_norm_sum<accum_type> sum;
-        __detail::__add_norm_term<T>(sum, init);
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            __detail::__add_norm_term<value_type>(sum, x[i]);
-        }
-        return __detail::__norm_result<T>(sum);
+    using magnitude_type = std::remove_cvref_t<decltype(__detail::__abs_if_needed(init))>;
+    using accum_type = __detail::__norm_accum_t<magnitude_type, value_type, typename Accessor::reference>;
+    __detail::__linalg_norm_sum<accum_type> sum;
+    __detail::__add_norm_term<T>(sum, init);
+    for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
+        __detail::__add_norm_term<value_type>(sum, x[i]);
     }
+    return __detail::__norm_result<T>(sum);
 }
 
 template<bool UseValueType = false, class Extents, class Layout, class Accessor>
@@ -601,51 +590,6 @@ typename Extents::size_type vector_idx_abs_max(
         if (v > best_v) { best_v = v; best = i; }
     }
     return static_cast<size_type>(best);
-}
-
-// sum_of_squares helper struct — historical Forge compatibility
-template<class T>
-struct __sum_of_squares_result {
-    T scaling_factor;
-    T scaled_sum_of_squares;
-};
-
-template<class Extents, class Layout, class Accessor, class T>
-__sum_of_squares_result<T> __vector_sum_of_squares(
-    std::mdspan<typename Accessor::element_type, Extents, Layout, Accessor>& x,
-    __sum_of_squares_result<T>& init)
-{
-    if constexpr (std::is_integral_v<T>) {
-        // The scaled recurrence divides magnitudes, which truncates to zero
-        // in an integral T ({3, 4} used to produce {4, 1}, reconstructing a
-        // norm of 4 instead of 5). Integral inputs accumulate the raw sum
-        // of squares in double against a unit scaling factor, preserving
-        // the scaling_factor^2 * scaled_sum_of_squares contract exactly.
-        const double init_scale = static_cast<double>(init.scaling_factor);
-        double total = init_scale * init_scale *
-            static_cast<double>(init.scaled_sum_of_squares);
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            const double magnitude =
-                static_cast<double>(__detail::__abs_if_needed(x[i]));
-            total += magnitude * magnitude;
-        }
-        return {T{1}, __detail::__saturate_cast<T>(total)};
-    } else {
-        T scale = init.scaling_factor;
-        T ssq   = init.scaled_sum_of_squares;
-        for (typename Extents::index_type i = 0; i < x.extent(0); ++i) {
-            auto absxi = __detail::__abs_if_needed_as<T>(x[i]);
-            if (absxi != T{}) {
-                if (scale < absxi) {
-                    ssq = T{1} + ssq * (scale / absxi) * (scale / absxi);
-                    scale = absxi;
-                } else {
-                    ssq += (absxi / scale) * (absxi / scale);
-                }
-            }
-        }
-        return {scale, ssq};
-    }
 }
 
 // setup_givens_rotation — [linalg.algs.blas1.givens]
@@ -914,30 +858,16 @@ T __matrix_frob_norm(
     T& init)
 {
     using value_type = __detail::__accessor_value_t<Accessor>;
-    if constexpr (
-        std::is_integral_v<value_type> &&
-        std::is_integral_v<std::remove_cvref_t<typename Accessor::reference>> &&
-        std::is_integral_v<T>) {
-        __detail::__integral_norm_accumulator accumulator;
-        accumulator.__add(init);
-        for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-                accumulator.__add(A[i, j]);
-            }
+    using magnitude_type = std::remove_cvref_t<decltype(__detail::__abs_if_needed(init))>;
+    using accum_type = __detail::__norm_accum_t<magnitude_type, value_type, typename Accessor::reference>;
+    __detail::__linalg_norm_sum<accum_type> sum;
+    __detail::__add_norm_term<T>(sum, init);
+    for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
+        for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
+            __detail::__add_norm_term<value_type>(sum, A[i, j]);
         }
-        return __detail::__saturate_cast<T>(accumulator.__norm());
-    } else {
-        using magnitude_type = std::remove_cvref_t<decltype(__detail::__abs_if_needed(init))>;
-        using accum_type = __detail::__norm_accum_t<magnitude_type, value_type, typename Accessor::reference>;
-        __detail::__linalg_norm_sum<accum_type> sum;
-        __detail::__add_norm_term<T>(sum, init);
-        for (typename Extents::index_type i = 0; i < A.extent(0); ++i) {
-            for (typename Extents::index_type j = 0; j < A.extent(1); ++j) {
-                __detail::__add_norm_term<value_type>(sum, A[i, j]);
-            }
-        }
-        return __detail::__norm_result<T>(sum);
     }
+    return __detail::__norm_result<T>(sum);
 }
 
 template<bool UseValueType = false, class Extents, class Layout, class Accessor>
