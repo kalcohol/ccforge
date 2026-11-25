@@ -252,18 +252,37 @@ Sender attributes 的转发视图保留 `get_env(sndr)` 的确切类型（引用
 
 - 结果类型 Mandates 按 `remove_cvref_t` 解释；字面要求 allocator / token 的引用或 const
   类型满足 copyable 等约束会否定草案自身的 prop 示例。
-- 批次 D3b：`std::get_allocator`、`std::get_stop_token`、`get_scheduler`、
+- 批次 D3b.1 已解决：`std::get_allocator`、`std::get_stop_token`、`get_scheduler`、
   `get_start_scheduler`、`get_delegation_scheduler`、`get_forward_progress_guarantee` 与
-  `get_await_completion_adaptor` 仍通过 `__query(*this, ...)` 传递 tag；
-  `get_completion_scheduler` 的初次和递归查询也通过 `__try_query` / `__query` 传递 tag。
-  这些路径没有保留草案成员表达式中全局 query object 的常量地址，不能支持成员形参通过
-  `consteval` 转换构造函数取得该地址的运行期调用。D3a 只对齐新的 `get_scheduler_allocator`。
+  `get_await_completion_adaptor` 的成员表达式引用全局 query object，`get_scheduler` 的
+  参与检查也使用同一表达式。`get_completion_scheduler<T>` 的初次查找引用全局 `<T>`
+  对象，递归统一引用全局 `<set_value_t>` 对象。运行期探针通过成员形参的
+  `consteval` 转换检查地址，包括从 CPO 副本调用。D3a 已对齐 `get_scheduler_allocator`；
+  两个 domain CPO 仍仅选择类型，通用转发仍传递调用者提供的 tag。
+- `[exec.snd.expos]` 的 `basic-sender::get_env` 仍调用 `impls-for<Tag>::get-attrs`
+  （`cfc8964` 的 `exec.tex:2273`），但 P3826R5 已删除该 hook 的声明与旧的默认策略。
+  这是无法按字面实现的起草错误。Backport 由各 sender 提供自己的 attributes，
+  不恢复旧的通用 hook。
+  [P3826R5 §5.3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3826r5.html)
+  的 `starts_on(gpu, just()) | then(fn)` 例子要求 `just` 公布所提供环境的 domain，
+  这是后续 factory attributes 的意图依据。
+- 批次 D3b.2 的 factory attributes 延后，与 D3b.3 和 D3b.4 的 adaptor 改动一并落地。
+  现有 adaptor 转发 child attributes，直接引入 factory 答案会暴露三类问题：报告错误的
+  completion 位置、公布已被 adaptor 消除的 completion channel，以及在错误的环境中查询。
+- 后续计划（D3b 设计评审 §D；审查记录保存在仓库之外）：D3b.2–D3b.4 合并为一批落地，
+  D3b.3 按输出 channel 计算普通 adaptor 的 attributes，D3b.4 处理 `let_*`、
+  `continues_on`、`on`/`starts_on` 与 `affine` 等嵌套和调度算法，并修复环境值类别中
+  可恢复的丢失；D3b.5 做集成与 native handoff 测试。D3c 对锁定的 producer
+  （`when_all`、`associate`、`spawn_future`、`counting_scope`）、Forge producer 与
+  wait 调用方逐项验证，锁定头文件的改动伴随正式重新认证，最后两个 wait 消费者
+  一并改用精确的 completion domain。
 - `[exec.sched]/1` 要求 progress 查询，而 `[exec.get.fwd.progress]/2` 又要求 scheduler；
   通过不含 progress 的内部 shape 打破循环。Inline 指定查询列表缺少 progress，仍保留显式成员。
-- `[exec.get.compl.sched]/5.2` 使带环境的 scheduler 对所有 completion tags 都可回答，
-  `[exec.sched]/6` 要求 attributes parity，而 `/6` 的 signature consistency 又禁止不存在的
-  completion；inline 的 error / stopped、run-loop 的 error 无法同时满足。实现 /5.2，
-  parity 仅覆盖实际 completion tags，暂不诊断 scheduler / domain 的 signature consistency。
+- Schedule sender 的 parity 与 signatures 一致性等措辞问题留待后续调度工作核对。
+- [LWG 4635](https://cplusplus.github.io/LWG/issue4635)、[LWG 4551](https://cplusplus.github.io/LWG/issue4551)
+  及 [LWG 4570](https://cplusplus.github.io/LWG/issue4570) 在本次对照的草案中均未采纳。
+  分别不提前调整 inline / run-loop progress（两者仍为 `weakly_parallel`）、两参数 `on` 的
+  void customization domain 和 common-domain 的 `default_domain` 候选。
 - `[exec.read.env]` 的无环境 check-types 对缺失查询抛 unspecified-exception，与
   make-sender 的 non-dependent/dependent 分类有张力；目前用约束表达可观察的 sender_in 失败。
 - RECURSE-QUERY 的“同型”按去 cv/ref 的 scheduler 类型比较；终端借用结果保留引用。

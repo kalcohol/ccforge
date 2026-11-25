@@ -531,6 +531,11 @@ P4453R1 的 `get_scheduler_allocator(env)` 优先选择 const 环境上的
 `query(std::get_scheduler_allocator)`，仅在该表达式不良构时回退到
 `query(std::get_allocator)`；两者均不良构时不可调用，没有默认分配器。
 该查询是 forwarding query，并保留所选成员结果的值类别。
+`std::get_allocator`、`std::get_stop_token`、`get_scheduler`、`get_start_scheduler`、
+`get_delegation_scheduler`、`get_forward_progress_guarantee` 和 `get_await_completion_adaptor`
+的成员表达式直接使用全局 query object，即使从 CPO 副本调用也是如此。
+`get_completion_scheduler<T>` 的初次查询使用全局 `<T>` 对象，之后每次递归使用全局
+`<set_value_t>` 对象。此规则不改变仅选择类型的 domain 查询，也不替换通用转发收到的 tag。
 选中的成员查询遵守 MANDATE-NOTHROW，并检查相应 allocator、
 stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates 按结果的
 `remove_cvref_t` 检查，以支持 `prop` 的借用答案；草案措辞问题见台账。

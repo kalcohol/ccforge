@@ -655,8 +655,11 @@ predecessor 与 receiver scheduler，分别检查 `get_start_scheduler` 和 `get
 domain 函数及 utilities、scheduler 递归和环境单次求值。
 Allocator 查询用例检查专用成员的优先级、普通 allocator 回退、缺失时不可调用、
 constexpr forwarding 分类、借用结果的引用身份，以及经 FWD-ENV 与 `then` 转发的
-`prop`/`env` overlay。`get_scheduler_allocator` 的两个分支还检查成员形参可通过 `consteval`
-转换取得所选全局 query object 的地址。两种 allocator 查询均接受 fancy pointer 和非 `void` deallocate。
+`prop`/`env` overlay。具名查询的控制通过 `consteval` 转换取得全局 query object 的地址，
+包含从 CPO 副本调用、`get_scheduler` 的底层成员只求值一次、completion-scheduler
+初始 tag 与递归 value tag、pack 优先及 unary 回退、同型相等与不等、跨类型递归和终端借用引用。
+`get_scheduler_allocator` 的两个分支均验证所选对象。两种 allocator 查询均接受 fancy pointer
+和非 `void` deallocate。
 
 普通 Forge runtime、erasure 和 IO 测试使用成员定制。`forge_task_member_queries`
 涵盖 task promise 的查询。`forge_member_queries` 编译探针随
