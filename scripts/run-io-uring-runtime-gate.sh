@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib/io-uring-gate-config.sh"
+
 if [[ $# -lt 4 ]]; then
     printf '%s\n' \
         'usage: run-io-uring-runtime-gate.sh <cxx> <timeout-seconds> <require-runtime:0|1> <probe> [build-dir ...]' \
@@ -45,6 +47,27 @@ case "${require_runtime}" in
         ;;
 esac
 
+require_test_binary() {
+    if [[ ! -x "$1" ]]; then
+        printf 'missing io_uring test binary: %s\n' "$1" >&2
+        exit 3
+    fi
+}
+
+# A runtime skip must not hide missing binaries from a configured build.
+for dir in "$@"; do
+    if forge_io_uring_config_has "${dir}" backend=ON; then
+        require_test_binary "${dir}/test/forge/test_forge_io_uring_context"
+        require_test_binary "${dir}/test/forge/test_forge_io_uring_rw"
+        if forge_io_uring_config_has "${dir}" strict=ON; then
+            require_test_binary "${dir}/test/forge/test_forge_stop_lifetime_io_uring_rw"
+        fi
+        if forge_io_uring_config_has "${dir}" fault=ON; then
+            require_test_binary "${dir}/test/forge/test_forge_io_uring_fault"
+        fi
+    fi
+done
+
 set +e
 run_bounded \
     env CXX="${compiler}" \
@@ -70,10 +93,7 @@ fi
 for dir in "$@"; do
     for name in test_forge_io_uring_context test_forge_io_uring_rw; do
         binary="${dir}/test/forge/${name}"
-        if [[ ! -x "${binary}" ]]; then
-            printf 'missing io_uring test binary: %s\n' "${binary}" >&2
-            exit 3
-        fi
+        require_test_binary "${binary}"
         printf '[io-uring-container] running %s\n' "${binary}"
         run_bounded "${binary}"
     done

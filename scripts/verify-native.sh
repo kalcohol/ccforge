@@ -35,6 +35,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
+source "${REPO_ROOT}/scripts/lib/io-uring-gate-config.sh"
 
 PODMAN="${PODMAN:-podman}"
 LOG_DIR="${REPO_ROOT}/build/verify-logs"
@@ -43,6 +44,17 @@ mkdir -p "${LOG_DIR}"
 log()  { printf '\033[1;34m[verify]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
+
+should_run_io_uring_gate() {
+    local build_dir="$1"
+    local binary="${build_dir}/test/forge/test_forge_io_uring_context"
+    if forge_io_uring_config_has "${build_dir}" backend=ON; then
+        [[ -x "${binary}" ]] || fail "missing configured io_uring test binary: ${binary}"
+    elif ! forge_io_uring_config_has "${build_dir}" backend=OFF; then
+        fail "missing or invalid io_uring configuration marker in ${build_dir}"
+    fi
+    [[ -x "${binary}" ]]
+}
 
 build_image() {
     local tag="$1" containerfile="$2"
@@ -320,7 +332,7 @@ target_tsan() {
                 "execution|forge" \
                 build/tsan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
-    if [ -x build/tsan/test/forge/test_forge_io_uring_context ]; then
+    if should_run_io_uring_gate build/tsan; then
         log "tsan: running io_uring runtime tests in the allow-io_uring container"
         TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1" \
             FORGE_IO_URING_ALLOW_PTRACE=1 \
@@ -368,7 +380,7 @@ target_asan() {
                 "execution|forge|hive" \
                 build/asan/ctest-first-run.log
         ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" -DFORGE_TEST_ENABLE_HIVE=ON
-    if [ -x build/asan/test/forge/test_forge_io_uring_context ]; then
+    if should_run_io_uring_gate build/asan; then
         log "asan: running io_uring runtime tests in the allow-io_uring container"
         ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1" \
             UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \

@@ -117,12 +117,31 @@ for name in test_forge_io_uring_context test_forge_io_uring_rw test_forge_io_uri
     [[ -e "${marker_dir}/${name}" ]]
 done
 
-# Repeat with the optional strict target present and verify it is replayed.
+# Expected binaries are checked even when the runtime probe would skip.
+printf '%s\n' backend=ON strict=ON fault=ON > "${build_dir}/ccforge-io-uring-gate.txt"
+expect_missing_binary() {
+    local name="$1"
+    local status=0
+    local output
+    output="$(
+        "${runner}" c++ 5 0 "${work}/probe-skip" "${build_dir}" 2>&1
+    )" || status=$?
+    [[ ${status} -eq 3 ]]
+    [[ "${output}" == *"missing io_uring test binary: ${binary_dir}/${name}"* ]]
+}
+expect_missing_binary test_forge_stop_lifetime_io_uring_rw
+
 printf '%s\n' '#!/usr/bin/env bash' \
     'touch "${FORGE_IO_URING_TEST_MARKER_DIR}/test_forge_stop_lifetime_io_uring_rw"' \
     > "${binary_dir}/test_forge_stop_lifetime_io_uring_rw"
 chmod +x "${binary_dir}/test_forge_stop_lifetime_io_uring_rw"
+for name in test_forge_io_uring_context test_forge_io_uring_rw test_forge_io_uring_fault; do
+    chmod -x "${binary_dir}/${name}"
+    expect_missing_binary "${name}"
+    chmod +x "${binary_dir}/${name}"
+done
 
+find "${marker_dir}" -type f -delete
 FORGE_IO_URING_TEST_MARKER_DIR="${marker_dir}" \
     "${runner}" c++ 5 1 "${work}/probe-pass" "${build_dir}" \
     >/dev/null
@@ -134,5 +153,11 @@ for name in \
         test_forge_io_uring_fault; do
     [[ -e "${marker_dir}/${name}" ]]
 done
+
+# Without linker support, the missing fault target is still optional.
+printf '%s\n' backend=ON strict=ON > "${build_dir}/ccforge-io-uring-gate.txt"
+chmod -x "${binary_dir}/test_forge_io_uring_fault"
+FORGE_IO_URING_TEST_MARKER_DIR="${marker_dir}" \
+    "${runner}" c++ 5 1 "${work}/probe-pass" "${build_dir}" >/dev/null
 
 [[ -s "${FORGE_TIMEOUT_MARKER}" ]]
