@@ -7,8 +7,105 @@
 #include <functional>
 #include <memory>
 #include <type_traits>
+#include "../scheduler_fixture.hpp"
 namespace ex = std::execution;
 namespace {
+// As in the scheduler-allocator compile control, this conversion must be
+// constant-evaluable even though the enclosing member call is at runtime.
+template<class Tag>
+struct query_address {
+    const Tag* tag;
+    consteval query_address(const Tag& query) noexcept : tag(&query) {}
+};
+template<const auto& Query, class Result>
+struct address_env {
+    using tag_t = std::remove_cvref_t<decltype(Query)>;
+    Result result;
+    mutable const tag_t* observed = nullptr;
+    mutable int calls = 0;
+
+    const Result& query(query_address<tag_t> address) const noexcept {
+        observed = address.tag;
+        ++calls;
+        return result;
+    }
+};
+struct address_progress_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+    const ex::get_forward_progress_guarantee_t** observed;
+    auto schedule() const noexcept -> scheduler_fixture::schedule_sender<address_progress_scheduler> {
+        return {*this};
+    }
+    auto query(query_address<ex::get_forward_progress_guarantee_t> address) const noexcept {
+        *observed = address.tag;
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    bool operator==(const address_progress_scheduler&) const noexcept = default;
+};
+using error_scheduler_query = ex::get_completion_scheduler_t<ex::set_error_t>;
+using value_scheduler_query = ex::get_completion_scheduler_t<ex::set_value_t>;
+struct scheduler_query_trace {
+    const error_scheduler_query* initial = nullptr;
+    const value_scheduler_query* bridge = nullptr;
+    const value_scheduler_query* link = nullptr;
+    int pack_calls = 0;
+    int unary_calls = 0;
+    int bridge_calls = 0;
+    int link_calls = 0;
+};
+struct address_link {
+    using scheduler_concept = ex::scheduler_tag;
+    int identity;
+    const address_link* next;
+    scheduler_query_trace* trace;
+
+    auto schedule() const noexcept -> scheduler_fixture::schedule_sender<address_link> {
+        return {*this};
+    }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    const address_link& query(query_address<value_scheduler_query> address,
+                              const ex::env<>&, const ex::env<>&) const noexcept {
+        trace->link = address.tag;
+        ++trace->link_calls;
+        return *next;
+    }
+    bool operator==(const address_link& other) const noexcept { return identity == other.identity; }
+};
+struct address_bridge {
+    using scheduler_concept = ex::scheduler_tag;
+    const address_link* first;
+    scheduler_query_trace* trace;
+
+    auto schedule() const noexcept -> scheduler_fixture::schedule_sender<address_bridge> {
+        return {*this};
+    }
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+    const address_link& query(query_address<value_scheduler_query> address) const noexcept {
+        trace->bridge = address.tag;
+        ++trace->bridge_calls;
+        return *first;
+    }
+    bool operator==(const address_bridge&) const noexcept = default;
+};
+struct address_attrs {
+    address_bridge bridge;
+
+    address_bridge query(query_address<error_scheduler_query> address,
+                         const ex::env<>&, const ex::env<>&) const noexcept {
+        bridge.trace->initial = address.tag;
+        ++bridge.trace->pack_calls;
+        return bridge;
+    }
+    address_bridge query(query_address<error_scheduler_query> address) const noexcept {
+        bridge.trace->initial = address.tag;
+        ++bridge.trace->unary_calls;
+        return bridge;
+    }
+};
 struct fancy_pointer {
     int* value;
     int& operator*() const noexcept { return *value; }
@@ -75,6 +172,78 @@ void check_parity(const S& scheduler) {
     EXPECT_EQ(ex::get_forward_progress_guarantee(scheduler),
               scheduler.query(ex::get_forward_progress_guarantee));
 }
+}
+TEST(QueryConformanceTest, NamedQueriesPassGlobalTagsToRuntimeMembers) {
+    const address_env<std::get_allocator, std::allocator<int>> allocator{};
+    const auto allocator_copy = std::get_allocator;
+    EXPECT_EQ(&allocator_copy(allocator), &allocator.result);
+    EXPECT_EQ(allocator.observed, &std::get_allocator);
+
+    const address_env<std::get_stop_token, std::never_stop_token> token{};
+    EXPECT_EQ(&std::get_stop_token(token), &token.result);
+    EXPECT_EQ(token.observed, &std::get_stop_token);
+    static_assert(std::same_as<decltype(std::get_stop_token(ex::env<>{})), std::never_stop_token>);
+
+    const address_env<ex::get_start_scheduler, ex::inline_scheduler> start{};
+    EXPECT_EQ(&ex::get_start_scheduler(start), &start.result);
+    EXPECT_EQ(start.observed, &ex::get_start_scheduler);
+
+    const address_env<ex::get_delegation_scheduler, ex::inline_scheduler> delegation{};
+    EXPECT_EQ(&ex::get_delegation_scheduler(delegation), &delegation.result);
+    EXPECT_EQ(delegation.observed, &ex::get_delegation_scheduler);
+
+    const address_env<ex::get_scheduler, ex::inline_scheduler> current{};
+    EXPECT_EQ(ex::get_scheduler(current), current.result);
+    EXPECT_EQ(current.observed, &ex::get_scheduler);
+    EXPECT_EQ(current.calls, 1);
+
+    const ex::get_forward_progress_guarantee_t* progress_tag = nullptr;
+    const address_progress_scheduler progress{&progress_tag};
+    EXPECT_EQ(ex::get_forward_progress_guarantee(progress), ex::forward_progress_guarantee::weakly_parallel);
+    EXPECT_EQ(progress_tag, &ex::get_forward_progress_guarantee);
+
+    const address_env<ex::get_await_completion_adaptor, int> await_env{42};
+    EXPECT_EQ(&ex::get_await_completion_adaptor(await_env), &await_env.result);
+    EXPECT_EQ(await_env.observed, &ex::get_await_completion_adaptor);
+}
+TEST(QueryConformanceTest, CompletionSchedulerPassesGlobalTagsAtEveryHop) {
+    scheduler_query_trace trace;
+    const address_link equal{2, &equal, &trace};
+    const address_link second{2, &equal, &trace};
+    const address_link first{1, &second, &trace};
+    const address_attrs attrs{{&first, &trace}};
+    const auto copied_query = ex::get_completion_scheduler<ex::set_error_t>;
+    int evaluations = 0;
+    auto environment = [&] { ++evaluations; return ex::env<>{}; };
+
+    // The initial pack wins, the bridge retries unary and changes type, and
+    // an equal next scheduler must leave the borrowed answer at "second".
+    decltype(auto) packed = copied_query(attrs, environment(), environment());
+    static_assert(std::same_as<decltype(packed), const address_link&>);
+    EXPECT_EQ(&packed, &second);
+    EXPECT_EQ(trace.initial, &ex::get_completion_scheduler<ex::set_error_t>);
+    EXPECT_EQ(trace.bridge, &ex::get_completion_scheduler<ex::set_value_t>);
+    EXPECT_EQ(trace.link, &ex::get_completion_scheduler<ex::set_value_t>);
+    EXPECT_EQ(trace.pack_calls, 1);
+    EXPECT_EQ(trace.unary_calls, 0);
+    EXPECT_EQ(trace.bridge_calls, 1);
+    EXPECT_EQ(trace.link_calls, 2);
+    EXPECT_EQ(evaluations, 2);
+
+    trace = {};
+    decltype(auto) unary = copied_query(attrs, environment());
+    static_assert(std::same_as<decltype(unary), const address_link&>);
+    EXPECT_EQ(&unary, &first);
+    EXPECT_EQ(trace.initial, &ex::get_completion_scheduler<ex::set_error_t>);
+    EXPECT_EQ(trace.bridge, &ex::get_completion_scheduler<ex::set_value_t>);
+    EXPECT_EQ(trace.pack_calls, 0);
+    EXPECT_EQ(trace.unary_calls, 1);
+    EXPECT_EQ(trace.bridge_calls, 1);
+    EXPECT_EQ(trace.link_calls, 0);
+    EXPECT_EQ(evaluations, 3);
+
+    EXPECT_EQ(copied_query(ex::inline_scheduler{}, environment()), ex::inline_scheduler{});
+    EXPECT_EQ(evaluations, 4);
 }
 TEST(QueryConformanceTest, PropMovesItsMoveOnlyValue) {
     struct value_tag {};

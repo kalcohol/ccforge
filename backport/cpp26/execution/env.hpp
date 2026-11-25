@@ -137,6 +137,16 @@ constexpr decltype(auto) __query(Query&& query, Env&& env, Args&&... args)
         .query(query, static_cast<Args&&>(args)...);
 }
 
+// Named CPOs must pass the global tag as a constant expression, even when
+// invoked through a copy. A function parameter cannot carry that property.
+template<const auto& Query, class Env, class... Args>
+    requires __queryable<std::remove_cvref_t<decltype(Query)>, Env, Args...>
+constexpr decltype(auto) __query_named(Env&& env, Args&&... args)
+    noexcept(__nothrow_query<std::remove_cvref_t<decltype(Query)>, Env, Args...>) {
+    return static_cast<const std::remove_reference_t<Env>&>(env)
+        .query(Query, static_cast<Args&&>(args)...);
+}
+
 template<class Query>
 concept __forwarding_query = requires {
     // Keep non-constant classification in the type-substitution failure path.
@@ -222,15 +232,7 @@ inline constexpr get_scheduler_t get_scheduler{};
 struct get_start_scheduler_t {
     template<class Env>
         requires __forge_env_detail::__queryable<get_start_scheduler_t, Env>
-    constexpr decltype(auto) operator()(Env&& env) const
-        noexcept {
-        static_assert(__forge_env_detail::__nothrow_query<get_start_scheduler_t, Env>,
-                      "query must be noexcept");
-        static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<decltype(
-            __forge_env_detail::__query(*this, static_cast<Env&&>(env)))>>(),
-            "query must return a scheduler");
-        return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
-    }
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
@@ -238,24 +240,38 @@ struct get_start_scheduler_t {
 };
 inline constexpr get_start_scheduler_t get_start_scheduler{};
 
+template<class Env>
+    requires __forge_env_detail::__queryable<get_start_scheduler_t, Env>
+constexpr decltype(auto) get_start_scheduler_t::operator()(Env&& env) const noexcept {
+    static_assert(__forge_env_detail::__nothrow_query<get_start_scheduler_t, Env>,
+                  "query must be noexcept");
+    static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<decltype(
+        __forge_env_detail::__query_named<get_start_scheduler>(static_cast<Env&&>(env)))>>(),
+        "query must return a scheduler");
+    return __forge_env_detail::__query_named<get_start_scheduler>(static_cast<Env&&>(env));
+}
+
 struct get_delegation_scheduler_t {
     template<class Env>
         requires __forge_env_detail::__queryable<get_delegation_scheduler_t, Env>
-    constexpr decltype(auto) operator()(Env&& env) const
-        noexcept {
-        static_assert(__forge_env_detail::__nothrow_query<get_delegation_scheduler_t, Env>,
-                      "query must be noexcept");
-        static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<decltype(
-            __forge_env_detail::__query(*this, static_cast<Env&&>(env)))>>(),
-            "query must return a scheduler");
-        return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
-    }
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
 inline constexpr get_delegation_scheduler_t get_delegation_scheduler{};
+
+template<class Env>
+    requires __forge_env_detail::__queryable<get_delegation_scheduler_t, Env>
+constexpr decltype(auto) get_delegation_scheduler_t::operator()(Env&& env) const noexcept {
+    static_assert(__forge_env_detail::__nothrow_query<get_delegation_scheduler_t, Env>,
+                  "query must be noexcept");
+    static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<decltype(
+        __forge_env_detail::__query_named<get_delegation_scheduler>(static_cast<Env&&>(env)))>>(),
+        "query must return a scheduler");
+    return __forge_env_detail::__query_named<get_delegation_scheduler>(static_cast<Env&&>(env));
+}
 
 enum class forward_progress_guarantee {
     concurrent,
@@ -268,21 +284,26 @@ struct get_forward_progress_guarantee_t {
         requires (__forge_env_detail::__scheduler_shape<Scheduler>()) &&
                  __forge_env_detail::__queryable<
             get_forward_progress_guarantee_t, Scheduler>
-    constexpr decltype(auto) operator()(Scheduler&& scheduler) const
-        noexcept {
-        static_assert(__forge_env_detail::__nothrow_query<get_forward_progress_guarantee_t, Scheduler>,
-                      "query must be noexcept");
-        static_assert(std::same_as<std::remove_cvref_t<decltype(__forge_env_detail::__query(
-            *this, static_cast<Scheduler&&>(scheduler)))>, forward_progress_guarantee>);
-        return __forge_env_detail::__query(
-            *this, static_cast<Scheduler&&>(scheduler));
-    }
+    constexpr decltype(auto) operator()(Scheduler&& scheduler) const noexcept;
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
 inline constexpr get_forward_progress_guarantee_t get_forward_progress_guarantee{};
+
+template<class Scheduler>
+    requires (__forge_env_detail::__scheduler_shape<Scheduler>()) &&
+             __forge_env_detail::__queryable<get_forward_progress_guarantee_t, Scheduler>
+constexpr decltype(auto) get_forward_progress_guarantee_t::operator()(Scheduler&& scheduler) const noexcept {
+    static_assert(__forge_env_detail::__nothrow_query<get_forward_progress_guarantee_t, Scheduler>,
+                  "query must be noexcept");
+    static_assert(std::same_as<std::remove_cvref_t<decltype(
+        __forge_env_detail::__query_named<get_forward_progress_guarantee>(
+            static_cast<Scheduler&&>(scheduler)))>, forward_progress_guarantee>);
+    return __forge_env_detail::__query_named<get_forward_progress_guarantee>(
+        static_cast<Scheduler&&>(scheduler));
+}
 
 namespace __forge_env_detail {
 
@@ -299,15 +320,7 @@ namespace std {
 struct get_stop_token_t {
     template<class Env>
         requires execution::__forge_env_detail::__queryable<get_stop_token_t, Env>
-    constexpr decltype(auto) operator()(Env&& env) const
-        noexcept {
-        static_assert(execution::__forge_env_detail::__nothrow_query<get_stop_token_t, Env>,
-                      "query must be noexcept");
-        using result_t = std::remove_cvref_t<decltype(
-            execution::__forge_env_detail::__query(*this, static_cast<Env&&>(env)))>;
-        static_assert(std::stoppable_token<result_t>, "invalid query result");
-        return execution::__forge_env_detail::__query(*this, static_cast<Env&&>(env));
-    }
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
     template<class Env>
         requires (!execution::__forge_env_detail::__queryable<get_stop_token_t, Env>)
@@ -319,24 +332,38 @@ struct get_stop_token_t {
 };
 inline constexpr get_stop_token_t get_stop_token{};
 
+template<class Env>
+    requires execution::__forge_env_detail::__queryable<get_stop_token_t, Env>
+constexpr decltype(auto) get_stop_token_t::operator()(Env&& env) const noexcept {
+    namespace detail = execution::__forge_env_detail;
+    static_assert(detail::__nothrow_query<get_stop_token_t, Env>, "query must be noexcept");
+    using result_t = std::remove_cvref_t<decltype(
+        detail::__query_named<std::get_stop_token>(static_cast<Env&&>(env)))>;
+    static_assert(std::stoppable_token<result_t>, "invalid query result");
+    return detail::__query_named<std::get_stop_token>(static_cast<Env&&>(env));
+}
+
 struct get_allocator_t {
     template<class Env>
         requires execution::__forge_env_detail::__queryable<get_allocator_t, Env>
-    constexpr decltype(auto) operator()(Env&& env) const
-        noexcept {
-        static_assert(execution::__forge_env_detail::__nothrow_query<get_allocator_t, Env>,
-                      "query must be noexcept");
-        using result_t = std::remove_cvref_t<decltype(
-            execution::__forge_env_detail::__query(*this, static_cast<Env&&>(env)))>;
-        static_assert(execution::__forge_env_detail::__simple_allocator<result_t>, "invalid query result");
-        return execution::__forge_env_detail::__query(*this, static_cast<Env&&>(env));
-    }
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
     }
 };
 inline constexpr get_allocator_t get_allocator{};
+
+template<class Env>
+    requires execution::__forge_env_detail::__queryable<get_allocator_t, Env>
+constexpr decltype(auto) get_allocator_t::operator()(Env&& env) const noexcept {
+    namespace detail = execution::__forge_env_detail;
+    static_assert(detail::__nothrow_query<get_allocator_t, Env>, "query must be noexcept");
+    using result_t = std::remove_cvref_t<decltype(
+        detail::__query_named<std::get_allocator>(static_cast<Env&&>(env)))>;
+    static_assert(detail::__simple_allocator<result_t>, "invalid query result");
+    return detail::__query_named<std::get_allocator>(static_cast<Env&&>(env));
+}
 
 struct get_scheduler_allocator_t {
     template<class Env>
@@ -628,15 +655,16 @@ struct __completion_query_allowed<__fwd_attrs_view<Env>, Tag, Envs...>
 template<class Q, class S, class... Envs>
 concept __try_queryable = __queryable<Q, S, Envs...> || __queryable<Q, S>;
 
-template<class Q, class S, class... Envs>
-    requires __try_queryable<Q, S, Envs...>
-constexpr decltype(auto) __try_query(Q q, S&& s, Envs&&... envs) noexcept {
+template<const auto& Query, class S, class... Envs>
+    requires __try_queryable<std::remove_cvref_t<decltype(Query)>, S, Envs...>
+constexpr decltype(auto) __try_query(S&& s, Envs&&... envs) noexcept {
+    using Q = std::remove_cvref_t<decltype(Query)>;
     if constexpr (__queryable<Q, S, Envs...>) {
         static_assert(__nothrow_query<Q, S, Envs...>, "query must be noexcept");
-        return __query(q, static_cast<S&&>(s), static_cast<Envs&&>(envs)...);
+        return __query_named<Query>(static_cast<S&&>(s), static_cast<Envs&&>(envs)...);
     } else {
         static_assert(__nothrow_query<Q, S>, "query must be noexcept");
-        return __query(q, static_cast<S&&>(s));
+        return __query_named<Query>(static_cast<S&&>(s));
     }
 }
 
@@ -652,16 +680,20 @@ namespace __forge_env_detail {
 // S is the exact query result, so a terminal borrowed answer stays borrowed.
 template<class S, class... Envs>
 constexpr decltype(auto) __resolve_scheduler(S sch, Envs&&... envs) noexcept {
-    using Q = get_completion_scheduler_t<std::conditional_t<true, set_value_t, S>>;
+    // Keep the value-tag specialization dependent until the CPO type is complete.
+    using V = std::conditional_t<true, set_value_t, S>;
+    using Q = get_completion_scheduler_t<V>;
     if constexpr (!__try_queryable<Q, S&, Envs...>) {
         return static_cast<S>(static_cast<S&&>(sch));
     } else {
-        using next_t = decltype(__try_query(Q{}, sch, static_cast<Envs&&>(envs)...));
+        using next_t = decltype(__try_query<std::execution::get_completion_scheduler<V>>(
+            sch, static_cast<Envs&&>(envs)...));
         if constexpr (std::same_as<std::remove_cvref_t<S>, std::remove_cvref_t<next_t>>) {
             if constexpr (std::is_lvalue_reference_v<S> && std::same_as<S, next_t>) {
                 auto* current = std::addressof(sch);
                 for (;;) {
-                    auto& next = __try_query(Q{}, *current, static_cast<Envs&&>(envs)...);
+                    auto& next = __try_query<std::execution::get_completion_scheduler<V>>(
+                        *current, static_cast<Envs&&>(envs)...);
                     static_assert(noexcept(*current == next));
                     if (*current == next) return static_cast<S>(*current);
                     current = std::addressof(next);
@@ -669,7 +701,8 @@ constexpr decltype(auto) __resolve_scheduler(S sch, Envs&&... envs) noexcept {
             } else {
                 auto current = static_cast<S&&>(sch);
                 for (;;) {
-                    auto next = __try_query(Q{}, current, static_cast<Envs&&>(envs)...);
+                    auto next = __try_query<std::execution::get_completion_scheduler<V>>(
+                        current, static_cast<Envs&&>(envs)...);
                     static_assert(noexcept(current == next));
                     if (current == next) return current;
                     current = std::move(next);
@@ -677,7 +710,8 @@ constexpr decltype(auto) __resolve_scheduler(S sch, Envs&&... envs) noexcept {
             }
         } else {
             return __resolve_scheduler<next_t>(
-                __try_query(Q{}, sch, static_cast<Envs&&>(envs)...),
+                __try_query<std::execution::get_completion_scheduler<V>>(
+                    sch, static_cast<Envs&&>(envs)...),
                 static_cast<Envs&&>(envs)...);
         }
     }
@@ -696,16 +730,19 @@ struct get_completion_scheduler_t {
                    requires(Attrs&& a) { auto(static_cast<Attrs&&>(a)); }))
     constexpr decltype(auto) operator()(Attrs&& attrs, Envs&&... envs) const noexcept {
         if constexpr (__forge_env_detail::__try_queryable<get_completion_scheduler_t, Attrs, Envs...>) {
-            using result_t = decltype(__forge_env_detail::__try_query(
-                *this, static_cast<Attrs&&>(attrs), static_cast<Envs&&>(envs)...));
+            using result_t = decltype(__forge_env_detail::__try_query<
+                std::execution::get_completion_scheduler<CPO>>(
+                    static_cast<Attrs&&>(attrs), static_cast<Envs&&>(envs)...));
             using resolved_t = decltype(__forge_env_detail::__resolve_scheduler<result_t>(
-                __forge_env_detail::__try_query(*this, static_cast<Attrs&&>(attrs),
-                    static_cast<Envs&&>(envs)...), static_cast<Envs&&>(envs)...));
+                __forge_env_detail::__try_query<std::execution::get_completion_scheduler<CPO>>(
+                    static_cast<Attrs&&>(attrs), static_cast<Envs&&>(envs)...),
+                static_cast<Envs&&>(envs)...));
             static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<resolved_t>>(),
                           "query must return a scheduler");
             return __forge_env_detail::__resolve_scheduler<result_t>(
-                __forge_env_detail::__try_query(*this, static_cast<Attrs&&>(attrs),
-                    static_cast<Envs&&>(envs)...), static_cast<Envs&&>(envs)...);
+                __forge_env_detail::__try_query<std::execution::get_completion_scheduler<CPO>>(
+                    static_cast<Attrs&&>(attrs), static_cast<Envs&&>(envs)...),
+                static_cast<Envs&&>(envs)...);
         } else {
             static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<Attrs>>(),
                           "query must return a scheduler");
@@ -740,7 +777,7 @@ consteval bool __composed_scheduler_query() {
     if constexpr (__queryable<get_scheduler_t, Env>) {
         return requires(Env&& env) {
             get_completion_scheduler<set_value_t>(
-                __query(std::execution::get_scheduler, static_cast<Env&&>(env)),
+                __query_named<std::execution::get_scheduler>(static_cast<Env&&>(env)),
                 __hide_scheduler<std::remove_reference_t<Env>>{std::addressof(env)});
         };
     } else {
@@ -756,24 +793,19 @@ constexpr decltype(auto) get_scheduler_t::operator()(Env&& env) const noexcept {
     static_assert(__forge_env_detail::__nothrow_query<get_scheduler_t, Env>,
                   "query must be noexcept");
     using result_t = decltype(get_completion_scheduler<set_value_t>(
-        __forge_env_detail::__query(*this, static_cast<Env&&>(env)),
+        __forge_env_detail::__query_named<std::execution::get_scheduler>(static_cast<Env&&>(env)),
         __forge_env_detail::__hide_scheduler<std::remove_reference_t<Env>>{std::addressof(env)}));
     static_assert(__forge_env_detail::__scheduler<std::remove_cvref_t<result_t>>(),
                   "query must return a scheduler");
     return get_completion_scheduler<set_value_t>(
-        __forge_env_detail::__query(*this, static_cast<Env&&>(env)),
+        __forge_env_detail::__query_named<std::execution::get_scheduler>(static_cast<Env&&>(env)),
         __forge_env_detail::__hide_scheduler<std::remove_reference_t<Env>>{std::addressof(env)});
 }
 
 struct get_await_completion_adaptor_t {
     template<class Env>
         requires __forge_env_detail::__queryable<get_await_completion_adaptor_t, Env>
-    constexpr decltype(auto) operator()(Env&& env) const
-        noexcept {
-        static_assert(__forge_env_detail::__nothrow_query<get_await_completion_adaptor_t, Env>,
-                      "query must be noexcept");
-        return __forge_env_detail::__query(*this, static_cast<Env&&>(env));
-    }
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
 
     constexpr bool query(std::forwarding_query_t) const noexcept {
         return true;
@@ -781,5 +813,13 @@ struct get_await_completion_adaptor_t {
 };
 
 inline constexpr get_await_completion_adaptor_t get_await_completion_adaptor{};
+
+template<class Env>
+    requires __forge_env_detail::__queryable<get_await_completion_adaptor_t, Env>
+constexpr decltype(auto) get_await_completion_adaptor_t::operator()(Env&& env) const noexcept {
+    static_assert(__forge_env_detail::__nothrow_query<get_await_completion_adaptor_t, Env>,
+                  "query must be noexcept");
+    return __forge_env_detail::__query_named<get_await_completion_adaptor>(static_cast<Env&&>(env));
+}
 
 } // namespace std::execution
